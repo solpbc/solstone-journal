@@ -116,6 +116,10 @@ See [AGENTS.md](AGENTS.md) for development guidelines, coding standards, and tes
 
 Use `make dev` to run the full stack against test fixtures and `make ci` for pre-commit checks.
 
+## feedback
+
+Questions, feedback, or a bug? Open an issue at [github.com/solpbc/solstone/issues](https://github.com/solpbc/solstone/issues), or reach support at [support.solpbc.org](https://support.solpbc.org). You don't need to know anyone — those are the front doors.
+
 ## contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution terms.
