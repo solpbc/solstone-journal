@@ -89,6 +89,6 @@ company: https://solpbc.org
 
 ## feedback
 
-questions, feedback, or a bug? **follow and tag [@solstone.app](https://bsky.app/profile/solstone.app) on Bluesky** for discussion and updates, open an issue at https://github.com/solpbc/solstone/issues for bugs, or reach support at https://support.solpbc.org. you don't need to know anyone — those are the front doors.
+questions, feedback, or a bug? **follow and tag [@solstone.app](https://bsky.app/profile/solstone.app) on Bluesky** for discussion and updates, open an issue at https://github.com/solpbc/solstone/issues for bugs, or reach support at https://support.solstone.app. you don't need to know anyone — those are the front doors.
 
 (running into trouble or want to develop on solstone yourself? see [CONTRIBUTING.md](CONTRIBUTING.md).)

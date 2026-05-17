@@ -118,7 +118,7 @@ Use `make dev` to run the full stack against test fixtures and `make ci` for pre
 
 ## feedback
 
-Questions, feedback, or a bug? **Follow and tag [@solstone.app](https://bsky.app/profile/solstone.app) on Bluesky** for discussion and updates, open an issue at [github.com/solpbc/solstone/issues](https://github.com/solpbc/solstone/issues) for bugs, or reach support at [support.solpbc.org](https://support.solpbc.org). You don't need to know anyone — those are the front doors.
+Questions, feedback, or a bug? **Follow and tag [@solstone.app](https://bsky.app/profile/solstone.app) on Bluesky** for discussion and updates, open an issue at [github.com/solpbc/solstone/issues](https://github.com/solpbc/solstone/issues) for bugs, or reach support at [support.solstone.app](https://support.solstone.app). You don't need to know anyone — those are the front doors.
 
 ## contributing
 
