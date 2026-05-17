@@ -17,7 +17,7 @@
     "enabled": true,
     "proactive": true,
     "anonymous_feedback": false,
-    "portal_url": "https://support.solpbc.org"
+    "portal_url": "https://support.solstone.app"
   },
   "describe": {
     "max_concurrent": 1,

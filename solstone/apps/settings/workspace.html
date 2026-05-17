@@ -3003,7 +3003,7 @@ button:focus:not(:focus-visible) {
 
       <div class="settings-field">
         <label for="field-support-portal-url">portal URL</label>
-        <input type="text" id="field-support-portal-url" data-section="support" data-key="portal_url" placeholder="https://support.solpbc.org">
+        <input type="text" id="field-support-portal-url" data-section="support" data-key="portal_url" placeholder="https://support.solstone.app">
         <small>Support portal endpoint. Change this if you run your own portal.</small>
       </div>
       </form>
@@ -3652,7 +3652,7 @@ function populateFields(config) {
   document.getElementById('field-support-enabled').checked = support.enabled !== false;
   document.getElementById('field-support-proactive').checked = support.proactive !== false;
   document.getElementById('field-support-anonymous').checked = support.anonymous_feedback || false;
-  setValue('field-support-portal-url', support.portal_url || 'https://support.solpbc.org');
+  setValue('field-support-portal-url', support.portal_url || 'https://support.solstone.app');
 
   // Agent identity
   const agent = config.agent || {};
