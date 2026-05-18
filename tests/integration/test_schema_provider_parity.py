@@ -170,11 +170,22 @@ def call_openai(schema: dict[str, Any], prompt: str, api_key: str) -> str:
     return response.output_text or ""
 
 
+_GOOGLE_CLIENTS: dict[str, Any] = {}
+
+
 def call_google(schema: dict[str, Any], prompt: str, api_key: str) -> str:
     from google import genai
     from google.genai import types
 
-    response = genai.Client(api_key=api_key, vertexai=False).models.generate_content(
+    # Hold the client across parametrized cases. A per-call inline
+    # ``genai.Client(...).models...`` temporary is closed before the request
+    # completes ("Cannot send a request, as the client has been closed").
+    client = _GOOGLE_CLIENTS.get(api_key)
+    if client is None:
+        client = genai.Client(api_key=api_key, vertexai=False)
+        _GOOGLE_CLIENTS[api_key] = client
+
+    response = client.models.generate_content(
         model=GEMINI_FLASH,
         contents=[prompt + " Respond JSON only."],
         config=types.GenerateContentConfig(
