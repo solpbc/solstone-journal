@@ -1,5 +1,4 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
   "required": ["message", "notes", "talent_request"],
@@ -7,22 +6,14 @@
     "message": {"type": ["string", "null"]},
     "notes": {"type": "string"},
     "talent_request": {
-      "oneOf": [
-        {"type": "null"},
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["target", "task"],
-          "properties": {
-            "target": {
-              "type": "string",
-              "enum": ["exec", "reflection"]
-            },
-            "task": {"type": "string", "minLength": 1},
-            "context": {"type": "object"}
-          }
-        }
-      ]
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["target", "task", "context"],
+      "properties": {
+        "target": {"type": "string", "enum": ["exec", "reflection"]},
+        "task": {"type": "string"},
+        "context": {"type": ["string", "null"]}
+      }
     }
   }
 }

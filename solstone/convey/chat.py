@@ -984,9 +984,31 @@ def _parse_chat_result(result: Any) -> dict[str, Any]:
     task = talent_request.get("task")
     if not isinstance(task, str) or not task.strip():
         raise ValueError("chat talent_request.task must be a non-empty string")
-    context = talent_request.get("context") or {}
-    if not isinstance(context, dict):
-        raise ValueError("chat talent_request.context must be an object")
+    raw_context = talent_request.get("context")
+    if raw_context is None:
+        context = {}
+    elif isinstance(raw_context, str):
+        stripped = raw_context.strip()
+        if not stripped:
+            context = {}
+        else:
+            # Wrap json.loads so invalid provider context propagates as a plain ValueError.
+            try:
+                decoded = json.loads(stripped)
+            except ValueError as exc:
+                raise ValueError(
+                    "chat talent_request.context must be a JSON object string"
+                ) from exc
+            if not isinstance(decoded, dict):
+                raise ValueError(
+                    "chat talent_request.context must be a JSON object string"
+                )
+            context = decoded
+    elif isinstance(raw_context, dict):
+        # Scope-mandated defensive shim; no confirmed live replay/cache path sends dict context.
+        context = raw_context
+    else:
+        raise ValueError("chat talent_request.context must be a JSON object string")
     return {
         "message": message,
         "notes": payload["notes"],

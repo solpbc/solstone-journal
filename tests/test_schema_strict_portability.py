@@ -33,12 +33,7 @@ BANNED_KEYS = frozenset(
 
 # Lodes 2-4 of req_bfbdbux6 remove their entries as those classes are
 # portabilized; Lode 4 deletes this allowlist mechanism entirely.
-PENDING_PORTABILITY = frozenset(
-    {
-        "solstone/talent/chat.schema.json",
-        "build_rollup_schema(3)",
-    }
-)
+PENDING_PORTABILITY = frozenset({"build_rollup_schema(3)"})
 
 
 def _discover_schemas() -> tuple[tuple[str, dict[str, Any]], ...]:

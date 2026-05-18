@@ -150,10 +150,16 @@ def test_chat_result_with_two_active_talents_retriggers_with_max_active_reason(
     chat._on_cortex_finish(
         {
             "use_id": "1713620000101",
-            "result": (
-                '{"message":"I am looking into that.","notes":"need exec",'
-                '"talent_request":{"target":"exec","task":"research it",'
-                '"context":{"k":"v"}}}'
+            "result": json.dumps(
+                {
+                    "message": "I am looking into that.",
+                    "notes": "need exec",
+                    "talent_request": {
+                        "target": "exec",
+                        "task": "research it",
+                        "context": json.dumps({"k": "v"}),
+                    },
+                }
             ),
         }
     )
@@ -230,10 +236,16 @@ def test_exec_retrigger_loop_stops_after_three_without_owner_reset(
     chat._on_cortex_finish(
         {
             "use_id": "1713622000000",
-            "result": (
-                '{"message":"Still digging.","notes":"loop",'
-                '"talent_request":{"target":"exec","task":"one more pass",'
-                '"context":{}}}'
+            "result": json.dumps(
+                {
+                    "message": "Still digging.",
+                    "notes": "loop",
+                    "talent_request": {
+                        "target": "exec",
+                        "task": "one more pass",
+                        "context": json.dumps({}),
+                    },
+                }
             ),
         }
     )
@@ -517,7 +529,7 @@ def test_terminal_talent_reports_back_without_redispatch(
                     "talent_request": {
                         "target": "exec",
                         "task": "Check the thing",
-                        "context": {"facet": "work"},
+                        "context": json.dumps({"facet": "work"}),
                     },
                 }
             ),
@@ -790,6 +802,69 @@ def test_chat_generate_schema_violation_retries_once_then_chat_errors(
     assert errors[-1]["use_id"] == "1713625000000"
 
 
+def test_chat_generate_invalid_context_retries_once_then_chat_errors(
+    tmp_path, monkeypatch
+):
+    import solstone.convey.chat as chat
+
+    _setup_journal(tmp_path, monkeypatch)
+    _reset_chat_state(chat)
+
+    actions: list[dict | None] = []
+    emitted_errors: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "solstone.convey.chat._run_next_action", lambda action: actions.append(action)
+    )
+    monkeypatch.setattr(
+        "solstone.convey.chat._emit_finish", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        "solstone.convey.chat._emit_error",
+        lambda use_id, reason: emitted_errors.append((use_id, reason)),
+    )
+
+    with chat._state_lock:
+        chat._current_chat_use_id = "1713625050000"
+        chat._current_chat_state = {
+            "raw_use_id": "1713625050001",
+            "raw_use_ids_seen": {"1713625050001"},
+            "trigger": {"type": "owner_message", "message": "help"},
+            "location": {"app": "sol", "path": "/app/sol", "facet": "work"},
+            "retry_count": 0,
+        }
+
+    invalid_context_result = json.dumps(
+        {
+            "message": "I am looking into that.",
+            "notes": "need exec",
+            "talent_request": {
+                "target": "exec",
+                "task": "research it",
+                "context": "not json{",
+            },
+        }
+    )
+    chat._on_cortex_finish(
+        {"use_id": "1713625050001", "result": invalid_context_result}
+    )
+
+    assert actions and actions[-1]["kind"] == "chat"
+    assert actions[-1]["logical_use_id"] == "1713625050000"
+    assert emitted_errors == []
+
+    with chat._state_lock:
+        retry_use_id = chat._current_chat_state["raw_use_id"]
+
+    chat._on_cortex_finish({"use_id": retry_use_id, "result": invalid_context_result})
+
+    assert emitted_errors == [("1713625050000", "provider_response_invalid")]
+    errors = [
+        e for e in read_chat_events(chat._today_day()) if e["kind"] == "chat_error"
+    ]
+    assert errors[-1]["use_id"] == "1713625050000"
+    assert errors[-1]["reason"] == "provider_response_invalid"
+
+
 def test_superseded_raw_finish_after_retry_is_dropped_without_warning(
     tmp_path, monkeypatch, caplog
 ):
@@ -991,10 +1066,16 @@ def test_exec_dispatch_appends_sol_message_and_spawns_talent_real_path(
     chat._on_cortex_finish(
         {
             "use_id": raw_use_id,
-            "result": (
-                '{"message":"I am looking into that.","notes":"need exec",'
-                '"talent_request":{"target":"exec","task":"research it",'
-                '"context":{"k":"v"}}}'
+            "result": json.dumps(
+                {
+                    "message": "I am looking into that.",
+                    "notes": "need exec",
+                    "talent_request": {
+                        "target": "exec",
+                        "task": "research it",
+                        "context": json.dumps({"k": "v"}),
+                    },
+                }
             ),
         }
     )
@@ -1019,6 +1100,7 @@ def test_exec_dispatch_appends_sol_message_and_spawns_talent_real_path(
         "chat_parent_use_id": "1713625500000",
     }
     assert "research it" in str(spawn_call["prompt"])
+    assert "Context hints:\n{'k': 'v'}" in str(spawn_call["prompt"])
     assert len(timers) == 2
     assert timers[0].cancelled is True
     with chat._state_lock:
@@ -1555,6 +1637,76 @@ def test_parse_chat_result_accepts_reflection_target():
         "task": "Reflect on the last week",
         "context": {"facet": "work"},
     }
+    # Exercises the scope-mandated defensive dict shim.
+    assert parsed["talent_request"]["context"] == {"facet": "work"}
+
+
+def test_parse_chat_result_decodes_json_string_context():
+    import solstone.convey.chat as chat
+
+    parsed = chat._parse_chat_result(
+        {
+            "message": "I am looking into that.",
+            "notes": "need exec",
+            "talent_request": {
+                "target": "exec",
+                "task": "Research the last two weeks",
+                "context": '{"window":"14d"}',
+            },
+        }
+    )
+
+    assert parsed["talent_request"]["context"] == {"window": "14d"}
+
+
+@pytest.mark.parametrize("raw_context", ['["a","b"]', "42"])
+def test_parse_chat_result_rejects_non_object_context_string(raw_context):
+    import solstone.convey.chat as chat
+
+    with pytest.raises(ValueError) as excinfo:
+        chat._parse_chat_result(
+            {
+                "message": "I am looking into that.",
+                "notes": "need exec",
+                "talent_request": {
+                    "target": "exec",
+                    "task": "Research it",
+                    "context": raw_context,
+                },
+            }
+        )
+
+    assert type(excinfo.value) is ValueError
+
+
+def test_parse_chat_result_rejects_non_json_context_string():
+    import solstone.convey.chat as chat
+
+    with pytest.raises(ValueError) as excinfo:
+        chat._parse_chat_result(
+            {
+                "message": "I am looking into that.",
+                "notes": "need exec",
+                "talent_request": {
+                    "target": "exec",
+                    "task": "Research it",
+                    "context": "not json{",
+                },
+            }
+        )
+
+    assert type(excinfo.value) is ValueError
+    assert not isinstance(excinfo.value, json.JSONDecodeError)
+
+
+def test_parse_chat_result_accepts_null_talent_request():
+    import solstone.convey.chat as chat
+
+    parsed = chat._parse_chat_result(
+        {"message": "hi", "notes": "n", "talent_request": None}
+    )
+
+    assert parsed == {"message": "hi", "notes": "n", "talent_request": None}
 
 
 def test_parse_chat_result_rejects_unknown_target():
@@ -1613,10 +1765,16 @@ def test_reflection_dispatch_spawns_reflection_talent(tmp_path, monkeypatch):
     chat._on_cortex_finish(
         {
             "use_id": "1713626000001",
-            "result": (
-                '{"message":"I want to sit with that.","notes":"need reflection",'
-                '"talent_request":{"target":"reflection","task":"Reflect on the week",'
-                '"context":{"facet":"work"}}}'
+            "result": json.dumps(
+                {
+                    "message": "I want to sit with that.",
+                    "notes": "need reflection",
+                    "talent_request": {
+                        "target": "reflection",
+                        "task": "Reflect on the week",
+                        "context": json.dumps({"facet": "work"}),
+                    },
+                }
             ),
         }
     )

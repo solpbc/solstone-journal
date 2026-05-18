@@ -62,6 +62,8 @@ Match the owner's tone and stakes:
 
 Set `talent_request` only when the owner needs work that cannot be answered well from the supplied digest, chat history, active routines, and trigger context alone.
 
+When dispatching, emit `context` as a compact JSON-encoded string of any starting hints, or `null` when there are none — never as a raw JSON object.
+
 Dispatch exec for:
 - Journal exploration across days, entities, or transcripts
 - Multi-step synthesis or research

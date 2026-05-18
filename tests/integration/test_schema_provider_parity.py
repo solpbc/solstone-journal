@@ -119,6 +119,15 @@ PORTABLE_SCHEMAS = [
         "name 'Alice', role attendee, source voice, confidence 0.9, context 'c', "
         "entity_id null.",
     ),
+    (
+        "chat",
+        "solstone/talent/chat.schema.json",
+        "Hypothetical chat backend turn. Owner asks for a synthesis of their last two "
+        "weeks across the journal, which needs fresh multi-day lookup. Produce JSON "
+        "only: message a one-sentence acknowledgement; notes a brief internal reason; "
+        'talent_request non-null with target "exec", task a one-sentence synthesis '
+        'request, and context exactly "{\\"window\\":\\"14d\\"}".',
+    ),
 ]
 
 
