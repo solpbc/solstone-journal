@@ -165,7 +165,7 @@ def create_or_reuse_registration(name: str, *, force: bool) -> ObserverRecord:
     if force:
         for observer in _active_observers_by_name(name):
             revoke_observer_record(observer.get("key", "")[:8])
-        record, key = create_observer_record(name, permit_duplicate_name=True)
+        record, key, _ = create_observer_record(name, permit_duplicate_name=True)
         return ObserverRecord(record=record, key=key, prefix=key[:8])
 
     active = _active_observers_by_name(name)
@@ -179,7 +179,9 @@ def create_or_reuse_registration(name: str, *, force: bool) -> ObserverRecord:
         return ObserverRecord(record=active[0], key=key, prefix=key[:8])
 
     permit_duplicate = find_observer_by_name(name) is not None
-    record, key = create_observer_record(name, permit_duplicate_name=permit_duplicate)
+    record, key, _ = create_observer_record(
+        name, permit_duplicate_name=permit_duplicate
+    )
     return ObserverRecord(record=record, key=key, prefix=key[:8])
 
 

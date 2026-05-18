@@ -108,14 +108,19 @@ def _fmt_time(ms: int | None) -> str:
 
 
 def create_observer_record(
-    name: str, *, permit_duplicate_name: bool = False
-) -> tuple[dict, str]:
-    """Create and save an observer record, returning the record and raw key."""
+    name: str,
+    *,
+    permit_duplicate_name: bool = False,
+    reuse_existing: bool = False,
+) -> tuple[dict, str, bool]:
+    """Create and save an observer record, returning record, raw key, and reused flag."""
     existing_active = [
         observer
         for observer in list_observers()
         if observer.get("name") == name and not observer.get("revoked", False)
     ]
+    if existing_active and reuse_existing:
+        return existing_active[0], existing_active[0]["key"], True
     if existing_active and not permit_duplicate_name:
         raise ValueError(f"observer already exists: {name}")
 
@@ -142,7 +147,7 @@ def create_observer_record(
         action="observer_create",
         params={"name": name, "key_prefix": key[:8]},
     )
-    return observer_data, key
+    return observer_data, key, False
 
 
 def revoke_observer_record(identifier: str) -> dict:
@@ -179,7 +184,9 @@ def cmd_create(args: argparse.Namespace) -> int:
     name = args.name
 
     try:
-        observer_data, key = create_observer_record(name)
+        observer_data, key, reused = create_observer_record(
+            name, reuse_existing=args.reuse_existing
+        )
     except ValueError:
         print(f"Error: observer '{name}' already exists", file=sys.stderr)
         return 1
@@ -201,7 +208,7 @@ def cmd_create(args: argparse.Namespace) -> int:
         print(OBSERVER_LOCALHOST_BANNER_LINE_3)
         print(OBSERVER_LOCALHOST_BANNER_LINE_4)
         print()
-    print("Observer created:")
+    print("Reusing existing observer:" if reused else "Observer created:")
     print(f"  Name:       {name}")
     print(f"  Prefix:     {key[:8]}")
     print("  server url:  (set during server configuration)")
@@ -525,6 +532,12 @@ def main() -> None:
     # create
     p_create = sub.add_parser("create", help="Create a new observer")
     p_create.add_argument("name", help="Name for the observer")
+    p_create.add_argument(
+        "--reuse-existing",
+        action="store_true",
+        dest="reuse_existing",
+        help="Reuse an active observer with this name instead of failing.",
+    )
 
     # list
     sub.add_parser("list", help="List all registered observers")
