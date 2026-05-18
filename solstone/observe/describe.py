@@ -206,10 +206,6 @@ class VideoProcessor:
         self.height: Optional[int] = None
         # Store qualified frames as simple list
         self.qualified_frames: List[dict] = []
-        # Load entity names for vision analysis context
-        from solstone.think.entities import load_entity_names
-
-        self.entity_names = load_entity_names()
 
     def process(self) -> List[dict]:
         """
@@ -400,16 +396,9 @@ class VideoProcessor:
             return cat_meta
         return None
 
-    def _user_contents(self, prompt: str, image, entities: bool = False) -> list:
-        """Build contents list with optional entity context."""
-        contents = [prompt]
-        if entities and self.entity_names:
-            contents.append(
-                f"These are some frequently used names that you may encounter "
-                f"and can be helpful when transcribing for accuracy: {self.entity_names}"
-            )
-        contents.append(image)
-        return contents
+    def _user_contents(self, prompt: str, image) -> list:
+        """Build the vision request user-content list: instruction then image."""
+        return [prompt, image]
 
     async def process_with_vision(
         self,
@@ -767,7 +756,6 @@ class VideoProcessor:
                         contents=self._user_contents(
                             f"Analyze this {category} screenshot.",
                             full_img,
-                            entities=True,
                         ),
                         model=cat_model,
                         system_instruction=cat_meta["prompt"] + redact_instruction,
