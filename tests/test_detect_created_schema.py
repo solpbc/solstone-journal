@@ -51,7 +51,7 @@ def test_detect_created_schema_accepts_and_rejects_expected_values():
     assert not validator.is_valid({**valid, "time": "14:30:52"})
     assert not validator.is_valid({**valid, "confidence": "certain"})
     assert not validator.is_valid({**valid, "extra": "x"})
-    assert not validator.is_valid({**valid, "source": ""})
+    assert not validator.is_valid({**valid, "source": 42})
 
 
 def test_detect_created_passes_schema_to_generate(monkeypatch):

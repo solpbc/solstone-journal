@@ -1,53 +1,171 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["density","content_type","activity_summary","entities","facets","meeting_detected","speakers","recommend","emotional_register"],
+  "required": [
+    "density",
+    "content_type",
+    "activity_summary",
+    "entities",
+    "facets",
+    "meeting_detected",
+    "speakers",
+    "recommend",
+    "emotional_register"
+  ],
   "properties": {
-    "density": {"type": "string", "enum": ["active","low_change","idle"]},
-    "content_type": {"type": "string", "enum": ["meeting","coding","browsing","email","messaging","ai_conversation","writing","reading","video","gaming","social","planning","productivity","terminal","design","music","idle"]},
-    "activity_summary": {"type": "string", "minLength": 1},
+    "density": {
+      "type": "string",
+      "enum": [
+        "active",
+        "low_change",
+        "idle"
+      ]
+    },
+    "content_type": {
+      "type": "string",
+      "enum": [
+        "meeting",
+        "coding",
+        "browsing",
+        "email",
+        "messaging",
+        "ai_conversation",
+        "writing",
+        "reading",
+        "video",
+        "gaming",
+        "social",
+        "planning",
+        "productivity",
+        "terminal",
+        "design",
+        "music",
+        "idle"
+      ]
+    },
+    "activity_summary": {
+      "type": "string"
+    },
     "entities": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["type","name","role","source","context"],
+        "required": [
+          "type",
+          "name",
+          "role",
+          "source",
+          "context"
+        ],
         "properties": {
-          "type": {"type": "string", "enum": ["Person","Company","Project","Tool"]},
-          "name": {"type": "string", "minLength": 1},
-          "role": {"type": "string", "enum": ["attendee","mentioned"]},
-          "source": {"type": "string", "enum": ["voice","speaker_label","transcript","screen","other"]},
-          "context": {"type": "string", "minLength": 1}
+          "type": {
+            "type": "string",
+            "enum": [
+              "Person",
+              "Company",
+              "Project",
+              "Tool"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "attendee",
+              "mentioned"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "voice",
+              "speaker_label",
+              "transcript",
+              "screen",
+              "other"
+            ]
+          },
+          "context": {
+            "type": "string"
+          }
         }
       }
     },
     "facets": {
       "type": "array",
-      "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["facet","activity","level"],
+        "required": [
+          "facet",
+          "activity",
+          "level"
+        ],
         "properties": {
-          "facet": {"type": "string", "enum": ["__RUNTIME_FACETS__"]},
-          "activity": {"type": "string", "minLength": 1},
-          "level": {"type": "string", "enum": ["high","medium","low"]}
+          "facet": {
+            "type": "string",
+            "enum": [
+              "__RUNTIME_FACETS__"
+            ]
+          },
+          "activity": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          }
         }
       }
     },
-    "meeting_detected": {"type": "boolean"},
-    "speakers": {"type": "array", "items": {"type": "string"}},
+    "meeting_detected": {
+      "type": "boolean"
+    },
+    "speakers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "recommend": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["screen_record","speaker_attribution","pulse_update"],
+      "required": [
+        "screen_record",
+        "speaker_attribution",
+        "pulse_update"
+      ],
       "properties": {
-        "screen_record": {"type": "boolean"},
-        "speaker_attribution": {"type": "boolean"},
-        "pulse_update": {"type": "boolean"}
+        "screen_record": {
+          "type": "boolean"
+        },
+        "speaker_attribution": {
+          "type": "boolean"
+        },
+        "pulse_update": {
+          "type": "boolean"
+        }
       }
     },
-    "emotional_register": {"type": "string", "enum": ["high_energy","tense","focused","collaborative","flat","celebratory","strained","neutral"]}
+    "emotional_register": {
+      "type": "string",
+      "enum": [
+        "high_energy",
+        "tense",
+        "focused",
+        "collaborative",
+        "flat",
+        "celebratory",
+        "strained",
+        "neutral"
+      ]
+    }
   }
 }

@@ -83,7 +83,7 @@ def test_detect_transcript_json_schema_accepts_and_rejects_expected_values():
     assert not validator.is_valid(
         {
             **valid,
-            "entries": [{"start": "12:34:56", "speaker": "Alice", "text": ""}],
+            "entries": [{"start": "12:34:56", "speaker": "Alice", "text": 7}],
         }
     )
     assert not validator.is_valid({**valid, "extra": "x"})

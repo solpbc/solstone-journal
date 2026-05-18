@@ -42,6 +42,17 @@ def _load_schedule_schema() -> dict:
     return schema
 
 
+def _strip_portability_annotations(value):
+    if isinstance(value, dict):
+        for key in ("minLength", "minimum", "maximum"):
+            value.pop(key, None)
+        for child in value.values():
+            _strip_portability_annotations(child)
+    elif isinstance(value, list):
+        for child in value:
+            _strip_portability_annotations(child)
+
+
 def _expected_schedule_activity_ids() -> set[str]:
     # Why: `meeting` is emitted by both the schedule talent and sense; the
     # other 9 are schedule-only (their instructions carry the marker).
@@ -171,16 +182,21 @@ def test_schedule_participation_entry_diverges_from_shared_fragment():
 
     assert isinstance(fragment, dict)
     fragment_without_schema = dict(fragment)
-    fragment_without_schema.pop("$schema")
     fragment_without_schema["properties"] = dict(fragment_without_schema["properties"])
     fragment_without_schema["properties"].pop("entity_id")
     fragment_without_schema["required"] = [
         key for key in fragment_without_schema["required"] if key != "entity_id"
     ]
 
-    inline_items = dict(
+    raw_inline_items = dict(
         schedule_schema["items"]["properties"]["participation"]["items"]
     )
+    assert "entity_id" in fragment["properties"]
+    assert "entity_id" not in raw_inline_items["properties"]
+    assert raw_inline_items != fragment
+
+    inline_items = json.loads(json.dumps(raw_inline_items))
+    _strip_portability_annotations(inline_items)
 
     assert inline_items == fragment_without_schema
 

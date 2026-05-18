@@ -43,10 +43,17 @@ def _decoded_image(b64: str) -> Image.Image:
 
 
 def _load_describe_schema() -> dict:
-    schema_path = (
-        Path(__file__).resolve().parents[1] / "solstone/observe/describe.schema.json"
-    )
-    return json.loads(schema_path.read_text(encoding="utf-8"))
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$comment": f"Inline dirty fixture for {Path('describe.schema.json').name}",
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["visual_description", "primary"],
+        "properties": {
+            "visual_description": {"type": "string", "minLength": 1},
+            "primary": {"type": "string", "enum": ["browsing", "code"]},
+        },
+    }
 
 
 def _assert_no_schema_metadata(value):
@@ -781,6 +788,7 @@ class TestRunGenerateJsonSchema:
         assert "$comment" in schema
         assert json.dumps(schema, sort_keys=True) == original_json
         assert output_schema["additionalProperties"] is False
+        assert schema["properties"]["visual_description"]["minLength"] == 1
         assert output_schema["properties"]["visual_description"]["minLength"] == 1
         assert "code" in output_schema["properties"]["primary"]["enum"]
         _validate_json_response(result, True)
@@ -813,6 +821,7 @@ class TestRunGenerateJsonSchema:
         assert "$comment" in schema
         assert json.dumps(schema, sort_keys=True) == original_json
         assert output_schema["additionalProperties"] is False
+        assert schema["properties"]["visual_description"]["minLength"] == 1
         assert output_schema["properties"]["visual_description"]["minLength"] == 1
         assert "code" in output_schema["properties"]["primary"]["enum"]
         _validate_json_response(result, True)

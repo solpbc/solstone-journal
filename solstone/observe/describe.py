@@ -113,6 +113,7 @@ def _discover_categories() -> dict[str, dict]:
             if prompt_content.text.strip():
                 metadata["prompt"] = prompt_content.text
 
+            # Per-category output contract from <category>.schema.json; e.g. meeting.schema.json: Source of truth for the shape is observe/categories/meeting.md
             schema_path = md_path.with_suffix(".schema.json")
             if schema_path.exists():
                 metadata["json_schema"] = json.loads(schema_path.read_text("utf-8"))
@@ -181,6 +182,7 @@ CATEGORIES = _discover_categories()
 # Build categorization prompt from template
 CATEGORIZATION_PROMPT = _build_categorization_prompt()
 
+# The enums in `primary` and `secondary` MUST match the filenames under observe/categories/*.md.
 _SCHEMA = json.loads(
     (Path(__file__).parent / "describe.schema.json").read_text(encoding="utf-8")
 )

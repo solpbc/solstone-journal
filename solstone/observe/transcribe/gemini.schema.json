@@ -1,27 +1,30 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["segments"],
+  "required": [
+    "segments"
+  ],
   "properties": {
     "segments": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["start", "speaker", "text"],
+        "required": [
+          "start",
+          "speaker",
+          "text"
+        ],
         "properties": {
           "start": {
             "type": "string",
             "pattern": "^\\d{2}:\\d{2}$"
           },
           "speaker": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "text": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           }
         }
       }

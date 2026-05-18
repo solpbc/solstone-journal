@@ -68,10 +68,10 @@ def test_gemini_schema_accepts_and_rejects_expected_values():
         }
     )
     assert not validator.is_valid(
-        {"segments": [{"start": "01:23", "speaker": "Speaker 1", "text": ""}]}
+        {"segments": [{"start": "01:23", "speaker": "Speaker 1", "text": 7}]}
     )
     assert not validator.is_valid(
-        {"segments": [{"start": "01:23", "speaker": "", "text": "hi"}]}
+        {"segments": [{"start": "01:23", "speaker": 7, "text": "hi"}]}
     )
     assert not validator.is_valid(
         {"segments": [{"start": "1:23", "speaker": "Speaker 1", "text": "hi"}]}

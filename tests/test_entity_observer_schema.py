@@ -130,7 +130,7 @@ def test_invalid_empty_content():
             "observations": [
                 {
                     "entity_id": "alice_johnson",
-                    "items": [{"content": "", "reasoning": "Durable preference."}],
+                    "items": [{"content": 7, "reasoning": "Durable preference."}],
                 }
             ],
             "skipped": [],

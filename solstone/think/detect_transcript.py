@@ -17,6 +17,7 @@ _SEGMENT_SCHEMA = json.loads(
         encoding="utf-8"
     )
 )
+# Source of truth is think/detect_transcript_json.md.
 _JSON_SCHEMA = json.loads(
     (Path(__file__).parent / "detect_transcript_json.schema.json").read_text(
         encoding="utf-8"

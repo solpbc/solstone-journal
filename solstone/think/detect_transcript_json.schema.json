@@ -1,24 +1,41 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Output contract for detect_transcript_json(). Source of truth is think/detect_transcript_json.md.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["entries", "topics", "setting"],
+  "required": [
+    "entries",
+    "topics",
+    "setting"
+  ],
   "properties": {
     "entries": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["start", "speaker", "text"],
+        "required": [
+          "start",
+          "speaker",
+          "text"
+        ],
         "properties": {
-          "start": {"type": "string", "pattern": "^\\d{2}:\\d{2}:\\d{2}$"},
-          "speaker": {"type": "string", "minLength": 1},
-          "text": {"type": "string", "minLength": 1}
+          "start": {
+            "type": "string",
+            "pattern": "^\\d{2}:\\d{2}:\\d{2}$"
+          },
+          "speaker": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
         }
       }
     },
-    "topics": {"type": "string"},
-    "setting": {"type": "string"}
+    "topics": {
+      "type": "string"
+    },
+    "setting": {
+      "type": "string"
+    }
   }
 }

@@ -10,5 +10,9 @@
       "description": "ONE sentence, MAX 10 words, MAX 60 characters, third person, present-tense, verb-led. Examples: 'Maps the app surface and names rebuild priorities.' 'Restarts display manager to recover the desktop session.' 'Fixes panel placement and terminal artifacts in Plasma.' No first-person. No times. No segment IDs."
     }
   },
-  "required": ["title", "description"]
+  "required": [
+    "title",
+    "description"
+  ],
+  "additionalProperties": false
 }

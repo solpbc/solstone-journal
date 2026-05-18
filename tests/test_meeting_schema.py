@@ -34,7 +34,7 @@ def test_meeting_schema_accepts_and_rejects_expected_values():
         {
             "platform": "zoom",
             "participants": [
-                {"name": "Alice", "status": "active", "video": True},
+                {"name": "Alice", "status": "active", "video": True, "box_2d": None},
             ],
             "screen_share": None,
         }
@@ -62,7 +62,7 @@ def test_meeting_schema_accepts_and_rejects_expected_values():
         {
             "platform": "hangouts",
             "participants": [
-                {"name": "Alice", "status": "active", "video": True},
+                {"name": "Alice", "status": "active", "video": True, "box_2d": None},
             ],
             "screen_share": None,
         }
@@ -71,7 +71,7 @@ def test_meeting_schema_accepts_and_rejects_expected_values():
         {
             "platform": "zoom",
             "participants": [
-                {"name": "Alice", "status": "talking", "video": True},
+                {"name": "Alice", "status": "talking", "video": True, "box_2d": None},
             ],
             "screen_share": None,
         }
@@ -87,7 +87,7 @@ def test_meeting_schema_accepts_and_rejects_expected_values():
         {
             "platform": "zoom",
             "participants": [
-                {"name": "Alice", "status": "active", "video": True},
+                {"name": "Alice", "status": "active", "video": True, "box_2d": None},
             ],
             "screen_share": None,
             "extra": True,
@@ -97,7 +97,7 @@ def test_meeting_schema_accepts_and_rejects_expected_values():
         {
             "platform": "zoom",
             "participants": [
-                {"status": "active", "video": True},
+                {"status": "active", "video": True, "box_2d": None},
             ],
             "screen_share": None,
         }
@@ -106,7 +106,7 @@ def test_meeting_schema_accepts_and_rejects_expected_values():
         {
             "platform": "zoom",
             "participants": [
-                {"name": "", "status": "active", "video": True},
+                {"name": "Alice", "status": "active", "video": True},
             ],
             "screen_share": None,
         }

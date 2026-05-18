@@ -1,28 +1,55 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["body","topics","confidence","commitments","closures","decisions"],
+  "required": [
+    "body",
+    "topics",
+    "confidence",
+    "commitments",
+    "closures",
+    "decisions"
+  ],
   "properties": {
-    "body": {"type": "string", "minLength": 1},
+    "body": {
+      "type": "string"
+    },
     "topics": {
       "type": "array",
-      "items": {"type": "string"},
-      "maxItems": 10
+      "items": {
+        "type": "string"
+      }
     },
-    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "confidence": {
+      "type": "number"
+    },
     "commitments": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["owner","action","counterparty","when","context"],
+        "required": [
+          "owner",
+          "action",
+          "counterparty",
+          "when",
+          "context"
+        ],
         "properties": {
-          "owner": {"type": "string", "minLength": 1},
-          "action": {"type": "string", "minLength": 1},
-          "counterparty": {"type": "string", "minLength": 1},
-          "when": {"type": "string", "minLength": 1},
-          "context": {"type": "string", "minLength": 1}
+          "owner": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "counterparty": {
+            "type": "string"
+          },
+          "when": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          }
         }
       }
     },
@@ -31,16 +58,36 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["owner","action","counterparty","resolution","context"],
+        "required": [
+          "owner",
+          "action",
+          "counterparty",
+          "resolution",
+          "context"
+        ],
         "properties": {
-          "owner": {"type": "string", "minLength": 1},
-          "action": {"type": "string", "minLength": 1},
-          "counterparty": {"type": "string", "minLength": 1},
+          "owner": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "counterparty": {
+            "type": "string"
+          },
           "resolution": {
             "type": "string",
-            "enum": ["sent","done","signed","dropped","deferred"]
+            "enum": [
+              "sent",
+              "done",
+              "signed",
+              "dropped",
+              "deferred"
+            ]
           },
-          "context": {"type": "string", "minLength": 1}
+          "context": {
+            "type": "string"
+          }
         }
       }
     },
@@ -49,11 +96,21 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["owner","action","context"],
+        "required": [
+          "owner",
+          "action",
+          "context"
+        ],
         "properties": {
-          "owner": {"type": "string", "minLength": 1},
-          "action": {"type": "string", "minLength": 1},
-          "context": {"type": "string", "minLength": 1}
+          "owner": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          }
         }
       }
     }

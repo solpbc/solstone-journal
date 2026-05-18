@@ -1,13 +1,47 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Frame categorization schema for observe/describe.py. The enums in `primary` and `secondary` MUST match the filenames under observe/categories/*.md. Enforced by tests/test_observe_describe_schema.py::test_category_enum_matches_registry. If you add/remove/rename a category file, update both enums here.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["visual_description", "primary", "secondary", "overlap"],
+  "required": [
+    "visual_description",
+    "primary",
+    "secondary",
+    "overlap"
+  ],
   "properties": {
-    "visual_description": {"type": "string", "minLength": 1},
-    "primary": {"type": "string", "enum": ["browsing", "code", "gaming", "media", "meeting", "messaging", "productivity", "reading", "terminal"]},
-    "secondary": {"type": "string", "enum": ["browsing", "code", "gaming", "media", "meeting", "messaging", "productivity", "reading", "terminal", "none"]},
-    "overlap": {"type": "boolean"}
+    "visual_description": {
+      "type": "string"
+    },
+    "primary": {
+      "type": "string",
+      "enum": [
+        "browsing",
+        "code",
+        "gaming",
+        "media",
+        "meeting",
+        "messaging",
+        "productivity",
+        "reading",
+        "terminal"
+      ]
+    },
+    "secondary": {
+      "type": "string",
+      "enum": [
+        "browsing",
+        "code",
+        "gaming",
+        "media",
+        "meeting",
+        "messaging",
+        "productivity",
+        "reading",
+        "terminal",
+        "none"
+      ]
+    },
+    "overlap": {
+      "type": "boolean"
+    }
   }
 }

@@ -85,7 +85,7 @@ def test_describe_schema_accepts_and_rejects_expected_values():
     )
     assert not validator.is_valid(
         {
-            "visual_description": "",
+            "visual_description": 7,
             "primary": "productivity",
             "secondary": "none",
             "overlap": False,
@@ -119,6 +119,7 @@ async def test_describe_batch_call_passes_schema(mock_agenerate):
 
 
 def test_category_enum_matches_registry():
+    """The enums in `primary` and `secondary` MUST match the filenames under observe/categories/*.md."""
     categories_dir = Path(describe_mod.__file__).resolve().parent / "categories"
     on_disk = {p.stem for p in categories_dir.glob("*.md")}
 

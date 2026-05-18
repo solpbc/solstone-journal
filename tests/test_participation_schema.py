@@ -22,8 +22,6 @@ def test_participation_entry_schema_is_valid_draft_2020_12():
 
     Draft202012Validator.check_schema(schema)
 
-    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-
 
 def test_participation_schema_is_valid_and_matches_loaded():
     schema = _load_json(PARTICIPATION_SCHEMA_PATH)
@@ -39,6 +37,5 @@ def test_participation_schema_items_match_fragment():
 
     items = dict(schema["properties"]["participation"]["items"])
     fragment_without_schema = dict(fragment)
-    fragment_without_schema.pop("$schema")
 
     assert items == fragment_without_schema

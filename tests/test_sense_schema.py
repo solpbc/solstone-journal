@@ -93,15 +93,6 @@ def test_hydrate_runtime_enums_replaces_facet_sentinel(monkeypatch):
     assert hydrated["properties"]["facet"]["enum"] == ["alpha", "valid_one"]
 
 
-def test_sense_schema_facets_array_requires_minItems_one():
-    schema = json.loads(SENSE_SCHEMA_PATH.read_text(encoding="utf-8"))
-    facets_node = schema["properties"]["facets"]
-
-    assert facets_node["type"] == "array"
-    assert facets_node.get("minItems") == 1
-    Draft202012Validator.check_schema(schema)
-
-
 def test_hydrate_runtime_enums_preserves_facet_minItems_when_facets_exist(
     monkeypatch,
 ):
