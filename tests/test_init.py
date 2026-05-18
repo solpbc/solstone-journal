@@ -130,7 +130,7 @@ class TestInitDetection:
     def test_init_sol_agent_paragraphs(self, fresh_client):
         resp = fresh_client.get("/init")
         assert b"the sol agent curates your journal" in resp.data
-        assert b"the fastest way to get started" in resp.data
+        assert b"the fastest start is a gemini key" in resp.data
 
     def test_init_no_legacy_trust_note(self, fresh_client):
         resp = fresh_client.get("/init")
