@@ -271,7 +271,6 @@ Use `--jsonl` when another process needs progress events as they happen. The con
 | `doctor_timeout` | Doctor exceeds its timeout. |
 | `journal_dir_invalid` | The requested journal path is a regular file. |
 | `journal_existing_blocked` | Non-interactive setup refuses to auto-claim an existing journal. |
-| `port_in_use_non_interactive` | Non-interactive setup finds the service port already in use. |
 | `service_up_failed` | Service installation succeeded but service startup failed. |
 | `setup_unhandled_exception` | A setup step raised an unexpected exception. |
 | `step_subprocess_failed` | A setup subprocess exited non-zero. |

@@ -63,17 +63,17 @@ def doctor_ok_lines() -> list[dict]:
     ]
 
 
-def doctor_port_warning_lines() -> list[dict]:
+def doctor_non_port_warning_lines() -> list[dict]:
     return [
         doctor_ok_lines()[0],
         {
             "event": "check.completed",
             "ts": "2026-05-11T00:00:00Z",
-            "name": "port_5015_free",
+            "name": "local_bin_sol_reachable",
             "severity": "advisory",
             "status": "warning",
-            "detail": "port 5015 is in use by pid 123",
-            "fix": "kill 123",
+            "detail": ".local/bin/sol is not reachable",
+            "fix": "uv tool install solstone",
         },
         {
             "event": "doctor.completed",
@@ -204,36 +204,14 @@ def test_setup_jsonl_translates_doctor_advisories_to_step_warning(
         monkeypatch,
         capsys,
         ["--skip-models", "--skip-skills", "--skip-service", "--port", "5015"],
-        doctor_lines=doctor_port_warning_lines(),
+        doctor_lines=doctor_non_port_warning_lines(),
     )
 
     assert rc == 0
     warnings = [event for event in events if event["event"] == "step.warning"]
     assert warnings[-1]["step"] == "doctor"
-    assert warnings[-1]["text"] == "port 5015 is in use by pid 123"
-    assert warnings[-1]["fix_hint"] == "kill 123"
-
-
-def test_setup_jsonl_port_in_use_emits_dead_end(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    rc, events, _out = run_setup_jsonl(
-        tmp_path,
-        monkeypatch,
-        capsys,
-        ["--skip-models", "--skip-skills"],
-        doctor_lines=doctor_port_warning_lines(),
-    )
-
-    assert rc == 2
-    failed = [event for event in events if event["event"] == "step.failed"][-1]
-    assert failed["step"] == "doctor"
-    assert failed["error"]["code"] == "port_in_use_non_interactive"
-    assert events[-1]["event"] == "setup.completed"
-    assert events[-1]["status"] == "failed"
-    assert events[-1]["failed_step"] == "doctor"
+    assert warnings[-1]["text"] == ".local/bin/sol is not reachable"
+    assert warnings[-1]["fix_hint"] == "uv tool install solstone"
 
 
 def test_setup_jsonl_existing_journal_emits_dead_end(
@@ -424,17 +402,22 @@ def test_setup_jsonl_does_not_call_input(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     patch_tty(monkeypatch)
+    journal = tmp_path / "journal"
+    (journal / "config").mkdir(parents=True)
     input_mock = Mock()
     monkeypatch.setattr("builtins.input", input_mock)
-    rc, _events, _out = run_setup_jsonl(
+    rc, events, _out = run_setup_jsonl(
         tmp_path,
         monkeypatch,
         capsys,
         ["--skip-models", "--skip-skills"],
-        doctor_lines=doctor_port_warning_lines(),
+        doctor_lines=doctor_ok_lines(),
     )
 
     assert rc == 2
+    failed = [event for event in events if event["event"] == "step.failed"][-1]
+    assert failed["step"] == "journal"
+    assert failed["error"]["code"] == "journal_existing_blocked"
     input_mock.assert_not_called()
 
 

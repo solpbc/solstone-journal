@@ -25,14 +25,12 @@ Decision log:
 from __future__ import annotations
 
 import argparse
-import errno
 import importlib
 import json
 import os
 import plistlib
 import re
 import shutil
-import socket
 import subprocess
 import sys
 import time
@@ -460,45 +458,6 @@ def local_bin_sol_reachable_check(args: Args) -> CheckResult:
     return make_result(check, "warn", "; ".join(failures), LOCAL_BIN_SOL_FIX)
 
 
-def port_5015_free_check(args: Args) -> CheckResult:
-    check = CHECK_MAP["port_5015_free"]
-    # In a git worktree (hopper lode, personal worktree) the host's port state
-    # is not this worktree's concern — the worktree will never run its own
-    # service. Skip, matching the pattern in stale_alias_symlink_check.
-    try:
-        alias_state_cls, check_alias_fn = import_install_guard()
-    except Exception:
-        pass
-    else:
-        state, _ = check_alias_fn(ROOT)
-        if state is alias_state_cls.WORKTREE:
-            return make_result(
-                check,
-                "skip",
-                "git worktree; run doctor from the primary clone",
-            )
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        try:
-            sock.bind(("127.0.0.1", args.port))
-        except OSError as exc:
-            if exc.errno in (errno.EADDRINUSE, errno.EACCES):
-                return make_result(
-                    check,
-                    "warn",
-                    f"port {args.port} is in use; run 'sol service stop' to stop the existing solstone service. For manual investigation: 'lsof -nP -iTCP:{args.port}'.",
-                )
-            return make_result(
-                check,
-                "warn",
-                f"could not probe port {args.port}: {exc}",
-            )
-    finally:
-        sock.close()
-    return make_result(check, "ok", f"port {args.port} is free")
-
-
 def disk_space_check(args: Args) -> CheckResult:
     del args
     check = CHECK_MAP["disk_space"]
@@ -688,7 +647,6 @@ CHECKS: list[tuple[Check, Callable[[Args], CheckResult]]] = [
         Check("local_bin_sol_reachable", "advisory", ("linux", "darwin")),
         local_bin_sol_reachable_check,
     ),
-    (Check("port_5015_free", "advisory", ("linux", "darwin")), port_5015_free_check),
     (Check("disk_space", "advisory", ("linux", "darwin")), disk_space_check),
     (
         Check("config_dir_readable", "blocker", ("linux", "darwin")),

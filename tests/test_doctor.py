@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import errno
 import json
 import os
 import plistlib
@@ -320,75 +319,10 @@ class TestPackagedInstall:
         assert "uv tool install solstone" in (result.fix or "")
 
 
-def _make_fake_socket_factory(bind_exc=None):
-    class _FakeSocket:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        def bind(self, _addr):
-            if bind_exc is not None:
-                raise bind_exc
-
-        def close(self):
-            pass
-
-    return _FakeSocket
-
-
-class TestPortCheck:
-    def test_severity_is_advisory(self, doctor):
-        assert doctor.CHECK_MAP["port_5015_free"].severity == "advisory"
-
-    def test_ok_when_port_free(self, doctor, monkeypatch, home_root, tmp_path):
-        del home_root
-        monkeypatch.setattr(doctor, "ROOT", tmp_path)
-        monkeypatch.setattr(doctor.socket, "socket", _make_fake_socket_factory())
-        result = doctor.port_5015_free_check(args(doctor))
-        assert result.status == "ok"
-
-    def test_warn_when_port_in_use(self, doctor, monkeypatch, home_root, tmp_path):
-        del home_root
-        monkeypatch.setattr(doctor, "ROOT", tmp_path)
-        monkeypatch.setattr(
-            doctor.socket,
-            "socket",
-            _make_fake_socket_factory(OSError(errno.EADDRINUSE, "in use")),
-        )
-        result = doctor.port_5015_free_check(args(doctor))
-        assert result.status == "warn"
-        assert "in use" in result.detail
-
-    def test_warn_when_permission_denied(
-        self, doctor, monkeypatch, home_root, tmp_path
-    ):
-        del home_root
-        monkeypatch.setattr(doctor, "ROOT", tmp_path)
-        monkeypatch.setattr(
-            doctor.socket,
-            "socket",
-            _make_fake_socket_factory(OSError(errno.EACCES, "permission denied")),
-        )
-        result = doctor.port_5015_free_check(args(doctor))
-        assert result.status == "warn"
-
-    def test_warn_on_other_oserror(self, doctor, monkeypatch, home_root, tmp_path):
-        del home_root
-        monkeypatch.setattr(doctor, "ROOT", tmp_path)
-        monkeypatch.setattr(
-            doctor.socket,
-            "socket",
-            _make_fake_socket_factory(OSError(99, "boom")),
-        )
-        result = doctor.port_5015_free_check(args(doctor))
-        assert result.status == "warn"
-        assert "could not probe" in result.detail
-
-    def test_skip_in_worktree(self, doctor, monkeypatch, home_root, tmp_path):
-        del home_root
-        repo = make_repo(tmp_path, worktree=True)
-        monkeypatch.setattr(doctor, "ROOT", repo)
-        result = doctor.port_5015_free_check(args(doctor))
-        assert result.status == "skip"
+class TestPortCheckRemoved:
+    def test_port_check_is_not_registered(self, doctor):
+        assert "port_5015_free" not in doctor.CHECK_MAP
+        assert "port_5015_free" not in {check.name for check, _runner in doctor.CHECKS}
 
 
 class TestDiskSpace:

@@ -60,20 +60,6 @@ def doctor_payload(checks: list[dict[str, Any]] | None = None) -> str:
     )
 
 
-def port_advisory_payload() -> str:
-    return doctor_payload(
-        [
-            {
-                "name": "port_5015_free",
-                "severity": "advisory",
-                "status": "warn",
-                "detail": "port 5015 is in use by pid 123",
-                "fix": "kill 123",
-            }
-        ]
-    )
-
-
 def patch_subprocess(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -896,97 +882,40 @@ def test_partial_completion_runs_remaining_steps(
     assert len(calls) == 5
 
 
-def test_port_in_use_default_non_interactive_dead_end(
+def test_non_interactive_setup_has_no_port_preflight_dead_end(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    patch_home(monkeypatch, tmp_path)
+    """Post-removal there is no port pre-flight.
+
+    On a real upgrade port 5015 is held by the running solstone service; setup no
+    longer probes it, so non-interactive setup completes with no dead-end or
+    prompt. The doctor subprocess is faked by the harness; the assertion is the
+    absence of the former port dead-end.
+    """
+    home = patch_home(monkeypatch, tmp_path)
     patch_source_checkout(monkeypatch, tmp_path)
     monkeypatch.delenv("SOLSTONE_JOURNAL", raising=False)
-    calls = patch_subprocess(
-        monkeypatch,
-        doctor_stdout=port_advisory_payload(),
-    )
+    (home / ".claude").mkdir()
+    input_mock = Mock()
+    monkeypatch.setattr("builtins.input", input_mock)
+    calls = patch_subprocess(monkeypatch, doctor_stdout=doctor_payload())
+    patch_service_health(monkeypatch)
     journal = tmp_path / "journal"
 
     rc = setup.main(["--yes", "--journal", str(journal)])
 
-    assert rc == 2
-    assert "port 5015 is already in use" in capsys.readouterr().err
-    assert_command(calls, 0, expected_doctor_command())
-    assert len(calls) == 1
-
-
-def test_interactive_port_in_use_prompts_for_choice(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    home = patch_home(monkeypatch, tmp_path)
-    patch_source_checkout(monkeypatch, tmp_path)
-    patch_tty(monkeypatch)
-    monkeypatch.delenv("SOLSTONE_JOURNAL", raising=False)
-    (home / ".claude").mkdir()
-    answers = iter(["1", "8080"])
-    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
-    calls = patch_subprocess(monkeypatch, doctor_stdout=port_advisory_payload())
-    patch_service_health(monkeypatch)
-
-    rc = setup.main([])
-
     assert rc == 0
-    journal = home / "journal"
-    assert read_manifest(journal)["args_resolved"]["port"] == {
-        "value": 8080,
-        "source": "prompt",
-    }
+    input_mock.assert_not_called()
+    captured = capsys.readouterr()
+    assert "port 5015 is already in use" not in captured.err
+    assert "port_in_use_non_interactive" not in captured.err
+    assert "port 5015 is already in use" not in captured.out
+    assert "port_in_use_non_interactive" not in captured.out
     assert_command(calls, 0, expected_doctor_command())
-    assert_command(calls, 5, expected_service_install_command(port=8080))
+    assert_command(calls, 5, expected_service_install_command())
     assert len(calls) == 6
-
-
-def test_interactive_port_in_use_proceed_anyway(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    home = patch_home(monkeypatch, tmp_path)
-    patch_source_checkout(monkeypatch, tmp_path)
-    patch_tty(monkeypatch)
-    monkeypatch.delenv("SOLSTONE_JOURNAL", raising=False)
-    (home / ".claude").mkdir()
-    answers = iter(["2"])
-    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
-    calls = patch_subprocess(monkeypatch, doctor_stdout=port_advisory_payload())
-    patch_service_health(monkeypatch)
-
-    rc = setup.main([])
-
-    assert rc == 0
-    assert_command(calls, 0, expected_doctor_command())
-    assert_command(calls, 5, expected_service_install_command(port=5015))
-    assert len(calls) == 6
-
-
-def test_interactive_port_in_use_abort(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    patch_home(monkeypatch, tmp_path)
-    patch_source_checkout(monkeypatch, tmp_path)
-    patch_tty(monkeypatch)
-    monkeypatch.delenv("SOLSTONE_JOURNAL", raising=False)
-    answers = iter(["3"])
-    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
-    calls = patch_subprocess(monkeypatch, doctor_stdout=port_advisory_payload())
-
-    rc = setup.main([])
-
-    assert rc == 2
-    assert "setup aborted by user" in capsys.readouterr().err
-    assert_command(calls, 0, expected_doctor_command())
-    assert expected_service_install_command() not in calls
-    assert len(calls) == 1
 
 
 def test_doctor_timeout_records_failure(

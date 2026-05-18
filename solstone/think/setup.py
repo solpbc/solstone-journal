@@ -936,7 +936,6 @@ def step_doctor_jsonl(ctx: SetupContext, started_at: str) -> StepResult:
             text=advisory.get("detail") or advisory.get("name") or "",
             fix_hint=advisory.get("fix") or "",
         )
-    maybe_handle_port_in_use(ctx)
     return step_result("doctor", "ok", [], started_at)
 
 
@@ -1017,71 +1016,8 @@ def step_doctor(ctx: SetupContext, step_index: int) -> StepResult:
             and check.get("severity") == "advisory"
             and check.get("status") in ("warn", "fail")
         ]
-    maybe_handle_port_in_use(ctx)
     narrate(ctx, f"[step {step_index}/{TOTAL_STEPS}] doctor passed")
     return step_result("doctor", "ok", [], started_at)
-
-
-def _port_advisory_present(ctx: SetupContext) -> bool:
-    for advisory in ctx.doctor_advisories:
-        if advisory.get("name") == "port_5015_free":
-            return True
-        detail = str(advisory.get("detail", ""))
-        if f"port {ctx.port}" in detail:
-            return True
-    return False
-
-
-def maybe_handle_port_in_use(ctx: SetupContext) -> None:
-    if ctx.skip_service or ctx.port_supplied:
-        return
-    if not _port_advisory_present(ctx):
-        return
-    if ctx.mode is SetupMode.NON_INTERACTIVE:
-        dead_end_port_in_use(ctx)
-        return
-    prompt_port_choice(ctx)
-
-
-def prompt_port_choice(ctx: SetupContext) -> None:
-    advisory = next(
-        (
-            item
-            for item in ctx.doctor_advisories
-            if item.get("name") == "port_5015_free"
-        ),
-        None,
-    )
-    if advisory:
-        detail = advisory.get("detail")
-        if detail:
-            narrate(ctx, f"  {detail}")
-        fix = advisory.get("fix")
-        if fix:
-            narrate(ctx, f"  suggested fix: {fix}")
-    narrate(ctx)
-    narrate(ctx, "  1) enter a different port")
-    narrate(ctx, "  2) proceed anyway on this port")
-    narrate(ctx, "  3) abort setup")
-    while True:
-        choice = input("choice [1/2/3]: ").strip()
-        if choice == "1":
-            while True:
-                raw = input("port: ").strip()
-                try:
-                    new_port = _port_arg(raw)
-                except argparse.ArgumentTypeError as exc:
-                    narrate(ctx, f"  {exc}")
-                    continue
-                ctx.port = new_port
-                ctx.port_source = "prompt"
-                ctx.args_resolved["port"] = {"value": new_port, "source": "prompt"}
-                return
-        if choice == "2":
-            return
-        if choice == "3":
-            raise SetupDeadEnd("setup aborted by user", 2)
-        narrate(ctx, "  invalid choice; enter 1, 2, or 3")
 
 
 def step_journal(ctx: SetupContext, step_index: int) -> StepResult:
@@ -1383,33 +1319,6 @@ def dead_end_journal_is_file(ctx: SetupContext) -> None:
         2,
         step_name="journal",
         error_code="journal_dir_invalid",
-    )
-
-
-def dead_end_port_in_use(ctx: SetupContext) -> None:
-    message = "\n".join(
-        [
-            (
-                "sol setup: cannot proceed in non-interactive mode - "
-                f"port {ctx.port} is already in use."
-            ),
-            "Setup will not choose a different service port silently.",
-            "",
-            "Retry with one of:",
-            "  sol setup --port <port>",
-            "  sol setup --skip-service",
-            "",
-            "Interactive escape:",
-            "  sol setup",
-            "",
-            "Run 'sol setup --explain' for full step list.",
-        ]
-    )
-    raise SetupDeadEnd(
-        message,
-        2,
-        step_name="doctor",
-        error_code="port_in_use_non_interactive",
     )
 
 

@@ -30,7 +30,6 @@ ERROR_CODES: frozenset[str] = frozenset(
         "doctor_timeout",
         "journal_dir_invalid",
         "journal_existing_blocked",
-        "port_in_use_non_interactive",
         "service_up_failed",
         "setup_unhandled_exception",
         "step_subprocess_failed",
