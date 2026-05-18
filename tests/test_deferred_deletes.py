@@ -62,6 +62,7 @@ def test_cancel_commit_race_runs_at_most_once():
     for _ in range(iterations):
         commit_count = 0
         commit_lock = threading.Lock()
+        commit_event = threading.Event()
         start = threading.Event()
         cancel_results = []
 
@@ -69,8 +70,11 @@ def test_cancel_commit_race_runs_at_most_once():
             nonlocal commit_count
             with commit_lock:
                 commit_count += 1
+            commit_event.set()
 
         deferred_id = deferred_deletes.schedule(commit, ttl_seconds=0.05)
+        with deferred_deletes._LOCK:
+            timer = deferred_deletes._TIMERS[deferred_id]
 
         def attempt_cancel():
             start.wait()
@@ -81,11 +85,16 @@ def test_cancel_commit_race_runs_at_most_once():
             thread.start()
 
         start.set()
-        time.sleep(0.15)
         for thread in threads:
             thread.join()
 
         true_cancels = sum(cancel_results)
+        if true_cancels:
+            timer.join(timeout=0.1)
+            assert not timer.is_alive()
+            assert not commit_event.is_set()
+        else:
+            assert commit_event.wait(0.1)
         assert commit_count in (0, 1)
         assert not (true_cancels and commit_count)
         assert (true_cancels == 1 and commit_count == 0) or (

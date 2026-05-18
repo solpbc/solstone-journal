@@ -49,6 +49,23 @@ class CallosumServer:
         with self.lock:
             return len(self.clients)
 
+    def _close_server_socket(self) -> None:
+        with self.lock:
+            server_socket = self.server_socket
+            self.server_socket = None
+
+        if server_socket is None:
+            return
+
+        try:
+            server_socket.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            server_socket.close()
+        except OSError:
+            pass
+
     def start(self) -> None:
         """Start the broadcast server."""
         # Ensure health directory exists
@@ -75,7 +92,11 @@ class CallosumServer:
         try:
             while not self.stop_event.is_set():
                 try:
-                    conn, _ = self.server_socket.accept()
+                    with self.lock:
+                        server_socket = self.server_socket
+                    if server_socket is None:
+                        break
+                    conn, _ = server_socket.accept()
                     # Handle client in background thread
                     threading.Thread(
                         target=self._handle_client, args=(conn,), daemon=True
@@ -86,7 +107,7 @@ class CallosumServer:
                     if not self.stop_event.is_set():
                         logger.error(f"Accept error: {e}")
         finally:
-            self.server_socket.close()
+            self._close_server_socket()
             if self.socket_path.exists():
                 self.socket_path.unlink()
 
@@ -218,6 +239,7 @@ class CallosumServer:
     def stop(self) -> None:
         """Stop the server and writer thread."""
         self.stop_event.set()
+        self._close_server_socket()
 
         # Wait for writer thread to finish
         if self.writer_thread and self.writer_thread.is_alive():

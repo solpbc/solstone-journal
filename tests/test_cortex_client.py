@@ -578,7 +578,7 @@ def test_wait_for_agents_partial(callosum_server):
 
     def wait_thread():
         result["completed"], result["timed_out"] = wait_for_uses(
-            [completing_agent, timeout_agent], timeout=2
+            [completing_agent, timeout_agent], timeout=1
         )
 
     waiter = threading.Thread(target=wait_thread)

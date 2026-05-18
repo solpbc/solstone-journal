@@ -53,8 +53,8 @@ def test_status_only_stream_stalls(caplog):
     failed_segments, completed_count = _wait_for_segments(
         message_queue,
         pending,
-        segment_timeout=1.0,
-        poll_timeout=0.05,
+        segment_timeout=0.15,
+        poll_timeout=0.02,
     )
     elapsed = time.monotonic() - started_at
 
@@ -79,8 +79,8 @@ def test_mixed_observed_and_status_stalls_remaining_segments(caplog):
     failed_segments, completed_count = _wait_for_segments(
         message_queue,
         pending,
-        segment_timeout=1.0,
-        poll_timeout=0.05,
+        segment_timeout=0.15,
+        poll_timeout=0.02,
     )
     elapsed = time.monotonic() - started_at
 

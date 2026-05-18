@@ -26,10 +26,12 @@ from tests.verify_api import (
 )
 
 FREEZEGUN_IGNORE = [
+    "_pytest",
     "librosa",
     "numba",
     "pandas",
     "pyarrow",
+    "pytest",
     "scipy",
     "sentencepiece",
     "sklearn",

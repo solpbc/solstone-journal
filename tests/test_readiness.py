@@ -92,7 +92,7 @@ def test_wait_ready_times_out_without_marker(tmp_path, monkeypatch):
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
     _write_identity(tmp_path)
 
-    assert readiness.wait_ready(timeout=1.0) is None
+    assert readiness.wait_ready(timeout=0.1) is None
 
 
 def test_wait_ready_ignores_malformed_marker(tmp_path, monkeypatch, caplog):
@@ -136,9 +136,10 @@ def test_wait_ready_rejects_reused_pid(tmp_path, monkeypatch):
 
 def test_wait_ready_observes_marker_written_mid_flight(tmp_path, monkeypatch):
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    monkeypatch.setattr(readiness, "_POLL_INTERVAL_S", 0.02)
     _write_identity(tmp_path)
     timer = threading.Timer(
-        0.1, readiness.signal_ready, kwargs={"payload": {"stage": "ready"}}
+        0.02, readiness.signal_ready, kwargs={"payload": {"stage": "ready"}}
     )
 
     try:
