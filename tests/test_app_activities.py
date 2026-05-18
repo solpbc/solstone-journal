@@ -4,7 +4,6 @@
 """Tests for activities app routes — activities API and output serving."""
 
 import json
-import os
 
 import pytest
 
@@ -16,15 +15,10 @@ from solstone.apps.activities.routes import (
 
 
 @pytest.fixture
-def fixture_journal():
+def fixture_journal(monkeypatch):
     """Set SOLSTONE_JOURNAL to tests/fixtures/journal for testing."""
-    old = os.environ.get("SOLSTONE_JOURNAL")
-    os.environ["SOLSTONE_JOURNAL"] = "tests/fixtures/journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", "tests/fixtures/journal")
     yield
-    if old is None:
-        os.environ.pop("SOLSTONE_JOURNAL", None)
-    else:
-        os.environ["SOLSTONE_JOURNAL"] = old
 
 
 @pytest.fixture

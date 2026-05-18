@@ -12,7 +12,6 @@ Tests cover:
 import importlib
 import io
 import json
-import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -22,8 +21,8 @@ from tests.conftest import copytree_tracked
 FIXTURES = Path("tests/fixtures")
 
 
-def copy_day(tmp_path: Path) -> Path:
-    os.environ["SOLSTONE_JOURNAL"] = str(tmp_path)
+def copy_day(tmp_path: Path, monkeypatch) -> Path:
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
     dest = day_path("20240101")
     src = FIXTURES / "journal" / "chronicle" / "20240101"
     copytree_tracked(src, dest)
@@ -83,7 +82,7 @@ def _write_schema_file(tmp_path: Path, name: str, schema: dict) -> None:
 def test_generate_output_ndjson(tmp_path, monkeypatch):
     """Test basic output generation via NDJSON protocol."""
     mod = importlib.import_module("solstone.think.talents")
-    copy_day(tmp_path)
+    copy_day(tmp_path, monkeypatch)
 
     import solstone.think.talent as talent
 
@@ -129,7 +128,7 @@ def test_generate_output_ndjson(tmp_path, monkeypatch):
 def test_dispatcher_passes_json_schema(tmp_path, monkeypatch):
     """Test that generator execution forwards json_schema to the model layer."""
     mod = importlib.import_module("solstone.think.talents")
-    copy_day(tmp_path)
+    copy_day(tmp_path, monkeypatch)
 
     from solstone.think import models, talent
 
@@ -179,7 +178,7 @@ def test_dispatcher_passes_json_schema(tmp_path, monkeypatch):
 def test_dispatcher_omits_json_schema_when_absent(tmp_path, monkeypatch):
     """Test that generator execution passes json_schema=None when absent."""
     mod = importlib.import_module("solstone.think.talents")
-    copy_day(tmp_path)
+    copy_day(tmp_path, monkeypatch)
 
     from solstone.think import models, talent
 
@@ -219,7 +218,7 @@ def test_dispatcher_omits_json_schema_when_absent(tmp_path, monkeypatch):
 def test_finish_event_includes_schema_validation(tmp_path, monkeypatch):
     """Test that finish events surface schema_validation when returned."""
     mod = importlib.import_module("solstone.think.talents")
-    copy_day(tmp_path)
+    copy_day(tmp_path, monkeypatch)
 
     from solstone.think import models, talent
 
@@ -274,7 +273,7 @@ def test_finish_event_includes_schema_validation(tmp_path, monkeypatch):
 def test_finish_event_omits_schema_validation_when_absent(tmp_path, monkeypatch):
     """Test that finish events omit schema_validation when not returned."""
     mod = importlib.import_module("solstone.think.talents")
-    copy_day(tmp_path)
+    copy_day(tmp_path, monkeypatch)
 
     from solstone.think import models, talent
 
@@ -319,7 +318,7 @@ def test_finish_event_omits_schema_validation_when_absent(tmp_path, monkeypatch)
 def test_generate_hook_invoked_with_context(tmp_path, monkeypatch):
     """Test that hooks receive correct context including span flag."""
     mod = importlib.import_module("solstone.think.talents")
-    copy_day(tmp_path)
+    copy_day(tmp_path, monkeypatch)
 
     import solstone.think.talent as talent
 
@@ -394,7 +393,7 @@ def post_process(result, context):
 def test_generate_without_hook_succeeds(tmp_path, monkeypatch):
     """Test that generators without hooks still work correctly."""
     mod = importlib.import_module("solstone.think.talents")
-    copy_day(tmp_path)
+    copy_day(tmp_path, monkeypatch)
 
     import solstone.think.talent as talent
 
@@ -436,7 +435,7 @@ def test_generate_without_hook_succeeds(tmp_path, monkeypatch):
 def test_generate_error_event_on_missing_generator(tmp_path, monkeypatch):
     """Test that missing generator name emits error event."""
     mod = importlib.import_module("solstone.think.talents")
-    copy_day(tmp_path)
+    copy_day(tmp_path, monkeypatch)
 
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
 
@@ -459,7 +458,7 @@ def test_generate_skipped_on_no_input(tmp_path, monkeypatch):
     mod = importlib.import_module("solstone.think.talents")
 
     # Create empty day directory (no transcripts)
-    os.environ["SOLSTONE_JOURNAL"] = str(tmp_path)
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
     day_dir = day_path("20240101")
     day_dir.mkdir(parents=True, exist_ok=True)
 
@@ -496,7 +495,7 @@ def test_cogitate_not_skipped_without_sources(tmp_path, monkeypatch):
     mod = importlib.import_module("solstone.think.talents")
 
     # Create empty day directory (no transcripts)
-    os.environ["SOLSTONE_JOURNAL"] = str(tmp_path)
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
     day_dir = day_path("20240101")
     day_dir.mkdir(parents=True, exist_ok=True)
 

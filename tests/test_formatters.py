@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 
 # Set SOLSTONE_JOURNAL to fixtures for tests
-os.environ["SOLSTONE_JOURNAL"] = str(Path(__file__).parent / "fixtures" / "journal")
 
 
 class TestRegistry:

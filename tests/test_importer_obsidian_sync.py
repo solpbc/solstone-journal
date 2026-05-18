@@ -568,14 +568,14 @@ def test_obsidian_sync_excludes_templates(tmp_path, monkeypatch):
     assert "Templates/weekly.md" not in state["files"]
 
 
-def test_obsidian_backends_cli_flag(capsys, monkeypatch):
+def test_obsidian_backends_cli_flag(capsys, monkeypatch, tmp_path):
     """sol import --backends lists obsidian."""
     import sys
 
     from solstone.think.importers.cli import main
 
     monkeypatch.setattr(sys, "argv", ["sol import", "--backends"])
-    monkeypatch.setenv("SOLSTONE_JOURNAL", "/tmp/test-journal")
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path / "journal"))
 
     main()
     captured = capsys.readouterr()

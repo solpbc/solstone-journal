@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 
 from solstone.apps.entities.talent.entity_observer import post_process, pre_process
@@ -20,8 +19,8 @@ from solstone.think.entities.relationships import clear_relationship_caches
 from solstone.think.talent import get_talent
 
 
-def _set_journal(path: str) -> None:
-    os.environ["SOLSTONE_JOURNAL"] = path
+def _set_journal(monkeypatch, path: str) -> None:
+    monkeypatch.setenv("SOLSTONE_JOURNAL", path)
     clear_entity_loading_cache()
     clear_observation_cache()
     clear_relationship_caches()
@@ -68,8 +67,8 @@ def _obs_path(facet: str, entity_id: str) -> Path:
 # ============================================================================
 
 
-def test_assemble_observer_context_with_fixture_data():
-    _set_journal("tests/fixtures/journal")
+def test_assemble_observer_context_with_fixture_data(monkeypatch):
+    _set_journal(monkeypatch, "tests/fixtures/journal")
 
     result = assemble_observer_context("capulet", "20260304")
 
@@ -81,8 +80,8 @@ def test_assemble_observer_context_with_fixture_data():
     )
 
 
-def test_assemble_observer_context_no_kg(tmp_path):
-    _set_journal(str(tmp_path))
+def test_assemble_observer_context_no_kg(tmp_path, monkeypatch):
+    _set_journal(monkeypatch, str(tmp_path))
     facet = "work"
     day = "20260304"
     _attach_entity(tmp_path, facet, "alice_johnson", "Alice Johnson")
@@ -105,8 +104,8 @@ def test_assemble_observer_context_no_kg(tmp_path):
     assert "Alice Johnson" in result
 
 
-def test_assemble_observer_context_no_active_entities(tmp_path):
-    _set_journal(str(tmp_path))
+def test_assemble_observer_context_no_active_entities(tmp_path, monkeypatch):
+    _set_journal(monkeypatch, str(tmp_path))
     _attach_entity(tmp_path, "work", "alice_johnson", "Alice Johnson")
 
     result = assemble_observer_context("work", "20260304")
@@ -114,8 +113,8 @@ def test_assemble_observer_context_no_active_entities(tmp_path):
     assert "No active entities" in result
 
 
-def test_assemble_observer_context_empty_facet(tmp_path):
-    _set_journal(str(tmp_path))
+def test_assemble_observer_context_empty_facet(tmp_path, monkeypatch):
+    _set_journal(monkeypatch, str(tmp_path))
     (tmp_path / "facets" / "empty" / "entities").mkdir(parents=True)
 
     result = assemble_observer_context("empty", "20260304")
@@ -123,8 +122,8 @@ def test_assemble_observer_context_empty_facet(tmp_path):
     assert "No active entities" in result
 
 
-def test_assemble_observer_context_observations_sliced(tmp_path):
-    _set_journal(str(tmp_path))
+def test_assemble_observer_context_observations_sliced(tmp_path, monkeypatch):
+    _set_journal(monkeypatch, str(tmp_path))
     facet = "work"
     day = "20260304"
     entity_id = "alice_johnson"
@@ -163,8 +162,8 @@ def test_assemble_observer_context_observations_sliced(tmp_path):
 # ============================================================================
 
 
-def test_pre_process_returns_template_vars():
-    _set_journal("tests/fixtures/journal")
+def test_pre_process_returns_template_vars(monkeypatch):
+    _set_journal(monkeypatch, "tests/fixtures/journal")
 
     result = pre_process({"facet": "capulet", "day": "20260304"})
 
@@ -182,8 +181,8 @@ def test_pre_process_missing_day():
     assert pre_process({"facet": "work"}) is None
 
 
-def test_post_process_persists_observations(tmp_path):
-    _set_journal(str(tmp_path))
+def test_post_process_persists_observations(tmp_path, monkeypatch):
+    _set_journal(monkeypatch, str(tmp_path))
     facet = "work"
     _attach_entity(tmp_path, facet, "alice_johnson", "Alice Johnson")
 
@@ -213,8 +212,8 @@ def test_post_process_persists_observations(tmp_path):
     assert [obs["content"] for obs in observations] == ["Prefers morning meetings"]
 
 
-def test_post_process_filters_unrecognized_entity(tmp_path, caplog):
-    _set_journal(str(tmp_path))
+def test_post_process_filters_unrecognized_entity(tmp_path, caplog, monkeypatch):
+    _set_journal(monkeypatch, str(tmp_path))
     facet = "work"
     _attach_entity(tmp_path, facet, "alice_johnson", "Alice Johnson")
 
@@ -246,8 +245,8 @@ def test_post_process_filters_unrecognized_entity(tmp_path, caplog):
     assert "Skipping unrecognized entity_id: unknown_entity" in caplog.text
 
 
-def test_post_process_skips_empty_content(tmp_path):
-    _set_journal(str(tmp_path))
+def test_post_process_skips_empty_content(tmp_path, monkeypatch):
+    _set_journal(monkeypatch, str(tmp_path))
     facet = "work"
     _attach_entity(tmp_path, facet, "alice_johnson", "Alice Johnson")
 
@@ -270,8 +269,8 @@ def test_post_process_skips_empty_content(tmp_path):
     assert load_observations(facet, "alice_johnson") == []
 
 
-def test_post_process_skips_non_list_group_items(tmp_path, caplog):
-    _set_journal(str(tmp_path))
+def test_post_process_skips_non_list_group_items(tmp_path, caplog, monkeypatch):
+    _set_journal(monkeypatch, str(tmp_path))
     facet = "work"
     _attach_entity(tmp_path, facet, "alice_johnson", "Alice Johnson")
 
@@ -296,8 +295,8 @@ def test_post_process_skips_non_list_group_items(tmp_path, caplog):
     assert "Skipping malformed observation entry" in caplog.text
 
 
-def test_post_process_skips_group_missing_entity_id(tmp_path, caplog):
-    _set_journal(str(tmp_path))
+def test_post_process_skips_group_missing_entity_id(tmp_path, caplog, monkeypatch):
+    _set_journal(monkeypatch, str(tmp_path))
     facet = "work"
     _attach_entity(tmp_path, facet, "alice_johnson", "Alice Johnson")
 
@@ -321,8 +320,8 @@ def test_post_process_skips_group_missing_entity_id(tmp_path, caplog):
     assert "Skipping malformed observation entry" in caplog.text
 
 
-def test_post_process_deduplicates_existing(tmp_path):
-    _set_journal(str(tmp_path))
+def test_post_process_deduplicates_existing(tmp_path, monkeypatch):
+    _set_journal(monkeypatch, str(tmp_path))
     facet = "work"
     _attach_entity(tmp_path, facet, "alice_johnson", "Alice Johnson")
     _write_jsonl(
@@ -370,8 +369,8 @@ def test_post_process_handles_malformed_json():
 # ============================================================================
 
 
-def test_entity_observer_agent_config():
-    _set_journal("tests/fixtures/journal")
+def test_entity_observer_agent_config(monkeypatch):
+    _set_journal(monkeypatch, "tests/fixtures/journal")
 
     config = get_talent("entities:entity_observer")
 

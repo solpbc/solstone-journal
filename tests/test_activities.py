@@ -4,7 +4,6 @@
 """Tests for the activities module and activities agent hooks."""
 
 import json
-import os
 import tempfile
 from pathlib import Path
 
@@ -56,7 +55,7 @@ def test_get_default_activities_returns_copy():
     assert defaults2[0]["id"] != "modified"
 
 
-def test_always_on_activities():
+def test_always_on_activities(monkeypatch):
     """Test that always-on activities are auto-included for all facets."""
     from solstone.think.activities import DEFAULT_ACTIVITIES, get_facet_activities
 
@@ -68,29 +67,23 @@ def test_always_on_activities():
     assert "email" in always_on_ids
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        original_path = os.environ.get("SOLSTONE_JOURNAL")
-        os.environ["SOLSTONE_JOURNAL"] = tmpdir
+        monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
         facet_path = Path(tmpdir) / "facets" / "test_facet"
         facet_path.mkdir(parents=True)
 
-        try:
-            # Empty facet should still have always-on activities
-            activities = get_facet_activities("test_facet")
-            activity_ids = {a["id"] for a in activities}
-            assert always_on_ids <= activity_ids
+        # Empty facet should still have always-on activities
+        activities = get_facet_activities("test_facet")
+        activity_ids = {a["id"] for a in activities}
+        assert always_on_ids <= activity_ids
 
-            # Explicitly attaching one should not duplicate it
-            from solstone.think.activities import add_activity_to_facet
+        # Explicitly attaching one should not duplicate it
+        from solstone.think.activities import add_activity_to_facet
 
-            add_activity_to_facet("test_facet", "messaging")
-            activities = get_facet_activities("test_facet")
-            messaging_count = sum(1 for a in activities if a["id"] == "messaging")
-            assert messaging_count == 1
-
-        finally:
-            if original_path:
-                os.environ["SOLSTONE_JOURNAL"] = original_path
+        add_activity_to_facet("test_facet", "messaging")
+        activities = get_facet_activities("test_facet")
+        messaging_count = sum(1 for a in activities if a["id"] == "messaging")
+        assert messaging_count == 1
 
 
 def test_generate_activity_id():
@@ -129,63 +122,51 @@ def test_meeting_is_always_on():
     assert "messaging" in always_on_ids
 
 
-def test_unconfigured_facet_returns_all_defaults():
+def test_unconfigured_facet_returns_all_defaults(monkeypatch):
     """Test that a facet with no activities.jsonl gets all 16 defaults."""
     from solstone.think.activities import DEFAULT_ACTIVITIES, get_facet_activities
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        original_path = os.environ.get("SOLSTONE_JOURNAL")
-        os.environ["SOLSTONE_JOURNAL"] = tmpdir
+        monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
         facet_path = Path(tmpdir) / "facets" / "new_facet"
         facet_path.mkdir(parents=True)
 
-        try:
-            activities = get_facet_activities("new_facet")
-            assert len(activities) == len(DEFAULT_ACTIVITIES)
+        activities = get_facet_activities("new_facet")
+        assert len(activities) == len(DEFAULT_ACTIVITIES)
 
-            activity_ids = {a["id"] for a in activities}
-            default_ids = {a["id"] for a in DEFAULT_ACTIVITIES}
-            assert activity_ids == default_ids
+        activity_ids = {a["id"] for a in activities}
+        default_ids = {a["id"] for a in DEFAULT_ACTIVITIES}
+        assert activity_ids == default_ids
 
-            # All should be marked as not custom
-            for activity in activities:
-                assert activity.get("custom") is False
-
-        finally:
-            if original_path:
-                os.environ["SOLSTONE_JOURNAL"] = original_path
+        # All should be marked as not custom
+        for activity in activities:
+            assert activity.get("custom") is False
 
 
-def test_configured_facet_includes_meeting_always_on():
+def test_configured_facet_includes_meeting_always_on(monkeypatch):
     """Test that a facet with explicit activities auto-includes meeting."""
     from solstone.think.activities import get_facet_activities, save_facet_activities
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        original_path = os.environ.get("SOLSTONE_JOURNAL")
-        os.environ["SOLSTONE_JOURNAL"] = tmpdir
+        monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
         facet_path = Path(tmpdir) / "facets" / "work"
         facet_path.mkdir(parents=True)
 
-        try:
-            # Save only coding — meeting, email, messaging should auto-include
-            save_facet_activities("work", [{"id": "coding"}])
+        # Save only coding — meeting, email, messaging should auto-include
+        save_facet_activities("work", [{"id": "coding"}])
 
-            activities = get_facet_activities("work")
-            activity_ids = {a["id"] for a in activities}
+        activities = get_facet_activities("work")
+        activity_ids = {a["id"] for a in activities}
 
-            assert "coding" in activity_ids
-            assert "meeting" in activity_ids
-            assert "email" in activity_ids
-            assert "messaging" in activity_ids
-
-        finally:
-            if original_path:
-                os.environ["SOLSTONE_JOURNAL"] = original_path
+        assert "coding" in activity_ids
+        assert "meeting" in activity_ids
+        assert "email" in activity_ids
+        assert "messaging" in activity_ids
 
 
-def test_facet_activities_roundtrip():
+def test_facet_activities_roundtrip(monkeypatch):
     """Test saving and loading activities."""
     from solstone.think.activities import (
         DEFAULT_ACTIVITIES,
@@ -197,77 +178,68 @@ def test_facet_activities_roundtrip():
     # Create a temp journal
     with tempfile.TemporaryDirectory() as tmpdir:
         # Temporarily override SOLSTONE_JOURNAL
-        original_path = os.environ.get("SOLSTONE_JOURNAL")
-        os.environ["SOLSTONE_JOURNAL"] = tmpdir
+        monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
         # Create facet directory
         facet_path = Path(tmpdir) / "facets" / "test_facet"
         facet_path.mkdir(parents=True)
 
-        try:
-            # Save some activities
-            activities = [
-                {"id": "meeting", "priority": "high"},
-                {"id": "coding", "description": "Custom coding description"},
-                {
-                    "id": "browsing",
-                    "instructions": "Custom browsing instructions for this facet",
-                },
-                {
-                    "id": "custom_activity",
-                    "name": "Custom",
-                    "description": "A custom activity",
-                    "instructions": "Custom activity detection hints",
-                    "custom": True,
-                },
-            ]
-            save_facet_activities("test_facet", activities)
+        # Save some activities
+        activities = [
+            {"id": "meeting", "priority": "high"},
+            {"id": "coding", "description": "Custom coding description"},
+            {
+                "id": "browsing",
+                "instructions": "Custom browsing instructions for this facet",
+            },
+            {
+                "id": "custom_activity",
+                "name": "Custom",
+                "description": "A custom activity",
+                "instructions": "Custom activity detection hints",
+                "custom": True,
+            },
+        ]
+        save_facet_activities("test_facet", activities)
 
-            # Verify file was created
-            path = _get_activities_path("test_facet")
-            assert path.exists()
+        # Verify file was created
+        path = _get_activities_path("test_facet")
+        assert path.exists()
 
-            # Load and verify (4 saved + always-on defaults not already saved)
-            loaded = get_facet_activities("test_facet")
-            loaded_ids = {a["id"] for a in loaded}
-            saved_ids = {a["id"] for a in activities}
-            always_on_ids = {a["id"] for a in DEFAULT_ACTIVITIES if a.get("always_on")}
-            assert loaded_ids == saved_ids | always_on_ids
+        # Load and verify (4 saved + always-on defaults not already saved)
+        loaded = get_facet_activities("test_facet")
+        loaded_ids = {a["id"] for a in loaded}
+        saved_ids = {a["id"] for a in activities}
+        always_on_ids = {a["id"] for a in DEFAULT_ACTIVITIES if a.get("always_on")}
+        assert loaded_ids == saved_ids | always_on_ids
 
-            # Check meeting (predefined with priority override)
-            meeting = next(a for a in loaded if a["id"] == "meeting")
-            assert meeting["priority"] == "high"
-            assert meeting["custom"] is False
-            assert "name" in meeting  # Should have default name
-            # Should have default instructions (no override)
-            assert "instructions" in meeting
-            assert "Levels:" in meeting["instructions"]
+        # Check meeting (predefined with priority override)
+        meeting = next(a for a in loaded if a["id"] == "meeting")
+        assert meeting["priority"] == "high"
+        assert meeting["custom"] is False
+        assert "name" in meeting  # Should have default name
+        # Should have default instructions (no override)
+        assert "instructions" in meeting
+        assert "Levels:" in meeting["instructions"]
 
-            # Check coding (predefined with description override)
-            coding = next(a for a in loaded if a["id"] == "coding")
-            assert coding["description"] == "Custom coding description"
-            # Should keep default instructions (only description overridden)
-            assert "instructions" in coding
+        # Check coding (predefined with description override)
+        coding = next(a for a in loaded if a["id"] == "coding")
+        assert coding["description"] == "Custom coding description"
+        # Should keep default instructions (only description overridden)
+        assert "instructions" in coding
 
-            # Check browsing (predefined with instructions override)
-            browsing = next(a for a in loaded if a["id"] == "browsing")
-            assert (
-                browsing["instructions"]
-                == "Custom browsing instructions for this facet"
-            )
+        # Check browsing (predefined with instructions override)
+        browsing = next(a for a in loaded if a["id"] == "browsing")
+        assert browsing["instructions"] == "Custom browsing instructions for this facet"
 
-            # Check custom activity with instructions
-            custom = next(a for a in loaded if a["id"] == "custom_activity")
-            assert custom["custom"] is True
-            assert custom["name"] == "Custom"
-            assert custom["instructions"] == "Custom activity detection hints"
-
-        finally:
-            if original_path:
-                os.environ["SOLSTONE_JOURNAL"] = original_path
+        # Check custom activity with instructions
+        custom = next(a for a in loaded if a["id"] == "custom_activity")
+        assert custom["custom"] is True
+        assert custom["name"] == "Custom"
+        assert custom["instructions"] == "Custom activity detection hints"
 
 
-def test_add_activity_to_facet():
+def test_add_activity_to_facet(monkeypatch):
     """Test adding an activity to a facet."""
     from solstone.think.activities import (
         add_activity_to_facet,
@@ -276,71 +248,62 @@ def test_add_activity_to_facet():
     )
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        original_path = os.environ.get("SOLSTONE_JOURNAL")
-        os.environ["SOLSTONE_JOURNAL"] = tmpdir
+        monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
         facet_path = Path(tmpdir) / "facets" / "test_facet"
         facet_path.mkdir(parents=True)
 
-        try:
-            # Add a predefined activity
-            result = add_activity_to_facet("test_facet", "meeting", priority="high")
-            assert result["id"] == "meeting"
+        # Add a predefined activity
+        result = add_activity_to_facet("test_facet", "meeting", priority="high")
+        assert result["id"] == "meeting"
 
-            # Verify it was added (+ always-on defaults)
-            activities = get_facet_activities("test_facet")
-            activity_ids = {a["id"] for a in activities}
-            assert "meeting" in activity_ids
+        # Verify it was added (+ always-on defaults)
+        activities = get_facet_activities("test_facet")
+        activity_ids = {a["id"] for a in activities}
+        assert "meeting" in activity_ids
 
-            # Adding same activity again should not duplicate
-            prev_count = len(activities)
-            add_activity_to_facet("test_facet", "meeting")
-            activities = get_facet_activities("test_facet")
-            assert len(activities) == prev_count
+        # Adding same activity again should not duplicate
+        prev_count = len(activities)
+        add_activity_to_facet("test_facet", "meeting")
+        activities = get_facet_activities("test_facet")
+        assert len(activities) == prev_count
 
-            # Add a predefined activity with custom instructions
-            add_activity_to_facet(
-                "test_facet",
-                "coding",
-                instructions="Focus on Python and Rust only",
-            )
-            coding = next(
-                a for a in get_facet_activities("test_facet") if a["id"] == "coding"
-            )
-            assert coding["instructions"] == "Focus on Python and Rust only"
+        # Add a predefined activity with custom instructions
+        add_activity_to_facet(
+            "test_facet",
+            "coding",
+            instructions="Focus on Python and Rust only",
+        )
+        coding = next(
+            a for a in get_facet_activities("test_facet") if a["id"] == "coding"
+        )
+        assert coding["instructions"] == "Focus on Python and Rust only"
 
-            # Add a custom activity with instructions
-            add_activity_to_facet(
-                "test_facet",
-                "3d_modeling",
-                name="3D Modeling",
-                description="Blender and CAD work",
-                instructions="Detect via: Blender, FreeCAD, OpenSCAD windows",
-            )
-            modeling = next(
-                a
-                for a in get_facet_activities("test_facet")
-                if a["id"] == "3d_modeling"
-            )
-            assert (
-                modeling["instructions"]
-                == "Detect via: Blender, FreeCAD, OpenSCAD windows"
-            )
+        # Add a custom activity with instructions
+        add_activity_to_facet(
+            "test_facet",
+            "3d_modeling",
+            name="3D Modeling",
+            description="Blender and CAD work",
+            instructions="Detect via: Blender, FreeCAD, OpenSCAD windows",
+        )
+        modeling = next(
+            a for a in get_facet_activities("test_facet") if a["id"] == "3d_modeling"
+        )
+        assert (
+            modeling["instructions"] == "Detect via: Blender, FreeCAD, OpenSCAD windows"
+        )
 
-            # Remove it
-            removed = remove_activity_from_facet("test_facet", "meeting")
-            assert removed is True
+        # Remove it
+        removed = remove_activity_from_facet("test_facet", "meeting")
+        assert removed is True
 
-            # Removing non-existent should return False
-            removed = remove_activity_from_facet("test_facet", "meeting")
-            assert removed is False
-
-        finally:
-            if original_path:
-                os.environ["SOLSTONE_JOURNAL"] = original_path
+        # Removing non-existent should return False
+        removed = remove_activity_from_facet("test_facet", "meeting")
+        assert removed is False
 
 
-def test_update_activity_in_facet():
+def test_update_activity_in_facet(monkeypatch):
     """Test updating an activity in a facet."""
     from solstone.think.activities import (
         add_activity_to_facet,
@@ -349,123 +312,107 @@ def test_update_activity_in_facet():
     )
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        original_path = os.environ.get("SOLSTONE_JOURNAL")
-        os.environ["SOLSTONE_JOURNAL"] = tmpdir
+        monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
         facet_path = Path(tmpdir) / "facets" / "test_facet"
         facet_path.mkdir(parents=True)
 
-        try:
-            # Add an activity
-            add_activity_to_facet("test_facet", "meeting")
+        # Add an activity
+        add_activity_to_facet("test_facet", "meeting")
 
-            # Update it
-            updated = update_activity_in_facet(
-                "test_facet", "meeting", priority="low", description="Updated desc"
-            )
-            assert updated is not None
-            assert updated["priority"] == "low"
-            assert updated["description"] == "Updated desc"
+        # Update it
+        updated = update_activity_in_facet(
+            "test_facet", "meeting", priority="low", description="Updated desc"
+        )
+        assert updated is not None
+        assert updated["priority"] == "low"
+        assert updated["description"] == "Updated desc"
 
-            # Update instructions
-            updated = update_activity_in_facet(
-                "test_facet",
-                "meeting",
-                instructions="Only detect scheduled meetings, not ad-hoc calls",
-            )
-            assert updated is not None
-            assert (
-                updated["instructions"]
-                == "Only detect scheduled meetings, not ad-hoc calls"
-            )
-            # Other fields should be preserved
-            assert updated["priority"] == "low"
+        # Update instructions
+        updated = update_activity_in_facet(
+            "test_facet",
+            "meeting",
+            instructions="Only detect scheduled meetings, not ad-hoc calls",
+        )
+        assert updated is not None
+        assert (
+            updated["instructions"]
+            == "Only detect scheduled meetings, not ad-hoc calls"
+        )
+        # Other fields should be preserved
+        assert updated["priority"] == "low"
 
-            # Verify via lookup
-            activity = get_activity_by_id("test_facet", "meeting")
-            assert activity["priority"] == "low"
-            assert (
-                activity["instructions"]
-                == "Only detect scheduled meetings, not ad-hoc calls"
-            )
+        # Verify via lookup
+        activity = get_activity_by_id("test_facet", "meeting")
+        assert activity["priority"] == "low"
+        assert (
+            activity["instructions"]
+            == "Only detect scheduled meetings, not ad-hoc calls"
+        )
 
-            # Reset instructions to default via empty string
-            from solstone.think.activities import DEFAULT_ACTIVITIES
+        # Reset instructions to default via empty string
+        from solstone.think.activities import DEFAULT_ACTIVITIES
 
-            default_instructions = next(
-                a["instructions"] for a in DEFAULT_ACTIVITIES if a["id"] == "meeting"
-            )
-            updated = update_activity_in_facet("test_facet", "meeting", instructions="")
-            assert updated is not None
-            assert updated["instructions"] == default_instructions
+        default_instructions = next(
+            a["instructions"] for a in DEFAULT_ACTIVITIES if a["id"] == "meeting"
+        )
+        updated = update_activity_in_facet("test_facet", "meeting", instructions="")
+        assert updated is not None
+        assert updated["instructions"] == default_instructions
 
-            # Reset description to default via empty string
-            default_desc = next(
-                a["description"] for a in DEFAULT_ACTIVITIES if a["id"] == "meeting"
-            )
-            updated = update_activity_in_facet("test_facet", "meeting", description="")
-            assert updated is not None
-            assert updated["description"] == default_desc
+        # Reset description to default via empty string
+        default_desc = next(
+            a["description"] for a in DEFAULT_ACTIVITIES if a["id"] == "meeting"
+        )
+        updated = update_activity_in_facet("test_facet", "meeting", description="")
+        assert updated is not None
+        assert updated["description"] == default_desc
 
-            # Reset priority to default via "normal"
-            updated = update_activity_in_facet(
-                "test_facet", "meeting", priority="normal"
-            )
-            assert updated is not None
-            assert updated["priority"] == "normal"
+        # Reset priority to default via "normal"
+        updated = update_activity_in_facet("test_facet", "meeting", priority="normal")
+        assert updated is not None
+        assert updated["priority"] == "normal"
 
-            # Update non-existent should return None
-            result = update_activity_in_facet(
-                "test_facet", "nonexistent", priority="high"
-            )
-            assert result is None
-
-        finally:
-            if original_path:
-                os.environ["SOLSTONE_JOURNAL"] = original_path
+        # Update non-existent should return None
+        result = update_activity_in_facet("test_facet", "nonexistent", priority="high")
+        assert result is None
 
 
-def test_format_activities_context_includes_instructions():
+def test_format_activities_context_includes_instructions(monkeypatch):
     """Test that format_activities_context renders instructions inline."""
     from solstone.think.activities import save_facet_activities
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        original_path = os.environ.get("SOLSTONE_JOURNAL")
-        os.environ["SOLSTONE_JOURNAL"] = tmpdir
+        monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
         facet_path = Path(tmpdir) / "facets" / "test_facet"
         facet_path.mkdir(parents=True)
 
-        try:
-            save_facet_activities(
-                "test_facet",
-                [
-                    {"id": "coding"},
-                    {
-                        "id": "custom_task",
-                        "name": "Custom",
-                        "description": "A custom activity",
-                        "instructions": "Detect via: specific app UI",
-                        "custom": True,
-                    },
-                ],
-            )
+        save_facet_activities(
+            "test_facet",
+            [
+                {"id": "coding"},
+                {
+                    "id": "custom_task",
+                    "name": "Custom",
+                    "description": "A custom activity",
+                    "instructions": "Detect via: specific app UI",
+                    "custom": True,
+                },
+            ],
+        )
 
-            from solstone.talent.activity_state import format_activities_context
+        from solstone.talent.activity_state import format_activities_context
 
-            output = format_activities_context("test_facet")
+        output = format_activities_context("test_facet")
 
-            # Predefined coding should include its default instructions
-            assert "**coding**" in output
-            assert "IDE or editor open" in output  # from default instructions
+        # Predefined coding should include its default instructions
+        assert "**coding**" in output
+        assert "IDE or editor open" in output  # from default instructions
 
-            # Custom activity should include its custom instructions
-            assert "**custom_task**" in output
-            assert "Detect via: specific app UI" in output
-
-        finally:
-            if original_path:
-                os.environ["SOLSTONE_JOURNAL"] = original_path
+        # Custom activity should include its custom instructions
+        assert "**custom_task**" in output
+        assert "Detect via: specific app UI" in output
 
 
 # ---------------------------------------------------------------------------

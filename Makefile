@@ -354,14 +354,17 @@ format-check: .installed
 	@$(RUFF) format --check . || { echo "Run 'make format' to fix formatting"; exit 1; }
 
 # Run core tests (excluding integration and app tests)
+# -n auto --dist loadgroup lives here, not in pyproject addopts, so bare
+# pytest / pytest-watch / IDE runs stay serial. The root conftest
+# workerinput controller-guard keeps direct `pytest -n auto` correct too.
 test: .installed format-check
 	@echo "Running core tests..."
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -q --ignore=tests/integration $(NOT_INTEGRATION)
+	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -q --ignore=tests/integration $(NOT_INTEGRATION) -n auto --dist loadgroup
 
 # Run core tests with full-repo coverage (used by ci/verify)
 test-cov: .installed format-check
 	@echo "Running core tests with coverage..."
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -q --cov=. --ignore=tests/integration $(NOT_INTEGRATION)
+	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -q --cov=. --ignore=tests/integration $(NOT_INTEGRATION) -n auto --dist loadgroup
 
 # Run app tests
 test-apps: .installed

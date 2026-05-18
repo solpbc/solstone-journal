@@ -8,8 +8,6 @@ from pathlib import Path
 
 from solstone.think.talent import get_output_name, get_output_path
 
-os.environ.setdefault("SOLSTONE_JOURNAL", "tests/fixtures/journal")
-
 
 class TestGetOutputName:
     """Tests for get_output_name."""

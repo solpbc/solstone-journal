@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import os
 from argparse import Namespace
 from importlib import import_module
 from pathlib import Path
@@ -39,8 +38,8 @@ save_journal_source = journal_sources.save_journal_source
 import_bp = import_routes.import_bp
 
 
-def _set_active_journal(journal: Path) -> None:
-    os.environ["SOLSTONE_JOURNAL"] = str(journal)
+def _set_active_journal(monkeypatch, journal: Path) -> None:
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
     think_utils._journal_path_cache = None
     clear_journal_entity_cache()
 
@@ -65,25 +64,28 @@ class _FlaskResponse:
 class _FlaskSessionAdapter:
     """Wrap a Flask test client to behave like requests.Session for export functions."""
 
-    def __init__(self, client, *, source_journal: Path, target_journal: Path):
+    def __init__(
+        self, client, *, source_journal: Path, target_journal: Path, monkeypatch
+    ):
         self.client = client
         self.source_journal = source_journal
         self.target_journal = target_journal
+        self.monkeypatch = monkeypatch
         self.headers: dict[str, str] = {}
 
     def get(self, url, **kwargs):
         del kwargs
-        _set_active_journal(self.target_journal)
+        _set_active_journal(self.monkeypatch, self.target_journal)
         try:
             resp = self.client.get(_extract_path(url), headers=self.headers)
         finally:
-            _set_active_journal(self.source_journal)
+            _set_active_journal(self.monkeypatch, self.source_journal)
         return _FlaskResponse(resp)
 
     def post(self, url, **kwargs):
         path = _extract_path(url)
         headers = {**self.headers}
-        _set_active_journal(self.target_journal)
+        _set_active_journal(self.monkeypatch, self.target_journal)
         try:
             if "files" in kwargs:
                 data = {}
@@ -114,7 +116,7 @@ class _FlaskSessionAdapter:
             else:
                 resp = self.client.post(path, headers=headers)
         finally:
-            _set_active_journal(self.source_journal)
+            _set_active_journal(self.monkeypatch, self.source_journal)
         return _FlaskResponse(resp)
 
     def close(self):
@@ -124,10 +126,9 @@ class _FlaskSessionAdapter:
 @pytest.fixture
 def export_integration_env(tmp_path, monkeypatch):
     """Set up source journal + target Flask app for integration testing."""
-    previous_override = os.environ.get("SOLSTONE_JOURNAL")
     source_journal = tmp_path / "source"
     source_journal.mkdir()
-    _set_active_journal(source_journal)
+    _set_active_journal(monkeypatch, source_journal)
 
     target_journal = tmp_path / "target"
     target_journal.mkdir()
@@ -162,7 +163,10 @@ def export_integration_env(tmp_path, monkeypatch):
 
     client = app.test_client()
     adapter = _FlaskSessionAdapter(
-        client, source_journal=source_journal, target_journal=target_journal
+        client,
+        source_journal=source_journal,
+        target_journal=target_journal,
+        monkeypatch=monkeypatch,
     )
     adapter.headers["Authorization"] = f"Bearer {key}"
 
@@ -174,12 +178,9 @@ def export_integration_env(tmp_path, monkeypatch):
         "client": client,
         "adapter": adapter,
         "base_url": "http://localhost:5000",
+        "monkeypatch": monkeypatch,
     }
 
-    if previous_override is None:
-        os.environ.pop("SOLSTONE_JOURNAL", None)
-    else:
-        os.environ["SOLSTONE_JOURNAL"] = previous_override
     think_utils._journal_path_cache = None
     clear_journal_entity_cache()
 
@@ -469,9 +470,9 @@ def test_staged_items_entity_collision(export_integration_env):
         {"id": "test", "name": "Completely Different Name", "type": "Person"},
     )
 
-    _set_active_journal(env["target"])
+    _set_active_journal(env["monkeypatch"], env["target"])
     save_journal_entity({"id": "test", "name": "Test Entity", "type": "Tool"})
-    _set_active_journal(env["source"])
+    _set_active_journal(env["monkeypatch"], env["source"])
 
     result = export_entities(env["base_url"], env["key"], False, session=env["adapter"])
 
@@ -505,11 +506,11 @@ def test_processing_order_entities_before_facets(export_integration_env):
     )
     _setup_facet_with_entity(env["source"], entity_id="source_entity")
 
-    _set_active_journal(env["target"])
+    _set_active_journal(env["monkeypatch"], env["target"])
     save_journal_entity(
         {"id": "target_entity", "name": "Alice Johnson", "type": "Person"}
     )
-    _set_active_journal(env["source"])
+    _set_active_journal(env["monkeypatch"], env["source"])
 
     entity_result = export_entities(
         env["base_url"], env["key"], False, session=env["adapter"]

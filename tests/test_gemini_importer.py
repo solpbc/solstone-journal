@@ -160,7 +160,7 @@ def test_preview_json():
 # --- Process tests ---
 
 
-def test_process_json():
+def test_process_json(monkeypatch):
     with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
         activities = [
             _sample_activity(time="2026-01-15T10:00:00Z"),
@@ -175,7 +175,7 @@ def test_process_json():
 
         try:
             with tempfile.TemporaryDirectory() as journal:
-                os.environ["SOLSTONE_JOURNAL"] = journal
+                monkeypatch.setenv("SOLSTONE_JOURNAL", journal)
                 result = importer.process(Path(f.name), Path(journal))
                 assert result.entries_written == 4
                 assert result.errors == []
@@ -198,10 +198,9 @@ def test_process_json():
                 assert entries[1]["speaker"] == "Assistant"
         finally:
             os.unlink(f.name)
-            os.environ.pop("SOLSTONE_JOURNAL", None)
 
 
-def test_process_zip():
+def test_process_zip(monkeypatch):
     with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
         with zipfile.ZipFile(tmp, "w") as zf:
             activities = [_sample_activity(time="2026-03-01T09:00:00Z")]
@@ -211,7 +210,7 @@ def test_process_zip():
             )
         try:
             with tempfile.TemporaryDirectory() as journal:
-                os.environ["SOLSTONE_JOURNAL"] = journal
+                monkeypatch.setenv("SOLSTONE_JOURNAL", journal)
                 result = importer.process(Path(tmp.name), Path(journal))
                 assert result.entries_written == 2
                 assert result.segments is not None
@@ -219,10 +218,9 @@ def test_process_zip():
                 assert any(Path(p).suffix == ".jsonl" for p in result.files_created)
         finally:
             os.unlink(tmp.name)
-            os.environ.pop("SOLSTONE_JOURNAL", None)
 
 
-def test_process_multiple_windows():
+def test_process_multiple_windows(monkeypatch):
     """Activities more than 5 minutes apart land in different segments."""
     with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
         activities = [
@@ -237,7 +235,7 @@ def test_process_multiple_windows():
         f.flush()
         try:
             with tempfile.TemporaryDirectory() as journal:
-                os.environ["SOLSTONE_JOURNAL"] = journal
+                monkeypatch.setenv("SOLSTONE_JOURNAL", journal)
                 result = importer.process(Path(f.name), Path(journal))
                 assert result.entries_written == 4
                 assert result.segments is not None
@@ -245,7 +243,6 @@ def test_process_multiple_windows():
                 assert len(result.files_created) == 2
         finally:
             os.unlink(f.name)
-            os.environ.pop("SOLSTONE_JOURNAL", None)
 
 
 # --- Registry test ---

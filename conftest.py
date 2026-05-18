@@ -113,6 +113,9 @@ def _format_leak_message(new_entries: set[tuple[str, str]]) -> str:
 def pytest_sessionstart(session):
     global _BASELINE, _GIT_AVAILABLE, _TMPDIR_FALLBACK_NOTICE
 
+    if hasattr(session.config, "workerinput"):
+        return
+
     if _TMPDIR_FALLBACK_NOTICE is not None:
         sys.stderr.write(_TMPDIR_FALLBACK_NOTICE)
         _TMPDIR_FALLBACK_NOTICE = None
@@ -125,6 +128,9 @@ def pytest_sessionstart(session):
 
 
 def pytest_sessionfinish(session, exitstatus):
+    if hasattr(session.config, "workerinput"):
+        return
+
     if not _GIT_AVAILABLE or _BASELINE is None:
         return
 

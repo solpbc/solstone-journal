@@ -118,7 +118,7 @@ def test_preview():
 # --- Process tests ---
 
 
-def test_process_basic():
+def test_process_basic(monkeypatch):
     content = _make_clippings_file(
         [
             _make_clipping(),
@@ -133,7 +133,7 @@ def test_process_basic():
         f.flush()
         try:
             with tempfile.TemporaryDirectory() as journal:
-                os.environ["SOLSTONE_JOURNAL"] = journal
+                monkeypatch.setenv("SOLSTONE_JOURNAL", journal)
                 result = importer.process(Path(f.name), Path(journal))
                 assert result.entries_written == 2
                 assert result.errors == []
@@ -149,10 +149,9 @@ def test_process_basic():
                 assert "Page 42" in md
         finally:
             os.unlink(f.name)
-            os.environ.pop("SOLSTONE_JOURNAL", None)
 
 
-def test_process_multiple_windows():
+def test_process_multiple_windows(monkeypatch):
     """Highlights more than 5 minutes apart land in different segments."""
     content = _make_clippings_file(
         [
@@ -171,7 +170,7 @@ def test_process_multiple_windows():
         f.flush()
         try:
             with tempfile.TemporaryDirectory() as journal:
-                os.environ["SOLSTONE_JOURNAL"] = journal
+                monkeypatch.setenv("SOLSTONE_JOURNAL", journal)
                 result = importer.process(Path(f.name), Path(journal))
                 assert result.entries_written == 2
                 assert result.segments is not None
@@ -179,10 +178,9 @@ def test_process_multiple_windows():
                 assert len(result.files_created) == 2
         finally:
             os.unlink(f.name)
-            os.environ.pop("SOLSTONE_JOURNAL", None)
 
 
-def test_process_note_markdown():
+def test_process_note_markdown(monkeypatch):
     """Notes render with Note: prefix instead of blockquote."""
     content = _make_clippings_file(
         [
@@ -197,13 +195,12 @@ def test_process_note_markdown():
         f.flush()
         try:
             with tempfile.TemporaryDirectory() as journal:
-                os.environ["SOLSTONE_JOURNAL"] = journal
+                monkeypatch.setenv("SOLSTONE_JOURNAL", journal)
                 result = importer.process(Path(f.name), Path(journal))
                 md = Path(result.files_created[0]).read_text()
                 assert "Note: My personal note" in md
         finally:
             os.unlink(f.name)
-            os.environ.pop("SOLSTONE_JOURNAL", None)
 
 
 def test_observations_author_of(tmp_path, monkeypatch):

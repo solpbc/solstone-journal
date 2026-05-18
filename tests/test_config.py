@@ -4,7 +4,6 @@
 """Tests for journal configuration utilities."""
 
 import json
-import os
 
 import pytest
 
@@ -164,10 +163,10 @@ def test_get_config_handles_invalid_json(tmp_path, monkeypatch):
     assert "describe" in config
 
 
-def test_get_config_with_fixtures():
+def test_get_config_with_fixtures(monkeypatch):
     """Test get_config with tests/fixtures/journal path."""
     # Set SOLSTONE_JOURNAL to fixtures
-    os.environ["SOLSTONE_JOURNAL"] = "tests/fixtures/journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", "tests/fixtures/journal")
 
     config = get_config()
 

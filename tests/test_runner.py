@@ -20,15 +20,12 @@ from solstone.think.runner import ManagedProcess, run_task
 
 
 @pytest.fixture
-def journal_path(tmp_path):
+def journal_path(tmp_path, monkeypatch):
     """Set up a temporary journal path."""
     journal = tmp_path / "journal"
     journal.mkdir()
-    os.environ["SOLSTONE_JOURNAL"] = str(journal)
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
     yield journal
-    # Cleanup
-    if "SOLSTONE_JOURNAL" in os.environ:
-        del os.environ["SOLSTONE_JOURNAL"]
 
 
 def _managed_for_process(process):

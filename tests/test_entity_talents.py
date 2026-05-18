@@ -3,17 +3,15 @@
 
 """Tests for entity detection and review agent configurations."""
 
-import os
-
 import pytest
 
 from solstone.think.talent import get_talent
 
 
 @pytest.fixture
-def fixture_journal():
+def fixture_journal(monkeypatch):
     """Set SOLSTONE_JOURNAL to tests/fixtures/journal for testing."""
-    os.environ["SOLSTONE_JOURNAL"] = "tests/fixtures/journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", "tests/fixtures/journal")
     yield
     # No cleanup needed - just testing reads
 

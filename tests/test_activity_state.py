@@ -4,7 +4,6 @@
 """Tests for the activity_state pre/post hook module."""
 
 import json
-import os
 import tempfile
 from pathlib import Path
 
@@ -45,65 +44,45 @@ class TestExtractFacetFromOutputPath:
 class TestFindPreviousSegment:
     """Tests for find_previous_segment."""
 
-    def test_finds_previous_segment(self):
+    def test_finds_previous_segment(self, monkeypatch):
         from solstone.talent.activity_state import find_previous_segment
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                # Create day directory with segments
-                day_dir = Path(tmpdir) / "chronicle" / "20260130"
-                day_dir.mkdir(parents=True)
-                (day_dir / "default" / "100000_300").mkdir(parents=True)
-                (day_dir / "default" / "110000_300").mkdir(parents=True)
-                (day_dir / "default" / "120000_300").mkdir(parents=True)
+            # Create day directory with segments
+            day_dir = Path(tmpdir) / "chronicle" / "20260130"
+            day_dir.mkdir(parents=True)
+            (day_dir / "default" / "100000_300").mkdir(parents=True)
+            (day_dir / "default" / "110000_300").mkdir(parents=True)
+            (day_dir / "default" / "120000_300").mkdir(parents=True)
 
-                # Test finding previous
-                assert find_previous_segment("20260130", "120000_300") == "110000_300"
-                assert find_previous_segment("20260130", "110000_300") == "100000_300"
-                assert find_previous_segment("20260130", "100000_300") is None
+            # Test finding previous
+            assert find_previous_segment("20260130", "120000_300") == "110000_300"
+            assert find_previous_segment("20260130", "110000_300") == "100000_300"
+            assert find_previous_segment("20260130", "100000_300") is None
 
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
-
-    def test_returns_none_for_nonexistent_day(self):
+    def test_returns_none_for_nonexistent_day(self, monkeypatch):
         from solstone.talent.activity_state import find_previous_segment
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                assert find_previous_segment("20260130", "100000_300") is None
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
+            assert find_previous_segment("20260130", "100000_300") is None
 
-    def test_handles_segments_with_suffix(self):
+    def test_handles_segments_with_suffix(self, monkeypatch):
         from solstone.talent.activity_state import find_previous_segment
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                day_dir = Path(tmpdir) / "chronicle" / "20260130"
-                day_dir.mkdir(parents=True)
-                (day_dir / "default" / "100000_300_audio").mkdir(parents=True)
-                (day_dir / "default" / "110000_300").mkdir(parents=True)
+            day_dir = Path(tmpdir) / "chronicle" / "20260130"
+            day_dir.mkdir(parents=True)
+            (day_dir / "default" / "100000_300_audio").mkdir(parents=True)
+            (day_dir / "default" / "110000_300").mkdir(parents=True)
 
-                # Should still find previous
-                assert (
-                    find_previous_segment("20260130", "110000_300")
-                    == "100000_300_audio"
-                )
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
+            # Should still find previous
+            assert find_previous_segment("20260130", "110000_300") == "100000_300_audio"
 
 
 class TestCheckTimeout:
@@ -133,154 +112,124 @@ class TestCheckTimeout:
 class TestLoadPreviousState:
     """Tests for load_previous_state."""
 
-    def test_loads_valid_state(self):
+    def test_loads_valid_state(self, monkeypatch):
         from solstone.talent.activity_state import load_previous_state
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                # Create state file (new flat format)
-                segment_dir = (
-                    Path(tmpdir) / "chronicle" / "20260130" / "default" / "100000_300"
-                )
-                segment_dir.mkdir(parents=True)
-                (segment_dir / "talents" / "work").mkdir(parents=True)
+            # Create state file (new flat format)
+            segment_dir = (
+                Path(tmpdir) / "chronicle" / "20260130" / "default" / "100000_300"
+            )
+            segment_dir.mkdir(parents=True)
+            (segment_dir / "talents" / "work").mkdir(parents=True)
 
-                state = [
-                    {
-                        "activity": "meeting",
-                        "state": "active",
-                        "since": "100000_300",
-                        "description": "Standup",
-                        "level": "high",
-                    }
-                ]
-                (segment_dir / "talents/work/activity_state.json").write_text(
-                    json.dumps(state)
-                )
+            state = [
+                {
+                    "activity": "meeting",
+                    "state": "active",
+                    "since": "100000_300",
+                    "description": "Standup",
+                    "level": "high",
+                }
+            ]
+            (segment_dir / "talents/work/activity_state.json").write_text(
+                json.dumps(state)
+            )
 
-                loaded, segment = load_previous_state(
-                    "20260130", "100000_300", "work", stream="default"
-                )
-                assert segment == "100000_300"
-                assert isinstance(loaded, list)
-                assert loaded[0]["activity"] == "meeting"
+            loaded, segment = load_previous_state(
+                "20260130", "100000_300", "work", stream="default"
+            )
+            assert segment == "100000_300"
+            assert isinstance(loaded, list)
+            assert loaded[0]["activity"] == "meeting"
 
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
-
-    def test_returns_none_for_missing_file(self):
+    def test_returns_none_for_missing_file(self, monkeypatch):
         from solstone.talent.activity_state import load_previous_state
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                segment_dir = (
-                    Path(tmpdir) / "chronicle" / "20260130" / "default" / "100000_300"
-                )
-                segment_dir.mkdir(parents=True)
-                (segment_dir / "talents" / "work").mkdir(parents=True)
+            segment_dir = (
+                Path(tmpdir) / "chronicle" / "20260130" / "default" / "100000_300"
+            )
+            segment_dir.mkdir(parents=True)
+            (segment_dir / "talents" / "work").mkdir(parents=True)
 
-                loaded, segment = load_previous_state(
-                    "20260130", "100000_300", "work", stream="default"
-                )
-                assert loaded is None
-                assert segment is None
+            loaded, segment = load_previous_state(
+                "20260130", "100000_300", "work", stream="default"
+            )
+            assert loaded is None
+            assert segment is None
 
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
-
-    def test_rejects_non_array(self):
+    def test_rejects_non_array(self, monkeypatch):
         from solstone.talent.activity_state import load_previous_state
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                segment_dir = (
-                    Path(tmpdir) / "chronicle" / "20260130" / "default" / "100000_300"
-                )
-                segment_dir.mkdir(parents=True)
-                (segment_dir / "talents" / "work").mkdir(parents=True)
+            segment_dir = (
+                Path(tmpdir) / "chronicle" / "20260130" / "default" / "100000_300"
+            )
+            segment_dir.mkdir(parents=True)
+            (segment_dir / "talents" / "work").mkdir(parents=True)
 
-                # Write a dict (old format) — should be rejected
-                (segment_dir / "talents/work/activity_state.json").write_text(
-                    '{"active": [], "ended": []}'
-                )
+            # Write a dict (old format) — should be rejected
+            (segment_dir / "talents/work/activity_state.json").write_text(
+                '{"active": [], "ended": []}'
+            )
 
-                loaded, segment = load_previous_state(
-                    "20260130", "100000_300", "work", stream="default"
-                )
-                assert loaded is None
-                assert segment == "100000_300"
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
+            loaded, segment = load_previous_state(
+                "20260130", "100000_300", "work", stream="default"
+            )
+            assert loaded is None
+            assert segment == "100000_300"
 
 
 class TestFormatActivitiesContext:
     """Tests for format_activities_context."""
 
-    def test_formats_activities_list(self):
+    def test_formats_activities_list(self, monkeypatch):
         from solstone.talent.activity_state import format_activities_context
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                # Create facet with activities
-                facet_dir = Path(tmpdir) / "facets" / "work" / "activities"
-                facet_dir.mkdir(parents=True)
+            # Create facet with activities
+            facet_dir = Path(tmpdir) / "facets" / "work" / "activities"
+            facet_dir.mkdir(parents=True)
 
-                activities = [
-                    {"id": "meeting"},
-                    {"id": "coding", "priority": "high"},
-                ]
-                (facet_dir / "activities.jsonl").write_text(
-                    "\n".join(json.dumps(a) for a in activities)
-                )
+            activities = [
+                {"id": "meeting"},
+                {"id": "coding", "priority": "high"},
+            ]
+            (facet_dir / "activities.jsonl").write_text(
+                "\n".join(json.dumps(a) for a in activities)
+            )
 
-                result = format_activities_context("work")
-                assert "## Facet Activities" in result
-                assert "meeting" in result
-                assert "coding" in result
-                assert "[high priority]" in result
+            result = format_activities_context("work")
+            assert "## Facet Activities" in result
+            assert "meeting" in result
+            assert "coding" in result
+            assert "[high priority]" in result
 
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
-
-    def test_handles_empty_activities(self):
+    def test_handles_empty_activities(self, monkeypatch):
         """Facet with no activities.jsonl still gets always-on defaults."""
         from solstone.talent.activity_state import format_activities_context
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                # Create facet without activities
-                facet_dir = Path(tmpdir) / "facets" / "work"
-                facet_dir.mkdir(parents=True)
+            # Create facet without activities
+            facet_dir = Path(tmpdir) / "facets" / "work"
+            facet_dir.mkdir(parents=True)
 
-                result = format_activities_context("work")
-                # Always-on activities (messaging, email) are auto-included
-                assert "Facet Activities" in result
-                assert "messaging" in result
-                assert "email" in result
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
+            result = format_activities_context("work")
+            # Always-on activities (messaging, email) are auto-included
+            assert "Facet Activities" in result
+            assert "messaging" in result
+            assert "email" in result
 
 
 class TestFormatPreviousState:
@@ -352,72 +301,63 @@ class TestFormatPreviousState:
 class TestPreProcess:
     """Tests for the pre_process hook function."""
 
-    def test_builds_enriched_context(self):
+    def test_builds_enriched_context(self, monkeypatch):
         from solstone.talent.activity_state import pre_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                # Create day and segments
-                day_dir = Path(tmpdir) / "chronicle" / "20260130"
-                day_dir.mkdir(parents=True)
-                (day_dir / "default" / "100000_300").mkdir(parents=True)
-                (day_dir / "default" / "100000_300" / "talents" / "work").mkdir(
-                    parents=True
-                )
-                segment_dir = day_dir / "default" / "110000_300"
-                segment_dir.mkdir(parents=True)
+            # Create day and segments
+            day_dir = Path(tmpdir) / "chronicle" / "20260130"
+            day_dir.mkdir(parents=True)
+            (day_dir / "default" / "100000_300").mkdir(parents=True)
+            (day_dir / "default" / "100000_300" / "talents" / "work").mkdir(
+                parents=True
+            )
+            segment_dir = day_dir / "default" / "110000_300"
+            segment_dir.mkdir(parents=True)
 
-                # Create facet with activities
-                facet_dir = Path(tmpdir) / "facets" / "work" / "activities"
-                facet_dir.mkdir(parents=True)
-                (facet_dir / "activities.jsonl").write_text(
-                    '{"id": "meeting"}\n{"id": "coding"}'
-                )
+            # Create facet with activities
+            facet_dir = Path(tmpdir) / "facets" / "work" / "activities"
+            facet_dir.mkdir(parents=True)
+            (facet_dir / "activities.jsonl").write_text(
+                '{"id": "meeting"}\n{"id": "coding"}'
+            )
 
-                # Create previous state (new flat format)
-                prev_state = [
-                    {
-                        "activity": "meeting",
-                        "state": "active",
-                        "since": "100000_300",
-                        "description": "Standup",
-                        "level": "high",
-                    }
-                ]
-                (
-                    day_dir
-                    / "default"
-                    / "100000_300"
-                    / "talents/work/activity_state.json"
-                ).write_text(json.dumps(prev_state))
-
-                context = {
-                    "day": "20260130",
-                    "segment": "110000_300",
-                    "stream": "default",
-                    "output_path": "/journal/20260130/110000_300/talents/work/activity_state.json",
-                    "transcript": "User is typing code...",
-                    "meta": {},
+            # Create previous state (new flat format)
+            prev_state = [
+                {
+                    "activity": "meeting",
+                    "state": "active",
+                    "since": "100000_300",
+                    "description": "Standup",
+                    "level": "high",
                 }
+            ]
+            (
+                day_dir / "default" / "100000_300" / "talents/work/activity_state.json"
+            ).write_text(json.dumps(prev_state))
 
-                result = pre_process(context)
-                assert result is not None
-                assert "transcript" in result
+            context = {
+                "day": "20260130",
+                "segment": "110000_300",
+                "stream": "default",
+                "output_path": "/journal/20260130/110000_300/talents/work/activity_state.json",
+                "transcript": "User is typing code...",
+                "meta": {},
+            }
 
-                transcript = result["transcript"]
-                assert "## Facet Activities" in transcript
-                assert "meeting" in transcript
-                assert "## Previous State" in transcript
-                assert "Standup" in transcript
-                assert "## Current Segment Content" in transcript
-                assert "User is typing code" in transcript
+            result = pre_process(context)
+            assert result is not None
+            assert "transcript" in result
 
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
+            transcript = result["transcript"]
+            assert "## Facet Activities" in transcript
+            assert "meeting" in transcript
+            assert "## Previous State" in transcript
+            assert "Standup" in transcript
+            assert "## Current Segment Content" in transcript
+            assert "User is typing code" in transcript
 
     def test_returns_none_without_day(self):
         from solstone.talent.activity_state import pre_process
@@ -473,120 +413,108 @@ class TestPostProcess:
         assert items[0]["since"] == "143000_300"
         assert items[0]["level"] == "high"
 
-    def test_continuing_activity_copies_since(self):
+    def test_continuing_activity_copies_since(self, monkeypatch):
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                day_dir = Path(tmpdir) / "chronicle" / "20260130"
-                day_dir.mkdir(parents=True)
+            day_dir = Path(tmpdir) / "chronicle" / "20260130"
+            day_dir.mkdir(parents=True)
 
-                # Previous segment with active meeting
-                prev_dir = day_dir / "default" / "100000_300"
-                prev_dir.mkdir(parents=True)
-                (prev_dir / "talents" / "work").mkdir(parents=True)
-                prev_state = [
+            # Previous segment with active meeting
+            prev_dir = day_dir / "default" / "100000_300"
+            prev_dir.mkdir(parents=True)
+            (prev_dir / "talents" / "work").mkdir(parents=True)
+            prev_state = [
+                {
+                    "activity": "meeting",
+                    "state": "active",
+                    "since": "093000_300",
+                    "description": "Sprint planning",
+                    "level": "high",
+                }
+            ]
+            (prev_dir / "talents/work/activity_state.json").write_text(
+                json.dumps(prev_state)
+            )
+
+            # Current segment
+            (day_dir / "default" / "100500_300").mkdir(parents=True)
+
+            llm_output = json.dumps(
+                [
                     {
                         "activity": "meeting",
-                        "state": "active",
-                        "since": "093000_300",
-                        "description": "Sprint planning",
+                        "state": "continuing",
+                        "description": "Sprint planning - discussing blockers",
                         "level": "high",
                     }
                 ]
-                (prev_dir / "talents/work/activity_state.json").write_text(
-                    json.dumps(prev_state)
-                )
+            )
 
-                # Current segment
-                (day_dir / "default" / "100500_300").mkdir(parents=True)
+            context = {
+                "day": "20260130",
+                "segment": "100500_300",
+                "stream": "default",
+                "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
+            }
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "meeting",
-                            "state": "continuing",
-                            "description": "Sprint planning - discussing blockers",
-                            "level": "high",
-                        }
-                    ]
-                )
+            result = post_process(llm_output, context)
+            items = json.loads(result)
+            assert items[0]["state"] == "active"
+            assert items[0]["since"] == "093000_300"  # Copied from previous
 
-                context = {
-                    "day": "20260130",
-                    "segment": "100500_300",
-                    "stream": "default",
-                    "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
-                }
-
-                result = post_process(llm_output, context)
-                items = json.loads(result)
-                assert items[0]["state"] == "active"
-                assert items[0]["since"] == "093000_300"  # Copied from previous
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
-
-    def test_ended_activity_copies_since(self):
+    def test_ended_activity_copies_since(self, monkeypatch):
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                day_dir = Path(tmpdir) / "chronicle" / "20260130"
-                day_dir.mkdir(parents=True)
+            day_dir = Path(tmpdir) / "chronicle" / "20260130"
+            day_dir.mkdir(parents=True)
 
-                # Previous segment with active meeting
-                prev_dir = day_dir / "default" / "100000_300"
-                prev_dir.mkdir(parents=True)
-                (prev_dir / "talents" / "work").mkdir(parents=True)
-                prev_state = [
+            # Previous segment with active meeting
+            prev_dir = day_dir / "default" / "100000_300"
+            prev_dir.mkdir(parents=True)
+            (prev_dir / "talents" / "work").mkdir(parents=True)
+            prev_state = [
+                {
+                    "activity": "meeting",
+                    "state": "active",
+                    "since": "093000_300",
+                    "description": "Sprint planning",
+                    "level": "high",
+                }
+            ]
+            (prev_dir / "talents/work/activity_state.json").write_text(
+                json.dumps(prev_state)
+            )
+
+            (day_dir / "default" / "100500_300").mkdir(parents=True)
+
+            llm_output = json.dumps(
+                [
                     {
                         "activity": "meeting",
-                        "state": "active",
-                        "since": "093000_300",
-                        "description": "Sprint planning",
-                        "level": "high",
+                        "state": "ended",
+                        "description": "Sprint planning completed",
                     }
                 ]
-                (prev_dir / "talents/work/activity_state.json").write_text(
-                    json.dumps(prev_state)
-                )
+            )
 
-                (day_dir / "default" / "100500_300").mkdir(parents=True)
+            context = {
+                "day": "20260130",
+                "segment": "100500_300",
+                "stream": "default",
+                "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
+            }
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "meeting",
-                            "state": "ended",
-                            "description": "Sprint planning completed",
-                        }
-                    ]
-                )
-
-                context = {
-                    "day": "20260130",
-                    "segment": "100500_300",
-                    "stream": "default",
-                    "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
-                }
-
-                result = post_process(llm_output, context)
-                items = json.loads(result)
-                assert items[0]["state"] == "ended"
-                assert items[0]["since"] == "093000_300"
-                assert "level" not in items[0]
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
+            result = post_process(llm_output, context)
+            items = json.loads(result)
+            assert items[0]["state"] == "ended"
+            assert items[0]["since"] == "093000_300"
+            assert "level" not in items[0]
 
     def test_no_previous_state_continuing_becomes_new(self):
         from solstone.talent.activity_state import post_process
@@ -654,118 +582,108 @@ class TestPostProcess:
         items = json.loads(result)
         assert len(items) == 0
 
-    def test_unmatched_ended_matching_prev_ended_dropped(self):
+    def test_unmatched_ended_matching_prev_ended_dropped(self, monkeypatch):
         """Ended activity that matches a previously ended activity is dropped."""
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                day_dir = Path(tmpdir) / "chronicle" / "20260130"
-                day_dir.mkdir(parents=True)
+            day_dir = Path(tmpdir) / "chronicle" / "20260130"
+            day_dir.mkdir(parents=True)
 
-                # Previous segment — email already ended
-                prev_dir = day_dir / "default" / "100000_300"
-                prev_dir.mkdir(parents=True)
-                (prev_dir / "talents" / "work").mkdir(parents=True)
-                prev_state = [
+            # Previous segment — email already ended
+            prev_dir = day_dir / "default" / "100000_300"
+            prev_dir.mkdir(parents=True)
+            (prev_dir / "talents" / "work").mkdir(parents=True)
+            prev_state = [
+                {
+                    "activity": "email",
+                    "state": "ended",
+                    "since": "090000_300",
+                    "description": "Replied to boss",
+                }
+            ]
+            (prev_dir / "talents/work/activity_state.json").write_text(
+                json.dumps(prev_state)
+            )
+
+            (day_dir / "default" / "100500_300").mkdir(parents=True)
+
+            llm_output = json.dumps(
+                [
                     {
                         "activity": "email",
                         "state": "ended",
-                        "since": "090000_300",
                         "description": "Replied to boss",
                     }
                 ]
-                (prev_dir / "talents/work/activity_state.json").write_text(
-                    json.dumps(prev_state)
-                )
+            )
 
-                (day_dir / "default" / "100500_300").mkdir(parents=True)
+            context = {
+                "day": "20260130",
+                "segment": "100500_300",
+                "stream": "default",
+                "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
+            }
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "email",
-                            "state": "ended",
-                            "description": "Replied to boss",
-                        }
-                    ]
-                )
+            result = post_process(llm_output, context)
+            items = json.loads(result)
+            assert len(items) == 0  # Dropped as redundant
 
-                context = {
-                    "day": "20260130",
-                    "segment": "100500_300",
-                    "stream": "default",
-                    "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
-                }
-
-                result = post_process(llm_output, context)
-                items = json.loads(result)
-                assert len(items) == 0  # Dropped as redundant
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
-
-    def test_unmatched_ended_novel_desc_with_prev_ended_becomes_active(self):
+    def test_unmatched_ended_novel_desc_with_prev_ended_becomes_active(
+        self, monkeypatch
+    ):
         """Ended activity with novel description (different from prev ended)
         is promoted to active."""
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                day_dir = Path(tmpdir) / "chronicle" / "20260130"
-                day_dir.mkdir(parents=True)
+            day_dir = Path(tmpdir) / "chronicle" / "20260130"
+            day_dir.mkdir(parents=True)
 
-                # Previous segment — email ended with different description
-                prev_dir = day_dir / "default" / "100000_300"
-                prev_dir.mkdir(parents=True)
-                (prev_dir / "talents" / "work").mkdir(parents=True)
-                prev_state = [
+            # Previous segment — email ended with different description
+            prev_dir = day_dir / "default" / "100000_300"
+            prev_dir.mkdir(parents=True)
+            (prev_dir / "talents" / "work").mkdir(parents=True)
+            prev_state = [
+                {
+                    "activity": "email",
+                    "state": "ended",
+                    "since": "090000_300",
+                    "description": "Replied to boss",
+                }
+            ]
+            (prev_dir / "talents/work/activity_state.json").write_text(
+                json.dumps(prev_state)
+            )
+
+            (day_dir / "default" / "100500_300").mkdir(parents=True)
+
+            llm_output = json.dumps(
+                [
                     {
                         "activity": "email",
                         "state": "ended",
-                        "since": "090000_300",
-                        "description": "Replied to boss",
+                        "description": "Composing proposal to new client",
                     }
                 ]
-                (prev_dir / "talents/work/activity_state.json").write_text(
-                    json.dumps(prev_state)
-                )
+            )
 
-                (day_dir / "default" / "100500_300").mkdir(parents=True)
+            context = {
+                "day": "20260130",
+                "segment": "100500_300",
+                "stream": "default",
+                "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
+            }
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "email",
-                            "state": "ended",
-                            "description": "Composing proposal to new client",
-                        }
-                    ]
-                )
-
-                context = {
-                    "day": "20260130",
-                    "segment": "100500_300",
-                    "stream": "default",
-                    "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
-                }
-
-                result = post_process(llm_output, context)
-                items = json.loads(result)
-                assert len(items) == 1
-                assert items[0]["state"] == "active"
-                assert items[0]["since"] == "100500_300"
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
+            result = post_process(llm_output, context)
+            items = json.loads(result)
+            assert len(items) == 1
+            assert items[0]["state"] == "active"
+            assert items[0]["since"] == "100500_300"
 
     def test_empty_array_passthrough(self):
         from solstone.talent.activity_state import post_process
@@ -792,74 +710,68 @@ class TestPostProcess:
         result = post_process("[]", {})
         assert result is None
 
-    def test_same_type_transition_end_and_new(self):
+    def test_same_type_transition_end_and_new(self, monkeypatch):
         """One meeting ends, another starts — both get correct since."""
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                day_dir = Path(tmpdir) / "chronicle" / "20260130"
-                day_dir.mkdir(parents=True)
+            day_dir = Path(tmpdir) / "chronicle" / "20260130"
+            day_dir.mkdir(parents=True)
 
-                prev_dir = day_dir / "default" / "100000_300"
-                prev_dir.mkdir(parents=True)
-                (prev_dir / "talents" / "work").mkdir(parents=True)
-                prev_state = [
+            prev_dir = day_dir / "default" / "100000_300"
+            prev_dir.mkdir(parents=True)
+            (prev_dir / "talents" / "work").mkdir(parents=True)
+            prev_state = [
+                {
+                    "activity": "meeting",
+                    "state": "active",
+                    "since": "093000_300",
+                    "description": "Sprint planning",
+                    "level": "high",
+                }
+            ]
+            (prev_dir / "talents/work/activity_state.json").write_text(
+                json.dumps(prev_state)
+            )
+
+            (day_dir / "default" / "100500_300").mkdir(parents=True)
+
+            llm_output = json.dumps(
+                [
                     {
                         "activity": "meeting",
-                        "state": "active",
-                        "since": "093000_300",
-                        "description": "Sprint planning",
+                        "state": "ended",
+                        "description": "Sprint planning completed",
+                    },
+                    {
+                        "activity": "meeting",
+                        "state": "new",
+                        "description": "1:1 with manager",
                         "level": "high",
-                    }
+                    },
                 ]
-                (prev_dir / "talents/work/activity_state.json").write_text(
-                    json.dumps(prev_state)
-                )
+            )
 
-                (day_dir / "default" / "100500_300").mkdir(parents=True)
+            context = {
+                "day": "20260130",
+                "segment": "100500_300",
+                "stream": "default",
+                "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
+            }
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "meeting",
-                            "state": "ended",
-                            "description": "Sprint planning completed",
-                        },
-                        {
-                            "activity": "meeting",
-                            "state": "new",
-                            "description": "1:1 with manager",
-                            "level": "high",
-                        },
-                    ]
-                )
+            result = post_process(llm_output, context)
+            items = json.loads(result)
 
-                context = {
-                    "day": "20260130",
-                    "segment": "100500_300",
-                    "stream": "default",
-                    "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
-                }
+            ended = [i for i in items if i["state"] == "ended"]
+            active = [i for i in items if i["state"] == "active"]
 
-                result = post_process(llm_output, context)
-                items = json.loads(result)
+            assert len(ended) == 1
+            assert ended[0]["since"] == "093000_300"  # From previous
 
-                ended = [i for i in items if i["state"] == "ended"]
-                active = [i for i in items if i["state"] == "active"]
-
-                assert len(ended) == 1
-                assert ended[0]["since"] == "093000_300"  # From previous
-
-                assert len(active) == 1
-                assert active[0]["since"] == "100500_300"  # Current segment
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
+            assert len(active) == 1
+            assert active[0]["since"] == "100500_300"  # Current segment
 
     def test_default_level_for_new(self):
         """New activity without level gets default 'medium'."""
@@ -913,126 +825,114 @@ class TestPostProcess:
         items = json.loads(result)
         assert "active_entities" not in items[0]
 
-    def test_active_entities_omitted_on_ended(self):
+    def test_active_entities_omitted_on_ended(self, monkeypatch):
         """active_entities is not included on ended activities."""
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                day_dir = Path(tmpdir) / "chronicle" / "20260130"
-                day_dir.mkdir(parents=True)
+            day_dir = Path(tmpdir) / "chronicle" / "20260130"
+            day_dir.mkdir(parents=True)
 
-                prev_dir = day_dir / "default" / "100000_300"
-                prev_dir.mkdir(parents=True)
-                (prev_dir / "talents" / "work").mkdir(parents=True)
-                prev_state = [
+            prev_dir = day_dir / "default" / "100000_300"
+            prev_dir.mkdir(parents=True)
+            (prev_dir / "talents" / "work").mkdir(parents=True)
+            prev_state = [
+                {
+                    "activity": "meeting",
+                    "state": "active",
+                    "since": "093000_300",
+                    "description": "Sprint planning",
+                    "level": "high",
+                }
+            ]
+            (prev_dir / "talents/work/activity_state.json").write_text(
+                json.dumps(prev_state)
+            )
+
+            (day_dir / "default" / "100500_300").mkdir(parents=True)
+
+            llm_output = json.dumps(
+                [
                     {
                         "activity": "meeting",
-                        "state": "active",
-                        "since": "093000_300",
-                        "description": "Sprint planning",
-                        "level": "high",
+                        "state": "ended",
+                        "description": "Sprint planning completed",
+                        "active_entities": ["Alice"],
                     }
                 ]
-                (prev_dir / "talents/work/activity_state.json").write_text(
-                    json.dumps(prev_state)
-                )
+            )
 
-                (day_dir / "default" / "100500_300").mkdir(parents=True)
+            context = {
+                "day": "20260130",
+                "segment": "100500_300",
+                "stream": "default",
+                "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
+            }
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "meeting",
-                            "state": "ended",
-                            "description": "Sprint planning completed",
-                            "active_entities": ["Alice"],
-                        }
-                    ]
-                )
+            result = post_process(llm_output, context)
+            items = json.loads(result)
+            assert items[0]["state"] == "ended"
+            assert "active_entities" not in items[0]
 
-                context = {
-                    "day": "20260130",
-                    "segment": "100500_300",
-                    "stream": "default",
-                    "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
-                }
-
-                result = post_process(llm_output, context)
-                items = json.loads(result)
-                assert items[0]["state"] == "ended"
-                assert "active_entities" not in items[0]
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
-
-    def test_fuzzy_match_disambiguates_same_type(self):
+    def test_fuzzy_match_disambiguates_same_type(self, monkeypatch):
         """Multiple same-type previous activities matched by description."""
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                day_dir = Path(tmpdir) / "chronicle" / "20260130"
-                day_dir.mkdir(parents=True)
+            day_dir = Path(tmpdir) / "chronicle" / "20260130"
+            day_dir.mkdir(parents=True)
 
-                prev_dir = day_dir / "default" / "100000_300"
-                prev_dir.mkdir(parents=True)
-                (prev_dir / "talents" / "work").mkdir(parents=True)
-                prev_state = [
+            prev_dir = day_dir / "default" / "100000_300"
+            prev_dir.mkdir(parents=True)
+            (prev_dir / "talents" / "work").mkdir(parents=True)
+            prev_state = [
+                {
+                    "activity": "meeting",
+                    "state": "active",
+                    "since": "090000_300",
+                    "description": "Sprint planning with engineering team",
+                    "level": "high",
+                },
+                {
+                    "activity": "meeting",
+                    "state": "active",
+                    "since": "093000_300",
+                    "description": "Customer support standup",
+                    "level": "medium",
+                },
+            ]
+            (prev_dir / "talents/work/activity_state.json").write_text(
+                json.dumps(prev_state)
+            )
+
+            (day_dir / "default" / "100500_300").mkdir(parents=True)
+
+            llm_output = json.dumps(
+                [
                     {
                         "activity": "meeting",
-                        "state": "active",
-                        "since": "090000_300",
-                        "description": "Sprint planning with engineering team",
-                        "level": "high",
-                    },
-                    {
-                        "activity": "meeting",
-                        "state": "active",
-                        "since": "093000_300",
-                        "description": "Customer support standup",
+                        "state": "continuing",
+                        "description": "Customer support standup - discussing tickets",
                         "level": "medium",
-                    },
+                    }
                 ]
-                (prev_dir / "talents/work/activity_state.json").write_text(
-                    json.dumps(prev_state)
-                )
+            )
 
-                (day_dir / "default" / "100500_300").mkdir(parents=True)
+            context = {
+                "day": "20260130",
+                "segment": "100500_300",
+                "stream": "default",
+                "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
+            }
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "meeting",
-                            "state": "continuing",
-                            "description": "Customer support standup - discussing tickets",
-                            "level": "medium",
-                        }
-                    ]
-                )
-
-                context = {
-                    "day": "20260130",
-                    "segment": "100500_300",
-                    "stream": "default",
-                    "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
-                }
-
-                result = post_process(llm_output, context)
-                items = json.loads(result)
-                # Should match the standup (093000_300), not sprint planning
-                assert items[0]["since"] == "093000_300"
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
+            result = post_process(llm_output, context)
+            items = json.loads(result)
+            # Should match the standup (093000_300), not sprint planning
+            assert items[0]["since"] == "093000_300"
 
 
 class TestActivityId:
@@ -1056,114 +956,102 @@ class TestActivityId:
         items = json.loads(result)
         assert items[0]["id"] == "coding_143000_300"
 
-    def test_continuing_activity_preserves_since_in_id(self):
+    def test_continuing_activity_preserves_since_in_id(self, monkeypatch):
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                day_dir = Path(tmpdir) / "chronicle" / "20260130"
-                day_dir.mkdir(parents=True)
+            day_dir = Path(tmpdir) / "chronicle" / "20260130"
+            day_dir.mkdir(parents=True)
 
-                prev_dir = day_dir / "default" / "100000_300"
-                prev_dir.mkdir(parents=True)
-                (prev_dir / "talents" / "work").mkdir(parents=True)
-                prev_state = [
+            prev_dir = day_dir / "default" / "100000_300"
+            prev_dir.mkdir(parents=True)
+            (prev_dir / "talents" / "work").mkdir(parents=True)
+            prev_state = [
+                {
+                    "activity": "meeting",
+                    "state": "active",
+                    "since": "093000_300",
+                    "description": "Sprint planning",
+                    "level": "high",
+                }
+            ]
+            (prev_dir / "talents/work/activity_state.json").write_text(
+                json.dumps(prev_state)
+            )
+
+            (day_dir / "default" / "100500_300").mkdir(parents=True)
+
+            llm_output = json.dumps(
+                [
                     {
                         "activity": "meeting",
-                        "state": "active",
-                        "since": "093000_300",
-                        "description": "Sprint planning",
+                        "state": "continuing",
+                        "description": "Sprint planning - blockers",
                         "level": "high",
                     }
                 ]
-                (prev_dir / "talents/work/activity_state.json").write_text(
-                    json.dumps(prev_state)
-                )
+            )
 
-                (day_dir / "default" / "100500_300").mkdir(parents=True)
+            context = {
+                "day": "20260130",
+                "segment": "100500_300",
+                "stream": "default",
+                "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
+            }
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "meeting",
-                            "state": "continuing",
-                            "description": "Sprint planning - blockers",
-                            "level": "high",
-                        }
-                    ]
-                )
+            result = post_process(llm_output, context)
+            items = json.loads(result)
+            assert items[0]["id"] == "meeting_093000_300"
 
-                context = {
-                    "day": "20260130",
-                    "segment": "100500_300",
-                    "stream": "default",
-                    "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
-                }
-
-                result = post_process(llm_output, context)
-                items = json.loads(result)
-                assert items[0]["id"] == "meeting_093000_300"
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
-
-    def test_ended_activity_gets_id(self):
+    def test_ended_activity_gets_id(self, monkeypatch):
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                day_dir = Path(tmpdir) / "chronicle" / "20260130"
-                day_dir.mkdir(parents=True)
+            day_dir = Path(tmpdir) / "chronicle" / "20260130"
+            day_dir.mkdir(parents=True)
 
-                prev_dir = day_dir / "default" / "100000_300"
-                prev_dir.mkdir(parents=True)
-                (prev_dir / "talents" / "work").mkdir(parents=True)
-                prev_state = [
+            prev_dir = day_dir / "default" / "100000_300"
+            prev_dir.mkdir(parents=True)
+            (prev_dir / "talents" / "work").mkdir(parents=True)
+            prev_state = [
+                {
+                    "activity": "meeting",
+                    "state": "active",
+                    "since": "093000_300",
+                    "description": "Sprint planning",
+                    "level": "high",
+                }
+            ]
+            (prev_dir / "talents/work/activity_state.json").write_text(
+                json.dumps(prev_state)
+            )
+
+            (day_dir / "default" / "100500_300").mkdir(parents=True)
+
+            llm_output = json.dumps(
+                [
                     {
                         "activity": "meeting",
-                        "state": "active",
-                        "since": "093000_300",
-                        "description": "Sprint planning",
-                        "level": "high",
+                        "state": "ended",
+                        "description": "Sprint planning completed",
                     }
                 ]
-                (prev_dir / "talents/work/activity_state.json").write_text(
-                    json.dumps(prev_state)
-                )
+            )
 
-                (day_dir / "default" / "100500_300").mkdir(parents=True)
+            context = {
+                "day": "20260130",
+                "segment": "100500_300",
+                "stream": "default",
+                "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
+            }
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "meeting",
-                            "state": "ended",
-                            "description": "Sprint planning completed",
-                        }
-                    ]
-                )
-
-                context = {
-                    "day": "20260130",
-                    "segment": "100500_300",
-                    "stream": "default",
-                    "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
-                }
-
-                result = post_process(llm_output, context)
-                items = json.loads(result)
-                assert items[0]["id"] == "meeting_093000_300"
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
+            result = post_process(llm_output, context)
+            items = json.loads(result)
+            assert items[0]["id"] == "meeting_093000_300"
 
     def test_promoted_ended_gets_new_id(self):
         """Ended activity promoted to active gets id with current segment."""
@@ -1229,123 +1117,111 @@ class TestActivityLiveEvents:
                 active_entities=["VS Code"],
             )
 
-    def test_emits_live_for_continuing_activity(self):
+    def test_emits_live_for_continuing_activity(self, monkeypatch):
         from unittest.mock import patch
 
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                day_dir = Path(tmpdir) / "chronicle" / "20260130"
-                day_dir.mkdir(parents=True)
+            day_dir = Path(tmpdir) / "chronicle" / "20260130"
+            day_dir.mkdir(parents=True)
 
-                prev_dir = day_dir / "default" / "100000_300"
-                prev_dir.mkdir(parents=True)
-                (prev_dir / "talents" / "work").mkdir(parents=True)
-                prev_state = [
+            prev_dir = day_dir / "default" / "100000_300"
+            prev_dir.mkdir(parents=True)
+            (prev_dir / "talents" / "work").mkdir(parents=True)
+            prev_state = [
+                {
+                    "activity": "coding",
+                    "state": "active",
+                    "since": "093000_300",
+                    "description": "Writing code",
+                    "level": "high",
+                }
+            ]
+            (prev_dir / "talents/work/activity_state.json").write_text(
+                json.dumps(prev_state)
+            )
+
+            (day_dir / "default" / "100500_300").mkdir(parents=True)
+
+            llm_output = json.dumps(
+                [
                     {
                         "activity": "coding",
-                        "state": "active",
-                        "since": "093000_300",
-                        "description": "Writing code",
-                        "level": "high",
+                        "state": "continuing",
+                        "description": "Still writing code",
+                        "level": "medium",
                     }
                 ]
-                (prev_dir / "talents/work/activity_state.json").write_text(
-                    json.dumps(prev_state)
-                )
+            )
 
-                (day_dir / "default" / "100500_300").mkdir(parents=True)
+            context = {
+                "day": "20260130",
+                "segment": "100500_300",
+                "stream": "default",
+                "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
+            }
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "coding",
-                            "state": "continuing",
-                            "description": "Still writing code",
-                            "level": "medium",
-                        }
-                    ]
-                )
+            with patch("solstone.talent.activity_state.callosum_send") as mock_send:
+                mock_send.return_value = True
+                post_process(llm_output, context)
 
-                context = {
-                    "day": "20260130",
-                    "segment": "100500_300",
-                    "stream": "default",
-                    "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
-                }
+                mock_send.assert_called_once()
+                call_kwargs = mock_send.call_args[1]
+                assert call_kwargs["id"] == "coding_093000_300"
+                assert call_kwargs["since"] == "093000_300"
 
-                with patch("solstone.talent.activity_state.callosum_send") as mock_send:
-                    mock_send.return_value = True
-                    post_process(llm_output, context)
-
-                    mock_send.assert_called_once()
-                    call_kwargs = mock_send.call_args[1]
-                    assert call_kwargs["id"] == "coding_093000_300"
-                    assert call_kwargs["since"] == "093000_300"
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
-
-    def test_no_live_event_for_ended_activity(self):
+    def test_no_live_event_for_ended_activity(self, monkeypatch):
         from unittest.mock import patch
 
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                day_dir = Path(tmpdir) / "chronicle" / "20260130"
-                day_dir.mkdir(parents=True)
+            day_dir = Path(tmpdir) / "chronicle" / "20260130"
+            day_dir.mkdir(parents=True)
 
-                prev_dir = day_dir / "default" / "100000_300"
-                prev_dir.mkdir(parents=True)
-                (prev_dir / "talents" / "work").mkdir(parents=True)
-                prev_state = [
+            prev_dir = day_dir / "default" / "100000_300"
+            prev_dir.mkdir(parents=True)
+            (prev_dir / "talents" / "work").mkdir(parents=True)
+            prev_state = [
+                {
+                    "activity": "meeting",
+                    "state": "active",
+                    "since": "093000_300",
+                    "description": "Sprint planning",
+                    "level": "high",
+                }
+            ]
+            (prev_dir / "talents/work/activity_state.json").write_text(
+                json.dumps(prev_state)
+            )
+
+            (day_dir / "default" / "100500_300").mkdir(parents=True)
+
+            llm_output = json.dumps(
+                [
                     {
                         "activity": "meeting",
-                        "state": "active",
-                        "since": "093000_300",
-                        "description": "Sprint planning",
-                        "level": "high",
+                        "state": "ended",
+                        "description": "Sprint planning completed",
                     }
                 ]
-                (prev_dir / "talents/work/activity_state.json").write_text(
-                    json.dumps(prev_state)
-                )
+            )
 
-                (day_dir / "default" / "100500_300").mkdir(parents=True)
+            context = {
+                "day": "20260130",
+                "segment": "100500_300",
+                "stream": "default",
+                "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
+            }
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "meeting",
-                            "state": "ended",
-                            "description": "Sprint planning completed",
-                        }
-                    ]
-                )
-
-                context = {
-                    "day": "20260130",
-                    "segment": "100500_300",
-                    "stream": "default",
-                    "output_path": f"{tmpdir}/20260130/100500_300/talents/work/activity_state.json",
-                }
-
-                with patch("solstone.talent.activity_state.callosum_send") as mock_send:
-                    post_process(llm_output, context)
-                    mock_send.assert_not_called()
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
+            with patch("solstone.talent.activity_state.callosum_send") as mock_send:
+                post_process(llm_output, context)
+                mock_send.assert_not_called()
 
     def test_no_live_events_without_day_or_facet(self):
         from unittest.mock import patch
@@ -1403,58 +1279,52 @@ class TestActivityLiveEvents:
 class TestActivityIdValidation:
     """Tests for post-hook activity ID validation against configured vocabulary."""
 
-    def test_drops_unrecognized_activity_ids(self):
+    def test_drops_unrecognized_activity_ids(self, monkeypatch):
         """Post-hook drops LLM output entries with activity IDs not in config."""
         from unittest.mock import patch
 
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                # Create facet with only coding and meeting configured
-                facet_dir = Path(tmpdir) / "facets" / "work" / "activities"
-                facet_dir.mkdir(parents=True)
-                (facet_dir / "activities.jsonl").write_text(
-                    '{"id": "coding"}\n{"id": "meeting"}'
-                )
+            # Create facet with only coding and meeting configured
+            facet_dir = Path(tmpdir) / "facets" / "work" / "activities"
+            facet_dir.mkdir(parents=True)
+            (facet_dir / "activities.jsonl").write_text(
+                '{"id": "coding"}\n{"id": "meeting"}'
+            )
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "coding",
-                            "state": "new",
-                            "description": "Writing code",
-                            "level": "high",
-                        },
-                        {
-                            "activity": "Technical Work",
-                            "state": "new",
-                            "description": "Hallucinated from facet name",
-                            "level": "medium",
-                        },
-                    ]
-                )
+            llm_output = json.dumps(
+                [
+                    {
+                        "activity": "coding",
+                        "state": "new",
+                        "description": "Writing code",
+                        "level": "high",
+                    },
+                    {
+                        "activity": "Technical Work",
+                        "state": "new",
+                        "description": "Hallucinated from facet name",
+                        "level": "medium",
+                    },
+                ]
+            )
 
-                context = {
-                    "segment": "143000_300",
-                    "output_path": f"{tmpdir}/20260130/143000_300/talents/work/activity_state.json",
-                }
+            context = {
+                "segment": "143000_300",
+                "output_path": f"{tmpdir}/20260130/143000_300/talents/work/activity_state.json",
+            }
 
-                with patch("solstone.talent.activity_state.callosum_send"):
-                    result = post_process(llm_output, context)
+            with patch("solstone.talent.activity_state.callosum_send"):
+                result = post_process(llm_output, context)
 
-                items = json.loads(result)
-                assert len(items) == 1
-                assert items[0]["activity"] == "coding"
+            items = json.loads(result)
+            assert len(items) == 1
+            assert items[0]["activity"] == "coding"
 
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
-
-    def test_logs_warning_on_dropped_activities(self, caplog):
+    def test_logs_warning_on_dropped_activities(self, caplog, monkeypatch):
         """Post-hook logs a warning when dropping unrecognized activity IDs."""
         import logging
         from unittest.mock import patch
@@ -1462,145 +1332,127 @@ class TestActivityIdValidation:
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                facet_dir = Path(tmpdir) / "facets" / "work" / "activities"
-                facet_dir.mkdir(parents=True)
-                (facet_dir / "activities.jsonl").write_text('{"id": "coding"}')
+            facet_dir = Path(tmpdir) / "facets" / "work" / "activities"
+            facet_dir.mkdir(parents=True)
+            (facet_dir / "activities.jsonl").write_text('{"id": "coding"}')
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "meetings",
-                            "state": "new",
-                            "description": "Hallucinated",
-                            "level": "medium",
-                        },
-                    ]
-                )
+            llm_output = json.dumps(
+                [
+                    {
+                        "activity": "meetings",
+                        "state": "new",
+                        "description": "Hallucinated",
+                        "level": "medium",
+                    },
+                ]
+            )
 
-                context = {
-                    "segment": "143000_300",
-                    "output_path": f"{tmpdir}/20260130/143000_300/talents/work/activity_state.json",
-                }
+            context = {
+                "segment": "143000_300",
+                "output_path": f"{tmpdir}/20260130/143000_300/talents/work/activity_state.json",
+            }
 
-                with caplog.at_level(
-                    logging.WARNING, logger="solstone.talent.activity_state"
-                ):
-                    with patch("solstone.talent.activity_state.callosum_send"):
-                        post_process(llm_output, context)
+            with caplog.at_level(
+                logging.WARNING, logger="solstone.talent.activity_state"
+            ):
+                with patch("solstone.talent.activity_state.callosum_send"):
+                    post_process(llm_output, context)
 
-                assert "Dropped 1 activity entries" in caplog.text
-                assert "work" in caplog.text
+            assert "Dropped 1 activity entries" in caplog.text
+            assert "work" in caplog.text
 
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
-
-    def test_valid_activity_ids_pass_through(self):
+    def test_valid_activity_ids_pass_through(self, monkeypatch):
         """Post-hook preserves entries with valid activity IDs."""
         from unittest.mock import patch
 
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                facet_dir = Path(tmpdir) / "facets" / "work" / "activities"
-                facet_dir.mkdir(parents=True)
-                (facet_dir / "activities.jsonl").write_text(
-                    '{"id": "coding"}\n{"id": "meeting"}'
-                )
+            facet_dir = Path(tmpdir) / "facets" / "work" / "activities"
+            facet_dir.mkdir(parents=True)
+            (facet_dir / "activities.jsonl").write_text(
+                '{"id": "coding"}\n{"id": "meeting"}'
+            )
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "coding",
-                            "state": "new",
-                            "description": "Writing code",
-                            "level": "high",
-                        },
-                        {
-                            "activity": "meeting",
-                            "state": "new",
-                            "description": "Standup",
-                            "level": "medium",
-                        },
-                        {
-                            "activity": "email",
-                            "state": "new",
-                            "description": "Checking inbox",
-                            "level": "low",
-                        },
-                    ]
-                )
+            llm_output = json.dumps(
+                [
+                    {
+                        "activity": "coding",
+                        "state": "new",
+                        "description": "Writing code",
+                        "level": "high",
+                    },
+                    {
+                        "activity": "meeting",
+                        "state": "new",
+                        "description": "Standup",
+                        "level": "medium",
+                    },
+                    {
+                        "activity": "email",
+                        "state": "new",
+                        "description": "Checking inbox",
+                        "level": "low",
+                    },
+                ]
+            )
 
-                context = {
-                    "segment": "143000_300",
-                    "output_path": f"{tmpdir}/20260130/143000_300/talents/work/activity_state.json",
-                }
+            context = {
+                "segment": "143000_300",
+                "output_path": f"{tmpdir}/20260130/143000_300/talents/work/activity_state.json",
+            }
 
-                with patch("solstone.talent.activity_state.callosum_send"):
-                    result = post_process(llm_output, context)
+            with patch("solstone.talent.activity_state.callosum_send"):
+                result = post_process(llm_output, context)
 
-                items = json.loads(result)
-                # All three are valid: coding + meeting explicit, email always_on
-                assert len(items) == 3
-                activity_ids = {item["activity"] for item in items}
-                assert activity_ids == {"coding", "meeting", "email"}
+            items = json.loads(result)
+            # All three are valid: coding + meeting explicit, email always_on
+            assert len(items) == 3
+            activity_ids = {item["activity"] for item in items}
+            assert activity_ids == {"coding", "meeting", "email"}
 
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
-
-    def test_unconfigured_facet_allows_all_defaults(self):
+    def test_unconfigured_facet_allows_all_defaults(self, monkeypatch):
         """Post-hook allows all default activity IDs for unconfigured facets."""
         from unittest.mock import patch
 
         from solstone.talent.activity_state import post_process
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            original_path = os.environ.get("SOLSTONE_JOURNAL")
-            os.environ["SOLSTONE_JOURNAL"] = tmpdir
+            monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-            try:
-                # Create facet dir but no activities.jsonl
-                facet_dir = Path(tmpdir) / "facets" / "new_facet"
-                facet_dir.mkdir(parents=True)
+            # Create facet dir but no activities.jsonl
+            facet_dir = Path(tmpdir) / "facets" / "new_facet"
+            facet_dir.mkdir(parents=True)
 
-                llm_output = json.dumps(
-                    [
-                        {
-                            "activity": "meeting",
-                            "state": "new",
-                            "description": "Team sync",
-                            "level": "high",
-                        },
-                        {
-                            "activity": "coding",
-                            "state": "new",
-                            "description": "Writing code",
-                            "level": "medium",
-                        },
-                    ]
-                )
+            llm_output = json.dumps(
+                [
+                    {
+                        "activity": "meeting",
+                        "state": "new",
+                        "description": "Team sync",
+                        "level": "high",
+                    },
+                    {
+                        "activity": "coding",
+                        "state": "new",
+                        "description": "Writing code",
+                        "level": "medium",
+                    },
+                ]
+            )
 
-                context = {
-                    "segment": "143000_300",
-                    "output_path": f"{tmpdir}/20260130/143000_300/talents/new_facet/activity_state.json",
-                }
+            context = {
+                "segment": "143000_300",
+                "output_path": f"{tmpdir}/20260130/143000_300/talents/new_facet/activity_state.json",
+            }
 
-                with patch("solstone.talent.activity_state.callosum_send"):
-                    result = post_process(llm_output, context)
+            with patch("solstone.talent.activity_state.callosum_send"):
+                result = post_process(llm_output, context)
 
-                items = json.loads(result)
-                # Both are valid defaults
-                assert len(items) == 2
-
-            finally:
-                if original_path:
-                    os.environ["SOLSTONE_JOURNAL"] = original_path
+            items = json.loads(result)
+            # Both are valid defaults
+            assert len(items) == 2

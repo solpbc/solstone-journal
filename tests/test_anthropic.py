@@ -144,16 +144,13 @@ def _setup_anthropic_stub(
     # Add types as a submodule
     anthropic_stub.types = anthropic_types_stub
 
-    # Stub out the anthropic module
-    if "anthropic" in sys.modules:
-        sys.modules.pop("anthropic")
-    if "anthropic._constants" in sys.modules:
-        sys.modules.pop("anthropic._constants")
-    if "anthropic.types" in sys.modules:
-        sys.modules.pop("anthropic.types")
-    sys.modules["anthropic"] = anthropic_stub
-    sys.modules["anthropic._constants"] = anthropic_constants_stub
-    sys.modules["anthropic.types"] = anthropic_types_stub
+    # These anthropic* entries must be installed via monkeypatch.setitem so the
+    # stub is unconditionally torn down. Raw sys.modules assignments leak across
+    # workers and can cross-skip tests/test_provider_error_classification.py
+    # under nondeterministic xdist distribution.
+    monkeypatch.setitem(sys.modules, "anthropic", anthropic_stub)
+    monkeypatch.setitem(sys.modules, "anthropic._constants", anthropic_constants_stub)
+    monkeypatch.setitem(sys.modules, "anthropic.types", anthropic_types_stub)
 
 
 def _setup_claude_cli_stub(
@@ -238,7 +235,9 @@ def _setup_claude_cli_stub(
 
 def test_claude_main(monkeypatch, tmp_path, capsys):
     _setup_anthropic_stub(monkeypatch)
-    sys.modules.pop("solstone.think.providers.anthropic", None)
+    monkeypatch.delitem(
+        sys.modules, "solstone.think.providers.anthropic", raising=False
+    )
     provider_mod = importlib.reload(
         importlib.import_module("solstone.think.providers.anthropic")
     )
@@ -282,7 +281,9 @@ def test_claude_main(monkeypatch, tmp_path, capsys):
 
 def test_claude_outfile(monkeypatch, tmp_path, capsys):
     _setup_anthropic_stub(monkeypatch)
-    sys.modules.pop("solstone.think.providers.anthropic", None)
+    monkeypatch.delitem(
+        sys.modules, "solstone.think.providers.anthropic", raising=False
+    )
     provider_mod = importlib.reload(
         importlib.import_module("solstone.think.providers.anthropic")
     )
@@ -330,7 +331,9 @@ def test_claude_thinking_events(monkeypatch, tmp_path, capsys):
     """Test that thinking events are properly emitted for Claude models."""
     # Setup anthropic stub with thinking
     _setup_anthropic_stub(monkeypatch, with_thinking=True)
-    sys.modules.pop("solstone.think.providers.anthropic", None)
+    monkeypatch.delitem(
+        sys.modules, "solstone.think.providers.anthropic", raising=False
+    )
     provider_mod = importlib.reload(
         importlib.import_module("solstone.think.providers.anthropic")
     )
@@ -373,7 +376,9 @@ def test_claude_thinking_events(monkeypatch, tmp_path, capsys):
 def test_claude_redacted_thinking_events(monkeypatch, tmp_path, capsys):
     """Test that redacted thinking events are properly handled."""
     _setup_anthropic_stub(monkeypatch, with_redacted_thinking=True)
-    sys.modules.pop("solstone.think.providers.anthropic", None)
+    monkeypatch.delitem(
+        sys.modules, "solstone.think.providers.anthropic", raising=False
+    )
     provider_mod = importlib.reload(
         importlib.import_module("solstone.think.providers.anthropic")
     )
@@ -414,7 +419,9 @@ def test_claude_redacted_thinking_events(monkeypatch, tmp_path, capsys):
 
 def test_claude_outfile_error(monkeypatch, tmp_path, capsys):
     _setup_anthropic_stub(monkeypatch, error=True)
-    sys.modules.pop("solstone.think.providers.anthropic", None)
+    monkeypatch.delitem(
+        sys.modules, "solstone.think.providers.anthropic", raising=False
+    )
     provider_mod = importlib.reload(
         importlib.import_module("solstone.think.providers.anthropic")
     )

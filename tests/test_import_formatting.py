@@ -4,7 +4,6 @@
 """Tests for think.importers.formatting — the import JSONL formatter."""
 
 import json
-import os
 import tempfile
 from pathlib import Path
 
@@ -319,35 +318,28 @@ def test_format_ai_chat_basic():
     assert chunks[1]["timestamp"] > chunks[0]["timestamp"]
 
 
-def test_format_file_integration():
+def test_format_file_integration(monkeypatch):
     """End-to-end: write import JSONL, format it, get chunks."""
     from solstone.think.formatters import format_file
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Set SOLSTONE_JOURNAL for format_file
-        old_journal = os.environ.get("SOLSTONE_JOURNAL")
-        os.environ["SOLSTONE_JOURNAL"] = tmpdir
+        monkeypatch.setenv("SOLSTONE_JOURNAL", tmpdir)
 
-        try:
-            import_dir = Path(tmpdir) / "20260115" / "import.ics"
-            import_dir.mkdir(parents=True)
-            jsonl_path = import_dir / "imported.jsonl"
+        import_dir = Path(tmpdir) / "20260115" / "import.ics"
+        import_dir.mkdir(parents=True)
+        jsonl_path = import_dir / "imported.jsonl"
 
-            header = {"import": {"id": "t", "source": "ics"}, "entry_count": 1}
-            entry = {
-                "type": "calendar_event",
-                "ts": "2026-01-15T10:00:00",
-                "title": "Lunch with Alice",
-                "content": "",
-            }
-            jsonl_path.write_text(json.dumps(header) + "\n" + json.dumps(entry) + "\n")
+        header = {"import": {"id": "t", "source": "ics"}, "entry_count": 1}
+        entry = {
+            "type": "calendar_event",
+            "ts": "2026-01-15T10:00:00",
+            "title": "Lunch with Alice",
+            "content": "",
+        }
+        jsonl_path.write_text(json.dumps(header) + "\n" + json.dumps(entry) + "\n")
 
-            chunks, meta = format_file(str(jsonl_path))
-            assert len(chunks) == 1
-            assert "Lunch with Alice" in chunks[0]["markdown"]
-            assert meta["indexer"]["agent"] == "import.ics"
-        finally:
-            if old_journal is not None:
-                os.environ["SOLSTONE_JOURNAL"] = old_journal
-            else:
-                os.environ.pop("SOLSTONE_JOURNAL", None)
+        chunks, meta = format_file(str(jsonl_path))
+        assert len(chunks) == 1
+        assert "Lunch with Alice" in chunks[0]["markdown"]
+        assert meta["indexer"]["agent"] == "import.ics"

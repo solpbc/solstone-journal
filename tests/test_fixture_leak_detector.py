@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 pytest_plugins = ["pytester"]
+pytestmark = pytest.mark.xdist_group("fixture_leak_detector")
 
 _ROOT_CONFTEST = Path(__file__).resolve().parent.parent / "conftest.py"
 

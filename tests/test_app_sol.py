@@ -4,7 +4,6 @@
 """Tests for app agent discovery, loading, and route helpers."""
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -14,9 +13,9 @@ from solstone.think.talent import _resolve_talent_path, get_talent, get_talent_c
 
 
 @pytest.fixture
-def fixture_journal():
+def fixture_journal(monkeypatch):
     """Set SOLSTONE_JOURNAL to tests/fixtures/journal for testing."""
-    os.environ["SOLSTONE_JOURNAL"] = "tests/fixtures/journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", "tests/fixtures/journal")
     yield
 
 

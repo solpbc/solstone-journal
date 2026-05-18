@@ -4,7 +4,6 @@
 """Tests for template variable substitution in load_prompt."""
 
 import json
-import os
 
 import pytest
 
@@ -12,7 +11,7 @@ from solstone.think.prompts import _flatten_identity_to_template_vars, load_prom
 
 
 @pytest.fixture
-def mock_journal_with_config(tmp_path):
+def mock_journal_with_config(tmp_path, monkeypatch):
     """Create a temporary journal with config."""
     # Create config directory and journal.json
     config_dir = tmp_path / "config"
@@ -44,17 +43,9 @@ def mock_journal_with_config(tmp_path):
     with open(config_dir / "journal.json", "w") as f:
         json.dump(config, f)
 
-    # Set SOLSTONE_JOURNAL for the test
-    old_journal = os.environ.get("SOLSTONE_JOURNAL")
-    os.environ["SOLSTONE_JOURNAL"] = str(tmp_path)
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
 
     yield tmp_path
-
-    # Restore original SOLSTONE_JOURNAL
-    if old_journal:
-        os.environ["SOLSTONE_JOURNAL"] = old_journal
-    else:
-        os.environ.pop("SOLSTONE_JOURNAL", None)
 
 
 @pytest.fixture
@@ -155,10 +146,10 @@ def test_load_prompt_without_substitution(mock_journal_with_config, mock_prompt_
     assert result.text == "This is a plain prompt without any variables."
 
 
-def test_load_prompt_missing_config_graceful(tmp_path, mock_prompt_dir):
+def test_load_prompt_missing_config_graceful(tmp_path, mock_prompt_dir, monkeypatch):
     """Test that load_prompt works even without config (safe_substitute)."""
     # Point to a journal without config
-    os.environ["SOLSTONE_JOURNAL"] = str(tmp_path)
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
 
     result = load_prompt("test_template", base_dir=mock_prompt_dir)
 

@@ -2,7 +2,6 @@
 # Copyright (c) 2026 sol pbc
 
 import importlib
-import os
 from pathlib import Path
 
 from solstone.think.utils import day_path
@@ -11,8 +10,8 @@ from tests.conftest import copytree_tracked
 FIXTURES = Path("tests/fixtures")
 
 
-def copy_day(tmp_path: Path) -> Path:
-    os.environ["SOLSTONE_JOURNAL"] = str(tmp_path)
+def copy_day(tmp_path: Path, monkeypatch) -> Path:
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
     dest = day_path("20240101")
     src = FIXTURES / "journal" / "chronicle" / "20240101"
     copytree_tracked(src, dest)
@@ -24,7 +23,7 @@ def copy_day(tmp_path: Path) -> Path:
 
 def test_scan_day(tmp_path, monkeypatch):
     mod = importlib.import_module("solstone.think.talents")
-    day_dir = copy_day(tmp_path)
+    day_dir = copy_day(tmp_path, monkeypatch)
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
 
     info = mod.scan_day("20240101")

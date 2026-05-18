@@ -167,107 +167,98 @@ def test_entry_content_key_kindle():
 # --- entry-level merge in write_structured_import ---
 
 
-def test_reimport_same_entries_no_duplicates():
+def test_reimport_same_entries_no_duplicates(monkeypatch):
     """Re-importing identical entries should not create duplicates."""
     with tempfile.TemporaryDirectory() as journal:
-        os.environ["SOLSTONE_JOURNAL"] = journal
-        try:
-            entries = [
-                {
-                    "type": "calendar_event",
-                    "ts": "2026-01-15T10:00:00",
-                    "title": "Standup",
-                    "content": "Daily sync",
-                },
-                {
-                    "type": "calendar_event",
-                    "ts": "2026-01-15T14:00:00",
-                    "title": "Review",
-                    "content": "Code review",
-                },
-            ]
+        monkeypatch.setenv("SOLSTONE_JOURNAL", journal)
+        entries = [
+            {
+                "type": "calendar_event",
+                "ts": "2026-01-15T10:00:00",
+                "title": "Standup",
+                "content": "Daily sync",
+            },
+            {
+                "type": "calendar_event",
+                "ts": "2026-01-15T14:00:00",
+                "title": "Review",
+                "content": "Code review",
+            },
+        ]
 
-            # First import
-            files1 = write_structured_import("ics", entries, import_id="t1")
-            assert len(files1) == 1
+        # First import
+        files1 = write_structured_import("ics", entries, import_id="t1")
+        assert len(files1) == 1
 
-            # Read entry count
-            lines1 = Path(files1[0]).read_text().strip().split("\n")
-            header1 = json.loads(lines1[0])
-            assert header1["entry_count"] == 2
+        # Read entry count
+        lines1 = Path(files1[0]).read_text().strip().split("\n")
+        header1 = json.loads(lines1[0])
+        assert header1["entry_count"] == 2
 
-            # Re-import same entries
-            files2 = write_structured_import("ics", entries, import_id="t2")
-            assert len(files2) == 1
+        # Re-import same entries
+        files2 = write_structured_import("ics", entries, import_id="t2")
+        assert len(files2) == 1
 
-            # Entry count should still be 2 (no duplicates)
-            lines2 = Path(files2[0]).read_text().strip().split("\n")
-            header2 = json.loads(lines2[0])
-            assert header2["entry_count"] == 2
-        finally:
-            os.environ.pop("SOLSTONE_JOURNAL", None)
+        # Entry count should still be 2 (no duplicates)
+        lines2 = Path(files2[0]).read_text().strip().split("\n")
+        header2 = json.loads(lines2[0])
+        assert header2["entry_count"] == 2
 
 
-def test_reimport_with_new_entries_merges():
+def test_reimport_with_new_entries_merges(monkeypatch):
     """Re-importing with new entries should merge (add new, keep old)."""
     with tempfile.TemporaryDirectory() as journal:
-        os.environ["SOLSTONE_JOURNAL"] = journal
-        try:
-            original = [
-                {
-                    "type": "calendar_event",
-                    "ts": "2026-01-15T10:00:00",
-                    "title": "Standup",
-                    "content": "Daily sync",
-                },
-            ]
-            updated = original + [
-                {
-                    "type": "calendar_event",
-                    "ts": "2026-01-15T14:00:00",
-                    "title": "New meeting",
-                    "content": "Added later",
-                },
-            ]
+        monkeypatch.setenv("SOLSTONE_JOURNAL", journal)
+        original = [
+            {
+                "type": "calendar_event",
+                "ts": "2026-01-15T10:00:00",
+                "title": "Standup",
+                "content": "Daily sync",
+            },
+        ]
+        updated = original + [
+            {
+                "type": "calendar_event",
+                "ts": "2026-01-15T14:00:00",
+                "title": "New meeting",
+                "content": "Added later",
+            },
+        ]
 
-            # First import
-            write_structured_import("ics", original, import_id="t1")
+        # First import
+        write_structured_import("ics", original, import_id="t1")
 
-            # Import with new entries
-            files = write_structured_import("ics", updated, import_id="t2")
+        # Import with new entries
+        files = write_structured_import("ics", updated, import_id="t2")
 
-            # Should have both entries
-            lines = Path(files[0]).read_text().strip().split("\n")
-            header = json.loads(lines[0])
-            assert header["entry_count"] == 2
+        # Should have both entries
+        lines = Path(files[0]).read_text().strip().split("\n")
+        header = json.loads(lines[0])
+        assert header["entry_count"] == 2
 
-            # Verify content
-            entries = [json.loads(line) for line in lines[1:]]
-            titles = [e["title"] for e in entries]
-            assert "Standup" in titles
-            assert "New meeting" in titles
-        finally:
-            os.environ.pop("SOLSTONE_JOURNAL", None)
+        # Verify content
+        entries = [json.loads(line) for line in lines[1:]]
+        titles = [e["title"] for e in entries]
+        assert "Standup" in titles
+        assert "New meeting" in titles
 
 
-def test_first_import_no_merge_needed():
+def test_first_import_no_merge_needed(monkeypatch):
     """First import should work normally with no existing file."""
     with tempfile.TemporaryDirectory() as journal:
-        os.environ["SOLSTONE_JOURNAL"] = journal
-        try:
-            entries = [
-                {
-                    "type": "note",
-                    "ts": "2026-02-01T00:00:00",
-                    "title": "Test note",
-                    "content": "Hello",
-                },
-            ]
-            files = write_structured_import("obsidian", entries, import_id="t1")
-            assert len(files) == 1
-            assert Path(files[0]).exists()
-        finally:
-            os.environ.pop("SOLSTONE_JOURNAL", None)
+        monkeypatch.setenv("SOLSTONE_JOURNAL", journal)
+        entries = [
+            {
+                "type": "note",
+                "ts": "2026-02-01T00:00:00",
+                "title": "Test note",
+                "content": "Hello",
+            },
+        ]
+        files = write_structured_import("obsidian", entries, import_id="t1")
+        assert len(files) == 1
+        assert Path(files[0]).exists()
 
 
 def test_load_existing_entries():
