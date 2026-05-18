@@ -1409,6 +1409,64 @@ class TestSanitizeMarkdown:
         assert "truncated" not in chunks[0]["markdown"]
         assert "too large" not in chunks[0]["markdown"]
 
+    def test_bound_extraction_clamps_f314_signature(self):
+        from solstone.think.markdown import (
+            _EXTRACTION_BOUND_MARKER,
+            _MAX_EXTRACTION_CHARS,
+            _MAX_LINE_CHARS,
+            bound_extraction_markdown,
+        )
+
+        s = "# [tmux - x]\n\n```\n" + (" " * 230_989) + ("Inc." * 1290)
+        result = bound_extraction_markdown(s)
+
+        # Real leading content survives (guards against over-truncation)
+        assert result.startswith("# [tmux - x]")
+        # No line exceeds the sanitizer's max line length
+        assert all(len(line) <= _MAX_LINE_CHARS for line in result.split("\n"))
+        # Total bounded value (marker included) is within the cap and << anomaly
+        assert len(result) <= _MAX_EXTRACTION_CHARS
+        assert len(result) < 40_000
+        assert len(result) < len(s)
+        # Explicit, human-readable marker present (it was bounded)
+        assert _EXTRACTION_BOUND_MARKER in result
+        assert result.count(_EXTRACTION_BOUND_MARKER) == 1
+
+    def test_bound_extraction_caps_many_short_lines(self):
+        """The hard cap is the backstop sanitize_markdown alone misses."""
+        from solstone.think.markdown import (
+            _EXTRACTION_BOUND_MARKER,
+            _MAX_EXTRACTION_CHARS,
+            bound_extraction_markdown,
+            sanitize_markdown,
+        )
+
+        degenerate = "a\n" * 50_000  # 100K chars, every line < 2048
+        # sanitize_markdown alone does NOT bound this shape
+        assert len(sanitize_markdown(degenerate)) == len(degenerate)
+        result = bound_extraction_markdown(degenerate)
+        assert len(result) <= _MAX_EXTRACTION_CHARS
+        assert _EXTRACTION_BOUND_MARKER in result
+        assert result.count(_EXTRACTION_BOUND_MARKER) == 1
+
+    def test_bound_extraction_healthy_byte_identical_no_marker(self):
+        from solstone.think.markdown import (
+            _EXTRACTION_BOUND_MARKER,
+            bound_extraction_markdown,
+        )
+
+        sample = (
+            "# Terminal session\n\n```\n"
+            + "\n".join(f"$ run step {i} -- ok ({i * 7} ms)" for i in range(40))
+            + "\n```\n\nSummary: all 40 steps completed.\n"
+        )
+        assert len(sample) < 4000
+        result = bound_extraction_markdown(sample)
+        assert result == sample
+        assert _EXTRACTION_BOUND_MARKER not in result
+        # Idempotent for healthy input
+        assert bound_extraction_markdown(result) == sample
+
 
 class TestExtractPathMetadata:
     """Tests for extract_path_metadata helper."""

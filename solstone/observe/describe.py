@@ -36,6 +36,7 @@ from solstone.observe.extract import (
 )
 from solstone.observe.utils import get_segment_key
 from solstone.think.callosum import callosum_send
+from solstone.think.markdown import bound_extraction_markdown
 from solstone.think.prompts import load_prompt
 from solstone.think.utils import (
     day_from_path,
@@ -801,8 +802,10 @@ class VideoProcessor:
                             has_error = True
                             error_msg = f"Invalid JSON response for {category}: {e}"
                     else:
-                        # Markdown output - store as-is
-                        req.category_results[category] = req.response
+                        # Markdown output - bound before journaling
+                        req.category_results[category] = bound_extraction_markdown(
+                            req.response
+                        )
 
                 # Retry logic
                 if has_error and req.retry_count < 4:

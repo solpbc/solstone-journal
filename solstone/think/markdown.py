@@ -16,6 +16,11 @@ LOG = logging.getLogger(__name__)
 
 _MAX_LINE_CHARS = 2048
 _MAX_CHUNK_CHARS = 4096
+_MAX_EXTRACTION_CHARS = 32_768
+_EXTRACTION_BOUND_MARKER = (
+    "\n\n[solstone: extraction output bounded before journaling - "
+    "degenerate length sanitized/truncated]"
+)
 
 import mistune
 from mistune.core import BlockState
@@ -357,6 +362,36 @@ def sanitize_markdown(text: str) -> str:
             _MAX_LINE_CHARS,
         )
     return "\n".join(clean)
+
+
+def bound_extraction_markdown(text: str) -> str:
+    """Bound a degenerate extraction value before it is journaled.
+
+    Phase-3 observe/describe markdown extraction can occasionally produce a
+    runaway-generation blob (huge whitespace runs or millions of short
+    repeated lines). Reuse sanitize_markdown() to drop over-long lines, then
+    apply a hard total-character cap as the backstop sanitize alone misses
+    (the many-short-lines shape). When the value is altered, append a
+    human-readable marker so a consumer reading the journal artifact can tell
+    it was bounded. Healthy output passes through byte-identical with no
+    marker.
+    """
+    sanitized = sanitize_markdown(text)
+    changed = sanitized != text
+    budget = _MAX_EXTRACTION_CHARS - len(_EXTRACTION_BOUND_MARKER)
+    truncated = len(sanitized) > budget
+    if truncated:
+        sanitized = sanitized[:budget]
+        changed = True
+    if not changed:
+        return sanitized
+    LOG.warning(
+        "Bounded extraction markdown: %d -> %d chars (cap-truncated=%s)",
+        len(text),
+        len(sanitized) + len(_EXTRACTION_BOUND_MARKER),
+        truncated,
+    )
+    return sanitized + _EXTRACTION_BOUND_MARKER
 
 
 def _render_header_stub(raw_chunk: dict, original_size: int) -> str:
