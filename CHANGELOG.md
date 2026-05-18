@@ -4,6 +4,16 @@ All notable changes to solstone (the Python package) will be documented in this 
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), aligned with `cmo/brand/changelog-voice.md`.
 
+## [0.3.6] - 2026-05-18
+
+### Changed
+- solstone now uses each provider's current models, and the structured results sol asks providers for are validated the same way across every provider, including the backup one. this makes the AI features more reliable, with no change to how you use solstone.
+
+### Fixed
+- in some cases what sol wrote to your journal from a screen could be off. a frame with little on it could pick up names from your own contacts as if they'd been on screen, and an occasional runaway from the model could write a long block of repeated text into an entry. both are now caught before anything is written, so your journal reflects what was actually there.
+- when sol fell back to a backup AI provider for a task that involved an image, the image could be left out of the request, so the result was a confident guess instead of something grounded in what was on screen. images are now sent correctly on every provider, and structured results from the backup provider are read correctly.
+- upgrading solstone over an existing install now works cleanly. before, an upgrade could stop partway: setup could wrongly report that port 5015 was in use when it was solstone's own running service, and re-registering this machine's observer could fail as "already exists." if an upgrade left you stuck, this resolves it.
+
 ## [0.3.5] - 2026-05-17
 
 ### Added
