@@ -14,6 +14,7 @@ import pytest
 from dotenv import load_dotenv
 from jsonschema import Draft202012Validator
 
+from solstone.apps.timeline.rollup import build_rollup_schema
 from solstone.think.models import CLAUDE_SONNET_4, GEMINI_FLASH, GPT_5
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -128,6 +129,13 @@ PORTABLE_SCHEMAS = [
         'talent_request non-null with target "exec", task a one-sentence synthesis '
         'request, and context exactly "{\\"window\\":\\"14d\\"}".',
     ),
+    (
+        "build_rollup_schema",
+        "build_rollup_schema(3)",
+        "Given four hypothetical timeline candidates, return picks [0, 2, 3] "
+        "and a short rationale for choosing shipped schema portability, fixed CI, "
+        "and updated docs.",
+    ),
 ]
 
 
@@ -151,6 +159,10 @@ def hydrate(node: Any) -> None:
 
 
 def load_schema(rel_path: str) -> dict[str, Any]:
+    if rel_path == "build_rollup_schema(3)":
+        schema = build_rollup_schema(3)
+        hydrate(schema)
+        return schema
     schema = json.loads((REPO_ROOT / rel_path).read_text(encoding="utf-8"))
     hydrate(schema)
     return schema

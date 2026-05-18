@@ -8,7 +8,6 @@ import io
 import json
 import sys
 import types
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -40,31 +39,6 @@ def _png_bytes(size: tuple[int, int] = (4, 3)) -> bytes:
 
 def _decoded_image(b64: str) -> Image.Image:
     return Image.open(io.BytesIO(base64.b64decode(b64)))
-
-
-def _load_describe_schema() -> dict:
-    return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$comment": f"Inline dirty fixture for {Path('describe.schema.json').name}",
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["visual_description", "primary"],
-        "properties": {
-            "visual_description": {"type": "string", "minLength": 1},
-            "primary": {"type": "string", "enum": ["browsing", "code"]},
-        },
-    }
-
-
-def _assert_no_schema_metadata(value):
-    if isinstance(value, dict):
-        assert "$schema" not in value
-        assert "$comment" not in value
-        for child in value.values():
-            _assert_no_schema_metadata(child)
-    elif isinstance(value, list):
-        for child in value:
-            _assert_no_schema_metadata(child)
 
 
 class DummyMessages:
@@ -621,6 +595,8 @@ class TestRunGenerateJsonSchema:
         assert call_kwargs["output_config"] == {
             "format": {"type": "json_schema", "schema": schema}
         }
+        assert "tools" not in call_kwargs
+        assert "tool_choice" not in call_kwargs
         assert call_kwargs["system"] == "base"
 
     def test_structured_messages_with_schema_uses_output_config(self, monkeypatch):
@@ -652,86 +628,9 @@ class TestRunGenerateJsonSchema:
         assert call_kwargs["output_config"] == {
             "format": {"type": "json_schema", "schema": schema}
         }
+        assert "tools" not in call_kwargs
+        assert "tool_choice" not in call_kwargs
         assert call_kwargs["system"] == "base"
-
-    def test_fallback_on_bad_request(self, monkeypatch):
-        provider = importlib.reload(
-            importlib.import_module("solstone.think.providers.anthropic")
-        )
-        mock_client = MagicMock()
-
-        class DummyBadRequestError(Exception):
-            pass
-
-        fallback_response = MagicMock()
-        fallback_response.content = [
-            SimpleNamespace(type="tool_use", input={"key": "value"}),
-        ]
-        fallback_response.usage = None
-        fallback_response.stop_reason = "end_turn"
-        mock_client.messages.create.side_effect = [
-            DummyBadRequestError("bad schema"),
-            fallback_response,
-        ]
-
-        monkeypatch.setattr(provider, "BadRequestError", DummyBadRequestError)
-        monkeypatch.setattr(provider, "_get_anthropic_client", lambda: mock_client)
-        schema = {"type": "object"}
-
-        result = provider.run_generate("hello", json_schema=schema)
-
-        assert mock_client.messages.create.call_count == 2
-        retry_kwargs = mock_client.messages.create.call_args_list[1].kwargs
-        assert retry_kwargs["tools"] == [
-            {
-                "name": "response",
-                "description": "Generate the requested JSON response.",
-                "input_schema": schema,
-            }
-        ]
-        assert retry_kwargs["tool_choice"] == {"type": "tool", "name": "response"}
-        assert "output_config" not in retry_kwargs
-        assert result["text"] == json.dumps({"key": "value"})
-
-    def test_fallback_drops_thinking_when_forcing_tool_use(self, monkeypatch):
-        # Anthropic rejects `tool_choice` forcing combined with `thinking`.
-        # Verify the fallback strips thinking and restores temperature.
-        provider = importlib.reload(
-            importlib.import_module("solstone.think.providers.anthropic")
-        )
-        mock_client = MagicMock()
-
-        class DummyBadRequestError(Exception):
-            pass
-
-        fallback_response = MagicMock()
-        fallback_response.content = [
-            SimpleNamespace(type="tool_use", input={"key": "value"}),
-        ]
-        fallback_response.usage = None
-        fallback_response.stop_reason = "end_turn"
-        mock_client.messages.create.side_effect = [
-            DummyBadRequestError("bad schema"),
-            fallback_response,
-        ]
-
-        monkeypatch.setattr(provider, "BadRequestError", DummyBadRequestError)
-        monkeypatch.setattr(provider, "_get_anthropic_client", lambda: mock_client)
-        schema = {"type": "object"}
-
-        provider.run_generate(
-            "hello", json_schema=schema, thinking_budget=4096, temperature=0.5
-        )
-
-        primary_kwargs = mock_client.messages.create.call_args_list[0].kwargs
-        assert primary_kwargs.get("thinking") == {
-            "type": "enabled",
-            "budget_tokens": 4096,
-        }
-        retry_kwargs = mock_client.messages.create.call_args_list[1].kwargs
-        assert "thinking" not in retry_kwargs
-        assert retry_kwargs.get("temperature") == 0.5
-        assert retry_kwargs["tool_choice"] == {"type": "tool", "name": "response"}
 
     def test_async_with_schema_uses_output_config(self, monkeypatch):
         provider = importlib.reload(
@@ -761,96 +660,9 @@ class TestRunGenerateJsonSchema:
         assert call_kwargs["output_config"] == {
             "format": {"type": "json_schema", "schema": schema}
         }
+        assert "tools" not in call_kwargs
+        assert "tool_choice" not in call_kwargs
         assert call_kwargs["system"] == "base"
-
-    def test_schema_output_config_sanitizes_describe_schema(self, monkeypatch):
-        provider = importlib.reload(
-            importlib.import_module("solstone.think.providers.anthropic")
-        )
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.content = [SimpleNamespace(type="text", text="{}")]
-        mock_response.usage = None
-        mock_response.stop_reason = "end_turn"
-        mock_client.messages.create.return_value = mock_response
-        monkeypatch.setattr(provider, "_get_anthropic_client", lambda: mock_client)
-        schema = _load_describe_schema()
-        original_json = json.dumps(schema, sort_keys=True)
-
-        result = provider.run_generate("hello", json_schema=schema)
-
-        output_schema = mock_client.messages.create.call_args.kwargs["output_config"][
-            "format"
-        ]["schema"]
-        _assert_no_schema_metadata(output_schema)
-        assert output_schema is not schema
-        assert "$schema" in schema
-        assert "$comment" in schema
-        assert json.dumps(schema, sort_keys=True) == original_json
-        assert output_schema["additionalProperties"] is False
-        assert schema["properties"]["visual_description"]["minLength"] == 1
-        assert output_schema["properties"]["visual_description"]["minLength"] == 1
-        assert "code" in output_schema["properties"]["primary"]["enum"]
-        _validate_json_response(result, True)
-
-    def test_async_schema_output_config_sanitizes_describe_schema(self, monkeypatch):
-        provider = importlib.reload(
-            importlib.import_module("solstone.think.providers.anthropic")
-        )
-        mock_client = MagicMock()
-        mock_client.messages.create = AsyncMock()
-        mock_response = MagicMock()
-        mock_response.content = [SimpleNamespace(type="text", text="{}")]
-        mock_response.usage = None
-        mock_response.stop_reason = "end_turn"
-        mock_client.messages.create.return_value = mock_response
-        monkeypatch.setattr(
-            provider, "_get_async_anthropic_client", lambda: mock_client
-        )
-        schema = _load_describe_schema()
-        original_json = json.dumps(schema, sort_keys=True)
-
-        result = asyncio.run(provider.run_agenerate("hello", json_schema=schema))
-
-        output_schema = mock_client.messages.create.call_args.kwargs["output_config"][
-            "format"
-        ]["schema"]
-        _assert_no_schema_metadata(output_schema)
-        assert output_schema is not schema
-        assert "$schema" in schema
-        assert "$comment" in schema
-        assert json.dumps(schema, sort_keys=True) == original_json
-        assert output_schema["additionalProperties"] is False
-        assert schema["properties"]["visual_description"]["minLength"] == 1
-        assert output_schema["properties"]["visual_description"]["minLength"] == 1
-        assert "code" in output_schema["properties"]["primary"]["enum"]
-        _validate_json_response(result, True)
-
-    def test_sanitize_schema_for_anthropic_recurses_without_mutating_input(self):
-        provider = importlib.reload(
-            importlib.import_module("solstone.think.providers.anthropic")
-        )
-        schema = {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "$comment": "top",
-            "type": "object",
-            "properties": {
-                "name": {
-                    "$comment": "nested",
-                    "type": "string",
-                    "minLength": 1,
-                }
-            },
-            "allOf": [{"$comment": "list nested", "additionalProperties": False}],
-        }
-
-        sanitized = provider._sanitize_schema_for_anthropic(schema)
-
-        _assert_no_schema_metadata(sanitized)
-        assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-        assert schema["properties"]["name"]["$comment"] == "nested"
-        assert sanitized["properties"]["name"]["minLength"] == 1
-        assert sanitized["allOf"][0]["additionalProperties"] is False
 
     def test_schema_max_tokens_still_surfaces_incomplete_json(self, monkeypatch):
         provider = importlib.reload(
@@ -869,69 +681,6 @@ class TestRunGenerateJsonSchema:
         assert result["finish_reason"] == "max_tokens"
         with pytest.raises(IncompleteJSONError):
             _validate_json_response(result, True)
-
-    def test_fallback_tool_use_finish_reason_is_stop(self, monkeypatch):
-        provider = importlib.reload(
-            importlib.import_module("solstone.think.providers.anthropic")
-        )
-        mock_client = MagicMock()
-
-        class DummyBadRequestError(Exception):
-            pass
-
-        fallback_response = MagicMock()
-        fallback_response.content = [
-            SimpleNamespace(type="tool_use", input={"key": "value"}),
-        ]
-        fallback_response.usage = None
-        fallback_response.stop_reason = "tool_use"
-        mock_client.messages.create.side_effect = [
-            DummyBadRequestError("bad schema"),
-            fallback_response,
-        ]
-        monkeypatch.setattr(provider, "BadRequestError", DummyBadRequestError)
-        monkeypatch.setattr(provider, "_get_anthropic_client", lambda: mock_client)
-        schema = {"type": "object"}
-
-        result = provider.run_generate("hello", json_schema=schema)
-
-        retry_kwargs = mock_client.messages.create.call_args_list[1].kwargs
-        assert result["finish_reason"] == "stop"
-        _validate_json_response(result, True)
-        assert retry_kwargs["tools"][0]["input_schema"] is schema
-
-    def test_async_fallback_tool_use_finish_reason_is_stop(self, monkeypatch):
-        provider = importlib.reload(
-            importlib.import_module("solstone.think.providers.anthropic")
-        )
-        mock_client = MagicMock()
-        mock_client.messages.create = AsyncMock()
-
-        class DummyBadRequestError(Exception):
-            pass
-
-        fallback_response = MagicMock()
-        fallback_response.content = [
-            SimpleNamespace(type="tool_use", input={"key": "value"}),
-        ]
-        fallback_response.usage = None
-        fallback_response.stop_reason = "tool_use"
-        mock_client.messages.create.side_effect = [
-            DummyBadRequestError("bad schema"),
-            fallback_response,
-        ]
-        monkeypatch.setattr(provider, "BadRequestError", DummyBadRequestError)
-        monkeypatch.setattr(
-            provider, "_get_async_anthropic_client", lambda: mock_client
-        )
-        schema = {"type": "object"}
-
-        result = asyncio.run(provider.run_agenerate("hello", json_schema=schema))
-
-        retry_kwargs = mock_client.messages.create.call_args_list[1].kwargs
-        assert result["finish_reason"] == "stop"
-        _validate_json_response(result, True)
-        assert retry_kwargs["tools"][0]["input_schema"] is schema
 
     def test_async_multi_image_parts_preserve_order(self, monkeypatch):
         provider = importlib.reload(
@@ -1170,42 +919,6 @@ class TestStreamingDispatch:
 
         assert mock_client.messages.create.call_count == 1
         assert mock_client.messages.stream.call_count == 0
-
-    def test_streams_tool_use_fallback_extracts_json(self, monkeypatch):
-        provider = importlib.reload(
-            importlib.import_module("solstone.think.providers.anthropic")
-        )
-        mock_client = MagicMock()
-
-        class DummyBadRequestError(Exception):
-            pass
-
-        fallback_response = _make_response(
-            content=[SimpleNamespace(type="tool_use", input={"key": "value"})]
-        )
-        # Raising from __enter__ is a sufficient stand-in for the SDK surfacing
-        # the BadRequestError before a streaming response is available.
-        mock_client.messages.stream.side_effect = [
-            _make_stream_cm(
-                None,
-                enter_side_effect=DummyBadRequestError("bad schema"),
-            ),
-            _make_stream_cm(fallback_response),
-        ]
-
-        monkeypatch.setattr(provider, "BadRequestError", DummyBadRequestError)
-        monkeypatch.setattr(provider, "_get_anthropic_client", lambda: mock_client)
-
-        result = provider.run_generate(
-            "hello",
-            model="claude-sonnet-4-5",
-            json_schema={"type": "object"},
-            max_output_tokens=49152,
-        )
-
-        assert mock_client.messages.stream.call_count == 2
-        assert mock_client.messages.create.call_count == 0
-        assert json.loads(result["text"]) == {"key": "value"}
 
     def test_interaction_thinking_and_streaming(self, monkeypatch):
         provider = importlib.reload(

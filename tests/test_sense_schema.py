@@ -138,11 +138,11 @@ def test_hydrate_runtime_enums_empty_facets_fallback(monkeypatch):
     hydrated = hydrate_runtime_enums(schema)
     facet_schema = hydrated["properties"]["facet"]
 
-    assert facet_schema == {"type": "string", "minLength": 1}
+    assert facet_schema == {"type": "string"}
     Draft202012Validator.check_schema(hydrated)
 
 
-def test_hydrate_runtime_enums_drops_facet_minItems_on_empty_facets_fallback(
+def test_hydrate_runtime_enums_keeps_portable_facet_shape_on_empty_facets_fallback(
     monkeypatch,
 ):
     monkeypatch.setattr("solstone.think.talent.get_facets", lambda: {})
@@ -151,7 +151,6 @@ def test_hydrate_runtime_enums_drops_facet_minItems_on_empty_facets_fallback(
         "properties": {
             "facets": {
                 "type": "array",
-                "minItems": 1,
                 "items": {
                     "type": "object",
                     "properties": {
@@ -170,8 +169,7 @@ def test_hydrate_runtime_enums_drops_facet_minItems_on_empty_facets_fallback(
     facet_schema = facets_node["items"]["properties"]["facet"]
 
     assert "minItems" not in facets_node
-    assert facet_schema["minLength"] == 1
-    assert "enum" not in facet_schema
+    assert facet_schema == {"type": "string"}
     Draft202012Validator.check_schema(hydrated)
 
 

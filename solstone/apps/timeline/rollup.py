@@ -14,7 +14,7 @@ MODEL = "gemini-3-flash-preview"
 # Schema: a list of indices into the candidate array. We don't ask the model
 # to re-emit titles/descriptions because (a) we want lossless preservation of
 # the originals and (b) it's cheaper. The caller dereferences indices.
-# Schema is built per-call so maxItems can match the requested n.
+# Schema is built per-call so descriptions can reference the requested n.
 def build_rollup_schema(n: int) -> dict:
     return {
         "type": "object",
@@ -26,8 +26,7 @@ def build_rollup_schema(n: int) -> dict:
                     f"candidate list, in order of importance (most important first). "
                     f"Length must be exactly {n} (or fewer if input has fewer)."
                 ),
-                "items": {"type": "integer", "minimum": 0},
-                "maxItems": n,
+                "items": {"type": "integer"},
             },
             "rationale": {
                 "type": "string",
@@ -38,6 +37,7 @@ def build_rollup_schema(n: int) -> dict:
             },
         },
         "required": ["picks", "rationale"],
+        "additionalProperties": False,
     }
 
 

@@ -457,10 +457,9 @@ def hydrate_runtime_enums(schema: Any) -> Any:
     """Replace runtime sentinels in schema enums with current journal state.
 
     Walks the schema; wherever an `enum` is exactly [RUNTIME_FACETS_SENTINEL],
-    replaces it with the sorted list of valid runtime facet slugs. If no
-    valid facets exist, drops the `enum` key and sets `minLength: 1` on
-    that node so the schema remains satisfiable.
-    Also removes the parent facets array `minItems` constraint in that case.
+    replaces it with the sorted list of valid runtime facet slugs. If zero
+    valid facets exist, drops the `enum` key so the node remains a plain
+    portable {"type": "string"} with no banned keyword.
 
     Returns None when given None. Deep-copies non-None input. Idempotent
     for already-hydrated schemas (sentinel is gone after first call).
@@ -470,18 +469,14 @@ def hydrate_runtime_enums(schema: Any) -> Any:
 
     hydrated = copy.deepcopy(schema)
     facets = _valid_runtime_facets()
-    used_empty_fallback = False
 
     def _walk(node: Any) -> None:
-        nonlocal used_empty_fallback
         if isinstance(node, dict):
             if node.get("enum") == [RUNTIME_FACETS_SENTINEL]:
                 if facets:
                     node["enum"] = list(facets)
                 else:
                     node.pop("enum", None)
-                    node["minLength"] = 1
-                    used_empty_fallback = True
             for value in node.values():
                 _walk(value)
         elif isinstance(node, list):
@@ -489,14 +484,6 @@ def hydrate_runtime_enums(schema: Any) -> Any:
                 _walk(item)
 
     _walk(hydrated)
-
-    if used_empty_fallback:
-        facets_node = hydrated.get("properties", {}).get("facets")
-        if isinstance(facets_node, dict):
-            facets_node.pop("minItems", None)
-        LOG.info(
-            "hydrate_runtime_enums: no valid runtime facets; using minLength fallback"
-        )
 
     return hydrated
 

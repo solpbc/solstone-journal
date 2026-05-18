@@ -1,11 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Offline CI gate for req_bfbdbux6 strict schema portability.
-
-The allowlist is temporary: later portability lodes remove entries as they
-portabilize Class-B/C/D schemas, then delete this allowlist mechanism entirely.
-"""
+"""Offline CI gate for req_bfbdbux6 strict schema portability."""
 
 from __future__ import annotations
 
@@ -16,6 +12,7 @@ from typing import Any
 import pytest
 
 from solstone.apps.timeline.rollup import build_rollup_schema
+from solstone.think.talent import hydrate_runtime_enums
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BANNED_KEYS = frozenset(
@@ -30,10 +27,6 @@ BANNED_KEYS = frozenset(
         "maximum",
     }
 )
-
-# Lodes 2-4 of req_bfbdbux6 remove their entries as those classes are
-# portabilized; Lode 4 deletes this allowlist mechanism entirely.
-PENDING_PORTABILITY = frozenset({"build_rollup_schema(3)"})
 
 
 def _discover_schemas() -> tuple[tuple[str, dict[str, Any]], ...]:
@@ -84,18 +77,50 @@ def violations(schema: dict[str, Any]) -> list[str]:
     return found
 
 
+def banned_key_hits(schema: dict[str, Any]) -> list[str]:
+    found: list[str] = []
+
+    def walk(node: Any, path: str) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key in BANNED_KEYS:
+                    found.append(f"{path}: banned key {key!r}")
+                walk(value, f"{path}/{key}")
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                walk(value, f"{path}[{index}]")
+
+    walk(schema, "$")
+    return found
+
+
 @pytest.mark.parametrize(
     ("schema_id", "schema"),
     [pytest.param(schema_id, schema, id=schema_id) for schema_id, schema in SCHEMAS],
 )
-def test_pending_portability_set_matches_discovery(
+def test_all_discovered_schemas_are_strict_portable(
     schema_id: str, schema: dict[str, Any]
 ) -> None:
     schema_violations = violations(schema)
-    if schema_id in PENDING_PORTABILITY:
-        assert schema_violations, f"{schema_id} is still allowlisted but is portable"
-    else:
-        assert schema_violations == [], f"{schema_id}: {schema_violations}"
+    assert schema_violations == [], f"{schema_id}: {schema_violations}"
+
+
+@pytest.mark.parametrize(
+    "schema_path",
+    [
+        Path("solstone/talent/schedule.schema.json"),
+        Path("solstone/talent/sense.schema.json"),
+    ],
+)
+def test_zero_facet_runtime_hydration_of_shipped_schemas_has_no_banned_keys(
+    schema_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("solstone.think.talent._valid_runtime_facets", lambda: [])
+    schema = json.loads((REPO_ROOT / schema_path).read_text(encoding="utf-8"))
+
+    hydrated = hydrate_runtime_enums(schema)
+
+    assert banned_key_hits(hydrated) == []
 
 
 @pytest.mark.parametrize(

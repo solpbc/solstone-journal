@@ -239,6 +239,49 @@ def test_schedule_post_process_skips_unknown_facet(tmp_path, monkeypatch, caplog
     assert "unknown facet 'missing'" in caplog.text
 
 
+def test_schedule_post_process_skips_empty_facet_from_zero_facet_hydration(
+    tmp_path, monkeypatch, caplog
+):
+    from jsonschema import Draft202012Validator
+
+    from solstone.talent.schedule import post_process
+    from solstone.think.activities import load_activity_records
+    from solstone.think.talent import hydrate_runtime_enums
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    monkeypatch.setattr("solstone.think.talent._valid_runtime_facets", lambda: [])
+    _write_facet(tmp_path, "work")
+    caplog.set_level(logging.WARNING, logger="solstone.talent.schedule")
+    schema_path = (
+        Path(__file__).resolve().parents[1]
+        / "solstone"
+        / "talent"
+        / "schedule.schema.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    hydrated_schema = hydrate_runtime_enums(schema)
+    event = {
+        "activity": "meeting",
+        "target_date": "2026-04-20",
+        "start": "09:00:00",
+        "end": None,
+        "title": "Empty facet",
+        "description": "This facet should be rejected by the hook.",
+        "details": "",
+        "participation": [],
+        "participation_confidence": 0.5,
+        "facet": "",
+        "cancelled": False,
+    }
+    payload = {"events": [event]}
+
+    assert list(Draft202012Validator(hydrated_schema).iter_errors(payload)) == []
+    assert post_process(json.dumps(payload), {"day": "20260418"}) is None
+
+    assert load_activity_records("work", "20260420", include_hidden=True) == []
+    assert "missing required field 'facet'" in caplog.text
+
+
 def test_schedule_post_process_skips_non_future_items(tmp_path, monkeypatch, caplog):
     from solstone.talent.schedule import post_process
     from solstone.think.activities import load_activity_records
