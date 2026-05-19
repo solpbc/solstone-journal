@@ -3,18 +3,13 @@ Dry-run: would install solstone-linux observer
 Platform: linux
 Stream:   archon
 Server:   http://127.0.0.1:5015
-Source:   https://github.com/solpbc/solstone-linux.git
+Package:  solstone-linux==0.1.0
 Target:   /home/jer/.local/share/solstone/observers/solstone-linux
 Config:   /home/jer/.local/share/solstone-linux/config/config.json
 Service:  solstone-linux.service
 Marker:   /home/jer/.local/share/solstone/observers/solstone-linux/.installed.json
 
 Preflight:
-  ✓ git found
-  ✓ uv found
-  ✓ pipx found
-  ✓ make found
-  ✓ systemctl --user available
   ✓ distro detected: fedora
   ✓ package python3-gobject installed
   ✓ package gtk4 installed
@@ -28,10 +23,11 @@ Preflight:
   ✓ package pipx installed
 
 Plan:
-  would clone https://github.com/solpbc/solstone-linux.git into /home/jer/.local/share/solstone/observers/solstone-linux
   would create observer registration 'archon'
   would write /home/jer/.local/share/solstone-linux/config/config.json
-  would run observer install-service target
+  would run pipx install --force --system-site-packages solstone-linux==0.1.0
+  would run solstone-linux install-service
+  would restart solstone-linux.service
   would wait up to 30s for observer status
   would write marker /home/jer/.local/share/solstone/observers/solstone-linux/.installed.json
 

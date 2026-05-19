@@ -31,10 +31,10 @@ def test_status_includes_install_marker(monkeypatch, capsys):
         {
             "name": "archon",
             "platform": "linux",
-            "source": linux.SOURCE_URL,
+            "source": f"pypi:{linux.PACKAGE_NAME}",
             "installed_at": "2026-05-02T00:00:00Z",
             "last_run": "2026-05-02T00:00:00Z",
-            "version": "abcdef1234567890",
+            "version": "0.1.0",
         },
     )
     monkeypatch.setattr(
@@ -46,7 +46,7 @@ def test_status_includes_install_marker(monkeypatch, capsys):
     assert observer_cli._status_single("archon") == 0
 
     output = capsys.readouterr().out
-    assert "  Installed: 2026-05-02T00:00:00Z (linux, version abcdef123456)" in output
+    assert "  Installed: 2026-05-02T00:00:00Z (linux, version 0.1.0)" in output
     assert f"  Service:   {linux.UNIT_NAME} — active" in output
 
 

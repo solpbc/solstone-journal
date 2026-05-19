@@ -4,6 +4,11 @@ All notable changes to solstone (the Python package) will be documented in this 
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), aligned with `cmo/brand/changelog-voice.md`.
 
+## [0.3.7] - 2026-05-19
+
+### Changed
+- linux and tmux observers now come online from their published packages — no need for git or make on the host to bring an observer online.
+
 ## [0.3.6] - 2026-05-18
 
 ### Changed

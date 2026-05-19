@@ -583,6 +583,16 @@ def main() -> None:
     p_install.add_argument(
         "--force", action="store_true", help="Recreate registration and rerun install"
     )
+    p_install.add_argument(
+        "--observer-version",
+        default=None,
+        dest="observer_version",
+        metavar="VERSION",
+        help=(
+            "Override the pinned observer package version "
+            "(developer use; bypasses the version pinned by sol)."
+        ),
+    )
 
     args = setup_cli(parser)
 

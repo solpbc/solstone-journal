@@ -46,6 +46,7 @@ def args_factory():
             "dry_run": False,
             "force": False,
             "json_output": False,
+            "observer_version": None,
         }
         data.update(overrides)
         return SimpleNamespace(**data)

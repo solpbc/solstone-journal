@@ -104,7 +104,7 @@ def install_root() -> Path:
 
 
 def xdg_install_dir(install_name: str) -> Path:
-    """Return the source clone directory for an observer package."""
+    """Return the per-observer state directory that holds the install marker."""
     return install_root() / install_name
 
 
@@ -228,6 +228,32 @@ def run_step(
     if not json_output:
         print("✓ done")
     return StepResult(process=process)
+
+
+def pipx_install(
+    package_name: str,
+    version: str,
+    *,
+    system_site_packages: bool,
+    json_output: bool,
+    dry_run: bool,
+) -> StepResult:
+    """Install or refresh a pipx package by exact version.
+
+    Always passes ``--force`` so re-installing the same version is a no-op
+    for pipx (it would otherwise error). On linux, ``system_site_packages``
+    is required so the venv can see PyGObject / GStreamer from the distro.
+    """
+    cmd = ["pipx", "install", "--force"]
+    if system_site_packages:
+        cmd.append("--system-site-packages")
+    cmd.append(f"{package_name}=={version}")
+    return run_step(
+        f"install {package_name}=={version}",
+        cmd,
+        json_output=json_output,
+        dry_run=dry_run,
+    )
 
 
 def run_probe(

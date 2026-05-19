@@ -3,25 +3,21 @@ Dry-run: would install solstone-tmux observer
 Platform: tmux
 Stream:   archon
 Server:   http://127.0.0.1:5015
-Source:   https://github.com/solpbc/solstone-tmux.git
+Package:  solstone-tmux==0.1.0
 Target:   /home/jer/.local/share/solstone/observers/solstone-tmux
 Config:   /home/jer/.local/share/solstone-tmux/config/config.json
 Service:  solstone-tmux.service
 Marker:   /home/jer/.local/share/solstone/observers/solstone-tmux/.installed.json
 
 Preflight:
-  ✓ git found
-  ✓ uv found
-  ✓ pipx found
-  ✓ make found
-  ✓ systemctl --user available
   ✓ tmux found
 
 Plan:
-  would clone https://github.com/solpbc/solstone-tmux.git into /home/jer/.local/share/solstone/observers/solstone-tmux
   would create observer registration 'archon'
   would write /home/jer/.local/share/solstone-tmux/config/config.json
-  would run observer install-service target
+  would run pipx install --force solstone-tmux==0.1.0
+  would run solstone-tmux install-service
+  would restart solstone-tmux.service
   would wait up to 30s for observer status
   would write marker /home/jer/.local/share/solstone/observers/solstone-tmux/.installed.json
 

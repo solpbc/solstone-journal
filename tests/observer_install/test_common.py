@@ -68,10 +68,10 @@ def test_marker_round_trip():
     data = {
         "name": "archon",
         "platform": "linux",
-        "source": "https://github.com/solpbc/solstone-linux.git",
+        "source": "pypi:solstone-linux",
         "installed_at": "2026-05-02T00:00:00Z",
         "last_run": "2026-05-02T00:00:00Z",
-        "version": "abc123",
+        "version": "0.1.0",
     }
 
     common.write_marker("solstone-linux", data)
@@ -85,10 +85,10 @@ def test_find_marker_for_observer_matches_name():
         {
             "name": "archon",
             "platform": "linux",
-            "source": "https://github.com/solpbc/solstone-linux.git",
+            "source": "pypi:solstone-linux",
             "installed_at": "2026-05-02T00:00:00Z",
             "last_run": "2026-05-02T00:00:00Z",
-            "version": "abc123",
+            "version": "0.1.0",
         },
     )
 
