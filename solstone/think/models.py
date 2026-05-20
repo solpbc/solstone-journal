@@ -3,14 +3,16 @@
 
 import fcntl
 import fnmatch
+import functools
 import inspect
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Union
 
 import frontmatter
 from jsonschema import Draft202012Validator
@@ -44,15 +46,93 @@ TIER_LITE = 3
 # E.g., "gpt-5.2-high" → reasoning_effort="high", "gpt-5.2" → omitted.
 OPENAI_EFFORT_SUFFIXES = ("-none", "-low", "-medium", "-high", "-xhigh")
 
-# Map model names that genai-prices doesn't recognize yet to a known equivalent.
-MODEL_PRICE_ALIASES: Dict[str, str] = {
-    "gpt-5.5": "gpt-5.2",
-    "gpt-5.4": "gpt-5.2",
-    "gpt-5.4-mini": "gpt-5-mini",
-    "gpt-5.4-nano": "gpt-5-nano",
-    "claude-sonnet-4-6": "claude-sonnet-4-5",
-    "claude-opus-4-7": "claude-opus-4-5",
+
+class _Family(NamedTuple):
+    key: tuple[str, str | None]
+    version: tuple[int, ...]
+
+
+def _parse_family_openai(model: str) -> _Family | None:
+    model = model.lower()
+    if model.startswith("ft:") or "-image" in model or not model.startswith("gpt-"):
+        return None
+    match = re.fullmatch(r"gpt-(\d+)(?:\.(\d+))?(?:-(mini|nano|pro))?", model)
+    if match is None:
+        return None
+    return _Family(
+        key=("openai", match.group(3)),
+        version=(int(match.group(1)), int(match.group(2) or 0)),
+    )
+
+
+def _parse_family_anthropic(model: str) -> _Family | None:
+    model = model.lower()
+    match = re.fullmatch(r"claude-(opus|sonnet|haiku)-(\d+)(?:-(\d+))?", model)
+    if match is None:
+        return None
+    return _Family(
+        key=("anthropic", match.group(1)),
+        version=(int(match.group(2)), int(match.group(3) or 0)),
+    )
+
+
+def _parse_family_gemini(model: str) -> _Family | None:
+    model = model.lower()
+    latest_aliases = {
+        "gemini-flash-latest": _Family(key=("gemini", "flash"), version=(0, 0)),
+        "gemini-pro-latest": _Family(key=("gemini", "pro"), version=(0, 0)),
+        "gemini-flash-lite-latest": _Family(
+            key=("gemini", "flash-lite"),
+            version=(0, 0),
+        ),
+    }
+    if model in latest_aliases:
+        return latest_aliases[model]
+    if "-image" in model:
+        return None
+    if model.endswith("-preview"):
+        model = model[: -len("-preview")]
+    match = re.fullmatch(r"gemini-(\d+)(?:\.(\d+))?-(pro|flash|flash-lite)", model)
+    if match is None:
+        return None
+    return _Family(
+        key=("gemini", match.group(3)),
+        version=(int(match.group(1)), int(match.group(2) or 0)),
+    )
+
+
+_FAMILY_PARSERS: dict[str, Callable[[str], _Family | None]] = {
+    "openai": _parse_family_openai,
+    "anthropic": _parse_family_anthropic,
+    "google": _parse_family_gemini,
 }
+
+_LOGGED_FALLBACKS: set[str] = set()
+
+
+@functools.lru_cache(maxsize=None)
+def _find_pricing_fallback(model: str, provider_id: str) -> str | None:
+    parser = _FAMILY_PARSERS.get(provider_id)
+    if parser is None:
+        return None
+    target = parser(model)
+    if target is None:
+        return None
+
+    from genai_prices.data import providers
+
+    best: tuple[tuple[int, ...], str] | None = None
+    for provider in providers:
+        if provider.id != provider_id:
+            continue
+        for snapshot_model in provider.models:
+            candidate = parser(snapshot_model.id)
+            if candidate is None or candidate.key != target.key:
+                continue
+            if best is None or candidate.version > best[0]:
+                best = (candidate.version, snapshot_model.id)
+    return best[1] if best else None
+
 
 GEMINI_PRO = "gemini-pro-latest"
 GEMINI_FLASH = "gemini-flash-latest"
@@ -743,8 +823,7 @@ def calc_token_cost(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 "currency": "USD",
             }
 
-        # Apply price aliases for models genai-prices doesn't recognize yet
-        model = MODEL_PRICE_ALIASES.get(model, model)
+        # Family-fallback below handles unpriced inputs.
 
         # Map our token fields to genai_prices Usage format
         # Note: Gemini reports reasoning_tokens separately, but they're billed at
@@ -766,11 +845,24 @@ def calc_token_cost(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         )
 
         # Calculate price
-        result = calc_price(
-            usage=usage,
-            model_ref=model,
-            provider_id=provider_id,
-        )
+        try:
+            result = calc_price(
+                usage=usage,
+                model_ref=model,
+                provider_id=provider_id,
+            )
+        except LookupError:
+            resolved = _find_pricing_fallback(model, provider_id)
+            if resolved is None:
+                raise
+            result = calc_price(
+                usage=usage,
+                model_ref=resolved,
+                provider_id=provider_id,
+            )
+            if model not in _LOGGED_FALLBACKS:
+                _LOGGED_FALLBACKS.add(model)
+                logger.info("pricing: family-fallback %s -> %s", model, resolved)
 
         # Return simplified cost breakdown
         return {
