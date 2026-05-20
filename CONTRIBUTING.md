@@ -11,6 +11,7 @@ Required everywhere:
 - Python 3.11 or later
 - [uv](https://docs.astral.sh/uv/)
 - Git
+- ripgrep (`rg`)
 - ffmpeg for audio processing
 
 Linux is the primary development platform. macOS is supported. Source-checkout installs on Apple Silicon need Xcode command line tools to build the CoreML parakeet helper; packaged installs (`uv tool install solstone`) on macOS 14 or newer ship the helper as a pre-built binary.
@@ -18,21 +19,21 @@ Linux is the primary development platform. macOS is supported. Source-checkout i
 Fedora/RHEL:
 
 ```bash
-sudo dnf install python3 git ffmpeg pipewire gstreamer1-plugins-base gstreamer1-plugin-pipewire pulseaudio-utils
+sudo dnf install python3 git ripgrep ffmpeg pipewire gstreamer1-plugins-base gstreamer1-plugin-pipewire pulseaudio-utils
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 Ubuntu/Debian:
 
 ```bash
-sudo apt install python3 git ffmpeg pipewire gstreamer1.0-tools gstreamer1.0-pipewire pulseaudio-utils
+sudo apt install python3 git ripgrep ffmpeg pipewire gstreamer1.0-tools gstreamer1.0-pipewire pulseaudio-utils
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 Arch:
 
 ```bash
-sudo pacman -S python git ffmpeg pipewire gstreamer gst-plugin-pipewire libpulse
+sudo pacman -S python git ripgrep ffmpeg pipewire gstreamer gst-plugin-pipewire libpulse
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
@@ -40,7 +41,7 @@ macOS:
 
 ```bash
 xcode-select --install
-brew install python git ffmpeg uv
+brew install python git ripgrep ffmpeg uv
 ```
 
 ## Source-checkout install
@@ -131,43 +132,6 @@ make review
 ```
 
 See [AGENTS.md](AGENTS.md) for the full Makefile command table and [docs/testing.md](docs/testing.md) for test isolation details.
-
-## Tool-using agents (Cogitate CLI binaries)
-
-solstone runs two distinct AI workloads, and they have different prerequisites:
-
-- **Generate** — direct text generation (transcription, vision analysis, insights, descriptions). Uses each provider's SDK and works as soon as the API key is set. No extra binaries.
-- **Cogitate** — tool-using agents (entity detection, entity assist, entity describe, and any talent under `solstone/apps/entities/talent/*.md` with `"type": "cogitate"`). solstone shells out to a provider CLI binary as a subprocess. Anthropic and OpenAI are installed into your journal on demand; Google and Ollama still use CLIs you install yourself.
-
-Because cogitate-type talents only run after entity-related thinking completes, missing CLI binaries are invisible during initial install — generate-only paths produce transcripts and summaries, but **entities never appear**. `sol top` Agents Health flags this with messages like `"Google generate passes but Google cogitate fails: gemini CLI not installed"`. Enable the cogitate binary for **each provider whose API key you configured above**. If you only set `GOOGLE_API_KEY`, you only need `gemini`.
-
-| provider  | binary     | install                                                         |
-|-----------|------------|-----------------------------------------------------------------|
-| anthropic | `claude`   | `sol call settings providers install anthropic`                 |
-| openai    | `codex`    | `sol call settings providers install openai`                    |
-| google    | `gemini`   | `npm install -g @google/gemini-cli` (Node 20+)                  |
-| ollama    | `opencode` | `curl -fsSL https://opencode.ai/install \| bash`                |
-
-For Anthropic and OpenAI, check install status with:
-
-```bash
-sol call settings providers status
-```
-
-For Google, install Node.js first if needed: `brew install node` on macOS, your distro's package manager on Linux (e.g. `sudo dnf install nodejs`, `sudo apt install nodejs npm`). Verify manually installed binaries are on `PATH` after install:
-
-```bash
-gemini --version
-opencode --version
-```
-
-After installing a manually managed CLI binary while solstone is running, restart the service so cortex picks up the new `PATH`:
-
-```bash
-sol service restart
-```
-
-`sol providers check` reports per-provider readiness, including bundled or manually installed cogitate CLI status.
 
 ## Developing on AI features
 

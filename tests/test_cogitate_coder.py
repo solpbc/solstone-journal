@@ -163,60 +163,38 @@ class TestOpenAIWriteFlag:
 
 
 class TestGoogleWriteFlag:
-    """Verify --approval-mode is controlled by config write flag."""
+    """Verify Google SDK policy behavior is controlled by config write flag."""
 
-    def _provider(self):
-        return importlib.import_module("solstone.think.providers.google")
+    def test_no_write_uses_yolo_with_policy(self, tmp_path):
+        """Without write flag, policy denies writes and non-sol shell commands."""
+        from solstone.think.providers.google_tools import CogitatePolicy
 
-    @patch("solstone.think.providers.google.CLIRunner")
-    def test_no_write_uses_yolo_with_policy(self, mock_runner_cls, tmp_path):
-        """Without write flag, approval-mode is yolo with scoped policy."""
-        provider = self._provider()
-        mock_instance = AsyncMock()
-        mock_instance.run = AsyncMock(return_value="result")
-        mock_instance.cli_session_id = None
-        mock_runner_cls.return_value = mock_instance
+        policy = CogitatePolicy(write=False, allowed_roots=[tmp_path])
 
-        policy_path = tmp_path / "policy.toml"
-        policy_path.write_text("# generated\n", encoding="utf-8")
-        config = {"prompt": "test", "model": "gemini-2.5-flash"}
-        with patch(
-            "solstone.think.providers.google.build_per_task_policy",
-            return_value=policy_path,
-        ) as build_policy:
-            asyncio.run(provider.run_cogitate(config))
+        allowed, reason = policy.check("write_file", {"file_path": "x"})
+        assert allowed is False
+        assert reason.startswith("policy_deny:")
+        assert policy.check("run_shell_command", {"command": "rm -rf /tmp/x"})[0] is (
+            False
+        )
+        assert policy.check(
+            "run_shell_command", {"command": "sol call activities list"}
+        ) == (True, "ok")
+        assert policy.check("read_file", {"file_path": str(tmp_path / "x")}) == (
+            True,
+            "ok",
+        )
 
-        cmd = mock_runner_cls.call_args.kwargs["cmd"]
-        idx = cmd.index("--approval-mode")
-        assert cmd[idx + 1] == "yolo"
-        policy_idx = cmd.index("--policy")
-        assert cmd[policy_idx + 1] == str(policy_path)
-        build_policy.assert_called_once()
-        assert not policy_path.exists()
+    def test_write_true_uses_yolo_mode(self, tmp_path):
+        """With write=True, policy allows all tool calls."""
+        from solstone.think.providers.google_tools import CogitatePolicy
 
-    @patch("solstone.think.providers.google.CLIRunner")
-    def test_write_true_uses_yolo_mode(self, mock_runner_cls):
-        """With write=True, approval-mode is yolo (full access)."""
-        provider = self._provider()
-        mock_instance = AsyncMock()
-        mock_instance.run = AsyncMock(return_value="result")
-        mock_instance.cli_session_id = None
-        mock_runner_cls.return_value = mock_instance
+        policy = CogitatePolicy(write=True, allowed_roots=[tmp_path])
 
-        config = {"prompt": "test", "model": "gemini-2.5-flash", "write": True}
-        asyncio.run(provider.run_cogitate(config))
-
-        cmd = mock_runner_cls.call_args.kwargs["cmd"]
-        idx = cmd.index("--approval-mode")
-        assert cmd[idx + 1] == "yolo"
-        assert "--policy" not in cmd
-
-    def test_cogitate_base_policy_file_exists_on_disk(self):
-        """The per-task policy generator's base policy must exist."""
-        from solstone.think.cogitate_policy import _BASE_POLICY_PATH
-
-        assert _BASE_POLICY_PATH.is_file(), (
-            f"Expected policy file at {_BASE_POLICY_PATH}"
+        assert policy.check("write_file", {"file_path": "x"}) == (True, "ok")
+        assert policy.check("run_shell_command", {"command": "rm -rf /tmp/x"}) == (
+            True,
+            "ok",
         )
 
 

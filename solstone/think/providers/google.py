@@ -38,25 +38,32 @@ from pathlib import Path
 from typing import Any, Callable
 
 from google import genai
+from google.genai import errors as google_errors
 from google.genai import types
 
-from solstone.think.cogitate_policy import build_per_task_policy
+from solstone.think.cogitate_policy import resolve_read_scope
 from solstone.think.models import GEMINI_FLASH
-from solstone.think.utils import now_ms
+from solstone.think.utils import get_journal, get_project_root, now_ms
 
-from .cli import (
-    CLIRunner,
-    QuotaExhaustedError,
-    ThinkingAggregator,
-    assemble_prompt,
-    build_cogitate_env,
+from .cli import QuotaExhaustedError, assemble_prompt
+from .google_tools import (
+    DEFAULT_READ_CALL_BUDGET,
+    MAX_TURNS,
+    CogitatePolicy,
+    MaxTurnsExhausted,
+    build_tool_declarations,
+    glob,
+    grep_search,
+    list_directory,
+    load_history,
+    read_file,
+    run_shell_command,
+    save_history,
 )
 from .shared import (
     GenerateResult,
     JSONEventCallback,
-    ThinkingEvent,
     classify_provider_error,
-    safe_raw,
 )
 
 GEMINI_MAX_OUTPUT_TOKENS = 65536
@@ -64,6 +71,15 @@ _DEFAULT_MAX_TOKENS = 8192
 _DEFAULT_MODEL = GEMINI_FLASH
 
 logger = logging.getLogger(__name__)
+
+_READ_TOOL_NAMES = frozenset(
+    {
+        "read_file",
+        "glob",
+        "list_directory",
+        "grep_search",
+    }
+)
 
 # Backend detection cache
 _detected_backend: str | None = None
@@ -601,139 +617,153 @@ async def run_agenerate(
 # ---------------------------------------------------------------------------
 
 
-def _emit_thinking_events(
-    response: Any, model: str, callback: JSONEventCallback
-) -> None:
-    """Extract and emit thinking events from a response.
+def _cogitate_history_path(session_id: str | None) -> Path | None:
+    if not session_id:
+        return None
+    return Path(get_journal()) / ".cache" / "cogitate-history" / f"{session_id}.json"
 
-    In the Google GenAI SDK, thinking content appears in response.candidates[].content.parts[]
-    where each Part has a `thought` boolean indicating if it's thinking content, and the
-    actual thinking text is in `part.text`.
-    """
-    if not hasattr(response, "candidates") or not response.candidates:
-        return
 
-    for candidate in response.candidates:
-        if not candidate.content or not candidate.content.parts:
+def _resolve_allowed_roots(config: dict[str, Any]) -> list[Path]:
+    journal = Path(get_journal()).resolve()
+    project_root = Path(get_project_root()).resolve()
+    day = config.get("day") or ""
+    span = int(config.get("read_scope_span", 0) or 0)
+    scope_roots: list[Path] = []
+    for scope in resolve_read_scope(config, day, span=span):
+        scope_path = Path(scope).expanduser()
+        if not scope_path.is_absolute():
+            scope_path = journal / scope_path
+        scope_roots.append(scope_path.resolve())
+    return [journal, project_root, *scope_roots]
+
+
+def _extract_retry_delay_ms(exc: BaseException) -> int | None:
+    details = getattr(exc, "details", None)
+    if not isinstance(details, dict):
+        return None
+    error = details.get("error")
+    if not isinstance(error, dict):
+        return None
+    for item in error.get("details", []) or []:
+        if not isinstance(item, dict):
             continue
-
-        for part in candidate.content.parts:
-            # part.thought is a boolean indicating this is thinking content
-            # part.text contains the actual thinking summary
-            if getattr(part, "thought", False) and getattr(part, "text", None):
-                thinking_event: ThinkingEvent = {
-                    "event": "thinking",
-                    "ts": now_ms(),
-                    "summary": part.text,
-                    "model": model,
-                }
-                callback.emit(thinking_event)
-
-
-def _translate_gemini(
-    event: dict[str, Any],
-    aggregator: ThinkingAggregator,
-    callback: JSONEventCallback,
-    usage_out: dict[str, Any] | None = None,
-    pending_tools: dict[str, dict[str, Any]] | None = None,
-) -> str | None:
-    """Translate a Gemini CLI JSONL event into our standard Event types.
-
-    Args:
-        event: Raw JSONL event dict from the Gemini CLI.
-        aggregator: ThinkingAggregator for buffering text.
-        callback: JSONEventCallback for emitting events.
-        usage_out: Optional mutable dict to receive usage stats from result events.
-        pending_tools: Optional mutable dict tracking tool_id -> {tool, args}.
-
-    Returns:
-        The CLI session ID from init events, or None.
-    """
-    event_type = event.get("type")
-
-    if event_type == "init":
-        return event.get("session_id")
-
-    if event_type == "message":
-        role = event.get("role")
-        if role == "user":
+        retry_delay = item.get("retryDelay")
+        if not isinstance(retry_delay, str):
+            continue
+        value = retry_delay.strip()
+        if value.endswith("s"):
+            value = value[:-1]
+        try:
+            return int(float(value) * 1000)
+        except ValueError:
             return None
-        if role == "assistant" and event.get("delta"):
-            content = event.get("content", "")
-            if content:
-                aggregator.accumulate(content)
-            return None
-        return None
-
-    if event_type == "tool_use":
-        aggregator.flush_as_thinking(raw_events=[event])
-        tool_name = event.get("tool_name", "")
-        tool_id = event.get("tool_id")
-        tool_args = event.get("parameters")
-        if pending_tools is not None and tool_id:
-            pending_tools[tool_id] = {"tool": tool_name, "args": tool_args}
-        callback.emit(
-            {
-                "event": "tool_start",
-                "tool": tool_name,
-                "args": tool_args,
-                "call_id": tool_id,
-                "raw": safe_raw([event]),
-                "ts": now_ms(),
-            }
-        )
-        return None
-
-    if event_type == "tool_result":
-        tool_id = event.get("tool_id")
-        tool_info = {}
-        if pending_tools is not None and tool_id:
-            tool_info = pending_tools.pop(tool_id, {})
-        callback.emit(
-            {
-                "event": "tool_end",
-                "tool": tool_info.get("tool", ""),
-                "args": tool_info.get("args"),
-                "call_id": tool_id,
-                "result": event.get("output"),
-                "raw": safe_raw([event]),
-                "ts": now_ms(),
-            }
-        )
-        return None
-
-    if event_type == "result":
-        stats = event.get("stats") or {}
-        if usage_out is not None and stats:
-            input_tokens = stats.get("input_tokens", 0)
-            output_tokens = stats.get("output_tokens", 0)
-            total_tokens = stats.get("total_tokens", 0)
-            usage_out.update(
-                {
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "total_tokens": total_tokens,
-                }
-            )
-            if stats.get("cached"):
-                usage_out["cached_tokens"] = stats["cached"]
-            # CLI doesn't break out thinking tokens, but they're the
-            # difference between total and input+output.
-            reasoning = total_tokens - input_tokens - output_tokens
-            if reasoning > 0:
-                usage_out["reasoning_tokens"] = reasoning
-        return None
-
-    # Unknown event type — log and skip
-    logger.debug("Unknown Gemini CLI event type: %s", event_type)
     return None
+
+
+def _raise_quota_if_needed(exc: google_errors.ClientError) -> None:
+    if getattr(exc, "code", None) != 429 and getattr(exc, "status", None) != (
+        "RESOURCE_EXHAUSTED"
+    ):
+        return
+    message = str(exc) or getattr(exc, "message", "") or "Provider quota exhausted"
+    raise QuotaExhaustedError(message, _extract_retry_delay_ms(exc)) from exc
+
+
+def _build_cogitate_config(
+    system_instruction: str | None,
+) -> types.GenerateContentConfig:
+    return types.GenerateContentConfig(
+        system_instruction=system_instruction,
+        tools=[types.Tool(function_declarations=build_tool_declarations())],
+        tool_config=types.ToolConfig(
+            function_calling_config=types.FunctionCallingConfig(
+                mode=types.FunctionCallingConfigMode.AUTO
+            )
+        ),
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        thinking_config=types.ThinkingConfig(
+            include_thoughts=True,
+            thinking_budget=-1,
+        ),
+    )
+
+
+def _iter_response_parts(chunk: Any) -> list[Any]:
+    parts: list[Any] = []
+    for candidate in getattr(chunk, "candidates", []) or []:
+        content = getattr(candidate, "content", None)
+        if content is None:
+            continue
+        parts.extend(getattr(content, "parts", []) or [])
+    return parts
+
+
+def _call_id(tool_name: str, function_call: Any, turn_index: int, index: int) -> str:
+    existing = getattr(function_call, "id", None)
+    if existing:
+        return str(existing)
+    return f"{tool_name}-{turn_index}-{index}"
+
+
+def _dispatch_google_tool(
+    tool_name: str,
+    args: dict[str, Any],
+    allowed_roots: list[Path],
+) -> dict[str, Any]:
+    if tool_name == "read_file":
+        return read_file(str(args.get("file_path", "")), allowed_roots=allowed_roots)
+    if tool_name == "glob":
+        return glob(
+            str(args.get("pattern", "")),
+            path=str(args.get("path", ".")),
+            allowed_roots=allowed_roots,
+        )
+    if tool_name == "list_directory":
+        return list_directory(
+            str(args.get("dir_path", "")),
+            allowed_roots=allowed_roots,
+        )
+    if tool_name == "grep_search":
+        return grep_search(
+            str(args.get("pattern", "")),
+            path=str(args.get("path", ".")),
+            include=str(args.get("include", "")),
+            allowed_roots=allowed_roots,
+        )
+    if tool_name == "run_shell_command":
+        return run_shell_command(str(args.get("command", "")))
+    return {"error": f"unknown_tool: {tool_name}"}
+
+
+def _emit_tool_budget_exhausted(
+    callback: JSONEventCallback,
+    tool_name: str,
+    budget: int,
+    count: int,
+) -> None:
+    callback.emit(
+        {
+            "event": "tool_budget_exhausted",
+            "tool": tool_name,
+            "budget": budget,
+            "count": count,
+            "read_tools": sorted(_READ_TOOL_NAMES),
+            "ts": now_ms(),
+        }
+    )
+
+
+def _raise_tool_budget_exhausted(count: int, budget: int) -> None:
+    raise RuntimeError(
+        f"tool_budget_exhausted: read tool call budget exceeded ({count}/{budget})"
+    )
 
 
 async def run_cogitate(
     config: dict[str, Any],
     on_event: Callable[[dict], None] | None = None,
 ) -> str:
-    """Run a prompt with tool-calling support via Google Gemini.
+    """Run a prompt with tool-calling support via Google Gemini SDK.
 
     Args:
         config: Complete configuration dictionary including prompt, system_instruction,
@@ -745,95 +775,196 @@ async def run_cogitate(
     callback = JSONEventCallback(on_event)
 
     try:
-        # Assemble prompt from config fields
         prompt_body, system_instruction = assemble_prompt(
             config,
             sol_tool_name="run_shell_command" if not config.get("write") else None,
         )
-
-        # Gemini CLI has no --system-prompt flag; prepend to prompt body
-        if system_instruction:
-            prompt_body = system_instruction + "\n\n" + prompt_body
-
-        # Approval posture:
-        #   - Write-enabled talents (coder) run unpolicied yolo: full tool registry,
-        #     write_file / replace allowed.
-        #   - Read-only cogitate talents run yolo + a scoped policy: full tool
-        #     registry (no plan-mode stripping), but write_file / replace denied
-        #     and run_shell_command narrowed to `sol` invocations.
-        # Plan mode strips run_shell_command from the registry, which drove a
-        # tool-name hallucination loop in earlier prototypes (documented in sol
-        # pbc's internal engineering notes). The deprecated --allowed-tools
-        # flag controls auto-approval, not availability, so it can't replace
-        # the policy file for this purpose.
-        cmd = [
-            "gemini",
-            "-p",
-            "-",
-            "-o",
-            "stream-json",
-            "--approval-mode",
-            "yolo",
-            "-m",
-            model,
-            "--sandbox=none",
-        ]
-        policy_path = None
-        if not config.get("write"):
-            policy_path = build_per_task_policy(
-                config.get("name") or "cogitate",
-                config,
-                config.get("day") or "",
-                int(config.get("read_scope_span", 0) or 0),
-            )
-            cmd.extend(["--policy", str(policy_path)])
-
-        # Resume from previous session if continuing
-        if session_id:
-            cmd.extend(["--resume", session_id])
-
-        # Mutable containers for translate closure
-        usage: dict[str, Any] = {}
-        pending_tools: dict[str, dict[str, Any]] = {}
-
-        def translate(
-            event: dict[str, Any], agg: ThinkingAggregator, cb: JSONEventCallback
-        ) -> str | None:
-            return _translate_gemini(event, agg, cb, usage, pending_tools)
-
-        aggregator = ThinkingAggregator(callback, model=model)
-        cwd_value = config.get("cwd")
-        runner = CLIRunner(
-            cmd=cmd,
-            prompt_text=prompt_body,
-            translate=translate,
-            callback=callback,
-            aggregator=aggregator,
-            cwd=Path(cwd_value) if cwd_value else None,
-            env=build_cogitate_env("google"),
-            read_call_budget=int(config.get("read_call_budget", 200)),
+        client = get_or_create_client(config.get("client"))
+        sdk_config = _build_cogitate_config(system_instruction)
+        history_path = _cogitate_history_path(session_id)
+        history = load_history(history_path) if history_path else []
+        chat = client.chats.create(
+            model=model,
+            config=sdk_config,
+            history=history,
         )
-        runner.provider = "google"
+        allowed_roots = _resolve_allowed_roots(config)
+        policy = CogitatePolicy(
+            write=bool(config.get("write")), allowed_roots=allowed_roots
+        )
+        read_call_budget = int(
+            config.get("read_call_budget", DEFAULT_READ_CALL_BUDGET) or 0
+        )
+        read_call_count = 0
+        usage: dict[str, Any] = {}
 
-        try:
-            result = await runner.run()
-        finally:
-            if policy_path is not None:
-                policy_path.unlink(missing_ok=True)
+        next_message: str | list[types.Part] = prompt_body
+        result_parts: list[str] = []
+        for turn_index in range(MAX_TURNS):
+            function_calls: list[dict[str, Any]] = []
+            stream = chat.send_message_stream(next_message)
+            for chunk in stream:
+                chunk_usage = _extract_usage(chunk)
+                if chunk_usage:
+                    usage = chunk_usage
+                for part in _iter_response_parts(chunk):
+                    text = getattr(part, "text", None)
+                    is_thought = bool(getattr(part, "thought", False))
+                    if is_thought and isinstance(text, str) and text.strip():
+                        callback.emit(
+                            {
+                                "event": "thinking",
+                                "summary": text.strip(),
+                                "model": model,
+                                "ts": now_ms(),
+                            }
+                        )
+                    if not is_thought and isinstance(text, str) and text:
+                        result_parts.append(text)
+                        callback.emit(
+                            {
+                                "event": "text_delta",
+                                "delta": text,
+                                "model": model,
+                                "ts": now_ms(),
+                            }
+                        )
+                    function_call = getattr(part, "function_call", None)
+                    if function_call is not None:
+                        tool_name = str(getattr(function_call, "name", "") or "")
+                        args = dict(getattr(function_call, "args", {}) or {})
+                        function_calls.append(
+                            {
+                                "tool": tool_name,
+                                "args": args,
+                                "call_id": _call_id(
+                                    tool_name,
+                                    function_call,
+                                    turn_index,
+                                    len(function_calls),
+                                ),
+                            }
+                        )
 
-        # Emit finish event (CLIRunner does not emit one)
-        finish_event: dict[str, Any] = {
-            "event": "finish",
-            "result": result,
-            "ts": now_ms(),
-        }
-        if usage:
-            finish_event["usage"] = usage
-        if runner.cli_session_id:
-            finish_event["cli_session_id"] = runner.cli_session_id
-        callback.emit(finish_event)
-        return result
+            if history_path:
+                save_history(history_path, chat.get_history(curated=True))
+
+            if not function_calls:
+                result = "".join(result_parts).strip()
+                finish_event: dict[str, Any] = {
+                    "event": "finish",
+                    "result": result,
+                    "ts": now_ms(),
+                }
+                if usage:
+                    finish_event["usage"] = usage
+                if session_id:
+                    finish_event["cli_session_id"] = session_id
+                callback.emit(finish_event)
+                return result
+
+            response_parts: list[types.Part] = []
+            for function_call in function_calls:
+                tool_name = function_call["tool"]
+                args = function_call["args"]
+                call_id = function_call["call_id"]
+                callback.emit(
+                    {
+                        "event": "tool_start",
+                        "tool": tool_name,
+                        "args": args,
+                        "call_id": call_id,
+                        "ts": now_ms(),
+                    }
+                )
+                if tool_name in _READ_TOOL_NAMES:
+                    read_call_count += 1
+                    if read_call_count > read_call_budget:
+                        _emit_tool_budget_exhausted(
+                            callback,
+                            tool_name,
+                            read_call_budget,
+                            read_call_count,
+                        )
+                        _raise_tool_budget_exhausted(
+                            read_call_count,
+                            read_call_budget,
+                        )
+                allowed, reason = policy.check(tool_name, args)
+                if allowed:
+                    tool_result = _dispatch_google_tool(tool_name, args, allowed_roots)
+                else:
+                    tool_result = {"error": reason}
+                callback.emit(
+                    {
+                        "event": "tool_end",
+                        "tool": tool_name,
+                        "args": args,
+                        "call_id": call_id,
+                        "result": tool_result,
+                        "ts": now_ms(),
+                    }
+                )
+                response_parts.append(
+                    types.Part.from_function_response(
+                        name=tool_name,
+                        response=tool_result,
+                    )
+                )
+            next_message = response_parts
+
+        callback.emit(
+            {
+                "event": "max_turns_exhausted",
+                "max_turns": MAX_TURNS,
+                "ts": now_ms(),
+            }
+        )
+        raise MaxTurnsExhausted(
+            f"max_turns_exhausted: Google cogitate exceeded {MAX_TURNS} turns"
+        )
+    except google_errors.ClientError as exc:
+        _raise_quota_if_needed(exc)
+        callback.emit(
+            {
+                "event": "error",
+                "error": str(exc),
+                "reason_code": classify_provider_error(exc, "google"),
+                "provider": "google",
+                "trace": traceback.format_exc(),
+            }
+        )
+        setattr(exc, "_evented", True)
+        raise
+    except google_errors.APIError as exc:
+        callback.emit(
+            {
+                "event": "error",
+                "error": str(exc),
+                "reason_code": classify_provider_error(exc, "google"),
+                "provider": "google",
+                "trace": traceback.format_exc(),
+            }
+        )
+        setattr(exc, "_evented", True)
+        raise
     except QuotaExhaustedError:
+        raise
+    except MaxTurnsExhausted:
+        raise
+    except RuntimeError as exc:
+        if str(exc).startswith("tool_budget_exhausted:"):
+            raise
+        callback.emit(
+            {
+                "event": "error",
+                "error": str(exc),
+                "reason_code": classify_provider_error(exc, "google"),
+                "provider": "google",
+                "trace": traceback.format_exc(),
+            }
+        )
+        setattr(exc, "_evented", True)
         raise
     except Exception as exc:
         callback.emit(
@@ -929,7 +1060,6 @@ __all__ = [
     "run_generate",
     "run_agenerate",
     "get_or_create_client",
-    "validate_vertex_credentials",
     "_detect_backend",
     "_get_effective_backend",
     "list_models",

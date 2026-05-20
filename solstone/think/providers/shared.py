@@ -57,7 +57,7 @@ class StartEvent(TypedDict, total=False):
     name: Required[str]
     model: Required[str]
     provider: Required[str]
-    session_id: Optional[str]  # CLI session ID for continuation
+    session_id: Optional[str]  # solstone-owned session ID for continuation
     chat_id: Optional[str]  # Chat ID for reverse lookup
     raw: Optional[list[dict[str, Any]]]  # Original provider JSON event(s)
 
@@ -69,7 +69,9 @@ class FinishEvent(TypedDict, total=False):
     ts: Required[int]
     result: Required[str]
     usage: Optional[dict[str, Any]]
-    cli_session_id: Optional[str]  # Provider CLI session/thread ID for resume
+    cli_session_id: Optional[
+        str
+    ]  # solstone-owned session ID persisted under journal/.cache/cogitate-history/
     raw: Optional[list[dict[str, Any]]]  # Original provider JSON event(s)
 
 
@@ -110,6 +112,16 @@ class ThinkingEvent(TypedDict, total=False):
     raw: Optional[list[dict[str, Any]]]  # Original provider JSON event(s)
 
 
+class TextDeltaEvent(TypedDict, total=False):
+    """Event emitted when streamed text content is available."""
+
+    event: Required[Literal["text_delta"]]
+    ts: Required[int]
+    delta: Required[str]
+    model: Optional[str]
+    raw: Optional[list[dict[str, Any]]]  # Original provider JSON event(s)
+
+
 class FallbackEvent(TypedDict, total=False):
     """Event emitted when provider fallback occurs."""
 
@@ -128,6 +140,7 @@ Event = Union[
     FinishEvent,
     ErrorEvent,
     ThinkingEvent,
+    TextDeltaEvent,
     TalentUpdatedEvent,
     FallbackEvent,
 ]

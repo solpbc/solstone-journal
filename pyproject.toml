@@ -31,7 +31,7 @@ keywords = ["audio", "transcription", "screenshot", "multimodal", "ai", "gemini"
 dependencies = [
     # Core dependencies
     "python-dotenv",
-    "google-genai",
+    "google-genai>=1.62.0",
     "Flask[async]",
     "Markdown",
     "mistune",

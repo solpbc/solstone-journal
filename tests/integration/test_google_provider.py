@@ -12,7 +12,6 @@ import pytest
 from dotenv import load_dotenv
 
 from solstone.think.models import GEMINI_FLASH, GEMINI_PRO
-from tests.integration.conftest import require_cli_tool
 
 
 def get_fixtures_env():
@@ -33,8 +32,7 @@ def get_fixtures_env():
 @pytest.mark.integration
 @pytest.mark.requires_api
 def test_google_provider_basic():
-    """Test Google provider with basic prompt via CLI."""
-    require_cli_tool("Google", "gemini")
+    """Test Google provider with basic prompt."""
     fixtures_env, api_key, journal_path = get_fixtures_env()
 
     if not fixtures_env:
@@ -126,7 +124,6 @@ def test_google_provider_basic():
 @pytest.mark.requires_api
 def test_google_provider_with_thinking():
     """Test Google provider with thinking enabled."""
-    require_cli_tool("Google", "gemini")
     fixtures_env, api_key, journal_path = get_fixtures_env()
 
     if not fixtures_env:

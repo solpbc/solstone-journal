@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from solstone.think.models import GEMINI_FLASH
+from solstone.think.providers import google as google_provider
 from solstone.think.providers.google import (
     _extract_finish_reason,
     _format_completion_message,
@@ -25,48 +26,6 @@ async def run_main(mod, argv, stdin_data=None):
     await mod.main_async()
 
 
-def make_mock_process(stdout_lines, return_code=0):
-    """Create a mock asyncio subprocess for CLI tests."""
-
-    class MockStdout:
-        def __init__(self, lines):
-            self._lines = [line.encode() + b"\n" for line in lines]
-            self._index = 0
-
-        async def readline(self):
-            if self._index >= len(self._lines):
-                return b""
-            line = self._lines[self._index]
-            self._index += 1
-            return line
-
-        def __aiter__(self):
-            return self
-
-        async def __anext__(self):
-            if self._index >= len(self._lines):
-                raise StopAsyncIteration
-            line = self._lines[self._index]
-            self._index += 1
-            return line
-
-    class MockStderr:
-        def __aiter__(self):
-            return self
-
-        async def __anext__(self):
-            raise StopAsyncIteration
-
-    process = AsyncMock()
-    process.stdout = MockStdout(stdout_lines)
-    process.stderr = MockStderr()
-    process.stdin = AsyncMock()
-    process.stdin.write = lambda data: None
-    process.stdin.close = lambda: None
-    process.wait = AsyncMock(return_value=return_code)
-    return process
-
-
 def _assert_structured_contents(contents):
     assert [content.role for content in contents] == ["user", "model", "user"]
     assert [[part.text for part in content.parts] for content in contents] == [
@@ -77,60 +36,20 @@ def _assert_structured_contents(contents):
 
 
 def test_google_main(monkeypatch, tmp_path, capsys):
-    setup_google_genai_stub(monkeypatch, with_thinking=False)
-    sys.modules.pop("solstone.think.providers.google", None)
-    importlib.reload(importlib.import_module("solstone.think.providers.google"))
     mod = importlib.reload(importlib.import_module("solstone.think.talents"))
 
     journal = tmp_path / "journal"
     journal.mkdir()
 
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
-    monkeypatch.setenv("GOOGLE_API_KEY", "x")
-    monkeypatch.setattr(
-        "solstone.think.utils.get_config",
-        lambda: {"providers": {"google_backend": "aistudio"}},
-    )
-    monkeypatch.setattr(
-        "solstone.think.providers.cli.shutil.which",
-        lambda name: "/usr/bin/gemini" if name == "gemini" else None,
-    )
 
-    stdout_lines = [
-        json.dumps(
-            {
-                "type": "init",
-                "timestamp": 100,
-                "session_id": "sess-test",
-                "model": "gemini-2.5-flash",
-            }
-        ),
-        json.dumps(
-            {
-                "type": "message",
-                "role": "assistant",
-                "delta": True,
-                "content": "ok",
-            }
-        ),
-        json.dumps(
-            {
-                "type": "result",
-                "timestamp": 200,
-                "status": "success",
-                "stats": {
-                    "total_tokens": 10,
-                    "input_tokens": 5,
-                    "output_tokens": 5,
-                },
-            }
-        ),
-    ]
-    process = make_mock_process(stdout_lines)
-    monkeypatch.setattr(
-        "solstone.think.providers.cli.asyncio.create_subprocess_exec",
-        AsyncMock(return_value=process),
-    )
+    async def fake_run_cogitate(config, on_event=None):
+        if on_event:
+            on_event({"event": "text_delta", "delta": "ok"})
+            on_event({"event": "finish", "result": "ok"})
+        return "ok"
+
+    monkeypatch.setattr(google_provider, "run_cogitate", fake_run_cogitate)
 
     ndjson_input = json.dumps(
         {
@@ -156,46 +75,6 @@ def test_google_main(monkeypatch, tmp_path, capsys):
 
     # Journal logging is now handled by cortex, not by agents directly
     # So we don't check for journal files here
-
-
-def test_google_cli_not_found_error(monkeypatch, tmp_path, capsys):
-    setup_google_genai_stub(monkeypatch, with_thinking=False)
-
-    sys.modules.pop("solstone.think.providers.google", None)
-    importlib.reload(importlib.import_module("solstone.think.providers.google"))
-    mod = importlib.reload(importlib.import_module("solstone.think.talents"))
-
-    journal = tmp_path / "journal"
-    journal.mkdir()
-
-    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
-    monkeypatch.setenv("GOOGLE_API_KEY", "x")
-    monkeypatch.setattr(
-        "solstone.think.utils.get_config",
-        lambda: {"providers": {"google_backend": "aistudio"}},
-    )
-    monkeypatch.setattr("solstone.think.providers.cli.shutil.which", lambda _name: None)
-
-    ndjson_input = json.dumps(
-        {
-            "name": "exec",
-            "prompt": "hello",
-            "provider": "google",
-            "model": GEMINI_FLASH,
-            "tools": ["search_insights"],
-        }
-    )
-    asyncio.run(run_main(mod, ["sol think.talents"], stdin_data=ndjson_input))
-
-    # Check stdout for error event
-    out_lines = capsys.readouterr().out.strip().splitlines()
-    events = [json.loads(line) for line in out_lines]
-    assert events[-1]["event"] == "error"
-    assert isinstance(events[-1]["ts"], int)
-    error_message = events[-1]["error"].lower()
-    assert "gemini" in error_message
-    assert "not found" in error_message
-    assert "trace" in events[-1]
 
 
 # ---------------------------------------------------------------------------

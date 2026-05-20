@@ -3205,7 +3205,7 @@ requires-dist = [
     { name = "faster-whisper", marker = "extra == 'whisper'", specifier = ">=1.0.0" },
     { name = "flask", extras = ["async"] },
     { name = "genai-prices" },
-    { name = "google-genai" },
+    { name = "google-genai", specifier = ">=1.62.0" },
     { name = "h2" },
     { name = "httpx" },
     { name = "huggingface-hub", specifier = ">=0.24" },

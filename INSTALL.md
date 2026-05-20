@@ -19,9 +19,9 @@ if solstone is running and healthy, skip to [install an observer](#install-an-ob
 
 ### prerequisites
 
-linux: `uv` is the only requirement. install with `curl -LsSf https://astral.sh/uv/install.sh | sh`.
+linux: install `uv` (`curl -LsSf https://astral.sh/uv/install.sh | sh`) and `ripgrep` (`rg`) from your distro package manager.
 
-macOS: install xcode command line tools (`xcode-select --install`) and homebrew (https://brew.sh), then `brew install uv`.
+macOS: install xcode command line tools (`xcode-select --install`) and homebrew (https://brew.sh), then `brew install uv ripgrep`.
 
 ## install
 

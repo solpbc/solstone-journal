@@ -68,15 +68,16 @@ LEGACY_NAME = _parts("uni", "fied")
 def _python_files() -> list[Path]:
     # `git ls-files` excludes anything gitignored (`/journal/*` on dev boxes can
     # be 100+ GB of capture data; `ROOT.rglob` walks all of it on every call).
-    return [ROOT / line for line in _git_ls("*.py")]
+    return [path for line in _git_ls("*.py") if (path := ROOT / line).exists()]
 
 
 def _text_scan_files() -> list[Path]:
     blocked_parts = ("tests/fixtures",)
     return [
-        ROOT / line
+        path
         for line in _git_ls("*.html", "*.js")
         if not any(part in line for part in blocked_parts)
+        if (path := ROOT / line).exists()
     ]
 
 

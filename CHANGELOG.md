@@ -4,6 +4,14 @@ All notable changes to solstone (the Python package) will be documented in this 
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), aligned with `cmo/brand/changelog-voice.md`.
 
+## [Unreleased]
+
+### Changed
+- Google cogitate agents now run through the Google GenAI SDK instead of a separate Gemini CLI process.
+  - Google tool use is handled inside solstone, with the same read/write policy boundaries.
+  - Google cogitate no longer needs a separate JavaScript package-manager install step.
+  - Existing Google cogitate sessions start fresh once because SDK history is stored in solstone's journal cache.
+
 ## [0.3.7] - 2026-05-19
 
 ### Changed

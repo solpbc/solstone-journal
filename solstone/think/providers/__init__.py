@@ -48,16 +48,14 @@ PROVIDER_REGISTRY: Dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Provider Metadata
 # ---------------------------------------------------------------------------
-# Display labels, environment variable names, and cogitate CLI binary names
-# for each provider. Used by settings UI, provider status, and agent health
-# checks.
+# Display labels, environment variable names, and CLI metadata where applicable.
+# Used by settings UI, provider status, and agent health checks.
 # ---------------------------------------------------------------------------
 
 PROVIDER_METADATA: Dict[str, Dict[str, Any]] = {
     "google": {
         "label": "Google (Gemini)",
         "env_key": "GOOGLE_API_KEY",
-        "cogitate_cli": "gemini",
         "vertex_env_keys": [
             "GOOGLE_GENAI_USE_VERTEXAI",
             "GOOGLE_APPLICATION_CREDENTIALS",
@@ -152,8 +150,8 @@ def build_provider_status(
     Returns
     -------
     Dict[str, Dict[str, Any]]
-        Keyed by provider name. Each entry has: configured, generate_ready,
-        cogitate_ready, cogitate_cli, cogitate_cli_found, issues.
+        Keyed by provider name. Each entry has readiness fields and issues.
+        CLI-backed providers also include cogitate_cli and cogitate_cli_found.
     """
     status = {}
     bundled_cli_states = {"installed-no-key", "key-validating", "valid", "invalid-key"}
@@ -197,6 +195,16 @@ def build_provider_status(
             configured = bool(os.getenv(env_key)) if env_key else False
             if not configured and env_key:
                 issues.append(f"{env_key} not set")
+
+        if name == "google":
+            cogitate_ready = configured
+            status[name] = {
+                "configured": configured,
+                "generate_ready": configured,
+                "cogitate_ready": cogitate_ready,
+                "issues": issues,
+            }
+            continue
 
         if bundled_state is not None:
             bundled_contract_state = bundled_state["state"]

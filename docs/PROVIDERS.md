@@ -122,7 +122,7 @@ async def run_cogitate(
 - `user_instruction`: Agent-specific prompt as second user message
 - `tools`: Optional list of allowed tool names
 - `use_id`, `name`: Identity for logging and tool calls
-- `session_id`: CLI session ID for conversation continuation
+- `session_id`: solstone-owned session ID for conversation continuation; Google cogitate history is stored under `journal/.cache/cogitate-history/`
 - `chat_id`: Chat ID for reverse lookup from agent to chat
 
 **Event emission:**
@@ -177,16 +177,10 @@ honor `config["tools"]` allowlists when present.
 
 **Conversation continuation:**
 
-When `session_id` is provided, use the provider CLI's native resume mechanism:
-```python
-session_id = config.get("session_id")
-if session_id:
-    cmd.extend(["--resume", session_id])
-```
-
-Each CLI tool manages its own session state internally. The `session_id` is
-returned from the CLI's init/finish event on the first interaction and reused
-for all subsequent continuations within the same chat.
+When `session_id` is provided, use the provider's native continuation mechanism
+or a solstone-owned history file where the provider has no durable session
+handle. The `session_id` is reused for all subsequent continuations within the
+same chat.
 
 ## Token Logging
 

@@ -543,14 +543,11 @@
       ]
     },
     "google": {
-      "cogitate_cli": "gemini",
-      "cogitate_cli_found": false,
       "cogitate_ready": false,
       "configured": false,
       "generate_ready": false,
       "issues": [
-        "GOOGLE_API_KEY not set",
-        "gemini CLI not found on PATH"
+        "GOOGLE_API_KEY not set"
       ]
     },
     "mlx": {
