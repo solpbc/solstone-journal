@@ -94,14 +94,6 @@ SETTINGS_NETWORK_DISCLOSURE_TOO_SHORT = "password must be at least 8 characters.
 SETTINGS_NETWORK_RESTARTING = "restarting convey…"
 SETTINGS_PASSWORD_HINT = "used when network access is on, or when localhost trust is off. not used otherwise."
 OBSERVER_CALLOSUM_LIVE_LABEL = "live"
-PAIRING_LOCALHOST_BANNER_TITLE = "convey is in localhost-only mode"
-PAIRING_LOCALHOST_BANNER_BODY_1 = (
-    "paired devices won't be able to connect until network access is enabled."
-)
-PAIRING_LOCALHOST_BANNER_BODY_2 = "enabling network access should only be done on trusted networks and requires a password."
-PAIRING_LOCALHOST_BANNER_ACTION = "enable network access in settings →"
-PAIRING_NO_LAN_BANNER_TITLE = "couldn't detect a local network address"
-PAIRING_NO_LAN_BANNER_BODY = "the QR code below uses localhost, which paired devices can't reach. set a host URL manually with: sol call settings convey host-url <url>"
 
 
 __all__ = [
@@ -168,12 +160,6 @@ __all__ = [
     "CONVEY_REPORT_TITLE",
     "LOGIN_NO_PASSWORD_CONFIGURED",
     "OBSERVER_CALLOSUM_LIVE_LABEL",
-    "PAIRING_LOCALHOST_BANNER_ACTION",
-    "PAIRING_LOCALHOST_BANNER_BODY_1",
-    "PAIRING_LOCALHOST_BANNER_BODY_2",
-    "PAIRING_LOCALHOST_BANNER_TITLE",
-    "PAIRING_NO_LAN_BANNER_BODY",
-    "PAIRING_NO_LAN_BANNER_TITLE",
     "SETTINGS_LAN_URL_LABEL",
     "SETTINGS_NETWORK_BUTTON_DISABLE",
     "SETTINGS_NETWORK_BUTTON_ENABLE",

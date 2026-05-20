@@ -11,10 +11,6 @@ from typing import Any
 from solstone.think.service import DEFAULT_SERVICE_PORT
 from solstone.think.utils import get_config, read_service_port
 
-DEFAULT_TOKEN_TTL_SECONDS = 600
-MIN_TOKEN_TTL_SECONDS = 60
-MAX_TOKEN_TTL_SECONDS = 3600
-
 
 def _pairing_config() -> dict[str, Any]:
     config = get_config()
@@ -58,33 +54,7 @@ def get_host_url() -> str:
     return f"http://localhost:{convey_port}"
 
 
-def get_token_ttl_seconds() -> int:
-    configured = _pairing_config().get("token_ttl_seconds")
-    try:
-        ttl_seconds = int(configured)
-    except (TypeError, ValueError):
-        ttl_seconds = DEFAULT_TOKEN_TTL_SECONDS
-    return max(MIN_TOKEN_TTL_SECONDS, min(MAX_TOKEN_TTL_SECONDS, ttl_seconds))
-
-
-def get_owner_identity() -> str:
-    config = get_config()
-    identity = config.get("identity")
-    if not isinstance(identity, dict):
-        return ""
-    preferred = _clean_str(identity.get("preferred"))
-    if preferred is not None:
-        return preferred
-    name = _clean_str(identity.get("name"))
-    return name or ""
-
-
 __all__ = [
-    "DEFAULT_TOKEN_TTL_SECONDS",
-    "MAX_TOKEN_TTL_SECONDS",
-    "MIN_TOKEN_TTL_SECONDS",
     "_detect_lan_ipv4",
     "get_host_url",
-    "get_owner_identity",
-    "get_token_ttl_seconds",
 ]

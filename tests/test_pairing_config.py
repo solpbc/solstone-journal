@@ -26,15 +26,12 @@ def test_pairing_config_defaults(journal_copy):
     _write_config(journal_copy, payload)
 
     assert config.get_host_url() == "http://localhost:5015"
-    assert config.get_token_ttl_seconds() == 600
-    assert config.get_owner_identity() == ""
 
 
 def test_pairing_host_url_reads_trimmed_value(journal_copy):
     payload = _read_config(journal_copy)
     payload["pairing"] = {
         "host_url": " https://example.test/base ",
-        "token_ttl_seconds": 600,
     }
     _write_config(journal_copy, payload)
 
@@ -85,42 +82,3 @@ def test_pairing_host_url_falls_back_to_localhost_when_lan_detect_fails(journal_
     mock_socket.connect.side_effect = OSError("boom")
     with patch("solstone.think.pairing.config.socket.socket", return_value=mock_socket):
         assert config.get_host_url() == "http://localhost:6123"
-
-
-def test_pairing_token_ttl_clamps(journal_copy):
-    payload = _read_config(journal_copy)
-
-    payload["pairing"] = {"token_ttl_seconds": 59}
-    _write_config(journal_copy, payload)
-    assert config.get_token_ttl_seconds() == 60
-
-    payload["pairing"] = {"token_ttl_seconds": 60}
-    _write_config(journal_copy, payload)
-    assert config.get_token_ttl_seconds() == 60
-
-    payload["pairing"] = {"token_ttl_seconds": 600}
-    _write_config(journal_copy, payload)
-    assert config.get_token_ttl_seconds() == 600
-
-    payload["pairing"] = {"token_ttl_seconds": 3600}
-    _write_config(journal_copy, payload)
-    assert config.get_token_ttl_seconds() == 3600
-
-    payload["pairing"] = {"token_ttl_seconds": 3601}
-    _write_config(journal_copy, payload)
-    assert config.get_token_ttl_seconds() == 3600
-
-
-def test_pairing_owner_identity_fallbacks(journal_copy):
-    payload = _read_config(journal_copy)
-    payload["identity"] = {"name": "Sol", "preferred": "Sol Preferred"}
-    _write_config(journal_copy, payload)
-    assert config.get_owner_identity() == "Sol Preferred"
-
-    payload["identity"] = {"name": "Sol", "preferred": "  "}
-    _write_config(journal_copy, payload)
-    assert config.get_owner_identity() == "Sol"
-
-    payload["identity"] = {"name": " ", "preferred": None}
-    _write_config(journal_copy, payload)
-    assert config.get_owner_identity() == ""

@@ -78,8 +78,7 @@
     "trust_localhost": true
   },
   "pairing": {
-    "host_url": null,
-    "token_ttl_seconds": 600
+    "host_url": null
   },
   "retention": {
     "raw_media": "keep",

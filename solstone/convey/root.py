@@ -132,11 +132,6 @@ def require_login() -> Any:
         "app:import.ingest_facets",
         "app:import.ingest_imports",
         "app:import.ingest_config",
-        # Pairing endpoints with explicit bearer or mixed auth
-        "pairing.confirm_pairing",
-        "pairing.heartbeat",
-        "pairing.list_devices",
-        "pairing.unpair_device",
     }:
         return None
 

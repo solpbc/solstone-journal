@@ -36,16 +36,6 @@ PAIRING_KEY_INVALID = Reason(
     "I couldn't use that pairing key.",
     400,
 )
-PAIRING_TOKEN_INVALID = Reason(
-    "pairing_token_invalid",
-    "I couldn't use that pairing token.",
-    400,
-)
-PAIRING_TOKEN_UNAVAILABLE = Reason(
-    "pairing_token_unavailable",
-    "I couldn't use that pairing token because it expired or was already used.",
-    410,
-)
 
 # input validation
 INVALID_JSON_REQUEST = Reason(
