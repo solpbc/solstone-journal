@@ -9,6 +9,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), al
 ### Changed
 - linux and tmux observers now come online from their published packages — no need for git or make on the host to bring an observer online.
 
+### Fixed
+- on installs from pypi, sol's meeting-screen analysis was coming back as freeform notes instead of the structured entries it was designed to produce. the missing piece is now bundled with the package, so meeting frames go back to their intended shape.
+
 ## [0.3.6] - 2026-05-18
 
 ### Changed
