@@ -65,7 +65,6 @@ def _gemma4_stubs(*, optional_attrs: bool = True):
     processor = SimpleNamespace(tokenizer=object(), image_processor=image_processor)
     pooler = SimpleNamespace(default_output_length=0)
     vision_tower = SimpleNamespace(
-        position_embedding_size=10240,
         pooling_kernel_size=3,
         max_patches=0,
         default_output_length=0,
@@ -76,7 +75,8 @@ def _gemma4_stubs(*, optional_attrs: bool = True):
         processor.image_seq_length = 0
     else:
         delattr(vision_tower, "pooler")
-    model = SimpleNamespace(vision_tower=vision_tower)
+    config = SimpleNamespace(vision_config=SimpleNamespace(position_embedding_size=10240))
+    model = SimpleNamespace(vision_tower=vision_tower, config=config)
     return model, processor
 
 
@@ -447,7 +447,7 @@ def test_gemma4_post_load_writes_all_patch_attributes(monkeypatch):
 def test_gemma4_post_load_refuses_small_position_embedding(monkeypatch):
     provider = _provider(monkeypatch)
     model, processor = _gemma4_stubs()
-    model.vision_tower.position_embedding_size = 5120
+    model.config.vision_config.position_embedding_size = 5120
 
     with pytest.raises(RuntimeError) as exc_info:
         provider._gemma4_post_load(model, processor)
@@ -461,7 +461,7 @@ def test_gemma4_post_load_refuses_small_position_embedding(monkeypatch):
 def test_gemma4_post_load_refuses_missing_position_embedding(monkeypatch):
     provider = _provider(monkeypatch)
     model, processor = _gemma4_stubs()
-    delattr(model.vision_tower, "position_embedding_size")
+    delattr(model.config.vision_config, "position_embedding_size")
 
     with pytest.raises(RuntimeError) as exc_info:
         provider._gemma4_post_load(model, processor)
@@ -503,7 +503,6 @@ def test_gemma4_post_load_asserts_required_writes_stick(
     elif attr_name == "max_patches":
 
         class NoOpMaxPatchesVisionTower:
-            position_embedding_size = 10240
             pooling_kernel_size = 3
             default_output_length = 0
             pooler = SimpleNamespace(default_output_length=0)
@@ -520,7 +519,6 @@ def test_gemma4_post_load_asserts_required_writes_stick(
     else:
 
         class NoOpDefaultOutputVisionTower:
-            position_embedding_size = 10240
             pooling_kernel_size = 3
             max_patches = 0
             pooler = SimpleNamespace(default_output_length=0)

@@ -36,18 +36,18 @@ class MLXModelSpec:
 
 def _gemma4_post_load(model: Any, processor: Any) -> None:
     try:
-        position_embedding_size = model.vision_tower.position_embedding_size
+        position_embedding_size = model.config.vision_config.position_embedding_size
     except AttributeError as exc:
         raise RuntimeError(
             f"{GEMMA4_26B_A4B_4BIT} requires "
-            "model.vision_tower.position_embedding_size >= "
+            "model.config.vision_config.position_embedding_size >= "
             f"{_GEMMA4_MIN_POSITION_EMBEDDING_SIZE}; actual missing"
         ) from exc
 
     if position_embedding_size < _GEMMA4_MIN_POSITION_EMBEDDING_SIZE:
         raise RuntimeError(
             f"{GEMMA4_26B_A4B_4BIT} requires "
-            "model.vision_tower.position_embedding_size >= "
+            "model.config.vision_config.position_embedding_size >= "
             f"{_GEMMA4_MIN_POSITION_EMBEDDING_SIZE}; "
             f"actual {position_embedding_size}"
         )
