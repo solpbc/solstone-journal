@@ -54,6 +54,8 @@ USER_BIN := $(HOME)/.local/bin
 .installed: pyproject.toml uv.lock .python-version-hash
 	@echo "Installing package with uv..."
 	$(UV) sync --group dev $(EXTRAS_ARGS)
+	@echo "Installing Playwright Chromium browser..."
+	$(VENV_BIN)/python -m playwright install chromium
 	@# Python 3.14+ needs onnxruntime from nightly (not yet on PyPI)
 	@OS_NAME=$$(uname -s); \
 	PY_MINOR=$$($(PYTHON) -c "import sys; print(sys.version_info.minor)"); \
@@ -365,6 +367,7 @@ test: .installed format-check
 test-cov: .installed format-check
 	@echo "Running core tests with coverage..."
 	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -q --cov=. --ignore=tests/integration $(NOT_INTEGRATION) -n auto --dist loadgroup
+	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) solstone/apps/link/tests/test_workspace_qr_size.py -q --cov=. --cov-append
 
 # Run app tests
 test-apps: .installed

@@ -185,6 +185,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "pytest-cov",
+    "pytest-playwright",
     "pytest-timeout",
     "pytest-xdist",
     "ruff",
