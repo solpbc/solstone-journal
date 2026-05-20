@@ -569,7 +569,7 @@
       "generate_ready": false,
       "issues": [
         "Ollama not reachable at http://localhost:11434",
-        "opencode CLI not found on PATH"
+        "opencode CLI not found on PATH — run: curl -fsSL https://opencode.ai/install | bash"
       ]
     },
     "openai": {

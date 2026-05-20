@@ -77,6 +77,7 @@ PROVIDER_METADATA: Dict[str, Dict[str, Any]] = {
         "label": "Ollama (Local)",
         "env_key": "",
         "cogitate_cli": "opencode",
+        "cogitate_cli_install": "curl -fsSL https://opencode.ai/install | bash",
     },
     "mlx": {
         "label": "MLX (Local, Apple Silicon)",
@@ -214,7 +215,13 @@ def build_provider_status(
                 bool(shutil.which(cogitate_cli)) if cogitate_cli else False
             )
             if cogitate_cli and not cogitate_cli_found:
-                issues.append(f"{cogitate_cli} CLI not found on PATH")
+                install_cmd = meta.get("cogitate_cli_install")
+                if install_cmd:
+                    issues.append(
+                        f"{cogitate_cli} CLI not found on PATH — run: {install_cmd}"
+                    )
+                else:
+                    issues.append(f"{cogitate_cli} CLI not found on PATH")
             cogitate_ready = configured and cogitate_cli_found
 
         generate_ready = configured

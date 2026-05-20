@@ -297,7 +297,10 @@ class TestProvidersShow:
                 "cogitate_ready": False,
                 "cogitate_cli": "opencode",
                 "cogitate_cli_found": False,
-                "issues": ["opencode CLI not found on PATH"],
+                "issues": [
+                    "opencode CLI not found on PATH — run: "
+                    "curl -fsSL https://opencode.ai/install | bash"
+                ],
             },
             "openai": {
                 "configured": True,
@@ -318,7 +321,10 @@ class TestProvidersShow:
             )
 
         assert result.exit_code == 0
-        assert "ollama: opencode CLI not found on PATH" in result.output.splitlines()
+        assert (
+            "ollama: opencode CLI not found on PATH — run: "
+            "curl -fsSL https://opencode.ai/install | bash"
+        ) in result.output.splitlines()
         assert not result.output.lstrip().startswith("{")
 
 

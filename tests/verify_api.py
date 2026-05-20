@@ -472,7 +472,13 @@ def normalize(data: Any, journal_path: str) -> Any:
                             and "not reachable" not in i
                         ]
                         if cli and _name not in {"anthropic", "openai"}:
-                            issues.append(f"{cli} CLI not found on PATH")
+                            if _name == "ollama":
+                                issues.append(
+                                    f"{cli} CLI not found on PATH — run: "
+                                    "curl -fsSL https://opencode.ai/install | bash"
+                                )
+                            else:
+                                issues.append(f"{cli} CLI not found on PATH")
                         # Re-add generic key-not-set issues per provider
                         env_keys = {
                             "anthropic": "ANTHROPIC_API_KEY",
