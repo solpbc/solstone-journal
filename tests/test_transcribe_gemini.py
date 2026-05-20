@@ -3,6 +3,8 @@
 
 """Tests for the Gemini STT backend."""
 
+from unittest.mock import Mock
+
 import numpy as np
 import pytest
 
@@ -15,7 +17,9 @@ from solstone.observe.transcribe.gemini import (
     _parse_speaker,
     _parse_timestamp,
     get_model_info,
+    transcribe,
 )
+from solstone.think.models import IncompleteJSONError
 
 
 class TestFormatTimestamp:
@@ -308,6 +312,131 @@ class TestExtractSegments:
         """Dict without segments key is rejected."""
         with pytest.raises(RuntimeError):
             _extract_segments({"other": 1})
+
+
+class TestSplitRetry:
+    def _statement(self, statement_id: int, start: float) -> dict:
+        return {
+            "id": statement_id,
+            "start": start,
+            "end": start + 1.0,
+            "text": f"statement {statement_id}",
+            "words": [],
+            "speaker": "A",
+        }
+
+    def test_split_retry_on_truncation_returns_time_sorted_statements(
+        self, monkeypatch
+    ):
+        audio = np.zeros(16000, dtype=np.float32)
+        speech_segments = [(0.0, 1.0), (1.0, 2.0), (2.0, 3.0), (3.0, 4.0)]
+        original_error = IncompleteJSONError("MAX_TOKENS", "partial")
+        mock_once = Mock(
+            side_effect=[
+                original_error,
+                [self._statement(7, 10.0)],
+                [self._statement(3, 2.0)],
+            ]
+        )
+        monkeypatch.setattr(
+            "solstone.observe.transcribe.gemini._transcribe_once", mock_once
+        )
+
+        statements = transcribe(audio, 16000, {}, speech_segments)
+
+        assert [s["start"] for s in statements] == [2.0, 10.0]
+        assert [s["id"] for s in statements] == [1, 2]
+
+    def test_split_retry_only_attempts_once_total_three_calls(self, monkeypatch):
+        audio = np.zeros(16000, dtype=np.float32)
+        speech_segments = [(0.0, 1.0), (1.0, 2.0)]
+        original_error = IncompleteJSONError("MAX_TOKENS", "partial")
+        mock_once = Mock(
+            side_effect=[
+                original_error,
+                [self._statement(1, 0.0)],
+                [self._statement(2, 1.0)],
+            ]
+        )
+        monkeypatch.setattr(
+            "solstone.observe.transcribe.gemini._transcribe_once", mock_once
+        )
+
+        transcribe(audio, 16000, {}, speech_segments)
+
+        assert mock_once.call_count == 3
+
+    def test_split_retry_half_b_failure_raises_original(self, monkeypatch):
+        audio = np.zeros(16000, dtype=np.float32)
+        speech_segments = [(0.0, 1.0), (1.0, 2.0)]
+        original_error = IncompleteJSONError("MAX_TOKENS", "partial")
+        mock_once = Mock(
+            side_effect=[
+                original_error,
+                [self._statement(1, 0.0)],
+                RuntimeError("half b failed"),
+            ]
+        )
+        monkeypatch.setattr(
+            "solstone.observe.transcribe.gemini._transcribe_once", mock_once
+        )
+
+        with pytest.raises(IncompleteJSONError) as exc_info:
+            transcribe(audio, 16000, {}, speech_segments)
+
+        assert exc_info.value is original_error
+        assert mock_once.call_count == 3
+
+    def test_split_retry_half_b_truncation_raises_original(self, monkeypatch):
+        audio = np.zeros(16000, dtype=np.float32)
+        speech_segments = [(0.0, 1.0), (1.0, 2.0)]
+        original_error = IncompleteJSONError("MAX_TOKENS", "partial")
+        half_error = IncompleteJSONError("MAX_TOKENS", "half")
+        mock_once = Mock(
+            side_effect=[
+                original_error,
+                [self._statement(1, 0.0)],
+                half_error,
+            ]
+        )
+        monkeypatch.setattr(
+            "solstone.observe.transcribe.gemini._transcribe_once", mock_once
+        )
+
+        with pytest.raises(IncompleteJSONError) as exc_info:
+            transcribe(audio, 16000, {}, speech_segments)
+
+        assert exc_info.value is original_error
+        assert mock_once.call_count == 3
+
+    def test_no_split_when_fewer_than_two_chunks(self, monkeypatch):
+        audio = np.zeros(16000, dtype=np.float32)
+        speech_segments = [(0.0, 1.0)]
+        original_error = IncompleteJSONError("MAX_TOKENS", "partial")
+        mock_once = Mock(side_effect=[original_error])
+        monkeypatch.setattr(
+            "solstone.observe.transcribe.gemini._transcribe_once", mock_once
+        )
+
+        with pytest.raises(IncompleteJSONError) as exc_info:
+            transcribe(audio, 16000, {}, speech_segments)
+
+        assert exc_info.value is original_error
+        assert mock_once.call_count == 1
+
+    def test_happy_path_no_retry(self, monkeypatch):
+        audio = np.zeros(16000, dtype=np.float32)
+        speech_segments = [(0.0, 1.0), (1.0, 2.0)]
+        expected = [self._statement(1, 0.0)]
+        mock_once = Mock(return_value=expected)
+        monkeypatch.setattr(
+            "solstone.observe.transcribe.gemini._transcribe_once", mock_once
+        )
+
+        statements = transcribe(audio, 16000, {}, speech_segments)
+
+        assert statements == expected
+        assert mock_once.call_count == 1
 
 
 class TestGetModelInfo:

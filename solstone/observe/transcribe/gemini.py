@@ -31,7 +31,7 @@ import numpy as np
 from google.genai import types
 
 from solstone.observe.utils import audio_to_flac_bytes
-from solstone.think.models import generate
+from solstone.think.models import IncompleteJSONError, generate
 from solstone.think.prompts import load_prompt
 
 logger = logging.getLogger(__name__)
@@ -288,29 +288,14 @@ def _normalize_chunked_segments(
     return statements
 
 
-def transcribe(
+def _transcribe_once(
     audio: np.ndarray,
     sample_rate: int,
     config: dict,
     speech_segments: list[tuple[float, float]] | None = None,
 ) -> list[dict]:
-    """Transcribe audio using Gemini API.
+    """Run one Gemini transcription request."""
 
-    When speech_segments is provided (from VAD), sends audio as labeled clips
-    with explicit timestamps. Gemini returns absolute MM:SS timestamps which
-    are mapped back to the audio timeline.
-
-    Args:
-        audio: Audio buffer (float32, mono)
-        sample_rate: Sample rate in Hz (typically 16000)
-        config: Backend configuration dict (currently unused)
-        speech_segments: Optional list of (start, end) tuples from VAD.
-            When provided, enables clip-based transcription for better
-            timestamp accuracy.
-
-    Returns:
-        List of statements with id, start, end, text, speaker.
-    """
     audio_duration = len(audio) / sample_rate
     use_chunks = speech_segments is not None and len(speech_segments) > 0
 
@@ -383,6 +368,66 @@ def transcribe(
     )
 
     return statements
+
+
+def transcribe(
+    audio: np.ndarray,
+    sample_rate: int,
+    config: dict,
+    speech_segments: list[tuple[float, float]] | None = None,
+) -> list[dict]:
+    """Transcribe audio using Gemini API.
+
+    When speech_segments is provided (from VAD), sends audio as labeled clips
+    with explicit timestamps. Gemini returns absolute MM:SS timestamps which
+    are mapped back to the audio timeline.
+
+    Args:
+        audio: Audio buffer (float32, mono)
+        sample_rate: Sample rate in Hz (typically 16000)
+        config: Backend configuration dict (currently unused)
+        speech_segments: Optional list of (start, end) tuples from VAD.
+            When provided, enables clip-based transcription for better
+            timestamp accuracy.
+
+    Returns:
+        List of statements with id, start, end, text, speaker.
+    """
+    try:
+        return _transcribe_once(audio, sample_rate, config, speech_segments)
+    except IncompleteJSONError as original_error:
+        if speech_segments is None or len(speech_segments) < 2:
+            raise
+
+        mid = len(speech_segments) // 2
+        first_half = speech_segments[:mid]
+        second_half = speech_segments[mid:]
+        logger.info(
+            "Gemini transcribe truncated at %d chunks; retrying as %d+%d split (one attempt)",
+            len(speech_segments),
+            len(first_half),
+            len(second_half),
+        )
+
+        try:
+            first_statements = _transcribe_once(audio, sample_rate, config, first_half)
+            second_statements = _transcribe_once(
+                audio, sample_rate, config, second_half
+            )
+        except Exception:
+            logger.info("Gemini transcribe split-retry also truncated; raising")
+            raise original_error
+
+        statements = sorted(
+            [*first_statements, *second_statements], key=lambda s: s["start"]
+        )
+        for i, statement in enumerate(statements):
+            statement["id"] = i + 1
+        logger.info(
+            "Gemini transcribe split-retry succeeded; merged %d statements",
+            len(statements),
+        )
+        return statements
 
 
 def get_model_info(config: dict) -> dict:
