@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import re
 
+from solstone.apps.link import routes as link_routes
+
 PAIR_START_KEYS = [
     "nonce",
     "pair_link",
@@ -30,10 +32,13 @@ def test_pair_start_shape_and_locked_order(link_env) -> None:
     payload = response.get_json()
     assert list(payload.keys()) == PAIR_START_KEYS
     assert re.fullmatch(
-        r"https://link\.solpbc\.org/p#h=[^&]+&t=[a-f0-9]+&f=[a-f0-9]+&l=[^&]*&v=1",
+        r"^https://link\.solpbc\.org/p#[0-9A-HJKMNP-TV-Z]{52}$",
         payload["pair_link"],
     )
-    assert re.fullmatch(r"^[A-Z2-9]{4}-[A-Z2-9]{4}$", payload["manual_code"])
+    assert re.fullmatch(
+        r"^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$",
+        payload["manual_code"],
+    )
     assert "://" not in payload["lan_url"]
     assert "pair_url" not in payload
     assert "qr_payload" not in payload
@@ -53,3 +58,23 @@ def test_pair_start_mints_distinct_nonce_and_manual_code(link_env) -> None:
 
     assert first["nonce"] != second["nonce"]
     assert first["manual_code"] != second["manual_code"]
+
+
+def test_pair_start_rejects_non_ipv4_pair_link_host(link_env, monkeypatch) -> None:
+    env = link_env()
+    monkeypatch.setattr(
+        link_routes,
+        "_resolve_host_port",
+        lambda: "mylab.local:7070",
+    )
+
+    response = env.client.post(
+        "/app/link/pair-start",
+        json={"device_label": "Test Phone"},
+    )
+
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert payload["reason_code"] == "pairing_request_invalid"
+    assert "mylab.local" in payload["detail"]
+    assert link_routes._nonces().snapshot() == []

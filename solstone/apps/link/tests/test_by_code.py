@@ -13,6 +13,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 
+from solstone.apps.link import routes as link_routes
+
 PAIR_RESPONSE_KEYS = {
     "client_cert",
     "ca_chain",
@@ -143,6 +145,42 @@ def test_by_code_bad_manual_code_format_returns_400(link_env) -> None:
     )
 
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize("manual_code", ["0000-0000", "1111-1111"])
+def test_by_code_accepts_crockford_zero_and_one(
+    link_env,
+    monkeypatch: pytest.MonkeyPatch,
+    manual_code: str,
+) -> None:
+    env = link_env()
+    monkeypatch.setattr(link_routes, "generate_manual_code", lambda: manual_code)
+    started = _start_pair(env)
+
+    response = env.client.post(
+        "/app/link/by-code",
+        json={"code": started["manual_code"], "csr": _make_csr("by-code")},
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("manual_code", ["IIII-IIII", "LLLL-LLLL"])
+def test_by_code_rejects_non_crockford_ambiguous_letters(
+    link_env,
+    manual_code: str,
+) -> None:
+    env = link_env()
+
+    response = env.client.post(
+        "/app/link/by-code",
+        json={"code": manual_code, "csr": _make_csr("by-code")},
+    )
+
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert payload["reason_code"] == "pairing_request_invalid"
+    assert payload["detail"] == "bad code"
 
 
 @pytest.mark.parametrize("route", ["pair", "by-code"])

@@ -26,24 +26,24 @@ cannot forge a cert signed by the pinned CA.
 from __future__ import annotations
 
 import datetime as dt
+import ipaddress
 import json as _json
 import logging
 import re
 import socket
 from dataclasses import asdict, dataclass
 from typing import Any
-from urllib.parse import quote
 
 from cryptography.hazmat.primitives import serialization
 from flask import Blueprint, Response, abort, jsonify, request
 
 from solstone.apps.link import copy as link_copy
 from solstone.apps.link.copy import (
-    MANUAL_CODE_GROUP,
     MANUAL_CODE_LEN,
     PAIR_LINK_HOST,
     PAIR_LINK_PATH,
 )
+from solstone.apps.link.crockford32 import encode as crockford_encode
 from solstone.apps.link.manual_code import (
     generate as generate_manual_code,
 )
@@ -84,10 +84,7 @@ from solstone.think.link.paths import (
 )
 
 logger = logging.getLogger(__name__)
-MANUAL_CODE_RE = re.compile(
-    rf"^[A-Z2-9]{{{MANUAL_CODE_GROUP}}}"
-    rf"[A-Z2-9]{{{MANUAL_CODE_LEN - MANUAL_CODE_GROUP}}}$"
-)
+MANUAL_CODE_RE = re.compile(rf"^[0-9A-HJKMNP-TV-Z]{{{MANUAL_CODE_LEN}}}$")
 
 link_bp = Blueprint(
     "app:link",
@@ -162,17 +159,24 @@ def _ca_fingerprint() -> str:
 
 
 def _build_pair_link(
-    lan_url: str,
+    host: str,
+    port: int,
     nonce: str,
     ca_fp: str,
-    device_label: str,
 ) -> str:
-    fp_hex = ca_fp.removeprefix("sha256:")
-    encoded_label = quote(device_label, safe="")
-    return (
-        f"https://{PAIR_LINK_HOST}{PAIR_LINK_PATH}"
-        f"#h={lan_url}&t={nonce}&f={fp_hex}&l={encoded_label}&v=1"
-    )
+    """Build the v2 pair-link URL.
+
+    Layout:
+    version(1) | addr_type(1) | ipv4(4) | port_be(2) | nonce(8) | ca_fp[:16].
+    Encoded as 52-char uppercase Crockford base32 in the URL fragment.
+    """
+    ipv4_bytes = ipaddress.IPv4Address(host).packed
+    port_bytes = port.to_bytes(2, "big")
+    nonce_bytes = bytes.fromhex(nonce)
+    ca_fp_bytes = bytes.fromhex(ca_fp)[:16]
+    blob = b"\x02\x01" + ipv4_bytes + port_bytes + nonce_bytes + ca_fp_bytes
+    assert len(blob) == 32
+    return f"https://{PAIR_LINK_HOST}{PAIR_LINK_PATH}#{crockford_encode(blob)}"
 
 
 @dataclass(frozen=True)
@@ -259,19 +263,29 @@ def pair_start() -> Any:
         str(payload.get("device_label") or "").strip() or _default_device_label()
     )
 
+    lan_url = _resolve_host_port()
+    hostname, _, port_str = lan_url.partition(":")
+    try:
+        ipaddress.IPv4Address(hostname)
+    except ValueError:
+        return error_response(
+            PAIRING_REQUEST_INVALID,
+            detail=f"pair-link requires an IPv4 LAN address; got {hostname!r}",
+        )
+    port = int(port_str) if port_str else 80
+
+    ca_fp = _ca_fingerprint()
     nonce = generate_nonce()
     manual_code_hyphenated = generate_manual_code()
+    pair_link = _build_pair_link(hostname, port, nonce, ca_fp)
     _nonces().add(
         nonce,
         device_label,
         manual_code=normalize_manual_code(manual_code_hyphenated),
     )
-
-    ca_fp = _ca_fingerprint()
-    lan_url = _resolve_host_port()
     response = PairStartResponse(
         nonce=nonce,
-        pair_link=_build_pair_link(lan_url, nonce, ca_fp, device_label),
+        pair_link=pair_link,
         manual_code=manual_code_hyphenated,
         expires_in=300,
         device_label=device_label,

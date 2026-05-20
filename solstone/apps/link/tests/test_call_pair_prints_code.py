@@ -39,4 +39,7 @@ def test_call_pair_prints_manual_code(tmp_path, monkeypatch) -> None:
 
     assert result.exit_code == 2
     assert "manual code:" in result.stdout
-    assert re.search(r"manual code: [A-Z2-9]{4}-[A-Z2-9]{4}", result.stdout)
+    assert re.search(
+        r"manual code: [0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}",
+        result.stdout,
+    )

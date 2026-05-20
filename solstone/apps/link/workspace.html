@@ -388,7 +388,11 @@
       throw new Error('QR renderer unavailable');
     }
     const qr = window.qrcode(0, 'M');
-    qr.addData(pairLink);
+    const hashIdx = pairLink.indexOf('#');
+    const prefix = pairLink.slice(0, hashIdx + 1);
+    const blob = pairLink.slice(hashIdx + 1);
+    qr.addData(prefix, 'Byte');
+    qr.addData(blob, 'Alphanumeric');
     qr.make();
     qrContainer.innerHTML = qr.createSvgTag({
       cellSize: 8,
@@ -396,6 +400,7 @@
       title: 'pair QR',
       alt: 'pair QR',
     });
+    qrContainer.querySelector('svg').setAttribute('data-module-count', qr.getModuleCount());
   }
 
   async function requestPairCode() {

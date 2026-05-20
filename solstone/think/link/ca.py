@@ -212,8 +212,8 @@ def cert_fingerprint(cert_pem: str | bytes) -> str:
 
 
 def generate_nonce() -> str:
-    """64-character hex nonce for the pair ceremony."""
-    return secrets.token_hex(32)
+    """16-character hex nonce / 8 bytes for the pair ceremony."""
+    return secrets.token_hex(8)
 
 
 def _materialize(cert: x509.Certificate, key: ec.EllipticCurvePrivateKey) -> LoadedCa:

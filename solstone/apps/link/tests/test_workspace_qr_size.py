@@ -40,7 +40,9 @@ def test_pair_modal_qr_renders_at_usable_size(live_server, page):
     svg = page.locator("#link-qr-container svg")
     width_attr = _parse_px_dimension(svg.get_attribute("width"))
     height_attr = _parse_px_dimension(svg.get_attribute("height"))
+    module_count = int(svg.get_attribute("data-module-count") or "0")
 
+    assert module_count <= 37
     assert width_attr >= 200
     assert height_attr >= 200
 
