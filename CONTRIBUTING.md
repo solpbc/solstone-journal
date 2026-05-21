@@ -96,6 +96,10 @@ Run `sol password set` to configure web authentication. Replace `your-key-here` 
 
 `journal.json` contains API keys and credentials. Keep it private and restricted (`chmod 600`).
 
+### Seeding a dev/test journal from public media
+
+If you want a journal seeded with public-domain audio and screen recordings instead of your own capture data — useful for contributors who shouldn't be exposed to a maintainer's personal journal, integration-test scenarios, or a clean dev environment — see [docs/FIELD_JOURNAL.md](docs/FIELD_JOURNAL.md). The `setup_field_journal.sh` script at the repo root populates `journal/chronicle/` from a local clone of [solpbc/field_journal](https://github.com/solpbc/field_journal). It is opt-in and deliberately not part of `make install` or `sol setup`.
+
 ## Repo layout
 
 Start with [AGENTS.md](AGENTS.md) or [CLAUDE.md](CLAUDE.md) for the developer-facing repo map, layer hygiene rules, make targets, and coding invariants. Most implementation work lives in `solstone/think/`, `solstone/observe/`, `solstone/convey/`, `solstone/apps/`, `solstone/talent/`, and `tests/`.
