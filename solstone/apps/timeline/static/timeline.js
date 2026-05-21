@@ -6,6 +6,7 @@ const segmentAvail = {};        // "monthIdx:day:hour" → buckets (12 entries)
 const dayCache = new Map();      // "YYYYMMDD" → /app/timeline/api/day response
 const segCache = new Map();      // "<day>/<stream>/<seg>" → /app/timeline/api/segment response
 const monthCache = {};
+const timelineMeta = { generatedAt: null, model: null, dataThrough: null };
 
 const ACCENT_ROTATION = ["blue", "teal", "amber", "coral"];
 const MONTH_FULL_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -26,6 +27,15 @@ function minuteFromOrigin(origin) {
   const seg = (origin || "").split("/").pop() || "";
   if (seg.length < 6 || !/^\d{6}/.test(seg)) return null;
   return parseInt(seg.slice(2, 4), 10);
+}
+function originParts(origin) {
+  if (!origin || typeof origin !== "string") return null;
+  if (origin.length < 8) return null;
+  const day = origin.slice(0, 8);
+  if (!/^\d{8}$/.test(day)) return null;
+  const last = origin.split("/").pop();
+  if (!last || !/^\d{6}/.test(last)) return null;
+  return { day, hh: last.slice(0, 2), mm: last.slice(2, 4) };
 }
 
 function segmentCountFromHoursAvail(hoursAvail) {
@@ -66,6 +76,9 @@ async function loadIndex() {
       console.warn("/app/timeline/api/index returned unreadable JSON; showing timeline error", e);
       return { state: "error" };
     }
+    timelineMeta.generatedAt = idx.generated_at ?? null;
+    timelineMeta.model = idx.model ?? null;
+    timelineMeta.dataThrough = idx.data_through ?? null;
     rebuildMonthsFromIndex(idx);
     const state = months.every((m) => !m.yearEvent && !(m.day_count > 0)) ? "empty" : "data";
     console.info(`loaded /app/timeline/api/index (${idx.months.length} months, year_top=${idx.year_top.length})`);
@@ -158,6 +171,32 @@ async function loadDay(yyyymmdd) {
   const monthIdx = isoToMonthIdx(yyyymmdd.slice(0, 6));
   if (monthIdx >= 0) populateDayLookups(monthIdx, yyyymmdd, data);
   return data;
+}
+
+function clearMonthCache() {
+  for (const key of Object.keys(monthCache)) delete monthCache[key];
+}
+
+function clearDayLookups(yyyymmdd) {
+  const monthIdx = isoToMonthIdx(yyyymmdd.slice(0, 6));
+  if (monthIdx < 0) return;
+  const dayInt = parseInt(yyyymmdd.slice(6, 8), 10);
+  const dayPrefix = `${monthIdx}:${dayInt}`;
+  delete realDayPlan[dayPrefix];
+  for (const key of Object.keys(realHourPlan)) {
+    if (key.startsWith(`${dayPrefix}:`)) delete realHourPlan[key];
+  }
+  for (const key of Object.keys(segmentAvail)) {
+    if (key.startsWith(`${dayPrefix}:`)) delete segmentAvail[key];
+  }
+}
+
+function clearRollupCaches() {
+  clearMonthCache();
+  dayCache.clear();
+  realHourPlan = {};
+  realDayPlan = {};
+  for (const key of Object.keys(segmentAvail)) delete segmentAvail[key];
 }
 
 function populateDayLookups(monthIdx, yyyymmdd, data) {
@@ -409,6 +448,33 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function renderOriginChip(origin) {
+  const parts = originParts(origin);
+  if (!parts) return "";
+  return `<a class="timeline-origin-chip" href="/app/activities/${parts.day}">→ ${parts.hh}:${parts.mm}</a>`;
+}
+
+function renderYearFooter(dataThrough) {
+  if (!dataThrough || !/^\d{8}$/.test(dataThrough)) return "";
+  const y = dataThrough.slice(0, 4);
+  const m = parseInt(dataThrough.slice(4, 6), 10) - 1;
+  const d = parseInt(dataThrough.slice(6, 8), 10);
+  const date = new Date(Date.UTC(parseInt(y, 10), m, d));
+  const monthName = date.toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+  return `<footer class="timeline-data-through">data through ${monthName} ${d}, ${y}</footer>`;
+}
+
+function renderDayProvenance(generatedAt, model) {
+  if (!generatedAt || !model) return "";
+  const date = new Date(generatedAt * 1000);
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  const y = date.getFullYear();
+  const mo = String(date.getMonth() + 1).padStart(2, "0");
+  const da = String(date.getDate()).padStart(2, "0");
+  return `<p class="timeline-day-provenance">rolled up at ${hh}:${mm} on ${y}-${mo}-${da} · ${escapeHtml(model)}</p>`;
+}
+
 function renderEmptyState(headline, body, opts = {}) {
   const classes = ["timeline-empty-state", opts.modifierClass || ""].filter(Boolean).join(" ");
   const link = opts.href && opts.linkText
@@ -634,6 +700,7 @@ function renderYear() {
                   <div class="timeline-date">${month.name} ${month.year || ""}</div>
                   <h2>${escapeHtml(month.yearEvent.title)}</h2>
                   <p>${escapeHtml(month.yearEvent.text)}</p>
+                  ${renderOriginChip(month.yearEvent.origin)}
                 </div>
               ` : ""}
               <button class="timeline-node" type="button" data-month="${index}" aria-label="Open ${month.name} ${month.year || ""}">
@@ -643,6 +710,7 @@ function renderYear() {
           `,
         )
         .join("")}
+      ${renderYearFooter(timelineMeta.dataThrough)}
     </div>
   `;
 }
@@ -753,6 +821,7 @@ async function renderDay(monthIndex, day) {
           <button class="day-focus-node" type="button" data-month="${monthIndex}" data-return-month="true" aria-label="Return to ${month.name} ${month.year || ""}">
             ${dayLabel}
           </button>
+          ${renderDayProvenance(data.generated_at, data.model)}
         </div>
 
         <div class="hour-lane timeline-top" aria-label="${month.name} ${day} highlighted events above the hourly timeline">
@@ -1261,36 +1330,34 @@ function renderEdgeMonth(month, index, position) {
 }
 
 function renderDayEvent(event, days, side) {
-  // Origin is internal-only: kept on the title attr for hover/inspection
-  // and on the data attribute for layout, never rendered visibly.
-  const originAttr = event.origin ? ` title="${escapeHtml(event.origin)}"` : "";
   return `
-    <article class="day-event timeline-${side}" data-anchor-day="${event.day}" data-side="${side}"${originAttr}>
+    <article class="day-event timeline-${side}" data-anchor-day="${event.day}" data-side="${side}">
       <div class="day-date">Day ${event.day}</div>
       <h3>${escapeHtml(event.title)}</h3>
       <p>${escapeHtml(event.text)}</p>
+      ${renderOriginChip(event.origin)}
     </article>
   `;
 }
 
 function renderHourEvent(event) {
-  const originAttr = event.origin ? ` title="${escapeHtml(event.origin)}"` : "";
   return `
-    <article class="hour-event timeline-${event.side}" data-anchor-hour="${event.hour}" data-side="${event.side}"${originAttr}>
+    <article class="hour-event timeline-${event.side}" data-anchor-hour="${event.hour}" data-side="${event.side}">
       <div class="hour-time">${formatHour(event.hour)}</div>
       <h3>${escapeHtml(event.title)}</h3>
       <p>${escapeHtml(event.text)}</p>
+      ${renderOriginChip(event.origin)}
     </article>
   `;
 }
 
 function renderMinuteEvent(event) {
-  const originAttr = event.origin ? ` title="${escapeHtml(event.origin)}"` : "";
   return `
-    <article class="minute-event timeline-${event.side}" data-anchor-minute="${event.minute}" data-side="${event.side}"${originAttr}>
+    <article class="minute-event timeline-${event.side}" data-anchor-minute="${event.minute}" data-side="${event.side}">
       <div class="minute-time">${String(event.minute).padStart(2, "0")}</div>
       <h3>${escapeHtml(event.title)}</h3>
       <p>${escapeHtml(event.text)}</p>
+      ${renderOriginChip(event.origin)}
     </article>
   `;
 }
@@ -1444,6 +1511,9 @@ window.addEventListener("popstate", (e) => {
 });
 
 async function bootTimeline() {
+  if (window.AppServices?.badges?.app?.clear) {
+    window.AppServices.badges.app.clear("timeline");
+  }
   const result = await loadIndex();
   if (result.state === "error") {
     timeline.innerHTML = renderErrorState();
@@ -1451,5 +1521,34 @@ async function bootTimeline() {
   }
   await applyHash(window.location.hash);
 }
+
+window.timelineRefresh = {
+  day(yyyymmdd) {
+    if (!yyyymmdd) return undefined;
+    dayCache.delete(yyyymmdd);
+    delete monthCache[yyyymmdd.slice(0, 6)];
+    clearDayLookups(yyyymmdd);
+    return loadDay(yyyymmdd).then(() => applyHash(window.location.hash));
+  },
+  index() {
+    clearRollupCaches();
+    return loadIndex().then((result) => {
+      if (result.state === "error") {
+        timeline.innerHTML = renderErrorState();
+        return undefined;
+      }
+      return applyHash(window.location.hash);
+    });
+  },
+  getCurrentDay() {
+    if (selectedMonth === null || selectedDay === null) return null;
+    return isoDay(selectedMonth, selectedDay);
+  },
+  getCurrentView() {
+    if (selectedMinute !== null) return "five-minute";
+    if (selectedHour !== null) return "hour";
+    return currentView || "year";
+  },
+};
 
 bootTimeline();

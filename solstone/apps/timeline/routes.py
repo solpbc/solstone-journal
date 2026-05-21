@@ -116,10 +116,17 @@ def _build_index() -> dict[str, Any]:
     year_top = [
         entry for entry in master.get("year_top", []) if entry.get("month") in ym_set
     ]
+    days_seen: list[str] = []
+    for entry in months_meta:
+        days_seen.extend(entry.get("days_with_data") or [])
+    data_through = max(days_seen) if days_seen else None
 
     return {
         "now": datetime.now().isoformat(),
         "today": date.today().strftime("%Y%m%d"),
+        "generated_at": master.get("generated_at"),
+        "model": master.get("model"),
+        "data_through": data_through,
         "months": months_meta,
         "year_top": year_top,
     }
@@ -132,6 +139,8 @@ def _build_month(ym: str) -> dict[str, Any] | None:
         return None
     return {
         "ym": ym,
+        "generated_at": master.get("generated_at"),
+        "model": master.get("model"),
         "month_top": m.get("month_top", []),
         "month_rationale": m.get("month_rationale", ""),
         "day_count": m.get("day_count", 0),
@@ -139,6 +148,8 @@ def _build_month(ym: str) -> dict[str, Any] | None:
         "days": {
             d: {
                 "day": d,
+                "generated_at": v.get("generated_at"),
+                "model": v.get("model"),
                 "day_top": v.get("day_top", []),
                 "day_rationale": v.get("day_rationale", ""),
             }
@@ -218,6 +229,8 @@ def _build_day(day: str) -> dict[str, Any]:
 
     return {
         "day": day,
+        "generated_at": day_data.get("generated_at"),
+        "model": day_data.get("model"),
         "day_top": day_data.get("day_top", []),
         "day_rationale": day_data.get("day_rationale", ""),
         "hours": day_data.get("hours", {}),

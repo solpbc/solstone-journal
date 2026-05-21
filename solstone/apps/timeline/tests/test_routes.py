@@ -155,13 +155,41 @@ def test_empty_journal_index_returns_empty_recent_months(empty_client):
         assert month["days_with_data"] == []
 
 
+def test_index_metadata_absent_when_master_minimal(empty_client, empty_timeline_env):
+    (empty_timeline_env / "timeline.json").write_text(
+        json.dumps({"months": {}}) + "\n", encoding="utf-8"
+    )
+
+    response = empty_client.get("/app/timeline/api/index")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["generated_at"] is None
+    assert payload["model"] is None
+    assert payload["data_through"] is None
+
+
 def test_index_shape_and_size(client):
     response = client.get("/app/timeline/api/index")
 
     assert response.status_code == 200
     assert len(response.data) < 20 * 1024
     payload = response.get_json()
-    assert set(payload) == {"now", "today", "months", "year_top"}
+    assert set(payload) == {
+        "now",
+        "today",
+        "generated_at",
+        "model",
+        "data_through",
+        "months",
+        "year_top",
+    }
+    assert payload["generated_at"] == 1770000000
+    assert isinstance(payload["generated_at"], int)
+    assert payload["model"] == "test-model"
+    assert isinstance(payload["model"], str)
+    assert payload["data_through"] == DAY
+    assert isinstance(payload["data_through"], str)
     assert len(payload["months"]) == 12
     month = next(m for m in payload["months"] if m["ym"] == MONTH)
     assert month["day_count"] == 1
@@ -177,10 +205,14 @@ def test_month_known_shape(client):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["ym"] == MONTH
+    assert payload["generated_at"] == 1770000000
+    assert payload["model"] == "test-model"
     assert payload["day_count"] == 1
     assert payload["days_with_data"] == [DAY]
     assert payload["days"][DAY] == {
         "day": DAY,
+        "generated_at": 1770000100,
+        "model": "test-day-model",
         "day_top": [
             {
                 "title": "Timeline Port",
@@ -216,6 +248,8 @@ def test_day_known_includes_hours_avail(client):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["day"] == DAY
+    assert payload["generated_at"] == 1770000100
+    assert payload["model"] == "test-day-model"
     assert payload["day_top"][0]["title"] == "Timeline Port"
     assert payload["hours"]["10"]["picks"][0]["title"] == "Default Both"
 

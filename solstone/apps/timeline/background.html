@@ -1,0 +1,61 @@
+/*
+Timeline background service: listens for rollup completion and refreshes
+the visible view in place. Emit signatures verified against:
+  - cortex finish:      solstone/think/cortex.py:436-458
+  - supervisor stopped: solstone/think/supervisor.py:496-504
+  - scheduler ref:      solstone/think/scheduler.py:465-475
+*/
+AppServices.register("timeline", {
+  _initialized: false,
+
+  initialize() {
+    if (this._initialized) return;
+    if (!window.appEvents || !window.AppServices?.badges?.app) return;
+    this._initialized = true;
+
+    window.appEvents.listen("cortex", (msg) => {
+      if (!msg || msg.event !== "finish") return;
+      if (msg.name !== "timeline:segment_summary") return;
+      const visibleDay = window.timelineRefresh?.getCurrentDay?.();
+      if (!visibleDay || msg.day !== visibleDay) return;
+      window.timelineRefresh?.day?.(msg.day);
+    });
+
+    window.appEvents.listen("supervisor", (msg) => {
+      if (!msg || msg.event !== "stopped" || msg.exit_code !== 0) return;
+      const ref = msg.ref || "";
+      if (/^sched:timeline-rollup-day:/.test(ref)) {
+        fetch("/app/timeline/api/index", { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((idx) => {
+            if (!idx) return;
+            const today = todayYYYYMMDD();
+            if (idx.data_through === today) {
+              window.AppServices.badges.app.set("timeline", 1);
+            }
+            const view = window.timelineRefresh?.getCurrentView?.();
+            const day = window.timelineRefresh?.getCurrentDay?.();
+            if (
+              day &&
+              (view === "day" || view === "hour" || view === "five-minute")
+            ) {
+              window.timelineRefresh?.day?.(day);
+            }
+          })
+          .catch(() => {});
+        return;
+      }
+      if (/^sched:timeline-rollup-master:/.test(ref)) {
+        window.timelineRefresh?.index?.();
+      }
+    });
+  },
+});
+
+function todayYYYYMMDD() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${y}${m}${da}`;
+}

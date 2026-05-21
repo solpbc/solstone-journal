@@ -1955,3 +1955,30 @@
     display: none;
   }
 }
+
+.timeline-shell .timeline-origin-chip {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.timeline-shell .timeline-origin-chip:hover,
+.timeline-shell .timeline-origin-chip:focus {
+  text-decoration: underline;
+}
+
+.timeline-shell .timeline-data-through {
+  grid-column: 1 / -1;
+  margin-top: 1rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.timeline-shell .timeline-day-provenance {
+  margin: 0.25rem 0 0.75rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}

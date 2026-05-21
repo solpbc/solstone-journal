@@ -39,6 +39,8 @@
       ],
       "days": {
         "20260510": {
+          "generated_at": 1770000100,
+          "model": "test-day-model",
           "day_top": [
             {
               "title": "Timeline Port",
