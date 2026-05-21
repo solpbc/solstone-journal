@@ -43,6 +43,7 @@
 }
 
 .settings-nav-item {
+  position: relative;
   display: block;
   width: 100%;
   padding: 0.375rem 1.25rem;
@@ -69,6 +70,22 @@
   color: white;
   font-weight: 600;
   box-shadow: inset 3px 0 0 0 rgba(255,255,255,0.5);
+}
+
+/* Reusable per-tab attention indicator. Any tab can opt in by setting
+   data-attention="true" on its <button class="settings-nav-item">. The
+   dot is positioned within the button so it follows the tab in both
+   desktop nav and the mobile select rendering of the same items. */
+.settings-nav-item[data-attention="true"]::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d97706;
+  margin-left: 0.4em;
+  vertical-align: middle;
+  flex-shrink: 0;
 }
 
 /* Mobile nav dropdown */
@@ -3474,6 +3491,26 @@ const solVoiceCopy = {
   throttledHeaderOutcome: {{ sol_voice_copy.SOL_VOICE_THROTTLED_LOG_HEADER_OUTCOME | tojson }},
 };
 const solVoiceCategories = {{ sol_voice_copy.CATEGORIES | list | tojson }};
+
+// ========== TAB ATTENTION ==========
+
+// Reusable per-tab attention indicator. Any tab can opt in by calling
+// setTabAttention('<section>', true) when its content has a problem the
+// user should notice (incompatible backend on the transcription tab,
+// missing API key referenced from the providers tab, etc.) and
+// setTabAttention('<section>', false) once the issue clears. Implemented
+// by toggling data-attention on the <button id="tab-{section}"> in the
+// nav; the CSS rule on .settings-nav-item[data-attention="true"]::after
+// draws the dot.
+function setTabAttention(section, on) {
+  const tab = document.getElementById('tab-' + section);
+  if (!tab) return;
+  if (on) {
+    tab.setAttribute('data-attention', 'true');
+  } else {
+    tab.removeAttribute('data-attention');
+  }
+}
 
 // ========== MODAL ACCESSIBILITY ==========
 function setupModalAccessibility(modalId) {
