@@ -27,6 +27,24 @@ def _workspace_text() -> str:
     return WORKSPACE.read_text(encoding="utf-8")
 
 
+def test_apikeys_inputs_are_masked_by_default():
+    text = _workspace_text()
+    keys = (
+        "GOOGLE_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "REVAI_ACCESS_TOKEN",
+        "PLAUD_ACCESS_TOKEN",
+    )
+
+    for key in keys:
+        match = re.search(rf'<input[^>]*\bdata-key="{key}"[^>]*>', text)
+        assert match, f"{key} input not found"
+        tag = match.group(0)
+        assert 'type="password"' in tag, f"{key} input is not type=password"
+        assert 'type="text"' not in tag, f"{key} input still has type=text"
+
+
 def test_workspace_has_diagnostic_reports_toggle():
     text = _workspace_text()
 

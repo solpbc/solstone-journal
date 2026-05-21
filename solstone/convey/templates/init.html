@@ -77,6 +77,15 @@
     .retention-days-row input[type="number"]:focus { outline: none; border-color: #E8923A; }
     .retention-days-row.is-disabled { opacity: 0.5; cursor: not-allowed; }
     .retention-days-suffix { font-size: 0.85rem; color: #666; }
+    .password-wrap { position: relative; flex: 1; min-width: 0; }
+    .password-wrap input { width: 100%; padding-right: 2.5em; box-sizing: border-box; }
+    .password-toggle {
+      position: absolute; right: 0.5em; top: 50%; transform: translateY(-50%);
+      background: none; border: none; padding: 0.4em; cursor: pointer;
+      color: #666; font-size: 1.1em;
+    }
+    .password-toggle:hover { color: #333; }
+    .password-toggle:active { color: #111; transform: translateY(-50%) scale(0.9); }
   </style>
   <script src="{{ url_for('root.static', filename='error-handler.js') }}"></script>
   <script src="{{ url_for('root.static', filename='api.js') }}"></script>
@@ -133,8 +142,13 @@
       <div class="field-group">
         <label for="gemini-key">gemini api key</label>
         <div class="provider-key-row">
-          <input type="text" id="gemini-key" autocomplete="off"
-                 data-1p-ignore data-lpignore="true" data-bwignore="true">
+          <div class="password-wrap">
+            <input type="password" id="gemini-key" autocomplete="off"
+                   data-1p-ignore data-lpignore="true" data-bwignore="true">
+            <button type="button" class="password-toggle" data-toggle="gemini-key" title="show key">
+              <span>&#128065;</span>
+            </button>
+          </div>
           <button type="button" id="gemini-validate" class="settings-preset-btn">validate</button>
         </div>
         <small class="field-status">&nbsp;</small>
@@ -201,6 +215,7 @@
     }
 
     let detectedTimezone = '';
+    const RESULT_DISPLAY_MS = 1200;
 
     function clearKeyStatus() {
       const input = document.getElementById('gemini-key');
@@ -220,6 +235,11 @@
         clearKeyStatus();
         return;
       }
+      const button = document.getElementById('gemini-validate');
+      const originalLabel = button.textContent;
+      const validatedValue = key;
+      button.disabled = true;
+      button.textContent = 'validating…';
       try {
         const result = await window.apiJson('/init/validate-provider', {
           method: 'POST',
@@ -228,8 +248,19 @@
         });
         if (result.valid) showFieldStatus(input, 'saved', 'connected');
         else showFieldStatus(input, 'error', result.error || 'validation failed');
+        if (input.value.trim() === validatedValue) {
+          button.textContent = result.valid ? 'connected' : 'failed';
+        }
       } catch (err) {
         showFieldStatus(input, 'error', (err && err.serverMessage) || 'validation failed');
+        if (input.value.trim() === validatedValue) {
+          button.textContent = 'failed';
+        }
+      } finally {
+        setTimeout(() => {
+          button.textContent = originalLabel;
+          button.disabled = false;
+        }, RESULT_DISPLAY_MS);
       }
     }
 
@@ -284,6 +315,24 @@
         if (!this.value.trim()) clearKeyStatus();
       });
       document.getElementById('gemini-validate').addEventListener('click', validateProviderKey);
+      document.querySelectorAll('.password-toggle').forEach(btn => {
+        btn.onclick = () => {
+          const targetId = btn.dataset.toggle;
+          const input = document.getElementById(targetId);
+          const icon = btn.querySelector('span');
+          if (input && icon) {
+            if (input.type === 'password') {
+              input.type = 'text';
+              icon.innerHTML = '&#128064;';
+              btn.title = 'hide key';
+            } else {
+              input.type = 'password';
+              icon.innerHTML = '&#128065;';
+              btn.title = 'show key';
+            }
+          }
+        };
+      });
 
       document.querySelectorAll('input[name="retention_mode"]').forEach(radio => {
         radio.addEventListener('change', updateRetentionUI);
