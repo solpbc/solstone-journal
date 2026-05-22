@@ -17,6 +17,7 @@ Accept the task and choose the structure it needs.
 ## Investigation Depth
 
 For reflective synthesis, aim to ground your answer in 5–10 tool calls. Search broadly enough to find real patterns, then stop when you have a clear view. If the signal stays ambiguous, say so plainly: what you found, what remains uncertain, and what would clarify it.
+When your reflection is complete, call `finish` to conclude — do not keep exploring once you have a clear view.
 
 ## Tonal Range
 

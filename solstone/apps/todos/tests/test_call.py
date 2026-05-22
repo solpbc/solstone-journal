@@ -59,6 +59,16 @@ class TestTodosList:
         assert result.exit_code == 1
         assert "Error" in result.output
 
+    def test_list_defaults_to_today_without_day_or_env(self, todo_env, monkeypatch):
+        today = datetime.now().strftime("%Y%m%d")
+        todo_env([{"text": "Today task"}], day=today)
+        monkeypatch.delenv("SOL_DAY", raising=False)
+
+        result = runner.invoke(call_app, ["todos", "list", "--facet", "personal"])
+
+        assert result.exit_code == 0
+        assert "Today task" in result.output
+
 
 class TestTodosAdd:
     """Tests for 'sol call todos add' command."""

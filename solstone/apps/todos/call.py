@@ -58,10 +58,14 @@ def list_todos(
     ),
 ) -> None:
     """Show the todo checklist for a day (or date range)."""
-    from solstone.think.utils import get_journal, get_sol_facet, resolve_sol_day
+    from solstone.think.utils import (
+        get_journal,
+        get_sol_facet,
+        resolve_sol_day_or_today,
+    )
 
     get_journal()
-    day = resolve_sol_day(day)
+    day = resolve_sol_day_or_today(day)
     if facet is None:
         facet = get_sol_facet()
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 from typer.testing import CliRunner
 
@@ -31,6 +32,29 @@ def test_list_outputs_activity_records(activities_env):
     assert result.exit_code == 0
     assert "Focused coding" in result.output
     assert "Activity: coding" in result.output
+
+
+def test_list_defaults_to_today_without_day_or_env(activities_env, monkeypatch):
+    today = datetime.now().strftime("%Y%m%d")
+    activities_env(
+        [
+            {
+                "id": "coding_090000_300",
+                "activity": "coding",
+                "title": "Today coding",
+                "description": "Using today's default",
+                "segments": ["090000_300"],
+                "created_at": 1,
+            }
+        ],
+        day=today,
+    )
+    monkeypatch.delenv("SOL_DAY", raising=False)
+
+    result = runner.invoke(call_app, ["activities", "list", "--facet", "work"])
+
+    assert result.exit_code == 0
+    assert "Today coding" in result.output
 
 
 def test_list_filters_hidden_by_default_and_allows_all(activities_env):

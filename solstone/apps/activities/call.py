@@ -35,6 +35,7 @@ from solstone.think.utils import (
     now_ms,
     require_solstone,
     resolve_sol_day,
+    resolve_sol_day_or_today,
     resolve_sol_facet,
     segment_parse,
 )
@@ -307,11 +308,11 @@ def list_records(
     if day:
         resolved_days = [resolve_sol_day(day)]
     elif from_day or to_day:
-        start_day = from_day or resolve_sol_day(None)
+        start_day = from_day or resolve_sol_day_or_today(None)
         end_day = to_day or start_day
         resolved_days = _iter_days(start_day, end_day)
     else:
-        resolved_days = [resolve_sol_day(None)]
+        resolved_days = [resolve_sol_day_or_today(None)]
 
     if source and source not in {"anticipated", "cogitate", "user"}:
         typer.echo(

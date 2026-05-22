@@ -1070,6 +1070,21 @@ def resolve_sol_day(arg: str | None) -> str:
     raise typer.Exit(1)
 
 
+def resolve_sol_day_or_today(arg: str | None) -> str:
+    """Return *arg* if provided, else SOL_DAY from env, else today.
+
+    For read-only ``list`` commands where omitting the day should default to
+    today rather than erroring. Do NOT use for write commands — those rely on
+    ``resolve_sol_day`` erroring when no day is given.
+    """
+    if arg:
+        return arg
+    env = get_sol_day()
+    if env:
+        return env
+    return datetime.now().strftime("%Y%m%d")
+
+
 def resolve_sol_facet(arg: str | None) -> str:
     """Return *arg* if provided, else SOL_FACET from env, else exit with error.
 
