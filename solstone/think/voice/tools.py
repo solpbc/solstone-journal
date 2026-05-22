@@ -392,7 +392,7 @@ def handle_journal_get_day(payload: dict[str, Any], app: Any) -> dict[str, Any]:
     if not day_dir.is_dir():
         return {"error": "day not found"}
 
-    _, _, scan_rows, _ = scan_day(internal_day)
+    _, _, scan_rows = scan_day(internal_day)
     segment_rows = cluster_segments(internal_day)
     scan_keys = {row["key"] for row in scan_rows}
     summaries: list[str] = []

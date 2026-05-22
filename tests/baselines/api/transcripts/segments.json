@@ -1,6 +1,10 @@
 {
   "segments": [
     {
+      "data_state": {
+        "audio": "analyzed",
+        "screen": "analyzed"
+      },
       "end": "09:05",
       "key": "090000_300",
       "start": "09:00",
@@ -11,6 +15,10 @@
       ]
     },
     {
+      "data_state": {
+        "audio": "analyzed",
+        "screen": "analyzed"
+      },
       "end": "14:05",
       "key": "140000_300",
       "start": "14:00",
@@ -21,6 +29,10 @@
       ]
     },
     {
+      "data_state": {
+        "audio": "analyzed",
+        "screen": "analyzed"
+      },
       "end": "18:05",
       "key": "180000_300",
       "start": "18:00",

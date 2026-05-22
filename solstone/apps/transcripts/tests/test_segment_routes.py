@@ -45,16 +45,29 @@ def _write_segment(
     *,
     audio: bool = True,
     screen: bool = True,
+    audio_state: str = "analyzed",
+    screen_state: str = "analyzed",
 ) -> None:
     segment_dir = journal_root / "chronicle" / day / stream / segment
     segment_dir.mkdir(parents=True, exist_ok=True)
     if audio:
-        (segment_dir / "audio.jsonl").write_text("{}\n", encoding="utf-8")
+        audio_entries = [{"raw": "audio.flac"}]
+        if audio_state == "analyzed":
+            audio_entries.append(
+                {"start": "00:00:01", "source": "mic", "text": "audio line"}
+            )
+        _write_jsonl(segment_dir / "audio.jsonl", audio_entries)
     if screen:
-        (segment_dir / "screen.jsonl").write_text(
-            '{"raw": "screen.webm"}\n',
-            encoding="utf-8",
-        )
+        screen_entries = [{"raw": "screen.webm"}]
+        if screen_state == "analyzed":
+            screen_entries.append(
+                {
+                    "frame_id": 1,
+                    "timestamp": 1,
+                    "analysis": {"primary": "work"},
+                }
+            )
+        _write_jsonl(segment_dir / "screen.jsonl", screen_entries)
 
 
 def _write_jsonl(path, entries: list[dict]) -> None:
@@ -118,10 +131,20 @@ def test_ranges_returns_object_shape_with_streams(client, journal_copy):
     data = response.get_json()
     assert set(data) == {"audio", "screen"}
     assert data["audio"] == [
-        {"start": "09:00", "end": "09:15", "streams": ["alpha", "bravo"]}
+        {
+            "start": "09:00",
+            "end": "09:15",
+            "streams": ["alpha", "bravo"],
+            "state": "analyzed",
+        }
     ]
     assert data["screen"] == [
-        {"start": "09:00", "end": "09:15", "streams": ["alpha", "bravo"]}
+        {
+            "start": "09:00",
+            "end": "09:15",
+            "streams": ["alpha", "bravo"],
+            "state": "analyzed",
+        }
     ]
 
 
@@ -138,6 +161,7 @@ def test_ranges_overflow_returns_full_list(client, journal_copy):
             "start": "09:00",
             "end": "09:15",
             "streams": ["alpha", "bravo", "charlie", "delta", "echo"],
+            "state": "analyzed",
         }
     ]
 
@@ -150,7 +174,12 @@ def test_ranges_single_stream(client, journal_copy):
 
     assert response.status_code == 200
     assert response.get_json()["audio"] == [
-        {"start": "09:00", "end": "09:15", "streams": ["solo"]}
+        {
+            "start": "09:00",
+            "end": "09:15",
+            "streams": ["solo"],
+            "state": "analyzed",
+        }
     ]
 
 
@@ -164,9 +193,21 @@ def test_day_returns_object_shape_with_streams(client, journal_copy):
     assert response.status_code == 200
     data = response.get_json()
     assert data["audio"] == [
-        {"start": "09:00", "end": "09:15", "streams": ["alpha", "bravo"]}
+        {
+            "start": "09:00",
+            "end": "09:15",
+            "streams": ["alpha", "bravo"],
+            "state": "analyzed",
+        }
     ]
-    assert data["screen"] == [{"start": "09:00", "end": "09:15", "streams": ["alpha"]}]
+    assert data["screen"] == [
+        {
+            "start": "09:00",
+            "end": "09:15",
+            "streams": ["alpha"],
+            "state": "analyzed",
+        }
+    ]
     assert data["segments"] == [
         {
             "key": "090000_300",
@@ -174,6 +215,7 @@ def test_day_returns_object_shape_with_streams(client, journal_copy):
             "end": "09:05",
             "types": ["audio", "screen"],
             "stream": "alpha",
+            "data_state": {"audio": "analyzed", "screen": "analyzed"},
         },
         {
             "key": "090500_300",
@@ -181,6 +223,7 @@ def test_day_returns_object_shape_with_streams(client, journal_copy):
             "end": "09:10",
             "types": ["audio"],
             "stream": "bravo",
+            "data_state": {"audio": "analyzed"},
         },
     ]
 
@@ -188,7 +231,41 @@ def test_day_returns_object_shape_with_streams(client, journal_copy):
 def test_attach_streams_to_ranges_empty_when_no_overlap():
     result = _attach_streams_to_ranges([("09:00", "09:15")], [], "audio")
 
-    assert result == [{"start": "09:00", "end": "09:15", "streams": []}]
+    assert result == [
+        {"start": "09:00", "end": "09:15", "streams": [], "state": "pending"}
+    ]
+
+
+def test_ranges_best_state_wins_for_mixed_pending_and_analyzed(client, journal_copy):
+    day = "20990109"
+    _write_segment(
+        journal_copy,
+        day,
+        "default",
+        "090000_300",
+        audio=False,
+        screen_state="pending",
+    )
+    _write_segment(
+        journal_copy,
+        day,
+        "default",
+        "090500_300",
+        audio=False,
+        screen_state="analyzed",
+    )
+
+    response = client.get(f"/app/transcripts/api/ranges/{day}")
+
+    assert response.status_code == 200
+    assert response.get_json()["screen"] == [
+        {
+            "start": "09:00",
+            "end": "09:15",
+            "streams": ["default"],
+            "state": "analyzed",
+        }
+    ]
 
 
 @pytest.mark.parametrize("stream", ["-bad", "Upper", "..bad"])
@@ -265,6 +342,9 @@ def test_segment_content_happy_path_returns_segment_payload(client):
     assert data["segment_key"] == FIXTURE_SEGMENT
     assert data["chunks"]
     assert "media_sizes" in data
+    assert data["data_state"] == {"audio": "analyzed", "screen": "analyzed"}
+    assert set(data["media_purged"]) == {"audio", "screen"}
+    assert all(isinstance(value, bool) for value in data["media_purged"].values())
 
 
 def test_segment_content_strips_duplicate_audio_markdown_timestamp(
@@ -347,6 +427,84 @@ def test_segment_content_returns_warning_details_for_parse_failures(
     assert all(detail["file"] for detail in data["warning_details"])
     assert all(detail["message"] for detail in data["warning_details"])
     assert all(detail["ts"] for detail in data["warning_details"])
+    assert data["data_state"] == {"audio": "failed", "screen": "failed"}
+    assert data["media_purged"] == {"audio": False, "screen": False}
+
+
+@pytest.mark.parametrize("raw_name", ["audio.flac", "audio.m4a"])
+def test_segment_content_raw_audio_without_jsonl_is_pending(
+    client, journal_copy, raw_name
+):
+    day = "20990111"
+    stream = "default"
+    segment = "090000_300"
+    segment_dir = journal_copy / "chronicle" / day / stream / segment
+    segment_dir.mkdir(parents=True)
+    (segment_dir / raw_name).write_bytes(b"audio")
+
+    response = client.get(f"/app/transcripts/api/segment/{day}/{stream}/{segment}")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["chunks"] == []
+    assert data["data_state"] == {"audio": "pending"}
+    assert data["media_sizes"]["audio"] == 5
+    assert data["media_purged"] == {"audio": False, "screen": False}
+
+
+def test_segment_content_header_only_missing_raw_is_purged(client, journal_copy):
+    day = "20990112"
+    stream = "default"
+    segment = "090000_300"
+    _write_segment(
+        journal_copy,
+        day,
+        stream,
+        segment,
+        audio_state="pending",
+        screen_state="pending",
+    )
+
+    response = client.get(f"/app/transcripts/api/segment/{day}/{stream}/{segment}")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["chunks"] == []
+    assert data["data_state"] == {"audio": "purged", "screen": "purged"}
+    assert data["media_purged"] == {"audio": True, "screen": True}
+
+
+def test_segment_content_analyzed_missing_raw_keeps_purged_flag(client, journal_copy):
+    day = "20990113"
+    stream = "default"
+    segment = "090000_300"
+    _write_segment(journal_copy, day, stream, segment, audio=False)
+
+    response = client.get(f"/app/transcripts/api/segment/{day}/{stream}/{segment}")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert any(chunk["type"] == "screen" for chunk in data["chunks"])
+    assert data["data_state"] == {"screen": "analyzed"}
+    assert data["media_purged"] == {"audio": False, "screen": True}
+
+
+def test_segment_content_failed_precedence_over_pending_raw(client, journal_copy):
+    day = "20990114"
+    stream = "default"
+    segment = "090000_300"
+    segment_dir = journal_copy / "chronicle" / day / stream / segment
+    segment_dir.mkdir(parents=True)
+    (segment_dir / "audio.flac").write_bytes(b"audio")
+    (segment_dir / "audio.jsonl").write_text("{bad json\n", encoding="utf-8")
+
+    response = client.get(f"/app/transcripts/api/segment/{day}/{stream}/{segment}")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["chunks"] == []
+    assert data["warning_details"][0]["type"] == "audio"
+    assert data["data_state"] == {"audio": "failed"}
 
 
 def test_segment_content_returns_audio_header_duration(client, journal_copy):

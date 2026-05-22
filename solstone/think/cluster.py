@@ -5,11 +5,14 @@ import os
 import re
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Collection
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from solstone.observe.screen import format_screen_text
+from solstone.think.data_state import DataState
+from solstone.think.media import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
 
 from .streams import read_segment_stream
 from .utils import day_from_path, day_path
@@ -394,20 +397,90 @@ def _slots_to_ranges(slots: list[datetime]) -> list[tuple[str, str]]:
     return ranges
 
 
-def _detect_content_types(seg_path: Path) -> list[str]:
-    """Detect content types present in a segment directory."""
-    types = []
-    if (
-        (seg_path / "audio.jsonl").exists()
-        or any(seg_path.glob("*_audio.jsonl"))
-        or any(seg_path.glob("*_transcript.jsonl"))
-        or any(seg_path.glob("*_transcript.md"))
-        or (seg_path / "imported.md").exists()
-    ):
-        types.append("audio")
-    if (seg_path / "screen.jsonl").exists() or any(seg_path.glob("*_screen.jsonl")):
-        types.append("screen")
-    return types
+def _jsonl_has_marker_row(path: Path, marker_key: str) -> bool:
+    """Return whether a JSONL file has a marker-bearing row after its header.
+
+    This intentionally peeks at at most two nonblank lines and does not parse JSON;
+    day scans need to distinguish analyzed output from header-only stubs cheaply.
+    """
+    marker = f'"{marker_key}"'
+    nonblank = 0
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                nonblank += 1
+                if nonblank == 2:
+                    return marker in line
+    except OSError:
+        return False
+    return False
+
+
+def _has_nonempty_text(path: Path) -> bool:
+    try:
+        return path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _has_raw_media(paths: Collection[Path], extensions: Collection[str]) -> bool:
+    return any(path.suffix.lower() in extensions for path in paths)
+
+
+def _detect_data_state(seg_path: Path) -> dict[str, str]:
+    """Detect cheap per-modality data state for a segment directory."""
+    state: dict[str, str] = {}
+    raw_media_paths = [path for path in seg_path.iterdir() if path.is_file()]
+
+    audio_jsonl_files = sorted(
+        {
+            path
+            for pattern in ("audio.jsonl", "*_audio.jsonl", "*_transcript.jsonl")
+            for path in seg_path.glob(pattern)
+            if path.is_file()
+        }
+    )
+    audio_md_files = sorted(
+        {
+            path
+            for pattern in ("*_transcript.md", "imported.md")
+            for path in seg_path.glob(pattern)
+            if path.is_file()
+        }
+    )
+    audio_analyzed = any(
+        _jsonl_has_marker_row(path, "start") for path in audio_jsonl_files
+    ) or any(_has_nonempty_text(path) for path in audio_md_files)
+    audio_pending = (
+        bool(audio_jsonl_files) or _has_raw_media(raw_media_paths, AUDIO_EXTENSIONS)
+    ) and not audio_analyzed
+    if audio_analyzed:
+        state["audio"] = DataState.ANALYZED.value
+    elif audio_pending:
+        state["audio"] = DataState.PENDING.value
+
+    screen_jsonl_files = sorted(
+        {
+            path
+            for pattern in ("screen.jsonl", "*_screen.jsonl")
+            for path in seg_path.glob(pattern)
+            if path.is_file()
+        }
+    )
+    screen_analyzed = any(
+        _jsonl_has_marker_row(path, "timestamp") for path in screen_jsonl_files
+    )
+    screen_pending = (
+        bool(screen_jsonl_files) or _has_raw_media(raw_media_paths, VIDEO_EXTENSIONS)
+    ) and not screen_analyzed
+    if screen_analyzed:
+        state["screen"] = DataState.ANALYZED.value
+    elif screen_pending:
+        state["screen"] = DataState.PENDING.value
+
+    return state
 
 
 def scan_day(
@@ -415,7 +488,6 @@ def scan_day(
 ) -> tuple[
     list[tuple[str, str]],
     list[tuple[str, str]],
-    list[dict[str, Any]],
     list[dict[str, Any]],
 ]:
     """Single-pass scan returning both range aggregation and segment list.
@@ -427,42 +499,28 @@ def scan_day(
         day: Day folder in ``YYYYMMDD`` format.
 
     Returns:
-        Tuple of (audio_ranges, screen_ranges, segments, errored_segments) where
+        Tuple of (audio_ranges, screen_ranges, segments) where
         ranges are ``(start, end)`` pairs in ``HH:MM`` format, segments is a list
-        of dicts with ``key``, ``start``, ``end``, ``types``, and ``stream``, and
-        errored_segments is a list of dicts with ``key``, ``stream``, and
-        ``start``.
+        of dicts with ``key``, ``start``, ``end``, ``types``, ``stream``, and
+        ``data_state``.
     """
     from solstone.think.utils import iter_segments, segment_parse
 
     day_dir = day_path(day, create=False)
     if not day_dir.is_dir():
-        return [], [], [], []
+        return [], [], []
 
     date_str = _date_str(str(day_dir))
     day_date = datetime.strptime(date_str, "%Y%m%d").date()
     transcript_slots: set[datetime] = set()
     percept_slots: set[datetime] = set()
     segments: list[dict[str, Any]] = []
-    errored_segments: list[dict[str, Any]] = []
 
     for stream_name, _, seg_path in iter_segments(day_dir):
         start_time, end_time = segment_parse(seg_path.name)
 
-        types = _detect_content_types(seg_path) if start_time else []
-
-        if (
-            start_time
-            and (seg_path / "audio.flac").is_file()
-            and not (seg_path / "audio.jsonl").exists()
-        ):
-            errored_segments.append(
-                {
-                    "key": seg_path.name,
-                    "stream": stream_name,
-                    "start": start_time.strftime("%H:%M:%S"),
-                }
-            )
+        data_state = _detect_data_state(seg_path) if start_time else {}
+        types = [modality for modality in ("audio", "screen") if modality in data_state]
 
         if start_time and types:
             dt = datetime.combine(day_date, start_time)
@@ -482,14 +540,14 @@ def scan_day(
                     "end": end_time.strftime("%H:%M"),
                     "types": types,
                     "stream": stream_name,
+                    "data_state": data_state,
                 }
             )
 
     audio_ranges = _slots_to_ranges(sorted(transcript_slots))
     screen_ranges = _slots_to_ranges(sorted(percept_slots))
     segments.sort(key=lambda s: s["start"])
-    errored_segments.sort(key=lambda s: s["start"])
-    return audio_ranges, screen_ranges, segments, errored_segments
+    return audio_ranges, screen_ranges, segments
 
 
 def cluster_scan(day: str) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
@@ -503,7 +561,7 @@ def cluster_scan(day: str) -> tuple[list[tuple[str, str]], list[tuple[str, str]]
         screen content respectively.
     """
 
-    audio_ranges, screen_ranges, _, _ = scan_day(day)
+    audio_ranges, screen_ranges, _ = scan_day(day)
     return audio_ranges, screen_ranges
 
 
@@ -522,15 +580,10 @@ def cluster_segments(day: str) -> list[dict[str, Any]]:
         - start: start time as HH:MM
         - end: end time as HH:MM
         - types: list of content types present ("audio", "screen", or both)
+        - data_state: per-modality state for non-absent modalities
     """
-    _, _, segments, _ = scan_day(day)
+    _, _, segments = scan_day(day)
     return segments
-
-
-def cluster_errored_segments(day: str) -> list[dict[str, Any]]:
-    """Return audio segments that have raw media but no transcript output."""
-    _, _, _, errored = scan_day(day)
-    return errored
 
 
 def _find_segment_dir(day: str, segment: str, stream: str | None) -> Path | None:

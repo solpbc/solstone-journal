@@ -3,6 +3,7 @@
     {
       "end": "09:15",
       "start": "09:00",
+      "state": "analyzed",
       "streams": [
         "default"
       ]
@@ -10,6 +11,7 @@
     {
       "end": "14:15",
       "start": "14:00",
+      "state": "analyzed",
       "streams": [
         "default"
       ]
@@ -17,6 +19,7 @@
     {
       "end": "18:15",
       "start": "18:00",
+      "state": "analyzed",
       "streams": [
         "default"
       ]
@@ -26,6 +29,7 @@
     {
       "end": "09:15",
       "start": "09:00",
+      "state": "analyzed",
       "streams": [
         "default"
       ]
@@ -33,6 +37,7 @@
     {
       "end": "14:15",
       "start": "14:00",
+      "state": "analyzed",
       "streams": [
         "default"
       ]
@@ -40,6 +45,7 @@
     {
       "end": "18:15",
       "start": "18:00",
+      "state": "analyzed",
       "streams": [
         "default"
       ]

@@ -44,6 +44,7 @@ from solstone.observe.hear import format_audio
 from solstone.observe.screen import format_screen
 from solstone.observe.utils import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
 from solstone.think.cluster import cluster_scan, cluster_segments, scan_day
+from solstone.think.data_state import DataState
 from solstone.think.entities.journal import get_journal_principal, load_journal_entity
 from solstone.think.media import MIME_TYPES
 from solstone.think.models import get_usage_cost
@@ -118,6 +119,8 @@ def _attach_streams_to_ranges(
 
     A segment contributes to a range when its half-open span overlaps the range
     and its types include ``content_type``. Streams are sorted and de-duped.
+    Range state uses best-state-wins: analyzed if any overlapping segment for
+    the modality is analyzed, otherwise pending.
     """
 
     def _to_min(hhmm: str) -> int:
@@ -129,6 +132,7 @@ def _attach_streams_to_ranges(
         range_start = _to_min(start)
         range_end = _to_min(end)
         streams: set[str] = set()
+        state = DataState.PENDING.value
         for seg in segments:
             if content_type not in seg.get("types", ()):
                 continue
@@ -136,7 +140,12 @@ def _attach_streams_to_ranges(
             seg_end = _to_min(seg["end"])
             if seg_start < range_end and seg_end > range_start:
                 streams.add(seg["stream"])
-        out.append({"start": start, "end": end, "streams": sorted(streams)})
+                modality_state = seg.get("data_state", {}).get(content_type)
+                if modality_state == DataState.ANALYZED.value:
+                    state = DataState.ANALYZED.value
+        out.append(
+            {"start": start, "end": end, "streams": sorted(streams), "state": state}
+        )
     return out
 
 
@@ -167,7 +176,7 @@ def transcript_ranges(day: str) -> Any:
     if not DATE_RE.fullmatch(day):
         return error_response(INVALID_DAY, status=404, detail="Day not found")
 
-    audio_ranges, screen_ranges, segments, _ = scan_day(day)
+    audio_ranges, screen_ranges, segments = scan_day(day)
     return jsonify(
         {
             "audio": _attach_streams_to_ranges(audio_ranges, segments, "audio"),
@@ -195,7 +204,7 @@ def transcript_day_data(day: str) -> Any:
     if not DATE_RE.fullmatch(day):
         return error_response(INVALID_DAY, status=404, detail="Day not found")
 
-    audio_ranges, screen_ranges, segments, _ = scan_day(day)
+    audio_ranges, screen_ranges, segments = scan_day(day)
     return jsonify(
         {
             "audio": _attach_streams_to_ranges(audio_ranges, segments, "audio"),
@@ -340,6 +349,8 @@ def segment_content(day: str, stream: str, segment_key: str) -> Any:
         - segment_key: segment directory name
         - cost: processing cost in USD (float, 0.0 if no data)
         - media_sizes: dict with audio/screen byte counts for raw media files
+        - media_purged: dict with audio/screen raw-reference purge flags
+        - data_state: dict of advertised modality states
     """
     if not DATE_RE.fullmatch(day):
         return error_response(INVALID_DAY, status=404, detail="Invalid day format")
@@ -358,8 +369,9 @@ def segment_content(day: str, stream: str, segment_key: str) -> Any:
             detail="Invalid segment key format",
         )
 
-    segment_dir = str(segment_path(day, segment_key, stream, create=False))
-    if not os.path.isdir(segment_dir):
+    segment_dir_path = segment_path(day, segment_key, stream, create=False)
+    segment_dir = str(segment_dir_path)
+    if not segment_dir_path.is_dir():
         return error_response(
             INVALID_SEGMENT_OR_STREAM,
             status=404,
@@ -371,12 +383,28 @@ def segment_content(day: str, stream: str, segment_key: str) -> Any:
     audio_duration = 0.0
     video_files: dict[str, str] = {}  # jsonl filename -> video URL
     media_sizes: dict[str, int] = {"audio": 0, "screen": 0}
-    has_raw_reference = False
-    has_raw_file = False
+    has_raw_reference = {"audio": False, "screen": False}
+    has_raw_file = {"audio": False, "screen": False}
+    has_raw_present = {"audio": False, "screen": False}
+    has_jsonl = {"audio": False, "screen": False}
+    counted_media_paths: set[Path] = set()
     warning_details: list[dict[str, str]] = []
 
+    for raw_media in sorted(segment_dir_path.iterdir()):
+        if not raw_media.is_file():
+            continue
+        suffix = raw_media.suffix.lower()
+        if suffix in AUDIO_EXTENSIONS:
+            has_raw_present["audio"] = True
+            counted_media_paths.add(raw_media.resolve())
+            media_sizes["audio"] += raw_media.stat().st_size
+        elif suffix in VIDEO_EXTENSIONS:
+            has_raw_present["screen"] = True
+            counted_media_paths.add(raw_media.resolve())
+            media_sizes["screen"] += raw_media.stat().st_size
+
     # Load speaker labels if available.
-    speaker_labels_path = Path(segment_dir) / "talents" / "speaker_labels.json"
+    speaker_labels_path = segment_dir_path / "talents" / "speaker_labels.json"
     speaker_map: dict[int, dict] = {}
     if speaker_labels_path.is_file():
         try:
@@ -408,6 +436,7 @@ def segment_content(day: str, stream: str, segment_key: str) -> Any:
     # Process audio files
     audio_files = glob(os.path.join(segment_dir, "*audio.jsonl"))
     for audio_path in sorted(audio_files):
+        has_jsonl["audio"] = True
         try:
             entries = _load_jsonl(audio_path)
             audio_duration = max(
@@ -433,13 +462,17 @@ def segment_content(day: str, stream: str, segment_key: str) -> Any:
 
             # Validate raw points to an audio file (skip if not)
             if raw_audio and raw_audio.endswith(AUDIO_EXTENSIONS):
-                has_raw_reference = True
-                audio_full = os.path.join(segment_dir, raw_audio)
-                if os.path.isfile(audio_full):
-                    has_raw_file = True
+                has_raw_reference["audio"] = True
+                audio_full = segment_dir_path / raw_audio
+                if audio_full.is_file():
+                    has_raw_present["audio"] = True
+                    has_raw_file["audio"] = True
                     rel_path = f"{stream}/{segment_key}/{raw_audio}"
                     audio_file_url = f"/app/transcripts/api/serve_file/{day}/{rel_path}"
-                    media_sizes["audio"] += os.path.getsize(audio_full)
+                    resolved = audio_full.resolve()
+                    if resolved not in counted_media_paths:
+                        counted_media_paths.add(resolved)
+                        media_sizes["audio"] += audio_full.stat().st_size
 
             for chunk in formatted_chunks:
                 source = chunk.get("source", {})
@@ -484,6 +517,7 @@ def segment_content(day: str, stream: str, segment_key: str) -> Any:
     # Process screen files and collect video URLs for client-side decoding
     screen_files = glob(os.path.join(segment_dir, "*screen.jsonl"))
     for screen_path in sorted(screen_files):
+        has_jsonl["screen"] = True
         try:
             entries = _load_jsonl(screen_path)
             formatted_chunks, meta = format_screen(entries, {"file_path": screen_path})
@@ -504,15 +538,19 @@ def segment_content(day: str, stream: str, segment_key: str) -> Any:
 
             # Validate raw points to a video file (skip if not, e.g. tmux)
             if raw_video and raw_video.endswith(VIDEO_EXTENSIONS):
-                has_raw_reference = True
-                video_full = os.path.join(segment_dir, raw_video)
-                if os.path.isfile(video_full):
-                    has_raw_file = True
+                has_raw_reference["screen"] = True
+                video_full = segment_dir_path / raw_video
+                if video_full.is_file():
+                    has_raw_present["screen"] = True
+                    has_raw_file["screen"] = True
                     rel_path = f"{stream}/{segment_key}/{raw_video}"
                     video_files[filename] = (
                         f"/app/transcripts/api/serve_file/{day}/{rel_path}"
                     )
-                    media_sizes["screen"] += os.path.getsize(video_full)
+                    resolved = video_full.resolve()
+                    if resolved not in counted_media_paths:
+                        counted_media_paths.add(resolved)
+                        media_sizes["screen"] += video_full.stat().st_size
 
             for chunk in formatted_chunks:
                 source = chunk.get("source", {})
@@ -584,14 +622,33 @@ def segment_content(day: str, stream: str, segment_key: str) -> Any:
 
     # Sort all chunks by timestamp
     chunks.sort(key=lambda c: c["timestamp"])
-    media_purged = has_raw_reference and not has_raw_file
+    media_purged = {
+        modality: has_raw_reference[modality] and not has_raw_file[modality]
+        for modality in ("audio", "screen")
+    }
+    warning_types = {
+        detail["type"]
+        for detail in warning_details
+        if detail.get("type") in ("audio", "screen")
+    }
+    data_state: dict[str, str] = {}
+    for modality in ("audio", "screen"):
+        has_chunks = any(chunk["type"] == modality for chunk in chunks)
+        if modality in warning_types:
+            data_state[modality] = DataState.FAILED.value
+        elif has_chunks:
+            data_state[modality] = DataState.ANALYZED.value
+        elif media_purged[modality]:
+            data_state[modality] = DataState.PURGED.value
+        elif has_raw_present[modality] or has_jsonl[modality]:
+            data_state[modality] = DataState.PENDING.value
 
     # Get cost data for this segment
     cost_data = get_usage_cost(day, segment=segment_key)
 
     # Collect talent .md files
     md_files = {}
-    talents_dir = Path(segment_dir) / "talents"
+    talents_dir = segment_dir_path / "talents"
     if talents_dir.is_dir():
         for md_path in sorted(talents_dir.rglob("*.md")):
             try:
@@ -600,12 +657,12 @@ def segment_content(day: str, stream: str, segment_key: str) -> Any:
             except Exception:
                 continue
 
-    # UI dedup: when a segment has screen chunks, the structural "screen" tab
+    # UI dedup: when a segment has screen data, the structural "screen" tab
     # already covers it — drop talents/screen.md from md_files so the tab row
     # doesn't render two screen-labeled tabs. Speaker attribution reads
     # talents/screen.md directly from disk (apps/speakers/attribution.py),
     # unaffected by this UI-side suppression.
-    if any(c["type"] == "screen" for c in chunks):
+    if "screen" in data_state:
         md_files.pop("screen", None)
 
     return jsonify(
@@ -619,6 +676,7 @@ def segment_content(day: str, stream: str, segment_key: str) -> Any:
             "cost": cost_data["cost"],
             "media_sizes": media_sizes,
             "media_purged": media_purged,
+            "data_state": data_state,
             "warnings": len(warning_details),
             "warning_details": warning_details,
         }

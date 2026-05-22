@@ -22,12 +22,17 @@ def _write_segment(
     segment_dir = journal_root / "chronicle" / day / "default" / segment
     segment_dir.mkdir(parents=True, exist_ok=True)
     if audio_jsonl:
-        (segment_dir / "audio.jsonl").write_text("{}\n", encoding="utf-8")
+        (segment_dir / "audio.jsonl").write_text(
+            '{"raw": "audio.flac"}\n{"start": "00:00:01", "text": "audio"}\n',
+            encoding="utf-8",
+        )
     if audio_flac:
         (segment_dir / "audio.flac").write_bytes(b"audio")
     if screen_jsonl:
         (segment_dir / "screen.jsonl").write_text(
-            '{"raw": "screen.webm"}\n', encoding="utf-8"
+            '{"raw": "screen.webm"}\n'
+            '{"timestamp": 1, "analysis": {"primary": "work"}}\n',
+            encoding="utf-8",
         )
 
 
@@ -43,7 +48,7 @@ class TestScan:
         assert result.exit_code == 0
         assert "(none)" in result.output
 
-    def test_scan_output_byte_identical_when_no_errored_segments(
+    def test_scan_output_byte_identical_when_no_pending_segments(
         self, tmp_path, monkeypatch
     ):
         day = "20990102"
@@ -63,7 +68,7 @@ class TestScan:
             "Transcripts:\n  09:00 - 09:15\nPercepts:\n  09:00 - 09:15\n"
         )
 
-    def test_scan_output_annotates_errored_inside_range(self, tmp_path, monkeypatch):
+    def test_scan_output_annotates_pending_inside_range(self, tmp_path, monkeypatch):
         day = "20990103"
         monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
         _write_segment(tmp_path, day, "090000_300", audio_jsonl=True)
@@ -74,12 +79,12 @@ class TestScan:
         assert result.exit_code == 0
         assert result.output == (
             "Transcripts:\n"
-            "  09:00 - 09:15 (1 segment errored at 09:05:00)\n"
+            "  09:00 - 09:15 (1 segment pending at 09:05)\n"
             "Percepts:\n"
             "  (none)\n"
         )
 
-    def test_scan_output_annotates_orphan_errored_slot(self, tmp_path, monkeypatch):
+    def test_scan_output_reports_pending_only_range(self, tmp_path, monkeypatch):
         day = "20990104"
         monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
         _write_segment(tmp_path, day, "091500_300", audio_flac=True)
@@ -89,12 +94,12 @@ class TestScan:
         assert result.exit_code == 0
         assert result.output == (
             "Transcripts:\n"
-            "  (1 segment errored at 09:15:00, no transcript in this slot)\n"
+            "  09:15 - 09:30 (1 segment pending at 09:15)\n"
             "Percepts:\n"
             "  (none)\n"
         )
 
-    def test_scan_output_pluralizes_multiple_errored(self, tmp_path, monkeypatch):
+    def test_scan_output_pluralizes_multiple_pending(self, tmp_path, monkeypatch):
         day = "20990105"
         monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
         _write_segment(tmp_path, day, "090000_300", audio_jsonl=True)
@@ -106,7 +111,7 @@ class TestScan:
         assert result.exit_code == 0
         assert result.output == (
             "Transcripts:\n"
-            "  09:00 - 09:15 (2 segments errored at 09:05:00, 09:10:00)\n"
+            "  09:00 - 09:15 (2 segments pending at 09:05, 09:10)\n"
             "Percepts:\n"
             "  (none)\n"
         )

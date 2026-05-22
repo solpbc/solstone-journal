@@ -252,6 +252,35 @@ body.has-app-bar .tr-card {
   border: 1px solid #eab308;
 }
 
+.tr-seg-pending {
+  opacity: 0.9;
+  border-style: dashed;
+}
+
+.tr-seg-audio.tr-seg-pending {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(74, 222, 128, 0.45) 0,
+      rgba(74, 222, 128, 0.45) 3px,
+      rgba(134, 239, 172, 0.16) 3px,
+      rgba(134, 239, 172, 0.16) 8px
+    );
+  border-color: #22c55e;
+}
+
+.tr-seg-screen.tr-seg-pending {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(234, 179, 8, 0.45) 0,
+      rgba(234, 179, 8, 0.45) 3px,
+      rgba(253, 230, 138, 0.18) 3px,
+      rgba(253, 230, 138, 0.18) 8px
+    );
+  border-color: #ca8a04;
+}
+
 .tr-now-marker {
   position: absolute;
   left: 64px;
@@ -363,6 +392,12 @@ body.has-app-bar .tr-card {
 
 .tr-tab-pane.active {
   display: block;
+}
+
+.tr-state-stack {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
 }
 
 .tr-md-content {
@@ -616,6 +651,46 @@ body.has-app-bar .tr-zoom {
 .tr-zoom-pill-both {
   background: linear-gradient(to right, rgba(134, 239, 172, 0.75), rgba(194, 234, 155, 0.7) 50%, rgba(253, 230, 138, 0.75));
   border: 1px solid #84cc16;
+}
+
+.tr-zoom-pill-pending {
+  border-style: dashed;
+}
+
+.tr-zoom-pill-audio.tr-zoom-pill-pending {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(74, 222, 128, 0.38) 0,
+      rgba(74, 222, 128, 0.38) 4px,
+      rgba(134, 239, 172, 0.18) 4px,
+      rgba(134, 239, 172, 0.18) 10px
+    );
+  border-color: #22c55e;
+}
+
+.tr-zoom-pill-screen.tr-zoom-pill-pending {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(234, 179, 8, 0.38) 0,
+      rgba(234, 179, 8, 0.38) 4px,
+      rgba(253, 230, 138, 0.2) 4px,
+      rgba(253, 230, 138, 0.2) 10px
+    );
+  border-color: #ca8a04;
+}
+
+.tr-zoom-pill-both.tr-zoom-pill-pending {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(132, 204, 22, 0.38) 0,
+      rgba(132, 204, 22, 0.38) 4px,
+      rgba(194, 234, 155, 0.2) 4px,
+      rgba(194, 234, 155, 0.2) 10px
+    );
+  border-color: #65a30d;
 }
 
 /* Dragging state */
@@ -1518,13 +1593,23 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   const deleteSegmentModal = document.getElementById('trDeleteSegmentModal');
   const deleteSegmentModalBody = document.getElementById('trDeleteSegmentModalBody');
   const deleteSegmentModalConfirm = document.getElementById('trDeleteSegmentModalConfirm');
-	  const emptyIcons = {
+  const emptyIcons = {
     day: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>',
     nothing: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>',
     transcript: '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>',
     audio: '<svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>',
-	    screen: '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>'
-	  };
+    screen: '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>'
+  };
+
+  const DATA_STATE_SUFFIX = {
+    pending: 'analysis pending',
+    failed: 'analysis failed'
+  };
+
+  function dataStateCopy(modality, state) {
+    const suffix = DATA_STATE_SUFFIX[state];
+    return suffix ? `${modality} observed · ${suffix}` : '';
+  }
 
 	  function warningTimestampLabel(ts) {
 	    const parsed = new Date(ts);
@@ -2100,9 +2185,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     return { start, end };
   }
 
-  function addSegmentIndicator(type, startMin, endMin, column, streams = []) {
+  function addSegmentIndicator(type, startMin, endMin, column, streams = [], state = 'analyzed') {
     const el = document.createElement('div');
     el.className = 'tr-seg ' + (type === 'screen' ? 'tr-seg-screen' : 'tr-seg-audio');
+    if (state === 'pending') {
+      el.classList.add('tr-seg-pending');
+    }
     el.style.top = y(startMin) + 'px';
     el.style.height = Math.max(2, y(endMin) - y(startMin)) + 'px';
     el.classList.add(column === 1 ? 'tr-seg-col-1' : 'tr-seg-col-0');
@@ -2117,7 +2205,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     const streamHead = sortedStreams.slice(0, 3).join(' + ');
     const streamToken = sortedStreams.length > 3 ? streamHead + ' +' + (sortedStreams.length - 3) : streamHead;
     const streamSuffix = sortedStreams.length ? ' · ' + streamToken : '';
-    el.title = hhmm(startMin) + ' – ' + hhmm(endMin) + ' (' + (endMin - startMin) + ' min, ' + type + streamSuffix + ')';
+    const stateSuffix = state === 'pending' ? ' · pending' : '';
+    el.title = hhmm(startMin) + ' – ' + hhmm(endMin) + ' (' + (endMin - startMin) + ' min, ' + type + streamSuffix + stateSuffix + ')';
     el.addEventListener('click', e => {
       e.stopPropagation();
       const midMin = (startMin + endMin) / 2;
@@ -2254,12 +2343,19 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       // Determine pill type based on content
       const hasAudio = seg.types.includes('audio');
       const hasScreen = seg.types.includes('screen');
+      const dataState = seg.data_state || {};
+      const hasPendingAdvertised = (seg.types || []).some(
+        type => dataState[type] && dataState[type] !== 'analyzed'
+      );
       if (hasAudio && hasScreen) {
         pill.classList.add('tr-zoom-pill-both');
       } else if (hasAudio) {
         pill.classList.add('tr-zoom-pill-audio');
       } else {
         pill.classList.add('tr-zoom-pill-screen');
+      }
+      if (hasPendingAdvertised) {
+        pill.classList.add('tr-zoom-pill-pending');
       }
       const typeLabel = (hasAudio && hasScreen) ? 'audio and screen' : hasAudio ? 'audio' : 'screen';
 
@@ -2271,7 +2367,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       pill.style.height = Math.max(4, zoomY(visEnd) - zoomY(visStart)) + 'px';
       const duration = Math.round(visEnd - visStart);
       const typeDesc = (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : 'screen';
-      pill.title = seg.start + ' – ' + seg.end + ' · ' + duration + ' min · ' + typeDesc + ' · ' + seg.stream;
+      const pendingSuffix = hasPendingAdvertised ? ' · pending' : '';
+      pill.title = seg.start + ' – ' + seg.end + ' · ' + duration + ' min · ' + typeDesc + ' · ' + seg.stream + pendingSuffix;
       pill.setAttribute('aria-label', 'Segment ' + seg.start + ' \u2013 ' + seg.end + ', ' + typeLabel + ', ' + seg.stream);
       pill.dataset.key = seg.key;
 
@@ -2517,11 +2614,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       tabsContainer.appendChild(btn);
     };
 
+    const dataState = data.data_state || {};
     addTab('transcript', 'transcript');
-    if (data.audio_file) {
+    if (dataState.audio) {
       addTab('audio', 'audio');
     }
-    if ((data.chunks || []).some(chunk => chunk.type === 'screen')) {
+    if (dataState.screen) {
       addTab('screen', 'screen');
     }
 
@@ -2618,12 +2716,45 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     return `${minutes}:${String(secs).padStart(2, '0')}`;
   }
 
+  function renderDataStateAffordance(modality, state, data) {
+    const icon = emptyIcons[modality] || emptyIcons.transcript;
+    if (state === 'pending') {
+      const metadata = [];
+      if (modality === 'audio') {
+        const duration = formatAudioDuration(data.duration);
+        if (duration) metadata.push('duration ' + duration);
+      }
+      const size = formatSize(data.media_sizes?.[modality]);
+      if (size) metadata.push('raw media ' + size);
+      return window.SurfaceState.empty({
+        icon,
+        heading: dataStateCopy(modality, 'pending'),
+        desc: metadata.join(' · ')
+      });
+    }
+    if (state === 'failed') {
+      return window.SurfaceState.error({
+        heading: dataStateCopy(modality, 'failed'),
+        desc: 'analysis errored for this segment'
+      });
+    }
+    if (state === 'purged') {
+      return window.SurfaceState.empty({
+        icon,
+        heading: 'Raw observed media removed per retention policy',
+        desc: ''
+      });
+    }
+    return '';
+  }
+
   function renderSegmentTimeline(data, showAudio, showScreen, targetEl) {
     const chunks = (data.chunks || []).filter(c => {
       if (c.type === 'audio' && !showAudio) return false;
       if (c.type === 'screen' && !showScreen) return false;
       return true;
     });
+    const dataState = data.data_state || {};
 
     const textOnlyScreen = showScreen && Object.keys(currentVideoFiles).length === 0;
 
@@ -2632,6 +2763,24 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     currentFrameIndex = -1;
 
     if (chunks.length === 0) {
+      if (showAudio && !showScreen && dataState.audio && dataState.audio !== 'analyzed') {
+        targetEl.innerHTML = renderDataStateAffordance('audio', dataState.audio, data);
+        return;
+      }
+      if (!showAudio && showScreen && dataState.screen && dataState.screen !== 'analyzed') {
+        targetEl.innerHTML = renderDataStateAffordance('screen', dataState.screen, data);
+        return;
+      }
+      if (showAudio && showScreen) {
+        const states = ['audio', 'screen']
+          .filter(modality => dataState[modality] && dataState[modality] !== 'analyzed')
+          .map(modality => renderDataStateAffordance(modality, dataState[modality], data))
+          .filter(Boolean);
+        if (states.length > 0) {
+          targetEl.innerHTML = `<div class="tr-state-stack">${states.join('')}</div>`;
+          return;
+        }
+      }
       const tabType = !showScreen ? 'audio' : !showAudio ? 'screen' : 'transcript';
       const tabEmptyMap = {
         transcript: { icon: emptyIcons.transcript, heading: 'no transcript entries', desc: 'this segment has no transcript content' },
@@ -2662,7 +2811,11 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       html += '</div></div>';
     }
 
-    if (data.media_purged && !data.audio_file && showAudio) {
+    if (data.media_purged?.audio && !data.audio_file && showAudio) {
+      html += '<div class="tr-purge-notice" role="presentation">Raw observed media removed per retention policy</div>';
+    }
+
+    if (data.media_purged?.screen && showScreen && chunks.some(c => c.type === 'screen')) {
       html += '<div class="tr-purge-notice" role="presentation">Raw observed media removed per retention policy</div>';
     }
 
@@ -3254,12 +3407,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       (data.audio || []).forEach(rg => {
         const s = parseTime(rg.start);
         const e = parseTime(rg.end);
-        addSegmentIndicator('audio', s, e, 0, rg.streams);
+        addSegmentIndicator('audio', s, e, 0, rg.streams, rg.state || 'analyzed');
       });
       (data.screen || []).forEach(rg => {
         const s = parseTime(rg.start);
         const e = parseTime(rg.end);
-        addSegmentIndicator('screen', s, e, 1, rg.streams);
+        addSegmentIndicator('screen', s, e, 1, rg.streams, rg.state || 'analyzed');
       });
 
       // Now-marker for today
@@ -3524,12 +3677,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         (data.audio || []).forEach(rg => {
           const s = parseTime(rg.start);
           const e = parseTime(rg.end);
-          addSegmentIndicator('audio', s, e, 0, rg.streams);
+          addSegmentIndicator('audio', s, e, 0, rg.streams, rg.state || 'analyzed');
         });
         (data.screen || []).forEach(rg => {
           const s = parseTime(rg.start);
           const e = parseTime(rg.end);
-          addSegmentIndicator('screen', s, e, 1, rg.streams);
+          addSegmentIndicator('screen', s, e, 1, rg.streams, rg.state || 'analyzed');
         });
       })
       .catch(() => {
