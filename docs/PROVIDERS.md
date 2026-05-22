@@ -337,6 +337,30 @@ from cloud providers:
 - **Base URL:** Reads ``OLLAMA_BASE_URL`` env var, defaults to
   ``http://localhost:11434``.
 
+## MLX (Local, Apple Silicon) Provider
+
+The ``mlx`` provider (`solstone/think/providers/mlx.py`) runs vision/generate
+on-device on Apple Silicon via the MLX framework — used for the screen-analysis
+path with nothing sent to a cloud provider. It surfaces in Settings → Providers
+as **"MLX (Local, Apple Silicon)"**.
+
+- **Generate-only, no cogitate.** ``run_generate()`` / ``run_agenerate()`` are
+  implemented; ``run_cogitate()`` raises — MLX is vision/generate-only in v1.
+  Configure a cloud provider for cogitate (tool-using) agents.
+- **No API key.** ``env_key`` is empty and ``validate_key()`` always returns
+  ``{"valid": True}`` — availability is gated on platform + RAM, not a secret.
+- **Availability gating.** ``is_mlx_available()`` requires Apple Silicon plus the
+  ``mlx``/``mlx-vlm`` packages; ``is_mlx_available_for_model(spec)`` additionally
+  enforces each model's ``min_ram_bytes`` floor.
+- **Model registry (`_MLX_MODEL_REGISTRY`).** Pinned by repo + revision:
+  ``qwen3.5:9b`` (`mlx-community/Qwen3.5-9B-MLX-8bit`, ≥16 GB) and
+  ``gemma-4-26b-a4b-it-mlx-4bit`` (`mlx-community/gemma-4-26b-a4b-it-4bit`, ≥24 GB,
+  with a ``post_load`` hook that constrains the Gemma 4 vision tower to the
+  screenshot-faithful patch budget).
+- **On-demand snapshot.** The pinned snapshot downloads in the background on first
+  enable; a missing snapshot raises ``ModelSnapshotMissingError`` rather than
+  silently degrading. Loaded models are cached at module level.
+
 ## Checklist for New Providers
 
 **Core implementation:**
