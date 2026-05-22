@@ -38,9 +38,9 @@ from typing import Any, Dict, List
 # ---------------------------------------------------------------------------
 
 PROVIDER_REGISTRY: Dict[str, str] = {
-    "google": "solstone.think.providers.google",
-    "openai": "solstone.think.providers.openai",
-    "anthropic": "solstone.think.providers.anthropic",
+    "google": "solstone.think.providers.openhands",
+    "openai": "solstone.think.providers.openhands",
+    "anthropic": "solstone.think.providers.openhands",
     "ollama": "solstone.think.providers.ollama",
     "mlx": "solstone.think.providers.mlx",
 }
@@ -56,6 +56,7 @@ PROVIDER_METADATA: Dict[str, Dict[str, Any]] = {
     "google": {
         "label": "Google (Gemini)",
         "env_key": "GOOGLE_API_KEY",
+        "cogitate_runtime": "openhands",
         "vertex_env_keys": [
             "GOOGLE_GENAI_USE_VERTEXAI",
             "GOOGLE_APPLICATION_CREDENTIALS",
@@ -64,12 +65,12 @@ PROVIDER_METADATA: Dict[str, Dict[str, Any]] = {
     "openai": {
         "label": "OpenAI (GPT)",
         "env_key": "OPENAI_API_KEY",
-        "cogitate_cli": "codex",
+        "cogitate_runtime": "openhands",
     },
     "anthropic": {
         "label": "Anthropic (Claude)",
         "env_key": "ANTHROPIC_API_KEY",
-        "cogitate_cli": "claude",
+        "cogitate_runtime": "openhands",
     },
     "ollama": {
         "label": "Ollama (Local)",
@@ -134,8 +135,21 @@ def get_provider_list() -> List[Dict[str, Any]]:
     return providers
 
 
+def _env_key_configured(env_key: str) -> bool:
+    if not env_key:
+        return False
+    if os.getenv(env_key):
+        return True
+    try:
+        from solstone.think.journal_config import read_journal_config
+
+        return bool(read_journal_config().get("env", {}).get(env_key))
+    except Exception:
+        return False
+
+
 def build_provider_status(
-    providers_list: List[Dict[str, Any]],
+    providers_list: List[Dict[str, Any]] | None = None,
     vertex_creds_configured: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
     """Build per-provider readiness status.
@@ -153,15 +167,17 @@ def build_provider_status(
         Keyed by provider name. Each entry has readiness fields and issues.
         CLI-backed providers also include cogitate_cli and cogitate_cli_found.
     """
+    if providers_list is None:
+        providers_list = get_provider_list()
+
     status = {}
-    bundled_cli_states = {"installed-no-key", "key-validating", "valid", "invalid-key"}
+    runtime_installed_states = {"installed-no-key", "valid"}
     for provider in providers_list:
         name = provider["name"]
         env_key = provider.get("env_key", "")
         meta = PROVIDER_METADATA.get(name, {})
         cogitate_cli = meta.get("cogitate_cli", "")
         issues: list[str] = []
-        bundled_state: dict[str, Any] | None = None
 
         if name == "ollama":
             try:
@@ -179,58 +195,59 @@ def build_provider_status(
                     "OLLAMA_BASE_URL", "http://localhost:11434"
                 ).rstrip("/")
                 issues.append(f"Ollama not reachable at {base_url}")
-        elif name == "google":
-            has_key = bool(os.getenv(env_key))
-            configured = has_key or vertex_creds_configured
-            if not configured:
-                issues.append(f"{env_key} not set")
-        elif name in {"anthropic", "openai"}:
+        elif name in {"google", "anthropic", "openai"}:
             from solstone.think.providers import bundled
 
-            bundled_state = bundled.get_provider_state(name)
-            configured = bool(bundled_state["key_configured"])
-            if not configured and env_key:
-                issues.append(f"{env_key} not set")
-        else:
-            configured = bool(os.getenv(env_key)) if env_key else False
-            if not configured and env_key:
-                issues.append(f"{env_key} not set")
+            runtime_state = bundled.get_provider_state(
+                meta.get("cogitate_runtime", "openhands")
+            )
+            runtime_contract_state = runtime_state["state"]
+            cogitate_cli = "openhands-sdk"
+            cogitate_cli_found = runtime_contract_state in runtime_installed_states
 
-        if name == "google":
-            cogitate_ready = configured
+            if name == "google":
+                has_key = _env_key_configured(env_key)
+                configured = has_key or vertex_creds_configured
+                cogitate_key_configured = has_key
+                if not configured:
+                    issues.append(f"{env_key} not set")
+                elif not has_key:
+                    issues.append(f"{env_key} not set for cogitate")
+            else:
+                configured = _env_key_configured(env_key)
+                cogitate_key_configured = configured
+                if not configured and env_key:
+                    issues.append(f"{env_key} not set")
+
+            if not cogitate_cli_found:
+                issues.extend(runtime_state.get("issues", []))
+            elif runtime_contract_state == "invalid-key":
+                issues.extend(runtime_state.get("issues", []))
+
             status[name] = {
                 "configured": configured,
                 "generate_ready": configured,
-                "cogitate_ready": cogitate_ready,
+                "cogitate_ready": cogitate_key_configured and cogitate_cli_found,
+                "cogitate_cli": cogitate_cli,
+                "cogitate_cli_found": cogitate_cli_found,
                 "issues": issues,
             }
             continue
-
-        if bundled_state is not None:
-            bundled_contract_state = bundled_state["state"]
-            cogitate_cli_found = bundled_contract_state in bundled_cli_states
-            if not cogitate_cli_found:
-                issues.append(
-                    f"bundled CLI not installed — run `sol call settings providers install {name}`"
-                )
-            elif bundled_contract_state == "invalid-key":
-                issues.extend(bundled_state.get("issues", []))
-            cogitate_ready = (
-                bundled_contract_state in {"installed-no-key", "valid"} and configured
-            )
         else:
-            cogitate_cli_found = (
-                bool(shutil.which(cogitate_cli)) if cogitate_cli else False
-            )
-            if cogitate_cli and not cogitate_cli_found:
-                install_cmd = meta.get("cogitate_cli_install")
-                if install_cmd:
-                    issues.append(
-                        f"{cogitate_cli} CLI not found on PATH — run: {install_cmd}"
-                    )
-                else:
-                    issues.append(f"{cogitate_cli} CLI not found on PATH")
-            cogitate_ready = configured and cogitate_cli_found
+            configured = _env_key_configured(env_key)
+            if not configured and env_key:
+                issues.append(f"{env_key} not set")
+
+        cogitate_cli_found = bool(shutil.which(cogitate_cli)) if cogitate_cli else False
+        if cogitate_cli and not cogitate_cli_found:
+            install_cmd = meta.get("cogitate_cli_install")
+            if install_cmd:
+                issues.append(
+                    f"{cogitate_cli} CLI not found on PATH — run: {install_cmd}"
+                )
+            else:
+                issues.append(f"{cogitate_cli} CLI not found on PATH")
+        cogitate_ready = configured and cogitate_cli_found
 
         generate_ready = configured
 
@@ -264,7 +281,7 @@ def get_provider_models(provider: str) -> list[dict]:
         If the provider is not registered.
     """
     module = get_provider_module(provider)
-    return module.list_models()
+    return module.list_models(provider)
 
 
 def validate_key(provider: str, api_key: str) -> dict:
@@ -288,7 +305,7 @@ def validate_key(provider: str, api_key: str) -> dict:
         If the provider is not registered.
     """
     module = get_provider_module(provider)
-    return module.validate_key(api_key)
+    return module.validate_key(provider, api_key)
 
 
 __all__ = [

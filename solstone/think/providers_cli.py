@@ -17,6 +17,23 @@ from pathlib import Path
 
 from solstone.think.utils import get_journal, require_solstone, setup_cli
 
+_OPENHANDS_BACKED_PROVIDERS = {"anthropic", "openai", "google"}
+
+
+def _provider_status(provider_name: str) -> dict[str, object]:
+    from solstone.think.providers import build_provider_status, get_provider_list
+
+    provider = next(
+        (item for item in get_provider_list() if item["name"] == provider_name),
+        None,
+    )
+    if provider is None:
+        return {}
+    return build_provider_status([provider], vertex_creds_configured=False).get(
+        provider_name,
+        {},
+    )
+
 
 def _check_generate(provider_name: str, tier: int, timeout: int) -> tuple[str, str]:
     """Check generate interface for a provider."""
@@ -44,6 +61,7 @@ def _check_generate(provider_name: str, tier: int, timeout: int) -> tuple[str, s
         result = module.run_generate(
             contents="Say OK",
             model=model,
+            provider=provider_name,
             temperature=0,
             max_output_tokens=16,
             system_instruction=None,
@@ -77,7 +95,19 @@ async def _check_cogitate(
     from solstone.think.providers import PROVIDER_METADATA, get_provider_module
 
     env_key = PROVIDER_METADATA[provider_name]["env_key"]
-    if env_key and not os.getenv(env_key):
+    if provider_name in _OPENHANDS_BACKED_PROVIDERS:
+        label = PROVIDER_METADATA[provider_name]["label"]
+        status = _provider_status(provider_name)
+        if not status.get("configured"):
+            return "skip", f"{label} not configured (no {env_key})"
+        if not status.get("cogitate_cli_found"):
+            binary = str(status.get("cogitate_cli") or "openhands-sdk")
+            return "skip", f"{binary} runtime not installed"
+        if not status.get("cogitate_ready"):
+            issues = status.get("issues") or []
+            message = "; ".join(str(issue) for issue in issues) or "cogitate not ready"
+            return "skip", message
+    elif env_key and not os.getenv(env_key):
         label = PROVIDER_METADATA[provider_name]["label"]
         return "skip", f"{label} not configured (no {env_key})"
 
@@ -98,7 +128,7 @@ async def _check_cogitate(
     try:
         module = get_provider_module(provider_name)
         model = PROVIDER_DEFAULTS[provider_name][tier]
-        config = {"prompt": "Say OK", "model": model}
+        config = {"prompt": "Say OK", "model": model, "provider": provider_name}
         result = await asyncio.wait_for(
             module.run_cogitate(config=config, on_event=None),
             timeout=timeout,

@@ -584,7 +584,7 @@ async def run_cogitate(
 # ---------------------------------------------------------------------------
 
 
-def list_models() -> list[dict]:
+def list_models(provider: str) -> list[dict]:
     """List available models from the local Ollama instance.
 
     Returns
@@ -592,21 +592,24 @@ def list_models() -> list[dict]:
     list[dict]
         List of model info dicts from the Ollama ``/api/tags`` endpoint.
     """
+    del provider
     client = _get_client()
     response = client.get("/api/tags")
     response.raise_for_status()
     return response.json().get("models", [])
 
 
-def validate_key(api_key: str) -> dict:
+def validate_key(provider: str, api_key: str) -> dict:
     """Check that the local Ollama instance is reachable.
 
+    The ``provider`` parameter is accepted for registry dispatch compatibility.
     The ``api_key`` parameter is ignored — Ollama requires no authentication.
     Connectivity is validated by hitting the version endpoint.
 
     Returns ``{"valid": True}`` if reachable, ``{"valid": False, "error": "..."}``
     if not.
     """
+    del provider, api_key
     try:
         base_url = _get_base_url()
         response = httpx.get(f"{base_url}/api/version", timeout=5)

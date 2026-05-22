@@ -512,7 +512,7 @@ def _bundled_status_payload(name: str | None) -> dict:
         return bundled.get_provider_state(name)
     return {
         provider: bundled.get_provider_state(provider)
-        for provider in ("anthropic", "openai")
+        for provider in ("anthropic", "openai", "openhands")
     }
 
 

@@ -19,7 +19,7 @@ def _ollama_reachable() -> bool:
     try:
         from solstone.think.providers.ollama import validate_key
 
-        return validate_key("")["valid"]
+        return validate_key("ollama", "")["valid"]
     except Exception:
         return False
 
@@ -138,7 +138,7 @@ class TestOllamaListModels:
     def test_list_models(self):
         from solstone.think.providers.ollama import list_models
 
-        models = list_models()
+        models = list_models("ollama")
         assert isinstance(models, list)
         assert len(models) > 0
         # Native API returns models with "name" field
@@ -149,7 +149,7 @@ class TestOllamaValidateKey:
     def test_reachable(self):
         from solstone.think.providers.ollama import validate_key
 
-        result = validate_key("")
+        result = validate_key("ollama", "")
         assert result["valid"] is True
 
 

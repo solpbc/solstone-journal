@@ -236,15 +236,48 @@ def _setup_claude_cli_stub(
     monkeypatch.setattr(provider_mod, "CLIRunner", DummyCLIRunner)
 
 
+def _setup_openhands_cogitate_stub(
+    monkeypatch,
+    *,
+    error=False,
+    with_thinking=False,
+    with_redacted_thinking=False,
+):
+    from solstone.think.providers import openhands as openhands_provider
+
+    async def fake_run_cogitate(config, on_event=None):
+        if error:
+            raise RuntimeError("boo")
+        if on_event:
+            if with_thinking:
+                on_event(
+                    {
+                        "event": "thinking",
+                        "summary": "I'm thinking about this...",
+                        "signature": "test-signature-123",
+                        "redacted_data": None,
+                        "model": config.get("model"),
+                    }
+                )
+            if with_redacted_thinking:
+                on_event(
+                    {
+                        "event": "thinking",
+                        "summary": "[redacted]",
+                        "signature": None,
+                        "redacted_data": "encrypted-data-xyz",
+                        "model": config.get("model"),
+                    }
+                )
+            on_event({"event": "text_delta", "delta": "ok"})
+            on_event({"event": "finish", "result": "ok"})
+        return "ok"
+
+    monkeypatch.setattr(openhands_provider, "run_cogitate", fake_run_cogitate)
+
+
 def test_claude_main(monkeypatch, tmp_path, capsys):
-    _setup_anthropic_stub(monkeypatch)
-    monkeypatch.delitem(
-        sys.modules, "solstone.think.providers.anthropic", raising=False
-    )
-    provider_mod = importlib.reload(
-        importlib.import_module("solstone.think.providers.anthropic")
-    )
-    _setup_claude_cli_stub(monkeypatch, provider_mod)
+    _setup_openhands_cogitate_stub(monkeypatch)
     mod = importlib.reload(importlib.import_module("solstone.think.talents"))
 
     journal = tmp_path / "journal"
@@ -283,14 +316,7 @@ def test_claude_main(monkeypatch, tmp_path, capsys):
 
 
 def test_claude_outfile(monkeypatch, tmp_path, capsys):
-    _setup_anthropic_stub(monkeypatch)
-    monkeypatch.delitem(
-        sys.modules, "solstone.think.providers.anthropic", raising=False
-    )
-    provider_mod = importlib.reload(
-        importlib.import_module("solstone.think.providers.anthropic")
-    )
-    _setup_claude_cli_stub(monkeypatch, provider_mod)
+    _setup_openhands_cogitate_stub(monkeypatch)
     mod = importlib.reload(importlib.import_module("solstone.think.talents"))
 
     journal = tmp_path / "journal"
@@ -332,15 +358,7 @@ def test_claude_outfile(monkeypatch, tmp_path, capsys):
 
 def test_claude_thinking_events(monkeypatch, tmp_path, capsys):
     """Test that thinking events are properly emitted for Claude models."""
-    # Setup anthropic stub with thinking
-    _setup_anthropic_stub(monkeypatch, with_thinking=True)
-    monkeypatch.delitem(
-        sys.modules, "solstone.think.providers.anthropic", raising=False
-    )
-    provider_mod = importlib.reload(
-        importlib.import_module("solstone.think.providers.anthropic")
-    )
-    _setup_claude_cli_stub(monkeypatch, provider_mod, with_thinking=True)
+    _setup_openhands_cogitate_stub(monkeypatch, with_thinking=True)
     mod = importlib.reload(importlib.import_module("solstone.think.talents"))
 
     journal = tmp_path / "journal"
@@ -378,14 +396,7 @@ def test_claude_thinking_events(monkeypatch, tmp_path, capsys):
 
 def test_claude_redacted_thinking_events(monkeypatch, tmp_path, capsys):
     """Test that redacted thinking events are properly handled."""
-    _setup_anthropic_stub(monkeypatch, with_redacted_thinking=True)
-    monkeypatch.delitem(
-        sys.modules, "solstone.think.providers.anthropic", raising=False
-    )
-    provider_mod = importlib.reload(
-        importlib.import_module("solstone.think.providers.anthropic")
-    )
-    _setup_claude_cli_stub(monkeypatch, provider_mod, with_redacted_thinking=True)
+    _setup_openhands_cogitate_stub(monkeypatch, with_redacted_thinking=True)
     mod = importlib.reload(importlib.import_module("solstone.think.talents"))
 
     journal = tmp_path / "journal"
@@ -421,14 +432,7 @@ def test_claude_redacted_thinking_events(monkeypatch, tmp_path, capsys):
 
 
 def test_claude_outfile_error(monkeypatch, tmp_path, capsys):
-    _setup_anthropic_stub(monkeypatch, error=True)
-    monkeypatch.delitem(
-        sys.modules, "solstone.think.providers.anthropic", raising=False
-    )
-    provider_mod = importlib.reload(
-        importlib.import_module("solstone.think.providers.anthropic")
-    )
-    _setup_claude_cli_stub(monkeypatch, provider_mod, error=True)
+    _setup_openhands_cogitate_stub(monkeypatch, error=True)
     mod = importlib.reload(importlib.import_module("solstone.think.talents"))
 
     journal = tmp_path / "journal"

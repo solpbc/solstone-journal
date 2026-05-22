@@ -1178,6 +1178,7 @@ def generate(
     result = provider_mod.run_generate(
         contents=contents,
         model=model,
+        provider=provider,
         temperature=temperature,
         max_output_tokens=max_output_tokens,
         system_instruction=system_instruction,
@@ -1478,6 +1479,7 @@ def generate_with_result(
     result = provider_mod.run_generate(
         contents=contents,
         model=model,
+        provider=provider,
         temperature=temperature,
         max_output_tokens=max_output_tokens,
         system_instruction=system_instruction,
@@ -1582,6 +1584,7 @@ async def agenerate(
     result = await provider_mod.run_agenerate(
         contents=contents,
         model=model,
+        provider=provider,
         temperature=temperature,
         max_output_tokens=max_output_tokens,
         system_instruction=system_instruction,

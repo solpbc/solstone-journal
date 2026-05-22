@@ -142,7 +142,9 @@ def test_google_main(monkeypatch, tmp_path, capsys):
             on_event({"event": "finish", "result": "ok"})
         return "ok"
 
-    monkeypatch.setattr(google_provider, "run_cogitate", fake_run_cogitate)
+    from solstone.think.providers import openhands as openhands_provider
+
+    monkeypatch.setattr(openhands_provider, "run_cogitate", fake_run_cogitate)
 
     ndjson_input = json.dumps(
         {

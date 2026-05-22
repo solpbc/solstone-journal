@@ -194,14 +194,14 @@ class TestProvidersShow:
         assert payload["cogitate"]["provider"] == "openai"
 
     def test_provider_status_key_set_cli_found(self, settings_env):
-        """Provider with key set and bundled CLI installed."""
+        """Provider with key set and OpenHands runtime installed."""
         tmp_path, config = settings_env()
         config["providers"]["bundled"] = {
-            "openai": {
-                "state": "installed-no-key",
+            "openhands": {
+                "state": "valid",
                 "last_transition_at": "2026-05-20T00:00:00+00:00",
-                "sdk_spec": "openai-codex-sdk==0.1.11",
-                "binary_path": "/tmp/codex",
+                "sdk_specs": ["openhands-sdk==1.23.*"],
+                "binary_path": "/tmp/openhands/sdk/__init__.py",
                 "install_error": None,
             }
         }
@@ -210,7 +210,15 @@ class TestProvidersShow:
             encoding="utf-8",
         )
 
-        result = runner.invoke(call_app, ["settings", "providers", "show"])
+        with patch.object(
+            bundled,
+            "get_provider_state",
+            return_value={
+                "state": "valid",
+                "issues": [],
+            },
+        ):
+            result = runner.invoke(call_app, ["settings", "providers", "show"])
 
         assert result.exit_code == 0
         payload = json.loads(result.output)
@@ -218,7 +226,7 @@ class TestProvidersShow:
         assert status["configured"] is True
         assert status["generate_ready"] is True
         assert status["cogitate_ready"] is True
-        assert status["cogitate_cli"] == "codex"
+        assert status["cogitate_cli"] == "openhands-sdk"
         assert status["cogitate_cli_found"] is True
         assert status["issues"] == []
 
@@ -242,7 +250,7 @@ class TestProvidersShow:
         assert "OPENAI_API_KEY not set" in status["issues"]
 
     def test_provider_status_key_set_cli_missing(self, settings_env):
-        """Provider with key set but bundled CLI not installed."""
+        """Provider with key set but OpenHands runtime not installed."""
         tmp_path, config = settings_env()
         config["env"]["ANTHROPIC_API_KEY"] = "test-key"
         (tmp_path / "config" / "journal.json").write_text(
@@ -260,7 +268,7 @@ class TestProvidersShow:
         assert status["cogitate_ready"] is False
         assert status["cogitate_cli_found"] is False
         assert (
-            "bundled CLI not installed — run `sol call settings providers install anthropic`"
+            "bundled runtime not installed — run `sol call settings providers install openhands` missing: openhands.sdk, litellm"
             in status["issues"]
         )
 
@@ -271,17 +279,17 @@ class TestProvidersShow:
                 "configured": False,
                 "generate_ready": False,
                 "cogitate_ready": False,
-                "cogitate_cli": "claude",
+                "cogitate_cli": "openhands-sdk",
                 "cogitate_cli_found": False,
                 "issues": ["ANTHROPIC_API_KEY not set"],
             },
             "google": {
                 "configured": True,
                 "generate_ready": True,
-                "cogitate_ready": True,
-                "cogitate_cli": "gemini",
-                "cogitate_cli_found": True,
-                "issues": [],
+                "cogitate_ready": False,
+                "cogitate_cli": "openhands-sdk",
+                "cogitate_cli_found": False,
+                "issues": ["GOOGLE_API_KEY not set for cogitate"],
             },
             "mlx": {
                 "configured": False,
@@ -306,7 +314,7 @@ class TestProvidersShow:
                 "configured": True,
                 "generate_ready": True,
                 "cogitate_ready": True,
-                "cogitate_cli": "codex",
+                "cogitate_cli": "openhands-sdk",
                 "cogitate_cli_found": True,
                 "issues": [],
             },
@@ -363,7 +371,7 @@ class TestProvidersBundled:
 
         assert result.exit_code == 0
         payload = json.loads(result.output)
-        assert set(payload) == {"anthropic", "openai"}
+        assert set(payload) == {"anthropic", "openai", "openhands"}
 
     def test_status_human(self, settings_env):
         settings_env()

@@ -782,7 +782,7 @@ def get_providers() -> Any:
         provider_status = build_provider_status(providers_list, vertex_creds_configured)
         bundled_status = {
             provider: bundled.get_provider_state(provider)
-            for provider in ("anthropic", "openai")
+            for provider in ("anthropic", "openai", "openhands")
         }
         mlx_config = providers_config.get("mlx", {})
         mlx_active_model = (
@@ -822,7 +822,7 @@ def get_bundled_providers() -> Any:
         return jsonify(
             {
                 provider: bundled.get_provider_state(provider)
-                for provider in ("anthropic", "openai")
+                for provider in ("anthropic", "openai", "openhands")
             }
         )
     except Exception:

@@ -81,7 +81,12 @@ class ErrorEvent(TypedDict, total=False):
     event: Literal["error"]
     ts: int
     error: str
+    reason: Optional[str]
+    reason_code: Optional[str]
+    provider: Optional[str]
     trace: Optional[str]
+    reset_at_ms: Optional[int]
+    terminal: Optional[bool]
     raw: Optional[list[dict[str, Any]]]  # Original provider JSON event(s)
 
 

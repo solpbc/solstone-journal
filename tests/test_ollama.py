@@ -970,7 +970,7 @@ class TestListModels:
             mock_client.get.return_value = mock_response
             mock_get.return_value = mock_client
 
-            result = provider.list_models()
+            result = provider.list_models("ollama")
 
         assert len(result) == 2
         assert result[0]["name"] == "qwen3.5:9b"
@@ -986,7 +986,7 @@ class TestValidateKey:
             mock_response.json.return_value = {"version": "0.18.3"}
             mock_get.return_value = mock_response
 
-            result = provider.validate_key("ignored")
+            result = provider.validate_key("ollama", "ignored")
 
         assert result == {"valid": True}
 
@@ -996,7 +996,7 @@ class TestValidateKey:
         with patch("httpx.get") as mock_get:
             mock_get.side_effect = httpx.ConnectError("Connection refused")
 
-            result = provider.validate_key("ignored")
+            result = provider.validate_key("ollama", "ignored")
 
         assert result["valid"] is False
         assert "Connection refused" in result["error"]

@@ -272,7 +272,7 @@ def test_list_models_returns_registry_keys(monkeypatch):
 
     provider = _provider(monkeypatch)
 
-    assert provider.list_models() == [QWEN_35_9B, provider.GEMMA4_26B_A4B_4BIT]
+    assert provider.list_models("mlx") == [QWEN_35_9B, provider.GEMMA4_26B_A4B_4BIT]
 
 
 def test_load_model_rejects_unknown_model(monkeypatch):

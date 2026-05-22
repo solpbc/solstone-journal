@@ -72,17 +72,14 @@ def mock_prepare_config(request: dict) -> dict:
 
 
 def mock_all_providers(monkeypatch):
-    """Mock all provider modules uniformly with mock_run_cogitate.
+    """Mock the registered cogitate provider module with mock_run_cogitate.
 
-    This ensures tests are not fragile to changes in default provider.
+    Cloud providers route through the OpenHands facade for cogitate, so one mock
+    covers openai, anthropic, and google registry lookups.
     """
-    # Mock providers in think.providers (google, openai, anthropic)
-    for provider_name in ("openai", "anthropic", "google"):
-        mock_module = MagicMock()
-        mock_module.run_cogitate = mock_run_cogitate
-        monkeypatch.setitem(
-            sys.modules, f"solstone.think.providers.{provider_name}", mock_module
-        )
+    mock_module = MagicMock()
+    mock_module.run_cogitate = mock_run_cogitate
+    monkeypatch.setitem(sys.modules, "solstone.think.providers.openhands", mock_module)
 
     monkeypatch.setitem(sys.modules, "agents", MagicMock())
 

@@ -409,11 +409,13 @@ async def run_cogitate(
     )
 
 
-def list_models() -> list[str]:
+def list_models(provider: str) -> list[str]:
+    del provider
     return list(_MLX_MODEL_REGISTRY.keys())
 
 
-def validate_key(api_key: str) -> dict:
+def validate_key(provider: str, api_key: str) -> dict:
+    del provider, api_key
     return {"valid": True}
 
 

@@ -405,21 +405,31 @@ def test_generate_content_config_pins_thinking_and_manual_tools(
 
 def test_google_provider_metadata_has_no_cogitate_cli() -> None:
     assert "cogitate_cli" not in PROVIDER_METADATA["google"]
+    assert PROVIDER_METADATA["google"]["cogitate_runtime"] == "openhands"
 
 
 @pytest.mark.parametrize(
-    ("api_key", "vertex_creds_configured", "ready", "issues"),
+    (
+        "api_key",
+        "vertex_creds_configured",
+        "configured",
+        "generate_ready",
+        "cogitate_ready",
+        "issues",
+    ),
     [
-        ("", False, False, ["GOOGLE_API_KEY not set"]),
-        ("key", False, True, []),
-        ("", True, True, []),
+        ("", False, False, False, False, ["GOOGLE_API_KEY not set"]),
+        ("key", False, True, True, True, []),
+        ("", True, True, True, False, ["GOOGLE_API_KEY not set for cogitate"]),
     ],
 )
 def test_google_provider_status_ignores_gemini_path(
     monkeypatch,
     api_key: str,
     vertex_creds_configured: bool,
-    ready: bool,
+    configured: bool,
+    generate_ready: bool,
+    cogitate_ready: bool,
     issues: list[str],
 ) -> None:
     if api_key:
@@ -430,6 +440,10 @@ def test_google_provider_status_ignores_gemini_path(
         "solstone.think.providers.shutil.which",
         lambda _name: (_ for _ in ()).throw(AssertionError("which should not run")),
     )
+    monkeypatch.setattr(
+        "solstone.think.providers.bundled.get_provider_state",
+        lambda _name: {"state": "valid", "issues": []},
+    )
 
     status = build_provider_status(
         [{"name": "google", "env_key": "GOOGLE_API_KEY"}],
@@ -437,9 +451,11 @@ def test_google_provider_status_ignores_gemini_path(
     )["google"]
 
     assert status == {
-        "configured": ready,
-        "generate_ready": ready,
-        "cogitate_ready": ready,
+        "configured": configured,
+        "generate_ready": generate_ready,
+        "cogitate_ready": cogitate_ready,
+        "cogitate_cli": "openhands-sdk",
+        "cogitate_cli_found": True,
         "issues": issues,
     }
 
