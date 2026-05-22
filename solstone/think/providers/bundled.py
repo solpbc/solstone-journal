@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import logging
 import os
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 STUCK_ENABLING_SECONDS = 300
 
 SUPPORTED_PROVIDERS = {"anthropic", "openai"}
+SUPPORTED_RUNTIMES = {"openhands"}
 BINARY_STATES = {"installed-no-key", "key-validating", "valid", "invalid-key"}
 TERMINAL_INSTALLED_STATES = {"installed-no-key", "valid", "invalid-key"}
 
@@ -63,6 +65,23 @@ PINS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "openhands": {
+        "sdk_specs": ["openhands-sdk==1.23.*"],
+        "runtime": "python",
+    },
+}
+
+RUNTIME_METADATA: dict[str, dict[str, Any]] = {
+    "openhands": {
+        "label": "OpenHands SDK",
+        "env_key": "",
+        "cogitate_cli": "openhands-sdk",
+        "modules": ["openhands.sdk", "litellm"],
+    }
+}
+BUNDLED_PROVIDER_METADATA: dict[str, dict[str, Any]] = {
+    "anthropic": {"cogitate_cli": "claude"},
+    "openai": {"cogitate_cli": "codex"},
 }
 
 ProviderStateDict: TypeAlias = dict[str, Any]
@@ -123,17 +142,25 @@ def _parse_timestamp(value: str | None) -> datetime | None:
 
 
 def _require_supported(name: str) -> None:
-    if name not in SUPPORTED_PROVIDERS:
-        valid = ", ".join(sorted(SUPPORTED_PROVIDERS))
+    supported = SUPPORTED_PROVIDERS | SUPPORTED_RUNTIMES
+    if name not in supported:
+        valid = ", ".join(sorted(supported))
         raise UnsupportedBundledProvider(
             f"Unsupported bundled provider: {name!r}. Supported providers: {valid}"
         )
 
 
+def _is_runtime_key(name: str) -> bool:
+    return name in SUPPORTED_RUNTIMES
+
+
 def _provider_metadata(name: str) -> dict[str, Any]:
+    if _is_runtime_key(name):
+        return RUNTIME_METADATA[name]
+
     from solstone.think.providers import PROVIDER_METADATA
 
-    return PROVIDER_METADATA[name]
+    return {**PROVIDER_METADATA[name], **BUNDLED_PROVIDER_METADATA.get(name, {})}
 
 
 def _provider_env_key(name: str) -> str:
@@ -155,14 +182,28 @@ def _key_configured(config: dict[str, Any], name: str) -> bool:
 
 
 def _auth_mode(config: dict[str, Any], name: str) -> str:
+    if _is_runtime_key(name):
+        return "runtime"
     return config.get("providers", {}).get("auth", {}).get(name, "platform")
+
+
+def _sdk_specs(name: str) -> list[str]:
+    pin = PINS[name]
+    specs = pin.get("sdk_specs")
+    if specs:
+        return list(specs)
+    return [pin["sdk_spec"]]
 
 
 def _pin_record(name: str) -> dict[str, Any]:
     pin = PINS[name]
-    record: dict[str, Any] = {
-        "sdk_spec": pin["sdk_spec"],
-    }
+    record: dict[str, Any] = {}
+    if "sdk_spec" in pin:
+        record["sdk_spec"] = pin["sdk_spec"]
+    else:
+        record["sdk_specs"] = _sdk_specs(name)
+    if "runtime" in pin:
+        record["runtime"] = pin["runtime"]
     if name == "openai":
         artifact = _codex_artifact_for_current_platform()
         record["codex_version"] = pin["codex_version"]
@@ -222,6 +263,38 @@ def _state_from_config(
     return "installed-no-key"
 
 
+def _runtime_module_path(module_name: str) -> str | None:
+    try:
+        spec = importlib.util.find_spec(module_name)
+    except (ImportError, AttributeError, ValueError):
+        return None
+    if spec is None:
+        return None
+    if spec.origin and spec.origin != "namespace":
+        return spec.origin
+    locations = spec.submodule_search_locations
+    if locations:
+        return next(iter(locations), None)
+    return None
+
+
+def _runtime_module_paths(name: str) -> dict[str, str | None]:
+    modules = _provider_metadata(name).get("modules", [])
+    return {str(module): _runtime_module_path(str(module)) for module in modules}
+
+
+def _runtime_state_from_config(name: str, record: dict[str, Any]) -> str:
+    persisted = record.get("state", "not-enabled")
+    installed = all(path for path in _runtime_module_paths(name).values())
+    if persisted == "disabled":
+        return "disabled"
+    if installed:
+        return "valid"
+    if persisted in {"enabling", "install-failed"}:
+        return persisted
+    return "not-enabled"
+
+
 def _issues_for_state(
     state: str,
     *,
@@ -248,6 +321,27 @@ def _issues_for_state(
     return []
 
 
+def _issues_for_runtime_state(
+    state: str,
+    *,
+    name: str,
+    install_error: str | None,
+) -> list[str]:
+    if state == "not-enabled":
+        missing = [
+            module
+            for module, path in _runtime_module_paths(name).items()
+            if path is None
+        ]
+        detail = f" missing: {', '.join(missing)}" if missing else ""
+        return [f"bundled runtime not installed — run `{_install_hint(name)}`{detail}"]
+    if state == "install-failed":
+        return [install_error or "bundled runtime install failed"]
+    if state == "disabled":
+        return ["bundled runtime disabled"]
+    return []
+
+
 def _actions_for_state(state: str, *, key_configured: bool, stuck: bool) -> list[str]:
     if state == "not-enabled":
         return ["install"]
@@ -263,6 +357,18 @@ def _actions_for_state(state: str, *, key_configured: bool, stuck: bool) -> list
     if key_configured:
         actions.insert(0, "validate-key")
     return actions
+
+
+def _actions_for_runtime_state(state: str, *, stuck: bool) -> list[str]:
+    if state == "not-enabled":
+        return ["install"]
+    if state == "enabling":
+        return ["install"] if stuck else []
+    if state == "install-failed":
+        return ["install", "uninstall"]
+    if state == "disabled":
+        return ["enable", "uninstall"]
+    return ["disable", "uninstall"]
 
 
 def _is_record_stuck(record: dict[str, Any]) -> bool:
@@ -284,6 +390,9 @@ def get_provider_state(name: str) -> ProviderStateDict:
     _require_supported(name)
     config = read_journal_config()
     record = _bundled_config(config, name)
+    if _is_runtime_key(name):
+        return _get_runtime_state(name, record)
+
     state = _state_from_config(config, name, record)
     env_key = _provider_env_key(name)
     validation = _key_validation(config, name)
@@ -300,7 +409,8 @@ def get_provider_state(name: str) -> ProviderStateDict:
         "state": state,
         "last_transition_at": record.get("last_transition_at"),
         "stuck_enabling": stuck,
-        "sdk_spec": record.get("sdk_spec", PINS[name]["sdk_spec"]),
+        "sdk_spec": record.get("sdk_spec", _sdk_specs(name)[0]),
+        "sdk_specs": record.get("sdk_specs", _sdk_specs(name)),
         "codex_version": record.get("codex_version"),
         "codex_artifact": record.get("codex_artifact"),
         "codex_sha256": record.get("codex_sha256"),
@@ -324,6 +434,49 @@ def get_provider_state(name: str) -> ProviderStateDict:
         "actions": _actions_for_state(
             state, key_configured=key_configured, stuck=stuck
         ),
+    }
+
+
+def _get_runtime_state(name: str, record: dict[str, Any]) -> ProviderStateDict:
+    state = _runtime_state_from_config(name, record)
+    paths = _runtime_module_paths(name)
+    module_path = paths.get("openhands.sdk") or next(
+        (path for path in paths.values() if path),
+        None,
+    )
+    installed = all(path for path in paths.values())
+    stuck = _is_record_stuck(record)
+    install_error = record.get("install_error")
+    label = _provider_metadata(name).get("label", name)
+    binary_name = _provider_metadata(name).get("cogitate_cli", name)
+
+    return {
+        "name": name,
+        "label": label,
+        "state": state,
+        "last_transition_at": record.get("last_transition_at"),
+        "stuck_enabling": stuck,
+        "sdk_spec": record.get("sdk_spec", _sdk_specs(name)[0]),
+        "sdk_specs": record.get("sdk_specs", _sdk_specs(name)),
+        "codex_version": None,
+        "codex_artifact": None,
+        "codex_sha256": None,
+        "runtime": record.get("runtime", PINS[name].get("runtime")),
+        "auth_mode": _auth_mode({}, name),
+        "env_key": "",
+        "key_configured": installed,
+        "key_valid": installed,
+        "key_validation": {},
+        "binary_name": binary_name,
+        "binary_path": module_path,
+        "binary_exists": bool(module_path and Path(module_path).exists()),
+        "install_error": install_error,
+        "issues": _issues_for_runtime_state(
+            state,
+            name=name,
+            install_error=install_error,
+        ),
+        "actions": _actions_for_runtime_state(state, stuck=stuck),
     }
 
 
@@ -364,6 +517,8 @@ def _transition_state(
 
 
 def _installed_state_for_config(config: dict[str, Any], name: str) -> str:
+    if _is_runtime_key(name):
+        return "valid"
     if not _key_configured(config, name):
         return "installed-no-key"
     validation = _key_validation(config, name)
@@ -409,7 +564,7 @@ def uninstall_provider(name: str) -> ContractState:
             return current
 
     try:
-        _run_uv_pip_uninstall(PINS[name]["sdk_spec"])
+        _run_uv_pip_uninstall(_sdk_specs(name))
         if name == "openai":
             _remove_openai_post_install_artifacts()
     finally:
@@ -443,11 +598,18 @@ def enable_provider(name: str) -> ContractState:
     with _provider_lock(name):
         config = read_journal_config()
         record = _bundled_config(config, name)
-        next_state = (
-            _installed_state_for_config(config, name)
-            if record.get("binary_path")
-            else "not-enabled"
-        )
+        if _is_runtime_key(name):
+            next_state = (
+                _installed_state_for_config(config, name)
+                if all(path for path in _runtime_module_paths(name).values())
+                else "not-enabled"
+            )
+        else:
+            next_state = (
+                _installed_state_for_config(config, name)
+                if record.get("binary_path")
+                else "not-enabled"
+            )
         record.update(_pin_record(name))
         record.update(
             {
@@ -464,6 +626,8 @@ def validate_key(name: str) -> ContractState:
     """Start validating a bundled provider key and return the current state."""
 
     _require_supported(name)
+    if _is_runtime_key(name):
+        raise BundledProviderError(f"Bundled runtime {name} has no key to validate")
     with _provider_lock(name):
         current = get_provider_state(name)
         if current["state"] == "enabling" and not current["stuck_enabling"]:
@@ -507,10 +671,19 @@ def resolve_bundled_binary(name: str) -> Path:
 
 def _install_thread(name: str) -> None:
     try:
-        _run_uv_pip_install(PINS[name]["sdk_spec"])
-        if name == "anthropic":
+        _run_uv_pip_install(_sdk_specs(name))
+        importlib.invalidate_caches()
+        if _is_runtime_key(name):
+            paths = _runtime_module_paths(name)
+            if not all(path for path in paths.values()):
+                missing = [module for module, path in paths.items() if path is None]
+                raise CogitateProviderResolveError(
+                    f"runtime modules not importable: {', '.join(missing)}"
+                )
+            extra: dict[str, Any] = {"binary_path": paths["openhands.sdk"]}
+        elif name == "anthropic":
             binary_path = _resolve_anthropic_binary_via_subprocess()
-            extra: dict[str, Any] = {"binary_path": str(binary_path)}
+            extra = {"binary_path": str(binary_path)}
         else:
             artifact = _codex_artifact_for_current_platform()
             filename = artifact["filename"] if artifact else ""
@@ -570,10 +743,15 @@ def _install_error_message(exc: Exception) -> str:
     return f"install: {exc}"
 
 
-def _categorize_uv_error(sdk_spec: str, output: str) -> str:
+def _package_name(sdk_spec: str) -> str:
+    return sdk_spec.split("==", 1)[0]
+
+
+def _categorize_uv_error(sdk_specs: str | list[str], output: str) -> str:
     text = output.strip() or "unknown error"
     lower = text.lower()
-    package = sdk_spec.split("==", 1)[0]
+    specs = [sdk_specs] if isinstance(sdk_specs, str) else sdk_specs
+    packages = ", ".join(_package_name(spec) for spec in specs)
     if any(
         marker in lower
         for marker in (
@@ -592,17 +770,18 @@ def _categorize_uv_error(sdk_spec: str, output: str) -> str:
     ):
         return f"pypi: {text}"
     if any(marker in lower for marker in ("conflict", "resolution", "incompatible")):
-        return f"dependency conflict: {package}"
+        return f"dependency conflict: {packages}"
     return f"install: {text}"
 
 
-def _run_uv_pip_install(sdk_spec: str) -> None:
+def _run_uv_pip_install(sdk_specs: str | list[str]) -> None:
     """Install a provider SDK into the current Python environment."""
 
+    specs = [sdk_specs] if isinstance(sdk_specs, str) else sdk_specs
     env = os.environ.copy()
     env["UV_HTTP_TIMEOUT"] = "60"
     result = subprocess.run(
-        ["uv", "pip", "install", "--python", sys.executable, sdk_spec],
+        ["uv", "pip", "install", "--python", sys.executable, *specs],
         text=True,
         capture_output=True,
         env=env,
@@ -611,15 +790,16 @@ def _run_uv_pip_install(sdk_spec: str) -> None:
     )
     if result.returncode != 0:
         output = "\n".join(part for part in (result.stderr, result.stdout) if part)
-        raise CogitateProviderInstallFailed(_categorize_uv_error(sdk_spec, output))
+        raise CogitateProviderInstallFailed(_categorize_uv_error(specs, output))
 
 
-def _run_uv_pip_uninstall(sdk_spec: str) -> None:
+def _run_uv_pip_uninstall(sdk_specs: str | list[str]) -> None:
     """Best-effort uninstall of a provider SDK from the current environment."""
 
-    package = sdk_spec.split("==", 1)[0]
+    specs = [sdk_specs] if isinstance(sdk_specs, str) else sdk_specs
+    packages = [_package_name(spec) for spec in specs]
     result = subprocess.run(
-        ["uv", "pip", "uninstall", "--python", sys.executable, package],
+        ["uv", "pip", "uninstall", "--python", sys.executable, *packages],
         text=True,
         capture_output=True,
         timeout=120,
@@ -794,7 +974,7 @@ def _validate_provider_key(name: str) -> dict[str, Any]:
     from solstone.think.providers import get_provider_module
 
     module = get_provider_module(name)
-    return module.validate_key(api_key)
+    return module.validate_key(name, api_key)
 
 
 __all__ = [

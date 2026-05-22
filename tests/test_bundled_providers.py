@@ -8,6 +8,7 @@ import logging
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -160,6 +161,40 @@ def test_install_thread_success_transitions_to_valid(journal_config, monkeypatch
     state = bundled.get_provider_state("anthropic")
     assert state["state"] == "valid"
     assert state["binary_path"] == "/tmp/claude"
+
+
+def test_openhands_runtime_state_uses_importable_modules(
+    journal_config,
+    monkeypatch,
+    tmp_path,
+):
+    sdk_path = tmp_path / "openhands" / "sdk" / "__init__.py"
+    litellm_path = tmp_path / "litellm" / "__init__.py"
+    sdk_path.parent.mkdir(parents=True)
+    litellm_path.parent.mkdir(parents=True)
+    sdk_path.write_text("", encoding="utf-8")
+    litellm_path.write_text("", encoding="utf-8")
+    journal_config({"providers": {"bundled": {}}})
+
+    def fake_find_spec(module_name: str):
+        paths = {
+            "openhands.sdk": sdk_path,
+            "litellm": litellm_path,
+        }
+        path = paths.get(module_name)
+        if path is None:
+            return None
+        return SimpleNamespace(origin=str(path), submodule_search_locations=None)
+
+    monkeypatch.setattr(bundled.importlib.util, "find_spec", fake_find_spec)
+
+    state = bundled.get_provider_state("openhands")
+
+    assert state["state"] == "valid"
+    assert state["sdk_specs"] == ["openhands-sdk==1.23.*"]
+    assert state["binary_path"] == str(sdk_path)
+    assert state["key_configured"] is True
+    assert state["issues"] == []
 
 
 def test_validate_key_thread_persists_result(journal_config, monkeypatch):
@@ -413,6 +448,21 @@ def test_uv_install_error_categorization(monkeypatch):
         bundled._run_uv_pip_install("claude-agent-sdk==0.2.82")
 
     assert str(exc_info.value).startswith("network:")
+
+
+def test_uv_install_accepts_multiple_specs(monkeypatch):
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(args[0], 0, stdout="", stderr="")
+
+    monkeypatch.setattr(bundled.subprocess, "run", fake_run)
+
+    bundled._run_uv_pip_install(["openhands-sdk==1.23.*", "litellm"])
+
+    command = calls[0][0][0]
+    assert command[-2:] == ["openhands-sdk==1.23.*", "litellm"]
 
 
 @pytest.mark.parametrize(

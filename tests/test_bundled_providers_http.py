@@ -60,7 +60,7 @@ def test_get_providers_includes_bundled(settings_client):
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert set(payload["bundled"]) == {"anthropic", "openai"}
+    assert set(payload["bundled"]) == {"anthropic", "openai", "openhands"}
 
 
 def test_get_ollama_provider_status_shape(settings_client):
