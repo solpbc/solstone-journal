@@ -42,6 +42,13 @@ def _write_segment(
         )
 
 
+def _write_jsonl(path, entries: list[dict]) -> None:
+    path.write_text(
+        "\n".join(json.dumps(entry) for entry in entries) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _action_log_rows(journal_root, day):
     log_path = journal_root / "config" / "actions" / f"{day}.jsonl"
     if not log_path.exists():
@@ -212,6 +219,63 @@ def test_segment_content_happy_path_returns_segment_payload(client):
     assert data["segment_key"] == FIXTURE_SEGMENT
     assert data["chunks"]
     assert "media_sizes" in data
+
+
+def test_segment_content_strips_duplicate_audio_markdown_timestamp(
+    client, journal_copy
+):
+    day = "20990110"
+    stream = "default"
+    segment = "090000_300"
+    _write_segment(journal_copy, day, stream, segment)
+    segment_dir = journal_copy / "chronicle" / day / stream / segment
+    _write_jsonl(
+        segment_dir / "audio.jsonl",
+        [
+            {"raw": "raw.m4a", "duration": 42.0},
+            {
+                "start": "00:00:05",
+                "source": "mic",
+                "speaker": 1,
+                "text": "hello from the room",
+            },
+            {
+                "start": "00:00:10",
+                "source": "sys",
+                "speaker": 2,
+                "text": "system audio line",
+            },
+        ],
+    )
+    _write_jsonl(
+        segment_dir / "screen.jsonl",
+        [
+            {"raw": "screen.webm"},
+            {
+                "frame_id": 1,
+                "timestamp": 7,
+                "analysis": {
+                    "primary": "work",
+                    "visual_description": "[09:00:07] screen bracket stays",
+                },
+            },
+        ],
+    )
+
+    response = client.get(f"/app/transcripts/api/segment/{day}/{stream}/{segment}")
+
+    assert response.status_code == 200
+    chunks = response.get_json()["chunks"]
+    audio_chunks = [chunk for chunk in chunks if chunk["type"] == "audio"]
+    assert [chunk["time"] for chunk in audio_chunks] == ["00:00:05", "00:00:10"]
+    assert all(
+        not re.match(r"^\[\d{2}:\d{2}:\d{2}\]", chunk["markdown"])
+        for chunk in audio_chunks
+    )
+    assert audio_chunks[0]["markdown"].startswith("(mic) Speaker 1:")
+
+    screen_chunk = next(chunk for chunk in chunks if chunk["type"] == "screen")
+    assert "[09:00:07] screen bracket stays" in screen_chunk["markdown"]
 
 
 def test_segment_content_returns_warning_details_for_parse_failures(

@@ -407,6 +407,7 @@ def segment_content(day: str, stream: str, segment_key: str) -> Any:
                 # Audio has start time in HH:MM:SS format
                 time_str = source.get("start", "")
                 markdown = chunk.get("markdown", "")
+                markdown = re.sub(r"^\[\d{2}:\d{2}:\d{2}\]\s*", "", markdown)
 
                 chunk_sid = entry_to_sid.get(id(source))
                 speaker_label = speaker_map.get(chunk_sid) if chunk_sid else None

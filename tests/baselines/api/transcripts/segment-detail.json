@@ -42,7 +42,7 @@
       "type": "screen"
     },
     {
-      "markdown": "[00:00:05] (mic) Welcome everyone to the Denver Tech Summit. We have an incredible lineup today.",
+      "markdown": "(mic) Welcome everyone to the Denver Tech Summit. We have an incredible lineup today.",
       "source_ref": {
         "source": "mic",
         "speaker": 1,
@@ -59,7 +59,7 @@
       "type": "audio"
     },
     {
-      "markdown": "[00:00:20] (mic) Our first presenter is Juliet Capulet from Capulet Industries, talking about enterprise API architecture.",
+      "markdown": "(mic) Our first presenter is Juliet Capulet from Capulet Industries, talking about enterprise API architecture.",
       "source_ref": {
         "source": "mic",
         "speaker": 1,
@@ -76,7 +76,7 @@
       "type": "audio"
     },
     {
-      "markdown": "[00:00:45] (mic) Thank you. Today I want to share our vision for unified API gateways that can serve both enterprise and startup clients.",
+      "markdown": "(mic) Thank you. Today I want to share our vision for unified API gateways that can serve both enterprise and startup clients.",
       "source_ref": {
         "source": "mic",
         "speaker": 2,
@@ -93,7 +93,7 @@
       "type": "audio"
     },
     {
-      "markdown": "[00:01:10] (mic) The key insight is that API compatibility does not have to mean lowest common denominator. We can build bridges.",
+      "markdown": "(mic) The key insight is that API compatibility does not have to mean lowest common denominator. We can build bridges.",
       "source_ref": {
         "source": "mic",
         "speaker": 2,
@@ -110,7 +110,7 @@
       "type": "audio"
     },
     {
-      "markdown": "[00:01:30] (mic) Romeo, are you seeing this? Her architecture is almost identical to what we have been building.",
+      "markdown": "(mic) Romeo, are you seeing this? Her architecture is almost identical to what we have been building.",
       "source_ref": {
         "source": "mic",
         "speaker": 3,
