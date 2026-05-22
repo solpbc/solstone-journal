@@ -4,25 +4,27 @@ All notable changes to solstone (the Python package) will be documented in this 
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), aligned with `cmo/brand/changelog-voice.md`.
 
-## [Unreleased]
+## [0.3.8] - 2026-05-22
 
-### Fixed
-- convey now cleanly releases its paired-device listener on port 7657 when the service restarts, so a fresh convey can immediately bind in place of one that's still shutting down. on the first upgrade past this fix, if a previous convey is still holding the port at upgrade time, stop it once manually; subsequent restarts are seamless.
-- solstone's local `describe.log` and `transcribe.log` were including the http client's full request URL on every outbound call — noisy, and on the Google provider those URLs carried the API key as a query parameter. http info-level logging is now off, so those logs are quieter going forward. they're local to your install either way.
-
-### Changed
-- Google cogitate agents now run through the Google GenAI SDK instead of a separate Gemini CLI process.
-  - Google tool use is handled inside solstone, with the same read/write policy boundaries.
-  - Google cogitate no longer needs a separate JavaScript package-manager install step.
-  - Existing Google cogitate sessions start fresh once because SDK history is stored in solstone's journal cache.
-
-## [0.3.7] - 2026-05-19
+### Added
+- you can now run sol's on-screen analysis fully on your own Mac. on Apple Silicon with at least 16 GB of memory, "MLX (Local, Apple Silicon)" appears in Settings under Providers; choose it once, sol downloads a local model in the background, and from then on the part of sol that makes sense of your screen runs on your machine, with nothing sent to a cloud provider. it's opt-in and covers vision today; the rest of sol stays on whichever provider you've chosen.
+- you can now power sol with Anthropic or OpenAI without installing anything extra. choose the provider in Settings and solstone sets it up for you, with no separate command-line tool to install first. running on a hosted Google key needs no extra setup either.
+- `sol setup --clean-uninstall` removes the pieces setup added to your machine, behind a confirmation that lists exactly what it will remove. your journal is never touched.
 
 ### Changed
-- linux and tmux observers now come online from their published packages — no need for git or make on the host to bring an observer online.
+- the timeline view is rebuilt. it opens straight into your real journal, fits any window from a phone-width pane to a wide desktop, and every entry shows which AI produced it with a link to that day. when sol finishes summarizing a new day, the view updates on its own.
+- long todo lists now load fast and stay readable: solstone shows the most recent items first with a "show more" control for the rest, instead of rendering everything at once.
+- api keys in setup and Settings are now masked as you type, and the validate button tells you plainly whether the key connected or failed.
+- on Linux, bringing an observer online no longer needs git or a build step on the host; observers now install straight from their published packages.
 
 ### Fixed
-- on installs from pypi, sol's meeting-screen analysis was coming back as freeform notes instead of the structured entries it was designed to produce. the missing piece is now bundled with the package, so meeting frames go back to their intended shape.
+- video and audio in your journal that showed "format not supported" now play. some entries with video or audio hit this; it's resolved.
+- on installs from PyPI, sol's meeting-screen analysis was coming back as freeform notes instead of the structured entries it was built to produce. the missing piece now ships with the package, so meeting frames return to their intended shape.
+- transcription that gave up on a long, dense stretch of audio now retries and recovers, so days that previously failed to transcribe complete. this also recovered a backlog of past days that had errored.
+- pages that occasionally didn't finish loading now load cleanly.
+- on some machines the background service could stop overnight and not restart; it now restarts as intended.
+- pairing a phone by QR code now works in Safari on iPhone and Mac, where the code could previously render too small to scan.
+- internal stability improvements, plus quieter local logs.
 
 ## [0.3.6] - 2026-05-18
 
