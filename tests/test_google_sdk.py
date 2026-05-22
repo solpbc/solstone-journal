@@ -30,10 +30,10 @@ import pytest
 from google.genai import errors as google_errors
 from google.genai import types
 
+from solstone.think.cogitate_policy import MAX_TURNS, MaxTurnsExhausted
 from solstone.think.models import GEMINI_FLASH
 from solstone.think.providers import PROVIDER_METADATA, build_provider_status, google
 from solstone.think.providers.cli import QuotaExhaustedError
-from solstone.think.providers.google_tools import MAX_TURNS, MaxTurnsExhausted
 
 
 class FakeChat:

@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 from google.genai import types
 
+from solstone.think.cogitate_policy import _SOL_INVOCATION_RE, CogitatePolicy
 from solstone.think.providers import google_tools
 
 
@@ -37,12 +38,12 @@ from solstone.think.providers import google_tools
     ],
 )
 def test_policy_regex_edge_cases(command: str, allowed: bool) -> None:
-    assert bool(google_tools._SOL_INVOCATION_RE.search(command)) is allowed
+    assert bool(_SOL_INVOCATION_RE.search(command)) is allowed
 
 
 # AC 5, 6, 8: Policy semantics for read-only and write modes.
 def test_cogitate_policy_readonly_and_write_modes(tmp_path: Path) -> None:
-    readonly = google_tools.CogitatePolicy(write=False, allowed_roots=[tmp_path])
+    readonly = CogitatePolicy(write=False, allowed_roots=[tmp_path])
     assert readonly.check("write_file", {"file_path": "x"})[0] is False
     assert readonly.check("replace", {"file_path": "x"})[0] is False
     assert readonly.check("read_file", {"file_path": "x"}) == (True, "ok")
@@ -58,7 +59,7 @@ def test_cogitate_policy_readonly_and_write_modes(tmp_path: Path) -> None:
     assert allowed is False
     assert reason.startswith("policy_deny:")
 
-    write = google_tools.CogitatePolicy(write=True, allowed_roots=[tmp_path])
+    write = CogitatePolicy(write=True, allowed_roots=[tmp_path])
     assert write.check("write_file", {"file_path": "x"}) == (True, "ok")
     assert write.check(
         "run_shell_command", {"command": "rm -rf /tmp/notarealfile"}

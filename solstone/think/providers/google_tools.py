@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -24,16 +23,6 @@ GREP_TIMEOUT_S = 10
 SHELL_STDOUT_CAP = 6000
 SHELL_STDERR_CAP = 6000
 SHELL_TIMEOUT_S = 30
-MAX_TURNS = 30
-DEFAULT_READ_CALL_BUDGET = 200
-
-_SOL_INVOCATION_RE = re.compile(r"(^sol\s|\bsol call\b)")
-_WRITE_TOOLS = {"write_file", "replace"}
-_READ_TOOLS = {"read_file", "glob", "list_directory", "grep_search"}
-
-
-class MaxTurnsExhausted(RuntimeError):
-    """Raised when the SDK tool loop exceeds its turn ceiling."""
 
 
 def _check_workspace_boundary(target: Path, allowed_roots: list[Path]) -> Path | None:
@@ -216,37 +205,6 @@ def run_shell_command(command: str) -> dict[str, Any]:
         "stderr": stderr,
         "returncode": result.returncode,
     }
-
-
-class CogitatePolicy:
-    """In-process policy gate for Google SDK tool calls."""
-
-    def __init__(self, *, write: bool, allowed_roots: list[Path]) -> None:
-        self.write = write
-        self.allowed_roots = [
-            Path(root).expanduser().resolve() for root in allowed_roots
-        ]
-
-    def check(self, tool: str, args: dict[str, Any]) -> tuple[bool, str]:
-        if self.write:
-            return True, "ok"
-
-        if tool in _WRITE_TOOLS:
-            return False, f"policy_deny: {tool} not allowed for read-only talents"
-
-        if tool == "run_shell_command":
-            command = str(args.get("command", ""))
-            if not _SOL_INVOCATION_RE.search(command):
-                return (
-                    False,
-                    "policy_deny: run_shell_command restricted to sol invocations",
-                )
-            return True, "ok"
-
-        if tool in _READ_TOOLS:
-            return True, "ok"
-
-        return True, "ok"
 
 
 def build_tool_declarations() -> list[types.FunctionDeclaration]:

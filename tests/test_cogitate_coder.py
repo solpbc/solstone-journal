@@ -167,7 +167,7 @@ class TestGoogleWriteFlag:
 
     def test_no_write_uses_yolo_with_policy(self, tmp_path):
         """Without write flag, policy denies writes and non-sol shell commands."""
-        from solstone.think.providers.google_tools import CogitatePolicy
+        from solstone.think.cogitate_policy import CogitatePolicy
 
         policy = CogitatePolicy(write=False, allowed_roots=[tmp_path])
 
@@ -187,7 +187,7 @@ class TestGoogleWriteFlag:
 
     def test_write_true_uses_yolo_mode(self, tmp_path):
         """With write=True, policy allows all tool calls."""
-        from solstone.think.providers.google_tools import CogitatePolicy
+        from solstone.think.cogitate_policy import CogitatePolicy
 
         policy = CogitatePolicy(write=True, allowed_roots=[tmp_path])
 

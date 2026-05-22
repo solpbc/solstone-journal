@@ -41,16 +41,18 @@ from google import genai
 from google.genai import errors as google_errors
 from google.genai import types
 
-from solstone.think.cogitate_policy import resolve_read_scope
+from solstone.think.cogitate_policy import (
+    DEFAULT_READ_CALL_BUDGET,
+    MAX_TURNS,
+    CogitatePolicy,
+    MaxTurnsExhausted,
+    resolve_read_scope,
+)
 from solstone.think.models import GEMINI_FLASH
 from solstone.think.utils import get_journal, get_project_root, now_ms
 
 from .cli import QuotaExhaustedError, assemble_prompt
 from .google_tools import (
-    DEFAULT_READ_CALL_BUDGET,
-    MAX_TURNS,
-    CogitatePolicy,
-    MaxTurnsExhausted,
     build_tool_declarations,
     glob,
     grep_search,
