@@ -10,6 +10,9 @@ import pytest
 
 from solstone.apps.transcripts.routes import _attach_streams_to_ranges
 
+# 20260304 is the canonical fully-analyzed reference day; see
+# tests/fixtures/journal/chronicle/20260304/README.md and
+# tests/test_reference_day_fixture.py.
 FIXTURE_DAY = "20260304"
 FIXTURE_STREAM = "default"
 FIXTURE_SEGMENT = "090000_300"
