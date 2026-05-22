@@ -37,6 +37,9 @@
       "last_transition_at": "<TIMESTAMP>",
       "name": "anthropic",
       "sdk_spec": "claude-agent-sdk==0.2.82",
+      "sdk_specs": [
+        "claude-agent-sdk==0.2.82"
+      ],
       "state": "not-enabled",
       "stuck_enabling": false
     },
@@ -63,6 +66,39 @@
       "last_transition_at": "<TIMESTAMP>",
       "name": "openai",
       "sdk_spec": "openai-codex-sdk==0.1.11",
+      "sdk_specs": [
+        "openai-codex-sdk==0.1.11"
+      ],
+      "state": "not-enabled",
+      "stuck_enabling": false
+    },
+    "openhands": {
+      "actions": [
+        "install"
+      ],
+      "auth_mode": "runtime",
+      "binary_exists": false,
+      "binary_name": "openhands-sdk",
+      "binary_path": null,
+      "codex_artifact": null,
+      "codex_sha256": null,
+      "codex_version": null,
+      "env_key": "",
+      "install_error": null,
+      "issues": [
+        "bundled runtime not installed — run `sol call settings providers install openhands` missing: openhands.sdk, litellm"
+      ],
+      "key_configured": false,
+      "key_valid": false,
+      "key_validation": {},
+      "label": "OpenHands SDK",
+      "last_transition_at": "<TIMESTAMP>",
+      "name": "openhands",
+      "runtime": "python",
+      "sdk_spec": "openhands-sdk==1.23.*",
+      "sdk_specs": [
+        "openhands-sdk==1.23.*"
+      ],
       "state": "not-enabled",
       "stuck_enabling": false
     }
@@ -530,24 +566,30 @@
   },
   "google_backend": "auto",
   "key_validation": {},
+  "mlx": {
+    "active_model": "qwen3.5:9b"
+  },
   "provider_status": {
     "anthropic": {
-      "cogitate_cli": "claude",
+      "cogitate_cli": "openhands-sdk",
       "cogitate_cli_found": false,
       "cogitate_ready": false,
       "configured": false,
       "generate_ready": false,
       "issues": [
         "ANTHROPIC_API_KEY not set",
-        "bundled CLI not installed — run `sol call settings providers install anthropic`"
+        "bundled runtime not installed — run `sol call settings providers install openhands` missing: openhands.sdk, litellm"
       ]
     },
     "google": {
+      "cogitate_cli": "openhands-sdk",
+      "cogitate_cli_found": false,
       "cogitate_ready": false,
       "configured": false,
       "generate_ready": false,
       "issues": [
-        "GOOGLE_API_KEY not set"
+        "GOOGLE_API_KEY not set",
+        "bundled runtime not installed — run `sol call settings providers install openhands` missing: openhands.sdk, litellm"
       ]
     },
     "mlx": {
@@ -570,14 +612,14 @@
       ]
     },
     "openai": {
-      "cogitate_cli": "codex",
+      "cogitate_cli": "openhands-sdk",
       "cogitate_cli_found": false,
       "cogitate_ready": false,
       "configured": false,
       "generate_ready": false,
       "issues": [
         "OPENAI_API_KEY not set",
-        "bundled CLI not installed — run `sol call settings providers install openai`"
+        "bundled runtime not installed — run `sol call settings providers install openhands` missing: openhands.sdk, litellm"
       ]
     }
   },
@@ -613,8 +655,5 @@
     }
   ],
   "vertex_credentials_configured": false,
-  "vertex_credentials_email": "",
-  "mlx": {
-    "active_model": "qwen3.5:9b"
-  }
+  "vertex_credentials_email": ""
 }

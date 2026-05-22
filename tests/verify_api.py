@@ -462,7 +462,7 @@ def normalize(data: Any, journal_path: str) -> Any:
                             and "not set" not in i
                             and "not reachable" not in i
                         ]
-                        if cli and _name not in {"anthropic", "openai"}:
+                        if cli and _name not in {"anthropic", "openai", "google"}:
                             if _name == "ollama":
                                 issues.append(
                                     f"{cli} CLI not found on PATH — run: "
