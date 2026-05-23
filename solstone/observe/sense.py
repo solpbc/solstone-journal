@@ -29,6 +29,7 @@ from solstone.think.runner import ManagedProcess as RunnerManagedProcess
 from solstone.think.utils import (
     CHRONICLE_DIR,
     DATE_RE,
+    STREAM_RE,
     day_path,
     get_config,
     get_journal,
@@ -763,7 +764,12 @@ class FileSensor:
                 queued.clear()
 
     def scan_unprocessed(
-        self, day: str, segment_filter: Optional[str] = None
+        self,
+        day: str,
+        segment_filter: Optional[str] = None,
+        *,
+        stream_filter: Optional[str] = None,
+        modality_filter: Optional[str] = None,
     ) -> tuple[list[tuple[Path, str, List[str]]], Dict[str, Optional[Dict[str, Any]]]]:
         """Scan a day and return matching unprocessed files and segment stream metadata."""
         day_dir = day_path(day)
@@ -774,6 +780,9 @@ class FileSensor:
         to_process = []
         segment_meta_cache: Dict[str, Optional[Dict[str, Any]]] = {}
         for stream_name, seg_key, seg_path in iter_segments(day_dir):
+            if stream_filter and seg_path.parent.name != stream_filter:
+                continue
+
             # Apply segment filter if specified
             if segment_filter and seg_key != segment_filter:
                 continue
@@ -790,6 +799,12 @@ class FileSensor:
                 if not file_path.is_file():
                     continue
 
+                suffix = file_path.suffix.lower()
+                if modality_filter == "audio" and suffix not in AUDIO_EXTENSIONS:
+                    continue
+                if modality_filter == "screen" and suffix not in VIDEO_EXTENSIONS:
+                    continue
+
                 # Check if output JSONL exists (already processed)
                 output_path = file_path.with_suffix(".jsonl")
                 if output_path.exists():
@@ -803,7 +818,13 @@ class FileSensor:
         return to_process, segment_meta_cache
 
     def process_day(
-        self, day: str, max_jobs: int = 1, segment_filter: Optional[str] = None
+        self,
+        day: str,
+        max_jobs: int = 1,
+        segment_filter: Optional[str] = None,
+        *,
+        stream_filter: Optional[str] = None,
+        modality_filter: Optional[str] = None,
     ):
         """Process all matching unprocessed files from a specific day directory.
 
@@ -821,7 +842,10 @@ class FileSensor:
             return
 
         to_process, segment_meta_cache = self.scan_unprocessed(
-            day, segment_filter=segment_filter
+            day,
+            segment_filter=segment_filter,
+            stream_filter=stream_filter,
+            modality_filter=modality_filter,
         )
 
         if not to_process:
@@ -895,6 +919,8 @@ def delete_outputs(
     day_dir: Path,
     reprocess_type: str,
     segment_filter: Optional[str] = None,
+    *,
+    stream_filter: Optional[str] = None,
     dry_run: bool = False,
 ) -> list[Path]:
     """Delete existing output files to force reprocessing.
@@ -914,6 +940,9 @@ def delete_outputs(
         return deleted
 
     for _stream_name, seg_key, seg_path in iter_segments(day_dir):
+        if stream_filter and seg_path.parent.name != stream_filter:
+            continue
+
         # Apply segment filter if specified
         if segment_filter and seg_key != segment_filter:
             continue
@@ -1044,6 +1073,11 @@ def main():
         help="Filter to specific segment (HHMMSS_LEN format, requires --day)",
     )
     parser.add_argument(
+        "--stream",
+        type=str,
+        help="Filter to specific stream (requires --day)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Show what would be processed (or deleted with --reprocess) without making changes",
@@ -1058,6 +1092,8 @@ def main():
         parser.error("--reprocess requires --day")
     if args.segment and not args.day:
         parser.error("--segment requires --day")
+    if args.stream and not args.day:
+        parser.error("--stream requires --day")
     if args.dry_run and not args.day:
         parser.error("--dry-run requires --day")
 
@@ -1067,6 +1103,9 @@ def main():
 
         if not segment_key(args.segment):
             parser.error(f"--segment must be HHMMSS_LEN format, got: {args.segment}")
+
+    if args.stream and not STREAM_RE.fullmatch(args.stream):
+        parser.error(f"--stream must match stream name format, got: {args.stream}")
 
     sensor = FileSensor(journal, verbose=args.verbose, debug=args.debug)
 
@@ -1088,6 +1127,7 @@ def main():
                 day_dir,
                 args.reprocess,
                 segment_filter=args.segment,
+                stream_filter=args.stream,
                 dry_run=args.dry_run,
             )
 
@@ -1104,8 +1144,14 @@ def main():
 
         # Standalone dry-run: show what would be processed
         if args.dry_run:
+            modality_filter = (
+                args.reprocess if args.reprocess in {"audio", "screen"} else None
+            )
             to_process, _ = sensor.scan_unprocessed(
-                args.day, segment_filter=args.segment
+                args.day,
+                segment_filter=args.segment,
+                stream_filter=args.stream,
+                modality_filter=modality_filter,
             )
             if to_process:
                 ext_counts = {}
@@ -1128,7 +1174,16 @@ def main():
             f"Processing files from day {args.day}{segment_msg} "
             f"with {args.jobs} concurrent jobs"
         )
-        sensor.process_day(args.day, max_jobs=args.jobs, segment_filter=args.segment)
+        modality_filter = (
+            args.reprocess if args.reprocess in {"audio", "screen"} else None
+        )
+        sensor.process_day(
+            args.day,
+            max_jobs=args.jobs,
+            segment_filter=args.segment,
+            stream_filter=args.stream,
+            modality_filter=modality_filter,
+        )
     else:
         # Event mode: listen for Callosum events
         logger.info("Starting observe sensor in event mode...")

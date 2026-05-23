@@ -3,6 +3,10 @@
 
 import importlib
 import json
+import os
+import shutil
+import time
+from pathlib import Path
 
 import pytest
 
@@ -766,6 +770,130 @@ def test_scan_day_marks_header_only_audio_pending(tmp_path, monkeypatch):
 
     assert audio_ranges == [("09:00", "09:15")]
     assert segments[0]["data_state"] == {"audio": "pending"}
+
+
+def test_derive_modality_state_chunks_win_rescue(tmp_path):
+    from solstone.think.data_state import derive_modality_state
+
+    segment = tmp_path / "090000_300"
+    segment.mkdir()
+    marker = segment / ".analyzing_audio"
+    marker.write_text('{"started_at": "2026-05-20T09:00:00Z", "modality": "audio"}\n')
+
+    state = derive_modality_state(
+        segment,
+        "audio",
+        has_chunks=True,
+        has_jsonl=True,
+        has_raw=True,
+    )
+
+    assert state == "analyzed"
+    assert not marker.exists()
+
+
+def test_derive_modality_state_stale_marker_renames_failed(tmp_path):
+    from solstone.think.data_state import derive_modality_state
+
+    segment = tmp_path / "090000_300"
+    segment.mkdir()
+    marker = segment / ".analyzing_screen"
+    failed = segment / ".analyze_failed_screen"
+    marker.write_text('{"started_at": "2026-05-20T09:00:00Z", "modality": "screen"}\n')
+    old_time = time.time() - 2000
+    os.utime(marker, (old_time, old_time))
+
+    state = derive_modality_state(
+        segment,
+        "screen",
+        has_chunks=False,
+        has_jsonl=True,
+        has_raw=True,
+    )
+
+    assert state == "failed"
+    assert not marker.exists()
+    payload = json.loads(failed.read_text())
+    assert payload["reason"] == "stale"
+    assert payload["modality"] == "screen"
+
+
+def test_derive_modality_state_corrupt_marker_renames_failed(tmp_path):
+    from solstone.think.data_state import derive_modality_state
+
+    segment = tmp_path / "090000_300"
+    segment.mkdir()
+    marker = segment / ".analyzing_screen"
+    failed = segment / ".analyze_failed_screen"
+    marker.write_text("{not json")
+
+    state = derive_modality_state(
+        segment,
+        "screen",
+        has_chunks=False,
+        has_jsonl=False,
+        has_raw=True,
+    )
+
+    assert state == "failed"
+    assert not marker.exists()
+    payload = json.loads(failed.read_text())
+    assert payload["reason"] == "marker_corrupt"
+    assert payload["modality"] == "screen"
+
+
+def test_derive_modality_state_does_not_probe_processes(tmp_path, monkeypatch):
+    from solstone.think.data_state import derive_modality_state
+
+    def fail_os_kill(pid, sig):  # pragma: no cover - fails if called
+        raise AssertionError("os.kill should not be used for analyzing state")
+
+    monkeypatch.setattr(os, "kill", fail_os_kill)
+    segment = tmp_path / "090000_300"
+    segment.mkdir()
+    (segment / ".analyzing_screen").write_text(
+        '{"started_at": "2026-05-20T09:00:00Z", "modality": "screen"}\n'
+    )
+
+    assert (
+        derive_modality_state(
+            segment,
+            "screen",
+            has_chunks=False,
+            has_jsonl=True,
+            has_raw=True,
+        )
+        == "analyzing"
+    )
+
+
+def test_scan_day_detects_analyzing_markers_from_fixture(tmp_path, monkeypatch):
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    source = Path("tests/fixtures/journal/chronicle/20260520")
+    dest = day_path("20260520")
+    shutil.copytree(source, dest, dirs_exist_ok=True)
+    stale_marker = dest / "default" / "093000_300" / ".analyzing_screen"
+    old_time = time.time() - 2000
+    os.utime(stale_marker, (old_time, old_time))
+
+    mod = importlib.import_module("solstone.think.cluster")
+
+    _audio_ranges, _screen_ranges, segments = mod.scan_day("20260520")
+    by_key = {segment["key"]: segment for segment in segments}
+
+    assert by_key["090000_300"]["data_state"]["screen"] == "analyzing"
+    assert by_key["091000_300"]["data_state"]["screen"] == "failed"
+    assert by_key["092000_300"]["data_state"]["screen"] == "analyzed"
+    assert not (dest / "default" / "092000_300" / ".analyzing_screen").exists()
+    assert by_key["093000_300"]["data_state"]["screen"] == "failed"
+    stale_payload = json.loads(
+        (dest / "default" / "093000_300" / ".analyze_failed_screen").read_text()
+    )
+    assert stale_payload["reason"] == "stale"
+    assert by_key["094000_300"]["data_state"] == {
+        "audio": "pending",
+        "screen": "pending",
+    }
 
 
 def test_scan_day_marks_analyzed_audio_analyzed(tmp_path, monkeypatch):

@@ -2,11 +2,13 @@
 # Copyright (c) 2026 sol pbc
 
 import builtins
+import io
 import json
 import math
 import re
 import shutil
 import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -14,7 +16,10 @@ from pathlib import Path
 import av
 import pytest
 
-from solstone.apps.transcripts.routes import _attach_streams_to_ranges
+from solstone.apps.transcripts.routes import (
+    _attach_streams_to_ranges,
+    _watch_reprocess_completion,
+)
 from solstone.apps.transcripts.tests._media_helpers import (
     build_moov_at_tail_m4a,
     head_bytes,
@@ -75,6 +80,67 @@ def _write_jsonl(path, entries: list[dict]) -> None:
         "\n".join(json.dumps(entry) for entry in entries) + "\n",
         encoding="utf-8",
     )
+
+
+def _write_raw_pending_segment(
+    journal_root,
+    day: str,
+    stream: str,
+    segment: str,
+    *,
+    audio: bool = False,
+    screen: bool = True,
+) -> Path:
+    segment_dir = journal_root / "chronicle" / day / stream / segment
+    segment_dir.mkdir(parents=True, exist_ok=True)
+    if audio:
+        (segment_dir / "audio.flac").write_bytes(b"audio")
+        _write_jsonl(segment_dir / "audio.jsonl", [{"raw": "audio.flac"}])
+    if screen:
+        (segment_dir / "screen.webm").write_bytes(b"screen")
+        _write_jsonl(segment_dir / "screen.jsonl", [{"raw": "screen.webm"}])
+    return segment_dir
+
+
+class _ProcStub:
+    def __init__(self, rc: int = 0, stderr: bytes = b"") -> None:
+        self.rc = rc
+        self.stderr = io.BytesIO(stderr)
+        self.stdout = io.BytesIO()
+
+    def wait(self) -> int:
+        return self.rc
+
+
+class _ThreadStub:
+    def __init__(self, *, target, args, daemon) -> None:
+        self.target = target
+        self.args = args
+        self.daemon = daemon
+        self.started = False
+
+    def start(self) -> None:
+        self.started = True
+
+
+def _stub_reprocess_spawn(monkeypatch, proc: _ProcStub | None = None):
+    popen_calls = []
+    threads = []
+
+    def fake_popen(argv, **kwargs):
+        popen_calls.append((argv, kwargs))
+        return proc or _ProcStub()
+
+    def fake_thread(*, target, args, daemon):
+        thread = _ThreadStub(target=target, args=args, daemon=daemon)
+        threads.append(thread)
+        return thread
+
+    monkeypatch.setattr("solstone.apps.transcripts.routes.subprocess.Popen", fake_popen)
+    monkeypatch.setattr(
+        "solstone.apps.transcripts.routes.threading.Thread", fake_thread
+    )
+    return popen_calls, threads
 
 
 def _write_moov_tail_audio_segment(
@@ -687,6 +753,345 @@ def test_segment_content_drops_screen_md_when_screen_chunks_present(client):
     assert any(c["type"] == "screen" for c in data["chunks"])
     assert "screen" not in data["md_files"]
     assert "audio" in data["md_files"]
+
+
+def test_reprocess_segment_rejects_invalid_day(client):
+    response = client.post(
+        "/app/transcripts/api/segment/2026-05-20/default/090000_300/reprocess",
+        json={"modality": "screen"},
+    )
+
+    assert response.status_code == 400
+    _assert_reason(
+        response,
+        error="I couldn't use that day.",
+        reason_code="invalid_day",
+        detail="Invalid day format",
+    )
+
+
+def test_reprocess_segment_rejects_invalid_segment_or_stream(client):
+    response = client.post(
+        f"/app/transcripts/api/segment/{FIXTURE_DAY}/Upper/090000_300/reprocess",
+        json={"modality": "screen"},
+    )
+
+    assert response.status_code == 400
+    _assert_reason(
+        response,
+        error="I couldn't use that segment or stream.",
+        reason_code="invalid_segment_or_stream",
+        detail="Invalid stream format",
+    )
+
+
+def test_reprocess_segment_rejects_invalid_segment_key(client):
+    response = client.post(
+        f"/app/transcripts/api/segment/{FIXTURE_DAY}/default/not-a-segment/reprocess",
+        json={"modality": "screen"},
+    )
+
+    assert response.status_code == 400
+    _assert_reason(
+        response,
+        error="I couldn't use that segment or stream.",
+        reason_code="invalid_segment_or_stream",
+        detail="Invalid segment key format",
+    )
+
+
+def test_reprocess_segment_rejects_invalid_body_value(client, journal_copy):
+    day = "20990120"
+    segment = "090000_300"
+    _write_raw_pending_segment(journal_copy, day, "alpha", segment)
+
+    response = client.post(
+        f"/app/transcripts/api/segment/{day}/alpha/{segment}/reprocess",
+        json={"modality": "notes"},
+    )
+
+    assert response.status_code == 400
+    _assert_reason(
+        response,
+        error="I couldn't use one of those values.",
+        reason_code="invalid_request_value",
+        detail="modality must be audio or screen",
+    )
+
+
+def test_reprocess_missing_segment_does_not_create_phantom_directory(
+    client, journal_copy
+):
+    response = client.post(
+        "/app/transcripts/api/segment/29990101/default/090000_300/reprocess",
+        json={"modality": "screen"},
+    )
+
+    assert response.status_code == 404
+    _assert_reason(
+        response,
+        error="I couldn't use that day.",
+        reason_code="invalid_day",
+        detail="Day not found",
+    )
+    assert not (journal_copy / "chronicle" / "29990101").exists()
+
+
+def test_reprocess_existing_day_missing_segment_does_not_create_segment(
+    client, journal_copy
+):
+    day = "20990129"
+    (journal_copy / "chronicle" / day / "default").mkdir(parents=True)
+
+    response = client.post(
+        f"/app/transcripts/api/segment/{day}/default/090000_300/reprocess",
+        json={"modality": "screen"},
+    )
+
+    assert response.status_code == 404
+    _assert_reason(
+        response,
+        error="I couldn't use that segment or stream.",
+        reason_code="invalid_segment_or_stream",
+        detail="Segment not found",
+    )
+    assert not (journal_copy / "chronicle" / day / "default" / "090000_300").exists()
+
+
+def test_reprocess_segment_rejects_analyzed_modality(client, journal_copy):
+    day = "20990121"
+    segment = "090000_300"
+    _write_segment(journal_copy, day, "alpha", segment, audio=False)
+
+    response = client.post(
+        f"/app/transcripts/api/segment/{day}/alpha/{segment}/reprocess",
+        json={"modality": "screen"},
+    )
+
+    assert response.status_code == 400
+    _assert_reason(
+        response,
+        error="I couldn't take that action in the current state.",
+        reason_code="invalid_operation_for_state",
+        detail="Segment modality is already analyzed",
+    )
+
+
+def test_reprocess_segment_rejects_purged_modality(client, journal_copy):
+    day = "20990122"
+    segment = "090000_300"
+    _write_segment(
+        journal_copy,
+        day,
+        "alpha",
+        segment,
+        audio=False,
+        screen_state="pending",
+    )
+
+    response = client.post(
+        f"/app/transcripts/api/segment/{day}/alpha/{segment}/reprocess",
+        json={"modality": "screen"},
+    )
+
+    assert response.status_code == 400
+    _assert_reason(
+        response,
+        error="I couldn't run analysis because the raw media is no longer available.",
+        reason_code="raw_media_not_available",
+        detail="Raw media is no longer available",
+    )
+
+
+def test_reprocess_segment_rejects_missing_raw_modality(client, journal_copy):
+    day = "20990123"
+    segment = "090000_300"
+    (journal_copy / "chronicle" / day / "alpha" / segment).mkdir(parents=True)
+
+    response = client.post(
+        f"/app/transcripts/api/segment/{day}/alpha/{segment}/reprocess",
+        json={"modality": "screen"},
+    )
+
+    assert response.status_code == 400
+    _assert_reason(
+        response,
+        error="I couldn't run analysis because the raw media is no longer available.",
+        reason_code="raw_media_not_available",
+        detail="Raw media is no longer available",
+    )
+
+
+def test_reprocess_segment_starts_sense_process(client, journal_copy, monkeypatch):
+    day = "20990124"
+    segment = "090000_300"
+    segment_dir = _write_raw_pending_segment(journal_copy, day, "alpha", segment)
+    popen_calls, threads = _stub_reprocess_spawn(monkeypatch)
+
+    response = client.post(
+        f"/app/transcripts/api/segment/{day}/alpha/{segment}/reprocess",
+        json={"modality": "screen"},
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["data_state"]["screen"] == "analyzing"
+    assert data["marker"]["started_at"]
+    marker = segment_dir / ".analyzing_screen"
+    assert marker.exists()
+    marker_payload = json.loads(marker.read_text())
+    assert marker_payload["modality"] == "screen"
+    assert len(popen_calls) == 1
+    argv, kwargs = popen_calls[0]
+    assert argv == [
+        sys.executable,
+        "-m",
+        "solstone.observe.sense",
+        "--day",
+        day,
+        "--segment",
+        segment,
+        "--stream",
+        "alpha",
+        "--reprocess",
+        "screen",
+    ]
+    assert kwargs["start_new_session"] is True
+    assert kwargs["stdin"] == subprocess.DEVNULL
+    assert kwargs["stdout"] == subprocess.PIPE
+    assert kwargs["stderr"] == subprocess.PIPE
+    assert len(threads) == 1
+    assert threads[0].daemon is True
+    assert threads[0].started is True
+
+
+def test_reprocess_segment_analyzing_is_idempotent(client, journal_copy, monkeypatch):
+    day = "20990125"
+    segment = "090000_300"
+    segment_dir = _write_raw_pending_segment(journal_copy, day, "alpha", segment)
+    (segment_dir / ".analyzing_screen").write_text(
+        '{"started_at": "2026-05-20T09:00:00Z", "modality": "screen"}\n',
+        encoding="utf-8",
+    )
+
+    def fail_popen(*args, **kwargs):
+        raise AssertionError("idempotent analyzing request must not spawn")
+
+    monkeypatch.setattr("solstone.apps.transcripts.routes.subprocess.Popen", fail_popen)
+
+    response = client.post(
+        f"/app/transcripts/api/segment/{day}/alpha/{segment}/reprocess",
+        json={"modality": "screen"},
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["data_state"]["screen"] == "analyzing"
+    assert data["marker"] == {"started_at": "2026-05-20T09:00:00Z"}
+
+
+def test_reprocess_segment_failed_unlinks_failed_marker(
+    client, journal_copy, monkeypatch
+):
+    day = "20990126"
+    segment = "090000_300"
+    segment_dir = _write_raw_pending_segment(journal_copy, day, "alpha", segment)
+    failed = segment_dir / ".analyze_failed_screen"
+    failed.write_text(
+        '{"started_at": "2026-05-20T09:00:00Z", "modality": "screen", '
+        '"reason": "exit_1", "failed_at": "2026-05-20T09:00:10Z", "detail": "x"}\n',
+        encoding="utf-8",
+    )
+    _stub_reprocess_spawn(monkeypatch)
+
+    response = client.post(
+        f"/app/transcripts/api/segment/{day}/alpha/{segment}/reprocess",
+        json={"modality": "screen"},
+    )
+
+    assert response.status_code == 200
+    assert not failed.exists()
+    assert (segment_dir / ".analyzing_screen").exists()
+
+
+def test_reprocess_segment_rolls_back_marker_when_spawn_fails(
+    client, journal_copy, monkeypatch
+):
+    day = "20990127"
+    segment = "090000_300"
+    segment_dir = _write_raw_pending_segment(journal_copy, day, "alpha", segment)
+
+    def fail_popen(*args, **kwargs):
+        raise OSError("no process")
+
+    monkeypatch.setattr("solstone.apps.transcripts.routes.subprocess.Popen", fail_popen)
+
+    response = client.post(
+        f"/app/transcripts/api/segment/{day}/alpha/{segment}/reprocess",
+        json={"modality": "screen"},
+    )
+
+    assert response.status_code == 500
+    _assert_reason(
+        response,
+        error="I couldn't read that file.",
+        reason_code="file_read_failed",
+        detail="Failed to start analysis: no process",
+    )
+    assert not (segment_dir / ".analyzing_screen").exists()
+
+
+def test_reprocess_watcher_success_removes_marker(tmp_path):
+    marker = tmp_path / ".analyzing_screen"
+    failed = tmp_path / ".analyze_failed_screen"
+    marker.write_text(
+        '{"started_at": "2026-05-20T09:00:00Z", "modality": "screen"}\n',
+        encoding="utf-8",
+    )
+
+    _watch_reprocess_completion(_ProcStub(rc=0), marker, failed)
+
+    assert not marker.exists()
+    assert not failed.exists()
+
+
+def test_reprocess_watcher_failure_writes_failed_marker(tmp_path):
+    marker = tmp_path / ".analyzing_screen"
+    failed = tmp_path / ".analyze_failed_screen"
+    marker.write_text(
+        '{"started_at": "2026-05-20T09:00:00Z", "modality": "screen"}\n',
+        encoding="utf-8",
+    )
+    stderr = b"x" * 600
+
+    _watch_reprocess_completion(_ProcStub(rc=7, stderr=stderr), marker, failed)
+
+    assert not marker.exists()
+    payload = json.loads(failed.read_text())
+    assert payload["started_at"] == "2026-05-20T09:00:00Z"
+    assert payload["modality"] == "screen"
+    assert payload["reason"] == "exit_7"
+    assert payload["detail"] == "x" * 512
+    assert payload["failed_at"]
+
+
+def test_reprocess_segment_isolates_streams(client, journal_copy, monkeypatch):
+    day = "20990128"
+    segment = "090000_300"
+    alpha_dir = _write_raw_pending_segment(journal_copy, day, "alpha", segment)
+    bravo_dir = _write_raw_pending_segment(journal_copy, day, "bravo", segment)
+    popen_calls, _threads = _stub_reprocess_spawn(monkeypatch)
+
+    response = client.post(
+        f"/app/transcripts/api/segment/{day}/alpha/{segment}/reprocess",
+        json={"modality": "screen"},
+    )
+
+    assert response.status_code == 200
+    assert (alpha_dir / ".analyzing_screen").exists()
+    assert not (bravo_dir / ".analyzing_screen").exists()
+    assert "--stream" in popen_calls[0][0]
+    assert popen_calls[0][0][popen_calls[0][0].index("--stream") + 1] == "alpha"
 
 
 def test_delete_segment_happy_path_removes_segment_directory(

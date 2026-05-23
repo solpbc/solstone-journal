@@ -367,6 +367,86 @@ def test_standalone_dry_run_with_segment_filter(tmp_path, monkeypatch):
     assert file_names == {"audio.flac"}
 
 
+def test_scan_unprocessed_filters_stream_and_modality(tmp_path, monkeypatch):
+    """Test scan_unprocessed honors stream and modality filters together."""
+    from solstone.observe.utils import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+
+    day_dir = tmp_path / "chronicle" / "20250101"
+    alpha = day_dir / "alpha" / "143022_300"
+    bravo = day_dir / "bravo" / "143022_300"
+    alpha.mkdir(parents=True)
+    bravo.mkdir(parents=True)
+
+    (alpha / "audio.flac").write_text("audio")
+    (alpha / "screen.webm").write_text("video")
+    (bravo / "screen.webm").write_text("video")
+
+    sensor = FileSensor(journal_dir=tmp_path)
+    for ext in AUDIO_EXTENSIONS:
+        sensor.register(f"*{ext}", "transcribe", ["sol", "transcribe", "{file}"])
+    for ext in VIDEO_EXTENSIONS:
+        sensor.register(f"*{ext}", "describe", ["sol", "describe", "{file}"])
+
+    to_process, _ = sensor.scan_unprocessed(
+        "20250101",
+        stream_filter="alpha",
+        modality_filter="screen",
+    )
+
+    assert [(path.parent.parent.name, path.name) for path, _, _ in to_process] == [
+        ("alpha", "screen.webm")
+    ]
+
+
+def test_process_day_filters_stream_and_modality(tmp_path, monkeypatch):
+    """Test process_day only dispatches matching stream/modality files."""
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    make_segment_file(
+        tmp_path,
+        filename="audio.flac",
+        day="20250101",
+        stream="alpha",
+        segment="143022_300",
+    )
+    make_segment_file(
+        tmp_path,
+        filename="screen.webm",
+        day="20250101",
+        stream="alpha",
+        segment="143022_300",
+    )
+    make_segment_file(
+        tmp_path,
+        filename="audio.flac",
+        day="20250101",
+        stream="bravo",
+        segment="143022_300",
+    )
+
+    sensor = FileSensor(tmp_path)
+    sensor.register("*.flac", "transcribe", ["sol", "transcribe", "{file}"])
+    sensor.register("*.webm", "describe", ["sol", "describe", "{file}"])
+    processed = []
+
+    def fake_run(queued_item, *_args):
+        processed.append(
+            (queued_item.file_path.parent.parent.name, queued_item.file_path.name)
+        )
+
+    monkeypatch.setattr(sensor, "_run_handler", fake_run)
+
+    sensor.process_day(
+        "20250101",
+        max_jobs=1,
+        stream_filter="alpha",
+        modality_filter="audio",
+    )
+
+    assert processed == [("alpha", "audio.flac")]
+
+
 def test_file_sensor_spawn_handler(tmp_path, monkeypatch):
     """Test spawning handler process."""
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
@@ -941,6 +1021,101 @@ def test_process_day_survives_one_batch_worker_failure(tmp_path, monkeypatch, ca
     assert "Batch processing complete" in caplog.text
 
 
+def test_main_rejects_invalid_stream_filter(tmp_path, monkeypatch):
+    from solstone.observe import sense
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    monkeypatch.setattr(sense, "require_solstone", lambda: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["sense", "--day", "20250101", "--stream", "bad/stream"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        sense.main()
+
+    assert exc_info.value.code == 2
+
+
+def test_main_reprocess_screen_passes_stream_and_modality_filter(tmp_path, monkeypatch):
+    from solstone.observe import sense
+
+    calls = []
+
+    class SensorStub:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def register(self, *_args, **_kwargs):
+            pass
+
+        def process_day(self, *args, **kwargs):
+            calls.append((args, kwargs))
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    monkeypatch.setattr(sense, "require_solstone", lambda: None)
+    monkeypatch.setattr(sense, "FileSensor", SensorStub)
+    monkeypatch.setattr(sense, "delete_outputs", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "sense",
+            "--day",
+            "20250101",
+            "--stream",
+            "alpha",
+            "--reprocess",
+            "screen",
+        ],
+    )
+
+    sense.main()
+
+    assert calls == [
+        (
+            ("20250101",),
+            {
+                "max_jobs": 1,
+                "segment_filter": None,
+                "stream_filter": "alpha",
+                "modality_filter": "screen",
+            },
+        )
+    ]
+
+
+def test_main_reprocess_all_keeps_modality_filter_unset(tmp_path, monkeypatch):
+    from solstone.observe import sense
+
+    calls = []
+
+    class SensorStub:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def register(self, *_args, **_kwargs):
+            pass
+
+        def process_day(self, *args, **kwargs):
+            calls.append((args, kwargs))
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    monkeypatch.setattr(sense, "require_solstone", lambda: None)
+    monkeypatch.setattr(sense, "FileSensor", SensorStub)
+    monkeypatch.setattr(sense, "delete_outputs", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["sense", "--day", "20250101", "--reprocess", "all"],
+    )
+
+    sense.main()
+
+    assert calls[0][1]["modality_filter"] is None
+
+
 def test_transcribe_cpu_fallback_stays_in_same_worker_thread(tmp_path, monkeypatch):
     """The exit-134 retry is spawned by the same worker thread."""
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
@@ -1092,3 +1267,50 @@ def test_delete_outputs_segment_filter(tmp_path):
     assert len(deleted) == 1
     assert not (segment1 / "screen.jsonl").exists()
     assert (segment2 / "screen.jsonl").exists()  # Other segment untouched
+
+
+def test_delete_outputs_stream_filter(tmp_path):
+    """Test delete_outputs with stream filter."""
+    from solstone.observe.sense import delete_outputs
+
+    day_dir = tmp_path / "chronicle" / "20250101"
+    alpha = day_dir / "alpha" / "143022_300"
+    bravo = day_dir / "bravo" / "143022_300"
+    alpha.mkdir(parents=True)
+    bravo.mkdir(parents=True)
+
+    (alpha / "screen.webm").write_text("video")
+    (alpha / "screen.jsonl").write_text('{"raw": "test"}')
+    (bravo / "screen.webm").write_text("video")
+    (bravo / "screen.jsonl").write_text('{"raw": "test"}')
+
+    deleted = delete_outputs(day_dir, "screen", stream_filter="alpha")
+
+    assert [path.parent.parent.name for path in deleted] == ["alpha"]
+    assert not (alpha / "screen.jsonl").exists()
+    assert (bravo / "screen.jsonl").exists()
+
+
+def test_delete_outputs_all_keeps_modality_behavior_with_stream_filter(tmp_path):
+    """Test reprocess_type=all still deletes audio and screen outputs."""
+    from solstone.observe.sense import delete_outputs
+
+    day_dir = tmp_path / "chronicle" / "20250101"
+    alpha = day_dir / "alpha" / "143022_300"
+    bravo = day_dir / "bravo" / "143022_300"
+    alpha.mkdir(parents=True)
+    bravo.mkdir(parents=True)
+
+    for segment_dir in (alpha, bravo):
+        (segment_dir / "screen.webm").write_text("video")
+        (segment_dir / "screen.jsonl").write_text('{"raw": "test"}')
+        (segment_dir / "audio.flac").write_text("audio")
+        (segment_dir / "audio.jsonl").write_text('{"raw": "test"}')
+
+    deleted = delete_outputs(day_dir, "all", stream_filter="alpha")
+
+    assert {path.name for path in deleted} == {"screen.jsonl", "audio.jsonl"}
+    assert not (alpha / "screen.jsonl").exists()
+    assert not (alpha / "audio.jsonl").exists()
+    assert (bravo / "screen.jsonl").exists()
+    assert (bravo / "audio.jsonl").exists()

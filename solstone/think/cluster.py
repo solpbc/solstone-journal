@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from solstone.observe.screen import format_screen_text
-from solstone.think.data_state import DataState
+from solstone.think.data_state import DataState, derive_modality_state
 from solstone.think.media import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
 
 from .streams import read_segment_stream
@@ -459,13 +459,18 @@ def _detect_data_state(seg_path: Path) -> dict[str, str]:
     audio_analyzed = any(
         _jsonl_has_marker_row(path, "start") for path in audio_jsonl_files
     ) or any(_has_nonempty_text(path) for path in audio_md_files)
-    audio_pending = (
-        bool(audio_jsonl_files) or _has_raw_media(raw_media_paths, AUDIO_EXTENSIONS)
-    ) and not audio_analyzed
-    if audio_analyzed:
-        state["audio"] = DataState.ANALYZED.value
-    elif audio_pending:
-        state["audio"] = DataState.PENDING.value
+    audio_has_raw = _has_raw_media(raw_media_paths, AUDIO_EXTENSIONS)
+    # Sanctioned read-path mutation (CLAUDE.md §7 L1/L6 exception, ACs 10/11/12):
+    # the shared helper may rename/unlink sidecar markers. See data_state.derive_modality_state.
+    audio_state = derive_modality_state(
+        seg_path,
+        "audio",
+        has_chunks=audio_analyzed,
+        has_jsonl=bool(audio_jsonl_files),
+        has_raw=audio_has_raw,
+    )
+    if audio_state != DataState.ABSENT.value:
+        state["audio"] = audio_state
 
     screen_jsonl_files = sorted(
         {
@@ -478,13 +483,16 @@ def _detect_data_state(seg_path: Path) -> dict[str, str]:
     screen_analyzed = any(
         _jsonl_has_marker_row(path, "timestamp") for path in screen_jsonl_files
     )
-    screen_pending = (
-        bool(screen_jsonl_files) or _has_raw_media(raw_media_paths, VIDEO_EXTENSIONS)
-    ) and not screen_analyzed
-    if screen_analyzed:
-        state["screen"] = DataState.ANALYZED.value
-    elif screen_pending:
-        state["screen"] = DataState.PENDING.value
+    screen_has_raw = _has_raw_media(raw_media_paths, VIDEO_EXTENSIONS)
+    screen_state = derive_modality_state(
+        seg_path,
+        "screen",
+        has_chunks=screen_analyzed,
+        has_jsonl=bool(screen_jsonl_files),
+        has_raw=screen_has_raw,
+    )
+    if screen_state != DataState.ABSENT.value:
+        state["screen"] = screen_state
 
     return state
 

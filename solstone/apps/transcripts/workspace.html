@@ -281,6 +281,27 @@ body.has-app-bar .tr-card {
   border-color: #ca8a04;
 }
 
+.tr-seg-analyzing {
+  opacity: 1;
+  border-style: solid;
+  animation: tr-analyzing-pulse 1.5s ease-in-out infinite;
+}
+
+.tr-seg-audio.tr-seg-analyzing {
+  background: rgba(45, 212, 191, 0.58);
+  border-color: #0d9488;
+}
+
+.tr-seg-screen.tr-seg-analyzing {
+  background: rgba(96, 165, 250, 0.58);
+  border-color: #2563eb;
+}
+
+@keyframes tr-analyzing-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
 .tr-now-marker {
   position: absolute;
   left: 64px;
@@ -398,6 +419,17 @@ body.has-app-bar .tr-card {
   display: grid;
   gap: 12px;
   padding: 16px;
+}
+
+.tr-analyze-action[disabled] {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+.tr-analyze-error {
+  margin: 8px 0 0;
+  color: #991b1b;
+  font-size: 13px;
 }
 
 .tr-md-content {
@@ -691,6 +723,26 @@ body.has-app-bar .tr-zoom {
       rgba(194, 234, 155, 0.2) 10px
     );
   border-color: #65a30d;
+}
+
+.tr-zoom-pill-analyzing {
+  border-style: solid;
+  animation: tr-analyzing-pulse 1.5s ease-in-out infinite;
+}
+
+.tr-zoom-pill-audio.tr-zoom-pill-analyzing {
+  background: rgba(45, 212, 191, 0.6);
+  border-color: #0d9488;
+}
+
+.tr-zoom-pill-screen.tr-zoom-pill-analyzing {
+  background: rgba(96, 165, 250, 0.6);
+  border-color: #2563eb;
+}
+
+.tr-zoom-pill-both.tr-zoom-pill-analyzing {
+  background: linear-gradient(to right, rgba(45, 212, 191, 0.62), rgba(96, 165, 250, 0.62));
+  border-color: #0891b2;
 }
 
 /* Dragging state */
@@ -1601,12 +1653,23 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     screen: '<svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>'
   };
 
+  const BTN_LABEL_PENDING = 'analyze now';
+  const BTN_LABEL_FAILED = 'try again';
+  const ANALYZING_LABEL = 'analyzing…';
+  const BTN_TITLE = modality => `Process this segment's raw ${modality} observed data and generate analyzed content.`;
+  const ANALYZE_POLL_INTERVAL_MS = 3000;
+  const ANALYZE_POLL_MAX_MS = 30 * 60 * 1000;
+
   const DATA_STATE_SUFFIX = {
     pending: 'analysis pending',
+    analyzing: '',
     failed: 'analysis failed'
   };
 
   function dataStateCopy(modality, state) {
+    if (state === 'analyzing') {
+      return `${modality} observed · ${ANALYZING_LABEL}`;
+    }
     const suffix = DATA_STATE_SUFFIX[state];
     return suffix ? `${modality} observed · ${suffix}` : '';
   }
@@ -2190,6 +2253,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     el.className = 'tr-seg ' + (type === 'screen' ? 'tr-seg-screen' : 'tr-seg-audio');
     if (state === 'pending') {
       el.classList.add('tr-seg-pending');
+    } else if (state === 'analyzing') {
+      el.classList.add('tr-seg-analyzing');
     }
     el.style.top = y(startMin) + 'px';
     el.style.height = Math.max(2, y(endMin) - y(startMin)) + 'px';
@@ -2205,7 +2270,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     const streamHead = sortedStreams.slice(0, 3).join(' + ');
     const streamToken = sortedStreams.length > 3 ? streamHead + ' +' + (sortedStreams.length - 3) : streamHead;
     const streamSuffix = sortedStreams.length ? ' · ' + streamToken : '';
-    const stateSuffix = state === 'pending' ? ' · pending' : '';
+    const stateSuffix = state === 'pending' ? ' · pending' : state === 'analyzing' ? ' · analyzing' : '';
     el.title = hhmm(startMin) + ' – ' + hhmm(endMin) + ' (' + (endMin - startMin) + ' min, ' + type + streamSuffix + stateSuffix + ')';
     el.addEventListener('click', e => {
       e.stopPropagation();
@@ -2347,6 +2412,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const hasPendingAdvertised = (seg.types || []).some(
         type => dataState[type] && dataState[type] !== 'analyzed'
       );
+      const hasAnalyzingAdvertised = (seg.types || []).some(
+        type => dataState[type] === 'analyzing'
+      );
       if (hasAudio && hasScreen) {
         pill.classList.add('tr-zoom-pill-both');
       } else if (hasAudio) {
@@ -2354,7 +2422,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       } else {
         pill.classList.add('tr-zoom-pill-screen');
       }
-      if (hasPendingAdvertised) {
+      if (hasAnalyzingAdvertised) {
+        pill.classList.add('tr-zoom-pill-analyzing');
+      } else if (hasPendingAdvertised) {
         pill.classList.add('tr-zoom-pill-pending');
       }
       const typeLabel = (hasAudio && hasScreen) ? 'audio and screen' : hasAudio ? 'audio' : 'screen';
@@ -2367,7 +2437,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       pill.style.height = Math.max(4, zoomY(visEnd) - zoomY(visStart)) + 'px';
       const duration = Math.round(visEnd - visStart);
       const typeDesc = (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : 'screen';
-      const pendingSuffix = hasPendingAdvertised ? ' · pending' : '';
+      const pendingSuffix = hasAnalyzingAdvertised ? ' · analyzing' : hasPendingAdvertised ? ' · pending' : '';
       pill.title = seg.start + ' – ' + seg.end + ' · ' + duration + ' min · ' + typeDesc + ' · ' + seg.stream + pendingSuffix;
       pill.setAttribute('aria-label', 'Segment ' + seg.start + ' \u2013 ' + seg.end + ', ' + typeLabel + ', ' + seg.stream);
       pill.dataset.key = seg.key;
@@ -2440,9 +2510,13 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   let currentSegmentAbort = null;
   let tabPanes = {}; // tabId -> pane element
   let screenDecoded = false;
+  let analyzePollTimer = null;
+  let analyzePollStartedAt = 0;
+  let analyzePollModalities = new Set();
 
   function loadSegmentContent(seg, requestedTabId = null) {
     currentSegmentAbort?.abort();
+    stopAnalyzePoller();
     currentSegmentAbort = new AbortController();
     const signal = currentSegmentAbort.signal;
     const segmentToken = seg.key;
@@ -2467,19 +2541,11 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
           return;
         }
         panel.classList.remove('loading');
-        segmentData = data;
-        updateRangeText();
-        buildTabBar(data);
-        activateTab('transcript');
-        if (
-          requestedTabId
-          && [...tabsContainer.querySelectorAll('.tr-tab')].some(
-            tab => tab.dataset.tab === requestedTabId
-          )
-        ) {
-          activateTab(requestedTabId);
+        renderLoadedSegmentData(data, requestedTabId);
+        const analyzing = currentAnalyzingModalities(data.data_state || {});
+        if (analyzing.length > 0) {
+          startAnalyzePoller(analyzing);
         }
-	        renderWarningNotice(data);
       })
       .catch(err => {
         if (err.name === 'AbortError') {
@@ -2703,7 +2769,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     }
   }
 
-  function formatAudioDuration(seconds) {
+	  function formatAudioDuration(seconds) {
     const totalSeconds = Math.round(Number(seconds) || 0);
     if (totalSeconds <= 0) return '';
 
@@ -2713,7 +2779,21 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     if (hours > 0) {
       return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     }
-    return `${minutes}:${String(secs).padStart(2, '0')}`;
+	    return `${minutes}:${String(secs).padStart(2, '0')}`;
+	  }
+
+  function renderAnalyzeButton(modality, label) {
+    const title = BTN_TITLE(modality);
+    return `<button type="button" class="tr-analyze-action" data-modality="${escapeHtml(modality)}" aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
+  }
+
+  function renderFailedDataState(modality) {
+    return `<div class="surface-state surface-state--error" role="alert">`
+      + `<div class="surface-state-icon" aria-hidden="true">${emptyIcons[modality] || emptyIcons.transcript}</div>`
+      + `<h2 class="surface-state-heading">${escapeHtml(dataStateCopy(modality, 'failed'))}</h2>`
+      + `<p class="surface-state-desc">analysis errored for this segment</p>`
+      + `<div class="surface-state-action">${renderAnalyzeButton(modality, BTN_LABEL_FAILED)}</div>`
+      + `</div>`;
   }
 
   function renderDataStateAffordance(modality, state, data) {
@@ -2729,14 +2809,18 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       return window.SurfaceState.empty({
         icon,
         heading: dataStateCopy(modality, 'pending'),
-        desc: metadata.join(' · ')
+        desc: metadata.join(' · '),
+        action: renderAnalyzeButton(modality, BTN_LABEL_PENDING)
       });
     }
+    if (state === 'analyzing') {
+      return `<div class="surface-state surface-state--loading tr-analyzing-state" role="status" aria-busy="true">`
+        + `<div class="surface-state-spinner" aria-hidden="true"></div>`
+        + `<span class="surface-state-text">${escapeHtml(ANALYZING_LABEL)}</span>`
+        + `</div>`;
+    }
     if (state === 'failed') {
-      return window.SurfaceState.error({
-        heading: dataStateCopy(modality, 'failed'),
-        desc: 'analysis errored for this segment'
-      });
+      return renderFailedDataState(modality);
     }
     if (state === 'purged') {
       return window.SurfaceState.empty({
@@ -2746,6 +2830,154 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       });
     }
     return '';
+  }
+
+  function tabExists(tabId) {
+    return [...tabsContainer.querySelectorAll('.tr-tab')].some(tab => tab.dataset.tab === tabId);
+  }
+
+  function renderLoadedSegmentData(data, requestedTabId = null) {
+    segmentData = data;
+    updateRangeText();
+    buildTabBar(data);
+    const nextTab = requestedTabId && tabExists(requestedTabId) ? requestedTabId : 'transcript';
+    activateTab(nextTab);
+    renderWarningNotice(data);
+  }
+
+  function currentAnalyzingModalities(dataState) {
+    return ['audio', 'screen'].filter(modality => dataState[modality] === 'analyzing');
+  }
+
+  function stopAnalyzePoller() {
+    if (analyzePollTimer) {
+      clearInterval(analyzePollTimer);
+    }
+    analyzePollTimer = null;
+    analyzePollStartedAt = 0;
+    analyzePollModalities.clear();
+  }
+
+  function updateSelectedSegmentDataState(dataState) {
+    if (!selectedSegment) return;
+    selectedSegment.data_state = { ...(selectedSegment.data_state || {}), ...dataState };
+    const matchingSegment = allSegments.find(
+      seg => seg.key === selectedSegment.key && seg.stream === selectedSegment.stream
+    );
+    if (matchingSegment) {
+      matchingSegment.data_state = { ...(matchingSegment.data_state || {}), ...dataState };
+    }
+  }
+
+  function applySegmentDataState(dataState) {
+    if (!dataState) return;
+    updateSelectedSegmentDataState(dataState);
+    buildZoomSegments();
+    refreshSegmentIndicators();
+  }
+
+  function rerenderSegmentAfterAnalysis(data, preferredTab = activeTab) {
+    currentVideoFiles = {};
+    tabPanes = {};
+    activeTab = null;
+    screenDecoded = false;
+    frameCapture.clear();
+    renderLoadedSegmentData(data, preferredTab);
+  }
+
+  function showAnalyzeError(button, message) {
+    const action = button.closest('.surface-state-action') || button.parentElement;
+    if (!action) return;
+    action.parentElement?.querySelectorAll('.tr-analyze-error').forEach(el => el.remove());
+    const errorEl = document.createElement('p');
+    errorEl.className = 'tr-analyze-error';
+    errorEl.setAttribute('role', 'alert');
+    errorEl.textContent = message || 'analysis request failed';
+    action.insertAdjacentElement('afterend', errorEl);
+  }
+
+  function renderAnalyzeStateInPlace(button, modality, state) {
+    const surface = button.closest('.surface-state');
+    if (!surface || !segmentData) return;
+    const replacement = renderDataStateAffordance(modality, state, segmentData);
+    if (replacement) {
+      surface.outerHTML = replacement;
+    }
+  }
+
+  async function performAnalyzeNow(button, modality) {
+    if (!selectedSegment || !modality) return;
+    const seg = selectedSegment;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.closest('.surface-state')?.querySelectorAll('.tr-analyze-error').forEach(el => el.remove());
+
+    try {
+      const response = await fetch(
+        `/app/transcripts/api/segment/${day}/${seg.stream}/${seg.key}/reprocess`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ modality })
+        }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || 'analysis request failed');
+      }
+
+      segmentData = { ...(segmentData || {}), data_state: data.data_state || {} };
+      applySegmentDataState(segmentData.data_state);
+      renderAnalyzeStateInPlace(button, modality, 'analyzing');
+      startAnalyzePoller([modality]);
+    } catch (err) {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      showAnalyzeError(button, err.message);
+    }
+  }
+
+  async function pollAnalyzeState() {
+    if (!selectedSegment || analyzePollModalities.size === 0) {
+      stopAnalyzePoller();
+      return;
+    }
+    if (Date.now() - analyzePollStartedAt > ANALYZE_POLL_MAX_MS) {
+      stopAnalyzePoller();
+      return;
+    }
+
+    const seg = selectedSegment;
+    try {
+      const response = await fetch(`/app/transcripts/api/segment/${day}/${seg.stream}/${seg.key}`);
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!selectedSegment || selectedSegment.key !== seg.key || selectedSegment.stream !== seg.stream) {
+        return;
+      }
+      const dataState = data.data_state || {};
+      segmentData = data;
+      applySegmentDataState(dataState);
+
+      const watched = [...analyzePollModalities];
+      const complete = watched.every(modality => (
+        dataState[modality] === 'analyzed' || dataState[modality] === 'failed'
+      ));
+      if (complete) {
+        const preferredTab = activeTab;
+        stopAnalyzePoller();
+        rerenderSegmentAfterAnalysis(data, preferredTab);
+      }
+    } catch (err) {
+      console.debug('transcripts: analysis poll failed', err);
+    }
+  }
+
+  function startAnalyzePoller(modalities) {
+    modalities.forEach(modality => analyzePollModalities.add(modality));
+    if (analyzePollTimer) return;
+    analyzePollStartedAt = Date.now();
+    analyzePollTimer = setInterval(pollAnalyzeState, ANALYZE_POLL_INTERVAL_MS);
   }
 
   function renderSegmentTimeline(data, showAudio, showScreen, targetEl) {
@@ -3545,6 +3777,15 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     }
   });
 
+  window.addEventListener('beforeunload', stopAnalyzePoller);
+
+  panel.addEventListener('click', (event) => {
+    const button = event.target.closest('.tr-analyze-action');
+    if (!button || !panel.contains(button)) return;
+    event.preventDefault();
+    performAnalyzeNow(button, button.dataset.modality);
+  });
+
   // Click on timeline to set range
   timeline.addEventListener('click', (e) => {
     if (e.target.closest('.tr-sel')) return;
@@ -3809,6 +4050,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
   // Clear selection and reset UI state
   function clearSegmentSelection() {
+    stopAnalyzePoller();
     selectedSegment = null;
     segmentData = null;
     currentVideoFiles = {};

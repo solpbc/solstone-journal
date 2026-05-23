@@ -11,6 +11,9 @@ import logging
 import os
 import re
 import shutil
+import subprocess
+import sys
+import threading
 import time
 import uuid
 from datetime import date, datetime
@@ -23,6 +26,7 @@ from flask import (
     jsonify,
     redirect,
     render_template,
+    request,
     send_file,
     url_for,
 )
@@ -35,16 +39,23 @@ from solstone.convey.reasons import (
     FILE_READ_FAILED,
     INVALID_DAY,
     INVALID_MONTH,
+    INVALID_OPERATION_FOR_STATE,
     INVALID_PATH,
+    INVALID_REQUEST_VALUE,
     INVALID_SEGMENT_OR_STREAM,
     OPERATION_NO_LONGER_AVAILABLE,
+    RAW_MEDIA_NOT_AVAILABLE,
 )
 from solstone.convey.utils import DATE_RE, error_response, format_date, success_response
 from solstone.observe.hear import format_audio
 from solstone.observe.screen import format_screen
 from solstone.observe.utils import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
 from solstone.think.cluster import cluster_scan, cluster_segments, scan_day
-from solstone.think.data_state import DataState
+from solstone.think.data_state import (
+    DataState,
+    create_analyzing_marker,
+    derive_modality_state,
+)
 from solstone.think.entities.journal import get_journal_principal, load_journal_entity
 from solstone.think.media import MIME_TYPES
 from solstone.think.models import get_usage_cost
@@ -119,8 +130,7 @@ def _attach_streams_to_ranges(
 
     A segment contributes to a range when its half-open span overlaps the range
     and its types include ``content_type``. Streams are sorted and de-duped.
-    Range state uses best-state-wins: analyzed if any overlapping segment for
-    the modality is analyzed, otherwise pending.
+    Range state uses best-state-wins: analyzed, then analyzing, otherwise pending.
     """
 
     def _to_min(hhmm: str) -> int:
@@ -143,6 +153,11 @@ def _attach_streams_to_ranges(
                 modality_state = seg.get("data_state", {}).get(content_type)
                 if modality_state == DataState.ANALYZED.value:
                     state = DataState.ANALYZED.value
+                elif (
+                    modality_state == DataState.ANALYZING.value
+                    and state != DataState.ANALYZED.value
+                ):
+                    state = DataState.ANALYZING.value
         out.append(
             {"start": start, "end": end, "streams": sorted(streams), "state": state}
         )
@@ -328,6 +343,153 @@ def _read_audio_duration_seconds(entries: list[dict], segment_key: str) -> float
     if window_seconds > 0:
         return float(window_seconds)
     return 0.0
+
+
+def _analyzing_marker_path(segment_dir_path: Path, modality: str) -> Path:
+    return segment_dir_path / f".analyzing_{modality}"
+
+
+def _analyze_failed_marker_path(segment_dir_path: Path, modality: str) -> Path:
+    return segment_dir_path / f".analyze_failed_{modality}"
+
+
+def _read_marker_payload(marker_path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(marker_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _segment_modality_signals(
+    segment_dir_path: Path, modality: str
+) -> dict[str, bool | str]:
+    extensions = AUDIO_EXTENSIONS if modality == "audio" else VIDEO_EXTENSIONS
+    has_raw_present = any(
+        path.is_file() and path.suffix.lower() in extensions
+        for path in segment_dir_path.iterdir()
+    )
+    has_raw_reference = False
+    has_raw_file = False
+    has_jsonl = False
+    has_chunks = False
+    warning = False
+
+    patterns = ("*audio.jsonl",) if modality == "audio" else ("*screen.jsonl",)
+    for pattern in patterns:
+        for jsonl_path in sorted(segment_dir_path.glob(pattern)):
+            if not jsonl_path.is_file():
+                continue
+            has_jsonl = True
+            try:
+                entries = _load_jsonl(str(jsonl_path))
+                if modality == "audio":
+                    formatted_chunks, _meta = format_audio(
+                        entries, {"file_path": str(jsonl_path)}
+                    )
+                    for entry in entries:
+                        if "start" not in entry and "raw" in entry:
+                            raw_name = entry["raw"]
+                            if raw_name.endswith(AUDIO_EXTENSIONS):
+                                has_raw_reference = True
+                                has_raw_file = (segment_dir_path / raw_name).is_file()
+                            break
+                else:
+                    formatted_chunks, _meta = format_screen(
+                        entries, {"file_path": str(jsonl_path)}
+                    )
+                    for entry in entries:
+                        if "frame_id" not in entry and "raw" in entry:
+                            raw_name = entry["raw"]
+                            if raw_name.endswith(VIDEO_EXTENSIONS):
+                                has_raw_reference = True
+                                has_raw_file = (segment_dir_path / raw_name).is_file()
+                            break
+                has_chunks = has_chunks or bool(formatted_chunks)
+            except Exception:
+                warning = True
+
+    media_purged = has_raw_reference and not has_raw_file
+    if has_chunks:
+        state = derive_modality_state(
+            segment_dir_path,
+            modality,
+            has_chunks=True,
+            has_jsonl=has_jsonl,
+            has_raw=has_raw_present,
+        )
+    elif media_purged:
+        state = DataState.PURGED.value
+    else:
+        state = derive_modality_state(
+            segment_dir_path,
+            modality,
+            has_chunks=False,
+            has_jsonl=has_jsonl,
+            has_raw=has_raw_present,
+        )
+        if warning and state == DataState.PENDING.value:
+            state = DataState.FAILED.value
+
+    return {
+        "state": state,
+        "has_raw": has_raw_present,
+        "has_jsonl": has_jsonl,
+        "has_chunks": has_chunks,
+        "media_purged": media_purged,
+    }
+
+
+def _segment_data_state(segment_dir_path: Path) -> dict[str, str]:
+    data_state: dict[str, str] = {}
+    for modality in ("audio", "screen"):
+        state = str(_segment_modality_signals(segment_dir_path, modality)["state"])
+        if state != DataState.ABSENT.value:
+            data_state[modality] = state
+    return data_state
+
+
+def _write_failed_reprocess_marker(
+    marker_path: Path,
+    failed_path: Path,
+    reason: str,
+    detail: str,
+) -> None:
+    marker_payload = _read_marker_payload(marker_path)
+    payload = {
+        "started_at": marker_payload.get("started_at", ""),
+        "modality": marker_payload.get("modality", ""),
+        "reason": reason,
+        "failed_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "detail": detail,
+    }
+    tmp = failed_path.with_suffix(failed_path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.replace(failed_path)
+    marker_path.unlink(missing_ok=True)
+
+
+def _watch_reprocess_completion(
+    proc: subprocess.Popen,
+    marker_path: Path,
+    failed_path: Path,
+) -> None:
+    try:
+        rc = proc.wait()
+        stderr_tail = ""
+        if proc.stderr:
+            stderr_tail = (proc.stderr.read() or b"")[-512:].decode("utf-8", "replace")
+        if rc == 0:
+            marker_path.unlink(missing_ok=True)
+            return
+        _write_failed_reprocess_marker(
+            marker_path,
+            failed_path,
+            f"exit_{rc}",
+            stderr_tail,
+        )
+    except Exception:
+        logger.exception("reprocess watcher failed")
 
 
 @transcripts_bp.route("/api/segment/<day>/<stream>/<segment_key>")
@@ -634,14 +796,30 @@ def segment_content(day: str, stream: str, segment_key: str) -> Any:
     data_state: dict[str, str] = {}
     for modality in ("audio", "screen"):
         has_chunks = any(chunk["type"] == modality for chunk in chunks)
-        if modality in warning_types:
-            data_state[modality] = DataState.FAILED.value
-        elif has_chunks:
-            data_state[modality] = DataState.ANALYZED.value
+        # Sanctioned read-path mutation (CLAUDE.md §7 L1/L6 exception, ACs 10/11/12):
+        # the shared helper may rename/unlink sidecar markers. See data_state.derive_modality_state.
+        if has_chunks:
+            data_state[modality] = derive_modality_state(
+                segment_dir_path,
+                modality,
+                has_chunks=True,
+                has_jsonl=has_jsonl[modality],
+                has_raw=has_raw_present[modality],
+            )
         elif media_purged[modality]:
             data_state[modality] = DataState.PURGED.value
-        elif has_raw_present[modality] or has_jsonl[modality]:
-            data_state[modality] = DataState.PENDING.value
+        else:
+            state = derive_modality_state(
+                segment_dir_path,
+                modality,
+                has_chunks=has_chunks,
+                has_jsonl=has_jsonl[modality],
+                has_raw=has_raw_present[modality],
+            )
+            if state != DataState.ABSENT.value:
+                if modality in warning_types and state == DataState.PENDING.value:
+                    state = DataState.FAILED.value
+                data_state[modality] = state
 
     # Get cost data for this segment
     cost_data = get_usage_cost(day, segment=segment_key)
@@ -679,6 +857,146 @@ def segment_content(day: str, stream: str, segment_key: str) -> Any:
             "data_state": data_state,
             "warnings": len(warning_details),
             "warning_details": warning_details,
+        }
+    )
+
+
+@transcripts_bp.route(
+    "/api/segment/<day>/<stream>/<segment_key>/reprocess",
+    methods=["POST"],
+)
+def reprocess_segment(day: str, stream: str, segment_key: str) -> Any:
+    """Start per-modality reprocessing for a segment."""
+    if not DATE_RE.fullmatch(day):
+        return error_response(INVALID_DAY, detail="Invalid day format")
+
+    if not validate_segment_key(segment_key):
+        return error_response(
+            INVALID_SEGMENT_OR_STREAM,
+            detail="Invalid segment key format",
+        )
+
+    if not STREAM_RE.fullmatch(stream):
+        return error_response(INVALID_SEGMENT_OR_STREAM, detail="Invalid stream format")
+
+    day_dir = str(day_path(day, create=False))
+    segment_dir_path = segment_path(day, segment_key, stream, create=False)
+    segment_dir = str(segment_dir_path)
+
+    if not os.path.isdir(day_dir):
+        return error_response(
+            INVALID_DAY,
+            status=404,
+            detail="Day not found",
+        )
+
+    if not os.path.isdir(segment_dir):
+        return error_response(
+            INVALID_SEGMENT_OR_STREAM,
+            status=404,
+            detail="Segment not found",
+        )
+
+    if not os.path.commonpath([segment_dir, day_dir]) == day_dir:
+        return error_response(
+            INVALID_SEGMENT_OR_STREAM,
+            status=403,
+            detail="Invalid segment path",
+        )
+
+    body = request.get_json(silent=True)
+    modality = body.get("modality") if isinstance(body, dict) else None
+    if modality not in {"audio", "screen"}:
+        return error_response(
+            INVALID_REQUEST_VALUE,
+            detail="modality must be audio or screen",
+        )
+
+    signals = _segment_modality_signals(segment_dir_path, modality)
+    state = str(signals["state"])
+    has_raw = bool(signals["has_raw"])
+    if state == DataState.ANALYZED.value:
+        return error_response(
+            INVALID_OPERATION_FOR_STATE,
+            detail="Segment modality is already analyzed",
+        )
+    if state == DataState.PURGED.value or not has_raw:
+        return error_response(
+            RAW_MEDIA_NOT_AVAILABLE,
+            detail="Raw media is no longer available",
+        )
+    marker_path = _analyzing_marker_path(segment_dir_path, modality)
+    failed_path = _analyze_failed_marker_path(segment_dir_path, modality)
+    if state == DataState.ANALYZING.value:
+        data_state = _segment_data_state(segment_dir_path)
+        data_state[modality] = DataState.ANALYZING.value
+        marker = _read_marker_payload(marker_path)
+        return jsonify(
+            {
+                "data_state": data_state,
+                "marker": {"started_at": marker.get("started_at", "")},
+            }
+        )
+
+    if state == DataState.FAILED.value:
+        failed_path.unlink(missing_ok=True)
+
+    try:
+        marker_path = create_analyzing_marker(segment_dir_path, modality)
+    except FileExistsError:
+        data_state = _segment_data_state(segment_dir_path)
+        data_state[modality] = DataState.ANALYZING.value
+        marker = _read_marker_payload(marker_path)
+        return jsonify(
+            {
+                "data_state": data_state,
+                "marker": {"started_at": marker.get("started_at", "")},
+            }
+        )
+
+    argv = [
+        sys.executable,
+        "-m",
+        "solstone.observe.sense",
+        "--day",
+        day,
+        "--segment",
+        segment_key,
+        "--stream",
+        stream,
+        "--reprocess",
+        modality,
+    ]
+    try:
+        proc = subprocess.Popen(
+            argv,
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as exc:
+        marker_path.unlink(missing_ok=True)
+        return error_response(
+            FILE_READ_FAILED,
+            status=500,
+            detail=f"Failed to start analysis: {exc}",
+        )
+
+    watcher = threading.Thread(
+        target=_watch_reprocess_completion,
+        args=(proc, marker_path, failed_path),
+        daemon=True,
+    )
+    watcher.start()
+
+    data_state = _segment_data_state(segment_dir_path)
+    data_state[modality] = DataState.ANALYZING.value
+    marker = _read_marker_payload(marker_path)
+    return jsonify(
+        {
+            "data_state": data_state,
+            "marker": {"started_at": marker.get("started_at", "")},
         }
     )
 
