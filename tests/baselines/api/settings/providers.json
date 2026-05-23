@@ -25,23 +25,27 @@
       "codex_artifact": null,
       "codex_sha256": null,
       "codex_version": null,
+      "disabled": false,
       "env_key": "ANTHROPIC_API_KEY",
       "install_error": null,
+      "install_state": "idle",
       "issues": [
         "bundled CLI not installed — run `sol call settings providers install anthropic`"
       ],
       "key_configured": false,
+      "key_status": "key-needed",
       "key_valid": false,
       "key_validation": {},
       "label": "Anthropic (Claude)",
+      "last_progress_at": null,
       "last_transition_at": "<TIMESTAMP>",
       "name": "anthropic",
+      "progress_bytes_received": null,
+      "progress_bytes_total": null,
       "sdk_spec": "claude-agent-sdk==0.2.82",
       "sdk_specs": [
         "claude-agent-sdk==0.2.82"
-      ],
-      "state": "not-enabled",
-      "stuck_enabling": false
+      ]
     },
     "openai": {
       "actions": [
@@ -54,23 +58,27 @@
       "codex_artifact": null,
       "codex_sha256": null,
       "codex_version": null,
+      "disabled": false,
       "env_key": "OPENAI_API_KEY",
       "install_error": null,
+      "install_state": "idle",
       "issues": [
         "bundled CLI not installed — run `sol call settings providers install openai`"
       ],
       "key_configured": false,
+      "key_status": "key-needed",
       "key_valid": false,
       "key_validation": {},
       "label": "OpenAI (GPT)",
+      "last_progress_at": null,
       "last_transition_at": "<TIMESTAMP>",
       "name": "openai",
+      "progress_bytes_received": null,
+      "progress_bytes_total": null,
       "sdk_spec": "openai-codex-sdk==0.1.11",
       "sdk_specs": [
         "openai-codex-sdk==0.1.11"
-      ],
-      "state": "not-enabled",
-      "stuck_enabling": false
+      ]
     },
     "openhands": {
       "actions": [
@@ -83,24 +91,28 @@
       "codex_artifact": null,
       "codex_sha256": null,
       "codex_version": null,
+      "disabled": false,
       "env_key": "",
       "install_error": null,
+      "install_state": "idle",
       "issues": [
         "bundled runtime not installed — run `sol call settings providers install openhands` missing: openhands.sdk, litellm"
       ],
       "key_configured": false,
+      "key_status": "not-applicable",
       "key_valid": false,
       "key_validation": {},
       "label": "OpenHands SDK",
+      "last_progress_at": null,
       "last_transition_at": "<TIMESTAMP>",
       "name": "openhands",
+      "progress_bytes_received": null,
+      "progress_bytes_total": null,
       "runtime": "python",
       "sdk_spec": "openhands-sdk==1.23.*",
       "sdk_specs": [
         "openhands-sdk==1.23.*"
-      ],
-      "state": "not-enabled",
-      "stuck_enabling": false
+      ]
     }
   },
   "cogitate": {

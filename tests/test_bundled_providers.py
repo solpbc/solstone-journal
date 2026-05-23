@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,6 +14,7 @@ import pytest
 from solstone.think.providers import bundled
 from tests.bundled_provider_fixtures import (
     BUNDLED_STATES,
+    BundledCase,
     bundled_provider_config,
 )
 
@@ -54,24 +54,224 @@ def _build_openai_codex_sdk_tree(site_packages: Path) -> Path:
     return package_dir
 
 
+def _canonical_valid_case() -> BundledCase:
+    return BundledCase("installed", "valid", False, True, False)
+
+
 @pytest.mark.parametrize("provider", ["anthropic", "openai"])
-@pytest.mark.parametrize("state", BUNDLED_STATES)
-def test_fixture_states_compose_contract(journal_config, provider, state):
-    journal_config(bundled_provider_config(provider, state))
+@pytest.mark.parametrize("case", BUNDLED_STATES)
+def test_fixture_states_compose_contract(journal_config, provider, case):
+    journal_config(bundled_provider_config(provider, case))
 
     contract = bundled.get_provider_state(provider)
 
     assert contract["name"] == provider
-    assert contract["state"] == state
+    assert contract["install_state"] == case.install_state
+    assert contract["key_status"] == case.key_status
+    assert contract["disabled"] is case.disabled
+    assert "state" not in contract
+    assert "stuck_enabling" not in contract
     assert "actions" in contract
     assert "issues" in contract
 
 
-def test_install_provider_persists_enabling_and_starts_one_thread(
+@pytest.mark.parametrize(
+    (
+        "legacy_state",
+        "expected_install_state",
+        "expected_cloud_key_status",
+        "expected_runtime_key_status",
+        "expected_disabled",
+    ),
+    [
+        ("not-enabled", "idle", "key-needed", "not-applicable", False),
+        ("enabling", "idle", "key-needed", "not-applicable", False),
+        ("installed-no-key", "installed", "key-needed", "not-applicable", False),
+        ("key-validating", "installed", "validating", "not-applicable", False),
+        ("valid", "installed", "valid", "not-applicable", False),
+        ("invalid-key", "installed", "invalid", "not-applicable", False),
+        ("install-failed", "failed", "key-needed", "not-applicable", False),
+        ("disabled", "idle", "key-needed", "not-applicable", True),
+    ],
+)
+@pytest.mark.parametrize("provider", ["anthropic", "openhands"])
+def test_legacy_records_migrate_on_read(
+    journal_config,
+    provider,
+    legacy_state,
+    expected_install_state,
+    expected_cloud_key_status,
+    expected_runtime_key_status,
+    expected_disabled,
+):
+    record = {
+        "state": legacy_state,
+        "last_transition_at": "2026-05-20T00:00:00+00:00",
+        "install_error": "network: timeout"
+        if legacy_state == "install-failed"
+        else None,
+    }
+    env = {}
+    key_validation = {}
+    if provider == "openhands":
+        record["sdk_specs"] = ["openhands-sdk==1.23.*"]
+        record["runtime"] = "python"
+        if legacy_state in {
+            "installed-no-key",
+            "key-validating",
+            "valid",
+            "invalid-key",
+        }:
+            record["binary_path"] = "/tmp/solstone-test/openhands/sdk/__init__.py"
+    else:
+        record["sdk_spec"] = bundled.PINS[provider]["sdk_spec"]
+        if legacy_state in {
+            "installed-no-key",
+            "key-validating",
+            "valid",
+            "invalid-key",
+        }:
+            record["binary_path"] = f"/tmp/solstone-test/{provider}"
+        if legacy_state in {"key-validating", "valid", "invalid-key"}:
+            env["ANTHROPIC_API_KEY"] = "test-key"
+        if legacy_state == "valid":
+            key_validation[provider] = {"valid": True}
+        elif legacy_state == "invalid-key":
+            key_validation[provider] = {"valid": False, "error": "bad key"}
+    config_path = journal_config(
+        {
+            "env": env,
+            "providers": {
+                "auth": {"anthropic": "api_key"},
+                "key_validation": key_validation,
+                "bundled": {provider: record},
+            },
+        }
+    )
+
+    state = bundled.get_provider_state(provider)
+
+    expected_key_status = (
+        expected_runtime_key_status
+        if provider == "openhands"
+        else expected_cloud_key_status
+    )
+    assert state["install_state"] == expected_install_state
+    assert state["key_status"] == expected_key_status
+    assert state["disabled"] is expected_disabled
+    assert "state" not in state
+    persisted = json.loads(config_path.read_text(encoding="utf-8"))
+    persisted_record = persisted["providers"]["bundled"][provider]
+    assert "state" not in persisted_record
+    assert persisted_record["install_state"] == expected_install_state
+    assert persisted_record["key_state"] == expected_key_status
+    assert persisted_record["disabled"] is expected_disabled
+
+
+def test_mixed_record_drops_legacy_state_and_keeps_canonical(
+    journal_config,
+    caplog,
+):
+    config_path = journal_config(
+        {
+            "providers": {
+                "bundled": {
+                    "anthropic": {
+                        "state": "valid",
+                        "install_state": "failed",
+                        "last_transition_at": "2026-05-20T00:00:00+00:00",
+                        "last_progress_at": None,
+                        "install_error": "boom",
+                        "key_state": "invalid",
+                        "disabled": False,
+                        "sdk_spec": bundled.PINS["anthropic"]["sdk_spec"],
+                    }
+                }
+            }
+        }
+    )
+
+    with caplog.at_level(logging.WARNING):
+        state = bundled.get_provider_state("anthropic")
+
+    assert state["install_state"] == "failed"
+    assert state["key_status"] == "invalid"
+    persisted = json.loads(config_path.read_text(encoding="utf-8"))
+    assert "state" not in persisted["providers"]["bundled"]["anthropic"]
+    assert any(
+        "Dropping legacy state='valid'" in record.message for record in caplog.records
+    )
+
+
+@pytest.mark.parametrize(
+    ("record_updates", "env", "key_validation", "install_state", "key_status"),
+    [
+        ({}, {}, {}, "idle", "key-needed"),
+        (
+            {"binary_path": "/tmp/solstone-test/anthropic"},
+            {"ANTHROPIC_API_KEY": "test-key"},
+            {"anthropic": {"valid": True}},
+            "installed",
+            "valid",
+        ),
+        (
+            {"install_error": "network: timeout"},
+            {},
+            {"anthropic": {"valid": True}},
+            "failed",
+            "key-needed",
+        ),
+    ],
+)
+def test_disabled_legacy_records_recover_underlying_state(
+    journal_config,
+    record_updates,
+    env,
+    key_validation,
+    install_state,
+    key_status,
+):
+    record = {
+        "state": "disabled",
+        "last_transition_at": "2026-05-20T00:00:00+00:00",
+        "install_error": None,
+        "sdk_spec": bundled.PINS["anthropic"]["sdk_spec"],
+        **record_updates,
+    }
+    config_path = journal_config(
+        {
+            "env": env,
+            "providers": {
+                "auth": {"anthropic": "api_key"},
+                "key_validation": key_validation,
+                "bundled": {"anthropic": record},
+            },
+        }
+    )
+
+    state = bundled.get_provider_state("anthropic")
+
+    assert state["install_state"] == install_state
+    assert state["key_status"] == key_status
+    assert state["disabled"] is True
+    persisted = json.loads(config_path.read_text(encoding="utf-8"))
+    persisted_record = persisted["providers"]["bundled"]["anthropic"]
+    assert "state" not in persisted_record
+    assert persisted_record["install_state"] == install_state
+    assert persisted_record["key_state"] == key_status
+    if install_state == "failed":
+        assert persisted_record["install_error"] == "network: timeout"
+
+
+def test_install_provider_persists_installing_and_rejects_reentry(
     journal_config,
     monkeypatch,
 ):
-    journal_config(bundled_provider_config("anthropic", "not-enabled"))
+    journal_config(
+        bundled_provider_config(
+            "anthropic", BundledCase("idle", "key-needed", False, False, False)
+        )
+    )
     started = []
     monkeypatch.setattr(
         bundled,
@@ -81,17 +281,18 @@ def test_install_provider_persists_enabling_and_starts_one_thread(
 
     state = bundled.install_provider("anthropic")
 
-    assert state["state"] == "enabling"
+    assert state["install_state"] == "installing"
     assert len(started) == 1
-
-    second = bundled.install_provider("anthropic")
-
-    assert second["state"] == "enabling"
-    assert len(started) == 1
+    with pytest.raises(bundled.CogitateProviderInstallInFlight):
+        bundled.install_provider("anthropic")
 
 
-def test_install_provider_installed_no_key_is_noop(journal_config, monkeypatch):
-    journal_config(bundled_provider_config("anthropic", "installed-no-key"))
+def test_install_provider_installed_is_noop(journal_config, monkeypatch):
+    journal_config(
+        bundled_provider_config(
+            "anthropic", BundledCase("installed", "key-needed", False, True, False)
+        )
+    )
     started = []
     monkeypatch.setattr(
         bundled,
@@ -101,12 +302,17 @@ def test_install_provider_installed_no_key_is_noop(journal_config, monkeypatch):
 
     state = bundled.install_provider("anthropic")
 
-    assert state["state"] == "installed-no-key"
+    assert state["install_state"] == "installed"
+    assert state["key_status"] == "key-needed"
     assert started == []
 
 
-def test_install_provider_retries_install_failed(journal_config, monkeypatch):
-    journal_config(bundled_provider_config("openai", "install-failed"))
+def test_install_provider_retries_failed(journal_config, monkeypatch):
+    journal_config(
+        bundled_provider_config(
+            "openai", BundledCase("failed", "key-needed", False, False, True)
+        )
+    )
     started = []
     monkeypatch.setattr(
         bundled,
@@ -116,39 +322,17 @@ def test_install_provider_retries_install_failed(journal_config, monkeypatch):
 
     state = bundled.install_provider("openai")
 
-    assert state["state"] == "enabling"
+    assert state["install_state"] == "installing"
     assert state["install_error"] is None
     assert len(started) == 1
 
 
-def test_stuck_enabling_allows_install_retry(journal_config, monkeypatch):
-    config = bundled_provider_config("openai", "enabling")
-    old = datetime.now(timezone.utc) - timedelta(
-        seconds=bundled.STUCK_ENABLING_SECONDS + 60
+def test_install_thread_success_transitions_to_installed(journal_config, monkeypatch):
+    journal_config(
+        bundled_provider_config(
+            "anthropic", BundledCase("installing", "key-needed", False, False, False)
+        )
     )
-    config["providers"]["bundled"]["openai"]["last_transition_at"] = old.isoformat()
-    journal_config(config)
-    started = []
-    monkeypatch.setattr(
-        bundled,
-        "_start_thread",
-        lambda target, args: started.append((target, args)),
-    )
-
-    before = bundled.get_provider_state("openai")
-    after = bundled.install_provider("openai")
-
-    assert before["stuck_enabling"] is True
-    assert after["state"] == "enabling"
-    assert after["stuck_enabling"] is False
-    assert len(started) == 1
-
-
-def test_install_thread_success_transitions_to_valid(journal_config, monkeypatch):
-    config = bundled_provider_config("anthropic", "enabling")
-    config["env"]["ANTHROPIC_API_KEY"] = "test-key"
-    config["providers"]["key_validation"]["anthropic"] = {"valid": True}
-    journal_config(config)
     monkeypatch.setattr(bundled, "_run_uv_pip_install", lambda sdk_spec: None)
     monkeypatch.setattr(
         bundled,
@@ -159,8 +343,28 @@ def test_install_thread_success_transitions_to_valid(journal_config, monkeypatch
     bundled._install_thread("anthropic")
 
     state = bundled.get_provider_state("anthropic")
-    assert state["state"] == "valid"
+    assert state["install_state"] == "installed"
+    assert state["key_status"] == "key-needed"
     assert state["binary_path"] == "/tmp/claude"
+
+
+def test_install_thread_failure_transitions_to_failed(journal_config, monkeypatch):
+    journal_config(
+        bundled_provider_config(
+            "anthropic", BundledCase("installing", "key-needed", False, False, False)
+        )
+    )
+
+    def fail(_sdk_spec):
+        raise bundled.CogitateProviderInstallFailed("network: timeout")
+
+    monkeypatch.setattr(bundled, "_run_uv_pip_install", fail)
+
+    bundled._install_thread("anthropic")
+
+    state = bundled.get_provider_state("anthropic")
+    assert state["install_state"] == "failed"
+    assert state["install_error"] == "network: timeout"
 
 
 def test_openhands_runtime_state_uses_importable_modules(
@@ -174,7 +378,25 @@ def test_openhands_runtime_state_uses_importable_modules(
     litellm_path.parent.mkdir(parents=True)
     sdk_path.write_text("", encoding="utf-8")
     litellm_path.write_text("", encoding="utf-8")
-    journal_config({"providers": {"bundled": {}}})
+    journal_config(
+        {
+            "providers": {
+                "bundled": {
+                    "openhands": {
+                        "install_state": "installed",
+                        "last_transition_at": "2026-05-20T00:00:00+00:00",
+                        "last_progress_at": None,
+                        "install_error": None,
+                        "key_state": "not-applicable",
+                        "disabled": False,
+                        "sdk_specs": ["openhands-sdk==1.23.*"],
+                        "runtime": "python",
+                        "binary_path": str(sdk_path),
+                    }
+                }
+            }
+        }
+    )
 
     def fake_find_spec(module_name: str):
         paths = {
@@ -190,7 +412,8 @@ def test_openhands_runtime_state_uses_importable_modules(
 
     state = bundled.get_provider_state("openhands")
 
-    assert state["state"] == "valid"
+    assert state["install_state"] == "installed"
+    assert state["key_status"] == "not-applicable"
     assert state["sdk_specs"] == ["openhands-sdk==1.23.*"]
     assert state["binary_path"] == str(sdk_path)
     assert state["key_configured"] is True
@@ -198,7 +421,9 @@ def test_openhands_runtime_state_uses_importable_modules(
 
 
 def test_validate_key_thread_persists_result(journal_config, monkeypatch):
-    config = bundled_provider_config("openai", "installed-no-key")
+    config = bundled_provider_config(
+        "openai", BundledCase("installed", "key-needed", False, True, False)
+    )
     config["env"]["OPENAI_API_KEY"] = "test-key"
     journal_config(config)
     monkeypatch.setattr(
@@ -210,13 +435,15 @@ def test_validate_key_thread_persists_result(journal_config, monkeypatch):
     bundled._validate_thread("openai")
 
     state = bundled.get_provider_state("openai")
-    assert state["state"] == "valid"
+    assert state["key_status"] == "valid"
     assert state["key_validation"]["valid"] is True
     assert "timestamp" in state["key_validation"]
 
 
 def test_validate_key_thread_persists_human_error(journal_config, monkeypatch):
-    config = bundled_provider_config("openai", "key-validating")
+    config = bundled_provider_config(
+        "openai", BundledCase("installed", "validating", False, True, False)
+    )
     config["env"]["OPENAI_API_KEY"] = "test-key"
     journal_config(config)
 
@@ -228,13 +455,15 @@ def test_validate_key_thread_persists_human_error(journal_config, monkeypatch):
     bundled._validate_thread("openai")
 
     state = bundled.get_provider_state("openai")
-    assert state["state"] == "invalid-key"
+    assert state["key_status"] == "invalid"
     assert state["key_validation"]["error"] == "provider rejected key"
-    assert "provider rejected key" in state["issues"]
+    assert state["issues"] == ["provider rejected key"]
 
 
-def test_validate_key_returns_key_validating_immediately(journal_config, monkeypatch):
-    config = bundled_provider_config("anthropic", "installed-no-key")
+def test_validate_key_returns_validating_immediately(journal_config, monkeypatch):
+    config = bundled_provider_config(
+        "anthropic", BundledCase("installed", "key-needed", False, True, False)
+    )
     config["env"]["ANTHROPIC_API_KEY"] = "test-key"
     journal_config(config)
     started = []
@@ -246,12 +475,16 @@ def test_validate_key_returns_key_validating_immediately(journal_config, monkeyp
 
     state = bundled.validate_key("anthropic")
 
-    assert state["state"] == "key-validating"
+    assert state["key_status"] == "validating"
     assert len(started) == 1
 
 
 def test_validate_key_not_enabled_requires_install(journal_config, monkeypatch):
-    journal_config(bundled_provider_config("anthropic", "not-enabled"))
+    journal_config(
+        bundled_provider_config(
+            "anthropic", BundledCase("idle", "key-needed", False, False, False)
+        )
+    )
     started = []
     monkeypatch.setattr(
         bundled,
@@ -266,19 +499,26 @@ def test_validate_key_not_enabled_requires_install(journal_config, monkeypatch):
     assert started == []
 
 
-def test_uninstall_during_install_raises(journal_config):
-    config = bundled_provider_config("anthropic", "enabling")
-    config["providers"]["bundled"]["anthropic"]["last_transition_at"] = datetime.now(
-        timezone.utc
-    ).isoformat()
-    journal_config(config)
+def test_uninstall_during_install_resets_to_idle(journal_config, monkeypatch):
+    journal_config(
+        bundled_provider_config(
+            "anthropic", BundledCase("installing", "key-needed", False, False, False)
+        )
+    )
+    monkeypatch.setattr(bundled, "_run_uv_pip_uninstall", lambda sdk_spec: None)
 
-    with pytest.raises(bundled.CogitateProviderInstallInFlight):
-        bundled.uninstall_provider("anthropic")
+    state = bundled.uninstall_provider("anthropic")
+
+    assert state["install_state"] == "idle"
+    assert state["key_status"] == "key-needed"
 
 
 def test_uninstall_not_enabled_is_noop(journal_config, monkeypatch):
-    config_path = journal_config(bundled_provider_config("anthropic", "not-enabled"))
+    config_path = journal_config(
+        bundled_provider_config(
+            "anthropic", BundledCase("idle", "key-needed", False, False, False)
+        )
+    )
     calls = []
     monkeypatch.setattr(
         bundled,
@@ -289,13 +529,13 @@ def test_uninstall_not_enabled_is_noop(journal_config, monkeypatch):
     state = bundled.uninstall_provider("anthropic")
 
     persisted = json.loads(config_path.read_text(encoding="utf-8"))
-    assert state["state"] == "not-enabled"
+    assert state["install_state"] == "idle"
     assert calls == []
-    assert persisted["providers"]["bundled"]["anthropic"]["state"] == "not-enabled"
+    assert persisted["providers"]["bundled"]["anthropic"]["install_state"] == "idle"
 
 
 def test_uninstall_preserves_keys_auth_and_env(journal_config, monkeypatch):
-    config = bundled_provider_config("anthropic", "valid")
+    config = bundled_provider_config("anthropic", _canonical_valid_case())
     config["env"]["ANTHROPIC_API_KEY"] = "test-key"
     config["providers"]["auth"]["anthropic"] = "api_key"
     config["providers"]["key_validation"]["anthropic"] = {
@@ -308,10 +548,35 @@ def test_uninstall_preserves_keys_auth_and_env(journal_config, monkeypatch):
     state = bundled.uninstall_provider("anthropic")
 
     persisted = json.loads(config_path.read_text(encoding="utf-8"))
-    assert state["state"] == "not-enabled"
+    assert state["install_state"] == "idle"
+    assert state["key_status"] == "key-needed"
     assert persisted["env"]["ANTHROPIC_API_KEY"] == "test-key"
     assert persisted["providers"]["auth"]["anthropic"] == "api_key"
     assert persisted["providers"]["key_validation"]["anthropic"]["valid"] is True
+
+
+def test_disable_provider_preserves_install_and_key_status(journal_config):
+    journal_config(bundled_provider_config("anthropic", _canonical_valid_case()))
+
+    state = bundled.disable_provider("anthropic")
+
+    assert state["install_state"] == "installed"
+    assert state["key_status"] == "valid"
+    assert state["disabled"] is True
+
+
+def test_enable_provider_preserves_install_and_key_status(journal_config):
+    journal_config(
+        bundled_provider_config(
+            "anthropic", BundledCase("installed", "valid", True, True, False)
+        )
+    )
+
+    state = bundled.enable_provider("anthropic")
+
+    assert state["install_state"] == "installed"
+    assert state["key_status"] == "valid"
+    assert state["disabled"] is False
 
 
 def test_uninstall_openai_reclaims_vendor_tree(journal_config, monkeypatch, tmp_path):
@@ -319,11 +584,11 @@ def test_uninstall_openai_reclaims_vendor_tree(journal_config, monkeypatch, tmp_
     package_dir = _build_openai_codex_sdk_tree(site_packages)
     _patch_purelib(monkeypatch, site_packages)
     monkeypatch.setattr(bundled, "_run_uv_pip_uninstall", lambda sdk_spec: None)
-    journal_config(bundled_provider_config("openai", "valid"))
+    journal_config(bundled_provider_config("openai", _canonical_valid_case()))
 
     state = bundled.uninstall_provider("openai")
 
-    assert state["state"] == "not-enabled"
+    assert state["install_state"] == "idle"
     assert not package_dir.exists()
     assert site_packages.is_dir()
 
@@ -344,12 +609,12 @@ def test_uninstall_openai_skips_when_outside_site_packages(
     )
     _patch_purelib(monkeypatch, site_packages)
     monkeypatch.setattr(bundled, "_run_uv_pip_uninstall", lambda sdk_spec: None)
-    journal_config(bundled_provider_config("openai", "valid"))
+    journal_config(bundled_provider_config("openai", _canonical_valid_case()))
 
     with caplog.at_level(logging.WARNING):
         state = bundled.uninstall_provider("openai")
 
-    assert state["state"] == "not-enabled"
+    assert state["install_state"] == "idle"
     assert package_dir.exists()
     assert any("outside site-packages" in record.message for record in caplog.records)
 
@@ -369,12 +634,12 @@ def test_uninstall_openai_rmtree_failure_is_non_fatal(
         raise OSError("boom")
 
     monkeypatch.setattr(bundled.shutil, "rmtree", fail_rmtree)
-    journal_config(bundled_provider_config("openai", "valid"))
+    journal_config(bundled_provider_config("openai", _canonical_valid_case()))
 
     with caplog.at_level(logging.WARNING):
         state = bundled.uninstall_provider("openai")
 
-    assert state["state"] == "not-enabled"
+    assert state["install_state"] == "idle"
     assert package_dir.exists()
     assert any("boom" in record.message for record in caplog.records)
 
@@ -389,12 +654,12 @@ def test_uninstall_openai_missing_target_is_silent_noop(
     site_packages.mkdir()
     _patch_purelib(monkeypatch, site_packages)
     monkeypatch.setattr(bundled, "_run_uv_pip_uninstall", lambda sdk_spec: None)
-    journal_config(bundled_provider_config("openai", "valid"))
+    journal_config(bundled_provider_config("openai", _canonical_valid_case()))
 
     with caplog.at_level(logging.WARNING):
         state = bundled.uninstall_provider("openai")
 
-    assert state["state"] == "not-enabled"
+    assert state["install_state"] == "idle"
     assert not any(record.levelno >= logging.WARNING for record in caplog.records)
 
 
@@ -409,11 +674,11 @@ def test_uninstall_anthropic_does_not_invoke_openai_cleanup(
         "_remove_openai_post_install_artifacts",
         lambda: calls.append(True),
     )
-    journal_config(bundled_provider_config("anthropic", "valid"))
+    journal_config(bundled_provider_config("anthropic", _canonical_valid_case()))
 
     state = bundled.uninstall_provider("anthropic")
 
-    assert state["state"] == "not-enabled"
+    assert state["install_state"] == "idle"
     assert calls == []
 
 

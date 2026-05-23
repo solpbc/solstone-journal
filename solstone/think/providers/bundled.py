@@ -18,18 +18,20 @@ import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 from solstone.think.journal_config import read_journal_config, write_journal_config
+from solstone.think.providers.install_state import (
+    InstallStatus,
+    read_install_status,
+    transition_state,
+    write_install_status,
+)
 
 logger = logging.getLogger(__name__)
 
-STUCK_ENABLING_SECONDS = 300
-
 SUPPORTED_PROVIDERS = {"anthropic", "openai"}
 SUPPORTED_RUNTIMES = {"openhands"}
-BINARY_STATES = {"installed-no-key", "key-validating", "valid", "invalid-key"}
-TERMINAL_INSTALLED_STATES = {"installed-no-key", "valid", "invalid-key"}
 
 PINS: dict[str, dict[str, Any]] = {
     "anthropic": {
@@ -86,6 +88,13 @@ BUNDLED_PROVIDER_METADATA: dict[str, dict[str, Any]] = {
 
 ProviderStateDict: TypeAlias = dict[str, Any]
 ContractState: TypeAlias = ProviderStateDict
+KeyStatus: TypeAlias = Literal[
+    "key-needed",
+    "validating",
+    "valid",
+    "invalid",
+    "not-applicable",
+]
 
 _LOCKS: dict[str, threading.Lock] = {}
 _LOCKS_LOCK = threading.Lock()
@@ -132,15 +141,6 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _parse_timestamp(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
-
-
 def _require_supported(name: str) -> None:
     supported = SUPPORTED_PROVIDERS | SUPPORTED_RUNTIMES
     if name not in supported:
@@ -167,8 +167,9 @@ def _provider_env_key(name: str) -> str:
     return str(_provider_metadata(name).get("env_key", ""))
 
 
-def _bundled_config(config: dict[str, Any], name: str) -> dict[str, Any]:
-    return config.get("providers", {}).get("bundled", {}).get(name, {}).copy()
+def _read_bundled_record(config: dict[str, Any], name: str) -> dict[str, Any]:
+    record = config.get("providers", {}).get("bundled", {}).get(name, {})
+    return record if isinstance(record, dict) else {}
 
 
 def _key_validation(config: dict[str, Any], name: str) -> dict[str, Any]:
@@ -236,31 +237,97 @@ def _install_hint(name: str) -> str:
     return f"sol call settings providers install {name}"
 
 
-def _state_from_config(
+def _write_bundled_record_fields(name: str, **fields: Any) -> None:
+    config = read_journal_config()
+    bundled = config.setdefault("providers", {}).setdefault("bundled", {})
+    slot = bundled.get(name)
+    if not isinstance(slot, dict):
+        slot = {}
+    bundled[name] = slot
+    slot.pop("state", None)
+    slot.update(_pin_record(name))
+    slot.update(fields)
+    write_journal_config(config)
+
+
+def _migrate_legacy_record_if_needed(
     config: dict[str, Any],
     name: str,
-    bundled_record: dict[str, Any],
-) -> str:
-    persisted = bundled_record.get("state", "not-enabled")
-    if persisted in {
-        "not-enabled",
-        "enabling",
-        "key-validating",
-        "install-failed",
-        "disabled",
-    }:
-        return persisted
-    if persisted not in TERMINAL_INSTALLED_STATES:
-        return "not-enabled"
+    *,
+    runtime: bool,
+) -> None:
+    record = _read_bundled_record(config, name)
+    if "state" not in record:
+        return
 
-    if not _key_configured(config, name):
-        return "installed-no-key"
-    validation = _key_validation(config, name)
-    if validation.get("valid") is True:
-        return "valid"
-    if validation.get("valid") is False:
-        return "invalid-key"
-    return "installed-no-key"
+    legacy_state = str(record["state"])
+    if "install_state" in record:
+        logger.warning(
+            "Dropping legacy state=%r from providers.bundled.%s "
+            "(canonical install_state=%r already present)",
+            legacy_state,
+            name,
+            record["install_state"],
+        )
+        _write_bundled_record_fields(name)
+        config.clear()
+        config.update(read_journal_config())
+        return
+
+    key_validation = _key_validation(config, name)
+    key_configured = _key_configured(config, name)
+    legacy_installed_no_key = "installed-" + "no-key"
+    legacy_key_validating = "key-" + "validating"
+    legacy_invalid_key = "invalid-" + "key"
+    legacy_install_failed = "install-" + "failed"
+    if runtime:
+        key_status: KeyStatus = "not-applicable"
+    elif legacy_state == legacy_key_validating:
+        key_status = "validating"
+    elif legacy_state == "valid":
+        key_status = "valid"
+    elif legacy_state == legacy_invalid_key:
+        key_status = "invalid"
+    elif legacy_state == "disabled":
+        if record.get("install_error"):
+            key_status = "key-needed"
+        elif key_validation.get("valid") is True:
+            key_status = "valid"
+        elif key_validation.get("valid") is False:
+            key_status = "invalid"
+        elif key_configured:
+            key_status = "validating"
+        else:
+            key_status = "key-needed"
+    else:
+        key_status = "key-needed"
+
+    if legacy_state in {
+        legacy_installed_no_key,
+        legacy_key_validating,
+        "valid",
+        legacy_invalid_key,
+    }:
+        install_state = "installed"
+    elif legacy_state == legacy_install_failed:
+        install_state = "failed"
+    elif legacy_state == "disabled" and record.get("install_error"):
+        install_state = "failed"
+    elif legacy_state == "disabled" and record.get("binary_path"):
+        install_state = "installed"
+    else:
+        install_state = "idle"
+    disabled = legacy_state == "disabled"
+    current_status = read_install_status(scope="bundled", name=name)
+    next_status = transition_state(
+        current_status,
+        new_state=install_state,
+        error=record.get("install_error") if install_state == "failed" else None,
+    )
+    write_install_status(next_status, scope="bundled")
+    _write_bundled_record_fields(name, key_state=key_status, disabled=disabled)
+    config.clear()
+    config.update(read_journal_config())
 
 
 def _runtime_module_path(module_name: str) -> str | None:
@@ -283,105 +350,109 @@ def _runtime_module_paths(name: str) -> dict[str, str | None]:
     return {str(module): _runtime_module_path(str(module)) for module in modules}
 
 
-def _runtime_state_from_config(name: str, record: dict[str, Any]) -> str:
-    persisted = record.get("state", "not-enabled")
-    installed = all(path for path in _runtime_module_paths(name).values())
-    if persisted == "disabled":
-        return "disabled"
-    if installed:
-        return "valid"
-    if persisted in {"enabling", "install-failed"}:
-        return persisted
-    return "not-enabled"
+def _compose_install_status(config: dict[str, Any], name: str) -> InstallStatus:
+    _migrate_legacy_record_if_needed(config, name, runtime=_is_runtime_key(name))
+    return read_install_status(scope="bundled", name=name)
 
 
-def _issues_for_state(
-    state: str,
+def _compose_key_status(
+    record: dict[str, Any],
     *,
-    name: str,
-    env_key: str,
     key_configured: bool,
     key_validation: dict[str, Any],
+    runtime: bool,
+) -> KeyStatus:
+    if runtime:
+        return "not-applicable"
+    key_state = record.get("key_state")
+    if key_state in {"key-needed", "validating", "valid", "invalid"}:
+        return key_state
+    if key_validation.get("valid") is True:
+        return "valid"
+    if key_validation.get("valid") is False:
+        return "invalid"
+    return "key-needed"
+
+
+def _issues_for_payload(
+    install_status: InstallStatus,
+    key_status: KeyStatus,
+    disabled: bool,
+    *,
+    name: str,
+    runtime: bool,
+    env_key: str,
+    key_validation: dict[str, Any],
     install_error: str | None,
+    binary_exists: bool,
+    key_configured: bool,
 ) -> list[str]:
-    if state == "not-enabled":
+    install_state = install_status["install_state"]
+    if disabled:
+        return (
+            ["bundled runtime disabled"] if runtime else ["bundled provider disabled"]
+        )
+    if install_state == "failed":
+        fallback = (
+            "bundled runtime install failed"
+            if runtime
+            else "bundled CLI install failed"
+        )
+        return [install_error or fallback]
+    if install_state == "idle":
+        if runtime:
+            missing = [
+                module
+                for module, path in _runtime_module_paths(name).items()
+                if path is None
+            ]
+            detail = f" missing: {', '.join(missing)}" if missing else ""
+            return [
+                f"bundled runtime not installed — run `{_install_hint(name)}`{detail}"
+            ]
         return [f"bundled CLI not installed — run `{_install_hint(name)}`"]
-    if state == "install-failed":
-        return [install_error or "bundled CLI install failed"]
-    if state == "disabled":
-        return ["bundled provider disabled"]
-    if state == "installed-no-key":
+    if install_state in {"resolving", "downloading", "verifying", "installing"}:
+        return []
+    if runtime:
+        return []
+    if key_status == "key-needed":
         if not key_configured:
             return [f"{env_key} not set"] if env_key else ["API key not configured"]
         if not key_validation:
             return ["API key not validated"]
-    if state == "invalid-key":
+        return []
+    if key_status == "validating":
+        return []
+    if key_status == "invalid":
         error = key_validation.get("error")
         return [str(error)] if error else ["API key validation failed"]
     return []
 
 
-def _issues_for_runtime_state(
-    state: str,
+def _actions_for_payload(
+    install_status: InstallStatus,
+    key_status: KeyStatus,
+    disabled: bool,
     *,
-    name: str,
-    install_error: str | None,
+    runtime: bool,
 ) -> list[str]:
-    if state == "not-enabled":
-        missing = [
-            module
-            for module, path in _runtime_module_paths(name).items()
-            if path is None
-        ]
-        detail = f" missing: {', '.join(missing)}" if missing else ""
-        return [f"bundled runtime not installed — run `{_install_hint(name)}`{detail}"]
-    if state == "install-failed":
-        return [install_error or "bundled runtime install failed"]
-    if state == "disabled":
-        return ["bundled runtime disabled"]
-    return []
-
-
-def _actions_for_state(state: str, *, key_configured: bool, stuck: bool) -> list[str]:
-    if state == "not-enabled":
+    install_state = install_status["install_state"]
+    if disabled:
+        actions = ["enable"]
+        if install_state != "installing":
+            actions.append("uninstall")
+        return actions
+    if install_state == "idle":
         return ["install"]
-    if state == "enabling":
-        return ["install"] if stuck else []
-    if state == "install-failed":
-        return ["install", "uninstall"]
-    if state == "disabled":
-        return ["enable", "uninstall"]
-    if state == "key-validating":
+    if install_state in {"resolving", "downloading", "verifying", "installing"}:
         return []
-    actions = ["disable", "uninstall"]
-    if key_configured:
-        actions.insert(0, "validate-key")
-    return actions
-
-
-def _actions_for_runtime_state(state: str, *, stuck: bool) -> list[str]:
-    if state == "not-enabled":
-        return ["install"]
-    if state == "enabling":
-        return ["install"] if stuck else []
-    if state == "install-failed":
+    if install_state == "failed":
         return ["install", "uninstall"]
-    if state == "disabled":
-        return ["enable", "uninstall"]
-    return ["disable", "uninstall"]
-
-
-def _is_record_stuck(record: dict[str, Any]) -> bool:
-    if record.get("state") != "enabling":
-        return False
-    timestamp = _parse_timestamp(record.get("last_transition_at"))
-    if timestamp is None:
-        return False
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=timezone.utc)
-    return (
-        datetime.now(timezone.utc) - timestamp
-    ).total_seconds() > STUCK_ENABLING_SECONDS
+    actions: list[str] = []
+    if not runtime and key_status != "validating":
+        actions.append("validate-key")
+    actions.extend(["disable", "uninstall"])
+    return actions
 
 
 def get_provider_state(name: str) -> ProviderStateDict:
@@ -389,26 +460,39 @@ def get_provider_state(name: str) -> ProviderStateDict:
 
     _require_supported(name)
     config = read_journal_config()
-    record = _bundled_config(config, name)
+    record = _read_bundled_record(config, name)
     if _is_runtime_key(name):
         return _get_runtime_state(name, record)
 
-    state = _state_from_config(config, name, record)
+    _migrate_legacy_record_if_needed(config, name, runtime=False)
+    record = _read_bundled_record(config, name)
+    install_status = _compose_install_status(config, name)
     env_key = _provider_env_key(name)
     validation = _key_validation(config, name)
     key_configured = _key_configured(config, name)
-    binary_path = record.get("binary_path")
-    stuck = _is_record_stuck(record)
-    install_error = record.get("install_error")
+    key_status = _compose_key_status(
+        record,
+        key_configured=key_configured,
+        key_validation=validation,
+        runtime=False,
+    )
+    binary_path = str(record["binary_path"]) if record.get("binary_path") else None
+    binary_exists = bool(binary_path and Path(binary_path).exists())
+    disabled = bool(record.get("disabled", False))
     label = _provider_metadata(name).get("label", name)
     binary_name = _provider_metadata(name).get("cogitate_cli", name)
 
     return {
         "name": name,
         "label": label,
-        "state": state,
-        "last_transition_at": record.get("last_transition_at"),
-        "stuck_enabling": stuck,
+        "install_state": install_status["install_state"],
+        "key_status": key_status,
+        "disabled": disabled,
+        "last_transition_at": install_status["last_transition_at"],
+        "last_progress_at": install_status["last_progress_at"],
+        "progress_bytes_received": install_status["progress_bytes_received"],
+        "progress_bytes_total": install_status["progress_bytes_total"],
+        "install_error": install_status["install_error"],
         "sdk_spec": record.get("sdk_spec", _sdk_specs(name)[0]),
         "sdk_specs": record.get("sdk_specs", _sdk_specs(name)),
         "codex_version": record.get("codex_version"),
@@ -421,41 +505,56 @@ def get_provider_state(name: str) -> ProviderStateDict:
         "key_validation": validation,
         "binary_name": binary_name,
         "binary_path": binary_path,
-        "binary_exists": bool(binary_path and Path(binary_path).exists()),
-        "install_error": install_error,
-        "issues": _issues_for_state(
-            state,
+        "binary_exists": binary_exists,
+        "issues": _issues_for_payload(
+            install_status,
+            key_status,
+            disabled,
             name=name,
+            runtime=False,
             env_key=env_key,
-            key_configured=key_configured,
             key_validation=validation,
-            install_error=install_error,
+            install_error=install_status["install_error"],
+            binary_exists=binary_exists,
+            key_configured=key_configured,
         ),
-        "actions": _actions_for_state(
-            state, key_configured=key_configured, stuck=stuck
+        "actions": _actions_for_payload(
+            install_status,
+            key_status,
+            disabled,
+            runtime=False,
         ),
     }
 
 
-def _get_runtime_state(name: str, record: dict[str, Any]) -> ProviderStateDict:
-    state = _runtime_state_from_config(name, record)
+def _get_runtime_state(name: str, _record: dict[str, Any]) -> ProviderStateDict:
+    config = read_journal_config()
+    _migrate_legacy_record_if_needed(config, name, runtime=True)
+    record = _read_bundled_record(config, name)
+    install_status = _compose_install_status(config, name)
     paths = _runtime_module_paths(name)
     module_path = paths.get("openhands.sdk") or next(
         (path for path in paths.values() if path),
         None,
     )
     installed = all(path for path in paths.values())
-    stuck = _is_record_stuck(record)
-    install_error = record.get("install_error")
+    binary_exists = bool(module_path and Path(module_path).exists())
+    key_status: KeyStatus = "not-applicable"
+    disabled = bool(record.get("disabled", False))
     label = _provider_metadata(name).get("label", name)
     binary_name = _provider_metadata(name).get("cogitate_cli", name)
 
     return {
         "name": name,
         "label": label,
-        "state": state,
-        "last_transition_at": record.get("last_transition_at"),
-        "stuck_enabling": stuck,
+        "install_state": install_status["install_state"],
+        "key_status": key_status,
+        "disabled": disabled,
+        "last_transition_at": install_status["last_transition_at"],
+        "last_progress_at": install_status["last_progress_at"],
+        "progress_bytes_received": install_status["progress_bytes_received"],
+        "progress_bytes_total": install_status["progress_bytes_total"],
+        "install_error": install_status["install_error"],
         "sdk_spec": record.get("sdk_spec", _sdk_specs(name)[0]),
         "sdk_specs": record.get("sdk_specs", _sdk_specs(name)),
         "codex_version": None,
@@ -469,64 +568,26 @@ def _get_runtime_state(name: str, record: dict[str, Any]) -> ProviderStateDict:
         "key_validation": {},
         "binary_name": binary_name,
         "binary_path": module_path,
-        "binary_exists": bool(module_path and Path(module_path).exists()),
-        "install_error": install_error,
-        "issues": _issues_for_runtime_state(
-            state,
+        "binary_exists": binary_exists,
+        "issues": _issues_for_payload(
+            install_status,
+            key_status,
+            disabled,
             name=name,
-            install_error=install_error,
+            runtime=True,
+            env_key="",
+            key_validation={},
+            install_error=install_status["install_error"],
+            binary_exists=binary_exists,
+            key_configured=installed,
         ),
-        "actions": _actions_for_runtime_state(state, stuck=stuck),
+        "actions": _actions_for_payload(
+            install_status,
+            key_status,
+            disabled,
+            runtime=True,
+        ),
     }
-
-
-def is_stuck_enabling(name: str) -> bool:
-    """Return whether the provider has been enabling too long."""
-
-    return bool(get_provider_state(name)["stuck_enabling"])
-
-
-def _write_bundled_record(
-    config: dict[str, Any],
-    name: str,
-    record: dict[str, Any],
-) -> None:
-    config.setdefault("providers", {}).setdefault("bundled", {})[name] = record
-    write_journal_config(config)
-
-
-def _transition_state(
-    name: str,
-    state: str,
-    *,
-    extra: dict[str, Any] | None = None,
-) -> None:
-    config = read_journal_config()
-    record = _bundled_config(config, name)
-    record.update(_pin_record(name))
-    record.update(
-        {
-            "state": state,
-            "last_transition_at": _now_iso(),
-            "install_error": None,
-        }
-    )
-    if extra:
-        record.update(extra)
-    _write_bundled_record(config, name, record)
-
-
-def _installed_state_for_config(config: dict[str, Any], name: str) -> str:
-    if _is_runtime_key(name):
-        return "valid"
-    if not _key_configured(config, name):
-        return "installed-no-key"
-    validation = _key_validation(config, name)
-    if validation.get("valid") is True:
-        return "valid"
-    if validation.get("valid") is False:
-        return "invalid-key"
-    return "installed-no-key"
 
 
 def _start_thread(target: Callable[..., None], args: tuple[Any, ...]) -> None:
@@ -541,12 +602,17 @@ def install_provider(name: str) -> ContractState:
     lock = _provider_lock(name)
     with lock:
         current = get_provider_state(name)
-        state = current["state"]
-        if state == "enabling" and not current["stuck_enabling"]:
+        install_state = current["install_state"]
+        if install_state == "installed":
             return current
-        if state in BINARY_STATES and not current["stuck_enabling"]:
-            return current
-        _transition_state(name, "enabling", extra=_pin_record(name))
+        if install_state in {"resolving", "downloading", "verifying", "installing"}:
+            raise CogitateProviderInstallInFlight("install in flight")
+        status = read_install_status(scope="bundled", name=name)
+        write_install_status(
+            transition_state(status, new_state="installing"),
+            scope="bundled",
+        )
+        _write_bundled_record_fields(name)
         _start_thread(_install_thread, (name,))
         return get_provider_state(name)
 
@@ -558,9 +624,7 @@ def uninstall_provider(name: str) -> ContractState:
     lock = _provider_lock(name)
     with lock:
         current = get_provider_state(name)
-        if current["state"] == "enabling" and not current["stuck_enabling"]:
-            raise CogitateProviderInstallInFlight("install in flight")
-        if current["state"] == "not-enabled":
+        if current["install_state"] == "idle":
             return current
 
     try:
@@ -569,15 +633,17 @@ def uninstall_provider(name: str) -> ContractState:
             _remove_openai_post_install_artifacts()
     finally:
         with lock:
-            _transition_state(
+            status = read_install_status(scope="bundled", name=name)
+            write_install_status(
+                transition_state(status, new_state="idle"),
+                scope="bundled",
+            )
+            _write_bundled_record_fields(
                 name,
-                "not-enabled",
-                extra={
-                    "binary_path": None,
-                    "install_error": None,
-                    "codex_artifact": None,
-                    "codex_sha256": None,
-                },
+                key_state="not-applicable" if _is_runtime_key(name) else "key-needed",
+                binary_path=None,
+                codex_artifact=None,
+                codex_sha256=None,
             )
             return get_provider_state(name)
 
@@ -587,7 +653,8 @@ def disable_provider(name: str) -> ContractState:
 
     _require_supported(name)
     with _provider_lock(name):
-        _transition_state(name, "disabled")
+        get_provider_state(name)
+        _write_bundled_record_fields(name, disabled=True)
         return get_provider_state(name)
 
 
@@ -596,29 +663,8 @@ def enable_provider(name: str) -> ContractState:
 
     _require_supported(name)
     with _provider_lock(name):
-        config = read_journal_config()
-        record = _bundled_config(config, name)
-        if _is_runtime_key(name):
-            next_state = (
-                _installed_state_for_config(config, name)
-                if all(path for path in _runtime_module_paths(name).values())
-                else "not-enabled"
-            )
-        else:
-            next_state = (
-                _installed_state_for_config(config, name)
-                if record.get("binary_path")
-                else "not-enabled"
-            )
-        record.update(_pin_record(name))
-        record.update(
-            {
-                "state": next_state,
-                "last_transition_at": _now_iso(),
-                "install_error": None,
-            }
-        )
-        _write_bundled_record(config, name, record)
+        get_provider_state(name)
+        _write_bundled_record_fields(name, disabled=False)
         return get_provider_state(name)
 
 
@@ -630,21 +676,28 @@ def validate_key(name: str) -> ContractState:
         raise BundledProviderError(f"Bundled runtime {name} has no key to validate")
     with _provider_lock(name):
         current = get_provider_state(name)
-        if current["state"] == "enabling" and not current["stuck_enabling"]:
+        if current["install_state"] in {
+            "resolving",
+            "downloading",
+            "verifying",
+            "installing",
+        }:
             raise CogitateProviderInstallInFlight("install in flight")
-        if current["state"] == "disabled":
+        if current["disabled"]:
             raise CogitateProviderDisabled(
                 f"Bundled provider {name} is disabled. Enable it before validating the key."
             )
-        if current["state"] not in BINARY_STATES:
+        if current["install_state"] != "installed":
             raise CogitateProviderNotInstalled(
                 f"Bundled cogitate provider {name} is not installed. Run `{_install_hint(name)}` before validating the key."
             )
+        if current["key_status"] == "validating":
+            return current
         config = read_journal_config()
         if not _key_configured(config, name):
-            _transition_state(name, "installed-no-key")
+            _write_bundled_record_fields(name, key_state="key-needed")
             return get_provider_state(name)
-        _transition_state(name, "key-validating")
+        _write_bundled_record_fields(name, key_state="validating")
         _start_thread(_validate_thread, (name,))
         return get_provider_state(name)
 
@@ -680,15 +733,26 @@ def _install_thread(name: str) -> None:
                 "codex_sha256": sha256 or None,
             }
         with _provider_lock(name):
-            config = read_journal_config()
-            next_state = _installed_state_for_config(config, name)
-            _transition_state(name, next_state, extra=extra)
+            status = read_install_status(scope="bundled", name=name)
+            write_install_status(
+                transition_state(status, new_state="installed"),
+                scope="bundled",
+            )
+            _write_bundled_record_fields(
+                name,
+                key_state="not-applicable" if _is_runtime_key(name) else "key-needed",
+                **extra,
+            )
     except Exception as exc:
         with _provider_lock(name):
-            _transition_state(
-                name,
-                "install-failed",
-                extra={"install_error": _install_error_message(exc)},
+            status = read_install_status(scope="bundled", name=name)
+            write_install_status(
+                transition_state(
+                    status,
+                    new_state="failed",
+                    error=_install_error_message(exc),
+                ),
+                scope="bundled",
             )
 
 
@@ -704,17 +768,11 @@ def _validate_thread(name: str) -> None:
         config.setdefault("providers", {}).setdefault("key_validation", {})[name] = (
             result
         )
-        record = _bundled_config(config, name)
-        state = "valid" if result.get("valid") else "invalid-key"
-        record.update(_pin_record(name))
-        record.update(
-            {
-                "state": state,
-                "last_transition_at": _now_iso(),
-                "install_error": None,
-            }
+        write_journal_config(config)
+        _write_bundled_record_fields(
+            name,
+            key_state="valid" if result.get("valid") else "invalid",
         )
-        _write_bundled_record(config, name, record)
 
 
 def _install_error_message(exc: Exception) -> str:
@@ -958,9 +1016,7 @@ def _validate_provider_key(name: str) -> dict[str, Any]:
 
 
 __all__ = [
-    "BINARY_STATES",
     "PINS",
-    "STUCK_ENABLING_SECONDS",
     "BundledProviderError",
     "CogitateProviderDisabled",
     "CogitateProviderInstallFailed",
@@ -972,7 +1028,6 @@ __all__ = [
     "enable_provider",
     "get_provider_state",
     "install_provider",
-    "is_stuck_enabling",
     "uninstall_provider",
     "validate_key",
 ]

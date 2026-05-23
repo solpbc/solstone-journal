@@ -47,7 +47,12 @@ def test_google_provider_status_ignores_gemini_path(
     )
     monkeypatch.setattr(
         "solstone.think.providers.bundled.get_provider_state",
-        lambda _name: {"state": "valid", "issues": []},
+        lambda _name: {
+            "install_state": "installed",
+            "key_status": "not-applicable",
+            "disabled": False,
+            "issues": [],
+        },
     )
 
     status = build_provider_status(

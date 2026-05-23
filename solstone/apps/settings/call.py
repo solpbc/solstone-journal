@@ -521,18 +521,22 @@ def _echo_bundled_result(payload: dict, *, human: bool = False) -> None:
         typer.echo(json.dumps(payload, indent=2))
         return
 
-    rows = payload.values() if "state" not in payload else [payload]
-    headers = ("provider", "state", "stuck", "key", "binary", "issues")
+    def _render_binary_path(value: str | None) -> str:
+        if not value:
+            return "-"
+        return value if len(value) <= 32 else "..." + value[-29:]
+
+    rows = payload.values() if "install_state" not in payload else [payload]
+    headers = ("provider", "install", "key", "binary", "issues")
     rendered = []
     for row in rows:
         rendered.append(
             (
                 row["name"],
-                row["state"],
-                "yes" if row.get("stuck_enabling") else "no",
-                "yes" if row["key_configured"] else "no",
-                "yes" if row["binary_path"] else "no",
-                "; ".join(row.get("issues", [])),
+                row["install_state"],
+                row["key_status"],
+                _render_binary_path(row["binary_path"]),
+                ", ".join(row.get("issues", [])),
             )
         )
     widths = [

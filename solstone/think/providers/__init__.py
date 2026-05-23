@@ -170,7 +170,6 @@ def build_provider_status(
         providers_list = get_provider_list()
 
     status = {}
-    runtime_installed_states = {"installed-no-key", "valid"}
     for provider in providers_list:
         name = provider["name"]
         env_key = provider.get("env_key", "")
@@ -213,9 +212,14 @@ def build_provider_status(
             runtime_state = bundled.get_provider_state(
                 meta.get("cogitate_runtime", "openhands")
             )
-            runtime_contract_state = runtime_state["state"]
+            runtime_install_state = runtime_state["install_state"]
+            runtime_key_status = runtime_state["key_status"]
             cogitate_cli = "openhands-sdk"
-            cogitate_cli_found = runtime_contract_state in runtime_installed_states
+            cogitate_cli_found = (
+                runtime_install_state == "installed"
+                and runtime_key_status == "not-applicable"
+                and runtime_state["disabled"] is False
+            )
 
             if name == "google":
                 has_key = _env_key_configured(env_key)
@@ -232,8 +236,6 @@ def build_provider_status(
                     issues.append(f"{env_key} not set")
 
             if not cogitate_cli_found:
-                issues.extend(runtime_state.get("issues", []))
-            elif runtime_contract_state == "invalid-key":
                 issues.extend(runtime_state.get("issues", []))
 
             status[name] = {

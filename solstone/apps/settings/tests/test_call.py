@@ -198,11 +198,14 @@ class TestProvidersShow:
         tmp_path, config = settings_env()
         config["providers"]["bundled"] = {
             "openhands": {
-                "state": "valid",
+                "install_state": "installed",
                 "last_transition_at": "2026-05-20T00:00:00+00:00",
+                "last_progress_at": None,
+                "install_error": None,
+                "key_state": "not-applicable",
+                "disabled": False,
                 "sdk_specs": ["openhands-sdk==1.23.*"],
                 "binary_path": "/tmp/openhands/sdk/__init__.py",
-                "install_error": None,
             }
         }
         (tmp_path / "config" / "journal.json").write_text(
@@ -214,7 +217,9 @@ class TestProvidersShow:
             bundled,
             "get_provider_state",
             return_value={
-                "state": "valid",
+                "install_state": "installed",
+                "key_status": "not-applicable",
+                "disabled": False,
                 "issues": [],
             },
         ):
@@ -335,11 +340,14 @@ class TestProvidersBundled:
         tmp_path, config = settings_env()
         config["providers"]["bundled"] = {
             "anthropic": {
-                "state": "valid",
+                "install_state": "installed",
                 "last_transition_at": "2026-05-20T00:00:00+00:00",
+                "last_progress_at": None,
+                "install_error": None,
+                "key_state": "valid",
+                "disabled": False,
                 "sdk_spec": "claude-agent-sdk==0.2.82",
                 "binary_path": "/tmp/claude",
-                "install_error": None,
             }
         }
         config["env"]["ANTHROPIC_API_KEY"] = "test-key"
@@ -356,7 +364,8 @@ class TestProvidersBundled:
         assert result.exit_code == 0
         payload = json.loads(result.output)
         assert payload["name"] == "anthropic"
-        assert payload["state"] == "valid"
+        assert payload["install_state"] == "installed"
+        assert payload["key_status"] == "valid"
 
     def test_status_all_json(self, settings_env):
         settings_env()
@@ -377,19 +386,37 @@ class TestProvidersBundled:
 
         assert result.exit_code == 0
         assert "provider" in result.output
-        assert "stuck" in result.output
+        assert "install" in result.output
+        assert "key" in result.output
+        assert "binary" in result.output
         assert "anthropic" in result.output
 
-    def test_status_human_surfaces_stuck_enabling(self, settings_env):
+    def test_status_human_renders_install_and_key_columns(self, settings_env):
         tmp_path, config = settings_env()
         config["providers"]["bundled"] = {
             "anthropic": {
-                "state": "enabling",
-                "last_transition_at": "2000-01-01T00:00:00+00:00",
-                "sdk_spec": "claude-agent-sdk==0.2.82",
+                "install_state": "installed",
+                "last_transition_at": "2026-05-20T00:00:00+00:00",
+                "last_progress_at": None,
                 "install_error": None,
-            }
+                "key_state": "valid",
+                "disabled": False,
+                "sdk_spec": "claude-agent-sdk==0.2.82",
+                "binary_path": "/tmp/claude",
+            },
+            "openai": {
+                "install_state": "installing",
+                "last_transition_at": "2026-05-20T00:00:00+00:00",
+                "last_progress_at": "2026-05-20T00:00:00+00:00",
+                "install_error": None,
+                "key_state": "key-needed",
+                "disabled": False,
+                "sdk_spec": "openai-codex-sdk==0.1.11",
+                "binary_path": None,
+            },
         }
+        config["env"]["ANTHROPIC_API_KEY"] = "test-key"
+        config["providers"]["key_validation"]["anthropic"] = {"valid": True}
         (tmp_path / "config" / "journal.json").write_text(
             json.dumps(config, indent=2) + "\n",
             encoding="utf-8",
@@ -397,12 +424,22 @@ class TestProvidersBundled:
 
         result = runner.invoke(
             call_app,
-            ["settings", "providers", "status", "anthropic", "--human"],
+            ["settings", "providers", "status", "--human"],
         )
 
         assert result.exit_code == 0
-        assert "stuck" in result.output
-        assert "yes" in result.output
+        assert "provider" in result.output
+        assert "install" in result.output
+        assert "key" in result.output
+        assert "binary" in result.output
+        assert "issues" in result.output
+        lines = result.output.splitlines()
+        anthropic = next(line for line in lines if line.startswith("anthropic"))
+        openai = next(line for line in lines if line.startswith("openai"))
+        assert "installed" in anthropic
+        assert "valid" in anthropic
+        assert "installing" in openai
+        assert "key-needed" in openai
 
     def test_status_json_human_conflict(self, settings_env):
         settings_env()
@@ -429,7 +466,7 @@ class TestProvidersBundled:
         self, settings_env, monkeypatch, command, function_name
     ):
         settings_env()
-        payload = {"name": "openai", "state": "valid"}
+        payload = {"name": "openai", "install_state": "installed"}
         monkeypatch.setattr(bundled, function_name, lambda name: payload)
 
         result = runner.invoke(call_app, ["settings", "providers", command, "openai"])

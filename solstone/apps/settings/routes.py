@@ -947,7 +947,9 @@ def _bundled_action_response(name: str, action: str) -> Any:
     try:
         return jsonify(actions[action](name))
     except bundled.CogitateProviderInstallInFlight:
-        return jsonify({"error": "install in flight", "state": "enabling"}), 409
+        return jsonify(
+            {"error": "install in flight", "install_state": "installing"}
+        ), 409
     except bundled.UnsupportedBundledProvider as exc:
         return error_response(INVALID_CONFIG_VALUE, detail=str(exc))
     except bundled.BundledProviderError as exc:

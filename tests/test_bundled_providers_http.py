@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 
 import pytest
 from typer.testing import CliRunner
@@ -14,6 +13,7 @@ from solstone.think.call import call_app
 from solstone.think.providers import bundled
 from tests.bundled_provider_fixtures import (
     BUNDLED_STATES,
+    BundledCase,
     bundled_provider_config,
 )
 
@@ -36,10 +36,10 @@ def _write_config(journal, config: dict) -> None:
 
 
 @pytest.mark.parametrize("provider", ["anthropic", "openai"])
-@pytest.mark.parametrize("state", BUNDLED_STATES)
-def test_cli_status_and_http_bundled_contract_match(settings_client, provider, state):
+@pytest.mark.parametrize("case", BUNDLED_STATES)
+def test_cli_status_and_http_bundled_contract_match(settings_client, provider, case):
     client, journal = settings_client
-    _write_config(journal, bundled_provider_config(provider, state))
+    _write_config(journal, bundled_provider_config(provider, case))
 
     cli_result = runner.invoke(
         call_app,
@@ -54,7 +54,12 @@ def test_cli_status_and_http_bundled_contract_match(settings_client, provider, s
 
 def test_get_providers_includes_bundled(settings_client):
     client, journal = settings_client
-    _write_config(journal, bundled_provider_config("anthropic", "valid"))
+    _write_config(
+        journal,
+        bundled_provider_config(
+            "anthropic", BundledCase("installed", "valid", False, True, False)
+        ),
+    )
 
     response = client.get("/app/settings/api/providers")
 
@@ -93,7 +98,7 @@ def test_get_local_provider_status_shape(settings_client):
 )
 def test_bundled_action_routes(settings_client, monkeypatch, endpoint, function_name):
     client, _journal = settings_client
-    payload = {"name": "openai", "state": "valid"}
+    payload = {"name": "openai", "install_state": "installed"}
     monkeypatch.setattr(bundled, function_name, lambda name: payload)
 
     response = client.post(f"/app/settings/api/providers/openai/{endpoint}")
@@ -111,15 +116,17 @@ def test_invalid_bundled_provider_route_returns_400(settings_client):
     assert response.get_json()["reason_code"] == "invalid_config_value"
 
 
-def test_uninstall_during_install_route_returns_409(settings_client):
+def test_install_during_install_route_returns_409(settings_client):
     client, journal = settings_client
-    config = bundled_provider_config("anthropic", "enabling")
-    config["providers"]["bundled"]["anthropic"]["last_transition_at"] = datetime.now(
-        timezone.utc
-    ).isoformat()
+    config = bundled_provider_config(
+        "anthropic", BundledCase("installing", "key-needed", False, False, False)
+    )
     _write_config(journal, config)
 
-    response = client.post("/app/settings/api/providers/anthropic/uninstall")
+    response = client.post("/app/settings/api/providers/anthropic/install")
 
     assert response.status_code == 409
-    assert response.get_json() == {"error": "install in flight", "state": "enabling"}
+    assert response.get_json() == {
+        "error": "install in flight",
+        "install_state": "installing",
+    }
