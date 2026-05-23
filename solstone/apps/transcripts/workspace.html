@@ -3561,21 +3561,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     }
   }
 
-  // Resize observers
   // Account for 12px padding top and bottom
   const PADDING = 24;
-
-  new ResizeObserver(() => {
-    height = timeline.clientHeight - PADDING;
-    ppm = height / (timelineEnd - timelineStart);
-    buildGrid();
-    renderTimeline();
-    if (updateNowPosition) updateNowPosition();
-  }).observe(timeline);
-
-  new ResizeObserver(() => {
-    updateZoom();
-  }).observe(zoom);
 
 	  // Load combined transcript data
 	  function loadDayData() {
@@ -3719,6 +3706,19 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 	  }
 
   function initTranscripts() {
+    // Resize observers
+    new ResizeObserver(() => {
+      height = timeline.clientHeight - PADDING;
+      ppm = height / (timelineEnd - timelineStart);
+      buildGrid();
+      renderTimeline();
+      if (updateNowPosition) updateNowPosition();
+    }).observe(timeline);
+
+    new ResizeObserver(() => {
+      updateZoom();
+    }).observe(zoom);
+
     loadDayData();
 
     // Handle browser back/forward

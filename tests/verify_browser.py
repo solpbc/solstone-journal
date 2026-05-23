@@ -291,32 +291,13 @@ _ERROR_LISTENER_JS = (
 
 _VISUAL_FREEZE_EPOCH_MS = 1772625600000
 
-# CDP visual captures run injected scripts before deferred app scripts. That
-# exposed a pre-existing transcripts load-order race where ResizeObserver work
-# can call SurfaceState before solstone/convey/static/app.js installs the shared
-# globals. The stub below keeps the harness deterministic; app.js overwrites
-# these globals before the readiness wait and capture. The long-term fix belongs
-# in solstone/apps/transcripts/workspace.html or its script ordering, not here.
+# CDP visual captures run this script before deferred app scripts; it freezes
+# Date.now, disables visual motion, hides scrollbars and audio peak meters, and
+# exposes __solstoneVisualBeforeCapture for deterministic capture. The prior
+# SurfaceState/AppServices race-masking stub was removed after the transcripts
+# workspace deferred its ResizeObserver registrations into initTranscripts().
 _VISUAL_STABILITY_JS = f"""
 (() => {{
-  const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({{
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  }}[ch]));
-  if (!window.AppServices) {{
-    window.AppServices = {{ escapeHtml }};
-  }}
-  if (!window.SurfaceState) {{
-    const state = (className, text) => `<div class="${{className}}">${{escapeHtml(text)}}</div>`;
-    window.SurfaceState = {{
-      loading: (opts = {{}}) => state('surface-state surface-state--loading', opts.text || 'Loading...'),
-      empty: (opts = {{}}) => state('surface-state surface-state--empty', opts.heading || ''),
-      error: (opts = {{}}) => state('surface-state surface-state--error', opts.heading || 'Error'),
-    }};
-  }}
   Date.now = () => {_VISUAL_FREEZE_EPOCH_MS};
   const css = `
     *, *::before, *::after {{
