@@ -3043,11 +3043,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       html += '</div></div>';
     }
 
-    if (data.media_purged?.audio && !data.audio_file && showAudio) {
-      html += '<div class="tr-purge-notice" role="presentation">Raw observed media removed per retention policy</div>';
-    }
-
-    if (data.media_purged?.screen && showScreen && chunks.some(c => c.type === 'screen')) {
+    const audioPurged = data.media_purged?.audio && !data.audio_file && showAudio;
+    const screenPurged = data.media_purged?.screen && showScreen && chunks.some(c => c.type === 'screen');
+    if (audioPurged || screenPurged) {
       html += '<div class="tr-purge-notice" role="presentation">Raw observed media removed per retention policy</div>';
     }
 

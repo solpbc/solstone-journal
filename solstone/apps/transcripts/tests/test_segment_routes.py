@@ -743,7 +743,7 @@ def test_segment_content_does_not_probe_served_m4a(
     assert m4a_content_reads == []
 
 
-def test_segment_content_drops_screen_md_when_screen_chunks_present(client):
+def test_segment_content_drops_talent_md_when_data_state_analyzed(client):
     response = client.get(
         f"/app/transcripts/api/segment/{FIXTURE_DAY}/{FIXTURE_STREAM}/{FIXTURE_SEGMENT}"
     )
@@ -751,8 +751,9 @@ def test_segment_content_drops_screen_md_when_screen_chunks_present(client):
     assert response.status_code == 200
     data = response.get_json()
     assert any(c["type"] == "screen" for c in data["chunks"])
+    assert data["data_state"].get("audio") == "analyzed"
     assert "screen" not in data["md_files"]
-    assert "audio" in data["md_files"]
+    assert "audio" not in data["md_files"]
 
 
 def test_reprocess_segment_rejects_invalid_day(client):

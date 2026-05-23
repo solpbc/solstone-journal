@@ -835,13 +835,15 @@ def segment_content(day: str, stream: str, segment_key: str) -> Any:
             except Exception:
                 continue
 
-    # UI dedup: when a segment has screen data, the structural "screen" tab
-    # already covers it — drop talents/screen.md from md_files so the tab row
-    # doesn't render two screen-labeled tabs. Speaker attribution reads
-    # talents/screen.md directly from disk (apps/speakers/attribution.py),
-    # unaffected by this UI-side suppression.
+    # UI dedup: when a segment has structural modality data (screen/audio),
+    # the structural tab already covers it — drop the matching talents/<mod>.md
+    # from md_files so the tab row doesn't render two tabs labeled the same.
+    # Speaker attribution reads talents/screen.md directly from disk
+    # (apps/speakers/attribution.py), unaffected by this UI-side suppression.
     if "screen" in data_state:
         md_files.pop("screen", None)
+    if "audio" in data_state:
+        md_files.pop("audio", None)
 
     return jsonify(
         {
