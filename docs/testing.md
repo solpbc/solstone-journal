@@ -39,9 +39,7 @@ The `tests/fixtures/journal/` directory contains a complete mock journal structu
 
 ### Browser verification status
 
-Full `make verify-browser` is currently red due to pre-existing pinchtab REST instability. Use the isolated CDP transcripts scenarios in `tests/verify_browser.py --scenario transcripts/<name>` as the visual-regression validation gate.
-
-The transcripts CDP path carries a temporary pre-document `AppServices`/`SurfaceState` stub for a known transcripts load-order race; fix the app/template ordering long term rather than treating the harness stub as product behavior.
+Browser verification is CDP-only in `tests/verify_browser.py`. Pinchtab is retained to launch Chrome and expose the debug port; the harness drives pages through CDP because CTO advisory `req_4kcmthzo` diagnosed Pinchtab REST instability, around 60% per-request rejection under long-lived state, as the driver of the old full-suite failures.
 
 ## Worktree Development
 
