@@ -107,6 +107,11 @@ responses. Nothing gets sent without their review.
 _AWARENESS_MD = "not yet updated\n"
 _DIGEST_MD = "not yet generated\n"
 
+STEWARD_SECTION_STATUS = "## Status"
+STEWARD_SECTION_ATTENTION = "## Needs your attention"
+STEWARD_SECTION_AUTO_REPAIRS = "## Auto-repairs (last 7d)"
+STEWARD_SECTION_TRENDS = "## Trends (last 7d)"
+
 
 def _build_self_md(config: dict) -> str:
     agent = config.get("agent", {})
@@ -472,6 +477,20 @@ def ensure_identity_directory() -> Path:
         "partner.md": _PARTNER_MD,
         "awareness.md": _AWARENESS_MD,
         "digest.md": _DIGEST_MD,
+        "health.md": "\n".join(
+            [
+                STEWARD_SECTION_STATUS,
+                "",
+                "not yet generated",
+                "",
+                STEWARD_SECTION_ATTENTION,
+                "",
+                STEWARD_SECTION_AUTO_REPAIRS,
+                "",
+                STEWARD_SECTION_TRENDS,
+                "",
+            ]
+        ),
     }
     for file_name, content in defaults.items():
         target = identity_dir / file_name

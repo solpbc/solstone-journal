@@ -32,7 +32,7 @@ Call all sources upfront. Some may return empty — that's expected, especially 
 10. For each of the next 7 days after today: `sol call activities list --source anticipated --day YYYYMMDD` — upcoming scheduled items for forward look
 
 Also run:
-11. `sol call health pipeline --yesterday` — pipeline anomalies from yesterday's processing
+11. `sol call identity health` — sol's federated health surface (synthesized by the steward talent)
 
 ## Phase 1.5: Pre-pass audit
 
@@ -44,13 +44,13 @@ Before synthesizing, audit what you gathered. This step uses only the data from 
    - `facet_newsletters` — facets that returned a newsletter (step 2)
    - `followups` — follow-up items returned (step 7)
    - `todos` — pending todo items (step 4)
-   - `pipeline_anomalies` — surfaced anomalies from yesterday's pipeline summary
+   - `steward_health` — whether the steward health surface returned parseable content and how many Needs your attention bullets it surfaced
 
 2. **Identify gaps.** Record a gap for each source that returned zero results or is otherwise missing. A gap is not an error — it means the briefing has a blind spot in that area. Examples: `"no facet newsletters available"`, `"no follow-up items found"`, `"no anticipated activities today"`.
 
 3. **Catalog tool errors.** If any `sol call` in Phase 1 returned an error response, record it as a gap with the error context.
 
-4. **Check pipeline health.** If yesterday's pipeline summary status is not healthy, surface its anomalies as top-ranked operational gaps in Needs Attention. If status is healthy, omit the Pipeline gaps section entirely.
+4. **Check the steward health surface.** Read the steward's Needs your attention section. If empty, omit the Pipeline gaps subsection entirely. Otherwise surface those bullets as top-ranked operational gaps in Needs Attention, rendering them verbatim. If `sol call identity health` returned empty content, the file is missing, or the surface failed to parse: add `steward health surface unavailable` to the coverage-preamble `gaps:` list AND omit the Pipeline gaps subsection — do not emit a healthy-looking briefing without acknowledging this gap.
 
 > **CRITICAL: Tool error handling.** When any `sol call` tool returns an error, you MUST:
 > 1. Record the error as a gap with the command or source that failed
@@ -81,12 +81,8 @@ Grade highlights by evidence strength. **High** (corroborated by multiple source
   1. Overdue commitments (todos past due, missed follow-ups)
   2. Pending follow-ups (items flagged by the followups agent)
   3. Unscheduled todos (action items with no calendar time blocked)
-  Pipeline gaps owner-facing phrasings (from `pipeline_anomalies`). Use these verbatim, substituting real counts and agent names from the summary:
-  - `activity_agents_missing` → "**Pipeline gap:** N activities ended yesterday but activity agents didn't fire — meeting notes, decisions, and follow-ups may be missing."
-  - `talent_failure` → "**Pipeline issue:** N agents timed out during yesterday's processing (name1, name2). Some insights may be incomplete." (Use "timed out" when every failed agent has `state == "timeout"`; otherwise use "failed".)
-  - `daily_agents_missing` → "**Pipeline gap:** Daily agents didn't run yesterday despite journal data. Facet newsletters and digest may be missing."
 
-  Do NOT include this section when pipeline status is `healthy` (status == "healthy" or anomalies list is empty). Zero noise on normal days.
+  Do NOT include pipeline gaps when the steward health surface has no Needs your attention bullets. Zero noise on normal days.
 Attribute commitments and follow-ups to the originating segment: `(committed [date](sol://...))`, `(flagged [date](sol://...))`. For inferred items: `(inferred from [source](sol://...))`.
 Grade action items by evidence strength. **High** (explicit commitment with date, or overdue todo): state assertively — "Follow up on Series A term sheet — committed March 20, now overdue." **Medium** (flagged by followups agent with moderate confidence, or clear single-source item): present with attribution — "Review CI pipeline logs (flagged yesterday)." **Low** (inferred obligation from ambiguous mention, or low-confidence followup): hedge — "Possible commitment to send deck to investors" or "May need to follow up on the API discussion." When upstream followup output includes a `Confidence:` score, use it: 0.85+ high, 0.50–0.84 medium, below 0.50 low. Never hedge explicit commitments with clear dates; never present inferred obligations as definite action items.
 
@@ -112,6 +108,7 @@ sources:
   facet_newsletters: [count]
   followups: [count]
   todos: [count]
+  steward_health: [present|missing]
 gaps: [list of gap descriptions, or empty list [] if none]
 ---
 

@@ -161,6 +161,59 @@ def _append_think_log(
         handle.write(json.dumps(record) + "\n")
 
 
+def _patch_minimal_pulse_context(monkeypatch, pipeline_status):
+    monkeypatch.setattr(
+        "solstone.apps.home.routes.get_capture_health",
+        lambda: {"status": "active", "observers": []},
+    )
+    monkeypatch.setattr("solstone.apps.home.routes.get_cached_state", lambda: {})
+    monkeypatch.setattr("solstone.apps.home.routes.get_current", lambda: None)
+    monkeypatch.setattr(
+        "solstone.apps.home.routes._resolve_attention", lambda awareness: None
+    )
+    monkeypatch.setattr("solstone.apps.home.routes._today", lambda: "20260416")
+    monkeypatch.setattr("solstone.apps.home.routes._yesterday", lambda: "20260415")
+    monkeypatch.setattr(
+        "solstone.apps.home.routes._count_journal_age_days", lambda today: 8
+    )
+    monkeypatch.setattr("solstone.apps.home.routes._load_stats", lambda today: {})
+    monkeypatch.setattr(
+        "solstone.apps.home.routes._load_flow_md", lambda today: (None, None)
+    )
+    monkeypatch.setattr(
+        "solstone.apps.home.routes._load_pulse_md", lambda: (None, None, [])
+    )
+    monkeypatch.setattr(
+        "solstone.apps.home.routes._load_briefing_md", lambda today: ({}, None, [])
+    )
+    monkeypatch.setattr(
+        "solstone.apps.home.routes._collect_anticipated_activities", lambda today: []
+    )
+    monkeypatch.setattr(
+        "solstone.apps.home.routes._collect_activities", lambda today: []
+    )
+    monkeypatch.setattr("solstone.apps.home.routes._collect_todos", lambda today: [])
+    monkeypatch.setattr("solstone.apps.home.routes._collect_routines", lambda: [])
+    monkeypatch.setattr("solstone.apps.home.routes._collect_skills", lambda: [])
+    monkeypatch.setattr(
+        "solstone.apps.home.routes.read_steward_health",
+        lambda: pipeline_status,
+    )
+    monkeypatch.setattr(
+        "solstone.apps.home.routes._summarize_yesterday_processing",
+        lambda yesterday, journal_age_days: {
+            "title": "Yesterday's processing",
+            "mode": "healthy",
+            "default_collapsed": True,
+            "summary_line": "I wrote 2 newsletters.",
+            "details": [],
+            "sparse_lines": None,
+            "first_week_framing": None,
+            "status_reasons": [],
+        },
+    )
+
+
 def _set_mtime(path: Path, dt: datetime) -> None:
     ts = dt.timestamp()
     os.utime(path, (ts, ts))
@@ -611,14 +664,7 @@ def test_build_pulse_context_includes_yesterday_processing(monkeypatch):
     monkeypatch.setattr("solstone.apps.home.routes._collect_todos", lambda today: [])
     monkeypatch.setattr("solstone.apps.home.routes._collect_routines", lambda: [])
     monkeypatch.setattr("solstone.apps.home.routes._collect_skills", lambda: [])
-    monkeypatch.setattr(
-        "solstone.apps.home.routes.summarize_pipeline_day",
-        lambda day: {"status": "healthy", "anomalies": []},
-    )
-    monkeypatch.setattr(
-        "solstone.apps.home.routes.pipeline_status_message",
-        lambda summary: None,
-    )
+    monkeypatch.setattr("solstone.apps.home.routes.read_steward_health", lambda: None)
     monkeypatch.setattr(
         "solstone.apps.home.routes._summarize_yesterday_processing",
         lambda yesterday, journal_age_days: {
@@ -636,3 +682,20 @@ def test_build_pulse_context_includes_yesterday_processing(monkeypatch):
     ctx = _build_pulse_context()
 
     assert ctx["yesterday_processing"]["summary_line"] == "I wrote 2 newsletters."
+
+
+def test_build_pulse_context_pipeline_status_none_when_steward_healthy(monkeypatch):
+    _patch_minimal_pulse_context(monkeypatch, None)
+
+    ctx = _build_pulse_context()
+
+    assert ctx["pipeline_status"] is None
+
+
+def test_build_pulse_context_pipeline_status_surfaces_steward_warning(monkeypatch):
+    status = {"status": "warning", "message": "Foo bar"}
+    _patch_minimal_pulse_context(monkeypatch, status)
+
+    ctx = _build_pulse_context()
+
+    assert ctx["pipeline_status"] == status

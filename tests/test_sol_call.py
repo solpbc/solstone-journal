@@ -123,6 +123,14 @@ adapt its responses, timing, and initiative to how this person actually works.
     (identity_dir / "partner.md").write_text(partner_md)
     (identity_dir / "awareness.md").write_text("not yet updated\n")
     (identity_dir / "digest.md").write_text("not yet generated\n")
+    (identity_dir / "health.md").write_text(
+        "## Status\n\n"
+        "not yet generated\n\n"
+        "## Needs your attention\n\n"
+        "## Auto-repairs (last 7d)\n\n"
+        "## Trends (last 7d)\n",
+        encoding="utf-8",
+    )
 
     return tmp_path
 

@@ -11,7 +11,15 @@ from pathlib import Path
 
 import pytest
 
-from solstone.think.identity import update_identity_section, write_identity
+from solstone.think.identity import (
+    STEWARD_SECTION_ATTENTION,
+    STEWARD_SECTION_AUTO_REPAIRS,
+    STEWARD_SECTION_STATUS,
+    STEWARD_SECTION_TRENDS,
+    ensure_identity_directory,
+    update_identity_section,
+    write_identity,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -174,3 +182,26 @@ def test_update_identity_section_returns_false_no_change(tmp_path):
 
     assert changed is False
     assert not _history_path(tmp_path).exists()
+
+
+def test_health_md_bootstrap_creates_via_ensure_identity_directory(tmp_path):
+    identity_dir = ensure_identity_directory()
+    health = identity_dir / "health.md"
+
+    assert health.read_text(encoding="utf-8") == "\n".join(
+        [
+            STEWARD_SECTION_STATUS,
+            "",
+            "not yet generated",
+            "",
+            STEWARD_SECTION_ATTENTION,
+            "",
+            STEWARD_SECTION_AUTO_REPAIRS,
+            "",
+            STEWARD_SECTION_TRENDS,
+            "",
+        ]
+    )
+    record = [row for row in _read_history(tmp_path) if row["file"] == "health.md"][0]
+    assert record["actor"] == "ensure_identity_directory"
+    assert record["op"] == "create"

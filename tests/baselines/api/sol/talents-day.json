@@ -434,6 +434,17 @@
       "title": "Speaker Attribution",
       "type": "generate"
     },
+    "steward": {
+      "app": null,
+      "color": "#6c757d",
+      "description": "Synthesizes federated health signals into identity/health.md.",
+      "multi_facet": false,
+      "output_format": null,
+      "schedule": "daily",
+      "source": "system",
+      "title": "Steward",
+      "type": "cogitate"
+    },
     "support:support": {
       "app": "support",
       "color": "#0288d1",

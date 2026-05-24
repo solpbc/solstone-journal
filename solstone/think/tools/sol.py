@@ -15,6 +15,7 @@ Mounted by ``think.call`` as ``sol call identity ...``.
 
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -29,6 +30,13 @@ from solstone.think.identity import (
     update_identity_section,
     update_self_md_section,
     write_identity,
+)
+from solstone.think.steward import (
+    acquire_steward_lock,
+    generated_at_from_body,
+    generated_at_ms_from_body,
+    latest_daily_run_complete_ts,
+    release_steward_lock,
 )
 from solstone.think.utils import day_dirs, day_path, get_journal, require_solstone
 
@@ -390,6 +398,95 @@ def digest_cmd(
         raise typer.Exit(1)
 
     typer.echo(f"regenerated {digest_path} ({digest_path.stat().st_size} bytes)")
+
+
+@app.command("health")
+def health_cmd(
+    refresh: bool = typer.Option(
+        False,
+        "--refresh",
+        help="Regenerate identity/health.md through the steward talent.",
+    ),
+) -> None:
+    """Read or regenerate the steward health surface."""
+    identity_dir = _identity_dir()
+    health_path = identity_dir / "health.md"
+
+    if not refresh:
+        if not health_path.exists():
+            typer.echo("health.md not found.", err=True)
+            raise typer.Exit(1)
+        typer.echo(health_path.read_text(encoding="utf-8"))
+        return
+
+    fd = acquire_steward_lock()
+    if fd is None:
+        typer.echo("Error: steward already in flight.", err=True)
+        raise typer.Exit(1)
+
+    try:
+        today = datetime.now().strftime("%Y%m%d")
+        before_body = (
+            health_path.read_text(encoding="utf-8") if health_path.exists() else ""
+        )
+        before_generated_at = generated_at_from_body(before_body)
+        before_generated_at_ms = generated_at_ms_from_body(before_body)
+        latest_ts = latest_daily_run_complete_ts(today)
+        if (
+            latest_ts is not None
+            and before_generated_at is not None
+            and before_generated_at_ms is not None
+            and before_generated_at_ms >= latest_ts
+        ):
+            typer.echo(f"already fresh (generated_at: {before_generated_at})")
+            return
+
+        before_mtime_ns = (
+            health_path.stat().st_mtime_ns if health_path.exists() else None
+        )
+        try:
+            use_id = cortex_request(
+                prompt="",
+                name="steward",
+                config={"day": today, "output": "md", "refresh": True},
+            )
+        except CortexSpawnUnavailable:
+            use_id = None
+        if use_id is None:
+            typer.echo("Error: failed to send steward request to cortex.", err=True)
+            raise typer.Exit(1)
+
+        completed, timed_out = wait_for_uses([use_id], timeout=600)
+        if use_id in timed_out:
+            typer.echo("Error: steward request timed out.", err=True)
+            raise typer.Exit(1)
+
+        end_state = completed.get(use_id, "unknown")
+        if end_state != "finish":
+            typer.echo(f"Error: steward request failed: {end_state}.", err=True)
+            raise typer.Exit(1)
+
+        if not health_path.exists():
+            typer.echo("Error: identity/health.md was not updated.", err=True)
+            raise typer.Exit(1)
+
+        after_mtime_ns = health_path.stat().st_mtime_ns
+        if before_mtime_ns is not None and after_mtime_ns <= before_mtime_ns:
+            typer.echo("Error: identity/health.md was not updated.", err=True)
+            raise typer.Exit(1)
+
+        after_body = health_path.read_text(encoding="utf-8")
+        generated_at = generated_at_from_body(after_body)
+        if generated_at is None:
+            typer.echo("Error: identity/health.md was not updated.", err=True)
+            raise typer.Exit(1)
+
+        typer.echo(
+            f"regenerated {health_path} "
+            f"(generated_at: {generated_at}, {health_path.stat().st_size} bytes)"
+        )
+    finally:
+        release_steward_lock(fd)
 
 
 @app.command("briefing")

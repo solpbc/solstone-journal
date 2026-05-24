@@ -490,6 +490,14 @@
       "tier": 2,
       "type": "generate"
     },
+    "talent.system.steward": {
+      "disabled": false,
+      "group": "Think",
+      "label": "Steward",
+      "schedule": "daily",
+      "tier": 2,
+      "type": "cogitate"
+    },
     "talent.system.weekly_reflection": {
       "disabled": false,
       "group": "Think",

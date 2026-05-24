@@ -25,10 +25,8 @@ from solstone.think import skills as think_skills
 from solstone.think.awareness import get_current
 from solstone.think.capture_health import get_capture_health
 from solstone.think.facets import get_enabled_facets, get_facets
-from solstone.think.pipeline_health import (
-    pipeline_status_message,
-    summarize_pipeline_day,
-)
+from solstone.think.pipeline_health import summarize_pipeline_day
+from solstone.think.steward import read_steward_health
 from solstone.think.utils import get_journal
 
 # Briefing phase thresholds
@@ -1369,12 +1367,7 @@ def _build_pulse_context() -> dict[str, Any]:
             briefing_sections, len(briefing_needs_deduped)
         )
 
-    try:
-        _summary = summarize_pipeline_day(_today())
-        pipeline_status = pipeline_status_message(_summary)
-    except Exception:
-        logger.warning("pipeline_status unavailable", exc_info=True)
-        pipeline_status = None
+    pipeline_status = read_steward_health()
 
     yesterday_processing = _summarize_yesterday_processing(yesterday, journal_age_days)
 
