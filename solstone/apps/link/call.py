@@ -38,6 +38,12 @@ from solstone.think.utils import require_solstone
 app = typer.Typer(
     help="Link — tunnel service for reaching this solstone from paired phones."
 )
+VALID_ROLES = {"phone", "observer", "peer"}
+ROLE_HEADINGS = {
+    "phone": "Phones:",
+    "observer": "Observers:",
+    "peer": "Peers:",
+}
 
 
 @app.callback()
@@ -82,6 +88,15 @@ def pair(
     device_label: str = typer.Option(
         ..., "--device-label", help="Label for the phone being paired"
     ),
+    as_role: str = typer.Option(
+        "phone",
+        "--as",
+        help=(
+            "Role tag stored with the pairing — identity metadata that future route "
+            "handlers will key on (not just CLI grouping). One of: phone, observer, "
+            "peer."
+        ),
+    ),
     convey_host: str = typer.Option(
         "",
         "--convey-host",
@@ -101,11 +116,16 @@ def pair(
     """Mint a one-shot nonce, print the pair URL + QR-ready payload, wait for completion."""
     from solstone.think.utils import read_service_port
 
+    if as_role not in VALID_ROLES:
+        typer.echo("invalid role; expected one of: phone, observer, peer", err=True)
+        raise typer.Exit(2)
+
     value = generate_nonce()
     manual_code = generate_manual_code()
     _nonces().add(
         value,
         device_label,
+        role=as_role,
         manual_code=normalize_manual_code(manual_code),
     )
     ca_fp = load_or_generate_ca(ca_dir()).fingerprint_sha256()
@@ -119,7 +139,7 @@ def pair(
     typer.echo(f"{CLI_MANUAL_CODE_LABEL}: {manual_code}")
     typer.echo(f"Pair URL: {url}")
     typer.echo(f"CA fingerprint: sha256:{ca_fp}")
-    typer.echo(f"Device: {device_label}")
+    typer.echo(f"Device: {device_label} (role: {as_role})")
     typer.echo("")
     typer.echo("Waiting for phone…")
 
@@ -133,7 +153,7 @@ def pair(
         new_entries = [e for e in current if e.fingerprint not in before]
         if new_entries:
             entry = new_entries[-1]
-            typer.echo(f"Paired: {entry.device_label}")
+            typer.echo(f"Paired: {entry.device_label} (role: {entry.role})")
             typer.echo(f"  fingerprint: {entry.fingerprint}")
             typer.echo(f"  paired_at:   {entry.paired_at}")
             raise typer.Exit(0)
@@ -154,16 +174,29 @@ def list_devices() -> None:
     """Print every paired device with its last-seen time."""
     entries = _authorized().snapshot()
     if not entries:
-        typer.echo("No phones paired yet.")
+        typer.echo("No devices linked yet.")
         return
+    grouped = {role: [] for role in ROLE_HEADINGS}
     for entry in entries:
-        short_fp = entry.fingerprint.replace("sha256:", "")[:16]
-        typer.echo(
-            f"- {entry.device_label}"
-            f" — added {_relative_time(entry.paired_at)}"
-            f" — last seen {_relative_time(entry.last_seen_at)}"
-            f" [{short_fp}]"
-        )
+        grouped.setdefault(entry.role, []).append(entry)
+
+    printed_section = False
+    for role, heading in ROLE_HEADINGS.items():
+        role_entries = grouped[role]
+        if not role_entries:
+            continue
+        if printed_section:
+            typer.echo("")
+        typer.echo(heading)
+        for entry in role_entries:
+            short_fp = entry.fingerprint.replace("sha256:", "")[:16]
+            typer.echo(
+                f"- {entry.device_label}"
+                f" — added {_relative_time(entry.paired_at)}"
+                f" — last seen {_relative_time(entry.last_seen_at)}"
+                f" [{short_fp}]"
+            )
+        printed_section = True
 
 
 @app.command()

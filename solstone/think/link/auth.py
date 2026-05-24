@@ -7,13 +7,14 @@ Entry shape is fixed by the spl protocol (see github.com/solpbc/spl
 proto/pairing.md §6), plus a solstone-specific `last_seen_at` field for
 UX:
 
-    {
-      "fingerprint": "sha256:<hex>",
-      "device_label": "Jer's iPhone",
-      "paired_at": "2026-04-19T17:42:13Z",
-      "instance_id": "<home_instance_id>",
-      "last_seen_at": "2026-04-19T18:03:12Z"   // optional; null/absent = never
-    }
+            {
+              "fingerprint": "sha256:<hex>",
+              "device_label": "Jer's iPhone",
+              "paired_at": "2026-04-19T17:42:13Z",
+              "instance_id": "<home_instance_id>",
+              "role": "phone",
+              "last_seen_at": "2026-04-19T18:03:12Z"   // optional; null/absent = never
+            }
 
 Readers reload the file on mtime change so an unpair action takes effect
 within ~500 ms of the file write. Convey's pair and unpair routes own the
@@ -40,6 +41,7 @@ class ClientEntry:
     device_label: str
     paired_at: str
     instance_id: str
+    role: str = "phone"
     last_seen_at: str | None = None
 
 
@@ -85,6 +87,7 @@ class AuthorizedClients:
         device_label: str,
         instance_id: str,
         *,
+        role: str = "phone",
         paired_at: str | None = None,
     ) -> None:
         paired_at = paired_at or dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -93,6 +96,7 @@ class AuthorizedClients:
             device_label=device_label,
             paired_at=paired_at,
             instance_id=instance_id,
+            role=role,
             last_seen_at=None,
         )
         with self._lock:
@@ -173,6 +177,11 @@ class AuthorizedClients:
                     device_label=str(item.get("device_label", "")),
                     paired_at=str(item.get("paired_at", "")),
                     instance_id=str(item.get("instance_id", "")),
+                    role=(
+                        item.get("role")
+                        if isinstance(item.get("role"), str)
+                        else "phone"
+                    ),
                     last_seen_at=last_seen if isinstance(last_seen, str) else None,
                 )
         return out
@@ -185,6 +194,7 @@ class AuthorizedClients:
                 "device_label": e.device_label,
                 "paired_at": e.paired_at,
                 "instance_id": e.instance_id,
+                "role": e.role,
                 **({"last_seen_at": e.last_seen_at} if e.last_seen_at else {}),
             }
             for e in entries.values()

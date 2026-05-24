@@ -83,6 +83,7 @@ def test_snapshot_returns_entries(tmp_path: Path) -> None:
     fingerprints = sorted(entry.fingerprint for entry in snapshot)
 
     assert fingerprints == ["sha256:a", "sha256:b"]
+    assert {entry.role for entry in snapshot} == {"phone"}
 
 
 def test_add_then_last_seen_key_absent_in_payload(tmp_path: Path) -> None:
@@ -92,6 +93,7 @@ def test_add_then_last_seen_key_absent_in_payload(tmp_path: Path) -> None:
     store.add("sha256:abc", "Jer", "inst-1")
 
     payload = _load_payload(path)
+    assert payload[0]["role"] == "phone"
     assert "last_seen_at" not in payload[0]
 
 
@@ -133,6 +135,7 @@ def test_touch_last_seen_persists_key_in_payload(tmp_path: Path) -> None:
     assert store.touch_last_seen("sha256:abc") is True
 
     payload = _load_payload(path)
+    assert payload[0]["role"] == "phone"
     assert payload[0]["last_seen_at"]
 
 
@@ -146,6 +149,7 @@ def test_find_by_label(tmp_path: Path) -> None:
     entry = store.find_by_label("Jer")
     assert entry is not None
     assert entry.fingerprint == "sha256:abc"
+    assert entry.role == "phone"
     assert store.find_by_label("Nope") is None
 
     time.sleep(0.02)
@@ -169,6 +173,7 @@ def test_find_by_label(tmp_path: Path) -> None:
     reloaded = store.find_by_label("External")
     assert reloaded is not None
     assert reloaded.fingerprint == "sha256:xyz"
+    assert reloaded.role == "phone"
     assert reloaded.last_seen_at == "2026-04-19T18:03:12Z"
     assert store.find_by_label("Jer") is None
 

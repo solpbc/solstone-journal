@@ -85,6 +85,7 @@ from solstone.think.link.paths import (
 
 logger = logging.getLogger(__name__)
 MANUAL_CODE_RE = re.compile(rf"^[0-9A-HJKMNP-TV-Z]{{{MANUAL_CODE_LEN}}}$")
+VALID_ROLES = {"phone", "observer", "peer"}
 
 link_bp = Blueprint(
     "app:link",
@@ -262,6 +263,9 @@ def pair_start() -> Any:
     device_label = (
         str(payload.get("device_label") or "").strip() or _default_device_label()
     )
+    role = payload.get("role", "phone")
+    if not isinstance(role, str) or role not in VALID_ROLES:
+        return error_response(PAIRING_REQUEST_INVALID, detail="invalid role")
 
     lan_url = _resolve_host_port()
     hostname, _, port_str = lan_url.partition(":")
@@ -281,6 +285,7 @@ def pair_start() -> Any:
     _nonces().add(
         nonce,
         device_label,
+        role=role,
         manual_code=normalize_manual_code(manual_code_hyphenated),
     )
     response = PairStartResponse(
@@ -309,6 +314,7 @@ def _complete_pairing(
         fingerprint=fingerprint,
         device_label=device_label,
         instance_id=state.instance_id,
+        role=consumed.role,
         paired_at=paired_at,
     )
     attestation = mint_attestation(ca, state.instance_id, fingerprint)

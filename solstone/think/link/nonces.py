@@ -33,6 +33,7 @@ class Nonce:
     expires_at: int
     used: bool
     manual_code: str | None
+    role: str = "phone"
 
 
 class NonceStore:
@@ -48,6 +49,7 @@ class NonceStore:
         nonce: str,
         device_label: str,
         *,
+        role: str = "phone",
         manual_code: str | None = None,
         now: int | None = None,
     ) -> Nonce:
@@ -59,6 +61,7 @@ class NonceStore:
             expires_at=ts + NONCE_TTL_SECONDS,
             used=False,
             manual_code=manual_code,
+            role=role,
         )
         with self._locked_read_write() as entries:
             self._gc_locked(entries, ts)
@@ -83,6 +86,7 @@ class NonceStore:
                 expires_at=entry.expires_at,
                 used=True,
                 manual_code=entry.manual_code,
+                role=entry.role,
             )
             entries[value] = entry
             self._write_locked(entries)
@@ -103,6 +107,7 @@ class NonceStore:
                     expires_at=entry.expires_at,
                     used=True,
                     manual_code=entry.manual_code,
+                    role=entry.role,
                 )
                 entries[value] = used_entry
                 self._write_locked(entries)
@@ -152,6 +157,11 @@ class NonceStore:
                         if isinstance(item.get("manual_code"), str)
                         else None
                     ),
+                    role=(
+                        item.get("role")
+                        if isinstance(item.get("role"), str)
+                        else "phone"
+                    ),
                 )
         return out
 
@@ -165,6 +175,7 @@ class NonceStore:
                 "expires_at": e.expires_at,
                 "used": e.used,
                 "manual_code": e.manual_code,
+                "role": e.role,
             }
             for e in entries.values()
         ]
