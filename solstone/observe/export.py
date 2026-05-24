@@ -4,7 +4,8 @@
 """Export journal data to a remote solstone instance.
 
 Usage:
-    sol export --to HOST --key KEY [--only TYPE] [--dry-run] [--day YYYYMMDD]
+    sol export --to URL --key KEY [--only TYPE] [--dry-run] [--day YYYYMMDD]
+    sol export --to LABEL [--only TYPE] [--dry-run] [--day YYYYMMDD]
 """
 
 from __future__ import annotations
@@ -22,6 +23,9 @@ from typing import Any
 
 import requests
 
+from solstone.observe.peer_lookup import PeerInfo, PeerLookupError, resolve_peer
+from solstone.observe.peer_unpair import maybe_prompt_unpair
+from solstone.observe.pl_http import PlHttpSession
 from solstone.observe.transfer import (
     RETRY_BACKOFF,
     _build_segment_manifest,
@@ -30,6 +34,9 @@ from solstone.observe.transfer import (
 )
 from solstone.think.entities.journal import load_all_journal_entities
 from solstone.think.importers.sync import SYNCABLE_REGISTRY
+from solstone.think.link.bundle import load_client_identity
+from solstone.think.link.dialer import TunnelClient
+from solstone.think.link.paths import relay_url
 from solstone.think.utils import (
     day_path,
     get_config,
@@ -47,6 +54,8 @@ _DAY_JSONL_RE = re.compile(r"^\d{8}\.jsonl$")
 _DAY_MD_RE = re.compile(r"^\d{8}\.md$")
 _IMPORT_ID_RE = re.compile(r"^\d{8}_\d{6}$")
 _NEVER_TRANSFER_PATHS = frozenset({"convey.password_hash", "convey.secret"})
+EXPORT_AREAS = ("segments", "imports", "entities", "facets", "config")
+FULL_EXPORT_SET = frozenset(EXPORT_AREAS)
 
 
 @dataclass
@@ -60,6 +69,45 @@ class ExportResult:
     failed: int = 0
     errors: list[str] = field(default_factory=list)
     error: str | None = None
+
+
+def _is_url_destination(to: str) -> bool:
+    return to.startswith(("http://", "https://"))
+
+
+def _resolve_destination(
+    parser: argparse.ArgumentParser,
+    to: str,
+    key: str | None,
+) -> tuple[str, str | None, PeerInfo | None]:
+    if _is_url_destination(to):
+        if key is None:
+            parser.error("'--to <URL>' requires '--key <KEY>'")
+        return ("dl", _normalize_url(to), None)
+    if key is not None:
+        parser.error(
+            "'--key' is only valid with '--to <URL>'; "
+            "use '--to <label>' for pl peer transfers"
+        )
+    try:
+        return ("pl", None, resolve_peer(to))
+    except PeerLookupError as exc:
+        parser.error(str(exc))
+
+
+def _parse_only_set(
+    parser: argparse.ArgumentParser,
+    raw: str | None,
+) -> frozenset[str]:
+    if raw is None:
+        return FULL_EXPORT_SET
+    areas = frozenset(part.strip() for part in raw.split(",") if part.strip())
+    invalid = sorted(areas - FULL_EXPORT_SET)
+    if invalid or not areas:
+        parser.error(
+            "--only must contain one or more of: " + ", ".join(sorted(FULL_EXPORT_SET))
+        )
+    return areas
 
 
 def _query_manifest(
@@ -1007,118 +1055,71 @@ def export_config(
             session.close()
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Export journal data to a remote solstone instance"
-    )
-    parser.add_argument(
-        "--to",
-        required=True,
-        help="Remote instance URL (e.g., host:port or https://host)",
-    )
-    parser.add_argument(
-        "--key",
-        required=True,
-        help="API key for the remote journal source",
-    )
-    parser.add_argument(
-        "--only",
-        default=None,
-        help="Export only specific area (segments, entities, facets, imports, config)",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show what would be exported without sending",
-    )
-    parser.add_argument(
-        "--day",
-        default=None,
-        help="Day or range (YYYYMMDD or YYYYMMDD-YYYYMMDD)",
-    )
-    args = setup_cli(parser)
-
-    base_url = _normalize_url(args.to)
-
-    if args.only == "entities":
-        export_entities(base_url, args.key, args.dry_run)
-        return
-    if args.only == "facets":
-        export_facets(base_url, args.key, args.dry_run)
-        return
-    if args.only == "imports":
-        export_imports(base_url, args.key, args.dry_run)
-        return
-    if args.only == "config":
-        export_config(base_url, args.key, args.dry_run)
-        return
-    if args.only == "segments":
-        days = _parse_day_spec(args.day, Path(get_journal()))
-        export_segments(base_url, args.key, days, args.dry_run)
-        return
-    if args.only is not None:
-        print(f"Export of '{args.only}' is not yet implemented")
-        sys.exit(0)
-
-    # Full export: all areas in dependency order
-    days = _parse_day_spec(args.day, Path(get_journal()))
-    session = requests.Session()
-    session.headers["Authorization"] = f"Bearer {args.key}"
-
-    try:
-        _query_manifest(session, base_url, args.key)
-    except requests.ConnectionError:
-        print(f"Connection failed: could not reach {base_url}")
-        session.close()
-        sys.exit(1)
-    except ValueError as e:
-        print(str(e))
-        session.close()
-        sys.exit(1)
-
-    areas = [
-        (
-            "segments",
-            lambda: export_segments(
-                base_url, args.key, days, args.dry_run, session=session
-            ),
+def _run_export_areas(
+    base_url: str,
+    key: str,
+    days: list[str],
+    dry_run: bool,
+    session: requests.Session | PlHttpSession,
+    areas: frozenset[str],
+) -> list[ExportResult]:
+    exporters = {
+        "segments": lambda: export_segments(
+            base_url,
+            key,
+            days,
+            dry_run,
+            session=session,
         ),
-        (
-            "imports",
-            lambda: export_imports(base_url, args.key, args.dry_run, session=session),
+        "imports": lambda: export_imports(
+            base_url,
+            key,
+            dry_run,
+            session=session,
         ),
-        (
-            "entities",
-            lambda: export_entities(base_url, args.key, args.dry_run, session=session),
+        "entities": lambda: export_entities(
+            base_url,
+            key,
+            dry_run,
+            session=session,
         ),
-        (
-            "facets",
-            lambda: export_facets(base_url, args.key, args.dry_run, session=session),
+        "facets": lambda: export_facets(
+            base_url,
+            key,
+            dry_run,
+            session=session,
         ),
-        (
-            "config",
-            lambda: export_config(base_url, args.key, args.dry_run, session=session),
+        "config": lambda: export_config(
+            base_url,
+            key,
+            dry_run,
+            session=session,
         ),
-    ]
+    }
 
     results: list[ExportResult] = []
-    for area_name, export_fn in areas:
+    for area_name in EXPORT_AREAS:
+        if area_name not in areas:
+            continue
         try:
-            area_result = export_fn()
-            results.append(area_result)
+            results.append(exporters[area_name]())
         except Exception:
             logger.exception("Export failed for %s", area_name)
-            error_result = ExportResult(
-                area=area_name, error=f"Exception during {area_name} export"
+            results.append(
+                ExportResult(
+                    area=area_name,
+                    error=f"Exception during {area_name} export",
+                )
             )
-            results.append(error_result)
             if area_name == "entities":
                 print(
-                    "  Warning: entity export failed — facet entity mapping may be incomplete"
+                    "  Warning: entity export failed - "
+                    "facet entity mapping may be incomplete"
                 )
+    return results
 
-    session.close()
 
+def _print_export_summary(results: list[ExportResult]) -> bool:
     print("\n--- Export Summary ---")
     any_failed = False
     for area_result in results:
@@ -1142,6 +1143,85 @@ def main() -> None:
         if not parts:
             parts.append("nothing to send")
         print(f"  {area_result.area}: {', '.join(parts)}")
+    return any_failed
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Export journal data to a remote solstone instance"
+    )
+    parser.add_argument(
+        "--to",
+        required=True,
+        help="Remote URL (http:// or https://) or paired peer label",
+    )
+    parser.add_argument(
+        "--key",
+        required=False,
+        default=None,
+        help="API key for URL mode",
+    )
+    parser.add_argument(
+        "--only",
+        default=None,
+        help="Export only specific area (segments, entities, facets, imports, config)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be exported without sending",
+    )
+    parser.add_argument(
+        "--day",
+        default=None,
+        help="Day or range (YYYYMMDD or YYYYMMDD-YYYYMMDD)",
+    )
+    args = setup_cli(parser)
+
+    areas = _parse_only_set(parser, args.only)
+    mode, base_url, peer = _resolve_destination(parser, args.to, args.key)
+    try:
+        days = _parse_day_spec(args.day, Path(get_journal()))
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    if mode == "dl":
+        assert base_url is not None and args.key is not None
+        session = requests.Session()
+        session.headers["Authorization"] = f"Bearer {args.key}"
+        try:
+            results = _run_export_areas(
+                base_url,
+                args.key,
+                days,
+                args.dry_run,
+                session,
+                areas,
+            )
+        finally:
+            session.close()
+        any_failed = _print_export_summary(results)
+        if any_failed:
+            sys.exit(1)
+        return
+
+    assert peer is not None
+    identity = load_client_identity(peer.dir)
+    with TunnelClient(identity, relay_url=relay_url()) as tunnel:
+        session = PlHttpSession(tunnel)
+        results = _run_export_areas(
+            "https://pl.peer",
+            peer.instance_id,
+            days,
+            args.dry_run,
+            session,
+            areas,
+        )
+        any_failed = _print_export_summary(results)
+        # Prompt fires after any successful full migration: explicit --only
+        # and the no-flag default both execute the full area set.
+        if not args.dry_run and areas == FULL_EXPORT_SET and not any_failed:
+            maybe_prompt_unpair(peer, session)
 
     if any_failed:
         sys.exit(1)

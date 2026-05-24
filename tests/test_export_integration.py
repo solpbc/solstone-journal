@@ -551,7 +551,7 @@ def test_error_resilience(monkeypatch, capsys):
     monkeypatch.setattr(
         "solstone.observe.export.setup_cli",
         lambda parser: Namespace(
-            to="localhost:5000",
+            to="https://localhost:5000",
             key="test-key-123456",
             only=None,
             dry_run=False,

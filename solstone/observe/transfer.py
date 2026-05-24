@@ -9,7 +9,8 @@ observation segments between solstone instances.
 Usage:
     sol transfer export --day YYYYMMDD [--output PATH]
     sol transfer import --archive PATH [--dry-run]
-    sol transfer send --to HOST --key KEY [--day YYYYMMDD] [--dry-run]
+    sol transfer send --to URL --key KEY [--day YYYYMMDD] [--dry-run]
+    sol transfer send --to LABEL [--day YYYYMMDD] [--dry-run]
 
 On the RECEIVING host (the machine you are sending TO), run
 `sol observer create <name>` to generate an observer API key, then pass it
@@ -32,7 +33,12 @@ from typing import Any
 
 import requests
 
+from solstone.observe.peer_lookup import PeerInfo, PeerLookupError, resolve_peer
+from solstone.observe.pl_http import PlHttpSession
 from solstone.think.callosum import callosum_send
+from solstone.think.link.bundle import load_client_identity
+from solstone.think.link.dialer import TunnelClient, TunnelRequestError
+from solstone.think.link.paths import relay_url
 from solstone.think.utils import (
     CHRONICLE_DIR,
     day_path,
@@ -395,6 +401,30 @@ def _normalize_url(to: str) -> str:
     return f"https://{to}"
 
 
+def _is_url_destination(to: str) -> bool:
+    return to.startswith(("http://", "https://"))
+
+
+def _resolve_destination(
+    parser: argparse.ArgumentParser,
+    to: str,
+    key: str | None,
+) -> tuple[str, str | None, PeerInfo | None]:
+    if _is_url_destination(to):
+        if key is None:
+            parser.error("'--to <URL>' requires '--key <KEY>'")
+        return ("dl", _normalize_url(to), None)
+    if key is not None:
+        parser.error(
+            "'--key' is only valid with '--to <URL>'; "
+            "use '--to <label>' for pl peer transfers"
+        )
+    try:
+        return ("pl", None, resolve_peer(to))
+    except PeerLookupError as exc:
+        parser.error(str(exc))
+
+
 def _parse_day_spec(day_spec: str | None, journal_root: Path) -> list[str]:
     """Parse a single day, day range, or default to all journal days."""
     if day_spec is None:
@@ -546,6 +576,121 @@ def _upload_segment(
     return ("error", 0)
 
 
+def _query_journal_segments(
+    session: PlHttpSession,
+    base_url: str,
+    key_prefix: str,
+) -> dict[str, Any]:
+    url = f"{base_url}/app/import/journal/{key_prefix}/manifest/segments"
+    try:
+        response = session.get(url, timeout=UPLOAD_TIMEOUT)
+        if response.status_code == 200:
+            return response.json()
+        logger.warning(
+            "Remote segment manifest query failed: %s %s",
+            response.status_code,
+            response.text,
+        )
+    except (TunnelRequestError, OSError) as exc:
+        logger.warning("Remote segment manifest query failed: %s", exc)
+    return {}
+
+
+def _upload_segment_journal(
+    session: PlHttpSession,
+    base_url: str,
+    key_prefix: str,
+    day: str,
+    segment_key: str,
+    stream_name: str,
+    segment_path: Path,
+) -> tuple[str, int]:
+    files = [
+        file_path
+        for file_path in sorted(segment_path.iterdir())
+        if file_path.is_file() and file_path.name != "stream.json"
+    ]
+    if not files:
+        return ("skip", 0)
+
+    bytes_sent = sum(file_path.stat().st_size for file_path in files)
+    metadata = {
+        "segments": [
+            {
+                "day": day,
+                "stream": stream_name,
+                "segment_key": segment_key,
+                "files": [file_path.name for file_path in files],
+            }
+        ]
+    }
+    url = f"{base_url}/app/import/journal/{key_prefix}/ingest/segments/{day}"
+
+    for attempt, delay in enumerate(RETRY_BACKOFF):
+        file_handles = []
+        files_data = []
+        try:
+            for file_path in files:
+                fh = open(file_path, "rb")
+                file_handles.append(fh)
+                files_data.append(
+                    ("files_0", (file_path.name, fh, "application/octet-stream"))
+                )
+
+            response = session.post(
+                url,
+                data={"metadata": json.dumps(metadata)},
+                files=files_data,
+                timeout=UPLOAD_TIMEOUT,
+            )
+            if response.status_code == 200:
+                return ("sent", bytes_sent)
+            if response.status_code == 401:
+                return ("auth_invalid", 0)
+            if response.status_code == 403:
+                return ("auth_revoked", 0)
+            if 500 <= response.status_code <= 599:
+                logger.warning(
+                    "PL upload attempt %s failed for %s/%s/%s: %s %s",
+                    attempt + 1,
+                    day,
+                    stream_name,
+                    segment_key,
+                    response.status_code,
+                    response.text,
+                )
+            else:
+                logger.warning(
+                    "PL upload rejected for %s/%s/%s: %s %s",
+                    day,
+                    stream_name,
+                    segment_key,
+                    response.status_code,
+                    response.text,
+                )
+                return ("error", 0)
+        except (TunnelRequestError, OSError) as exc:
+            logger.warning(
+                "PL upload attempt %s failed for %s/%s/%s: %s",
+                attempt + 1,
+                day,
+                stream_name,
+                segment_key,
+                exc,
+            )
+        finally:
+            for fh in file_handles:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
+
+        if attempt < len(RETRY_BACKOFF) - 1:
+            time.sleep(delay)
+
+    return ("error", 0)
+
+
 def send_segments(base_url: str, key: str, days: list[str], dry_run: bool) -> None:
     """Send local journal segments to a remote observer."""
     session = requests.Session()
@@ -647,6 +792,104 @@ def send_segments(base_url: str, key: str, days: list[str], dry_run: bool) -> No
         print("Nothing to send - remote is up to date")
 
 
+def send_segments_pl(peer: PeerInfo, days: list[str], dry_run: bool) -> None:
+    """Send local journal segments to a paired peer over PL."""
+    identity = load_client_identity(peer.dir)
+    key_prefix = peer.instance_id[:8]
+    base_url = "https://pl.peer"
+
+    sent = 0
+    skipped = 0
+    failed = 0
+    bytes_total = 0
+
+    with TunnelClient(identity, relay_url=relay_url()) as tunnel:
+        session = PlHttpSession(tunnel)
+        remote_manifest = _query_journal_segments(session, base_url, key_prefix)
+
+        for day in days:
+            day_dir = day_path(day, create=False)
+            if not day_dir.exists():
+                logger.debug(f"Day directory not found: {day}")
+                continue
+
+            segment_entries = iter_segments(day_dir)
+            if not segment_entries:
+                continue
+
+            for stream_name, seg_key, seg_path in segment_entries:
+                manifest = _build_segment_manifest(seg_path)
+                local_files = {
+                    file_info["name"]: file_info["sha256"]
+                    for file_info in manifest["files"]
+                    if file_info["name"] != "stream.json"
+                }
+                remote_entry = remote_manifest.get(day, {}).get(
+                    f"{stream_name}/{seg_key}", {}
+                )
+                remote_files = {
+                    file_info["name"]: file_info["sha256"]
+                    for file_info in remote_entry.get("files", [])
+                }
+                if local_files == remote_files:
+                    logger.info(f"  [skip] {day}/{stream_name}/{seg_key}")
+                    skipped += 1
+                    continue
+
+                if dry_run:
+                    logger.info(f"  [would send] {day}/{stream_name}/{seg_key}")
+                    sent += 1
+                    continue
+
+                status, bytes_sent = _upload_segment_journal(
+                    session,
+                    base_url,
+                    key_prefix,
+                    day,
+                    seg_key,
+                    stream_name,
+                    seg_path,
+                )
+                if status == "sent":
+                    logger.info(
+                        f"  [sent] {day}/{stream_name}/{seg_key} ({bytes_sent} bytes)"
+                    )
+                    sent += 1
+                    bytes_total += bytes_sent
+                elif status == "skip":
+                    logger.info(f"  [skip] {day}/{stream_name}/{seg_key}")
+                    skipped += 1
+                elif status == "auth_invalid":
+                    print(
+                        "Authentication failed: invalid or missing paired-link identity"
+                    )
+                    return
+                elif status == "auth_revoked":
+                    print(
+                        "Authentication failed: paired-link identity revoked or disabled"
+                    )
+                    return
+                else:
+                    logger.info(f"  [FAILED] {day}/{stream_name}/{seg_key}")
+                    failed += 1
+
+    total = sent + skipped + failed
+    if total == 0:
+        print("No segments found to transfer")
+        return
+
+    if dry_run:
+        print(f"\nDry run: would send {sent}, skip {skipped}")
+        return
+
+    print(
+        f"\nTransfer complete: {sent} sent, {skipped} skipped, "
+        f"{failed} failed, {bytes_total} bytes transferred"
+    )
+    if sent == 0 and skipped > 0 and failed == 0:
+        print("Nothing to send - remote is up to date")
+
+
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -694,13 +937,14 @@ def main() -> None:
     send_parser.add_argument(
         "--to",
         required=True,
-        help="Remote observer URL (host:port or https://...)",
+        help="Remote observer URL (http:// or https://) or paired peer label",
     )
     send_parser.add_argument(
         "--key",
-        required=True,
+        required=False,
+        default=None,
         help=(
-            "Observer API key (generate on the RECEIVING host with "
+            "Observer API key for URL mode (generate on the RECEIVING host with "
             "`sol observer create <name>`)"
         ),
     )
@@ -749,10 +993,15 @@ def main() -> None:
             parser.error(str(e))
 
     elif args.command == "send":
-        base_url = _normalize_url(args.to)
+        mode, base_url, peer = _resolve_destination(send_parser, args.to, args.key)
         journal = get_journal()
         try:
             days = _parse_day_spec(args.day, Path(journal))
         except ValueError as e:
             parser.error(str(e))
-        send_segments(base_url, args.key, days, args.dry_run)
+        if mode == "dl":
+            assert base_url is not None and args.key is not None
+            send_segments(base_url, args.key, days, args.dry_run)
+        else:
+            assert peer is not None
+            send_segments_pl(peer, days, args.dry_run)
