@@ -8,7 +8,7 @@ of journal source registrations for remote journal data import.
 
 Usage:
     sol import journal-source create <name>
-    sol import journal-source list
+    sol import journal-source list [--mode {dl,pl}]
     sol import journal-source revoke <name>
     sol import journal-source status [name]
 """
@@ -18,11 +18,16 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import logging
 import sys
 from importlib import import_module
 from pathlib import Path
 
+from solstone.think.link.auth import AuthorizedClients
+from solstone.think.link.paths import authorized_clients_path
 from solstone.think.utils import get_journal, now_ms, setup_cli
+
+logger = logging.getLogger(__name__)
 
 
 def _fmt_time(ts: int | None) -> str:
@@ -38,6 +43,86 @@ def _journal_sources():
 
 def _source_prefix(source: dict) -> str:
     return str(_journal_sources().journal_source_state_prefix(source))
+
+
+def _probe_authorized_clients(path: Path) -> None:
+    if not path.is_file():
+        return
+    try:
+        json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed to read authorized clients ledger %s: %s", path, exc)
+
+
+def _row_mode(source: dict) -> str:
+    return "pl" if source.get("pair_mode") == "pl" else "dl"
+
+
+def _dl_row_json(source: dict) -> dict:
+    return {
+        "mode": "dl",
+        "prefix": _source_prefix(source),
+        "name": source["name"],
+        "status": "revoked" if source.get("revoked") else "active",
+        "created_at": source["created_at"],
+    }
+
+
+def _pl_row_json(source: dict, auth: AuthorizedClients) -> dict:
+    entry = auth.get(source["fingerprint"])
+    if entry is None:
+        auth_status = "missing"
+        last_seen_at = None
+    else:
+        auth_status = "present"
+        last_seen_at = entry.last_seen_at
+    row = {
+        "mode": "pl",
+        "prefix": _source_prefix(source),
+        "fingerprint": source["fingerprint"],
+        "device_label": source["device_label"],
+        "status": "revoked" if source.get("revoked") else "active",
+        "paired_at": source["paired_at"],
+        "last_seen_at": last_seen_at,
+        "auth_status": auth_status,
+        "created_at": source["created_at"],
+    }
+    if "peer_instance_id" in source:
+        row["peer_instance_id"] = source["peer_instance_id"]
+    return row
+
+
+def _dl_row_human(source: dict) -> tuple[str, ...]:
+    return (
+        "dl",
+        _source_prefix(source),
+        "—",
+        source["name"],
+        "revoked" if source.get("revoked") else "active",
+        "—",
+        "—",
+        _fmt_time(source["created_at"]),
+    )
+
+
+def _pl_row_human(source: dict, auth: AuthorizedClients) -> tuple[str, ...]:
+    entry = auth.get(source["fingerprint"])
+    if entry is None:
+        last_seen_display = "(no auth)"
+    elif entry.last_seen_at is None:
+        last_seen_display = "—"
+    else:
+        last_seen_display = entry.last_seen_at
+    return (
+        "pl",
+        _source_prefix(source),
+        source.get("peer_instance_id") or "—",
+        source["device_label"],
+        "revoked" if source.get("revoked") else "active",
+        source["paired_at"],
+        last_seen_display,
+        _fmt_time(source["created_at"]),
+    )
 
 
 def _dl_journal_sources() -> list[dict]:
@@ -103,36 +188,60 @@ def cmd_create(args: argparse.Namespace) -> int:
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    sources = _dl_journal_sources()
+    records = _journal_sources().list_journal_sources()
+    mode = getattr(args, "mode", None)
+    if mode is not None:
+        records = [record for record in records if _row_mode(record) == mode]
+
+    if not records:
+        if args.json_output:
+            print(json.dumps([]))
+            return 0
+        if mode is None:
+            print("No journal sources registered.")
+        else:
+            print(f"No journal sources match --mode {mode}.")
+        return 0
+
+    path = authorized_clients_path()
+    _probe_authorized_clients(path)
+    auth = AuthorizedClients(path)
+
+    rows = []
+    for source in records:
+        if _row_mode(source) == "pl":
+            try:
+                _source_prefix(source)
+            except ValueError as exc:
+                logger.warning(
+                    "Skipping malformed journal source record (fingerprint=%r): %s",
+                    source.get("fingerprint"),
+                    exc,
+                )
+                continue
+            row = (
+                _pl_row_json(source, auth)
+                if args.json_output
+                else _pl_row_human(source, auth)
+            )
+        else:
+            row = _dl_row_json(source) if args.json_output else _dl_row_human(source)
+        rows.append(row)
 
     if args.json_output:
-        print(
-            json.dumps(
-                [
-                    {
-                        "name": source.get("name", ""),
-                        "prefix": _source_prefix(source),
-                        "status": "revoked" if source.get("revoked") else "active",
-                        "created_at": source.get("created_at"),
-                    }
-                    for source in sources
-                ]
-            )
-        )
+        print(json.dumps(rows))
         return 0
 
-    if not sources:
-        print("No journal sources registered.")
-        return 0
-
-    print(f"{'Name':<24} {'Prefix':<10} {'Status':<10} {'Created':<18}")
-    print("-" * 66)
-    for source in sources:
+    print(
+        f"{'Mode':<4} {'Identifier':<16} {'Sender Instance':<16} "
+        f"{'Name / Label':<24} {'Status':<8} {'Paired':<20} "
+        f"{'Last Seen':<20} {'Created':<16}"
+    )
+    print("-" * 131)
+    for row in rows:
         print(
-            f"{source.get('name', ''):<24} "
-            f"{_source_prefix(source):<10} "
-            f"{('revoked' if source.get('revoked') else 'active'):<10} "
-            f"{_fmt_time(source.get('created_at')):<18}"
+            f"{row[0]:<4} {row[1]:<16} {row[2]:<16} {row[3]:<24} "
+            f"{row[4]:<8} {row[5]:<20} {row[6]:<20} {row[7]:<16}"
         )
     return 0
 
@@ -285,7 +394,13 @@ def main() -> None:
     p_create = sub.add_parser("create", help="Create a new journal source")
     p_create.add_argument("name", help="Name for the journal source")
 
-    sub.add_parser("list", help="List all registered journal sources")
+    p_list = sub.add_parser("list", help="List all registered journal sources")
+    p_list.add_argument(
+        "--mode",
+        choices=["dl", "pl"],
+        default=None,
+        help="Filter to one record mode.",
+    )
 
     p_status = sub.add_parser("status", help="Show journal source status details")
     p_status.add_argument(

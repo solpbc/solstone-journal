@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 from importlib import import_module
 
 import pytest
@@ -90,22 +89,6 @@ def test_api_journal_source_list_excludes_pl_records(journal_env) -> None:
 
     assert response.status_code == 200
     assert response.get_json() == [
-        {
-            "name": "alpha",
-            "prefix": journal_source_state_prefix(dl_source),
-            "status": "active",
-            "created_at": 1000,
-        }
-    ]
-
-
-def test_cli_journal_source_list_excludes_pl_records(journal_env, capsys) -> None:
-    dl_source = _save_dl_and_pl()
-
-    rc = journal_source_cli.cmd_list(argparse.Namespace(json_output=True))
-
-    assert rc == 0
-    assert json.loads(capsys.readouterr().out) == [
         {
             "name": "alpha",
             "prefix": journal_source_state_prefix(dl_source),
