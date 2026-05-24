@@ -54,17 +54,21 @@ def test_workspace_has_no_legacy_install_state_terms():
         assert term not in text
 
 
-def test_workspace_bundled_provider_iteration_includes_openhands():
+def test_workspace_provider_iteration_has_single_source_of_truth():
     text = _workspace_text()
+    provider_names = (
+        "const PROVIDER_NAMES = ['anthropic', 'openai', 'openhands', 'local', 'mlx']"
+    )
 
-    assert "['anthropic', 'openai', 'openhands']" in text
+    assert provider_names in text
+    assert text.count(provider_names) == 1
 
 
 def test_bundled_provider_overflow_keeps_expected_actions():
     text = _workspace_text()
     match = re.search(
-        r"function bundledProviderOverflow\(state\) \{(?P<body>.*?)"
-        r"function runBundledProviderAction",
+        r"function providerCardOverflow\(state, kind\) \{(?P<body>.*?)"
+        r"function runProviderAction",
         text,
         re.DOTALL,
     )

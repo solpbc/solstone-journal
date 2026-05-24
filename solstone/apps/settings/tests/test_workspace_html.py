@@ -89,7 +89,7 @@ def test_workspace_mlx_model_picker_labels_are_pinned():
     assert "qwen 3.5 — 16 GB Mac" in text
     assert "gemma 4 (26B) — 24 GB Mac" in text
     assert text.index('id="field-mlx-active-model"') < text.index(
-        'id="mlxBootstrapProgressShell"'
+        'id="field-cogitate-provider"'
     )
 
 
@@ -100,68 +100,71 @@ def test_workspace_mlx_v1_scope_copy_is_generate_gated():
     assert "provider === 'mlx' ? '' : 'none'" in text
 
 
-def test_workspace_mlx_progress_region_has_progress_bar():
+def test_workspace_unified_provider_panel_replaces_install_regions():
     text = _workspace_text()
 
-    assert 'id="mlxBootstrapRegion"' in text
-    assert 'id="mlxBootstrapProgress"' in text
-    assert "<progress" in text
+    assert 'id="providersPanel"' in text
+    assert 'id="bundledProviders"' not in text
+    assert 'id="mlxBootstrapRegion"' not in text
+    assert 'id="localBootstrapRegion"' not in text
+    assert "bundled-provider-grid" not in text
+    assert "mlx-bootstrap-region" not in text
+    assert "local-bootstrap-region" not in text
+    assert "mlx-progress-shell" not in text
+    assert "local-progress-shell" not in text
+    assert "function startMlxBootstrap()" in text
+    assert "function startLocalBootstrap()" in text
+    assert "function renderProvidersPanel(data)" in text
+    assert "function providerCardMeta(state, kind, availability)" in text
+    assert "function runProviderAction(providerId, action)" in text
+    assert "async function pollProvidersPanel()" in text
+    assert "function providerCardOverflow(state, kind)" in text
+    assert (
+        "const PROVIDER_NAMES = ['anthropic', 'openai', 'openhands', 'local', 'mlx']"
+        in text
+    )
 
 
-def test_workspace_mlx_progress_region_has_byte_readout():
+def test_workspace_unified_provider_panel_keeps_bootstrap_endpoints_and_polling():
     text = _workspace_text()
 
-    assert 'id="mlxBootstrapBytes"' in text
+    assert "let mlxBootstrapPostStarted = false" in text
+    assert "let localBootstrapPostStarted = false" in text
+    assert "api/mlx/bootstrap?model=${model}" in text
+    assert "api/local/bootstrap?model=${model}" in text
+    assert "api/providers?local_model=${model}" in text
+    assert "api/mlx/availability?model=${model}" in text
+    assert "api/local/availability?model=${model}" in text
+    assert "setInterval(pollProvidersPanel, 1000)" in text
+    assert "clearInterval(providersPanelPollTimer)" in text
+    assert "IN_FLIGHT_INSTALL_STATES.includes(state.install_state)" in text
+    assert "state.key_status === 'validating'" in text
+    assert "providersPanelActionPending" in text
+
+
+def test_workspace_unified_provider_panel_has_byte_and_blocked_state_paths():
+    text = _workspace_text()
+
     assert "formatMlxBytes(receivedBytes)" in text
     assert "formatMlxBytes(totalBytes)" in text
-
-
-def test_workspace_mlx_progress_region_has_state_text():
-    text = _workspace_text()
-
-    assert 'id="mlxBootstrapState"' in text
-    assert "downloading: INSTALL_COPY.INSTALL_PHASE_DOWNLOADING" in text
-    assert "verifying: INSTALL_COPY.INSTALL_PHASE_VERIFYING" in text
-
-
-def test_workspace_mlx_retry_button_is_failed_only():
-    text = _workspace_text()
-
-    assert 'id="mlxBootstrapRetry"' in text
-    assert "retry.style.display = installState === 'failed' ? '' : 'none'" in text
-    assert "retry.disabled = !!status?.bootstrap_disabled" in text
-    assert "retry.onclick" in text
-    assert "mountMlxProgress()" in text
-
-
-def test_workspace_mlx_polling_starts_and_stops_on_terminal_states():
-    text = _workspace_text()
-
-    assert "let mlxBootstrapPollTimer = null" in text
-    assert "let mlxBootstrapPostStarted = false" in text
-    assert "api/mlx/bootstrap?model=${model}" in text
-    assert "api/mlx/bootstrap/status?model=${model}" in text
-    assert "api/mlx/availability?model=${model}" in text
-    assert "setInterval(pollMlxBootstrap, 1000)" in text
-    assert "clearInterval(mlxBootstrapPollTimer)" in text
-    assert "installState === 'installed'" in text
-    assert "installState === 'failed'" in text
-    assert "unmountMlxProgress()" in text
+    assert "function localMlxBlockedReason(state, availability)" in text
+    assert "availability.reason === 'model snapshot not present'" in text
+    assert "'local runtime is not installed'" in text
+    assert "'local model files are not installed'" in text
 
 
 def test_workspace_mlx_bootstrap_handlers_do_not_write_generate_provider():
     text = _workspace_text()
     function_names = [
-        "syncMlxProgressRegion",
-        "mountMlxProgress",
-        "unmountMlxProgress",
-        "pollMlxBootstrap",
-        "handleMlxBootstrapStatus",
+        "maybeAutoStartMlxBootstrap",
+        "startMlxBootstrap",
+        "pollProvidersPanel",
     ]
 
     for name in function_names:
         match = re.search(
-            rf"function {name}\b[\s\S]*?(?=\nfunction |\n// ==========|\Z)",
+            rf"(?:async )?function {name}\b[\s\S]*?"
+            rf"(?=\n(?:async )?function |\n// ==========|\Z)",
             text,
         )
         assert match, name
@@ -179,7 +182,7 @@ def test_workspace_mlx_cogitate_option_disabled_with_runtime_message():
     assert "if (type === 'cogitate') return MLX_COGITATE_UNSUPPORTED_TITLE" in text
 
 
-def test_workspace_local_cogitate_status_block_and_progress_region():
+def test_workspace_local_cogitate_status_block_and_unified_panel():
     text = _workspace_text()
 
     warning_idx = text.index('id="cogitateProviderKeyWarning"')
@@ -187,10 +190,20 @@ def test_workspace_local_cogitate_status_block_and_progress_region():
     provider_status_idx = text.index('id="providerStatus"')
     assert warning_idx < status_idx < provider_status_idx
     assert 'id="localCogitateStatus-indicator"' in text
-    assert 'id="localBootstrapRegion"' in text
-    assert 'id="localBootstrapProgress"' in text
+    assert 'id="providersPanel"' in text
+    assert 'id="localBootstrapRegion"' not in text
     assert "api/providers/local/status" in text
     assert "api/local/bootstrap?model=${model}" in text
-    assert "api/local/bootstrap/status?model=${model}" in text
     assert "api/local/availability?model=${model}" in text
     assert "tool-using agents" not in text
+
+
+def test_workspace_local_and_mlx_model_rows_are_shared():
+    text = _workspace_text()
+
+    assert 'id="mlxModelRow"' in text
+    assert 'id="localModelRow"' in text
+    assert 'id="field-mlx-active-model"' in text
+    assert 'id="field-local-active-model"' in text
+    assert "document.getElementById('field-generate-provider')?.value === 'mlx'" in text
+    assert "function isLocalProviderSelected()" in text

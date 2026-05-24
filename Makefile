@@ -565,9 +565,15 @@ smoke-cogitate: .installed
 smoke-install-providers: .installed
 	@echo "Running install-state integration smoke..."
 	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) \
+	  solstone/apps/settings/tests/test_providers_payload_extended.py \
+	  -v --tb=short --timeout=120
+	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) \
 	  tests/integration/test_bundled_install_real_uv.py \
 	  tests/integration/test_bundled_provider_migration.py \
 	  tests/integration/test_local_install_canonical.py \
+	  -m integration -v --tb=short --timeout=120
+	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) \
+	  solstone/apps/settings/tests/test_providers_panel_visual.py \
 	  -m integration -v --tb=short --timeout=120
 
 release: ## Publish solstone to PyPI (production)
