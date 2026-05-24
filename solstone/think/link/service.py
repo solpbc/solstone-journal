@@ -26,12 +26,15 @@ Callosum events are emitted on the `link` tract:
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import signal
+import sys
 from typing import Any
 
 from solstone.think.callosum import CallosumConnection
+from solstone.think.utils import require_solstone
 
 from .ca import load_or_generate_ca
 from .paths import (
@@ -101,18 +104,45 @@ class _suppress_not_implemented:
         return exc_type is NotImplementedError
 
 
-def main() -> None:
-    """CLI entry point for `sol link` — starts the service."""
-    import argparse
-
-    from solstone.think.utils import require_solstone, setup_cli
-
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="solstone link tunnel service")
-    args = setup_cli(parser)
-    require_solstone()
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose output"
+    )
+    parser.add_argument(
+        "-d", "--debug", action="store_true", help="Enable debug logging"
+    )
+    subparsers = parser.add_subparsers(
+        dest="command", metavar="{serve,join}", title="commands"
+    )
+    subparsers.add_parser("serve", help="start the link tunnel service")
 
+    from . import join_cli
+
+    join_parser = subparsers.add_parser(
+        "join",
+        help="join a solstone with a short code or pair link",
+    )
+    join_cli.add_arguments(join_parser)
+    return parser
+
+
+def _normalize_serve_args(argv: list[str]) -> list[str]:
+    if not argv or argv[0] != "serve":
+        return argv
+    global_flags = [
+        arg for arg in argv[1:] if arg in {"-v", "--verbose", "-d", "--debug"}
+    ]
+    remaining = [
+        arg for arg in argv[1:] if arg not in {"-v", "--verbose", "-d", "--debug"}
+    ]
+    return global_flags + ["serve"] + remaining
+
+
+def _run_service_command(args: argparse.Namespace) -> int:
+    require_solstone()
     logging.basicConfig(
-        level=logging.INFO if not args.verbose else logging.DEBUG,
+        level=logging.DEBUG if args.verbose or args.debug else logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
 
@@ -120,7 +150,21 @@ def main() -> None:
         asyncio.run(run_service())
     except KeyboardInterrupt:
         log.info("link service interrupted")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point for `sol link`."""
+    parser = _build_parser()
+    parsed_argv = _normalize_serve_args(list(sys.argv[1:] if argv is None else argv))
+    args = parser.parse_args(parsed_argv)
+    if args.command in (None, "serve"):
+        return _run_service_command(args)
+
+    from . import join_cli
+
+    return join_cli.main(args)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
