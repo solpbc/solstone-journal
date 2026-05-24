@@ -4,8 +4,6 @@
 from __future__ import annotations
 
 import json
-import threading
-import time
 
 import pytest
 
@@ -41,29 +39,25 @@ def test_bundled_install_emits_real_uv_phases(tmp_path, monkeypatch):
     bundled._INSTALL_PROCESSES.clear()
     bundled._OBSERVED_PHASES.clear()
 
-    observations: list[tuple[float, str]] = []
-    stop = threading.Event()
+    # Hook _advance_phase to capture every phase the install pipeline emits.
+    # Polling for transitions races a uv install that finishes in <100ms with a
+    # warm cache; the spec contract (AC2) is that production code *emits*
+    # phase transitions, which a deterministic hook verifies without the race.
+    emitted_phases: list[str] = []
+    original_advance = bundled._advance_phase
 
-    def poll_state() -> None:
-        last_state = None
-        while not stop.is_set():
-            state = bundled.get_provider_state(name)["install_state"]
-            if state != last_state:
-                observations.append((time.monotonic(), state))
-                last_state = state
-            time.sleep(0.25)
+    def recording_advance(provider_name, phase):
+        if provider_name == name:
+            emitted_phases.append(phase)
+        original_advance(provider_name, phase)
 
-    poller = threading.Thread(target=poll_state, daemon=True)
+    monkeypatch.setattr(bundled, "_advance_phase", recording_advance)
+
     try:
-        poller.start()
-        try:
-            bundled.install_provider(name)
-            thread = bundled._INSTALL_THREADS.get(name)
-            if thread is not None:
-                thread.join(timeout=300)
-        finally:
-            stop.set()
-            poller.join(timeout=1)
+        bundled.install_provider(name)
+        thread = bundled._INSTALL_THREADS.get(name)
+        if thread is not None:
+            thread.join(timeout=300)
 
         final_state = bundled.get_provider_state(name)
         if final_state["install_state"] == "failed":
@@ -72,8 +66,9 @@ def test_bundled_install_emits_real_uv_phases(tmp_path, monkeypatch):
             )
 
         assert final_state["install_state"] == "installed"
-        observed_states = [state for _timestamp, state in observations]
-        assert any(state in {"resolving", "downloading"} for state in observed_states)
+        assert any(phase in {"resolving", "downloading"} for phase in emitted_phases), (
+            f"expected resolving/downloading phase, got {emitted_phases}"
+        )
     finally:
         try:
             bundled.uninstall_provider(name)
