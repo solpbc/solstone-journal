@@ -8,7 +8,12 @@ import logging
 from solstone.apps.events import EventContext, on_event
 from solstone.think.utils import now_ms
 
-from .utils import append_history_record, find_observer_by_name, increment_stat
+from .utils import (
+    append_history_record,
+    find_observer_by_name,
+    increment_stat,
+    observer_filename_prefix,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +44,9 @@ def handle_observed(ctx: EventContext) -> None:
         logger.debug(f"Observer not found for observed event: {observer_name}")
         return
 
-    key_prefix = observer.get("key", "")[:8]
-    if not key_prefix:
+    try:
+        key_prefix = observer_filename_prefix(observer)
+    except ValueError:
         return
 
     # Append observed record to history
@@ -84,8 +90,9 @@ def handle_transferred(ctx: EventContext) -> None:
         logger.debug(f"Observer not found for transferred event: {observer_name}")
         return
 
-    key_prefix = observer.get("key", "")[:8]
-    if not key_prefix:
+    try:
+        key_prefix = observer_filename_prefix(observer)
+    except ValueError:
         return
 
     record = {

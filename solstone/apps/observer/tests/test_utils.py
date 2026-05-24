@@ -6,10 +6,12 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 
 from solstone.apps.observer.utils import (
+    ObserverRegistry,
     append_history_record,
     find_observer_by_name,
     find_segment_by_sha256,
@@ -19,8 +21,14 @@ from solstone.apps.observer.utils import (
     list_observers,
     load_history,
     load_observer,
+    load_observer_by_fingerprint,
+    mint_pl_observer_record,
+    observer_filename_prefix,
     save_observer,
 )
+
+FINGERPRINT = "sha256:" + ("a" * 64)
+FINGERPRINT_2 = "sha256:" + ("b" * 64)
 
 
 @pytest.fixture
@@ -67,6 +75,64 @@ class TestObserverStorage:
         loaded = load_observer("testkey123456789")
         assert loaded is not None
         assert loaded["name"] == "test-observer"
+        assert loaded["mode"] == "dl"
+        assert loaded["filename_prefix"] == "testkey1"
+
+    def test_observer_filename_prefix_for_dl_and_pl(self, storage_env):
+        assert observer_filename_prefix({"key": "abcdef123456"}) == "abcdef12"
+        assert observer_filename_prefix({"fingerprint": FINGERPRINT}) == "a" * 16
+
+    def test_save_and_load_pl_observer(self, storage_env):
+        observer = {
+            "fingerprint": FINGERPRINT,
+            "name": "pl-observer",
+            "stats": {"segments_received": 0},
+        }
+
+        assert save_observer(observer) is True
+
+        loaded = load_observer_by_fingerprint(FINGERPRINT)
+        assert loaded is not None
+        assert loaded["name"] == "pl-observer"
+        assert loaded["mode"] == "pl"
+        assert loaded["filename_prefix"] == "a" * 16
+        assert (storage_env.observers_dir / f"{'a' * 16}.json").exists()
+
+    def test_mint_pl_observer_record(self, storage_env):
+        path = mint_pl_observer_record(FINGERPRINT, "laptop", "2026-04-20T00:00:00Z")
+
+        assert path == storage_env.observers_dir / f"{'a' * 16}.json"
+        loaded = load_observer_by_fingerprint(FINGERPRINT)
+        assert loaded is not None
+        assert loaded["name"] == "laptop"
+        assert loaded["paired_at"] == "2026-04-20T00:00:00Z"
+        assert loaded["enabled"] is True
+
+    def test_mint_pl_observer_record_refuses_existing(self, storage_env):
+        mint_pl_observer_record(FINGERPRINT, "laptop", "2026-04-20T00:00:00Z")
+
+        with pytest.raises(FileExistsError):
+            mint_pl_observer_record(FINGERPRINT, "laptop", "2026-04-20T00:00:01Z")
+
+    def test_observer_registry_skips_invalid_records(self, storage_env, caplog):
+        caplog.set_level(logging.WARNING)
+        invalid_path = storage_env.observers_dir / "bad.json"
+        invalid_path.write_text(
+            json.dumps({"key": "badkey123", "fingerprint": FINGERPRINT}) + "\n",
+            encoding="utf-8",
+        )
+        ObserverRegistry.singleton().invalidate()
+
+        assert list_observers() == []
+        assert "Skipping invalid observer record" in caplog.text
+
+    def test_observer_registry_by_prefix(self, storage_env):
+        save_observer({"key": "dlkey123456789", "name": "dl", "stats": {}})
+        save_observer({"fingerprint": FINGERPRINT_2, "name": "pl", "stats": {}})
+
+        registry = ObserverRegistry.singleton()
+        assert registry.by_prefix("dlkey123")["name"] == "dl"
+        assert registry.by_prefix("b" * 16)["name"] == "pl"
 
     def test_load_observer_wrong_key(self, storage_env):
         """load_observer returns None for wrong key."""

@@ -57,6 +57,7 @@ def test_status_without_marker_matches_baseline(capsys):
 
     assert capsys.readouterr().out == (
         "Observer: archon\n"
+        "  Mode:       dl\n"
         "  Prefix:     abcdefgh\n"
         "  Status:     disconnected\n"
         "  Created:    never\n"

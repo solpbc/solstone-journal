@@ -50,6 +50,7 @@ from solstone.apps.link.manual_code import (
 from solstone.apps.link.manual_code import (
     normalize as normalize_manual_code,
 )
+from solstone.apps.observer.utils import mint_pl_observer_record
 from solstone.convey import emit
 from solstone.convey.reasons import (
     MISSING_REQUIRED_FIELD,
@@ -310,13 +311,6 @@ def _complete_pairing(
 
     state = LinkState.load_or_create()
     paired_at = _utc_now_iso()
-    _authorized().add(
-        fingerprint=fingerprint,
-        device_label=device_label,
-        instance_id=state.instance_id,
-        role=consumed.role,
-        paired_at=paired_at,
-    )
     attestation = mint_attestation(ca, state.instance_id, fingerprint)
     ca_chain_pem = ca.cert.public_bytes(serialization.Encoding.PEM).decode("ascii")
     response: dict[str, Any] = {
@@ -330,6 +324,31 @@ def _complete_pairing(
     endpoints = _current_local_endpoints()
     if endpoints:
         response["local_endpoints"] = [endpoint_to_dict(ep) for ep in endpoints]
+
+    observer_record_path = None
+    if consumed.role == "observer":
+        observer_record_path = mint_pl_observer_record(
+            fingerprint=fingerprint,
+            device_label=device_label,
+            paired_at=paired_at,
+        )
+
+    try:
+        _authorized().add(
+            fingerprint=fingerprint,
+            device_label=device_label,
+            instance_id=state.instance_id,
+            role=consumed.role,
+            paired_at=paired_at,
+        )
+    except Exception:
+        if observer_record_path is not None:
+            try:
+                observer_record_path.unlink()
+            except FileNotFoundError:
+                pass
+        raise
+
     return response, fingerprint, paired_at
 
 

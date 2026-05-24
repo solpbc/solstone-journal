@@ -10,7 +10,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from solstone.apps.observer.utils import list_observers, save_observer
+from solstone.apps.observer.utils import (
+    list_observers,
+    mint_pl_observer_record,
+    save_observer,
+)
 from solstone.observe import observer_cli
 
 
@@ -68,10 +72,13 @@ def test_create_observer_record_reuses_existing_without_create_side_effects(
         "archon", reuse_existing=True
     )
 
-    assert record == existing
+    assert record["key"] == existing["key"]
+    assert record["name"] == existing["name"]
+    assert record["mode"] == "dl"
+    assert record["filename_prefix"] == "existing"
     assert key == "existing-key-abcdef"
     assert reused is True
-    assert list_observers() == [existing]
+    assert list_observers() == [record]
 
 
 def test_create_observer_record_fresh_create_returns_reused_false_and_logs(
@@ -223,3 +230,90 @@ def test_cmd_create_reuse_existing_creates_normally_when_absent(
             "params": {"name": "archon", "key_prefix": "fresh-ke"},
         }
     ]
+
+
+def test_cmd_list_json_includes_mode_and_width_aware_prefix(
+    observer_cli_env,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert save_observer(_observer(name="desktop", key="abcdefgh12345678"))
+    mint_pl_observer_record(
+        fingerprint="sha256:" + ("a" * 64),
+        device_label="pl-laptop",
+        paired_at="2026-05-20T00:00:00Z",
+    )
+    args = argparse.Namespace(json_output=True)
+
+    rc = observer_cli.cmd_list(args)
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    rows = {row["name"]: row for row in json.loads(captured.out)}
+    assert rows["desktop"]["mode"] == "dl"
+    assert rows["desktop"]["prefix"] == "abcdefgh"
+    assert rows["pl-laptop"]["mode"] == "pl"
+    assert rows["pl-laptop"]["prefix"] == "a" * 16
+
+
+def test_cmd_list_human_shows_mode_column(
+    observer_cli_env,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert save_observer(_observer(name="desktop", key="abcdefgh12345678"))
+    mint_pl_observer_record(
+        fingerprint="sha256:" + ("b" * 64),
+        device_label="pl-laptop",
+        paired_at="2026-05-20T00:00:00Z",
+    )
+    args = argparse.Namespace(json_output=False)
+
+    rc = observer_cli.cmd_list(args)
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "Name                 Mode  Prefix" in captured.out
+    assert "desktop              dl    abcdefgh" in captured.out
+    assert "pl-laptop" in captured.out
+    assert f"pl    {'b' * 16}" in captured.out
+
+
+def test_cmd_status_single_reports_mode_and_pl_prefix(
+    observer_cli_env,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    mint_pl_observer_record(
+        fingerprint="sha256:" + ("c" * 64),
+        device_label="pl-laptop",
+        paired_at="2026-05-20T00:00:00Z",
+    )
+
+    rc = observer_cli.cmd_status(
+        argparse.Namespace(identifier="pl-laptop", json_output=True)
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    payload = json.loads(captured.out)
+    assert payload["mode"] == "pl"
+    assert payload["prefix"] == "c" * 16
+
+
+def test_cmd_status_all_table_shows_mode_and_prefix(
+    observer_cli_env,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert save_observer(_observer(name="desktop", key="abcdefgh12345678"))
+    mint_pl_observer_record(
+        fingerprint="sha256:" + ("d" * 64),
+        device_label="pl-laptop",
+        paired_at="2026-05-20T00:00:00Z",
+    )
+
+    rc = observer_cli.cmd_status(argparse.Namespace(identifier=None, json_output=False))
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "Name                 Mode  Prefix" in captured.out
+    assert "desktop              dl    abcdefgh" in captured.out
+    assert "pl-laptop" in captured.out
+    assert f"pl    {'d' * 16}" in captured.out

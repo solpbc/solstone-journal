@@ -33,7 +33,6 @@ from solstone.convey import emit
 from solstone.convey.bridge import _SSE_HEARTBEAT_SECONDS
 from solstone.convey.copy import OBSERVER_CALLOSUM_LIVE_LABEL
 from solstone.convey.reasons import (
-    AUTH_KEY_INVALID,
     AUTH_REQUIRED,
     FEATURE_UNAVAILABLE,
     FILE_READ_FAILED,
@@ -58,6 +57,7 @@ from solstone.think.streams import stream_name, update_stream, write_segment_str
 from solstone.think.utils import day_path, iter_segments, now_ms, segment_path
 
 from .utils import (
+    ObserverRegistry,
     append_history_record,
     find_segment_by_sha256,
     get_hist_dir,
@@ -65,6 +65,8 @@ from .utils import (
     list_observers,
     load_history,
     load_observer,
+    observer_filename_prefix,
+    resolve_observer_identity,
     save_observer,
 )
 
@@ -102,14 +104,8 @@ def _error_body(reason: Reason, *, detail: str | None = None) -> dict[str, str]:
     }
 
 
-def _get_key(url_key: str | None = None) -> str | None:
-    """Extract auth key from Authorization: Bearer header (primary) or URL path (legacy)."""
-    auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        bearer = auth[7:].strip()
-        if bearer:
-            return bearer
-    return url_key or None
+def _sse_error_event(reason: Reason, *, detail: str) -> str:
+    return f"event: error\ndata: {json.dumps(_error_body(reason, detail=detail))}\n\n"
 
 
 def _generate_key() -> str:
@@ -184,7 +180,7 @@ def _serialize_observer(observer: dict[str, Any], current_now: int) -> dict[str,
         observer.get("revoked", False),
         current_now,
     )
-    key_prefix = observer.get("key", "")[:8]
+    key_prefix = observer_filename_prefix(observer)
     return {
         "key_prefix": key_prefix,
         "name": observer.get("name", ""),
@@ -266,22 +262,20 @@ def api_list() -> Any:
 @observer_bp.route(_OBSERVER_CALLOSUM_SSE_RULE, methods=["GET"])
 def callosum_sse(key: str) -> Any:
     """Stream Callosum events to an authenticated observer process."""
-    auth_key = _get_key(key)
-    if not auth_key:
-        return error_response(AUTH_REQUIRED, detail="Authorization required")
+    observer, key_prefix, error = resolve_observer_identity(key)
+    if error is not None:
+        return error
+    auth_key = observer.get("key")
+    fingerprint = observer.get("fingerprint")
 
-    observer = load_observer(auth_key)
-    if not observer:
-        return error_response(AUTH_KEY_INVALID, detail="Invalid key")
-
-    if observer.get("revoked", False):
-        return error_response(PL_REVOKED, detail="Observer revoked")
-
-    if not observer.get("enabled", True):
-        return error_response(FEATURE_UNAVAILABLE, detail="Observer disabled")
-
-    key_prefix = auth_key[:8]
     handle = convey_bridge.register_sse_subscriber(key_prefix)
+
+    def current_observer() -> dict | None:
+        if isinstance(fingerprint, str) and fingerprint:
+            return ObserverRegistry.singleton().by_fingerprint(fingerprint)
+        if isinstance(auth_key, str) and auth_key:
+            return load_observer(auth_key)
+        return None
 
     def generate():
         try:
@@ -294,12 +288,19 @@ def callosum_sse(key: str) -> Any:
                         timeout=_SSE_HEARTBEAT_SECONDS
                     )
                 except queue.Empty:
-                    current_observer = load_observer(auth_key)
-                    if not current_observer:
+                    observer_now = current_observer()
+                    if not observer_now:
+                        yield _sse_error_event(
+                            AUTH_REQUIRED, detail="Authorization required"
+                        )
                         return
-                    if current_observer.get("revoked", False):
+                    if observer_now.get("revoked", False):
+                        yield _sse_error_event(PL_REVOKED, detail="Observer revoked")
                         return
-                    if not current_observer.get("enabled", True):
+                    if not observer_now.get("enabled", True):
+                        yield _sse_error_event(
+                            FEATURE_UNAVAILABLE, detail="Observer disabled"
+                        )
                         return
                     yield ": heartbeat\n\n"
                     continue
@@ -750,21 +751,9 @@ def ingest_upload(key: str | None = None) -> Any:
     - "duplicate": All files already received (no processing triggered)
     - "collision": New segment saved with adjusted key (directory conflict)
     """
-    # Extract key from Bearer header (primary) or URL path (legacy)
-    auth_key = _get_key(key)
-    if not auth_key:
-        return error_response(AUTH_REQUIRED, detail="Authorization required")
-
-    # Validate key
-    observer = load_observer(auth_key)
-    if not observer:
-        return error_response(AUTH_KEY_INVALID, detail="Invalid key")
-
-    if observer.get("revoked", False):
-        return error_response(PL_REVOKED, detail="Observer revoked")
-
-    if not observer.get("enabled", True):
-        return error_response(FEATURE_UNAVAILABLE, detail="Observer disabled")
+    observer, key_prefix, error = resolve_observer_identity(key)
+    if error is not None:
+        return error
 
     # Get segment, day, and host info from form
     segment = request.form.get("segment", "").strip()
@@ -790,7 +779,7 @@ def ingest_upload(key: str | None = None) -> Any:
     observer_name = observer.get("name", "")
     if effective_host and effective_host != observer_name:
         logger.warning(
-            f"Observer '{observer_name}' ({auth_key[:8]}) connecting from host "
+            f"Observer '{observer_name}' ({key_prefix}) connecting from host "
             f"'{effective_host}' — hostname differs from registered name. "
             f"Use `sol observer rename` to update if the host was renamed."
         )
@@ -815,8 +804,6 @@ def ingest_upload(key: str | None = None) -> Any:
     files = request.files.getlist("files")
     if not files:
         return error_response(INGEST_NO_FILES, detail="No files uploaded")
-
-    key_prefix = auth_key[:8]
 
     # Determine stream name: trust client-provided stream in meta if valid,
     # otherwise derive from observer registration name.
@@ -878,19 +865,9 @@ def ingest_upload(key: str | None = None) -> Any:
 @observer_bp.route("/ingest/<key>/transfer", methods=["POST"])
 def ingest_transfer(key: str) -> Any:
     """Receive transferred file uploads from another solstone instance."""
-    auth_key = _get_key(key)
-    if not auth_key:
-        return error_response(AUTH_REQUIRED, detail="Authorization required")
-
-    observer = load_observer(auth_key)
-    if not observer:
-        return error_response(AUTH_KEY_INVALID, detail="Invalid key")
-
-    if observer.get("revoked", False):
-        return error_response(PL_REVOKED, detail="Observer revoked")
-
-    if not observer.get("enabled", True):
-        return error_response(FEATURE_UNAVAILABLE, detail="Observer disabled")
+    observer, key_prefix, error = resolve_observer_identity(key)
+    if error is not None:
+        return error
 
     segment = request.form.get("segment", "").strip()
     day = request.form.get("day", "").strip()
@@ -933,7 +910,6 @@ def ingest_transfer(key: str) -> Any:
     if not files:
         return error_response(INGEST_NO_FILES, detail="No files uploaded")
 
-    key_prefix = auth_key[:8]
     body, status = _process_ingest_files(
         observer,
         key_prefix,
@@ -964,21 +940,10 @@ def ingest_transfer(key: str) -> Any:
 @observer_bp.route("/ingest/<key>/manifest", methods=["GET"])
 def ingest_manifest(key: str) -> Any:
     """List available manifest days for an observer."""
-    auth_key = _get_key(key)
-    if not auth_key:
-        return error_response(AUTH_REQUIRED, detail="Authorization required")
+    _observer, key_prefix, error = resolve_observer_identity(key)
+    if error is not None:
+        return error
 
-    observer = load_observer(auth_key)
-    if not observer:
-        return error_response(AUTH_KEY_INVALID, detail="Invalid key")
-
-    if observer.get("revoked", False):
-        return error_response(PL_REVOKED, detail="Observer revoked")
-
-    if not observer.get("enabled", True):
-        return error_response(FEATURE_UNAVAILABLE, detail="Observer disabled")
-
-    key_prefix = auth_key[:8]
     hist_dir = get_hist_dir(key_prefix, ensure_exists=False)
     if not hist_dir.exists():
         return jsonify({"days": {}})
@@ -999,19 +964,9 @@ def ingest_manifest(key: str) -> Any:
 @observer_bp.route("/ingest/<key>/manifest/<day>", methods=["GET"])
 def ingest_manifest_day(key: str, day: str) -> Any:
     """Return a transfer manifest for all segments on a given day."""
-    auth_key = _get_key(key)
-    if not auth_key:
-        return error_response(AUTH_REQUIRED, detail="Authorization required")
-
-    observer = load_observer(auth_key)
-    if not observer:
-        return error_response(AUTH_KEY_INVALID, detail="Invalid key")
-
-    if observer.get("revoked", False):
-        return error_response(PL_REVOKED, detail="Observer revoked")
-
-    if not observer.get("enabled", True):
-        return error_response(FEATURE_UNAVAILABLE, detail="Observer disabled")
+    _observer, _key_prefix, error = resolve_observer_identity(key)
+    if error is not None:
+        return error
 
     if not re.match(r"^\d{8}$", day):
         return error_response(INVALID_DAY, detail="Invalid day format")
@@ -1051,21 +1006,9 @@ def ingest_event(key: str | None = None) -> Any:
     - event: Event name
     - ...additional fields
     """
-    # Extract key from Bearer header (primary) or URL path (legacy)
-    auth_key = _get_key(key)
-    if not auth_key:
-        return error_response(AUTH_REQUIRED, detail="Authorization required")
-
-    # Validate key
-    observer = load_observer(auth_key)
-    if not observer:
-        return error_response(AUTH_KEY_INVALID, detail="Invalid key")
-
-    if observer.get("revoked", False):
-        return error_response(PL_REVOKED, detail="Observer revoked")
-
-    if not observer.get("enabled", True):
-        return error_response(FEATURE_UNAVAILABLE, detail="Observer disabled")
+    observer, _key_prefix, error = resolve_observer_identity(key)
+    if error is not None:
+        return error
 
     # Parse event
     data = request.get_json(force=True) if request.is_json else {}
@@ -1107,28 +1050,15 @@ def ingest_segments(day: str, key: str | None = None) -> Any:
         day: Day string (YYYYMMDD)
         key: Observer authentication key (from URL path, legacy)
     """
-    # Extract key from Bearer header (primary) or URL path (legacy)
-    auth_key = _get_key(key)
-    if not auth_key:
-        return error_response(AUTH_REQUIRED, detail="Authorization required")
-
-    # Validate key
-    observer = load_observer(auth_key)
-    if not observer:
-        return error_response(AUTH_KEY_INVALID, detail="Invalid key")
-
-    if observer.get("revoked", False):
-        return error_response(PL_REVOKED, detail="Observer revoked")
-
-    if not observer.get("enabled", True):
-        return error_response(FEATURE_UNAVAILABLE, detail="Observer disabled")
+    observer, key_prefix, error = resolve_observer_identity(key)
+    if error is not None:
+        return error
 
     # Validate day format (YYYYMMDD)
     if not re.match(r"^\d{8}$", day):
         return error_response(INVALID_DAY, detail="Invalid day format")
 
     # Load sync history for this observer/day
-    key_prefix = auth_key[:8]
     records = load_history(key_prefix, day)
 
     if not records:

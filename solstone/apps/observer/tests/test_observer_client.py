@@ -87,6 +87,74 @@ def test_observer_client_init_with_config(mock_session, mock_config):
     assert client._auto_register is False
 
 
+@pytest.mark.parametrize("pair_mode", ["", "PL", "http"])
+def test_observer_client_rejects_invalid_pair_mode(
+    mock_session,
+    mock_config,
+    pair_mode,
+):
+    from solstone.observe.observer_client import ObserverClient
+
+    mock_config.return_value = {"observe": {"observer": {"pair_mode": pair_mode}}}
+
+    with pytest.raises(ValueError, match="pair_mode"):
+        ObserverClient("main-stream")
+
+
+def test_observer_client_pl_rejects_dual_key_config(mock_session, mock_config):
+    from solstone.observe.observer_client import ObserverClient
+
+    mock_config.return_value = {
+        "observe": {
+            "observer": {
+                "pair_mode": "pl",
+                "key": "testkey123",
+                "spl_label": "laptop",
+                "spl_relay_url": "https://relay.test",
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="pair_mode=pl.*observe.observer.key"):
+        ObserverClient("main-stream")
+
+
+def test_observer_client_pl_requires_label_and_relay(mock_session, mock_config):
+    from solstone.observe.observer_client import ObserverClient
+
+    mock_config.return_value = {
+        "observe": {"observer": {"pair_mode": "pl", "spl_relay_url": "https://relay"}}
+    }
+    with pytest.raises(ValueError, match="spl_label"):
+        ObserverClient("main-stream")
+
+    mock_config.return_value = {
+        "observe": {"observer": {"pair_mode": "pl", "spl_label": "laptop"}}
+    }
+    with pytest.raises(ValueError, match="spl_relay_url"):
+        ObserverClient("main-stream")
+
+
+def test_observer_client_pl_requires_bundle(
+    mock_session, mock_config, tmp_path, monkeypatch
+):
+    from solstone.observe.observer_client import ObserverClient
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    mock_config.return_value = {
+        "observe": {
+            "observer": {
+                "pair_mode": "pl",
+                "spl_label": "missing",
+                "spl_relay_url": "https://relay.test",
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="bundle not found"):
+        ObserverClient("main-stream")
+
+
 def test_auto_registration(mock_session, mock_config, mock_journal, tmp_path):
     from solstone.observe.observer_client import ObserverClient
 
@@ -133,7 +201,10 @@ def test_existing_key_skips_registration(mock_session, mock_config, tmp_path):
 
     assert result.success is True
     assert mock_session.post.call_count == 1
-    assert mock_session.post.call_args[0][0].endswith("/app/observer/ingest/testkey123")
+    assert mock_session.post.call_args[0][0].endswith("/app/observer/ingest")
+    assert mock_session.post.call_args[1]["headers"] == {
+        "Authorization": "Bearer testkey123"
+    }
 
 
 def test_registration_retry(mock_session, mock_config, mock_journal, tmp_path):

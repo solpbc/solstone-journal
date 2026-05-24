@@ -17,9 +17,23 @@ from solstone.apps.observer.routes import (
     STALE_THRESHOLD_MS,
     _classify_observer_freshness,
 )
-from solstone.apps.observer.utils import save_observer
+from solstone.apps.observer.utils import mint_pl_observer_record, save_observer
 from solstone.convey.copy import OBSERVER_CALLOSUM_LIVE_LABEL
+from solstone.convey.secure_listener import ConveyIdentity
 from solstone.convey.sol_initiated.copy import KIND_SOL_CHAT_REQUEST
+
+PL_FINGERPRINT = "sha256:" + ("c" * 64)
+PL_FINGERPRINT_2 = "sha256:" + ("d" * 64)
+
+
+def _pl_identity(fingerprint: str = PL_FINGERPRINT) -> ConveyIdentity:
+    return ConveyIdentity(
+        mode="pl-via-spl",
+        fingerprint=fingerprint,
+        device_label="pl-observer",
+        paired_at="2026-05-20T00:00:00Z",
+        session_id="session-1",
+    )
 
 
 def _api_list_payload(env):
@@ -30,6 +44,10 @@ def _api_list_payload(env):
 
 def _api_list_observers(env):
     return _api_list_payload(env)["observers"]
+
+
+def _day_dir(env, day: str = "20250103"):
+    return env.journal / "chronicle" / day
 
 
 def _save_test_observer(
@@ -620,9 +638,7 @@ def test_ingest_success(observer_env):
     assert data["bytes"] == len(test_data)
 
     # Verify file was written (in stream/segment directory)
-    expected_file = (
-        env.journal / "20250103" / "test-observer" / "120000_300" / "test_audio.flac"
-    )
+    expected_file = _day_dir(env) / "test-observer" / "120000_300" / "test_audio.flac"
     assert expected_file.exists()
     assert expected_file.read_bytes() == test_data
 
@@ -661,6 +677,37 @@ def test_ingest_updates_stats(observer_env):
     assert observers[0]["last_seen"] is not None
 
 
+def test_ingest_pl_uses_fingerprint_identity(observer_env):
+    env = observer_env()
+    prefix = PL_FINGERPRINT.removeprefix("sha256:")[:16]
+    mint_pl_observer_record(
+        fingerprint=PL_FINGERPRINT,
+        device_label="pl-observer",
+        paired_at="2026-05-20T00:00:00Z",
+    )
+
+    resp = env.client.post(
+        "/app/observer/ingest",
+        environ_overrides={"pl.identity": _pl_identity()},
+        data={
+            "day": "20250103",
+            "segment": "120000_300",
+            "files": (io.BytesIO(b"pl content"), "audio.flac"),
+        },
+    )
+
+    assert resp.status_code == 200
+    assert (
+        env.journal
+        / "apps"
+        / "observer"
+        / "observers"
+        / prefix
+        / "hist"
+        / "20250103.jsonl"
+    ).exists()
+
+
 def test_ingest_event_relay(observer_env):
     """Test event relay endpoint."""
     env = observer_env()
@@ -682,6 +729,124 @@ def test_ingest_event_relay(observer_env):
     )
     assert resp.status_code == 200
     assert resp.get_json()["status"] == "ok"
+
+
+def test_ingest_event_pl_ignores_url_key(observer_env, monkeypatch):
+    env = observer_env()
+    other_key = _save_test_observer(
+        "deadbeef",
+        "other-dl",
+        created_at=100,
+        last_seen=None,
+    )
+    mint_pl_observer_record(
+        fingerprint=PL_FINGERPRINT,
+        device_label="pl-event",
+        paired_at="2026-05-20T00:00:00Z",
+    )
+    emitted: list[tuple[str, str, dict]] = []
+    monkeypatch.setattr(
+        routes_module,
+        "emit",
+        lambda tract, event, **kwargs: emitted.append((tract, event, kwargs)),
+    )
+
+    resp = env.client.post(
+        f"/app/observer/ingest/{other_key[:8]}/event",
+        environ_overrides={"pl.identity": _pl_identity()},
+        json={"tract": "observe", "event": "status", "mode": "screencast"},
+        content_type="application/json",
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "ok"
+    assert emitted == [
+        (
+            "observe",
+            "status",
+            {"mode": "screencast", "observer": "pl-event"},
+        )
+    ]
+
+
+def test_dl_and_pl_observers_coexist_and_ingest(observer_env):
+    env = observer_env()
+    dl_resp = env.client.post(
+        "/app/observer/api/create",
+        json={"name": "dl-coexist"},
+        content_type="application/json",
+    )
+    assert dl_resp.status_code == 200
+    dl_key = dl_resp.get_json()["key"]
+    dl_prefix = dl_key[:8]
+    pl_prefix = PL_FINGERPRINT.removeprefix("sha256:")[:16]
+    mint_pl_observer_record(
+        fingerprint=PL_FINGERPRINT,
+        device_label="pl-coexist",
+        paired_at="2026-05-20T00:00:00Z",
+    )
+
+    dl_upload = env.client.post(
+        "/app/observer/ingest",
+        headers={"Authorization": f"Bearer {dl_key}"},
+        data={
+            "day": "20250103",
+            "segment": "120000_300",
+            "files": (io.BytesIO(b"dl content"), "dl.txt"),
+        },
+    )
+    pl_upload = env.client.post(
+        "/app/observer/ingest",
+        environ_overrides={"pl.identity": _pl_identity()},
+        data={
+            "day": "20250103",
+            "segment": "120500_300",
+            "files": (io.BytesIO(b"pl content"), "pl.txt"),
+        },
+    )
+
+    assert dl_upload.status_code == 200
+    assert pl_upload.status_code == 200
+    observer_files = {
+        path.name
+        for path in (env.journal / "apps" / "observer" / "observers").glob("*.json")
+    }
+    assert f"{dl_prefix}.json" in observer_files
+    assert f"{pl_prefix}.json" in observer_files
+    assert (
+        env.journal
+        / "apps"
+        / "observer"
+        / "observers"
+        / dl_prefix
+        / "hist"
+        / "20250103.jsonl"
+    ).exists()
+    assert (
+        env.journal
+        / "apps"
+        / "observer"
+        / "observers"
+        / pl_prefix
+        / "hist"
+        / "20250103.jsonl"
+    ).exists()
+
+
+def test_ingest_event_pl_phone_identity_without_observer_record_returns_401(
+    observer_env,
+):
+    env = observer_env()
+
+    resp = env.client.post(
+        "/app/observer/ingest/event",
+        environ_overrides={"pl.identity": _pl_identity(PL_FINGERPRINT_2)},
+        json={"tract": "observe", "event": "status"},
+        content_type="application/json",
+    )
+
+    assert resp.status_code == 401
+    assert resp.get_json()["reason_code"] == "auth_required"
 
 
 def test_ingest_event_missing_tract(observer_env):
@@ -854,7 +1019,7 @@ def test_find_available_segment_no_conflict(observer_env):
     from solstone.observe.utils import find_available_segment
 
     env = observer_env()
-    day_dir = env.journal / "20250103"
+    day_dir = _day_dir(env)
     day_dir.mkdir(parents=True)
 
     result = find_available_segment(day_dir, "120000_300")
@@ -866,7 +1031,7 @@ def test_find_available_segment_with_conflict(observer_env):
     from solstone.observe.utils import find_available_segment
 
     env = observer_env()
-    day_dir = env.journal / "20250103"
+    day_dir = _day_dir(env)
     day_dir.mkdir(parents=True)
 
     # Create conflicting segment directory
@@ -889,7 +1054,7 @@ def test_find_available_segment_with_limited_attempts(observer_env):
     from solstone.observe.utils import find_available_segment
 
     env = observer_env()
-    day_dir = env.journal / "20250103"
+    day_dir = _day_dir(env)
     day_dir.mkdir(parents=True)
 
     # Create conflicting segment directory
@@ -905,7 +1070,7 @@ def test_save_to_failed_creates_directory(observer_env):
     from solstone.apps.observer.routes import _save_to_failed
 
     env = observer_env()
-    day_dir = env.journal / "20250103"
+    day_dir = _day_dir(env)
     day_dir.mkdir(parents=True)
 
     # Create mock file_data tuples: (submitted_filename, simple_filename, content, sha256)
@@ -942,7 +1107,7 @@ def test_ingest_collision_adjusts_segment(observer_env):
     key = resp.get_json()["key"]
 
     # Create a conflicting segment directory under the stream
-    day_dir = env.journal / "20250103"
+    day_dir = _day_dir(env)
     stream_dir = day_dir / "collision-test"
     stream_dir.mkdir(parents=True)
     (stream_dir / "120000_300").mkdir()
@@ -1008,9 +1173,7 @@ def test_ingest_no_collision_preserves_segment(observer_env):
     assert data["files"] == ["audio.flac"]  # Segment prefix stripped
 
     # Verify file saved in stream/segment directory
-    expected_file = (
-        env.journal / "20250103" / "no-collision-test" / "120000_300" / "audio.flac"
-    )
+    expected_file = _day_dir(env) / "no-collision-test" / "120000_300" / "audio.flac"
     assert expected_file.exists()
 
 
@@ -1027,7 +1190,7 @@ def test_ingest_stats_use_adjusted_segment(observer_env):
     key = resp.get_json()["key"]
 
     # Create a conflicting segment directory under the stream
-    day_dir = env.journal / "20250103"
+    day_dir = _day_dir(env)
     stream_dir = day_dir / "stats-adjust-test"
     stream_dir.mkdir(parents=True)
     (stream_dir / "120000_300").mkdir()
@@ -1131,7 +1294,7 @@ def test_ingest_history_with_collision(observer_env):
     key_prefix = data["key_prefix"]
 
     # Create conflicting segment directory under the stream
-    day_dir = env.journal / "20250103"
+    day_dir = _day_dir(env)
     stream_dir = day_dir / "collision-history-test"
     stream_dir.mkdir(parents=True)
     (stream_dir / "120000_300").mkdir()
@@ -1287,7 +1450,7 @@ def test_segments_endpoint_shows_collision(observer_env):
     key = resp.get_json()["key"]
 
     # Create conflicting segment directory under the stream
-    day_dir = env.journal / "20250103"
+    day_dir = _day_dir(env)
     stream_dir = day_dir / "segments-collision-test"
     stream_dir.mkdir(parents=True)
     (stream_dir / "120000_300").mkdir()
@@ -1349,9 +1512,7 @@ def test_segments_endpoint_missing_file(observer_env):
     assert resp.status_code == 200
 
     # Delete the file (now in stream/segment directory with stripped name)
-    (
-        env.journal / "20250103" / "segments-missing-test" / "120000_300" / "audio.flac"
-    ).unlink()
+    (_day_dir(env) / "segments-missing-test" / "120000_300" / "audio.flac").unlink()
 
     # Query segments
     resp = env.client.get(
@@ -1391,7 +1552,7 @@ def test_segments_endpoint_relocated_file(observer_env):
     assert resp.status_code == 200
 
     # Move the file to a different name (simulating some file reorganization)
-    day_dir = env.journal / "20250103"
+    day_dir = _day_dir(env)
     segment_dir = day_dir / "segments-relocate-test" / "120000_300"
     original_path = segment_dir / "audio.flac"
     new_path = segment_dir / "renamed_audio.flac"
@@ -1418,7 +1579,7 @@ def test_find_by_inode(observer_env):
     from solstone.apps.observer.routes import _find_by_inode
 
     env = observer_env()
-    day_dir = env.journal / "20250103"
+    day_dir = _day_dir(env)
     day_dir.mkdir(parents=True)
 
     # Create a file and get its inode
@@ -1904,7 +2065,7 @@ def test_ingest_returns_collision_status_when_adjusted(observer_env):
     key = resp.get_json()["key"]
 
     # Create existing segment directory under the stream
-    day_dir = env.journal / "20250103"
+    day_dir = _day_dir(env)
     stream_dir = day_dir / "collision-status-test"
     stream_dir.mkdir(parents=True)
     (stream_dir / "120000_300").mkdir()
@@ -1986,9 +2147,7 @@ def test_ingest_mixed_zero_byte_files(observer_env):
     assert data["bytes"] == len(valid_data)
 
     # Verify only valid file was written
-    expected_file = (
-        env.journal / "20250103" / "test-observer" / "120000_300" / "audio.flac"
-    )
+    expected_file = _day_dir(env) / "test-observer" / "120000_300" / "audio.flac"
     assert expected_file.exists()
     assert expected_file.read_bytes() == valid_data
 
@@ -2028,12 +2187,8 @@ def test_ingest_stream_qualifier_preserved(observer_env):
     assert resp.get_json()["status"] == "ok"
 
     # Must land under fedora.tmux/, NOT fedora/
-    assert (
-        env.journal / "20250103" / "fedora.tmux" / "120000_300" / "tmux.jsonl"
-    ).exists()
-    assert not (
-        env.journal / "20250103" / "fedora" / "120000_300" / "tmux.jsonl"
-    ).exists()
+    assert (_day_dir(env) / "fedora.tmux" / "120000_300" / "tmux.jsonl").exists()
+    assert not (_day_dir(env) / "fedora" / "120000_300" / "tmux.jsonl").exists()
 
 
 def test_transfer_success(observer_env):
@@ -2064,9 +2219,7 @@ def test_transfer_success(observer_env):
     assert data["files"] == ["audio.flac"]
     assert data["bytes"] == len(test_data)
 
-    expected_file = (
-        env.journal / "20250103" / "remote.host" / "120000_300" / "audio.flac"
-    )
+    expected_file = _day_dir(env) / "remote.host" / "120000_300" / "audio.flac"
     assert expected_file.exists()
     assert expected_file.read_bytes() == test_data
 
@@ -2168,7 +2321,7 @@ def test_transfer_deconfliction(observer_env):
     )
     key = resp.get_json()["key"]
 
-    stream_dir = env.journal / "20250103" / "remote.host"
+    stream_dir = _day_dir(env) / "remote.host"
     stream_dir.mkdir(parents=True)
     (stream_dir / "120000_300").mkdir()
 
