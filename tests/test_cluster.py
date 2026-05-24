@@ -872,8 +872,14 @@ def test_scan_day_detects_analyzing_markers_from_fixture(tmp_path, monkeypatch):
     source = Path("tests/fixtures/journal/chronicle/20260520")
     dest = day_path("20260520")
     shutil.copytree(source, dest, dirs_exist_ok=True)
+    # Normalize all analyzing markers to "now" so wall-clock elapsed since the
+    # fixture was checked out doesn't push fresh markers over the staleness
+    # threshold; then explicitly stale only the one this test exercises.
+    now = time.time()
+    for marker in dest.rglob(".analyzing_*"):
+        os.utime(marker, (now, now))
     stale_marker = dest / "default" / "093000_300" / ".analyzing_screen"
-    old_time = time.time() - 2000
+    old_time = now - 2000
     os.utime(stale_marker, (old_time, old_time))
 
     mod = importlib.import_module("solstone.think.cluster")
