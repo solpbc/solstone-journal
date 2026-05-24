@@ -1,5 +1,6 @@
 import base64
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -121,25 +122,114 @@ class TestInitDetection:
 
         assert f"<code>{journal_path}</code>".encode() in resp.data
         assert b"solstone is three things working together" not in resp.data
+        assert b"solstone is two things working together" not in resp.data
+        assert b"solstone runs on your machine." in resp.data
+        assert b"your observers, your journal, and sol, all right here" in resp.data
 
     def test_init_sol_agent_section_renders(self, fresh_client):
         resp = fresh_client.get("/init")
-        assert b">sol agent<" in resp.data
+        assert b">set up Gemini for sol<" in resp.data
         assert b"the sol agent curates your journal" in resp.data
 
     def test_init_sol_agent_paragraphs(self, fresh_client):
         resp = fresh_client.get("/init")
         assert b"the sol agent curates your journal" in resp.data
-        assert b"the fastest start is a gemini key" in resp.data
+        assert b"the fastest start is a Gemini key" in resp.data
 
     def test_init_no_legacy_trust_note(self, fresh_client):
         resp = fresh_client.get("/init")
         assert b"your key is stored locally" not in resp.data
 
-    def test_init_gemini_label_lowercase(self, fresh_client):
+    def test_init_gemini_label_canonical_case(self, fresh_client):
         resp = fresh_client.get("/init")
-        assert b">gemini api key<" in resp.data
-        assert b"Gemini API key" not in resp.data
+        assert b"Gemini API key" in resp.data
+        assert b">gemini api key<" not in resp.data
+
+    def test_machine_card_present_and_verbatim(self, fresh_client):
+        resp = fresh_client.get("/init")
+        assert b"solstone runs on your machine." in resp.data
+        assert (
+            b"your observers, your journal, and sol, all right here "
+            b"\xe2\x80\x94 no services needed."
+        ) in resp.data
+        assert b"sol pbc offers a few optional services" in resp.data
+        assert (
+            b"turn them on if they help. turn them off whenever you want. or never."
+            in resp.data
+        )
+        assert (
+            b"observers \xe2\x80\x94 experience your day along with you"
+            not in resp.data
+        )
+        assert b"where memories are stored and curated by sol" not in resp.data
+
+    def test_machine_card_section_id(self, fresh_client):
+        resp = fresh_client.get("/init")
+        assert b'id="section-machine-card"' in resp.data
+        assert b'id="section-trinity"' not in resp.data
+
+    def test_identity_hint_refresh(self, fresh_client):
+        resp = fresh_client.get("/init")
+        assert (
+            b"optional \xe2\x80\x94 just helps sol know what to call you." in resp.data
+        )
+        assert (
+            b"optional \xe2\x80\x94 helps sol address you correctly." not in resp.data
+        )
+
+    def test_footer_note_refresh(self, fresh_client):
+        resp = fresh_client.get("/init")
+        assert (
+            b"your journal stays on your machine. solstone runs right here "
+            b"\xe2\x80\x94 nothing leaves unless you send it."
+        ) in resp.data
+        assert b"your data stays on your machine" not in resp.data
+
+    def test_no_lowercase_gemini_in_body_copy(self, fresh_client):
+        resp = fresh_client.get("/init")
+        allowed_contexts = (
+            "gemini-key",
+            "gemini-validate",
+            "geminiKey",
+            "gemini_key",
+            "gemini.google.com",
+            "gemini-api/terms",
+        )
+        # DOM identifiers, JS selectors, JSON keys, and literal domains stay lowercase.
+        body_copy = "\n".join(
+            line
+            for line in resp.data.decode().splitlines()
+            if not any(context in line for context in allowed_contexts)
+        )
+        assert re.search(r"\bgemini\b", body_copy) is None
+
+    def test_no_banned_terms_or_surveillance_verbs(self, fresh_client):
+        resp = fresh_client.get("/init")
+        for phrase in (
+            b"your account",
+            b"sign up for",
+            b"log in to",
+            b"create an account",
+            b"account.solstone.app",
+        ):
+            assert phrase not in resp.data
+        text = resp.data.decode()
+        assert (
+            re.search(
+                r"\bwatch\b|\bcapture\b|\bmonitor\b|\btrack\b|\bcollect\b", text, re.I
+            )
+            is None
+        )
+
+    def test_portal_unreachable_stub_inert_on_default_path(self, fresh_client):
+        resp = fresh_client.get("/init")
+        assert b"can't reach sol pbc right now." not in resp.data
+        assert b"L11-stub: portal-unreachable" in resp.data
+
+    def test_signed_in_retention_prefill_stub_inert_on_default_path(self, fresh_client):
+        resp = fresh_client.get("/init")
+        assert b"using your saved preference: 30 days." not in resp.data
+        assert b"L11-stub: signed-in retention pre-fill" in resp.data
 
     def test_init_validate_button_present(self, fresh_client):
         resp = fresh_client.get("/init")

@@ -24,9 +24,33 @@
     .init-section h3 { font-size: 1.25rem; font-weight: 600; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; margin-bottom: 0.75rem; }
     .section-hint { font-size: 0.85rem; color: #666; margin: 0 0 0.75rem; }
     .section-hint a { color: #b06a1a; }
-    .welcome-list { font-size: 0.85rem; color: #666; list-style: none; padding-left: 0; margin: 0 0 0.75rem; }
-    .welcome-list li { margin-bottom: 0.4em; }
-    .welcome-list strong { color: #444; }
+    .machine-card {
+      margin-bottom: 2rem;
+      padding: 1rem;
+      border: 1px solid #eadfce;
+      border-radius: 8px;
+      background: #fff8ef;
+      color: #555;
+    }
+    .machine-card-headline {
+      margin: 0 0 0.75rem;
+      color: #222;
+      font-size: 1.25rem;
+      font-weight: 600;
+      font-family: 'Comfortaa', system-ui, sans-serif;
+    }
+    .machine-card p { margin: 0; font-size: 0.9rem; line-height: 1.5; }
+    .portal-unreachable {
+      margin-bottom: 2rem;
+      padding: 0.9rem 1rem;
+      border: 1px solid #f4c78e;
+      border-radius: 8px;
+      background: #fff8ef;
+      color: #5f3a14;
+      font-size: 0.9rem;
+    }
+    .portal-unreachable p { margin: 0 0 0.4rem; }
+    .portal-unreachable p:last-child { margin-bottom: 0; }
     .field-group { margin-bottom: 0.75rem; }
     .field-group label { display: block; font-size: 0.85rem; color: #444; margin-bottom: 0.25rem; }
     .field-group input:not([type="checkbox"]):not([type="radio"]) {
@@ -106,19 +130,23 @@
     <h1>set up solstone</h1>
     <p class="product-tagline">your private agentic partner — sol</p>
 
-    <section class="init-section" id="section-trinity">
-      <h3>welcome</h3>
-      <p class="section-hint">solstone is two things working together:</p>
-      <ul class="welcome-list">
-        <li><strong>observers</strong> — experience your day along with you, on each device</li>
-        <li><strong>your journal</strong> — where memories are stored and curated by sol (your agent)</li>
-      </ul>
+    <!-- L11-stub: portal-unreachable (see Arc A S2 §4g) -->
+    {% if false %}
+    <aside class="portal-unreachable">
+      <p>can't reach sol pbc right now.</p>
+      <p>no problem — finish setting up locally and turn on services whenever you want. nothing here needs sol pbc to work.</p>
+    </aside>
+    {% endif %}
+
+    <section id="section-machine-card" class="section machine-card">
+      <h2 class="machine-card-headline">solstone runs on your machine.</h2>
+      <p>your observers, your journal, and sol, all right here — no services needed. sol pbc offers a few optional services (like setting up a Gemini key for you or reaching your phone when sol has something to surface). turn them on if they help. turn them off whenever you want. or never.</p>
     </section>
 
     <form id="init-form" onsubmit="finalize(event); return false;">
     <section class="init-section" id="section-identity">
       <h3>who are you?</h3>
-      <p class="section-hint">optional — helps sol address you correctly.</p>
+      <p class="section-hint">optional — just helps sol know what to call you.</p>
       <div class="field-group">
         <label for="name">full name</label>
         <input type="text" id="name" value="{{ identity_name }}">
@@ -132,15 +160,15 @@
     </section>
 
     <section class="init-section" id="section-provider">
-      <h3>sol agent</h3>
+      <h3>set up Gemini for sol</h3>
       <p class="section-hint">the sol agent curates your journal and is powered by ai. you can skip this and set it up later in settings, either a hosted provider or the bundled Local provider.</p>
       <p class="section-hint"><strong>a hosted provider key is the recommended way to start.</strong> running a capable model locally is a real, supported goal, but it needs capable hardware and a model with strong "thinking" support. it isn't the default daily experience yet. <a href="https://github.com/solpbc/solstone/blob/main/INSTALL.md#choosing-how-to-power-sol" target="_blank" rel="noopener noreferrer">how to power sol &rarr;</a></p>
-      <p class="section-hint">the fastest start is a gemini key; enter it below. note this is a <strong>developer api key from Google AI Studio</strong> (<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com</a>) — not a gemini.google.com chat account. you can tune how much automated processing runs in settings.</p>
+      <p class="section-hint">the fastest start is a Gemini key; enter it below. note this is a <strong>developer api key from Google AI Studio</strong> (<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com</a>) — not a gemini.google.com chat account. you can tune how much automated processing runs in settings.</p>
       <p class="section-hint">if you're a scout for solstone you can enter the key provided here, or apply to get a key for testing at <a href="https://scouts.solstone.app" target="_blank" rel="noopener noreferrer">scouts.solstone.app</a></p>
       <p class="section-hint">prefer Claude or OpenAI? add a developer key in settings &rarr; API keys: Claude from <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com</a> (not the claude.ai chat signup), OpenAI from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com</a> (not chatgpt.com).</p>
       <p class="section-hint">curious what leaves your machine and what doesn't? see <a href="https://github.com/solpbc/solstone/blob/main/DATA-FLOW.md" target="_blank" rel="noopener noreferrer">what solstone sends</a>.</p>
       <div class="field-group">
-        <label for="gemini-key">gemini api key</label>
+        <label for="gemini-key">Gemini API key</label>
         <div class="provider-key-row">
           <div class="password-wrap">
             <input type="password" id="gemini-key" autocomplete="off"
@@ -153,12 +181,16 @@
         </div>
         <small class="field-status">&nbsp;</small>
       </div>
-      <p class="trust-note">to maximize privacy with google, use a key tied to a billing account — <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer" style="color: #b06a1a;">Google Terms</a></p>
+      <p class="trust-note">to maximize privacy with Google, use a key tied to a billing account — <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer" style="color: #b06a1a;">Google Terms</a></p>
     </section>
 
     <section class="init-section" id="section-observed-media">
       <h3>your observed media (raw audio and screencast files)</h3>
       <p class="section-hint">by default, solstone retains your observed media so you can access it again later. you can also expire originals after a number of days, or delete them as soon as they're processed. <a href="https://solpbc.org/privacy#recording-laws" target="_blank" rel="noopener">recording-consent laws</a> may apply in your jurisdiction.</p>
+      <!-- L11-stub: signed-in retention pre-fill (see Arc A S2 §4e) -->
+      {% if false %}
+      <p class="retention-prefill-hint">using your saved preference: 30 days. change it here for this machine, or in your sign-in to change it everywhere.</p>
+      {% endif %}
       <div class="field-group">
         <div class="retention-options">
           <label class="retention-option">
@@ -189,7 +221,7 @@
     </form>
     <div id="finalize-error" class="error-message" hidden></div>
 
-    <p class="footer-note">your data stays on your machine</p>
+    <p class="footer-note">your journal stays on your machine. solstone runs right here — nothing leaves unless you send it.</p>
     <p class="footer-note">questions or feedback? <a href="https://bsky.app/profile/solstone.app" target="_blank" rel="noopener noreferrer">@solstone.app on bluesky</a> &middot; <a href="https://github.com/solpbc/solstone/issues" target="_blank" rel="noopener noreferrer">github issues</a> &middot; <a href="https://support.solstone.app" target="_blank" rel="noopener noreferrer">support.solstone.app</a></p>
     </div>
   </main>
