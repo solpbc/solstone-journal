@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from typing import get_args
 
 import pytest
@@ -128,6 +130,33 @@ def test_bundled_action_routes(settings_client, monkeypatch, endpoint, function_
 
     assert response.status_code == 200
     assert response.get_json() == payload
+
+
+def test_install_route_does_not_block_on_slow_thread(settings_client, monkeypatch):
+    client, journal = settings_client
+    _write_config(
+        journal,
+        bundled_provider_config(
+            "anthropic", BundledCase("idle", "key-needed", False, False, False)
+        ),
+    )
+    release = threading.Event()
+    monkeypatch.setattr(bundled, "_install_thread", lambda _name: release.wait(2))
+
+    start = time.monotonic()
+    try:
+        response = client.post("/app/settings/api/providers/anthropic/install")
+        elapsed = time.monotonic() - start
+    finally:
+        release.set()
+        thread = bundled._INSTALL_THREADS.pop("anthropic", None)
+        bundled._OBSERVED_PHASES.pop("anthropic", None)
+        if thread is not None:
+            thread.join(timeout=1)
+
+    assert elapsed < 0.5
+    assert response.status_code == 200
+    assert response.get_json()["install_state"] == "installing"
 
 
 def test_invalid_bundled_provider_route_returns_400(settings_client):

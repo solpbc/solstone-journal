@@ -468,17 +468,34 @@ class TestProvidersBundled:
     ):
         settings_env()
         payload = {"name": "openai", "install_state": "installed"}
-        monkeypatch.setattr(bundled, function_name, lambda name: payload)
+        monkeypatch.setattr(bundled, function_name, lambda name, **_kw: payload)
 
         result = runner.invoke(call_app, ["settings", "providers", command, "openai"])
 
         assert result.exit_code == 0
         assert json.loads(result.output) == payload
 
+    def test_providers_install_passes_wait_true(self, settings_env, monkeypatch):
+        settings_env()
+        calls = []
+
+        def recorder(name, **kwargs):
+            calls.append((name, kwargs))
+            return {"name": name, "install_state": "installed"}
+
+        monkeypatch.setattr(bundled, "install_provider", recorder)
+
+        result = runner.invoke(
+            call_app, ["settings", "providers", "install", "anthropic"]
+        )
+
+        assert result.exit_code == 0
+        assert calls == [("anthropic", {"wait": True})]
+
     def test_write_verb_error_exits_nonzero(self, settings_env, monkeypatch):
         settings_env()
 
-        def fail(_name):
+        def fail(_name, **_kwargs):
             raise bundled.UnsupportedBundledProvider("bad provider")
 
         monkeypatch.setattr(bundled, "install_provider", fail)

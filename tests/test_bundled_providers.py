@@ -394,6 +394,42 @@ def test_install_provider_retries_failed(journal_config, monkeypatch):
             thread.join(timeout=1)
 
 
+def test_install_provider_wait_blocks_until_installed(journal_config, monkeypatch):
+    journal_config(
+        bundled_provider_config(
+            "anthropic", BundledCase("idle", "key-needed", False, False, False)
+        )
+    )
+    monkeypatch.setattr(bundled, "_run_uv_pip_install", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        bundled,
+        "_resolve_anthropic_binary_via_subprocess",
+        lambda: Path("/tmp/claude"),
+    )
+
+    state = bundled.install_provider("anthropic", wait=True)
+
+    assert state["install_state"] == "installed"
+
+
+def test_install_provider_wait_blocks_until_failed(journal_config, monkeypatch):
+    journal_config(
+        bundled_provider_config(
+            "anthropic", BundledCase("idle", "key-needed", False, False, False)
+        )
+    )
+
+    def fail(*_args, **_kwargs):
+        raise bundled.CogitateProviderInstallFailed("network error")
+
+    monkeypatch.setattr(bundled, "_run_uv_pip_install", fail)
+
+    state = bundled.install_provider("anthropic", wait=True)
+
+    assert state["install_state"] == "failed"
+    assert "network error" in state["install_error"]
+
+
 def test_install_thread_success_transitions_to_installed(journal_config, monkeypatch):
     journal_config(
         bundled_provider_config(

@@ -715,7 +715,7 @@ def _start_thread(target: Callable[..., None], args: tuple[Any, ...]) -> None:
     thread.start()
 
 
-def install_provider(name: str) -> ContractState:
+def install_provider(name: str, *, wait: bool = False) -> ContractState:
     """Start installing a bundled provider and return the current state."""
 
     _require_supported(name)
@@ -756,7 +756,13 @@ def install_provider(name: str) -> ContractState:
                 scope="bundled",
             )
             raise CogitateProviderInstallFailed(str(exc)) from exc
-        return get_provider_state(name)
+        snapshot = get_provider_state(name)
+
+    # The worker thread needs _provider_lock to write terminal state and clean up.
+    if not wait:
+        return snapshot
+    thread.join(timeout=_UV_INSTALL_TIMEOUT_SECONDS)
+    return get_provider_state(name)
 
 
 def uninstall_provider(name: str) -> ContractState:

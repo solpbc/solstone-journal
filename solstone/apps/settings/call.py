@@ -593,7 +593,7 @@ def providers_bundled_install(
     from solstone.think.providers import bundled
 
     try:
-        typer.echo(json.dumps(bundled.install_provider(name), indent=2))
+        typer.echo(json.dumps(bundled.install_provider(name, wait=True), indent=2))
     except bundled.BundledProviderError as exc:
         _bundled_error_exit(exc)
 
