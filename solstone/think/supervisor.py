@@ -90,10 +90,31 @@ def _sd_notify(state: str) -> None:
         logging.warning("sd_notify failed: %s", exc)
 
 
-def _sweep_orphaned_sol_processes(grace: float = 5.0) -> int:
+def _candidate_journal(proc: "psutil.Process") -> Path | None:
+    """Return the resolved SOLSTONE_JOURNAL of ``proc``, or None on any failure.
+
+    Used by the orphan sweep to skip candidates we cannot positively classify
+    as belonging to the caller's journal. Conservative on unknown: any failure
+    to read or parse the env value returns None so the candidate is skipped.
+    """
+    try:
+        env = proc.environ()
+    except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
+        return None
+    raw = env.get("SOLSTONE_JOURNAL")
+    if not raw:
+        return None
+    try:
+        return Path(raw).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def _sweep_orphaned_sol_processes(journal: Path, grace: float = 5.0) -> int:
     if sys.platform != "linux":
         return 0
 
+    journal = journal.resolve()
     current_user = getpass.getuser()
     own_pid = os.getpid()
     targets: list[int] = []
@@ -107,6 +128,9 @@ def _sweep_orphaned_sol_processes(grace: float = 5.0) -> int:
                 continue
             if proc.pid == own_pid:
                 continue
+            candidate_journal = _candidate_journal(proc)
+            if candidate_journal != journal:
+                continue
             targets.append(proc.pid)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
@@ -114,7 +138,11 @@ def _sweep_orphaned_sol_processes(grace: float = 5.0) -> int:
     if not targets:
         return 0
 
-    logger.info("orphan sweep: terminating %d sol process(es)", len(targets))
+    logger.info(
+        "orphan sweep: terminating %d sol process(es) in journal %s",
+        len(targets),
+        journal,
+    )
     for pid in targets:
         logger.debug("orphan sweep: SIGTERM pid=%d", pid)
         try:
@@ -1892,7 +1920,7 @@ def main() -> None:
     # Written here, not at _supervisor_start, to minimize drift from psutil create_time().
     start_time_path.write_text(str(time.time()))
     logging.info("Singleton lock acquired (PID %d)", os.getpid())
-    _sweep_orphaned_sol_processes()
+    _sweep_orphaned_sol_processes(journal_path)
 
     # Set up signal handlers
     signal.signal(signal.SIGINT, handle_shutdown)
