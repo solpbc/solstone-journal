@@ -111,6 +111,13 @@ async def _check_cogitate(
     if provider_name == "local":
         status = _provider_status(provider_name)
         if not status.get("cogitate_ready"):
+            if not status.get("cogitate_cli_found"):
+                from solstone.think.providers import bundled
+
+                return (
+                    "skip",
+                    f"not installed; run `{bundled._install_hint('openhands')}`",
+                )
             return "skip", _local_readiness_message(status)
     elif provider_name in _OPENHANDS_BACKED_PROVIDERS:
         label = PROVIDER_METADATA[provider_name]["label"]
@@ -118,8 +125,17 @@ async def _check_cogitate(
         if not status.get("configured"):
             return "skip", f"{label} not configured (no {env_key})"
         if not status.get("cogitate_cli_found"):
-            binary = str(status.get("cogitate_cli") or "openhands-sdk")
-            return "skip", f"{binary} runtime not installed"
+            from solstone.think.providers import bundled
+
+            install_target = (
+                provider_name
+                if provider_name in bundled.SUPPORTED_PROVIDERS
+                else "openhands"
+            )
+            return (
+                "skip",
+                f"not installed; run `{bundled._install_hint(install_target)}`",
+            )
         if not status.get("cogitate_ready"):
             issues = status.get("issues") or []
             message = "; ".join(str(issue) for issue in issues) or "cogitate not ready"
@@ -210,6 +226,10 @@ async def _run_check(args: argparse.Namespace) -> None:
                 sys.exit(1)
     else:
         providers = list(PROVIDER_REGISTRY.keys())
+        from solstone.think.providers.mlx import is_mlx_platform_supported
+
+        if "mlx" in providers and not is_mlx_platform_supported():
+            providers.remove("mlx")
 
     interfaces = [args.interface] if args.interface else ["generate", "cogitate"]
     tier_names = {1: "pro", 2: "flash", 3: "lite"}

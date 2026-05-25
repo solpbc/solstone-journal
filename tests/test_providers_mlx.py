@@ -141,6 +141,26 @@ def test_is_mlx_available_parameterized(
     assert provider.is_mlx_available() == expected
 
 
+@pytest.mark.parametrize(
+    ("system", "machine", "expected"),
+    [
+        ("Darwin", "arm64", True),
+        ("Darwin", "x86_64", False),
+        ("Linux", "x86_64", False),
+        ("Linux", "arm64", False),
+        ("Windows", "amd64", False),
+    ],
+)
+def test_is_mlx_platform_supported_parameterized(
+    monkeypatch, system, machine, expected
+):
+    provider = _provider(monkeypatch)
+    monkeypatch.setattr(provider.platform, "system", lambda: system)
+    monkeypatch.setattr(provider.platform, "machine", lambda: machine)
+
+    assert provider.is_mlx_platform_supported() is expected
+
+
 @pytest.mark.parametrize("image_count", [1, 2])
 def test_image_actually_reaches_mlx_vlm(monkeypatch, image_count):
     provider = _provider(monkeypatch)

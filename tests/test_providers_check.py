@@ -318,6 +318,84 @@ def test_run_check_targeted_flock_dedup(tmp_path, monkeypatch):
     lock_file.close()
 
 
+def test_run_check_filters_mlx_when_platform_unsupported(tmp_path, monkeypatch):
+    import solstone.think.providers_cli as providers_cli
+
+    fake_registry = {"mlx": object(), "openai": object()}
+    fake_defaults = {
+        "mlx": {1: "mlx-pro", 2: "mlx-flash", 3: "mlx-lite"},
+        "openai": {1: "openai-pro", 2: "openai-flash", 3: "openai-lite"},
+    }
+
+    monkeypatch.setattr("solstone.think.providers.PROVIDER_REGISTRY", fake_registry)
+    monkeypatch.setattr("solstone.think.models.PROVIDER_DEFAULTS", fake_defaults)
+    monkeypatch.setattr(
+        "solstone.think.providers.mlx.is_mlx_platform_supported", lambda: False
+    )
+    monkeypatch.setattr(providers_cli, "get_journal", lambda: str(tmp_path))
+    monkeypatch.setattr(providers_cli, "_check_generate", lambda *_args: ("ok", "OK"))
+
+    async def mock_check_cogitate(*_args):
+        return "ok", "OK"
+
+    monkeypatch.setattr(providers_cli, "_check_cogitate", mock_check_cogitate)
+
+    args = argparse.Namespace(
+        provider=None,
+        interface=None,
+        tier=None,
+        json=True,
+        timeout=1,
+        targeted=False,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        asyncio.run(providers_cli._run_check(args))
+
+    assert exc_info.value.code == 0
+    payload = json.loads((tmp_path / "health" / "talents.json").read_text())
+    assert {result["provider"] for result in payload["results"]} == {"openai"}
+
+
+def test_run_check_includes_mlx_when_platform_supported(tmp_path, monkeypatch):
+    import solstone.think.providers_cli as providers_cli
+
+    fake_registry = {"mlx": object(), "openai": object()}
+    fake_defaults = {
+        "mlx": {1: "mlx-pro", 2: "mlx-flash", 3: "mlx-lite"},
+        "openai": {1: "openai-pro", 2: "openai-flash", 3: "openai-lite"},
+    }
+
+    monkeypatch.setattr("solstone.think.providers.PROVIDER_REGISTRY", fake_registry)
+    monkeypatch.setattr("solstone.think.models.PROVIDER_DEFAULTS", fake_defaults)
+    monkeypatch.setattr(
+        "solstone.think.providers.mlx.is_mlx_platform_supported", lambda: True
+    )
+    monkeypatch.setattr(providers_cli, "get_journal", lambda: str(tmp_path))
+    monkeypatch.setattr(providers_cli, "_check_generate", lambda *_args: ("ok", "OK"))
+
+    async def mock_check_cogitate(*_args):
+        return "ok", "OK"
+
+    monkeypatch.setattr(providers_cli, "_check_cogitate", mock_check_cogitate)
+
+    args = argparse.Namespace(
+        provider=None,
+        interface=None,
+        tier=None,
+        json=True,
+        timeout=1,
+        targeted=False,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        asyncio.run(providers_cli._run_check(args))
+
+    assert exc_info.value.code == 0
+    payload = json.loads((tmp_path / "health" / "talents.json").read_text())
+    assert any(result["provider"] == "mlx" for result in payload["results"])
+
+
 def test_check_generate_logs_token_usage(monkeypatch):
     """_check_generate logs token usage when result includes usage data."""
     import solstone.think.providers_cli as providers_cli
@@ -410,6 +488,35 @@ def test_cogitate_missing_binary_returns_skip(monkeypatch):
     status, msg = asyncio.run(providers_cli._check_cogitate("fake", 2, 30))
     assert status == "skip"
     assert "nonexistent-binary-xyz CLI not installed" in msg
+
+
+@pytest.mark.parametrize(
+    ("provider_name", "install_target"),
+    [
+        ("anthropic", "anthropic"),
+        ("openai", "openai"),
+        ("google", "openhands"),
+        ("local", "openhands"),
+    ],
+)
+def test_check_cogitate_skip_names_install_command(
+    monkeypatch, provider_name, install_target
+):
+    import solstone.think.providers_cli as providers_cli
+
+    monkeypatch.setattr(
+        providers_cli,
+        "_provider_status",
+        lambda _name: {
+            "configured": True,
+            "cogitate_cli_found": False,
+        },
+    )
+
+    status, msg = asyncio.run(providers_cli._check_cogitate(provider_name, 2, 30))
+
+    assert status == "skip"
+    assert f"sol call settings providers install {install_target}" in msg
 
 
 def test_all_skip_exits_zero(tmp_path, monkeypatch):

@@ -117,11 +117,18 @@ class ModelSnapshotMissingError(RuntimeError):
         return f"model snapshot not present: {text}"
 
 
-def _check_platform_and_package() -> tuple[bool, str]:
+def _platform_unsupported_reason() -> str | None:
     if platform.system() != "Darwin":
-        return False, "not running on macOS"
+        return "not running on macOS"
     if platform.machine() != "arm64":
-        return False, "not running on Apple Silicon"
+        return "not running on Apple Silicon"
+    return None
+
+
+def _check_platform_and_package() -> tuple[bool, str]:
+    platform_reason = _platform_unsupported_reason()
+    if platform_reason is not None:
+        return False, platform_reason
 
     try:
         importlib.import_module("mlx_vlm")
@@ -129,6 +136,11 @@ def _check_platform_and_package() -> tuple[bool, str]:
         return False, "mlx-vlm package not installed"
 
     return True, ""
+
+
+def is_mlx_platform_supported() -> bool:
+    """True when the host is Apple Silicon macOS. Does not import mlx_vlm."""
+    return _platform_unsupported_reason() is None
 
 
 def is_mlx_available() -> tuple[bool, str]:
@@ -426,6 +438,7 @@ __all__ = [
     "QWEN_35_9B",
     "is_mlx_available",
     "is_mlx_available_for_model",
+    "is_mlx_platform_supported",
     "list_models",
     "run_agenerate",
     "run_cogitate",
