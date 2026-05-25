@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,18 @@ LOW_QUALITY_REASON_MEDIAN_DURATION_TOO_SHORT = "median_duration_too_short"
 LOW_QUALITY_REASON_CLUSTER_TOO_DIFFUSE = "cluster_too_diffuse"
 MANUAL_OWNER_METHODS = frozenset({"user_assigned", "user_corrected", "user_confirmed"})
 _PROVISIONAL_GUARD_CACHE: dict[str, tuple[int, int, np.ndarray]] | None = None
+
+
+@dataclass(frozen=True)
+class OwnerCentroid:
+    """Confirmed owner centroid plus browser-facing metadata."""
+
+    centroid: np.ndarray
+    threshold: float
+    cluster_size: int
+    last_refreshed_at: str
+    intra_cosine_p25: float | None
+    streams: list[str]
 
 
 def _mark_no_cluster(segment_count: int) -> None:
@@ -129,6 +142,14 @@ def _pairwise_cosines(embeddings: np.ndarray) -> np.ndarray:
     return sim[iu].astype(np.float32, copy=False)
 
 
+def compute_intra_cosine_p25(embeddings: np.ndarray) -> float | None:
+    """Return p25 pairwise cosine for embeddings, or None when unavailable."""
+    cosines = _pairwise_cosines(np.asarray(embeddings, dtype=np.float32))
+    if cosines.size == 0:
+        return None
+    return float(np.percentile(cosines, 25))
+
+
 def _routes_helpers():
     """Load speakers route helpers lazily to avoid import cycles."""
     from solstone.apps.speakers.routes import (
@@ -157,7 +178,7 @@ def _principal_id_or_none() -> str | None:
 
 def _iso_now() -> str:
     """Return a timestamp string for persisted metadata."""
-    return datetime.now().isoformat()
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _audio_url(day: str, stream: str, segment_key: str, source: str) -> str:
@@ -437,7 +458,7 @@ def _write_owner_centroid(
         centroid=np.asarray(centroid, dtype=np.float32).reshape(-1),
         cluster_size=np.array(cluster_size, dtype=np.int32),
         threshold=np.array(OWNER_THRESHOLD, dtype=np.float32),
-        version=np.array(_iso_now()),
+        last_refreshed_at=np.array(_iso_now()),
     )
     return owner_path
 
@@ -880,29 +901,67 @@ def detect_owner_candidate() -> dict[str, Any]:
     }
 
 
-def load_owner_centroid() -> tuple[np.ndarray, float] | None:
-    """Load the confirmed owner centroid and threshold for the principal entity."""
+def _load_owner_voiceprint_summary(
+    principal_id: str,
+) -> tuple[float | None, list[str]]:
+    """Compute owner cohesion and stream list from the principal voiceprints."""
+    voiceprints = load_entity_voiceprints_file(principal_id)
+    if voiceprints is None:
+        return None, []
+
+    embeddings, metadata = voiceprints
+    streams = sorted(
+        {
+            str(item["stream"])
+            for item in metadata
+            if isinstance(item.get("stream"), str) and item.get("stream")
+        }
+    )
+    return compute_intra_cosine_p25(embeddings), streams
+
+
+def load_owner_centroid() -> OwnerCentroid | None:
+    """Load the confirmed owner centroid and metadata for the principal entity."""
     principal = get_journal_principal()
     if not principal:
         return None
 
-    centroid_path = journal_entity_memory_path(principal["id"]) / "owner_centroid.npz"
+    principal_id = str(principal["id"])
+    centroid_path = journal_entity_memory_path(principal_id) / "owner_centroid.npz"
     if not centroid_path.exists():
         return None
 
     try:
-        data = np.load(centroid_path, allow_pickle=False)
-        centroid = data.get("centroid")
-        threshold = data.get("threshold")
-        if centroid is None or threshold is None:
-            return None
+        with np.load(centroid_path, allow_pickle=False) as data:
+            centroid = data.get("centroid")
+            threshold = data.get("threshold")
+            cluster_size = data.get("cluster_size")
+            last_refreshed_at = data.get("last_refreshed_at")
+            if centroid is None or threshold is None or cluster_size is None:
+                return None
 
-        normalized = centroid.astype(np.float32).reshape(-1)
-        norm = np.linalg.norm(normalized)
-        if norm == 0:
-            return None
-        normalized = normalized / norm
-        return normalized, float(np.asarray(threshold).item())
+            normalized = centroid.astype(np.float32).reshape(-1)
+            norm = np.linalg.norm(normalized)
+            if norm == 0:
+                return None
+            normalized = normalized / norm
+            refreshed = (
+                str(np.asarray(last_refreshed_at).item())
+                if last_refreshed_at is not None
+                else ""
+            )
+            size = int(np.asarray(cluster_size).item())
+            thresh = float(np.asarray(threshold).item())
+
+        intra_p25, streams = _load_owner_voiceprint_summary(principal_id)
+        return OwnerCentroid(
+            centroid=normalized,
+            threshold=thresh,
+            cluster_size=size,
+            last_refreshed_at=refreshed,
+            intra_cosine_p25=intra_p25,
+            streams=streams,
+        )
     except Exception as exc:
         logger.warning("Failed to load owner centroid %s: %s", centroid_path, exc)
         return None
@@ -918,7 +977,8 @@ def classify_sentences(
     if centroid_data is None:
         return []
 
-    centroid, threshold = centroid_data
+    centroid = centroid_data.centroid
+    threshold = centroid_data.threshold
     emb_data = load_embeddings_file(
         segment_path(day, segment_key, stream, create=False) / f"{source}.npz"
     )

@@ -35,10 +35,10 @@ from solstone.apps.speakers.encoder_config import (
     NOISY_FLYWHEEL_OVERLAP_MAX,
 )
 from solstone.apps.speakers.owner import load_owner_centroid
+from solstone.apps.speakers.time import segment_start_ts_ms
 from solstone.think.entities import find_matching_entity
 from solstone.think.entities.journal import (
     get_journal_principal,
-    journal_entity_memory_path,
     load_all_journal_entities,
 )
 from solstone.think.utils import day_path, now_ms, segment_path
@@ -200,7 +200,7 @@ def attribute_segment(
         source           - audio source stem processed
         candidates       - list of candidate speaker names
         candidate_entity_ids - resolved entity IDs
-        metadata         - owner centroid version + voiceprint counts
+        metadata         - owner centroid refresh timestamp + voiceprint counts
     """
     (
         load_embeddings_file,
@@ -216,7 +216,8 @@ def attribute_segment(
     if centroid_data is None:
         return {"error": "no_owner_centroid", "labels": [], "unmatched": []}
 
-    owner_centroid, owner_threshold = centroid_data
+    owner_centroid = centroid_data.centroid
+    owner_threshold = centroid_data.threshold
 
     # --- prerequisite: embeddings ---
     npz_files = sorted(
@@ -427,18 +428,8 @@ def attribute_segment(
             except Exception:
                 pass
 
-    # --- owner centroid version ---
-    owner_version = None
-    if owner_entity_id:
-        try:
-            cp = journal_entity_memory_path(owner_entity_id) / "owner_centroid.npz"
-            if cp.exists():
-                d = np.load(cp, allow_pickle=False)
-                v = d.get("version")
-                if v is not None:
-                    owner_version = str(np.asarray(v).item())
-        except Exception:
-            pass
+    # --- owner centroid refresh timestamp ---
+    owner_refreshed_at = centroid_data.last_refreshed_at or None
 
     return {
         "labels": [labels[int(sid)] for sid in statement_ids],
@@ -448,7 +439,7 @@ def attribute_segment(
         "candidates": candidate_names,
         "candidate_entity_ids": list(candidate_entities.keys()),
         "metadata": {
-            "owner_centroid_version": owner_version,
+            "owner_centroid_last_refreshed_at": owner_refreshed_at,
             "voiceprint_versions": voiceprint_versions,
         },
     }
@@ -514,7 +505,9 @@ def save_speaker_labels(
     out_path = agents_dir / "speaker_labels.json"
     data = {
         "labels": labels,
-        "owner_centroid_version": metadata.get("owner_centroid_version"),
+        "owner_centroid_last_refreshed_at": metadata.get(
+            "owner_centroid_last_refreshed_at"
+        ),
         "voiceprint_versions": metadata.get("voiceprint_versions", {}),
     }
     with open(out_path, "w", encoding="utf-8") as f:
@@ -564,7 +557,8 @@ def accumulate_voiceprints(
     centroid_data = load_owner_centroid()
     if centroid_data is None:
         return {}
-    owner_centroid, owner_threshold = centroid_data
+    owner_centroid = centroid_data.centroid
+    owner_threshold = centroid_data.threshold
 
     seg_dir = segment_path(day, segment_key, stream, create=False)
     jsonl_path = seg_dir / f"{source}.jsonl"
@@ -586,6 +580,7 @@ def accumulate_voiceprints(
 
     embeddings, statement_ids, _ = emb_data
     sid_to_idx = {int(s): i for i, s in enumerate(statement_ids)}
+    last_seen_ts = segment_start_ts_ms(day, segment_key)
 
     # Eligible methods for accumulation
     eligible_methods = {
@@ -639,6 +634,7 @@ def accumulate_voiceprints(
             "stream": stream,
             "sentence_id": sid,
             "added_at": now_ms(),
+            "last_seen_ts": last_seen_ts,
         }
         entity_new[speaker].append((normalized, metadata))
         entity_existing[speaker].add(vp_key)
@@ -785,3 +781,96 @@ def backfill_segments(
 
     stats["speakers_seen"] = speakers_seen
     return stats
+
+
+def _load_attributed_speakers(labels_path: Path) -> set[str]:
+    """Return entity ids attributed in one speaker_labels.json file."""
+    try:
+        data = json.loads(labels_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
+    return {
+        str(label["speaker"])
+        for label in data.get("labels", [])
+        if isinstance(label.get("speaker"), str) and label.get("speaker")
+    }
+
+
+def backfill_last_seen(*, dry_run: bool = True) -> dict[str, Any]:
+    """Backfill last_seen_ts on existing voiceprint metadata rows."""
+    from solstone.think.entities.voiceprints import (
+        load_entity_voiceprints_file,
+        rewrite_voiceprint_metadata,
+    )
+    from solstone.think.utils import day_dirs, iter_segments
+
+    entity_max_ts: dict[str, int] = {}
+    labels_read = 0
+    errors: list[str] = []
+
+    for day_name in sorted(day_dirs().keys()):
+        for _stream_name, seg_key, seg_path in iter_segments(day_name):
+            labels_path = seg_path / "talents" / "speaker_labels.json"
+            if not labels_path.exists():
+                continue
+            labels_read += 1
+            try:
+                segment_ts = segment_start_ts_ms(day_name, seg_key)
+            except ValueError as exc:
+                errors.append(f"{day_name}/{seg_key}: {exc}")
+                continue
+            for entity_id in _load_attributed_speakers(labels_path):
+                entity_max_ts[entity_id] = max(
+                    entity_max_ts.get(entity_id, 0),
+                    segment_ts,
+                )
+
+    pending: dict[str, dict[str, int]] = {}
+    rows_scanned = 0
+    rows_pending = 0
+    rows_written = 0
+
+    def needs_update(metadata: dict, max_ts: int) -> bool:
+        current = metadata.get("last_seen_ts")
+        return not isinstance(current, int) or current < max_ts
+
+    for entity_id, max_ts in sorted(entity_max_ts.items()):
+        voiceprints = load_entity_voiceprints_file(entity_id)
+        if voiceprints is None:
+            continue
+
+        _embeddings, metadata_rows = voiceprints
+        rows_scanned += len(metadata_rows)
+        update_count = sum(1 for row in metadata_rows if needs_update(row, max_ts))
+        if update_count <= 0:
+            continue
+
+        pending[entity_id] = {
+            "rows": update_count,
+            "last_seen_ts": max_ts,
+        }
+        rows_pending += update_count
+        if dry_run:
+            continue
+
+        def mutator(rows: list[dict], *, target_ts: int = max_ts) -> int:
+            changed = 0
+            for row in rows:
+                if needs_update(row, target_ts):
+                    row["last_seen_ts"] = target_ts
+                    changed += 1
+            return changed
+
+        rows_written += rewrite_voiceprint_metadata(entity_id, mutator)
+
+    return {
+        "dry_run": dry_run,
+        "labels_read": labels_read,
+        "entities_seen": len(entity_max_ts),
+        "entities_pending": len(pending),
+        "rows_scanned": rows_scanned,
+        "rows_pending": rows_pending,
+        "rows_written": rows_written,
+        "pending": pending,
+        "errors": errors,
+    }

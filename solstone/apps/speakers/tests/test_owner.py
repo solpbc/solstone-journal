@@ -477,15 +477,20 @@ def test_bootstrap_owner_from_manual_tags_confirms(speakers_env):
     assert result["cluster_size"] == 30
     assert owner_path.exists()
     with np.load(owner_path, allow_pickle=False) as data:
-        assert set(data.files) == {"centroid", "cluster_size", "threshold", "version"}
+        assert set(data.files) == {
+            "centroid",
+            "cluster_size",
+            "threshold",
+            "last_refreshed_at",
+        }
         centroid = data["centroid"]
         cluster_size = int(np.asarray(data["cluster_size"]).item())
         threshold = float(np.asarray(data["threshold"]).item())
-        version = str(np.asarray(data["version"]).item())
+        last_refreshed_at = str(np.asarray(data["last_refreshed_at"]).item())
     assert cluster_size == 30
     assert np.isclose(np.linalg.norm(centroid), 1.0)
     assert np.isclose(threshold, OWNER_THRESHOLD)
-    assert version
+    assert last_refreshed_at.endswith("Z")
     assert get_current()["voiceprint"]["status"] == "confirmed"
 
 
@@ -657,7 +662,7 @@ def test_owner_centroid_schema_parity_between_confirm_and_manual_build(speakers_
             "centroid",
             "cluster_size",
             "threshold",
-            "version",
+            "last_refreshed_at",
         }
     )
 
@@ -716,15 +721,18 @@ def test_load_owner_centroid_success(speakers_env):
         centroid=centroid,
         cluster_size=np.array(60, dtype=np.int32),
         threshold=np.array(OWNER_THRESHOLD, dtype=np.float32),
-        version=np.array("2026-03-15T12:00:00"),
+        last_refreshed_at=np.array("2026-03-15T12:00:00Z"),
     )
 
     loaded = load_owner_centroid()
 
     assert loaded is not None
-    loaded_centroid, threshold = loaded
-    assert np.allclose(loaded_centroid, centroid)
-    assert np.isclose(threshold, OWNER_THRESHOLD)
+    assert np.allclose(loaded.centroid, centroid)
+    assert np.isclose(loaded.threshold, OWNER_THRESHOLD)
+    assert loaded.cluster_size == 60
+    assert loaded.last_refreshed_at == "2026-03-15T12:00:00Z"
+    assert loaded.intra_cosine_p25 is None
+    assert loaded.streams == []
 
 
 def test_classify_sentences_no_centroid(speakers_env):
@@ -747,7 +755,7 @@ def test_classify_sentences_with_centroid(speakers_env):
         centroid=centroid,
         cluster_size=np.array(70, dtype=np.int32),
         threshold=np.array(OWNER_THRESHOLD, dtype=np.float32),
-        version=np.array("2026-03-15T12:00:00"),
+        last_refreshed_at=np.array("2026-03-15T12:00:00Z"),
     )
 
     close = _normalized(np.array([0.95, 0.05] + [0.0] * 254, dtype=np.float32))
@@ -937,7 +945,15 @@ def test_api_owner_status_confirmed(speakers_env):
         response = client.get("/app/speakers/api/owner/status")
 
     assert response.status_code == 200
-    assert response.get_json() == {"status": "confirmed"}
+    assert response.get_json() == {
+        "status": "confirmed",
+        "centroid_metadata": {
+            "cluster_size": 0,
+            "streams": [],
+            "last_refreshed_at": "",
+            "intra_cosine_p25": None,
+        },
+    }
 
 
 def test_api_owner_classify_no_centroid(speakers_env):

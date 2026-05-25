@@ -9,6 +9,7 @@ import fcntl
 import json
 import logging
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 
@@ -126,6 +127,35 @@ def save_voiceprints_batch(
         metadata=combined_meta_dicts,
     )
     return len(new_items)
+
+
+def rewrite_voiceprint_metadata(
+    entity_id: str,
+    mutator: Callable[[list[dict]], int],
+) -> int:
+    """Rewrite an entity's voiceprint metadata in place when mutator changes rows."""
+    try:
+        folder = journal_entity_memory_path(entity_id)
+    except (RuntimeError, ValueError):
+        return 0
+
+    npz_path = folder / "voiceprints.npz"
+    if not npz_path.exists():
+        return 0
+
+    with np.load(npz_path, allow_pickle=False) as data:
+        embeddings = data.get("embeddings")
+        metadata_arr = data.get("metadata")
+        if embeddings is None or metadata_arr is None:
+            return 0
+        metadata = [json.loads(item) for item in metadata_arr]
+
+    updates = mutator(metadata)
+    if updates <= 0:
+        return 0
+
+    save_voiceprints_safely(npz_path=npz_path, embeddings=embeddings, metadata=metadata)
+    return updates
 
 
 def voiceprint_file_path(entity_id: str) -> Path:

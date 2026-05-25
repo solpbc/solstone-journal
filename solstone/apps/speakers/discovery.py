@@ -139,7 +139,8 @@ def discover_unknown_speakers() -> dict[str, Any]:
         _clear_discovery_cache()
         return {"clusters": []}
 
-    owner_centroid, owner_threshold = centroid_data
+    owner_centroid = centroid_data.centroid
+    owner_threshold = centroid_data.threshold
     embedding_chunks: list[np.ndarray] = []
     provenance: list[dict[str, Any]] = []
 
@@ -469,7 +470,7 @@ def identify_cluster(
         if labels_data is None:
             labels_data = {
                 "labels": [],
-                "owner_centroid_version": None,
+                "owner_centroid_last_refreshed_at": None,
                 "voiceprint_versions": {},
             }
 

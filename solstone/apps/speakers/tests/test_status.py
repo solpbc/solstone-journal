@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 
 
@@ -76,6 +78,109 @@ def test_status_owner_includes_bootstrap_diagnostics(speakers_env):
     assert result["embeddings_available"] == 7
     assert result["streams_represented"] == 1
     assert result["can_build_from_tags"] is False
+
+
+def test_owner_section_confirmed_includes_centroid_metadata_locked_shape(speakers_env):
+    from solstone.apps.speakers.encoder_config import OWNER_THRESHOLD
+    from solstone.apps.speakers.status import get_speakers_status
+
+    env = speakers_env()
+    principal_dir = env.create_entity("Self Person", is_principal=True)
+    embeddings = np.zeros((2, 256), dtype=np.float32)
+    embeddings[:, 0] = 1.0
+    metadata = [
+        json.dumps(
+            {
+                "day": "20240101",
+                "segment_key": "090000_300",
+                "source": "audio",
+                "stream": "test",
+                "sentence_id": idx,
+                "last_seen_ts": 1704103200000 + idx,
+            }
+        )
+        for idx in range(1, 3)
+    ]
+    np.savez_compressed(
+        principal_dir / "voiceprints.npz",
+        embeddings=embeddings,
+        metadata=np.asarray(metadata, dtype=str),
+    )
+    np.savez_compressed(
+        principal_dir / "owner_centroid.npz",
+        centroid=embeddings[0],
+        cluster_size=np.array(2, dtype=np.int32),
+        threshold=np.array(OWNER_THRESHOLD, dtype=np.float32),
+        last_refreshed_at=np.array("2026-03-15T12:00:00Z"),
+    )
+    from solstone.think.awareness import update_state
+
+    update_state("voiceprint", {"status": "confirmed"})
+
+    result = get_speakers_status(section="owner")
+
+    assert set(result["centroid_metadata"]) == {
+        "cluster_size",
+        "streams",
+        "last_refreshed_at",
+        "intra_cosine_p25",
+    }
+    assert result["centroid_metadata"]["cluster_size"] == 2
+    assert result["centroid_metadata"]["streams"] == ["test"]
+    assert result["centroid_metadata"]["last_refreshed_at"] == "2026-03-15T12:00:00Z"
+    assert result["centroid_metadata"]["intra_cosine_p25"] == 1.0
+
+
+def test_speakers_section_includes_last_seen_ts_and_intra_cosine_p25_per_entity(
+    speakers_env,
+):
+    from solstone.apps.speakers.status import get_speakers_status
+
+    env = speakers_env()
+    entity_dir = env.create_entity("Alice Test")
+    embeddings = np.zeros((2, 256), dtype=np.float32)
+    embeddings[:, 0] = 1.0
+    metadata = [
+        json.dumps(
+            {
+                "day": "20240101",
+                "segment_key": "090000_300",
+                "source": "audio",
+                "stream": "mic",
+                "sentence_id": 1,
+                "last_seen_ts": 10,
+            }
+        ),
+        json.dumps(
+            {
+                "day": "20240102",
+                "segment_key": "100000_300",
+                "source": "audio",
+                "stream": "sys",
+                "sentence_id": 2,
+                "last_seen_ts": 20,
+            }
+        ),
+    ]
+    np.savez_compressed(
+        entity_dir / "voiceprints.npz",
+        embeddings=embeddings,
+        metadata=np.asarray(metadata, dtype=str),
+    )
+
+    result = get_speakers_status(section="speakers")
+
+    assert result == [
+        {
+            "entity_id": "alice_test",
+            "name": "Alice Test",
+            "embedding_count": 2,
+            "segment_count": 2,
+            "streams": ["mic", "sys"],
+            "last_seen_ts": 20,
+            "intra_cosine_p25": 1.0,
+        }
+    ]
 
 
 def test_status_unknown_section(speakers_env):

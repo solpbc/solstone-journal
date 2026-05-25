@@ -6,6 +6,6 @@
     {"sentence_id": 4, "speaker": "juliet_capulet", "confidence": "medium", "method": "acoustic"},
     {"sentence_id": 5, "speaker": "mercutio_escalus", "confidence": "medium", "method": "context"}
   ],
-  "owner_centroid_version": "fixture-v1",
+  "owner_centroid_last_refreshed_at": "fixture-v1",
   "voiceprint_versions": {}
 }

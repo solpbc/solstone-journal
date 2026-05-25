@@ -64,7 +64,7 @@ def _setup_owner_centroid(
         centroid=centroid,
         cluster_size=np.array(100, dtype=np.int32),
         threshold=np.array(OWNER_THRESHOLD, dtype=np.float32),
-        version=np.array("2026-01-01T00:00:00"),
+        last_refreshed_at=np.array("2026-01-01T00:00:00Z"),
     )
     return centroid
 

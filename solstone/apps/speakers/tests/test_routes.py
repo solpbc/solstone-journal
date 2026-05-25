@@ -267,6 +267,7 @@ def test_save_voiceprint(speakers_env):
     import json
 
     from solstone.apps.speakers.routes import _save_voiceprint
+    from solstone.apps.speakers.time import segment_start_ts_ms
 
     env = speakers_env()
 
@@ -295,6 +296,7 @@ def test_save_voiceprint(speakers_env):
     assert metadata["source"] == "mic_audio"
     assert metadata["sentence_id"] == 5
     assert "added_at" in metadata
+    assert metadata["last_seen_ts"] == segment_start_ts_ms("20240101", "143022_300")
 
 
 def test_save_voiceprint_appends(speakers_env):
@@ -411,7 +413,7 @@ def test_check_owner_contamination_prefers_confirmed_centroid(speakers_env):
         centroid=confirmed,
         cluster_size=np.array(30, dtype=np.int32),
         threshold=np.array(OWNER_THRESHOLD, dtype=np.float32),
-        version=np.array("2026-04-25T12:00:00"),
+        last_refreshed_at=np.array("2026-04-25T12:00:00Z"),
     )
 
     assert _check_owner_contamination(similar) is False
@@ -1418,3 +1420,243 @@ def test_api_segments_pagination(speakers_env):
 
         keys = [s["key"] for s in data["segments"]]
         assert keys == sorted(keys)
+
+
+def test_api_segments_speaker_filter_includes_attributed_segments_only(speakers_env):
+    from solstone.apps.speakers.routes import speakers_bp
+
+    env = speakers_env()
+    env.create_segment("20240101", "090000_300", ["mic_audio"], num_sentences=2)
+    env.create_segment("20240101", "100000_300", ["mic_audio"], num_sentences=2)
+    env.create_speaker_labels(
+        "20240101",
+        "090000_300",
+        [{"sentence_id": 1, "speaker": "alice_test", "confidence": "high"}],
+    )
+    env.create_speaker_labels(
+        "20240101",
+        "100000_300",
+        [{"sentence_id": 1, "speaker": "bob_test", "confidence": "high"}],
+    )
+
+    app = Flask(__name__)
+    app.register_blueprint(speakers_bp)
+
+    with app.test_client() as client:
+        resp = client.get("/app/speakers/api/segments/20240101?speaker=alice_test")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["total"] == 1
+    assert [segment["key"] for segment in data["segments"]] == ["090000_300"]
+
+
+def test_api_segments_speaker_filter_unknown_entity_returns_empty_200(speakers_env):
+    from solstone.apps.speakers.routes import speakers_bp
+
+    env = speakers_env()
+    env.create_segment("20240101", "090000_300", ["mic_audio"], num_sentences=2)
+    env.create_speaker_labels(
+        "20240101",
+        "090000_300",
+        [{"sentence_id": 1, "speaker": "alice_test", "confidence": "high"}],
+    )
+
+    app = Flask(__name__)
+    app.register_blueprint(speakers_bp)
+
+    with app.test_client() as client:
+        resp = client.get("/app/speakers/api/segments/20240101?speaker=unknown")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"segments": [], "total": 0}
+
+
+def test_api_speakers_known_returns_section_shape(speakers_env):
+    from solstone.apps.speakers.copy import SPK_OVERVIEW_KNOWN_VOICES_SORTS
+    from solstone.apps.speakers.routes import speakers_bp
+
+    env = speakers_env()
+    alice_dir = env.create_entity("Alice Test")
+    bob_dir = env.create_entity("Bob Test")
+    emb = np.zeros((2, 256), dtype=np.float32)
+    emb[:, 0] = 1.0
+    np.savez_compressed(
+        alice_dir / "voiceprints.npz",
+        embeddings=emb,
+        metadata=np.asarray(
+            [
+                json.dumps(
+                    {
+                        "day": "20240101",
+                        "segment_key": "090000_300",
+                        "source": "audio",
+                        "stream": "mic",
+                        "sentence_id": 1,
+                        "last_seen_ts": 10,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "day": "20240102",
+                        "segment_key": "090000_300",
+                        "source": "audio",
+                        "stream": "mic",
+                        "sentence_id": 2,
+                        "last_seen_ts": 30,
+                    }
+                ),
+            ],
+            dtype=str,
+        ),
+    )
+    np.savez_compressed(
+        bob_dir / "voiceprints.npz",
+        embeddings=emb[:1],
+        metadata=np.asarray(
+            [
+                json.dumps(
+                    {
+                        "day": "20240101",
+                        "segment_key": "100000_300",
+                        "source": "audio",
+                        "stream": "sys",
+                        "sentence_id": 1,
+                    }
+                )
+            ],
+            dtype=str,
+        ),
+    )
+
+    app = Flask(__name__)
+    app.register_blueprint(speakers_bp)
+
+    with app.test_client() as client:
+        recent = client.get("/app/speakers/api/speakers/known")
+        alphabetical = client.get(
+            f"/app/speakers/api/speakers/known?sort={SPK_OVERVIEW_KNOWN_VOICES_SORTS[2]}"
+        )
+
+    assert recent.status_code == 200
+    data = recent.get_json()
+    assert data["total"] == 2
+    assert [speaker["entity_id"] for speaker in data["speakers"]] == [
+        "alice_test",
+        "bob_test",
+    ]
+    assert data["speakers"][0]["last_seen_ts"] == 30
+    assert data["speakers"][0]["intra_cosine_p25"] == 1.0
+    assert alphabetical.status_code == 200
+    assert [
+        speaker["entity_id"] for speaker in alphabetical.get_json()["speakers"]
+    ] == [
+        "alice_test",
+        "bob_test",
+    ]
+
+
+def test_api_owner_status_confirmed_has_centroid_metadata(speakers_env):
+    from solstone.apps.speakers.encoder_config import OWNER_THRESHOLD
+    from solstone.apps.speakers.routes import speakers_bp
+    from solstone.think.awareness import update_state
+
+    env = speakers_env()
+    principal_dir = env.create_entity("Self Person", is_principal=True)
+    emb = np.zeros((2, 256), dtype=np.float32)
+    emb[:, 0] = 1.0
+    np.savez_compressed(
+        principal_dir / "voiceprints.npz",
+        embeddings=emb,
+        metadata=np.asarray(
+            [
+                json.dumps(
+                    {
+                        "day": "20240101",
+                        "segment_key": "090000_300",
+                        "source": "audio",
+                        "stream": "mic",
+                        "sentence_id": 1,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "day": "20240101",
+                        "segment_key": "100000_300",
+                        "source": "audio",
+                        "stream": "sys",
+                        "sentence_id": 2,
+                    }
+                ),
+            ],
+            dtype=str,
+        ),
+    )
+    np.savez_compressed(
+        principal_dir / "owner_centroid.npz",
+        centroid=emb[0],
+        cluster_size=np.array(2, dtype=np.int32),
+        threshold=np.array(OWNER_THRESHOLD, dtype=np.float32),
+        last_refreshed_at=np.array("2026-03-15T12:00:00Z"),
+    )
+    update_state("voiceprint", {"status": "confirmed"})
+
+    app = Flask(__name__)
+    app.register_blueprint(speakers_bp)
+
+    with app.test_client() as client:
+        resp = client.get("/app/speakers/api/owner/status")
+
+    assert resp.status_code == 200
+    metadata = resp.get_json()["centroid_metadata"]
+    assert set(metadata) == {
+        "cluster_size",
+        "streams",
+        "last_refreshed_at",
+        "intra_cosine_p25",
+    }
+    assert metadata == {
+        "cluster_size": 2,
+        "streams": ["mic", "sys"],
+        "last_refreshed_at": "2026-03-15T12:00:00Z",
+        "intra_cosine_p25": 1.0,
+    }
+
+
+def test_index_renders_overview_template_not_redirect(speakers_env, monkeypatch):
+    from solstone.apps.speakers import routes
+    from solstone.apps.speakers.routes import speakers_bp
+
+    speakers_env()
+    seen = {}
+
+    def fake_render_template(template, **context):
+        seen["template"] = template
+        seen["context"] = context
+        return "overview"
+
+    monkeypatch.setattr(routes, "render_template", fake_render_template)
+
+    app = Flask(__name__)
+    app.register_blueprint(speakers_bp)
+
+    with app.test_client() as client:
+        resp = client.get("/app/speakers/")
+
+    assert resp.status_code == 200
+    assert seen["template"] == "speakers/overview.html"
+    assert seen["context"]["day"] is None
+    assert "speaker_copy" in seen["context"]
+
+
+def test_overview_renders_four_section_markers():
+    template = (
+        __import__("pathlib")
+        .Path("solstone/apps/speakers/overview.html")
+        .read_text(encoding="utf-8")
+    )
+
+    assert 'data-section="your-voice"' in template
+    assert 'data-section="known-voices"' in template
+    assert 'data-section="new-voices"' in template
+    assert 'data-section="today"' in template

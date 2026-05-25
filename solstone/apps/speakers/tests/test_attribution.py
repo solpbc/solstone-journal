@@ -31,7 +31,7 @@ def _setup_owner(env, name: str = "Self Person") -> tuple[Path, np.ndarray]:
         centroid=centroid,
         cluster_size=np.array(70, dtype=np.int32),
         threshold=np.array(OWNER_THRESHOLD, dtype=np.float32),
-        version=np.array("2026-03-15T12:00:00"),
+        last_refreshed_at=np.array("2026-03-15T12:00:00Z"),
     )
     return principal_dir, centroid
 
@@ -256,6 +256,9 @@ def test_layer3_acoustic_matching(speakers_env):
     assert labels[1]["speaker"] == "alice_test"
     assert labels[1]["method"] == "acoustic"
     assert labels[1]["confidence"] == "high"
+    assert (
+        result["metadata"]["owner_centroid_last_refreshed_at"] == "2026-03-15T12:00:00Z"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +310,7 @@ def test_save_speaker_labels(tmp_path):
         },
     ]
     metadata = {
-        "owner_centroid_version": "2026-03-15T12:00:00",
+        "owner_centroid_last_refreshed_at": "2026-03-15T12:00:00",
         "voiceprint_versions": {"alice": 10},
     }
 
@@ -316,7 +319,7 @@ def test_save_speaker_labels(tmp_path):
     assert path.name == "speaker_labels.json"
     data = json.loads(path.read_text())
     assert len(data["labels"]) == 2
-    assert data["owner_centroid_version"] == "2026-03-15T12:00:00"
+    assert data["owner_centroid_last_refreshed_at"] == "2026-03-15T12:00:00"
     assert data["voiceprint_versions"]["alice"] == 10
 
 
@@ -327,6 +330,7 @@ def test_save_speaker_labels(tmp_path):
 
 def test_accumulate_voiceprints_saves(speakers_env):
     from solstone.apps.speakers.attribution import accumulate_voiceprints
+    from solstone.apps.speakers.time import segment_start_ts_ms
 
     env = speakers_env()
     _setup_owner(env)
@@ -357,6 +361,8 @@ def test_accumulate_voiceprints_saves(speakers_env):
     assert vp_path.exists()
     data = np.load(vp_path, allow_pickle=False)
     assert len(data["embeddings"]) == 1
+    metadata = json.loads(str(data["metadata"][0]))
+    assert metadata["last_seen_ts"] == segment_start_ts_ms("20240101", "090000_300")
 
 
 def test_accumulate_idempotent(speakers_env):
@@ -688,3 +694,36 @@ def test_backfill_resumable(speakers_env):
     stats2 = backfill_segments()
     assert stats2["processed"] == 0
     assert stats2["already_labeled"] == 1
+
+
+def test_backfill_last_seen_commit_writes_then_dry_run_reports_zero(speakers_env):
+    from solstone.apps.speakers.attribution import backfill_last_seen
+    from solstone.apps.speakers.time import segment_start_ts_ms
+
+    env = speakers_env()
+    entity_dir = env.create_entity(
+        "Alice Test",
+        voiceprints=[("20240101", "090000_300", "audio", 1)],
+    )
+    env.create_speaker_labels(
+        "20240101",
+        "090000_300",
+        [{"sentence_id": 1, "speaker": "alice_test", "confidence": "high"}],
+    )
+    env.create_speaker_labels(
+        "20240102",
+        "100000_300",
+        [{"sentence_id": 1, "speaker": "alice_test", "confidence": "high"}],
+    )
+
+    preview = backfill_last_seen(dry_run=True)
+    committed = backfill_last_seen(dry_run=False)
+    second_preview = backfill_last_seen(dry_run=True)
+
+    expected = segment_start_ts_ms("20240102", "100000_300")
+    assert preview["rows_pending"] == 1
+    assert committed["rows_written"] == 1
+    assert second_preview["rows_pending"] == 0
+    with np.load(entity_dir / "voiceprints.npz", allow_pickle=False) as data:
+        metadata = json.loads(str(data["metadata"][0]))
+    assert metadata["last_seen_ts"] == expected

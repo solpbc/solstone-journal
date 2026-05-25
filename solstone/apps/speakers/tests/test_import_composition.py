@@ -24,9 +24,18 @@ def _normalized_vector(seed: int) -> np.ndarray:
 
 
 def _mock_owner(monkeypatch, vector: np.ndarray, threshold: float = 0.85) -> None:
+    from solstone.apps.speakers.owner import OwnerCentroid
+
     monkeypatch.setattr(
         "solstone.apps.speakers.bootstrap.load_owner_centroid",
-        lambda: (vector.astype(np.float32), threshold),
+        lambda: OwnerCentroid(
+            centroid=vector.astype(np.float32),
+            threshold=threshold,
+            cluster_size=1,
+            last_refreshed_at="2026-03-15T12:00:00Z",
+            intra_cosine_p25=None,
+            streams=[],
+        ),
     )
 
 

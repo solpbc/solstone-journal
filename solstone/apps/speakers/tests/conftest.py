@@ -262,14 +262,14 @@ def speakers_env(tmp_path, monkeypatch):
                 segment_key: Segment key (HHMMSS_LEN)
                 labels: List of label dicts with sentence_id, speaker, confidence,
                     method
-                metadata: Optional extra metadata (owner_centroid_version,
+                metadata: Optional extra metadata (owner_centroid_last_refreshed_at,
                     voiceprint_versions)
             """
             data = {"labels": labels}
             if metadata:
                 data.update(metadata)
             else:
-                data["owner_centroid_version"] = None
+                data["owner_centroid_last_refreshed_at"] = None
                 data["voiceprint_versions"] = {}
             flat_dir, chronicle_dir = self._segment_dirs(day, segment_key)
             paths = []

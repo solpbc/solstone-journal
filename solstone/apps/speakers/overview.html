@@ -1,0 +1,429 @@
+{% extends "app.html" %}
+
+{% block workspace_content %}
+<style>
+.spk-overview {
+  width: min(1120px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 32px 0 56px;
+  color: #111827;
+}
+
+.spk-overview-section {
+  padding: 28px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.spk-overview-section:last-child {
+  border-bottom: 0;
+}
+
+.spk-overview-section[hidden] {
+  display: none;
+}
+
+.spk-overview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.spk-overview-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.spk-overview-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  padding: 18px;
+}
+
+.spk-overview-muted {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.spk-overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.spk-overview-btn,
+.spk-overview-link,
+.spk-overview-select {
+  min-height: 38px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+}
+
+.spk-overview-btn,
+.spk-overview-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.spk-overview-btn-primary {
+  background: #111827;
+  border-color: #111827;
+  color: #fff;
+}
+
+.spk-overview-select {
+  padding: 7px 10px;
+}
+
+.spk-progress {
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 12px 0 8px;
+}
+
+.spk-progress-fill {
+  height: 100%;
+  width: 0;
+  background: #111827;
+}
+
+.spk-owner-samples,
+.spk-known-grid,
+.spk-discovery-clusters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.spk-owner-sample,
+.spk-known-card,
+.spk-discovery-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+}
+
+.spk-known-card {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.spk-card-title {
+  margin: 0 0 8px;
+  font-weight: 700;
+}
+
+.spk-card-line {
+  margin: 4px 0;
+  color: #4b5563;
+  font-size: 14px;
+}
+
+.spk-cohesion {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.spk-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d1d5db;
+}
+
+.spk-dot-filled {
+  background: #111827;
+}
+
+.spk-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.spk-discovery-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.spk-discovery-input {
+  flex: 1;
+  min-height: 38px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font: inherit;
+}
+
+@media (max-width: 720px) {
+  .spk-overview {
+    width: min(100vw - 24px, 1120px);
+    padding-top: 20px;
+  }
+
+  .spk-overview-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .spk-discovery-clusters {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+
+<div class="spk-overview" data-spk-overview>
+  <section class="spk-overview-section" data-section="your-voice">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_YOUR_VOICE_HEADER"></h2>
+    </div>
+    <div id="spkOverviewOwner" class="spk-overview-panel"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="known-voices">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_KNOWN_VOICES_HEADER"></h2>
+      <select id="spkKnownSort" class="spk-overview-select" aria-label="sort voices"></select>
+    </div>
+    <div id="spkKnownVoices"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="new-voices" id="spkNewVoicesSection">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_NEW_VOICES_HEADER"></h2>
+    </div>
+    <div id="spkDiscoveryClusters" class="spk-discovery-clusters"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="today">
+    <a id="spkTodayReview" class="spk-overview-link" href="/app/speakers/{{ today }}"></a>
+  </section>
+</div>
+
+<script>
+(() => {
+  const COPY = {{ speaker_copy|tojson|safe }};
+  const TODAY = {{ today|tojson|safe }};
+  const OWNER_MIN = {{ owner_min_statements|tojson|safe }};
+  const ownerPanel = document.getElementById('spkOverviewOwner');
+  const knownContainer = document.getElementById('spkKnownVoices');
+  const sortSelect = document.getElementById('spkKnownSort');
+  const discoverySection = document.getElementById('spkNewVoicesSection');
+  const discoveryContainer = document.getElementById('spkDiscoveryClusters');
+  const todayLink = document.getElementById('spkTodayReview');
+  const escapeHtml = (value) => window.AppServices.escapeHtml(value);
+
+  document.querySelectorAll('[data-copy]').forEach((node) => {
+    node.textContent = COPY[node.dataset.copy] || '';
+  });
+  todayLink.textContent = COPY.SPK_OVERVIEW_TODAY_LINK_LABEL || '';
+
+  function relativeTime(value) {
+    if (!value) return '&mdash;';
+    const ms = typeof value === 'number' ? value : Date.parse(value);
+    if (!Number.isFinite(ms)) return '&mdash;';
+    if (window.RelativeTime?.formatTimestamp) return window.RelativeTime.formatTimestamp(ms);
+    const delta = Math.max(0, Date.now() - ms);
+    const hours = Math.floor(delta / 3600000);
+    if (hours < 1) return 'just now';
+    if (hours < 48) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+  }
+
+  function cohesionBin(value) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return 0;
+    const n = Number(value);
+    if (n >= 0.50) return 5;
+    if (n >= 0.40) return 4;
+    if (n >= 0.30) return 3;
+    if (n >= 0.20) return 2;
+    if (n >= 0.10) return 1;
+    return 0;
+  }
+
+  function cohesion(value) {
+    const bin = cohesionBin(value);
+    const dots = Array.from({length: 5}, (_, index) => (
+      `<span class="spk-dot${index < bin ? ' spk-dot-filled' : ''}"></span>`
+    )).join('');
+    const label = COPY.SPK_OVERVIEW_COHESION_LABELS[bin] || '';
+    return `<span class="spk-cohesion"><span class="spk-dots">${dots}</span><span>${escapeHtml(label)}</span></span>`;
+  }
+
+  function ownerNotReady(data) {
+    const count = Number(data.manual_tags_count || data.embeddings_available || 0);
+    const streams = Number(data.streams_represented || 0);
+    const progress = Math.min(100, Math.round((count / OWNER_MIN) * 100));
+    const diagnostic = data.low_quality_reason
+      ? `<p class="spk-overview-muted">gate: ${escapeHtml(data.low_quality_reason)}; observed ${escapeHtml(String(data.observed_value ?? ''))}; threshold ${escapeHtml(String(data.threshold_value ?? ''))}</p>`
+      : `<p class="spk-overview-muted">${count} ${escapeHtml(COPY.SPK_OVERVIEW_OWNER_PROGRESS_SUFFIX)} · ${streams} ${escapeHtml(COPY.SPK_OVERVIEW_OWNER_STREAMS_LABEL)}</p>`;
+    ownerPanel.innerHTML = `
+      <strong>${escapeHtml(COPY.SPK_OVERVIEW_YOUR_VOICE_LEARNING)}</strong>
+      <div class="spk-progress" aria-hidden="true"><div class="spk-progress-fill" style="width:${progress}%"></div></div>
+      ${diagnostic}
+      <div class="spk-overview-actions">
+        <a class="spk-overview-btn spk-overview-btn-primary" href="/app/speakers/${TODAY}">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_HELP_LABEL)}</a>
+        ${data.can_build_from_tags === true ? `<button id="spkBuildOwner" class="spk-overview-btn">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_BUILD_FROM_TAGS_LABEL)}</button>` : ''}
+      </div>
+    `;
+    document.getElementById('spkBuildOwner')?.addEventListener('click', () => {
+      fetch('/app/speakers/api/owner/build-from-tags', {method: 'POST'}).then(loadOwner);
+    });
+  }
+
+  function ownerCandidate(data) {
+    const samples = data.samples || [];
+    ownerPanel.innerHTML = `
+      <strong>Is this you?</strong>
+      <p class="spk-overview-muted">${escapeHtml(String(data.cluster_size || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_OWNER_SAMPLES_LABEL)}</p>
+      <div class="spk-owner-samples">
+        ${samples.map((sample, index) => `
+          <div class="spk-owner-sample">
+            <div class="spk-card-title">sample ${index + 1}</div>
+            <div class="spk-card-line">${escapeHtml(sample.day)} · ${escapeHtml(sample.stream)} · ${escapeHtml(sample.segment_key)}</div>
+            <audio controls preload="metadata" src="${escapeHtml(sample.audio_url)}"></audio>
+          </div>
+        `).join('')}
+      </div>
+      <div class="spk-overview-actions">
+        <button id="spkOwnerConfirm" class="spk-overview-btn spk-overview-btn-primary">yes, that's me</button>
+        <button id="spkOwnerReject" class="spk-overview-btn">no, try again</button>
+      </div>
+    `;
+    document.getElementById('spkOwnerConfirm')?.addEventListener('click', () => {
+      fetch('/app/speakers/api/owner/confirm', {method: 'POST'}).then(loadOwner);
+    });
+    document.getElementById('spkOwnerReject')?.addEventListener('click', () => {
+      fetch('/app/speakers/api/owner/reject', {method: 'POST'}).then(loadOwner);
+    });
+  }
+
+  function ownerConfirmed(data) {
+    const meta = data.centroid_metadata || {};
+    const streams = meta.streams || [];
+    ownerPanel.innerHTML = `
+      <strong>${escapeHtml(COPY.SPK_OVERVIEW_YOUR_VOICE_CONFIRMED)}</strong>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_SAMPLES_LABEL)}: ${escapeHtml(String(meta.cluster_size || 0))}</p>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_STREAMS_LABEL)}: ${escapeHtml(streams.length ? streams.join(' · ') : '—')}</p>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_COHESION_LABEL)}: ${cohesion(meta.intra_cosine_p25)}</p>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_REFRESHED_PREFIX)}: ${relativeTime(meta.last_refreshed_at)}</p>
+    `;
+  }
+
+  function loadOwner() {
+    fetch('/app/speakers/api/owner/status')
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.status === 'candidate') ownerCandidate(data);
+        else if (data.status === COPY.SPK_OVERVIEW_YOUR_VOICE_CONFIRMED) ownerConfirmed(data);
+        else ownerNotReady(data);
+      })
+      .catch(() => ownerNotReady({}));
+  }
+
+  function renderKnown(data) {
+    const speakers = data.speakers || [];
+    if (speakers.length === 0) {
+      knownContainer.innerHTML = `<div class="spk-overview-muted">${escapeHtml(COPY.SPK_OVERVIEW_KNOWN_VOICES_EMPTY)}</div>`;
+      return;
+    }
+    knownContainer.innerHTML = `<div class="spk-known-grid">${speakers.map((speaker) => {
+      const streams = speaker.streams || [];
+      const href = `/app/speakers/${TODAY}?speaker=${encodeURIComponent(speaker.entity_id)}`;
+      return `
+        <a class="spk-known-card" href="${href}">
+          <h3 class="spk-card-title">${escapeHtml(speaker.name || speaker.entity_id)}</h3>
+          <p class="spk-card-line">${escapeHtml(String(speaker.embedding_count || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_CARD_SAMPLES_LABEL)} · ${escapeHtml(String(speaker.segment_count || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_CARD_SEGMENTS_LABEL)}</p>
+          <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_CARD_LAST_HEARD_PREFIX)}: ${relativeTime(speaker.last_seen_ts)}</p>
+          <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_CARD_STREAMS_PREFIX)}: ${escapeHtml(streams.length ? streams.join(' · ') : '—')}</p>
+          ${cohesion(speaker.intra_cosine_p25)}
+        </a>
+      `;
+    }).join('')}</div>`;
+  }
+
+  function loadKnown() {
+    const sort = sortSelect.value || COPY.SPK_OVERVIEW_KNOWN_VOICES_SORTS[0];
+    fetch(`/app/speakers/api/speakers/known?sort=${encodeURIComponent(sort)}`)
+      .then((response) => response.json())
+      .then(renderKnown)
+      .catch(() => renderKnown({speakers: []}));
+  }
+
+  function setupSort() {
+    sortSelect.innerHTML = COPY.SPK_OVERVIEW_KNOWN_VOICES_SORTS.map((sort) => (
+      `<option value="${escapeHtml(sort)}">${escapeHtml(sort)}</option>`
+    )).join('');
+    sortSelect.addEventListener('change', loadKnown);
+  }
+
+  function renderDiscovery(data) {
+    const clusters = data.clusters || [];
+    if (!clusters.length) {
+      discoverySection.hidden = true;
+      return;
+    }
+    discoverySection.hidden = false;
+    discoveryContainer.innerHTML = clusters.map((cluster) => `
+      <div class="spk-discovery-card" data-cluster-id="${escapeHtml(cluster.cluster_id)}">
+        <h3 class="spk-card-title">${escapeHtml(cluster.suggested_name || cluster.cluster_id)}</h3>
+        <p class="spk-card-line">${escapeHtml(String(cluster.size || cluster.count || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_CARD_SAMPLES_LABEL)}</p>
+        <div class="spk-discovery-actions">
+          <input class="spk-discovery-input" type="text" aria-label="speaker name">
+          <button class="spk-overview-btn">identify</button>
+        </div>
+      </div>
+    `).join('');
+    discoveryContainer.querySelectorAll('.spk-discovery-card').forEach((card) => {
+      const button = card.querySelector('button');
+      const input = card.querySelector('input');
+      button?.addEventListener('click', () => {
+        const name = input.value.trim();
+        if (!name) return;
+        fetch('/app/speakers/api/discovery/identify', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({cluster_id: card.dataset.clusterId, name})
+        }).then(loadDiscovery);
+      });
+    });
+  }
+
+  function loadDiscovery() {
+    fetch('/app/speakers/api/discovery/scan', {method: 'POST'})
+      .then((response) => {
+        if (!response.ok) throw new Error('scan failed');
+        return response.json();
+      })
+      .then(renderDiscovery)
+      .catch(() => {
+        discoverySection.hidden = true;
+      });
+  }
+
+  setupSort();
+  loadOwner();
+  loadKnown();
+  loadDiscovery();
+})();
+</script>
+{% endblock %}

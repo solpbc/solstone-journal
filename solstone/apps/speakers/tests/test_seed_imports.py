@@ -103,7 +103,9 @@ def _create_owner_centroid(env, *, threshold: float = 0.85):
     np.savez_compressed(
         centroid_path,
         centroid=owner_emb,
+        cluster_size=np.array(1, dtype=np.int32),
         threshold=np.float32(threshold),
+        last_refreshed_at=np.array("2026-03-15T12:00:00Z"),
     )
     return owner_emb
 

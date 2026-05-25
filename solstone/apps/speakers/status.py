@@ -105,30 +105,44 @@ def _owner_section() -> dict[str, Any]:
     elif status in {"none", "rejected"}:
         result.update(diagnostics)
 
-    result["centroid_saved"] = load_owner_centroid() is not None
+    centroid = load_owner_centroid()
+    result["centroid_saved"] = centroid is not None
+    if status == "confirmed" and centroid is not None:
+        result["centroid_metadata"] = {
+            "cluster_size": centroid.cluster_size,
+            "streams": centroid.streams,
+            "last_refreshed_at": centroid.last_refreshed_at,
+            "intra_cosine_p25": centroid.intra_cosine_p25,
+        }
     return result
 
 
 def _speakers_section() -> list[dict[str, Any]]:
-    from solstone.apps.speakers.routes import _load_entity_voiceprints_file
+    from solstone.apps.speakers.owner import compute_intra_cosine_p25
     from solstone.think.entities.journal import (
         load_journal_entity,
         scan_journal_entities,
     )
+    from solstone.think.entities.voiceprints import load_entity_voiceprints_file
 
     speakers = []
     for entity_id in scan_journal_entities():
-        result = _load_entity_voiceprints_file(entity_id)
+        result = load_entity_voiceprints_file(entity_id)
         if result is None:
             continue
 
         embeddings, metadata_list = result
         streams: set[str] = set()
         segments: set[tuple[str, str]] = set()
+        last_seen_values: list[int] = []
         for metadata in metadata_list:
-            if "stream" in metadata:
-                streams.add(metadata["stream"])
+            stream = metadata.get("stream")
+            if isinstance(stream, str) and stream:
+                streams.add(stream)
             segments.add((metadata.get("day", ""), metadata.get("segment_key", "")))
+            last_seen_ts = metadata.get("last_seen_ts")
+            if isinstance(last_seen_ts, int):
+                last_seen_values.append(last_seen_ts)
 
         entity = load_journal_entity(entity_id) or {}
         speakers.append(
@@ -138,6 +152,8 @@ def _speakers_section() -> list[dict[str, Any]]:
                 "embedding_count": len(embeddings),
                 "segment_count": len(segments),
                 "streams": sorted(streams),
+                "last_seen_ts": max(last_seen_values) if last_seen_values else None,
+                "intra_cosine_p25": compute_intra_cosine_p25(embeddings),
             }
         )
 

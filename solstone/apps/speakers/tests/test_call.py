@@ -191,6 +191,60 @@ def test_backfill_commit_writes(speakers_env, monkeypatch):
     assert seen["dry_run"] is False
 
 
+def test_backfill_last_seen_dry_run_by_default(speakers_env, monkeypatch):
+    speakers_env()
+    seen: dict[str, bool] = {}
+
+    def fake_backfill_last_seen(*, dry_run: bool) -> dict:
+        seen["dry_run"] = dry_run
+        return {
+            "labels_read": 0,
+            "entities_seen": 0,
+            "rows_scanned": 0,
+            "rows_pending": 0,
+            "rows_written": 0,
+            "pending": {},
+            "errors": [],
+        }
+
+    monkeypatch.setattr(
+        "solstone.apps.speakers.attribution.backfill_last_seen",
+        fake_backfill_last_seen,
+    )
+
+    result = runner.invoke(speakers_app, ["backfill-last-seen"])
+
+    assert result.exit_code == 0
+    assert seen["dry_run"] is True
+
+
+def test_backfill_last_seen_commit_writes(speakers_env, monkeypatch):
+    speakers_env()
+    seen: dict[str, bool] = {}
+
+    def fake_backfill_last_seen(*, dry_run: bool) -> dict:
+        seen["dry_run"] = dry_run
+        return {
+            "labels_read": 0,
+            "entities_seen": 0,
+            "rows_scanned": 0,
+            "rows_pending": 0,
+            "rows_written": 0,
+            "pending": {},
+            "errors": [],
+        }
+
+    monkeypatch.setattr(
+        "solstone.apps.speakers.attribution.backfill_last_seen",
+        fake_backfill_last_seen,
+    )
+
+    result = runner.invoke(speakers_app, ["backfill-last-seen", "--commit"])
+
+    assert result.exit_code == 0
+    assert seen["dry_run"] is False
+
+
 def test_seed_from_imports_default_is_preview(speakers_env, monkeypatch):
     speakers_env()
     seen: dict[str, bool] = {}

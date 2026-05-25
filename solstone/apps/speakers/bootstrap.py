@@ -88,7 +88,8 @@ def bootstrap_voiceprints(dry_run: bool = False) -> dict[str, Any]:
     if centroid_data is None:
         return {"error": "No confirmed owner centroid. Run owner detection first."}
 
-    owner_centroid, owner_threshold = centroid_data
+    owner_centroid = centroid_data.centroid
+    owner_threshold = centroid_data.threshold
 
     # Load all journal entities for speaker name matching
     journal_entities = load_all_journal_entities()
@@ -590,7 +591,8 @@ def seed_from_imports(dry_run: bool = False) -> dict[str, Any]:
     if centroid_data is None:
         return {"error": "No confirmed owner centroid. Run owner detection first."}
 
-    owner_centroid, owner_threshold = centroid_data
+    owner_centroid = centroid_data.centroid
+    owner_threshold = centroid_data.threshold
 
     journal_entities = load_all_journal_entities()
     entities_list = [e for e in journal_entities.values() if not e.get("blocked")]

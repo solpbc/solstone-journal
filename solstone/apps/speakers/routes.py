@@ -21,28 +21,36 @@ import numpy as np
 from flask import (
     Blueprint,
     jsonify,
-    redirect,
     render_template,
     request,
     send_file,
-    url_for,
 )
 
+from solstone.apps.speakers.copy import (
+    SPK_OVERVIEW_KNOWN_VOICES_SORTS,
+    speaker_copy_payload,
+)
 from solstone.apps.speakers.discovery import (
     discover_unknown_speakers,
     identify_cluster,
     load_resolved_cluster,
 )
-from solstone.apps.speakers.encoder_config import OWNER_THRESHOLD
+from solstone.apps.speakers.encoder_config import (
+    OWNER_BOOTSTRAP_MIN_STMTS,
+    OWNER_THRESHOLD,
+)
 from solstone.apps.speakers.owner import (
     bootstrap_owner_from_manual_tags,
     classify_sentences,
     confirm_owner_candidate,
     detect_owner_candidate,
     load_owner_bootstrap_diagnostics,
+    load_owner_centroid,
     load_owner_provisional_centroid,
     reject_owner_candidate,
 )
+from solstone.apps.speakers.status import get_speakers_status
+from solstone.apps.speakers.time import segment_start_ts_ms
 from solstone.apps.utils import log_app_action
 from solstone.convey import state
 from solstone.convey.reasons import (
@@ -206,6 +214,7 @@ def _save_voiceprint(
         "source": source,
         "sentence_id": sentence_id,
         "added_at": now_ms(),
+        "last_seen_ts": segment_start_ts_ms(day, segment_key),
     }
     if stream:
         metadata["stream"] = stream
@@ -361,7 +370,8 @@ def _check_owner_contamination(embedding: np.ndarray) -> bool:
 
     centroid_data = load_owner_centroid()
     if centroid_data is not None:
-        owner_centroid, owner_threshold = centroid_data
+        owner_centroid = centroid_data.centroid
+        owner_threshold = centroid_data.threshold
     else:
         principal_id = _principal_id_or_none()
         if principal_id is None:
@@ -583,9 +593,16 @@ def _get_sentence_embedding(
 
 @speakers_bp.route("/")
 def index() -> Any:
-    """Redirect to today's view."""
+    """Render the speakers overview."""
     today = date.today().strftime("%Y%m%d")
-    return redirect(url_for("app:speakers.speakers_day", day=today))
+    return render_template(
+        "speakers/overview.html",
+        title="speakers",
+        day=None,
+        today=today,
+        speaker_copy=speaker_copy_payload(),
+        owner_min_statements=OWNER_BOOTSTRAP_MIN_STMTS,
+    )
 
 
 @speakers_bp.route("/<day>")
@@ -594,8 +611,22 @@ def speakers_day(day: str) -> str:
     if not DATE_RE.fullmatch(day):
         return "", 404
 
+    speaker_filter = request.args.get("speaker")
+    speaker_filter = speaker_filter.strip() if speaker_filter else ""
+    speaker_name = speaker_filter
+    if speaker_filter:
+        entity = load_journal_entity(speaker_filter)
+        if entity:
+            speaker_name = str(entity.get("name") or speaker_filter)
+
     title = format_date(day)
-    return render_template("app.html", title=title)
+    return render_template(
+        "app.html",
+        title=title,
+        speaker_copy=speaker_copy_payload(),
+        speaker_filter=speaker_filter,
+        speaker_filter_name=speaker_name,
+    )
 
 
 @speakers_bp.route("/api/stats/<month>")
@@ -638,8 +669,23 @@ def api_segments(day: str) -> Any:
             detail="Invalid limit/offset parameter",
         )
 
+    speaker_filter = request.args.get("speaker")
+    if speaker_filter is not None:
+        speaker_filter = speaker_filter.strip()
+        if not speaker_filter:
+            return error_response(
+                INVALID_REQUEST_VALUE,
+                detail="Invalid speaker parameter",
+            )
+
     segments = _scan_segment_embeddings(day)
     segments.sort(key=lambda s: s["key"])
+    if speaker_filter:
+        segments = [
+            seg
+            for seg in segments
+            if _segment_has_speaker(day, seg["stream"], seg["key"], speaker_filter)
+        ]
     total = len(segments)
     segments = segments[offset : offset + limit]
 
@@ -672,6 +718,59 @@ def api_segments(day: str) -> Any:
             seg["attribution_non_owner_total"] = 0
 
     return jsonify({"segments": segments, "total": total})
+
+
+def _segment_has_speaker(
+    day: str, stream: str, segment_key: str, entity_id: str
+) -> bool:
+    """Return whether a segment has any label attributed to entity_id."""
+    seg_dir = get_segment_path(day, segment_key, stream, create=False)
+    labels_data = _load_speaker_labels(seg_dir)
+    if not labels_data:
+        return False
+    return any(
+        label.get("speaker") == entity_id for label in labels_data.get("labels", [])
+    )
+
+
+@speakers_bp.route("/api/speakers/known")
+def api_speakers_known() -> Any:
+    """Return known voice cards for the speakers overview."""
+    sort = request.args.get("sort") or SPK_OVERVIEW_KNOWN_VOICES_SORTS[0]
+    sort = sort.replace("_", " ")
+    if sort not in SPK_OVERVIEW_KNOWN_VOICES_SORTS:
+        return error_response(
+            INVALID_REQUEST_VALUE,
+            detail="Invalid sort parameter",
+        )
+
+    speakers = list(get_speakers_status(section="speakers"))
+    if sort == SPK_OVERVIEW_KNOWN_VOICES_SORTS[1]:
+        speakers.sort(
+            key=lambda item: (
+                -int(item.get("embedding_count") or 0),
+                str(item.get("name") or item.get("entity_id") or "").lower(),
+                str(item.get("entity_id") or ""),
+            )
+        )
+    elif sort == SPK_OVERVIEW_KNOWN_VOICES_SORTS[2]:
+        speakers.sort(
+            key=lambda item: (
+                str(item.get("name") or item.get("entity_id") or "").lower(),
+                str(item.get("entity_id") or ""),
+            )
+        )
+    else:
+        speakers.sort(
+            key=lambda item: (
+                item.get("last_seen_ts") is None,
+                -(int(item.get("last_seen_ts") or 0)),
+                str(item.get("name") or item.get("entity_id") or "").lower(),
+                str(item.get("entity_id") or ""),
+            )
+        )
+
+    return jsonify({"speakers": speakers, "total": len(speakers), "sort": sort})
 
 
 @speakers_bp.route("/api/speakers/<day>/<stream>/<segment_key>")
@@ -1258,7 +1357,18 @@ def api_owner_status() -> Any:
     diagnostics = _owner_bootstrap_status_fields()
 
     if status == "confirmed":
-        return jsonify({"status": "confirmed"})
+        centroid = load_owner_centroid()
+        metadata = {
+            "cluster_size": centroid.cluster_size if centroid is not None else 0,
+            "streams": centroid.streams if centroid is not None else [],
+            "last_refreshed_at": (
+                centroid.last_refreshed_at if centroid is not None else ""
+            ),
+            "intra_cosine_p25": (
+                centroid.intra_cosine_p25 if centroid is not None else None
+            ),
+        }
+        return jsonify({"status": "confirmed", "centroid_metadata": metadata})
 
     if status == "candidate":
         return jsonify(

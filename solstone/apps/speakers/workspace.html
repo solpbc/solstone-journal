@@ -115,6 +115,20 @@
   margin: 12px 0;
 }
 
+.spk-filter-indicator {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.spk-filter-indicator:empty {
+  display: none;
+}
+
 .spk-segments-status:empty,
 .spk-review-status:empty {
   display: none;
@@ -1085,8 +1099,9 @@
   <div class="spk-layout">
     <nav class="spk-segments" aria-label="segments">
       <h2 class="spk-segments-header">
-        segments
+        {{ speaker_copy.SPK_OVERVIEW_CARD_SEGMENTS_LABEL }}
       </h2>
+      <div id="spkFilterIndicator" class="spk-filter-indicator"></div>
       <div id="spkSegmentsStatus" class="spk-segments-status" aria-live="polite"></div>
       <ul class="spk-segments-list" id="spkSegmentList" role="listbox">
         <li class="spk-empty">loading...</li>
@@ -1162,11 +1177,15 @@
     contextual: 'context match',
   };
   const day = '{{ day }}';
+  const SPK_COPY = {{ speaker_copy|default({})|tojson|safe }};
+  const speakerFilter = {{ speaker_filter|default("")|tojson|safe }};
+  const speakerFilterName = {{ speaker_filter_name|default("")|tojson|safe }};
   const segmentList = document.getElementById('spkSegmentList');
   const detailPanel = document.getElementById('spkDetail');
   const ownerBanner = document.getElementById('spkOwnerBanner');
   const discoveryBanner = document.getElementById('spkDiscoveryBanner');
   const segmentsStatus = document.getElementById('spkSegmentsStatus');
+  const filterIndicator = document.getElementById('spkFilterIndicator');
 
   let segments = [];
   let segmentTotal = 0;
@@ -1456,7 +1475,7 @@
         </div>
         <div class="spk-owner-actions">
           <button class="spk-owner-btn spk-owner-btn-confirm" id="spkOwnerHelp">
-            help solstone learn faster
+            ${escapeHtml(SPK_COPY.SPK_OVERVIEW_OWNER_HELP_LABEL || '')}
           </button>
         </div>
         <div class="spk-owner-toast" id="spkOwnerGuideToast"></div>
@@ -1475,7 +1494,7 @@
             ${data.can_build_from_tags === true ? `
               <div class="spk-owner-actions">
                 <button class="spk-owner-btn spk-owner-btn-reject" id="spkOwnerBuildFromTags">
-                  Build from manual tags
+                  ${escapeHtml(SPK_COPY.SPK_OVERVIEW_OWNER_BUILD_FROM_TAGS_LABEL || '')}
                 </button>
               </div>
             ` : ''}
@@ -1570,9 +1589,35 @@
     discoveryBanner.innerHTML = '';
   }
 
+  function segmentsApiUrl(limit, offset) {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset)
+    });
+    if (speakerFilter) {
+      params.set('speaker', speakerFilter);
+    }
+    return `/app/speakers/api/segments/${day}?${params.toString()}`;
+  }
+
+  function updateSpeakerFilterIndicator() {
+    if (!filterIndicator) return;
+    if (!speakerFilter) {
+      filterIndicator.innerHTML = '';
+      return;
+    }
+    const label = speakerFilterName || speakerFilter;
+    filterIndicator.innerHTML = `${escapeHtml(SPK_COPY.SPK_FILTER_BY_PREFIX || '')} ${escapeHtml(label)}`;
+  }
+
+  function segmentHeaderLabel() {
+    return SPK_COPY.SPK_OVERVIEW_CARD_SEGMENTS_LABEL || '';
+  }
+
   function loadSegments() {
+    updateSpeakerFilterIndicator();
     const fetchLimit = Math.max(segments.length, 20);
-    fetch(`/app/speakers/api/segments/${day}?limit=${fetchLimit}&offset=0`)
+    fetch(segmentsApiUrl(fetchLimit, 0))
       .then(r => r.json())
       .then(data => {
         setSegmentsStatus();
@@ -1595,7 +1640,7 @@
   function loadMoreSegments() {
     const btn = document.getElementById('spkLoadMoreBtn');
     if (btn) btn.disabled = true;
-    fetch(`/app/speakers/api/segments/${day}?limit=20&offset=${segments.length}`)
+    fetch(segmentsApiUrl(20, segments.length))
       .then(r => r.json())
       .then(data => {
         setSegmentsStatus();
@@ -1611,7 +1656,7 @@
   }
 
   function loadUntilFound(key) {
-    window.apiJson(`/app/speakers/api/segments/${day}?limit=20&offset=${segments.length}`)
+    window.apiJson(segmentsApiUrl(20, segments.length))
       .then(data => {
         setSegmentsStatus();
         const newSegments = data.segments || [];
@@ -1646,14 +1691,20 @@
 
   function renderSegmentList() {
     if (segments.length === 0) {
+      const emptyHeading = speakerFilter
+        ? (SPK_COPY.SPK_FILTER_NO_SEGMENTS_TODAY || '')
+        : 'no speakers discovered today';
+      const emptyDesc = speakerFilter
+        ? ''
+        : 'solstone hasn\'t found any speaker segments for this day yet';
       segmentList.innerHTML = '<li>' + window.SurfaceState.empty({
         icon: emptyIcons.segment,
-        heading: 'no speakers discovered today',
-        desc: 'solstone hasn\'t found any speaker segments for this day yet'
+        heading: emptyHeading,
+        desc: emptyDesc
       }) + '</li>';
       const header = document.querySelector('.spk-segments-header');
       if (header) {
-        header.textContent = 'segments';
+        header.textContent = segmentHeaderLabel();
       }
       return;
     }
@@ -1714,9 +1765,9 @@
     const header = document.querySelector('.spk-segments-header');
     if (header) {
       if (segmentTotal > 20) {
-        header.innerHTML = `segments <span class="spk-segments-count">${segments.length} of ${segmentTotal}</span>`;
+        header.innerHTML = `${escapeHtml(segmentHeaderLabel())} <span class="spk-segments-count">${segments.length} of ${segmentTotal}</span>`;
       } else {
-        header.textContent = 'segments';
+        header.textContent = segmentHeaderLabel();
       }
     }
   }

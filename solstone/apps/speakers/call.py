@@ -13,6 +13,7 @@ Commands:
     sol call speakers resolve-names [--commit] [--json]
     sol call speakers attribute-segment <day> <stream> <segment> [--commit] [--json]
     sol call speakers backfill [--commit] [--json]
+    sol call speakers backfill-last-seen [--commit] [--json]
     sol call speakers wipe [--commit] [--json]
     sol call speakers discover [--json]
     sol call speakers identify <cluster-id> <name> [--entity-id ID]
@@ -338,6 +339,49 @@ def backfill(
             typer.echo(f"  {err}", err=True)
         if len(stats["errors"]) > 10:
             typer.echo(f"  ... and {len(stats['errors']) - 10} more", err=True)
+
+
+@app.command("backfill-last-seen")
+def backfill_last_seen_cmd(
+    commit: bool = typer.Option(
+        False,
+        "--commit",
+        help="Persist results. Without this flag the command only reports what would happen.",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Output full result as JSON."
+    ),
+) -> None:
+    """Backfill last_seen_ts on existing voiceprint metadata rows."""
+    from solstone.apps.speakers.attribution import backfill_last_seen
+
+    if not commit and not json_output:
+        typer.echo("REPORT ONLY — pass --commit to persist.\n")
+
+    stats = backfill_last_seen(dry_run=not commit)
+
+    if json_output:
+        import json as json_mod
+
+        typer.echo(json_mod.dumps(stats, indent=2, default=str))
+        return
+
+    typer.echo(f"Speaker label files read: {stats['labels_read']}")
+    typer.echo(f"Entities seen:            {stats['entities_seen']}")
+    typer.echo(f"Voiceprint rows scanned:  {stats['rows_scanned']}")
+    typer.echo(f"Rows pending:             {stats['rows_pending']}")
+    typer.echo(f"Rows written:             {stats['rows_written']}")
+
+    pending = stats.get("pending", {})
+    if pending:
+        typer.echo("\nPending by entity:")
+        for entity_id, item in pending.items():
+            typer.echo(f"  {entity_id}: {item['rows']}")
+
+    if stats.get("errors"):
+        typer.echo("\nErrors:", err=True)
+        for error in stats["errors"]:
+            typer.echo(f"  {error}", err=True)
 
 
 @app.command()
