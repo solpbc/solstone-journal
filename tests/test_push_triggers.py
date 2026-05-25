@@ -629,6 +629,7 @@ def test_handle_chat_lifecycle_dispatches_silent_for_open(monkeypatch, tmp_path)
             "dedupe_key": "req-1",
             "category": KIND_OWNER_CHAT_OPEN,
             "outcome": "dispatched",
+            "via": "local",
         }
     ]
 
@@ -821,6 +822,143 @@ def test_dispatch_via_portal_no_scout_returns_none(monkeypatch):
     assert not urlopen_called
 
 
+def test_dispatch_dedup_via_portal_posts_and_returns_payload(monkeypatch):
+    monkeypatch.setattr(
+        portal_dispatch,
+        "scout_provenance",
+        lambda: {"dispatch_token": "dispatch-token", "account_id": "acct-1"},
+    )
+    monkeypatch.setattr(
+        portal_dispatch, "portal_base_url", lambda: "https://portal.test"
+    )
+
+    def fake_urlopen(request, timeout):
+        assert timeout == 10
+        assert request.full_url == "https://portal.test/push/dedup"
+        assert request.get_method() == "POST"
+        assert request.get_header("Authorization") == "Bearer dispatch-token"
+        assert json.loads(request.data.decode("utf-8")) == {
+            "request_id": "req-1",
+            "action": KIND_OWNER_CHAT_OPEN,
+        }
+        return _PortalResponse(b'{"ok": true, "fanout": 3}')
+
+    monkeypatch.setattr(portal_dispatch.urllib_request, "urlopen", fake_urlopen)
+
+    assert portal_dispatch.dispatch_dedup_via_portal(
+        request_id="req-1",
+        action=KIND_OWNER_CHAT_OPEN,
+    ) == {"ok": True, "fanout": 3}
+
+
+def test_dispatch_dedup_via_portal_returns_none_on_4xx(monkeypatch):
+    monkeypatch.setattr(
+        portal_dispatch,
+        "scout_provenance",
+        lambda: {"dispatch_token": "dispatch-token", "account_id": "acct-1"},
+    )
+
+    def fake_urlopen(request, timeout):
+        raise HTTPError(request.full_url, 400, "bad request", hdrs=None, fp=None)
+
+    monkeypatch.setattr(portal_dispatch.urllib_request, "urlopen", fake_urlopen)
+
+    assert (
+        portal_dispatch.dispatch_dedup_via_portal(
+            request_id="req-1",
+            action=KIND_OWNER_CHAT_OPEN,
+        )
+        is None
+    )
+
+
+def test_dispatch_dedup_via_portal_returns_none_on_5xx(monkeypatch):
+    monkeypatch.setattr(
+        portal_dispatch,
+        "scout_provenance",
+        lambda: {"dispatch_token": "dispatch-token", "account_id": "acct-1"},
+    )
+
+    def fake_urlopen(request, timeout):
+        raise HTTPError(request.full_url, 500, "server error", hdrs=None, fp=None)
+
+    monkeypatch.setattr(portal_dispatch.urllib_request, "urlopen", fake_urlopen)
+
+    assert (
+        portal_dispatch.dispatch_dedup_via_portal(
+            request_id="req-1",
+            action=KIND_OWNER_CHAT_OPEN,
+        )
+        is None
+    )
+
+
+def test_dispatch_dedup_via_portal_returns_none_on_timeout(monkeypatch):
+    monkeypatch.setattr(
+        portal_dispatch,
+        "scout_provenance",
+        lambda: {"dispatch_token": "dispatch-token", "account_id": "acct-1"},
+    )
+    monkeypatch.setattr(
+        portal_dispatch.urllib_request,
+        "urlopen",
+        lambda request, timeout: (_ for _ in ()).throw(socket.timeout("timed out")),
+    )
+
+    assert (
+        portal_dispatch.dispatch_dedup_via_portal(
+            request_id="req-1",
+            action=KIND_OWNER_CHAT_OPEN,
+        )
+        is None
+    )
+
+
+def test_dispatch_dedup_via_portal_returns_none_when_no_scout(monkeypatch):
+    urlopen_called = False
+    monkeypatch.setattr(portal_dispatch, "scout_provenance", lambda: None)
+
+    def fake_urlopen(request, timeout):
+        nonlocal urlopen_called
+        urlopen_called = True
+        return _PortalResponse(b"{}")
+
+    monkeypatch.setattr(portal_dispatch.urllib_request, "urlopen", fake_urlopen)
+
+    assert (
+        portal_dispatch.dispatch_dedup_via_portal(
+            request_id="req-1",
+            action=KIND_OWNER_CHAT_OPEN,
+        )
+        is None
+    )
+    assert not urlopen_called
+
+
+def test_dispatch_dedup_via_portal_returns_none_when_dispatch_token_missing(
+    monkeypatch,
+):
+    urlopen_called = False
+
+    def fake_urlopen(request, timeout):
+        nonlocal urlopen_called
+        urlopen_called = True
+        return _PortalResponse(b"{}")
+
+    monkeypatch.setattr(portal_dispatch.urllib_request, "urlopen", fake_urlopen)
+    for scout in ({"account_id": "acct-1"}, {"dispatch_token": ""}):
+        monkeypatch.setattr(portal_dispatch, "scout_provenance", lambda: scout)
+        assert (
+            portal_dispatch.dispatch_dedup_via_portal(
+                request_id="req-1",
+                action=KIND_OWNER_CHAT_OPEN,
+            )
+            is None
+        )
+
+    assert not urlopen_called
+
+
 def test_handle_sol_chat_request_routes_via_portal_when_scout_enabled(
     monkeypatch, tmp_path
 ):
@@ -972,6 +1110,197 @@ def test_handle_sol_chat_request_no_scout_unchanged(monkeypatch, tmp_path):
     assert sent_calls == [devices]
 
 
+def test_handle_chat_lifecycle_routes_via_portal_when_scout_enabled(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    monkeypatch.setattr(
+        triggers,
+        "scout_provenance",
+        lambda: {"dispatch_token": "dispatch-token", "account_id": "acct-1"},
+    )
+    monkeypatch.setattr(triggers.time, "time", lambda: 123.0)
+    send_calls: list[dict[str, object]] = []
+    portal_calls: list[dict[str, str]] = []
+    monkeypatch.setattr(
+        triggers,
+        "_eligible_devices",
+        lambda: (_ for _ in ()).throw(AssertionError("devices should not load")),
+    )
+    monkeypatch.setattr(
+        triggers,
+        "send_many",
+        lambda *args, **kwargs: send_calls.append(kwargs) or (1, 0),
+    )
+
+    def fake_dispatch_dedup_via_portal(*, request_id, action):
+        portal_calls.append({"request_id": request_id, "action": action})
+        return {"ok": True}
+
+    monkeypatch.setattr(
+        triggers, "dispatch_dedup_via_portal", fake_dispatch_dedup_via_portal
+    )
+
+    triggers.handle_chat_lifecycle(
+        {"tract": "chat", "event": KIND_OWNER_CHAT_OPEN, "request_id": "req-1"}
+    )
+
+    assert portal_calls == [{"request_id": "req-1", "action": KIND_OWNER_CHAT_OPEN}]
+    assert send_calls == []
+    assert _read_log(tmp_path) == [
+        {
+            "ts": 123,
+            "kind": "sol_chat_lifecycle_push",
+            "dedupe_key": "req-1",
+            "category": KIND_OWNER_CHAT_OPEN,
+            "outcome": "dispatched",
+            "via": "portal",
+        }
+    ]
+
+
+def test_handle_chat_lifecycle_falls_back_to_local_when_portal_fails(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    monkeypatch.setattr(
+        triggers,
+        "scout_provenance",
+        lambda: {"dispatch_token": "dispatch-token", "account_id": "acct-1"},
+    )
+    monkeypatch.setattr(triggers, "dispatch_dedup_via_portal", lambda **kwargs: None)
+    monkeypatch.setattr(triggers, "is_configured", lambda: True)
+    devices = [{"token": "a" * 64}]
+    monkeypatch.setattr(triggers, "_eligible_devices", lambda: devices)
+    monkeypatch.setattr(triggers.time, "time", lambda: 123.0)
+    sent_calls: list[dict[str, object]] = []
+
+    def fake_send_many(push_devices, payload, *, collapse_id, priority, push_type):
+        sent_calls.append(
+            {
+                "devices": push_devices,
+                "payload": payload,
+                "collapse_id": collapse_id,
+                "priority": priority,
+                "push_type": push_type,
+            }
+        )
+        return 1, 0
+
+    monkeypatch.setattr(triggers, "send_many", fake_send_many)
+
+    triggers.handle_chat_lifecycle(
+        {"tract": "chat", "event": KIND_OWNER_CHAT_OPEN, "request_id": "req-1"}
+    )
+
+    assert sent_calls == [
+        {
+            "devices": devices,
+            "payload": {
+                "aps": {"mutable-content": 1, "content-available": 1},
+                "data": {"action": KIND_OWNER_CHAT_OPEN, "request_id": "req-1"},
+            },
+            "collapse_id": f"sol_chat_lifecycle:req-1:{KIND_OWNER_CHAT_OPEN}",
+            "priority": 5,
+            "push_type": "background",
+        }
+    ]
+    assert _read_log(tmp_path) == [
+        {
+            "ts": 123,
+            "kind": "sol_chat_lifecycle_push",
+            "dedupe_key": "req-1",
+            "category": KIND_OWNER_CHAT_OPEN,
+            "outcome": "dispatched",
+            "via": "local",
+        }
+    ]
+
+
+def test_handle_chat_lifecycle_falls_back_to_local_when_scout_missing_token(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    monkeypatch.setattr(triggers, "scout_provenance", lambda: {"account_id": "acct-1"})
+    monkeypatch.setattr(
+        triggers,
+        "dispatch_dedup_via_portal",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("portal should not run")),
+    )
+    monkeypatch.setattr(triggers, "is_configured", lambda: True)
+    devices = [{"token": "a" * 64}]
+    monkeypatch.setattr(triggers, "_eligible_devices", lambda: devices)
+    sent_calls: list[list[dict[str, object]]] = []
+    monkeypatch.setattr(
+        triggers,
+        "send_many",
+        lambda push_devices, *args, **kwargs: sent_calls.append(push_devices) or (1, 0),
+    )
+
+    triggers.handle_chat_lifecycle(
+        {"tract": "chat", "event": KIND_OWNER_CHAT_OPEN, "request_id": "req-1"}
+    )
+
+    assert sent_calls == [devices]
+    assert _read_log(tmp_path)[0]["via"] == "local"
+
+
+def test_handle_chat_lifecycle_no_scout_unchanged(monkeypatch, tmp_path):
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    monkeypatch.setattr(triggers, "scout_provenance", lambda: None)
+    monkeypatch.setattr(
+        triggers,
+        "dispatch_dedup_via_portal",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("portal should not run")),
+    )
+    monkeypatch.setattr(triggers, "is_configured", lambda: True)
+    devices = [{"token": "a" * 64}]
+    monkeypatch.setattr(triggers, "_eligible_devices", lambda: devices)
+    sent_calls: list[list[dict[str, object]]] = []
+    monkeypatch.setattr(
+        triggers,
+        "send_many",
+        lambda push_devices, *args, **kwargs: sent_calls.append(push_devices) or (1, 0),
+    )
+
+    triggers.handle_chat_lifecycle(
+        {"tract": "chat", "event": KIND_OWNER_CHAT_OPEN, "request_id": "req-1"}
+    )
+
+    assert sent_calls == [devices]
+    assert _read_log(tmp_path)[0]["via"] == "local"
+
+
+def test_handle_chat_lifecycle_local_send_many_error_records_outcome_error(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    monkeypatch.setattr(triggers, "scout_provenance", lambda: None)
+    monkeypatch.setattr(triggers, "is_configured", lambda: True)
+    monkeypatch.setattr(triggers, "_eligible_devices", lambda: [{"token": "a" * 64}])
+    monkeypatch.setattr(triggers.time, "time", lambda: 123.0)
+
+    def fail_send_many(*args, **kwargs):
+        raise RuntimeError("apns failed")
+
+    monkeypatch.setattr(triggers, "send_many", fail_send_many)
+
+    triggers.handle_chat_lifecycle(
+        {"tract": "chat", "event": KIND_OWNER_CHAT_OPEN, "request_id": "req-1"}
+    )
+
+    assert _read_log(tmp_path) == [
+        {
+            "ts": 123,
+            "kind": "sol_chat_lifecycle_push",
+            "dedupe_key": "req-1",
+            "category": KIND_OWNER_CHAT_OPEN,
+            "outcome": "error",
+            "via": "local",
+        }
+    ]
+
+
 def test_dispatch_via_portal_does_not_log_token_plaintext(monkeypatch, caplog):
     token = "TEST_TOKEN_SHOULD_NEVER_APPEAR"
     monkeypatch.setattr(
@@ -995,6 +1324,37 @@ def test_dispatch_via_portal_does_not_log_token_plaintext(monkeypatch, caplog):
         is None
     )
     assert token not in caplog.text
+
+
+def test_dispatch_dedup_via_portal_does_not_log_token_plaintext(monkeypatch, caplog):
+    token = "TEST_DEDUP_TOKEN_SHOULD_NEVER_APPEAR"
+    monkeypatch.setattr(
+        portal_dispatch,
+        "scout_provenance",
+        lambda: {"dispatch_token": token, "account_id": "acct-1"},
+    )
+    caplog.set_level("WARNING", logger=portal_dispatch.logger.name)
+
+    def raise_http(status):
+        def fake_urlopen(request, timeout):
+            raise HTTPError(request.full_url, status, "error", hdrs=None, fp=None)
+
+        return fake_urlopen
+
+    scenarios = (
+        lambda request, timeout: _PortalResponse(b'{"ok": true}'),
+        raise_http(400),
+        raise_http(500),
+        lambda request, timeout: (_ for _ in ()).throw(socket.timeout("timed out")),
+    )
+    for fake_urlopen in scenarios:
+        caplog.clear()
+        monkeypatch.setattr(portal_dispatch.urllib_request, "urlopen", fake_urlopen)
+        portal_dispatch.dispatch_dedup_via_portal(
+            request_id="req-1",
+            action=KIND_OWNER_CHAT_OPEN,
+        )
+        assert token not in caplog.text
 
 
 def test_dispatch_via_portal_module_has_no_brand_canon_violations():

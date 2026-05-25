@@ -39,7 +39,10 @@ from solstone.think.push.dispatch import (
     build_sol_chat_request_payload,
     send_many,
 )
-from solstone.think.push.portal_dispatch import dispatch_via_portal
+from solstone.think.push.portal_dispatch import (
+    dispatch_dedup_via_portal,
+    dispatch_via_portal,
+)
 from solstone.think.services.scout import scout_provenance
 from solstone.think.utils import get_journal
 
@@ -380,14 +383,31 @@ def handle_chat_lifecycle(message: dict[str, Any]) -> None:
     event = message.get("event")
     if event not in {KIND_OWNER_CHAT_OPEN, KIND_OWNER_CHAT_DISMISSED}:
         return
+    raw_request_id = message.get("request_id")
+    request_id = raw_request_id.strip() if isinstance(raw_request_id, str) else ""
+    if not request_id:
+        return
+
+    scout = scout_provenance()
+    if scout and scout.get("dispatch_token"):
+        portal_result = dispatch_dedup_via_portal(request_id=request_id, action=event)
+        if portal_result is not None:
+            _append_nudge_log(
+                {
+                    "ts": int(time.time()),
+                    "kind": "sol_chat_lifecycle_push",
+                    "dedupe_key": request_id,
+                    "category": event,
+                    "outcome": "dispatched",
+                    "via": "portal",
+                }
+            )
+            return
+
     if not is_configured():
         return
     eligible_devices = _eligible_devices()
     if not eligible_devices:
-        return
-
-    request_id = str(message.get("request_id") or "").strip()
-    if not request_id:
         return
 
     outcome = "dispatched"
@@ -422,6 +442,7 @@ def handle_chat_lifecycle(message: dict[str, Any]) -> None:
             "dedupe_key": request_id,
             "category": event,
             "outcome": outcome,
+            "via": "local",
         }
     )
 
