@@ -3221,6 +3221,12 @@ button:focus:not(:focus-visible) {
       <h2>facets</h2>
       <p class="settings-section-desc">Manage muted facets. Muted facets are hidden from the facet bar but retain all their data.</p>
 
+      <h3>all facets</h3>
+      <div id="allFacetsList">
+        <p class="text-muted">Loading...</p>
+      </div>
+
+      <h3>muted facets</h3>
       <div id="mutedFacetsList">
         <p class="text-muted">Loading...</p>
       </div>
@@ -3581,6 +3587,7 @@ function switchSection(sectionId, updateHash = true) {
   });
 
   if (sectionId === 'facets') {
+    loadAllFacets();
     loadMutedFacets();
   }
 
@@ -3603,7 +3610,72 @@ function switchSection(sectionId, updateHash = true) {
   }
 }
 
-// ========== MUTED FACETS ==========
+// ========== FACETS ==========
+async function loadAllFacets() {
+  const container = document.getElementById('allFacetsList');
+  if (!container) return;
+  try {
+    const response = await fetch('/app/settings/api/facets');
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+
+    const facets = data.facets || [];
+    if (facets.length === 0) {
+      container.innerHTML = '<p class="text-muted">No facets yet.</p>';
+      return;
+    }
+
+    container.innerHTML = '';
+    facets.forEach(facet => {
+      const row = document.createElement('a');
+      row.className = 'settings-field';
+      row.href = `/app/settings/facets/${encodeURIComponent(facet.name)}`;
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.justifyContent = 'space-between';
+      row.style.textDecoration = 'none';
+      row.style.color = 'inherit';
+
+      const info = document.createElement('div');
+      info.style.display = 'flex';
+      info.style.alignItems = 'center';
+      info.style.gap = '0.5em';
+
+      if (facet.emoji) {
+        const emoji = document.createElement('span');
+        emoji.textContent = facet.emoji;
+        info.appendChild(emoji);
+      }
+
+      const title = document.createElement('span');
+      title.textContent = facet.title || facet.name;
+      info.appendChild(title);
+
+      if (facet.color) {
+        const swatch = document.createElement('span');
+        swatch.style.display = 'inline-block';
+        swatch.style.width = '12px';
+        swatch.style.height = '12px';
+        swatch.style.borderRadius = '50%';
+        swatch.style.backgroundColor = facet.color;
+        swatch.style.marginLeft = '0.25em';
+        info.appendChild(swatch);
+      }
+
+      const state = document.createElement('span');
+      state.className = 'text-muted';
+      state.style.fontSize = '0.85em';
+      state.textContent = facet.muted ? 'muted' : 'open';
+
+      row.appendChild(info);
+      row.appendChild(state);
+      container.appendChild(row);
+    });
+  } catch (err) {
+    container.innerHTML = '<p class="text-muted">Failed to load facets.</p>';
+  }
+}
+
 async function loadMutedFacets() {
   const container = document.getElementById('mutedFacetsList');
   try {
@@ -4940,7 +5012,7 @@ document.getElementById('createPersonalBtn').onclick = async () => {
     const data = await response.json();
     if (data.success) {
       document.cookie = `selectedFacet=${data.facet}; path=/; SameSite=Lax`;
-      window.location.href = '/app/home';
+      window.location.href = '/app/settings/facets/' + encodeURIComponent(data.facet);
     } else {
       throw new Error(data.error);
     }
