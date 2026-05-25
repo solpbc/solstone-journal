@@ -44,6 +44,7 @@ from solstone.think.models import (
     get_model_provider,
     get_usage_cost,
     iter_token_log,
+    model_supports,
     request_health_recheck,
     resolve_provider,
 )
@@ -993,6 +994,20 @@ def test_log_token_usage_passes_through_cache_creation_tokens(tmp_path, monkeypa
     entry = json.loads(log_file.read_text().strip())
     assert entry["usage"]["cache_creation_tokens"] == 2000
     assert entry["usage"]["cached_tokens"] == 3000
+
+
+class TestModelSupports:
+    def test_opus_4_7_temperature_not_supported(self):
+        assert model_supports(CLAUDE_OPUS_4, "temperature") is False
+
+    def test_sonnet_4_6_temperature_supported(self):
+        assert model_supports(CLAUDE_SONNET_4, "temperature") is True
+
+    def test_unlisted_param_defaults_supported(self):
+        assert model_supports(CLAUDE_OPUS_4, "max_tokens") is True
+
+    def test_unlisted_model_defaults_supported(self):
+        assert model_supports("gpt-5.5", "temperature") is True
 
 
 class TestValidateSchema:

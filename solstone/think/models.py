@@ -156,6 +156,20 @@ MLX_PRO = QWEN_35_9B
 MLX_FLASH = QWEN_35_9B
 MLX_LITE = QWEN_35_9B
 
+
+# Per-model request parameter capability overrides.
+# Anthropic reasoning-model temperature deprecation: Opus 4.7 rejects temperature.
+# Canonical error string: 'temperature' is deprecated for this model.
+# Missing models/params are treated as supported so providers stay permissive by default.
+MODEL_CAPABILITIES: dict[str, dict[str, bool]] = {
+    CLAUDE_OPUS_4: {"temperature": False},
+}
+
+
+def model_supports(model: str, param: str) -> bool:
+    return MODEL_CAPABILITIES.get(model, {}).get(param) is not False
+
+
 # ---------------------------------------------------------------------------
 # System defaults: provider -> tier -> model
 # ---------------------------------------------------------------------------
@@ -1628,6 +1642,8 @@ __all__ = [
     "QWEN_35_9B",
     "GEMMA4_26B_A4B_4BIT",
     "MLX_FLASH",
+    # Model capability helpers
+    "model_supports",
     # Unified API
     "generate",
     "generate_with_result",

@@ -44,7 +44,7 @@ from anthropic.types import (
     ThinkingBlock,
 )
 
-from solstone.think.models import CLAUDE_SONNET_4
+from solstone.think.models import CLAUDE_SONNET_4, model_supports
 from solstone.think.providers._image import encode_image_part, is_image_part
 
 from .shared import GenerateResult
@@ -311,8 +311,11 @@ def run_generate(
             "type": "enabled",
             "budget_tokens": thinking_budget,
         }
-    else:
+    elif model_supports(model, "temperature"):
         request_kwargs["temperature"] = temperature
+    else:
+        # Some Anthropic reasoning models reject the temperature parameter.
+        pass
     _adjust_budget_for_thinking(request_kwargs)
 
     if timeout_s:
@@ -384,8 +387,11 @@ async def run_agenerate(
             "type": "enabled",
             "budget_tokens": thinking_budget,
         }
-    else:
+    elif model_supports(model, "temperature"):
         request_kwargs["temperature"] = temperature
+    else:
+        # Some Anthropic reasoning models reject the temperature parameter.
+        pass
     _adjust_budget_for_thinking(request_kwargs)
 
     if timeout_s:

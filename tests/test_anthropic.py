@@ -15,6 +15,7 @@ import pytest
 from PIL import Image
 
 from solstone.think.models import (
+    CLAUDE_OPUS_4,
     CLAUDE_SONNET_4,
     IncompleteJSONError,
     _validate_json_response,
@@ -914,3 +915,208 @@ class TestStreamingDispatch:
         assert mock_client.messages.stream.call_count == 1
         call_kwargs = mock_client.messages.stream.call_args.kwargs
         assert call_kwargs["max_tokens"] == 25577
+
+
+class TestTemperatureCapabilityGate:
+    """Per-model temperature capability gate (omits `temperature` for opus-4-7)."""
+
+    def test_sync_omits_temperature_for_opus_4_7_create(self, monkeypatch):
+        provider = importlib.reload(
+            importlib.import_module("solstone.think.providers.anthropic")
+        )
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_response()
+        monkeypatch.setattr(provider, "_get_anthropic_client", lambda: mock_client)
+
+        provider.run_generate(
+            "hi",
+            model=CLAUDE_OPUS_4,
+            temperature=0.3,
+        )
+
+        call_kwargs = mock_client.messages.create.call_args.kwargs
+        assert "temperature" not in call_kwargs
+        assert "thinking" not in call_kwargs
+
+    def test_async_omits_temperature_for_opus_4_7_create(self, monkeypatch):
+        provider = importlib.reload(
+            importlib.import_module("solstone.think.providers.anthropic")
+        )
+        mock_client = MagicMock()
+        mock_client.messages.create = AsyncMock(return_value=_make_response())
+        monkeypatch.setattr(
+            provider, "_get_async_anthropic_client", lambda: mock_client
+        )
+
+        asyncio.run(
+            provider.run_agenerate(
+                "hi",
+                model=CLAUDE_OPUS_4,
+                temperature=0.3,
+            )
+        )
+
+        call_kwargs = mock_client.messages.create.call_args.kwargs
+        assert "temperature" not in call_kwargs
+        assert "thinking" not in call_kwargs
+
+    def test_sync_omits_temperature_for_opus_4_7_stream(self, monkeypatch):
+        provider = importlib.reload(
+            importlib.import_module("solstone.think.providers.anthropic")
+        )
+        mock_client = MagicMock()
+        mock_client.messages.stream.return_value = _make_stream_cm(_make_response())
+        monkeypatch.setattr(provider, "_get_anthropic_client", lambda: mock_client)
+
+        provider.run_generate(
+            "hi",
+            model=CLAUDE_OPUS_4,
+            temperature=0.3,
+            max_output_tokens=49152,
+        )
+
+        stream_kwargs = mock_client.messages.stream.call_args.kwargs
+        assert "temperature" not in stream_kwargs
+        assert mock_client.messages.create.call_count == 0
+
+    def test_async_omits_temperature_for_opus_4_7_stream(self, monkeypatch):
+        provider = importlib.reload(
+            importlib.import_module("solstone.think.providers.anthropic")
+        )
+        mock_client = MagicMock()
+        mock_client.messages.stream = MagicMock(
+            return_value=_make_async_stream_cm(_make_response())
+        )
+        monkeypatch.setattr(
+            provider, "_get_async_anthropic_client", lambda: mock_client
+        )
+
+        asyncio.run(
+            provider.run_agenerate(
+                "hi",
+                model=CLAUDE_OPUS_4,
+                temperature=0.3,
+                max_output_tokens=49152,
+            )
+        )
+
+        stream_kwargs = mock_client.messages.stream.call_args.kwargs
+        assert "temperature" not in stream_kwargs
+
+    def test_sync_keeps_temperature_for_sonnet_4_6(self, monkeypatch):
+        provider = importlib.reload(
+            importlib.import_module("solstone.think.providers.anthropic")
+        )
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_response()
+        monkeypatch.setattr(provider, "_get_anthropic_client", lambda: mock_client)
+
+        provider.run_generate(
+            "hi",
+            model=CLAUDE_SONNET_4,
+            temperature=0.3,
+        )
+
+        call_kwargs = mock_client.messages.create.call_args.kwargs
+        assert call_kwargs["temperature"] == 0.3
+
+    def test_async_keeps_temperature_for_sonnet_4_6(self, monkeypatch):
+        provider = importlib.reload(
+            importlib.import_module("solstone.think.providers.anthropic")
+        )
+        mock_client = MagicMock()
+        mock_client.messages.create = AsyncMock(return_value=_make_response())
+        monkeypatch.setattr(
+            provider, "_get_async_anthropic_client", lambda: mock_client
+        )
+
+        asyncio.run(
+            provider.run_agenerate(
+                "hi",
+                model=CLAUDE_SONNET_4,
+                temperature=0.3,
+            )
+        )
+
+        call_kwargs = mock_client.messages.create.call_args.kwargs
+        assert call_kwargs["temperature"] == 0.3
+
+    def test_sync_thinking_budget_takes_precedence_for_opus_4_7(self, monkeypatch):
+        provider = importlib.reload(
+            importlib.import_module("solstone.think.providers.anthropic")
+        )
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_response()
+        monkeypatch.setattr(provider, "_get_anthropic_client", lambda: mock_client)
+
+        provider.run_generate(
+            "hi",
+            model=CLAUDE_OPUS_4,
+            thinking_budget=4096,
+            max_output_tokens=8192,
+        )
+
+        call_kwargs = mock_client.messages.create.call_args.kwargs
+        assert "thinking" in call_kwargs
+        assert "temperature" not in call_kwargs
+
+    def test_async_thinking_budget_takes_precedence_for_opus_4_7(self, monkeypatch):
+        provider = importlib.reload(
+            importlib.import_module("solstone.think.providers.anthropic")
+        )
+        mock_client = MagicMock()
+        mock_client.messages.create = AsyncMock(return_value=_make_response())
+        monkeypatch.setattr(
+            provider, "_get_async_anthropic_client", lambda: mock_client
+        )
+
+        asyncio.run(
+            provider.run_agenerate(
+                "hi",
+                model=CLAUDE_OPUS_4,
+                thinking_budget=4096,
+                max_output_tokens=8192,
+            )
+        )
+
+        call_kwargs = mock_client.messages.create.call_args.kwargs
+        assert "thinking" in call_kwargs
+        assert "temperature" not in call_kwargs
+
+    def test_sync_explicit_temperature_omitted_for_opus_4_7(self, monkeypatch):
+        provider = importlib.reload(
+            importlib.import_module("solstone.think.providers.anthropic")
+        )
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _make_response()
+        monkeypatch.setattr(provider, "_get_anthropic_client", lambda: mock_client)
+
+        provider.run_generate(
+            "hi",
+            model=CLAUDE_OPUS_4,
+            temperature=0.5,
+        )
+
+        call_kwargs = mock_client.messages.create.call_args.kwargs
+        assert "temperature" not in call_kwargs
+
+    def test_async_explicit_temperature_omitted_for_opus_4_7(self, monkeypatch):
+        provider = importlib.reload(
+            importlib.import_module("solstone.think.providers.anthropic")
+        )
+        mock_client = MagicMock()
+        mock_client.messages.create = AsyncMock(return_value=_make_response())
+        monkeypatch.setattr(
+            provider, "_get_async_anthropic_client", lambda: mock_client
+        )
+
+        asyncio.run(
+            provider.run_agenerate(
+                "hi",
+                model=CLAUDE_OPUS_4,
+                temperature=0.5,
+            )
+        )
+
+        call_kwargs = mock_client.messages.create.call_args.kwargs
+        assert "temperature" not in call_kwargs
