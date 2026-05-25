@@ -149,8 +149,10 @@
 
 <!-- Main Content -->
 <main id="main-content" class="workspace">
+  {% block workspace_content %}
   <h1 class="visually-hidden">{{ app_registry.apps[app].label }}</h1>
   {% include app_registry.apps[app].get_workspace_template() %}
+  {% endblock %}
 </main>
 
 <script>

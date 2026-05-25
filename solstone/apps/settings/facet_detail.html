@@ -1,0 +1,137 @@
+{% extends "app.html" %}
+
+{% block workspace_content %}
+<style>
+  .facet-detail-page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 2rem 1rem calc(var(--app-bar-height, 60px) + 2rem);
+  }
+
+  .facet-detail-back {
+    display: inline-flex;
+    color: #64748b;
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+    text-decoration: none;
+  }
+
+  .facet-detail-heading {
+    color: #111827;
+    font-size: 2rem;
+    line-height: 1.15;
+    margin: 0 0 1rem;
+  }
+
+  .facet-detail-meta {
+    align-items: center;
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .facet-detail-emoji {
+    font-size: 1.75rem;
+  }
+
+  .facet-detail-swatch {
+    border: 1px solid rgba(15, 23, 42, 0.16);
+    border-radius: 50%;
+    display: inline-block;
+    height: 1.25rem;
+    width: 1.25rem;
+  }
+
+  .facet-detail-muted {
+    background: #f1f5f9;
+    border-radius: 999px;
+    color: #64748b;
+    font-size: 0.8rem;
+    padding: 0.2rem 0.6rem;
+  }
+
+  .facet-detail-copy {
+    color: #475569;
+    font-size: 1rem;
+    line-height: 1.6;
+    margin: 0 0 2rem;
+  }
+
+  .facet-detail-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .facet-detail-action {
+    border-radius: 8px;
+    display: inline-flex;
+    font-weight: 600;
+    padding: 0.7rem 1rem;
+    text-decoration: none;
+  }
+
+  .facet-detail-action--primary {
+    background: var(--facet-color, #E8923A);
+    color: white;
+  }
+
+  .facet-detail-action--secondary {
+    background: #f8fafc;
+    color: #334155;
+  }
+
+  .facet-detail-action--tertiary {
+    color: #64748b;
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
+  }
+</style>
+
+<section
+  class="facet-detail-page"
+  aria-labelledby="facetDetailHeading"
+  {% if color %}style="--facet-color: {{ color }}"{% endif %}
+>
+  <h1 class="visually-hidden">settings</h1>
+  <a class="facet-detail-back" href="/app/settings#facets">{{ tertiary_cta }}</a>
+  <h2 class="facet-detail-heading" id="facetDetailHeading">{{ success_heading }}</h2>
+  <div class="facet-detail-meta">
+    {% if emoji %}<span class="facet-detail-emoji" aria-hidden="true">{{ emoji }}</span>{% endif %}
+    {% if color %}
+    <span
+      class="facet-detail-swatch"
+      style="background-color: {{ color }}"
+      aria-label="{{ title }} color"
+    ></span>
+    {% endif %}
+    {% if muted %}<span class="facet-detail-muted">muted</span>{% endif %}
+  </div>
+  <p class="facet-detail-copy">{{ value_framing }}</p>
+  <div class="facet-detail-actions">
+    <a
+      class="facet-detail-action facet-detail-action--primary"
+      href="/app/entities/"
+      data-facet-slug="{{ slug }}"
+      id="facetDetailPrimary"
+    >{{ primary_cta }}</a>
+    <a class="facet-detail-action facet-detail-action--secondary" href="/app/settings#facets">{{ secondary_cta }}</a>
+    <a class="facet-detail-action facet-detail-action--tertiary" href="/app/settings">{{ tertiary_cta }}</a>
+  </div>
+</section>
+
+<script>
+(function() {
+  var link = document.getElementById('facetDetailPrimary');
+  if (!link) return;
+  link.addEventListener('click', function() {
+    var slug = link.dataset.facetSlug;
+    if (!slug) return;
+    var expires = new Date();
+    expires.setFullYear(expires.getFullYear() + 1);
+    document.cookie = 'selectedFacet=' + slug + '; expires=' + expires.toUTCString() + '; path=/; SameSite=Lax';
+  });
+})();
+</script>
+{% endblock %}

@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, abort, jsonify, render_template, request
 
 from solstone.apps.settings import copy as settings_copy
 from solstone.apps.settings import install_copy, local_bootstrap, mlx_bootstrap
@@ -87,6 +87,16 @@ def _settings_operation_failed(detail: str = GENERIC_SETTINGS_ERROR) -> Any:
     return error_response(SETTINGS_OPERATION_FAILED, detail=detail)
 
 
+def _public_facet_record(name: str, data: dict[str, object]) -> dict[str, object]:
+    return {
+        "name": name,
+        "title": str(data.get("title") or name),
+        "color": str(data.get("color") or ""),
+        "emoji": str(data.get("emoji") or ""),
+        "muted": bool(data.get("muted", False)),
+    }
+
+
 # API keys that can be configured in the env section
 # Used for system env checks and allowed env fields validation
 API_KEY_ENV_VARS = [
@@ -147,6 +157,34 @@ def _inject_settings_copy() -> dict[str, Any]:
         "settings_copy": settings_copy,
         "sol_voice_copy": sol_voice_copy,
     }
+
+
+@settings_bp.route("/facets/<slug>")
+def view_facet_detail(slug: str) -> str:
+    from solstone.think.facets import get_facets
+
+    facets = get_facets()
+    facet = facets.get(slug)
+    if facet is None:
+        abort(404)
+
+    title = str(facet.get("title") or slug)
+    color = str(facet.get("color") or "")
+    emoji = str(facet.get("emoji") or "")
+    return render_template(
+        "settings/facet_detail.html",
+        app="settings",
+        slug=slug,
+        title=title,
+        color=color,
+        emoji=emoji,
+        muted=bool(facet.get("muted", False)),
+        primary_cta=settings_copy.FACET_DETAIL_PRIMARY_CTA.format(title=title),
+        secondary_cta=settings_copy.FACET_DETAIL_SECONDARY_CTA,
+        tertiary_cta=settings_copy.FACET_DETAIL_TERTIARY_ESCAPE,
+        success_heading=settings_copy.FACET_DETAIL_SUCCESS_HEADING.format(title=title),
+        value_framing=settings_copy.FACET_DETAIL_VALUE_FRAMING.format(title=title),
+    )
 
 
 @settings_bp.route("/api/config")
@@ -1940,6 +1978,25 @@ def update_observe() -> Any:
         return _settings_operation_failed()
 
 
+@settings_bp.route("/api/facets")
+def list_facets() -> Any:
+    """List all facets."""
+    try:
+        from solstone.think.facets import get_facets
+
+        facets = [
+            _public_facet_record(name, data)
+            for name, data in sorted(
+                get_facets().items(),
+                key=lambda item: str(item[1].get("title") or item[0]).lower(),
+            )
+        ]
+        return jsonify({"facets": facets})
+    except Exception:
+        logger.exception("error loading facets")
+        return _settings_operation_failed()
+
+
 @settings_bp.route("/api/facets/muted")
 def get_muted_facets() -> Any:
     """List muted facets."""
@@ -1948,12 +2005,7 @@ def get_muted_facets() -> Any:
 
         facets = get_facets()
         muted = [
-            {
-                "name": name,
-                "title": data.get("title", name),
-                "color": data.get("color", ""),
-                "emoji": data.get("emoji", ""),
-            }
+            _public_facet_record(name, data)
             for name, data in facets.items()
             if data.get("muted", False)
         ]
