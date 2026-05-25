@@ -26,14 +26,16 @@ def read_journal_config() -> dict[str, Any]:
 
 
 def write_journal_config(config: dict[str, Any]) -> None:
-    """Write journal config with stable formatting and private permissions."""
+    """Write journal config atomically with stable formatting and private permissions."""
 
     config_path = get_journal_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(config_path, "w", encoding="utf-8") as handle:
+    tmp_path = config_path.with_suffix(config_path.suffix + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as handle:
         json.dump(config, handle, indent=2, ensure_ascii=False)
         handle.write("\n")
-    os.chmod(config_path, 0o600)
+    os.chmod(tmp_path, 0o600)
+    os.replace(tmp_path, config_path)
 
 
 __all__ = [

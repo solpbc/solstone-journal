@@ -78,6 +78,7 @@ COMMANDS: dict[str, str] = {
     "restart-convey": "solstone.convey.restart",
     "maint": "solstone.convey.maint_cli",
     "service": "solstone.think.service",
+    "services": "solstone.think.services",
     "setup": "solstone.think.setup",
 }
 
@@ -111,6 +112,7 @@ GROUPS: dict[str, list[str]] = {
         "heartbeat",
     ],
     "Service": ["service"],
+    "Services": ["services"],
     "Observe (capture)": [
         "transcribe",
         "describe",

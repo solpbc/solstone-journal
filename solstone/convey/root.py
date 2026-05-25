@@ -32,6 +32,7 @@ from flask import (
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from solstone.think.cluster import cluster_segments
+from solstone.think.journal_config import write_journal_config
 from solstone.think.utils import (
     day_dirs,
     ensure_journal_config,
@@ -367,12 +368,7 @@ def init_finalize() -> Any:
         }
     )
 
-    config_path = Path(get_journal()) / "config" / "journal.json"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
-        f.write("\n")
-    os.chmod(config_path, 0o600)
+    write_journal_config(config)
 
     config = load_convey_config()
     if seed_default_app_navigation(config) and not save_convey_config(config):
