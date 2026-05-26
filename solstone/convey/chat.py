@@ -54,7 +54,6 @@ logger = logging.getLogger(__name__)
 chat_bp = Blueprint("chat", __name__, url_prefix="/api/chat")
 
 MAX_ACTIVE_TALENTS = 2
-MAX_LOOP_RETRIES = 3
 _WATCHDOG_TIMEOUTS = {"chat": 30, "talent": 180}
 _DEFAULT_WATCHDOG_SECONDS = 180
 _RESERVED_USE_ID_CAP = 256
@@ -391,6 +390,22 @@ def _on_cortex_finish(message: dict[str, Any]) -> None:
                     if parsed["talent_request"]
                     else None
                 )
+                trigger = _current_chat_state.get("trigger") or {}
+                trigger_type = trigger.get("type")
+                if trigger_type in {"talent_finished", "talent_errored"}:
+                    exit_mode = (
+                        "talent_errored"
+                        if trigger_type == "talent_errored"
+                        else "loop_exhausted"
+                    )
+                    message_text = _compose_terminal_closer(
+                        exit_mode,
+                        message_text,
+                        talent_errored_reason=trigger.get("reason"),
+                        talent_finished_summary=trigger.get("summary"),
+                    )
+                    requested_target = None
+                    requested_task = None
                 append_chat_event(
                     "sol_message",
                     use_id=logical_use_id,
@@ -411,20 +426,6 @@ def _on_cortex_finish(message: dict[str, Any]) -> None:
                         synthetic_use_id = _reserve_use_id_locked()
                         _set_current_raw_use_locked(logical_use_id, synthetic_use_id)
                         next_info = _build_spawn_info_locked(logical_use_id)
-                    elif _talent_loop_count_locked() >= MAX_LOOP_RETRIES:
-                        provider = str(message.get("provider") or "")
-                        append_chat_event(
-                            "chat_error",
-                            reason="provider_response_invalid",
-                            use_id=logical_use_id,
-                            provider=provider,
-                            detail="",
-                        )
-                        error_payload = {
-                            "use_id": logical_use_id,
-                            "reason": "provider_response_invalid",
-                        }
-                        next_info = _clear_current_locked()
                     else:
                         talent_use_id = _reserve_use_id_locked()
                         _active_talents[talent_use_id] = {
@@ -1016,36 +1017,6 @@ def _on_watchdog_timeout(use_id: str, kind: str, logical_use_id: str) -> None:
 
 def _active_talent_count_for_today_locked() -> int:
     return len(reduce_chat_state(_today_day())["active_talents"])
-
-
-def _talent_loop_count_locked() -> int:
-    """Count trailing redispatch hops for the current owner turn.
-
-    Each hop is a requested-target sol_message paired with the nearest earlier
-    talent_finished or talent_errored event. Bookkeeping events between them do
-    not break the chain or satisfy a pending hop.
-    """
-    events = read_chat_events(_today_day())
-    count = 0
-    pending_redispatch = False
-
-    for event in reversed(events):
-        kind = event.get("kind")
-        if kind == "owner_message":
-            break
-        if kind == "sol_message":
-            if not event.get("requested_target"):
-                continue
-            if pending_redispatch:
-                break
-            pending_redispatch = True
-            continue
-        if kind in {"talent_finished", "talent_errored"}:
-            if pending_redispatch:
-                count += 1
-                pending_redispatch = False
-            continue
-    return count
 
 
 # LOCKED — see cpo/specs/in-flight/chat-schema-tolerance-audit.md

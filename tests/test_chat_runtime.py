@@ -178,49 +178,24 @@ def test_chat_result_with_two_active_talents_retriggers_with_max_active_reason(
     assert sol_messages[-1]["requested_task"] == "research it"
 
 
-def test_exec_retrigger_loop_stops_after_three_without_owner_reset(
-    tmp_path, monkeypatch
-):
+def test_post_talent_finished_request_is_forced_terminal(tmp_path, monkeypatch):
     import solstone.convey.chat as chat
 
     _setup_journal(tmp_path, monkeypatch)
     _reset_chat_state(chat)
 
-    append_chat_event(
-        "owner_message",
-        text="dig deeper",
-        app="sol",
-        path="/app/sol",
-        facet="work",
-    )
-    for index in range(3):
-        append_chat_event(
-            "talent_finished",
-            use_id=f"171362100000{index}",
-            name="exec",
-            summary=f"summary {index}",
-        )
-        if index < 2:
-            append_chat_event(
-                "sol_message",
-                use_id="1713621999999",
-                text=f"follow up {index}",
-                notes="retrying",
-                requested_target="exec",
-                requested_task=f"task {index}",
-            )
-
-    emitted_errors: list[tuple[str, str]] = []
     actions: list[dict | None] = []
+    finishes: list[tuple[str, str]] = []
     monkeypatch.setattr(
         "solstone.convey.chat._run_next_action", lambda action: actions.append(action)
     )
     monkeypatch.setattr(
-        "solstone.convey.chat._emit_finish", lambda *args, **kwargs: None
+        "solstone.convey.chat._emit_finish",
+        lambda use_id, message: finishes.append((use_id, message)),
     )
     monkeypatch.setattr(
         "solstone.convey.chat._emit_error",
-        lambda use_id, reason: emitted_errors.append((use_id, reason)),
+        lambda *args, **kwargs: None,
     )
 
     with chat._state_lock:
@@ -228,7 +203,7 @@ def test_exec_retrigger_loop_stops_after_three_without_owner_reset(
         chat._current_chat_state = {
             "raw_use_id": "1713622000000",
             "raw_use_ids_seen": {"1713622000000"},
-            "trigger": {"type": "talent_finished", "summary": "summary 2"},
+            "trigger": {"type": "talent_finished", "summary": "summary"},
             "location": {"app": "sol", "path": "/app/sol", "facet": "work"},
             "retry_count": 0,
         }
@@ -238,8 +213,8 @@ def test_exec_retrigger_loop_stops_after_three_without_owner_reset(
             "use_id": "1713622000000",
             "result": json.dumps(
                 {
-                    "message": "Still digging.",
-                    "notes": "loop",
+                    "message": "Let me check logs. Found three relevant notes.",
+                    "notes": "blocked redispatch",
                     "talent_request": {
                         "target": "exec",
                         "task": "one more pass",
@@ -250,137 +225,255 @@ def test_exec_retrigger_loop_stops_after_three_without_owner_reset(
         }
     )
 
-    assert emitted_errors == [("1713621999999", "provider_response_invalid")]
     assert actions == [None]
-    errors = [
-        e for e in read_chat_events(chat._today_day()) if e["kind"] == "chat_error"
+    expected_text = (
+        "Here's what I have so far: Found three relevant notes. "
+        "Want me to try a different angle?"
+    )
+    events = read_chat_events(chat._today_day())
+    sol_messages = [event for event in events if event["kind"] == "sol_message"]
+    assert len(sol_messages) == 1
+    assert sol_messages[-1]["text"] == expected_text
+    assert sol_messages[-1]["requested_target"] is None
+    assert sol_messages[-1]["requested_task"] is None
+    assert [event for event in events if event["kind"] == "talent_spawned"] == []
+    assert finishes == [("1713621999999", expected_text)]
+    with chat._state_lock:
+        assert chat._current_chat_state is None
+        assert chat._current_chat_use_id is None
+
+
+def test_post_talent_errored_request_is_forced_terminal(tmp_path, monkeypatch):
+    import solstone.convey.chat as chat
+
+    _setup_journal(tmp_path, monkeypatch)
+    _reset_chat_state(chat)
+
+    actions: list[dict | None] = []
+    finishes: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "solstone.convey.chat._run_next_action", lambda action: actions.append(action)
+    )
+    monkeypatch.setattr(
+        "solstone.convey.chat._emit_finish",
+        lambda use_id, message: finishes.append((use_id, message)),
+    )
+    monkeypatch.setattr(
+        "solstone.convey.chat._emit_error",
+        lambda *args, **kwargs: None,
+    )
+
+    with chat._state_lock:
+        chat._current_chat_use_id = "1713622100000"
+        chat._current_chat_state = {
+            "raw_use_id": "1713622100001",
+            "raw_use_ids_seen": {"1713622100001"},
+            "trigger": {
+                "type": "talent_errored",
+                "reason": "talent timed out waiting for provider response",
+            },
+            "location": {"app": "sol", "path": "/app/sol", "facet": "work"},
+            "retry_count": 0,
+        }
+
+    chat._on_cortex_finish(
+        {
+            "use_id": "1713622100001",
+            "result": json.dumps(
+                {
+                    "message": "I'll check again.",
+                    "notes": "blocked redispatch",
+                    "talent_request": {
+                        "target": "exec",
+                        "task": "one more pass",
+                        "context": json.dumps({}),
+                    },
+                }
+            ),
+        }
+    )
+
+    expected_text = (
+        "I couldn't finish that lookup — talent timed out waiting for provider "
+        "response. Want to try a different angle, or rephrase the question?"
+    )
+    assert actions == [None]
+    events = read_chat_events(chat._today_day())
+    sol_messages = [event for event in events if event["kind"] == "sol_message"]
+    assert len(sol_messages) == 1
+    assert sol_messages[-1]["text"] == expected_text
+    assert sol_messages[-1]["requested_target"] is None
+    assert sol_messages[-1]["requested_task"] is None
+    assert [event for event in events if event["kind"] == "talent_spawned"] == []
+    assert finishes == [("1713622100000", expected_text)]
+    with chat._state_lock:
+        assert chat._current_chat_state is None
+        assert chat._current_chat_use_id is None
+
+
+def test_owner_message_direct_reply_keeps_raw_model_text(tmp_path, monkeypatch):
+    import solstone.convey.chat as chat
+
+    _setup_journal(tmp_path, monkeypatch)
+    _reset_chat_state(chat)
+
+    finishes: list[tuple[str, str]] = []
+    monkeypatch.setattr("solstone.convey.chat._run_next_action", lambda action: None)
+    monkeypatch.setattr(
+        "solstone.convey.chat._emit_finish",
+        lambda use_id, message: finishes.append((use_id, message)),
+    )
+    monkeypatch.setattr(
+        "solstone.convey.chat._emit_error",
+        lambda *args, **kwargs: None,
+    )
+
+    with chat._state_lock:
+        chat._current_chat_use_id = "1713622200000"
+        chat._current_chat_state = {
+            "raw_use_id": "1713622200001",
+            "raw_use_ids_seen": {"1713622200001"},
+            "trigger": {"type": "owner_message", "message": "status?"},
+            "location": {"app": "sol", "path": "/app/sol", "facet": "work"},
+            "retry_count": 0,
+        }
+
+    raw_text = "Nothing new showed up in the digest."
+    chat._on_cortex_finish(
+        {
+            "use_id": "1713622200001",
+            "result": json.dumps(
+                {
+                    "message": raw_text,
+                    "notes": "answered directly",
+                    "talent_request": None,
+                }
+            ),
+        }
+    )
+
+    sol_messages = [
+        event
+        for event in read_chat_events(chat._today_day())
+        if event["kind"] == "sol_message"
     ]
-    assert errors[-1]["reason"] == "provider_response_invalid"
+    assert sol_messages[-1]["text"] == raw_text
+    assert finishes == [("1713622200000", raw_text)]
 
 
-def test_talent_loop_count_skips_chat_error_between_retry_hops(tmp_path, monkeypatch):
+def test_owner_message_request_still_spawns_talent(tmp_path, monkeypatch):
     import solstone.convey.chat as chat
 
     _setup_journal(tmp_path, monkeypatch)
     _reset_chat_state(chat)
 
-    append_chat_event(
-        "owner_message",
-        text="dig deeper",
-        app="sol",
-        path="/app/sol",
-        facet="work",
+    actions: list[dict] = []
+    monkeypatch.setattr(
+        "solstone.convey.chat._run_next_action", lambda action: actions.append(action)
     )
-    append_chat_event(
-        "sol_message",
-        use_id="1713622100000",
-        text="follow up 0",
-        notes="retrying",
-        requested_target="exec",
-        requested_task="task 0",
+    monkeypatch.setattr(
+        "solstone.convey.chat._emit_finish", lambda *args, **kwargs: None
     )
-    append_chat_event(
-        "talent_finished",
-        use_id="1713622100001",
-        name="exec",
-        summary="summary 0",
-    )
-    append_chat_event(
-        "chat_error",
-        use_id="1713622100000",
-        reason="transient trouble",
-    )
-    append_chat_event(
-        "sol_message",
-        use_id="1713622100000",
-        text="follow up 1",
-        notes="retrying",
-        requested_target="exec",
-        requested_task="task 1",
-    )
-    append_chat_event(
-        "talent_finished",
-        use_id="1713622100002",
-        name="exec",
-        summary="summary 1",
-    )
-    append_chat_event(
-        "sol_message",
-        use_id="1713622100000",
-        text="follow up 2",
-        notes="retrying",
-        requested_target="exec",
-        requested_task="task 2",
+    monkeypatch.setattr(
+        "solstone.convey.chat._emit_error",
+        lambda *args, **kwargs: None,
     )
 
     with chat._state_lock:
-        assert chat._talent_loop_count_locked() == 2
+        chat._current_chat_use_id = "1713622300000"
+        chat._current_chat_state = {
+            "raw_use_id": "1713622300001",
+            "raw_use_ids_seen": {"1713622300001"},
+            "trigger": {"type": "owner_message", "message": "research this"},
+            "location": {"app": "sol", "path": "/app/sol", "facet": "work"},
+            "retry_count": 0,
+        }
+
+    chat._on_cortex_finish(
+        {
+            "use_id": "1713622300001",
+            "result": json.dumps(
+                {
+                    "message": "I am looking into that.",
+                    "notes": "dispatch",
+                    "talent_request": {
+                        "target": "exec",
+                        "task": "research it",
+                        "context": json.dumps({}),
+                    },
+                }
+            ),
+        }
+    )
+
+    assert actions[-1]["kind"] == "talent"
+    events = read_chat_events(chat._today_day())
+    talent_spawns = [event for event in events if event["kind"] == "talent_spawned"]
+    assert len(talent_spawns) == 1
+    assert talent_spawns[-1]["name"] == "exec"
 
 
-def test_talent_loop_count_counts_through_talent_errored_and_reflection_ready(
-    tmp_path, monkeypatch
-):
+@pytest.mark.parametrize(
+    "trigger",
+    [
+        None,
+        {},
+        {
+            "type": "synthetic-max-active",
+            "reason": "max active — waiting for one to finish",
+        },
+    ],
+)
+def test_non_post_talent_triggers_allow_dispatch(tmp_path, monkeypatch, trigger):
     import solstone.convey.chat as chat
 
     _setup_journal(tmp_path, monkeypatch)
     _reset_chat_state(chat)
 
-    append_chat_event(
-        "owner_message",
-        text="dig deeper",
-        app="sol",
-        path="/app/sol",
-        facet="work",
+    actions: list[dict] = []
+    monkeypatch.setattr(
+        "solstone.convey.chat._run_next_action", lambda action: actions.append(action)
     )
-    append_chat_event(
-        "sol_message",
-        use_id="1713622200000",
-        text="follow up 0",
-        notes="retrying",
-        requested_target="exec",
-        requested_task="task 0",
+    monkeypatch.setattr(
+        "solstone.convey.chat._emit_finish", lambda *args, **kwargs: None
     )
-    append_chat_event(
-        "talent_errored",
-        use_id="1713622200001",
-        name="exec",
-        reason="needs clarification",
-    )
-    append_chat_event(
-        "reflection_ready",
-        day=chat._today_day(),
-        url="/app/chat/today",
-    )
-    append_chat_event(
-        "sol_message",
-        use_id="1713622200000",
-        text="follow up 1",
-        notes="retrying",
-        requested_target="exec",
-        requested_task="task 1",
-    )
-    append_chat_event(
-        "talent_finished",
-        use_id="1713622200002",
-        name="exec",
-        summary="summary 1",
-    )
-    append_chat_event(
-        "reflection_ready",
-        day=chat._today_day(),
-        url="/app/chat/today#latest",
-    )
-    append_chat_event(
-        "sol_message",
-        use_id="1713622200000",
-        text="follow up 2",
-        notes="retrying",
-        requested_target="exec",
-        requested_task="task 2",
+    monkeypatch.setattr(
+        "solstone.convey.chat._emit_error",
+        lambda *args, **kwargs: None,
     )
 
     with chat._state_lock:
-        assert chat._talent_loop_count_locked() == 2
+        chat._current_chat_use_id = "1713622400000"
+        chat._current_chat_state = {
+            "raw_use_id": "1713622400001",
+            "raw_use_ids_seen": {"1713622400001"},
+            "trigger": trigger,
+            "location": {"app": "sol", "path": "/app/sol", "facet": "work"},
+            "retry_count": 0,
+        }
+
+    chat._on_cortex_finish(
+        {
+            "use_id": "1713622400001",
+            "result": json.dumps(
+                {
+                    "message": "I am looking into that.",
+                    "notes": "dispatch",
+                    "talent_request": {
+                        "target": "exec",
+                        "task": "research it",
+                        "context": json.dumps({}),
+                    },
+                }
+            ),
+        }
+    )
+
+    assert actions[-1]["kind"] == "talent"
+    events = read_chat_events(chat._today_day())
+    talent_spawns = [event for event in events if event["kind"] == "talent_spawned"]
+    assert len(talent_spawns) == 1
+    assert talent_spawns[-1]["name"] == "exec"
 
 
 def test_cortex_finish_and_error_append_exec_terminal_events_by_use_id(
@@ -578,7 +671,17 @@ def test_terminal_talent_reports_back_without_redispatch(
 
     events = read_chat_events(chat._today_day())
     sol_messages = [event for event in events if event["kind"] == "sol_message"]
-    assert sol_messages[-1]["text"] == "Here is the summary."
+    if terminal_kind == "talent_finished":
+        expected_text = (
+            "Here's what I have so far: Here is the summary. "
+            "Want me to try a different angle?"
+        )
+    else:
+        expected_text = (
+            "I couldn't finish that lookup — The lookup failed. "
+            "Want to try a different angle, or rephrase the question?"
+        )
+    assert sol_messages[-1]["text"] == expected_text
     assert sol_messages[-1]["requested_target"] is None
     talent_spawns = [event for event in events if event["kind"] == "talent_spawned"]
     assert len(talent_spawns) == 1
@@ -1027,7 +1130,10 @@ def test_superseded_raw_error_after_followup_rotation_is_dropped_without_warning
         for event in read_chat_events(chat._today_day())
         if event["kind"] == "sol_message"
     ]
-    assert sol_messages[-1]["text"] == "wrapped up"
+    assert (
+        sol_messages[-1]["text"]
+        == "Here's what I have so far: wrapped up Want me to try a different angle?"
+    )
 
 
 def test_reserved_unknown_raw_use_id_still_warns(tmp_path, monkeypatch, caplog):
