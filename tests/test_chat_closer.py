@@ -7,14 +7,17 @@ from solstone.convey import chat
 
 CHAT_LOGGER = "solstone.convey.chat"
 FIXTURE_OPENERS = (
-    "Let me look up",
-    "Let me check",
-    "Let me see",
-    "I'll check",
-    "I'll look up",
-    "I'll take a look",
+    "Let me look up ",
+    "Let me check ",
+    "Let me find out ",
+    "Let me also ",
+    "I'll look up ",
+    "I'll check ",
+    "I'll find ",
+    "And one more thing — ",
+    "And let me ",
 )
-FIXTURE_TRAILING = ("one moment while I check",)
+FIXTURE_TRAILING = (" and I'll let you know",)
 
 
 def _chat_debug_records(caplog):
@@ -34,8 +37,14 @@ def test_strip_closer_patterns_casefolds_openers_and_preserves_out_of_set():
     assert (
         chat._strip_closer_patterns("let me look up emails. Found one.") == "Found one."
     )
-    assert chat._strip_closer_patterns("Let me check. Found one.") == "Found one."
-    assert chat._strip_closer_patterns("I'LL TAKE A LOOK. Found one.") == "Found one."
+    assert (
+        chat._strip_closer_patterns("Let me check your inbox. Found one.")
+        == "Found one."
+    )
+    assert (
+        chat._strip_closer_patterns("AND ONE MORE THING — checking that. Found one.")
+        == "Found one."
+    )
     assert (
         chat._strip_closer_patterns("Looking into this. Found one.")
         == "Looking into this. Found one."
@@ -44,8 +53,10 @@ def test_strip_closer_patterns_casefolds_openers_and_preserves_out_of_set():
 
 def test_strip_closer_patterns_removes_trailing_span_only():
     assert (
-        chat._strip_closer_patterns("Here is one moment while I check the answer.")
-        == "Here is the answer."
+        chat._strip_closer_patterns(
+            "Here is the answer and I'll let you know if anything else turns up."
+        )
+        == "Here is the answer if anything else turns up."
     )
 
 
@@ -59,19 +70,19 @@ def test_strip_closer_patterns_logs_opener_match_debug(caplog):
     assert result == "There are 3 from Adrian."
     assert len(records) == 1
     message = records[0].getMessage()
-    assert "Let me look up" in message
+    assert "Let me look up " in message
     assert "There are 3 from Adrian." in message
 
 
 def test_strip_closer_patterns_logs_trailing_match_debug(caplog):
     with caplog.at_level(logging.DEBUG, logger=CHAT_LOGGER):
-        result = chat._strip_closer_patterns("Sure thing one moment while I check.")
+        result = chat._strip_closer_patterns("Sure thing and I'll let you know later.")
 
     records = _chat_debug_records(caplog)
-    assert result == "Sure thing ."
+    assert result == "Sure thing later."
     assert len(records) == 1
     message = records[0].getMessage()
-    assert "one moment while I check" in message
+    assert " and I'll let you know" in message
     assert result in message
 
 
@@ -86,16 +97,16 @@ def test_strip_closer_patterns_no_match_emits_no_debug(caplog):
 def test_strip_closer_patterns_logs_each_match_debug(caplog):
     with caplog.at_level(logging.DEBUG, logger=CHAT_LOGGER):
         result = chat._strip_closer_patterns(
-            "Let me check the emails. Sure, one moment while I check."
+            "Let me check the emails. Sure, found three and I'll let you know."
         )
 
     records = _chat_debug_records(caplog)
-    assert result == "Sure, ."
+    assert result == "Sure, found three."
     assert len(records) == 2
     messages = [record.getMessage() for record in records]
-    assert "Let me check" in messages[0]
-    assert "Sure, one moment while I check." in messages[0]
-    assert "one moment while I check" in messages[1]
+    assert "Let me check " in messages[0]
+    assert "Sure, found three and I'll let you know." in messages[0]
+    assert " and I'll let you know" in messages[1]
     assert result in messages[1]
 
 

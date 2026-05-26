@@ -1145,14 +1145,17 @@ TARGET_ALIASES = {
 # trailing forms — literal span removal; seed flash-bridge holding phrase.
 CLOSER_STRIP_PATTERNS = {
     "openers": (
-        "Let me look up",
-        "Let me check",
-        "Let me see",
-        "I'll check",
-        "I'll look up",
-        "I'll take a look",
+        "Let me look up ",
+        "Let me check ",
+        "Let me find out ",
+        "Let me also ",
+        "I'll look up ",
+        "I'll check ",
+        "I'll find ",
+        "And one more thing — ",
+        "And let me ",
     ),
-    "trailing": ("one moment while I check",),
+    "trailing": (" and I'll let you know",),
 }
 
 # task field — whitespace trim, then non-empty check
