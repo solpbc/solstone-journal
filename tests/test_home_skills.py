@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -207,13 +207,60 @@ def test_collect_skills_seen_flag(monkeypatch, tmp_path):
     )
 
     _save_skills_state(
-        {"skills_last_seen": (datetime.now() + timedelta(minutes=5)).isoformat()}
+        {
+            "skills_last_seen": (
+                datetime.now(timezone.utc) + timedelta(minutes=5)
+            ).isoformat()
+        }
     )
 
     skills = _collect_skills()
 
     assert len(skills) == 1
     assert skills[0]["seen"] is True
+
+
+def test_collect_skills_tolerates_aware_naive_state_mix(monkeypatch, tmp_path):
+    """Profile mtime is aware UTC; legacy naive last_seen ISO must not raise.
+
+    Regression for `req_qufugcsv` — pre-fix, _collect_skills compared an aware
+    last_seen_dt (writer emits aware UTC) against a naive profile_mtime
+    (datetime.fromtimestamp without tz=), raising TypeError on every render and
+    silently blanking the Pulse skills list.
+    """
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+
+    _write_skill_fixtures(
+        tmp_path,
+        [_pattern(slug="daily-review", name="Daily Review")],
+        {
+            "daily-review": _profile_markdown(
+                name="daily-review",
+                display_name="Daily Review",
+                description="End-of-day review habit.",
+            )
+        },
+    )
+
+    aware_state = {
+        "skills_last_seen": (
+            datetime.now(timezone.utc) + timedelta(minutes=5)
+        ).isoformat()
+    }
+    _save_skills_state(aware_state)
+    skills_aware = _collect_skills()
+    assert len(skills_aware) == 1
+    assert skills_aware[0]["seen"] is True
+
+    naive_state = {
+        "skills_last_seen": (datetime.now(timezone.utc) + timedelta(minutes=5))
+        .replace(tzinfo=None)
+        .isoformat()
+    }
+    _save_skills_state(naive_state)
+    skills_naive = _collect_skills()
+    assert len(skills_naive) == 1
+    assert skills_naive[0]["seen"] is True
 
 
 def test_collect_skills_shows_dormant(monkeypatch, tmp_path):

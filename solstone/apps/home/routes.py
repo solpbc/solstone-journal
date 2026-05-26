@@ -1045,6 +1045,26 @@ def _save_skills_state(state: dict[str, Any]) -> None:
         raise
 
 
+def _parse_seen_iso(value: str | None) -> datetime | None:
+    # Legacy state files persisted naive-UTC ISO; current writers persist aware UTC.
+    # Treat naive as UTC so both formats round-trip into a comparable aware datetime.
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _was_seen(item_time: datetime | None, last_seen: datetime | None) -> bool:
+    if item_time is None or last_seen is None:
+        return False
+    return item_time <= last_seen
+
+
 def _collect_routines() -> list[dict[str, Any]]:
     """Collect recent routine outputs for display."""
     from solstone.think.routines import get_config as get_routines_config
@@ -1052,10 +1072,9 @@ def _collect_routines() -> list[dict[str, Any]]:
     try:
         config = get_routines_config()
         state = _load_routines_state()
-        last_seen = state.get("routines_last_seen")
-        last_seen_dt = datetime.fromisoformat(last_seen) if last_seen else None
+        last_seen_dt = _parse_seen_iso(state.get("routines_last_seen"))
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         journal = Path(get_journal())
         routines = []
 
@@ -1069,11 +1088,12 @@ def _collect_routines() -> list[dict[str, Any]]:
                 continue
 
             try:
-                last_run_dt = datetime.fromisoformat(
-                    last_run.replace("Z", "+00:00")
-                ).replace(tzinfo=None)
+                parsed = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
             except (ValueError, AttributeError):
                 continue
+            last_run_dt = (
+                parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            )
 
             freshness = _freshness_hours(value.get("cadence"))
             if (now - last_run_dt).total_seconds() > freshness * 3600:
@@ -1094,7 +1114,7 @@ def _collect_routines() -> list[dict[str, Any]]:
                 if outputs:
                     summary = _extract_summary(outputs[0])
 
-            seen = last_seen_dt is not None and last_run_dt <= last_seen_dt
+            seen = _was_seen(last_run_dt, last_seen_dt)
 
             routines.append(
                 {
@@ -1118,8 +1138,7 @@ def _collect_skills() -> list[dict[str, Any]]:
     """Collect owner-wide skill profiles for the Pulse view."""
     try:
         state = _load_skills_state()
-        last_seen = state.get("skills_last_seen")
-        last_seen_dt = datetime.fromisoformat(last_seen) if last_seen else None
+        last_seen_dt = _parse_seen_iso(state.get("skills_last_seen"))
 
         skills: list[dict[str, Any]] = []
         for pattern in think_skills.load_patterns():
@@ -1167,16 +1186,13 @@ def _collect_skills() -> list[dict[str, Any]]:
 
                 try:
                     profile_mtime = datetime.fromtimestamp(
-                        think_skills.profile_path(slug).stat().st_mtime
+                        think_skills.profile_path(slug).stat().st_mtime,
+                        tz=timezone.utc,
                     )
                 except OSError:
                     profile_mtime = None
 
-                seen = (
-                    last_seen_dt is not None
-                    and profile_mtime is not None
-                    and profile_mtime <= last_seen_dt
-                )
+                seen = _was_seen(profile_mtime, last_seen_dt)
 
                 skills.append(
                     {
@@ -1443,9 +1459,7 @@ def api_pulse():
 def api_routines_seen():
     """Mark routines as seen."""
     state = _load_routines_state()
-    state["routines_last_seen"] = (
-        datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
-    )
+    state["routines_last_seen"] = datetime.now(timezone.utc).isoformat()
     _save_routines_state(state)
     return jsonify({"ok": True})
 
