@@ -2,6 +2,7 @@
 # Copyright (c) 2026 sol pbc
 
 import importlib
+import itertools
 from types import SimpleNamespace
 from unittest import mock
 
@@ -130,7 +131,7 @@ def test_wait_for_convey_ready_timeout(caplog):
     mod = importlib.import_module("solstone.think.supervisor")
     caplog.set_level("ERROR")
     convey_mp = SimpleNamespace(process=SimpleNamespace(poll=lambda: None))
-    ticks = iter([0.0, 0.0, 0.1, 0.2, 0.3, 0.35])
+    ticks = itertools.chain([0.0, 0.0, 0.1, 0.2, 0.3], itertools.repeat(0.35))
 
     with mock.patch("solstone.think.supervisor.is_solstone_up", return_value=False):
         with mock.patch(
