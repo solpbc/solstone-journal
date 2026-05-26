@@ -115,20 +115,15 @@ class TestOrphanSweep:
         assert supervisor._sweep_orphaned_sol_processes(journal=TEST_JOURNAL) == 1
         assert kills == [(333, signal.SIGTERM)]
 
-    def test_non_linux_skips_without_killing(self, monkeypatch):
-        kills = []
-        monkeypatch.setattr(supervisor.sys, "platform", "darwin")
-        monkeypatch.setattr(
-            supervisor.psutil,
-            "process_iter",
-            lambda _attrs: pytest.fail("process_iter should not be called"),
-        )
-        monkeypatch.setattr(
-            supervisor.os, "kill", lambda pid, sig: kills.append((pid, sig))
-        )
+    @pytest.mark.parametrize("platform", ["linux", "darwin", "freebsd"])
+    def test_runs_on_all_platforms(self, monkeypatch, platform):
+        procs = [_FakeProcess(pid=111)]
+        kills = self._patch_common(monkeypatch, procs)
+        monkeypatch.setattr(supervisor.sys, "platform", platform)
+        monkeypatch.setattr(supervisor.psutil, "pid_exists", lambda _pid: False)
 
-        assert supervisor._sweep_orphaned_sol_processes(journal=TEST_JOURNAL) == 0
-        assert kills == []
+        assert supervisor._sweep_orphaned_sol_processes(journal=TEST_JOURNAL) == 1
+        assert kills == [(111, signal.SIGTERM)]
 
     def test_candidate_in_different_journal_is_skipped(self, monkeypatch):
         procs = [_FakeProcess(pid=111)]

@@ -689,6 +689,7 @@ class _TaskManagedStub:
         self.ref = "ref-1"
         self.terminate = MagicMock()
         self.cleanup = MagicMock()
+        self.is_running = MagicMock(return_value=True)
 
 
 def test_ensure_venv_bin_on_path_prepends_when_missing(monkeypatch):
@@ -1044,6 +1045,52 @@ def test_enforce_deadlines_terminates_when_elapsed_exceeds_cap(caplog, monkeypat
         "Task import (cmd=sol import --sync plaud --save, ref=ref-1) exceeded "
         "max_runtime of 50s (elapsed=100s); terminating"
     ) in caplog.text
+
+
+def test_collect_task_status_no_cap(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    queue = mod.TaskQueue(on_queue_change=None)
+    managed = _TaskManagedStub(cmd=["sol", "providers"], start_time=100.0)
+    queue._active["ref-1"] = managed
+    monkeypatch.setattr(mod.time, "time", lambda: 112.0)
+
+    assert queue.collect_task_status() == [
+        {
+            "ref": "ref-1",
+            "name": "providers",
+            "duration_seconds": 12,
+            "max_runtime_seconds": None,
+            "stuck": False,
+        }
+    ]
+
+
+def test_collect_task_status_under_cap(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    queue = mod.TaskQueue(on_queue_change=None)
+    managed = _TaskManagedStub(cmd=["sol", "providers"], start_time=100.0)
+    queue._active["ref-1"] = managed
+    queue.set_cap("providers", 300)
+    monkeypatch.setattr(mod.time, "time", lambda: 112.0)
+
+    status = queue.collect_task_status()
+
+    assert status[0]["max_runtime_seconds"] == 300
+    assert status[0]["stuck"] is False
+
+
+def test_collect_task_status_over_cap(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    queue = mod.TaskQueue(on_queue_change=None)
+    managed = _TaskManagedStub(cmd=["sol", "providers"], start_time=100.0)
+    queue._active["ref-1"] = managed
+    queue.set_cap("providers", 5)
+    monkeypatch.setattr(mod.time, "time", lambda: 112.0)
+
+    status = queue.collect_task_status()
+
+    assert status[0]["max_runtime_seconds"] == 5
+    assert status[0]["stuck"] is True
 
 
 def test_enforce_deadlines_terminates_stopped_task(caplog, monkeypatch):

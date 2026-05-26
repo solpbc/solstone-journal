@@ -72,7 +72,10 @@ def print_status(status: dict[str, Any]) -> None:
         for task in tasks:
             name = task.get("name", "?")
             duration = task.get("duration_seconds", 0)
-            print(f"  {name:16} {duration}s")
+            line = f"  {name:16} {duration}s"
+            if task.get("stuck"):
+                line += f"  STUCK (cap {task['max_runtime_seconds']}s)"
+            print(line)
         for name, count in non_zero_queues:
             print(f"  queued {name:9} {count}")
     elif non_zero_queues:

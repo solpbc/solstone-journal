@@ -111,9 +111,6 @@ def _candidate_journal(proc: "psutil.Process") -> Path | None:
 
 
 def _sweep_orphaned_sol_processes(journal: Path, grace: float = 5.0) -> int:
-    if sys.platform != "linux":
-        return 0
-
     journal = journal.resolve()
     current_user = getpass.getuser()
     own_pid = os.getpid()
@@ -694,11 +691,14 @@ class TaskQueue:
             if managed.is_running():
                 duration = int(now - managed.start_time)
                 cmd_name = TaskQueue.get_command_name(managed.cmd)
+                cap = self._caps.get(cmd_name)
                 tasks.append(
                     {
                         "ref": ref,
                         "name": cmd_name,
                         "duration_seconds": duration,
+                        "max_runtime_seconds": cap,
+                        "stuck": cap is not None and duration > cap,
                     }
                 )
         return tasks
@@ -1813,10 +1813,46 @@ def parse_args() -> argparse.ArgumentParser:
 def handle_shutdown(signum, frame):
     """Handle shutdown signals gracefully."""
     global shutdown_requested
-    if not shutdown_requested:  # Only log once
+    if not shutdown_requested:
         shutdown_requested = True
-        logging.info("Shutdown requested, cleaning up...")
-    raise KeyboardInterrupt
+        logger.info("shutdown requested via signal %d", signum)
+        live = [managed for managed in _managed_procs if managed.is_running()]
+        if live:
+            logger.info("shutdown: signaling %d managed child(ren)", len(live))
+            for managed in live:
+                try:
+                    managed.process.terminate()
+                except Exception:
+                    logger.exception("shutdown: terminate failed for %s", managed.name)
+
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                if all(not managed.is_running() for managed in live):
+                    break
+                time.sleep(0.05)
+
+            kills = 0
+            for managed in live:
+                if managed.is_running():
+                    try:
+                        managed.process.kill()
+                        logger.warning(
+                            "shutdown: SIGKILL pid=%s name=%s",
+                            managed.process.pid,
+                            managed.name,
+                        )
+                        kills += 1
+                    except Exception:
+                        logger.exception("shutdown: kill failed for %s", managed.name)
+
+            cleanly = len(live) - kills
+            logger.info(
+                "shutdown: reap complete (%d exited cleanly, %d SIGKILL'd)",
+                cleanly,
+                kills,
+            )
+        raise KeyboardInterrupt
+    # Second signal during shutdown: cleanup is already in progress.
 
 
 def _ensure_venv_bin_on_path() -> None:

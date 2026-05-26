@@ -1152,6 +1152,7 @@ class TestHeartbeatSchedule:
         assert "heartbeat" in mod._entries
         assert mod._entries["heartbeat"]["cmd"] == ["sol", "heartbeat"]
         assert mod._entries["heartbeat"]["every"] == "daily"
+        assert mod._entries["heartbeat"]["max_runtime"] == 600
 
         config_path = journal_path / "config" / "schedules.json"
         assert config_path.exists()
@@ -1159,6 +1160,28 @@ class TestHeartbeatSchedule:
             raw = json.load(f)
         assert "heartbeat" in raw
         assert raw["heartbeat"]["cmd"] == ["sol", "heartbeat"]
+        assert raw["heartbeat"]["max_runtime"] == "10m"
+        assert raw["weekly-agents"]["max_runtime"] == "30m"
+
+    def test_register_defaults_creates_providers(self, journal_path):
+        """register_defaults() creates a providers health check entry."""
+        import solstone.think.scheduler as mod
+
+        mock_cal = Mock()
+        mod.init(mock_cal)
+        mod.register_defaults()
+
+        config_path = journal_path / "config" / "schedules.json"
+        with open(config_path) as f:
+            raw = json.load(f)
+
+        assert raw["providers"] == {
+            "cmd": ["sol", "providers", "check"],
+            "every": "daily",
+            "enabled": True,
+            "max_runtime": "5m",
+        }
+        assert mod._entries["providers"]["max_runtime"] == 300
 
     def test_register_defaults_idempotent(self, journal_path):
         """register_defaults() does not overwrite existing heartbeat config."""
@@ -1180,6 +1203,48 @@ class TestHeartbeatSchedule:
         mod.register_defaults()
 
         assert mod._entries["heartbeat"]["cmd"] == ["sol", "heartbeat", "--custom"]
+        config_path = journal_path / "config" / "schedules.json"
+        with open(config_path) as f:
+            raw = json.load(f)
+        assert "max_runtime" not in raw["heartbeat"]
+
+    def test_register_defaults_preserves_disabled_providers(self, journal_path):
+        """register_defaults() does not overwrite disabled providers config."""
+        import solstone.think.scheduler as mod
+
+        existing = {
+            "cmd": ["sol", "providers", "check", "--custom"],
+            "every": "daily",
+            "enabled": False,
+        }
+        _write_config(journal_path, {"providers": existing})
+
+        mock_cal = Mock()
+        mod.init(mock_cal)
+        mod.register_defaults()
+
+        config_path = journal_path / "config" / "schedules.json"
+        with open(config_path) as f:
+            raw = json.load(f)
+        assert raw["providers"] == existing
+
+    def test_register_defaults_second_call_writes_nothing(
+        self, journal_path, monkeypatch
+    ):
+        """register_defaults() is idempotent once defaults are present."""
+        import solstone.think.scheduler as mod
+
+        mock_cal = Mock()
+        mod.init(mock_cal)
+        mod.register_defaults()
+
+        monkeypatch.setattr(
+            mod.tempfile,
+            "mkstemp",
+            lambda *args, **kwargs: pytest.fail("register_defaults rewrote config"),
+        )
+
+        mod.register_defaults()
 
     def test_heartbeat_is_due_when_never_run(self, journal_path):
         """_is_due returns True for heartbeat entry with no prior run."""

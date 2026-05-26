@@ -50,6 +50,47 @@ def test_health_check_prints_status(capsys):
     assert "Callosum: 5 clients" in output
 
 
+def test_health_check_renders_stuck_marker(capsys):
+    status = {
+        "services": [],
+        "tasks": [
+            {
+                "name": "providers",
+                "duration_seconds": 313656,
+                "max_runtime_seconds": 300,
+                "stuck": True,
+            }
+        ],
+        "queues": {},
+    }
+
+    print_status(status)
+
+    output = capsys.readouterr().out
+    assert "  providers        313656s  STUCK (cap 300s)" in output
+
+
+def test_healthy_task_rendering_unchanged(capsys):
+    status = {
+        "services": [],
+        "tasks": [
+            {
+                "name": "providers",
+                "duration_seconds": 12,
+                "max_runtime_seconds": 300,
+                "stuck": False,
+            }
+        ],
+        "queues": {},
+    }
+
+    print_status(status)
+
+    output = capsys.readouterr().out
+    assert "STUCK" not in output
+    assert "  providers        12s" in output.splitlines()
+
+
 def test_health_check_timeout(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
     sock = tmp_path / "health" / "callosum.sock"

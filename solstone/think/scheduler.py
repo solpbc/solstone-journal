@@ -344,8 +344,9 @@ def register_defaults() -> None:
 
     need_heartbeat = "heartbeat" not in _entries
     need_weekly = "weekly-agents" not in _entries
+    need_providers = "providers" not in _entries
 
-    if not need_heartbeat and not need_weekly:
+    if not need_heartbeat and not need_weekly and not need_providers:
         return
 
     # Read raw config (preserving daily_time and other entries)
@@ -371,6 +372,7 @@ def register_defaults() -> None:
             "cmd": ["sol", "heartbeat"],
             "every": "daily",
             "enabled": True,
+            "max_runtime": "10m",
         }
         changed = True
 
@@ -379,6 +381,16 @@ def register_defaults() -> None:
             "cmd": ["sol", "think", "--weekly", "-v"],
             "every": "weekly",
             "enabled": True,
+            "max_runtime": "30m",
+        }
+        changed = True
+
+    if need_providers and "providers" not in raw:
+        raw["providers"] = {
+            "cmd": ["sol", "providers", "check"],
+            "every": "daily",
+            "enabled": True,
+            "max_runtime": "5m",
         }
         changed = True
 
