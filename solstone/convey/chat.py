@@ -340,7 +340,9 @@ def _on_cortex_finish(message: dict[str, Any]) -> None:
             logical_use_id = str(_current_chat_use_id)
             _cancel_watchdog_locked(use_id)
             try:
-                parsed = _parse_chat_result(message.get("result"))
+                parsed = _parse_chat_result(
+                    message.get("result"), use_id=logical_use_id
+                )
             except ValueError:
                 provider = str(message.get("provider") or "")
                 if int(_current_chat_state.get("retry_count", 0) or 0) < 1:
@@ -1026,7 +1028,46 @@ def _talent_loop_count_locked() -> int:
     return count
 
 
-def _parse_chat_result(result: Any) -> dict[str, Any]:
+# LOCKED — see cpo/specs/in-flight/chat-schema-tolerance-audit.md
+# Spec amendment required to expand. No fuzzy matching, no LLM classification.
+
+# target field — accepted aliases → canonical
+TARGET_ALIASES = {
+    "exec": "exec",
+    "execute": "exec",
+    "Exec": "exec",
+    "EXEC": "exec",
+    "reflection": "reflection",
+    "Reflection": "reflection",
+    "REFLECTION": "reflection",
+    "reflect": "reflection",
+}
+# Values outside this set still raise ValueError.
+
+# task field — whitespace trim, then non-empty check
+#   coerce: leading/trailing whitespace stripped before non-empty check
+#   keep: empty-after-trim still raises
+
+# context field — fix shipped in parallel lode at d03aa3ad
+#   (prose → {"hint": str}); this lode ratifies, adds no new context behavior.
+
+# talent_request itself — keep "must be dict or null" strict;
+#   total structural violation is a real-bug-guard.
+# Chat parser classification record (audit: chat-schema-tolerance-audit, 2026-05-26).
+# Pre-change line refs in _parse_chat_result:
+#   1035 result non-str/non-dict     : keep      — structural, no recoverable envelope.
+#   1038 payload non-object          : keep      — schema requires object.
+#   1040 notes non-string            : keep      — field-type contract; notes-list deferred.
+#   1044 message non-string/non-null : keep      — field-type contract.
+#   1050 talent_request non-dict/null: keep      — spec call-out: keep strict.
+#   1053 target non-string           : keep      — aliases apply only after type check.
+#   1055 target unknown              : coerce    — TARGET_ALIASES, then raise if unresolved.
+#   1058 task non-empty              : coerce    — strip whitespace; empty-after-strip raises.
+#   1079 context odd shape           : ratified  — d03aa3ad shipped prose fallback; no new behavior.
+# Sibling sweep: chat_stream.py ValueErrors guard the state↔disk JSONL/path seam, out of scope.
+
+
+def _parse_chat_result(result: Any, use_id: str | None = None) -> dict[str, Any]:
     if isinstance(result, str):
         payload = json.loads(result)
     elif isinstance(result, dict):
@@ -1051,10 +1092,30 @@ def _parse_chat_result(result: Any) -> dict[str, Any]:
     target = talent_request.get("target")
     if not isinstance(target, str):
         raise ValueError("chat talent_request.target must be a string")
+    raw_target = target
+    target = TARGET_ALIASES.get(target, target)
+    if target != raw_target:
+        logger.debug(
+            "chat parser coerced target=%s -> %s (use_id=%s)",
+            raw_target,
+            target,
+            use_id,
+        )
     if target not in {"exec", "reflection"}:
         raise ValueError(f"unknown talent target: {target}")
     task = talent_request.get("task")
-    if not isinstance(task, str) or not task.strip():
+    if not isinstance(task, str):
+        raise ValueError("chat talent_request.task must be a non-empty string")
+    raw_task = task
+    task = task.strip()
+    if task != raw_task:
+        logger.debug(
+            "chat parser coerced task whitespace raw=%r -> %r (use_id=%s)",
+            raw_task,
+            task,
+            use_id,
+        )
+    if not task:
         raise ValueError("chat talent_request.task must be a non-empty string")
     raw_context = talent_request.get("context")
     if raw_context is None:
@@ -1082,7 +1143,7 @@ def _parse_chat_result(result: Any) -> dict[str, Any]:
         "notes": payload["notes"],
         "talent_request": {
             "target": target,
-            "task": task.strip(),
+            "task": task,
             "context": context,
         },
     }

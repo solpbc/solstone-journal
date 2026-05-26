@@ -1873,6 +1873,194 @@ def test_parse_chat_result_rejects_missing_target():
         )
 
 
+def _target_alias_cases():
+    import solstone.convey.chat as chat
+
+    return list(chat.TARGET_ALIASES.items())
+
+
+@pytest.mark.parametrize(("raw_target", "canonical_target"), _target_alias_cases())
+def test_parse_chat_result_coerces_target_case_variants(raw_target, canonical_target):
+    import solstone.convey.chat as chat
+
+    parsed = chat._parse_chat_result(
+        {
+            "message": "I am looking into that.",
+            "notes": "need talent",
+            "talent_request": {
+                "target": raw_target,
+                "task": "Research it",
+                "context": None,
+            },
+        }
+    )
+
+    assert parsed["talent_request"]["target"] == canonical_target
+
+
+def test_parse_chat_result_coerces_reflect_synonym():
+    import solstone.convey.chat as chat
+
+    parsed = chat._parse_chat_result(
+        {
+            "message": "I am looking into that.",
+            "notes": "need reflection",
+            "talent_request": {
+                "target": "reflect",
+                "task": "Reflect on the week",
+                "context": None,
+            },
+        }
+    )
+
+    assert parsed["talent_request"]["target"] == "reflection"
+
+
+def test_parse_chat_result_rejects_unknown_target_after_alias_lookup():
+    import solstone.convey.chat as chat
+
+    with pytest.raises(ValueError, match="unknown talent target: mystery"):
+        chat._parse_chat_result(
+            {
+                "message": "Let me think about that.",
+                "notes": "dispatch unknown",
+                "talent_request": {
+                    "target": "mystery",
+                    "task": "Reflect on the week",
+                    "context": None,
+                },
+            }
+        )
+
+
+def test_parse_chat_result_trims_task_whitespace():
+    import solstone.convey.chat as chat
+
+    parsed = chat._parse_chat_result(
+        {
+            "message": "I am looking into that.",
+            "notes": "need exec",
+            "talent_request": {
+                "target": "exec",
+                "task": "  do thing  ",
+                "context": None,
+            },
+        }
+    )
+
+    assert parsed["talent_request"]["task"] == "do thing"
+
+
+def test_parse_chat_result_rejects_whitespace_only_task():
+    import solstone.convey.chat as chat
+
+    with pytest.raises(
+        ValueError, match="chat talent_request.task must be a non-empty string"
+    ):
+        chat._parse_chat_result(
+            {
+                "message": "I am looking into that.",
+                "notes": "need exec",
+                "talent_request": {
+                    "target": "exec",
+                    "task": "   ",
+                    "context": None,
+                },
+            }
+        )
+
+
+def test_parse_chat_result_emits_debug_on_target_coercion(caplog):
+    import solstone.convey.chat as chat
+
+    with caplog.at_level(logging.DEBUG, logger="solstone.convey.chat"):
+        chat._parse_chat_result(
+            {
+                "message": "I am looking into that.",
+                "notes": "need exec",
+                "talent_request": {
+                    "target": "Exec",
+                    "task": "Research it",
+                    "context": None,
+                },
+            },
+            use_id="test-use-id",
+        )
+
+    assert any(
+        "chat parser coerced target=Exec -> exec (use_id=test-use-id)"
+        == record.getMessage()
+        for record in caplog.records
+    )
+
+
+def test_parse_chat_result_emits_debug_on_task_coercion(caplog):
+    import solstone.convey.chat as chat
+
+    with caplog.at_level(logging.DEBUG, logger="solstone.convey.chat"):
+        chat._parse_chat_result(
+            {
+                "message": "I am looking into that.",
+                "notes": "need exec",
+                "talent_request": {
+                    "target": "exec",
+                    "task": "  run  ",
+                    "context": None,
+                },
+            },
+            use_id="test-use-id",
+        )
+
+    assert any(
+        "chat parser coerced task whitespace raw='  run  ' -> 'run' "
+        "(use_id=test-use-id)" == record.getMessage()
+        for record in caplog.records
+    )
+
+
+def test_parse_chat_result_keeps_strict_on_non_dict_talent_request():
+    import solstone.convey.chat as chat
+
+    with pytest.raises(
+        ValueError, match="chat talent_request must be an object or null"
+    ):
+        chat._parse_chat_result(
+            {
+                "message": "I am looking into that.",
+                "notes": "need exec",
+                "talent_request": [1, 2, 3],
+            }
+        )
+
+
+def test_parse_chat_result_keeps_strict_on_non_string_message():
+    import solstone.convey.chat as chat
+
+    with pytest.raises(
+        ValueError, match="chat result message must be a string or null"
+    ):
+        chat._parse_chat_result(
+            {
+                "message": 123,
+                "notes": "need exec",
+                "talent_request": None,
+            }
+        )
+
+
+def test_parse_chat_result_keeps_strict_on_non_string_notes():
+    import solstone.convey.chat as chat
+
+    with pytest.raises(ValueError, match="chat result notes must be a string"):
+        chat._parse_chat_result(
+            {
+                "message": "I am looking into that.",
+                "notes": ["a", "b"],
+                "talent_request": None,
+            }
+        )
+
+
 def test_reflection_dispatch_spawns_reflection_talent(tmp_path, monkeypatch):
     import solstone.convey.chat as chat
 
