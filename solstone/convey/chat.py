@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import pprint
+import re
 import threading
 from collections import deque
 from dataclasses import dataclass, field
@@ -20,6 +21,12 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
+from solstone.apps.chat.copy import (
+    CHAT_CLOSER_DIFFERENT_ANGLE_SUFFIX,
+    CHAT_CLOSER_LOOP_EXHAUSTED_PREFIX,
+    CHAT_CLOSER_TALENT_ERRORED_FORMAT,
+    CHAT_CLOSER_TALENT_ERRORED_GENERIC,
+)
 from solstone.convey.chat_stream import (
     append_chat_event,
     find_unresponded_trigger,
@@ -1057,6 +1064,23 @@ TARGET_ALIASES = {
 }
 # Values outside this set still raise ValueError.
 
+# LOCKED — see scope doc.
+# Spec amendment required to expand. No fuzzy matching, no LLM classification.
+
+# opener forms — sentence-start prefix removal; case-insensitive matching.
+# trailing forms — literal span removal; seed flash-bridge holding phrase.
+CLOSER_STRIP_PATTERNS = {
+    "openers": (
+        "Let me look up",
+        "Let me check",
+        "Let me see",
+        "I'll check",
+        "I'll look up",
+        "I'll take a look",
+    ),
+    "trailing": ("one moment while I check",),
+}
+
 # task field — whitespace trim, then non-empty check
 #   coerce: leading/trailing whitespace stripped before non-empty check
 #   keep: empty-after-trim still raises
@@ -1160,6 +1184,108 @@ def _parse_chat_result(result: Any, use_id: str | None = None) -> dict[str, Any]
             "context": context,
         },
     }
+
+
+def _compose_terminal_closer(
+    exit_mode: str,
+    raw_message: str | None,
+    *,
+    talent_errored_reason: str | None = None,
+    talent_finished_summary: str | None = None,
+) -> str:
+    if exit_mode == "loop_exhausted":
+        raw_clean = _strip_closer_patterns(raw_message or "")
+        if len(raw_clean.split()) >= 15:
+            return raw_clean
+        if raw_clean:
+            return _frame_loop_exhausted_body(raw_clean)
+
+        summary_clean = _strip_closer_patterns(talent_finished_summary or "")
+        if summary_clean:
+            return _frame_loop_exhausted_body(summary_clean)
+        return (
+            f"{CHAT_CLOSER_LOOP_EXHAUSTED_PREFIX} {CHAT_CLOSER_DIFFERENT_ANGLE_SUFFIX}"
+        )
+
+    if exit_mode == "talent_errored":
+        reason = _clean_talent_errored_reason(talent_errored_reason)
+        if reason:
+            return CHAT_CLOSER_TALENT_ERRORED_FORMAT.format(reason=reason)
+        return CHAT_CLOSER_TALENT_ERRORED_GENERIC
+
+    raise ValueError(f"unknown exit_mode: {exit_mode!r}")
+
+
+def _frame_loop_exhausted_body(body: str) -> str:
+    return (
+        f"{CHAT_CLOSER_LOOP_EXHAUSTED_PREFIX} "
+        f"{body.strip()} "
+        f"{CHAT_CLOSER_DIFFERENT_ANGLE_SUFFIX}"
+    ).strip()
+
+
+def _strip_closer_patterns(text: str) -> str:
+    source = str(text or "")
+    parts = re.split(r"([.!?])", source)
+    survivors: list[str] = []
+
+    for index in range(0, len(parts), 2):
+        sentence = parts[index]
+        if sentence == "":
+            continue
+        if index + 1 < len(parts):
+            sentence += parts[index + 1]
+
+        stripped_sentence = sentence.lstrip()
+        opener = _matching_closer_opener(stripped_sentence)
+        if opener is not None:
+            logger.debug(
+                "chat closer stripped opener pattern=%r post_strip_length=%s",
+                opener,
+                max(len(source) - len(sentence), 0),
+            )
+            continue
+        survivors.append(sentence)
+
+    stripped = "".join(survivors)
+    for pattern in CLOSER_STRIP_PATTERNS["trailing"]:
+        regex = re.compile(re.escape(pattern), flags=re.IGNORECASE)
+        matches = list(regex.finditer(stripped))
+        for match in matches:
+            logger.debug(
+                "chat closer stripped trailing pattern=%r post_strip_length=%s",
+                pattern,
+                max(len(stripped) - len(match.group(0)), 0),
+            )
+        stripped = regex.sub("", stripped)
+
+    return re.sub(r"\s+", " ", stripped).strip()
+
+
+def _matching_closer_opener(sentence: str) -> str | None:
+    lowered = sentence.lower()
+    for opener in CLOSER_STRIP_PATTERNS["openers"]:
+        if lowered.startswith(opener.lower()):
+            return opener
+    return None
+
+
+_TRACEBACK_SENTINEL = "Traceback (most recent call last)"
+_PYTHON_PATH_RE = re.compile(r"/[A-Za-z0-9_./-]+\.py")
+
+
+def _clean_talent_errored_reason(reason: str | None) -> str | None:
+    reason_clean = re.sub(r"\s+", " ", str(reason or "")).strip()
+    if not reason_clean:
+        return None
+    if len(reason_clean) > 160:
+        return None
+    if _TRACEBACK_SENTINEL in reason_clean:
+        return None
+    if _PYTHON_PATH_RE.search(reason_clean):
+        return None
+    reason_clean = reason_clean.rstrip(".!?")
+    return reason_clean or None
 
 
 def _build_talent_prompt(
