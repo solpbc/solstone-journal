@@ -420,10 +420,18 @@
       });
   }
 
-  setupSort();
-  loadOwner();
-  loadKnown();
-  loadDiscovery();
+  function init() {
+    setupSort();
+    loadOwner();
+    loadKnown();
+    loadDiscovery();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
 </script>
 {% endblock %}
