@@ -1199,6 +1199,7 @@ def _strip_closer_patterns(text: str) -> str:
     source = str(text or "")
     parts = re.split(r"([.!?])", source)
     survivors: list[str] = []
+    opener_matches: list[str] = []
 
     for index in range(0, len(parts), 2):
         sentence = parts[index]
@@ -1210,27 +1211,37 @@ def _strip_closer_patterns(text: str) -> str:
         stripped_sentence = sentence.lstrip()
         opener = _matching_closer_opener(stripped_sentence)
         if opener is not None:
-            logger.debug(
-                "chat closer stripped opener pattern=%r post_strip_length=%s",
-                opener,
-                max(len(source) - len(sentence), 0),
-            )
+            opener_matches.append(opener)
             continue
         survivors.append(sentence)
 
     stripped = "".join(survivors)
+    for opener in opener_matches:
+        logger.debug(
+            "chat closer stripped opener pattern=%r stripped_output=%r",
+            opener,
+            _normalize_stripped_closer_output(stripped),
+        )
+
     for pattern in CLOSER_STRIP_PATTERNS["trailing"]:
         regex = re.compile(re.escape(pattern), flags=re.IGNORECASE)
         matches = list(regex.finditer(stripped))
-        for match in matches:
+        if not matches:
+            continue
+        stripped_after = regex.sub("", stripped)
+        for _match in matches:
             logger.debug(
-                "chat closer stripped trailing pattern=%r post_strip_length=%s",
+                "chat closer stripped trailing pattern=%r stripped_output=%r",
                 pattern,
-                max(len(stripped) - len(match.group(0)), 0),
+                _normalize_stripped_closer_output(stripped_after),
             )
-        stripped = regex.sub("", stripped)
+        stripped = stripped_after
 
-    return re.sub(r"\s+", " ", stripped).strip()
+    return _normalize_stripped_closer_output(stripped)
+
+
+def _normalize_stripped_closer_output(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _matching_closer_opener(sentence: str) -> str | None:

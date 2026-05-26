@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
+import logging
+
 from solstone.convey import chat
 
+CHAT_LOGGER = "solstone.convey.chat"
 FIXTURE_OPENERS = (
     "Let me look up",
     "Let me check",
@@ -12,6 +15,14 @@ FIXTURE_OPENERS = (
     "I'll take a look",
 )
 FIXTURE_TRAILING = ("one moment while I check",)
+
+
+def _chat_debug_records(caplog):
+    return [
+        record
+        for record in caplog.records
+        if record.name == CHAT_LOGGER and record.levelno == logging.DEBUG
+    ]
 
 
 def test_closer_strip_patterns_locked_bytes():
@@ -36,6 +47,56 @@ def test_strip_closer_patterns_removes_trailing_span_only():
         chat._strip_closer_patterns("Here is one moment while I check the answer.")
         == "Here is the answer."
     )
+
+
+def test_strip_closer_patterns_logs_opener_match_debug(caplog):
+    with caplog.at_level(logging.DEBUG, logger=CHAT_LOGGER):
+        result = chat._strip_closer_patterns(
+            "Let me look up emails. There are 3 from Adrian."
+        )
+
+    records = _chat_debug_records(caplog)
+    assert result == "There are 3 from Adrian."
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "Let me look up" in message
+    assert "There are 3 from Adrian." in message
+
+
+def test_strip_closer_patterns_logs_trailing_match_debug(caplog):
+    with caplog.at_level(logging.DEBUG, logger=CHAT_LOGGER):
+        result = chat._strip_closer_patterns("Sure thing one moment while I check.")
+
+    records = _chat_debug_records(caplog)
+    assert result == "Sure thing ."
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "one moment while I check" in message
+    assert result in message
+
+
+def test_strip_closer_patterns_no_match_emits_no_debug(caplog):
+    with caplog.at_level(logging.DEBUG, logger=CHAT_LOGGER):
+        result = chat._strip_closer_patterns("There are 3 emails from Adrian.")
+
+    assert result == "There are 3 emails from Adrian."
+    assert _chat_debug_records(caplog) == []
+
+
+def test_strip_closer_patterns_logs_each_match_debug(caplog):
+    with caplog.at_level(logging.DEBUG, logger=CHAT_LOGGER):
+        result = chat._strip_closer_patterns(
+            "Let me check the emails. Sure, one moment while I check."
+        )
+
+    records = _chat_debug_records(caplog)
+    assert result == "Sure, ."
+    assert len(records) == 2
+    messages = [record.getMessage() for record in records]
+    assert "Let me check" in messages[0]
+    assert "Sure, one moment while I check." in messages[0]
+    assert "one moment while I check" in messages[1]
+    assert result in messages[1]
 
 
 def test_loop_exhausted_substantive_text_surfaces_verbatim():
