@@ -282,6 +282,11 @@ def _handle_callosum_message(message: dict[str, Any]) -> None:
 
 
 def _proxy_progress(message: dict[str, Any]) -> None:
+    # Cortex listens on tract=cortex, event=request without checking chat_proxy
+    # (cortex.py:199-203). Re-emitting request would spawn a duplicate talent.
+    if message.get("event") == "request":
+        return
+
     logical_use_id: str | None = None
     use_id = str(message.get("use_id") or "")
     if not use_id:

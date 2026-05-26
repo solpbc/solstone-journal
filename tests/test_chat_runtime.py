@@ -1132,6 +1132,80 @@ def test_watchdog_refreshed_by_progress_event(tmp_path, monkeypatch):
     assert timers[-1].interval == chat._CHAT_WATCHDOG_SECONDS
 
 
+def test_proxy_progress_does_not_re_emit_request_event(tmp_path, monkeypatch):
+    import solstone.convey.chat as chat
+
+    _setup_journal(tmp_path, monkeypatch)
+    _reset_chat_state(chat)
+    timers = _install_fake_timers(monkeypatch)
+
+    emitted: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        "solstone.convey.chat._emit_cortex_event",
+        lambda event, **fields: emitted.append((event, fields)),
+    )
+
+    with chat._state_lock:
+        start_info = chat._activate_current_locked(
+            "1713627820000",
+            {"type": "owner_message", "message": "help"},
+            {"app": "sol", "path": "/app/sol", "facet": "work"},
+        )
+
+    chat._proxy_progress(
+        {
+            "tract": "cortex",
+            "event": "request",
+            "use_id": start_info["raw_use_id"],
+        }
+    )
+
+    assert emitted == []
+    assert len(timers) == 1
+
+
+@pytest.mark.parametrize("event_type", ["thinking", "progress", "start"])
+def test_proxy_progress_still_emits_other_event_types(
+    tmp_path, monkeypatch, event_type
+):
+    import solstone.convey.chat as chat
+
+    _setup_journal(tmp_path, monkeypatch)
+    _reset_chat_state(chat)
+    _install_fake_timers(monkeypatch)
+
+    emitted: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        "solstone.convey.chat._emit_cortex_event",
+        lambda event, **fields: emitted.append((event, fields)),
+    )
+
+    with chat._state_lock:
+        start_info = chat._activate_current_locked(
+            "1713627830000",
+            {"type": "owner_message", "message": "help"},
+            {"app": "sol", "path": "/app/sol", "facet": "work"},
+        )
+
+    chat._proxy_progress(
+        {
+            "tract": "cortex",
+            "event": event_type,
+            "use_id": start_info["raw_use_id"],
+        }
+    )
+
+    assert emitted == [
+        (
+            event_type,
+            {
+                "use_id": "1713627830000",
+                "chat_proxy": True,
+            },
+        )
+    ]
+
+
 def test_watchdog_refresh_is_no_op_when_no_timer_registered(tmp_path, monkeypatch):
     import solstone.convey.chat as chat
 
