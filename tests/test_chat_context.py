@@ -3,12 +3,14 @@
 
 import importlib.util
 import json
+import re
 import sys
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
 from solstone.convey.chat_stream import append_chat_event
+from solstone.convey.sol_initiated.copy import KIND_SOL_CHAT_REQUEST
 from solstone.think.identity import ensure_identity_directory
 
 TEMPLATE_VAR_KEYS = {
@@ -60,6 +62,43 @@ def _write_journal_config(journal: Path, data: dict) -> None:
 
 def _ts(hour: int, minute: int, second: int = 0) -> int:
     return int(datetime(2026, 4, 20, hour, minute, second).timestamp() * 1000)
+
+
+def _stub_routines(monkeypatch) -> None:
+    monkeypatch.setattr("solstone.think.routines.get_routine_state", lambda: [])
+    monkeypatch.setattr(
+        "solstone.think.routines.get_config",
+        lambda: {"_meta": {"suggestions_enabled": False, "suggestions": {}}},
+    )
+    monkeypatch.setattr("solstone.think.routines.save_config", lambda config: None)
+
+
+def _append_owner_message(text: str, ts: int, **extra) -> None:
+    append_chat_event(
+        "owner_message",
+        ts=ts,
+        text=text,
+        app=extra.pop("app", "home"),
+        path=extra.pop("path", "/app/home"),
+        facet=extra.pop("facet", "work"),
+        **extra,
+    )
+
+
+def _chat_prompt_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "solstone" / "talent" / "chat.md"
+
+
+def _chat_prompt_text() -> str:
+    return _chat_prompt_path().read_text(encoding="utf-8")
+
+
+def _chat_prompt_frontmatter() -> dict:
+    text = _chat_prompt_text()
+    metadata, end = json.JSONDecoder().raw_decode(text)
+    assert isinstance(metadata, dict)
+    assert text[end:].startswith("\n\n")
+    return metadata
 
 
 def test_chat_context_injects_digest_tail_trigger_location_and_routine_state(
@@ -160,13 +199,12 @@ def test_chat_context_injects_digest_tail_trigger_location_and_routine_state(
     assert result["messages"] == [
         {"role": "user", "content": "Please brief me for my meeting"},
         {"role": "assistant", "content": "I can help with that."},
+        {"role": "user", "content": "Please brief me for my meeting"},
     ]
     assert all("exec spawned" not in msg["content"] for msg in result["messages"])
     assert "## Active Talents" in template_vars["active_talents"]
     assert "Prepare the meeting brief" in template_vars["active_talents"]
-    assert "## Trigger Context" in template_vars["trigger_context"]
-    assert "Type: owner_message" in template_vars["trigger_context"]
-    assert "Please brief me for my meeting" in template_vars["trigger_context"]
+    assert template_vars["trigger_context"] == ""
     assert "## Location" in template_vars["location"]
     assert "/app/home" in template_vars["location"]
     assert "work" in template_vars["location"]
@@ -174,6 +212,343 @@ def test_chat_context_injects_digest_tail_trigger_location_and_routine_state(
     assert "Morning Briefing" in template_vars["active_routines"]
     assert "Routine Suggestion Eligible" in template_vars["routine_suggestion"]
     assert "meeting-prep" in template_vars["routine_suggestion"]
+
+
+def test_chat_context_owner_message_anchors_empty_tail(monkeypatch, tmp_path):
+    journal = tmp_path / "journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    _stub_routines(monkeypatch)
+
+    result = _load_chat_context_module().pre_process(
+        {
+            "prompt": "what's my name?",
+            "day": "20260420",
+            "trigger": {
+                "type": "owner_message",
+                "message": "what's my name?",
+                "ts": _ts(8, 0),
+            },
+        }
+    )
+
+    assert result["messages"] == [{"role": "user", "content": "what's my name?"}]
+
+
+def test_chat_context_owner_message_anchors_after_sol_message(monkeypatch, tmp_path):
+    journal = tmp_path / "journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    _stub_routines(monkeypatch)
+
+    _append_owner_message("thanks", _ts(8, 0))
+    append_chat_event(
+        "sol_message",
+        ts=_ts(8, 1),
+        use_id="use-chat-anchor",
+        text="Anytime!",
+        notes="Responded directly.",
+        requested_target=None,
+        requested_task=None,
+    )
+
+    result = _load_chat_context_module().pre_process(
+        {
+            "day": "20260420",
+            "trigger": {
+                "type": "owner_message",
+                "message": "what happened?",
+                "ts": _ts(8, 2),
+            },
+        }
+    )
+
+    assert result["messages"] == [
+        {"role": "user", "content": "thanks"},
+        {"role": "assistant", "content": "Anytime!"},
+        {"role": "user", "content": "what happened?"},
+    ]
+
+
+def test_chat_context_owner_message_anchor_is_idempotent(monkeypatch, tmp_path):
+    journal = tmp_path / "journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    _stub_routines(monkeypatch)
+
+    _append_owner_message("what's my name?", _ts(8, 0))
+
+    result = _load_chat_context_module().pre_process(
+        {
+            "day": "20260420",
+            "trigger": {
+                "type": "owner_message",
+                "message": "what's my name?",
+                "ts": _ts(8, 0),
+            },
+        }
+    )
+
+    assert result["messages"] == [{"role": "user", "content": "what's my name?"}]
+
+
+def test_chat_context_owner_message_anchors_after_different_user(monkeypatch, tmp_path):
+    journal = tmp_path / "journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    _stub_routines(monkeypatch)
+
+    _append_owner_message("thanks", _ts(8, 0))
+
+    result = _load_chat_context_module().pre_process(
+        {
+            "day": "20260420",
+            "trigger": {
+                "type": "owner_message",
+                "message": "what's my name?",
+                "ts": _ts(8, 1),
+            },
+        }
+    )
+
+    assert result["messages"] == [
+        {"role": "user", "content": "thanks"},
+        {"role": "user", "content": "what's my name?"},
+    ]
+
+
+def test_chat_context_prompt_only_owner_message_anchors(monkeypatch, tmp_path):
+    journal = tmp_path / "journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    _stub_routines(monkeypatch)
+
+    result = _load_chat_context_module().pre_process(
+        {"prompt": "what's my name?", "day": "20260420"}
+    )
+
+    assert result["messages"] == [{"role": "user", "content": "what's my name?"}]
+
+
+def test_chat_context_owner_message_anchors_when_tail_read_fails(monkeypatch, tmp_path):
+    journal = tmp_path / "journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    _stub_routines(monkeypatch)
+    module = _load_chat_context_module()
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(module, "read_chat_tail", _boom)
+
+    result = module.pre_process(
+        {
+            "prompt": "what's my name?",
+            "day": "20260420",
+            "trigger": {
+                "type": "owner_message",
+                "message": "what's my name?",
+                "ts": _ts(8, 0),
+            },
+        }
+    )
+
+    assert result["messages"] == [{"role": "user", "content": "what's my name?"}]
+
+
+def test_chat_context_talent_finished_does_not_owner_anchor(monkeypatch, tmp_path):
+    journal = tmp_path / "journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    _stub_routines(monkeypatch)
+
+    _append_owner_message("What happened?", _ts(8, 0))
+    append_chat_event(
+        "sol_message",
+        ts=_ts(8, 1),
+        use_id="use-chat-finished-anchor",
+        text="Looking into it.",
+        notes="Acknowledged request.",
+        requested_target=None,
+        requested_task=None,
+    )
+
+    result = _load_chat_context_module().pre_process(
+        {
+            "day": "20260420",
+            "trigger": {
+                "type": "talent_finished",
+                "name": "exec",
+                "summary": "Found the latest notes.",
+            },
+        }
+    )
+
+    assert len(result["messages"]) == 3
+    assert result["messages"][1] == {
+        "role": "assistant",
+        "content": "Looking into it.",
+    }
+    assert result["messages"][-1]["role"] == "user"
+    assert result["messages"][-1]["content"].startswith("[internal follow-up:")
+
+
+def test_chat_context_talent_errored_does_not_owner_anchor(monkeypatch, tmp_path):
+    journal = tmp_path / "journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    _stub_routines(monkeypatch)
+
+    _append_owner_message("What happened?", _ts(8, 0))
+    append_chat_event(
+        "sol_message",
+        ts=_ts(8, 1),
+        use_id="use-chat-errored-anchor",
+        text="Looking into it.",
+        notes="Acknowledged request.",
+        requested_target=None,
+        requested_task=None,
+    )
+
+    result = _load_chat_context_module().pre_process(
+        {
+            "day": "20260420",
+            "trigger": {
+                "type": "talent_errored",
+                "name": "exec",
+                "reason": "The lookup failed.",
+            },
+        }
+    )
+
+    assert len(result["messages"]) == 3
+    assert result["messages"][1] == {
+        "role": "assistant",
+        "content": "Looking into it.",
+    }
+    assert result["messages"][-1]["role"] == "user"
+    assert result["messages"][-1]["content"].startswith("[internal follow-up:")
+
+
+def test_chat_context_owner_message_renders_empty_trigger_context(
+    monkeypatch, tmp_path
+):
+    journal = tmp_path / "journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    _stub_routines(monkeypatch)
+
+    result = _load_chat_context_module().pre_process(
+        {
+            "prompt": "What is on my calendar today?",
+            "day": "20260420",
+            "trigger": {
+                "type": "owner_message",
+                "message": "What is on my calendar today?",
+                "ts": _ts(8, 0),
+            },
+        }
+    )
+
+    template_vars = _assert_template_vars_result(result)
+    assert template_vars["trigger_context"] == ""
+
+
+def test_chat_context_sol_initiated_still_renders_trigger_context(
+    monkeypatch, tmp_path
+):
+    journal = tmp_path / "journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    _stub_routines(monkeypatch)
+
+    result = _load_chat_context_module().pre_process(
+        {
+            "day": "20260420",
+            "trigger": {
+                "type": KIND_SOL_CHAT_REQUEST,
+                "summary": "Notice this",
+                "message": "Here is why.",
+                "category": "attention",
+                "since_ts": 1_775_000_000_000,
+            },
+        }
+    )
+
+    template_vars = _assert_template_vars_result(result)
+    assert "## Trigger Context" in template_vars["trigger_context"]
+    assert "- Summary: Notice this" in template_vars["trigger_context"]
+
+
+def test_chat_context_talent_finished_still_renders_trigger_context(
+    monkeypatch, tmp_path
+):
+    journal = tmp_path / "journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    _stub_routines(monkeypatch)
+
+    result = _load_chat_context_module().pre_process(
+        {
+            "day": "20260420",
+            "trigger": {
+                "type": "talent_finished",
+                "name": "exec",
+                "summary": "Found the latest notes.",
+            },
+        }
+    )
+
+    template_vars = _assert_template_vars_result(result)
+    assert "## Trigger Context" in template_vars["trigger_context"]
+    assert "- Talent: exec" in template_vars["trigger_context"]
+
+
+def test_chat_context_talent_errored_still_renders_trigger_context(
+    monkeypatch, tmp_path
+):
+    journal = tmp_path / "journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    _stub_routines(monkeypatch)
+
+    result = _load_chat_context_module().pre_process(
+        {
+            "day": "20260420",
+            "trigger": {
+                "type": "talent_errored",
+                "name": "exec",
+                "reason": "The lookup failed.",
+            },
+        }
+    )
+
+    template_vars = _assert_template_vars_result(result)
+    assert "## Trigger Context" in template_vars["trigger_context"]
+    assert "- Talent: exec" in template_vars["trigger_context"]
+
+
+def test_chat_context_owner_message_needs_you_source_becomes_trigger_context(
+    monkeypatch, tmp_path
+):
+    journal = tmp_path / "journal"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    _stub_routines(monkeypatch)
+    source = {"kind": "needs_you", "item_text": "Review the launch checklist"}
+
+    _append_owner_message("Review the launch checklist", _ts(8, 0), source=source)
+
+    result = _load_chat_context_module().pre_process(
+        {
+            "prompt": "Review the launch checklist",
+            "day": "20260420",
+            "trigger": {
+                "type": "owner_message",
+                "message": "Review the launch checklist",
+                "ts": _ts(8, 0),
+            },
+        }
+    )
+
+    expected = (
+        "The owner reached this conversation from their Needs You tile: "
+        '"Review the launch checklist". Be useful on this topic -- no need '
+        "to call out where it came from."
+    )
+    assert result["template_vars"]["trigger_context"] == expected
+    assert result["template_vars"]["trigger_context"].startswith(
+        "The owner reached this conversation from their Needs You tile"
+    )
+    assert "## Trigger Context" not in result["template_vars"]["trigger_context"]
 
 
 def test_chat_context_routine_suggestion_only_counts_owner_messages(
@@ -619,9 +994,11 @@ def test_chat_context_enrichment_errors_are_graceful(monkeypatch, tmp_path):
     assert template_vars["active_talents"] == ""
     assert template_vars["active_routines"] == ""
     assert template_vars["routine_suggestion"] == ""
-    assert "Type: owner_message" in template_vars["trigger_context"]
+    assert template_vars["trigger_context"] == ""
     assert "/app/home" in template_vars["location"]
-    assert "messages" not in result
+    assert result["messages"] == [
+        {"role": "user", "content": "What is on my calendar today?"}
+    ]
 
 
 def test_chat_context_drops_legacy_memory_imports(monkeypatch):
@@ -646,13 +1023,21 @@ def test_chat_context_drops_legacy_memory_imports(monkeypatch):
     assert legacy_module not in sys.modules
 
 
-def test_chat_prompt_includes_meta_question_inline_rule():
-    prompt_path = (
-        Path(__file__).resolve().parents[1] / "solstone" / "talent" / "chat.md"
-    )
-    prompt_text = prompt_path.read_text(encoding="utf-8")
+def test_chat_prompt_v4_sentinels_are_present():
+    prompt_text = _chat_prompt_text()
 
     assert (
-        "Questions about your role, capabilities, limits, current context, naming, "
-        "or system status stay inline."
-    ) in prompt_text
+        "The latest user message in the conversation below is what you must answer"
+        in prompt_text
+    )
+    assert not re.search(r"^##\s+Trigger Context", prompt_text, re.MULTILINE)
+    assert not re.search(r"^##\s+Location", prompt_text, re.MULTILINE)
+    assert "$trigger_context" in prompt_text
+    assert "## Stop-And-Report Contract" in prompt_text
+
+
+def test_chat_prompt_frontmatter_pins_generation_budget():
+    metadata = _chat_prompt_frontmatter()
+
+    assert metadata["thinking_budget"] == 4096
+    assert metadata["max_output_tokens"] == 2048

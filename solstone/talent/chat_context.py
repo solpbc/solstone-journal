@@ -124,11 +124,11 @@ def pre_process(context: dict) -> dict:
     except Exception:
         logger.debug("Identity enrichment failed", exc_info=True)
 
+    messages: list[dict[str, str]] = []
     source_context = ""
+    latest_owner_message: dict[str, Any] | None = None
     try:
         tail = read_chat_tail(day, limit=20)
-        messages: list[dict[str, str]] = []
-        latest_owner_message: dict[str, Any] | None = None
         for event in tail:
             if event["kind"] == "owner_message":
                 latest_owner_message = event
@@ -151,11 +151,20 @@ def pre_process(context: dict) -> dict:
         terminal_followup = _render_terminal_followup(trigger_kind, trigger_payload)
         if terminal_followup:
             messages.append({"role": "user", "content": terminal_followup})
-
-        if messages:
-            result["messages"] = messages
     except Exception:
         logger.debug("Chat tail enrichment failed", exc_info=True)
+
+    if trigger_kind == "owner_message":
+        trigger_text = str(trigger_payload.get("text") or "").strip()
+        if trigger_text and (
+            not messages
+            or messages[-1].get("role") != "user"
+            or messages[-1].get("content") != trigger_text
+        ):
+            messages.append({"role": "user", "content": trigger_text})
+
+    if messages:
+        result["messages"] = messages
 
     try:
         state = reduce_chat_state(day)
@@ -317,13 +326,11 @@ def _render_trigger_context(
 ) -> str:
     if not trigger_kind:
         return ""
+    if trigger_kind == "owner_message":
+        return ""
 
     lines = ["## Trigger Context\n", f"- Type: {_prompt_trigger_kind(trigger_kind)}"]
-    if trigger_kind == "owner_message":
-        text = str(payload.get("text") or context.get("prompt") or "").strip()
-        if text:
-            lines.append(f"- Message: {text}")
-    elif trigger_kind == KIND_SOL_CHAT_REQUEST:
+    if trigger_kind == KIND_SOL_CHAT_REQUEST:
         _append_sol_request_trigger_context(lines, payload)
     elif trigger_kind == "talent_finished":
         _append_terminal_trigger_context(lines, trigger_kind, payload)
