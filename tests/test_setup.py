@@ -268,17 +268,21 @@ def touch_file(path: Path) -> None:
 
 
 def write_owned_wrapper(home: Path, repo: Path, journal: Path) -> Path:
-    wrapper = home / ".local" / "bin" / "sol"
-    wrapper.parent.mkdir(parents=True, exist_ok=True)
-    target = repo / ".venv" / "bin" / "sol"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("", encoding="utf-8")
-    wrapper.write_text(
-        install_guard.render_wrapper(str(journal), str(target)),
-        encoding="utf-8",
-    )
-    wrapper.chmod(0o755)
-    return wrapper
+    first_wrapper: Path | None = None
+    for binary, wrapper in install_guard.alias_paths().items():
+        if first_wrapper is None:
+            first_wrapper = wrapper
+        wrapper.parent.mkdir(parents=True, exist_ok=True)
+        target = install_guard.expected_target(repo, binary)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("", encoding="utf-8")
+        wrapper.write_text(
+            install_guard.render_wrapper(str(journal), str(target), binary),
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o755)
+    assert first_wrapper is not None
+    return first_wrapper
 
 
 def seed_clean_uninstall_artifacts(
@@ -287,6 +291,7 @@ def seed_clean_uninstall_artifacts(
     service_path = setup._service_path_for_uninstall()
     touch_file(service_path)
     wrapper_path = write_owned_wrapper(home, repo, journal)
+    journal_wrapper_path = home / ".local" / "bin" / "journal"
     write_user_config(journal=str(journal))
     manifest_path = journal / "health" / "setup-state.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -294,6 +299,7 @@ def seed_clean_uninstall_artifacts(
     return {
         "service": service_path,
         "wrapper": wrapper_path,
+        "wrapper_journal": journal_wrapper_path,
         "config": setup.config_path(),
         "manifest": manifest_path,
     }
@@ -327,7 +333,7 @@ def prior_artifact_paths(journal: Path) -> dict[str, list[Path]]:
             journal / ".claude" / "skills",
             journal / ".agents" / "skills",
         ],
-        "wrapper": [Path.home() / ".local" / "bin" / "sol"],
+        "wrapper": list(install_guard.alias_paths().values()),
         "service": [service_path] if service_path is not None else [],
     }
 
@@ -757,7 +763,7 @@ def test_clean_rerun_preface_when_manifest_complete(
     assert rc == 0
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == (
-        f"sol setup last ran cleanly on {completed_at}; verifying current state."
+        f"journal setup last ran cleanly on {completed_at}; verifying current state."
     )
     assert lines[1] == "Use --force to re-run all steps unconditionally."
 
@@ -803,7 +809,7 @@ def test_partial_rerun_preface_when_steps_failed(
 
     assert rc == 0
     assert (
-        f"sol setup last run on {started_at} left these steps incomplete:\n"
+        f"journal setup last run on {started_at} left these steps incomplete:\n"
         "  - install_models (failed)\n"
         "Re-running will verify state and re-run incomplete steps."
     ) in capsys.readouterr().out
@@ -881,7 +887,7 @@ def test_force_flag_changes_preface_text(
     assert rc == 0
     out = capsys.readouterr().out
     assert out.startswith(
-        f"sol setup last ran cleanly on {completed_at}; re-running all steps (--force)."
+        f"journal setup last ran cleanly on {completed_at}; re-running all steps (--force)."
     )
     assert "Use --force to re-run all steps unconditionally." not in out
 
@@ -1122,7 +1128,7 @@ def test_clean_uninstall_prompt_cancels_without_mutation(
     assert rc == 0
     assert all(path.exists() for path in paths.values())
     out = capsys.readouterr().out
-    assert "sol setup --clean-uninstall will remove these runtime artifacts:" in out
+    assert "journal setup --clean-uninstall will remove these runtime artifacts:" in out
     assert "[present] service:" in out
     assert "[present] wrapper:" in out
     assert "[present] config:" in out
@@ -1239,6 +1245,41 @@ def test_clean_uninstall_noop_when_all_paths_absent(
     assert rc == 0
     assert service_calls == []
     assert capsys.readouterr().out == "nothing to remove (all paths already absent)\n"
+
+
+def test_clean_uninstall_partial_wrapper_state_removes_remaining_wrapper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    home = patch_home(monkeypatch, tmp_path)
+    repo = patch_source_checkout(monkeypatch, tmp_path)
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("SOLSTONE_JOURNAL", raising=False)
+    journal = home / "journal"
+    journal_wrapper = home / ".local" / "bin" / "journal"
+    target = install_guard.expected_target(repo, "journal")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("", encoding="utf-8")
+    journal_wrapper.parent.mkdir(parents=True, exist_ok=True)
+    journal_wrapper.write_text(
+        install_guard.render_wrapper(str(journal), str(target), "journal"),
+        encoding="utf-8",
+    )
+    journal_wrapper.chmod(0o755)
+    monkeypatch.setattr(setup, "_run_service_uninstall", lambda: 0)
+
+    rc = setup.main(["--clean-uninstall", "--yes"])
+
+    assert rc == 0
+    assert not journal_wrapper.exists()
+    assert not (home / ".local" / "bin" / "sol").exists()
+    out = capsys.readouterr().out
+    assert "[step 2/4] removed wrapper:" in out
+    assert (
+        "clean uninstall complete: 1 removed, 3 already-absent, 0 skipped, 0 failed"
+        in out
+    )
 
 
 def test_clean_uninstall_service_failure_is_best_effort(

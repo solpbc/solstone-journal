@@ -355,10 +355,10 @@ class TestCommandRegistry:
 
     def test_groups_contain_valid_commands(self):
         """Test that all commands in groups exist in registry."""
-        for group_name, commands in sol.GROUPS.items():
-            for cmd in commands:
+        for group in sol.help_groups():
+            for cmd in group.commands:
                 assert cmd in sol.COMMANDS, (
-                    f"Command '{cmd}' in group '{group_name}' not in registry"
+                    f"Command '{cmd}' in group '{group.heading}' not in registry"
                 )
 
     def test_critical_commands_registered(self):
@@ -479,16 +479,15 @@ class TestCommandRegistry:
             for line in lines
             if line.strip().split() and line.strip().split()[0] in sol.COMMANDS
         }
+        expected_group_headers = {group.heading for group in sol.help_groups()}
         rendered_group_headers = {
-            line[:-1]
-            for line in lines
-            if line.endswith(":") and line[:-1] in sol.GROUPS
+            line for line in lines if line in expected_group_headers
         }
 
         rendered_aliases = set()
         in_aliases = False
         for line in lines:
-            if line == "Aliases:":
+            if line == sol.SOL_HELP_GROUP_ALIASES:
                 in_aliases = True
                 continue
             if in_aliases and not line.strip():
@@ -499,7 +498,7 @@ class TestCommandRegistry:
                     rendered_aliases.add(name)
 
         assert rendered_commands == set(sol.COMMANDS.keys())
-        assert rendered_group_headers == set(sol.GROUPS.keys())
+        assert rendered_group_headers == expected_group_headers
         assert rendered_aliases == set(sol.ALIASES.keys())
 
     def test_setproctitle_prefix_uses_active_binary(self, monkeypatch):

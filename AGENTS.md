@@ -62,13 +62,14 @@ Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `t
 - **Entities** — tracked people / projects / tools. Extracted from transcripts and accumulated across time. Canonical records in `journal/entities/<slug>/entity.json`.
 - **Activities** — scheduled or observed "things that happen" (meetings, deadlines, anticipated events). Per-facet JSONL at `journal/facets/<facet>/activities/<day>.jsonl`. Sources: `anticipated` (from `solstone/talent/schedule.md`), `user` (manual), `cogitate` (talent-inferred).
 - **Indexer** — reads journal state, builds SQLite + FTS5 index. **Never** mutates source data (§7 L6). Rerunning on unchanged data is a no-op.
-- **Supervisor** — top-level process manager. Starts/restarts services, talks to callosum. `sol supervisor` / `sol start`.
+- **Supervisor** — top-level process manager. Starts/restarts services, talks to callosum. `journal supervisor` / `journal start`.
 
 ## 4. The sol CLI
 
 Two surfaces:
 
-- **`sol <command>`** — top-level commands registered in `solstone/think/sol_cli.py`'s `COMMANDS` dict (e.g., `sol import`, `sol think`, `sol indexer`, `sol supervisor`, `sol heartbeat`). `ALIASES` provides a couple of shorthand compound commands (`sol start` → `sol supervisor`, `sol up/down` → `sol service up/down`).
+- **`sol <command>`** — access commands registered in `solstone/think/sol_cli.py`'s `COMMANDS` dict (e.g., `sol import`, `sol indexer`, `sol top`, `sol health`).
+- **`journal <command>`** — host/service commands from the same registry (e.g., `journal think`, `journal supervisor`, `journal heartbeat`). `ALIASES` provides shorthand compound commands (`journal start` → `journal supervisor`, `journal up/down` → `journal service up/down`).
 - **`sol call <app> <verb>`** — routes to `solstone/think/call.py`, which discovers each `solstone/apps/*/call.py` Typer sub-app and mounts it as a subcommand. Example: `sol call entities list`, `sol call activities create`, `sol call journal search`.
 
 **Adding a top-level command:** add an entry to `COMMANDS` in `solstone/think/sol_cli.py`; ensure the module has a `main()` function.
@@ -135,7 +136,7 @@ Verified against `Makefile`. Grouped by use.
 
 ### Service management (systemd / launchd)
 
-`.venv/bin/sol setup` is the source-checkout runtime install path after `make install`; it installs or refreshes the source-checkout wrapper, installs the Claude Code skill when Claude is configured, and starts the background service on port 5015 by default. After the first run, the wrapper at `~/.local/bin/sol` lets you use `sol setup` from anywhere. Use `sol service <install|start|stop|restart|status|logs>` for manual service operations.
+`.venv/bin/journal setup` is the source-checkout runtime install path after `make install`; it installs or refreshes the source-checkout wrappers, installs the Claude Code skill when Claude is configured, and starts the background service on port 5015 by default. After the first run, the wrappers at `~/.local/bin/sol` and `~/.local/bin/journal` let you use `sol` and `journal` from anywhere. Use `journal service <install|start|stop|restart|status|logs>` for manual service operations.
 
 | Target | When to use |
 |--------|-------------|
@@ -152,7 +153,7 @@ Verified against `Makefile`. Grouped by use.
 
 | Target | Why not |
 |--------|---------|
-| `make uninstall` | Disabled by design. Use `sol service uninstall`, `sol skills uninstall`, and `python -m solstone.think.install_guard uninstall` for installed user artifacts, or `make clean-install` to rebuild the local dev env. |
+| `make uninstall` | Disabled by design. Use `journal service uninstall`, `sol skills uninstall`, and `python -m solstone.think.install_guard uninstall` for installed user artifacts, or `make clean-install` to rebuild the local dev env. |
 
 ## 6. Testing quickstart
 
@@ -243,7 +244,7 @@ Any function that handles a callosum event, a scheduled tick, or a supervisor-st
 The rules above govern *where* code lives. The rules below govern *how* code behaves. They exist because we got burned.
 
 - **No backwards-compatibility shims.** All code that depends on this project lives in this repository — never add fallback aliases, re-exports for moved symbols, deprecated-parameter handling, or legacy support code. When renaming or removing something, update every usage directly. For journal data-format changes, write a migration script (see `docs/APPS.md` for `maint` commands); do not add a compatibility layer. Cogitate agents default to adding shims; resist this.
-- **Trust `get_journal()` unconditionally.** `get_journal()` from `solstone.think.utils` is the single source of truth for journal path resolution. For source-checkout installs, the managed bash wrapper at `~/.local/bin/sol` sets `SOLSTONE_JOURNAL` before invoking the venv `sol`; packaged installs use `uv tool install` / `pipx install` and rely on `get_journal()` for default-journal resolution; tests use the autouse fixture; Makefile sandboxes set it explicitly. Application code, agent prompts, subprocess environments, and service files must not set `SOLSTONE_JOURNAL` themselves. To rewrite the wrapper's embedded path use `sol config journal <path>`. See `docs/environment.md`.
+- **Trust `get_journal()` unconditionally.** `get_journal()` from `solstone.think.utils` is the single source of truth for journal path resolution. For source-checkout installs, the managed bash wrappers at `~/.local/bin/sol` and `~/.local/bin/journal` set `SOLSTONE_JOURNAL` before invoking the matching venv binary; packaged installs use `uv tool install` / `pipx install` and rely on `get_journal()` for default-journal resolution; tests use the autouse fixture; Makefile sandboxes set it explicitly. Application code, agent prompts, subprocess environments, and service files must not set `SOLSTONE_JOURNAL` themselves. To rewrite the wrapper's embedded path use `journal config journal <path>`. See `docs/environment.md`.
 - **SPDX header on every source file.** All Python (and other source) files begin with:
 
   ```python
@@ -309,7 +310,7 @@ The live journal also carries `journal/AGENTS.md` as its runtime-facing breadcru
 
 - **Not a runtime guide for cogitate talents.** Runtime CLI restrictions on talents live in `solstone/talent/journal/references/cli.md` § Talent CLI Boundaries. If you're tuning what a talent can or cannot call, look there, not here.
 - **Not the journal-layout reference.** `solstone/talent/journal/SKILL.md` + its `references/` is the cogitate-audience entry point. This file describes *how those commands are implemented*, not *which ones talents can't call*.
-- **Not an operations manual.** For debugging a live system see `docs/DOCTOR.md`; for setup and service lifecycle, see [INSTALL.md](INSTALL.md) (owner install), [CONTRIBUTING.md](CONTRIBUTING.md) (developer install), `sol setup`, and `sol service`.
+- **Not an operations manual.** For debugging a live system see `docs/DOCTOR.md`; for setup and service lifecycle, see [INSTALL.md](INSTALL.md) (owner install), [CONTRIBUTING.md](CONTRIBUTING.md) (developer install), `journal setup`, and `journal service`.
 
 ## 13. Owner-facing copy: the system-anatomy canon
 

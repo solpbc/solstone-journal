@@ -78,7 +78,7 @@ def test_init_scout_inline_script_contract(convey_env_setup_pending) -> None:
     assert "manage solstone scout anytime in your services" in html
     assert (
         "a gemini key is already on this machine. to swap it for a "
-        "scout-provisioned key, use `sol services enable scout --force` from a "
+        "scout-provisioned key, use `journal services enable scout --force` from a "
         "terminal."
     ) in html
     assert "the consent link expired. try again." in html

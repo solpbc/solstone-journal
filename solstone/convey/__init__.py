@@ -67,7 +67,7 @@ def _migrate_setup_completed() -> None:
     """Infer setup.completed_at and set trust_localhost for existing installs.
 
     Legacy migration: handles journals where password_hash was set via
-    'sol password set' CLI before web onboarding existed. Web onboarding
+    'journal password set' CLI before web onboarding existed. Web onboarding
     now writes all config atomically in init_finalize(), so this path is
     only reached for pre-existing journals.
     """

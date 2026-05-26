@@ -46,7 +46,7 @@ class TestPlistGeneration:
         plist = plistlib.loads(data)
         assert plist["Label"] == "org.solpbc.solstone"
         assert plist["ProgramArguments"][0] == str(
-            Path.home() / ".local" / "bin" / "sol"
+            Path.home() / ".local" / "bin" / "journal"
         )
         assert plist["ProgramArguments"][1] == "supervisor"
         assert plist["EnvironmentVariables"] == env
@@ -99,7 +99,7 @@ class TestSystemdUnit:
         assert f"StandardOutput=append:{service_log}" in unit
         assert "StandardError=inherit" in unit
         assert (
-            f"ExecStart={Path.home() / '.local' / 'bin' / 'sol'} supervisor 5015"
+            f"ExecStart={Path.home() / '.local' / 'bin' / 'journal'} supervisor 5015"
             in unit
         )
         assert "supervisor" in unit
@@ -617,26 +617,53 @@ class TestRegistry:
     def test_service_group_exists(self):
         from solstone.think import sol_cli as sol
 
-        assert "Service" in sol.GROUPS
-        assert "service" in sol.GROUPS["Service"]
+        assert sol.service_help_group().heading == sol.SOL_HELP_GROUP_SERVICE_HEADING
+        assert "service" in sol.service_help_group().commands
 
 
 class TestMain:
     def test_no_args_shows_usage(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, "argv", ["sol service"])
+        monkeypatch.setattr(sys, "argv", ["journal service"])
         with pytest.raises(SystemExit):
             service.main()
         output = capsys.readouterr().out
         assert "Usage:" in output
 
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["journal service", "--help"],
+            ["journal service", "-h"],
+            ["journal up", "up", "--help"],
+            ["journal down", "down", "--help"],
+        ],
+    )
+    def test_help_exits_without_lifecycle(self, monkeypatch, capsys, argv):
+        monkeypatch.setattr(sys, "argv", argv)
+        monkeypatch.setattr(
+            service, "_up", lambda **_kwargs: pytest.fail("should not run lifecycle")
+        )
+        monkeypatch.setattr(
+            service, "_down", lambda **_kwargs: pytest.fail("should not run lifecycle")
+        )
+
+        with pytest.raises(SystemExit) as exc:
+            service.main()
+
+        assert exc.value.code == 0
+        output = capsys.readouterr().out
+        assert "Usage:" in output
+
     def test_unknown_subcommand(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, "argv", ["sol service", "bogus"])
+        monkeypatch.setattr(sys, "argv", ["journal service", "bogus"])
         with pytest.raises(SystemExit):
             service.main()
         assert "Unknown subcommand" in capsys.readouterr().err
 
     def test_restart_if_installed_flag(self, monkeypatch):
-        monkeypatch.setattr(sys, "argv", ["sol service", "restart", "--if-installed"])
+        monkeypatch.setattr(
+            sys, "argv", ["journal service", "restart", "--if-installed"]
+        )
         with patch("solstone.think.service._restart", return_value=0) as mock:
             with pytest.raises(SystemExit):
                 service.main()
@@ -651,7 +678,11 @@ class TestRemoveStalePlists:
         current_path = current or (tmp_path / "current" / ".venv" / "bin" / "sol")
         monkeypatch.setattr(sys, "platform", platform)
         monkeypatch.setattr(service, "_plist_path", lambda: plist_path)
-        monkeypatch.setattr(service, "_sol_bin", lambda: str(current_path))
+        monkeypatch.setattr(
+            service,
+            "_managed_wrapper",
+            lambda binary: str(Path(current_path).with_name(binary)),
+        )
         monkeypatch.setattr(service.os, "getuid", lambda: 501)
         return launch_agents, plist_path, Path(current_path)
 
@@ -714,6 +745,52 @@ class TestRemoveStalePlists:
         assert plist_path.exists()
         captured = capsys.readouterr()
         assert captured.out == ""
+        assert captured.err == ""
+
+    def test_preserves_current_journal_plist(self, monkeypatch, tmp_path, capsys):
+        launch_agents, plist_path, current = self._configure(monkeypatch, tmp_path)
+        current_journal = current.with_name("journal")
+        launch_agents.mkdir(parents=True, exist_ok=True)
+        self._touch(current_journal)
+        self._write_plist(
+            plist_path,
+            label=service.SERVICE_LABEL,
+            program_arguments=[str(current_journal), "supervisor", "5015"],
+        )
+
+        with patch("solstone.think.service.subprocess.run") as run:
+            assert service.remove_stale_plists() == (0, 0)
+
+        run.assert_not_called()
+        assert plist_path.exists()
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err == ""
+
+    def test_removes_stale_journal_plist(self, monkeypatch, tmp_path, capsys):
+        launch_agents, plist_path, current = self._configure(monkeypatch, tmp_path)
+        launch_agents.mkdir(parents=True, exist_ok=True)
+        old = tmp_path / "old" / ".venv" / "bin" / "journal"
+        self._touch(old)
+        self._touch(current.with_name("journal"))
+        self._write_plist(
+            plist_path,
+            label=service.SERVICE_LABEL,
+            program_arguments=[str(old), "supervisor", "5015"],
+        )
+
+        with patch("solstone.think.service.subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0, stderr="", stdout="")
+            assert service.remove_stale_plists() == (1, 0)
+
+        run.assert_called_once_with(
+            ["launchctl", "bootout", "gui/501", str(plist_path)],
+            capture_output=True,
+            text=True,
+        )
+        assert not plist_path.exists()
+        captured = capsys.readouterr()
+        assert str(old) in captured.out
         assert captured.err == ""
 
     def test_preserves_current_plist_with_symlinked_venv_path(

@@ -7,10 +7,10 @@ Provides export, import, and send commands for transferring fully-processed
 observation segments between solstone instances.
 
 Usage:
-    sol transfer export --day YYYYMMDD [--output PATH]
-    sol transfer import --archive PATH [--dry-run]
-    sol transfer send --to URL --key KEY [--day YYYYMMDD] [--dry-run]
-    sol transfer send --to LABEL [--day YYYYMMDD] [--dry-run]
+    journal transfer export --day YYYYMMDD [--output PATH]
+    journal transfer import --archive PATH [--dry-run]
+    journal transfer send --to URL --key KEY [--day YYYYMMDD] [--dry-run]
+    journal transfer send --to LABEL [--day YYYYMMDD] [--dry-run]
 
 On the RECEIVING host (the machine you are sending TO), run
 `sol observer create <name>` to generate an observer API key, then pass it

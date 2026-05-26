@@ -71,7 +71,7 @@ ERROR_MESSAGES: dict[str, str] = {
     "rate_limited": "too many enable attempts from this network — wait an hour and try again.",
     "already_disabled": "solstone scout is not enabled on this machine.",
     "journal_not_initialized": (
-        "Journal config file is missing. Run sol setup, then retry."
+        "Journal config file is missing. Run journal setup, then retry."
     ),
     "unknown_service": "the only supported service is scout.",
 }

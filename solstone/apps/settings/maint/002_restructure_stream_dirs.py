@@ -97,7 +97,7 @@ def restructure(journal_root: Path, dry_run: bool) -> None:
     if missing > 0:
         print(
             f"\nERROR: {missing} segments are missing stream.json markers.\n"
-            "Run 'sol maint settings:001_backfill_streams' first to tag all segments."
+            "Run 'journal maint settings:001_backfill_streams' first to tag all segments."
         )
         raise SystemExit(1)
 

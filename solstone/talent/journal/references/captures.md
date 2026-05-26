@@ -119,7 +119,7 @@ Pre-stream segments (created before stream identity was added) have no `stream.j
 
 Captures are the original binary media files recorded by observation tools.
 
-`sol grab` walks observed screens from day to stream to segment to screen to frame.
+`journal grab` walks observed screens from day to stream to segment to screen to frame.
 Without `--out` it lists what is available or shows one frame's details.
 With `--out` it writes one or more frame images using the suffix you choose.
 Use bare `screen` for single-screen segments.

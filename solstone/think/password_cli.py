@@ -4,8 +4,8 @@
 """CLI for setting the convey web UI password.
 
 Usage:
-    sol password set    Set the convey password
-    sol password reset  Reset the convey password (alias for set)
+    journal password set    Set the convey password
+    journal password reset  Reset the convey password (alias for set)
 """
 
 from __future__ import annotations

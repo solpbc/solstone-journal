@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-CONVEY_REFUSE_NO_PASSWORD_NETWORK = "error: enabling network access requires a password. set one first with: sol password set"
-CONVEY_REFUSE_NO_PASSWORD_TRUST = "error: disabling localhost trust requires a password (otherwise no client could authenticate). set one first with: sol password set"
+CONVEY_REFUSE_NO_PASSWORD_NETWORK = "error: enabling network access requires a password. set one first with: journal password set"
+CONVEY_REFUSE_NO_PASSWORD_TRUST = "error: disabling localhost trust requires a password (otherwise no client could authenticate). set one first with: journal password set"
 CONVEY_NETWORK_ENABLE_PROGRESS = "enabling network access. restarting convey…"
 CONVEY_NETWORK_ENABLE_DONE = (
     "network access enabled. convey is now reachable at: {host_url}"

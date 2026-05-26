@@ -1194,7 +1194,7 @@ def require_solstone() -> None:
     if os.environ.get("SOL_SUPERVISOR_SPAWNED") == "1":
         sys.exit(EXIT_TEMPFAIL)
     print(
-        "sol: solstone isn't running. Start it with 'sol up' and retry.",
+        "sol: solstone isn't running. Start it with 'journal up' and retry.",
         file=sys.stderr,
     )
     sys.exit(1)

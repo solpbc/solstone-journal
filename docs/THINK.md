@@ -16,19 +16,19 @@ The package exposes several commands:
 
 - `sol call transcripts read` groups audio and screen transcripts into report sections. Use `--start` and
   `--length` to limit the report to a specific time range. See `sol call transcripts --help` for additional commands.
-- `sol think` runs generators and agents for a single day via Cortex.
+- `journal think` runs generators and agents for a single day via Cortex.
 - `python -m solstone.think.talents` is the unified execution module for tool talents and generators spawned by Cortex (NDJSON protocol).
-- `sol supervisor` monitors journaling health and starts the local services that feed Convey, Cortex, and related background tasks. Use the `--no-*` flags to opt out of specific services when debugging.
-- `sol cortex` starts a Callosum-based service for managing AI agent instances and generators.
-- `sol talent` lists available agents and generators with their configuration. Use `sol talent show <name>` to see details, and `sol talent show <name> --prompt` to see the fully composed prompt that would be sent to the LLM.
+- `journal supervisor` monitors journaling health and starts the local services that feed Convey, Cortex, and related background tasks. Use the `--no-*` flags to opt out of specific services when debugging.
+- `journal cortex` starts a Callosum-based service for managing AI agent instances and generators.
+- `journal talent` lists available agents and generators with their configuration. Use `journal talent show <name>` to see details, and `journal talent show <name> --prompt` to see the fully composed prompt that would be sent to the LLM.
 
 ```bash
 sol call transcripts read YYYYMMDD [--start HHMMSS --length MINUTES]
-sol think [--day YYYYMMDD] [--segment HHMMSS_LEN] [--stream NAME] [--refresh] [--flush]
-sol supervisor [--no-daily] [--no-cortex] [--no-link] [--no-convey] [--no-schedule]
-sol cortex [--host HOST] [--port PORT] [--path PATH]
-sol talent list [--schedule daily|segment] [--json]
-sol talent show <name> [--prompt] [--day YYYYMMDD] [--segment HHMMSS_LEN] [--full]
+journal think [--day YYYYMMDD] [--segment HHMMSS_LEN] [--stream NAME] [--refresh] [--flush]
+journal supervisor [--no-daily] [--no-cortex] [--no-link] [--no-convey] [--no-schedule]
+journal cortex [--host HOST] [--port PORT] [--path PATH]
+journal talent list [--schedule daily|segment] [--json]
+journal talent show <name> [--prompt] [--day YYYYMMDD] [--segment HHMMSS_LEN] [--full]
 ```
 
 Use `--refresh` to overwrite existing files, and `-v` for verbose logs.
@@ -50,7 +50,7 @@ Tool access is command-based via the `sol call` CLI framework.
 
 ## Automating daily processing
 
-The `sol think` command can be triggered by a systemd timer. Below is a
+The `journal think` command can be triggered by a systemd timer. Below is a
 minimal service and timer that process yesterday's folder every morning at
 06:00:
 
@@ -60,7 +60,7 @@ Description=Process solstone journal
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/sol think
+ExecStart=/usr/local/bin/journal think
 
 [Install]
 WantedBy=multi-user.target
@@ -68,7 +68,7 @@ WantedBy=multi-user.target
 
 ```ini
 [Unit]
-Description=Run sol think daily
+Description=Run journal think daily
 
 [Timer]
 OnCalendar=*-*-* 06:00:00
@@ -83,7 +83,7 @@ WantedBy=timers.target
 
 ### Unified Priority Execution
 
-All scheduled prompts (both generators and tool-using agents) share a unified priority system. The `sol think` command executes prompts ordered by priority, from lowest (runs first) to highest (runs last).
+All scheduled prompts (both generators and tool-using agents) share a unified priority system. The `journal think` command executes prompts ordered by priority, from lowest (runs first) to highest (runs last).
 
 **Priority is required for all scheduled prompts.** Prompts without a `priority` field will fail validation. Suggested priority bands:
 
@@ -98,7 +98,7 @@ After each generator completes and creates output, the indexer runs `--rescan-fi
 
 ### Cortex: Central Talent Manager
 
-The Cortex service (`sol cortex`) is the central system for managing AI talent instances and generators. It monitors the journal's `talents/` directory for new requests and manages execution. All talent spawning should go through Cortex for proper event tracking and management.
+The Cortex service (`journal cortex`) is the central system for managing AI talent instances and generators. It monitors the journal's `talents/` directory for new requests and manages execution. All talent spawning should go through Cortex for proper event tracking and management.
 
 Cortex routes requests based on configuration:
 - Requests with `tools` field → tool-using talents (`python -m solstone.think.talents`)
@@ -222,7 +222,7 @@ AI agent system and tool-calling support for solstone.
 
 | Command | Purpose |
 |---------|---------|
-| `sol cortex` | Agent orchestration service |
+| `journal cortex` | Agent orchestration service |
 | `sol providers check` | Ad-hoc provider check (testing only) |
 
 ## Architecture

@@ -7,17 +7,17 @@ Lists all system and app prompts with their frontmatter metadata,
 supports filtering by schedule and source, and provides detail views.
 
 Usage:
-    sol talent                          List all prompts grouped by schedule
-    sol talent list --schedule daily    Filter by schedule type
-    sol talent list --json              Output all configs as JSONL
-    sol talent show <name>              Show details for a specific prompt
-    sol talent show <name> --json       Output a single prompt as JSONL
-    sol talent show <name> --prompt     Show full prompt context (dry-run)
-    sol talent logs                     Show recent talent runs
-    sol talent logs <agent> -c 5        Show last 5 runs for a talent
-    sol talent log <id>                 Show events for a talent run
-    sol talent log <id> --json          Output raw JSONL events
-    sol talent log <id> --full          Show expanded event details
+    journal talent                          List all prompts grouped by schedule
+    journal talent list --schedule daily    Filter by schedule type
+    journal talent list --json              Output all configs as JSONL
+    journal talent show <name>              Show details for a specific prompt
+    journal talent show <name> --json       Output a single prompt as JSONL
+    journal talent show <name> --prompt     Show full prompt context (dry-run)
+    journal talent logs                     Show recent talent runs
+    journal talent logs <agent> -c 5        Show last 5 runs for a talent
+    journal talent log <id>                 Show events for a talent run
+    journal talent log <id> --json          Output raw JSONL events
+    journal talent log <id> --full          Show expanded event details
 """
 
 from __future__ import annotations
@@ -1121,7 +1121,7 @@ def log_run(use_id: str, *, json_mode: bool = False, full: bool = False) -> None
 
 
 def main() -> None:
-    """Entry point for sol talent."""
+    """Entry point for journal talent."""
     parser = argparse.ArgumentParser(description="Inspect talent prompt configurations")
     subparsers = parser.add_subparsers(dest="subcommand")
 

@@ -190,7 +190,7 @@ def test_require_solstone_exit1_when_not_supervisor_spawned(monkeypatch, capsys)
     assert exc_info.value.code == 1
     assert (
         capsys.readouterr().err
-        == "sol: solstone isn't running. Start it with 'sol up' and retry.\n"
+        == "sol: solstone isn't running. Start it with 'journal up' and retry.\n"
     )
 
 

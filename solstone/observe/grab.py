@@ -36,15 +36,15 @@ TABLE_LEVELS = {
     "3": ("screens", ["screen", "position", "connector", "frames_analyzed", "status"]),
 }
 NEXT_FOOTERS = {
-    "0": "Next: sol grab <day>",
-    "1": "Next: sol grab <day> <stream>",
-    "2": "Next: sol grab <day> <stream> <segment>",
-    "3": "Next: sol grab <day> <stream> <segment> <screen>",
+    "0": "Next: journal grab <day>",
+    "1": "Next: journal grab <day> <stream>",
+    "2": "Next: journal grab <day> <stream> <segment>",
+    "3": "Next: journal grab <day> <stream> <segment> <screen>",
 }
 LEVEL_4_FOOTER = (
-    "Inspect:    sol grab <day> <stream> <segment> <screen> <id>\n"
-    "Save one:   sol grab <day> <stream> <segment> <screen> <id> --out PATH\n"
-    "Save many:  sol grab <day> <stream> <segment> <screen> "
+    "Inspect:    journal grab <day> <stream> <segment> <screen> <id>\n"
+    "Save one:   journal grab <day> <stream> <segment> <screen> <id> --out PATH\n"
+    "Save many:  journal grab <day> <stream> <segment> <screen> "
     "<id1>,<id2>,... --out PATH\n"
     "\n"
     "How extraction works:\n"
@@ -57,7 +57,7 @@ LEVEL_4_PURGED_FOOTER = (
     "Save mode unavailable: raw video has been purged by retention.\n"
     "Frame metadata above is still readable.\n"
     "\n"
-    "Inspect: sol grab <day> <stream> <segment> <screen> <id>"
+    "Inspect: journal grab <day> <stream> <segment> <screen> <id>"
 )
 
 
@@ -546,7 +546,7 @@ def save_frame_images(
         if bundle.jsonl_rel is not None:
             frame_id_token = ",".join(str(frame_id) for frame_id in frame_ids)
             command = (
-                f"sol grab {day} {stream} {segment} {screen_token} {frame_id_token}"
+                f"journal grab {day} {stream} {segment} {screen_token} {frame_id_token}"
             )
             raise FileNotFoundError(
                 "raw video has been purged by retention; metadata-only access "
@@ -658,9 +658,9 @@ def emit_output(payload: dict[str, Any], *, as_json: bool) -> None:
         print()
         print(json.dumps(data["frame"], indent=2))
         print()
-        print("Save: sol grab <day> <stream> <segment> <screen> <id> --out PATH")
+        print("Save: journal grab <day> <stream> <segment> <screen> <id> --out PATH")
         print(
-            "Batch: sol grab <day> <stream> <segment> <screen> "
+            "Batch: journal grab <day> <stream> <segment> <screen> "
             "<id1>,<id2>,... --out PATH"
         )
         return

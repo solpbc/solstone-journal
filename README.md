@@ -70,10 +70,10 @@ Python 3.11+, Linux + macOS, AGPL-3.0-only, maintained by [sol pbc](https://solp
 
 ```bash
 uv tool install solstone
-sol setup
+journal setup
 ```
 
-(or `pipx install solstone && sol setup`.)
+(or `pipx install solstone && journal setup`.)
 
 then open http://localhost:5015 in a browser; the first-run wizard handles identity and the gemini API key. network access, and the password it requires, can be configured later in settings → security.
 
@@ -81,13 +81,13 @@ see [INSTALL.md](INSTALL.md) for prerequisites, observer install, and troublesho
 
 ## CLI
 
-solstone is operated through the unified `sol` command (33 subcommands).
+solstone is operated through `sol` for day-to-day journal access and `journal` for host operations.
 
 ```bash
 sol                    # Status overview and command list
-sol supervisor         # Start the full stack (capture + processing + web)
+journal supervisor         # Start the full stack (capture + processing + web)
 sol chat               # Interactive AI chat from the terminal
-sol transcribe <file>  # Transcribe an audio file
+journal transcribe <file>  # Transcribe an audio file
 sol indexer            # Rebuild the search index
 ```
 

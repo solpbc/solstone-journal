@@ -45,13 +45,13 @@ The `convey` block contains settings for the web application:
 ```json
 {
   "convey": {
-    "password_hash": "<set via Settings > Security or sol password set>"
+    "password_hash": "<set via Settings > Security or journal password set>"
   }
 }
 ```
 
 Fields:
-- `password_hash` (string) – Hashed password for accessing the convey web application. Set via Settings → Security or `sol password set`.
+- `password_hash` (string) – Hashed password for accessing the convey web application. Set via Settings → Security or `journal password set`.
 
 **UI Preferences:** The separate `config/convey.json` file stores UI/UX personalization (facet/app ordering, selected facet). All fields optional:
 
@@ -149,7 +149,7 @@ For complete documentation of the prompt template system including all variable 
 
 ## Transcribe configuration
 
-The `transcribe` block configures audio transcription settings for `sol transcribe`:
+The `transcribe` block configures audio transcription settings for `journal transcribe`:
 
 ```json
 {
@@ -204,7 +204,7 @@ CLI flags can override settings: `--backend` selects the backend, `--cpu` forces
 
 ## Describe configuration
 
-The `describe` block configures screen analysis settings for `sol describe`:
+The `describe` block configures screen analysis settings for `journal describe`:
 
 ```json
 {

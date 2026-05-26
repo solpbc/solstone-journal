@@ -47,7 +47,7 @@ class TestLogin:
         app.config["TESTING"] = True
         client = app.test_client()
         resp = client.get("/login")
-        assert b"sol password set" in resp.data
+        assert b"journal password set" in resp.data
 
 
 class TestMigration:

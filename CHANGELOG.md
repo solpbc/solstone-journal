@@ -14,6 +14,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), al
 - the built-in `sol observer install` command is gone. linux and tmux observers now install from their own published packages: `pipx install solstone-linux` (or `solstone-tmux`), `solstone-linux install-service` (or `solstone-tmux install-service`), then `sol observer create <name>` mints a key you give the observer. the macOS observer continues to come from the signed app bundle at solstone.app/observers.
 - the bundled per-provider install commands are gone — `sol call settings providers install` now accepts `local` only (cogitate runs out of the box for hosted providers with a key set), and `uninstall`/`disable`/`enable`/`validate-key` are removed entirely. local install continues to work via `sol call settings providers install local`.
 
+## [0.3.10] — 2026-05-26
+
+### Added
+- **journal CLI** — `solstone` now installs two CLI binaries: `sol` (the day-to-day surface for talking to your journal — chat, call, top, import, etc.) and `journal` (host operations — supervisor, setup, install-models, the daemons that tend your journal). `sol --help` shows both surfaces; `journal --help` shows just the host commands. Existing `sol <cmd>` invocations all keep working. Internal docs and scripts use `journal <cmd>` for host operations going forward.
+
 ## [0.3.9] - 2026-05-25
 
 ### Added

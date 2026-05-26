@@ -2617,7 +2617,7 @@ def dry_run(
     print(header + "\n")
 
     if not segment:
-        print("Pre-phase:  sol sense --day " + day)
+        print("Pre-phase:  journal sense --day " + day)
 
     if not all_prompts:
         print(f"No prompts for schedule: {target_schedule}")

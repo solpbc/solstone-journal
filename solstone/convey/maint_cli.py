@@ -4,10 +4,10 @@
 """CLI for managing maintenance tasks.
 
 Usage:
-    sol maint                    # Run pending tasks
-    sol maint --list             # Show status of all tasks
-    sol maint <task>             # Show task details and log output
-    sol maint --force <task>     # Re-run a specific task
+    journal maint                    # Run pending tasks
+    journal maint --list             # Show status of all tasks
+    journal maint <task>             # Show task details and log output
+    journal maint --force <task>     # Re-run a specific task
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ def show_task_details(journal: Path, task_name: str) -> None:
     task = get_task_by_name(task_name)
     if not task:
         print(f"Task not found: {task_name}", file=sys.stderr)
-        print("Use 'sol maint --list' to see available tasks.", file=sys.stderr)
+        print("Use 'journal maint --list' to see available tasks.", file=sys.stderr)
         sys.exit(1)
 
     status, exit_code, ran_ts = get_task_status(journal, task.app, task.name)
@@ -141,16 +141,16 @@ def show_task_details(journal: Path, task_name: str) -> None:
 
 
 def main() -> None:
-    """CLI entry point for sol maint command."""
+    """CLI entry point for journal maint command."""
     parser = argparse.ArgumentParser(
         description="Run maintenance tasks for apps",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    sol maint              Run all pending maintenance tasks
-    sol maint --list       Show status of all tasks
-    sol maint chat:fix_x   Show task details and log output
-    sol maint -f fix_x     Re-run a specific task
+    journal maint              Run all pending maintenance tasks
+    journal maint --list       Show status of all tasks
+    journal maint chat:fix_x   Show task details and log output
+    journal maint -f fix_x     Re-run a specific task
 """,
     )
     parser.add_argument(
@@ -213,12 +213,12 @@ Examples:
     if args.force:
         if not args.task:
             print("--force requires a task name.", file=sys.stderr)
-            print("Usage: sol maint --force <task>", file=sys.stderr)
+            print("Usage: journal maint --force <task>", file=sys.stderr)
             sys.exit(1)
         task = get_task_by_name(args.task)
         if not task:
             print(f"Task not found: {args.task}", file=sys.stderr)
-            print("Use 'sol maint --list' to see available tasks.", file=sys.stderr)
+            print("Use 'journal maint --list' to see available tasks.", file=sys.stderr)
             sys.exit(1)
         success, exit_code = run_task(journal, task)
         sys.exit(0 if success else exit_code)

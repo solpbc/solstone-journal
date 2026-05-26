@@ -273,16 +273,16 @@ sol call journal news work --cursor 20260110 -n 5
 
 Cogitate talents have access to all `sol` commands. The following infrastructure commands must never be called by talents, because they manage services and data pipelines that should only be operated by the supervisor or a human operator:
 
-- `sol supervisor` / `sol start`
-- `sol think` except heartbeat's targeted `sol think --segment`
+- `journal supervisor` / `journal start`
+- `journal think` except heartbeat's targeted `journal think --segment`
 - `sol import`
-- `sol config`
-- `sol cortex`
+- `journal config`
+- `journal cortex`
 - `sol providers check`
 - `sol callosum`
 - `sol observer` / `sol observe-*`
-- `sol sense`
-- `sol transcribe` / `sol describe`
+- `journal sense`
+- `journal transcribe` / `journal describe`
 - `sol indexer --reset`
 
-Talents should use `sol call` commands for journal interaction and `sol health` / `sol talent logs` for diagnostics.
+Talents should use `sol call` commands for journal interaction and `sol health` / `journal talent logs` for diagnostics.

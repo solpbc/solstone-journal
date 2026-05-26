@@ -70,7 +70,7 @@ CONVEY_REPORT_MAILTO_BODY_PREFIX = (
 )
 CONVEY_REPORT_MAILTO_TRUNCATION_SUFFIX = "\n\n[full report is in your clipboard]\n"
 CONVEY_REPORT_BUTTON_LABEL = "Report this"
-LOGIN_NO_PASSWORD_CONFIGURED = "no password is configured. set one in settings → security, or run 'sol password set' from a terminal on this machine."
+LOGIN_NO_PASSWORD_CONFIGURED = "no password is configured. set one in settings → security, or run 'journal password set' from a terminal on this machine."
 SETTINGS_SECURITY_DESC = (
     "network access and password protection for the convey web interface."
 )

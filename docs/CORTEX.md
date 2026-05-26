@@ -313,7 +313,7 @@ All providers:
 
 ## Scheduled Agents and Generators
 
-Both agents and generators support scheduling via `sol think`. Agents have `"schedule": "daily"` and generators have `"schedule": "segment"` or `"schedule": "daily"`.
+Both agents and generators support scheduling via `journal think`. Agents have `"schedule": "daily"` and generators have `"schedule": "segment"` or `"schedule": "daily"`.
 
 ### Execution Order
 Scheduled items run in priority order (lower numbers first):
@@ -384,10 +384,10 @@ Multi-facet segment agents spawn once per non-muted facet in this array. Muted f
 
 ## Process Management
 
-The `sol supervisor` command provides process management for the Cortex ecosystem:
+The `journal supervisor` command provides process management for the Cortex ecosystem:
 - Starts and monitors the Cortex file watcher service
 - Handles process restarts on failure
 - Monitors system health indicators
-- Triggers `sol think` at midnight for daily processing (generators + agents)
+- Triggers `journal think` at midnight for daily processing (generators + agents)
 
 This is distinct from agent lifecycle management, which Cortex handles internally through file state transitions.

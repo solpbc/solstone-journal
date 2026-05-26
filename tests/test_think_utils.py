@@ -888,7 +888,7 @@ class TestSolstoneGuard:
         assert captured.out == ""
         assert (
             captured.err
-            == "sol: solstone isn't running. Start it with 'sol up' and retry.\n"
+            == "sol: solstone isn't running. Start it with 'journal up' and retry.\n"
         )
 
     def test_require_solstone_returns_silently_when_up(

@@ -30,15 +30,15 @@ If you think you need to set `SOLSTONE_JOURNAL` from application code, fix the a
 
 ## Service Installation
 
-There are two install paths and they handle journal resolution differently. For a fresh source checkout, `.venv/bin/sol setup` installs the managed bash wrapper at `~/.local/bin/sol` and then installs solstone as a systemd user service (Linux) or launchd agent (macOS) with convey on port 5015. After the first run, the wrapper lets you use `sol setup` from anywhere; override with `.venv/bin/sol setup --port 8000` on the first run or `sol setup --port 8000` after the wrapper exists. For packaged installs (`uv tool install solstone` or `pipx install solstone`), `sol` is installed directly at `~/.local/bin/sol` as the tool entry point — there is no managed bash wrapper, and `SOLSTONE_JOURNAL` is not exported in the service env block; the default journal location resolves via `get_journal()`. Both paths install the service.
+There are two install paths and they handle journal resolution differently. For a fresh source checkout, `.venv/bin/journal setup` installs managed bash wrappers at `~/.local/bin/sol` and `~/.local/bin/journal`, then installs solstone as a systemd user service (Linux) or launchd agent (macOS) with convey on port 5015. After the first run, the wrappers let you use `sol` and `journal` from anywhere; override with `.venv/bin/journal setup --port 8000` on the first run or `journal setup --port 8000` after the wrapper exists. For packaged installs (`uv tool install solstone` or `pipx install solstone`), `sol` and `journal` are installed directly at `~/.local/bin/` as tool entry points — there are no managed bash wrappers, and `SOLSTONE_JOURNAL` is not exported in the service env block; the default journal location resolves via `get_journal()`. Both paths install the service.
 
-Installed services invoke `~/.local/bin/sol`. They do **not** write `SOLSTONE_JOURNAL` into the service env block; the wrapper exports it before execing the venv `sol`.
+Installed services invoke `~/.local/bin/journal`. They do **not** write `SOLSTONE_JOURNAL` into the service env block; the wrapper exports it before execing the venv `journal`.
 
 Use:
 
-- `sol config show` to display the resolved journal path, user-facing source label, and wrapper status
-- `sol config journal <path>` to atomically rewrite the wrapper's embedded journal path
-- `sol service <install|start|stop|restart|status|logs>` for service lifecycle management
+- `journal config show` to display the resolved journal path, user-facing source label, and wrapper status
+- `journal config journal <path>` to atomically rewrite the wrapper's embedded journal path
+- `journal service <install|start|stop|restart|status|logs>` for service lifecycle management
 
 ## API Keys
 

@@ -44,7 +44,7 @@ def _lock_path() -> Path:
 def _require_journal_config() -> None:
     if not get_journal_config_path().exists():
         raise JournalNotInitializedError(
-            "journal config file is not present; run 'sol setup' first"
+            "journal config file is not present; run 'journal setup' first"
         )
 
 

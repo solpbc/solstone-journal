@@ -13,7 +13,7 @@ Tactical work items prioritized for implementation.
 
 - [ ] Update supervisor/think interaction to use dynamic daily schedule from daily schedule agent output
 - [ ] Create segment agent for voiceprint detection and updating via hooks
-- [ ] Surface named hook outputs in agents app and sol talent CLI
+- [ ] Surface named hook outputs in agents app and journal talent CLI
 - [ ] Make daily schedule agents idempotent with state tracking (show existing vs new segments)
 - [ ] Add activities attach/update CLI tools for facet curation (like entity tools)
 

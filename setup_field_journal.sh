@@ -19,7 +19,7 @@
 # writes derived artifacts (audio.jsonl, audio.npz, descriptions, etc.) as
 # siblings of source media, so symlinking would dirty the field_journal clone.
 #
-# Run `sol setup` afterward to bring the journal to a ready-to-process state.
+# Run `journal setup` afterward to bring the journal to a ready-to-process state.
 
 set -euo pipefail
 

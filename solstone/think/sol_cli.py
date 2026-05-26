@@ -10,7 +10,7 @@ Usage:
 
 Examples:
     sol import data.json    Import data into journal
-    sol think 20250101      Run daily processing for a day
+    journal think 20250101      Run daily processing for a day
     sol solstone.think.talents -h    Show help for specific module
 """
 
@@ -50,10 +50,22 @@ class Alias(NamedTuple):
     surface: Literal["access", "service"]
 
 
+class HelpGroup(NamedTuple):
+    heading: str
+    commands: tuple[str, ...]
+
+
 JOURNAL_ACCESS_CMD_ERROR = (
     "'{cmd}' is a journal-access command — run it with 'sol {cmd}' instead.\n"
     "('journal' surfaces only journal-service commands; see 'journal --help'.)"
 )
+
+SOL_HELP_GROUP_CONVERSATION = "Conversation"
+SOL_HELP_GROUP_YOUR_JOURNAL = "Your journal"
+SOL_HELP_GROUP_DIAGNOSE = "See & diagnose"
+SOL_HELP_GROUP_TOOLS = "Tools"
+SOL_HELP_GROUP_SERVICE_HEADING = "Journal service (also available as `journal <cmd>`)"
+SOL_HELP_GROUP_ALIASES = "Aliases"
 
 
 COMMANDS: dict[str, Command] = {
@@ -116,54 +128,24 @@ ALIASES: dict[str, Alias] = {
     "down": Alias("solstone.think.service", ["down"], "service"),
 }
 
-# Command groupings for help display
-GROUPS: dict[str, list[str]] = {
-    "Think (AI processing)": [
-        "import",
-        "think",
-        "indexer",
-        "supervisor",
-        "schedule",
-        "top",
-        "health",
-        "notify",
-        "heartbeat",
-    ],
-    "Service": ["service"],
-    "Services": ["services"],
-    "Observe (capture)": [
-        "transcribe",
-        "describe",
-        "sense",
-        "transfer",
-        "export",
-        "grab",
-        "observer",
-    ],
-    "Talent": [
-        "providers",
-        "cortex",
-        "talent",
-        "engage",
-    ],
-    "Convey (web UI)": [
-        "convey",
-        "restart-convey",
-        "maint",
-    ],
-    "Setup": ["setup", "install-models"],
-    "Specialized tools": [
-        "password",
-        "config",
-        "skills",
-        "streams",
-        "segment",
-        "journal-stats",
-        "link",
-    ],
-    "Installation": ["doctor"],
-    "Help": ["chat"],
-}
+# Owner-facing command groupings for `sol --help`.
+#
+# Access-tagged commands are assigned to one of the four intent groups below.
+# Service-tagged commands are rendered in the Journal service group derived from
+# COMMANDS, preserving registry order. Future access commands must be assigned
+# here deliberately; future service commands join Journal service by tag.
+ACCESS_HELP_GROUPS: tuple[HelpGroup, ...] = (
+    HelpGroup(SOL_HELP_GROUP_CONVERSATION, ("chat", "engage")),
+    HelpGroup(
+        SOL_HELP_GROUP_YOUR_JOURNAL,
+        ("call", "import", "journal-stats", "segment", "streams", "indexer"),
+    ),
+    HelpGroup(SOL_HELP_GROUP_DIAGNOSE, ("top", "health", "notify", "doctor")),
+    HelpGroup(
+        SOL_HELP_GROUP_TOOLS,
+        ("providers", "observer", "skills", "restart-convey", "link"),
+    ),
+)
 
 
 def get_status() -> dict[str, Any]:
@@ -196,6 +178,39 @@ def print_status() -> None:
     print()
 
 
+def service_help_group() -> HelpGroup:
+    """Return the derived Journal service help group in registry order."""
+    return HelpGroup(
+        SOL_HELP_GROUP_SERVICE_HEADING,
+        tuple(
+            name for name, command in COMMANDS.items() if command.surface == "service"
+        ),
+    )
+
+
+def help_groups() -> tuple[HelpGroup, ...]:
+    """Return all owner-facing help groups in display order."""
+    return ACCESS_HELP_GROUPS + (service_help_group(),)
+
+
+def _print_help_group(group: HelpGroup) -> None:
+    print(group.heading)
+    for cmd in group.commands:
+        if cmd in COMMANDS:
+            module = COMMANDS[cmd].module
+            print(f"  {cmd:16} {module}")
+    print()
+
+
+def _alias_target_label(alias: Alias) -> str:
+    for name, command in COMMANDS.items():
+        if command.module == alias.module and not alias.preset_args:
+            return name
+        if command.module == alias.module and alias.preset_args:
+            return " ".join([name] + alias.preset_args)
+    return " ".join([alias.module] + alias.preset_args)
+
+
 def print_help() -> None:
     """Print help with status and available commands."""
     print("sol - solstone unified CLI\n")
@@ -203,14 +218,8 @@ def print_help() -> None:
 
     print("Usage: sol <command> [args...]\n")
 
-    # Print grouped commands
-    for group_name, commands in GROUPS.items():
-        print(f"{group_name}:")
-        for cmd in commands:
-            if cmd in COMMANDS:
-                module = COMMANDS[cmd].module
-                print(f"  {cmd:16} {module}")
-        print()
+    for group in help_groups():
+        _print_help_group(group)
 
     # Print call sub-apps
     try:
@@ -229,17 +238,10 @@ def print_help() -> None:
 
     # Print aliases if any
     if ALIASES:
-        print("Aliases:")
+        print(SOL_HELP_GROUP_ALIASES)
         for alias, command_alias in ALIASES.items():
-            args_str = (
-                " ".join(command_alias.preset_args) if command_alias.preset_args else ""
-            )
-            module = command_alias.module
-            print(f"  {alias:16} → {module} {args_str}")
+            print(f"  {alias:16} (= {_alias_target_label(command_alias)})")
         print()
-
-    print("Direct module syntax: sol <module.path> [args]")
-    print("Example: sol solstone.think.importers.cli --help")
 
 
 def print_journal_help() -> None:

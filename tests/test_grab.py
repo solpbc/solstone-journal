@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Tests for the sol grab CLI."""
+"""Tests for the journal grab CLI."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def test_grab_level_0_human_ends_with_next_footer(monkeypatch, capsys):
     assert code == 0
     assert message == ""
     assert err == ""
-    assert out.rstrip().endswith("Next: sol grab <day>")
+    assert out.rstrip().endswith("Next: journal grab <day>")
 
 
 def test_grab_level_1_json_matches_fixture(monkeypatch, capsys):
@@ -91,7 +91,7 @@ def test_grab_level_1_human_ends_with_next_footer(monkeypatch, capsys):
     assert code == 0
     assert message == ""
     assert err == ""
-    assert out.rstrip().endswith("Next: sol grab <day> <stream>")
+    assert out.rstrip().endswith("Next: journal grab <day> <stream>")
 
 
 def test_grab_missing_day_errors(monkeypatch, capsys):
@@ -118,7 +118,7 @@ def test_grab_level_2_human_ends_with_next_footer(monkeypatch, capsys):
     assert code == 0
     assert message == ""
     assert err == ""
-    assert out.rstrip().endswith("Next: sol grab <day> <stream> <segment>")
+    assert out.rstrip().endswith("Next: journal grab <day> <stream> <segment>")
 
 
 def test_grab_missing_stream_errors(monkeypatch, capsys):
@@ -196,7 +196,7 @@ def test_grab_level_3_human_ends_with_next_footer(monkeypatch, capsys):
     assert code == 0
     assert message == ""
     assert err == ""
-    assert out.rstrip().endswith("Next: sol grab <day> <stream> <segment> <screen>")
+    assert out.rstrip().endswith("Next: journal grab <day> <stream> <segment> <screen>")
 
 
 def test_grab_missing_segment_errors(monkeypatch, capsys):
@@ -263,9 +263,9 @@ def test_grab_level_4_human_includes_extraction_footer(monkeypatch, capsys):
     assert message == ""
     assert err == ""
     assert out.rstrip().endswith(
-        "Inspect:    sol grab <day> <stream> <segment> <screen> <id>\n"
-        "Save one:   sol grab <day> <stream> <segment> <screen> <id> --out PATH\n"
-        "Save many:  sol grab <day> <stream> <segment> <screen> "
+        "Inspect:    journal grab <day> <stream> <segment> <screen> <id>\n"
+        "Save one:   journal grab <day> <stream> <segment> <screen> <id> --out PATH\n"
+        "Save many:  journal grab <day> <stream> <segment> <screen> "
         "<id1>,<id2>,... --out PATH\n"
         "\n"
         "How extraction works:\n"
@@ -329,7 +329,7 @@ def test_grab_level_4_purged_human_uses_metadata_only_footer(monkeypatch, capsys
         "Save mode unavailable: raw video has been purged by retention.\n"
         "Frame metadata above is still readable.\n"
         "\n"
-        "Inspect: sol grab <day> <stream> <segment> <screen> <id>"
+        "Inspect: journal grab <day> <stream> <segment> <screen> <id>"
     )
 
 
@@ -393,8 +393,8 @@ def test_grab_level_5a_human_shows_save_and_batch_footer(monkeypatch, capsys):
     assert message == ""
     assert err == ""
     assert out.rstrip().endswith(
-        "Save: sol grab <day> <stream> <segment> <screen> <id> --out PATH\n"
-        "Batch: sol grab <day> <stream> <segment> <screen> "
+        "Save: journal grab <day> <stream> <segment> <screen> <id> --out PATH\n"
+        "Batch: journal grab <day> <stream> <segment> <screen> "
         "<id1>,<id2>,... --out PATH"
     )
 
@@ -450,7 +450,7 @@ def test_grab_save_purged_video_reports_retention_message(
     assert out == ""
     assert err == ""
     assert "purged by retention" in message
-    assert "sol grab 20240104 default 120000_300 screen 7" in message
+    assert "journal grab 20240104 default 120000_300 screen 7" in message
 
 
 def test_grab_level_5b_json_matches_fixture_and_writes_png(

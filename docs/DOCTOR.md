@@ -25,15 +25,15 @@ ls journal/talents/*/*_active.jsonl 2>/dev/null
 
 ## Service Architecture
 
-The supervisor (`sol supervisor`) manages these services:
+The supervisor (`journal supervisor`) manages these services:
 
 | Service | Command | Purpose | Auto-restart |
 |---------|---------|---------|--------------|
 | Callosum | (in-process) | Message bus for inter-service events | No |
 | Observer | `sol observer` | Screen/audio capture (platform-detected) | Yes |
-| Sense | `sol sense` | File detection, processing dispatch | Yes |
+| Sense | `journal sense` | File detection, processing dispatch | Yes |
 
-Cortex (agent execution) connects to Callosum but runs independently via `sol cortex`.
+Cortex (agent execution) connects to Callosum but runs independently via `journal cortex`.
 
 See [CALLOSUM.md](CALLOSUM.md) for message protocol and [CORTEX.md](CORTEX.md) for agent system.
 
@@ -44,7 +44,7 @@ See [CALLOSUM.md](CALLOSUM.md) for message protocol and [CORTEX.md](CORTEX.md) f
 | What | Where |
 |------|-------|
 | Current service logs | `journal/health/{service}.log` (symlinks) |
-| Daemon stdout/stderr | `journal/health/service.log` (combined, append-only). The managed wrapper exports `PYTHONUNBUFFERED=1` for supervisor runs so stdout/stderr flush in real time and show up in `sol service logs` without a restart. |
+| Daemon stdout/stderr | `journal/health/service.log` (combined, append-only). The managed wrapper exports `PYTHONUNBUFFERED=1` for supervisor runs so stdout/stderr flush in real time and show up in `journal service logs` without a restart. |
 | Day's process logs | `journal/{YYYYMMDD}/health/{ref}_{name}.log` |
 | Agent execution | `journal/talents/<name>/*.jsonl` |
 | Journal task log | `journal/task_log.txt` |
@@ -199,7 +199,7 @@ socat - UNIX-CONNECT:journal/health/callosum.sock
 
 ### Unfinalized MOV Files (Missing moov Atom)
 
-**Symptoms:** `sol describe` fails with `av.error.InvalidDataError: Invalid data found when processing input`. Sense logs show `describe failed ... exit code 1` and `Segment observed with errors ... ['describe exit 1']`.
+**Symptoms:** `journal describe` fails with `av.error.InvalidDataError: Invalid data found when processing input`. Sense logs show `describe failed ... exit code 1` and `Segment observed with errors ... ['describe exit 1']`.
 
 **Diagnosis:** The `.mov` file has `ftyp` + `wide` + `mdat` atoms but is missing the `moov` atom. The `mdat` size is 0 (extends-to-EOF). This means the screen recorder (solstone-macos native app) never finalized the file — it wrote video frames but crashed or was interrupted before writing the metadata index.
 
@@ -317,13 +317,13 @@ ffprobe -v error -show_streams /path/to/recovered.mov
 
 # Step 4: Replace original and re-run describe
 cp /path/to/recovered.mov /path/to/broken.mov
-sol describe /path/to/broken.mov -v
+journal describe /path/to/broken.mov -v
 ```
 
 **Notes:**
 - The segment duration (DURATION_SECS) comes from the segment folder name (`HHMMSS_LEN` — LEN is duration in seconds)
 - The reference file must be from the same stream/session so codec parameters match
-- PyAV (used by `sol describe`) bundles its own HEVC decoder, so this works even if system ffmpeg lacks one
+- PyAV (used by `journal describe`) bundles its own HEVC decoder, so this works even if system ffmpeg lacks one
 - After recovery, run `sol indexer` if you need the new screen extracts searchable
 
 ---

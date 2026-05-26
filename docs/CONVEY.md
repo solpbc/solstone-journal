@@ -21,7 +21,7 @@ convey
 Password authentication is configured from Settings → Security when enabling network access. For headless setups, use the CLI:
 
 ```bash
-sol password set
+journal password set
 ```
 
 When a password is set, it is stored as a secure hash in `config/journal.json` under `convey.password_hash`.

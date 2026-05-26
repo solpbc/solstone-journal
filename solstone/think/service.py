@@ -4,17 +4,17 @@
 """Cross-platform background service management for solstone.
 
 Usage:
-    sol service install [--port PORT]  Install solstone as a background service
-    sol service uninstall              Remove the background service
-    sol service start                  Start the background service
-    sol service stop                   Stop the background service
-    sol service restart [--if-installed]  Restart the background service
-    sol service status                 Show service installation and runtime status
-    sol service logs                   View service logs
-    sol service logs -f                Follow service logs
+    journal service install [--port PORT]  Install solstone as a background service
+    journal service uninstall              Remove the background service
+    journal service start                  Start the background service
+    journal service stop                   Stop the background service
+    journal service restart [--if-installed]  Restart the background service
+    journal service status                 Show service installation and runtime status
+    journal service logs                   View service logs
+    journal service logs -f                Follow service logs
 
-    sol up                             Install (if needed), start, and show status
-    sol down                           Stop the background service
+    journal up                             Install (if needed), start, and show status
+    journal down                           Stop the background service
 
 Default convey port for installed services is 5015.
 """
@@ -41,7 +41,7 @@ READY_TIMEOUT_SECONDS = 60.0
 def _ready_timeout_message() -> str:
     return (
         f"Service did not become ready within {READY_TIMEOUT_SECONDS:g}s — "
-        "run 'sol service status' or 'sol doctor' for diagnostics"
+        "run 'journal service status' or 'sol doctor' for diagnostics"
     )
 
 
@@ -64,9 +64,9 @@ def _unit_path() -> Path:
     return Path.home() / ".config" / "systemd" / "user" / f"{SYSTEMD_UNIT}.service"
 
 
-def _sol_bin() -> str:
-    """Return absolute path to the managed sol wrapper."""
-    return str(Path.home() / ".local" / "bin" / "sol")
+def _managed_wrapper(binary: str) -> str:
+    """Return absolute path to a managed user wrapper."""
+    return str(Path.home() / ".local" / "bin" / binary)
 
 
 def service_is_installed() -> bool:
@@ -106,7 +106,7 @@ def _collect_env() -> dict[str, str]:
     from journal.json at process startup via setup_cli().
 
     Never propagate SOLSTONE_JOURNAL into service files. Installed services
-    invoke ~/.local/bin/sol, which is a managed wrapper that sets
+    invoke ~/.local/bin/journal, which is a managed wrapper that sets
     SOLSTONE_JOURNAL itself. The service's job is to start the wrapper, not
     to configure the journal path.
     """
@@ -129,12 +129,12 @@ def _generate_plist(
 ) -> bytes:
     """Generate a launchd plist for the solstone supervisor."""
     validate_journal_path_for_wrapper(journal_path)
-    sol = _sol_bin()
+    journal = _managed_wrapper("journal")
     service_log = str(Path(journal_path) / "health" / "service.log")
 
     plist = {
         "Label": SERVICE_LABEL,
-        "ProgramArguments": [sol, "supervisor", str(port)],
+        "ProgramArguments": [journal, "supervisor", str(port)],
         "EnvironmentVariables": env,
         "StandardOutPath": service_log,
         "StandardErrorPath": service_log,
@@ -153,7 +153,7 @@ def remove_stale_plists() -> tuple[int, int]:
     if not scan_dir.is_dir():
         return (0, 0)
 
-    current = _sol_bin()
+    current_wrappers = {_managed_wrapper("sol"), _managed_wrapper("journal")}
     uid = os.getuid()
     removed = 0
     failed = 0
@@ -192,10 +192,10 @@ def remove_stale_plists() -> tuple[int, int]:
             print(f"skipping {path}: no Program or ProgramArguments", file=sys.stderr)
             continue
 
-        if not extracted.endswith("/sol"):
+        if not extracted.endswith(("/sol", "/journal")):
             continue
 
-        if extracted == current:
+        if extracted in current_wrappers:
             continue
 
         result = subprocess.run(
@@ -221,7 +221,7 @@ def remove_stale_plists() -> tuple[int, int]:
 
         print(
             f"Removed stale launchd plist {path} "
-            f"(referenced {extracted}, current is {current})"
+            f"(referenced {extracted}, current wrappers are {sorted(current_wrappers)})"
         )
         removed += 1
 
@@ -236,7 +236,7 @@ def _generate_systemd_unit(
 ) -> str:
     """Generate a systemd user unit for the solstone supervisor."""
     validate_journal_path_for_wrapper(journal_path)
-    sol = _sol_bin()
+    journal = _managed_wrapper("journal")
     env_lines = "\n".join(f"Environment={k}={v}" for k, v in sorted(env.items()))
     service_log = str(Path(journal_path) / "health" / "service.log")
 
@@ -249,7 +249,7 @@ def _generate_systemd_unit(
         f"\n"
         f"[Service]\n"
         f"Type=notify\n"
-        f"ExecStart={sol} supervisor {port}\n"
+        f"ExecStart={journal} supervisor {port}\n"
         f"Restart=on-failure\n"
         f"RestartSec=5\n"
         f"KillMode=control-group\n"
@@ -379,7 +379,7 @@ def _start() -> int:
         path = _plist_path()
         if not path.exists():
             print(
-                "Error: service not installed. Run 'sol service install' first.",
+                "Error: service not installed. Run 'journal service install' first.",
                 file=sys.stderr,
             )
             return 1
@@ -394,7 +394,7 @@ def _start() -> int:
     else:
         if not _unit_path().exists():
             print(
-                "Error: service not installed. Run 'sol service install' first.",
+                "Error: service not installed. Run 'journal service install' first.",
                 file=sys.stderr,
             )
             return 1
@@ -443,7 +443,7 @@ def _restart(if_installed: bool = False) -> int:
         if if_installed:
             return 0
         print(
-            "Error: service not installed. Run 'sol service install' first.",
+            "Error: service not installed. Run 'journal service install' first.",
             file=sys.stderr,
         )
         return 1
@@ -491,7 +491,9 @@ def _status() -> int:
 
     if not service_is_installed():
         print("Service: not installed")
-        print("Run 'sol service install' to install, or 'sol up' to install and start.")
+        print(
+            "Run 'journal service install' to install, or 'journal up' to install and start."
+        )
         return 1
 
     print("Service: installed")
@@ -584,6 +586,17 @@ _SUBCOMMANDS = {
 }
 
 
+def _print_usage() -> None:
+    print("Usage: journal service <install|uninstall|start|stop|restart|status|logs>")
+    print("       journal service install [--port PORT]  (default: 5015)")
+    print(
+        "       journal service restart [--if-installed]  "
+        "(restart; --if-installed noops if not installed)"
+    )
+    print("       journal up [--port PORT]               (install + start + status)")
+    print("       journal down                           (stop)")
+
+
 def _parse_port(args: list[str]) -> int:
     """Extract --port PORT from args, return DEFAULT_SERVICE_PORT if absent."""
     for i, arg in enumerate(args):
@@ -603,22 +616,19 @@ def _parse_port(args: list[str]) -> int:
 
 
 def main() -> None:
-    """Entry point for ``sol service``."""
+    """Entry point for ``journal service``."""
     args = sys.argv[1:]
 
     if args and args[0] == "logs":
         follow = "-f" in args[1:] or "--follow" in args[1:]
         sys.exit(_logs(follow=follow))
 
+    if "--help" in args or "-h" in args:
+        _print_usage()
+        sys.exit(0)
+
     if not args:
-        print("Usage: sol service <install|uninstall|start|stop|restart|status|logs>")
-        print("       sol service install [--port PORT]  (default: 5015)")
-        print(
-            "       sol service restart [--if-installed]  "
-            "(restart; --if-installed noops if not installed)"
-        )
-        print("       sol up [--port PORT]               (install + start + status)")
-        print("       sol down                           (stop)")
+        _print_usage()
         sys.exit(1)
 
     subcmd = args[0]

@@ -208,9 +208,9 @@ class SupervisorArgumentParser(argparse.ArgumentParser):
         if mistaken:
             self.exit(
                 2,
-                "sol supervisor is the server-launch command (takes a port). "
-                "For lifecycle, use: sol service <verb>. "
-                f"Did you mean: sol service {mistaken} ?\n",
+                "journal supervisor is the server-launch command (takes a port). "
+                "For lifecycle, use: journal service <verb>. "
+                f"Did you mean: journal service {mistaken} ?\n",
             )
         super().error(message)
 
@@ -1168,7 +1168,7 @@ def collect_status(procs: list[RunnerManagedProcess]) -> dict:
 
 
 def start_sense() -> RunnerManagedProcess:
-    """Launch sol sense with output logging."""
+    """Launch journal sense with output logging."""
     return _launch_process("sense", ["sol", "sense", "-v"], restart=True)
 
 
@@ -1456,7 +1456,7 @@ def handle_daily_tasks() -> None:
 def _handle_segment_observed(message: dict) -> None:
     """Handle segment completion events (from live observation or imports).
 
-    Submits sol think in segment mode via task queue, which handles both
+    Submits journal think in segment mode via task queue, which handles both
     generators and segment agents. Also updates flush state to track
     segment recency.
     """
@@ -1497,7 +1497,7 @@ def _check_segment_flush(force: bool = False) -> None:
     """Check if the last observed segment needs flushing.
 
     If no new segments have arrived within FLUSH_TIMEOUT seconds, runs
-    ``sol think --flush`` on the last segment to let flush-enabled agents
+    ``journal think --flush`` on the last segment to let flush-enabled agents
     close out dangling state (e.g., end active activities).
 
     Args:

@@ -37,10 +37,10 @@ sol observer revoke <name>
 |---------|---------|
 | `sol observer` | Screen and audio capture (auto-detects platform) |
 | `sol observe-linux` | Screen and audio capture on Linux (direct) |
-| `sol transcribe` | Audio transcription with faster-whisper |
-| `sol describe` | Visual analysis of screen recordings |
-| `sol grab` | Walk available screen frames and optionally write frame images |
-| `sol sense` | Unified observation coordination |
+| `journal transcribe` | Audio transcription with faster-whisper |
+| `journal describe` | Visual analysis of screen recordings |
+| `journal grab` | Walk available screen frames and optionally write frame images |
+| `journal sense` | Unified observation coordination |
 
 ## Architecture
 
@@ -51,9 +51,9 @@ Observer Ingest API (/app/observer/ingest/<key>)
        ↓
    Raw media files (*.flac, *.webm, tmux_*.jsonl)
        ↓
-sol sense (coordination)
-   ├── sol transcribe → audio.jsonl
-   └── sol describe → screen.jsonl
+journal sense (coordination)
+   ├── journal transcribe → audio.jsonl
+   └── journal describe → screen.jsonl
 ```
 
 ## Linux Observer State Machine

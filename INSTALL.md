@@ -11,7 +11,7 @@ the latest version of these instructions is at https://solstone.app/install.
 ### check whether solstone is already installed
 
 ```bash
-sol --version 2>&1 && sol service status 2>&1
+sol --version 2>&1 && journal service status 2>&1
 ```
 
 if `sol` isn't on PATH, the install hasn't been done yet — proceed.
@@ -36,7 +36,7 @@ uv tool install solstone
 ## set up
 
 ```bash
-sol setup
+journal setup
 ```
 
 this runs doctor diagnostics, confirms the journal directory at `~/journal`, installs the local transcription model (~2.5 GB on linux), installs the solstone skill for claude code, codex, and gemini, installs all journal-side talent skills into the configured journal so cogitate sub-agents can discover them, and starts a background service (systemd on linux, launchd on macOS) listening on http://localhost:5015.
@@ -45,7 +45,7 @@ let your human know: **open http://localhost:5015 in a browser**. the first-run 
 
 if a step has missing system libraries or python extras, `sol doctor` will tell you the exact install command to run for your platform. extras (`pdf`, `whisper`) can be added at any time with `uv tool upgrade solstone --extra pdf` or `pip install 'solstone[pdf]'`. on linux, local parakeet transcription needs `solstone[parakeet-onnx-cpu]` (or `[parakeet-onnx-cuda]` for NVIDIA GPUs); install or upgrade the same way as other extras.
 
-if the service fails to start, check `sol service logs`.
+if the service fails to start, check `journal service logs`.
 
 ## choosing how to power sol
 
@@ -53,7 +53,7 @@ the sol agent is powered by an AI model, and you choose which. the choice has re
 
 - **a hosted provider key is the recommended way to start.** point solstone at Google (Gemini), OpenAI, or Anthropic with **your own developer API key**, created in that provider's developer console — *not* the consumer chat product (gemini.google.com / chatgpt.com / claude.ai). this is the fastest path to a working co-brain and what the first-run wizard sets up. cogitate (sol's tool-calling agent loop, used by chat/digest/morning_briefing/etc.) works out of the box as soon as you set a provider key — no extra install step.
 - **a local model via the local provider is a real, supported goal, but not the default daily experience yet.** running the sol agent fully locally means nothing leaves your machine. it's the maximum-privacy path, but it needs capable hardware and a local model with strong "thinking" support; smaller models on constrained machines (for example a base Mac mini) struggle on the reasoning-heavy work. treat local as a goal to grow into, not the recommended starting point.
-- **on Apple Silicon, you can run sol's screen analysis on-device today.** macs with Apple Silicon and at least 16 GB of memory can turn on "MLX (Local, Apple Silicon)" in settings → providers; sol downloads a local model once, then does the work of making sense of your screen entirely on your machine, with nothing sent to a cloud provider. it's opt-in and covers screen analysis for now; the rest of sol stays on whichever provider you chose above.
+- **on Apple Silicon, you can run sol's screen analysis on-device today.** macs with Apple Silicon and at least 16 GB of memory can turn on "MLX (Local, Apple Silicon)" in settings → providers; journal downloads a local model once, then does the work of making sense of your screen entirely on your machine, with nothing sent to a cloud provider. it's opt-in and covers screen analysis for now; the rest of sol stays on whichever provider you chose above.
 
 a hardware heads-up: local transcription alone installs a ~2.5 GB model, and a capable local *thinking* model needs meaningfully more memory and compute on top of that. if your machine is constrained, start with a hosted key and revisit local later; you can switch any time in settings → providers.
 
@@ -88,14 +88,14 @@ sol observer create tmux-laptop
 ## upgrading
 
 ```bash
-uv tool upgrade solstone && sol setup
+uv tool upgrade solstone && journal setup
 ```
 
-(or `pipx upgrade solstone && sol setup`.) the second command refreshes the runtime artifacts and reconciles the service unit if anything has changed.
+(or `pipx upgrade solstone && journal setup`.) the second command refreshes the runtime artifacts and reconciles the service unit if anything has changed.
 
 ## uninstall
 
-1. remove setup-managed runtime files: `sol setup --clean-uninstall`
+1. remove setup-managed runtime files: `journal setup --clean-uninstall`
    this removes the user service, managed `~/.local/bin/sol` wrapper, user config, and setup manifest. it does not remove your journal.
 2. optional: remove agentic-tooling skills: `sol skills uninstall`.
 3. uninstall the python package: `uv tool uninstall solstone` (or `pipx uninstall solstone`).

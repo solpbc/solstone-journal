@@ -13,7 +13,7 @@ otherwise `~/.config/solstone-observer/spl/<label>/`.
 Peer credentials are written under `<journal_root>/peers/<instance_id>/`,
 where `instance_id` is the receiver instance_id returned by the pair response,
 not the local `--label`. Label-to-instance_id resolution for
-`sol transfer send --to <label>` is a follow-on lode that will walk
+`journal transfer send --to <label>` is a follow-on lode that will walk
 `peer.json` files.
 
 Both layouts contain `private.pem`, `cert.pem`, `chain.pem`,

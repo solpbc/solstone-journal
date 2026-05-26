@@ -18,7 +18,7 @@ If your other journal is on this same machine:
 
 ### About sol-transfer
 
-`sol transfer` moves raw observations between machines — it doesn't move your merged journal, facets, entities, or import history. Use `sol call journal export` for that.
+`journal transfer` moves raw observations between machines — it doesn't move your merged journal, facets, entities, or import history. Use `sol call journal export` for that.
 
 ## From another machine
 

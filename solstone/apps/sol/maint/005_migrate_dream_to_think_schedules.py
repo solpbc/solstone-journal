@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Rewrite stale `sol dream` schedule commands to `sol think`."""
+"""Rewrite stale `sol dream` schedule commands to `journal think`."""
 
 from __future__ import annotations
 
@@ -116,7 +116,7 @@ def _print_summary(summary: MigrationSummary) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Rewrite stale sol dream schedule commands to sol think."
+        description="Rewrite stale sol dream schedule commands to journal think."
     )
     parser.add_argument(
         "--dry-run",

@@ -158,9 +158,9 @@ def test_parse_args_lifecycle_verb_hint(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert exc_info.value.code == 2
     assert (
-        "sol supervisor is the server-launch command (takes a port). "
-        "For lifecycle, use: sol service <verb>. "
-        "Did you mean: sol service stop ?"
+        "journal supervisor is the server-launch command (takes a port). "
+        "For lifecycle, use: journal service <verb>. "
+        "Did you mean: journal service stop ?"
     ) in captured.err
 
 

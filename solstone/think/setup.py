@@ -103,7 +103,7 @@ class StepResult:
 class CleanUninstallContext:
     journal_path: Path
     service_path: Path
-    wrapper_path: Path
+    wrapper_paths: tuple[Path, ...]
     config_path: Path
     manifest_path: Path
     yes: bool
@@ -164,7 +164,6 @@ def _port_arg(value: str) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="sol setup",
         description="Set up solstone user-runtime artifacts and start the service.",
     )
     parser.add_argument(
@@ -185,7 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--variant",
         choices=("auto", "cpu", "cuda", "coreml"),
         default="auto",
-        help="Parakeet model/runtime variant passed to sol install-models (default: auto)",
+        help="Parakeet model/runtime variant passed to journal install-models (default: auto)",
     )
     parser.add_argument(
         "--step-timeout-seconds",
@@ -1231,8 +1230,10 @@ def step_skills_journal(ctx: SetupContext, step_index: int) -> StepResult:
 
 
 def step_wrapper(ctx: SetupContext, step_index: int) -> StepResult:
+    from solstone.think import install_guard
+
     started_at = utc_now()
-    wrapper_path = Path.home() / ".local" / "bin" / "sol"
+    wrapper_paths = list(install_guard.alias_paths().values())
     if not ctx.is_source_checkout:
         print_step_skipped(ctx, step_index, "wrapper", "packaged install")
         return step_result(
@@ -1245,7 +1246,7 @@ def step_wrapper(ctx: SetupContext, step_index: int) -> StepResult:
         return step_result(
             "wrapper",
             "failed",
-            [wrapper_path],
+            wrapper_paths,
             started_at,
             subprocess_error("wrapper", result, timeout=ctx.step_timeout_seconds),
         )
@@ -1253,11 +1254,11 @@ def step_wrapper(ctx: SetupContext, step_index: int) -> StepResult:
         return step_result(
             "wrapper",
             "failed",
-            [wrapper_path],
+            wrapper_paths,
             started_at,
             subprocess_error("wrapper", result),
         )
-    return step_result("wrapper", "ok", [wrapper_path], started_at)
+    return step_result("wrapper", "ok", wrapper_paths, started_at)
 
 
 def service_artifact_path() -> Path | None:
@@ -1331,11 +1332,13 @@ def _resolve_journal_for_uninstall() -> Path:
 
 
 def resolve_clean_uninstall_context(args: argparse.Namespace) -> CleanUninstallContext:
+    from solstone.think import install_guard
+
     journal_path = _resolve_journal_for_uninstall()
     return CleanUninstallContext(
         journal_path=journal_path,
         service_path=_service_path_for_uninstall(),
-        wrapper_path=Path.home() / ".local" / "bin" / "sol",
+        wrapper_paths=tuple(install_guard.alias_paths().values()),
         config_path=config_path(),
         manifest_path=journal_path / "health" / "setup-state.json",
         yes=bool(args.yes),
@@ -1359,14 +1362,20 @@ def _existence_marker(path: Path) -> str:
 
 
 def _clean_uninstall_paths(ctx: CleanUninstallContext) -> tuple[Path, ...]:
-    return (ctx.service_path, ctx.wrapper_path, ctx.config_path, ctx.manifest_path)
+    return (
+        ctx.service_path,
+        *ctx.wrapper_paths,
+        ctx.config_path,
+        ctx.manifest_path,
+    )
 
 
 def _print_clean_confirmation(ctx: CleanUninstallContext) -> bool:
-    print("sol setup --clean-uninstall will remove these runtime artifacts:")
+    print("journal setup --clean-uninstall will remove these runtime artifacts:")
     print()
     print(f"  [{_existence_marker(ctx.service_path):<7}] service: {ctx.service_path}")
-    print(f"  [{_existence_marker(ctx.wrapper_path):<7}] wrapper: {ctx.wrapper_path}")
+    for wrapper_path in ctx.wrapper_paths:
+        print(f"  [{_existence_marker(wrapper_path):<7}] wrapper: {wrapper_path}")
     print(f"  [{_existence_marker(ctx.config_path):<7}] config: {ctx.config_path}")
     print(
         f"  [{_existence_marker(ctx.manifest_path):<7}] manifest: {ctx.manifest_path}"
@@ -1439,7 +1448,8 @@ def _clean_uninstall_service(ctx: CleanUninstallContext) -> CleanUninstallStepRe
 def _clean_uninstall_wrapper(ctx: CleanUninstallContext) -> CleanUninstallStepResult:
     from solstone.think import install_guard
 
-    pre_exists = _path_present_for_uninstall(ctx.wrapper_path)
+    primary_path = ctx.wrapper_paths[0] if ctx.wrapper_paths else None
+    pre_exists = any(_path_present_for_uninstall(path) for path in ctx.wrapper_paths)
     try:
         with (
             contextlib.redirect_stdout(io.StringIO()),
@@ -1448,43 +1458,53 @@ def _clean_uninstall_wrapper(ctx: CleanUninstallContext) -> CleanUninstallStepRe
             rc = install_guard.cmd_uninstall(ctx.curdir)
     except Exception as exc:
         return CleanUninstallStepResult(
-            "wrapper", "failed", ctx.wrapper_path, _clean_failed_reason(exc)
+            "wrapper", "failed", primary_path, _clean_failed_reason(exc)
         )
     if rc == 0:
         state: CleanUninstallState = "removed" if pre_exists else "already-absent"
-        return CleanUninstallStepResult("wrapper", state, ctx.wrapper_path)
+        return CleanUninstallStepResult("wrapper", state, primary_path)
 
-    state, target = install_guard.check_alias(ctx.curdir)
+    state = install_guard.AliasState.ABSENT
+    target = None
+    blocked_path = primary_path
+    for binary, path in zip(install_guard.alias_paths(), ctx.wrapper_paths):
+        state, target = install_guard.check_alias(ctx.curdir, binary)
+        if state not in {
+            install_guard.AliasState.ABSENT,
+            install_guard.AliasState.OWNED,
+        }:
+            blocked_path = path
+            break
     if state is install_guard.AliasState.WORKTREE:
         return CleanUninstallStepResult(
             "wrapper",
             "skipped",
-            ctx.wrapper_path,
+            blocked_path,
             "refusing to act from a git worktree",
         )
     if state is install_guard.AliasState.CROSS_REPO:
         return CleanUninstallStepResult(
             "wrapper",
             "skipped",
-            ctx.wrapper_path,
+            blocked_path,
             f"alias points at {target}, not removing",
         )
     if state is install_guard.AliasState.DANGLING:
         return CleanUninstallStepResult(
             "wrapper",
             "skipped",
-            ctx.wrapper_path,
+            blocked_path,
             f"alias is dangling (target {target} missing), not removing",
         )
     if state is install_guard.AliasState.FOREIGN:
         return CleanUninstallStepResult(
             "wrapper",
             "skipped",
-            ctx.wrapper_path,
+            blocked_path,
             "alias is not a managed symlink, not removing",
         )
     return CleanUninstallStepResult(
-        "wrapper", "failed", ctx.wrapper_path, f"unexpected alias state: {state.name}"
+        "wrapper", "failed", blocked_path, f"unexpected alias state: {state.name}"
     )
 
 
@@ -1545,19 +1565,19 @@ def dead_end_existing_journal(ctx: SetupContext) -> None:
     message = "\n".join(
         [
             (
-                "sol setup: cannot proceed in non-interactive mode - "
+                "journal setup: cannot proceed in non-interactive mode - "
                 f"{ctx.journal_path} already contains journal data."
             ),
             "Setup will not auto-claim an existing journal.",
             "",
             "Retry with one of:",
-            "  sol setup --accept-existing-journal",
-            "  sol setup --journal /path/to/new-journal --accept-existing-journal",
+            "  journal setup --accept-existing-journal",
+            "  journal setup --journal /path/to/new-journal --accept-existing-journal",
             "",
             "Interactive escape:",
-            "  sol setup",
+            "  journal setup",
             "",
-            "Run 'sol setup --explain' for full step list.",
+            "Run 'journal setup --explain' for full step list.",
         ]
     )
     raise SetupDeadEnd(
@@ -1637,7 +1657,7 @@ def print_plan(ctx: SetupContext, *, dry_run: bool) -> None:
 def print_failure(ctx: SetupContext, result: StepResult) -> None:
     error = result.error or {}
     message = error.get("message", "step failed")
-    narrate(ctx, f"sol setup: {result.name} failed: {message}", file=sys.stderr)
+    narrate(ctx, f"journal setup: {result.name} failed: {message}", file=sys.stderr)
 
 
 def print_success_summary(ctx: SetupContext, manifest: dict[str, Any]) -> None:
@@ -1710,12 +1730,13 @@ def print_prior_run_preface(ctx: SetupContext) -> None:
             if ctx.force
             else "verifying current state."
         )
-        narrate(ctx, f"sol setup last ran cleanly on {status.timestamp}; {suffix}")
+        narrate(ctx, f"journal setup last ran cleanly on {status.timestamp}; {suffix}")
         if not ctx.force:
             narrate(ctx, "Use --force to re-run all steps unconditionally.")
         return
     narrate(
-        ctx, f"sol setup last run on {status.timestamp} left these steps incomplete:"
+        ctx,
+        f"journal setup last run on {status.timestamp} left these steps incomplete:",
     )
     for name in status.failed_steps:
         narrate(ctx, f"  - {name} (failed)")

@@ -4,8 +4,8 @@
 """Export journal data to a remote solstone instance.
 
 Usage:
-    sol export --to URL --key KEY [--only TYPE] [--dry-run] [--day YYYYMMDD]
-    sol export --to LABEL [--only TYPE] [--dry-run] [--day YYYYMMDD]
+    journal export --to URL --key KEY [--only TYPE] [--dry-run] [--day YYYYMMDD]
+    journal export --to LABEL [--only TYPE] [--dry-run] [--day YYYYMMDD]
 """
 
 from __future__ import annotations

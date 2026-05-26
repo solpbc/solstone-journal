@@ -50,18 +50,18 @@ brew install python git ripgrep ffmpeg uv
 git clone https://github.com/solpbc/solstone-journal.git
 cd solstone-journal
 make install
-.venv/bin/sol setup
+.venv/bin/journal setup
 ```
 
 `make install` creates `.venv/`, syncs dependencies from `pyproject.toml` and `uv.lock`, installs the package in editable mode, and refreshes the project skill symlinks into the journal.
 
-`.venv/bin/sol setup` runs doctor diagnostics, confirms the journal path, installs local transcription models, installs the `solstone` skill for Claude Code when Claude is configured, creates or refreshes the source-checkout wrapper at `~/.local/bin/sol`, and starts the background service. The default web interface listens on http://localhost:5015. Use `.venv/bin/sol setup --port 8000` to choose another port on the first run.
+`.venv/bin/journal setup` runs doctor diagnostics, confirms the journal path, installs local transcription models, installs the `solstone` skill for Claude Code when Claude is configured, creates or refreshes the source-checkout wrappers at `~/.local/bin/sol` and `~/.local/bin/journal`, and starts the background service. The default web interface listens on http://localhost:5015. Use `.venv/bin/journal setup --port 8000` to choose another port on the first run.
 
 After the first setup run, the wrapper lets you use `sol` from anywhere:
 
 ```bash
-sol service status
-sol setup
+journal service status
+journal setup
 ```
 
 The source-checkout journal lives at `journal/` inside the repo unless you pass `--journal` or have already configured another path.
@@ -81,7 +81,7 @@ EOF
 chmod 600 journal/config/journal.json
 ```
 
-Run `sol password set` to configure web authentication. Replace `your-key-here` with your Google AI API key. Optional provider keys can be added to the same `env` object:
+Run `journal password set` to configure web authentication. Replace `your-key-here` with your Google AI API key. Optional provider keys can be added to the same `env` object:
 
 ```json
 {
@@ -98,7 +98,7 @@ Run `sol password set` to configure web authentication. Replace `your-key-here` 
 
 ### Seeding a dev/test journal from public media
 
-If you want a journal seeded with public-domain audio and screen recordings instead of your own capture data — useful for contributors who shouldn't be exposed to a maintainer's personal journal, integration-test scenarios, or a clean dev environment — see [docs/FIELD_JOURNAL.md](docs/FIELD_JOURNAL.md). The `setup_field_journal.sh` script at the repo root populates `journal/chronicle/` from a local clone of [solpbc/field_journal](https://github.com/solpbc/field_journal). It is opt-in and deliberately not part of `make install` or `sol setup`.
+If you want a journal seeded with public-domain audio and screen recordings instead of your own capture data — useful for contributors who shouldn't be exposed to a maintainer's personal journal, integration-test scenarios, or a clean dev environment — see [docs/FIELD_JOURNAL.md](docs/FIELD_JOURNAL.md). The `setup_field_journal.sh` script at the repo root populates `journal/chronicle/` from a local clone of [solpbc/field_journal](https://github.com/solpbc/field_journal). It is opt-in and deliberately not part of `make install` or `journal setup`.
 
 ## Repo layout
 
@@ -176,11 +176,11 @@ The packaged install (`uv tool install solstone`) installs `sol` to `~/.local/bi
 `make uninstall` is disabled by design. To migrate cleanly from a source checkout to a packaged install, remove user-runtime artifacts explicitly:
 
 ```bash
-sol service uninstall
+journal service uninstall
 sol skills uninstall
 python -m solstone.think.install_guard uninstall
 uv tool install solstone
-sol setup
+journal setup
 ```
 
 Your journal is preserved at `~/journal`; solstone does not remove it during install or uninstall. Do not add backwards-compatibility shims for the old source-checkout layout. This migration is a clean break.

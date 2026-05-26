@@ -21,8 +21,8 @@ def home_root(monkeypatch, tmp_path):
     return home
 
 
-def ensure_expected_target(repo: Path) -> Path:
-    target = install_guard.expected_target(repo)
+def ensure_expected_target(repo: Path, binary: str = "sol") -> Path:
+    target = install_guard.expected_target(repo, binary)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("", encoding="utf-8")
     return target
@@ -35,15 +35,36 @@ def make_alias(home_root: Path, target: Path | str) -> Path:
     return alias
 
 
-def make_managed_wrapper(home_root: Path, *, journal: str, sol_bin: str) -> Path:
-    alias = home_root / ".local" / "bin" / "sol"
+def make_managed_wrapper(
+    home_root: Path,
+    *,
+    journal: str,
+    sol_bin: str,
+    binary: str = "sol",
+) -> Path:
+    alias = home_root / ".local" / "bin" / binary
     alias.parent.mkdir(parents=True, exist_ok=True)
     alias.write_text(
-        install_guard.render_wrapper(journal, sol_bin),
+        install_guard.render_wrapper(journal, sol_bin, binary),
         encoding="utf-8",
     )
     alias.chmod(0o755)
     return alias
+
+
+def make_managed_wrappers(
+    home_root: Path, repo: Path, *, journal: str
+) -> dict[str, Path]:
+    aliases: dict[str, Path] = {}
+    for binary in install_guard.alias_paths():
+        target = ensure_expected_target(repo, binary)
+        aliases[binary] = make_managed_wrapper(
+            home_root,
+            journal=journal,
+            sol_bin=str(target),
+            binary=binary,
+        )
+    return aliases
 
 
 def make_journal(path: Path, *, active: bool | None = None) -> Path:
@@ -63,7 +84,7 @@ def assert_wrapper(alias: Path, *, journal: str, sol_bin: str) -> None:
     assert install_guard.parse_wrapper(alias.read_text(encoding="utf-8")) == {
         "journal": journal,
         "sol_bin": sol_bin,
-        "version": 6,
+        "version": 7,
     }
 
 
@@ -86,7 +107,7 @@ def test_config_command_registered():
     from solstone.think import sol_cli as sol
 
     assert sol.COMMANDS["config"].module == "solstone.think.config_cli"
-    assert "config" in sol.GROUPS["Specialized tools"]
+    assert "config" in sol.service_help_group().commands
 
 
 def test_show_reports_wrapper_embedded(home_root, monkeypatch, tmp_path, capsys):
@@ -196,6 +217,58 @@ def test_journal_rewrites_wrapper(home_root, monkeypatch, tmp_path, capsys):
     run_mock.assert_not_called()
 
 
+def test_journal_rewrites_both_wrappers(home_root, monkeypatch, tmp_path, capsys):
+    source = make_journal(tmp_path / "source", active=False)
+    target_path = str((tmp_path / "target").resolve())
+    repo = tmp_path / "repo"
+    aliases = make_managed_wrappers(home_root, repo, journal=str(source))
+    patch_service(monkeypatch, installed=False, running=False)
+    run_mock = service_run_mock()
+    monkeypatch.setattr(config_cli.subprocess, "run", run_mock)
+
+    rc = config_cli.cmd_journal(target_path)
+    captured = capsys.readouterr()
+
+    assert rc == 0
+    assert captured.err == ""
+    assert captured.out == "service not installed; wrapper updated.\n"
+    for binary, alias in aliases.items():
+        assert_wrapper(
+            alias,
+            journal=target_path,
+            sol_bin=str(install_guard.expected_target(repo, binary)),
+        )
+    run_mock.assert_not_called()
+
+
+def test_journal_rewrite_mid_failure_rolls_back_both_wrappers(
+    home_root, monkeypatch, tmp_path, capsys
+):
+    source = make_journal(tmp_path / "source", active=False)
+    target_path = str((tmp_path / "target").resolve())
+    repo = tmp_path / "repo"
+    aliases = make_managed_wrappers(home_root, repo, journal=str(source))
+    before = {binary: alias.read_bytes() for binary, alias in aliases.items()}
+    patch_service(monkeypatch, installed=False, running=False)
+    real_replace = install_guard.os.replace
+
+    def fail_second_replace(src: Path | str, dst: Path | str) -> None:
+        if Path(dst).name == "journal":
+            raise OSError("simulated replace failure")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(install_guard.os, "replace", fail_second_replace)
+
+    rc = config_cli.cmd_journal(target_path)
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert captured.out == ""
+    assert "sol config: refused: cannot rewrite" in captured.err
+    for binary, alias in aliases.items():
+        assert alias.read_bytes() == before[binary]
+
+
 @pytest.mark.parametrize(
     ("current_active", "target_active", "expected_flags"),
     [
@@ -241,7 +314,7 @@ def test_journal_refuses_without_managed_wrapper(home_root, tmp_path, capsys):
 
     assert rc == 1
     assert captured.out == ""
-    assert "sol setup" in captured.err
+    assert "journal setup" in captured.err
 
 
 def test_journal_refuses_legacy_symlink(home_root, tmp_path, capsys):
@@ -253,7 +326,7 @@ def test_journal_refuses_legacy_symlink(home_root, tmp_path, capsys):
 
     assert rc == 1
     assert captured.out == ""
-    assert "sol setup" in captured.err
+    assert "journal setup" in captured.err
 
 
 def test_journal_refuses_invalid_chars(home_root, capsys):
@@ -318,7 +391,7 @@ def test_journal_switch_without_yes_prints_plan(
     captured = capsys.readouterr()
 
     assert rc == 1
-    assert "sol config journal - plan summary" in captured.out
+    assert "journal config journal - plan summary" in captured.out
     assert "action:  switch" in captured.out
     assert "re-run with --yes to proceed" in captured.out
     assert "current journal is left intact." in captured.out
@@ -491,7 +564,7 @@ def test_journal_proceed_installed_running_restarts(
     assert rc == 0
     assert captured.out == "wrapper updated; service restarted.\n"
     run_mock.assert_called_once_with(
-        [str(target), "service", "restart", "--if-installed"],
+        [str(target.with_name("journal")), "service", "restart", "--if-installed"],
         check=False,
     )
 
@@ -621,7 +694,7 @@ def test_journal_move_without_yes_prints_plan(home_root, monkeypatch, tmp_path, 
     captured = capsys.readouterr()
 
     assert rc == 1
-    assert "sol config journal - plan summary" in captured.out
+    assert "journal config journal - plan summary" in captured.out
     assert "action:  move" in captured.out
     assert "filesystem: same device" in captured.out
     assert "re-run with --yes to proceed" in captured.out
@@ -661,7 +734,7 @@ def test_journal_move_rolls_back_on_wrapper_write_failure(
     patch_service(monkeypatch, installed=False, running=False)
     monkeypatch.setattr(
         config_cli,
-        "write_wrapper_atomic",
+        "install_wrappers",
         MagicMock(side_effect=OSError("disk full")),
     )
 
@@ -800,6 +873,6 @@ def test_journal_move_service_running_stops_and_starts(
     assert rc == 0
     assert captured.out == "journal moved; wrapper updated; service restarted.\n"
     assert [call.args[0] for call in run_mock.call_args_list] == [
-        [str(target), "service", "stop"],
-        [str(target), "service", "start"],
+        [str(target.with_name("journal")), "service", "stop"],
+        [str(target.with_name("journal")), "service", "start"],
     ]

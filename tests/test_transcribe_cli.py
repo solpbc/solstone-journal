@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Unit tests for sol transcribe CLI (M3, M8, M9)."""
+"""Unit tests for journal transcribe CLI (M3, M8, M9)."""
 
 import argparse
 from pathlib import Path

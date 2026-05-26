@@ -8,7 +8,7 @@ via Callosum at hour and day boundaries. State (last-run times) persists
 to health/scheduler.json across restarts.
 
 Runtime functions (init, check) are used by the supervisor.
-The main() function provides the ``sol schedule`` CLI.
+The main() function provides the ``journal schedule`` CLI.
 """
 
 from __future__ import annotations
@@ -538,7 +538,7 @@ def _compute_next_run(entry: dict, state_entry: dict | None, now: datetime) -> i
 
 
 # ---------------------------------------------------------------------------
-# CLI: sol schedule
+# CLI: journal schedule
 # ---------------------------------------------------------------------------
 
 
@@ -575,7 +575,7 @@ def _format_next_due(entry: dict, state_entry: dict | None, now: datetime) -> st
 
 
 def main() -> None:
-    """CLI entry point for sol schedule."""
+    """CLI entry point for journal schedule."""
     parser = argparse.ArgumentParser(description="Show scheduled tasks")
     setup_cli(parser)
     require_solstone()

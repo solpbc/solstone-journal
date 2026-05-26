@@ -47,9 +47,8 @@ def _last_success_time(health_dir: Path) -> datetime | None:
 
 
 def main() -> None:
-    """Entry point for ``sol heartbeat``."""
+    """Entry point for ``journal heartbeat``."""
     parser = argparse.ArgumentParser(
-        prog="sol heartbeat",
         description="Run periodic self-check agent",
     )
     parser.add_argument(

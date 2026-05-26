@@ -35,7 +35,7 @@ COMMANDS: dict[str, str] = {
 
 Each module must export a `main()` function. The dispatcher does `importlib.import_module(path)` then calls `module.main()`.
 
-Commands are organized into `GROUPS` for help display, and `ALIASES` provide shortcuts (e.g., `sol up` → `sol service up`).
+Commands are organized into `GROUPS` for help display, and `ALIASES` provide shortcuts (e.g., `journal up` → `journal service up`).
 
 ### Adding a top-level command
 
@@ -248,18 +248,18 @@ This is for audit trail — it records that the agent confirmed user consent bef
 
 Use lowercase, single-word names. Hyphenated names for multi-word (`list-nudges-due`, `set-name`).
 
-## Structured output: `sol setup --jsonl` and `sol doctor --jsonl`
+## Structured output: `journal setup --jsonl` and `sol doctor --jsonl`
 
 Use `--jsonl` when another process needs progress events as they happen. The contract is one JSON object per stdout line, flushed immediately; `sol doctor --jsonl` is mutually exclusive with `sol doctor --json`, and the existing `sol doctor --json` payload keeps its short statuses (`ok`, `warn`, `fail`, `skip`).
 
 | Event | Emitted by | When |
 |-------|------------|------|
-| `setup.started` | `sol setup --jsonl` | Setup arguments are resolved and the run starts. |
-| `setup.completed` | `sol setup --jsonl` | Setup reaches a terminal `ok` or `failed` state. |
-| `step.started` | `sol setup --jsonl` | A setup step starts. |
-| `step.completed` | `sol setup --jsonl` | A setup step finishes with `outcome: "ok"` or `outcome: "skipped"`. |
-| `step.failed` | `sol setup --jsonl` | A setup step fails or reaches a dead end. |
-| `step.warning` | `sol setup --jsonl` | Setup translates advisory diagnostics or dropped doctor lines. |
+| `setup.started` | `journal setup --jsonl` | Setup arguments are resolved and the run starts. |
+| `setup.completed` | `journal setup --jsonl` | Setup reaches a terminal `ok` or `failed` state. |
+| `step.started` | `journal setup --jsonl` | A setup step starts. |
+| `step.completed` | `journal setup --jsonl` | A setup step finishes with `outcome: "ok"` or `outcome: "skipped"`. |
+| `step.failed` | `journal setup --jsonl` | A setup step fails or reaches a dead end. |
+| `step.warning` | `journal setup --jsonl` | Setup translates advisory diagnostics or dropped doctor lines. |
 | `doctor.started` | `sol doctor --jsonl` | Doctor diagnostics begin. |
 | `check.completed` | `sol doctor --jsonl` | One diagnostic check finishes. Status is long form: `ok`, `warning`, `failed`, or `skipped`. |
 | `doctor.completed` | `sol doctor --jsonl` | Doctor diagnostics finish with `status: "ok"`, `"warning"`, or `"failed"`. |
@@ -282,7 +282,7 @@ Skipped or resumed reasons are fixed: `--skip-models`, `--skip-skills`, `--skip-
 
 ### Doctor pass-through
 
-`sol setup --jsonl` runs `sol doctor --jsonl` for the doctor step and forwards `doctor.started`, `check.completed`, and `doctor.completed` lines verbatim. Advisory doctor checks are also translated into setup-level `step.warning` events so consumers can handle setup warnings uniformly.
+`journal setup --jsonl` runs `sol doctor --jsonl` for the doctor step and forwards `doctor.started`, `check.completed`, and `doctor.completed` lines verbatim. Advisory doctor checks are also translated into setup-level `step.warning` events so consumers can handle setup warnings uniformly.
 
 Example stream excerpt:
 
