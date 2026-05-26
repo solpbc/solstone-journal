@@ -114,6 +114,23 @@ def test_js_parity():
     assert "function chatErrorRetryExcerpt(text)" in text
 
 
+def test_closer_constants_byte_parity():
+    js_path = Path("solstone/convey/static/chat_copy.js")
+    text = js_path.read_text(encoding="utf-8")
+    expected = {
+        "CHAT_CLOSER_LOOP_EXHAUSTED_PREFIX": "Here's what I have so far:",
+        "CHAT_CLOSER_DIFFERENT_ANGLE_SUFFIX": "Want me to try a different angle?",
+        "CHAT_CLOSER_TALENT_ERRORED_FORMAT": "I couldn't finish that lookup — {reason}. Want to try a different angle, or rephrase the question?",
+        "CHAT_CLOSER_TALENT_ERRORED_GENERIC": "I couldn't finish that lookup. Want to try a different angle, or rephrase the question?",
+    }
+
+    for name, literal in expected.items():
+        assert getattr(chat_copy, name) == literal
+        assert literal in text
+
+    assert "\u2014" in chat_copy.CHAT_CLOSER_TALENT_ERRORED_FORMAT
+
+
 def test_chat_placeholder_css_present():
     css = Path("solstone/convey/static/app.css").read_text(encoding="utf-8")
 

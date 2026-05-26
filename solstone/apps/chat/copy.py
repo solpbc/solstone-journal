@@ -24,6 +24,12 @@ CHAT_LIVENESS_TASK_FORMAT = "{label} {task}"
 # T1.2 — chat error retry button
 CHAT_ERROR_RETRY_LABEL = "Try again"
 CHAT_ERROR_RETRY_ARIA_FORMAT = "Try again — re-send: {excerpt}"
+
+# T2.2 — closer framing (CPO LOCKED)
+CHAT_CLOSER_LOOP_EXHAUSTED_PREFIX = "Here's what I have so far:"
+CHAT_CLOSER_DIFFERENT_ANGLE_SUFFIX = "Want me to try a different angle?"
+CHAT_CLOSER_TALENT_ERRORED_FORMAT = "I couldn't finish that lookup — {reason}. Want to try a different angle, or rephrase the question?"
+CHAT_CLOSER_TALENT_ERRORED_GENERIC = "I couldn't finish that lookup. Want to try a different angle, or rephrase the question?"
 # fmt: on
 
 from typing import Literal
