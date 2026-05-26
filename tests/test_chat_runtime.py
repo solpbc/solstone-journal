@@ -676,6 +676,7 @@ def test_recover_active_talents_repopulates_from_chat_stream(tmp_path, monkeypat
             "chat_use_id": chat_use_id,
             "target": "exec",
             "task": "research it",
+            "trigger": "sol_message",
             "location": {"app": "home", "path": "/app/home", "facet": "work"},
         }
         assert talent_use_id in chat._watchdog_timers
@@ -751,6 +752,50 @@ def test_recovery_is_idempotent_for_active_talents(tmp_path, monkeypatch):
         assert list(chat._active_talents) == [talent_use_id]
         assert talent_use_id in chat._watchdog_timers
     assert len(timers) == 1
+
+
+def test_recovery_emits_info_log_per_reactivation(tmp_path, monkeypatch, caplog):
+    import solstone.convey.chat as chat
+
+    _setup_journal(tmp_path, monkeypatch)
+    _reset_chat_state(chat)
+    _install_fake_timers(monkeypatch)
+    day = datetime.now().strftime("%Y%m%d")
+    monkeypatch.setattr("solstone.convey.chat._today_day", lambda: day)
+
+    chat_use_id = "1713624750000"
+    talent_use_id = "1713624750001"
+    _append_recoverable_talent_events(chat_use_id, talent_use_id)
+
+    with caplog.at_level(logging.INFO, logger="solstone.convey.chat"):
+        chat._recover_chat_if_needed()
+
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "solstone.convey.chat"
+        and "reactivated" in record.getMessage()
+    ]
+    assert len(records) == 1
+    record = records[0]
+    assert record.use_id == talent_use_id
+    assert record.day == day
+    assert record.trigger == "sol_message"
+
+    caplog.clear()
+    empty_journal = tmp_path / "empty-journal"
+    empty_journal.mkdir()
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(empty_journal))
+    _reset_chat_state(chat)
+
+    with caplog.at_level(logging.INFO, logger="solstone.convey.chat"):
+        chat._recover_chat_if_needed()
+
+    assert [
+        record
+        for record in caplog.records
+        if record.name == "solstone.convey.chat" and record.levelno == logging.INFO
+    ] == []
 
 
 def test_chat_generate_schema_violation_retries_once_then_chat_errors(

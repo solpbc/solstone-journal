@@ -734,14 +734,17 @@ def _recover_active_talents_locked(day: str) -> None:
     latest_owner_message: dict[str, Any] | None = None
     latest_sol_message: dict[str, Any] | None = None
     spawned: dict[str, dict[str, Any]] = {}
+    latest_parent_kind: str | None = None
 
     for event in events:
         kind = event.get("kind")
         if kind == "owner_message":
             latest_owner_message = event
+            latest_parent_kind = "owner_message"
             continue
         if kind == "sol_message":
             latest_sol_message = event
+            latest_parent_kind = "sol_message"
             continue
         if kind == "talent_spawned":
             use_id = str(event.get("use_id") or "")
@@ -764,6 +767,7 @@ def _recover_active_talents_locked(day: str) -> None:
                 "chat_use_id": chat_use_id,
                 "target": str(event.get("name") or ""),
                 "task": str(event.get("task") or ""),
+                "trigger": latest_parent_kind or "sol_message",
                 "location": _normalize_location(
                     latest_owner_message.get("app"),
                     latest_owner_message.get("path"),
@@ -781,6 +785,10 @@ def _recover_active_talents_locked(day: str) -> None:
         if use_id in _active_talents:
             continue
         _active_talents[use_id] = state
+        logger.info(
+            "reactivated talent during recovery",
+            extra={"use_id": use_id, "day": day, "trigger": state["trigger"]},
+        )
         if use_id not in _watchdog_timers:
             _arm_watchdog_locked(use_id, "talent", state["chat_use_id"])
 
