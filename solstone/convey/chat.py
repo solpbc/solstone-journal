@@ -46,7 +46,8 @@ chat_bp = Blueprint("chat", __name__, url_prefix="/api/chat")
 
 MAX_ACTIVE_TALENTS = 2
 MAX_LOOP_RETRIES = 3
-_CHAT_WATCHDOG_SECONDS = 180
+_WATCHDOG_TIMEOUTS = {"chat": 30, "talent": 180}
+_DEFAULT_WATCHDOG_SECONDS = 180
 _RESERVED_USE_ID_CAP = 256
 MAX_ACTIVE_REASON = "max active — waiting for one to finish"
 
@@ -872,7 +873,7 @@ def _clear_current_locked() -> dict[str, Any] | None:
 def _arm_watchdog_locked(use_id: str, kind: str, logical_use_id: str) -> None:
     _cancel_watchdog_locked(use_id)
     timer = threading.Timer(
-        _CHAT_WATCHDOG_SECONDS,
+        _WATCHDOG_TIMEOUTS.get(kind, _DEFAULT_WATCHDOG_SECONDS),
         _on_watchdog_timeout,
         args=(use_id, kind, logical_use_id),
     )

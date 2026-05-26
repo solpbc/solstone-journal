@@ -1129,7 +1129,24 @@ def test_watchdog_refreshed_by_progress_event(tmp_path, monkeypatch):
 
     assert len(timers) == 2
     assert timers[0].cancelled is True
-    assert timers[-1].interval == chat._CHAT_WATCHDOG_SECONDS
+    assert timers[-1].interval == chat._WATCHDOG_TIMEOUTS["chat"]
+
+
+def test_arm_watchdog_uses_per_kind_timeout(tmp_path, monkeypatch):
+    import solstone.convey.chat as chat
+
+    _setup_journal(tmp_path, monkeypatch)
+    _reset_chat_state(chat)
+    timers = _install_fake_timers(monkeypatch)
+
+    with chat._state_lock:
+        chat._arm_watchdog_locked("u-chat-1", "chat", "u-chat-1")
+        chat._arm_watchdog_locked("u-talent-1", "talent", "u-chat-1")
+        chat._arm_watchdog_locked("u-unknown-1", "weirdkind", "u-chat-1")
+
+    assert timers[0].interval == 30
+    assert timers[1].interval == 180
+    assert timers[2].interval == 180
 
 
 def test_proxy_progress_does_not_re_emit_request_event(tmp_path, monkeypatch):
@@ -1278,7 +1295,7 @@ def test_watchdog_refreshed_by_talent_progress(tmp_path, monkeypatch):
 
     assert len(timers) == 2
     assert timers[0].cancelled is True
-    assert timers[-1].interval == chat._CHAT_WATCHDOG_SECONDS
+    assert timers[-1].interval == chat._WATCHDOG_TIMEOUTS["talent"]
 
 
 def test_stalled_run_still_times_out_after_inactivity(tmp_path, monkeypatch):
