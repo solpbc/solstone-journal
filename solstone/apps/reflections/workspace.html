@@ -138,6 +138,18 @@
   font-size: 0.9rem;
 }
 
+.reflection-sample-banner {
+  display: block;
+  padding: 0.5rem 0.875rem;
+  margin: 0 0 1rem;
+  border-radius: 0.5rem;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #78716c;
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
 @media (max-width: 720px) {
   .reflection-shell {
     padding: 1.25rem 1rem 4rem;
@@ -154,16 +166,27 @@
 </style>
 
 <div class="reflection-shell">
+  {# view_mode ∈ {"index", "detail", "sample"} #}
   {% if view_mode == "index" %}
     <header class="reflection-header">
       <div>
         <p class="reflection-kicker">weekly reflection</p>
         <h2 class="reflection-title">reflections</h2>
-        <p class="reflection-subtitle">Available weekly reflections, newest first.</p>
+        <p class="reflection-subtitle">{{ subtitle }}</p>
       </div>
     </header>
     <section class="reflection-index">
-      {% if weeks %}
+      {% if not weeks %}
+        <div class="reflection-empty-state">
+          <p class="reflection-empty-body">{{ empty_body }}</p>
+          <p class="reflection-empty-next">{{ empty_next }}</p>
+          <p class="reflection-empty-until-then">{{ empty_until_then }}</p>
+          <p class="reflection-empty-sample"><a href="{{ sample_url }}">{{ sample_link_label }}</a></p>
+        </div>
+      {% else %}
+        <div class="reflection-populated-framing">
+          <p>{{ populated_framing }} <a href="{{ sample_url }}">{{ populated_sample_link }}</a></p>
+        </div>
         <ul class="reflection-index-list">
           {% for week in weeks %}
             <li>
@@ -174,11 +197,12 @@
             </li>
           {% endfor %}
         </ul>
-      {% else %}
-        <p>No weekly reflections yet.</p>
+        {% if populated_next_footer %}
+          <p class="reflection-next-footer">{{ populated_next_footer }}</p>
+        {% endif %}
       {% endif %}
     </section>
-  {% else %}
+  {% elif view_mode == "detail" %}
     <header class="reflection-header">
       <div>
         <p class="reflection-kicker">weekly reflection</p>
@@ -192,10 +216,23 @@
     </header>
 
     <section class="reflection-body" id="reflectionBody"></section>
+  {% elif view_mode == "sample" %}
+    <header class="reflection-header">
+      <div>
+        <p class="reflection-kicker">weekly reflection</p>
+        <h2 class="reflection-title">sample reflection</h2>
+      </div>
+      <div class="reflection-actions">
+        <button type="button" class="reflection-button" id="copyReflectionButton">copy</button>
+      </div>
+    </header>
+
+    <div class="reflection-sample-banner">{{ sample_banner }}</div>
+    <section class="reflection-body" id="reflectionBody"></section>
   {% endif %}
 </div>
 
-{% if view_mode == "detail" %}
+{% if view_mode in ("detail", "sample") %}
 <script>
 (() => {
   const markdownSource = {{ reflection_markdown|tojson|safe }};
