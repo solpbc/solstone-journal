@@ -14,6 +14,20 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), al
 - the built-in `sol observer install` command is gone. linux and tmux observers now install from their own published packages: `pipx install solstone-linux` (or `solstone-tmux`), `solstone-linux install-service` (or `solstone-tmux install-service`), then `sol observer create <name>` mints a key you give the observer. the macOS observer continues to come from the signed app bundle at solstone.app/observers.
 - the bundled per-provider install commands are gone — `sol call settings providers install` now accepts `local` only (cogitate runs out of the box for hosted providers with a key set), and `uninstall`/`disable`/`enable`/`validate-key` are removed entirely. local install continues to work via `sol call settings providers install local`.
 
+## [0.4.3] - 2026-05-27
+
+### Added
+- a dedicated reader for facet newsletters at `/app/news/`. reverse-chrono index across all your facets, per-day detail with a copy button and a pdf download, and a sample newsletter so you can see the shape before your first one lands. newsletters sit next to reflections in the sidebar.
+
+### Changed
+- the participation tab on an activity now shows a structured list of people, grouped into attendees and mentioned, with a short note next to each name about how that person showed up in the activity. low-confidence entries appear muted with a "less certain" tag, and empty or unavailable states read in plain language instead of raw json.
+
+### Fixed
+- weekly reflection writes a full reflection to your journal again. on busy journals it was running out of room mid-gather and either saving nothing or saving only a short summary; both paths are resolved, and the reflections page renders again.
+- attendee lists are stricter about who counts as an attendee. someone whose name only appeared in a transcript, without other corroboration, is now demoted to mentioned rather than surfaced as an attendee. reported by Ryan during a walkthrough.
+- background work sol runs through google (morning briefings and other scheduled talents) no longer fails silently on a size limit. a request-budget calculation was landing one over the supported maximum, rejecting every call on the default settings; the calculation is corrected.
+- sidebar labels in the expanded menu no longer truncate. entities, transcripts, and other longer labels show in full at narrower window widths. reported by Ryan.
+
 ## [0.4.2] - 2026-05-26
 
 ### fixed
