@@ -285,6 +285,9 @@ def check_alias(curdir: Path, binary: str = "sol") -> tuple[AliasState, Path | N
     target = Path(parsed["sol_bin"])
     if target.resolve() == expected_target(curdir, binary).resolve():
         return AliasState.OWNED, target.resolve()
+    packaged_target = (Path(sys.executable).parent / binary).resolve()
+    if target.resolve() == packaged_target:
+        return AliasState.OWNED, target.resolve()
     return AliasState.FOREIGN, None
 
 

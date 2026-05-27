@@ -571,6 +571,34 @@ class TestCheckAlias:
         assert state is install_guard.AliasState.OWNED
         assert other == packaged_sol.resolve()
 
+    def test_packaged_install_managed_wrapper_is_owned(
+        self, home_root, tmp_path, monkeypatch
+    ):
+        # When a uv-tool / pipx install runs `journal start`, install_guard
+        # writes the managed wrapper at ~/.local/bin/sol with `sol_bin` set to
+        # the packaged binary at <sys.executable's parent>/sol — not the
+        # source-checkout's `.venv/bin/sol`. The wrapper branch needs the same
+        # packaged_target fallback the symlink branch already has, or the
+        # alias is misclassified as FOREIGN and `sol doctor` surfaces a
+        # spurious stale_alias_symlink blocker.
+        curdir = tmp_path / "site-packages" / "solstone"
+        curdir.mkdir(parents=True)
+        bin_dir = tmp_path / "tools" / "solstone" / "bin"
+        bin_dir.mkdir(parents=True)
+        packaged_sol = write_executable_script(bin_dir / "sol", "#!/bin/sh\n")
+        fake_python = write_executable_script(bin_dir / "python", "#!/bin/sh\n")
+        monkeypatch.setattr(sys, "executable", str(fake_python))
+        make_managed_wrapper(
+            home_root,
+            journal="/tmp/solstone",
+            sol_bin=str(packaged_sol),
+        )
+
+        state, other = install_guard.check_alias(curdir)
+
+        assert state is install_guard.AliasState.OWNED
+        assert other == packaged_sol.resolve()
+
     def test_cross_repo(self, home_root, tmp_path):
         repo = make_repo(tmp_path)
         target = other_target(tmp_path)
