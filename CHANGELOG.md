@@ -14,6 +14,15 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), al
 - the built-in `sol observer install` command is gone. linux and tmux observers now install from their own published packages: `pipx install solstone-linux` (or `solstone-tmux`), `solstone-linux install-service` (or `solstone-tmux install-service`), then `sol observer create <name>` mints a key you give the observer. the macOS observer continues to come from the signed app bundle at solstone.app/observers.
 - the bundled per-provider install commands are gone — `sol call settings providers install` now accepts `local` only (cogitate runs out of the box for hosted providers with a key set), and `uninstall`/`disable`/`enable`/`validate-key` are removed entirely. local install continues to work via `sol call settings providers install local`.
 
+## [0.4.4] - 2026-05-27
+
+### Changed
+- when sol is catching up on a backlog, today's thinking no longer waits in line behind it. on a busy journal, or right after an install, the day's catch-up work and sol's thinking on fresh observations now run alongside each other, so new moments get attended to in seconds instead of waiting hours.
+
+### Fixed
+- transcripts come through on every audio format again. if you run a transcription backend other than whisper, some audio was making it into your journal but quietly producing no transcript. this resolves it, so the moments you spoke are written down the way you'd expect.
+- upgrading from an older install no longer trips a setup check. if you first installed solstone a different way and then moved to the current method, `sol doctor` now adjusts the older `sol` and `journal` shortcuts for you instead of stopping. if you hit this, this resolves it.
+
 ## [0.4.3] - 2026-05-27
 
 ### Added
