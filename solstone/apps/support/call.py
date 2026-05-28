@@ -410,5 +410,13 @@ def diagnose(
         errors = data.get("recent_errors", [])
         if errors:
             typer.echo(f"\nRecent errors ({len(errors)}):")
-            for e in errors[:5]:
-                typer.echo(f"  [{e.get('service', '?')}] {e.get('message', '')[:100]}")
+            for e in errors:
+                t = e.get("time", "")
+                if t and e.get("time_approximate"):
+                    t = "~" + t
+                prefix = (t + " ") if t else ""
+                typer.echo(
+                    f"  {prefix}[{e.get('service', '?')}] {e.get('message', '')[:100]}"
+                )
+        else:
+            typer.echo("\nNo recent errors.")

@@ -14,10 +14,14 @@ import json
 import logging
 import os
 import platform
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# 168h = 7 days.
+RECENCY_WINDOW_HOURS = 168
 
 # Config keys that must never leave the device.
 _SECRET_KEYS = frozenset(
@@ -104,10 +108,7 @@ def collect_services() -> dict[str, str]:
 
 
 def collect_recent_errors(limit: int = 10) -> list[dict[str, Any]]:
-    """Return the most recent callosum error events from service logs.
-
-    Scans ``journal/health/*.log`` for lines containing ``ERROR``.
-    """
+    """Return recent ERROR log lines within the recency window, newest-first."""
     from solstone.think.utils import get_journal
 
     journal = get_journal()
@@ -115,22 +116,50 @@ def collect_recent_errors(limit: int = 10) -> list[dict[str, Any]]:
     if not health_dir.is_dir():
         return []
 
-    errors: list[dict[str, Any]] = []
+    cutoff = datetime.now() - timedelta(hours=RECENCY_WINDOW_HOURS)
+    candidates: list[tuple[datetime, dict[str, Any]]] = []
     for log_file in health_dir.glob("*.log"):
+        file_mtime: datetime | None = None
         try:
             lines = log_file.read_text(errors="replace").splitlines()
-            for line in reversed(lines):
-                if "ERROR" in line and len(errors) < limit:
-                    errors.append(
+            for line in lines:
+                if "ERROR" not in line:
+                    continue
+
+                parts = line.split(maxsplit=1)
+                try:
+                    if not parts:
+                        raise ValueError
+                    dt = datetime.fromisoformat(parts[0])
+                    approx = False
+                    # Head slice is intentional: the prefix carries ERROR details.
+                    message = (parts[1] if len(parts) > 1 else "").strip()[:500]
+                except ValueError:
+                    if file_mtime is None:
+                        file_mtime = datetime.fromtimestamp(log_file.stat().st_mtime)
+                    dt = file_mtime
+                    approx = True
+                    message = line.strip()[:500]
+
+                if dt < cutoff:
+                    continue
+
+                candidates.append(
+                    (
+                        dt,
                         {
                             "service": log_file.stem,
-                            "message": line.strip()[-500:],  # cap length
-                        }
+                            "message": message,
+                            "time": dt.isoformat(timespec="seconds"),
+                            "time_approximate": approx,
+                        },
                     )
+                )
         except OSError:
             continue
 
-    return errors[:limit]
+    candidates.sort(key=lambda c: c[0], reverse=True)
+    return [entry for _, entry in candidates[:limit]]
 
 
 def collect_config() -> dict[str, Any]:

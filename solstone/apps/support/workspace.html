@@ -1230,7 +1230,10 @@
     if (data.recent_errors && data.recent_errors.length > 0) {
       var errRows = '';
       data.recent_errors.forEach(function(e) {
-        errRows += '<div style="padding:0.2rem 0;"><strong>' + esc(String(e.service || 'unknown')) + '</strong>: ' +
+        var t = e.time ? (e.time_approximate ? '~' + e.time : e.time) : '';
+        errRows += '<div style="padding:0.2rem 0;">' +
+          (t ? '<span style="color:#888;">' + esc(String(t)) + '</span> ' : '') +
+          '<strong>' + esc(String(e.service || 'unknown')) + '</strong>: ' +
           esc(String(e.message || '')) + '</div>';
       });
       html += '<details class="support-diagnostics-section" open><summary>recent errors (' + esc(String(data.recent_errors.length)) + ')</summary>' +
