@@ -30,7 +30,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from xml.parsers.expat import ExpatError
 
-from solstone.think.install_guard import validate_journal_path_for_wrapper
+from solstone.think.install_guard import (
+    parse_wrapper,
+    validate_journal_path_for_wrapper,
+)
 from solstone.think.readiness import clear_ready, wait_ready
 from solstone.think.utils import get_journal, get_journal_info
 
@@ -46,6 +49,17 @@ class Reconciled:
     stale_binary: str | None
     stale_verb: str | None
     canonical_path: Path | None
+
+
+@dataclass(frozen=True)
+class ServiceTargetIdentity:
+    """Read-only report on which install the installed service will invoke."""
+
+    installed: bool
+    target: str
+    resolved_target: str
+    matches_current_install: bool
+    detail: str
 
 
 def _ready_timeout_message() -> str:
@@ -191,6 +205,26 @@ def _systemd_exec_start_parts(path: Path) -> tuple[list[str] | None, list[str]]:
     return parts, lines
 
 
+def _launchd_program_arguments(path: Path) -> list[str] | None:
+    """Return a launchd plist's ProgramArguments as strings (read-only).
+
+    Returns None when the plist cannot be parsed or has no ProgramArguments
+    list. Mirrors the inline read in ``_reconcile_launchd_plist`` but is a
+    pure reader: it never prints or mutates.
+    """
+    try:
+        with path.open("rb") as handle:
+            data = plistlib.load(handle)
+    except (plistlib.InvalidFileException, ValueError, ExpatError, OSError):
+        return None
+
+    program_arguments = data.get("ProgramArguments")
+    if not isinstance(program_arguments, list):
+        return None
+
+    return [str(arg) for arg in program_arguments]
+
+
 def _classify_unit_args(args: list[str]) -> tuple[str, str, list[str], bool] | None:
     if len(args) < 2:
         return None
@@ -299,6 +333,83 @@ def reconcile_installed_unit() -> Reconciled:
     if sys.platform.startswith("linux"):
         return _reconcile_systemd_unit()
     return Reconciled(False, None, None, None)
+
+
+def _resolve_service_target(target: str) -> Path:
+    """Resolve a service-target binary to its real executable (read-only).
+
+    The target is typically ``~/.local/bin/journal``, which may be:
+      (a) a managed bash wrapper (source-checkout install) — not a symlink;
+          parse it for the embedded ``sol_bin`` venv binary;
+      (b) a symlink (packaged uv-tool / pipx install) — follow it;
+      (c) a plain executable — resolve as-is.
+    """
+    path = Path(target)
+    if path.is_symlink():
+        return path.resolve()
+    if path.is_file():
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            pass
+        else:
+            parsed = parse_wrapper(content)
+            if parsed:
+                return Path(parsed["sol_bin"]).resolve()
+    return path.resolve()
+
+
+def check_service_target_identity() -> ServiceTargetIdentity:
+    """Report whether the installed user service targets the current install.
+
+    Read-only. Inspects the launchd plist (darwin) or systemd unit (linux),
+    extracts the service-target binary, resolves it through the managed
+    wrapper / symlink, and compares it to the running install's bin
+    directory. Returns a clean not-installed result (not an exception) when
+    no service is installed or the platform is unsupported.
+    """
+    if sys.platform == "darwin":
+        path = _plist_path()
+        if not path.exists():
+            return ServiceTargetIdentity(False, "", "", False, "service not installed")
+        parts = _launchd_program_arguments(path)
+    elif sys.platform.startswith("linux"):
+        path = _unit_path()
+        if not path.exists():
+            return ServiceTargetIdentity(False, "", "", False, "service not installed")
+        parts, _lines = _systemd_exec_start_parts(path)
+    else:
+        return ServiceTargetIdentity(False, "", "", False, "service not installed")
+
+    if not parts:
+        return ServiceTargetIdentity(
+            True,
+            "",
+            "",
+            False,
+            f"service unit is malformed: no executable target in {path}",
+        )
+
+    raw_target = str(parts[0])
+    resolved = _resolve_service_target(raw_target)
+    expected = (Path(sys.executable).parent / "journal").resolve()
+    matches = resolved == expected
+
+    if matches:
+        detail = f"service target matches current install: {raw_target} -> {resolved}"
+    else:
+        detail = (
+            "service target mismatch: "
+            f"{raw_target} resolves to {resolved}, expected {expected}"
+        )
+
+    return ServiceTargetIdentity(
+        True,
+        raw_target,
+        str(resolved),
+        matches,
+        detail,
+    )
 
 
 def remove_stale_plists() -> tuple[int, int]:

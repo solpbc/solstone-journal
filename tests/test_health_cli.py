@@ -8,7 +8,13 @@ from unittest.mock import patch
 
 import pytest
 
-from solstone.think.health_cli import health_check, main, print_status
+from solstone.think import health_cli
+from solstone.think.health_cli import (
+    fetch_supervisor_status,
+    health_check,
+    main,
+    print_status,
+)
 
 
 def test_health_check_no_socket(tmp_path, monkeypatch, capsys):
@@ -19,6 +25,73 @@ def test_health_check_no_socket(tmp_path, monkeypatch, capsys):
     captured = capsys.readouterr()
     assert result == 1
     assert "callosum socket not found" in captured.err
+
+
+def test_fetch_supervisor_status_returns_dict(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    sock = tmp_path / "health" / "callosum.sock"
+    sock.parent.mkdir(parents=True)
+    sock.touch()
+    status = {
+        "tract": "supervisor",
+        "event": "status",
+        "services": [{"name": "supervisor", "pid": 111, "uptime_seconds": 120}],
+        "crashed": [],
+        "tasks": [],
+        "queues": {},
+        "stale_heartbeats": [],
+        "schedules": [],
+        "callosum_clients": 1,
+    }
+
+    with patch("solstone.think.health_cli.CallosumConnection") as mock_conn_cls:
+        mock_conn = mock_conn_cls.return_value
+
+        def _start(*, callback):
+            callback(status)
+
+        mock_conn.start.side_effect = _start
+        mock_conn.stop.return_value = None
+
+        result = fetch_supervisor_status(timeout=health_cli.STATUS_TIMEOUT)
+
+    assert result is status
+    mock_conn.stop.assert_called_once()
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_fetch_supervisor_status_no_socket(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+
+    result = fetch_supervisor_status()
+
+    assert result is None
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_fetch_supervisor_status_timeout(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    sock = tmp_path / "health" / "callosum.sock"
+    sock.parent.mkdir(parents=True)
+    sock.touch()
+    monkeypatch.setattr("solstone.think.health_cli.STATUS_TIMEOUT", 0.1)
+
+    with patch("solstone.think.health_cli.CallosumConnection") as mock_conn_cls:
+        mock_conn = mock_conn_cls.return_value
+        mock_conn.start.return_value = None
+        mock_conn.stop.return_value = None
+
+        result = fetch_supervisor_status(timeout=health_cli.STATUS_TIMEOUT)
+
+    assert result is None
+    mock_conn.stop.assert_called_once()
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
 
 
 def test_health_check_prints_status(capsys):

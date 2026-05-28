@@ -95,15 +95,17 @@ def print_status(status: dict[str, Any]) -> None:
     print(f"Callosum: {callosum_clients} clients")
 
 
-def health_check() -> int:
-    """Request and print one-shot supervisor status."""
+def fetch_supervisor_status(timeout: float = STATUS_TIMEOUT) -> dict[str, Any] | None:
+    """Request one-shot supervisor status from callosum; return it as data.
+
+    Returns the supervisor/status event dict on success, or None if the
+    callosum socket is absent or no status arrives within ``timeout``
+    seconds. Performs no printing and never exits — safe for programmatic
+    callers (e.g. ``journal doctor``).
+    """
     sock_path = Path(get_journal()) / "health" / "callosum.sock"
     if not sock_path.exists():
-        print(
-            f"Cannot connect: callosum socket not found at {sock_path}",
-            file=sys.stderr,
-        )
-        return 1
+        return None
 
     status_event = threading.Event()
     status_holder: dict[str, dict[str, Any]] = {}
@@ -116,18 +118,34 @@ def health_check() -> int:
     conn = CallosumConnection(socket_path=sock_path)
     conn.start(callback=callback)
     try:
-        got_status = status_event.wait(timeout=STATUS_TIMEOUT)
+        got_status = status_event.wait(timeout=timeout)
     finally:
         conn.stop()
 
     if not got_status:
+        return None
+    return status_holder["data"]
+
+
+def health_check() -> int:
+    """Request and print one-shot supervisor status."""
+    sock_path = Path(get_journal()) / "health" / "callosum.sock"
+    if not sock_path.exists():
+        print(
+            f"Cannot connect: callosum socket not found at {sock_path}",
+            file=sys.stderr,
+        )
+        return 1
+
+    status = fetch_supervisor_status(timeout=STATUS_TIMEOUT)
+    if status is None:
         print(
             f"Timed out waiting for supervisor status ({STATUS_TIMEOUT:g}s)",
             file=sys.stderr,
         )
         return 1
 
-    print_status(status_holder["data"])
+    print_status(status)
     return 0
 
 
