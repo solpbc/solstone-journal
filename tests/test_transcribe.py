@@ -5,10 +5,13 @@
 
 import json
 import shutil
+import subprocess
+import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
 
+import av
 import numpy as np
 import pytest
 import soundfile as sf
@@ -26,6 +29,23 @@ from solstone.observe.transcribe import (
 from solstone.observe.transcribe.main import EMBEDDER_NAME, _statements_to_jsonl
 from solstone.observe.utils import load_audio
 from solstone.observe.vad import VadResult
+from solstone.think.media import AUDIO_EXTENSIONS
+
+LOAD_AUDIO_PROBE = """
+import sys
+from pathlib import Path
+
+from solstone.observe.utils import load_audio
+from solstone.think.media import AUDIO_EXTENSIONS
+
+for suffix in sorted(AUDIO_EXTENSIONS):
+    try:
+        load_audio(Path("/tmp/solstone-load-audio-probe").with_suffix(suffix))
+    except Exception:
+        pass
+assert "faster_whisper" not in sys.modules, sorted(m for m in sys.modules if "faster" in m)
+sys.stdout.write("PROBE_OK\\n")
+"""
 
 
 class TestBuildStatementsFromAcoustic:
@@ -242,6 +262,16 @@ class TestConstants:
 class TestLoadAudio:
     """Test the shared load_audio utility."""
 
+    def test_load_audio_does_not_pull_faster_whisper(self):
+        result = subprocess.run(
+            [sys.executable, "-c", LOAD_AUDIO_PROBE],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        assert "PROBE_OK" in result.stdout
+
     def test_flac_returns_numpy_array(self):
         """FLAC files should return a numpy array."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -351,6 +381,97 @@ class TestLoadAudio:
             # AAC compression affects amplitude, so use loose threshold
             rms = np.sqrt(np.mean(audio**2))
             assert rms > 0.1, f"Mixed audio should contain signal, got RMS={rms}"
+
+    @pytest.mark.parametrize("suffix", sorted(AUDIO_EXTENSIONS - {".m4a"}))
+    def test_load_audio_decodes_ext(self, tmp_path, suffix):
+        sample_rate = 48000
+        duration = 1.0
+        t = np.arange(int(sample_rate * duration), dtype=np.float32) / sample_rate
+        data = np.sin(2 * np.pi * 440 * t).astype(np.float32)
+        path = tmp_path / f"test{suffix}"
+
+        try:
+            sf.write(path, data, sample_rate)
+        except Exception as e:
+            pytest.skip(f"libsndfile cannot encode {suffix}: {e}")
+
+        audio = load_audio(path)
+
+        assert isinstance(audio, np.ndarray)
+        assert audio.dtype == np.float32
+        assert audio.ndim == 1
+        assert abs(len(audio) - 16000) <= 64
+
+    def test_load_audio_sine_wave_resamples_correctly(self, tmp_path):
+        input_rate = 48000
+        output_rate = 16000
+        t = np.arange(input_rate, dtype=np.float32) / input_rate
+        data = np.sin(2 * np.pi * 440 * t).astype(np.float32)
+        path = tmp_path / "test.wav"
+        sf.write(path, data, input_rate, format="WAV", subtype="FLOAT")
+
+        audio = load_audio(path, sample_rate=output_rate)
+        reference = np.sin(
+            2 * np.pi * 440 * np.arange(output_rate, dtype=np.float32) / output_rate
+        ).astype(np.float32)
+
+        errors = []
+        for shift in range(-16, 17):
+            if shift >= 0:
+                actual = audio[shift:]
+                expected = reference
+            else:
+                actual = audio
+                expected = reference[-shift:]
+            length = min(len(actual), len(expected))
+            if length <= 200:
+                continue
+            actual_window = actual[:length][100:-100]
+            expected_window = expected[:length][100:-100]
+            errors.append(float(np.max(np.abs(actual_window - expected_window))))
+
+        assert min(errors) <= 1e-2
+
+    def test_load_audio_wraps_decode_failure(self, tmp_path):
+        path = tmp_path / "not-audio.wav"
+        path.write_bytes(b"not audio")
+
+        with pytest.raises(RuntimeError) as excinfo:
+            load_audio(path)
+
+        message = str(excinfo.value)
+        assert str(path) in message
+        assert "(.wav)" in message
+        assert excinfo.value.__cause__ is not None
+        assert isinstance(excinfo.value.__cause__, av.error.FFmpegError)
+
+    def test_load_audio_rejects_empty_decode(self, tmp_path):
+        path = tmp_path / "not-audio.flac"
+        path.write_bytes(b"not audio")
+
+        with pytest.raises(RuntimeError) as excinfo:
+            load_audio(path)
+
+        message = str(excinfo.value)
+        assert str(path) in message
+        assert "(.flac)" in message
+        assert "no audio data decoded" in message
+        assert excinfo.value.__cause__ is None
+
+    def test_load_audio_handles_very_short_clip(self, tmp_path):
+        input_rate = 48000
+        output_rate = 16000
+        duration = 0.05
+        t = np.arange(int(input_rate * duration), dtype=np.float32) / input_rate
+        data = np.sin(2 * np.pi * 440 * t).astype(np.float32)
+        path = tmp_path / "short.wav"
+        sf.write(path, data, input_rate, format="WAV", subtype="FLOAT")
+
+        audio = load_audio(path, sample_rate=output_rate)
+
+        assert audio.dtype == np.float32
+        assert len(audio) > 0
+        assert abs(len(audio) - 800) <= 16
 
 
 class TestEmbeddingsFormat:

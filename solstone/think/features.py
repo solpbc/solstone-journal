@@ -32,7 +32,7 @@ FEATURES: dict[str, Feature] = {
     ),
     "whisper": Feature(
         name="whisper",
-        summary="Whisper speech-to-text transcription",
+        summary="Whisper transcription backend (optional)",
         pip_modules=("faster_whisper",),
         apt_packages=(),
         brew_packages=(),

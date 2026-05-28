@@ -6,12 +6,14 @@
 import subprocess
 import sys
 
+import pytest
+
 PROBE = """
 import sys
 import solstone.observe.vad  # noqa: F401
 import solstone.observe.transcribe  # noqa: F401
 assert "faster_whisper" not in sys.modules, sorted(m for m in sys.modules if "faster" in m)
-print("ok")
+sys.stdout.write("ok\\n")
 """
 
 
@@ -29,10 +31,7 @@ def test_vendored_module_does_not_pull_faster_whisper():
 
 def test_vendored_get_speech_timestamps_matches_upstream():
     """Vendored VAD should return the same speech segment bounds as upstream."""
-    from faster_whisper.vad import VadOptions as UpstreamVadOptions
-    from faster_whisper.vad import (
-        get_speech_timestamps as upstream_get_speech_timestamps,
-    )
+    upstream_vad = pytest.importorskip("faster_whisper.vad")
 
     from solstone.observe import _silero_vad as vendored_vad
     from solstone.observe.utils import SAMPLE_RATE, load_audio
@@ -44,9 +43,9 @@ def test_vendored_get_speech_timestamps_matches_upstream():
         vendored_vad.VadOptions(),
         sampling_rate=SAMPLE_RATE,
     )
-    upstream_segments = upstream_get_speech_timestamps(
+    upstream_segments = upstream_vad.get_speech_timestamps(
         audio,
-        UpstreamVadOptions(),
+        upstream_vad.VadOptions(),
         sampling_rate=SAMPLE_RATE,
     )
 

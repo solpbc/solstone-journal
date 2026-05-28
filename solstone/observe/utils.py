@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Utilities for working with media files (audio and video) and shared observer helpers."""
+"""Utilities for working with media files and shared observer helpers."""
 
 import datetime
 import hashlib
@@ -50,16 +50,18 @@ def audio_to_flac_bytes(audio: np.ndarray, sample_rate: int) -> bytes:
 
 
 def load_audio(raw_path: Path, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
-    """Load audio file into a numpy buffer, mixing M4A streams if needed.
+    """Load audio file into a numpy buffer using PyAV.
 
-    For M4A files from sck-cli (which contain two mono streams: track 0 =
+    All supported formats are decoded through PyAV. For M4A files from sck-cli
+    (which contain two mono streams: track 0 =
     system audio, track 1 = microphone), all streams are decoded and mixed
-    together. Other formats (.flac, .mp3, .ogg, .opus, .wav) are decoded via ffmpeg.
+    together. Other formats (.flac, .mp3, .ogg, .opus, .wav) decode the first
+    audio stream only.
 
     Parameters
     ----------
     raw_path : Path
-        Path to audio file (.flac, .ogg, .opus, .wav, or .m4a)
+        Path to audio file (.flac, .ogg, .opus, .wav, .mp3, or .m4a)
     sample_rate : int
         Target sample rate (default: 16000)
 
@@ -72,11 +74,42 @@ def load_audio(raw_path: Path, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
     ------
     ValueError
         If no audio streams found in M4A file
+    RuntimeError
+        If PyAV fails to decode a non-M4A file
     """
     if raw_path.suffix.lower() != ".m4a":
-        from faster_whisper.audio import decode_audio
+        import av
 
-        return decode_audio(str(raw_path), sampling_rate=sample_rate)
+        suffix = raw_path.suffix.lower()
+        try:
+            with av.open(str(raw_path)) as container:
+                streams = list(container.streams.audio)
+                if not streams:
+                    raise RuntimeError(
+                        f"failed to decode {raw_path} ({suffix}): "
+                        "no audio streams found"
+                    )
+                stream = streams[0]
+                resampler = av.audio.resampler.AudioResampler(
+                    format="flt", layout="mono", rate=sample_rate
+                )
+                chunks = []
+                for frame in container.decode(stream):
+                    for out_frame in resampler.resample(frame):
+                        arr = out_frame.to_ndarray()
+                        chunks.append(arr)
+                for out_frame in resampler.resample(None):
+                    arr = out_frame.to_ndarray()
+                    chunks.append(arr)
+                if not chunks:
+                    raise RuntimeError(
+                        f"failed to decode {raw_path} ({suffix}): no audio data decoded"
+                    )
+        except av.error.FFmpegError as e:
+            raise RuntimeError(f"failed to decode {raw_path} ({suffix}): {e}") from e
+
+        combined = np.concatenate(chunks, axis=1).flatten()
+        return combined.astype(np.float32)
 
     import av
 

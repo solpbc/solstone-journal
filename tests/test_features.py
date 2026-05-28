@@ -2,6 +2,7 @@
 # Copyright (c) 2026 sol pbc
 
 import dataclasses
+import importlib.util
 
 import pytest
 
@@ -48,8 +49,10 @@ def test_is_available_true_for_pdf():
     assert is_available("pdf") is True
 
 
-def test_is_available_true_for_whisper():
-    assert is_available("whisper") is True
+def test_is_available_reflects_whisper_installation():
+    assert is_available("whisper") is (
+        importlib.util.find_spec("faster_whisper") is not None
+    )
 
 
 def test_is_available_false_for_missing_module(monkeypatch):
