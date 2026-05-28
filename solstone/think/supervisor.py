@@ -29,6 +29,7 @@ from solstone.think.callosum import CallosumConnection, CallosumServer
 from solstone.think.maint import run_pending_tasks
 from solstone.think.readiness import clear_ready, signal_ready
 from solstone.think.runner import ManagedProcess as RunnerManagedProcess
+from solstone.think.runner import _command_partition
 from solstone.think.sync_check import (
     DEFAULT_INTERVAL_SECONDS,
     SyncCheckSnapshot,
@@ -246,13 +247,8 @@ class TaskQueue:
 
     @staticmethod
     def get_command_name(cmd: list[str]) -> str:
-        """Extract command name from cmd array for queue serialization.
-
-        For 'sol X' or 'journal X' commands, returns X. Otherwise returns cmd[0] basename.
-        """
-        if cmd and cmd[0] in ("sol", "journal") and len(cmd) > 1:
-            return cmd[1]
-        return Path(cmd[0]).name if cmd else "unknown"
+        """Return the canonical queue/log partition for a command."""
+        return _command_partition(cmd)
 
     def _notify_queue_change(self, cmd_name: str) -> None:
         """Notify listener of queue state change (called outside lock)."""

@@ -25,6 +25,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -198,6 +199,32 @@ class DailyLogWriter:
         )
 
 
+def _command_partition(cmd: Sequence[str]) -> str:
+    """Return the queue/log partition name for a managed-process cmd.
+
+    Think tasks partition by bare mode name (daily/segment/flush/activity/weekly);
+    everything else uses sol/journal subcommand or process basename.
+    """
+    if cmd and cmd[0] in ("sol", "journal") and len(cmd) > 1:
+        name = cmd[1]
+        if name == "think":
+            for flag, mode in [
+                ("--activity", "activity"),
+                ("--flush", "flush"),
+                ("--segments", "segment"),
+                ("--weekly", "weekly"),
+                ("--segment", "segment"),
+            ]:
+                if flag in cmd:
+                    name = mode
+                    break
+            else:
+                name = "daily"
+    else:
+        name = Path(cmd[0]).name if cmd else "unknown"
+    return name
+
+
 @dataclass
 class ManagedProcess:
     """Subprocess wrapper with automatic output logging and lifecycle management.
@@ -281,23 +308,7 @@ class ManagedProcess:
             this call. Use a long-lived worker thread that blocks in
             process.wait() for the lifetime of the child.
         """
-        if cmd[0] in ("sol", "journal") and len(cmd) > 1:
-            name = cmd[1]
-            if name == "think":
-                for flag, mode in [
-                    ("--activity", "activity"),
-                    ("--flush", "flush"),
-                    ("--segments", "segment"),
-                    ("--weekly", "weekly"),
-                    ("--segment", "segment"),
-                ]:
-                    if flag in cmd:
-                        name = mode
-                        break
-                else:
-                    name = "daily"
-        else:
-            name = Path(cmd[0]).name
+        name = _command_partition(cmd)
 
         # Generate correlation ID (use provided ref, else timestamp)
         ref = ref if ref else str(now_ms())

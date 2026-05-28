@@ -285,7 +285,7 @@ def test_get_command_name():
     # sol X -> X
     assert get(["sol", "indexer", "--rescan"]) == "indexer"
     assert get(["sol", "insight", "20240101"]) == "insight"
-    assert get(["journal", "think", "--day", "20240101"]) == "think"
+    assert get(["journal", "think", "--day", "20240101"]) == "daily"
 
     # Other commands -> basename
     assert get(["/usr/bin/python", "script.py"]) == "python"
@@ -293,6 +293,315 @@ def test_get_command_name():
 
     # Empty -> unknown
     assert get([]) == "unknown"
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        ["journal", "think", "--day", "20260527"],
+        ["journal", "think", "--day", "20260527", "--segment", "120000_300"],
+        [
+            "journal",
+            "think",
+            "--day",
+            "20260527",
+            "--segment",
+            "120000_300",
+            "--stream",
+            "screen",
+        ],
+        [
+            "journal",
+            "think",
+            "--day",
+            "20260527",
+            "--segment",
+            "120000_300",
+            "--flush",
+        ],
+        ["journal", "think", "--day", "20260527", "--segments"],
+        [
+            "journal",
+            "think",
+            "--activity",
+            "activity-id",
+            "--facet",
+            "work",
+            "--day",
+            "20260527",
+        ],
+        ["journal", "think", "--weekly", "-v"],
+        ["journal", "think"],
+        ["sol", "indexer", "--rescan"],
+        ["journal", "sense", "--day", "20260101"],
+    ],
+)
+def test_command_partition_matches_task_queue_get_command_name(cmd):
+    mod = importlib.import_module("solstone.think.supervisor")
+    runner = importlib.import_module("solstone.think.runner")
+
+    assert runner._command_partition(cmd) == mod.TaskQueue.get_command_name(cmd)
+
+
+def _fresh_task_queue(mod, *, on_queue_change=None):
+    mod._task_queue = mod.TaskQueue(on_queue_change=on_queue_change)
+    mod._supervisor_callosum = None
+    return mod._task_queue
+
+
+def _capture_thread_starts(monkeypatch, mod):
+    spawned = []
+
+    def fake_thread_start(self):
+        spawned.append(self._args)
+
+    monkeypatch.setattr(mod.threading.Thread, "start", fake_thread_start)
+    return spawned
+
+
+def test_task_queue_daily_and_segment_run_independently(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    queue = _fresh_task_queue(mod)
+    _capture_thread_starts(monkeypatch, mod)
+
+    queue.submit(["journal", "think", "--day", "20260527"], ref="daily-ref")
+    queue.submit(
+        ["journal", "think", "--day", "20260527", "--segment", "120000_300"],
+        ref="segment-ref",
+    )
+
+    assert set(queue._running) == {"daily", "segment"}
+    assert queue._queues == {}
+
+
+def test_task_queue_segment_and_flush_run_independently(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    queue = _fresh_task_queue(mod)
+    _capture_thread_starts(monkeypatch, mod)
+
+    queue.submit(
+        ["journal", "think", "--day", "20260527", "--segment", "120000_300"],
+        ref="segment-ref",
+    )
+    queue.submit(
+        [
+            "journal",
+            "think",
+            "--day",
+            "20260527",
+            "--segment",
+            "120000_300",
+            "--flush",
+        ],
+        ref="flush-ref",
+    )
+
+    assert set(queue._running) == {"segment", "flush"}
+    assert queue._queues == {}
+
+
+def test_task_queue_daily_and_activity_run_independently(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    queue = _fresh_task_queue(mod)
+    _capture_thread_starts(monkeypatch, mod)
+
+    queue.submit(["journal", "think", "--day", "20260527"], ref="daily-ref")
+    queue.submit(
+        [
+            "journal",
+            "think",
+            "--activity",
+            "activity-id",
+            "--facet",
+            "work",
+            "--day",
+            "20260527",
+        ],
+        ref="activity-ref",
+    )
+
+    assert set(queue._running) == {"daily", "activity"}
+    assert queue._queues == {}
+
+
+def test_task_queue_daily_and_weekly_run_independently(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    queue = _fresh_task_queue(mod)
+    _capture_thread_starts(monkeypatch, mod)
+
+    queue.submit(["journal", "think", "--day", "20260527"], ref="daily-ref")
+    queue.submit(["journal", "think", "--weekly", "-v"], ref="weekly-ref")
+
+    assert set(queue._running) == {"daily", "weekly"}
+    assert queue._queues == {}
+
+
+def test_task_queue_segments_plural_shares_segment_partition(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    queue = _fresh_task_queue(mod)
+    _capture_thread_starts(monkeypatch, mod)
+
+    queue.submit(
+        ["journal", "think", "--day", "20260527", "--segment", "120000_300"],
+        ref="segment-ref",
+    )
+    queue.submit(
+        ["journal", "think", "--day", "20260527", "--segments"],
+        ref="segments-ref",
+    )
+
+    assert set(queue._running) == {"segment"}
+    assert queue._queues["segment"][0]["refs"] == ["segments-ref"]
+    assert queue._queues["segment"][0]["cmd"] == [
+        "journal",
+        "think",
+        "--day",
+        "20260527",
+        "--segments",
+    ]
+
+
+def test_task_queue_flush_flag_precedes_segment_flag():
+    runner = importlib.import_module("solstone.think.runner")
+
+    assert (
+        runner._command_partition(
+            ["journal", "think", "--day", "20260527", "--segment", "00", "--flush"]
+        )
+        == "flush"
+    )
+
+
+def test_task_queue_within_mode_serialization_segment(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    queue = _fresh_task_queue(mod)
+    spawned = _capture_thread_starts(monkeypatch, mod)
+
+    queue.submit(
+        ["journal", "think", "--day", "20260527", "--segment", "120000_300"],
+        ref="first-ref",
+    )
+    queue.submit(
+        ["journal", "think", "--day", "20260527", "--segment", "120500_300"],
+        ref="second-ref",
+    )
+
+    assert set(queue._running) == {"segment"}
+    assert queue._running["segment"]["ref"] == "first-ref"
+    assert set(queue._queues) == {"segment"}
+    assert queue._queues["segment"][0]["refs"] == ["second-ref"]
+
+    queue._process_next("segment")
+
+    assert queue._running["segment"]["ref"] == "second-ref"
+    assert queue._queues["segment"] == []
+    assert spawned[-1][0] == ["second-ref"]
+
+
+def test_task_queue_dedup_within_segment_partition(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    queue = _fresh_task_queue(mod)
+    _capture_thread_starts(monkeypatch, mod)
+    cmd = ["journal", "think", "--day", "20260527", "--segment", "120000_300"]
+
+    queue.submit(cmd, ref="first-ref")
+    queue.submit(cmd, ref="second-ref")
+    queue.submit(cmd, ref="third-ref")
+
+    assert queue._running["segment"]["ref"] == "first-ref"
+    assert len(queue._queues["segment"]) == 1
+    assert queue._queues["segment"][0]["cmd"] == cmd
+    assert queue._queues["segment"][0]["refs"] == ["second-ref", "third-ref"]
+
+
+def test_task_queue_stale_thread_reclamation_per_partition(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    dead_thread = threading.Thread(target=lambda: None)
+    dead_thread.start()
+    dead_thread.join()
+
+    queue = _fresh_task_queue(mod)
+    _capture_thread_starts(monkeypatch, mod)
+
+    queue.submit(["journal", "think", "--day", "20260527"], ref="old-daily-ref")
+    queue.submit(
+        ["journal", "think", "--day", "20260527", "--segment", "120000_300"],
+        ref="segment-ref",
+    )
+
+    queue._running["daily"]["thread"] = dead_thread
+
+    queue.submit(["journal", "think", "--day", "20260528"], ref="new-daily-ref")
+
+    assert queue._running["daily"]["ref"] == "new-daily-ref"
+    assert queue._running["segment"]["ref"] == "segment-ref"
+    assert set(queue._running) == {"daily", "segment"}
+
+
+def test_handle_task_request_routes_to_mode_partition(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    queue = _fresh_task_queue(mod)
+    _capture_thread_starts(monkeypatch, mod)
+
+    queue.submit(["journal", "think", "--day", "20260527"], ref="daily-ref")
+    mod._handle_task_request(
+        {
+            "tract": "supervisor",
+            "event": "request",
+            "cmd": ["journal", "think", "--day", "20260527", "--segment", "120000_300"],
+            "ref": "segment-ref",
+        }
+    )
+
+    assert queue._running["daily"]["ref"] == "daily-ref"
+    assert queue._running["segment"]["ref"] == "segment-ref"
+    assert queue._queues == {}
+
+
+def test_scheduler_weekly_cap_registers_under_weekly(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    queue = mod.TaskQueue(on_queue_change=None)
+    monkeypatch.setattr(
+        mod.scheduler,
+        "collect_runtime_caps",
+        lambda: [(["journal", "think", "--weekly", "-v"], 60.0)],
+    )
+
+    for cmd, seconds in mod.scheduler.collect_runtime_caps():
+        queue.set_cap(mod.TaskQueue.get_command_name(cmd), seconds)
+
+    assert queue._caps == {"weekly": 60.0}
+
+
+def test_queue_event_carries_mode_partition_name(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    events = []
+    queue = _fresh_task_queue(
+        mod,
+        on_queue_change=lambda command, running, queued: events.append(
+            (command, running, queued)
+        ),
+    )
+    _capture_thread_starts(monkeypatch, mod)
+
+    queue.submit(
+        ["journal", "think", "--day", "20260527", "--segment", "120000_300"],
+        ref="first-ref",
+    )
+    queue.submit(
+        ["journal", "think", "--day", "20260527", "--segment", "120500_300"],
+        ref="second-ref",
+    )
+
+    assert events[-1][0] == "segment"
+
+
+def test_no_literal_think_queue_keys_in_source():
+    mod = importlib.import_module("solstone.think.supervisor")
+
+    assert mod.TaskQueue.get_command_name(
+        ["journal", "think", "--day", "20260527"]
+    ) != ("think")
 
 
 def test_task_queue_same_command_queued(monkeypatch):
