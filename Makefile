@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install uninstall test test-cov test-apps test-app test-only test-integration test-integration-only test-all format format-check install-checks ci clean clean-install coverage watch versions update update-prices pre-commit skills dev all sandbox sandbox-stop install-pinchtab install-models parakeet-helper parakeet-helper-clean wheel-macos wheel-macos-clean verify-browser update-browser-baselines review verify verify-api update-api-baselines service-logs check-layer-hygiene smoke-cogitate release release-test FORCE
+.PHONY: install uninstall test test-cov test-apps test-app test-only test-integration test-integration-only test-all format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills dev all sandbox sandbox-stop install-pinchtab install-models parakeet-helper parakeet-helper-clean wheel-macos wheel-macos-clean verify-browser update-browser-baselines review verify verify-api update-api-baselines service-logs check-layer-hygiene smoke-cogitate release release-test FORCE
 
 # Default target - install package in editable mode
 all: install
@@ -36,10 +36,16 @@ else
 EXTRAS_ARGS := --all-extras
 endif
 
-# Require uv
+# Require uv only for goals that actually use it. `preflight` is a pure
+# stdlib readiness battery and `install` runs preflight as its own fail-fast
+# pre-step, so neither should abort at parse time when uv is absent — they
+# report uv-absence themselves. test/ci/etc. still abort early.
 UV := $(shell command -v uv 2>/dev/null)
+UV_OPTIONAL_GOALS := preflight install
 ifndef UV
+ifneq ($(filter-out $(UV_OPTIONAL_GOALS),$(MAKECMDGOALS)),)
 $(error uv is not installed. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh)
+endif
 endif
 
 # User bin directory for symlink (standard location, usually already in PATH)
@@ -52,6 +58,7 @@ USER_BIN := $(HOME)/.local/bin
 
 # Marker file to track installation
 .installed: pyproject.toml uv.lock .python-version-hash
+	$(MAKE) preflight
 	@echo "Installing package with uv..."
 	$(UV) sync --group dev $(EXTRAS_ARGS)
 	@echo "Installing Playwright Chromium browser..."
@@ -109,6 +116,11 @@ install: .installed
 	fi
 	@touch .installed
 	@$(VENV_BIN)/journal install-models || { echo "journal install-models failed" >&2; exit 1; }
+
+# Stdlib-only install-readiness battery — runs before `.venv`/`uv` exist; a
+# blocker failure exits non-zero. Also wired as the first step of `.installed`.
+preflight:
+	python3 scripts/preflight.py
 
 # Setup skill symlinks
 skills:
