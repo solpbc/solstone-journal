@@ -51,12 +51,18 @@
 
   <section class="link-paired-section" aria-labelledby="link-paired-h2">
     <div class="link-section-heading">
-      <h2 id="link-paired-h2">paired devices</h2>
-      <button type="button" class="link-pair-btn" id="link-pair-btn">pair a phone</button>
+      <div>
+        <h2 id="link-paired-h2">{{ link_copy.DEVICE_SECTION_TITLE }}</h2>
+        <p id="link-devices-count" class="link-section-caption">0 connected</p>
+      </div>
+      <button type="button" class="link-pair-btn" id="link-pair-btn">{{ link_copy.DEVICE_PAIR_CTA }}</button>
     </div>
-    <div id="link-devices-list" class="link-devices-list" aria-live="polite">
-      <p class="link-empty-state" id="link-empty-state">No devices linked yet.</p>
-    </div>
+    <div id="link-devices-list" class="link-devices-list" aria-live="polite"></div>
+  </section>
+
+  <section id="link-recent-section" class="link-recent-section" aria-labelledby="link-recent-h2" hidden>
+    <h2 id="link-recent-h2">{{ link_copy.RECENT_SECTION_TITLE }}</h2>
+    <div id="link-recent-list" class="link-recent-list"></div>
   </section>
 
   <div id="link-pair-modal" class="link-modal" hidden role="dialog" aria-modal="true" aria-labelledby="link-pair-modal-title">
@@ -131,7 +137,23 @@
       SUCCESS_SUBHEAD: {{ link_copy.SUCCESS_SUBHEAD|tojson }},
       STATUS_SENTENCES: {{ link_copy.STATUS_SENTENCES|tojson }},
       POSTURE_SPL_SETUP_LABEL: {{ link_copy.POSTURE_SPL_SETUP_LABEL|tojson }},
-      POSTURE_SPL_MANAGE_LABEL: {{ link_copy.POSTURE_SPL_MANAGE_LABEL|tojson }}
+      POSTURE_SPL_MANAGE_LABEL: {{ link_copy.POSTURE_SPL_MANAGE_LABEL|tojson }},
+      DEVICE_STATUS_LABELS: {{ link_copy.DEVICE_STATUS_LABELS|tojson }},
+      DEVICE_GROUP_LABELS: {{ link_copy.DEVICE_GROUP_LABELS|tojson }},
+      DEVICE_ACTION_LABELS: {{ link_copy.DEVICE_ACTION_LABELS|tojson }},
+      DEVICE_EMPTY_TITLE: {{ link_copy.DEVICE_EMPTY_TITLE|tojson }},
+      DEVICE_EMPTY_BODY: {{ link_copy.DEVICE_EMPTY_BODY|tojson }},
+      DEVICE_PAIR_CTA: {{ link_copy.DEVICE_PAIR_CTA|tojson }},
+      RECENT_NETWORK_LABEL: {{ link_copy.RECENT_NETWORK_LABEL|tojson }},
+      RECENT_SEE_ALL_LABEL: {{ link_copy.RECENT_SEE_ALL_LABEL|tojson }},
+      RECENT_SHOW_LESS_LABEL: {{ link_copy.RECENT_SHOW_LESS_LABEL|tojson }},
+      REFRESH_FAIL_NOTICE: {{ link_copy.REFRESH_FAIL_NOTICE|tojson }},
+      UNPAIR_TITLE_FORMAT: {{ link_copy.UNPAIR_TITLE_FORMAT|tojson }},
+      FINGERPRINT_COPY_SUCCESS_TOAST: {{ link_copy.FINGERPRINT_COPY_SUCCESS_TOAST|tojson }},
+      FINGERPRINT_COPY_FAIL_TOAST: {{ link_copy.FINGERPRINT_COPY_FAIL_TOAST|tojson }},
+      RENAME_FAIL_TOAST: {{ link_copy.RENAME_FAIL_TOAST|tojson }},
+      UNPAIR_SUCCESS_TOAST: {{ link_copy.UNPAIR_SUCCESS_TOAST|tojson }},
+      UNPAIR_FAIL_TOAST: {{ link_copy.UNPAIR_FAIL_TOAST|tojson }}
     };
   </script>
 
@@ -159,8 +181,8 @@
 
   <div id="link-unpair-modal" class="link-modal" hidden role="dialog" aria-modal="true" aria-labelledby="link-unpair-title">
     <div class="link-modal-box">
-      <h3 id="link-unpair-title">unpair this phone?</h3>
-      <p>Are you sure? This phone will lose access immediately.</p>
+      <h3 id="link-unpair-title"></h3>
+      <p>{{ link_copy.UNPAIR_BODY }}</p>
       <div class="link-modal-actions">
         <button type="button" id="link-unpair-confirm" class="link-modal-danger">unpair</button>
         <button type="button" id="link-unpair-cancel" class="link-modal-cancel">cancel</button>
@@ -211,15 +233,49 @@
   .link-reach-upgrade a { color: #1e6bd0; font-weight: 500; }
 
   .link-section-heading { margin-bottom: 0.75em; }
-  .link-role-heading { font-size: 0.95rem; font-weight: 600; color: var(--text-muted, #555); margin: 1rem 0 0.5rem; text-transform: none; }
+  .link-section-caption { margin: 0.2em 0 0; color: #777; font-size: 0.9em; }
   .link-devices-list { display: flex; flex-direction: column; gap: 0.5em; }
-  .link-empty-state { color: #888; font-style: italic; }
-  .link-device-row { display: flex; align-items: center; justify-content: space-between; background: #f9f8f5; border: 1px solid #ede9e1; border-radius: 8px; padding: 0.75em 1em; }
-  .link-device-row .device-main { font-weight: 500; }
-  .link-device-row .device-sub { color: #777; font-size: 0.85em; margin-top: 0.2em; }
-  .link-device-row .device-fp { font-family: ui-monospace, monospace; font-size: 0.75em; color: #999; }
-  .link-unpair-btn { background: transparent; border: 1px solid #c44; color: #c44; border-radius: 4px; padding: 0.35em 0.7em; cursor: pointer; font-size: 0.85em; }
-  .link-unpair-btn:hover { background: #c44; color: #fff; }
+  .link-empty-state { background: #f9f8f5; border: 1px solid #ede9e1; border-radius: 8px; padding: 1em; }
+  .link-empty-state h3 { margin: 0 0 0.35em; font-size: 1em; color: #333; }
+  .link-empty-state p { margin: 0 0 0.75em; color: #666; }
+  .link-device-group-details { border: 1px solid #ede9e1; border-radius: 8px; background: #fffdfa; }
+  .link-device-group-details > summary { min-height: 44px; padding: 0.7em 1em; cursor: pointer; font-weight: 600; color: #444; }
+  .link-device-group-body { display: flex; flex-direction: column; gap: 0.5em; padding: 0 0.75em 0.75em; }
+  .link-section-filter { width: 100%; min-height: 44px; border: 1px solid #d8d0c4; border-radius: 6px; padding: 0.55em 0.7em; font: inherit; }
+  .link-device-subgroup { display: flex; flex-direction: column; gap: 0.5em; }
+  .link-offline-details { border-top: 1px solid #eee7dc; padding-top: 0.4em; }
+  .link-offline-details > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: #555; font-weight: 500; }
+  .link-device-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.75em; align-items: center; background: #f9f8f5; border: 1px solid #ede9e1; border-radius: 8px; padding: 0.75em 0.75em 0.75em 1em; }
+  .link-device-main { min-width: 0; }
+  .link-device-title { display: flex; align-items: center; gap: 0.55em; flex-wrap: wrap; min-width: 0; }
+  .link-device-status { display: inline-flex; align-items: center; gap: 0.35em; color: #555; font-size: 0.86em; white-space: nowrap; }
+  .link-status-glyph { font-size: 1.05em; line-height: 1; }
+  .link-status-glyph.is-online { color: #1e7b42; }
+  .link-status-glyph.is-recent { color: #b88400; }
+  .link-status-glyph.is-offline { color: #777; }
+  .link-device-label { font-weight: 600; color: #222; min-width: 0; overflow-wrap: anywhere; }
+  .link-device-meta { display: flex; align-items: center; gap: 0.55em; flex-wrap: wrap; margin-top: 0.25em; color: #777; font-size: 0.85em; }
+  .link-device-fp { font-family: ui-monospace, monospace; font-size: 0.9em; color: #999; }
+  .link-device-actions { position: relative; }
+  .link-device-menu-btn { min-width: 44px; min-height: 44px; border: 1px solid #d8d0c4; border-radius: 6px; background: #fff; color: #444; cursor: pointer; font-size: 1.25em; line-height: 1; }
+  .link-device-menu-btn:hover { background: #f0ebe3; }
+  .link-device-menu { position: absolute; right: 0; top: calc(100% + 4px); min-width: 12em; border: 1px solid #d8d0c4; border-radius: 8px; background: #fff; box-shadow: 0 8px 24px rgba(0,0,0,0.14); z-index: 20; padding: 0.25em; }
+  .link-device-menu[hidden] { display: none; }
+  .link-device-menu button { display: block; width: 100%; min-height: 44px; border: 0; border-radius: 5px; background: transparent; color: #333; text-align: left; padding: 0.65em 0.8em; cursor: pointer; font: inherit; }
+  .link-device-menu button:hover { background: #f4efe8; }
+  .link-device-menu button.is-danger { color: #a53a1f; }
+  .link-device-menu button:focus-visible,
+  .link-device-menu-btn:focus-visible,
+  .link-section-filter:focus-visible,
+  .link-rename-input:focus-visible { outline: 2px solid #b06a1a; outline-offset: 2px; }
+  .link-rename-input { min-height: 36px; max-width: min(100%, 22em); border: 1px solid #b8cceb; border-radius: 5px; padding: 0.35em 0.5em; font: inherit; font-weight: 600; }
+  .link-recent-section { margin-top: 1.5em; }
+  .link-recent-section[hidden] { display: none; }
+  .link-recent-section h2 { font-size: 1.05em; margin: 0 0 0.65em; font-weight: 600; color: #444; }
+  .link-recent-list { display: flex; flex-direction: column; gap: 0.45em; }
+  .link-recent-row { display: flex; align-items: baseline; gap: 0.45em; flex-wrap: wrap; color: #666; background: #fffdfa; border: 1px solid #ede9e1; border-radius: 8px; padding: 0.65em 0.8em; }
+  .link-recent-label { color: #222; font-weight: 600; }
+  .link-recent-toggle { align-self: flex-start; min-height: 44px; border: 1px solid #b8cceb; border-radius: 6px; background: #fff; color: #1e6bd0; padding: 0.45em 0.75em; cursor: pointer; font-weight: 500; }
 
   .link-modal[hidden] {
     display: none;
@@ -296,7 +352,9 @@
   const statusText = document.getElementById('link-status-text');
   const statusDot = document.getElementById('link-status-dot');
   const devicesList = document.getElementById('link-devices-list');
-  const emptyState = document.getElementById('link-empty-state');
+  const devicesCount = document.getElementById('link-devices-count');
+  const recentSection = document.getElementById('link-recent-section');
+  const recentList = document.getElementById('link-recent-list');
   const lanNudge = document.getElementById('link-lan-nudge');
   const reachCard = document.getElementById('link-reach-card');
   const homeAddressRow = document.getElementById('link-home-address-row');
@@ -331,11 +389,18 @@
   let autoRefreshFired = false;
 
   const unpairModal = document.getElementById('link-unpair-modal');
+  const unpairTitle = document.getElementById('link-unpair-title');
   const unpairConfirm = document.getElementById('link-unpair-confirm');
   const unpairCancel = document.getElementById('link-unpair-cancel');
   let unpairTarget = null;
 
   const toast = document.getElementById('link-toast');
+  const ONLINE_THRESHOLD_SECONDS = 60;
+  const RECENT_THRESHOLD_SECONDS = 86400;
+  const GROUP_FILTER_THRESHOLD = 8;
+  let openMenu = null;
+  let latestDevices = [];
+  let showAllRecent = false;
 
   function showToast(msg) {
     toast.textContent = msg;
@@ -468,12 +533,14 @@
       const data = await window.apiJson('/app/link/api/devices', { headers: { accept: 'application/json' } });
       clearRefreshError('link-devices-list');
       devicesEverLoaded = true;
-      renderDevices(data.devices || []);
+      latestDevices = data.devices || [];
+      renderDevices(latestDevices);
+      renderRecentlyPaired(latestDevices);
     } catch (err) {
       window.logError(err, { context: 'link: refreshDevices failed' });
       if (!devicesEverLoaded) {
         devicesList.innerHTML = window.SurfaceState.error({
-          heading: "Couldn't load paired devices",
+          heading: window.LinkCopy.REFRESH_FAIL_NOTICE,
           desc: window.CONVEY_COPY.RELOAD_HINT,
           serverMessage: err.serverMessage,
           detail: err,
@@ -481,7 +548,7 @@
         return;
       }
       window.SurfaceState.replaceLoading('link-devices-list', window.SurfaceState.error({
-        heading: "Couldn't refresh paired devices — showing last known state.",
+        heading: window.LinkCopy.REFRESH_FAIL_NOTICE,
         desc: window.CONVEY_COPY.RELOAD_HINT,
         serverMessage: err.serverMessage,
         detail: err,
@@ -489,65 +556,436 @@
     }
   }
 
-  function renderDevices(devices) {
-    devicesList.innerHTML = '';
-    const roleOrder = ['phone', 'observer', 'peer'];
-    const roleLabels = {
-      phone: 'Phones',
-      observer: 'Observers',
-      peer: 'Peers',
-    };
-    const buckets = {
-      phone: [],
-      observer: [],
-      peer: [],
-    };
-    for (const device of devices) {
-      const role = roleOrder.includes(device.role) ? device.role : 'phone';
-      buckets[role].push(device);
+  function deviceStatus(lastSeenIso) {
+    const labels = window.LinkCopy.DEVICE_STATUS_LABELS || {};
+    const offline = { key: 'offline', glyph: '○', label: labels.offline || 'offline' };
+    if (!lastSeenIso) return offline;
+    const then = new Date(lastSeenIso).getTime();
+    if (Number.isNaN(then)) return offline;
+    const diff = Math.max(0, (Date.now() - then) / 1000);
+    if (diff <= ONLINE_THRESHOLD_SECONDS) {
+      return { key: 'online', glyph: '●', label: labels.online || 'online' };
     }
-    if (!roleOrder.some((role) => buckets[role].length)) {
-      devicesList.appendChild(emptyState);
-      emptyState.hidden = false;
+    if (diff <= RECENT_THRESHOLD_SECONDS) {
+      return { key: 'recent', glyph: '◐', label: labels.recent || 'recently seen' };
+    }
+    return offline;
+  }
+
+  function shortFingerprint(device) {
+    if (typeof device.fingerprint_short === 'string' && device.fingerprint_short) {
+      return device.fingerprint_short;
+    }
+    return String(device.fingerprint || '').replace('sha256:', '').slice(0, 16);
+  }
+
+  function activityMs(device) {
+    const parsed = new Date(device.last_seen_at || device.paired_at || '').getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+
+  function sortDevices(devices) {
+    const rank = { online: 0, recent: 1, offline: 2 };
+    return devices
+      .map((device, index) => ({ device, index, status: deviceStatus(device.last_seen_at) }))
+      .sort((a, b) => {
+        const statusDelta = rank[a.status.key] - rank[b.status.key];
+        if (statusDelta !== 0) return statusDelta;
+        const activityDelta = activityMs(b.device) - activityMs(a.device);
+        if (activityDelta !== 0) return activityDelta;
+        return a.index - b.index;
+      })
+      .map((entry) => entry.device);
+  }
+
+  function renderEmptyState() {
+    devicesCount.textContent = '0 connected';
+    const empty = document.createElement('div');
+    empty.className = 'link-empty-state';
+    const title = document.createElement('h3');
+    title.textContent = window.LinkCopy.DEVICE_EMPTY_TITLE || '';
+    const body = document.createElement('p');
+    body.textContent = window.LinkCopy.DEVICE_EMPTY_BODY || '';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'link-pair-btn';
+    button.textContent = window.LinkCopy.DEVICE_PAIR_CTA || 'pair a device';
+    button.addEventListener('click', openPairModal);
+    empty.appendChild(title);
+    empty.appendChild(body);
+    empty.appendChild(button);
+    devicesList.appendChild(empty);
+  }
+
+  function closeOpenMenu() {
+    if (!openMenu) return;
+    openMenu.menu.hidden = true;
+    openMenu.button.setAttribute('aria-expanded', 'false');
+    openMenu = null;
+  }
+
+  function openDeviceMenu(menu, button) {
+    if (openMenu && openMenu.menu === menu) {
+      closeOpenMenu();
       return;
     }
-    emptyState.hidden = true;
-    function appendDeviceRow(d) {
-      const row = document.createElement('div');
-      row.className = 'link-device-row';
-      const left = document.createElement('div');
-      const main = document.createElement('div');
-      main.className = 'device-main';
-      main.textContent = `Paired: ${d.device_label} — added ${relativeTime(d.paired_at)}`;
-      const sub = document.createElement('div');
-      sub.className = 'device-sub';
-      sub.textContent = d.last_seen_at
-        ? `Last seen: ${relativeTime(d.last_seen_at)}`
-        : 'Last seen: never';
-      const fp = document.createElement('div');
-      fp.className = 'device-fp';
-      fp.textContent = d.fingerprint_short;
-      left.appendChild(main);
-      left.appendChild(sub);
-      left.appendChild(fp);
-      const btn = document.createElement('button');
-      btn.className = 'link-unpair-btn';
-      btn.type = 'button';
-      btn.textContent = 'unpair';
-      btn.addEventListener('click', () => openUnpair(d));
-      row.appendChild(left);
-      row.appendChild(btn);
-      devicesList.appendChild(row);
+    closeOpenMenu();
+    menu.hidden = false;
+    button.setAttribute('aria-expanded', 'true');
+    openMenu = { menu, button };
+    const first = menu.querySelector('button');
+    if (first) first.focus();
+  }
+
+  function handleMenuDocumentClick(event) {
+    if (!openMenu) return;
+    if (openMenu.menu.contains(event.target) || openMenu.button.contains(event.target)) {
+      return;
     }
-    for (const role of roleOrder) {
-      if (!buckets[role].length) continue;
-      const heading = document.createElement('h3');
-      heading.className = 'link-role-heading';
-      heading.textContent = roleLabels[role];
-      devicesList.appendChild(heading);
-      for (const device of buckets[role]) {
-        appendDeviceRow(device);
+    closeOpenMenu();
+  }
+
+  function handleMenuDocumentKey(event) {
+    if (event.key === 'Escape') {
+      closeOpenMenu();
+    }
+  }
+
+  async function copyFingerprint(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (err) {
+        window.logError?.(err, { context: 'link: clipboard api failed' });
       }
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    let copied = false;
+    try {
+      copied = document.execCommand('copy');
+    } catch (err) {
+      window.logError?.(err, { context: 'link: fallback copy failed' });
+    } finally {
+      document.body.removeChild(textarea);
+    }
+    return copied;
+  }
+
+  function replaceRenameInput(input, label) {
+    const labelEl = document.createElement('span');
+    labelEl.className = 'link-device-label';
+    labelEl.textContent = label;
+    input.replaceWith(labelEl);
+  }
+
+  function startRename(device, labelEl) {
+    closeOpenMenu();
+    const previous = device.device_label || '';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'link-rename-input';
+    input.maxLength = 80;
+    input.value = previous;
+    labelEl.replaceWith(input);
+    input.focus();
+    input.select();
+    let finished = false;
+
+    async function commit() {
+      if (finished) return;
+      finished = true;
+      try {
+        const response = await fetch('/app/link/rename', {
+          method: 'POST',
+          headers: {'content-type': 'application/json'},
+          body: JSON.stringify({ fingerprint: device.fingerprint, label: input.value }),
+        });
+        if (!response.ok) {
+          throw new Error(`rename failed: ${response.status}`);
+        }
+        const data = await response.json();
+        const persisted = typeof data.label === 'string' ? data.label : input.value.trim();
+        device.device_label = persisted;
+        replaceRenameInput(input, persisted);
+        renderRecentlyPaired(latestDevices);
+      } catch (err) {
+        device.device_label = previous;
+        replaceRenameInput(input, previous);
+        showToast(window.LinkCopy.RENAME_FAIL_TOAST || "couldn't rename device");
+        window.logError?.(err, { context: 'link: rename device failed' });
+      }
+    }
+
+    function cancel() {
+      if (finished) return;
+      finished = true;
+      replaceRenameInput(input, previous);
+    }
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        commit();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        cancel();
+      }
+    });
+    input.addEventListener('blur', commit);
+  }
+
+  function buildDeviceRow(device) {
+    const status = deviceStatus(device.last_seen_at);
+    const row = document.createElement('div');
+    row.className = 'link-device-row';
+
+    const main = document.createElement('div');
+    main.className = 'link-device-main';
+    const title = document.createElement('div');
+    title.className = 'link-device-title';
+    const statusWrap = document.createElement('span');
+    statusWrap.className = 'link-device-status';
+    statusWrap.title = status.label;
+    const glyph = document.createElement('span');
+    glyph.className = `link-status-glyph is-${status.key}`;
+    glyph.setAttribute('aria-hidden', 'true');
+    glyph.textContent = status.glyph;
+    const statusWord = document.createElement('span');
+    statusWord.textContent = status.label;
+    statusWrap.appendChild(glyph);
+    statusWrap.appendChild(statusWord);
+
+    const label = document.createElement('span');
+    label.className = 'link-device-label';
+    label.textContent = device.device_label || '';
+    title.appendChild(statusWrap);
+    title.appendChild(label);
+
+    const meta = document.createElement('div');
+    meta.className = 'link-device-meta';
+    const time = document.createElement('span');
+    time.textContent = device.last_seen_at
+      ? `last seen ${relativeTime(device.last_seen_at)}`
+      : `paired ${relativeTime(device.paired_at)}`;
+    const fp = document.createElement('code');
+    fp.className = 'link-device-fp';
+    fp.textContent = shortFingerprint(device);
+    meta.appendChild(time);
+    meta.appendChild(fp);
+    main.appendChild(title);
+    main.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'link-device-actions';
+    const menuButton = document.createElement('button');
+    menuButton.type = 'button';
+    menuButton.className = 'link-device-menu-btn';
+    menuButton.setAttribute('aria-haspopup', 'menu');
+    menuButton.setAttribute('aria-expanded', 'false');
+    menuButton.setAttribute('aria-label', 'device actions');
+    menuButton.textContent = '⋯';
+    const menu = document.createElement('div');
+    menu.className = 'link-device-menu';
+    menu.setAttribute('role', 'menu');
+    menu.hidden = true;
+
+    const actionLabels = window.LinkCopy.DEVICE_ACTION_LABELS || {};
+    const rename = document.createElement('button');
+    rename.type = 'button';
+    rename.setAttribute('role', 'menuitem');
+    rename.textContent = actionLabels.rename || 'rename';
+    rename.addEventListener('click', () => startRename(device, label));
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.setAttribute('role', 'menuitem');
+    copy.textContent = actionLabels.copy_fingerprint || 'copy fingerprint';
+    copy.addEventListener('click', async () => {
+      closeOpenMenu();
+      let copied = false;
+      try {
+        copied = await copyFingerprint(device.fingerprint || '');
+      } catch (err) {
+        window.logError?.(err, { context: 'link: copy fingerprint failed' });
+      }
+      if (copied) {
+        showToast(window.LinkCopy.FINGERPRINT_COPY_SUCCESS_TOAST || 'fingerprint copied');
+      } else {
+        showToast(window.LinkCopy.FINGERPRINT_COPY_FAIL_TOAST || "couldn't copy fingerprint");
+      }
+    });
+    const unpair = document.createElement('button');
+    unpair.type = 'button';
+    unpair.className = 'is-danger';
+    unpair.setAttribute('role', 'menuitem');
+    unpair.textContent = actionLabels.unpair || 'unpair';
+    unpair.addEventListener('click', () => {
+      closeOpenMenu();
+      openUnpair(device);
+    });
+    menu.appendChild(rename);
+    menu.appendChild(copy);
+    menu.appendChild(unpair);
+    menuButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openDeviceMenu(menu, menuButton);
+    });
+    actions.appendChild(menuButton);
+    actions.appendChild(menu);
+
+    row.appendChild(main);
+    row.appendChild(actions);
+    return row;
+  }
+
+  function renderFilteredRows(host, devices, term, collapseOffline) {
+    host.innerHTML = '';
+    const needle = term.trim().toLowerCase();
+    const visible = needle
+      ? devices.filter((device) => String(device.device_label || '').toLowerCase().includes(needle))
+      : devices;
+    const byStatus = { online: [], recent: [], offline: [] };
+    visible.forEach((device) => {
+      byStatus[deviceStatus(device.last_seen_at).key].push(device);
+    });
+    for (const key of ['online', 'recent']) {
+      if (!byStatus[key].length) continue;
+      const subgroup = document.createElement('div');
+      subgroup.className = 'link-device-subgroup';
+      byStatus[key].forEach((device) => subgroup.appendChild(buildDeviceRow(device)));
+      host.appendChild(subgroup);
+    }
+    if (!byStatus.offline.length) return;
+    if (collapseOffline) {
+      const labels = window.LinkCopy.DEVICE_STATUS_LABELS || {};
+      const details = document.createElement('details');
+      details.className = 'link-offline-details';
+      details.open = Boolean(needle);
+      const summary = document.createElement('summary');
+      summary.textContent = `${labels.offline || 'offline'} (${byStatus.offline.length})`;
+      const subgroup = document.createElement('div');
+      subgroup.className = 'link-device-subgroup';
+      byStatus.offline.forEach((device) => subgroup.appendChild(buildDeviceRow(device)));
+      details.appendChild(summary);
+      details.appendChild(subgroup);
+      host.appendChild(details);
+      return;
+    }
+    const subgroup = document.createElement('div');
+    subgroup.className = 'link-device-subgroup';
+    byStatus.offline.forEach((device) => subgroup.appendChild(buildDeviceRow(device)));
+    host.appendChild(subgroup);
+  }
+
+  function renderGroupBody(container, devices) {
+    const sorted = sortDevices(devices);
+    const collapseOffline = sorted.length > GROUP_FILTER_THRESHOLD;
+    if (collapseOffline) {
+      const filter = document.createElement('input');
+      filter.type = 'search';
+      filter.className = 'link-section-filter';
+      filter.placeholder = 'filter devices';
+      const rows = document.createElement('div');
+      rows.className = 'link-device-subgroup';
+      filter.addEventListener('input', () => {
+        renderFilteredRows(rows, sorted, filter.value, true);
+      });
+      container.appendChild(filter);
+      container.appendChild(rows);
+      renderFilteredRows(rows, sorted, '', true);
+      return;
+    }
+    renderFilteredRows(container, sorted, '', false);
+  }
+
+  function appendRoleDetails(parent, label, devices) {
+    if (!devices.length) return;
+    const details = document.createElement('details');
+    details.className = 'link-device-group-details';
+    const summary = document.createElement('summary');
+    summary.textContent = `${label} (${devices.length})`;
+    const body = document.createElement('div');
+    body.className = 'link-device-group-body';
+    details.appendChild(summary);
+    details.appendChild(body);
+    renderGroupBody(body, devices);
+    parent.appendChild(details);
+  }
+
+  function renderDevices(devices) {
+    closeOpenMenu();
+    devicesList.innerHTML = '';
+    const groups = { yours: [], observers: [], peers: [] };
+    for (const device of devices) {
+      if (device.role === 'observer') {
+        groups.observers.push(device);
+      } else if (device.role === 'peer') {
+        groups.peers.push(device);
+      } else {
+        groups.yours.push(device);
+      }
+    }
+    devicesCount.textContent = `${groups.yours.length} connected`;
+    if (!devices.length) {
+      renderEmptyState();
+      return;
+    }
+    renderGroupBody(devicesList, groups.yours);
+    const labels = window.LinkCopy.DEVICE_GROUP_LABELS || {};
+    appendRoleDetails(devicesList, labels.observers || 'observers', groups.observers);
+    appendRoleDetails(devicesList, labels.peers || 'peers', groups.peers);
+  }
+
+  function renderRecentlyPaired(devices) {
+    recentList.innerHTML = '';
+    if (!devices.length) {
+      recentSection.hidden = true;
+      showAllRecent = false;
+      return;
+    }
+    recentSection.hidden = false;
+    const sorted = devices
+      .map((device, index) => ({ device, index, ts: activityMs({ paired_at: device.paired_at }) }))
+      .sort((a, b) => (b.ts - a.ts) || (a.index - b.index))
+      .map((entry) => entry.device);
+    const visible = showAllRecent ? sorted : sorted.slice(0, 2);
+    for (const device of visible) {
+      const row = document.createElement('div');
+      row.className = 'link-recent-row';
+      const label = document.createElement('span');
+      label.className = 'link-recent-label';
+      const suffix = device.role === 'observer' || device.role === 'peer'
+        ? ` (${device.role})`
+        : '';
+      label.textContent = `${device.device_label || ''}${suffix}`;
+      const network = document.createElement('span');
+      network.textContent = window.LinkCopy.RECENT_NETWORK_LABEL || 'on your network';
+      const time = document.createElement('span');
+      time.textContent = relativeTime(device.paired_at);
+      row.appendChild(label);
+      row.appendChild(document.createTextNode('·'));
+      row.appendChild(network);
+      row.appendChild(document.createTextNode('·'));
+      row.appendChild(time);
+      recentList.appendChild(row);
+    }
+    if (sorted.length > 2) {
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'link-recent-toggle';
+      toggle.textContent = showAllRecent
+        ? (window.LinkCopy.RECENT_SHOW_LESS_LABEL || 'show less ▾')
+        : (window.LinkCopy.RECENT_SEE_ALL_LABEL || 'see all ▸');
+      toggle.addEventListener('click', () => {
+        showAllRecent = !showAllRecent;
+        renderRecentlyPaired(devices);
+      });
+      recentList.appendChild(toggle);
     }
   }
 
@@ -718,6 +1156,8 @@
     }
   }
 
+  document.addEventListener('click', handleMenuDocumentClick);
+  document.addEventListener('keydown', handleMenuDocumentKey);
   pairBtn.addEventListener('click', openPairModal);
   reachChange.addEventListener('click', openPostureModal);
   postureCancel.addEventListener('click', closePostureModal);
@@ -736,16 +1176,55 @@
   });
   window.addEventListener('beforeunload', cleanupPairEvents, { once: true });
 
-  function openUnpair(device) {
-    unpairTarget = device;
-    unpairModal.hidden = false;
+  function getUnpairFocusable() {
+    return Array.from(unpairModal.querySelectorAll('button:not([disabled])'))
+      .filter((el) => !el.hidden && el.offsetParent !== null);
   }
-  unpairCancel.addEventListener('click', () => {
+
+  function closeUnpairModal() {
     unpairModal.hidden = true;
     unpairTarget = null;
-  });
+  }
+
+  function openUnpair(device) {
+    unpairTarget = device;
+    unpairTitle.textContent = (window.LinkCopy.UNPAIR_TITLE_FORMAT || "unpair '{label}'?")
+      .replace('{label}', device.device_label || '');
+    unpairModal.hidden = false;
+    unpairConfirm.focus();
+  }
+
+  function handleUnpairModalKeys(event) {
+    if (unpairModal.hidden) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeUnpairModal();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = getUnpairFocusable();
+    if (!focusable.length) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    } else if (!focusable.includes(document.activeElement)) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  unpairCancel.addEventListener('click', closeUnpairModal);
+  unpairModal.addEventListener('keydown', handleUnpairModalKeys);
   unpairConfirm.addEventListener('click', async () => {
-    if (!unpairTarget) { unpairModal.hidden = true; return; }
+    if (!unpairTarget) { closeUnpairModal(); return; }
     try {
       const r = await fetch('/app/link/unpair', {
         method: 'POST',
@@ -753,12 +1232,11 @@
         body: JSON.stringify({fingerprint: unpairTarget.fingerprint}),
       });
       if (!r.ok) throw new Error(`unpair failed: ${r.status}`);
-      showToast('Unpaired.');
-      unpairModal.hidden = true;
-      unpairTarget = null;
+      showToast(window.LinkCopy.UNPAIR_SUCCESS_TOAST || 'unpaired');
+      closeUnpairModal();
       refreshDevices();
     } catch (e) {
-      showToast('Failed to unpair');
+      showToast(window.LinkCopy.UNPAIR_FAIL_TOAST || "couldn't unpair this device");
       console.error(e);
     }
   });
@@ -766,6 +1244,11 @@
   function initLink() {
     refreshStatus();
     refreshDevices();
+    if (window.appEvents) {
+      window.appEvents.listen('link', (payload) => {
+        if (payload.event === 'pair_complete') refreshDevices();
+      });
+    }
     setInterval(refreshStatus, 15000);
     setInterval(refreshDevices, 10000);
   }

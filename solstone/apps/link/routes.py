@@ -56,6 +56,8 @@ from solstone.apps.observer.utils import mint_pl_observer_record, revoke_observe
 from solstone.apps.utils import log_app_action
 from solstone.convey import emit
 from solstone.convey.reasons import (
+    CONVEY_OPERATION_FAILED,
+    INVALID_REQUEST_VALUE,
     MISSING_REQUIRED_FIELD,
     OPERATION_NO_LONGER_AVAILABLE,
     PAIRED_DEVICE_NOT_FOUND,
@@ -555,6 +557,39 @@ def by_code() -> Any:
         return error_response(PAIRING_KEY_INVALID, detail=f"bad csr: {exc}")
     _emit_pair_complete(effective_label, fingerprint, paired_at)
     return jsonify(response)
+
+
+@link_bp.route("/rename", methods=["POST"])
+def rename() -> Any:
+    """Rename a paired device by fingerprint."""
+    body = request.get_json(silent=True) or {}
+    fingerprint = body.get("fingerprint")
+    label = body.get("label")
+    if not isinstance(fingerprint, str) or not fingerprint.strip():
+        return error_response(
+            MISSING_REQUIRED_FIELD,
+            detail="fingerprint and label required",
+        )
+    if not isinstance(label, str):
+        return error_response(
+            MISSING_REQUIRED_FIELD,
+            detail="fingerprint and label required",
+        )
+
+    authorized = _authorized()
+    try:
+        updated = authorized.update_label(fingerprint.strip(), label)
+    except ValueError as exc:
+        return error_response(INVALID_REQUEST_VALUE, detail=str(exc))
+    except OSError as exc:
+        logger.error("rename: failed to persist label for %s: %s", fingerprint, exc)
+        return error_response(
+            CONVEY_OPERATION_FAILED,
+            detail="couldn't save the new label",
+        )
+    if not updated:
+        return error_response(PAIRED_DEVICE_NOT_FOUND, detail="fingerprint not paired")
+    return jsonify({"fingerprint": fingerprint, "label": label.strip()})
 
 
 @link_bp.route("/unpair", methods=["POST"])

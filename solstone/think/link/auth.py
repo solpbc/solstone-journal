@@ -34,6 +34,8 @@ import threading
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+MAX_DEVICE_LABEL_LEN = 80
+
 
 @dataclass(frozen=True)
 class ClientEntry:
@@ -126,6 +128,23 @@ class AuthorizedClients:
             if existing is None:
                 return False
             current[fingerprint] = replace(existing, last_seen_at=ts)
+            self._atomic_write_locked(current)
+            self._entries = current
+            return True
+
+    def update_label(self, fingerprint: str, label: str) -> bool:
+        """Update device_label for a paired device. Returns False if not paired."""
+        normalized = label.strip()
+        if not normalized:
+            raise ValueError("label must not be empty")
+        if len(normalized) > MAX_DEVICE_LABEL_LEN:
+            raise ValueError("label too long")
+        with self._lock:
+            current = self._load_file_locked()
+            existing = current.get(fingerprint)
+            if existing is None:
+                return False
+            current[fingerprint] = replace(existing, device_label=normalized)
             self._atomic_write_locked(current)
             self._entries = current
             return True

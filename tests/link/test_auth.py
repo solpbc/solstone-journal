@@ -10,7 +10,9 @@ import json
 import time
 from pathlib import Path
 
-from solstone.think.link.auth import AuthorizedClients
+import pytest
+
+from solstone.think.link.auth import MAX_DEVICE_LABEL_LEN, AuthorizedClients
 
 
 def test_empty_file_is_empty(tmp_path: Path) -> None:
@@ -137,6 +139,71 @@ def test_touch_last_seen_persists_key_in_payload(tmp_path: Path) -> None:
     payload = _load_payload(path)
     assert payload[0]["role"] == "phone"
     assert payload[0]["last_seen_at"]
+
+
+def test_update_label_updates_and_persists(tmp_path: Path) -> None:
+    path = tmp_path / "auth.json"
+    store = AuthorizedClients(path)
+    fingerprint = "sha256:abc"
+
+    store.add(fingerprint, "old name", "inst-1")
+
+    assert store.update_label(fingerprint, "  new name  ") is True
+    entry = store.get(fingerprint)
+    assert entry is not None
+    assert entry.device_label == "new name"
+
+    payload = _load_payload(path)
+    assert payload[0]["device_label"] == "new name"
+
+
+@pytest.mark.parametrize(
+    ("label", "message"),
+    [
+        ("", "label must not be empty"),
+        ("   ", "label must not be empty"),
+        ("x" * (MAX_DEVICE_LABEL_LEN + 1), "label too long"),
+    ],
+)
+def test_update_label_rejects_invalid_labels(
+    tmp_path: Path,
+    label: str,
+    message: str,
+) -> None:
+    store = AuthorizedClients(tmp_path / "auth.json")
+    store.add("sha256:abc", "old name", "inst-1")
+
+    with pytest.raises(ValueError, match=message):
+        store.update_label("sha256:abc", label)
+
+
+def test_update_label_unknown_fp_returns_false(tmp_path: Path) -> None:
+    store = AuthorizedClients(tmp_path / "auth.json")
+
+    assert store.update_label("sha256:deadbeef", "new name") is False
+
+    store.add("sha256:abc", "old name", "inst-1")
+
+    assert store.update_label("sha256:deadbeef", "new name") is False
+
+
+def test_update_label_rereads_file_and_preserves_interleaved_last_seen(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "auth.json"
+    first = AuthorizedClients(path)
+    second = AuthorizedClients(path)
+    fingerprint = "sha256:abc"
+    seen_at = dt.datetime(2026, 4, 19, 18, 3, 12, tzinfo=dt.UTC)
+
+    first.add(fingerprint, "old name", "inst-1")
+    assert second.touch_last_seen(fingerprint, now=seen_at) is True
+    assert first.update_label(fingerprint, "new name") is True
+
+    final = AuthorizedClients(path).get(fingerprint)
+    assert final is not None
+    assert final.device_label == "new name"
+    assert final.last_seen_at == "2026-04-19T18:03:12Z"
 
 
 def test_find_by_label(tmp_path: Path) -> None:

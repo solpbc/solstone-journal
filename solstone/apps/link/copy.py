@@ -68,3 +68,38 @@ POSTURE_SPL_TITLE = "from anywhere · sol private link"
 POSTURE_SPL_DESC = "sol pbc carries the connection and cannot see inside it."
 POSTURE_SPL_SETUP_LABEL = "set up sol private link at services.solstone.app →"
 POSTURE_SPL_MANAGE_LABEL = "manage at services.solstone.app →"
+
+# --- U3 device-section copy ---
+DEVICE_SECTION_TITLE = "your devices"
+DEVICE_PAIR_CTA = "pair a device"
+DEVICE_EMPTY_TITLE = "no devices connected yet"
+DEVICE_EMPTY_BODY = "pair a device to read your journal on the go."
+RECENT_SECTION_TITLE = "recently paired"
+RECENT_NETWORK_LABEL = "on your network"
+REFRESH_FAIL_NOTICE = "showing the last state we saw"
+UNPAIR_TITLE_FORMAT = "unpair '{label}'?"
+UNPAIR_BODY = (
+    "this device loses access to your solstone immediately and can't reconnect until "
+    "you pair it again. anything stored on the device stays on the device."
+)
+DEVICE_STATUS_LABELS = {
+    "online": "online",
+    "recent": "recently seen",
+    "offline": "offline",
+}
+DEVICE_GROUP_LABELS = {
+    "observers": "observers",
+    "peers": "peers",
+}
+DEVICE_ACTION_LABELS = {
+    "rename": "rename",
+    "copy_fingerprint": "copy fingerprint",
+    "unpair": "unpair",
+}
+RECENT_SEE_ALL_LABEL = "see all ▸"
+RECENT_SHOW_LESS_LABEL = "show less ▾"
+FINGERPRINT_COPY_SUCCESS_TOAST = "fingerprint copied"
+FINGERPRINT_COPY_FAIL_TOAST = "couldn't copy fingerprint"
+RENAME_FAIL_TOAST = "couldn't rename device"
+UNPAIR_SUCCESS_TOAST = "unpaired"
+UNPAIR_FAIL_TOAST = "couldn't unpair this device"

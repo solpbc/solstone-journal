@@ -56,7 +56,7 @@ def test_workspace_renders_reach_shell_copy_and_static_guards(link_env) -> None:
         assert color in body
     assert "SurfaceState.replaceLoading('link-status-panel'" in body
     assert 'id="link-pair-btn"' in body
-    assert "pair a phone" in body_text
+    assert "pair a device" in body_text
 
     for forbidden in (
         "'/posture'",
