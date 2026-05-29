@@ -159,6 +159,13 @@ def test_contract_fields_referenced_in_js():
         )
 
 
+def test_segments_awaiting_thinking_repair_card_referenced():
+    js_source = JS_PATH.read_text()
+
+    assert "segments_pending_think" in js_source
+    assert "segments awaiting thinking" in js_source
+
+
 def test_all_day_fields_have_nonzero_values(tmp_path, monkeypatch):
     stats_mod = importlib.import_module("solstone.think.journal_stats")
     schema_mod = importlib.import_module("solstone.think.stats_schema")

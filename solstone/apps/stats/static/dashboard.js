@@ -720,7 +720,7 @@ const Dashboard = (function() {
     );
     
     // Render repairs if needed
-    const repairs = ['pending_segments', 'outputs_pending'];
+    const repairs = ['pending_segments', 'segments_pending_think', 'outputs_pending'];
     const hasRepairs = repairs.some(key => (totals[key] || 0) > 0);
 
     if (hasRepairs) {
@@ -733,6 +733,7 @@ const Dashboard = (function() {
       const repairGrid = alert.querySelector('#repairGrid');
       const repairLabels = {
         pending_segments: 'pending segments',
+        segments_pending_think: 'segments awaiting thinking',
         outputs_pending: 'agent outputs'
       };
 
