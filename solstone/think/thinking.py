@@ -1357,6 +1357,7 @@ def run_daily_prompts(
                         elif config.get("output"):
                             # Cogitate agents with explicit output get auto-persisted
                             request_config["output"] = config["output"]
+                            request_config["refresh"] = True
                         env: dict[str, str] = {
                             "SOL_DAY": day,
                             "SOL_FACET": facet_name,
@@ -1463,6 +1464,10 @@ def run_daily_prompts(
                     request_config: dict = {"day": day}
                     if is_generate:
                         request_config["output"] = config.get("output", "md")
+                        request_config["refresh"] = True
+                    elif config.get("output"):
+                        # Cogitate agents with explicit output get auto-persisted
+                        request_config["output"] = config["output"]
                         request_config["refresh"] = True
                     env: dict[str, str] = {"SOL_DAY": day}
                     request_config["env"] = env

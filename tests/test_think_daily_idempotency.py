@@ -346,6 +346,39 @@ def test_run_daily_prompts_refreshes_dispatched_generators(daily_journal, monkey
     ]
 
 
+def test_run_daily_prompts_refreshes_dispatched_cogitate_with_output(
+    daily_journal, monkeypatch
+):
+    mod = importlib.import_module("solstone.think.thinking")
+    configs = {"alpha": {"type": "cogitate", "priority": 10, "output": "md"}}
+    _write_health(
+        daily_journal,
+        DAY,
+        "001_daily.jsonl",
+        [{"event": "talent.dispatch", "ts": 1, "mode": "daily", "name": "alpha"}],
+    )
+    output_path = daily_journal / "chronicle" / DAY / "talents" / "alpha.md"
+    output_path.parent.mkdir(parents=True)
+    output_path.touch()
+    dispatched: list[tuple[str, dict]] = []
+    _install_daily_mocks(monkeypatch, mod, configs, dispatched)
+
+    _run_daily_with_writer(mod, daily_journal, DAY, "002_daily.jsonl")
+
+    assert dispatched == [
+        (
+            "alpha",
+            {
+                "day": DAY,
+                "output": "md",
+                "refresh": True,
+                "env": {"SOL_DAY": DAY},
+                "schedule": "daily",
+            },
+        )
+    ]
+
+
 def _prepare_main_day(journal: Path, day: str) -> Path:
     health = journal / "chronicle" / day / "health"
     health.mkdir(parents=True)
