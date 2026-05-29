@@ -337,6 +337,7 @@ def _drain_priority_batch(
                 name=timed_name,
                 use_id=use_id,
                 state="timeout",
+                **({"stream": stream} if stream else {}),
                 **({"facet": timed_facet} if timed_facet else {}),
             )
 
@@ -366,6 +367,7 @@ def _drain_priority_batch(
                 name=prompt_name,
                 use_id=use_id,
                 state="finish",
+                **({"stream": stream} if stream else {}),
                 **({"facet": agent_facet} if agent_facet else {}),
             )
 
@@ -412,6 +414,7 @@ def _drain_priority_batch(
                 name=prompt_name,
                 use_id=use_id,
                 state=end_state,
+                **({"stream": stream} if stream else {}),
                 **({"facet": agent_facet} if agent_facet else {}),
             )
 
@@ -578,6 +581,7 @@ def run_segment_sense(
             mode=target_schedule,
             day=day,
             segment=segment,
+            **({"stream": stream} if stream else {}),
         )
         return (0, 1, ["sense (not_configured)"])
 
@@ -647,6 +651,7 @@ def run_segment_sense(
             segment=segment,
             name="sense",
             use_id=sense_agent_id,
+            **({"stream": stream} if stream else {}),
         )
         _update_status(current_agents=["sense"])
 
@@ -711,6 +716,7 @@ def run_segment_sense(
         segment=segment,
         density=density,
         recommend=sense_json.get("recommend") or {},
+        **({"stream": stream} if stream else {}),
     )
 
     if density == "idle" and not refresh:
@@ -835,8 +841,10 @@ def run_segment_sense(
                 mode=target_schedule,
                 day=day,
                 segment=segment,
+                **({"stream": stream} if stream else {}),
             )
 
+    # Only fold-consumed segment events carry stream; not_recommended skips stay untagged.
     if recommend.get("screen_record"):
         screen_config = _cfg("screen")
         if screen_config:
@@ -849,6 +857,7 @@ def run_segment_sense(
                 mode=target_schedule,
                 day=day,
                 segment=segment,
+                **({"stream": stream} if stream else {}),
             )
     else:
         _log_skip(
@@ -872,6 +881,7 @@ def run_segment_sense(
                 mode=target_schedule,
                 day=day,
                 segment=segment,
+                **({"stream": stream} if stream else {}),
             )
     else:
         if not recommend.get("speaker_attribution"):
@@ -933,6 +943,7 @@ def run_segment_sense(
             segment=segment,
             name=agent_name,
             use_id=use_id,
+            **({"stream": stream} if stream else {}),
         )
 
         if max_concurrency and len(spawned) >= max_concurrency:
@@ -1086,6 +1097,7 @@ def run_segment_sense(
                 segment=segment,
                 name="awareness_tender",
                 use_id=at_agent_id,
+                **({"stream": stream} if stream else {}),
             )
             _update_status(current_agents=["awareness_tender"])
             s, f, fn = _drain_priority_batch(
@@ -1134,6 +1146,7 @@ def run_segment_sense(
                 segment=segment,
                 name="pulse",
                 use_id=pulse_agent_id,
+                **({"stream": stream} if stream else {}),
             )
             _update_status(current_agents=["pulse"])
             s, f, fn = _drain_priority_batch(
@@ -1168,6 +1181,7 @@ def run_segment_sense(
             mode=target_schedule,
             day=day,
             segment=segment,
+            **({"stream": stream} if stream else {}),
         )
 
     duration_ms = int((time.time() - start_time) * 1000)

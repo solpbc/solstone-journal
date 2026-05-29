@@ -16,6 +16,7 @@ from solstone.think.cluster import cluster_segments
 from solstone.think.pipeline_health import (
     SegmentProgress,
     classify_segment_completion,
+    lookup_segment_progress,
     read_segment_backlog,
     read_segment_progress,
     segment_fully_sensed,
@@ -66,39 +67,108 @@ def _segment_event(
     return record
 
 
-def _dispatch(segment: str, name: str, ts: int = 1) -> dict:
-    return _segment_event("talent.dispatch", segment, name, ts)
+def _dispatch(
+    segment: str,
+    name: str,
+    ts: int = 1,
+    *,
+    stream: str | None = None,
+) -> dict:
+    return _segment_event(
+        "talent.dispatch",
+        segment,
+        name,
+        ts,
+        **({"stream": stream} if stream else {}),
+    )
 
 
-def _complete(segment: str, name: str, ts: int = 1) -> dict:
-    return _segment_event("talent.complete", segment, name, ts, state="finish")
+def _complete(
+    segment: str,
+    name: str,
+    ts: int = 1,
+    *,
+    stream: str | None = None,
+) -> dict:
+    return _segment_event(
+        "talent.complete",
+        segment,
+        name,
+        ts,
+        state="finish",
+        **({"stream": stream} if stream else {}),
+    )
 
 
-def _fail(segment: str, name: str, ts: int = 1) -> dict:
-    return _segment_event("talent.fail", segment, name, ts, state="error")
+def _fail(
+    segment: str,
+    name: str,
+    ts: int = 1,
+    *,
+    stream: str | None = None,
+) -> dict:
+    return _segment_event(
+        "talent.fail",
+        segment,
+        name,
+        ts,
+        state="error",
+        **({"stream": stream} if stream else {}),
+    )
 
 
-def _skip(segment: str, name: str, reason: str, ts: int = 1) -> dict:
-    return _segment_event("talent.skip", segment, name, ts, reason=reason)
+def _skip(
+    segment: str,
+    name: str,
+    reason: str,
+    ts: int = 1,
+    *,
+    stream: str | None = None,
+) -> dict:
+    return _segment_event(
+        "talent.skip",
+        segment,
+        name,
+        ts,
+        reason=reason,
+        **({"stream": stream} if stream else {}),
+    )
 
 
-def _sense_complete(segment: str, density: str = "active", ts: int = 1) -> dict:
-    return _segment_event("sense.complete", segment, ts=ts, density=density)
+def _sense_complete(
+    segment: str,
+    density: str = "active",
+    ts: int = 1,
+    *,
+    stream: str | None = None,
+) -> dict:
+    return _segment_event(
+        "sense.complete",
+        segment,
+        ts=ts,
+        density=density,
+        **({"stream": stream} if stream else {}),
+    )
 
 
-def _complete_segment_events(segment: str, density: str = "active") -> list[dict]:
+def _complete_segment_events(
+    segment: str,
+    density: str = "active",
+    *,
+    stream: str | None = None,
+) -> list[dict]:
     events = [
-        _dispatch(segment, "sense", 10),
-        _complete(segment, "sense", 11),
-        _sense_complete(segment, density, 12),
+        _dispatch(segment, "sense", 10, stream=stream),
+        _complete(segment, "sense", 11, stream=stream),
+        _sense_complete(segment, density, 12, stream=stream),
     ]
     if density != "idle":
         events.extend(
             [
-                _dispatch(segment, "entities", 13),
-                _complete(segment, "entities", 14),
-                _dispatch(segment, "documents", 15),
-                _complete(segment, "documents", 16),
+                _dispatch(segment, "entities", 13, stream=stream),
+                _complete(segment, "entities", 14, stream=stream),
+                _dispatch(segment, "documents", 15, stream=stream),
+                _complete(segment, "documents", 16, stream=stream),
             ]
         )
     return events
@@ -110,9 +180,12 @@ def _seed_segment(
     segment: str,
     *,
     state: str = "analyzed",
-    stream: str = STREAM,
+    stream: str | None = STREAM,
 ) -> Path:
-    segment_dir = journal / "chronicle" / day / stream / segment
+    if stream is None:
+        segment_dir = journal / "chronicle" / day / segment
+    else:
+        segment_dir = journal / "chronicle" / day / stream / segment
     segment_dir.mkdir(parents=True, exist_ok=True)
     if state == "dropped":
         return segment_dir
@@ -211,11 +284,11 @@ def test_read_segment_progress_folds_latest_terminal_and_segments(
 
     progress = read_segment_progress(DAY)
 
-    assert progress[SEGMENT].sensed is True
-    assert progress[SEGMENT].density == "active"
-    assert "entities" not in progress[SEGMENT].completed
-    assert progress[SEGMENT].dispatched == frozenset({"entities"})
-    assert progress[SEGMENT_B].completed == frozenset({"entities"})
+    assert progress[(None, SEGMENT)].sensed is True
+    assert progress[(None, SEGMENT)].density == "active"
+    assert "entities" not in progress[(None, SEGMENT)].completed
+    assert progress[(None, SEGMENT)].dispatched == frozenset({"entities"})
+    assert progress[(None, SEGMENT_B)].completed == frozenset({"entities"})
 
 
 def test_read_segment_progress_tracks_latest_sense_density(segment_journal):
@@ -229,7 +302,134 @@ def test_read_segment_progress_tracks_latest_sense_density(segment_journal):
         ],
     )
 
-    assert read_segment_progress(DAY)[SEGMENT].density == "idle"
+    assert read_segment_progress(DAY)[(None, SEGMENT)].density == "idle"
+
+
+def test_stream_keyed_progress_separates_duplicate_segment_ids(segment_journal):
+    day = "20990408"
+    _seed_segment(segment_journal, day, SEGMENT, stream="alpha")
+    _seed_segment(segment_journal, day, SEGMENT, stream="beta")
+    _write_health(
+        segment_journal,
+        day,
+        "001_segment.jsonl",
+        _complete_segment_events(SEGMENT, stream="alpha")
+        + [
+            _dispatch(SEGMENT, "sense", 20, stream="beta"),
+            _complete(SEGMENT, "sense", 21, stream="beta"),
+            _sense_complete(SEGMENT, "active", 22, stream="beta"),
+            _dispatch(SEGMENT, "entities", 23, stream="beta"),
+            _complete(SEGMENT, "entities", 24, stream="beta"),
+        ],
+    )
+
+    progress = read_segment_progress(day)
+
+    assert ("alpha", SEGMENT) in progress
+    assert ("beta", SEGMENT) in progress
+    assert progress[("alpha", SEGMENT)].completed == frozenset(
+        {"sense", "entities", "documents"}
+    )
+    assert progress[("beta", SEGMENT)].completed == frozenset({"sense", "entities"})
+    assert segment_fully_thought(
+        lookup_segment_progress(progress, "alpha", SEGMENT)
+    ) == (True, None)
+    assert segment_fully_thought(
+        lookup_segment_progress(progress, "beta", SEGMENT)
+    ) == (False, "floor:documents")
+
+    completion = classify_segment_completion(cluster_segments(day), progress)
+    assert completion.not_thought == 1
+    assert completion.total == 2
+
+
+def test_stream_lookup_does_not_borrow_from_other_stream(segment_journal):
+    day = "20990409"
+    _seed_segment(segment_journal, day, SEGMENT, stream="alpha")
+    _seed_segment(segment_journal, day, SEGMENT, stream="beta")
+    _write_health(
+        segment_journal,
+        day,
+        "001_segment.jsonl",
+        _complete_segment_events(SEGMENT, stream="alpha")
+        + [_sense_complete(SEGMENT, "active", 20, stream="beta")],
+    )
+
+    progress = read_segment_progress(day)
+
+    assert segment_fully_thought(
+        lookup_segment_progress(progress, "alpha", SEGMENT)
+    ) == (True, None)
+    assert segment_fully_thought(
+        lookup_segment_progress(progress, "beta", SEGMENT)
+    ) == (False, "floor:entities")
+
+    completion = classify_segment_completion(cluster_segments(day), progress)
+    assert completion.not_thought == 1
+    assert completion.total == 2
+
+
+def test_stream_keyed_no_config_floor_allows_completion(segment_journal):
+    day = "20990410"
+    _seed_segment(segment_journal, day, SEGMENT, stream="gamma")
+    _write_health(
+        segment_journal,
+        day,
+        "001_segment.jsonl",
+        [
+            _sense_complete(SEGMENT, "active", 1, stream="gamma"),
+            _complete(SEGMENT, "documents", 2, stream="gamma"),
+            _skip(SEGMENT, "entities", "no_config", 3, stream="gamma"),
+        ],
+    )
+
+    progress = read_segment_progress(day)
+
+    assert progress[("gamma", SEGMENT)].unconfigured == frozenset({"entities"})
+    assert segment_fully_thought(
+        lookup_segment_progress(progress, "gamma", SEGMENT)
+    ) == (True, None)
+
+
+def test_stream_keyed_dispatch_blocks_without_terminal(segment_journal):
+    day = "20990411"
+    _seed_segment(segment_journal, day, SEGMENT, stream="delta")
+    _write_health(
+        segment_journal,
+        day,
+        "001_segment.jsonl",
+        _complete_segment_events(SEGMENT, stream="delta")
+        + [_dispatch(SEGMENT, "screen", 30, stream="delta")],
+    )
+
+    progress = read_segment_progress(day)
+
+    assert "screen" in progress[("delta", SEGMENT)].dispatched
+    assert "screen" not in progress[("delta", SEGMENT)].completed
+    assert segment_fully_thought(
+        lookup_segment_progress(progress, "delta", SEGMENT)
+    ) == (False, "dispatched:screen")
+
+
+def test_primary_segment_uses_legacy_progress_fallback(segment_journal):
+    day = "20990412"
+    _seed_segment(segment_journal, day, SEGMENT, stream=None)
+    _write_health(
+        segment_journal,
+        day,
+        "001_segment.jsonl",
+        _complete_segment_events(SEGMENT),
+    )
+
+    progress = read_segment_progress(day)
+    segments = cluster_segments(day)
+    completion = classify_segment_completion(segments, progress)
+
+    assert (None, SEGMENT) in progress
+    assert ("_default", SEGMENT) not in progress
+    assert segments[0]["stream"] == "_default"
+    assert completion.not_thought == 0
+    assert completion.total == 1
 
 
 def test_read_segment_progress_fail_closed_on_unexpected_error(
@@ -292,7 +492,7 @@ def test_segment_fully_thought_ignores_skipped_not_dispatched_conditionals(
         + [_skip(SEGMENT, "speaker_attribution", "not_recommended", 30)],
     )
 
-    progress = read_segment_progress(DAY)[SEGMENT]
+    progress = read_segment_progress(DAY)[(None, SEGMENT)]
 
     assert "speaker_attribution" not in progress.dispatched
     assert segment_fully_thought(progress) == (True, None)

@@ -60,6 +60,7 @@ from solstone.think.entities.journal import get_journal_principal, load_journal_
 from solstone.think.media import MIME_TYPES
 from solstone.think.models import get_usage_cost
 from solstone.think.pipeline_health import (
+    lookup_segment_progress,
     read_segment_progress,
     segment_fully_sensed,
     segment_fully_thought,
@@ -140,7 +141,9 @@ def _attach_think_to_segments(segments: list[dict[str, Any]], day: str) -> None:
         if not segment_fully_sensed(seg["data_state"]):
             seg["think"] = None
             continue
-        thought, _reason = segment_fully_thought(progress.get(seg["key"]))
+        thought, _reason = segment_fully_thought(
+            lookup_segment_progress(progress, seg["stream"], seg["key"])
+        )
         seg["think"] = "thought" if thought else "awaiting"
 
 

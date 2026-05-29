@@ -290,21 +290,23 @@ def read_completed_units(day: str) -> set[tuple[str, str, str | None]]:
     return {key for key, (_ts, is_complete) in latest.items() if is_complete}
 
 
-def read_segment_progress(day: str) -> dict[str, SegmentProgress]:
+def read_segment_progress(day: str) -> dict[tuple[str | None, str], SegmentProgress]:
     """Return per-segment progress from the day's segment health events.
 
-    Folds the day's health JSONL files read-only. Segment-scoped records are
-    records with ``mode == "segment"`` and a truthy string ``segment`` field.
-    Terminal events are only ``talent.complete`` and ``talent.fail``; the latest
-    terminal per ``(segment, name)`` wins by ``ts``. ``talent.skip`` is
+    Folds the day's health JSONL files read-only. Progress is keyed by
+    ``(stream, segment)``. Untagged historical records use a legacy ``None``
+    stream bucket. Segment-scoped records are records with ``mode == "segment"``
+    and a truthy string ``segment`` field. Terminal events are only
+    ``talent.complete`` and ``talent.fail``; the latest terminal per
+    ``((stream, segment), name)`` wins by ``ts``. ``talent.skip`` is
     non-terminal, except ``reason="no_config"`` is tracked for floor verdicts.
 
     This function does not create, modify, or delete journal state.
     """
-    latest_sense: dict[str, tuple[int, str | None]] = {}
-    dispatched: dict[str, set[str]] = {}
-    terminals: dict[str, dict[str, tuple[int, bool]]] = {}
-    unconfigured: dict[str, set[str]] = {}
+    latest_sense: dict[tuple[str | None, str], tuple[int, str | None]] = {}
+    dispatched: dict[tuple[str | None, str], set[str]] = {}
+    terminals: dict[tuple[str | None, str], dict[str, tuple[int, bool]]] = {}
+    unconfigured: dict[tuple[str | None, str], set[str]] = {}
 
     try:
         health_dir = day_path(day, create=False) / "health"
@@ -334,6 +336,8 @@ def read_segment_progress(day: str) -> dict[str, SegmentProgress]:
                         continue
                     if not segment:
                         continue
+                    stream = rec.get("stream")
+                    key = (stream if isinstance(stream, str) else None, segment)
 
                     event = rec.get("event")
                     if event == "sense.complete":
@@ -349,15 +353,12 @@ def read_segment_progress(day: str) -> dict[str, SegmentProgress]:
                         density = rec.get("density")
                         if not isinstance(density, str):
                             density = None
-                        if (
-                            segment not in latest_sense
-                            or ts >= latest_sense[segment][0]
-                        ):
-                            latest_sense[segment] = (ts, density)
+                        if key not in latest_sense or ts >= latest_sense[key][0]:
+                            latest_sense[key] = (ts, density)
                     elif event == "talent.dispatch":
                         name = rec.get("name")
                         if isinstance(name, str):
-                            dispatched.setdefault(segment, set()).add(name)
+                            dispatched.setdefault(key, set()).add(name)
                     elif event in {"talent.complete", "talent.fail"}:
                         name = rec.get("name")
                         if not isinstance(name, str):
@@ -377,7 +378,7 @@ def read_segment_progress(day: str) -> dict[str, SegmentProgress]:
                             )
                             continue
 
-                        segment_terminals = terminals.setdefault(segment, {})
+                        segment_terminals = terminals.setdefault(key, {})
                         if (
                             name not in segment_terminals
                             or ts >= segment_terminals[name][0]
@@ -389,7 +390,7 @@ def read_segment_progress(day: str) -> dict[str, SegmentProgress]:
                     elif event == "talent.skip" and rec.get("reason") == "no_config":
                         name = rec.get("name")
                         if isinstance(name, str):
-                            unconfigured.setdefault(segment, set()).add(name)
+                            unconfigured.setdefault(key, set()).add(name)
     except Exception:
         logger.warning(
             "pipeline_health: unexpected error reading segment progress for %s",
@@ -399,19 +400,19 @@ def read_segment_progress(day: str) -> dict[str, SegmentProgress]:
         return {}
 
     segments = set(latest_sense) | set(dispatched) | set(terminals) | set(unconfigured)
-    progress: dict[str, SegmentProgress] = {}
-    for segment in sorted(segments):
-        segment_terminals = terminals.get(segment, {})
-        progress[segment] = SegmentProgress(
-            sensed=segment in latest_sense,
-            density=latest_sense.get(segment, (0, None))[1],
-            dispatched=frozenset(dispatched.get(segment, set())),
+    progress: dict[tuple[str | None, str], SegmentProgress] = {}
+    for key in sorted(segments, key=lambda k: (k[1], k[0] is not None, k[0] or "")):
+        segment_terminals = terminals.get(key, {})
+        progress[key] = SegmentProgress(
+            sensed=key in latest_sense,
+            density=latest_sense.get(key, (0, None))[1],
+            dispatched=frozenset(dispatched.get(key, set())),
             completed=frozenset(
                 name
                 for name, (_ts, is_complete) in segment_terminals.items()
                 if is_complete
             ),
-            unconfigured=frozenset(unconfigured.get(segment, set())),
+            unconfigured=frozenset(unconfigured.get(key, set())),
         )
     return progress
 
@@ -442,9 +443,26 @@ def segment_fully_thought(progress: SegmentProgress | None) -> tuple[bool, str |
     return True, None
 
 
+def lookup_segment_progress(
+    progress: dict[tuple[str | None, str], SegmentProgress],
+    stream: str,
+    segment: str,
+) -> SegmentProgress | None:
+    """Resolve a clustered segment's progress.
+
+    Exact ``(stream, segment)`` first; only on an exact miss fall back to the
+    legacy untagged bucket ``(None, segment)``. Never crosses to a different
+    stream's progress, and never falls back when an exact entry exists.
+    """
+    hit = progress.get((stream, segment))
+    if hit is not None:
+        return hit
+    return progress.get((None, segment))
+
+
 def classify_segment_completion(
     segments: list[dict],
-    progress: dict[str, SegmentProgress],
+    progress: dict[tuple[str | None, str], SegmentProgress],
 ) -> SegmentCompletion:
     """Purely classify clustered segment completion without journal reads/writes."""
     blockers: list[dict[str, str]] = []
@@ -469,7 +487,9 @@ def classify_segment_completion(
             not_sensed += 1
             continue
 
-        ok, reason = segment_fully_thought(progress.get(key))
+        ok, reason = segment_fully_thought(
+            lookup_segment_progress(progress, seg["stream"], key)
+        )
         if not ok:
             blockers.append(
                 {
