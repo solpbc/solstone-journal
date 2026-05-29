@@ -7,7 +7,7 @@ Registered with solstone's supervisor via `think/sol_cli.py` COMMANDS (see `sol 
 the supervisor launches this as a subprocess alongside callosum, cortex,
 convey, etc. Service lifecycle:
 
-  start → load state + CA → ensure account_token (enroll once) →
+  start → load state + CA → ensure service_token (enroll once) →
     open listen WS to spl-relay → accept tunnel pairs → pipe raw bytes to
     Convey's secure listener on 127.0.0.1:7657. On disconnect, reconnect
     with exponential backoff.
@@ -16,7 +16,7 @@ Exits on SIGINT/SIGTERM with a clean close of the listen WS and all
 in-flight tunnel WSes.
 
 Callosum events are emitted on the `link` tract:
-  enrolled     first-run account-token mint
+  enrolled     first-run service-token mint
   connecting   opening listen WS
   connected    listen WS open (service is reachable)
   disconnect   listen WS closed (about to reconnect)
@@ -40,9 +40,9 @@ from .ca import load_or_generate_ca
 from .paths import (
     LinkState,
     ca_dir,
-    load_account_token,
+    load_service_token,
     relay_url,
-    save_account_token,
+    save_service_token,
 )
 from .relay_client import RelayClient
 
@@ -53,7 +53,7 @@ async def run_service() -> None:
     """Build the relay client and run it until signaled."""
     state = LinkState.load_or_create()
     ca = load_or_generate_ca(ca_dir())
-    token = load_account_token()
+    token = load_service_token()
 
     callosum = CallosumConnection()
     callosum.start()
@@ -68,8 +68,8 @@ async def run_service() -> None:
         instance_id=state.instance_id,
         home_label=state.home_label,
         relay_endpoint=relay_url(),
-        account_token=token,
-        on_account_token=save_account_token,
+        service_token=token,
+        on_service_token=save_service_token,
         ca_pubkey_spki_pem=ca.pubkey_spki_pem,
         callosum_emit=emit,
     )

@@ -82,7 +82,7 @@ from solstone.think.link.paths import (
     LinkState,
     authorized_clients_path,
     ca_dir,
-    load_account_token,
+    load_service_token,
     nonces_path,
     relay_url,
 )
@@ -236,7 +236,7 @@ def api_devices() -> Any:
 def api_status() -> Any:
     """Snapshot of link-service state for the dashboard header."""
     state = LinkState.load_or_create()
-    token = load_account_token()
+    token = load_service_token()
     ca_fp = _ca_fingerprint() if ca_dir().exists() else None
     return jsonify(
         {

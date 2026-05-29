@@ -37,8 +37,8 @@ class RelayClient:
         instance_id: str,
         home_label: str,
         relay_endpoint: str,
-        account_token: str | None,
-        on_account_token: Callable[[str], None],
+        service_token: str | None,
+        on_service_token: Callable[[str], None],
         ca_pubkey_spki_pem: str,
         callosum_emit: CallosumEmit | None = None,
     ) -> None:
@@ -46,15 +46,15 @@ class RelayClient:
         self._home_label = home_label
         self._relay_endpoint = relay_endpoint.rstrip("/")
         self._relay_ws_endpoint = _to_ws(self._relay_endpoint)
-        self._account_token = account_token
-        self._on_account_token = on_account_token
+        self._service_token = service_token
+        self._on_service_token = on_service_token
         self._ca_pubkey_spki_pem = ca_pubkey_spki_pem
         self._emit = callosum_emit or (lambda _event, _fields: None)
         self._running = False
         self._tunnels: dict[str, asyncio.Task[None]] = {}
 
     async def enroll_if_needed(self) -> None:
-        if self._account_token:
+        if self._service_token:
             return
         endpoint = f"{self._relay_endpoint}/enroll/home"
         result = await asyncio.to_thread(
@@ -66,11 +66,12 @@ class RelayClient:
                 "home_label": self._home_label,
             },
         )
-        token = result.get("account_token")
+        # back-compat: relay still returns "account_token" until lode L2 renames it
+        token = result.get("service_token") or result.get("account_token")
         if not isinstance(token, str) or not token:
-            raise RuntimeError("relay returned no account_token")
-        self._account_token = token
-        self._on_account_token(token)
+            raise RuntimeError("relay returned no service_token")
+        self._service_token = token
+        self._on_service_token(token)
         self._emit("enrolled", {"instance_id": self._instance_id})
 
     async def run(self) -> None:
@@ -103,13 +104,13 @@ class RelayClient:
 
     async def _run_once(self) -> None:
         await self.enroll_if_needed()
-        assert self._account_token is not None
+        assert self._service_token is not None
         self._emit("connecting", {})
-        listen_url = self._url_for("/session/listen", token=self._account_token)
+        listen_url = self._url_for("/session/listen", token=self._service_token)
         log.info("opening listen WS")
         async with websockets.connect(
             listen_url,
-            additional_headers={"Authorization": f"Bearer {self._account_token}"},
+            additional_headers={"Authorization": f"Bearer {self._service_token}"},
             max_size=None,
         ) as ws:
             self._emit("connected", {})
@@ -132,12 +133,12 @@ class RelayClient:
                 )
 
     async def _handle_tunnel(self, tunnel_id: str) -> None:
-        assert self._account_token is not None
+        assert self._service_token is not None
         tcp_writer: asyncio.StreamWriter | None = None
         try:
             async with websockets.connect(
-                self._url_for(f"/tunnel/{tunnel_id}", token=self._account_token),
-                additional_headers={"Authorization": f"Bearer {self._account_token}"},
+                self._url_for(f"/tunnel/{tunnel_id}", token=self._service_token),
+                additional_headers={"Authorization": f"Bearer {self._service_token}"},
                 max_size=None,
             ) as ws:
                 tcp_reader, tcp_writer = await asyncio.open_connection(

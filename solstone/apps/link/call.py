@@ -33,7 +33,7 @@ from solstone.think.link.paths import (
     LinkState,
     authorized_clients_path,
     ca_dir,
-    load_account_token,
+    load_service_token,
     nonces_path,
     relay_url,
 )
@@ -299,7 +299,7 @@ def unpair(
 def status() -> None:
     """Report enrollment, listen-WS state, active tunnel count, relay endpoint."""
     state = LinkState.load_or_create()
-    token = load_account_token()
+    token = load_service_token()
     url = relay_url()
     entries = _authorized().snapshot()
     typer.echo(f"Instance ID:   {state.instance_id}")

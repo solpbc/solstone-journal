@@ -11,7 +11,7 @@ All link-service state lives under `journal/link/`:
         private.pem    mode 0600 — filesystem-perms-only protection
       authorized_clients.json   paired-device ledger (mtime-reloaded)
       tokens/
-        account.json   cached account_token from /enroll/home
+        account.json   cached service_token from /enroll/home
       nonces.json      pair-ceremony nonces (5-min TTL, single-use)
       state.json       instance_id + home_label (generated on first run)
 
@@ -59,7 +59,7 @@ def tokens_dir() -> Path:
     return d
 
 
-def account_token_path() -> Path:
+def service_token_path() -> Path:
     return tokens_dir() / "account.json"
 
 
@@ -97,7 +97,7 @@ def relay_url() -> str:
 
 @dataclass
 class LinkState:
-    """Service identity — the values spl-relay binds an account_token to.
+    """Service identity — the values spl-relay binds a service_token to.
 
     Persisted to `journal/link/state.json`; generated on first run.
     """
@@ -137,26 +137,27 @@ class LinkState:
         os.replace(tmp, path)
 
 
-def load_account_token() -> str | None:
-    """Read the cached /enroll/home account token, or None."""
-    path = account_token_path()
+def load_service_token() -> str | None:
+    """Read the cached /enroll/home service token, or None."""
+    path = service_token_path()
     if not path.exists():
         return None
     try:
         raw = json.loads(path.read_text("utf-8"))
-        token = raw.get("account_token")
+        # back-compat: pre-rename caches stored the token under "account_token"
+        token = raw.get("service_token") or raw.get("account_token")
         return token if isinstance(token, str) and token else None
     except (json.JSONDecodeError, OSError):
         return None
 
 
-def save_account_token(token: str) -> None:
-    """Persist the account token atomically with mode 0600."""
-    path = account_token_path()
+def save_service_token(token: str) -> None:
+    """Persist the service token atomically with mode 0600."""
+    path = service_token_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"account_token": token}, f, indent=2)
+        json.dump({"service_token": token}, f, indent=2)
         f.write("\n")
         f.flush()
         os.fsync(f.fileno())
