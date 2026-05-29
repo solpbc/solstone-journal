@@ -146,7 +146,9 @@ def _link_service(journal: Path):
     threading.Thread(target=drain, daemon=True).start()
     if not ready.wait(timeout=20):
         proc.terminate()
-        raise RuntimeError("link service never opened listen WS:\n" + "".join(lines[-40:]))
+        raise RuntimeError(
+            "link service never opened listen WS:\n" + "".join(lines[-40:])
+        )
     try:
         yield proc
     finally:
@@ -235,17 +237,25 @@ def test_offlan_pair_reach_revoke(
         # 2. run the real L10 mobile client through the off-LAN ceremony
         result = subprocess.run(
             [
-                "bun", "run", "src/index.ts", "pair",
-                pair_link, "offlan-e2e-device",
-                "--relay", RELAY_URL,
-                "--state", str(state_path),
+                "bun",
+                "run",
+                "src/index.ts",
+                "pair",
+                pair_link,
+                "offlan-e2e-device",
+                "--relay",
+                RELAY_URL,
+                "--state",
+                str(state_path),
             ],
             cwd=SPL_MOBILE,
             capture_output=True,
             text=True,
             timeout=60,
         )
-        assert result.returncode == 0, f"mobile pair failed:\n{result.stdout}\n{result.stderr}"
+        assert result.returncode == 0, (
+            f"mobile pair failed:\n{result.stdout}\n{result.stderr}"
+        )
 
         state = json.loads(state_path.read_text())
         assert state.get("device_token"), "no device_token issued"
