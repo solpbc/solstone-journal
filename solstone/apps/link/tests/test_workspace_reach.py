@@ -35,10 +35,11 @@ def test_workspace_renders_reach_shell_copy_and_static_guards(link_env) -> None:
         "blind by construction",
         "reachable from the internet",
         "typeof data.enrolled !== 'boolean'",
+        # no unconditional relay claim in the header — false in direct posture
+        "sol pbc carries the connection — but can never see inside it",
     ):
         assert gone not in body_text
 
-    assert copy.HEADER_TRUST_LINE in body_text
     for value in copy.STATUS_SENTENCES.values():
         assert value in body_text
     assert copy.REACH_CARD_TITLE in body_text

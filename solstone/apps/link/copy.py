@@ -84,7 +84,9 @@ LAN_BANNER_DIY_BODY = (
 )
 
 # --- U2 reach-shell copy ---
-HEADER_TRUST_LINE = "sol pbc carries the connection — but can never see inside it"
+# No unconditional header trust line: relay-trust messaging is posture-specific
+# (direct card = "no one in the middle"; spl card = POSTURE_SPL_DESC). An always-on
+# "sol pbc carries the connection" claim is false in direct posture (spec § problem).
 POSTURE_MODAL_FOOTER = "switching is gentle — devices you've paired keep working either way, no re-pairing."
 STATUS_SENTENCES = {
     "direct_online": "your solstone is reachable on your network.",

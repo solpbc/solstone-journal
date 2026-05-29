@@ -10,7 +10,6 @@ import re
 from solstone.apps.link import copy
 
 U2_COPY_VALUES = [
-    copy.HEADER_TRUST_LINE,
     copy.POSTURE_MODAL_FOOTER,
     copy.REACH_CARD_TITLE,
     copy.REACH_DIRECT_LABEL,
@@ -50,9 +49,6 @@ U5_COPY_VALUES = [
 
 
 def test_reach_shell_spec_fixed_copy_is_locked() -> None:
-    assert copy.HEADER_TRUST_LINE == (
-        "sol pbc carries the connection — but can never see inside it"
-    )
     assert copy.POSTURE_MODAL_FOOTER == (
         "switching is gentle — devices you've paired keep working either way, no re-pairing."
     )
