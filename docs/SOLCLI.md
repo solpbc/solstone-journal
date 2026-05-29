@@ -248,9 +248,45 @@ This is for audit trail — it records that the agent confirmed user consent bef
 
 Use lowercase, single-word names. Hyphenated names for multi-word (`list-nudges-due`, `set-name`).
 
-## Structured output: `journal setup --jsonl` and `sol doctor --jsonl`
+## Doctor Commands
 
-Use `--jsonl` when another process needs progress events as they happen. The contract is one JSON object per stdout line, flushed immediately; `sol doctor --jsonl` is mutually exclusive with `sol doctor --json`, and the existing `sol doctor --json` payload keeps its short statuses (`ok`, `warn`, `fail`, `skip`).
+`doctor` is a universal command surface: both `sol doctor` and `journal doctor`
+dispatch to `solstone.think.doctor`, with the battery selected by the active
+binary.
+
+`sol doctor` checks universal CLI usability and is designed to run cleanly on a
+journal-less or repo-less machine. Its default battery has four checks:
+
+- `python_version` — blocker; light package-metadata Requires-Python floor, no
+  `pyproject.toml` required.
+- `sol_importable` — blocker.
+- `local_bin_sol_reachable` — advisory.
+- `stale_alias_symlink` — blocker; checks only the `sol` wrapper.
+
+`journal doctor` diagnoses journal-host health. It is role-aware: on a machine
+without a local journal directory or installed journal service, folder and
+service checks emit `skip` (`no local journal` / `no local journal service`)
+instead of false failures. Its battery is:
+
+- `disk_space` — advisory.
+- `config_dir_readable`, `journal_dir_writable`, `service_identity`,
+  `service_running`, `journal_sync`, `stale_alias_symlink` — blockers.
+- `launchd_stale_plist` — advisory on macOS; skipped on Linux.
+- `feature:pdf`, `feature:whisper` — advisories with the exact extra-install
+  command when missing.
+
+Journal-host blocker failures include invalid service config, service identity
+mismatch, crash loops, systemd failed state, and journal-sync conflicts. An
+installed service with no supervisor socket is a warning when the OS unit is not
+failed. `--feature <name>` runs a single feature advisory on either surface.
+
+Use `sol doctor` for “can this CLI run?”, `journal doctor` for “why is this
+journal host unhealthy?”, `make preflight` for the stdlib-only fresh-clone check
+before `.venv`/`uv` exist, and `sol health` for the live supervisor status view.
+
+## Structured output: `journal setup --jsonl` and doctor `--jsonl`
+
+Use `--jsonl` when another process needs progress events as they happen. The contract is one JSON object per stdout line, flushed immediately; doctor `--jsonl` is mutually exclusive with doctor `--json`, and the existing doctor `--json` payload keeps its short statuses (`ok`, `warn`, `fail`, `skip`).
 
 | Event | Emitted by | When |
 |-------|------------|------|
@@ -260,9 +296,9 @@ Use `--jsonl` when another process needs progress events as they happen. The con
 | `step.completed` | `journal setup --jsonl` | A setup step finishes with `outcome: "ok"` or `outcome: "skipped"`. |
 | `step.failed` | `journal setup --jsonl` | A setup step fails or reaches a dead end. |
 | `step.warning` | `journal setup --jsonl` | Setup translates advisory diagnostics or dropped doctor lines. |
-| `doctor.started` | `sol doctor --jsonl` | Doctor diagnostics begin. |
-| `check.completed` | `sol doctor --jsonl` | One diagnostic check finishes. Status is long form: `ok`, `warning`, `failed`, or `skipped`. |
-| `doctor.completed` | `sol doctor --jsonl` | Doctor diagnostics finish with `status: "ok"`, `"warning"`, or `"failed"`. |
+| `doctor.started` | doctor `--jsonl` | Doctor diagnostics begin. |
+| `check.completed` | doctor `--jsonl` | One diagnostic check finishes. Status is long form: `ok`, `warning`, `failed`, or `skipped`. |
+| `doctor.completed` | doctor `--jsonl` | Doctor diagnostics finish with `status: "ok"`, `"warning"`, or `"failed"`. |
 
 | Code | When |
 |------|------|
@@ -282,16 +318,16 @@ Skipped or resumed reasons are fixed: `--skip-models`, `--skip-skills`, `--skip-
 
 ### Doctor pass-through
 
-`journal setup --jsonl` runs `sol doctor --jsonl` for the doctor step and forwards `doctor.started`, `check.completed`, and `doctor.completed` lines verbatim. Advisory doctor checks are also translated into setup-level `step.warning` events so consumers can handle setup warnings uniformly.
+`journal setup --jsonl` runs `sol doctor --readiness --jsonl` for the doctor step and forwards `doctor.started`, `check.completed`, and `doctor.completed` lines verbatim. The readiness battery is the four universal checks plus `disk_space`, `journal_dir_writable`, `feature:pdf`, and `feature:whisper`; it does not run runtime service, sync, config-dir, or launchd checks. Advisory doctor checks are also translated into setup-level `step.warning` events so consumers can handle setup warnings uniformly.
 
-Example stream excerpt:
+Example stream excerpt for setup readiness:
 
 ```jsonl
 {"event":"setup.started","ts":"2026-05-11T20:00:00Z","version":"0.0.0+source","mode":"non_interactive"}
 {"event":"step.started","ts":"2026-05-11T20:00:00Z","step":"doctor","index":1,"total":7}
-{"event":"doctor.started","ts":"2026-05-11T20:00:00Z","version":"0.0.0+source"}
+{"event":"doctor.started","ts":"2026-05-11T20:00:00Z","version":"0.0.0+source","port":5015,"feature":""}
 {"event":"check.completed","ts":"2026-05-11T20:00:01Z","name":"python_version","severity":"blocker","status":"ok","detail":"Python version ok","fix":""}
-{"event":"doctor.completed","ts":"2026-05-11T20:00:01Z","status":"ok","duration_ms":120,"summary":{"total":17,"failed":0,"warnings":0,"skipped":0}}
+{"event":"doctor.completed","ts":"2026-05-11T20:00:01Z","status":"ok","duration_ms":120,"summary":{"total":8,"failed":0,"warnings":0,"skipped":0}}
 {"event":"step.completed","ts":"2026-05-11T20:00:01Z","step":"doctor","outcome":"ok","duration_ms":121}
 {"event":"step.completed","ts":"2026-05-11T20:00:04Z","step":"service","outcome":"ok","duration_ms":900}
 {"event":"setup.completed","ts":"2026-05-11T20:00:04Z","status":"ok","duration_ms":4000}

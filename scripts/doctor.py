@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
-"""Stdlib-only bootstrap shim for `sol doctor`.
+"""Entry shim for `sol doctor`.
 
-Used as a pre-install entry point on machines that do not yet have `.venv`
-populated. Delegates to `think.doctor.main`, which holds the canonical
-diagnostic logic.
+Delegates to `solstone.think.doctor.main`, the canonical diagnostic. This
+requires the installed package; for the stdlib-only pre-`.venv` readiness
+battery use `scripts/preflight.py` or `make preflight`.
 """
 
 from __future__ import annotations

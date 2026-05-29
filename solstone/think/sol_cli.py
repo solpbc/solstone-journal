@@ -41,13 +41,13 @@ import setproctitle
 
 class Command(NamedTuple):
     module: str
-    surface: Literal["access", "service"]
+    surface: Literal["access", "service", "universal"]
 
 
 class Alias(NamedTuple):
     module: str
     preset_args: list[str]
-    surface: Literal["access", "service"]
+    surface: Literal["access", "service", "universal"]
 
 
 class HelpGroup(NamedTuple):
@@ -84,7 +84,7 @@ COMMANDS: dict[str, Command] = {
     "top": Command("solstone.think.top", "access"),
     "health": Command("solstone.think.health_cli", "access"),
     "notify": Command("solstone.think.notify_cli", "access"),
-    "doctor": Command("solstone.think.doctor", "access"),
+    "doctor": Command("solstone.think.doctor", "universal"),
     "config": Command("solstone.think.config_cli", "service"),
     "install-models": Command("solstone.think.install_models", "service"),
     "skills": Command("solstone.think.skills_cli", "access"),
@@ -244,7 +244,7 @@ def print_journal_help() -> None:
 
     print("Commands:")
     for name, command in sorted(COMMANDS.items()):
-        if command.surface == "service":
+        if command.surface in ("service", "universal"):
             print(f"  {name:16} {command.module}")
     print()
 
@@ -442,7 +442,7 @@ def main() -> None:
 
 def journal_main() -> None:
     """Main entry point for journal service CLI."""
-    _dispatch("journal", allowed_surfaces=frozenset({"service"}))
+    _dispatch("journal", allowed_surfaces=frozenset({"service", "universal"}))
 
 
 if __name__ == "__main__":

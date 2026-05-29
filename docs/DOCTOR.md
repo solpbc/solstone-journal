@@ -23,6 +23,63 @@ ls journal/talents/*/*_active.jsonl 2>/dev/null
 
 ---
 
+## Diagnostic Commands
+
+Use the diagnostic command that matches the question:
+
+- `sol doctor` — is the CLI usable on this machine? This universal battery is
+  safe on a journal-less or repo-less box.
+- `journal doctor` — is this journal host healthy, and what should be fixed?
+  This is the health diagnosis view.
+- `make preflight` — can a fresh source checkout get ready before `.venv` or
+  `uv` exist?
+- `sol health` — what live supervisor status is being reported right now?
+
+`sol doctor` runs four checks:
+
+| Check | Severity | Notes |
+|-------|----------|-------|
+| `python_version` | blocker | Light package-metadata Requires-Python floor; does not require `pyproject.toml`. |
+| `sol_importable` | blocker | Verifies the installed/source CLI import path. |
+| `local_bin_sol_reachable` | advisory | Checks the expected `~/.local/bin/sol` PATH shape. |
+| `stale_alias_symlink` | blocker | Checks only the `sol` wrapper and can migrate recognized legacy aliases. |
+
+`journal doctor` runs the journal-host battery:
+
+| Check | Severity | Notes |
+|-------|----------|-------|
+| `disk_space` | advisory | Free-space warning. |
+| `config_dir_readable` | blocker | Home and service config directory permissions. |
+| `journal_dir_writable` | blocker | Journal directory writability when the local journal exists. |
+| `service_identity` | blocker | Installed service points at this install. |
+| `service_running` | blocker | Service installed/running/crash-loop diagnosis. |
+| `journal_sync` | blocker | Concurrent-writer conflict check. |
+| `stale_alias_symlink` | blocker | Checks only the `journal` wrapper. |
+| `launchd_stale_plist` | advisory | macOS only; Linux skips it. |
+| `feature:pdf`, `feature:whisper` | advisory | Optional extras with exact install commands. |
+
+`journal doctor` is role-aware. If there is no local journal directory or no
+installed service, folder and service checks emit `skip` (`no local journal` or
+`no local journal service`) rather than failing. Invalid service config, service
+identity mismatch, crash loops, systemd failed state, and journal-sync conflicts
+are blocker failures. An installed service with no supervisor socket is a
+warning when the OS unit is not failed. Feature checks are advisory.
+
+`journal setup` step 1 runs `sol doctor --readiness`: the four universal checks
+plus `disk_space`, `journal_dir_writable`, `feature:pdf`, and `feature:whisper`.
+It does not run runtime service, sync, config-dir, or launchd checks. A blocker
+failure still stops setup early; feature advisories stay advisory and include
+the exact extra-install command.
+
+`make preflight` runs `scripts/preflight.py`, the stdlib-only source-checkout
+readiness battery that is valid before `.venv`/`uv` exist:
+`python_version`, `uv_installed`, `venv_consistent`,
+`local_bin_sol_reachable`, `disk_space`, and `config_dir_readable`. It shares
+probe primitives with doctor through `solstone/think/probe.py`, but its
+behavior is unchanged.
+
+---
+
 ## Service Architecture
 
 The supervisor (`journal supervisor`) manages these services:

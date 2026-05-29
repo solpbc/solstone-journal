@@ -24,18 +24,12 @@ def args(doctor, *, port: int = 5015, feature: str | None = None):
 
 
 def run_check(doctor, name: str):
-    for check, runner in doctor.CHECKS:
-        if check.name == name:
-            return runner(args(doctor))
-    raise AssertionError(f"missing check runner for {name}")
+    _check, runner = doctor.FEATURE_CHECKS[name.removeprefix("feature:")]
+    return runner(args(doctor))
 
 
 def test_feature_checks_registered(doctor):
-    feature_checks = [
-        check for check, _runner in doctor.CHECKS if check.name.startswith("feature:")
-    ]
-
-    assert len(feature_checks) == len(features.FEATURES)
+    assert set(doctor.FEATURE_CHECKS) == set(features.FEATURES)
 
 
 def test_feature_checks_in_check_map(doctor):

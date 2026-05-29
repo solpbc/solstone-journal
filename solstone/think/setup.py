@@ -735,6 +735,7 @@ def doctor_command(ctx: SetupContext, *, jsonl: bool = False) -> list[str]:
         "-m",
         "solstone.think.sol_cli",
         "doctor",
+        "--readiness",
         "--jsonl" if jsonl else "--json",
         "--port",
         str(ctx.port),

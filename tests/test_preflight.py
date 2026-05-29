@@ -22,6 +22,13 @@ def preflight():
 
 
 @pytest.fixture
+def probe():
+    from solstone.think import probe as probe_module
+
+    yield probe_module
+
+
+@pytest.fixture
 def home_root(monkeypatch, tmp_path):
     home = tmp_path / "home"
     home.mkdir()
@@ -48,26 +55,26 @@ def make_repo(tmp_path: Path, *, with_venv: bool = False) -> Path:
     return repo
 
 
-def fake_probe_dispatcher(preflight, repo: Path):
+def fake_probe_dispatcher(probe, repo: Path):
     def run_probe(_check, cmd, **_kwargs):
         if list(cmd) == ["uv", "--version"]:
-            return preflight.ProbeOutput("uv 0.7.12\n", "", 0)
+            return probe.ProbeOutput("uv 0.7.12\n", "", 0)
         if len(cmd) >= 3 and cmd[1:] == ["-c", "import sys; print(sys.prefix)"]:
-            return preflight.ProbeOutput(f"{repo / '.venv'}\n", "", 0)
+            return probe.ProbeOutput(f"{repo / '.venv'}\n", "", 0)
         raise AssertionError(f"unexpected probe command: {cmd}")
 
     return run_probe
 
 
-def patch_green_environment(preflight, monkeypatch, home_root, repo: Path) -> None:
-    monkeypatch.setattr(preflight, "ROOT", repo)
+def patch_green_environment(probe, monkeypatch, home_root, repo: Path) -> None:
+    monkeypatch.setattr(probe, "ROOT", repo)
     monkeypatch.setattr(
-        preflight,
+        probe,
         "run_probe",
-        fake_probe_dispatcher(preflight, repo),
+        fake_probe_dispatcher(probe, repo),
     )
     monkeypatch.setattr(
-        preflight.shutil,
+        probe.shutil,
         "disk_usage",
         lambda _root: SimpleNamespace(total=100, used=80, free=20 * 1024**3),
     )
@@ -76,10 +83,10 @@ def patch_green_environment(preflight, monkeypatch, home_root, repo: Path) -> No
 
 
 def test_main_json_passes_when_blockers_pass(
-    preflight, monkeypatch, tmp_path, home_root, capsys
+    preflight, probe, monkeypatch, tmp_path, home_root, capsys
 ):
     repo = make_repo(tmp_path, with_venv=True)
-    patch_green_environment(preflight, monkeypatch, home_root, repo)
+    patch_green_environment(probe, monkeypatch, home_root, repo)
 
     rc = preflight.main(["--json"])
     payload = json.loads(capsys.readouterr().out)
@@ -90,21 +97,21 @@ def test_main_json_passes_when_blockers_pass(
     assert isinstance(payload["summary"], dict)
 
 
-def test_python_version_ok(preflight, monkeypatch, tmp_path):
+def test_python_version_ok(preflight, probe, monkeypatch, tmp_path):
     repo = make_repo(tmp_path)
-    monkeypatch.setattr(preflight, "ROOT", repo)
+    monkeypatch.setattr(probe, "ROOT", repo)
 
     result = preflight.python_version_check(args(preflight))
 
     assert result.status == "ok"
 
 
-def test_uv_installed_ok(preflight, monkeypatch):
-    monkeypatch.setattr(preflight, "_is_source_checkout", lambda: True)
+def test_uv_installed_ok(preflight, probe, monkeypatch):
+    monkeypatch.setattr(probe, "_is_source_checkout", lambda: True)
     monkeypatch.setattr(
-        preflight,
+        probe,
         "run_probe",
-        lambda *_args, **_kwargs: preflight.ProbeOutput("uv 0.10.0\n", "", 0),
+        lambda *_args, **_kwargs: probe.ProbeOutput("uv 0.10.0\n", "", 0),
     )
 
     result = preflight.uv_installed_check(args(preflight))
@@ -112,13 +119,13 @@ def test_uv_installed_ok(preflight, monkeypatch):
     assert result.status == "ok"
 
 
-def test_venv_consistent_ok(preflight, monkeypatch, tmp_path):
+def test_venv_consistent_ok(preflight, probe, monkeypatch, tmp_path):
     repo = make_repo(tmp_path, with_venv=True)
-    monkeypatch.setattr(preflight, "ROOT", repo)
+    monkeypatch.setattr(probe, "ROOT", repo)
     monkeypatch.setattr(
-        preflight,
+        probe,
         "run_probe",
-        lambda *_args, **_kwargs: preflight.ProbeOutput(f"{repo / '.venv'}\n", "", 0),
+        lambda *_args, **_kwargs: probe.ProbeOutput(f"{repo / '.venv'}\n", "", 0),
     )
 
     result = preflight.venv_consistent_check(args(preflight))
@@ -126,9 +133,9 @@ def test_venv_consistent_ok(preflight, monkeypatch, tmp_path):
     assert result.status == "ok"
 
 
-def test_disk_space_ok(preflight, monkeypatch):
+def test_disk_space_ok(preflight, probe, monkeypatch):
     monkeypatch.setattr(
-        preflight.shutil,
+        probe.shutil,
         "disk_usage",
         lambda _root: SimpleNamespace(total=100, used=80, free=20 * 1024**3),
     )
@@ -147,23 +154,23 @@ def test_config_dir_readable_ok(preflight, home_root):
     assert result.status == "ok"
 
 
-def test_local_bin_sol_reachable_ok(preflight, monkeypatch, home_root):
+def test_local_bin_sol_reachable_ok(preflight, probe, monkeypatch, home_root):
     local = home_root / ".local" / "bin" / "sol"
     local.parent.mkdir(parents=True)
     local.write_text("#!/bin/sh\n", encoding="utf-8")
-    monkeypatch.setattr(preflight.shutil, "which", lambda name: str(local))
+    monkeypatch.setattr(probe.shutil, "which", lambda name: str(local))
 
     result = preflight.local_bin_sol_reachable_check(args(preflight))
 
     assert result.status == "ok"
 
 
-def test_uv_missing_fails(preflight, monkeypatch):
+def test_uv_missing_fails(preflight, probe, monkeypatch):
     def raise_missing(*_args, **_kwargs):
         raise FileNotFoundError
 
-    monkeypatch.setattr(preflight, "_is_source_checkout", lambda: True)
-    monkeypatch.setattr(preflight.subprocess, "run", raise_missing)
+    monkeypatch.setattr(probe, "_is_source_checkout", lambda: True)
+    monkeypatch.setattr(probe.subprocess, "run", raise_missing)
 
     result = preflight.uv_installed_check(args(preflight))
 
@@ -172,16 +179,16 @@ def test_uv_missing_fails(preflight, monkeypatch):
 
 
 def test_main_returns_one_when_uv_missing(
-    preflight, monkeypatch, tmp_path, home_root, capsys
+    preflight, probe, monkeypatch, tmp_path, home_root, capsys
 ):
     def raise_missing(*_args, **_kwargs):
         raise FileNotFoundError
 
     repo = make_repo(tmp_path)
-    monkeypatch.setattr(preflight, "ROOT", repo)
-    monkeypatch.setattr(preflight.subprocess, "run", raise_missing)
+    monkeypatch.setattr(probe, "ROOT", repo)
+    monkeypatch.setattr(probe.subprocess, "run", raise_missing)
     monkeypatch.setattr(
-        preflight.shutil,
+        probe.shutil,
         "disk_usage",
         lambda _root: SimpleNamespace(total=100, used=80, free=20 * 1024**3),
     )
@@ -216,6 +223,7 @@ def test_preflight_runs_under_stdlib_import_guard():
             sys.executable,
             "-c",
             stdlib_guard_code(
+                "from solstone.think import probe\n"
                 "from solstone.think.preflight import main\n"
                 'raise SystemExit(main(["--json"]))'
             ),

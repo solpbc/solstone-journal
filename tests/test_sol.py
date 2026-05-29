@@ -30,6 +30,12 @@ def access_command_names() -> list[str]:
     )
 
 
+def universal_command_names() -> list[str]:
+    return sorted(
+        name for name, command in sol.COMMANDS.items() if command.surface == "universal"
+    )
+
+
 def service_alias_names() -> list[str]:
     return [
         name
@@ -380,7 +386,7 @@ class TestCommandRegistry:
 
     def test_every_registry_entry_has_surface_tag(self):
         """All commands and aliases declare the CLI surface they belong to."""
-        valid_surfaces = {"access", "service"}
+        valid_surfaces = {"access", "service", "universal"}
         for name, command in sol.COMMANDS.items():
             assert command.surface in valid_surfaces, (
                 f"Command '{name}' has invalid surface '{command.surface}'"
@@ -409,6 +415,21 @@ class TestCommandRegistry:
                 == [f"journal {name}"] + command_alias.preset_args
             )
 
+    @pytest.mark.parametrize("name", universal_command_names())
+    def test_universal_entries_dispatch_through_sol_and_journal(
+        self, monkeypatch, name
+    ):
+        """Universal commands are available from both binaries."""
+        command = sol.COMMANDS[name]
+
+        sol_result = run_dispatch(monkeypatch, "sol", name)
+        journal_result = run_dispatch(monkeypatch, "journal", name)
+
+        assert sol_result["module"] == command.module
+        assert sol_result["argv"] == [f"sol {name}"]
+        assert journal_result["module"] == command.module
+        assert journal_result["argv"] == [f"journal {name}"]
+
     @pytest.mark.parametrize("name", access_command_names())
     def test_journal_rejects_access_tagged_commands(self, monkeypatch, capsys, name):
         """The journal binary exposes only service-tagged registry entries."""
@@ -426,8 +447,8 @@ class TestCommandRegistry:
         assert exc_info.value.code == 2
         assert JOURNAL_ACCESS_CMD_ERROR.format(cmd=name) in captured.err
 
-    def test_journal_help_lists_only_service_surface(self):
-        """journal --help renders a flat service-only command list."""
+    def test_journal_help_lists_service_and_universal_surfaces(self):
+        """journal --help renders service and universal command lists."""
         code = (
             "from solstone.think.sol_cli import journal_main; "
             "import sys; "
@@ -443,7 +464,7 @@ class TestCommandRegistry:
         )
 
         assert result.returncode == 0, result.stderr
-        for name in service_command_names():
+        for name in service_command_names() + universal_command_names():
             assert name in result.stdout
         for name in access_command_names():
             assert name not in result.stdout
@@ -490,7 +511,9 @@ class TestCommandRegistry:
                 if name in sol.ALIASES:
                     rendered_aliases.add(name)
 
-        assert rendered_commands == set(access_command_names())
+        assert rendered_commands == set(
+            access_command_names() + universal_command_names()
+        )
         assert rendered_group_headers == expected_group_headers
         assert rendered_aliases == set()
 

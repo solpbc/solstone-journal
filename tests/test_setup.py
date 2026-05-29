@@ -175,6 +175,7 @@ def expected_doctor_command(port: int = 5015) -> list[str]:
         "-m",
         "solstone.think.sol_cli",
         "doctor",
+        "--readiness",
         "--json",
         "--port",
         str(port),

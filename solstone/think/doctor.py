@@ -1,22 +1,21 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Pre-install diagnostics for solstone.
+"""Diagnostics for solstone CLI and journal hosts.
 
-Runs a fixed battery of blocker and advisory checks using only the Python
-standard library so a fresh clone can be diagnosed before `uv sync`. Exit code
-`0` means no blocker failed; exit code `1` means at least one blocker-severity
-check failed.
+`sol doctor` runs universal CLI-usability checks that must be meaningful on a
+journal-less machine. `journal doctor` runs journal-host service, folder, and
+processing-health checks. `--readiness` runs the setup step-1 battery.
+
+Exit code `0` means no blocker failed; exit code `1` means at least one
+blocker-severity check failed.
 
 Decision log:
-- uv floor: 0.7.12 — `uv.lock` revision=3 requires >= 0.7.12 per
-  astral-sh/uv#15220.
+- Universal python check reads installed package metadata (with a static
+  fallback), not pyproject.toml, so packaged installs and repo-less hosts can
+  be diagnosed.
 - disk threshold: 10 GiB — measured `.venv`=7.88 GiB +
   uv-cache first-install growth ~1 GiB + buffer.
-- Makefile UV-guard strategy: MAKECMDGOALS filter; prep verified the
-  doctor-only matrix on GNU make.
-- Ramon triage docs are absent in this worktree; the battery follows the task
-  spec directly.
 - Feature-extras checks (pdf, whisper) are dynamically registered from
   `solstone.think.features.FEATURES`, severity advisory, never affect
   exit code. Filter via `--feature <name>`.
@@ -30,35 +29,46 @@ import json
 import os
 import plistlib
 import re
-import shutil
-import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from functools import partial
 from importlib.metadata import PackageNotFoundError, distribution
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
-from typing import IO, Callable, Literal, Sequence
+from typing import IO, Callable, Sequence
 
 from solstone.think import features as _features
+from solstone.think.health_cli import fetch_supervisor_status
+from solstone.think.probe import (
+    CONFIG_DIR_READABLE_CHECK,
+    DEFAULT_REQUIRES_PYTHON,
+    DISK_SPACE_CHECK,
+    LOCAL_BIN_SOL_REACHABLE_CHECK,
+    PYTHON_VERSION_CHECK,
+    PYTHON_VERSION_FIX,
+    ROOT,
+    Check,
+    CheckResult,
+    Status,
+    compare_versions,
+    config_dir_readable_check,
+    disk_space_check,
+    local_bin_sol_reachable_check,
+    make_result,
+    platform_tag,
+    run_probe,
+    truncate,
+    version_text,
+)
+from solstone.think.service import (
+    check_service_target_identity,
+    service_is_failed,
+    service_is_installed,
+)
 from solstone.think.setup_events import STATUS_TRANSLATION, JsonlEmitter, utc_now_iso
 from solstone.think.sync_check import check_journal_sync, format_doctor_report
-from solstone.think.utils import is_packaged_install
-
-ROOT = Path(__file__).resolve().parents[2]
-MIN_UV = (0, 7, 12)
-MIN_FREE_GIB = 10.0
-DEFAULT_REQUIRES_PYTHON = ">=3.11"
-PYTHON_VERSION_FIX = "install Python >=3.11, then retry"
-LOCAL_BIN_SOL_FIX = (
-    "Install via `uv tool install solstone` or `pipx install solstone` for the "
-    "canonical layout, or run `ln -s $(command -v sol) ~/.local/bin/sol` to keep "
-    "your custom layout."
-)
-
-Severity = Literal["blocker", "advisory"]
-Status = Literal["ok", "fail", "warn", "skip"]
-Platform = Literal["linux", "darwin"]
+from solstone.think.utils import get_journal_info, is_packaged_install
 
 
 @dataclass(frozen=True)
@@ -68,209 +78,44 @@ class Args:
     jsonl: bool
     port: int
     feature: str | None = None
+    readiness: bool = False
 
 
-@dataclass(frozen=True)
-class Check:
-    name: str
-    severity: Severity
-    platforms: tuple[Platform, ...]
+Runner = Callable[[Args], CheckResult]
+
+SOL_IMPORTABLE_CHECK = Check("sol_importable", "blocker", ("linux", "darwin"))
+STALE_ALIAS_CHECK = Check("stale_alias_symlink", "blocker", ("linux", "darwin"))
+JOURNAL_DIR_WRITABLE_CHECK = Check(
+    "journal_dir_writable", "blocker", ("linux", "darwin")
+)
+SERVICE_IDENTITY_CHECK = Check("service_identity", "blocker", ("linux", "darwin"))
+SERVICE_RUNNING_CHECK = Check("service_running", "blocker", ("linux", "darwin"))
+LAUNCHD_STALE_PLIST_CHECK = Check("launchd_stale_plist", "advisory", ("darwin",))
+JOURNAL_SYNC_CHECK = Check("journal_sync", "blocker", ("linux", "darwin"))
 
 
-@dataclass(frozen=True)
-class CheckResult:
-    name: str
-    severity: Severity
-    status: Status
-    detail: str
-    fix: str | None
-    platform: str | None = None
-
-
-@dataclass(frozen=True)
-class ProbeOutput:
-    stdout: str
-    stderr: str
-    returncode: int
-
-
-def platform_tag() -> Platform:
-    if sys.platform == "darwin":
-        return "darwin"
-    return "linux"
-
-
-def make_result(
-    check: Check,
-    status: Status,
-    detail: str,
-    fix: str | None = None,
-    *,
-    platform: str | None = None,
-) -> CheckResult:
-    return CheckResult(
-        name=check.name,
-        severity=check.severity,
-        status=status,
-        detail=detail,
-        fix=fix,
-        platform=platform,
-    )
-
-
-def truncate(text: str, limit: int) -> str:
-    text = " ".join(text.split())
-    if len(text) <= limit:
-        return text
-    return text[: limit - 3] + "..."
-
-
-def version_text(version: tuple[int, int, int]) -> str:
-    return ".".join(str(part) for part in version)
-
-
-def parse_version(text: str) -> tuple[int, int, int] | None:
-    match = re.search(r"(\d+)\.(\d+)\.(\d+)", text)
-    if not match:
-        return None
-    return tuple(int(part) for part in match.groups())
-
-
-def compare_versions(left: tuple[int, int, int], right: tuple[int, int, int]) -> int:
-    if left < right:
-        return -1
-    if left > right:
-        return 1
-    return 0
-
-
-def unexpected_output_result(
-    check: Check,
-    output: str,
-    *,
-    fix: str | None = None,
-) -> CheckResult:
-    snippet = truncate(output or "<empty>", 80)
-    return make_result(
-        check,
-        "fail",
-        f"probe returned unexpected output: {snippet}",
-        fix,
-    )
-
-
-def command_text(cmd: Sequence[str]) -> str:
-    return " ".join(cmd)
-
-
-def run_probe(
-    check: Check,
-    cmd: Sequence[str],
-    *,
-    timeout: float,
-    cwd: Path | None = None,
-    env: dict[str, str] | None = None,
-    ok_returncodes: tuple[int, ...] = (0,),
-    allow_nonzero: bool = False,
-    allow_empty_stdout: bool = False,
-    fix: str | None = None,
-) -> ProbeOutput | CheckResult:
-    merged_env = os.environ.copy()
-    if env:
-        merged_env.update(env)
-    try:
-        completed = subprocess.run(
-            list(cmd),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=str(cwd) if cwd else None,
-            env=merged_env,
-            check=False,
-        )
-    except FileNotFoundError:
-        return make_result(check, "fail", f"probe command not found: {cmd[0]}", fix)
-    except subprocess.TimeoutExpired:
-        return make_result(
-            check,
-            "fail",
-            f"probe timed out after {timeout:g}s: {command_text(cmd)}",
-            fix,
-        )
-    except OSError as exc:
-        return make_result(
-            check,
-            "fail",
-            f"probe failed: {type(exc).__name__}: {exc}",
-            fix,
-        )
-
-    if completed.returncode not in ok_returncodes and not allow_nonzero:
-        detail = completed.stderr.strip() or completed.stdout.strip() or "<empty>"
-        return make_result(
-            check,
-            "fail",
-            f"probe exited {completed.returncode}: {truncate(detail, 80)}",
-            fix,
-        )
-
-    if not allow_empty_stdout and not completed.stdout.strip():
-        return unexpected_output_result(
-            check,
-            completed.stderr.strip() or completed.stdout.strip(),
-            fix=fix,
-        )
-
-    return ProbeOutput(
-        stdout=completed.stdout,
-        stderr=completed.stderr,
-        returncode=completed.returncode,
-    )
-
-
-def python_version_check(args: Args) -> CheckResult:
+def python_sanity_check(args: Args) -> CheckResult:
     del args
-    check = CHECK_MAP["python_version"]
-    pyproject = ROOT / "pyproject.toml"
-    spec_from_metadata = False
+    check = PYTHON_VERSION_CHECK
     try:
-        text = pyproject.read_text(encoding="utf-8")
-        match = re.search(r'^requires-python\s*=\s*"([^"]+)"', text, re.MULTILINE)
-        if not match:
-            return make_result(
-                check,
-                "fail",
-                "could not parse requires-python from pyproject.toml",
-                PYTHON_VERSION_FIX,
-            )
-        spec = match.group(1)
-    except FileNotFoundError:
-        spec_from_metadata = True
-        try:
-            spec = distribution("solstone").metadata.get("Requires-Python")
-        except PackageNotFoundError:
-            spec = None
-        if not spec:
-            spec = DEFAULT_REQUIRES_PYTHON
-    except OSError as exc:
-        return make_result(
-            check,
-            "fail",
-            f"could not read {pyproject.name}: {type(exc).__name__}: {exc}",
-            PYTHON_VERSION_FIX,
-        )
+        spec = distribution("solstone").metadata.get("Requires-Python")
+    except PackageNotFoundError:
+        spec = None
+    if not spec:
+        spec = DEFAULT_REQUIRES_PYTHON
+
     min_match = re.search(r">=\s*(\d+)\.(\d+)(?:\.(\d+))?", spec)
     if not min_match:
-        if spec_from_metadata:
-            spec = DEFAULT_REQUIRES_PYTHON
-            min_match = re.search(r">=\s*(\d+)\.(\d+)(?:\.(\d+))?", spec)
-        if not min_match:
-            return make_result(
-                check,
-                "fail",
-                f"unsupported requires-python specifier: {spec}",
-                PYTHON_VERSION_FIX,
-            )
+        spec = DEFAULT_REQUIRES_PYTHON
+        min_match = re.search(r">=\s*(\d+)\.(\d+)(?:\.(\d+))?", spec)
+    if not min_match:
+        return make_result(
+            check,
+            "fail",
+            f"unsupported requires-python specifier: {spec}",
+            PYTHON_VERSION_FIX,
+        )
+
     minimum = (
         int(min_match.group(1)),
         int(min_match.group(2)),
@@ -282,7 +127,7 @@ def python_version_check(args: Args) -> CheckResult:
             check,
             "fail",
             f"python {version_text(current)} does not satisfy {spec}",
-            "install Python >=3.11, then `rm -rf .venv .installed && make install`",
+            PYTHON_VERSION_FIX,
         )
     return make_result(
         check,
@@ -291,82 +136,9 @@ def python_version_check(args: Args) -> CheckResult:
     )
 
 
-def uv_installed_check(args: Args) -> CheckResult:
-    del args
-    check = CHECK_MAP["uv_installed"]
-    if is_packaged_install():
-        return make_result(
-            check,
-            "skip",
-            "uv is only required for source-checkout development",
-        )
-    fix = "curl -LsSf https://astral.sh/uv/install.sh | sh"
-    probe = run_probe(check, ["uv", "--version"], timeout=0.5, fix=fix)
-    if isinstance(probe, CheckResult):
-        return probe
-    version = parse_version(probe.stdout)
-    if version is None:
-        return unexpected_output_result(check, probe.stdout, fix=fix)
-    if compare_versions(version, MIN_UV) < 0:
-        return make_result(
-            check,
-            "fail",
-            f"uv {version_text(version)} is older than required {version_text(MIN_UV)}",
-            fix,
-        )
-    return make_result(
-        check,
-        "ok",
-        f"uv {version_text(version)} >= {version_text(MIN_UV)}",
-    )
-
-
-def venv_consistent_check(args: Args) -> CheckResult:
-    del args
-    check = CHECK_MAP["venv_consistent"]
-    if is_packaged_install():
-        return make_result(
-            check,
-            "skip",
-            "packaged install: env managed by uv tool / pipx",
-        )
-    python_bin = ROOT / ".venv" / "bin" / "python"
-    expected = (ROOT / ".venv").resolve()
-    if not python_bin.exists():
-        return make_result(
-            check,
-            "skip",
-            ".venv absent; run make install",
-        )
-    probe = run_probe(
-        check,
-        [str(python_bin), "-c", "import sys; print(sys.prefix)"],
-        timeout=0.5,
-        fix="rm -rf .venv .installed && make install",
-    )
-    if isinstance(probe, CheckResult):
-        return probe
-    prefix_text = probe.stdout.strip()
-    if not prefix_text:
-        return unexpected_output_result(
-            check,
-            probe.stdout,
-            fix="rm -rf .venv .installed && make install",
-        )
-    actual = Path(prefix_text).resolve()
-    if actual != expected:
-        return make_result(
-            check,
-            "fail",
-            f".venv points at {actual}, expected {expected}",
-            "rm -rf .venv .installed && make install",
-        )
-    return make_result(check, "ok", f".venv points at this repo ({expected})")
-
-
 def sol_importable_check(args: Args) -> CheckResult:
     del args
-    check = CHECK_MAP["sol_importable"]
+    check = SOL_IMPORTABLE_CHECK
     if is_packaged_install():
         try:
             import solstone  # noqa: F401
@@ -415,104 +187,119 @@ def sol_importable_check(args: Args) -> CheckResult:
     return make_result(check, "fail", detail, fix)
 
 
-def local_bin_sol_reachable_check(args: Args) -> CheckResult:
-    del args
-    check = CHECK_MAP["local_bin_sol_reachable"]
-    local = Path.home() / ".local" / "bin" / "sol"
-    which = shutil.which("sol")
-    if local.exists() and local.is_file() and which is not None:
-        which_path = Path(which)
-        local_resolved = local.resolve()
-        which_resolved = which_path.resolve()
-        if (
-            which_path != local
-            and local.is_symlink()
-            and local_resolved == which_resolved
-        ):
-            return make_result(
-                check,
-                "ok",
-                f"~/.local/bin/sol symlinks to PATH sol at {which}",
-            )
-        if which_resolved == local_resolved:
-            return make_result(
-                check,
-                "ok",
-                f"~/.local/bin/sol is on PATH at {local}",
-            )
-
-    failures: list[str] = []
-    if not local.exists():
-        failures.append(f"{local} is missing")
-    elif not local.is_file():
-        failures.append(f"{local} is not a file")
-    if which is None:
-        failures.append("sol is not on PATH")
-    else:
-        try:
-            failures.append(
-                f"PATH sol resolves to {Path(which).resolve()}, expected {local.resolve()}"
-            )
-        except OSError:
-            failures.append(f"PATH sol is {which}, but it could not be resolved")
-    return make_result(check, "warn", "; ".join(failures), LOCAL_BIN_SOL_FIX)
+def _nearest_existing_ancestor(path: Path) -> Path:
+    current = path
+    while not current.exists() and current.parent != current:
+        current = current.parent
+    return current
 
 
-def disk_space_check(args: Args) -> CheckResult:
-    del args
-    check = CHECK_MAP["disk_space"]
-    usage = shutil.disk_usage(ROOT)
-    free_gib = usage.free / (1024**3)
-    if free_gib < MIN_FREE_GIB:
+def _journal_writability_result(check: Check) -> CheckResult:
+    path_text, _source = get_journal_info()
+    path = Path(path_text)
+    if path.is_dir():
+        if os.access(path, os.W_OK):
+            return make_result(check, "ok", f"journal dir writable: {path}")
         return make_result(
             check,
-            "warn",
-            f"only {free_gib:.1f} GiB free on the repo filesystem (<{MIN_FREE_GIB:.0f} GiB)",
-            "free disk on the repo filesystem before `make install`",
+            "fail",
+            f"journal dir not writable: {path}",
+            f"fix ownership/permissions of {path}",
+        )
+    if path.exists():
+        return make_result(
+            check,
+            "fail",
+            f"journal path exists but is not a directory: {path}",
+            f"move or remove {path}, then re-run",
+        )
+
+    ancestor = _nearest_existing_ancestor(path)
+    if ancestor.is_dir() and os.access(ancestor, os.W_OK):
+        return make_result(
+            check,
+            "ok",
+            f"journal dir absent; parent {ancestor} is writable",
         )
     return make_result(
         check,
-        "ok",
-        f"{free_gib:.1f} GiB free (>= {MIN_FREE_GIB:.0f} GiB)",
+        "fail",
+        f"journal dir absent; nearest existing ancestor is not writable: {ancestor}",
+        f"fix ownership/permissions of {ancestor}",
     )
 
 
-def config_dir_readable_check(args: Args) -> CheckResult:
+def journal_dir_writable_readiness(args: Args) -> CheckResult:
     del args
-    check = CHECK_MAP["config_dir_readable"]
-    home = Path.home()
-    if not home.exists():
+    return _journal_writability_result(JOURNAL_DIR_WRITABLE_CHECK)
+
+
+def journal_dir_writable_journal(args: Args) -> CheckResult:
+    del args
+    path_text, _source = get_journal_info()
+    if not Path(path_text).exists():
+        return make_result(JOURNAL_DIR_WRITABLE_CHECK, "skip", "no local journal")
+    return _journal_writability_result(JOURNAL_DIR_WRITABLE_CHECK)
+
+
+def service_identity_check(args: Args) -> CheckResult:
+    del args
+    identity = check_service_target_identity()
+    if not identity.installed:
+        return make_result(SERVICE_IDENTITY_CHECK, "skip", "no local journal service")
+    if identity.target == "":
         return make_result(
-            check,
+            SERVICE_IDENTITY_CHECK,
             "fail",
-            f"home directory does not exist: {home}",
-            f"fix ownership/permissions of {home}",
+            identity.detail,
+            "run journal setup to reinstall the service",
         )
-    required_access = os.R_OK | os.W_OK | os.X_OK
-    if not os.access(home, required_access):
+    if not identity.matches_current_install:
         return make_result(
-            check,
+            SERVICE_IDENTITY_CHECK,
             "fail",
-            f"home directory is not readable and writable: {home}",
-            f"fix ownership/permissions of {home}",
+            identity.detail,
+            "run journal setup --force from this install to refresh the service",
         )
-    current_platform = platform_tag()
-    if current_platform == "darwin":
-        config_dir = home / "Library" / "LaunchAgents"
-    else:
-        config_dir = home / ".config"
-    if config_dir.exists() and not os.access(config_dir, required_access):
+    return make_result(SERVICE_IDENTITY_CHECK, "ok", identity.detail)
+
+
+def service_running_check(args: Args) -> CheckResult:
+    del args
+    if not service_is_installed():
+        return make_result(SERVICE_RUNNING_CHECK, "skip", "no local journal service")
+
+    status = fetch_supervisor_status()
+    if status is None:
+        if service_is_failed():
+            return make_result(
+                SERVICE_RUNNING_CHECK,
+                "fail",
+                "journal service unit is failed",
+                "run journal service restart; if it persists, run journal service logs",
+            )
         return make_result(
-            check,
-            "fail",
-            f"service config directory is not writable: {config_dir}",
-            f"fix ownership/permissions of {config_dir}",
+            SERVICE_RUNNING_CHECK,
+            "warn",
+            "service installed but not running",
+            "run journal service start",
         )
-    if config_dir.exists():
-        detail = f"home and service config dir are writable ({config_dir})"
-    else:
-        detail = f"home is writable; install will create {config_dir}"
-    return make_result(check, "ok", detail)
+
+    crashed = status.get("crashed") or []
+    if crashed:
+        crashed_details = []
+        for item in crashed:
+            name = item.get("name", "?")
+            attempts = item.get("restart_attempts", 0)
+            crashed_details.append(f"{name} ({attempts} restart attempts)")
+        return make_result(
+            SERVICE_RUNNING_CHECK,
+            "fail",
+            f"crash-loop: {', '.join(crashed_details)}",
+            "run journal service logs",
+        )
+
+    return make_result(SERVICE_RUNNING_CHECK, "ok", "journal service is running")
 
 
 def import_install_guard() -> tuple[object, object]:
@@ -587,61 +374,65 @@ def _legacy_target_from_symlink(alias: Path) -> tuple[Path, str] | None:
     return resolved, tag
 
 
-def _auto_migrate_legacy_aliases(check: Check, install_guard: object) -> CheckResult:
+def _auto_migrate_legacy_aliases(
+    check: Check,
+    install_guard: object,
+    binary: str,
+) -> CheckResult:
     try:
         journal = install_guard._current_journal_for_alias()
     except Exception as exc:
         return make_result(
             check,
             "fail",
-            f"legacy alias detected but journal resolution failed: {type(exc).__name__}: {exc} — run from venv to auto-migrate",
-            "run `journal setup` from the repo that owns the wrapper, or remove `~/.local/bin/sol` manually if the repo is gone",
+            f"legacy {binary} alias detected but journal resolution failed: {type(exc).__name__}: {exc} — run from venv to auto-migrate",
+            f"run `journal setup` from the repo that owns the wrapper, or remove `~/.local/bin/{binary}` manually if the repo is gone",
         )
 
-    migrated: list[tuple[str, str, Path]] = []
-    aliases = install_guard.alias_paths()
-    try:
-        for binary, alias in aliases.items():
-            legacy = _legacy_target_from_symlink(alias)
-            if legacy is None:
-                continue
-            _target, tag = legacy
-            backup = _legacy_backup_path(binary)
-            backup.parent.mkdir(parents=True, exist_ok=True)
-            alias.replace(backup)
-            migrated.append((binary, tag, backup))
+    alias = install_guard.alias_paths()[binary]
+    legacy = _legacy_target_from_symlink(alias)
+    if legacy is None:
+        return make_result(
+            check,
+            "fail",
+            f"legacy {binary} alias auto-migration failed: alias is no longer a recognized legacy symlink",
+        )
+    _target, tag = legacy
 
-        sol_bin_dir = Path(sys.executable).parent
-        sol_bins = {binary: str(sol_bin_dir / binary) for binary in aliases}
-        install_guard.install_wrappers(str(journal), sol_bins)
+    try:
+        backup = _legacy_backup_path(binary)
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        alias.replace(backup)
+
+        sol_bin = Path(sys.executable).parent / binary
+        install_guard.install_wrappers(
+            str(journal),
+            {binary: str(sol_bin)},
+            paths={binary: alias},
+        )
     except Exception as exc:
         return make_result(
             check,
             "fail",
-            f"legacy alias auto-migration failed: {type(exc).__name__}: {exc}",
+            f"legacy {binary} alias auto-migration failed: {type(exc).__name__}: {exc}",
         )
 
-    tags = {tag for _binary, tag, _backup in migrated}
-    tag = next(iter(tags)) if len(tags) == 1 else "mixed"
     if tag == "uv-tool":
         migration_phrase = "migrated legacy uv-tool symlink"
     elif tag.startswith("pipx"):
         migration_phrase = "migrated legacy pipx symlink"
     else:
-        migration_phrase = "migrated legacy mixed symlink"
-    backup_detail = " and ".join(
-        f"{binary} → {backup}" for binary, _tag, backup in migrated
-    )
+        migration_phrase = "migrated legacy symlink"
     return make_result(
         check,
         "ok",
-        f"auto-migrated legacy {tag} install ({migration_phrase}): backed up {backup_detail}; installed managed wrappers at ~/.local/bin/{{sol,journal}}",
+        f"auto-migrated legacy {tag} install for {binary} ({migration_phrase}): backed up {binary} → {backup}; installed managed wrapper at ~/.local/bin/{binary}",
     )
 
 
-def stale_alias_symlink_check(args: Args) -> CheckResult:
+def stale_alias_symlink_check(args: Args, binary: str) -> CheckResult:
     del args
-    check = CHECK_MAP["stale_alias_symlink"]
+    check = STALE_ALIAS_CHECK
     try:
         alias_state_cls, check_alias = import_install_guard()
     except Exception as exc:
@@ -651,67 +442,62 @@ def stale_alias_symlink_check(args: Args) -> CheckResult:
             f"could not import solstone.think.install_guard: {type(exc).__name__}: {exc}",
         )
     install_guard = importlib.import_module(check_alias.__module__)
+    alias = install_guard.alias_paths()[binary]
+    if not alias.exists() and not alias.is_symlink():
+        backup = _latest_legacy_backup(binary)
+        if backup is not None:
+            return make_result(
+                check,
+                "fail",
+                _partial_migration_detail(binary, backup),
+                "restore the backup or re-run from a fresh shell",
+            )
+
     worktree = alias_state_cls.WORKTREE
     absent = alias_state_cls.ABSENT
     owned = alias_state_cls.OWNED
     cross_repo = alias_state_cls.CROSS_REPO
     dangling = alias_state_cls.DANGLING
     foreign = alias_state_cls.FOREIGN
-    fail_detail: str | None = None
 
-    for binary, alias in install_guard.alias_paths().items():
-        if not alias.exists() and not alias.is_symlink():
-            backup = _latest_legacy_backup(binary)
-            if backup is not None:
-                return make_result(
-                    check,
-                    "fail",
-                    _partial_migration_detail(binary, backup),
-                    "restore the backup or re-run from a fresh shell",
-                )
-
-        state, other = check_alias(ROOT, binary)
-        if state is worktree:
-            return make_result(
-                check,
-                "skip",
-                "git worktree; run doctor from the primary clone",
-            )
-        if state in {absent, owned}:
-            continue
-
-        if state in {cross_repo, dangling, foreign} and other is not None:
-            tag = _recognized_legacy_target(other)
-            if tag is not None:
-                return _auto_migrate_legacy_aliases(check, install_guard)
-
-        if state is cross_repo:
-            fail_detail = f"~/.local/bin/{binary} points at another repo ({other})"
-        elif state is dangling:
-            fail_detail = f"~/.local/bin/{binary} is dangling ({other})"
-        elif state is foreign:
-            fail_detail = f"~/.local/bin/{binary} exists but is not a symlink"
-        else:
-            fail_detail = f"unexpected alias state for {binary}: {state}"
-        break
-
-    if fail_detail is None:
+    state, other = check_alias(ROOT, binary)
+    if state is worktree:
+        return make_result(
+            check,
+            "skip",
+            "git worktree; run doctor from the primary clone",
+        )
+    if state in {absent, owned}:
         return make_result(
             check,
             "ok",
-            "sol and journal aliases absent or owned by this repo",
+            f"{binary} alias absent or owned by this repo",
         )
+
+    if state in {cross_repo, dangling, foreign} and other is not None:
+        tag = _recognized_legacy_target(other)
+        if tag is not None:
+            return _auto_migrate_legacy_aliases(check, install_guard, binary)
+
+    if state is cross_repo:
+        fail_detail = f"~/.local/bin/{binary} points at another repo ({other})"
+    elif state is dangling:
+        fail_detail = f"~/.local/bin/{binary} is dangling ({other})"
+    elif state is foreign:
+        fail_detail = f"~/.local/bin/{binary} exists but is not a symlink"
+    else:
+        fail_detail = f"unexpected alias state for {binary}: {state}"
     return make_result(
         check,
         "fail",
         fail_detail,
-        "run `journal setup` from the repo that owns the wrapper, or remove `~/.local/bin/sol` manually if the repo is gone",
+        f"run `journal setup` from the repo that owns the wrapper, or remove `~/.local/bin/{binary}` manually if the repo is gone",
     )
 
 
 def launchd_stale_plist_check(args: Args) -> CheckResult:
     del args
-    check = CHECK_MAP["launchd_stale_plist"]
+    check = LAUNCHD_STALE_PLIST_CHECK
     if platform_tag() != "darwin":
         return make_result(check, "skip", "not supported on linux", platform="linux")
     plist_path = Path.home() / "Library" / "LaunchAgents" / "org.solpbc.solstone.plist"
@@ -748,7 +534,10 @@ def launchd_stale_plist_check(args: Args) -> CheckResult:
 
 def journal_sync_check(args: Args) -> CheckResult:
     del args
-    check = CHECK_MAP["journal_sync"]
+    check = JOURNAL_SYNC_CHECK
+    path_text, _source = get_journal_info()
+    if not Path(path_text).is_dir():
+        return make_result(check, "skip", "no local journal")
     try:
         result = check_journal_sync()
     except Exception as exc:
@@ -760,7 +549,7 @@ def journal_sync_check(args: Args) -> CheckResult:
 
 def _make_feature_check(
     feat_name: str,
-) -> tuple[Check, Callable[[Args], CheckResult]]:
+) -> tuple[Check, Runner]:
     feat = _features.FEATURES[feat_name]
     check = Check(f"feature:{feat_name}", "advisory", ("linux", "darwin"))
 
@@ -778,40 +567,48 @@ def _make_feature_check(
     return check, _run
 
 
-CHECKS: list[tuple[Check, Callable[[Args], CheckResult]]] = [
-    (Check("python_version", "blocker", ("linux", "darwin")), python_version_check),
-    (Check("uv_installed", "blocker", ("linux", "darwin")), uv_installed_check),
-    (Check("venv_consistent", "blocker", ("linux", "darwin")), venv_consistent_check),
-    (Check("sol_importable", "blocker", ("linux", "darwin")), sol_importable_check),
-    (
-        Check("local_bin_sol_reachable", "advisory", ("linux", "darwin")),
-        local_bin_sol_reachable_check,
-    ),
-    (Check("disk_space", "advisory", ("linux", "darwin")), disk_space_check),
-    (
-        Check("config_dir_readable", "blocker", ("linux", "darwin")),
-        config_dir_readable_check,
-    ),
-    (
-        Check("stale_alias_symlink", "blocker", ("linux", "darwin")),
-        stale_alias_symlink_check,
-    ),
-    (
-        Check("launchd_stale_plist", "advisory", ("darwin",)),
-        launchd_stale_plist_check,
-    ),
-    (Check("journal_sync", "blocker", ("linux", "darwin")), journal_sync_check),
+FEATURE_CHECKS: dict[str, tuple[Check, Runner]] = {
+    name: _make_feature_check(name) for name in _features.FEATURES
+}
+
+UNIVERSAL_CHECKS: list[tuple[Check, Runner]] = [
+    (PYTHON_VERSION_CHECK, python_sanity_check),
+    (SOL_IMPORTABLE_CHECK, sol_importable_check),
+    (LOCAL_BIN_SOL_REACHABLE_CHECK, local_bin_sol_reachable_check),
+    (STALE_ALIAS_CHECK, partial(stale_alias_symlink_check, binary="sol")),
 ]
 
-for _feat_name in _features.FEATURES:
-    CHECKS.append(_make_feature_check(_feat_name))
+JOURNAL_CHECKS: list[tuple[Check, Runner]] = [
+    (DISK_SPACE_CHECK, disk_space_check),
+    (CONFIG_DIR_READABLE_CHECK, config_dir_readable_check),
+    (JOURNAL_DIR_WRITABLE_CHECK, journal_dir_writable_journal),
+    (SERVICE_IDENTITY_CHECK, service_identity_check),
+    (SERVICE_RUNNING_CHECK, service_running_check),
+    (JOURNAL_SYNC_CHECK, journal_sync_check),
+    (STALE_ALIAS_CHECK, partial(stale_alias_symlink_check, binary="journal")),
+    (LAUNCHD_STALE_PLIST_CHECK, launchd_stale_plist_check),
+    *FEATURE_CHECKS.values(),
+]
 
-CHECK_MAP = {check.name: check for check, _func in CHECKS}
+READINESS_CHECKS: list[tuple[Check, Runner]] = [
+    (PYTHON_VERSION_CHECK, python_sanity_check),
+    (SOL_IMPORTABLE_CHECK, sol_importable_check),
+    (LOCAL_BIN_SOL_REACHABLE_CHECK, local_bin_sol_reachable_check),
+    (STALE_ALIAS_CHECK, partial(stale_alias_symlink_check, binary="sol")),
+    (DISK_SPACE_CHECK, disk_space_check),
+    (JOURNAL_DIR_WRITABLE_CHECK, journal_dir_writable_readiness),
+    *FEATURE_CHECKS.values(),
+]
+
+_ALL_CHECKS = UNIVERSAL_CHECKS + JOURNAL_CHECKS + READINESS_CHECKS
+CHECK_MAP: dict[str, Check] = {}
+for _check, _runner in _ALL_CHECKS:
+    CHECK_MAP.setdefault(_check.name, _check)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> Args:
     parser = argparse.ArgumentParser(
-        description="Run pre-install diagnostics for solstone.",
+        description="Run solstone diagnostics.",
         epilog=(
             "If 'sol doctor' is unavailable (e.g. before 'make install' completes), "
             "run 'python3 scripts/doctor.py' from the repo root for the same diagnostic."
@@ -834,6 +631,11 @@ def parse_args(argv: Sequence[str] | None = None) -> Args:
         default=None,
         help=f"Run only the named feature check ({', '.join(sorted(_features.FEATURES))})",
     )
+    parser.add_argument(
+        "--readiness",
+        action="store_true",
+        help="run the setup readiness battery",
+    )
     namespace = parser.parse_args(argv)
     if namespace.json and namespace.jsonl:
         parser.error("--json and --jsonl are mutually exclusive")
@@ -846,14 +648,26 @@ def parse_args(argv: Sequence[str] | None = None) -> Args:
         jsonl=namespace.jsonl,
         port=namespace.port,
         feature=namespace.feature,
+        readiness=namespace.readiness,
     )
 
 
-def run_checks(args: Args) -> list[CheckResult]:
+def select_battery(args: Args) -> list[tuple[Check, Runner]]:
+    if args.readiness:
+        return READINESS_CHECKS
+    if sys.argv[0] == "journal doctor":
+        return JOURNAL_CHECKS
+    return UNIVERSAL_CHECKS
+
+
+def run_checks(
+    args: Args,
+    checks: list[tuple[Check, Runner]] | None = None,
+) -> list[CheckResult]:
     current_platform = platform_tag()
     if args.feature is not None:
-        check_name = f"feature:{args.feature}"
-        check = CHECK_MAP[check_name]
+        check_name = args.feature
+        check, runner = FEATURE_CHECKS[check_name]
         if current_platform not in check.platforms:
             return [
                 make_result(
@@ -863,13 +677,11 @@ def run_checks(args: Args) -> list[CheckResult]:
                     platform=current_platform,
                 )
             ]
-        for candidate, func in CHECKS:
-            if candidate.name == check_name:
-                return [func(args)]
-        raise RuntimeError(f"missing check runner for {check_name}")
+        return [runner(args)]
 
+    selected_checks = select_battery(args) if checks is None else checks
     results: list[CheckResult] = []
-    for check, func in CHECKS:
+    for check, func in selected_checks:
         if current_platform not in check.platforms:
             results.append(
                 make_result(

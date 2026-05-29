@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import os
-import plistlib
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from solstone.think import install_guard
+from solstone.think.probe import ProbeOutput
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -101,79 +101,14 @@ def test_install_guard_import_succeeds_when_frontmatter_is_shadowed(tmp_path):
 
 class TestPythonVersion:
     def test_ok(self, doctor):
-        result = doctor.python_version_check(args(doctor))
+        result = doctor.python_sanity_check(args(doctor))
         assert result.status == "ok"
 
     def test_fail_when_too_old(self, doctor, monkeypatch):
         monkeypatch.setattr(doctor.sys, "version_info", (3, 9, 18))
-        result = doctor.python_version_check(args(doctor))
+        result = doctor.python_sanity_check(args(doctor))
         assert result.status == "fail"
         assert "does not satisfy" in result.detail
-
-
-class TestUvInstalled:
-    def test_ok(self, doctor, monkeypatch):
-        monkeypatch.setattr(
-            doctor,
-            "run_probe",
-            lambda *_args, **_kwargs: doctor.ProbeOutput("uv 0.10.0\n", "", 0),
-        )
-        result = doctor.uv_installed_check(args(doctor))
-        assert result.status == "ok"
-
-    def test_missing(self, doctor, monkeypatch):
-        def raise_missing(*_args, **_kwargs):
-            raise FileNotFoundError
-
-        monkeypatch.setattr(doctor.subprocess, "run", raise_missing)
-        result = doctor.uv_installed_check(args(doctor))
-        assert result.status == "fail"
-        assert "probe command not found" in result.detail
-
-    def test_fail_when_too_old(self, doctor, monkeypatch):
-        monkeypatch.setattr(
-            doctor,
-            "run_probe",
-            lambda *_args, **_kwargs: doctor.ProbeOutput("uv 0.7.0\n", "", 0),
-        )
-        result = doctor.uv_installed_check(args(doctor))
-        assert result.status == "fail"
-        assert "older than required" in result.detail
-
-
-class TestVenvConsistent:
-    def test_skip_when_absent(self, doctor, monkeypatch, tmp_path):
-        monkeypatch.setattr(doctor, "ROOT", tmp_path)
-        result = doctor.venv_consistent_check(args(doctor))
-        assert result.status == "skip"
-
-    def test_ok_when_consistent(self, doctor, monkeypatch, tmp_path):
-        monkeypatch.setattr(doctor, "ROOT", tmp_path)
-        python_bin = tmp_path / ".venv" / "bin" / "python"
-        python_bin.parent.mkdir(parents=True)
-        python_bin.write_text("", encoding="utf-8")
-        monkeypatch.setattr(
-            doctor,
-            "run_probe",
-            lambda *_args, **_kwargs: doctor.ProbeOutput(
-                f"{tmp_path / '.venv'}\n", "", 0
-            ),
-        )
-        result = doctor.venv_consistent_check(args(doctor))
-        assert result.status == "ok"
-
-    def test_fail_when_inconsistent(self, doctor, monkeypatch, tmp_path):
-        monkeypatch.setattr(doctor, "ROOT", tmp_path)
-        python_bin = tmp_path / ".venv" / "bin" / "python"
-        python_bin.parent.mkdir(parents=True)
-        python_bin.write_text("", encoding="utf-8")
-        monkeypatch.setattr(
-            doctor,
-            "run_probe",
-            lambda *_args, **_kwargs: doctor.ProbeOutput("/tmp/elsewhere\n", "", 0),
-        )
-        result = doctor.venv_consistent_check(args(doctor))
-        assert result.status == "fail"
 
 
 class TestSolImportable:
@@ -190,7 +125,7 @@ class TestSolImportable:
         monkeypatch.setattr(
             doctor,
             "run_probe",
-            lambda *_args, **_kwargs: doctor.ProbeOutput("", "", 0),
+            lambda *_args, **_kwargs: ProbeOutput("", "", 0),
         )
         result = doctor.sol_importable_check(args(doctor))
         assert result.status == "ok"
@@ -207,7 +142,7 @@ class TestSolImportable:
         monkeypatch.setattr(
             doctor,
             "run_probe",
-            lambda *_args, **_kwargs: doctor.ProbeOutput(
+            lambda *_args, **_kwargs: ProbeOutput(
                 "",
                 "Traceback (most recent call last):\nModuleNotFoundError: No module named 'solstone'\n",
                 1,
@@ -225,7 +160,7 @@ class TestSolImportable:
         monkeypatch.setattr(
             doctor,
             "run_probe",
-            lambda *_args, **_kwargs: doctor.ProbeOutput(
+            lambda *_args, **_kwargs: ProbeOutput(
                 "", "SyntaxError: broken import\n", 1
             ),
         )
@@ -249,26 +184,10 @@ class TestPackagedInstall:
             lambda name: SimpleNamespace(metadata={"Requires-Python": ">=3.11"}),
         )
 
-        result = doctor.python_version_check(args(doctor))
+        result = doctor.python_sanity_check(args(doctor))
 
         assert result.status == "ok"
         assert ">=3.11" in result.detail
-
-    def test_uv_installed_skips(self, doctor, monkeypatch, tmp_path):
-        self.setup_packaged(doctor, monkeypatch, tmp_path)
-
-        result = doctor.uv_installed_check(args(doctor))
-
-        assert result.status == "skip"
-        assert result.detail == "uv is only required for source-checkout development"
-
-    def test_venv_consistent_skips(self, doctor, monkeypatch, tmp_path):
-        self.setup_packaged(doctor, monkeypatch, tmp_path)
-
-        result = doctor.venv_consistent_check(args(doctor))
-
-        assert result.status == "skip"
-        assert result.detail == "packaged install: env managed by uv tool / pipx"
 
     def test_sol_importable_uses_in_process_import(self, doctor, monkeypatch, tmp_path):
         self.setup_packaged(doctor, monkeypatch, tmp_path)
@@ -278,89 +197,22 @@ class TestPackagedInstall:
         assert result.status == "ok"
         assert result.detail == "import solstone succeeded in packaged install"
 
-    def test_local_bin_sol_reachable_canonical_pass(
-        self, doctor, monkeypatch, home_root
-    ):
-        local = home_root / ".local" / "bin" / "sol"
-        local.parent.mkdir(parents=True)
-        local.write_text("#!/bin/sh\n", encoding="utf-8")
-        monkeypatch.setattr(doctor.shutil, "which", lambda name: str(local))
-
-        result = doctor.local_bin_sol_reachable_check(args(doctor))
-
-        assert result.status == "ok"
-        assert "~/.local/bin/sol is on PATH" in result.detail
-
-    def test_local_bin_sol_reachable_symlink_pass(
-        self, doctor, monkeypatch, home_root, tmp_path
-    ):
-        target = tmp_path / "usr" / "local" / "bin" / "sol"
-        target.parent.mkdir(parents=True)
-        target.write_text("#!/bin/sh\n", encoding="utf-8")
-        local = home_root / ".local" / "bin" / "sol"
-        local.parent.mkdir(parents=True)
-        local.symlink_to(target)
-        monkeypatch.setattr(doctor.shutil, "which", lambda name: str(target))
-
-        result = doctor.local_bin_sol_reachable_check(args(doctor))
-
-        assert result.status == "ok"
-        assert "symlinks to PATH sol" in result.detail
-
-    def test_local_bin_sol_reachable_warns_when_missing(
-        self, doctor, monkeypatch, home_root
-    ):
-        monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
-
-        result = doctor.local_bin_sol_reachable_check(args(doctor))
-
-        assert result.status == "warn"
-        assert ".local/bin/sol" in result.detail
-        assert "uv tool install solstone" in (result.fix or "")
-
 
 class TestPortCheckRemoved:
     def test_port_check_is_not_registered(self, doctor):
         assert "port_5015_free" not in doctor.CHECK_MAP
-        assert "port_5015_free" not in {check.name for check, _runner in doctor.CHECKS}
+        assert "port_5015_free" not in {
+            check.name for check, _runner in doctor.UNIVERSAL_CHECKS
+        }
 
 
-class TestDiskSpace:
-    def test_warn_when_low(self, doctor, monkeypatch):
-        monkeypatch.setattr(
-            doctor.shutil,
-            "disk_usage",
-            lambda _root: SimpleNamespace(total=100, used=95, free=5 * 1024**3),
-        )
-        result = doctor.disk_space_check(args(doctor))
-        assert result.status == "warn"
-
-    def test_ok_when_sufficient(self, doctor, monkeypatch):
-        monkeypatch.setattr(
-            doctor.shutil,
-            "disk_usage",
-            lambda _root: SimpleNamespace(total=100, used=80, free=20 * 1024**3),
-        )
-        result = doctor.disk_space_check(args(doctor))
-        assert result.status == "ok"
-
-
-class TestConfigDirReadable:
-    def test_ok(self, doctor, monkeypatch, home_root):
-        config_dir = home_root / ".config"
-        config_dir.mkdir()
-        result = doctor.config_dir_readable_check(args(doctor))
-        assert result.status == "ok"
-
-    def test_fail_when_home_unwritable(self, doctor, monkeypatch, home_root):
-        def fake_access(path, mode):
-            if Path(path) == home_root:
-                return False
-            return True
-
-        monkeypatch.setattr(doctor.os, "access", fake_access)
-        result = doctor.config_dir_readable_check(args(doctor))
-        assert result.status == "fail"
+def test_default_universal_battery_check_names(doctor):
+    assert {check.name for check, _runner in doctor.UNIVERSAL_CHECKS} == {
+        "python_version",
+        "sol_importable",
+        "local_bin_sol_reachable",
+        "stale_alias_symlink",
+    }
 
 
 class TestStaleAliasSymlink:
@@ -409,7 +261,7 @@ class TestStaleAliasSymlink:
         self.setup_import(doctor, monkeypatch)
         repo = make_repo(tmp_path)
         monkeypatch.setattr(doctor, "ROOT", repo)
-        result = doctor.stale_alias_symlink_check(args(doctor))
+        result = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
         assert result.status == "ok"
 
     def test_owned_ok(self, doctor, monkeypatch, home_root, tmp_path):
@@ -417,7 +269,7 @@ class TestStaleAliasSymlink:
         repo = make_repo(tmp_path)
         make_alias(home_root, ensure_expected_target(repo))
         monkeypatch.setattr(doctor, "ROOT", repo)
-        result = doctor.stale_alias_symlink_check(args(doctor))
+        result = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
         assert result.status == "ok"
 
     def test_cross_repo_fail(self, doctor, monkeypatch, home_root, tmp_path):
@@ -425,7 +277,7 @@ class TestStaleAliasSymlink:
         repo = make_repo(tmp_path)
         make_alias(home_root, other_target(tmp_path))
         monkeypatch.setattr(doctor, "ROOT", repo)
-        result = doctor.stale_alias_symlink_check(args(doctor))
+        result = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
         assert result.status == "fail"
 
     def test_dangling_fail(self, doctor, monkeypatch, home_root, tmp_path):
@@ -434,7 +286,7 @@ class TestStaleAliasSymlink:
         missing = tmp_path / "missing" / ".venv" / "bin" / "sol"
         make_alias(home_root, missing)
         monkeypatch.setattr(doctor, "ROOT", repo)
-        result = doctor.stale_alias_symlink_check(args(doctor))
+        result = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
         assert result.status == "fail"
 
     def test_not_symlink_fail(self, doctor, monkeypatch, home_root, tmp_path):
@@ -444,14 +296,14 @@ class TestStaleAliasSymlink:
         alias.parent.mkdir(parents=True, exist_ok=True)
         alias.write_text("not a symlink", encoding="utf-8")
         monkeypatch.setattr(doctor, "ROOT", repo)
-        result = doctor.stale_alias_symlink_check(args(doctor))
+        result = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
         assert result.status == "fail"
 
     def test_worktree_skip(self, doctor, monkeypatch, home_root, tmp_path):
         self.setup_import(doctor, monkeypatch)
         repo = make_repo(tmp_path, worktree=True)
         monkeypatch.setattr(doctor, "ROOT", repo)
-        result = doctor.stale_alias_symlink_check(args(doctor))
+        result = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
         assert result.status == "skip"
 
     def test_import_failure_skips(self, doctor, monkeypatch):
@@ -460,7 +312,7 @@ class TestStaleAliasSymlink:
             "import_install_guard",
             lambda: (_ for _ in ()).throw(ImportError("boom")),
         )
-        result = doctor.stale_alias_symlink_check(args(doctor))
+        result = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
         assert result.status == "skip"
         assert "could not import solstone.think.install_guard" in result.detail
 
@@ -473,13 +325,13 @@ class TestStaleAliasSymlink:
         make_alias(home_root, target)
         monkeypatch.setattr(doctor, "ROOT", repo)
 
-        result = doctor.stale_alias_symlink_check(args(doctor))
+        result = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
 
         assert result.status == "ok"
         assert "auto-migrated" in result.detail
         assert "uv-tool" in result.detail
         self.assert_managed_wrapper(home_root, "sol", journal, fake_bin)
-        self.assert_managed_wrapper(home_root, "journal", journal, fake_bin)
+        assert not (home_root / ".local" / "bin" / "journal").exists()
         backups = list(self.backup_dir.glob("sol.old-symlink-*"))
         assert len(backups) == 1
         assert backups[0].exists()
@@ -500,12 +352,12 @@ class TestStaleAliasSymlink:
         make_alias(home_root, target)
         monkeypatch.setattr(doctor, "ROOT", repo)
 
-        result = doctor.stale_alias_symlink_check(args(doctor))
+        result = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
 
         assert result.status == "ok"
         assert "pipx-xdg" in result.detail
         self.assert_managed_wrapper(home_root, "sol", journal, fake_bin)
-        self.assert_managed_wrapper(home_root, "journal", journal, fake_bin)
+        assert not (home_root / ".local" / "bin" / "journal").exists()
 
     def test_pipx_legacy_auto_migrates(self, doctor, monkeypatch, home_root, tmp_path):
         fake_bin, journal = self.setup_auto_migration(doctor, monkeypatch, tmp_path)
@@ -516,12 +368,12 @@ class TestStaleAliasSymlink:
         make_alias(home_root, target)
         monkeypatch.setattr(doctor, "ROOT", repo)
 
-        result = doctor.stale_alias_symlink_check(args(doctor))
+        result = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
 
         assert result.status == "ok"
         assert "pipx-legacy" in result.detail
         self.assert_managed_wrapper(home_root, "sol", journal, fake_bin)
-        self.assert_managed_wrapper(home_root, "journal", journal, fake_bin)
+        assert not (home_root / ".local" / "bin" / "journal").exists()
 
     def test_uv_tool_dangling_auto_migrates(
         self, doctor, monkeypatch, home_root, tmp_path
@@ -535,12 +387,12 @@ class TestStaleAliasSymlink:
         make_alias(home_root, target)
         monkeypatch.setattr(doctor, "ROOT", repo)
 
-        result = doctor.stale_alias_symlink_check(args(doctor))
+        result = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
 
         assert result.status == "ok"
         assert "migrated legacy uv-tool symlink" in result.detail
         self.assert_managed_wrapper(home_root, "sol", journal, fake_bin)
-        self.assert_managed_wrapper(home_root, "journal", journal, fake_bin)
+        assert not (home_root / ".local" / "bin" / "journal").exists()
         backups = list(self.backup_dir.glob("sol.old-symlink-*"))
         assert len(backups) == 1
         assert backups[0].is_symlink()
@@ -564,12 +416,12 @@ class TestStaleAliasSymlink:
         make_alias(home_root, target)
         monkeypatch.setattr(doctor, "ROOT", repo)
 
-        result = doctor.stale_alias_symlink_check(args(doctor))
+        result = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
 
         assert result.status == "ok"
         assert "migrated legacy pipx symlink" in result.detail
         self.assert_managed_wrapper(home_root, "sol", journal, fake_bin)
-        self.assert_managed_wrapper(home_root, "journal", journal, fake_bin)
+        assert not (home_root / ".local" / "bin" / "journal").exists()
         backups = list(self.backup_dir.glob("sol.old-symlink-*"))
         assert len(backups) == 1
         assert backups[0].is_symlink()
@@ -585,7 +437,7 @@ class TestStaleAliasSymlink:
         make_alias(home_root, target)
         monkeypatch.setattr(doctor, "ROOT", repo)
 
-        result = doctor.stale_alias_symlink_check(args(doctor))
+        result = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
 
         assert result.status == "fail"
         assert list(self.backup_dir.glob("sol.old-symlink-*")) == []
@@ -599,9 +451,9 @@ class TestStaleAliasSymlink:
         make_alias(home_root, target)
         monkeypatch.setattr(doctor, "ROOT", repo)
 
-        first = doctor.stale_alias_symlink_check(args(doctor))
+        first = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
         backups_after_first = sorted(self.backup_dir.glob("*.old-symlink-*"))
-        second = doctor.stale_alias_symlink_check(args(doctor))
+        second = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
         backups_after_second = sorted(self.backup_dir.glob("*.old-symlink-*"))
 
         assert first.status == "ok"
@@ -619,47 +471,11 @@ class TestStaleAliasSymlink:
         backup.write_text("", encoding="utf-8")
         monkeypatch.setattr(doctor, "ROOT", repo)
 
-        result = doctor.stale_alias_symlink_check(args(doctor))
+        result = doctor.stale_alias_symlink_check(args(doctor), binary="sol")
 
         assert result.status == "fail"
         assert "partial migration detected" in result.detail
         assert str(backup) in result.detail
-
-
-class TestLaunchdStalePlist:
-    def test_skip_on_linux(self, doctor, monkeypatch):
-        monkeypatch.setattr(doctor, "platform_tag", lambda: "linux")
-        result = doctor.launchd_stale_plist_check(args(doctor))
-        assert result.status == "skip"
-
-    def test_skip_when_absent(self, doctor, monkeypatch, home_root):
-        monkeypatch.setattr(doctor, "platform_tag", lambda: "darwin")
-        result = doctor.launchd_stale_plist_check(args(doctor))
-        assert result.status == "skip"
-
-    def test_fail_when_target_missing(self, doctor, monkeypatch, home_root):
-        monkeypatch.setattr(doctor, "platform_tag", lambda: "darwin")
-        plist_path = (
-            home_root / "Library" / "LaunchAgents" / "org.solpbc.solstone.plist"
-        )
-        plist_path.parent.mkdir(parents=True)
-        plist_path.write_bytes(
-            plistlib.dumps({"ProgramArguments": ["/tmp/missing-sol"]})
-        )
-        result = doctor.launchd_stale_plist_check(args(doctor))
-        assert result.status == "fail"
-
-    def test_ok_when_target_exists(self, doctor, monkeypatch, home_root, tmp_path):
-        monkeypatch.setattr(doctor, "platform_tag", lambda: "darwin")
-        exe = tmp_path / "sol"
-        exe.write_text("", encoding="utf-8")
-        plist_path = (
-            home_root / "Library" / "LaunchAgents" / "org.solpbc.solstone.plist"
-        )
-        plist_path.parent.mkdir(parents=True)
-        plist_path.write_bytes(plistlib.dumps({"ProgramArguments": [str(exe)]}))
-        result = doctor.launchd_stale_plist_check(args(doctor))
-        assert result.status == "ok"
 
 
 class TestJsonAndExitCodes:
@@ -747,7 +563,7 @@ class TestJsonAndExitCodes:
             "run_checks",
             lambda _args: [
                 doctor.CheckResult(check.name, check.severity, "ok", "fine", None)
-                for check, _func in doctor.CHECKS
+                for check, _func in doctor.UNIVERSAL_CHECKS
             ],
         )
 
@@ -755,7 +571,7 @@ class TestJsonAndExitCodes:
         events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
 
         checks = [event for event in events if event["event"] == "check.completed"]
-        assert len(checks) == len(doctor.CHECKS)
+        assert len(checks) == len(doctor.UNIVERSAL_CHECKS)
 
     def test_doctor_jsonl_status_translates_short_to_long(
         self, doctor, monkeypatch, capsys
@@ -849,7 +665,12 @@ def test_sol_doctor_subprocess_json_shape():
     payload = json.loads(result.stdout)
     assert "checks" in payload and isinstance(payload["checks"], list)
     assert "summary" in payload and isinstance(payload["summary"], dict)
-    assert len(payload["checks"]) >= 1
+    assert {check["name"] for check in payload["checks"]} == {
+        "python_version",
+        "sol_importable",
+        "local_bin_sol_reachable",
+        "stale_alias_symlink",
+    }
 
 
 class TestMakefileIntegration:
@@ -889,9 +710,16 @@ def test_doctor_runs_with_minimal_path_env(tmp_path):
         f"stdout={result.stdout}\nstderr={result.stderr}"
     )
     payload = json.loads(result.stdout)
-    sync = next((c for c in payload["checks"] if c["name"] == "journal_sync"), None)
-    assert sync is not None, "journal_sync check missing from output"
-    if sync["status"] == "fail":
-        assert "machine id" not in (sync.get("detail") or "").lower(), (
-            f"journal_sync failed due to machine id: {sync}"
-        )
+    names = {check["name"] for check in payload["checks"]}
+    assert names == {
+        "python_version",
+        "sol_importable",
+        "local_bin_sol_reachable",
+        "stale_alias_symlink",
+    }
+    assert not any(
+        name.startswith("service_")
+        or name == "journal_sync"
+        or name.startswith("feature:")
+        for name in names
+    )

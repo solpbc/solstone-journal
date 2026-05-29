@@ -65,7 +65,7 @@ class ServiceTargetIdentity:
 def _ready_timeout_message() -> str:
     return (
         f"Service did not become ready within {READY_TIMEOUT_SECONDS:g}s — "
-        "run 'journal service status' or 'sol doctor' for diagnostics"
+        "run 'journal service status' or 'journal doctor' for diagnostics"
     )
 
 
@@ -117,6 +117,40 @@ def service_is_running() -> bool:
         text=True,
     )
     return result.stdout.strip() == "active"
+
+
+def service_is_failed() -> bool:
+    """Return whether the installed user service is in a failed state."""
+    if not service_is_installed():
+        return False
+    if _platform() == "darwin":
+        try:
+            result = subprocess.run(
+                ["launchctl", "print", f"gui/{os.getuid()}/{SERVICE_LABEL}"],
+                capture_output=True,
+                text=True,
+                timeout=2.0,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        if result.returncode != 0:
+            return False
+        return (
+            "\n\tstate = crashed\n" in result.stdout
+            or "state = crashed" in result.stdout
+        )
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "is-failed", SYSTEMD_UNIT],
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.stdout.strip() == "failed"
 
 
 def _collect_env() -> dict[str, str]:

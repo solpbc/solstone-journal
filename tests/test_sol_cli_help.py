@@ -27,7 +27,7 @@ def _access_command_names() -> list[str]:
     return sorted(
         name
         for name, command in sol_cli.COMMANDS.items()
-        if command.surface == "access"
+        if command.surface in {"access", "universal"}
     )
 
 
