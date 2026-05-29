@@ -49,6 +49,14 @@ class LoadedCa:
         """SHA-256 of the CA cert DER — used as the CA identifier at /enroll/home."""
         return _hex_sha256(self.cert.public_bytes(serialization.Encoding.DER))
 
+    def spki_fingerprint_sha256(self) -> str:
+        """SHA-256 of DER SPKI; matches spl-relay enroll.ts ca_fp, not cert DER."""
+        spki_der = self.cert.public_key().public_bytes(
+            serialization.Encoding.DER,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        return _hex_sha256(spki_der)
+
 
 def generate_ca(
     ca_dir: Path,
@@ -214,6 +222,14 @@ def cert_fingerprint(cert_pem: str | bytes) -> str:
 def generate_nonce() -> str:
     """16-character hex nonce / 8 bytes for the pair ceremony."""
     return secrets.token_hex(8)
+
+
+RELAY_NONCE_BYTES = 16
+
+
+def generate_relay_nonce() -> str:
+    """32-character hex nonce / 16 bytes for relay-form pair links."""
+    return secrets.token_hex(RELAY_NONCE_BYTES)
 
 
 def _materialize(cert: x509.Certificate, key: ec.EllipticCurvePrivateKey) -> LoadedCa:

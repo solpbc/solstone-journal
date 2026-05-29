@@ -31,6 +31,7 @@ import json as _json
 import logging
 import re
 import socket
+import time
 from dataclasses import asdict, dataclass
 from importlib import import_module
 from pathlib import Path
@@ -52,11 +53,17 @@ from solstone.apps.link.manual_code import (
 from solstone.apps.link.manual_code import (
     normalize as normalize_manual_code,
 )
+from solstone.apps.link.relay_link import (
+    TOTP_STEP_SECONDS,
+    compute_current_totp,
+    encode_relay_pair_link,
+)
 from solstone.apps.observer.utils import mint_pl_observer_record, revoke_observer_record
 from solstone.apps.utils import log_app_action
 from solstone.convey import emit
 from solstone.convey.reasons import (
     CONVEY_OPERATION_FAILED,
+    INVALID_OPERATION_FOR_STATE,
     INVALID_REQUEST_VALUE,
     MISSING_REQUIRED_FIELD,
     OPERATION_NO_LONGER_AVAILABLE,
@@ -68,6 +75,7 @@ from solstone.convey.utils import error_response
 from solstone.think.link.auth import AuthorizedClients, ClientEntry
 from solstone.think.link.ca import (
     generate_nonce,
+    generate_relay_nonce,
     load_or_generate_ca,
     mint_attestation,
     sign_csr,
@@ -81,10 +89,12 @@ from solstone.think.link.local_endpoints import (
 )
 from solstone.think.link.nonces import Nonce, NonceStore
 from solstone.think.link.paths import (
+    DEFAULT_RELAY_URL,
     LinkState,
     authorized_clients_path,
     ca_dir,
     load_service_token,
+    load_totp_secret,
     nonces_path,
     relay_url,
 )
@@ -329,30 +339,63 @@ def pair_start() -> Any:
 
     lan_url = _resolve_host_port()
     hostname, _, port_str = lan_url.partition(":")
-    try:
-        ipaddress.IPv4Address(hostname)
-    except ValueError:
-        return error_response(
-            PAIRING_REQUEST_INVALID,
-            detail=f"pair-link requires an IPv4 LAN address; got {hostname!r}",
-        )
-    port = int(port_str) if port_str else 80
 
-    ca_fp = _ca_fingerprint()
-    nonce = generate_nonce()
+    nonce_ttl: int | None = None
+    if read_posture() == "spl":
+        secret = load_totp_secret()
+        if secret is None:
+            return error_response(
+                INVALID_OPERATION_FOR_STATE,
+                detail="spl posture requires a relay TOTP secret; none is configured",
+            )
+
+        ca = load_or_generate_ca(ca_dir())
+        ca_fp = ca.fingerprint_sha256()
+        now = int(time.time())
+        totp = compute_current_totp(secret, now)
+        nonce = generate_relay_nonce()
+        origin = relay_url()
+        relay_origin = None if origin == DEFAULT_RELAY_URL else origin
+        instance_id = LinkState.load_or_create().instance_id
+        pair_link = encode_relay_pair_link(
+            instance_id,
+            totp,
+            nonce,
+            ca.spki_fingerprint_sha256(),
+            relay_origin=relay_origin,
+        )
+        expires_in = TOTP_STEP_SECONDS
+        nonce_ttl = TOTP_STEP_SECONDS
+    else:
+        try:
+            ipaddress.IPv4Address(hostname)
+        except ValueError:
+            return error_response(
+                PAIRING_REQUEST_INVALID,
+                detail=f"pair-link requires an IPv4 LAN address; got {hostname!r}",
+            )
+        port = int(port_str) if port_str else 80
+        ca_fp = _ca_fingerprint()
+        nonce = generate_nonce()
+        pair_link = _build_pair_link(hostname, port, nonce, ca_fp)
+        expires_in = 300
+
     manual_code_hyphenated = generate_manual_code()
-    pair_link = _build_pair_link(hostname, port, nonce, ca_fp)
+    add_kwargs: dict[str, Any] = {}
+    if nonce_ttl is not None:
+        add_kwargs["ttl"] = nonce_ttl
     _nonces().add(
         nonce,
         device_label,
         role=role,
         manual_code=normalize_manual_code(manual_code_hyphenated),
+        **add_kwargs,
     )
     response = PairStartResponse(
         nonce=nonce,
         pair_link=pair_link,
         manual_code=manual_code_hyphenated,
-        expires_in=300,
+        expires_in=expires_in,
         device_label=device_label,
         lan_url=lan_url,
         ca_fingerprint=ca_fp,

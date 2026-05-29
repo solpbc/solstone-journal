@@ -52,13 +52,14 @@ class NonceStore:
         role: str = "phone",
         manual_code: str | None = None,
         now: int | None = None,
+        ttl: int = NONCE_TTL_SECONDS,
     ) -> Nonce:
         ts = now if now is not None else int(time.time())
         entry = Nonce(
             value=nonce,
             device_label=device_label,
             issued_at=ts,
-            expires_at=ts + NONCE_TTL_SECONDS,
+            expires_at=ts + ttl,
             used=False,
             manual_code=manual_code,
             role=role,
