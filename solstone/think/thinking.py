@@ -39,7 +39,13 @@ from solstone.think.facets import (
     get_enabled_facets,
     load_segment_facets,
 )
-from solstone.think.pipeline_health import read_completed_units
+from solstone.think.pipeline_health import (
+    SEGMENT_FLOOR_TALENTS,
+    read_completed_units,
+    read_segment_progress,
+    segment_fully_sensed,
+    segment_fully_thought,
+)
 from solstone.think.runner import run_task
 from solstone.think.sense_splitter import write_idle_stubs, write_sense_outputs
 from solstone.think.talent import get_output_path, get_talent_configs
@@ -818,31 +824,19 @@ def run_segment_sense(
     has_audio_embeddings = _has_audio_embeddings(seg_dir)
     agents_to_run: list[tuple[str, dict]] = []
 
-    entities_config = _cfg("entities")
-    if entities_config:
-        agents_to_run.append(("entities", entities_config))
-    else:
-        _log_skip(
-            "entities",
-            "no_config",
-            "entities config not found",
-            mode=target_schedule,
-            day=day,
-            segment=segment,
-        )
-
-    documents_config = _cfg("documents")
-    if documents_config:
-        agents_to_run.append(("documents", documents_config))
-    else:
-        _log_skip(
-            "documents",
-            "no_config",
-            "documents config not found",
-            mode=target_schedule,
-            day=day,
-            segment=segment,
-        )
+    for floor_name in SEGMENT_FLOOR_TALENTS:
+        floor_config = _cfg(floor_name)
+        if floor_config:
+            agents_to_run.append((floor_name, floor_config))
+        else:
+            _log_skip(
+                floor_name,
+                "no_config",
+                f"{floor_name} config not found",
+                mode=target_schedule,
+                day=day,
+                segment=segment,
+            )
 
     if recommend.get("screen_record"):
         screen_config = _cfg("screen")
@@ -3418,22 +3412,55 @@ def main() -> None:
                     "Storage health check failed in post-phase", exc_info=True
                 )
 
-            # Touch daily.updated marker only after applicable daily units complete.
+            # Touch daily.updated marker only after daily and segment work completes.
             try:
                 completed = read_completed_units(day)
-                all_done = all(
+                daily_done = all(
                     ("daily", name, facet) in completed
                     for name, facet in applicable_units
                 )
-                if all_done:
+
+                segments = cluster_segments(day)
+                progress = read_segment_progress(day)
+                blockers: list[dict[str, str]] = []
+                for seg in segments:
+                    key = seg["key"]
+                    if not segment_fully_sensed(seg["data_state"]):
+                        unsensed = ",".join(
+                            f"{modality}={state}"
+                            for modality, state in sorted(seg["data_state"].items())
+                            if state not in {"analyzed", "purged"}
+                        )
+                        blockers.append(
+                            {
+                                "segment": key,
+                                "dimension": "not_sensed",
+                                "detail": unsensed,
+                            }
+                        )
+                        continue
+                    ok, reason = segment_fully_thought(progress.get(key))
+                    if not ok:
+                        blockers.append(
+                            {
+                                "segment": key,
+                                "dimension": "not_thought",
+                                "detail": reason or "",
+                            }
+                        )
+
+                if daily_done and not blockers:
                     health_dir = day_path(day) / "health"
                     health_dir.mkdir(parents=True, exist_ok=True)
                     (health_dir / "daily.updated").touch()
                     logging.info("Day %s fully complete; wrote daily.updated", day)
                 else:
                     logging.info(
-                        "Day %s has incomplete daily unit(s); withholding daily.updated",
+                        "Day %s withholding daily.updated: "
+                        "daily_units_complete=%s segment_blockers=%s",
                         day,
+                        daily_done,
+                        blockers,
                     )
             except Exception:
                 logging.warning("Failed to update daily marker", exc_info=True)

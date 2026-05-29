@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 
 from solstone.think.utils import day_path, iter_segments, now_ms
@@ -18,6 +19,18 @@ _now = datetime.now
 
 _MODES = ("segment", "daily", "activity", "weekly", "flush")
 _FAILED_LIST_CAP = 20
+SEGMENT_FLOOR_TALENTS: tuple[str, ...] = ("entities", "documents")
+
+
+@dataclass(frozen=True)
+class SegmentProgress:
+    """Per-segment fold of think-pipeline health for one day."""
+
+    sensed: bool
+    density: str | None
+    dispatched: frozenset[str]
+    completed: frozenset[str]
+    unconfigured: frozenset[str]
 
 
 def summarize_pipeline_day(day: str) -> dict:
@@ -232,6 +245,158 @@ def read_completed_units(day: str) -> set[tuple[str, str, str | None]]:
         )
 
     return {key for key, (_ts, is_complete) in latest.items() if is_complete}
+
+
+def read_segment_progress(day: str) -> dict[str, SegmentProgress]:
+    """Return per-segment progress from the day's segment health events.
+
+    Folds the day's health JSONL files read-only. Segment-scoped records are
+    records with ``mode == "segment"`` and a truthy string ``segment`` field.
+    Terminal events are only ``talent.complete`` and ``talent.fail``; the latest
+    terminal per ``(segment, name)`` wins by ``ts``. ``talent.skip`` is
+    non-terminal, except ``reason="no_config"`` is tracked for floor verdicts.
+
+    This function does not create, modify, or delete journal state.
+    """
+    latest_sense: dict[str, tuple[int, str | None]] = {}
+    dispatched: dict[str, set[str]] = {}
+    terminals: dict[str, dict[str, tuple[int, bool]]] = {}
+    unconfigured: dict[str, set[str]] = {}
+
+    try:
+        health_dir = day_path(day, create=False) / "health"
+        if not health_dir.is_dir():
+            return {}
+
+        for path in sorted(health_dir.glob("*.jsonl")):
+            with path.open(encoding="utf-8") as handle:
+                for raw_line in handle:
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        logger.debug("malformed jsonl line in %s", path)
+                        continue
+
+                    if not isinstance(rec, dict):
+                        logger.debug(
+                            "pipeline_health: skipping invalid record in %s", path
+                        )
+                        continue
+
+                    segment = rec.get("segment")
+                    if rec.get("mode") != "segment" or not isinstance(segment, str):
+                        continue
+                    if not segment:
+                        continue
+
+                    event = rec.get("event")
+                    if event == "sense.complete":
+                        try:
+                            ts = int(rec["ts"])
+                        except (KeyError, TypeError, ValueError):
+                            logger.debug(
+                                "pipeline_health: skipping sense.complete with "
+                                "invalid ts in %s",
+                                path,
+                            )
+                            continue
+                        density = rec.get("density")
+                        if not isinstance(density, str):
+                            density = None
+                        if (
+                            segment not in latest_sense
+                            or ts >= latest_sense[segment][0]
+                        ):
+                            latest_sense[segment] = (ts, density)
+                    elif event == "talent.dispatch":
+                        name = rec.get("name")
+                        if isinstance(name, str):
+                            dispatched.setdefault(segment, set()).add(name)
+                    elif event in {"talent.complete", "talent.fail"}:
+                        name = rec.get("name")
+                        if not isinstance(name, str):
+                            logger.debug(
+                                "pipeline_health: skipping segment terminal missing "
+                                "name in %s",
+                                path,
+                            )
+                            continue
+                        try:
+                            ts = int(rec["ts"])
+                        except (KeyError, TypeError, ValueError):
+                            logger.debug(
+                                "pipeline_health: skipping segment terminal with "
+                                "invalid ts in %s",
+                                path,
+                            )
+                            continue
+
+                        segment_terminals = terminals.setdefault(segment, {})
+                        if (
+                            name not in segment_terminals
+                            or ts >= segment_terminals[name][0]
+                        ):
+                            segment_terminals[name] = (
+                                ts,
+                                event == "talent.complete",
+                            )
+                    elif event == "talent.skip" and rec.get("reason") == "no_config":
+                        name = rec.get("name")
+                        if isinstance(name, str):
+                            unconfigured.setdefault(segment, set()).add(name)
+    except Exception:
+        logger.warning(
+            "pipeline_health: unexpected error reading segment progress for %s",
+            day,
+            exc_info=True,
+        )
+        return {}
+
+    segments = set(latest_sense) | set(dispatched) | set(terminals) | set(unconfigured)
+    progress: dict[str, SegmentProgress] = {}
+    for segment in sorted(segments):
+        segment_terminals = terminals.get(segment, {})
+        progress[segment] = SegmentProgress(
+            sensed=segment in latest_sense,
+            density=latest_sense.get(segment, (0, None))[1],
+            dispatched=frozenset(dispatched.get(segment, set())),
+            completed=frozenset(
+                name
+                for name, (_ts, is_complete) in segment_terminals.items()
+                if is_complete
+            ),
+            unconfigured=frozenset(unconfigured.get(segment, set())),
+        )
+    return progress
+
+
+def segment_fully_sensed(data_state: dict[str, str]) -> bool:
+    """True when every non-absent modality has finished sensing.
+
+    ``data_state`` is the per-segment dict from ``cluster_segments``; it already
+    omits absent modalities, so an absent modality cannot peg a segment. Note
+    cluster's ``_detect_data_state`` cannot emit ``purged`` today; ``purged`` is
+    kept here for ``DataState`` vocabulary alignment and forward-safety.
+    """
+    return all(state in {"analyzed", "purged"} for state in data_state.values())
+
+
+def segment_fully_thought(progress: SegmentProgress | None) -> tuple[bool, str | None]:
+    """Per-segment fully-thought verdict. Returns (ok, blocking_reason)."""
+    if progress is None or not progress.sensed:
+        return False, "no_sense_complete"
+    if progress.density == "idle":
+        return True, None
+    for name in SEGMENT_FLOOR_TALENTS:
+        if name not in progress.completed and name not in progress.unconfigured:
+            return False, f"floor:{name}"
+    for name in sorted(progress.dispatched):
+        if name not in progress.completed:
+            return False, f"dispatched:{name}"
+    return True, None
 
 
 def pipeline_status_message(summary: dict) -> dict | None:
