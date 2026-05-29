@@ -111,6 +111,6 @@ The `sol call todos add` command automatically rejects items that fuzzy-match (â
 
 ## Output
 
-After making your changes, call `sol call todos list` and include the final checklist state.
+After making your changes, call `sol call todos list`, then call `emit_final(content=<final checklist state>)` exactly once with the final checklist state. The content is the checklist snapshot that will be written to the indexed activity file.
 
-If no todos were detected and no existing items were validated, output a brief sentence explaining why (e.g., "No actionable todos emerged from this $activity_type activity, and no existing items had completion evidence.").
+If no todos were detected and no existing items were validated, call `emit_final(content=<brief explanation>)` with a brief sentence explaining why (e.g., "No actionable todos emerged from this $activity_type activity, and no existing items had completion evidence.").

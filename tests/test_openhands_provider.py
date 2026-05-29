@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +12,7 @@ import pytest
 from solstone.think.cogitate_policy import MAX_TURNS, MaxTurnsExhausted
 from solstone.think.providers import openhands
 from solstone.think.providers.shared import USAGE_KEYS, JSONEventCallback
+from solstone.think.talent import get_talent_configs
 from tests.openhands_fakes import install_fake_openhands
 
 
@@ -415,6 +417,36 @@ def test_run_cogitate_uses_emit_final_branch_for_daily_no_output(
     assert not config.get("output_path")
     assert [tool.name for tool in conversation.agent.tools] == ["sol", "emit_final"]
     assert conversation.agent.include_default_tools == []
+
+
+def test_schedule_gated_cogitate_prompts_use_emit_final():
+    old_tool_name = "emit" + "_output"
+    configs = get_talent_configs(type="cogitate")
+    converted = {
+        name: config
+        for name, config in configs.items()
+        if config.get("schedule") in {"daily", "weekly", "activity"}
+        and "output" not in config
+    }
+    artifact_names = {
+        name
+        for name, config in converted.items()
+        if name == "steward"
+        or (name.endswith(":todo") and config.get("schedule") == "activity")
+    }
+
+    assert len(converted) == 9
+    assert artifact_names == {"steward", "todos:todo"}
+
+    for name, config in converted.items():
+        body = Path(config["path"]).read_text(encoding="utf-8")
+        assert "emit_final" in body, name
+        assert old_tool_name not in body, name
+        assert "FinishTool" not in body, name
+        if name in artifact_names:
+            assert body.count("emit_final") >= 1, name
+        else:
+            assert body.count("emit_final") >= 2, name
 
 
 def test_run_cogitate_threads_configured_max_turns(

@@ -213,13 +213,13 @@ When invoked:
 6. Synthesize timeless descriptions for qualifying entities
 7. Execute `sol call entities attach` for each promotion to THIS facet
 8. Detect name variations and execute `sol call entities aka` for aliases
-9. Summarize: "Promoted X entities for [facet]: [names with aliases and detection counts]"
+9. Call `emit_final(content=<promoted entities, aliases, near-threshold, skipped ambiguities>)` exactly once. Include promoted entities, aliases added, near-threshold entities, and skipped ambiguities.
 
 ## Edge Cases
 
-**No Detections**: If no entities meet their priority-based thresholds for THIS facet, report "No entities qualify for promotion this cycle for [facet]"
+**No Detections**: If no entities meet their priority-based thresholds for THIS facet, call `emit_final(content="No entities qualify for promotion this cycle for $facet.")`
 
-**All Already Attached**: If all qualifying entities are already attached to THIS facet, report "All recurring entities already attached to [facet]"
+**All Already Attached**: If all qualifying entities are already attached to THIS facet, call `emit_final(content="All recurring entities already attached to $facet.")`
 
 **Type Conflicts**: If entity name appears with different types within THIS facet's detections (e.g., "Mercury" as Company and Project), skip and report the ambiguity for manual review
 

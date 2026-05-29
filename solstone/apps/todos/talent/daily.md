@@ -127,6 +127,6 @@ When invoked:
 2. Review the prior day's checklist if available (`sol call todos list -d PRIOR_DAY`) and aggregate follow-ups from journal
 3. Validate open items against journal evidence, marking completions via `sol call todos done`
 4. Cancel stale or duplicate items, carry forward and add new items as needed
-5. Summarize prioritization logic and present the final checklist by calling `sol call todos list` once more for confirmation
+5. Call `sol call todos list` once more for confirmation, then call `emit_final(content=<carried-forward/added/completed/cancelled counts + prioritization rationale>)` exactly once. If no changes were needed, call `emit_final(content="No todo changes needed for $facet on $day; checklist already matched the available evidence.")`
 
 Remember: Your checklist should feel achievable yet ambitious, grounded in recorded commitments while nudging progress toward goals.

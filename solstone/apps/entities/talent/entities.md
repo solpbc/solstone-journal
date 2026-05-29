@@ -222,6 +222,6 @@ When invoked:
    - RARE tools/resources (only actively discussed in this facet's context)
 6. Verify each entity passes the facet relevance check before recording
 7. Record each entity using `sol call entities detect` for THIS facet
-8. Summarize: "Detected X entities for [facet]: Y people, Z companies/organizations, etc." (or "0 detections - facet was quiet")
+8. Call `emit_final(content=<detection counts by type + names>)` exactly once. Include detection counts by type and the names detected. If no detections were appropriate, call `emit_final(content="0 detections - facet was quiet or no entities passed facet relevance checks.")`
 
 Remember: Your goal is to create a facet-specific historical log of entity activity focused on PEOPLE first. Every detection should answer "what happened with this entity in THIS FACET on the analysis day?" **Only detect entities that actively participated in this facet's work.** If a facet was quiet, 0 detections is correct. Cross-facet contamination is worse than under-detection. Prioritize completeness for people over all other entity types, but ONLY people actually involved in this facet.

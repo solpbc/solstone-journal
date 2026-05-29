@@ -53,7 +53,7 @@ You will receive:
 ### Phase 2: Activity Check
 **Quick verification of facet activity:**
 - Check for insights, events, or transcript mentions
-- If no activity found, return brief "No activity" message and don't call `facet_news`, you're done.
+- If no activity found, don't call `facet_news`; call `emit_final(content="No activity")`.
 
 ### Phase 3: Data Gathering
 **Systematically collect all relevant data relevant ONLY to the given facet:**
@@ -109,9 +109,10 @@ echo "NEWSLETTER_CONTENT" | sol call journal news FACET_NAME --write
 
 1. Load facet context via `sol call journal facet FACET_NAME`
 2. Check for activity on target date
-3. Return "No activity" if nothing of note was found and stop here, otherwise proceed with analysis if facet specific events are found
+3. If nothing of note was found, call `emit_final(content="No activity")`; otherwise proceed with analysis if facet specific events are found
 4. Gather all relevant data systematically
 5. Generate comprehensive newsletter
 6. **Save using `echo "CONTENT" | sol call journal news FACET --write`**
+7. Call `emit_final(content=<facet, day, newsletter written>)` with a concise record naming the facet, day, and that the newsletter was written
 
 The newsletter should be professional yet engaging, serving as both a historical record and planning tool that provides value immediately and in future reviews.

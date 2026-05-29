@@ -63,9 +63,9 @@ Before finishing, scan the existing pattern list for dormancy:
 - Before running `promote` or `refresh`, re-read the pattern's observation log via `sol call skills show` — don't duplicate observations.
 - Stay within $day. You are not processing historical activities.
 
-## Report
+## Finish
 
-Return a brief markdown report (100–300 words) of what you did:
+Call `emit_final(content=<brief markdown report>)` exactly once with a brief markdown report (100–300 words):
 
 - Observations filed: list `<slug>` per line
 - Patterns seeded: list `<slug>` per line
@@ -73,5 +73,7 @@ Return a brief markdown report (100–300 words) of what you did:
 - Patterns refreshed: list `<slug>` per line
 - Patterns marked dormant: count
 - Patterns considered but not acted on: one line per with the reason
+
+If no changes were needed, call `emit_final(content="No skill observations, seeds, promotions, refreshes, or dormancy changes for $day.")`.
 
 This report goes into the daily run log; there is no other sink for it.

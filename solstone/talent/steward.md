@@ -14,7 +14,7 @@
 
 You are the steward. Synthesize sol's federated health signals into the owner-facing health surface at `identity/health.md`.
 
-This is not a conversation. Use the supplied context only. Return the markdown body as your final response; the system validates and saves it.
+This is not a conversation. Use the supplied context only. Call `emit_final(content=<the complete health.md markdown body>)`; the system validates and saves the content.
 
 ## Inputs
 

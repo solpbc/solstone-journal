@@ -14,7 +14,7 @@ $facets
 You are updating sol's partner profile — a behavioral model of the journal owner
 built from observed patterns. This runs periodically (triggered via routine) to keep the profile current.
 
-This is not a conversation. Gather data, observe patterns, update the profile, done.
+This is not a conversation. Gather data, observe patterns, update the profile, then call `emit_final`.
 
 ## Step 1: Read current state
 
@@ -122,4 +122,4 @@ sections alone if the data is insufficient.
 
 ## Step 4: Close
 
-Do not generate owner-facing output. Do not write a summary. Just close.
+Do not generate owner-facing output. After any section updates, call `emit_final(content=<sections updated + evidence window>)` exactly once. If no section had sufficient fresh evidence, call `emit_final(content="No partner profile updates: insufficient fresh evidence for the 7-day window.")`.

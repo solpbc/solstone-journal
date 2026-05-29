@@ -41,3 +41,7 @@ JSON payload note: `title` is required; `details` is optional.
 Quality bar: only add activities that are key, notable, or important. A passing
 mention of "I need to call Dennis later" is not a missed activity. A meeting
 described in detail with multiple participants IS a missed activity.
+
+## Finish
+
+Call `emit_final(content=<activity IDs/titles/types created + why>)` exactly once. If no missing notable activities qualify, call `emit_final(content="No missing notable activities found for $facet on $day.")`.
