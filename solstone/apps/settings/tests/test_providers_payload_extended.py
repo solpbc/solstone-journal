@@ -78,6 +78,14 @@ def test_providers_payload_omits_bundled_block(settings_client):
     _assert_install_status(payload["mlx"])
 
 
+def test_providers_payload_omits_auth(settings_client):
+    response = settings_client.get("/app/settings/api/providers")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert "auth" not in payload
+
+
 def test_get_providers_uses_requested_local_model(settings_client, monkeypatch):
     model_id = next(iter(LOCAL_MODEL_SPECS))
     requested_models: list[str] = []

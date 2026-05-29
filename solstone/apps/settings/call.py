@@ -324,7 +324,6 @@ def show() -> None:
             "generate": type_settings["generate"],
             "cogitate": type_settings["cogitate"],
             "google_backend": providers_config.get("google_backend", "auto"),
-            "auth": providers_config.get("auth", {}),
             "key_validation": providers_config.get("key_validation", {}),
         },
         "transcribe": config.get("transcribe", {}),
@@ -363,8 +362,6 @@ def keys_set(
     provider = _provider_for_env_var(env_var)
     if provider:
         config.setdefault("providers", {})
-        config["providers"].setdefault("auth", {})
-        config["providers"]["auth"][provider] = "api_key"
         validation = validate_key(provider, value)
         validation["timestamp"] = datetime.now(timezone.utc).isoformat()
         config["providers"].setdefault("key_validation", {})
@@ -393,8 +390,6 @@ def keys_clear(
     provider = _provider_for_env_var(env_var)
     if provider:
         config.setdefault("providers", {})
-        config["providers"].setdefault("auth", {})
-        config["providers"]["auth"][provider] = "platform"
         config["providers"].setdefault("key_validation", {})
         config["providers"]["key_validation"].pop(provider, None)
 
@@ -469,11 +464,6 @@ def providers_show(
         env_key = provider.get("env_key", "")
         api_keys[provider["name"]] = bool(os.getenv(env_key)) if env_key else False
 
-    auth_config = providers_config.get("auth", {})
-    auth = {
-        provider["name"]: auth_config.get(provider["name"], "platform")
-        for provider in providers_list
-    }
     vertex_creds_path = providers_config.get("vertex_credentials")
     vertex_creds_configured = bool(
         vertex_creds_path and Path(vertex_creds_path).exists()
@@ -485,7 +475,6 @@ def providers_show(
         "generate": type_settings["generate"],
         "cogitate": type_settings["cogitate"],
         "api_keys": api_keys,
-        "auth": auth,
         "key_validation": providers_config.get("key_validation", {}),
     }
     if human:
@@ -570,32 +559,6 @@ def providers_set_cogitate(
     typer.echo(
         json.dumps(_set_provider_type("cogitate", provider, tier, backup), indent=2)
     )
-
-
-@providers_app.command("set-auth")
-def providers_set_auth(
-    provider: str = typer.Argument(..., help="Provider name."),
-    mode: str = typer.Argument(..., help="Auth mode."),
-) -> None:
-    """Set provider auth mode."""
-    from solstone.think.providers import PROVIDER_REGISTRY
-
-    if provider not in PROVIDER_REGISTRY:
-        typer.echo(f"Invalid provider in auth: {provider}", err=True)
-        raise typer.Exit(1)
-    if mode not in ("platform", "api_key"):
-        typer.echo(
-            f"Invalid auth mode: {mode}. Must be 'platform' or 'api_key'.",
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    config = _get_config()
-    config.setdefault("providers", {})
-    config["providers"].setdefault("auth", {})
-    config["providers"]["auth"][provider] = mode
-    _write_config(config)
-    typer.echo(json.dumps({provider: mode}, indent=2))
 
 
 @google_backend_app.command("show")

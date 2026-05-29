@@ -2496,16 +2496,6 @@ button:focus:not(:focus-visible) {
           <small></small>
         </div>
       </div>
-      <div class="provider-row" style="max-width:16em">
-        <div class="settings-field">
-          <label for="field-cogitate-auth">auth</label>
-          <select id="field-cogitate-auth">
-            <option value="platform">platform account</option>
-            <option value="api_key">API key</option>
-          </select>
-          <small>how the CLI authenticates with the provider</small>
-        </div>
-      </div>
       <h3 class="settings-subsection-title">google backend</h3>
       <p class="settings-subsection-desc">how solstone connects to Google AI. auto-detect works for most owners.</p>
       <div class="provider-row">
@@ -4523,8 +4513,7 @@ function applyEnvSaveEffects(el, key, result) {
         updateTypeProviderKeyWarning(
           type,
           providerSelect.value,
-          providersData.api_keys || {},
-          providersData.auth || {}
+          providersData.api_keys || {}
         );
       }
     }
@@ -5159,7 +5148,11 @@ let localStatusLoading = false;
 let localStatusError = '';
 
 const PROVIDER_NAMES = ['anthropic', 'openai', 'local', 'mlx'];
-const MLX_COGITATE_UNSUPPORTED_TITLE = 'MLX provider does not support cogitate in v1 — it is vision/generate-only. Configure a cloud provider for cogitate agents.';
+const COGITATE_KEY_GUIDANCE = {
+  google: 'This provider needs an API key to run agents. Get one at aistudio.google.com, then add it in API keys below.',
+  anthropic: 'This provider needs an API key to run agents. Get one at console.anthropic.com, then add it in API keys below.',
+  openai: 'This provider needs an API key to run agents. Get one at platform.openai.com, then add it in API keys below.',
+};
 const MLX_SCOPE_COPY = 'vision and text on your device. tool-calling agents continue to use your configured cogitate provider.';
 const MLX_MODEL_LABELS = {
   'qwen3.5:9b': 'qwen 3.5 — 16 GB Mac',
@@ -5233,6 +5226,7 @@ function populateProviders(data) {
       select.innerHTML = '';
       if (data.providers) {
         for (const p of data.providers) {
+          if (type === 'cogitate' && p.name === 'mlx') continue;
           const opt = document.createElement('option');
           opt.value = p.name;
           opt.textContent = getProviderOptionLabel(p, type);
@@ -5252,14 +5246,7 @@ function populateProviders(data) {
     document.getElementById(`field-${type}-backup`).value = typeData.backup || '';
 
     // Update key warnings
-    updateTypeProviderKeyWarning(type, typeData.provider, data.api_keys, data.auth);
-  }
-
-  // Set cogitate auth mode from API response
-  const cogitateProvider = (data.cogitate || {}).provider || '';
-  const authSelect = document.getElementById('field-cogitate-auth');
-  if (authSelect && data.auth) {
-    authSelect.value = data.auth[cogitateProvider] || 'platform';
+    updateTypeProviderKeyWarning(type, typeData.provider, data.api_keys);
   }
 
   // Set Google backend selector
@@ -5831,7 +5818,6 @@ function getMlxAvailability() {
 
 function getProviderOptionDisabledReason(provider, type) {
   if (!provider || provider.name !== 'mlx') return '';
-  if (type === 'cogitate') return MLX_COGITATE_UNSUPPORTED_TITLE;
   const availability = getMlxAvailability();
   if (availability && availability.available === false) {
     return availability.reason || 'MLX unavailable';
@@ -6064,7 +6050,7 @@ async function startLocalBootstrap() {
   }
 }
 
-function updateTypeProviderKeyWarning(type, provider, apiKeys, auth) {
+function updateTypeProviderKeyWarning(type, provider, apiKeys) {
   const warning = document.getElementById(`${type}ProviderKeyWarning`);
   const link = document.getElementById(`${type}ProviderKeyLink`);
   if (!warning || !link) return;
@@ -6078,10 +6064,8 @@ function updateTypeProviderKeyWarning(type, provider, apiKeys, auth) {
     return;
   }
 
-  // For cogitate, hide key warning when using platform auth
-  const authMode = (auth && type === 'cogitate') ? (auth[provider] || 'platform') : 'api_key';
   const validation = provider ? keyValidationData[provider] : null;
-  if (authMode === 'platform' || !provider) {
+  if (!provider) {
     warning.style.display = 'none';
     warning.title = '';
     return;
@@ -6105,7 +6089,9 @@ function updateTypeProviderKeyWarning(type, provider, apiKeys, auth) {
   } else {
     warning.style.display = 'flex';
     if (message) {
-      message.textContent = `API key not configured for ${type} provider.`;
+      message.textContent = (type === 'cogitate' && COGITATE_KEY_GUIDANCE[provider])
+        ? COGITATE_KEY_GUIDANCE[provider]
+        : `API key not configured for ${type} provider.`;
     }
     warning.title = '';
   }
@@ -6145,7 +6131,7 @@ async function revalidateAllKeys() {
       for (const type of ['generate', 'cogitate']) {
         const providerSelect = document.getElementById(`field-${type}-provider`);
         if (providerSelect) {
-          updateTypeProviderKeyWarning(type, providerSelect.value, providersData.api_keys, providersData.auth);
+          updateTypeProviderKeyWarning(type, providerSelect.value, providersData.api_keys);
         }
       }
     }
@@ -6344,12 +6330,8 @@ for (const type of ['generate', 'cogitate']) {
             providersData.local_availability = previousLocalAvailability;
             providersData.local_models = previousLocalModels;
             if (field === 'provider') {
-              updateTypeProviderKeyWarning(type, value, result.api_keys, result.auth);
+              updateTypeProviderKeyWarning(type, value, result.api_keys);
               if (type === 'cogitate') {
-                const authSelect = document.getElementById('field-cogitate-auth');
-                if (authSelect && result.auth) {
-                  authSelect.value = result.auth[value] || 'platform';
-                }
                 renderLocalCogitateStatus();
               }
             }
@@ -6437,33 +6419,6 @@ document.getElementById('field-local-active-model')?.addEventListener('change', 
   } catch (err) {
     showFieldError(errorHost, err.message);
     notifyError('Local model update failed', err.message);
-  }
-});
-
-// Cogitate auth mode change handler
-document.getElementById('field-cogitate-auth')?.addEventListener('change', async function() {
-  const authSelect = this;
-  const provider = document.getElementById('field-cogitate-provider')?.value;
-  if (!provider) return;
-  const errorHost = prepareFieldErrorHost(authSelect);
-  try {
-    await window.saveControl({
-      el: authSelect,
-      errorHost,
-      fetchArgs: ['api/providers', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auth: { [provider]: authSelect.value } }),
-      }],
-      onSuccess: (result) => {
-        const previousMlxAvailability = providersData?.mlx_availability;
-        providersData = result;
-        providersData.mlx_availability = previousMlxAvailability;
-        updateTypeProviderKeyWarning('cogitate', provider, result.api_keys, result.auth);
-        showFieldStatus(authSelect, 'saved');
-      },
-    });
-  } catch (_) {
   }
 });
 

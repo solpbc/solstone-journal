@@ -371,8 +371,6 @@ def update_config() -> Any:
                                 }
                             config[section][backend_key][nested_key] = new_value
 
-        # When a provider API key is saved/cleared, auto-set the matching
-        # providers.auth mode so cogitate uses the key automatically.
         if section == "env" and changed_fields:
             from solstone.think.providers import PROVIDER_METADATA
 
@@ -384,14 +382,6 @@ def update_config() -> Any:
             }
             if "providers" not in config:
                 config["providers"] = {}
-            if "auth" not in config["providers"]:
-                config["providers"]["auth"] = {}
-            for env_var in changed_fields:
-                provider = env_to_provider.get(env_var)
-                if provider:
-                    new_val = data.get(env_var, "")
-                    mode = "api_key" if new_val else "platform"
-                    config["providers"]["auth"][provider] = mode
 
             # Validate changed provider API keys
             if "key_validation" not in config["providers"]:
@@ -876,7 +866,6 @@ def get_providers() -> Any:
         - context_defaults: Context registry with labels/groups for UI
           (includes talent configs with type, schedule, and disabled state)
         - api_keys: Boolean status for each provider's API key
-        - auth: Per-provider auth mode for cogitate ("platform" or "api_key")
     """
     try:
         from solstone.think.models import (
@@ -941,12 +930,6 @@ def get_providers() -> Any:
             env_key = p.get("env_key", "")
             api_keys[p["name"]] = bool(os.getenv(env_key)) if env_key else False
 
-        # Build auth settings (default "platform" for all providers)
-        auth_config = providers_config.get("auth", {})
-        auth = {
-            p["name"]: auth_config.get(p["name"], "platform") for p in providers_list
-        }
-
         # Get cached key validation results
         key_validation = providers_config.get("key_validation", {})
 
@@ -983,7 +966,6 @@ def get_providers() -> Any:
                 "contexts": contexts,
                 "context_defaults": context_defaults,
                 "api_keys": api_keys,
-                "auth": auth,
                 "key_validation": key_validation,
                 "local": local_status,
                 "mlx": {"active_model": mlx_active_model, **mlx_status},
@@ -1098,7 +1080,6 @@ def update_providers() -> Any:
     Accepts JSON with optional keys:
         - generate: {provider?, tier?, backup?} - Set generate defaults
         - cogitate: {provider?, tier?, backup?} - Set cogitate defaults
-        - auth: {provider: "platform"|"api_key"} - Cogitate CLI auth mode
         - contexts: {pattern: {provider?, tier?, disabled?, extract?} | null}
           Set or clear context overrides
 
@@ -1187,41 +1168,6 @@ def update_providers() -> Any:
                         "new": backup,
                     }
                 config["providers"][agent_type]["backup"] = backup
-
-        # Handle auth mode updates
-        if "auth" in request_data:
-            auth_data = request_data["auth"]
-            if not isinstance(auth_data, dict):
-                return error_response(
-                    INVALID_CONFIG_VALUE,
-                    detail="auth must be an object",
-                )
-
-            if "auth" not in config["providers"]:
-                config["providers"]["auth"] = {}
-
-            old_auth = old_providers.get("auth", {})
-
-            for provider, mode in auth_data.items():
-                if provider not in PROVIDER_REGISTRY:
-                    return error_response(
-                        INVALID_CONFIG_VALUE,
-                        detail=f"Invalid provider in auth: {provider}",
-                    )
-                if mode not in ("platform", "api_key"):
-                    return error_response(
-                        INVALID_CONFIG_VALUE,
-                        detail=(
-                            f"Invalid auth mode: {mode}. "
-                            "Must be 'platform' or 'api_key'."
-                        ),
-                    )
-                if old_auth.get(provider) != mode:
-                    changed_fields[f"auth.{provider}"] = {
-                        "old": old_auth.get(provider, "platform"),
-                        "new": mode,
-                    }
-                config["providers"]["auth"][provider] = mode
 
         # Handle context overrides
         if "contexts" in request_data:

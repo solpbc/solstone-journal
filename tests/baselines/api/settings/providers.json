@@ -6,13 +6,6 @@
     "mlx": false,
     "openai": false
   },
-  "auth": {
-    "anthropic": "platform",
-    "google": "platform",
-    "local": "platform",
-    "mlx": "platform",
-    "openai": "platform"
-  },
   "cogitate": {
     "backup": "anthropic",
     "provider": "openai",

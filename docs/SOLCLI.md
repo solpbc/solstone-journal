@@ -418,7 +418,7 @@ solstone/
 | `transcripts` | `solstone/apps/transcripts/call.py` | list, read, segments |
 | `support` | `solstone/apps/support/call.py` | register, search, article, create, list, show, reply, attach, feedback, announcements, diagnose |
 | `sol` | `solstone/apps/sol/call.py` | name, set-name, reset, thickness, set-owner, sol-init |
-| `settings` | `solstone/apps/settings/call.py` | keys (show/set/delete), providers (show/set-auth/install local), vertex service-account |
+| `settings` | `solstone/apps/settings/call.py` | keys (show/set/delete), providers (show/install local), vertex service-account |
 | `awareness` | `solstone/apps/awareness/call.py` | status, imports, log, log-read |
 | `journal` | `solstone/think/tools/call.py` | search, events, facets, facet (show/create/update/rename/mute/unmute/delete/merge), news, agents, read, imports, import, retention purge, storage-summary |
 | `routines` | `solstone/think/tools/routines.py` | list, templates, create, edit, delete, run, output, suggestions, suggest-respond, suggest-state |

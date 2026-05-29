@@ -31,6 +31,7 @@ class TestShow:
         assert "providers" in payload
         assert "transcribe" in payload
         assert "observe" in payload
+        assert "auth" not in payload["providers"]
 
 
 class TestKeysShow:
@@ -47,7 +48,12 @@ class TestKeysShow:
 
 class TestKeysSet:
     def test_keys_set(self, settings_env):
-        tmp_path, _config = settings_env()
+        tmp_path, config = settings_env()
+        config["providers"].pop("auth", None)
+        (tmp_path / "config" / "journal.json").write_text(
+            json.dumps(config, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
         with (
             patch.dict(os.environ, {}, clear=False),
@@ -65,7 +71,7 @@ class TestKeysSet:
         assert payload["set"] is True
         saved = json.loads((tmp_path / "config" / "journal.json").read_text())
         assert saved["env"]["ANTHROPIC_API_KEY"] == "test-key"
-        assert saved["providers"]["auth"]["anthropic"] == "api_key"
+        assert "auth" not in saved.get("providers", {})
 
     def test_keys_set_invalid_var(self, settings_env):
         settings_env()
@@ -79,7 +85,12 @@ class TestKeysSet:
 
 class TestKeysClear:
     def test_keys_clear(self, settings_env):
-        tmp_path, _config = settings_env()
+        tmp_path, config = settings_env()
+        config["providers"].pop("auth", None)
+        (tmp_path / "config" / "journal.json").write_text(
+            json.dumps(config, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
         result = runner.invoke(
             call_app, ["settings", "keys", "clear", "GOOGLE_API_KEY"]
@@ -88,7 +99,7 @@ class TestKeysClear:
         assert result.exit_code == 0
         saved = json.loads((tmp_path / "config" / "journal.json").read_text())
         assert "GOOGLE_API_KEY" not in saved["env"]
-        assert saved["providers"]["auth"]["google"] == "platform"
+        assert "auth" not in saved.get("providers", {})
 
 
 class TestKeysValidate:
@@ -191,6 +202,7 @@ class TestProvidersShow:
         payload = json.loads(result.output)
         assert payload["generate"]["provider"] == "google"
         assert payload["cogitate"]["provider"] == "openai"
+        assert "auth" not in payload
 
     def test_provider_status_key_set_baseline_ready(self, settings_env):
         tmp_path, config = settings_env()

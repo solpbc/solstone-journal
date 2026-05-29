@@ -278,7 +278,6 @@ def test_update_config_saves_key_validation(settings_client):
     assert "timestamp" in payload["key_validation"]["google"]
 
     config = json.loads((journal / "config" / "journal.json").read_text())
-    assert config["providers"]["auth"]["google"] == "api_key"
     assert config["providers"]["key_validation"]["google"]["valid"] is False
 
 
@@ -287,7 +286,6 @@ def test_update_config_clears_key_validation(settings_client):
     config_path = journal / "config" / "journal.json"
     config = json.loads(config_path.read_text())
     config.setdefault("env", {})["GOOGLE_API_KEY"] = "existing-key"
-    config.setdefault("providers", {}).setdefault("auth", {})["google"] = "api_key"
     config["providers"]["key_validation"] = {
         "google": {"valid": True, "timestamp": "2026-01-01T00:00:00+00:00"}
     }
@@ -304,7 +302,6 @@ def test_update_config_clears_key_validation(settings_client):
     assert "google" not in payload["key_validation"]
 
     saved = json.loads(config_path.read_text())
-    assert saved["providers"]["auth"]["google"] == "platform"
     assert "google" not in saved["providers"]["key_validation"]
 
 
