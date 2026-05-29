@@ -124,7 +124,7 @@ def test_cli_network_access_enable_restarts_and_prints_host_url(journal_copy):
             "solstone.convey.restart.wait_for_convey_restart", return_value=(True, [])
         ) as restart,
         patch(
-            "solstone.apps.settings.call.get_host_url",
+            "solstone.think.pairing.config.get_host_url",
             return_value="http://192.168.1.44:5015",
         ),
     ):
@@ -353,7 +353,7 @@ def test_api_put_network_access_returns_restart_payload(journal_copy):
             "solstone.convey.restart.wait_for_convey_restart", return_value=(True, [])
         ) as restart,
         patch(
-            "solstone.apps.settings.routes.get_host_url",
+            "solstone.think.pairing.config.get_host_url",
             return_value="http://192.168.1.44:5015",
         ),
     ):
@@ -381,7 +381,7 @@ def test_api_put_network_access_timeout_still_saves(journal_copy):
             "solstone.convey.restart.wait_for_convey_restart", return_value=(False, [])
         ),
         patch(
-            "solstone.apps.settings.routes.get_host_url",
+            "solstone.think.pairing.config.get_host_url",
             return_value="http://localhost:5015",
         ),
     ):

@@ -31,6 +31,10 @@ from solstone.apps.settings.copy import (
     CONVEY_TRUST_ENABLE_DONE,
     format_convey_status,
 )
+from solstone.convey.network_access import (
+    NetworkAccessPasswordRequired,
+    set_network_access,
+)
 from solstone.think.pairing.config import get_host_url
 from solstone.think.service import DEFAULT_SERVICE_PORT
 from solstone.think.utils import get_project_root, require_solstone
@@ -121,16 +125,6 @@ def _validate_host_url_or_exit(url: str) -> str:
     return cleaned
 
 
-def _restart_convey_or_exit() -> None:
-    from solstone.convey.restart import wait_for_convey_restart
-
-    restart_ok, _ = wait_for_convey_restart(timeout=15.0)
-    if restart_ok:
-        return
-    typer.echo(CONVEY_RESTART_TIMEOUT, err=True)
-    raise typer.Exit(1)
-
-
 def _provider_for_env_var(env_var: str) -> str | None:
     """Return the provider mapped to an API env var, if any."""
     from solstone.think.providers import PROVIDER_METADATA
@@ -147,26 +141,31 @@ def _provider_for_env_var(env_var: str) -> str | None:
 def convey_network_access_enable() -> None:
     """Enable non-loopback access to Convey and restart it."""
 
-    config = _get_config()
-    if not _convey_password_is_set(config):
+    try:
+        result = set_network_access(
+            enable=True,
+            on_restart=lambda: typer.echo(CONVEY_NETWORK_ENABLE_PROGRESS),
+        )
+    except NetworkAccessPasswordRequired:
         typer.echo(CONVEY_REFUSE_NO_PASSWORD_NETWORK, err=True)
         raise typer.Exit(1)
-    config.setdefault("convey", {})["allow_network_access"] = True
-    _write_config(config)
-    typer.echo(CONVEY_NETWORK_ENABLE_PROGRESS)
-    _restart_convey_or_exit()
-    typer.echo(CONVEY_NETWORK_ENABLE_DONE.format(host_url=get_host_url()))
+    if result["restart_timeout"]:
+        typer.echo(CONVEY_RESTART_TIMEOUT, err=True)
+        raise typer.Exit(1)
+    typer.echo(CONVEY_NETWORK_ENABLE_DONE.format(host_url=result["effective_host_url"]))
 
 
 @network_access_app.command("disable")
 def convey_network_access_disable() -> None:
     """Restrict Convey to localhost and restart it."""
 
-    config = _get_config()
-    config.setdefault("convey", {})["allow_network_access"] = False
-    _write_config(config)
-    typer.echo(CONVEY_NETWORK_DISABLE_PROGRESS)
-    _restart_convey_or_exit()
+    result = set_network_access(
+        enable=False,
+        on_restart=lambda: typer.echo(CONVEY_NETWORK_DISABLE_PROGRESS),
+    )
+    if result["restart_timeout"]:
+        typer.echo(CONVEY_RESTART_TIMEOUT, err=True)
+        raise typer.Exit(1)
     typer.echo(CONVEY_NETWORK_DISABLE_DONE.format(port=_convey_port()))
 
 

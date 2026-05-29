@@ -10,12 +10,24 @@
     <p class="link-trust">{{ link_copy.HEADER_TRUST_LINE }}</p>
   </header>
 
-  <div id="link-lan-nudge" class="link-lan-nudge" hidden>
-    <p>
-      Your convey isn't reachable on your local network, so phones can't complete the pair ceremony on the same wifi yet.
-      Start the supervisor with a LAN-bound port (for example <code>make dev PORT=0.0.0.0:5015</code>) or set <code>convey.host</code> in your journal config to a non-loopback interface, then reload this page.
-    </p>
-  </div>
+  <section id="link-lan-banner" class="link-lan-banner" hidden tabindex="-1" aria-labelledby="link-lan-banner-title">
+    <h2 id="link-lan-banner-title">{{ link_copy.LAN_BANNER_TITLE }}</h2>
+    <p>{{ link_copy.LAN_BANNER_BODY }}</p>
+    <div id="link-lan-password-fields" class="link-lan-password-fields" hidden>
+      <p>{{ link_copy.LAN_BANNER_PASSWORD_INTRO }}</p>
+      <label for="link-lan-password">{{ link_copy.LAN_BANNER_PASSWORD_LABEL }}</label>
+      <input type="password" id="link-lan-password" autocomplete="new-password">
+      <label for="link-lan-confirm">{{ link_copy.LAN_BANNER_CONFIRM_LABEL }}</label>
+      <input type="password" id="link-lan-confirm" autocomplete="new-password">
+      <div id="link-lan-banner-error" class="link-lan-banner-error" role="alert" hidden></div>
+    </div>
+    <button type="button" id="link-lan-enable" class="link-lan-enable">{{ link_copy.LAN_BANNER_ENABLE_CTA }}</button>
+    <p id="link-lan-banner-status" class="link-lan-banner-status" aria-live="polite"></p>
+    <details id="link-lan-diy" class="link-lan-diy">
+      <summary>{{ link_copy.LAN_BANNER_DIY_LABEL }}</summary>
+      <p>{{ link_copy.LAN_BANNER_DIY_BODY }}</p>
+    </details>
+  </section>
 
   <section id="link-first-run-hero" class="link-hero" hidden aria-labelledby="link-hero-title">
     <div class="link-hero-icon" aria-hidden="true">📡</div>
@@ -176,6 +188,12 @@
       DEVICE_EMPTY_TITLE: {{ link_copy.DEVICE_EMPTY_TITLE|tojson }},
       DEVICE_EMPTY_BODY: {{ link_copy.DEVICE_EMPTY_BODY|tojson }},
       DEVICE_PAIR_CTA: {{ link_copy.DEVICE_PAIR_CTA|tojson }},
+      LAN_BANNER_PASSWORD_TOO_SHORT: {{ link_copy.LAN_BANNER_PASSWORD_TOO_SHORT|tojson }},
+      LAN_BANNER_PASSWORD_MISMATCH: {{ link_copy.LAN_BANNER_PASSWORD_MISMATCH|tojson }},
+      LAN_BANNER_RESTARTING: {{ link_copy.LAN_BANNER_RESTARTING|tojson }},
+      LAN_BANNER_SLOW: {{ link_copy.LAN_BANNER_SLOW|tojson }},
+      LAN_BANNER_STILL_UNREACHABLE: {{ link_copy.LAN_BANNER_STILL_UNREACHABLE|tojson }},
+      LAN_BANNER_RETRY: {{ link_copy.LAN_BANNER_RETRY|tojson }},
       RECENT_NETWORK_LABEL: {{ link_copy.RECENT_NETWORK_LABEL|tojson }},
       RECENT_SEE_ALL_LABEL: {{ link_copy.RECENT_SEE_ALL_LABEL|tojson }},
       RECENT_SHOW_LESS_LABEL: {{ link_copy.RECENT_SHOW_LESS_LABEL|tojson }},
@@ -236,6 +254,7 @@
   .link-trust { color: #666; font-size: 0.95em; margin: 0.45em 0 0; }
   .link-pair-btn { background: #1e6bd0; color: #fff; border: none; border-radius: 6px; padding: 0.6em 1.2em; cursor: pointer; font-weight: 500; }
   .link-pair-btn:hover { background: #184f9a; }
+  .link-pair-btn:disabled { cursor: not-allowed; opacity: 0.65; }
   .skeleton-line, .skeleton-block { background: linear-gradient(90deg, #ededed 25%, #f5f5f5 50%, #ededed 75%); background-size: 200% 100%; animation: skeleton-pulse 1.4s ease-in-out infinite; border-radius: 4px; }
   .skeleton-line { height: 0.85em; margin: 0.3em 0; }
   .skeleton-block { height: 1.5em; }
@@ -243,8 +262,23 @@
   .link-status-skeleton { display: inline-block; width: 14em; max-width: 60vw; height: 1em; }
   #link-status-text[hidden], #link-status-skeleton[hidden] { display: none; }
 
-  .link-lan-nudge { background: #fff6d4; border: 1px solid #e6cf72; border-radius: 8px; padding: 1em; margin-bottom: 1.5em; font-size: 0.9em; }
-  .link-lan-nudge code { background: rgba(0,0,0,0.06); padding: 0.1em 0.35em; border-radius: 3px; }
+  .link-lan-banner { background: #fff6d4; border: 1px solid #e6cf72; border-radius: 8px; padding: 1em; margin-bottom: 1.5em; line-height: 1.5; }
+  .link-lan-banner[hidden] { display: none; }
+  .link-lan-banner:focus-visible { outline: 2px solid #b06a1a; outline-offset: 2px; }
+  .link-lan-banner h2 { margin: 0 0 0.4em; font-size: 1.1em; color: #333; }
+  .link-lan-banner p { margin: 0.35em 0 0; color: #4d452c; }
+  .link-lan-password-fields { display: grid; gap: 0.45em; max-width: 24em; margin-top: 0.85em; }
+  .link-lan-password-fields[hidden], .link-lan-banner-error[hidden] { display: none; }
+  .link-lan-password-fields label { font-size: 0.9em; font-weight: 600; color: #4d452c; }
+  .link-lan-password-fields input { min-height: 40px; border: 1px solid #cbbf94; border-radius: 6px; padding: 0.45em 0.6em; font: inherit; }
+  .link-lan-enable { margin-top: 0.9em; min-height: 44px; background: #1e6bd0; color: #fff; border: none; border-radius: 6px; padding: 0.6em 1.2em; cursor: pointer; font-weight: 500; }
+  .link-lan-enable:hover { background: #184f9a; }
+  .link-lan-enable:disabled { cursor: not-allowed; opacity: 0.65; }
+  .link-lan-enable:focus-visible, .link-lan-diy summary:focus-visible { outline: 2px solid #b06a1a; outline-offset: 2px; }
+  .link-lan-banner-error, .link-lan-banner-status.is-error { color: #8a2d1c; font-weight: 500; }
+  .link-lan-banner-status { min-height: 1.5em; font-size: 0.95em; }
+  .link-lan-diy { margin-top: 0.65em; color: #4d452c; }
+  .link-lan-diy summary { display: inline-flex; align-items: center; min-height: 44px; cursor: pointer; color: #1e6bd0; font-weight: 500; }
   .link-hero { border: 1px solid #e4ded4; border-radius: 8px; background: #fffdfa; padding: 2em 1.5em; margin-bottom: 1.5em; text-align: center; }
   .link-hero[hidden] { display: none; }
   .link-hero-icon { font-size: 2.5em; line-height: 1; margin-bottom: 0.4em; }
@@ -417,7 +451,14 @@
   const pairedSection = document.getElementById('link-paired-section');
   const recentSection = document.getElementById('link-recent-section');
   const recentList = document.getElementById('link-recent-list');
-  const lanNudge = document.getElementById('link-lan-nudge');
+  const lanBanner = document.getElementById('link-lan-banner');
+  const lanBannerEnable = document.getElementById('link-lan-enable');
+  const lanPasswordFields = document.getElementById('link-lan-password-fields');
+  const lanPassword = document.getElementById('link-lan-password');
+  const lanConfirm = document.getElementById('link-lan-confirm');
+  const lanBannerError = document.getElementById('link-lan-banner-error');
+  const lanBannerStatus = document.getElementById('link-lan-banner-status');
+  const lanDiy = document.getElementById('link-lan-diy');
   const reachCard = document.getElementById('link-reach-card');
   const homeAddressRow = document.getElementById('link-home-address-row');
   const homeAddressEl = document.getElementById('link-home-address');
@@ -498,6 +539,50 @@
   function revealStatusPanel() {
     if (statusSkeleton) statusSkeleton.hidden = true;
     statusText.hidden = false;
+  }
+
+  function pairBlocked() {
+    return latestStatus?.reachability === 'lan-unreachable';
+  }
+
+  function setPairCtasBlocked(blocked) {
+    document.querySelectorAll('.link-pair-btn').forEach((button) => {
+      button.disabled = blocked;
+      button.setAttribute('aria-disabled', String(blocked));
+    });
+  }
+
+  function setLanBannerMessage(message, isError = false) {
+    if (!lanBannerStatus) return;
+    lanBannerStatus.textContent = message || '';
+    lanBannerStatus.classList.toggle('is-error', Boolean(isError && message));
+  }
+
+  function setLanBannerError(message) {
+    if (!lanBannerError) return;
+    lanBannerError.textContent = message || '';
+    lanBannerError.hidden = !message;
+  }
+
+  function revealLanBanner() {
+    if (!lanBanner) return;
+    lanBanner.hidden = false;
+    lanBanner.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    lanBanner.focus({ preventScroll: true });
+  }
+
+  function updateLanBanner(data) {
+    const blocked = data?.reachability === 'lan-unreachable';
+    if (lanBanner) lanBanner.hidden = !blocked;
+    if (lanPasswordFields) {
+      lanPasswordFields.hidden = !blocked || data?.has_password === true;
+    }
+    if (!blocked) {
+      setLanBannerMessage('');
+      setLanBannerError('');
+      if (lanDiy) lanDiy.open = false;
+    }
+    setPairCtasBlocked(blocked);
   }
 
   function selectStatusSentenceKey(data) {
@@ -594,7 +679,7 @@
     setStatusSentence(selectStatusSentenceKey(latestStatus));
     renderReach(latestStatus);
     updatePostureModal(latestStatus);
-    lanNudge.hidden = !!data.lan_accessible;
+    updateLanBanner(latestStatus);
   }
 
   async function refreshStatus() {
@@ -610,6 +695,64 @@
         serverMessage: err.serverMessage,
         detail: err,
       }));
+    }
+  }
+
+  async function submitLanBannerNetworkAccess() {
+    if (!lanBannerEnable || lanBannerEnable.disabled) return;
+    const needsPassword = latestStatus?.has_password !== true;
+    let password = null;
+    setLanBannerError('');
+    setLanBannerMessage('');
+
+    if (needsPassword) {
+      if (!lanPassword || !lanConfirm) return;
+      password = lanPassword.value;
+      if (password.length < 8) {
+        setLanBannerError(window.LinkCopy.LAN_BANNER_PASSWORD_TOO_SHORT || 'password must be at least 8 characters.');
+        lanPassword.focus();
+        return;
+      }
+      if (password !== lanConfirm.value) {
+        setLanBannerError(window.LinkCopy.LAN_BANNER_PASSWORD_MISMATCH || 'passwords do not match.');
+        lanConfirm.focus();
+        return;
+      }
+    }
+
+    lanBannerEnable.disabled = true;
+    lanBannerEnable.setAttribute('aria-busy', 'true');
+    setLanBannerMessage(window.LinkCopy.LAN_BANNER_RESTARTING || 'turning on network access...');
+    try {
+      const result = await window.apiJson('/app/link/network-access', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(password ? { password } : {}),
+      });
+      if (result?.restart_timeout) {
+        setLanBannerMessage(window.LinkCopy.LAN_BANNER_SLOW || '');
+        return;
+      }
+      if (lanPassword) lanPassword.value = '';
+      if (lanConfirm) lanConfirm.value = '';
+      await refreshStatus();
+      if (pairBlocked()) {
+        if (lanDiy) lanDiy.open = true;
+        setLanBannerMessage(window.LinkCopy.LAN_BANNER_STILL_UNREACHABLE || '');
+      }
+    } catch (err) {
+      const serverMessage = String(err?.serverMessage || '').toLowerCase();
+      if (serverMessage.includes('password')) {
+        if (lanPasswordFields) lanPasswordFields.hidden = false;
+        setLanBannerError('');
+        lanPassword?.focus();
+      } else {
+        setLanBannerMessage(window.LinkCopy.LAN_BANNER_RETRY || 'try again.', true);
+      }
+      window.logError?.(err, { context: 'link: network access enable failed' });
+    } finally {
+      lanBannerEnable.disabled = false;
+      lanBannerEnable.removeAttribute('aria-busy');
     }
   }
 
@@ -697,6 +840,8 @@
     button.type = 'button';
     button.className = 'link-pair-btn';
     button.textContent = window.LinkCopy.DEVICE_PAIR_CTA || 'pair a device';
+    button.disabled = pairBlocked();
+    button.setAttribute('aria-disabled', String(pairBlocked()));
     button.addEventListener('click', openPairModal);
     empty.appendChild(title);
     empty.appendChild(body);
@@ -1177,6 +1322,10 @@
   }
 
   function openPairModal() {
+    if (pairBlocked()) {
+      revealLanBanner();
+      return;
+    }
     pairModal.hidden = false;
     autoRefreshFired = false;
     cleanupPairEvents();
@@ -1255,6 +1404,7 @@
   document.addEventListener('keydown', handleMenuDocumentKey);
   pairBtn.addEventListener('click', openPairModal);
   heroPairBtn.addEventListener('click', openPairModal);
+  lanBannerEnable.addEventListener('click', submitLanBannerNetworkAccess);
   heroHowReach.addEventListener('click', openPostureModal);
   reachChange.addEventListener('click', openPostureModal);
   postureCancel.addEventListener('click', closePostureModal);

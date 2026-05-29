@@ -31,6 +31,11 @@ from solstone.apps.settings.copy import (
 from solstone.apps.utils import log_app_action
 from solstone.convey import chat_stream, state
 from solstone.convey import copy as convey_copy
+from solstone.convey.network_access import (
+    NetworkAccessPasswordRequired,
+    NetworkAccessPasswordTooShort,
+    set_network_access,
+)
 from solstone.convey.reasons import (
     ACTIVITY_INVALID,
     ACTIVITY_NOT_FOUND,
@@ -294,6 +299,24 @@ def update_config() -> Any:
         changed_fields = {}
         old_section = old_config.get(section, {})
 
+        if section == "convey" and "allow_network_access" in data:
+            try:
+                result = set_network_access(
+                    enable=bool(data["allow_network_access"]),
+                    password=data.get("password"),
+                )
+            except NetworkAccessPasswordRequired:
+                return error_response(
+                    NETWORK_SECURITY_REQUIRES_PASSWORD,
+                    detail=CONVEY_REFUSE_NO_PASSWORD_NETWORK,
+                )
+            except NetworkAccessPasswordTooShort:
+                return error_response(
+                    INVALID_CONFIG_VALUE,
+                    detail="Password must be at least 8 characters",
+                )
+            return jsonify(result)
+
         if section == "convey" and "password" in data:
             raw_password = data.pop("password") or ""
             if raw_password:
@@ -312,14 +335,6 @@ def update_config() -> Any:
 
         has_password = _convey_password_is_set(config)
 
-        requested_network_access = None
-        if section == "convey" and "allow_network_access" in data:
-            requested_network_access = bool(data["allow_network_access"])
-            if requested_network_access and not has_password:
-                return error_response(
-                    NETWORK_SECURITY_REQUIRES_PASSWORD,
-                    detail=CONVEY_REFUSE_NO_PASSWORD_NETWORK,
-                )
         if (
             section == "convey"
             and "trust_localhost" in data
@@ -426,18 +441,6 @@ def update_config() -> Any:
             json.dump(config, f, indent=2, ensure_ascii=False)
             f.write("\n")
         os.chmod(config_path, 0o600)
-
-        if section == "convey" and requested_network_access is not None:
-            from solstone.convey.restart import wait_for_convey_restart
-
-            restart_ok, _ = wait_for_convey_restart(timeout=15.0)
-            return jsonify(
-                {
-                    "effective_host_url": get_host_url(),
-                    "ok": True,
-                    "restart_timeout": not restart_ok,
-                }
-            )
 
         # Log if something changed (don't log sensitive values)
         if changed_fields:

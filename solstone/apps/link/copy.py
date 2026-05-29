@@ -52,6 +52,36 @@ HERO_BODY = (
 )
 HERO_HOW_REACH_LABEL = "how reach works ▸"
 
+# --- U5 LAN banner ---
+LAN_BANNER_TITLE = "let devices reach this solstone"
+LAN_BANNER_BODY = (
+    "pairing needs this web interface to accept connections from your network. "
+    "you can turn that on here."
+)
+LAN_BANNER_ENABLE_CTA = "turn on network access"
+LAN_BANNER_PASSWORD_INTRO = (
+    "set a web password first. other devices will need it before opening your journal."
+)
+LAN_BANNER_PASSWORD_LABEL = "web password"
+LAN_BANNER_CONFIRM_LABEL = "confirm web password"
+LAN_BANNER_PASSWORD_TOO_SHORT = "password must be at least 8 characters."
+LAN_BANNER_PASSWORD_MISMATCH = "passwords do not match."
+LAN_BANNER_RESTARTING = "turning on network access..."
+LAN_BANNER_SLOW = (
+    "saved. this is taking longer than usual. reload in a moment to check."
+)
+LAN_BANNER_STILL_UNREACHABLE = (
+    "network access is on, but this page still cannot see a network address. "
+    "try the steps below."
+)
+LAN_BANNER_RETRY = "couldn't turn on network access. try again."
+LAN_BANNER_DIY_LABEL = "do it yourself ▸"
+LAN_BANNER_DIY_BODY = (
+    "if you're running from source, start convey on your network with "
+    "make dev PORT=0.0.0.0:5015, or set convey.host in your journal config "
+    "to a non-loopback interface, then reload this page."
+)
+
 # --- U2 reach-shell copy ---
 HEADER_TRUST_LINE = "sol pbc carries the connection — but can never see inside it"
 POSTURE_MODAL_FOOTER = "switching is gentle — devices you've paired keep working either way, no re-pairing."

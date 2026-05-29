@@ -207,6 +207,7 @@ def test_back_compat_field_set(link_env, monkeypatch) -> None:
         "enrolled",
         "relay_url",
         "ca_fingerprint",
+        "has_password",
         "lan_accessible",
         "posture",
         "reachability",
@@ -219,4 +220,21 @@ def test_back_compat_field_set(link_env, monkeypatch) -> None:
     assert isinstance(data["enrolled"], bool)
     assert isinstance(data["relay_url"], str)
     assert isinstance(data["ca_fingerprint"], str) or data["ca_fingerprint"] is None
+    assert isinstance(data["has_password"], bool)
     assert isinstance(data["lan_accessible"], bool)
+
+
+def test_status_reports_convey_password_state(link_env, monkeypatch) -> None:
+    env = link_env()
+    monkeypatch.setattr(link_routes, "_detect_lan_ip", lambda: "192.168.1.50")
+
+    data = _get_status(env)
+    assert data["has_password"] is False
+
+    config_path = env.journal / "config" / "journal.json"
+    config = json.loads(config_path.read_text("utf-8"))
+    config.setdefault("convey", {})["password_hash"] = "hashed"
+    config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+    data = _get_status(env)
+    assert data["has_password"] is True

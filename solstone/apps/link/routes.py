@@ -61,11 +61,18 @@ from solstone.apps.link.relay_link import (
 from solstone.apps.observer.utils import mint_pl_observer_record, revoke_observer_record
 from solstone.apps.utils import log_app_action
 from solstone.convey import emit
+from solstone.convey.network_access import (
+    NetworkAccessPasswordRequired,
+    NetworkAccessPasswordTooShort,
+    set_network_access,
+)
 from solstone.convey.reasons import (
     CONVEY_OPERATION_FAILED,
+    INVALID_CONFIG_VALUE,
     INVALID_OPERATION_FOR_STATE,
     INVALID_REQUEST_VALUE,
     MISSING_REQUIRED_FIELD,
+    NETWORK_SECURITY_REQUIRES_PASSWORD,
     OPERATION_NO_LONGER_AVAILABLE,
     PAIRED_DEVICE_NOT_FOUND,
     PAIRING_KEY_INVALID,
@@ -99,7 +106,7 @@ from solstone.think.link.paths import (
     relay_url,
 )
 from solstone.think.link.window import read_posture
-from solstone.think.utils import get_journal, now_ms
+from solstone.think.utils import get_config, get_journal, now_ms
 
 logger = logging.getLogger(__name__)
 MANUAL_CODE_RE = re.compile(rf"^[0-9A-HJKMNP-TV-Z]{{{MANUAL_CODE_LEN}}}$")
@@ -143,6 +150,11 @@ def _default_device_label() -> str:
 
 def _is_loopback_request() -> bool:
     return request.remote_addr in {"127.0.0.1", "::1"}
+
+
+def _convey_password_is_set() -> bool:
+    password_hash = get_config().get("convey", {}).get("password_hash", "")
+    return bool(str(password_hash or "").strip())
 
 
 def _current_local_endpoints() -> list[LocalEndpoint]:
@@ -298,6 +310,7 @@ def api_status() -> Any:
             "enrolled": token_present,
             "relay_url": relay_url(),
             "ca_fingerprint": ca_fp,
+            "has_password": _convey_password_is_set(),
             "lan_accessible": lan_accessible,
             "posture": posture,
             "reachability": reachability,
@@ -306,6 +319,28 @@ def api_status() -> Any:
             "vpn": {"active": None, "candidates": vpn_candidates},
         }
     )
+
+
+@link_bp.route("/network-access", methods=["POST"])
+def network_access() -> Any:
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        payload = {}
+    raw_password = payload.get("password")
+    password = raw_password if isinstance(raw_password, str) and raw_password else None
+    try:
+        result = set_network_access(enable=True, password=password)
+    except NetworkAccessPasswordRequired:
+        return error_response(NETWORK_SECURITY_REQUIRES_PASSWORD)
+    except NetworkAccessPasswordTooShort:
+        return error_response(
+            INVALID_CONFIG_VALUE,
+            detail="Password must be at least 8 characters",
+        )
+    except Exception:
+        logger.exception("link network access enable failed")
+        return error_response(CONVEY_OPERATION_FAILED)
+    return jsonify(result)
 
 
 @link_bp.get("/local-endpoints")

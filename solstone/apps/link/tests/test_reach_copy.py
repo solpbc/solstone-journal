@@ -31,6 +31,23 @@ U2_COPY_VALUES = [
     *copy.STATUS_SENTENCES.values(),
 ]
 
+U5_COPY_VALUES = [
+    copy.LAN_BANNER_TITLE,
+    copy.LAN_BANNER_BODY,
+    copy.LAN_BANNER_ENABLE_CTA,
+    copy.LAN_BANNER_PASSWORD_INTRO,
+    copy.LAN_BANNER_PASSWORD_LABEL,
+    copy.LAN_BANNER_CONFIRM_LABEL,
+    copy.LAN_BANNER_PASSWORD_TOO_SHORT,
+    copy.LAN_BANNER_PASSWORD_MISMATCH,
+    copy.LAN_BANNER_RESTARTING,
+    copy.LAN_BANNER_SLOW,
+    copy.LAN_BANNER_STILL_UNREACHABLE,
+    copy.LAN_BANNER_RETRY,
+    copy.LAN_BANNER_DIY_LABEL,
+    copy.LAN_BANNER_DIY_BODY,
+]
+
 
 def test_reach_shell_spec_fixed_copy_is_locked() -> None:
     assert copy.HEADER_TRUST_LINE == (
@@ -60,6 +77,39 @@ def test_reach_shell_corrected_copy_is_locked() -> None:
     )
 
 
+def test_lan_banner_copy_is_locked() -> None:
+    assert copy.LAN_BANNER_TITLE == "let devices reach this solstone"
+    assert copy.LAN_BANNER_BODY == (
+        "pairing needs this web interface to accept connections from your network. "
+        "you can turn that on here."
+    )
+    assert copy.LAN_BANNER_ENABLE_CTA == "turn on network access"
+    assert copy.LAN_BANNER_PASSWORD_INTRO == (
+        "set a web password first. other devices will need it before opening your journal."
+    )
+    assert copy.LAN_BANNER_PASSWORD_LABEL == "web password"
+    assert copy.LAN_BANNER_CONFIRM_LABEL == "confirm web password"
+    assert (
+        copy.LAN_BANNER_PASSWORD_TOO_SHORT == "password must be at least 8 characters."
+    )
+    assert copy.LAN_BANNER_PASSWORD_MISMATCH == "passwords do not match."
+    assert copy.LAN_BANNER_RESTARTING == "turning on network access..."
+    assert copy.LAN_BANNER_SLOW == (
+        "saved. this is taking longer than usual. reload in a moment to check."
+    )
+    assert copy.LAN_BANNER_STILL_UNREACHABLE == (
+        "network access is on, but this page still cannot see a network address. "
+        "try the steps below."
+    )
+    assert copy.LAN_BANNER_RETRY == "couldn't turn on network access. try again."
+    assert copy.LAN_BANNER_DIY_LABEL == "do it yourself ▸"
+    assert copy.LAN_BANNER_DIY_BODY == (
+        "if you're running from source, start convey on your network with "
+        "make dev PORT=0.0.0.0:5015, or set convey.host in your journal config "
+        "to a non-loopback interface, then reload this page."
+    )
+
+
 def test_reach_shell_copy_stays_in_bounds() -> None:
     banned_terms = (
         "account",
@@ -73,7 +123,7 @@ def test_reach_shell_copy_stays_in_bounds() -> None:
     )
     acronym_re = re.compile(r"\b(dl|pl|spl)\b")
 
-    for value in U2_COPY_VALUES:
+    for value in [*U2_COPY_VALUES, *U5_COPY_VALUES]:
         lowered = value.lower()
         for term in banned_terms:
             assert term not in lowered, value
