@@ -1549,7 +1549,25 @@ body.presentation-mode .entity-desc { color: #4b5563; }
   </div>
 </div>
 
+<!-- Detach Confirmation Modal (reversible — intentionally not danger-styled) -->
+<div id="detachConfirmModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>detach</h3>
+      <button class="close" aria-label="close" onclick="closeDetachConfirmModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p id="detachConfirmMessage"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeDetachConfirmModal()">cancel</button>
+      <button id="confirmDetachBtn" class="btn btn-primary" onclick="confirmDetach()">detach</button>
+    </div>
+  </div>
+</div>
+
 <script>
+const ENT_COPY = {{ entities_copy|default({})|tojson|safe }};
 let currentFacet = window.selectedFacet;
 let entitiesData = null;
 let detectedPage = 1;
@@ -1944,12 +1962,11 @@ function renderJournalDetailView(entity) {
       }
       row.style.borderLeftColor = facet.color || '#888';
 
-      if (isBlocked || isDetachedFacet) {
-        // Blocked or detached - don't navigate
-        row.title = isBlocked
-          ? 'Entity is blocked and detached from this facet'
-          : 'Entity is detached from this facet';
+      if (isBlocked) {
+        // Blocked dominates: non-navigable (covers blocked, and blocked+detached).
+        row.title = 'Entity is blocked and detached from this facet';
       } else {
+        // Navigable — now includes detached-but-not-blocked rows (re-attach lives in the facet detail).
         row.title = `Click to view in ${facet.title}`;
         row.onclick = () => {
           // Select the facet, which will reload entities and show this entity in facet context
@@ -2374,15 +2391,25 @@ function renderDetailView(entity, observations) {
 
       const meta = document.createElement('div');
       meta.className = 'observation-meta';
-      const metaParts = [];
       if (obs.source_day) {
-        metaParts.push(formatDateShort(obs.source_day));
+        if (/^\d{8}$/.test(obs.source_day)) {
+          const dayLink = document.createElement('a');
+          dayLink.href = `/app/sol/${obs.source_day}`;
+          dayLink.title = ENT_COPY.ENT_OBS_SOURCE_LINK_TITLE || '';
+          dayLink.textContent = formatDateShort(obs.source_day);
+          meta.appendChild(dayLink);
+        } else {
+          meta.appendChild(document.createTextNode(formatDateShort(obs.source_day) || obs.source_day));
+        }
       }
       if (obs.observed_at) {
+        if (meta.childNodes.length > 0) {
+          meta.appendChild(document.createTextNode(' · '));
+        }
         const date = new Date(obs.observed_at);
-        metaParts.push(date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }));
+        const timeText = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        meta.appendChild(document.createTextNode(timeText));
       }
-      meta.textContent = metaParts.join(' · ');
 
       item.appendChild(content);
       item.appendChild(meta);
@@ -2431,8 +2458,8 @@ function renderDetailView(entity, observations) {
       detachBtn.onclick = () => reattachEntity(entity);
     } else {
       detachBtn.textContent = 'detach';
-      detachBtn.className = 'btn btn-danger';
-      detachBtn.onclick = () => detachEntity(entity);
+      detachBtn.className = 'btn btn-secondary';
+      detachBtn.onclick = () => showDetachConfirmModal(entity);
     }
   }
 }
@@ -2573,7 +2600,34 @@ function saveDescription(entity, newDescription) {
   });
 }
 
+let pendingDetachEntity = null;
+
+function showDetachConfirmModal(entity) {
+  pendingDetachEntity = entity;
+  const message = (ENT_COPY.ENT_DETACH_CONFIRM || '')
+    .replace('{name}', entity.name)
+    .replace('{facet}', currentFacet);
+  document.getElementById('detachConfirmMessage').textContent = message;
+  document.getElementById('detachConfirmModal').style.display = 'flex';
+}
+
+function closeDetachConfirmModal() {
+  document.getElementById('detachConfirmModal').style.display = 'none';
+  pendingDetachEntity = null;
+}
+
+function confirmDetach() {
+  const entity = pendingDetachEntity;
+  closeDetachConfirmModal();
+  if (entity) {
+    detachEntity(entity);
+  }
+}
+
 function detachEntity(entity) {
+  const detachedFacet = currentFacet;
+  const entityId = entity.id;
+  const entityName = entity.name;
   fetch(`api/${encodeURIComponent(currentFacet)}`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
@@ -2586,6 +2640,29 @@ function detachEntity(entity) {
       // Go back to list view and refresh
       navigateToList();
       loadEntities();
+      // Success-only feedback. This toast must NEVER fire on the failure path below.
+      const doneMessage = (ENT_COPY.ENT_DETACH_DONE || '')
+        .replace('{facet}', detachedFacet)
+        .replace('{name}', entityName);
+      window.AppServices.notifications.show({
+        app: 'entities',
+        icon: '↩️',
+        title: doneMessage,
+        dismissible: true,
+        autoDismiss: 8000,
+        buttons: [
+          {
+            label: ENT_COPY.ENT_DETACH_REATTACH_ACTION || '',
+            dismiss: true,
+            onClick: () => navigateToEntity(entityId)
+          },
+          {
+            label: ENT_COPY.ENT_DETACH_FIND_ACTION || '',
+            dismiss: true,
+            onClick: () => { window.selectFacet(null); navigateToEntity(entityId); }
+          }
+        ]
+      });
     } else {
       throw new Error(data.error || 'Failed to detach');
     }
@@ -2714,10 +2791,13 @@ function initEntities() {
     if (e.key === 'Escape') {
       const deleteModal = document.getElementById('deleteModal');
       const deleteJournalModal = document.getElementById('deleteJournalEntityModal');
+      const detachConfirmModal = document.getElementById('detachConfirmModal');
       if (deleteModal.style.display === 'flex') {
         closeDeleteModal();
       } else if (deleteJournalModal.style.display === 'flex') {
         closeDeleteJournalEntityModal();
+      } else if (detachConfirmModal.style.display === 'flex') {
+        closeDetachConfirmModal();
       }
     }
   });
@@ -2726,11 +2806,15 @@ function initEntities() {
   window.onclick = function(event) {
     const deleteModal = document.getElementById('deleteModal');
     const deleteJournalModal = document.getElementById('deleteJournalEntityModal');
+    const detachConfirmModal = document.getElementById('detachConfirmModal');
     if (event.target == deleteModal) {
       closeDeleteModal();
     }
     if (event.target == deleteJournalModal) {
       closeDeleteJournalEntityModal();
+    }
+    if (event.target == detachConfirmModal) {
+      closeDetachConfirmModal();
     }
   };
 }

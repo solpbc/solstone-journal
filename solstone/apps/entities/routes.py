@@ -14,11 +14,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, render_template, request
 
 logger = logging.getLogger(__name__)
 
 import solstone.think.deferred_deletes as deferred_deletes
+from solstone.apps.entities.copy import entities_copy_payload
 from solstone.apps.utils import log_app_action
 from solstone.convey import state
 from solstone.convey.reasons import (
@@ -64,6 +65,12 @@ entities_bp = Blueprint(
     url_prefix="/app/entities",
 )
 ENTITY_DELETE_TTL = 10.0
+
+
+@entities_bp.route("/")
+def index() -> Any:
+    """Render the entities workspace with owner-facing copy injected."""
+    return render_template("app.html", entities_copy=entities_copy_payload())
 
 
 def _get_entity_metadata(facet_name: str, entity_name: str) -> dict:
