@@ -2,14 +2,11 @@
 
 <main class="link-dashboard">
   <header class="link-header">
-    <h1 class="link-h1">reach your solstone from anywhere</h1>
-    <p class="link-trust">spl is blind by construction. Cloudflare and sol pbc cannot see anything inside the tunnel.</p>
-    <div class="link-status-row" id="link-status-panel">
-      <span id="link-status-indicator" class="link-status-indicator" aria-live="polite">
-        Service status: <span id="link-status-text">loading…</span>
-      </span>
-      <button type="button" class="link-pair-btn" id="link-pair-btn">pair a phone</button>
+    <div id="link-status-panel" class="link-status-panel" aria-live="polite" aria-atomic="true">
+      <span id="link-status-dot" class="link-dot is-amber" aria-hidden="true"></span>
+      <span id="link-status-text">{{ link_copy.STATUS_SENTENCES.checking }}</span>
     </div>
+    <p class="link-trust">{{ link_copy.HEADER_TRUST_LINE }}</p>
   </header>
 
   <div id="link-lan-nudge" class="link-lan-nudge" hidden>
@@ -19,8 +16,44 @@
     </p>
   </div>
 
+  <section id="link-reach-card" class="link-reach-card" aria-labelledby="link-reach-title" hidden>
+    <div class="link-reach-heading-row">
+      <h2 id="link-reach-title">{{ link_copy.REACH_CARD_TITLE }}</h2>
+      <button type="button" id="link-reach-change" class="link-reach-change">
+        {{ link_copy.REACH_CHANGE_LABEL }}
+      </button>
+    </div>
+    <div class="link-reach-current">
+      <p class="link-reach-option">{{ link_copy.REACH_DIRECT_LABEL }}</p>
+      <p class="link-reach-detail">{{ link_copy.REACH_DIRECT_DETAIL }}</p>
+    </div>
+    <dl class="link-reach-details">
+      <div id="link-home-address-row" class="link-reach-detail-row" hidden>
+        <dt>{{ link_copy.REACH_HOME_ADDRESS_LABEL }}</dt>
+        <dd><code id="link-home-address"></code></dd>
+      </div>
+      <div id="link-vpn-candidates-row" class="link-reach-detail-row" hidden>
+        <dt>{{ link_copy.REACH_VPN_CANDIDATE_LABEL }}</dt>
+        <dd
+          id="link-vpn-candidates"
+          class="link-vpn-candidates"
+          data-row-label="{{ link_copy.REACH_VPN_CANDIDATE_LABEL }}"
+          data-use-label="{{ link_copy.REACH_VPN_USE_THIS }}"
+        ></dd>
+      </div>
+    </dl>
+    <div class="link-reach-upgrade">
+      <h3>{{ link_copy.REACH_UPGRADE_TITLE }}</h3>
+      <p>{{ link_copy.REACH_UPGRADE_BODY }}</p>
+      <a href="https://services.solstone.app/" target="_blank" rel="noopener noreferrer">{{ link_copy.REACH_UPGRADE_LINK_LABEL }}</a>
+    </div>
+  </section>
+
   <section class="link-paired-section" aria-labelledby="link-paired-h2">
-    <h2 id="link-paired-h2">paired devices</h2>
+    <div class="link-section-heading">
+      <h2 id="link-paired-h2">paired devices</h2>
+      <button type="button" class="link-pair-btn" id="link-pair-btn">pair a phone</button>
+    </div>
     <div id="link-devices-list" class="link-devices-list" aria-live="polite">
       <p class="link-empty-state" id="link-empty-state">No devices linked yet.</p>
     </div>
@@ -95,9 +128,34 @@
   <script>
     window.LinkCopy = {
       SUCCESS_HEADING: {{ link_copy.SUCCESS_HEADING|tojson }},
-      SUCCESS_SUBHEAD: {{ link_copy.SUCCESS_SUBHEAD|tojson }}
+      SUCCESS_SUBHEAD: {{ link_copy.SUCCESS_SUBHEAD|tojson }},
+      STATUS_SENTENCES: {{ link_copy.STATUS_SENTENCES|tojson }},
+      POSTURE_SPL_SETUP_LABEL: {{ link_copy.POSTURE_SPL_SETUP_LABEL|tojson }},
+      POSTURE_SPL_MANAGE_LABEL: {{ link_copy.POSTURE_SPL_MANAGE_LABEL|tojson }}
     };
   </script>
+
+  <div id="link-posture-modal" class="link-modal" hidden role="dialog" aria-modal="true" aria-labelledby="link-posture-modal-title">
+    <div class="link-modal-box">
+      <h3 id="link-posture-modal-title">{{ link_copy.POSTURE_MODAL_TITLE }}</h3>
+      <div class="link-posture-options">
+        <div class="link-posture-option is-selected" aria-current="true">
+          <h4>{{ link_copy.REACH_DIRECT_LABEL }}</h4>
+          <p>{{ link_copy.POSTURE_DIRECT_DESC }}</p>
+        </div>
+        <a href="https://services.solstone.app/" target="_blank" rel="noopener noreferrer">
+          <span class="link-posture-option-title">{{ link_copy.POSTURE_SPL_TITLE }}</span>
+          <span class="link-posture-option-desc">{{ link_copy.POSTURE_SPL_DESC }}</span>
+          <span id="link-posture-spl-label" class="link-posture-option-action">{{ link_copy.POSTURE_SPL_SETUP_LABEL }}</span>
+        </a>
+      </div>
+      <p class="link-posture-footer">{{ link_copy.POSTURE_MODAL_FOOTER }}</p>
+      <div class="link-modal-actions">
+        <button type="button" id="link-posture-cancel" class="link-modal-cancel">cancel</button>
+        <button type="button" id="link-posture-save">save</button>
+      </div>
+    </div>
+  </div>
 
   <div id="link-unpair-modal" class="link-modal" hidden role="dialog" aria-modal="true" aria-labelledby="link-unpair-title">
     <div class="link-modal-box">
@@ -115,21 +173,44 @@
 
 <style>
   .link-dashboard { max-width: 880px; margin: 0 auto; padding: 1.5em; color: #222; }
-  .link-header { margin-bottom: 2em; }
-  .link-h1 { font-size: 1.8em; margin-bottom: 0.25em; font-weight: 600; }
-  .link-trust { color: #666; font-size: 0.95em; margin-bottom: 1em; }
-  .link-status-row { display: flex; align-items: center; justify-content: space-between; gap: 1em; flex-wrap: wrap; }
-  .link-status-indicator { color: #444; font-size: 0.9em; }
-  .link-status-indicator.is-online { color: #1e7b42; }
-  .link-status-indicator.is-offline { color: #a53a1f; }
-  .link-status-indicator.is-reconnecting { color: #b88400; }
+  .link-header { margin-bottom: 1.5em; }
+  .link-status-panel { display: flex; align-items: center; gap: 0.55em; color: #333; font-size: 1rem; font-weight: 500; }
+  .link-dot { width: 0.7em; height: 0.7em; border-radius: 999px; flex: 0 0 auto; }
+  .link-dot.is-green { background: #1e7b42; }
+  .link-dot.is-amber { background: #b88400; }
+  .link-dot.is-red { background: #a53a1f; }
+  .link-trust { color: #666; font-size: 0.95em; margin: 0.45em 0 0; }
   .link-pair-btn { background: #1e6bd0; color: #fff; border: none; border-radius: 6px; padding: 0.6em 1.2em; cursor: pointer; font-weight: 500; }
   .link-pair-btn:hover { background: #184f9a; }
 
   .link-lan-nudge { background: #fff6d4; border: 1px solid #e6cf72; border-radius: 8px; padding: 1em; margin-bottom: 1.5em; font-size: 0.9em; }
   .link-lan-nudge code { background: rgba(0,0,0,0.06); padding: 0.1em 0.35em; border-radius: 3px; }
 
-  .link-paired-section h2 { font-size: 1.15em; margin-bottom: 0.75em; font-weight: 600; color: #444; }
+  .link-reach-card { border: 1px solid #e4ded4; border-radius: 8px; background: #fffdfa; padding: 1em; margin-bottom: 1.5em; overflow-wrap: anywhere; }
+  .link-reach-card[hidden] { display: none; }
+  .link-reach-heading-row, .link-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1em; flex-wrap: wrap; }
+  .link-reach-card h2, .link-section-heading h2 { font-size: 1.15em; margin: 0; font-weight: 600; color: #444; }
+  .link-reach-change { background: transparent; color: #1e6bd0; border: 1px solid #b8cceb; border-radius: 5px; padding: 0.4em 0.75em; cursor: pointer; font-weight: 500; }
+  .link-reach-change:hover { background: #eef5ff; }
+  .link-reach-current { margin-top: 0.85em; }
+  .link-reach-option { margin: 0; font-weight: 600; color: #222; }
+  .link-reach-detail { margin: 0.25em 0 0; color: #666; }
+  .link-reach-details { margin: 1em 0 0; }
+  .link-reach-detail-row { display: grid; grid-template-columns: minmax(7.5em, auto) 1fr; gap: 0.75em; align-items: start; margin-top: 0.65em; }
+  .link-reach-detail-row[hidden] { display: none; }
+  .link-reach-detail-row dt { color: #777; font-size: 0.9em; }
+  .link-reach-detail-row dd { margin: 0; min-width: 0; }
+  .link-reach-detail-row code { font-family: ui-monospace, monospace; color: #555; word-break: break-all; }
+  .link-vpn-candidates { display: flex; flex-direction: column; gap: 0.4em; }
+  .link-vpn-candidate { display: flex; gap: 0.45em; align-items: baseline; flex-wrap: wrap; }
+  .link-vpn-candidate-label { color: #555; font-weight: 500; }
+  .link-vpn-candidate-use { color: #777; font-size: 0.85em; }
+  .link-reach-upgrade { margin-top: 1em; padding-top: 1em; border-top: 1px solid #ede5da; }
+  .link-reach-upgrade h3 { margin: 0 0 0.35em; font-size: 1em; color: #444; }
+  .link-reach-upgrade p { margin: 0 0 0.55em; color: #666; }
+  .link-reach-upgrade a { color: #1e6bd0; font-weight: 500; }
+
+  .link-section-heading { margin-bottom: 0.75em; }
   .link-role-heading { font-size: 0.95rem; font-weight: 600; color: var(--text-muted, #555); margin: 1rem 0 0.5rem; text-transform: none; }
   .link-devices-list { display: flex; flex-direction: column; gap: 0.5em; }
   .link-empty-state { color: #888; font-style: italic; }
@@ -154,6 +235,18 @@
   .link-modal-actions button:not(.link-modal-cancel):not(.link-modal-danger) { background: #1e6bd0; color: #fff; }
   .link-modal-cancel { background: #eee; color: #444; }
   .link-modal-danger { background: #c44; color: #fff; }
+  #link-posture-modal button:focus-visible,
+  #link-posture-modal a:focus-visible { outline: 2px solid #b06a1a; outline-offset: 2px; }
+  .link-posture-options { display: grid; gap: 0.75em; }
+  .link-posture-option,
+  .link-posture-options > a { border: 1px solid #e0d8cc; border-radius: 8px; padding: 0.9em; background: #fffdfa; color: #222; text-decoration: none; }
+  .link-posture-option.is-selected { border-color: #1e7b42; box-shadow: inset 3px 0 0 #1e7b42; }
+  .link-posture-option h4,
+  .link-posture-option-title { display: block; margin: 0 0 0.3em; font-size: 1em; font-weight: 600; color: #222; }
+  .link-posture-option p,
+  .link-posture-option-desc { display: block; margin: 0; color: #666; }
+  .link-posture-option-action { display: inline-block; margin-top: 0.6em; color: #1e6bd0; font-weight: 500; }
+  .link-posture-footer { color: #666; font-size: 0.9em; margin: 1em 0; }
 
   .link-pair-code { margin-top: 1.25em; padding-top: 1.25em; border-top: 1px solid #eee; }
   .link-qr-container { background: #fff; padding: 1em; border: 1px solid #eee; border-radius: 6px; display: flex; justify-content: center; margin-bottom: 1em; }
@@ -187,6 +280,10 @@
   .link-pair-success p { color: #666; }
 
   @media (max-width: 540px) {
+    .link-dashboard { padding: 1em; }
+    .link-reach-card { padding: 0.9em; }
+    .link-reach-detail-row { grid-template-columns: 1fr; gap: 0.25em; }
+    .link-reach-heading-row, .link-section-heading { align-items: flex-start; }
     .link-pair-grid { grid-template-columns: 1fr; }
     .link-pair-qr-cell { grid-row: auto; }
   }
@@ -196,21 +293,23 @@
 
 <script>
 (function () {
-  const STATUS_LABELS = {
-    online: 'reachable from the internet',
-    connecting: 'connecting…',
-    reconnecting: 'reconnecting…',
-    offline: 'offline — check your connection',
-    'not-enrolled': 'not yet enrolled',
-    unknown: 'loading…',
-  };
-
   const statusText = document.getElementById('link-status-text');
-  const statusEl = document.getElementById('link-status-indicator');
+  const statusDot = document.getElementById('link-status-dot');
   const devicesList = document.getElementById('link-devices-list');
   const emptyState = document.getElementById('link-empty-state');
   const lanNudge = document.getElementById('link-lan-nudge');
+  const reachCard = document.getElementById('link-reach-card');
+  const homeAddressRow = document.getElementById('link-home-address-row');
+  const homeAddressEl = document.getElementById('link-home-address');
+  const vpnCandidatesRow = document.getElementById('link-vpn-candidates-row');
+  const vpnCandidatesEl = document.getElementById('link-vpn-candidates');
+  const reachChange = document.getElementById('link-reach-change');
+  const postureModal = document.getElementById('link-posture-modal');
+  const postureCancel = document.getElementById('link-posture-cancel');
+  const postureSave = document.getElementById('link-posture-save');
+  const postureSplLabel = document.getElementById('link-posture-spl-label');
   let devicesEverLoaded = false;
+  let latestStatus = null;
 
   const pairBtn = document.getElementById('link-pair-btn');
   const pairModal = document.getElementById('link-pair-modal');
@@ -264,22 +363,95 @@
     }
   }
 
+  function selectStatusSentenceKey(data) {
+    const reachability = data?.reachability;
+    const posture = data?.posture;
+    if (reachability === 'reconnecting') return 'reconnecting';
+    if (reachability === 'offline') return 'offline';
+    if (reachability === 'lan-unreachable') return 'lan_unreachable';
+    if (posture === 'direct' && reachability === 'online') {
+      return data?.vpn?.active != null ? 'direct_online_vpn' : 'direct_online';
+    }
+    if (posture === 'spl' && reachability === 'online') return 'spl_online';
+    if (posture === 'spl' && reachability === 'finishing-setup') return 'spl_finishing_setup';
+    return 'checking';
+  }
+
+  function setStatusSentence(key) {
+    const sentences = window.LinkCopy.STATUS_SENTENCES || {};
+    statusText.textContent = sentences[key] || sentences.checking || 'checking your solstone...';
+    statusDot.classList.remove('is-green', 'is-amber', 'is-red');
+    if (['direct_online', 'direct_online_vpn', 'spl_online'].includes(key)) {
+      statusDot.classList.add('is-green');
+    } else if (['offline', 'lan_unreachable'].includes(key)) {
+      statusDot.classList.add('is-red');
+    } else {
+      statusDot.classList.add('is-amber');
+    }
+  }
+
+  function renderVpnCandidates(candidates) {
+    vpnCandidatesEl.textContent = '';
+    let rendered = 0;
+    for (const candidate of candidates) {
+      const address = typeof candidate?.address === 'string' ? candidate.address : '';
+      if (!address) continue;
+      const item = document.createElement('div');
+      item.className = 'link-vpn-candidate';
+      const label = document.createElement('span');
+      label.className = 'link-vpn-candidate-label';
+      label.textContent = typeof candidate.label === 'string' && candidate.label
+        ? candidate.label
+        : vpnCandidatesEl.dataset.rowLabel || '';
+      const code = document.createElement('code');
+      code.textContent = address;
+      const use = document.createElement('span');
+      use.className = 'link-vpn-candidate-use';
+      use.textContent = vpnCandidatesEl.dataset.useLabel || 'use this';
+      item.appendChild(label);
+      item.appendChild(code);
+      item.appendChild(use);
+      vpnCandidatesEl.appendChild(item);
+      rendered += 1;
+    }
+    vpnCandidatesRow.hidden = rendered === 0;
+  }
+
+  function renderReach(data) {
+    if (data?.posture !== 'direct') {
+      reachCard.hidden = true;
+      return;
+    }
+    reachCard.hidden = false;
+
+    const homeAddress = typeof data.home_address === 'string' ? data.home_address : '';
+    homeAddressEl.textContent = homeAddress;
+    homeAddressRow.hidden = !homeAddress;
+
+    const candidates = Array.isArray(data?.vpn?.candidates) ? data.vpn.candidates : [];
+    renderVpnCandidates(candidates);
+  }
+
+  function updatePostureModal(data) {
+    const label = data?.posture === 'spl'
+      ? window.LinkCopy.POSTURE_SPL_MANAGE_LABEL
+      : window.LinkCopy.POSTURE_SPL_SETUP_LABEL;
+    postureSplLabel.textContent = label;
+  }
+
+  function applyStatus(data) {
+    latestStatus = data || {};
+    clearRefreshError('link-status-panel');
+    setStatusSentence(selectStatusSentenceKey(latestStatus));
+    renderReach(latestStatus);
+    updatePostureModal(latestStatus);
+    lanNudge.hidden = !!data.lan_accessible;
+  }
+
   async function refreshStatus() {
     try {
       const data = await window.apiJson('/app/link/api/status', { headers: { accept: 'application/json' } });
-      if (typeof data.enrolled !== 'boolean') {
-        throw new window.ApiError({
-          cause: 'parse',
-          status: 200,
-          statusText: 'OK',
-          serverMessage: 'Unexpected status shape',
-          url: '/app/link/api/status',
-        });
-      }
-      const state = data.enrolled ? 'online' : 'not-enrolled';
-      clearRefreshError('link-status-panel');
-      setStatus(state);
-      lanNudge.hidden = !!data.lan_accessible;
+      applyStatus(data || {});
     } catch (err) {
       window.logError(err, { context: 'link: refreshStatus failed' });
       window.SurfaceState.replaceLoading('link-status-panel', window.SurfaceState.error({
@@ -289,15 +461,6 @@
         detail: err,
       }));
     }
-  }
-
-  function setStatus(key) {
-    const label = STATUS_LABELS[key] || STATUS_LABELS.unknown;
-    statusText.textContent = label;
-    statusEl.classList.remove('is-online', 'is-offline', 'is-reconnecting');
-    if (key === 'online') statusEl.classList.add('is-online');
-    else if (key === 'offline') statusEl.classList.add('is-offline');
-    else if (key === 'reconnecting' || key === 'connecting') statusEl.classList.add('is-reconnecting');
   }
 
   async function refreshDevices() {
@@ -507,7 +670,59 @@
     resetPairCodeState();
   }
 
+  function getPostureFocusable() {
+    return Array.from(postureModal.querySelectorAll('a[href], button:not([disabled])'))
+      .filter((el) => !el.hidden && el.offsetParent !== null);
+  }
+
+  function closePostureModal() {
+    postureModal.hidden = true;
+    if (reachChange && !reachCard.hidden) {
+      reachChange.focus();
+    }
+  }
+
+  function openPostureModal() {
+    updatePostureModal(latestStatus || {});
+    postureModal.hidden = false;
+    const focusable = getPostureFocusable();
+    if (focusable.length) {
+      focusable[0].focus();
+    }
+  }
+
+  function handlePostureModalKeys(event) {
+    if (postureModal.hidden) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closePostureModal();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = getPostureFocusable();
+    if (!focusable.length) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    } else if (!focusable.includes(document.activeElement)) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   pairBtn.addEventListener('click', openPairModal);
+  reachChange.addEventListener('click', openPostureModal);
+  postureCancel.addEventListener('click', closePostureModal);
+  postureSave.addEventListener('click', closePostureModal);
+  postureModal.addEventListener('keydown', handlePostureModalKeys);
   pairCancel.addEventListener('click', closePairModal);
   pairDone.addEventListener('click', closePairModal);
   pairRegenerate.addEventListener('click', () => {
