@@ -126,8 +126,8 @@ def read_install_status(*, scope: _InstallScope, name: str) -> InstallStatus:
         "install_state": cast(InstallState, install_state),
         "last_transition_at": record.get("last_transition_at"),
         "last_progress_at": record.get("last_progress_at"),
-        "progress_bytes_received": None,
-        "progress_bytes_total": None,
+        "progress_bytes_received": record.get("progress_bytes_received"),
+        "progress_bytes_total": record.get("progress_bytes_total"),
         "install_error": record.get("install_error"),
     }
 
@@ -143,6 +143,8 @@ def write_install_status(status: InstallStatus, *, scope: _InstallScope) -> None
     slot["last_transition_at"] = status["last_transition_at"]
     slot["last_progress_at"] = status["last_progress_at"]
     slot["install_error"] = status["install_error"]
+    slot["progress_bytes_received"] = status["progress_bytes_received"]
+    slot["progress_bytes_total"] = status["progress_bytes_total"]
     write_journal_config(config)
 
 

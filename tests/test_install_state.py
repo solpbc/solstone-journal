@@ -301,7 +301,7 @@ def test_write_install_status_creates_mlx_key_chain(journal_config):
     assert persisted["providers"]["mlx"]["qwen3.5:9b"]["install_state"] == "installing"
 
 
-def test_volatile_byte_counters_do_not_persist_or_round_trip(journal_config):
+def test_progress_byte_counters_persist_and_round_trip(journal_config):
     config_path = journal_config({})
     status = bump_progress(
         transition_state(make_idle_status("anthropic"), new_state="downloading"),
@@ -313,12 +313,39 @@ def test_volatile_byte_counters_do_not_persist_or_round_trip(journal_config):
 
     persisted = json.loads(config_path.read_text(encoding="utf-8"))
     slot = persisted["providers"]["bundled"]["anthropic"]
-    assert "progress_bytes_received" not in slot
-    assert "progress_bytes_total" not in slot
+    assert slot["progress_bytes_received"] == 5
+    assert slot["progress_bytes_total"] == 10
 
     read_back = read_install_status(scope="bundled", name="anthropic")
-    assert read_back["progress_bytes_received"] is None
-    assert read_back["progress_bytes_total"] is None
+    assert read_back["progress_bytes_received"] == 5
+    assert read_back["progress_bytes_total"] == 10
+
+    partial_status = bump_progress(
+        transition_state(make_idle_status("openai"), new_state="downloading"),
+        received=7,
+    )
+    write_install_status(partial_status, scope="bundled")
+
+    persisted = json.loads(config_path.read_text(encoding="utf-8"))
+    partial_slot = persisted["providers"]["bundled"]["openai"]
+    assert partial_slot["progress_bytes_received"] == 7
+    assert partial_slot["progress_bytes_total"] is None
+
+    partial_read_back = read_install_status(scope="bundled", name="openai")
+    assert partial_read_back["progress_bytes_received"] == 7
+    assert partial_read_back["progress_bytes_total"] is None
+
+    terminal_status = transition_state(partial_status, new_state="installed")
+    write_install_status(terminal_status, scope="bundled")
+
+    persisted = json.loads(config_path.read_text(encoding="utf-8"))
+    terminal_slot = persisted["providers"]["bundled"]["openai"]
+    assert terminal_slot["progress_bytes_received"] is None
+    assert terminal_slot["progress_bytes_total"] is None
+
+    terminal_read_back = read_install_status(scope="bundled", name="openai")
+    assert terminal_read_back["progress_bytes_received"] is None
+    assert terminal_read_back["progress_bytes_total"] is None
 
 
 def test_install_copy_constants_match_spec_and_typography():
