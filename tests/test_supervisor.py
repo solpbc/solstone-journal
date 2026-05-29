@@ -220,6 +220,7 @@ def test_graceful_shutdown_calls_stop_process_for_each_managed_proc(
     )
     monkeypatch.setattr(mod, "run_pending_tasks", lambda *a, **k: (0, 0))
     monkeypatch.setattr(mod, "_sweep_orphaned_sol_processes", lambda *_a, **_k: 0)
+    monkeypatch.setattr(mod, "_reap_orphaned_local_servers", lambda *_a, **_k: 0)
     monkeypatch.setattr(mod.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(mod, "start_callosum_in_process", lambda: None)
     monkeypatch.setattr(mod, "stop_callosum_in_process", lambda: None)
@@ -1640,7 +1641,17 @@ def test_supervisor_singleton_lock_acquired(tmp_path, monkeypatch):
     # Skip maint discovery/subprocess runs — unrelated to lock acquisition and
     # slow enough on a fresh tmp_path to blow the 5s pytest-timeout under load.
     monkeypatch.setattr(mod, "run_pending_tasks", lambda *a, **k: (0, 0))
-    monkeypatch.setattr(mod, "_sweep_orphaned_sol_processes", lambda *_a, **_k: 0)
+    startup_reaps = []
+    monkeypatch.setattr(
+        mod,
+        "_sweep_orphaned_sol_processes",
+        lambda *_a, **_k: startup_reaps.append("sol"),
+    )
+    monkeypatch.setattr(
+        mod,
+        "_reap_orphaned_local_servers",
+        lambda *_a, **_k: startup_reaps.append("llama"),
+    )
     monkeypatch.setattr(mod.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(mod, "start_callosum_in_process", stop_after_lock)
 
@@ -1656,6 +1667,7 @@ def test_supervisor_singleton_lock_acquired(tmp_path, monkeypatch):
         (tmp_path / "health" / "supervisor.start_time").read_text().strip()
     )
     assert start_time > 0
+    assert startup_reaps == ["sol", "llama"]
 
 
 def test_supervisor_singleton_lock_blocked(tmp_path, monkeypatch, capsys):

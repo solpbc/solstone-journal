@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import os
 import sys
 import types
 from pathlib import Path
@@ -358,11 +359,7 @@ def test_local_provider_status_carries_install_hint_substring(monkeypatch):
     )
 
 
-def test_local_server_spawn_binds_loopback(monkeypatch):
-    from solstone.think.providers import local_server
-
-    captured = {}
-
+def _patch_local_server_spawn(monkeypatch, local_server, captured, config):
     class FakeProcess:
         returncode = None
 
@@ -377,6 +374,9 @@ def test_local_server_spawn_binds_loopback(monkeypatch):
     monkeypatch.setattr(local_server, "_PROCESS", None)
     monkeypatch.setattr(local_server, "_PROCESS_MODEL_ID", None)
     monkeypatch.setattr(local_server, "_PROCESS_PORT", None)
+    monkeypatch.setattr(local_server, "_ATEXIT_REGISTERED", False)
+    monkeypatch.setattr(local_server.atexit, "register", lambda func: None)
+    monkeypatch.setattr(local_server, "get_config", lambda: config)
     monkeypatch.setattr(
         local_server, "_server_file_lock", lambda: contextlib.nullcontext()
     )
@@ -390,12 +390,22 @@ def test_local_server_spawn_binds_loopback(monkeypatch):
     monkeypatch.setattr(local_server, "_probe_health", lambda port: ("ready", None))
     monkeypatch.setattr(local_server.RunnerManagedProcess, "spawn", fake_spawn)
 
+
+def test_local_server_spawn_binds_loopback(monkeypatch, tmp_path):
+    from solstone.think.providers import local_server
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    captured = {}
+    _patch_local_server_spawn(monkeypatch, local_server, captured, {})
+
     info = local_server.ensure_running(LOCAL_FLASH)
 
+    expected_threads = max(1, (os.cpu_count() or 2) - 2)
     assert info.base_url == "http://127.0.0.1:2468"
     assert "--host" in captured["cmd"]
     assert captured["cmd"][captured["cmd"].index("--host") + 1] == "127.0.0.1"
     assert "0.0.0.0" not in captured["cmd"]
+    assert "--n-gpu-layers" not in captured["cmd"]
     assert captured["cmd"] == [
         "/tmp/llama-server",
         "-m",
@@ -406,7 +416,132 @@ def test_local_server_spawn_binds_loopback(monkeypatch):
         "127.0.0.1",
         "--port",
         "2468",
+        "--threads",
+        str(expected_threads),
+        "--ctx-size",
+        "4096",
+        "--parallel",
+        "1",
     ]
+    assert captured["kwargs"]["nice"] == 10
+
+
+def test_local_server_spawn_uses_in_code_defaults_without_config_merge(
+    monkeypatch, tmp_path
+):
+    from solstone.think.providers import local_server
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    captured = {}
+    _patch_local_server_spawn(
+        monkeypatch,
+        local_server,
+        captured,
+        {"providers": {"bundled": {"local": {"threads": 99}}}},
+    )
+
+    local_server.ensure_running(LOCAL_FLASH)
+
+    expected_threads = max(1, (os.cpu_count() or 2) - 2)
+    assert captured["cmd"][-6:] == [
+        "--threads",
+        str(expected_threads),
+        "--ctx-size",
+        "4096",
+        "--parallel",
+        "1",
+    ]
+    assert "--n-gpu-layers" not in captured["cmd"]
+    assert captured["kwargs"]["nice"] == 10
+
+
+def test_local_server_spawn_uses_local_config_overrides(monkeypatch, tmp_path):
+    from solstone.think.providers import local_server
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    captured = {}
+    _patch_local_server_spawn(
+        monkeypatch,
+        local_server,
+        captured,
+        {
+            "providers": {
+                "local": {
+                    "threads": 3,
+                    "ctx_size": 8192,
+                    "parallel": 2,
+                    "n_gpu_layers": 0,
+                    "nice": None,
+                }
+            }
+        },
+    )
+
+    local_server.ensure_running(LOCAL_FLASH)
+
+    assert captured["cmd"][-8:] == [
+        "--threads",
+        "3",
+        "--ctx-size",
+        "8192",
+        "--parallel",
+        "2",
+        "--n-gpu-layers",
+        "0",
+    ]
+    assert captured["kwargs"]["nice"] is None
+
+
+def test_local_server_current_process_ready_touches_last_use(monkeypatch, tmp_path):
+    from solstone.think.providers import local_server
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+
+    class FakeProcess:
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(local_server, "_PROCESS", FakeProcess())
+    monkeypatch.setattr(local_server, "_PROCESS_MODEL_ID", LOCAL_FLASH)
+    monkeypatch.setattr(local_server, "_PROCESS_PORT", 2468)
+    monkeypatch.setattr(
+        local_server, "_server_file_lock", lambda: contextlib.nullcontext()
+    )
+    monkeypatch.setattr(local_server, "_probe_health", lambda port: ("ready", None))
+
+    local_server.ensure_running(LOCAL_FLASH)
+
+    assert (tmp_path / "health" / "local-server.last-use").exists()
+
+
+def test_local_server_reattach_ready_touches_last_use(monkeypatch, tmp_path):
+    from solstone.think.providers import local_server
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    monkeypatch.setattr(local_server, "_PROCESS", None)
+    monkeypatch.setattr(local_server, "_PROCESS_MODEL_ID", None)
+    monkeypatch.setattr(local_server, "_PROCESS_PORT", None)
+    monkeypatch.setattr(
+        local_server, "_server_file_lock", lambda: contextlib.nullcontext()
+    )
+    monkeypatch.setattr(local_server, "read_service_port", lambda service: 2468)
+    monkeypatch.setattr(local_server, "_probe_health", lambda port: ("ready", None))
+
+    local_server.ensure_running(LOCAL_FLASH)
+
+    assert (tmp_path / "health" / "local-server.last-use").exists()
+
+
+def test_local_server_fresh_spawn_ready_touches_last_use(monkeypatch, tmp_path):
+    from solstone.think.providers import local_server
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    captured = {}
+    _patch_local_server_spawn(monkeypatch, local_server, captured, {})
+
+    local_server.ensure_running(LOCAL_FLASH)
+
+    assert (tmp_path / "health" / "local-server.last-use").exists()
 
 
 def test_migrate_ollama_to_local_idempotent():

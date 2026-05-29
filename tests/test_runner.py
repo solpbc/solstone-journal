@@ -182,6 +182,84 @@ def test_managed_process_has_ref_and_pid(journal_path, mock_callosum):
     managed.cleanup()
 
 
+def test_spawn_uses_pdeathsig_preexec_when_nice_is_none(
+    journal_path, mock_callosum, monkeypatch
+):
+    from solstone.think import runner
+
+    captured = {}
+
+    class FakePopen:
+        def __init__(self, *args, **kwargs):
+            captured["kwargs"] = kwargs
+            self.pid = 4321
+            self.stdout = StringIO("")
+            self.stderr = StringIO("")
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = -15
+
+        def kill(self):
+            self.returncode = -9
+
+    def fake_pdeathsig():
+        pass
+
+    monkeypatch.setattr(runner, "_set_pdeathsig_on_linux", fake_pdeathsig)
+    monkeypatch.setattr(runner.subprocess, "Popen", FakePopen)
+
+    managed = ManagedProcess.spawn(["echo", "test"], ref="nice-none", nice=None)
+    managed.cleanup()
+
+    assert captured["kwargs"]["preexec_fn"] is fake_pdeathsig
+
+
+def test_spawn_composes_pdeathsig_and_nice(journal_path, mock_callosum, monkeypatch):
+    from solstone.think import runner
+
+    captured = {}
+    calls = []
+
+    class FakePopen:
+        def __init__(self, *args, **kwargs):
+            captured["kwargs"] = kwargs
+            self.pid = 4321
+            self.stdout = StringIO("")
+            self.stderr = StringIO("")
+            self.returncode = 0
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = -15
+
+        def kill(self):
+            self.returncode = -9
+
+    monkeypatch.setattr(
+        runner, "_set_pdeathsig_on_linux", lambda: calls.append("pdeathsig")
+    )
+    monkeypatch.setattr(runner.os, "nice", lambda value: calls.append(f"nice:{value}"))
+    monkeypatch.setattr(runner.subprocess, "Popen", FakePopen)
+
+    managed = ManagedProcess.spawn(["echo", "test"], ref="nice-ten", nice=10)
+    managed.cleanup()
+    captured["kwargs"]["preexec_fn"]()
+
+    assert calls == ["pdeathsig", "nice:10"]
+
+
 def test_managed_process_uses_ref_as_ref(journal_path, mock_callosum):
     """Test that ref becomes the ref when provided."""
     ref = "1730476800123"

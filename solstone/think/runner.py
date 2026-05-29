@@ -267,6 +267,7 @@ class ManagedProcess:
         ref: str | None = None,
         callosum: CallosumConnection | None = None,
         day: str | None = None,
+        nice: int | None = None,
     ) -> "ManagedProcess":
         """Spawn process with automatic output logging to daily health directory.
 
@@ -277,6 +278,7 @@ class ManagedProcess:
             callosum: Optional shared CallosumConnection (creates new one if not provided)
             day: Optional day override (YYYYMMDD). When provided, logs are placed
                 in that day's health directory instead of today's.
+            nice: Optional nice increment to apply in the child process before exec.
 
         Returns:
             ManagedProcess instance
@@ -298,15 +300,17 @@ class ManagedProcess:
             # Logs to: {JOURNAL}/{YYYYMMDD}/health/1730476800000_indexer.log
 
         Caller contract:
-            This method installs _set_pdeathsig_on_linux as subprocess.Popen's
-            preexec_fn. That hook calls prctl(PR_SET_PDEATHSIG, SIGTERM), and
-            man 2 prctl defines PR_SET_PDEATHSIG relative to the calling task's
-            TID: the thread that called Popen, not just the thread-group leader.
-            If that thread exits before the child does, the kernel delivers
-            SIGTERM to the child when the calling task terminates. Never call
-            spawn() from a daemon monitor thread that returns immediately after
-            this call. Use a long-lived worker thread that blocks in
-            process.wait() for the lifetime of the child.
+            This method installs a subprocess.Popen preexec_fn that always calls
+            _set_pdeathsig_on_linux; when nice is provided, it then applies
+            os.nice(nice). _set_pdeathsig_on_linux calls
+            prctl(PR_SET_PDEATHSIG, SIGTERM), and man 2 prctl defines
+            PR_SET_PDEATHSIG relative to the calling task's TID: the thread
+            that called Popen, not just the thread-group leader. If that thread
+            exits before the child does, the kernel delivers SIGTERM to the
+            child when the calling task terminates. Never call spawn() from a
+            daemon monitor thread that returns immediately after this call. Use
+            a long-lived worker thread that blocks in process.wait() for the
+            lifetime of the child.
         """
         name = _command_partition(cmd)
 
@@ -324,6 +328,15 @@ class ManagedProcess:
 
         logger.info(f"Starting {name}: {' '.join(cmd)}")
 
+        preexec_fn = _set_pdeathsig_on_linux
+        if nice is not None:
+
+            def _preexec_with_nice() -> None:
+                _set_pdeathsig_on_linux()
+                os.nice(nice)
+
+            preexec_fn = _preexec_with_nice
+
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -334,7 +347,7 @@ class ManagedProcess:
                 bufsize=1,
                 env=env,
                 process_group=0,
-                preexec_fn=_set_pdeathsig_on_linux,
+                preexec_fn=preexec_fn,
             )
         except Exception as exc:
             log_writer.close()

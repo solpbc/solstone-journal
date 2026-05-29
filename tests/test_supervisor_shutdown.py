@@ -3,6 +3,7 @@
 
 """Tests for handle_shutdown's reap pass."""
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -29,6 +30,11 @@ class FakeManaged:
 
     def _on_kill(self):
         self._running = False
+
+
+@pytest.fixture(autouse=True)
+def _disable_llama_reap(monkeypatch):
+    monkeypatch.setattr(supervisor, "_find_local_server_pids", lambda _journal: [])
 
 
 def test_reap_terminates_and_kills_survivor(monkeypatch):
@@ -87,3 +93,45 @@ def test_reap_swallows_oserror_on_kill(monkeypatch, caplog):
         supervisor.handle_shutdown(15, None)
 
     assert "shutdown: kill failed for bad" in caplog.text
+
+
+def test_reap_terminates_local_server_after_managed_children(monkeypatch):
+    proc = FakeManaged("svc", exits_after_terminate=True)
+    order = []
+    original_terminate = proc.process.terminate.side_effect
+
+    def terminate_managed():
+        order.append("managed")
+        original_terminate()
+
+    def find_local_servers(journal):
+        order.append(("find", journal))
+        return [444, 555]
+
+    def terminate_pids(pids, grace):
+        order.append(("llama", pids, grace))
+        return len(pids)
+
+    proc.process.terminate.side_effect = terminate_managed
+    monkeypatch.setattr(supervisor, "_managed_procs", [proc])
+    monkeypatch.setattr(supervisor, "shutdown_requested", False)
+    monkeypatch.setattr(supervisor, "get_journal", lambda: "/journal/test")
+    monkeypatch.setattr(supervisor, "_find_local_server_pids", find_local_servers)
+    monkeypatch.setattr(supervisor, "_terminate_pids", terminate_pids)
+
+    with pytest.raises(KeyboardInterrupt):
+        supervisor.handle_shutdown(15, None)
+
+    assert order == [
+        "managed",
+        ("find", Path("/journal/test").resolve()),
+        ("llama", [444, 555], supervisor.LOCAL_SERVER_TERMINATE_GRACE_S),
+    ]
+
+    supervisor.handle_shutdown(15, None)
+
+    assert order == [
+        "managed",
+        ("find", Path("/journal/test").resolve()),
+        ("llama", [444, 555], supervisor.LOCAL_SERVER_TERMINATE_GRACE_S),
+    ]

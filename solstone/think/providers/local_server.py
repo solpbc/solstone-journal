@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import atexit
 import logging
+import os
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -19,6 +21,7 @@ from solstone.think.providers.local import LocalProviderError, normalize_model_i
 from solstone.think.runner import ManagedProcess as RunnerManagedProcess
 from solstone.think.utils import (
     find_available_port,
+    get_config,
     get_journal,
     now_ms,
     read_service_port,
@@ -36,6 +39,10 @@ STATE_STOPPED = "stopped"
 
 _HOST = "127.0.0.1"
 _SERVICE_NAME = "local"
+_DEFAULT_THREADS = max(1, (os.cpu_count() or 2) - 2)
+_DEFAULT_CTX_SIZE = 4096
+_DEFAULT_PARALLEL = 1
+_DEFAULT_NICE = 10
 _DEFAULT_READY_TIMEOUT_S = 300.0
 _HEALTH_POLL_INTERVAL_S = 1.0
 
@@ -43,6 +50,7 @@ _LOCK = threading.RLock()
 _PROCESS: RunnerManagedProcess | None = None
 _PROCESS_MODEL_ID: str | None = None
 _PROCESS_PORT: int | None = None
+_ATEXIT_REGISTERED = False
 
 
 @dataclass(frozen=True)
@@ -159,7 +167,9 @@ def _reattach_if_ready(model_id: str) -> LocalServerInfo | None:
 def _spawn_server(
     model_id: str, binary_path: Path, model_path: Path, port: int
 ) -> None:
-    global _PROCESS, _PROCESS_MODEL_ID, _PROCESS_PORT
+    global _ATEXIT_REGISTERED, _PROCESS, _PROCESS_MODEL_ID, _PROCESS_PORT
+
+    cfg = get_config().get("providers", {}).get("local", {})
 
     cmd = [
         str(binary_path),
@@ -171,12 +181,32 @@ def _spawn_server(
         _HOST,
         "--port",
         str(port),
+        "--threads",
+        str(cfg.get("threads", _DEFAULT_THREADS)),
+        "--ctx-size",
+        str(cfg.get("ctx_size", _DEFAULT_CTX_SIZE)),
+        "--parallel",
+        str(cfg.get("parallel", _DEFAULT_PARALLEL)),
     ]
+    n_gpu_layers = cfg.get("n_gpu_layers")
+    if n_gpu_layers is not None:
+        cmd.extend(["--n-gpu-layers", str(n_gpu_layers)])
     if "0.0.0.0" in cmd:
         raise LocalProviderError("unsafe_bind", "Local server may not bind 0.0.0.0.")
-    _PROCESS = RunnerManagedProcess.spawn(cmd, ref="local-server")
+    # A null nice value opts out of lowering process priority.
+    nice = cfg.get("nice", _DEFAULT_NICE)
+    _PROCESS = RunnerManagedProcess.spawn(cmd, ref="local-server", nice=nice)
     _PROCESS_MODEL_ID = model_id
     _PROCESS_PORT = port
+    if not _ATEXIT_REGISTERED:
+        atexit.register(stop)
+        _ATEXIT_REGISTERED = True
+
+
+def _touch_last_use() -> None:
+    marker = Path(get_journal()) / "health" / "local-server.last-use"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
 
 
 def _clear_process() -> None:
@@ -204,10 +234,12 @@ def ensure_running(
         with _server_file_lock():
             ready = _current_process_ready(selected_model)
             if ready:
+                _touch_last_use()
                 return ready
 
             reattached = _reattach_if_ready(selected_model)
             if reattached:
+                _touch_last_use()
                 return reattached
 
             binary_path, gguf_path = local_install.ensure_artifacts_installed(
@@ -249,6 +281,7 @@ def ensure_running(
             state, error = _probe_health(port)
             if state == STATE_READY:
                 _emit(on_event, STATE_READY, model_id=selected_model, port=port)
+                _touch_last_use()
                 return LocalServerInfo(
                     model_id=selected_model,
                     port=port,
