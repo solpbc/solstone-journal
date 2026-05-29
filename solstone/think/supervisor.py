@@ -1466,6 +1466,21 @@ def _handle_segment_observed(message: dict) -> None:
 
     # Use day from event payload, fallback to today (for live observation)
     day = message.get("day") or datetime.now().strftime("%Y%m%d")
+
+    # Batch/historical re-sensing heals deterministically via daily catchup's
+    # segment-think pre-phase. A lone volatile segment think for a re-sensed
+    # past segment can rewind live activity-timeline state, so submit nothing;
+    # also leave flush state untouched so stale segments cannot reset
+    # _check_segment_flush or pollute handle_daily_tasks' force-flush gate.
+    if message.get("batch"):
+        logging.info(
+            "Batch observed segment deferred to daily catchup; "
+            "no volatile segment think submitted: %s/%s",
+            day,
+            segment,
+        )
+        return
+
     stream = message.get("stream")
 
     # Update flush state — new segment resets the flush timer

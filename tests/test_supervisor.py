@@ -386,7 +386,7 @@ def test_handle_segment_observed_live_command_marks_live(monkeypatch):
     assert "--live" in capture.submissions[0]["cmd"]
 
 
-def test_handle_segment_observed_batch_command_omits_live(monkeypatch):
+def test_handle_segment_observed_batch_submits_nothing(monkeypatch):
     mod = importlib.import_module("solstone.think.supervisor")
     capture = _CaptureTaskQueue()
     monkeypatch.setattr(mod, "_task_queue", capture)
@@ -401,8 +401,55 @@ def test_handle_segment_observed_batch_command_omits_live(monkeypatch):
         }
     )
 
+    assert len(capture.submissions) == 0
+
+
+def test_handle_segment_observed_batch_leaves_flush_state_untouched(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    capture = _CaptureTaskQueue()
+    monkeypatch.setattr(mod, "_task_queue", capture)
+
+    mod._flush_state["last_segment_ts"] = 0.0
+    mod._flush_state["day"] = None
+    mod._flush_state["segment"] = None
+    mod._flush_state["flushed"] = True
+
+    mod._handle_segment_observed(
+        {
+            "tract": "observe",
+            "event": "observed",
+            "day": "20260527",
+            "segment": "120000_300",
+        }
+    )
+
     assert len(capture.submissions) == 1
-    assert "--live" not in capture.submissions[0]["cmd"]
+    live_state = {
+        "day": mod._flush_state["day"],
+        "segment": mod._flush_state["segment"],
+        "flushed": mod._flush_state["flushed"],
+        "last_segment_ts": mod._flush_state["last_segment_ts"],
+    }
+    assert live_state["day"] == "20260527"
+    assert live_state["segment"] == "120000_300"
+    assert live_state["flushed"] is False
+    assert live_state["last_segment_ts"] > 0
+
+    mod._handle_segment_observed(
+        {
+            "tract": "observe",
+            "event": "observed",
+            "day": "20260101",
+            "segment": "090000_300",
+            "batch": True,
+        }
+    )
+
+    assert len(capture.submissions) == 1
+    assert mod._flush_state["day"] == live_state["day"]
+    assert mod._flush_state["segment"] == live_state["segment"]
+    assert mod._flush_state["flushed"] == live_state["flushed"]
+    assert mod._flush_state["last_segment_ts"] == live_state["last_segment_ts"]
 
 
 def test_handle_segment_observed_live_stream_command(monkeypatch):
