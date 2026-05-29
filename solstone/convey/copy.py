@@ -71,27 +71,12 @@ CONVEY_REPORT_MAILTO_BODY_PREFIX = (
 CONVEY_REPORT_MAILTO_TRUNCATION_SUFFIX = "\n\n[full report is in your clipboard]\n"
 CONVEY_REPORT_BUTTON_LABEL = "Report this"
 LOGIN_NO_PASSWORD_CONFIGURED = "no password is configured. set one in settings → security, or run 'journal password set' from a terminal on this machine."
-SETTINGS_SECURITY_DESC = (
-    "network access and password protection for the convey web interface."
+SETTINGS_SECURITY_DESC = "password protection for the convey web interface."
+SETTINGS_SECURITY_REACH_HINT = (
+    "how your devices reach home — managing your connection, paired devices, "
+    "and reach-from-anywhere now lives in link →"
 )
-SETTINGS_NETWORK_MODE_LABEL = "network access"
-SETTINGS_NETWORK_MODE_OFF = "localhost only"
-SETTINGS_NETWORK_MODE_ON = "on"
-SETTINGS_NETWORK_DESC_OFF = (
-    "convey is reachable only from this machine. no password is required."
-)
-SETTINGS_NETWORK_DESC_ON = "convey is reachable from other devices on the local network. password is required for non-localhost clients."
 SETTINGS_LAN_URL_LABEL = "local network url"
-SETTINGS_NETWORK_BUTTON_ENABLE = "allow network access"
-SETTINGS_NETWORK_BUTTON_DISABLE = "restrict to localhost only"
-SETTINGS_NETWORK_DISCLOSURE_TITLE = "protect non-localhost connections"
-SETTINGS_NETWORK_DISCLOSURE_BODY = "to reach solstone from other devices on your network, set a password. localhost connections from this machine will continue to skip the password."
-SETTINGS_NETWORK_DISCLOSURE_PASSWORD_LABEL = "password"
-SETTINGS_NETWORK_DISCLOSURE_CONFIRM_LABEL = "confirm password"
-SETTINGS_NETWORK_DISCLOSURE_SUBMIT = "set password and enable network access"
-SETTINGS_NETWORK_DISCLOSURE_MISMATCH = "passwords do not match."
-SETTINGS_NETWORK_DISCLOSURE_TOO_SHORT = "password must be at least 8 characters."
-SETTINGS_NETWORK_RESTARTING = "restarting convey…"
 SETTINGS_PASSWORD_HINT = "used when network access is on, or when localhost trust is off. not used otherwise."
 OBSERVER_CALLOSUM_LIVE_LABEL = "live"
 
@@ -161,21 +146,7 @@ __all__ = [
     "LOGIN_NO_PASSWORD_CONFIGURED",
     "OBSERVER_CALLOSUM_LIVE_LABEL",
     "SETTINGS_LAN_URL_LABEL",
-    "SETTINGS_NETWORK_BUTTON_DISABLE",
-    "SETTINGS_NETWORK_BUTTON_ENABLE",
-    "SETTINGS_NETWORK_DESC_OFF",
-    "SETTINGS_NETWORK_DESC_ON",
-    "SETTINGS_NETWORK_DISCLOSURE_BODY",
-    "SETTINGS_NETWORK_DISCLOSURE_CONFIRM_LABEL",
-    "SETTINGS_NETWORK_DISCLOSURE_MISMATCH",
-    "SETTINGS_NETWORK_DISCLOSURE_PASSWORD_LABEL",
-    "SETTINGS_NETWORK_DISCLOSURE_SUBMIT",
-    "SETTINGS_NETWORK_DISCLOSURE_TITLE",
-    "SETTINGS_NETWORK_DISCLOSURE_TOO_SHORT",
-    "SETTINGS_NETWORK_MODE_LABEL",
-    "SETTINGS_NETWORK_MODE_OFF",
-    "SETTINGS_NETWORK_MODE_ON",
-    "SETTINGS_NETWORK_RESTARTING",
     "SETTINGS_PASSWORD_HINT",
     "SETTINGS_SECURITY_DESC",
+    "SETTINGS_SECURITY_REACH_HINT",
 ]

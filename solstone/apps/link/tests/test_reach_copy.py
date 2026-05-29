@@ -110,6 +110,13 @@ def test_lan_banner_copy_is_locked() -> None:
     )
 
 
+def test_pair_web_password_settings_link_is_locked() -> None:
+    assert (
+        copy.PAIR_WEB_PASSWORD_SETTINGS_LINK
+        == "set a web password for this page in settings →"
+    )
+
+
 def test_reach_shell_copy_stays_in_bounds() -> None:
     banned_terms = (
         "account",
@@ -123,7 +130,11 @@ def test_reach_shell_copy_stays_in_bounds() -> None:
     )
     acronym_re = re.compile(r"\b(dl|pl|spl)\b")
 
-    for value in [*U2_COPY_VALUES, *U5_COPY_VALUES]:
+    for value in [
+        *U2_COPY_VALUES,
+        *U5_COPY_VALUES,
+        copy.PAIR_WEB_PASSWORD_SETTINGS_LINK,
+    ]:
         lowered = value.lower()
         for term in banned_terms:
             assert term not in lowered, value

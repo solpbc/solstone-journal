@@ -42,6 +42,7 @@ SUCCESS_VERIFY_NOTE = (
     "shows. didn't do this?"
 )
 SUCCESS_REMOVE_LABEL = "that wasn't me — remove"
+PAIR_WEB_PASSWORD_SETTINGS_LINK = "set a web password for this page in settings →"
 
 # --- U4 first-run hero ---
 HERO_TITLE = "let's connect a device"
