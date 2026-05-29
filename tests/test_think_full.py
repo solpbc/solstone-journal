@@ -4,6 +4,7 @@
 """Tests for the think module unified priority system."""
 
 import importlib
+import logging
 
 
 def test_main_runs_with_mocked_prompts(journal_copy, monkeypatch):
@@ -46,6 +47,99 @@ def test_main_runs_with_mocked_prompts(journal_copy, monkeypatch):
     indexer_cmds = [c for c in commands_run if c[0] == "sol" and c[1] == "indexer"]
     assert len(indexer_cmds) >= 1
     assert any("--rescan" in cmd for cmd in indexer_cmds)
+
+
+def test_main_runs_segment_think_prephase_before_daily_synthesis(
+    journal_copy,
+    monkeypatch,
+):
+    """Test segment-think repair runs between sense repair and daily prompts."""
+    mod = importlib.import_module("solstone.think.thinking")
+
+    commands_run = []
+
+    def mock_run_command(cmd, day):
+        commands_run.append(cmd)
+        return True
+
+    def mock_run_queued_command(cmd, day, timeout=600):
+        commands_run.append(cmd)
+        return True
+
+    def mock_run_daily_prompts(day, verbose, **kwargs):
+        commands_run.append(["__daily_synthesis__"])
+        return (5, 0, [], set())
+
+    monkeypatch.setattr(mod, "run_command", mock_run_command)
+    monkeypatch.setattr(mod, "run_queued_command", mock_run_queued_command)
+    monkeypatch.setattr(mod, "run_daily_prompts", mock_run_daily_prompts)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["sol think", "--day", "20240101", "--refresh", "--verbose"],
+    )
+
+    mod.main()
+
+    sense_index = next(
+        i
+        for i, cmd in enumerate(commands_run)
+        if len(cmd) >= 2 and cmd[:2] == ["journal", "sense"]
+    )
+    segment_index = next(
+        i
+        for i, cmd in enumerate(commands_run)
+        if len(cmd) >= 4 and cmd[:4] == ["journal", "think", "--segments", "--day"]
+    )
+    daily_index = commands_run.index(["__daily_synthesis__"])
+    indexer_index = next(
+        i
+        for i, cmd in enumerate(commands_run)
+        if len(cmd) >= 2 and cmd[:2] == ["sol", "indexer"] and "--rescan" in cmd
+    )
+
+    segment_cmd = commands_run[segment_index]
+    assert "--refresh" not in segment_cmd
+    assert "-v" in segment_cmd
+    assert sense_index < segment_index < daily_index < indexer_index
+
+
+def test_segment_think_prephase_failure_is_non_fatal(
+    journal_copy,
+    monkeypatch,
+    caplog,
+):
+    """Test daily synthesis still runs when segment-think repair fails."""
+    mod = importlib.import_module("solstone.think.thinking")
+
+    commands_run = []
+
+    def mock_run_command(cmd, day):
+        commands_run.append(cmd)
+        if len(cmd) >= 2 and cmd[:2] == ["journal", "think"] and "--segments" in cmd:
+            return False
+        return True
+
+    def mock_run_queued_command(cmd, day, timeout=600):
+        commands_run.append(cmd)
+        return True
+
+    def mock_run_daily_prompts(day, verbose, **kwargs):
+        commands_run.append(["__daily_synthesis__"])
+        return (5, 0, [], set())
+
+    monkeypatch.setattr(mod, "run_command", mock_run_command)
+    monkeypatch.setattr(mod, "run_queued_command", mock_run_queued_command)
+    monkeypatch.setattr(mod, "run_daily_prompts", mock_run_daily_prompts)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["sol think", "--day", "20240101", "--refresh", "--verbose"],
+    )
+
+    caplog.set_level(logging.WARNING)
+    mod.main()
+
+    assert ["__daily_synthesis__"] in commands_run
+    assert "Segment-think repair failed, continuing anyway" in caplog.text
 
 
 def test_segment_mode_skips_pre_post_phases(journal_copy, monkeypatch):

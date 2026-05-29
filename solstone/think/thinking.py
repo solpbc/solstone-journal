@@ -3283,6 +3283,27 @@ def main() -> None:
             if not phase_ok:
                 logging.warning("Sense repair failed, continuing anyway")
 
+        # PRE-PHASE: Run segment-think batch repair (daily only)
+        if not args.segment:
+            logging.info("Running pre-phase: segment-think repair")
+            cmd = ["journal", "think", "--segments", "--day", day]
+            if args.verbose:
+                cmd.append("-v")
+            day_log(day, f"starting: {' '.join(cmd)}")
+            _jsonl_log("phase.start", mode=_run_mode, day=day, phase="segment_think")
+            _phase_start = time.time()
+            phase_ok = run_command(cmd, day)
+            _jsonl_log(
+                "phase.complete",
+                mode=_run_mode,
+                day=day,
+                phase="segment_think",
+                success=phase_ok,
+                duration_ms=int((time.time() - _phase_start) * 1000),
+            )
+            if not phase_ok:
+                logging.warning("Segment-think repair failed, continuing anyway")
+
         # MAIN PHASE: Run prompts
         resolved_stream = args.stream
         if args.segment and args.stream is None:
