@@ -42,7 +42,6 @@ from solstone.think.utils import (
     EXIT_TEMPFAIL,
     day_path,
     find_available_port,
-    get_config,
     get_journal,
     get_journal_info,
     get_rev,
@@ -58,9 +57,6 @@ CHECK_INTERVAL = 30
 MAX_UPDATED_CATCHUP = 4
 TEMPFAIL_DELAY = 15  # seconds to wait before retrying a tempfail exit
 STOPPED_TICKS_THRESHOLD = 2
-LOCAL_SERVER_IDLE_CHECK_INTERVAL_S = 30.0
-LOCAL_SERVER_IDLE_TIMEOUT_S = 300
-LOCAL_SERVER_TERMINATE_GRACE_S = 3.0
 logger = logging.getLogger(__name__)
 _SERVICE_LIFECYCLE_VERBS = {
     "start",
@@ -115,89 +111,6 @@ def _candidate_journal(proc: "psutil.Process") -> Path | None:
         return None
 
 
-def _terminate_pids(targets: list[int], grace: float) -> int:
-    if not targets:
-        return 0
-
-    for pid in targets:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-
-    deadline = time.monotonic() + grace
-    while time.monotonic() < deadline:
-        if not any(psutil.pid_exists(pid) for pid in targets):
-            break
-        time.sleep(0.1)
-
-    survivors = [pid for pid in targets if psutil.pid_exists(pid)]
-    for pid in survivors:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    return len(targets)
-
-
-def _find_local_server_pids(journal: Path, *, orphaned_only: bool = False) -> list[int]:
-    journal = journal.resolve()
-    current_user = getpass.getuser()
-    own_pid = os.getpid()
-    targets: list[int] = []
-    for proc in psutil.process_iter(["name", "ppid", "username", "pid"]):
-        try:
-            if proc.name() != "llama-server":
-                continue
-            if proc.username() != current_user:
-                continue
-            if proc.pid == own_pid:
-                continue
-            if orphaned_only and proc.ppid() != 1:
-                continue
-            candidate_journal = _candidate_journal(proc)
-            if candidate_journal != journal:
-                continue
-            targets.append(proc.pid)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-    return targets
-
-
-def _reap_orphaned_local_servers(journal: Path, grace: float = 5.0) -> int:
-    targets = _find_local_server_pids(journal, orphaned_only=True)
-    if not targets:
-        return 0
-    logger.info(
-        "startup local server reap: terminating %d llama-server process(es) in journal %s",
-        len(targets),
-        journal.resolve(),
-    )
-    return _terminate_pids(targets, grace)
-
-
-def _check_local_server_idle(
-    journal: Path,
-    idle_timeout_s: float | None = None,
-    grace: float = LOCAL_SERVER_TERMINATE_GRACE_S,
-) -> None:
-    cfg = get_config().get("providers", {}).get("local", {})
-    if idle_timeout_s is None:
-        idle_timeout_s = cfg.get("idle_timeout_s", LOCAL_SERVER_IDLE_TIMEOUT_S)
-    pids = _find_local_server_pids(journal)
-    if not pids:
-        return
-    marker = journal / "health" / "local-server.last-use"
-    if not marker.exists():
-        return
-    age = time.time() - marker.stat().st_mtime
-    if age < idle_timeout_s:
-        return
-    for pid in pids:
-        logger.info("local server eviction: pid=%d reason=idle_timeout", pid)
-    _terminate_pids(pids, grace)
-
-
 def _sweep_orphaned_sol_processes(journal: Path, grace: float = 5.0) -> int:
     journal = journal.resolve()
     current_user = getpass.getuser()
@@ -228,7 +141,27 @@ def _sweep_orphaned_sol_processes(journal: Path, grace: float = 5.0) -> int:
         len(targets),
         journal,
     )
-    return _terminate_pids(targets, grace)
+    for pid in targets:
+        logger.debug("orphan sweep: SIGTERM pid=%d", pid)
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+    deadline = time.time() + grace
+    while time.time() < deadline:
+        if not any(psutil.pid_exists(pid) for pid in targets):
+            break
+        time.sleep(0.1)
+
+    survivors = [pid for pid in targets if psutil.pid_exists(pid)]
+    for pid in survivors:
+        logger.debug("orphan sweep: SIGKILL pid=%d", pid)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    return len(targets)
 
 
 class CallosumLogHandler(logging.Handler):
@@ -1791,7 +1724,6 @@ async def supervise(
     global _last_sync_tick, _last_sync_snapshot, _sync_conflict_shutdown
 
     last_status_emit = 0.0
-    last_idle_check = 0.0
     _last_sync_tick = 0.0
     _last_sync_snapshot = None
     _sync_conflict_shutdown = False
@@ -1817,10 +1749,6 @@ async def supervise(
                     except Exception as e:
                         logging.debug(f"Status emission failed: {e}")
                 last_status_emit = now
-
-            if now - last_idle_check >= LOCAL_SERVER_IDLE_CHECK_INTERVAL_S:
-                _check_local_server_idle(Path(get_journal()))
-                last_idle_check = now
 
             # Check for segment flush (non-blocking, submits via task queue)
             _check_segment_flush()
@@ -1936,13 +1864,6 @@ def handle_shutdown(signum, frame):
                 cleanly,
                 kills,
             )
-        local_server_pids = _find_local_server_pids(Path(get_journal()).resolve())
-        if local_server_pids:
-            logger.info(
-                "shutdown: signaling %d local server child(ren)",
-                len(local_server_pids),
-            )
-            _terminate_pids(local_server_pids, LOCAL_SERVER_TERMINATE_GRACE_S)
         raise KeyboardInterrupt
     # Second signal during shutdown: cleanup is already in progress.
 
@@ -2049,7 +1970,6 @@ def main() -> None:
     start_time_path.write_text(str(time.time()))
     logging.info("Singleton lock acquired (PID %d)", os.getpid())
     _sweep_orphaned_sol_processes(journal_path)
-    _reap_orphaned_local_servers(journal_path)
 
     # Set up signal handlers
     signal.signal(signal.SIGINT, handle_shutdown)

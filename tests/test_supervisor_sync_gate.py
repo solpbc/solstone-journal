@@ -55,7 +55,6 @@ def _load_supervisor(tmp_path, monkeypatch, argv=None):
     monkeypatch.setattr(mod.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(mod, "run_pending_tasks", lambda *args, **kwargs: (0, 0))
     monkeypatch.setattr(mod, "_sweep_orphaned_sol_processes", lambda *_a, **_k: 0)
-    monkeypatch.setattr(mod, "_reap_orphaned_local_servers", lambda *_a, **_k: 0)
     return mod
 
 

@@ -22,8 +22,6 @@ class _FakeProcess:
         name_error: Exception | None = None,
         ppid_error: Exception | None = None,
         username_error: Exception | None = None,
-        environ: dict[str, str] | None = None,
-        environ_error: Exception | None = None,
     ):
         self.pid = pid
         self._name = name
@@ -32,8 +30,6 @@ class _FakeProcess:
         self._name_error = name_error
         self._ppid_error = ppid_error
         self._username_error = username_error
-        self._environ = {} if environ is None else environ
-        self._environ_error = environ_error
 
     def name(self) -> str:
         if self._name_error:
@@ -49,11 +45,6 @@ class _FakeProcess:
         if self._username_error:
             raise self._username_error
         return self._username
-
-    def environ(self) -> dict[str, str]:
-        if self._environ_error:
-            raise self._environ_error
-        return self._environ
 
 
 class TestOrphanSweep:
@@ -169,79 +160,4 @@ class TestOrphanSweep:
         monkeypatch.setattr(supervisor.psutil, "pid_exists", lambda _pid: False)
 
         assert supervisor._sweep_orphaned_sol_processes(journal=TEST_JOURNAL) == 1
-        assert kills == [(111, signal.SIGTERM)]
-
-
-class TestLocalServerFind:
-    def _patch_common(self, monkeypatch, procs):
-        monkeypatch.setattr(supervisor.getpass, "getuser", lambda: "jer")
-        monkeypatch.setattr(supervisor.os, "getpid", lambda: 999)
-        monkeypatch.setattr(supervisor.psutil, "process_iter", lambda _attrs: procs)
-
-    def test_live_parent_base_matches_but_orphan_filter_excludes(self, monkeypatch):
-        procs = [_FakeProcess(pid=111, name="llama-server", ppid=222)]
-        self._patch_common(monkeypatch, procs)
-        monkeypatch.setattr(supervisor, "_candidate_journal", lambda proc: TEST_JOURNAL)
-
-        assert supervisor._find_local_server_pids(TEST_JOURNAL) == [111]
-        assert (
-            supervisor._find_local_server_pids(TEST_JOURNAL, orphaned_only=True) == []
-        )
-
-    def test_orphan_filter_matches_pid_one_local_server(self, monkeypatch):
-        procs = [_FakeProcess(pid=111, name="llama-server", ppid=1)]
-        self._patch_common(monkeypatch, procs)
-        monkeypatch.setattr(supervisor, "_candidate_journal", lambda proc: TEST_JOURNAL)
-
-        assert supervisor._find_local_server_pids(TEST_JOURNAL, orphaned_only=True) == [
-            111
-        ]
-
-    def test_different_journal_is_not_matched(self, monkeypatch):
-        procs = [
-            _FakeProcess(
-                pid=111,
-                name="llama-server",
-                environ={"SOLSTONE_JOURNAL": "/journal/other"},
-            )
-        ]
-        self._patch_common(monkeypatch, procs)
-
-        assert supervisor._find_local_server_pids(TEST_JOURNAL) == []
-
-    def test_same_name_without_solstone_journal_is_not_matched(self, monkeypatch):
-        procs = [_FakeProcess(pid=111, name="llama-server", environ={})]
-        self._patch_common(monkeypatch, procs)
-
-        assert supervisor._find_local_server_pids(TEST_JOURNAL) == []
-
-    def test_permission_denied_environ_is_skipped(self, monkeypatch):
-        procs = [
-            _FakeProcess(
-                pid=111,
-                name="llama-server",
-                environ_error=supervisor.psutil.AccessDenied(pid=111),
-            )
-        ]
-        self._patch_common(monkeypatch, procs)
-
-        assert supervisor._find_local_server_pids(TEST_JOURNAL) == []
-
-
-class TestLocalServerStartupReap:
-    @pytest.mark.parametrize("platform", ["linux", "darwin", "freebsd"])
-    def test_reaps_orphaned_local_servers_on_all_platforms(self, monkeypatch, platform):
-        kills = []
-        procs = [_FakeProcess(pid=111, name="llama-server", ppid=1)]
-        monkeypatch.setattr(supervisor.sys, "platform", platform)
-        monkeypatch.setattr(supervisor.getpass, "getuser", lambda: "jer")
-        monkeypatch.setattr(supervisor.os, "getpid", lambda: 999)
-        monkeypatch.setattr(supervisor.psutil, "process_iter", lambda _attrs: procs)
-        monkeypatch.setattr(supervisor, "_candidate_journal", lambda proc: TEST_JOURNAL)
-        monkeypatch.setattr(
-            supervisor.os, "kill", lambda pid, sig: kills.append((pid, sig))
-        )
-        monkeypatch.setattr(supervisor.psutil, "pid_exists", lambda _pid: False)
-
-        assert supervisor._reap_orphaned_local_servers(TEST_JOURNAL) == 1
         assert kills == [(111, signal.SIGTERM)]
