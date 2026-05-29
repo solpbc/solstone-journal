@@ -6,6 +6,7 @@ from __future__ import annotations
 import io
 import json
 import ssl
+import stat
 import urllib.error
 from typing import Any
 
@@ -13,6 +14,8 @@ import pytest
 
 from solstone.think import sol_cli
 from solstone.think.journal_config import write_journal_config
+from solstone.think.link import relay_client
+from solstone.think.link.paths import save_totp_secret, totp_secret_path
 from solstone.think.services import cli, portal_client
 
 
@@ -70,6 +73,25 @@ def _install_urlopen(monkeypatch, items: list[Any]):
 
     monkeypatch.setattr(portal_client.urllib.request, "urlopen", fake_urlopen)
     return calls
+
+
+def _install_spl_relay(
+    monkeypatch: pytest.MonkeyPatch,
+    captured: list[tuple[str, dict[str, Any]]],
+) -> None:
+    monkeypatch.setenv("SOL_LINK_RELAY_URL", "https://relay.test")
+
+    def post_json(url: str, body: dict[str, Any]) -> dict[str, str]:
+        captured.append((url, body))
+        return {"service_token": "tok.spl"}
+
+    monkeypatch.setattr(relay_client, "_post_json_sync", post_json)
+
+
+def _set_posture(journal_copy, posture: str) -> None:
+    config = json.loads((journal_copy / "config" / "journal.json").read_text())
+    config.setdefault("link", {})["posture"] = posture
+    write_journal_config(config)
 
 
 def test_mint_device_code_posts_empty_body_and_returns_success(monkeypatch) -> None:
@@ -152,6 +174,114 @@ def test_unknown_service_exits_2(capsys) -> None:
 
     assert exc.value.code == 2
     assert capsys.readouterr().err.startswith("unknown_service: ")
+
+
+def test_enable_spl_happy_path_writes_posture_and_secret(
+    journal_copy, monkeypatch, capsys
+) -> None:
+    captured_bodies: list[tuple[str, dict[str, Any]]] = []
+    _install_spl_relay(monkeypatch, captured_bodies)
+
+    assert cli.main(["enable", "spl"]) == 0
+
+    captured = capsys.readouterr()
+    assert cli.STDOUT_SPL_SUCCESS in captured.out
+    assert captured.err == ""
+    config_path = journal_copy / "config" / "journal.json"
+    config = json.loads(config_path.read_text("utf-8"))
+    secret = json.loads(totp_secret_path().read_text("utf-8"))["totp_secret"]
+    assert config["link"]["posture"] == "spl"
+    assert stat.S_IMODE(totp_secret_path().stat().st_mode) == 0o600
+    assert captured_bodies[0][1]["totp_secret"] == secret
+    combined_output = captured.out + captured.err
+    assert secret not in combined_output
+    assert secret not in config_path.read_text("utf-8")
+
+
+def test_enable_spl_already_enabled_is_idempotent_success(
+    journal_copy, monkeypatch, capsys
+) -> None:
+    captured_bodies: list[tuple[str, dict[str, Any]]] = []
+    _set_posture(journal_copy, "spl")
+    save_totp_secret("SECRET")
+    _install_spl_relay(monkeypatch, captured_bodies)
+
+    assert cli.main(["enable", "spl"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("spl_already_enabled: ")
+    assert captured_bodies == []
+
+
+def test_enable_spl_relay_down_emits_relay_unreachable(
+    journal_copy, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("SOL_LINK_RELAY_URL", "https://relay.test")
+
+    def post_json(_url: str, _body: dict[str, Any]) -> dict[str, str]:
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr(relay_client, "_post_json_sync", post_json)
+
+    assert cli.main(["enable", "spl"]) == 1
+
+    assert capsys.readouterr().err.startswith("relay_unreachable: ")
+
+
+def test_enable_spl_journal_not_initialized_exits_1(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    journal = tmp_path / "journal"
+    (journal / "config").mkdir(parents=True)
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+
+    assert cli.main(["enable", "spl"]) == 1
+
+    assert capsys.readouterr().err.startswith("journal_not_initialized: ")
+
+
+def test_disable_spl_when_enabled_sets_direct_and_retains_secret(
+    journal_copy, capsys
+) -> None:
+    _set_posture(journal_copy, "spl")
+    save_totp_secret("SECRET")
+
+    assert cli.main(["disable", "spl"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out.strip() == cli.STDOUT_SPL_DISABLE_SUCCESS
+    assert captured.err == ""
+    config = json.loads((journal_copy / "config" / "journal.json").read_text())
+    assert config["link"]["posture"] == "direct"
+    assert totp_secret_path().exists()
+
+
+def test_disable_spl_when_not_enabled_is_idempotent_success(
+    journal_copy, capsys
+) -> None:
+    _set_posture(journal_copy, "direct")
+
+    assert cli.main(["disable", "spl"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("spl_already_disabled: ")
+
+
+def test_enable_disable_help_lists_spl(capsys) -> None:
+    with pytest.raises(SystemExit) as enable_exc:
+        cli.main(["enable", "--help"])
+    enable_out = capsys.readouterr().out
+
+    with pytest.raises(SystemExit) as disable_exc:
+        cli.main(["disable", "--help"])
+    disable_out = capsys.readouterr().out
+
+    assert enable_exc.value.code == 0
+    assert disable_exc.value.code == 0
+    assert "spl" in enable_out
+    assert "spl" in disable_out
 
 
 def test_happy_path_writes_handoff(journal_copy, browser_ready, monkeypatch, capsys):

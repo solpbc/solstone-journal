@@ -19,6 +19,9 @@ CANONICAL_TOKENS = {
     "manual_key_present",
     "rate_limited",
     "already_disabled",
+    "spl_already_enabled",
+    "spl_already_disabled",
+    "relay_unreachable",
     "journal_not_initialized",
     "unknown_service",
 }

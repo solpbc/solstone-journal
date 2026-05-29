@@ -12,6 +12,7 @@ All link-service state lives under `journal/link/`:
       authorized_clients.json   paired-device ledger (mtime-reloaded)
       tokens/
         account.json   cached service_token from /enroll/home
+      totp.json      mode 0600 relay pairing TOTP secret
       nonces.json      pair-ceremony nonces (5-min TTL, single-use)
       state.json       instance_id + home_label (generated on first run)
 
@@ -22,8 +23,10 @@ one service (see cpo/strategy/journal-memory-structure.md).
 
 from __future__ import annotations
 
+import base64
 import json
 import os
+import secrets
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,6 +64,10 @@ def tokens_dir() -> Path:
 
 def service_token_path() -> Path:
     return tokens_dir() / "account.json"
+
+
+def totp_secret_path() -> Path:
+    return link_root() / "totp.json"
 
 
 def nonces_path() -> Path:
@@ -158,6 +165,37 @@ def save_service_token(token: str) -> None:
     tmp = path.with_suffix(".json.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump({"service_token": token}, f, indent=2)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+
+
+def generate_totp_secret() -> str:
+    return base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
+
+
+def load_totp_secret() -> str | None:
+    """Read the relay pairing TOTP secret, or None."""
+    path = totp_secret_path()
+    if not path.exists():
+        return None
+    try:
+        raw = json.loads(path.read_text("utf-8"))
+        secret = raw.get("totp_secret")
+        return secret if isinstance(secret, str) and secret else None
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_totp_secret(secret: str) -> None:
+    """Persist the relay pairing TOTP secret atomically with mode 0600."""
+    path = totp_secret_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"totp_secret": secret}, f, indent=2)
         f.write("\n")
         f.flush()
         os.fsync(f.fileno())

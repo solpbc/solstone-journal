@@ -26,6 +26,8 @@ def test_services_cli_copy_avoids_blocked_brand_terms() -> None:
         cli.STDOUT_OPENING,
         cli.STDOUT_WAITING,
         cli.STDOUT_SUCCESS,
+        cli.STDOUT_SPL_SUCCESS,
+        cli.STDOUT_SPL_DISABLE_SUCCESS,
         *cli.ERROR_MESSAGES.values(),
     ]
 

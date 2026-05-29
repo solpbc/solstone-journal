@@ -30,6 +30,37 @@ _BUF = 65536
 CallosumEmit = Callable[[str, dict[str, Any]], None]
 
 
+def enroll_home(
+    relay_endpoint: str,
+    *,
+    instance_id: str,
+    ca_pubkey: str,
+    home_label: str,
+    totp_secret: str | None = None,
+) -> str:
+    """POST /enroll/home and return the service_token.
+
+    Carries totp_secret when provided. The relay is external
+    (github.com/solpbc/spl, out of this repo); STATED ASSUMPTION: /enroll/home
+    upserts totp_secret for an existing (instance_id, ca_pubkey) enrollment and
+    returns the same/refreshed service_token, so an already-enrolled home can
+    re-POST to upload a later-generated secret.
+    """
+    body = {
+        "instance_id": instance_id,
+        "ca_pubkey": ca_pubkey,
+        "home_label": home_label,
+    }
+    if totp_secret is not None:
+        body["totp_secret"] = totp_secret
+    result = _post_json_sync(f"{relay_endpoint.rstrip('/')}/enroll/home", body)
+    # back-compat: relay still returns "account_token" until lode L2 renames it
+    token = result.get("service_token") or result.get("account_token")
+    if not isinstance(token, str) or not token:
+        raise RuntimeError("relay returned no service_token")
+    return token
+
+
 class RelayClient:
     def __init__(
         self,
@@ -40,6 +71,7 @@ class RelayClient:
         service_token: str | None,
         on_service_token: Callable[[str], None],
         ca_pubkey_spki_pem: str,
+        totp_secret: str | None = None,
         callosum_emit: CallosumEmit | None = None,
     ) -> None:
         self._instance_id = instance_id
@@ -49,6 +81,7 @@ class RelayClient:
         self._service_token = service_token
         self._on_service_token = on_service_token
         self._ca_pubkey_spki_pem = ca_pubkey_spki_pem
+        self._totp_secret = totp_secret
         self._emit = callosum_emit or (lambda _event, _fields: None)
         self._running = False
         self._tunnels: dict[str, asyncio.Task[None]] = {}
@@ -56,20 +89,14 @@ class RelayClient:
     async def enroll_if_needed(self) -> None:
         if self._service_token:
             return
-        endpoint = f"{self._relay_endpoint}/enroll/home"
-        result = await asyncio.to_thread(
-            _post_json_sync,
-            endpoint,
-            {
-                "instance_id": self._instance_id,
-                "ca_pubkey": self._ca_pubkey_spki_pem,
-                "home_label": self._home_label,
-            },
+        token = await asyncio.to_thread(
+            enroll_home,
+            self._relay_endpoint,
+            instance_id=self._instance_id,
+            ca_pubkey=self._ca_pubkey_spki_pem,
+            home_label=self._home_label,
+            totp_secret=self._totp_secret,
         )
-        # back-compat: relay still returns "account_token" until lode L2 renames it
-        token = result.get("service_token") or result.get("account_token")
-        if not isinstance(token, str) or not token:
-            raise RuntimeError("relay returned no service_token")
         self._service_token = token
         self._on_service_token(token)
         self._emit("enrolled", {"instance_id": self._instance_id})

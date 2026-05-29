@@ -41,6 +41,7 @@ from .paths import (
     LinkState,
     ca_dir,
     load_service_token,
+    load_totp_secret,
     relay_url,
     save_service_token,
 )
@@ -71,6 +72,7 @@ async def run_service() -> None:
         service_token=token,
         on_service_token=save_service_token,
         ca_pubkey_spki_pem=ca.pubkey_spki_pem,
+        totp_secret=load_totp_secret(),
         callosum_emit=emit,
     )
 

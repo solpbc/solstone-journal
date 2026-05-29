@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 
@@ -11,11 +12,16 @@ import pytest
 from solstone.think.link.paths import (
     DEFAULT_RELAY_URL,
     LinkState,
+    generate_totp_secret,
+    link_root,
     load_service_token,
+    load_totp_secret,
     relay_url,
     save_service_token,
+    save_totp_secret,
     service_token_path,
     state_path,
+    totp_secret_path,
 )
 
 
@@ -146,3 +152,54 @@ def test_load_service_token_reads_legacy_account_key(
     new_payload = json.loads(token_path.read_text("utf-8"))
     assert "service_token" in new_payload
     assert legacy_key not in new_payload
+
+
+def test_load_totp_secret_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_journal(monkeypatch, tmp_path)
+
+    assert load_totp_secret() is None
+
+
+def test_save_and_load_totp_secret_roundtrip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_journal(monkeypatch, tmp_path)
+
+    save_totp_secret("SECRET")
+
+    secret_path = totp_secret_path()
+    assert load_totp_secret() == "SECRET"
+    assert secret_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_save_totp_secret_is_atomic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_journal(monkeypatch, tmp_path)
+
+    save_totp_secret("SECRET")
+
+    secret_path = totp_secret_path()
+    assert secret_path.exists()
+    assert not any(path.name.endswith(".tmp") for path in secret_path.parent.iterdir())
+
+
+def test_generate_totp_secret_shape() -> None:
+    first = generate_totp_secret()
+    second = generate_totp_secret()
+
+    padded = first + "=" * ((8 - len(first) % 8) % 8)
+    decoded = base64.b32decode(padded)
+    assert "=" not in first
+    assert len(decoded) >= 20
+    assert first != second
+
+
+def test_totp_secret_path_is_link_root_totp_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_journal(monkeypatch, tmp_path)
+
+    assert totp_secret_path() == link_root() / "totp.json"

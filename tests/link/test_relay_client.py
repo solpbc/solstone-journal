@@ -16,7 +16,9 @@ def _legacy_token_key() -> str:
     return "account" + "_token"
 
 
-def _client_with_capture() -> tuple[relay_client.RelayClient, list[str]]:
+def _client_with_capture(
+    *, totp_secret: str | None = None
+) -> tuple[relay_client.RelayClient, list[str]]:
     captured_tokens: list[str] = []
     client = relay_client.RelayClient(
         instance_id="instance.test",
@@ -25,6 +27,7 @@ def _client_with_capture() -> tuple[relay_client.RelayClient, list[str]]:
         service_token=None,
         on_service_token=captured_tokens.append,
         ca_pubkey_spki_pem="pem",
+        totp_secret=totp_secret,
     )
     return client, captured_tokens
 
@@ -68,3 +71,85 @@ def test_enroll_rejects_response_without_service_token(
         asyncio.run(client.enroll_if_needed())
 
     assert captured_tokens == []
+
+
+def test_enroll_home_includes_totp_secret_when_provided(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[tuple[str, dict[str, Any]]] = []
+
+    def post_json(url: str, body: dict[str, Any]) -> dict[str, str]:
+        captured.append((url, body))
+        return {"service_token": "tok"}
+
+    monkeypatch.setattr(relay_client, "_post_json_sync", post_json)
+
+    token = relay_client.enroll_home(
+        "https://relay.test",
+        instance_id="instance.test",
+        ca_pubkey="pem",
+        home_label="home.test",
+        totp_secret="SECRET",
+    )
+
+    assert token == "tok"
+    assert captured == [
+        (
+            "https://relay.test/enroll/home",
+            {
+                "instance_id": "instance.test",
+                "ca_pubkey": "pem",
+                "home_label": "home.test",
+                "totp_secret": "SECRET",
+            },
+        )
+    ]
+
+
+def test_enroll_home_omits_totp_secret_when_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[tuple[str, dict[str, Any]]] = []
+
+    def post_json(url: str, body: dict[str, Any]) -> dict[str, str]:
+        captured.append((url, body))
+        return {"service_token": "tok"}
+
+    monkeypatch.setattr(relay_client, "_post_json_sync", post_json)
+
+    token = relay_client.enroll_home(
+        "https://relay.test",
+        instance_id="instance.test",
+        ca_pubkey="pem",
+        home_label="home.test",
+    )
+
+    assert token == "tok"
+    assert captured == [
+        (
+            "https://relay.test/enroll/home",
+            {
+                "instance_id": "instance.test",
+                "ca_pubkey": "pem",
+                "home_label": "home.test",
+            },
+        )
+    ]
+
+
+def test_enroll_if_needed_threads_totp_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, captured_tokens = _client_with_capture(totp_secret="SECRET")
+    captured: list[tuple[str, dict[str, Any]]] = []
+
+    def post_json(url: str, body: dict[str, Any]) -> dict[str, str]:
+        captured.append((url, body))
+        return {"service_token": "tok"}
+
+    monkeypatch.setattr(relay_client, "_post_json_sync", post_json)
+
+    asyncio.run(client.enroll_if_needed())
+
+    assert captured_tokens == ["tok"]
+    assert captured[0][1]["totp_secret"] == "SECRET"

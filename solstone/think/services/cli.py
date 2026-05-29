@@ -13,7 +13,7 @@ import time
 import webbrowser
 
 from solstone.think.journal_config import get_journal_config_path
-from solstone.think.services import portal_client, scout
+from solstone.think.services import portal_client, scout, spl
 
 MIN_WAIT_SECONDS = 60
 MAX_WAIT_SECONDS = 3600
@@ -36,6 +36,8 @@ STDOUT_DISABLE_SUCCESS = "Scout disabled."
 STDOUT_DISABLE_PRESERVED_MANUAL_KEY = (
     "Scout disabled — your manually-pasted key was preserved."
 )
+STDOUT_SPL_SUCCESS = "sol private link enabled."
+STDOUT_SPL_DISABLE_SUCCESS = "sol private link disabled."
 
 ERROR_MESSAGES: dict[str, str] = {
     "consent_link_expired": (
@@ -70,16 +72,21 @@ ERROR_MESSAGES: dict[str, str] = {
     ),
     "rate_limited": "too many enable attempts from this network — wait an hour and try again.",
     "already_disabled": "solstone scout is not enabled on this machine.",
+    "spl_already_enabled": "sol private link is already enabled. No change needed.",
+    "spl_already_disabled": "sol private link is not enabled on this machine.",
+    "relay_unreachable": "The spl relay could not be reached. Check network and try again.",
     "journal_not_initialized": (
         "Journal config file is missing. Run journal setup, then retry."
     ),
-    "unknown_service": "the only supported service is scout.",
+    "unknown_service": "supported services are scout and spl.",
 }
 
 EXIT_CODES: dict[str, int] = {
     "already_enabled": 0,
     "manual_key_present": 0,
     "already_disabled": 0,
+    "spl_already_enabled": 0,
+    "spl_already_disabled": 0,
     "unknown_service": 2,
 }
 
@@ -92,7 +99,7 @@ class _CliError(Exception):
 
 class _ServicesArgumentParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
-        if "invalid choice" in message and "choose from scout" in message:
+        if "invalid choice" in message and "scout" in message:
             _print_error("unknown_service")
             raise SystemExit(EXIT_CODES["unknown_service"])
         super().error(message)
@@ -124,7 +131,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     service_parsers = enable_parser.add_subparsers(
         dest="service",
-        metavar="{scout}",
+        metavar="{scout,spl}",
         title="services",
         parser_class=_ServicesArgumentParser,
     )
@@ -147,6 +154,11 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     scout_parser.set_defaults(handler=_enable_scout)
+    spl_parser = service_parsers.add_parser(
+        "spl",
+        help="enable sol private link",
+    )
+    spl_parser.set_defaults(handler=_enable_spl)
 
     disable_parser = subparsers.add_parser(
         "disable",
@@ -154,7 +166,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     disable_service_parsers = disable_parser.add_subparsers(
         dest="service",
-        metavar="{scout}",
+        metavar="{scout,spl}",
         title="services",
         parser_class=_ServicesArgumentParser,
     )
@@ -163,6 +175,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="disable scout",
     )
     disable_scout_parser.set_defaults(handler=_disable_scout)
+    disable_spl_parser = disable_service_parsers.add_parser(
+        "spl",
+        help="disable sol private link",
+    )
+    disable_spl_parser.set_defaults(handler=_disable_spl)
     return parser
 
 
@@ -278,6 +295,52 @@ def _disable_scout(_args: argparse.Namespace) -> int:
         print(STDOUT_DISABLE_PRESERVED_MANUAL_KEY)
         return 0
     print(STDOUT_DISABLE_SUCCESS)
+    return 0
+
+
+def _enable_spl(_args: argparse.Namespace) -> int:
+    if not get_journal_config_path().exists():
+        _print_error("journal_not_initialized")
+        return 1
+
+    if spl.is_spl_enabled():
+        _print_error("spl_already_enabled")
+        return EXIT_CODES["spl_already_enabled"]
+
+    try:
+        spl.enable_spl()
+    except spl.JournalNotInitializedError:
+        _print_error("journal_not_initialized")
+        return 1
+    except spl.RelayUnreachableError:
+        _print_error("relay_unreachable")
+        return 1
+    except spl.RelayResponseError:
+        _print_error("unexpected_payload")
+        return 1
+    except Exception:
+        _print_error("write_failed")
+        return 1
+
+    print(STDOUT_SPL_SUCCESS)
+    return 0
+
+
+def _disable_spl(_args: argparse.Namespace) -> int:
+    try:
+        outcome = spl.disable_spl()
+    except spl.JournalNotInitializedError:
+        _print_error("journal_not_initialized")
+        return 1
+    except Exception:
+        _print_error("write_failed")
+        return 1
+
+    if not outcome.was_enabled:
+        _print_error("spl_already_disabled")
+        return EXIT_CODES["spl_already_disabled"]
+
+    print(STDOUT_SPL_DISABLE_SUCCESS)
     return 0
 
 
