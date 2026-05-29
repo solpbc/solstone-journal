@@ -86,12 +86,14 @@ from solstone.think.link.paths import (
     nonces_path,
     relay_url,
 )
-from solstone.think.utils import get_journal, now_ms
+from solstone.think.utils import get_config, get_journal, now_ms
 
 logger = logging.getLogger(__name__)
 MANUAL_CODE_RE = re.compile(rf"^[0-9A-HJKMNP-TV-Z]{{{MANUAL_CODE_LEN}}}$")
 _SENDER_INSTANCE_ID_RE = re.compile(r"^[A-Za-z0-9-]{1,256}$")
 VALID_ROLES = {"phone", "observer", "peer"}
+# The watcher emits only lan/ula today; vpn stays empty until a scope is wired.
+VPN_SCOPES = {"vpn"}
 journal_sources = import_module("solstone.apps.import.journal_sources")
 create_state_directory = journal_sources.create_state_directory
 load_journal_source_by_fingerprint = journal_sources.load_journal_source_by_fingerprint
@@ -219,6 +221,44 @@ def _is_lan_accessible() -> bool:
     return True
 
 
+def _read_posture() -> str:
+    """Read link.posture from journal config; exact-match, no normalization."""
+    cfg = get_config()
+    link_cfg = cfg.get("link") if isinstance(cfg, dict) else None
+    if isinstance(link_cfg, dict):
+        posture = link_cfg.get("posture")
+        if isinstance(posture, str) and posture == "spl":
+            return "spl"
+    return "direct"
+
+
+def _derive_relay_state(token_present: bool) -> str:
+    """Return pre-mechanism relay attachment state.
+
+    connecting/parked are valid contract values but are not produced until
+    parking is wired.
+    """
+    return "offline" if token_present else "not-enrolled"
+
+
+def _derive_reachability(
+    lan_accessible: bool,
+    posture: str,
+    relay_state: str,
+) -> str:
+    if not lan_accessible:
+        return "lan-unreachable"
+    if posture == "direct":
+        return "online"
+    # posture == "spl": map relay_state. "reconnecting" is reserved.
+    return {
+        "connecting": "finishing-setup",
+        "parked": "online",
+        "offline": "offline",
+        "not-enrolled": "finishing-setup",
+    }[relay_state]
+
+
 # ---------------------------------------------------------------------------
 # dashboard
 # ---------------------------------------------------------------------------
@@ -237,15 +277,31 @@ def api_status() -> Any:
     """Snapshot of link-service state for the dashboard header."""
     state = LinkState.load_or_create()
     token = load_service_token()
+    token_present = token is not None
     ca_fp = _ca_fingerprint() if ca_dir().exists() else None
+    lan_accessible = _is_lan_accessible()
+    posture = _read_posture()
+    relay_state = _derive_relay_state(token_present)
+    reachability = _derive_reachability(lan_accessible, posture, relay_state)
+    home_address = _resolve_host_port() if lan_accessible else None
+    vpn_candidates = [
+        {"label": ep.scope, "address": f"{ep.ip}:{ep.port}"}
+        for ep in _current_local_endpoints()
+        if ep.scope in VPN_SCOPES
+    ]
     return jsonify(
         {
             "instance_id": state.instance_id,
             "home_label": state.home_label,
-            "enrolled": token is not None,
+            "enrolled": token_present,
             "relay_url": relay_url(),
             "ca_fingerprint": ca_fp,
-            "lan_accessible": _is_lan_accessible(),
+            "lan_accessible": lan_accessible,
+            "posture": posture,
+            "reachability": reachability,
+            "relay_state": relay_state,
+            "home_address": home_address,
+            "vpn": {"active": None, "candidates": vpn_candidates},
         }
     )
 
