@@ -43,10 +43,21 @@ def _complete(name: str, ts: int = 1, facet: str | None = None) -> dict:
     return event
 
 
-def _fail(name: str, ts: int = 1, facet: str | None = None) -> dict:
+def _fail(
+    name: str,
+    ts: int = 1,
+    facet: str | None = None,
+    *,
+    state: str | None = None,
+    reason_code: str | None = None,
+) -> dict:
     event = {"event": "talent.fail", "ts": ts, "mode": "daily", "name": name}
     if facet:
         event["facet"] = facet
+    if state:
+        event["state"] = state
+    if reason_code:
+        event["reason_code"] = reason_code
     return event
 
 
@@ -210,6 +221,33 @@ def test_run_daily_prompts_only_reruns_latest_failures(daily_journal, monkeypatc
         DAY,
         "001_daily.jsonl",
         [_complete("alpha"), _fail("beta")],
+    )
+    dispatched: list[tuple[str, dict]] = []
+    _install_daily_mocks(monkeypatch, mod, _single_configs("alpha", "beta"), dispatched)
+
+    _run_daily_with_writer(mod, daily_journal, DAY, "002_daily.jsonl")
+
+    assert [name for name, _config in dispatched] == ["beta"]
+    skips = [
+        event
+        for event in _read_jsonl(
+            daily_journal / "chronicle" / DAY / "health" / "002_daily.jsonl"
+        )
+        if event["event"] == "talent.skip"
+    ]
+    assert [event["name"] for event in skips] == ["alpha"]
+
+
+def test_run_daily_prompts_reruns_no_output_failures(daily_journal, monkeypatch):
+    mod = importlib.import_module("solstone.think.thinking")
+    _write_health(
+        daily_journal,
+        DAY,
+        "001_daily.jsonl",
+        [
+            _complete("alpha"),
+            _fail("beta", state="error", reason_code="no_output"),
+        ],
     )
     dispatched: list[tuple[str, dict]] = []
     _install_daily_mocks(monkeypatch, mod, _single_configs("alpha", "beta"), dispatched)
@@ -459,6 +497,26 @@ def test_main_withholds_daily_marker_when_applicable_unit_incomplete(
     health = _prepare_main_day(journal_copy, day)
     _write_health(journal_copy, day, "001_daily.jsonl", [_complete("alpha")])
     _patch_main(monkeypatch, mod, {("alpha", None), ("beta", None)})
+    monkeypatch.setattr("sys.argv", ["sol think", "--day", day])
+
+    mod.main()
+
+    assert not (health / "daily.updated").exists()
+
+
+def test_main_withholds_daily_marker_when_no_output_failure_is_incomplete(
+    journal_copy, monkeypatch
+):
+    mod = importlib.import_module("solstone.think.thinking")
+    day = "20990314"
+    health = _prepare_main_day(journal_copy, day)
+    _write_health(
+        journal_copy,
+        day,
+        "001_daily.jsonl",
+        [_fail("alpha", state="error", reason_code="no_output")],
+    )
+    _patch_main(monkeypatch, mod, {("alpha", None)})
     monkeypatch.setattr("sys.argv", ["sol think", "--day", day])
 
     mod.main()

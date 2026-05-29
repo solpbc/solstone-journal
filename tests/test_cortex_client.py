@@ -405,6 +405,32 @@ def test_get_agent_end_state_error(tmp_path, monkeypatch):
     assert get_use_end_state(use_id) == "error"
 
 
+def test_get_agent_end_state_no_output_maps_to_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    talents_dir = tmp_path / "talents"
+    talents_dir.mkdir()
+    unified_dir = talents_dir / "chat"
+    unified_dir.mkdir()
+
+    use_id = "1234567890123"
+    (unified_dir / f"{use_id}.jsonl").write_text(
+        json.dumps({"event": "request", "prompt": "hello"})
+        + "\n"
+        + json.dumps(
+            {
+                "event": "error",
+                "error": "no_output: expects-final cogitate run finished without "
+                "emitting a final result",
+                "reason_code": "no_output",
+                "terminal": True,
+            }
+        )
+        + "\n"
+    )
+
+    assert get_use_end_state(use_id) == "error"
+
+
 def test_get_agent_end_state_running(tmp_path, monkeypatch):
     """Test get_use_end_state returns 'running' for active agents."""
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))

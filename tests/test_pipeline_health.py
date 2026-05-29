@@ -278,6 +278,51 @@ def test_agent_failure_promotes_warning(pipeline_journal):
     ]
 
 
+def test_no_output_failure_is_incomplete_and_summarized(pipeline_journal):
+    day = "20990107"
+    _write_jsonl(
+        pipeline_journal / "chronicle" / day / "health" / "1_daily.jsonl",
+        [
+            {
+                "event": "talent.fail",
+                "mode": "daily",
+                "name": "alpha",
+                "use_id": "a-1",
+                "state": "error",
+                "reason_code": "no_output",
+                "ts": 1,
+            },
+            {
+                "event": "talent.complete",
+                "mode": "daily",
+                "name": "beta",
+                "use_id": "b-1",
+                "state": "finish",
+                "ts": 1,
+            },
+        ],
+    )
+
+    assert read_completed_units(day) == {("daily", "beta", None)}
+
+    summary = summarize_pipeline_day(day)
+    assert summary["status"] == "warning"
+    assert summary["talents"]["completed"] == 1
+    assert summary["talents"]["failed"] == 1
+    assert summary["talents"]["failed_list"] == [
+        {"mode": "daily", "name": "alpha", "use_id": "a-1", "state": "error"}
+    ]
+    assert summary["anomalies"] == [
+        {
+            "kind": "talent_failure",
+            "mode": "daily",
+            "name": "alpha",
+            "use_id": "a-1",
+            "state": "error",
+        }
+    ]
+
+
 def test_failed_list_truncates_at_20(pipeline_journal):
     day = "20990103"
     events = [

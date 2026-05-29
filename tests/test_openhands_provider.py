@@ -49,6 +49,26 @@ def _run_config(monkeypatch, tmp_path, **overrides):
     return config
 
 
+def _emit_final_action(fake_openhands, content: str):
+    return fake_openhands.ActionEvent(
+        reasoning_content=None,
+        thinking_blocks=[],
+        responses_reasoning_item=None,
+        tool_name="emit_final",
+        tool_call=SimpleNamespace(arguments=f'{{"content":"{content}"}}'),
+        tool_call_id="emit-1",
+        action=SimpleNamespace(content=content),
+    )
+
+
+def _install_emit_final_arun(fake_openhands, content: str) -> None:
+    async def emit_final(conversation):
+        for callback in conversation.callbacks:
+            callback(_emit_final_action(fake_openhands, content))
+
+    fake_openhands.Conversation.arun_impl = emit_final
+
+
 def test_fake_openhands_replaces_installed_sdk_modules(fake_openhands):
     from openhands.sdk import LLM
     from openhands.sdk.tool import ToolDefinition
@@ -386,6 +406,57 @@ def test_run_cogitate_uses_emit_final_branch_for_output_path(
     assert result is None
     assert [tool.name for tool in conversation.agent.tools] == ["sol", "emit_final"]
     assert conversation.agent.include_default_tools == []
+    error_events = [event for event in events if event["event"] == "error"]
+    assert len(error_events) == 1
+    assert error_events[0]["reason_code"] == "no_output"
+    assert error_events[0].get("terminal") is True
+    assert [event for event in events if event["event"] == "finish"] == []
+    assert [
+        event["event"] for event in events if event["event"] in ("finish", "error")
+    ] == ["error"]
+
+
+def test_run_cogitate_emits_no_output_for_whitespace_emit_final(
+    fake_openhands,
+    monkeypatch,
+    tmp_path,
+):
+    _install_emit_final_arun(fake_openhands, "   ")
+    config = _run_config(monkeypatch, tmp_path, output_path=str(tmp_path / "out.md"))
+    events: list[dict] = []
+
+    result = asyncio.run(openhands.run_cogitate(config, events.append))
+
+    assert result is None
+    error_events = [event for event in events if event["event"] == "error"]
+    assert len(error_events) == 1
+    assert error_events[0]["reason_code"] == "no_output"
+    assert error_events[0].get("terminal") is True
+    assert [event for event in events if event["event"] == "finish"] == []
+    assert [
+        event["event"] for event in events if event["event"] in ("finish", "error")
+    ] == ["error"]
+
+
+def test_run_cogitate_emits_finish_when_emit_final_has_content(
+    fake_openhands,
+    monkeypatch,
+    tmp_path,
+):
+    _install_emit_final_arun(fake_openhands, "No changes needed.")
+    config = _run_config(monkeypatch, tmp_path, output_path=str(tmp_path / "out.md"))
+    events: list[dict] = []
+
+    result = asyncio.run(openhands.run_cogitate(config, events.append))
+
+    assert result == "No changes needed."
+    finish_events = [event for event in events if event["event"] == "finish"]
+    assert len(finish_events) == 1
+    assert finish_events[0]["result"] == "No changes needed."
+    assert [event for event in events if event["event"] == "error"] == []
+    assert [
+        event["event"] for event in events if event["event"] in ("finish", "error")
+    ] == ["finish"]
 
 
 def test_run_cogitate_keeps_finish_branch_without_output_path(
@@ -396,11 +467,16 @@ def test_run_cogitate_keeps_finish_branch_without_output_path(
     config = _run_config(monkeypatch, tmp_path, schedule="segment")
     events: list[dict] = []
 
-    asyncio.run(openhands.run_cogitate(config, events.append))
+    result = asyncio.run(openhands.run_cogitate(config, events.append))
 
     conversation = fake_openhands.Conversation.instances[0]
+    assert result is None
     assert [tool.name for tool in conversation.agent.tools] == ["sol"]
     assert conversation.agent.include_default_tools == ["FinishTool"]
+    finish_events = [event for event in events if event["event"] == "finish"]
+    assert len(finish_events) == 1
+    assert finish_events[0]["result"] is None
+    assert [event for event in events if event["event"] == "error"] == []
 
 
 def test_run_cogitate_uses_emit_final_branch_for_daily_no_output(
@@ -417,6 +493,14 @@ def test_run_cogitate_uses_emit_final_branch_for_daily_no_output(
     assert not config.get("output_path")
     assert [tool.name for tool in conversation.agent.tools] == ["sol", "emit_final"]
     assert conversation.agent.include_default_tools == []
+    error_events = [event for event in events if event["event"] == "error"]
+    assert len(error_events) == 1
+    assert error_events[0]["reason_code"] == "no_output"
+    assert error_events[0].get("terminal") is True
+    assert [event for event in events if event["event"] == "finish"] == []
+    assert [
+        event["event"] for event in events if event["event"] in ("finish", "error")
+    ] == ["error"]
 
 
 def test_schedule_gated_cogitate_prompts_use_emit_final():

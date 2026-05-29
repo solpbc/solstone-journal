@@ -861,6 +861,21 @@ async def run_cogitate(
             )
 
         result = translator.result()
+        if expects_emit_final and not (result and result.strip()):
+            callback.emit(
+                {
+                    "event": "error",
+                    "error": (
+                        "no_output: expects-final cogitate run finished without "
+                        "emitting a final result"
+                    ),
+                    "reason_code": "no_output",
+                    "provider": provider,
+                    "terminal": True,
+                    "ts": now_ms(),
+                }
+            )
+            return None
         callback.emit(
             {
                 "event": "finish",
