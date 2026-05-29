@@ -3,6 +3,67 @@
 
 import importlib
 import json
+import logging
+import os
+
+
+def _write_jsonl(path, events):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for event in events:
+            handle.write(json.dumps(event) + "\n")
+
+
+def _segment_event(
+    event,
+    segment,
+    name=None,
+    ts=1,
+    **extra,
+):
+    record = {"event": event, "ts": ts, "mode": "segment", "segment": segment}
+    if name is not None:
+        record["name"] = name
+    record.update(extra)
+    return record
+
+
+def _dispatch(segment, name, ts=1):
+    return _segment_event("talent.dispatch", segment, name, ts)
+
+
+def _complete(segment, name, ts=1):
+    return _segment_event("talent.complete", segment, name, ts, state="finish")
+
+
+def _sense_complete(segment, density="active", ts=1):
+    return _segment_event("sense.complete", segment, ts=ts, density=density)
+
+
+def _complete_segment_events(segment):
+    return [
+        _dispatch(segment, "sense", 10),
+        _complete(segment, "sense", 11),
+        _sense_complete(segment, "active", 12),
+        _dispatch(segment, "entities", 13),
+        _complete(segment, "entities", 14),
+        _dispatch(segment, "documents", 15),
+        _complete(segment, "documents", 16),
+    ]
+
+
+def _seed_screen_segment(journal, day, segment="123456_300"):
+    segment_dir = journal / "chronicle" / day / "default" / segment
+    segment_dir.mkdir(parents=True, exist_ok=True)
+    (segment_dir / "screen.webm").write_bytes(b"raw")
+    (segment_dir / "screen.jsonl").write_text(
+        json.dumps({"raw": "screen.webm", "type": "screencast"})
+        + "\n"
+        + json.dumps({"timestamp": 0, "content": {}})
+        + "\n",
+        encoding="utf-8",
+    )
+    return segment_dir
 
 
 def test_scan_day(tmp_path, monkeypatch):
@@ -59,8 +120,64 @@ def test_scan_day(tmp_path, monkeypatch):
     assert js.days["20240101"]["day_bytes"] > 0
 
 
+def test_segments_pending_think_fold_failure_logs_and_defaults_zero(
+    tmp_path,
+    monkeypatch,
+    caplog,
+):
+    stats_mod = importlib.import_module("solstone.think.journal_stats")
+    journal = tmp_path
+    day = journal / "chronicle" / "20240101"
+    day.mkdir(parents=True)
+
+    def fail_classify(*_args, **_kwargs):
+        raise RuntimeError("fold exploded")
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    monkeypatch.setattr(stats_mod, "classify_segment_completion", fail_classify)
+    caplog.set_level(logging.WARNING)
+
+    js = stats_mod.JournalStats()
+    day_data = js.scan_day("20240101", str(day))
+
+    assert day_data["stats"]["segments_pending_think"] == 0
+    assert "segments_pending_think under-reported" in caplog.text
+
+
+def test_cache_invalidates_on_health_event(tmp_path, monkeypatch):
+    stats_mod = importlib.import_module("solstone.think.journal_stats")
+    journal = tmp_path
+    day_name = "20240101"
+    day = journal / "chronicle" / day_name
+    segment = "123456_300"
+    _seed_screen_segment(journal, day_name, segment)
+    _write_jsonl(
+        day / "health" / "001_segment.jsonl",
+        [_sense_complete(segment, "active", 1)],
+    )
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+
+    js1 = stats_mod.JournalStats()
+    js1.scan(str(journal), verbose=False, use_cache=True)
+    assert js1.days[day_name]["segments_pending_think"] == 1
+
+    cache_file = day / "stats.json"
+    new_health = day / "health" / "002_segment.jsonl"
+    _write_jsonl(new_health, _complete_segment_events(segment))
+    # Force a strict mtime increase so cache invalidation is stable on coarse FS.
+    newer = cache_file.stat().st_mtime + 2
+    os.utime(new_health, (newer, newer))
+
+    js2 = stats_mod.JournalStats()
+    js2.scan(str(journal), verbose=False, use_cache=True)
+
+    assert js2.days[day_name]["segments_pending_think"] == 0
+
+
 def test_token_usage(tmp_path, monkeypatch):
     stats_mod = importlib.import_module("solstone.think.journal_stats")
+    schema_mod = importlib.import_module("solstone.think.stats_schema")
     journal = tmp_path
     day1 = journal / "chronicle" / "20240101"
     day1.mkdir(parents=True)
@@ -163,7 +280,7 @@ def test_token_usage(tmp_path, monkeypatch):
 
     # Test JSON output includes token usage
     data = js.to_dict()
-    assert data["schema_version"] == 4
+    assert data["schema_version"] == schema_mod.SCHEMA_VERSION
     assert "generated_at" in data
     assert data["day_count"] == 2
     assert "tokens" in data

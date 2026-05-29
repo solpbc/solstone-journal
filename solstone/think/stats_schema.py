@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 DAY_FIELDS = (
     "transcript_sessions",
@@ -11,6 +11,7 @@ DAY_FIELDS = (
     "percept_frames",
     "percept_duration",
     "pending_segments",
+    "segments_pending_think",
     "outputs_processed",
     "outputs_pending",
     "day_bytes",
@@ -24,6 +25,7 @@ TOTAL_FIELDS = (
     "percept_frames",
     "percept_duration",
     "pending_segments",
+    "segments_pending_think",
     "outputs_processed",
     "outputs_pending",
     "day_bytes",

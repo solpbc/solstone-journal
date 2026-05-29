@@ -41,10 +41,9 @@ from solstone.think.facets import (
 )
 from solstone.think.pipeline_health import (
     SEGMENT_FLOOR_TALENTS,
+    classify_segment_completion,
     read_completed_units,
     read_segment_progress,
-    segment_fully_sensed,
-    segment_fully_thought,
 )
 from solstone.think.runner import run_task
 from solstone.think.sense_splitter import write_idle_stubs, write_sense_outputs
@@ -3422,32 +3421,8 @@ def main() -> None:
 
                 segments = cluster_segments(day)
                 progress = read_segment_progress(day)
-                blockers: list[dict[str, str]] = []
-                for seg in segments:
-                    key = seg["key"]
-                    if not segment_fully_sensed(seg["data_state"]):
-                        unsensed = ",".join(
-                            f"{modality}={state}"
-                            for modality, state in sorted(seg["data_state"].items())
-                            if state not in {"analyzed", "purged"}
-                        )
-                        blockers.append(
-                            {
-                                "segment": key,
-                                "dimension": "not_sensed",
-                                "detail": unsensed,
-                            }
-                        )
-                        continue
-                    ok, reason = segment_fully_thought(progress.get(key))
-                    if not ok:
-                        blockers.append(
-                            {
-                                "segment": key,
-                                "dimension": "not_thought",
-                                "detail": reason or "",
-                            }
-                        )
+                completion = classify_segment_completion(segments, progress)
+                blockers = completion.blockers
 
                 if daily_done and not blockers:
                     health_dir = day_path(day) / "health"

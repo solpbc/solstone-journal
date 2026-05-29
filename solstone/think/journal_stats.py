@@ -13,7 +13,12 @@ from typing import Dict
 from solstone.observe.sense import scan_day as sense_scan_day
 from solstone.observe.utils import VIDEO_EXTENSIONS, load_analysis_frames
 from solstone.think.activities import estimate_duration_minutes, load_activity_records
+from solstone.think.cluster import cluster_segments
 from solstone.think.facets import get_facets
+from solstone.think.pipeline_health import (
+    classify_segment_completion,
+    read_segment_progress,
+)
 from solstone.think.stats_schema import DAY_FIELDS, SCHEMA_VERSION
 from solstone.think.stats_schema import validate as validate_stats
 from solstone.think.talents import scan_day as generate_scan_day
@@ -62,6 +67,9 @@ class JournalStats:
             files.extend(talents_dir.glob("*.md"))
             files.extend(talents_dir.glob("*/*.json"))
             files.extend(talents_dir.glob("*/*.md"))
+
+        files.extend(day_dir.glob("health/*.jsonl"))
+        files.extend(day_dir.glob("health/*.updated"))
 
         if not files:
             return 0.0
@@ -259,6 +267,21 @@ class JournalStats:
         output_info = generate_scan_day(day)
         stats["outputs_processed"] = len(output_info["processed"])
         stats["outputs_pending"] = len(output_info["repairable"])
+
+        try:
+            completion = classify_segment_completion(
+                cluster_segments(day),
+                read_segment_progress(day),
+            )
+            stats["segments_pending_think"] = completion.not_thought
+        except Exception:
+            logger.warning(
+                "journal_stats: segment completion fold failed for %s; "
+                "segments_pending_think under-reported",
+                day,
+                exc_info=True,
+            )
+            stats["segments_pending_think"] = 0
 
         # --- Activities and heatmap from facets/*/activities/YYYYMMDD.jsonl ---
         weekday = datetime.strptime(day, "%Y%m%d").weekday()

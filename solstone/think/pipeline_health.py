@@ -10,7 +10,8 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 
-from solstone.think.utils import day_path, iter_segments, now_ms
+from solstone.think.cluster import cluster_segments
+from solstone.think.utils import day_path, now_ms, updated_days
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,28 @@ class SegmentProgress:
     dispatched: frozenset[str]
     completed: frozenset[str]
     unconfigured: frozenset[str]
+
+
+@dataclass(frozen=True)
+class SegmentCompletion:
+    """Per-segment completion verdict for clustered segments."""
+
+    blockers: list[dict[str, str]]
+    not_sensed: int
+    not_thought: int
+    total: int
+
+
+@dataclass(frozen=True)
+class SegmentBacklog:
+    """Cross-day segment completion backlog over updated days."""
+
+    days: tuple[str, ...]
+    not_thought: int
+    not_sensed: int
+    total: int
+    per_day: dict[str, SegmentCompletion]
+    errors: tuple[str, ...]
 
 
 def summarize_pipeline_day(day: str) -> dict:
@@ -149,16 +172,36 @@ def summarize_pipeline_day(day: str) -> dict:
     elif day < today and summary["runs"]["daily"]["count"] == 0:
         summary["anomalies"].append({"kind": "daily_agents_missing"})
 
-    if summary["runs"]["segment"]["count"] == 0:
-        try:
-            segs = list(iter_segments(day))
-        except Exception:
-            segs = []
-        if len(segs) >= 1:
-            summary["anomalies"].append({"kind": "segment_runs_missing"})
+    # Days with a health directory surface segment gaps here; degenerate
+    # zero-health days are still counted by stats and withheld by the daily gate.
+    try:
+        completion = classify_segment_completion(
+            cluster_segments(day),
+            read_segment_progress(day),
+        )
+        if completion.not_thought > 0:
+            # The kind now means segments sensed-but-not-thought, not zero runs.
+            summary["anomalies"].append(
+                {
+                    "kind": "segment_runs_missing",
+                    "not_thought": completion.not_thought,
+                    "not_sensed": completion.not_sensed,
+                    "total": completion.total,
+                }
+            )
+    except Exception:
+        logger.warning(
+            "pipeline_health: segment completion fold failed for %s",
+            day,
+            exc_info=True,
+        )
+        summary["anomalies"].append(
+            {"kind": "segment_runs_missing", "error": "fold_failed"}
+        )
 
     has_stale = any(
-        anomaly["kind"] in {"activity_agents_missing", "daily_agents_missing"}
+        anomaly["kind"]
+        in {"activity_agents_missing", "daily_agents_missing", "segment_runs_missing"}
         for anomaly in summary["anomalies"]
     )
     has_failure = any(
@@ -399,6 +442,82 @@ def segment_fully_thought(progress: SegmentProgress | None) -> tuple[bool, str |
     return True, None
 
 
+def classify_segment_completion(
+    segments: list[dict],
+    progress: dict[str, SegmentProgress],
+) -> SegmentCompletion:
+    """Purely classify clustered segment completion without journal reads/writes."""
+    blockers: list[dict[str, str]] = []
+    not_sensed = 0
+    not_thought = 0
+
+    for seg in segments:
+        key = seg["key"]
+        if not segment_fully_sensed(seg["data_state"]):
+            detail = ",".join(
+                f"{modality}={state}"
+                for modality, state in sorted(seg["data_state"].items())
+                if state not in {"analyzed", "purged"}
+            )
+            blockers.append(
+                {
+                    "segment": key,
+                    "dimension": "not_sensed",
+                    "detail": detail,
+                }
+            )
+            not_sensed += 1
+            continue
+
+        ok, reason = segment_fully_thought(progress.get(key))
+        if not ok:
+            blockers.append(
+                {
+                    "segment": key,
+                    "dimension": "not_thought",
+                    "detail": reason or "",
+                }
+            )
+            not_thought += 1
+
+    return SegmentCompletion(
+        blockers=blockers,
+        not_sensed=not_sensed,
+        not_thought=not_thought,
+        total=len(segments),
+    )
+
+
+def read_segment_backlog() -> SegmentBacklog:
+    """Sum segment-completion verdicts across updated_days() read-only."""
+    days = tuple(updated_days())
+    per_day: dict[str, SegmentCompletion] = {}
+    errors: list[str] = []
+
+    for day in days:
+        try:
+            per_day[day] = classify_segment_completion(
+                cluster_segments(day),
+                read_segment_progress(day),
+            )
+        except Exception:
+            logger.warning(
+                "pipeline_health: segment completion fold failed for %s",
+                day,
+                exc_info=True,
+            )
+            errors.append(day)
+
+    return SegmentBacklog(
+        days=days,
+        not_thought=sum(completion.not_thought for completion in per_day.values()),
+        not_sensed=sum(completion.not_sensed for completion in per_day.values()),
+        total=sum(completion.total for completion in per_day.values()),
+        per_day=per_day,
+        errors=tuple(errors),
+    )
+
+
 def pipeline_status_message(summary: dict) -> dict | None:
     """Return a short user-facing message for non-healthy summaries."""
     if summary.get("status") == "healthy":
@@ -414,6 +533,26 @@ def pipeline_status_message(summary: dict) -> dict | None:
         return {
             "status": "stale",
             "message": "Daily processing hasn't run yet",
+        }
+    seg = next(
+        (
+            anomaly
+            for anomaly in anomalies
+            if anomaly.get("kind") == "segment_runs_missing"
+        ),
+        None,
+    )
+    if seg is not None:
+        if seg.get("error"):
+            return {
+                "status": "stale",
+                "message": "Segment thinking status unavailable",
+            }
+        count = seg.get("not_thought", 0)
+        plural = "s" if count != 1 else ""
+        return {
+            "status": "stale",
+            "message": f"{count} segment{plural} awaiting thinking",
         }
     if any(anomaly.get("kind") == "talent_failure" for anomaly in anomalies):
         count = summary.get("talents", {}).get("failed", 0)

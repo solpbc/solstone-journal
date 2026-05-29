@@ -12,8 +12,11 @@ from pathlib import Path
 
 import pytest
 
+from solstone.think.cluster import cluster_segments
 from solstone.think.pipeline_health import (
     SegmentProgress,
+    classify_segment_completion,
+    read_segment_backlog,
     read_segment_progress,
     segment_fully_sensed,
     segment_fully_thought,
@@ -24,6 +27,9 @@ DAY = "20990401"
 STREAM = "default"
 SEGMENT = "090000_300"
 SEGMENT_B = "091000_300"
+SEGMENT_C = "092000_300"
+SEGMENT_D = "093000_300"
+SEGMENT_E = "094000_300"
 
 
 @pytest.fixture
@@ -163,6 +169,25 @@ def _run_daily_gate(journal: Path, day: str, monkeypatch) -> Path:
     monkeypatch.setattr("sys.argv", ["sol think", "--day", day])
     mod.main()
     return journal / "chronicle" / day / "health"
+
+
+def _build_all_gate_states(journal: Path, day: str) -> None:
+    _seed_segment(journal, day, SEGMENT)
+    _seed_segment(journal, day, SEGMENT_B, state="pending")
+    _seed_segment(journal, day, SEGMENT_C)
+    _seed_segment(journal, day, SEGMENT_D)
+    _seed_segment(journal, day, SEGMENT_E)
+    _write_health(journal, day, "001_daily.jsonl", [_daily_complete()])
+    _write_health(
+        journal,
+        day,
+        "002_segment.jsonl",
+        _complete_segment_events(SEGMENT)
+        + _complete_segment_events(SEGMENT_B)
+        + [_sense_complete(SEGMENT_C, "active", 20)]
+        + _complete_segment_events(SEGMENT_D)
+        + [_dispatch(SEGMENT_D, "screen", 30)],
+    )
 
 
 def test_read_segment_progress_folds_latest_terminal_and_segments(
@@ -307,6 +332,176 @@ def test_segment_fully_thought_requires_dispatched_completion():
     )
 
     assert segment_fully_thought(progress) == (False, "dispatched:screen")
+
+
+def test_classifier_stats_and_gate_agree_on_all_gate_states(
+    segment_journal,
+    monkeypatch,
+    caplog,
+):
+    from solstone.think.journal_stats import JournalStats
+
+    day = "20990402"
+    _build_all_gate_states(segment_journal, day)
+
+    completion = classify_segment_completion(
+        cluster_segments(day),
+        read_segment_progress(day),
+    )
+
+    assert completion.not_thought == 3
+    assert completion.not_sensed == 1
+    assert completion.total == 5
+    assert completion.blockers == [
+        {
+            "segment": SEGMENT_B,
+            "dimension": "not_sensed",
+            "detail": "screen=pending",
+        },
+        {
+            "segment": SEGMENT_C,
+            "dimension": "not_thought",
+            "detail": "floor:entities",
+        },
+        {
+            "segment": SEGMENT_D,
+            "dimension": "not_thought",
+            "detail": "dispatched:screen",
+        },
+        {
+            "segment": SEGMENT_E,
+            "dimension": "not_thought",
+            "detail": "no_sense_complete",
+        },
+    ]
+
+    stats = JournalStats().scan_day(
+        day,
+        str(segment_journal / "chronicle" / day),
+    )
+    assert stats["stats"]["segments_pending_think"] == completion.not_thought
+
+    caplog.set_level(logging.INFO)
+    health = _run_daily_gate(segment_journal, day, monkeypatch)
+
+    assert not (health / "daily.updated").exists()
+    assert str(completion.blockers) in caplog.text
+
+
+def test_classify_segment_completion_latest_terminal_wins(segment_journal):
+    day = "20990403"
+    fail_then_complete = SEGMENT
+    complete_then_fail = SEGMENT_B
+    _seed_segment(segment_journal, day, fail_then_complete)
+    _seed_segment(segment_journal, day, complete_then_fail)
+    _write_health(
+        segment_journal,
+        day,
+        "001_segment.jsonl",
+        [
+            _sense_complete(fail_then_complete, "active", 1),
+            _complete(fail_then_complete, "documents", 4),
+            _dispatch(fail_then_complete, "entities", 4),
+            _fail(fail_then_complete, "entities", 5),
+            _complete(fail_then_complete, "entities", 6),
+            _sense_complete(complete_then_fail, "active", 1),
+            _complete(complete_then_fail, "documents", 4),
+            _dispatch(complete_then_fail, "entities", 4),
+            _complete(complete_then_fail, "entities", 5),
+            _fail(complete_then_fail, "entities", 6),
+        ],
+    )
+
+    completion = classify_segment_completion(
+        cluster_segments(day),
+        read_segment_progress(day),
+    )
+
+    assert completion.not_thought == 1
+    assert completion.blockers == [
+        {
+            "segment": complete_then_fail,
+            "dimension": "not_thought",
+            "detail": "floor:entities",
+        }
+    ]
+
+
+def test_dropped_empty_modality_segment_is_not_counted(segment_journal):
+    day = "20990404"
+    _seed_segment(segment_journal, day, SEGMENT)
+    _seed_segment(segment_journal, day, SEGMENT_B, state="dropped")
+    _write_health(
+        segment_journal,
+        day,
+        "001_segment.jsonl",
+        _complete_segment_events(SEGMENT),
+    )
+
+    completion = classify_segment_completion(
+        cluster_segments(day),
+        read_segment_progress(day),
+    )
+
+    assert completion.total == 1
+    assert completion.blockers == []
+
+
+def test_read_segment_backlog_sums_updated_days(segment_journal):
+    day_one = "20990405"
+    day_two = "20990406"
+    day_three = "20990407"
+
+    _seed_segment(segment_journal, day_one, SEGMENT)
+    _seed_segment(segment_journal, day_one, SEGMENT_B, state="pending")
+    _write_health(
+        segment_journal,
+        day_one,
+        "001_segment.jsonl",
+        [_sense_complete(SEGMENT, "active", 1)],
+    )
+
+    _seed_segment(segment_journal, day_two, SEGMENT)
+    _seed_segment(segment_journal, day_two, SEGMENT_B)
+    _write_health(
+        segment_journal,
+        day_two,
+        "001_segment.jsonl",
+        _complete_segment_events(SEGMENT),
+    )
+
+    _seed_segment(segment_journal, day_three, SEGMENT)
+    _write_health(
+        segment_journal,
+        day_three,
+        "001_segment.jsonl",
+        [_sense_complete(SEGMENT, "active", 1)],
+    )
+
+    for day in (day_one, day_two):
+        health = segment_journal / "chronicle" / day / "health"
+        health.mkdir(parents=True, exist_ok=True)
+        (health / "stream.updated").touch()
+
+    bound = tuple(updated_days())
+    backlog = read_segment_backlog()
+
+    assert backlog.days == bound
+    assert backlog.days == (day_one, day_two)
+    assert set(backlog.per_day) == {day_one, day_two}
+    assert backlog.errors == ()
+    assert backlog.not_thought == sum(
+        completion.not_thought for completion in backlog.per_day.values()
+    )
+    assert backlog.not_sensed == sum(
+        completion.not_sensed for completion in backlog.per_day.values()
+    )
+    assert backlog.total == sum(
+        completion.total for completion in backlog.per_day.values()
+    )
+    assert backlog.not_thought == 2
+    assert backlog.not_sensed == 1
+    assert backlog.total == 4
 
 
 def test_daily_marker_written_when_daily_and_segments_complete(
