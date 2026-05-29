@@ -117,6 +117,13 @@ class HealthNote:
 
 
 @dataclass(frozen=True)
+class SegmentBacklogHealth:
+    not_thought: int
+    days_with_backlog: int
+    errors: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class HealthReport:
     generated_at: int
     range: tuple[str, str]
@@ -124,4 +131,5 @@ class HealthReport:
     capture_health: CaptureHealth
     synthesis_health: SynthesisHealth
     consumer_signal: ConsumerSignalHealth
+    segment_backlog: SegmentBacklogHealth
     notes: tuple[HealthNote, ...]

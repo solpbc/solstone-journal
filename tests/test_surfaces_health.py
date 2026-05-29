@@ -10,8 +10,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from click.testing import Result
 from typer.testing import CliRunner
 
+from solstone.think.pipeline_health import SegmentBacklog, SegmentCompletion
 from solstone.think.surfaces import health as health_surface
 
 _RUNNER = CliRunner()
@@ -183,6 +185,43 @@ def _write_pipeline_log(
         "".join(json.dumps(row) + "\n" for row in rows),
         encoding="utf-8",
     )
+
+
+def _segment_backlog(
+    per_day_counts: dict[str, int],
+    *,
+    errors: tuple[str, ...] = (),
+) -> SegmentBacklog:
+    per_day = {
+        day: SegmentCompletion(
+            blockers=[],
+            not_sensed=0,
+            not_thought=not_thought,
+            total=max(not_thought, 1),
+        )
+        for day, not_thought in per_day_counts.items()
+    }
+    return SegmentBacklog(
+        days=tuple(per_day_counts),
+        not_thought=sum(per_day_counts.values()),
+        not_sensed=0,
+        total=sum(completion.total for completion in per_day.values()),
+        per_day=per_day,
+        errors=errors,
+    )
+
+
+def _invoke_health_summary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Result:
+    _configure_env(tmp_path, monkeypatch)
+    _set_now(monkeypatch, _utc_dt("20260410"))
+    _minimal_facet_tree(tmp_path)
+
+    from solstone.think.call import call_app
+
+    return _RUNNER.invoke(call_app, ["health", "summary", "--day", "20260410"])
 
 
 def test_summary_metrics_from_controlled_range(tmp_path, monkeypatch):
@@ -364,6 +403,54 @@ def test_profile_entities_total_lives_on_consumer_signal(tmp_path, monkeypatch):
 
     assert report.consumer_signal.profile_entities_total == 2
     assert not hasattr(report.synthesis_health, "profile_entities_total")
+
+
+def test_segment_backlog_health_counts_days_with_backlog(tmp_path, monkeypatch):
+    _configure_env(tmp_path, monkeypatch)
+    _set_now(monkeypatch, _utc_dt("20260410"))
+    _minimal_facet_tree(tmp_path)
+    monkeypatch.setattr(
+        health_surface,
+        "read_segment_backlog",
+        lambda: _segment_backlog({"20260408": 2, "20260409": 0, "20260410": 1}),
+    )
+
+    report = health_surface.summary("20260410")
+
+    assert report.segment_backlog.not_thought == 3
+    assert report.segment_backlog.days_with_backlog == 2
+
+
+def test_segment_backlog_health_caught_up(tmp_path, monkeypatch):
+    _configure_env(tmp_path, monkeypatch)
+    _set_now(monkeypatch, _utc_dt("20260410"))
+    _minimal_facet_tree(tmp_path)
+    monkeypatch.setattr(
+        health_surface,
+        "read_segment_backlog",
+        lambda: _segment_backlog({}),
+    )
+
+    report = health_surface.summary("20260410")
+
+    assert report.segment_backlog.not_thought == 0
+    assert report.segment_backlog.days_with_backlog == 0
+    assert report.segment_backlog.errors == ()
+
+
+def test_segment_backlog_health_preserves_errors(tmp_path, monkeypatch):
+    _configure_env(tmp_path, monkeypatch)
+    _set_now(monkeypatch, _utc_dt("20260410"))
+    _minimal_facet_tree(tmp_path)
+    monkeypatch.setattr(
+        health_surface,
+        "read_segment_backlog",
+        lambda: _segment_backlog({}, errors=("20260101",)),
+    )
+
+    report = health_surface.summary("20260410")
+
+    assert report.segment_backlog.errors == ("20260101",)
 
 
 def test_silent_facet_note_ladder_thresholds(tmp_path, monkeypatch):
@@ -832,6 +919,73 @@ def test_talent_run_failures_24h_use_today_and_yesterday_day_indices(
     assert report.synthesis_health.talent_run_failures_24h == 2
 
 
+def test_cli_summary_renders_segment_backlog(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        health_surface,
+        "read_segment_backlog",
+        lambda: _segment_backlog({"20260409": 1, "20260410": 2}),
+    )
+
+    result = _invoke_health_summary(tmp_path, monkeypatch)
+
+    assert result.exit_code == 0
+    assert "3 segments across 2 days awaiting thinking" in result.stdout
+
+
+def test_cli_summary_renders_singular_segment_backlog(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        health_surface,
+        "read_segment_backlog",
+        lambda: _segment_backlog({"20260410": 1}),
+    )
+
+    result = _invoke_health_summary(tmp_path, monkeypatch)
+
+    assert result.exit_code == 0
+    assert "1 segment across 1 day awaiting thinking" in result.stdout
+
+
+def test_cli_summary_renders_segment_backlog_unavailable(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        health_surface,
+        "read_segment_backlog",
+        lambda: _segment_backlog({}, errors=("20260101",)),
+    )
+
+    result = _invoke_health_summary(tmp_path, monkeypatch)
+
+    assert result.exit_code == 0
+    assert "Segment thinking status unavailable" in result.stdout
+    assert "awaiting thinking" not in result.stdout
+
+
+def test_cli_summary_renders_partial_segment_backlog(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        health_surface,
+        "read_segment_backlog",
+        lambda: _segment_backlog({"20260409": 1, "20260410": 2}, errors=("bad",)),
+    )
+
+    result = _invoke_health_summary(tmp_path, monkeypatch)
+
+    assert result.exit_code == 0
+    assert "at least" in result.stdout
+    assert "awaiting thinking (status incomplete)" in result.stdout
+
+
+def test_cli_summary_omits_caught_up_segment_backlog(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        health_surface,
+        "read_segment_backlog",
+        lambda: _segment_backlog({}),
+    )
+
+    result = _invoke_health_summary(tmp_path, monkeypatch)
+
+    assert result.exit_code == 0
+    assert "awaiting thinking" not in result.stdout
+
+
 def test_cli_health_summary_full_range_json(tmp_path, monkeypatch):
     _configure_env(tmp_path, monkeypatch)
     _set_now(monkeypatch, _utc_dt("20260410"))
@@ -864,6 +1018,7 @@ def test_cli_health_summary_full_range_json(tmp_path, monkeypatch):
             "capture_health",
             "synthesis_health",
             "consumer_signal",
+            "segment_backlog",
             "notes",
         }
 

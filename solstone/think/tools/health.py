@@ -69,6 +69,20 @@ def _render_summary(report: HealthReport) -> None:
         "  indexer_last_rebuild_at: "
         + str(report.synthesis_health.indexer_last_rebuild_at)
     )
+    backlog = report.segment_backlog
+    n = backlog.not_thought
+    m = backlog.days_with_backlog
+    seg_word = "segment" if n == 1 else "segments"
+    day_word = "day" if m == 1 else "days"
+    if backlog.errors and n > 0:
+        typer.echo(
+            f"  at least {n} {seg_word} across {m} {day_word} "
+            "awaiting thinking (status incomplete)"
+        )
+    elif backlog.errors:
+        typer.echo("  Segment thinking status unavailable")
+    elif n > 0:
+        typer.echo(f"  {n} {seg_word} across {m} {day_word} awaiting thinking")
     typer.echo("Consumer Signals")
     typer.echo(
         f"  ledger_open_items_total: {report.consumer_signal.ledger_open_items_total}"

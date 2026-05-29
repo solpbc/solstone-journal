@@ -19,12 +19,14 @@ from typing import Any, Iterator
 from solstone.think.activities import load_activity_records
 from solstone.think.entities.journal import load_all_journal_entities
 from solstone.think.facets import get_facets
+from solstone.think.pipeline_health import read_segment_backlog
 from solstone.think.surfaces import ledger
 from solstone.think.surfaces.types import (
     CaptureHealth,
     ConsumerSignalHealth,
     HealthNote,
     HealthReport,
+    SegmentBacklogHealth,
     SynthesisHealth,
 )
 from solstone.think.utils import get_journal, segment_parse
@@ -450,6 +452,18 @@ def _build_consumer_signal_health() -> ConsumerSignalHealth:
     )
 
 
+def _build_segment_backlog_health() -> SegmentBacklogHealth:
+    backlog = read_segment_backlog()
+    days_with_backlog = sum(
+        1 for completion in backlog.per_day.values() if completion.not_thought > 0
+    )
+    return SegmentBacklogHealth(
+        not_thought=backlog.not_thought,
+        days_with_backlog=days_with_backlog,
+        errors=backlog.errors,
+    )
+
+
 def _build_report(day_from: str, day_to: str) -> HealthReport:
     generated_at = int(_resolve_now().timestamp() * 1000)
     facets = tuple(sorted(get_facets().keys()))
@@ -480,6 +494,7 @@ def _build_report(day_from: str, day_to: str) -> HealthReport:
         capture_health=capture_health,
         synthesis_health=synthesis_health,
         consumer_signal=_build_consumer_signal_health(),
+        segment_backlog=_build_segment_backlog_health(),
         notes=tuple(notes),
     )
 
