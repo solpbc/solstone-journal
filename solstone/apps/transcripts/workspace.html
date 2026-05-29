@@ -281,6 +281,21 @@ body.has-app-bar .tr-card {
   border-color: #ca8a04;
 }
 
+.tr-seg-awaiting {
+  opacity: 1;
+  border-style: solid;
+}
+
+.tr-seg-audio.tr-seg-awaiting {
+  background: rgba(245, 158, 11, 0.58);
+  border-color: #b45309;
+}
+
+.tr-seg-screen.tr-seg-awaiting {
+  background: rgba(251, 191, 36, 0.58);
+  border-color: #b45309;
+}
+
 .tr-seg-analyzing {
   opacity: 1;
   border-style: solid;
@@ -723,6 +738,25 @@ body.has-app-bar .tr-zoom {
       rgba(194, 234, 155, 0.2) 10px
     );
   border-color: #65a30d;
+}
+
+.tr-zoom-pill-awaiting {
+  border-style: solid;
+}
+
+.tr-zoom-pill-audio.tr-zoom-pill-awaiting {
+  background: rgba(245, 158, 11, 0.62);
+  border-color: #b45309;
+}
+
+.tr-zoom-pill-screen.tr-zoom-pill-awaiting {
+  background: rgba(251, 191, 36, 0.62);
+  border-color: #b45309;
+}
+
+.tr-zoom-pill-both.tr-zoom-pill-awaiting {
+  background: linear-gradient(to right, rgba(245, 158, 11, 0.64), rgba(251, 191, 36, 0.64));
+  border-color: #b45309;
 }
 
 .tr-zoom-pill-analyzing {
@@ -1656,6 +1690,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   const BTN_LABEL_PENDING = 'analyze now';
   const BTN_LABEL_FAILED = 'try again';
   const ANALYZING_LABEL = 'analyzing…';
+  const AWAITING_THINKING_LABEL = 'awaiting thinking';
   const BTN_TITLE = modality => `Process this segment's raw ${modality} observed data and generate analyzed content.`;
   const ANALYZE_POLL_INTERVAL_MS = 3000;
   const ANALYZE_POLL_MAX_MS = 30 * 60 * 1000;
@@ -2248,13 +2283,15 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     return { start, end };
   }
 
-  function addSegmentIndicator(type, startMin, endMin, column, streams = [], state = 'analyzed') {
+  function addSegmentIndicator(type, startMin, endMin, column, streams = [], state = 'analyzed', think = null) {
     const el = document.createElement('div');
     el.className = 'tr-seg ' + (type === 'screen' ? 'tr-seg-screen' : 'tr-seg-audio');
     if (state === 'pending') {
       el.classList.add('tr-seg-pending');
     } else if (state === 'analyzing') {
       el.classList.add('tr-seg-analyzing');
+    } else if (think === 'awaiting') {
+      el.classList.add('tr-seg-awaiting');
     }
     el.style.top = y(startMin) + 'px';
     el.style.height = Math.max(2, y(endMin) - y(startMin)) + 'px';
@@ -2270,7 +2307,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     const streamHead = sortedStreams.slice(0, 3).join(' + ');
     const streamToken = sortedStreams.length > 3 ? streamHead + ' +' + (sortedStreams.length - 3) : streamHead;
     const streamSuffix = sortedStreams.length ? ' · ' + streamToken : '';
-    const stateSuffix = state === 'pending' ? ' · pending' : state === 'analyzing' ? ' · analyzing' : '';
+    const stateSuffix = state === 'pending' ? ' · pending' : state === 'analyzing' ? ' · analyzing' : (think === 'awaiting' ? ' · ' + AWAITING_THINKING_LABEL : '');
     el.title = hhmm(startMin) + ' – ' + hhmm(endMin) + ' (' + (endMin - startMin) + ' min, ' + type + streamSuffix + stateSuffix + ')';
     el.addEventListener('click', e => {
       e.stopPropagation();
@@ -2426,6 +2463,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         pill.classList.add('tr-zoom-pill-analyzing');
       } else if (hasPendingAdvertised) {
         pill.classList.add('tr-zoom-pill-pending');
+      } else if (seg.think === 'awaiting') {
+        pill.classList.add('tr-zoom-pill-awaiting');
       }
       const typeLabel = (hasAudio && hasScreen) ? 'audio and screen' : hasAudio ? 'audio' : 'screen';
 
@@ -2437,9 +2476,11 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       pill.style.height = Math.max(4, zoomY(visEnd) - zoomY(visStart)) + 'px';
       const duration = Math.round(visEnd - visStart);
       const typeDesc = (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : 'screen';
-      const pendingSuffix = hasAnalyzingAdvertised ? ' · analyzing' : hasPendingAdvertised ? ' · pending' : '';
-      pill.title = seg.start + ' – ' + seg.end + ' · ' + duration + ' min · ' + typeDesc + ' · ' + seg.stream + pendingSuffix;
-      pill.setAttribute('aria-label', 'Segment ' + seg.start + ' \u2013 ' + seg.end + ', ' + typeLabel + ', ' + seg.stream);
+      const segmentStatusLabel = hasAnalyzingAdvertised ? 'analyzing' : hasPendingAdvertised ? 'pending' : seg.think === 'awaiting' ? AWAITING_THINKING_LABEL : '';
+      const statusSuffix = segmentStatusLabel ? ' · ' + segmentStatusLabel : '';
+      const ariaStatusSuffix = segmentStatusLabel ? ', ' + segmentStatusLabel : '';
+      pill.title = seg.start + ' – ' + seg.end + ' · ' + duration + ' min · ' + typeDesc + ' · ' + seg.stream + statusSuffix;
+      pill.setAttribute('aria-label', 'Segment ' + seg.start + ' \u2013 ' + seg.end + ', ' + typeLabel + ', ' + seg.stream + ariaStatusSuffix);
       pill.dataset.key = seg.key;
 
       pill.addEventListener('click', () => selectSegment(seg));
@@ -3624,12 +3665,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       (data.audio || []).forEach(rg => {
         const s = parseTime(rg.start);
         const e = parseTime(rg.end);
-        addSegmentIndicator('audio', s, e, 0, rg.streams, rg.state || 'analyzed');
+        addSegmentIndicator('audio', s, e, 0, rg.streams, rg.state || 'analyzed', rg.think);
       });
       (data.screen || []).forEach(rg => {
         const s = parseTime(rg.start);
         const e = parseTime(rg.end);
-        addSegmentIndicator('screen', s, e, 1, rg.streams, rg.state || 'analyzed');
+        addSegmentIndicator('screen', s, e, 1, rg.streams, rg.state || 'analyzed', rg.think);
       });
 
       // Now-marker for today
@@ -3916,12 +3957,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         (data.audio || []).forEach(rg => {
           const s = parseTime(rg.start);
           const e = parseTime(rg.end);
-          addSegmentIndicator('audio', s, e, 0, rg.streams, rg.state || 'analyzed');
+          addSegmentIndicator('audio', s, e, 0, rg.streams, rg.state || 'analyzed', rg.think);
         });
         (data.screen || []).forEach(rg => {
           const s = parseTime(rg.start);
           const e = parseTime(rg.end);
-          addSegmentIndicator('screen', s, e, 1, rg.streams, rg.state || 'analyzed');
+          addSegmentIndicator('screen', s, e, 1, rg.streams, rg.state || 'analyzed', rg.think);
         });
       })
       .catch(() => {

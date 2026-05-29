@@ -6,7 +6,8 @@
       "state": "analyzed",
       "streams": [
         "default"
-      ]
+      ],
+      "think": "awaiting"
     },
     {
       "end": "14:15",
@@ -14,7 +15,8 @@
       "state": "analyzed",
       "streams": [
         "default"
-      ]
+      ],
+      "think": "awaiting"
     },
     {
       "end": "18:15",
@@ -22,7 +24,8 @@
       "state": "analyzed",
       "streams": [
         "default"
-      ]
+      ],
+      "think": "awaiting"
     }
   ],
   "screen": [
@@ -32,7 +35,8 @@
       "state": "analyzed",
       "streams": [
         "default"
-      ]
+      ],
+      "think": "awaiting"
     },
     {
       "end": "14:15",
@@ -40,7 +44,8 @@
       "state": "analyzed",
       "streams": [
         "default"
-      ]
+      ],
+      "think": "awaiting"
     },
     {
       "end": "18:15",
@@ -48,7 +53,8 @@
       "state": "analyzed",
       "streams": [
         "default"
-      ]
+      ],
+      "think": "awaiting"
     }
   ]
 }

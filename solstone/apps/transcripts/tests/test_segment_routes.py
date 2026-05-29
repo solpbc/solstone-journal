@@ -82,6 +82,54 @@ def _write_jsonl(path, entries: list[dict]) -> None:
     )
 
 
+def _segment_event(
+    event: str,
+    segment: str,
+    name: str | None = None,
+    ts: int = 1,
+    **extra,
+) -> dict:
+    record = {"event": event, "ts": ts, "mode": "segment", "segment": segment}
+    if name is not None:
+        record["name"] = name
+    record.update(extra)
+    return record
+
+
+def _dispatch(segment: str, name: str, ts: int = 1) -> dict:
+    return _segment_event("talent.dispatch", segment, name, ts)
+
+
+def _complete(segment: str, name: str, ts: int = 1) -> dict:
+    return _segment_event("talent.complete", segment, name, ts, state="finish")
+
+
+def _fail(segment: str, name: str, ts: int = 1) -> dict:
+    return _segment_event("talent.fail", segment, name, ts, state="error")
+
+
+def _sense_complete(segment: str, density: str = "active", ts: int = 1) -> dict:
+    return _segment_event("sense.complete", segment, ts=ts, density=density)
+
+
+def _complete_segment_events(segment: str) -> list[dict]:
+    return [
+        _dispatch(segment, "sense", 10),
+        _complete(segment, "sense", 11),
+        _sense_complete(segment, "active", 12),
+        _dispatch(segment, "entities", 13),
+        _complete(segment, "entities", 14),
+        _dispatch(segment, "documents", 15),
+        _complete(segment, "documents", 16),
+    ]
+
+
+def _write_health(journal_root, day: str, filename: str, entries: list[dict]) -> None:
+    path = journal_root / "chronicle" / day / "health" / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(path, entries)
+
+
 def _write_raw_pending_segment(
     journal_root,
     day: str,
@@ -202,6 +250,7 @@ def test_ranges_returns_object_shape_with_streams(client, journal_copy):
             "end": "09:15",
             "streams": ["alpha", "bravo"],
             "state": "analyzed",
+            "think": "awaiting",
         }
     ]
     assert data["screen"] == [
@@ -210,6 +259,7 @@ def test_ranges_returns_object_shape_with_streams(client, journal_copy):
             "end": "09:15",
             "streams": ["alpha", "bravo"],
             "state": "analyzed",
+            "think": "awaiting",
         }
     ]
 
@@ -228,6 +278,7 @@ def test_ranges_overflow_returns_full_list(client, journal_copy):
             "end": "09:15",
             "streams": ["alpha", "bravo", "charlie", "delta", "echo"],
             "state": "analyzed",
+            "think": "awaiting",
         }
     ]
 
@@ -245,6 +296,7 @@ def test_ranges_single_stream(client, journal_copy):
             "end": "09:15",
             "streams": ["solo"],
             "state": "analyzed",
+            "think": "awaiting",
         }
     ]
 
@@ -264,6 +316,7 @@ def test_day_returns_object_shape_with_streams(client, journal_copy):
             "end": "09:15",
             "streams": ["alpha", "bravo"],
             "state": "analyzed",
+            "think": "awaiting",
         }
     ]
     assert data["screen"] == [
@@ -272,6 +325,7 @@ def test_day_returns_object_shape_with_streams(client, journal_copy):
             "end": "09:15",
             "streams": ["alpha"],
             "state": "analyzed",
+            "think": "awaiting",
         }
     ]
     assert data["segments"] == [
@@ -282,6 +336,7 @@ def test_day_returns_object_shape_with_streams(client, journal_copy):
             "types": ["audio", "screen"],
             "stream": "alpha",
             "data_state": {"audio": "analyzed", "screen": "analyzed"},
+            "think": "awaiting",
         },
         {
             "key": "090500_300",
@@ -290,6 +345,7 @@ def test_day_returns_object_shape_with_streams(client, journal_copy):
             "types": ["audio"],
             "stream": "bravo",
             "data_state": {"audio": "analyzed"},
+            "think": "awaiting",
         },
     ]
 
@@ -298,8 +354,56 @@ def test_attach_streams_to_ranges_empty_when_no_overlap():
     result = _attach_streams_to_ranges([("09:00", "09:15")], [], "audio")
 
     assert result == [
-        {"start": "09:00", "end": "09:15", "streams": [], "state": "pending"}
+        {
+            "start": "09:00",
+            "end": "09:15",
+            "streams": [],
+            "state": "pending",
+            "think": None,
+        }
     ]
+
+
+def test_routes_expose_sense_and_think_axes(client, journal_copy):
+    day = "20990116"
+    thought_segment = "090000_300"
+    awaiting_segment = "090500_300"
+    recovered_segment = "091000_300"
+    for segment in (thought_segment, awaiting_segment, recovered_segment):
+        _write_segment(journal_copy, day, "default", segment)
+    _write_health(
+        journal_copy,
+        day,
+        "001_segment.jsonl",
+        _complete_segment_events(thought_segment)
+        + [_sense_complete(awaiting_segment, "active", 30)]
+        + [
+            _dispatch(recovered_segment, "sense", 40),
+            _complete(recovered_segment, "sense", 41),
+            _sense_complete(recovered_segment, "active", 42),
+            _dispatch(recovered_segment, "entities", 43),
+            _fail(recovered_segment, "entities", 44),
+            _complete(recovered_segment, "entities", 45),
+            _dispatch(recovered_segment, "documents", 46),
+            _complete(recovered_segment, "documents", 47),
+        ],
+    )
+
+    day_response = client.get(f"/app/transcripts/api/day/{day}")
+    ranges_response = client.get(f"/app/transcripts/api/ranges/{day}")
+
+    assert day_response.status_code == 200
+    segments = {seg["key"]: seg for seg in day_response.get_json()["segments"]}
+    assert segments[thought_segment]["think"] == "thought"
+    assert segments[awaiting_segment]["think"] == "awaiting"
+    assert segments[thought_segment]["think"] != segments[awaiting_segment]["think"]
+    assert segments[recovered_segment]["think"] == "thought"
+
+    assert ranges_response.status_code == 200
+    ranges = ranges_response.get_json()
+    assert ranges["audio"][0]["state"] == "analyzed"
+    assert ranges["audio"][0]["think"] == "awaiting"
+    assert ranges["screen"][0]["think"] == "awaiting"
 
 
 def test_ranges_best_state_wins_for_mixed_pending_and_analyzed(client, journal_copy):
@@ -330,6 +434,7 @@ def test_ranges_best_state_wins_for_mixed_pending_and_analyzed(client, journal_c
             "end": "09:15",
             "streams": ["default"],
             "state": "analyzed",
+            "think": "awaiting",
         }
     ]
 

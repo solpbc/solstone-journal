@@ -59,6 +59,11 @@ from solstone.think.data_state import (
 from solstone.think.entities.journal import get_journal_principal, load_journal_entity
 from solstone.think.media import MIME_TYPES
 from solstone.think.models import get_usage_cost
+from solstone.think.pipeline_health import (
+    read_segment_progress,
+    segment_fully_sensed,
+    segment_fully_thought,
+)
 from solstone.think.supervisor import is_supervisor_up
 from solstone.think.utils import (
     STREAM_RE,
@@ -121,6 +126,24 @@ def _stats_for_month(month: str, mtime_key: float) -> dict[str, int]:
     return stats
 
 
+def _attach_think_to_segments(segments: list[dict[str, Any]], day: str) -> None:
+    """Annotate each segment dict in place with a per-segment ``think`` verdict.
+
+    Reads the day's think-layer progress fold once and applies the canonical
+    per-segment sense/think verdicts. Read-only: the segment dicts are freshly
+    built per request by cluster.scan_day/cluster_segments (no caching), and no
+    journal state is written. ``think`` is ``None`` until a segment is fully
+    sensed, then ``"awaiting"`` (sensed, not yet thought) or ``"thought"``.
+    """
+    progress = read_segment_progress(day)
+    for seg in segments:
+        if not segment_fully_sensed(seg["data_state"]):
+            seg["think"] = None
+            continue
+        thought, _reason = segment_fully_thought(progress.get(seg["key"]))
+        seg["think"] = "thought" if thought else "awaiting"
+
+
 def _attach_streams_to_ranges(
     ranges: list[tuple[str, str]],
     segments: list[dict[str, Any]],
@@ -143,6 +166,7 @@ def _attach_streams_to_ranges(
         range_end = _to_min(end)
         streams: set[str] = set()
         state = DataState.PENDING.value
+        think: str | None = None
         for seg in segments:
             if content_type not in seg.get("types", ()):
                 continue
@@ -150,6 +174,11 @@ def _attach_streams_to_ranges(
             seg_end = _to_min(seg["end"])
             if seg_start < range_end and seg_end > range_start:
                 streams.add(seg["stream"])
+                seg_think = seg.get("think")
+                if seg_think == "awaiting":
+                    think = "awaiting"
+                elif seg_think == "thought" and think != "awaiting":
+                    think = "thought"
                 modality_state = seg.get("data_state", {}).get(content_type)
                 if modality_state == DataState.ANALYZED.value:
                     state = DataState.ANALYZED.value
@@ -159,7 +188,13 @@ def _attach_streams_to_ranges(
                 ):
                     state = DataState.ANALYZING.value
         out.append(
-            {"start": start, "end": end, "streams": sorted(streams), "state": state}
+            {
+                "start": start,
+                "end": end,
+                "streams": sorted(streams),
+                "state": state,
+                "think": think,
+            }
         )
     return out
 
@@ -192,6 +227,7 @@ def transcript_ranges(day: str) -> Any:
         return error_response(INVALID_DAY, status=404, detail="Day not found")
 
     audio_ranges, screen_ranges, segments = scan_day(day)
+    _attach_think_to_segments(segments, day)
     return jsonify(
         {
             "audio": _attach_streams_to_ranges(audio_ranges, segments, "audio"),
@@ -210,6 +246,7 @@ def transcript_segments(day: str) -> Any:
         return error_response(INVALID_DAY, status=404, detail="Day not found")
 
     segments = cluster_segments(day)
+    _attach_think_to_segments(segments, day)
     return jsonify({"segments": segments})
 
 
@@ -220,6 +257,7 @@ def transcript_day_data(day: str) -> Any:
         return error_response(INVALID_DAY, status=404, detail="Day not found")
 
     audio_ranges, screen_ranges, segments = scan_day(day)
+    _attach_think_to_segments(segments, day)
     return jsonify(
         {
             "audio": _attach_streams_to_ranges(audio_ranges, segments, "audio"),
