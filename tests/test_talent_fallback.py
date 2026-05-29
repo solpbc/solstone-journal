@@ -713,6 +713,69 @@ def test_fallback_event_emitted():
     assert fallback_events[0]["reason"] == "preflight"
 
 
+def test_run_talent_refresh_bypasses_output_exists_guard(tmp_path, monkeypatch):
+    from solstone.think import talents
+
+    out = tmp_path / "out"
+    out.write_text("STALE", encoding="utf-8")
+    events = []
+    called = {"execute": False}
+
+    async def fake_execute(config, emit_event):
+        called["execute"] = True
+        emit_event({"event": "finish", "ts": 0, "result": "FRESH"})
+
+    monkeypatch.setattr(talents, "_execute_with_tools", fake_execute)
+    monkeypatch.setattr(talents, "_run_pre_hooks", lambda config: {})
+
+    config = {
+        "type": "cogitate",
+        "name": "alpha",
+        "provider": "google",
+        "model": "x",
+        "prompt": "hi",
+        "output_path": str(out),
+        "refresh": True,
+    }
+
+    asyncio.run(talents._run_talent(config, events.append, dry_run=False))
+
+    finish_events = [event for event in events if event.get("event") == "finish"]
+    assert called["execute"] is True
+    assert finish_events[-1]["result"] == "FRESH"
+
+
+def test_run_talent_loads_existing_output_without_refresh(tmp_path, monkeypatch):
+    from solstone.think import talents
+
+    out = tmp_path / "out"
+    out.write_text("STALE", encoding="utf-8")
+    events = []
+    called = {"execute": False}
+
+    async def fake_execute(config, emit_event):
+        called["execute"] = True
+        emit_event({"event": "finish", "ts": 0, "result": "FRESH"})
+
+    monkeypatch.setattr(talents, "_execute_with_tools", fake_execute)
+    monkeypatch.setattr(talents, "_run_pre_hooks", lambda config: {})
+
+    config = {
+        "type": "cogitate",
+        "name": "alpha",
+        "provider": "google",
+        "model": "x",
+        "prompt": "hi",
+        "output_path": str(out),
+    }
+
+    asyncio.run(talents._run_talent(config, events.append, dry_run=False))
+
+    finish_events = [event for event in events if event.get("event") == "finish"]
+    assert called["execute"] is False
+    assert finish_events[-1]["result"] == "STALE"
+
+
 def test_recheck_requested_on_stale(monkeypatch):
     from solstone.think.talents import _execute_with_tools
 

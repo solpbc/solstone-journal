@@ -379,6 +379,38 @@ def test_run_daily_prompts_refreshes_dispatched_cogitate_with_output(
     ]
 
 
+def test_run_daily_prompts_refreshes_multifacet_cogitate_with_output(
+    daily_journal, monkeypatch
+):
+    mod = importlib.import_module("solstone.think.thinking")
+    configs = {
+        "alpha": {
+            "type": "cogitate",
+            "priority": 10,
+            "output": "md",
+            "multi_facet": True,
+        }
+    }
+    dispatched: list[tuple[str, dict]] = []
+    _install_daily_mocks(
+        monkeypatch,
+        mod,
+        configs,
+        dispatched,
+        enabled_facets={"work": {}},
+        active_facets={"work"},
+    )
+
+    _run_daily_with_writer(mod, daily_journal, DAY, "001_daily.jsonl")
+
+    assert len(dispatched) == 1
+    name, config = dispatched[0]
+    assert (name, config["facet"]) == ("alpha", "work")
+    assert config["output"] == "md"
+    assert config["refresh"] is True
+    assert config["env"] == {"SOL_DAY": DAY, "SOL_FACET": "work"}
+
+
 def _prepare_main_day(journal: Path, day: str) -> Path:
     health = journal / "chronicle" / day / "health"
     health.mkdir(parents=True)

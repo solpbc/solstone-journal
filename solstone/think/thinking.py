@@ -1197,6 +1197,26 @@ def run_segment_sense(
     return (total_success, total_failed, all_failed_names)
 
 
+def _apply_output_persistence(
+    request_config: dict, config: dict, *, force_refresh: bool
+) -> None:
+    """Configure a dispatch request's persistent-output fields in place.
+
+    Generators and cogitate talents that declare an explicit output format
+    produce a persisted file. For those, set ``output`` (so prepare_config
+    computes an output_path) and, when ``force_refresh`` is True, set
+    ``refresh`` (so the output-exists guard in _run_talent is bypassed and the
+    talent regenerates). Cogitate talents with no declared output are left
+    untouched — they do not persist. ``refresh`` is left absent when not
+    forcing, matching the existing dispatch-config representation.
+    """
+    is_generate = config["type"] == "generate"
+    if is_generate or config.get("output"):
+        request_config["output"] = config.get("output") or "md"
+        if force_refresh:
+            request_config["refresh"] = True
+
+
 def run_daily_prompts(
     day: str,
     verbose: bool,
@@ -1373,13 +1393,9 @@ def run_daily_prompts(
 
                         # Always pass day for instructions.day context
                         request_config: dict = {"facet": facet_name, "day": day}
-                        if is_generate:
-                            request_config["output"] = config.get("output", "md")
-                            request_config["refresh"] = True
-                        elif config.get("output"):
-                            # Cogitate agents with explicit output get auto-persisted
-                            request_config["output"] = config["output"]
-                            request_config["refresh"] = True
+                        _apply_output_persistence(
+                            request_config, config, force_refresh=True
+                        )
                         env: dict[str, str] = {
                             "SOL_DAY": day,
                             "SOL_FACET": facet_name,
@@ -1484,13 +1500,9 @@ def run_daily_prompts(
 
                     # Always pass day for instructions.day context
                     request_config: dict = {"day": day}
-                    if is_generate:
-                        request_config["output"] = config.get("output", "md")
-                        request_config["refresh"] = True
-                    elif config.get("output"):
-                        # Cogitate agents with explicit output get auto-persisted
-                        request_config["output"] = config["output"]
-                        request_config["refresh"] = True
+                    _apply_output_persistence(
+                        request_config, config, force_refresh=True
+                    )
                     env: dict[str, str] = {"SOL_DAY": day}
                     request_config["env"] = env
                     request_config["schedule"] = target_schedule
@@ -1765,13 +1777,9 @@ def run_weekly_prompts(
 
                         # Always pass day for instructions.day context
                         request_config: dict = {"facet": facet_name, "day": day}
-                        if is_generate:
-                            request_config["output"] = config.get("output", "md")
-                            if refresh:
-                                request_config["refresh"] = True
-                        elif config.get("output"):
-                            # Cogitate agents with explicit output get auto-persisted
-                            request_config["output"] = config["output"]
+                        _apply_output_persistence(
+                            request_config, config, force_refresh=refresh
+                        )
                         env: dict[str, str] = {
                             "SOL_DAY": day,
                             "SOL_FACET": facet_name,
@@ -1865,10 +1873,9 @@ def run_weekly_prompts(
 
                     # Always pass day for instructions.day context
                     request_config: dict = {"day": day}
-                    if is_generate:
-                        request_config["output"] = config.get("output", "md")
-                        if refresh:
-                            request_config["refresh"] = True
+                    _apply_output_persistence(
+                        request_config, config, force_refresh=refresh
+                    )
                     env: dict[str, str] = {"SOL_DAY": day}
                     if prompt_name == "weekly_reflection":
                         request_config["day"] = week_start

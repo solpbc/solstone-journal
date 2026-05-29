@@ -166,3 +166,118 @@ def test_run_weekly_prompts_sets_override_for_multifacet_weekly_reflection(
     )
     assert config["env"]["SOL_DAY"] == "20260308"
     assert config["env"]["SOL_FACET"] == "work"
+
+
+def test_run_weekly_prompts_persists_cogitate_with_output(tmp_path, monkeypatch):
+    from solstone.think.thinking import run_weekly_prompts
+
+    captured = _patch_weekly_runtime(
+        monkeypatch,
+        tmp_path / "journal",
+        {"digest": {"type": "cogitate", "priority": 50, "output": "md"}},
+    )
+
+    success, failed, failed_names = run_weekly_prompts(
+        day="20260310",
+        refresh=False,
+        verbose=False,
+    )
+
+    assert (success, failed, failed_names) == (1, 0, [])
+    assert len(captured) == 1
+    _prompt, name, config = captured[0]
+    assert name == "digest"
+    assert config["output"] == "md"
+    assert "refresh" not in config
+
+
+def test_run_weekly_prompts_refreshes_cogitate_with_output(tmp_path, monkeypatch):
+    from solstone.think.thinking import run_weekly_prompts
+
+    captured = _patch_weekly_runtime(
+        monkeypatch,
+        tmp_path / "journal",
+        {"digest": {"type": "cogitate", "priority": 50, "output": "md"}},
+    )
+
+    success, failed, failed_names = run_weekly_prompts(
+        day="20260310",
+        refresh=True,
+        verbose=False,
+    )
+
+    assert (success, failed, failed_names) == (1, 0, [])
+    assert len(captured) == 1
+    _prompt, name, config = captured[0]
+    assert name == "digest"
+    assert config["output"] == "md"
+    assert config["refresh"] is True
+
+
+def test_run_weekly_prompts_compose_output_helper_with_reflection_override(
+    tmp_path, monkeypatch
+):
+    from solstone.think.thinking import run_weekly_prompts
+
+    captured = _patch_weekly_runtime(
+        monkeypatch,
+        tmp_path / "journal",
+        {
+            "weekly_reflection": {
+                "type": "cogitate",
+                "priority": 90,
+                "output": "md",
+            }
+        },
+    )
+
+    success, failed, failed_names = run_weekly_prompts(
+        day="20260310",
+        refresh=False,
+        verbose=False,
+    )
+
+    assert (success, failed, failed_names) == (1, 0, [])
+    assert len(captured) == 1
+    _prompt, name, config = captured[0]
+    assert name == "weekly_reflection"
+    assert config["output"] == "md"
+    assert config["output_path"] == str(
+        tmp_path / "journal" / "reflections" / "weekly" / "20260308.md"
+    )
+    assert config["day"] == "20260308"
+    assert config["env"]["SOL_DAY"] == "20260308"
+    assert "refresh" not in config
+
+
+def test_run_weekly_prompts_refresh_survives_reflection_override(tmp_path, monkeypatch):
+    from solstone.think.thinking import run_weekly_prompts
+
+    captured = _patch_weekly_runtime(
+        monkeypatch,
+        tmp_path / "journal",
+        {
+            "weekly_reflection": {
+                "type": "cogitate",
+                "priority": 90,
+                "output": "md",
+            }
+        },
+    )
+
+    success, failed, failed_names = run_weekly_prompts(
+        day="20260310",
+        refresh=True,
+        verbose=False,
+    )
+
+    assert (success, failed, failed_names) == (1, 0, [])
+    assert len(captured) == 1
+    _prompt, name, config = captured[0]
+    assert name == "weekly_reflection"
+    assert config["refresh"] is True
+    assert config["output_path"] == str(
+        tmp_path / "journal" / "reflections" / "weekly" / "20260308.md"
+    )
+    assert config["output"] == "md"
+    assert config["day"] == "20260308"
