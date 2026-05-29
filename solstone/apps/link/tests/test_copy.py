@@ -20,23 +20,40 @@ def test_copy_constants_are_locked() -> None:
     assert copy.PAIR_CODE_TTL_SECONDS == NONCE_TTL_SECONDS
     assert copy.PAIR_CODE_TTL_SECONDS == 300
     assert copy.CLI_MANUAL_CODE_LABEL == "manual code"
-    assert copy.MODAL_TITLE == "pair a phone"
-    assert copy.STEP_1 == "open the camera on your phone"
-    assert copy.STEP_2 == "point at this code"
-    assert copy.STEP_3 == "tap to open solstone"
-    assert copy.MANUAL_CODE_LABEL == "can't scan? type this on your phone:"
-    assert copy.TRUST_COPY == "only scan with your own phone. expires in 5 minutes."
-    assert copy.LAN_URL_LABEL == "server:"
-    assert copy.DETAILS_DISCLOSURE == "details"
-    assert copy.CA_FP_LABEL == "server fingerprint:"
-    assert copy.CA_FP_NOTE == (
-        "the phone verifies this fingerprint when it scans, "
-        "so a wifi attacker can't impersonate this server."
+    assert copy.MODAL_TITLE == "pair a device"
+    assert copy.STEP_1 == "open the camera on the device you're adding"
+    assert copy.STEP_2 == "point it at this code"
+    assert copy.STEP_3 == "tap the link to open solstone"
+    assert copy.MANUAL_CODE_LABEL == "can't scan? type this on the device:"
+    assert copy.PAIR_NETWORK_LINE == (
+        "this device needs to be on your network (or your VPN) to pair. "
+        "expires in 5:00."
     )
+    assert copy.DETAILS_DISCLOSURE == "verify this is really your home"
+    assert copy.CA_FP_LABEL == "fingerprint"
+    assert copy.CA_FP_NOTE == (
+        "the device checks this when it scans, so no one on your wifi can "
+        "impersonate home."
+    )
+    assert copy.DEVICE_LABEL_FIELD_LABEL == "name this device"
     assert copy.DEVICE_LABEL_PLACEHOLDER == "e.g. my iPhone"
-    assert copy.DEVICE_LABEL_DEFAULT_FORMAT == "Phone — added {month} {day}"
-    assert copy.AUTO_REFRESH_HINT == "code refreshes automatically"
-    assert copy.EXPIRED_BUTTON == "code expired — generate new code"
+    assert copy.DEVICE_LABEL_DEFAULT_FORMAT == "device — added {month} {day}"
+    assert copy.EXPIRED_BUTTON == "this code expired — show a new one"
     assert copy.SUCCESS_HEADING == '"{label}" is now paired with your solstone'
     assert copy.SUCCESS_SUBHEAD == "{short_fp} · paired just now"
     assert copy.SUCCESS_DONE == "done"
+    assert copy.PAIR_ERROR_BODY == (
+        "can't start pairing — your solstone isn't reachable on a network address yet."
+    )
+    assert copy.SUCCESS_VERIFY_NOTE == (
+        "check the device you just paired — this fingerprint should match what it "
+        "shows. didn't do this?"
+    )
+    assert copy.SUCCESS_REMOVE_LABEL == "that wasn't me — remove"
+    assert copy.HERO_TITLE == "let's connect a device"
+    assert copy.HERO_BODY == (
+        "your journal lives here, on this machine. to read it from your phone or "
+        "laptop, that device needs a way to reach it. right now it can be reached "
+        "on your home network."
+    )
+    assert copy.HERO_HOW_REACH_LABEL == "how reach works ▸"

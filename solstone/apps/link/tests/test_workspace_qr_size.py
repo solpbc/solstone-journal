@@ -5,11 +5,14 @@
 
 from __future__ import annotations
 
+import html
 import re
 import threading
 
 import pytest
 from werkzeug.serving import make_server
+
+from solstone.apps.link import copy
 
 
 def _parse_px_dimension(value: str | None) -> int:
@@ -34,7 +37,7 @@ def live_server(link_env):
 
 def test_pair_modal_qr_renders_at_usable_size(live_server, page):
     page.goto(f"{live_server}/app/link/")
-    page.locator("#link-pair-btn").click()
+    page.locator("#link-hero-pair").click()
     page.wait_for_selector("#link-qr-container svg")
 
     svg = page.locator("#link-qr-container svg")
@@ -50,3 +53,16 @@ def test_pair_modal_qr_renders_at_usable_size(live_server, page):
     assert box is not None
     assert box["width"] >= 200
     assert box["height"] >= 200
+
+
+def test_workspace_qr_expired_overlay(link_env) -> None:
+    env = link_env()
+    response = env.client.get("/app/link/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    assert 'id="link-qr-expired"' in body
+    assert ".link-qr-container.is-expired" in body
+    assert copy.EXPIRED_BUTTON in html.unescape(body)
+    assert "qrContainer.classList.add('is-expired')" in body

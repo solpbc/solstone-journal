@@ -4,7 +4,8 @@
   <header class="link-header">
     <div id="link-status-panel" class="link-status-panel" aria-live="polite" aria-atomic="true">
       <span id="link-status-dot" class="link-dot is-amber" aria-hidden="true"></span>
-      <span id="link-status-text">{{ link_copy.STATUS_SENTENCES.checking }}</span>
+      <span id="link-status-skeleton" class="skeleton-block link-status-skeleton" aria-hidden="true"></span>
+      <span id="link-status-text" hidden>{{ link_copy.STATUS_SENTENCES.checking }}</span>
     </div>
     <p class="link-trust">{{ link_copy.HEADER_TRUST_LINE }}</p>
   </header>
@@ -15,6 +16,16 @@
       Start the supervisor with a LAN-bound port (for example <code>make dev PORT=0.0.0.0:5015</code>) or set <code>convey.host</code> in your journal config to a non-loopback interface, then reload this page.
     </p>
   </div>
+
+  <section id="link-first-run-hero" class="link-hero" hidden aria-labelledby="link-hero-title">
+    <div class="link-hero-icon" aria-hidden="true">📡</div>
+    <h2 id="link-hero-title">{{ link_copy.HERO_TITLE }}</h2>
+    <p class="link-hero-body">{{ link_copy.HERO_BODY }}</p>
+    <div class="link-hero-actions">
+      <button type="button" id="link-hero-pair" class="link-pair-btn">{{ link_copy.DEVICE_PAIR_CTA }}</button>
+      <button type="button" id="link-hero-how-reach" class="link-hero-how-reach">{{ link_copy.HERO_HOW_REACH_LABEL }}</button>
+    </div>
+  </section>
 
   <section id="link-reach-card" class="link-reach-card" aria-labelledby="link-reach-title" hidden>
     <div class="link-reach-heading-row">
@@ -49,7 +60,7 @@
     </div>
   </section>
 
-  <section class="link-paired-section" aria-labelledby="link-paired-h2">
+  <section id="link-paired-section" class="link-paired-section" aria-labelledby="link-paired-h2">
     <div class="link-section-heading">
       <div>
         <h2 id="link-paired-h2">{{ link_copy.DEVICE_SECTION_TITLE }}</h2>
@@ -57,7 +68,20 @@
       </div>
       <button type="button" class="link-pair-btn" id="link-pair-btn">{{ link_copy.DEVICE_PAIR_CTA }}</button>
     </div>
-    <div id="link-devices-list" class="link-devices-list" aria-live="polite"></div>
+    <div id="link-devices-list" class="link-devices-list" aria-live="polite">
+      <div class="link-device-row link-skeleton-row" aria-hidden="true">
+        <div class="link-device-main">
+          <div class="skeleton-line" style="width: 45%;"></div>
+          <div class="skeleton-line" style="width: 70%;"></div>
+        </div>
+      </div>
+      <div class="link-device-row link-skeleton-row" aria-hidden="true">
+        <div class="link-device-main">
+          <div class="skeleton-line" style="width: 45%;"></div>
+          <div class="skeleton-line" style="width: 70%;"></div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <section id="link-recent-section" class="link-recent-section" aria-labelledby="link-recent-h2" hidden>
@@ -90,38 +114,46 @@
           <code id="link-pair-manual-code"></code>
         </p>
 
-        <p class="link-pair-trust">{{ link_copy.TRUST_COPY }}</p>
+        <p class="link-pair-network">{{ link_copy.PAIR_NETWORK_LINE }}</p>
 
-        <p class="link-pair-lan">
-          {{ link_copy.LAN_URL_LABEL }}
-          <code id="link-pair-lan-url"></code>
-        </p>
+        <label class="link-modal-label link-pair-label-edit">
+          {{ link_copy.DEVICE_LABEL_FIELD_LABEL }}
+          <input type="text" id="link-device-label" placeholder="{{ link_copy.DEVICE_LABEL_PLACEHOLDER }}" data-default-label-format="{{ link_copy.DEVICE_LABEL_DEFAULT_FORMAT }}" maxlength="80" />
+        </label>
 
         <details class="link-pair-details">
           <summary>{{ link_copy.DETAILS_DISCLOSURE }}</summary>
           <p class="link-pair-details-body">
             <span class="link-pair-fp-label">{{ link_copy.CA_FP_LABEL }}</span>
             <code id="link-pair-ca-fp"></code>
+            <span class="link-pair-fp-note">— {{ link_copy.CA_FP_NOTE }}</span>
           </p>
-          <p class="link-pair-fp-note">{{ link_copy.CA_FP_NOTE }}</p>
+          <p class="link-pair-home">
+            <span class="link-pair-home-label">{{ link_copy.REACH_HOME_ADDRESS_LABEL }}</span>
+            <code id="link-pair-lan-url"></code>
+          </p>
         </details>
-
-        <label class="link-modal-label link-pair-label-edit">
-          Device label
-          <input type="text" id="link-device-label" placeholder="{{ link_copy.DEVICE_LABEL_PLACEHOLDER }}" data-default-label-format="{{ link_copy.DEVICE_LABEL_DEFAULT_FORMAT }}" maxlength="80" />
-        </label>
-
-        <p class="link-pair-refresh-hint">{{ link_copy.AUTO_REFRESH_HINT }}</p>
 
         <div class="link-modal-actions">
           <button type="button" id="link-pair-cancel" class="link-modal-cancel">cancel</button>
         </div>
       </div>
 
+      <div id="link-pair-error" class="link-pair-error" hidden>
+        <p>{{ link_copy.PAIR_ERROR_BODY }}</p>
+        <div class="link-modal-actions">
+          <button type="button" id="link-pair-error-cancel" class="link-modal-cancel">cancel</button>
+        </div>
+      </div>
+
       <div id="link-pair-success" class="link-pair-success" hidden>
-        <p class="link-pair-success-check">✓</p>
+        <p class="link-pair-success-check" aria-hidden="true">✓</p>
         <h4 id="link-pair-success-heading"></h4>
         <p id="link-pair-success-subhead"></p>
+        <div class="link-pair-success-verify">
+          <p>{{ link_copy.SUCCESS_VERIFY_NOTE }}</p>
+          <button type="button" id="link-pair-remove" class="link-pair-success-remove">{{ link_copy.SUCCESS_REMOVE_LABEL }}</button>
+        </div>
         <div class="link-modal-actions">
           <button type="button" id="link-pair-done">
             {{ link_copy.SUCCESS_DONE }}
@@ -204,9 +236,24 @@
   .link-trust { color: #666; font-size: 0.95em; margin: 0.45em 0 0; }
   .link-pair-btn { background: #1e6bd0; color: #fff; border: none; border-radius: 6px; padding: 0.6em 1.2em; cursor: pointer; font-weight: 500; }
   .link-pair-btn:hover { background: #184f9a; }
+  .skeleton-line, .skeleton-block { background: linear-gradient(90deg, #ededed 25%, #f5f5f5 50%, #ededed 75%); background-size: 200% 100%; animation: skeleton-pulse 1.4s ease-in-out infinite; border-radius: 4px; }
+  .skeleton-line { height: 0.85em; margin: 0.3em 0; }
+  .skeleton-block { height: 1.5em; }
+  @keyframes skeleton-pulse { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .link-status-skeleton { display: inline-block; width: 14em; max-width: 60vw; height: 1em; }
+  #link-status-text[hidden], #link-status-skeleton[hidden] { display: none; }
 
   .link-lan-nudge { background: #fff6d4; border: 1px solid #e6cf72; border-radius: 8px; padding: 1em; margin-bottom: 1.5em; font-size: 0.9em; }
   .link-lan-nudge code { background: rgba(0,0,0,0.06); padding: 0.1em 0.35em; border-radius: 3px; }
+  .link-hero { border: 1px solid #e4ded4; border-radius: 8px; background: #fffdfa; padding: 2em 1.5em; margin-bottom: 1.5em; text-align: center; }
+  .link-hero[hidden] { display: none; }
+  .link-hero-icon { font-size: 2.5em; line-height: 1; margin-bottom: 0.4em; }
+  .link-hero h2 { margin: 0 0 0.5em; font-size: 1.3em; color: #333; }
+  .link-hero-body { margin: 0 auto 1.25em; max-width: 32em; color: #555; line-height: 1.55; }
+  .link-hero-actions { display: flex; gap: 1em; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .link-hero-how-reach { background: transparent; border: none; color: #1e6bd0; cursor: pointer; font: inherit; font-weight: 500; min-height: 44px; padding: 0 0.5em; }
+  .link-hero-how-reach:hover { text-decoration: underline; }
+  .link-hero-how-reach:focus-visible, .link-hero-pair:focus-visible { outline: 2px solid #b06a1a; outline-offset: 2px; }
 
   .link-reach-card { border: 1px solid #e4ded4; border-radius: 8px; background: #fffdfa; padding: 1em; margin-bottom: 1.5em; overflow-wrap: anywhere; }
   .link-reach-card[hidden] { display: none; }
@@ -233,6 +280,7 @@
   .link-reach-upgrade a { color: #1e6bd0; font-weight: 500; }
 
   .link-section-heading { margin-bottom: 0.75em; }
+  .link-paired-section[hidden] { display: none; }
   .link-section-caption { margin: 0.2em 0 0; color: #777; font-size: 0.9em; }
   .link-devices-list { display: flex; flex-direction: column; gap: 0.5em; }
   .link-empty-state { background: #f9f8f5; border: 1px solid #ede9e1; border-radius: 8px; padding: 1em; }
@@ -318,22 +366,31 @@
   .link-qr-expired[hidden] { display: none; }
   .link-pair-expired-btn { border: none; border-radius: 5px; background: #1e6bd0; color: #fff; cursor: pointer; font-weight: 500; padding: 0.6em 1em; }
   .link-pair-steps { margin: 0; padding-left: 1.4em; line-height: 1.55; color: #333; }
-  .link-pair-manual, .link-pair-trust, .link-pair-lan, .link-pair-refresh-hint { grid-column: 1 / -1; margin: 0; }
+  .link-pair-manual, .link-pair-network { grid-column: 1 / -1; margin: 0; }
   .link-pair-manual code { display: inline-block; margin-left: 0.35em; font-family: ui-monospace, monospace; font-size: 1.2em; letter-spacing: 0.05em; }
-  .link-pair-trust, .link-pair-refresh-hint { color: #777; font-size: 0.85em; }
-  .link-pair-lan code { font-family: ui-monospace, monospace; color: #666; font-size: 1em; word-break: break-all; }
+  .link-pair-network { color: #555; }
   .link-pair-details { grid-column: 1 / -1; color: #777; font-size: 0.82em; }
   .link-pair-details summary { color: #777; cursor: pointer; }
   .link-pair-details code { word-break: break-all; }
   .link-pair-details-body { margin-bottom: 0.35em; }
-  .link-pair-fp-label { display: block; margin-bottom: 0.25em; }
-  .link-pair-fp-note { color: #888; margin-bottom: 0; }
+  .link-pair-fp-label { color: #777; margin-right: 0.4em; }
+  .link-pair-fp-note { color: #888; }
+  .link-pair-home { margin: 0.35em 0 0; }
+  .link-pair-home-label { color: #777; margin-right: 0.4em; }
   .link-pair-label-edit { grid-column: 1 / -1; }
+  .link-pair-error { padding: 1.5em 0.5em; text-align: center; }
+  .link-pair-error[hidden] { display: none; }
+  .link-pair-error p { color: #555; margin: 0 0 1.25em; }
   .link-pair-success { padding: 24px; text-align: center; }
   .link-pair-success[hidden] { display: none; }
   .link-pair-success-check { color: #1e7b42; font-size: 3em; line-height: 1; margin: 0 0 0.25em; }
   .link-pair-success h4 { margin: 0 0 0.35em; font-size: 1.15em; }
   .link-pair-success p { color: #666; }
+  .link-pair-success-verify { border: 1px solid #e4ded4; border-radius: 8px; background: #fcfaf6; padding: 0.9em 1em; margin: 1em 0; text-align: left; }
+  .link-pair-success-verify p { margin: 0 0 0.75em; color: #555; }
+  .link-pair-success-remove { min-height: 44px; border: 1px solid #d8b6ab; border-radius: 6px; background: #fff; color: #a53a1f; cursor: pointer; font: inherit; font-weight: 500; padding: 0.5em 1em; }
+  .link-pair-success-remove:hover { background: #fbeeea; }
+  .link-pair-success-remove:focus-visible, #link-pair-remove:focus-visible { outline: 2px solid #b06a1a; outline-offset: 2px; }
 
   @media (max-width: 540px) {
     .link-dashboard { padding: 1em; }
@@ -351,8 +408,13 @@
 (function () {
   const statusText = document.getElementById('link-status-text');
   const statusDot = document.getElementById('link-status-dot');
+  const statusSkeleton = document.getElementById('link-status-skeleton');
   const devicesList = document.getElementById('link-devices-list');
   const devicesCount = document.getElementById('link-devices-count');
+  const heroSection = document.getElementById('link-first-run-hero');
+  const heroPairBtn = document.getElementById('link-hero-pair');
+  const heroHowReach = document.getElementById('link-hero-how-reach');
+  const pairedSection = document.getElementById('link-paired-section');
   const recentSection = document.getElementById('link-recent-section');
   const recentList = document.getElementById('link-recent-list');
   const lanNudge = document.getElementById('link-lan-nudge');
@@ -368,6 +430,7 @@
   const postureSplLabel = document.getElementById('link-posture-spl-label');
   let devicesEverLoaded = false;
   let latestStatus = null;
+  let isFirstRun = false;
 
   const pairBtn = document.getElementById('link-pair-btn');
   const pairModal = document.getElementById('link-pair-modal');
@@ -380,13 +443,17 @@
   const manualCodeEl = document.getElementById('link-pair-manual-code');
   const lanUrlEl = document.getElementById('link-pair-lan-url');
   const caFpEl = document.getElementById('link-pair-ca-fp');
+  const pairError = document.getElementById('link-pair-error');
+  const pairErrorCancel = document.getElementById('link-pair-error-cancel');
   const pairSuccess = document.getElementById('link-pair-success');
   const pairSuccessHeading = document.getElementById('link-pair-success-heading');
   const pairSuccessSubhead = document.getElementById('link-pair-success-subhead');
+  const pairRemove = document.getElementById('link-pair-remove');
   const pairDone = document.getElementById('link-pair-done');
   let pairEventsCleanup = null;
   let expiryTimer = null;
   let autoRefreshFired = false;
+  let lastPairedFingerprint = '';
 
   const unpairModal = document.getElementById('link-unpair-modal');
   const unpairTitle = document.getElementById('link-unpair-title');
@@ -426,6 +493,11 @@
     if (siblingError && siblingError.classList.contains('surface-state-refresh-error')) {
       siblingError.remove();
     }
+  }
+
+  function revealStatusPanel() {
+    if (statusSkeleton) statusSkeleton.hidden = true;
+    statusText.hidden = false;
   }
 
   function selectStatusSentenceKey(data) {
@@ -483,7 +555,7 @@
   }
 
   function renderReach(data) {
-    if (data?.posture !== 'direct') {
+    if (isFirstRun || data?.posture !== 'direct') {
       reachCard.hidden = true;
       return;
     }
@@ -497,6 +569,17 @@
     renderVpnCandidates(candidates);
   }
 
+  function applyFirstRunGate() {
+    heroSection.hidden = !isFirstRun;
+    pairedSection.hidden = isFirstRun;
+    if (isFirstRun) {
+      reachCard.hidden = true;
+      recentSection.hidden = true;
+    } else if (latestStatus) {
+      renderReach(latestStatus);
+    }
+  }
+
   function updatePostureModal(data) {
     const label = data?.posture === 'spl'
       ? window.LinkCopy.POSTURE_SPL_MANAGE_LABEL
@@ -505,6 +588,7 @@
   }
 
   function applyStatus(data) {
+    revealStatusPanel();
     latestStatus = data || {};
     clearRefreshError('link-status-panel');
     setStatusSentence(selectStatusSentenceKey(latestStatus));
@@ -519,6 +603,7 @@
       applyStatus(data || {});
     } catch (err) {
       window.logError(err, { context: 'link: refreshStatus failed' });
+      revealStatusPanel();
       window.SurfaceState.replaceLoading('link-status-panel', window.SurfaceState.error({
         heading: "Can't reach pairing service",
         desc: window.CONVEY_COPY.RELOAD_HINT,
@@ -534,8 +619,10 @@
       clearRefreshError('link-devices-list');
       devicesEverLoaded = true;
       latestDevices = data.devices || [];
+      isFirstRun = latestDevices.length === 0;
       renderDevices(latestDevices);
       renderRecentlyPaired(latestDevices);
+      applyFirstRunGate();
     } catch (err) {
       window.logError(err, { context: 'link: refreshDevices failed' });
       if (!devicesEverLoaded) {
@@ -1005,6 +1092,7 @@
 
   function resetPairCodeState() {
     pairCodeBox.hidden = false;
+    pairError.hidden = true;
     pairSuccess.hidden = true;
     qrExpired.hidden = true;
     qrContainer.classList.remove('is-expired');
@@ -1032,6 +1120,7 @@
 
   async function requestPairCode() {
     clearExpiryTimer();
+    pairError.hidden = true;
     qrExpired.hidden = true;
     qrContainer.classList.remove('is-expired');
 
@@ -1068,18 +1157,23 @@
   }
 
   function handlePairComplete(payload) {
-    pairCodeBox.hidden = true;
-    pairSuccess.hidden = false;
     clearExpiryTimer();
-    pairSuccessHeading.textContent = window.LinkCopy.SUCCESS_HEADING.replace(
-      '{label}',
-      payload.device_label || ''
-    );
-    pairSuccessSubhead.textContent = window.LinkCopy.SUCCESS_SUBHEAD.replace(
-      '{short_fp}',
-      payload.fingerprint_short || ''
-    );
-    refreshDevices();
+    lastPairedFingerprint = payload.fingerprint || '';
+    pairCodeBox.hidden = true;
+    pairError.hidden = true;
+    pairSuccess.hidden = false;
+    pairSuccessHeading.textContent = window.LinkCopy.SUCCESS_HEADING.replace('{label}', payload.device_label || '');
+    const shortFp = payload.fingerprint_short || '';
+    pairSuccessSubhead.textContent =
+      window.LinkCopy.SUCCESS_SUBHEAD.replace('{short_fp}', shortFp)
+      + ' · ' + (window.LinkCopy.RECENT_NETWORK_LABEL || 'on your network');
+  }
+
+  function showPairError() {
+    clearExpiryTimer();
+    pairCodeBox.hidden = true;
+    pairSuccess.hidden = true;
+    pairError.hidden = false;
   }
 
   function openPairModal() {
@@ -1095,13 +1189,14 @@
       });
     }
     requestPairCode().catch((err) => {
-      showToast('Failed to generate pair code');
+      showPairError();
       window.logError(err, { context: 'link: requestPairCode failed' });
     });
   }
 
   function closePairModal() {
     pairModal.hidden = true;
+    lastPairedFingerprint = '';
     cleanupPairEvents();
     clearExpiryTimer();
     autoRefreshFired = false;
@@ -1159,18 +1254,45 @@
   document.addEventListener('click', handleMenuDocumentClick);
   document.addEventListener('keydown', handleMenuDocumentKey);
   pairBtn.addEventListener('click', openPairModal);
+  heroPairBtn.addEventListener('click', openPairModal);
+  heroHowReach.addEventListener('click', openPostureModal);
   reachChange.addEventListener('click', openPostureModal);
   postureCancel.addEventListener('click', closePostureModal);
   postureSave.addEventListener('click', closePostureModal);
   postureModal.addEventListener('keydown', handlePostureModalKeys);
   pairCancel.addEventListener('click', closePairModal);
+  pairErrorCancel.addEventListener('click', closePairModal);
   pairDone.addEventListener('click', closePairModal);
+  pairRemove.addEventListener('click', async () => {
+    if (!lastPairedFingerprint) { closePairModal(); return; }
+    try {
+      const r = await fetch('/app/link/unpair', {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({ fingerprint: lastPairedFingerprint }),
+      });
+      if (!r.ok) throw new Error(`unpair failed: ${r.status}`);
+      showToast(window.LinkCopy.UNPAIR_SUCCESS_TOAST || 'unpaired');
+      closePairModal();
+      refreshDevices();
+    } catch (err) {
+      showToast(window.LinkCopy.UNPAIR_FAIL_TOAST || "couldn't unpair this device");
+      window.logError?.(err, { context: 'link: success-card remove failed' });
+    }
+  });
+  pairModal.addEventListener('keydown', (event) => {
+    if (pairModal.hidden) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closePairModal();
+    }
+  });
   pairRegenerate.addEventListener('click', () => {
     autoRefreshFired = false;
     qrExpired.hidden = true;
     qrContainer.classList.remove('is-expired');
     requestPairCode().catch((err) => {
-      showToast('Failed to generate pair code');
+      showPairError();
       window.logError(err, { context: 'link: regenerate pair code failed' });
     });
   });
