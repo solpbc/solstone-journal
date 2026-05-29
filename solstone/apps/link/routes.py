@@ -86,7 +86,8 @@ from solstone.think.link.paths import (
     nonces_path,
     relay_url,
 )
-from solstone.think.utils import get_config, get_journal, now_ms
+from solstone.think.link.window import read_posture
+from solstone.think.utils import get_journal, now_ms
 
 logger = logging.getLogger(__name__)
 MANUAL_CODE_RE = re.compile(rf"^[0-9A-HJKMNP-TV-Z]{{{MANUAL_CODE_LEN}}}$")
@@ -221,17 +222,6 @@ def _is_lan_accessible() -> bool:
     return True
 
 
-def _read_posture() -> str:
-    """Read link.posture from journal config; exact-match, no normalization."""
-    cfg = get_config()
-    link_cfg = cfg.get("link") if isinstance(cfg, dict) else None
-    if isinstance(link_cfg, dict):
-        posture = link_cfg.get("posture")
-        if isinstance(posture, str) and posture == "spl":
-            return "spl"
-    return "direct"
-
-
 def _derive_relay_state(token_present: bool) -> str:
     """Return pre-mechanism relay attachment state.
 
@@ -280,7 +270,7 @@ def api_status() -> Any:
     token_present = token is not None
     ca_fp = _ca_fingerprint() if ca_dir().exists() else None
     lan_accessible = _is_lan_accessible()
-    posture = _read_posture()
+    posture = read_posture()
     relay_state = _derive_relay_state(token_present)
     reachability = _derive_reachability(lan_accessible, posture, relay_state)
     home_address = _resolve_host_port() if lan_accessible else None

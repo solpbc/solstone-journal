@@ -16,6 +16,8 @@ handshake-time callback that can reject a cert with a clean TLS alert).
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from cryptography import x509
@@ -44,6 +46,38 @@ def build_server_context(
     authorized: AuthorizedClients,
 ) -> SSL.Context:
     """Build a TLS 1.3 server context with the pinned verify callback."""
+    return _build_server_context(
+        ca,
+        server_cert,
+        server_key,
+        authorized,
+        SSL.VERIFY_PEER | SSL.VERIFY_FAIL_IF_NO_PEER_CERT,
+    )
+
+
+def build_relaxed_server_context(
+    ca: LoadedCa,
+    server_cert: x509.Certificate,
+    server_key: bytes,
+    authorized: AuthorizedClients,
+) -> SSL.Context:
+    """Build a TLS 1.3 server context that allows missing peer certs."""
+    return _build_server_context(
+        ca,
+        server_cert,
+        server_key,
+        authorized,
+        SSL.VERIFY_PEER,
+    )
+
+
+def _build_server_context(
+    ca: LoadedCa,
+    server_cert: x509.Certificate,
+    server_key: bytes,
+    authorized: AuthorizedClients,
+    verify_flags: int,
+) -> SSL.Context:
     ctx = SSL.Context(SSL.TLS_METHOD)
     ctx.set_min_proto_version(SSL.TLS1_3_VERSION)
     ctx.set_max_proto_version(SSL.TLS1_3_VERSION)
@@ -56,6 +90,13 @@ def build_server_context(
     assert store is not None, "pyOpenSSL context must expose a cert store"
     store.add_cert(crypto.X509.from_cryptography(ca.cert))
 
+    ctx.set_verify(verify_flags, _make_verify_cb(authorized))
+    return ctx
+
+
+def _make_verify_cb(
+    authorized: AuthorizedClients,
+) -> Callable[[SSL.Connection, crypto.X509, int, int, int], bool]:
     def verify_cb(
         _conn: SSL.Connection,
         cert: crypto.X509,
@@ -68,16 +109,10 @@ def build_server_context(
         if depth != 0:
             return True
         der = cert.to_cryptography().public_bytes(serialization.Encoding.DER)
-        import hashlib
-
         fp = f"sha256:{hashlib.sha256(der).hexdigest()}"
         return authorized.is_authorized(fp)
 
-    ctx.set_verify(
-        SSL.VERIFY_PEER | SSL.VERIFY_FAIL_IF_NO_PEER_CERT,
-        verify_cb,
-    )
-    return ctx
+    return verify_cb
 
 
 def new_server(ctx: SSL.Context) -> TlsServerState:
@@ -108,8 +143,6 @@ def drive_tls(
             state.handshake_done = True
             peer = state.conn.get_peer_certificate()
             if peer is not None:
-                import hashlib
-
                 der = peer.to_cryptography().public_bytes(
                     serialization.Encoding.DER,
                 )
@@ -190,6 +223,7 @@ def issue_server_cert(
 __all__ = [
     "TlsError",
     "TlsServerState",
+    "build_relaxed_server_context",
     "build_server_context",
     "drive_tls",
     "issue_server_cert",

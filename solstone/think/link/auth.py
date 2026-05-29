@@ -162,6 +162,7 @@ class AuthorizedClients:
         try:
             raw = json.loads(self._path.read_text("utf-8"))
         except (json.JSONDecodeError, OSError):
+            # Unreadable authorized_clients.json means no clients are authorized. There is no last-good authorization cache.
             return {}
         out: dict[str, ClientEntry] = {}
         if isinstance(raw, list):

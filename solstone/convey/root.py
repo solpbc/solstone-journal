@@ -139,6 +139,15 @@ def require_login() -> Any:
         return None
 
     identity = getattr(g, "identity", None)
+    if (
+        request.endpoint == "app:link.pair"
+        and identity is not None
+        and identity.mode == "pl-via-spl"
+        and identity.fingerprint is None
+    ):
+        # Cert-less pairing stream; structurally confined to /pair by the C2 gate.
+        return None
+
     if identity is not None and identity.mode in {"pl-direct", "pl-via-spl"}:
         if identity.fingerprint and get_authorized_clients().is_authorized(
             identity.fingerprint

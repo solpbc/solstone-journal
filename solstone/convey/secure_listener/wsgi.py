@@ -14,6 +14,10 @@ from concurrent.futures import CancelledError, ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from werkzeug.exceptions import HTTPException
+
+from solstone.think.link.window import window_open
+
 from .identity import ConveyIdentity
 from .mux import StreamWriter
 
@@ -38,6 +42,12 @@ class ParsedRequest:
     headers: list[tuple[str, str]]
     content_length: int | None
     transfer_encoding: str | None
+
+
+@dataclass(frozen=True)
+class DispatchResult:
+    endpoint: str | None
+    status: int
 
 
 async def parse_http_head(stream_reader: asyncio.StreamReader) -> ParsedRequest:
@@ -165,12 +175,12 @@ async def dispatch_stream(
     stream_writer: StreamWriter,
     loop: asyncio.AbstractEventLoop,
     executor: ThreadPoolExecutor,
-) -> None:
+) -> DispatchResult:
     try:
         request = await parse_http_head(stream_reader)
     except HttpBadRequest as exc:
         await write_simple_response(stream_writer, 400, "Bad Request", str(exc))
-        return
+        return DispatchResult(endpoint=None, status=400)
 
     transfer_encoding = (request.transfer_encoding or "").lower()
     if transfer_encoding:
@@ -180,7 +190,7 @@ async def dispatch_stream(
             "Bad Request",
             "unsupported transfer-encoding",
         )
-        return
+        return DispatchResult(endpoint=None, status=400)
     if request.method in _BODY_METHODS and request.content_length is None:
         await write_simple_response(
             stream_writer,
@@ -188,10 +198,47 @@ async def dispatch_stream(
             "Length Required",
             "content-length required",
         )
-        return
+        return DispatchResult(endpoint=None, status=411)
+
+    path_info = urllib.parse.unquote(request.path)
+    endpoint: str | None = None
+    if identity.fingerprint is None:
+        # Request-level confinement: a cert-less request after the window closes is refused immediately (property 3), not served by a /pair that would 410. The 5s poll only reaps the idle socket.
+        if not window_open():
+            await write_simple_response(
+                stream_writer,
+                403,
+                "Forbidden",
+                "pairing window closed",
+            )
+            return DispatchResult(endpoint=None, status=403)
+        if request.path != path_info:
+            await write_simple_response(
+                stream_writer,
+                403,
+                "Forbidden",
+                "pairing tunnel may only use /app/link/pair",
+            )
+            return DispatchResult(endpoint=None, status=403)
+        endpoint = _match_endpoint(app, path_info, request.method)
+        if endpoint != "app:link.pair":
+            await write_simple_response(
+                stream_writer,
+                403,
+                "Forbidden",
+                "pairing tunnel may only use /app/link/pair",
+            )
+            return DispatchResult(endpoint=endpoint, status=403)
 
     disconnect_event = threading.Event()
-    environ = build_environ(request, identity, stream_reader, loop, disconnect_event)
+    environ = build_environ(
+        request,
+        identity,
+        stream_reader,
+        loop,
+        disconnect_event,
+        path_info,
+    )
     future = loop.run_in_executor(
         executor,
         _run_wsgi,
@@ -202,12 +249,28 @@ async def dispatch_stream(
         disconnect_event,
     )
     try:
-        await future
+        status = await future
     except asyncio.CancelledError:
         disconnect_event.set()
         raise
     finally:
         disconnect_event.set()
+    return DispatchResult(endpoint=endpoint, status=status)
+
+
+def certless_target_allowed(app: Any, path_info: str, method: str) -> bool:
+    return _match_endpoint(app, path_info, method) == "app:link.pair"
+
+
+def _match_endpoint(app: Any, path_info: str, method: str) -> str | None:
+    try:
+        endpoint, _args = app.url_map.bind(
+            "solstone.local",
+            url_scheme="https",
+        ).match(path_info, method=method)
+    except HTTPException:
+        return None
+    return str(endpoint)
 
 
 def build_environ(
@@ -216,11 +279,12 @@ def build_environ(
     stream_reader: asyncio.StreamReader,
     loop: asyncio.AbstractEventLoop,
     disconnect_event: threading.Event,
+    path_info: str,
 ) -> dict[str, Any]:
     environ: dict[str, Any] = {
         "REQUEST_METHOD": request.method,
         "SCRIPT_NAME": "",
-        "PATH_INFO": urllib.parse.unquote(request.path),
+        "PATH_INFO": path_info,
         "QUERY_STRING": request.query,
         "SERVER_NAME": "solstone.local",
         "SERVER_PORT": "7657",
@@ -277,7 +341,7 @@ def _run_wsgi(
     stream_writer: StreamWriter,
     loop: asyncio.AbstractEventLoop,
     disconnect_event: threading.Event,
-) -> None:
+) -> int:
     state: dict[str, Any] = {
         "status": None,
         "headers": None,
@@ -369,6 +433,7 @@ def _run_wsgi(
         disconnect_event.set()
         if response_iter is not None and hasattr(response_iter, "close"):
             response_iter.close()  # type: ignore[attr-defined]
+    return _status_code(str(state["status"] or "500 Internal Server Error"))
 
 
 def _status_code(status: str) -> int:

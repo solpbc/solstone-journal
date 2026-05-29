@@ -19,7 +19,7 @@ from solstone.think.link.ca import load_or_generate_ca
 from solstone.think.link.paths import LinkState, authorized_clients_path, ca_dir
 
 from .accept import SecureListener
-from .tls import build_server_context, issue_server_cert
+from .tls import build_relaxed_server_context, build_server_context, issue_server_cert
 
 logger = logging.getLogger("convey.secure_listener.runtime")
 
@@ -68,7 +68,13 @@ def _thread_main(runtime: RuntimeState) -> None:
             ca,
             common_name=f"solstone link ({state.home_label})",
         )
-        tls_ctx = build_server_context(
+        strict_tls_ctx = build_server_context(
+            ca=ca,
+            server_cert=server_cert,
+            server_key=server_key_pem,
+            authorized=authorized,
+        )
+        relaxed_tls_ctx = build_relaxed_server_context(
             ca=ca,
             server_cert=server_cert,
             server_key=server_key_pem,
@@ -85,7 +91,8 @@ def _thread_main(runtime: RuntimeState) -> None:
 
         listener = SecureListener(
             app=app,
-            tls_ctx=tls_ctx,
+            strict_tls_ctx=strict_tls_ctx,
+            relaxed_tls_ctx=relaxed_tls_ctx,
             authorized=authorized,
             executor=runtime.executor,
             callosum_emit=emit,

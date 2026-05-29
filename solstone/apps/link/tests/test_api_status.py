@@ -8,6 +8,7 @@ from typing import Any
 
 from solstone.apps.link import routes as link_routes
 from solstone.think.link.local_endpoints import LocalEndpoint
+from solstone.think.link.window import read_posture
 
 
 def _write_config(env: Any, *, link: Any = None, include_link: bool = True) -> None:
@@ -55,7 +56,7 @@ def test_posture_defaults_and_spl(link_env) -> None:
     env = link_env()
 
     _write_config(env, include_link=False)
-    assert link_routes._read_posture() == "direct"
+    assert read_posture() == "direct"
 
     for link_cfg in (
         {"posture": 123},
@@ -63,10 +64,10 @@ def test_posture_defaults_and_spl(link_env) -> None:
         {"posture": "spl "},
     ):
         _write_config(env, link=link_cfg)
-        assert link_routes._read_posture() == "direct"
+        assert read_posture() == "direct"
 
     _write_config(env, link={"posture": "spl"})
-    assert link_routes._read_posture() == "spl"
+    assert read_posture() == "spl"
 
 
 def test_direct_healthy_reports_online(link_env, monkeypatch) -> None:
