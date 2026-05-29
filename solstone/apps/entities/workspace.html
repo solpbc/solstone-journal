@@ -1419,9 +1419,7 @@ body.presentation-mode .entity-desc { color: #4b5563; }
       <p class="entities-subtitle" id="facet-entities-subtitle">people, places, and things you're tending</p>
       <div class="entity-cards-container">
         <div id="entity-cards-content"></div>
-        <div id="no-facet-entities" class="no-entities" style="display: none;">
-          no entities added to this facet yet. star entities below to add them.
-        </div>
+        <div id="no-facet-entities" class="no-entities" style="display: none;"></div>
         <div id="no-facet-card-matches" class="no-card-matches" style="display: none;">no entities match your search.</div>
       </div>
     </div>
@@ -1447,6 +1445,8 @@ body.presentation-mode .entity-desc { color: #4b5563; }
           <tbody id="all-entities-tbody">
           </tbody>
         </table>
+        <div id="no-detected-entities" class="no-entities" style="display: none;"></div>
+        <div id="no-detected-matches" class="no-card-matches" style="display: none;">no entities match your search.</div>
         <div id="detected-pagination" class="detected-pagination"></div>
       </div>
     </div>
@@ -1647,6 +1647,31 @@ function getTypeOrder() {
   return ENTITY_TYPES.map(t => t.name);
 }
 
+function groupEntitiesByType(entities) {
+  const norm = t => (t || 'Other').trim().toLowerCase() || 'other';
+  const groups = new Map();
+  entities.forEach(entity => {
+    const key = norm(entity.type);
+    if (!groups.has(key)) groups.set(key, { label: key, items: [] });
+    groups.get(key).items.push(entity);
+  });
+  const ordered = [];
+  const seen = new Set();
+  getTypeOrder().map(norm).forEach(key => {
+    if (groups.has(key) && !seen.has(key)) {
+      ordered.push(groups.get(key));
+      seen.add(key);
+    }
+  });
+  groups.forEach((group, key) => {
+    if (!seen.has(key)) {
+      ordered.push(group);
+      seen.add(key);
+    }
+  });
+  return ordered;
+}
+
 // Parse YYYYMMDD string to Date object
 function parseYYYYMMDD(dateStr) {
   const year = parseInt(dateStr.slice(0, 4));
@@ -1804,6 +1829,18 @@ function showFacetDetailView(entityId) {
           serverMessage: error?.message,
           detail: error,
         });
+      }
+      const obsContainer = document.getElementById('detail-observations');
+      if (obsContainer) {
+        obsContainer.innerHTML = window.SurfaceState.error({
+          heading: ENT_COPY.ENT_OBS_LOAD_FAILED,
+          desc: '',
+          retry: true,
+          reportable: false,
+          headingLevel: 'h3',
+        });
+        const retryBtn = obsContainer.querySelector('.surface-state-retry');
+        if (retryBtn) retryBtn.onclick = () => showFacetDetailView(entityId);
       }
     });
 }
@@ -2416,7 +2453,8 @@ function renderDetailView(entity, observations) {
       list.appendChild(item);
     });
   } else {
-    obsContainer.innerHTML = '<span class="observations-empty">no observations yet.</span>';
+    obsContainer.innerHTML = '<span class="observations-empty"></span>';
+    obsContainer.querySelector('.observations-empty').textContent = ENT_COPY.ENT_OBS_EMPTY.replace('{name}', entity.name);
   }
 
   // Detach/Re-attach button or Attach section
@@ -2922,25 +2960,10 @@ function renderJournalEntities(searchTerm = '') {
 
   noEntities.style.display = 'none';
 
-  // Group by type
-  const groups = {};
-  entities.forEach(entity => {
-    const type = entity.type || 'Other';
-    if (!groups[type]) groups[type] = [];
-    groups[type].push(entity);
-  });
-
-  // Render groups in order (standard types first, then custom)
-  const typeOrder = getTypeOrder();
-  const orderedTypes = [...typeOrder, ...Object.keys(groups).filter(t => !typeOrder.includes(t))];
-
-  orderedTypes.forEach(type => {
-    const typeEntities = groups[type];
-    if (!typeEntities || typeEntities.length === 0) return;
-
+  groupEntitiesByType(entities).forEach(({label, items}) => {
     const filteredEntities = term
-      ? typeEntities.filter(entity => entity.name.toLowerCase().includes(term))
-      : typeEntities;
+      ? items.filter(entity => entity.name.toLowerCase().includes(term))
+      : items;
     if (filteredEntities.length === 0) return;
 
     // Sort by activity date (most recent first)
@@ -2951,7 +2974,7 @@ function renderJournalEntities(searchTerm = '') {
 
     const header = document.createElement('div');
     header.className = 'entity-type-header';
-    header.textContent = type.toLowerCase();
+    header.textContent = label;
     groupDiv.appendChild(header);
 
     const grid = document.createElement('div');
@@ -3103,6 +3126,7 @@ function renderEntityCards(searchTerm = '') {
   const term = searchTerm.toLowerCase();
 
   if (attached.length === 0 && pendingCards.length === 0) {
+    noEntities.textContent = ENT_COPY.ENT_CARDS_EMPTY;
     noEntities.style.display = 'block';
     countEl.style.display = 'none';
     noMatchEl.style.display = 'none';
@@ -3111,25 +3135,10 @@ function renderEntityCards(searchTerm = '') {
 
   noEntities.style.display = 'none';
 
-  // Group by type
-  const groups = {};
-  attached.forEach(entity => {
-    const type = entity.type || 'Other';
-    if (!groups[type]) groups[type] = [];
-    groups[type].push(entity);
-  });
-
-  // Render groups in order (standard types first, then custom)
-  const typeOrder = getTypeOrder();
-  const orderedTypes = [...typeOrder, ...Object.keys(groups).filter(t => !typeOrder.includes(t))];
-
-  orderedTypes.forEach(type => {
-    const entities = groups[type];
-    if (!entities || entities.length === 0) return;
-
+  groupEntitiesByType(attached).forEach(({label, items}) => {
     const filteredEntities = term
-      ? entities.filter(entity => entity.name.toLowerCase().includes(term))
-      : entities;
+      ? items.filter(entity => entity.name.toLowerCase().includes(term))
+      : items;
     if (filteredEntities.length === 0) return;
 
     // Sort by activity date (most recent first) using server-computed timestamp
@@ -3140,7 +3149,7 @@ function renderEntityCards(searchTerm = '') {
 
     const header = document.createElement('div');
     header.className = 'entity-type-header';
-    header.textContent = type.toLowerCase();
+    header.textContent = label;
     groupDiv.appendChild(header);
 
     const grid = document.createElement('div');
@@ -3258,6 +3267,8 @@ function createPendingCard(name, agentId) {
 
 function renderDetectedTable(searchTerm = '') {
   const tbody = document.getElementById('all-entities-tbody');
+  const noDetectedEntities = document.getElementById('no-detected-entities');
+  const noDetectedMatches = document.getElementById('no-detected-matches');
   tbody.innerHTML = '';
 
   const detected = entitiesData.detected || [];
@@ -3274,6 +3285,18 @@ function renderDetectedTable(searchTerm = '') {
   // Paginate
   const pageSize = 25;
   const total = filtered.length;
+  if (searchTerm) {
+    noDetectedEntities.style.display = 'none';
+    noDetectedMatches.style.display = total === 0 ? 'block' : 'none';
+  } else {
+    noDetectedMatches.style.display = 'none';
+    if (total === 0) {
+      noDetectedEntities.textContent = ENT_COPY.ENT_DETECTED_EMPTY;
+      noDetectedEntities.style.display = 'block';
+    } else {
+      noDetectedEntities.style.display = 'none';
+    }
+  }
   const totalPages = Math.ceil(total / pageSize);
   if (detectedPage > totalPages) detectedPage = Math.max(1, totalPages);
   const start = (detectedPage - 1) * pageSize;
