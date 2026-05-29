@@ -82,6 +82,13 @@ def _all_segment_configs() -> dict[str, dict]:
     )
 
 
+def _new_only_segment_configs() -> dict[str, dict]:
+    configs = _all_segment_configs()
+    for name in ("awareness_tender", "pulse"):
+        configs[name] = {**configs[name], "new_only": True}
+    return configs
+
+
 def _active_sense_output() -> dict:
     return {
         "density": "active",
@@ -109,12 +116,11 @@ def _read_events(path: Path) -> list[dict]:
     ]
 
 
-def _skip_events(events: list[dict]) -> list[dict]:
+def _skip_events(events: list[dict], reason: str = "skip_talents_flag") -> list[dict]:
     return [
         event
         for event in events
-        if event["event"] == "talent.skip"
-        and event.get("reason") == "skip_talents_flag"
+        if event["event"] == "talent.skip" and event.get("reason") == reason
     ]
 
 
@@ -123,13 +129,16 @@ def _patch_segment_dependencies(
     spawned: list[str],
     append_calls: list[tuple] | None = None,
     activity_calls: list[dict] | None = None,
+    configs: dict | None = None,
 ) -> None:
     from solstone.think import thinking as think
 
     monkeypatch.setattr(
         think,
         "get_talent_configs",
-        lambda schedule=None, **kwargs: _all_segment_configs(),
+        lambda schedule=None, **kwargs: (
+            configs if configs is not None else _all_segment_configs()
+        ),
     )
     monkeypatch.setattr(
         think,
@@ -229,6 +238,18 @@ def _patch_main_dependencies(
         "iter_segments",
         lambda day: [(STREAM, SEGMENT, segment_dir)],
     )
+    monkeypatch.setattr(
+        think,
+        "cluster_segments",
+        lambda day: [
+            {
+                "key": SEGMENT,
+                "stream": STREAM,
+                "start": "12:00:00",
+                "end": "12:05:00",
+            }
+        ],
+    )
     monkeypatch.setattr(think, "run_segment_sense", mock_run_segment_sense)
     monkeypatch.setattr(think, "check_callosum_available", lambda: True)
     monkeypatch.setattr(think, "CallosumConnection", MockCallosumConnection)
@@ -286,6 +307,83 @@ def test_empty_flag_forwards_empty_set(
 
     assert len(calls) == 1
     assert calls[0]["skip_talents"] == frozenset()
+
+
+def test_parser_forwards_live_true_for_segment(
+    segment_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from solstone.think import thinking as think
+
+    calls: list[dict] = []
+    _patch_main_dependencies(monkeypatch, segment_dir, calls)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "sol think",
+            "--day",
+            DAY,
+            "--segment",
+            SEGMENT,
+            "--live",
+        ],
+    )
+
+    think.main()
+
+    assert len(calls) == 1
+    assert calls[0]["live"] is True
+
+
+def test_parser_forwards_live_false_by_default(
+    segment_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from solstone.think import thinking as think
+
+    calls: list[dict] = []
+    _patch_main_dependencies(monkeypatch, segment_dir, calls)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "sol think",
+            "--day",
+            DAY,
+            "--segment",
+            SEGMENT,
+        ],
+    )
+
+    think.main()
+
+    assert len(calls) == 1
+    assert calls[0]["live"] is False
+
+
+def test_segments_batch_forwards_live_false(
+    segment_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from solstone.think import thinking as think
+
+    calls: list[dict] = []
+    _patch_main_dependencies(monkeypatch, segment_dir, calls)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "sol think",
+            "--day",
+            DAY,
+            "--segments",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        think.main()
+
+    assert excinfo.value.code == 0
+    assert len(calls) == 1
+    assert calls[0]["live"] is False
 
 
 def test_segment_batch_skip_does_not_dispatch_or_fail(
@@ -373,6 +471,154 @@ def test_tail_talent_skip_does_not_dispatch_or_fail(
     skip_events = _skip_events(_read_events(jsonl_path))
     assert len(skip_events) == 1
     assert skip_events[0]["name"] == "pulse"
+
+
+def test_new_only_talents_skip_on_historical_segment_think(
+    segment_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from solstone.think import thinking as think
+    from solstone.think.thinking import ThinkingJSONLWriter
+
+    spawned: list[str] = []
+    jsonl_path = segment_dir.parent.parent / "health" / "test_new_only_skip.jsonl"
+    writer = ThinkingJSONLWriter(str(jsonl_path))
+    _write_sense_output(segment_dir, _active_sense_output())
+    (segment_dir / "audio.npz").touch()
+    _patch_segment_dependencies(
+        monkeypatch,
+        spawned,
+        configs=_new_only_segment_configs(),
+    )
+    monkeypatch.setattr(think, "_jsonl", writer)
+
+    success, failed, failed_names = think.run_segment_sense(
+        DAY,
+        SEGMENT,
+        refresh=False,
+        verbose=False,
+        stream=STREAM,
+    )
+    writer.close()
+    monkeypatch.setattr(think, "_jsonl", None)
+
+    assert "pulse" not in spawned
+    assert "awareness_tender" not in spawned
+    assert spawned == [
+        "sense",
+        "entities",
+        "documents",
+        "screen",
+        "speaker_attribution",
+    ]
+    assert success == 5
+    assert failed == 0
+    assert failed_names == []
+
+    events = _read_events(jsonl_path)
+    new_only_events = _skip_events(events, reason="new_only_historical")
+    assert len(new_only_events) == 2
+    assert {event["name"] for event in new_only_events} == {
+        "awareness_tender",
+        "pulse",
+    }
+    pulse_skip = next(event for event in new_only_events if event["name"] == "pulse")
+    assert pulse_skip["reason"] == "new_only_historical"
+    assert not any(
+        event["event"] == "talent.skip"
+        and event.get("name") == "pulse"
+        and event.get("reason") == "not_recommended"
+        for event in events
+    )
+
+
+def test_new_only_talents_dispatch_on_live_segment_think(
+    segment_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from solstone.think import thinking as think
+    from solstone.think.thinking import ThinkingJSONLWriter
+
+    spawned: list[str] = []
+    jsonl_path = segment_dir.parent.parent / "health" / "test_new_only_live.jsonl"
+    writer = ThinkingJSONLWriter(str(jsonl_path))
+    _write_sense_output(segment_dir, _active_sense_output())
+    (segment_dir / "audio.npz").touch()
+    _patch_segment_dependencies(
+        monkeypatch,
+        spawned,
+        configs=_new_only_segment_configs(),
+    )
+    monkeypatch.setattr(think, "_jsonl", writer)
+
+    success, failed, failed_names = think.run_segment_sense(
+        DAY,
+        SEGMENT,
+        refresh=False,
+        verbose=False,
+        stream=STREAM,
+        live=True,
+    )
+    writer.close()
+    monkeypatch.setattr(think, "_jsonl", None)
+
+    assert spawned == [
+        "sense",
+        "entities",
+        "documents",
+        "screen",
+        "speaker_attribution",
+        "awareness_tender",
+        "pulse",
+    ]
+    assert success == 7
+    assert failed == 0
+    assert failed_names == []
+    assert _skip_events(_read_events(jsonl_path), reason="new_only_historical") == []
+
+
+def test_new_only_composes_with_skip_talents_on_live_segment_think(
+    segment_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from solstone.think import thinking as think
+    from solstone.think.thinking import ThinkingJSONLWriter
+
+    spawned: list[str] = []
+    jsonl_path = segment_dir.parent.parent / "health" / "test_new_only_compose.jsonl"
+    writer = ThinkingJSONLWriter(str(jsonl_path))
+    _write_sense_output(segment_dir, _active_sense_output())
+    (segment_dir / "audio.npz").touch()
+    _patch_segment_dependencies(
+        monkeypatch,
+        spawned,
+        configs=_new_only_segment_configs(),
+    )
+    monkeypatch.setattr(think, "_jsonl", writer)
+
+    success, failed, failed_names = think.run_segment_sense(
+        DAY,
+        SEGMENT,
+        refresh=False,
+        verbose=False,
+        stream=STREAM,
+        skip_talents=frozenset({"pulse"}),
+        live=True,
+    )
+    writer.close()
+    monkeypatch.setattr(think, "_jsonl", None)
+
+    assert "pulse" not in spawned
+    assert "awareness_tender" in spawned
+    assert success == 6
+    assert failed == 0
+    assert failed_names == []
+
+    events = _read_events(jsonl_path)
+    skip_events = _skip_events(events)
+    assert len(skip_events) == 1
+    assert skip_events[0]["name"] == "pulse"
+    assert _skip_events(events, reason="new_only_historical") == []
 
 
 def test_sense_skip_uses_cached_output_for_downstream(

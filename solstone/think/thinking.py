@@ -489,12 +489,23 @@ def run_segment_sense(
     *,
     skip_activity_prompts: bool = False,
     skip_talents: frozenset[str] = frozenset(),
+    live: bool = False,
 ) -> tuple[int, int, list[str]]:
     """Run Sense-first linear orchestrator for a single segment.
 
     Dispatches the Sense agent first, parses its output to determine segment
     density and conditional agent recommendations, then dispatches remaining
     agents based on Sense output.
+
+    A talent whose config declares `new_only` is dispatched only when
+    `live=True` (the observe-triggered current-segment think). On any
+    historical/batch run (`live=False`, the default) such talents are skipped
+    via `talent.skip` with reason `new_only_historical` — never counted as a
+    failure.
+
+    `new_only` is read as raw Python truthiness from the config dict
+    (`config.get("new_only")`), so the talent frontmatter must declare the JSON
+    boolean `true`, not the string `"true"`.
     """
     target_schedule = "segment"
     all_prompts = get_talent_configs(schedule="segment")
@@ -511,6 +522,17 @@ def run_segment_sense(
                 name,
                 "skip_talents_flag",
                 "Skipped by --skip-talents",
+                day=day,
+                segment=segment,
+            )
+            return _SKIPPED
+
+        if config.get("new_only") and not live:
+            _log_skip(
+                name,
+                "new_only_historical",
+                "Skipped: new_only talent runs only on a live current-segment think",
+                mode=target_schedule,
                 day=day,
                 segment=segment,
             )
@@ -2947,6 +2969,19 @@ def parse_args() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--live",
+        action="store_true",
+        help=(
+            "Mark this run as a live, current-segment think (observe-triggered "
+            "for a segment that just completed live observation). Talents "
+            "declaring new_only in their frontmatter run ONLY when --live is "
+            "set; without it the run is treated as historical/batch "
+            "re-processing and new_only talents are skipped. Defaults off so "
+            "manually re-thinking an old segment never rebuilds rolling state "
+            "from stale data."
+        ),
+    )
+    parser.add_argument(
         "--updated",
         action="store_true",
         help="List days with pending daily processing and exit",
@@ -3147,6 +3182,7 @@ def main() -> None:
                         state_machine=batch_state_machine,
                         skip_activity_prompts=args.no_activity_prompts,
                         skip_talents=skip_talents,
+                        live=False,
                     )
                     # Touch stream.updated marker after each segment
                     try:
@@ -3262,6 +3298,7 @@ def main() -> None:
                 state_machine=ActivityStateMachine(journal_root=Path(get_journal())),
                 skip_activity_prompts=args.no_activity_prompts,
                 skip_talents=skip_talents,
+                live=args.live,
             )
         else:
             success_count, fail_count, failed_names, applicable_units = (

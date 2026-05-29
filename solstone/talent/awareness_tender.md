@@ -4,6 +4,7 @@
   "title": "Awareness Tender",
   "description": "Maintains identity/awareness.md — a compact situational awareness snapshot",
   "schedule": "segment",
+  "new_only": true,
   "priority": 98,
   "max_output_tokens": 600,
   "read_scope": ["chronicle/<day>", "identity", "facets", "entities", "imports", "health", "stats.json"]

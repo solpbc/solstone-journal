@@ -1481,6 +1481,8 @@ def _handle_segment_observed(message: dict) -> None:
     cmd = ["journal", "think", "-v", "--day", day, "--segment", segment]
     if stream:
         cmd.extend(["--stream", stream])
+    if not message.get("batch"):
+        cmd.append("--live")
     if _task_queue:
         _task_queue.submit(cmd, day=day)
     else:

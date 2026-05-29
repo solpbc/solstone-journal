@@ -4,6 +4,7 @@
   "title": "Pulse",
   "description": "Living narrative of the owner's day — updated each segment",
   "schedule": "segment",
+  "new_only": true,
   "priority": 99,
   "max_output_tokens": 1000
 }

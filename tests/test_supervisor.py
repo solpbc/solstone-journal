@@ -359,6 +359,74 @@ def _capture_thread_starts(monkeypatch, mod):
     return spawned
 
 
+class _CaptureTaskQueue:
+    def __init__(self):
+        self.submissions = []
+
+    def submit(self, cmd, day=None):
+        self.submissions.append({"cmd": cmd, "day": day})
+
+
+def test_handle_segment_observed_live_command_marks_live(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    capture = _CaptureTaskQueue()
+    monkeypatch.setattr(mod, "_task_queue", capture)
+
+    mod._handle_segment_observed(
+        {
+            "tract": "observe",
+            "event": "observed",
+            "day": "20260527",
+            "segment": "120000_300",
+        }
+    )
+
+    assert len(capture.submissions) == 1
+    assert capture.submissions[0]["day"] == "20260527"
+    assert "--live" in capture.submissions[0]["cmd"]
+
+
+def test_handle_segment_observed_batch_command_omits_live(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    capture = _CaptureTaskQueue()
+    monkeypatch.setattr(mod, "_task_queue", capture)
+
+    mod._handle_segment_observed(
+        {
+            "tract": "observe",
+            "event": "observed",
+            "day": "20260527",
+            "segment": "120000_300",
+            "batch": True,
+        }
+    )
+
+    assert len(capture.submissions) == 1
+    assert "--live" not in capture.submissions[0]["cmd"]
+
+
+def test_handle_segment_observed_live_stream_command(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    capture = _CaptureTaskQueue()
+    monkeypatch.setattr(mod, "_task_queue", capture)
+
+    mod._handle_segment_observed(
+        {
+            "tract": "observe",
+            "event": "observed",
+            "day": "20260527",
+            "segment": "120000_300",
+            "stream": "archon",
+        }
+    )
+
+    assert len(capture.submissions) == 1
+    cmd = capture.submissions[0]["cmd"]
+    assert "--live" in cmd
+    stream_index = cmd.index("--stream")
+    assert cmd[stream_index + 1] == "archon"
+
+
 def test_task_queue_daily_and_segment_run_independently(monkeypatch):
     mod = importlib.import_module("solstone.think.supervisor")
     queue = _fresh_task_queue(mod)
