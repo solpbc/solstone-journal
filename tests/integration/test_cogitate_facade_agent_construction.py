@@ -20,7 +20,7 @@ from __future__ import annotations
 import pytest
 
 from solstone.think.cogitate_policy import CogitatePolicy
-from solstone.think.providers import emit_output_tool
+from solstone.think.providers import emit_final_tool
 from solstone.think.providers import openhands as facade
 from solstone.think.providers.shared import JSONEventCallback
 
@@ -63,8 +63,8 @@ def test_real_openhands_agent_accepts_facade_tools_wiring(tmp_path):
     assert "FinishTool" in agent.include_default_tools
 
 
-def test_emit_output_branch_agent_construction(tmp_path):
-    """Emit-output branch must satisfy real Agent schema without FinishTool."""
+def test_emit_final_branch_agent_construction(tmp_path):
+    """Emit-final branch must satisfy real Agent schema without FinishTool."""
     sdk = pytest.importorskip(
         "openhands.sdk",
         reason="openhands-sdk baseline dependency is not installed",
@@ -80,18 +80,18 @@ def test_emit_output_branch_agent_construction(tmp_path):
         write=False,
         read_call_budget=10,
     )
-    emit_output_tools = emit_output_tool.build_emit_output_tools()
+    emit_final_tools = emit_final_tool.build_emit_final_tools()
 
     registry.register_tool("sol", sol_tools[0])
-    registry.register_tool("emit_output", emit_output_tools[0])
+    registry.register_tool("emit_final", emit_final_tools[0])
 
     llm = sdk.LLM(model="openai/gpt-5", api_key="EMPTY", native_tool_calling=True)
     agent = sdk.Agent(
         llm=llm,
-        tools=[spec.Tool(name="sol"), spec.Tool(name="emit_output")],
+        tools=[spec.Tool(name="sol"), spec.Tool(name="emit_final")],
         include_default_tools=[],
         system_prompt="probe",
     )
 
-    assert [t.name for t in agent.tools] == ["sol", "emit_output"]
+    assert [t.name for t in agent.tools] == ["sol", "emit_final"]
     assert agent.include_default_tools == []

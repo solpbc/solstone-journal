@@ -57,18 +57,23 @@ def test_fake_openhands_replaces_installed_sdk_modules(fake_openhands):
     assert issubclass(openhands._ensure_sol_types()["SolTool"], ToolDefinition)
 
 
-def test_emit_output_tool_description_contract(fake_openhands):
-    from solstone.think.providers import emit_output_tool
+def test_emit_final_tool_description_contract(fake_openhands):
+    from solstone.think.providers import emit_final_tool
 
-    emit_output_tool._EMIT_OUTPUT_TYPES.clear()
+    emit_final_tool._EMIT_FINAL_TYPES.clear()
 
-    tools = emit_output_tool.build_emit_output_tools()
+    tools = emit_final_tool.build_emit_final_tools()
 
     assert len(tools) == 1
-    assert tools[0].name == "emit_output"
-    assert "content argument is the artifact body itself" in tools[0].description
-    assert "Do NOT summarize" in tools[0].description
-    assert "Do NOT include phrases like" in tools[0].description
+    assert tools[0].name == "emit_final"
+    assert (
+        "Terminal tool for ending the run with its final result" in tools[0].description
+    )
+    assert "Call this tool exactly once" in tools[0].description
+    assert "Artifact talents:" in tools[0].description
+    assert "Action talents:" in tools[0].description
+    assert "concise, signal-carrying record" in tools[0].description
+    assert "No-op:" in tools[0].description
 
 
 def test_translator_maps_thinking_sources(fake_openhands, fixed_time):
@@ -200,20 +205,20 @@ def test_translator_records_finish_action_without_tool_start(
     assert translator.result() == "done"
 
 
-def test_translator_records_emit_output_action_without_tool_start(
+def test_translator_records_emit_final_action_without_tool_start(
     fake_openhands,
     fixed_time,
 ):
     events: list[dict] = []
     translator = _translator(fake_openhands, events)
-    translator.expects_emit_output = True
+    translator.expects_emit_final = True
 
     translator.on_event(
         fake_openhands.ActionEvent(
             reasoning_content=None,
             thinking_blocks=[],
             responses_reasoning_item=None,
-            tool_name="emit_output",
+            tool_name="emit_final",
             tool_call=SimpleNamespace(arguments='{"content":"# Done"}'),
             tool_call_id="emit-1",
             action=SimpleNamespace(content="# Done"),
@@ -221,14 +226,14 @@ def test_translator_records_emit_output_action_without_tool_start(
     )
 
     assert events == []
-    assert translator.emit_output_content == "# Done"
+    assert translator.emit_final_content == "# Done"
     assert translator.result() == "# Done"
 
 
-def test_translator_result_prefers_emit_output_content(fake_openhands, fixed_time):
+def test_translator_result_prefers_emit_final_content(fake_openhands, fixed_time):
     events: list[dict] = []
     translator = _translator(fake_openhands, events)
-    translator.expects_emit_output = True
+    translator.expects_emit_final = True
 
     translator.on_event(
         fake_openhands.MessageEvent(
@@ -254,7 +259,7 @@ def test_translator_result_prefers_emit_output_content(fake_openhands, fixed_tim
             reasoning_content=None,
             thinking_blocks=[],
             responses_reasoning_item=None,
-            tool_name="emit_output",
+            tool_name="emit_final",
             tool_call=SimpleNamespace(arguments='{"content":"emit result"}'),
             tool_call_id="emit-1",
             action=SimpleNamespace(content="emit result"),
@@ -264,13 +269,13 @@ def test_translator_result_prefers_emit_output_content(fake_openhands, fixed_tim
     assert translator.result() == "emit result"
 
 
-def test_translator_returns_none_when_emit_output_branch_skipped(
+def test_translator_returns_none_when_emit_final_branch_skipped(
     fake_openhands,
     fixed_time,
 ):
     events: list[dict] = []
     translator = _translator(fake_openhands, events)
-    translator.expects_emit_output = True
+    translator.expects_emit_final = True
 
     translator.on_event(
         fake_openhands.MessageEvent(
@@ -365,7 +370,7 @@ def test_translator_maps_max_turns_once(fake_openhands, fixed_time):
     ]
 
 
-def test_run_cogitate_uses_emit_output_branch_for_output_path(
+def test_run_cogitate_uses_emit_final_branch_for_output_path(
     fake_openhands,
     monkeypatch,
     tmp_path,
@@ -377,7 +382,7 @@ def test_run_cogitate_uses_emit_output_branch_for_output_path(
 
     conversation = fake_openhands.Conversation.instances[0]
     assert result is None
-    assert [tool.name for tool in conversation.agent.tools] == ["sol", "emit_output"]
+    assert [tool.name for tool in conversation.agent.tools] == ["sol", "emit_final"]
     assert conversation.agent.include_default_tools == []
 
 
@@ -386,7 +391,7 @@ def test_run_cogitate_keeps_finish_branch_without_output_path(
     monkeypatch,
     tmp_path,
 ):
-    config = _run_config(monkeypatch, tmp_path)
+    config = _run_config(monkeypatch, tmp_path, schedule="segment")
     events: list[dict] = []
 
     asyncio.run(openhands.run_cogitate(config, events.append))
@@ -394,6 +399,22 @@ def test_run_cogitate_keeps_finish_branch_without_output_path(
     conversation = fake_openhands.Conversation.instances[0]
     assert [tool.name for tool in conversation.agent.tools] == ["sol"]
     assert conversation.agent.include_default_tools == ["FinishTool"]
+
+
+def test_run_cogitate_uses_emit_final_branch_for_daily_no_output(
+    fake_openhands,
+    monkeypatch,
+    tmp_path,
+):
+    config = _run_config(monkeypatch, tmp_path, schedule="daily")
+    events: list[dict] = []
+
+    asyncio.run(openhands.run_cogitate(config, events.append))
+
+    conversation = fake_openhands.Conversation.instances[0]
+    assert not config.get("output_path")
+    assert [tool.name for tool in conversation.agent.tools] == ["sol", "emit_final"]
+    assert conversation.agent.include_default_tools == []
 
 
 def test_run_cogitate_threads_configured_max_turns(

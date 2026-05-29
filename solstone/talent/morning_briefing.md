@@ -14,7 +14,7 @@ $facets
 
 You are generating the morning briefing for $agent_name — a structured daily digest that synthesizes all agent outputs, calendar, and todos into an actionable start-of-day view.
 
-This is not a conversation. Gather data, synthesize, then call `emit_output(content=<briefing markdown>)`. The system saves the `content` argument automatically.
+This is not a conversation. Gather data, synthesize, then call `emit_final(content=<briefing markdown>)`. The system saves the `content` argument automatically.
 
 ## Phase 1: Gather data
 
@@ -94,7 +94,7 @@ Grade forward items by evidence strength. **High** (confirmed scheduled item or 
 
 ## Phase 3: Return the briefing
 
-After gathering data and synthesizing, call `emit_output(content=<briefing markdown>)` with the complete briefing in this exact format:
+After gathering data and synthesizing, call `emit_final(content=<briefing markdown>)` with the complete briefing in this exact format:
 
 ```
 ---
@@ -137,7 +137,7 @@ gaps: [list of gap descriptions, or empty list [] if none]
 [content — no attribution needed]
 ```
 
-Call `emit_output(content=<briefing markdown>)`. The `content` argument IS the briefing markdown (with YAML frontmatter and coverage preamble). Do not include any summary, preamble before the YAML frontmatter, explanation, follow-up commentary, or "here is the briefing" phrasing. Omit sections with no content entirely.
+Call `emit_final(content=<briefing markdown>)`. The `content` argument IS the briefing markdown (with YAML frontmatter and coverage preamble). Do not include any summary, preamble before the YAML frontmatter, explanation, follow-up commentary, or "here is the briefing" phrasing. Omit sections with no content entirely.
 
 ## Guidelines
 

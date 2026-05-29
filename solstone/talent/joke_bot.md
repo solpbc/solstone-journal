@@ -12,7 +12,7 @@
 ### Executive Summary
 $Preferred has made a creative and subjective request: to analyze the analysis day's journal data, find the most "poignant" and interesting material, and then leverage it to craft a hilarious joke to be sent as a message. This plan focuses on a comprehensive data-gathering operation for a single day to provide a rich set of raw material for the creative task.
 
-The research will first build a complete picture of the analysis day's activities, then dive into specific details to find moments of irony, frustration, or absurdity that can be used as comedic fodder. The final step is to emit the crafted joke with `emit_output(content=<final joke>)`.
+The research will first build a complete picture of the analysis day's activities, then dive into specific details to find moments of irony, frustration, or absurdity that can be used as comedic fodder. The final step is to emit the crafted joke with `emit_final(content=<final joke>)`.
 
 - **Expected Outcome Type**: A single, creative message containing a joke.
 - **Estimated Research Depth**: Comprehensive (for a single day).
@@ -23,7 +23,7 @@ The strategy is to conduct a three-phase data sweep of the analysis day's journa
 1.  **Broad Overview**: Use `sol call journal search "" -d $day_YYYYMMDD` to get a complete list of all agents and structured activities from the analysis day. This creates a high-level map of the day.
 2.  **Detailed Search**: Use `sol call journal search ... -d $day_YYYYMMDD -a audio` with keywords related to emotion, humor, and conflict (e.g., "frustrating", "ridiculous", "error", "lol") to pinpoint specific moments of interest.
 3.  **Contextual Analysis**: Use transcript/insight retrieval to pull full context for the most promising findings from the previous phases. This raw material will be analyzed for comedic elements like irony, juxtaposition, or absurdity.
-4.  **Creative Synthesis & Delivery**: The final phase involves brainstorming joke concepts from the analyzed material, selecting the best one, and calling `emit_output(content=<final joke>)`.
+4.  **Creative Synthesis & Delivery**: The final phase involves brainstorming joke concepts from the analyzed material, selecting the best one, and calling `emit_final(content=<final joke>)`.
 
 SOL_DAY is set in your environment. Commands like `journal read` and `transcripts read` default to the current day — only pass explicit day values to override. Note: `journal search` requires explicit `-d DAY`.
 
@@ -69,7 +69,7 @@ SOL_DAY is set in your environment. Commands like `journal read` and `transcript
 
 2.  **Joke Selection and Delivery**:
     -   Select the best joke from the brainstormed options.
-    -   Call `emit_output(content=<final joke>)`. The `content` argument IS the joke verbatim.
+    -   Call `emit_final(content=<final joke>)`. The `content` argument IS the joke verbatim.
 
 ### Query Optimization Strategy
 -   **Primary Queries**: Broad, day-filtered searches to capture all agents and events from the analysis day.

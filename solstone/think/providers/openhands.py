@@ -356,7 +356,7 @@ class _OpenHandsTranslator:
         provider: str,
         model: str,
         max_turns: int = MAX_TURNS,
-        expects_emit_output: bool = False,
+        expects_emit_final: bool = False,
     ) -> None:
         from openhands.sdk.event import (
             ActionEvent,
@@ -370,14 +370,14 @@ class _OpenHandsTranslator:
         self.provider = provider
         self.model = model
         self.max_turns = max_turns
-        self.expects_emit_output = expects_emit_output
+        self.expects_emit_final = expects_emit_final
         self.ActionEvent = ActionEvent
         self.AgentErrorEvent = AgentErrorEvent
         self.ConversationErrorEvent = ConversationErrorEvent
         self.MessageEvent = MessageEvent
         self.ObservationEvent = ObservationEvent
         self.tool_calls: dict[str, dict[str, Any]] = {}
-        self.emit_output_content: str | None = None
+        self.emit_final_content: str | None = None
         self.finish_message: str | None = None
         self.final_message: str | None = None
         self.max_turns_exhausted = False
@@ -422,8 +422,8 @@ class _OpenHandsTranslator:
 
         args = _tool_arguments(event)
         call_id = str(getattr(event, "tool_call_id", "") or "")
-        if _is_emit_output_action(tool_name, event, args):
-            self.emit_output_content = _emit_output_content(event, args)
+        if _is_emit_final_action(tool_name, event, args):
+            self.emit_final_content = _emit_final_content(event, args)
             return
         if _is_finish_action(tool_name, event, args):
             self.finish_message = _finish_message(event, args)
@@ -548,8 +548,8 @@ class _OpenHandsTranslator:
         self._max_turns_event_emitted = True
 
     def result(self) -> str | None:
-        if self.expects_emit_output:
-            return self.emit_output_content
+        if self.expects_emit_final:
+            return self.emit_final_content
         return self.finish_message or self.final_message
 
 
@@ -592,13 +592,13 @@ def _is_finish_action(tool_name: str, event: Any, args: dict[str, Any]) -> bool:
     return "message" in args and tool_name.endswith("finish")
 
 
-def _is_emit_output_action(tool_name: str, event: Any, args: dict[str, Any]) -> bool:
-    if tool_name == "emit_output":
+def _is_emit_final_action(tool_name: str, event: Any, args: dict[str, Any]) -> bool:
+    if tool_name == "emit_final":
         return True
     action = getattr(event, "action", None)
-    if action is not None and action.__class__.__name__ == "EmitOutputAction":
+    if action is not None and action.__class__.__name__ == "EmitFinalAction":
         return True
-    return "content" in args and tool_name.endswith("emit_output")
+    return "content" in args and tool_name.endswith("emit_final")
 
 
 def _finish_message(event: Any, args: dict[str, Any]) -> str:
@@ -610,7 +610,7 @@ def _finish_message(event: Any, args: dict[str, Any]) -> str:
     return value if isinstance(value, str) else ""
 
 
-def _emit_output_content(event: Any, args: dict[str, Any]) -> str:
+def _emit_final_content(event: Any, args: dict[str, Any]) -> str:
     action = getattr(event, "action", None)
     content = getattr(action, "content", None)
     if isinstance(content, str):
@@ -785,7 +785,9 @@ async def run_cogitate(
         from openhands.sdk.tool.spec import Tool
 
         write = bool(config.get("write"))
-        expects_emit_output = bool(config.get("output_path"))
+        expects_emit_final = bool(config.get("output_path")) or config.get(
+            "schedule"
+        ) in {"daily", "weekly", "activity"}
         max_turns = int(config.get("max_turns", MAX_TURNS) or MAX_TURNS)
         session_id, conversation_id = _session_identity(config.get("session_id"))
         prompt_body, system_instruction = assemble_prompt(
@@ -813,14 +815,12 @@ async def run_cogitate(
         register_tool("sol", sol_tools[0])
         tool_specs = [Tool(name="sol")]
         default_tools = ["FinishTool"]
-        if expects_emit_output:
-            from solstone.think.providers.emit_output_tool import (
-                build_emit_output_tools,
-            )
+        if expects_emit_final:
+            from .emit_final_tool import build_emit_final_tools
 
-            emit_output_tools = build_emit_output_tools()
-            register_tool("emit_output", emit_output_tools[0])
-            tool_specs.append(Tool(name="emit_output"))
+            emit_final_tools = build_emit_final_tools()
+            register_tool("emit_final", emit_final_tools[0])
+            tool_specs.append(Tool(name="emit_final"))
             default_tools = []
 
         agent = Agent(
@@ -838,7 +838,7 @@ async def run_cogitate(
             provider=provider,
             model=_prefixed_model(provider, model),
             max_turns=max_turns,
-            expects_emit_output=expects_emit_output,
+            expects_emit_final=expects_emit_final,
         )
         conversation = Conversation(
             agent=agent,

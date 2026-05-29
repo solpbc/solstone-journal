@@ -56,7 +56,7 @@ Before writing, audit your coverage:
 
 ## Output
 
-Call `emit_output(content=<markdown body>)` with the markdown in this structure as the `content` argument:
+Call `emit_final(content=<markdown body>)` with the markdown in this structure as the `content` argument:
 
 ```markdown
 ---
