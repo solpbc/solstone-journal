@@ -7,15 +7,15 @@ from __future__ import annotations
 
 from typing import Any
 
-ENT_DETACH_CONFIRM = "Detach {name} from {facet}? It stays in your journal and you can re-attach it anytime."
-ENT_DETACH_DONE = "Detached from {facet}. {name} is still in your journal."
-ENT_DETACH_REATTACH_ACTION = "Re-attach it →"
-ENT_DETACH_FIND_ACTION = "Find it in your journal →"
-ENT_OBS_SOURCE_LINK_TITLE = "See this day"
-ENT_DETECTED_EMPTY = "Nothing detected here yet. As sol experiences your day in this facet, people, places, and things show up here to add to your journal."
-ENT_CARDS_EMPTY = "No entities in this facet yet. Anything sol detects below, you can star to keep. Or add one yourself."
-ENT_OBS_EMPTY = "No observations for {name} yet."
-ENT_OBS_LOAD_FAILED = "Couldn't load observations. Try again."
+ENT_DETACH_CONFIRM = "detach {name} from {facet}? stays in your journal and you can re-attach it anytime."
+ENT_DETACH_DONE = "detached from {facet}. {name} is still in your journal."
+ENT_DETACH_REATTACH_ACTION = "re-attach it →"
+ENT_DETACH_FIND_ACTION = "find it in your journal →"
+ENT_OBS_SOURCE_LINK_TITLE = "see this day"
+ENT_DETECTED_EMPTY = "nothing detected here yet. as sol experiences your day in this facet, people, places, and things show up here to add to your journal."
+ENT_CARDS_EMPTY = "no entities in this facet yet. anything sol detects below, you can star to keep. or add one yourself."
+ENT_OBS_EMPTY = "no observations for {name} yet."
+ENT_OBS_LOAD_FAILED = "couldn't load observations. try again."
 
 
 def entities_copy_payload() -> dict[str, Any]:

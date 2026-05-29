@@ -2642,9 +2642,10 @@ let pendingDetachEntity = null;
 
 function showDetachConfirmModal(entity) {
   pendingDetachEntity = entity;
+  const facetTitle = (window.facetsData || []).find(f => f.name === currentFacet)?.title || currentFacet;
   const message = (ENT_COPY.ENT_DETACH_CONFIRM || '')
     .replace('{name}', entity.name)
-    .replace('{facet}', currentFacet);
+    .replace('{facet}', facetTitle);
   document.getElementById('detachConfirmMessage').textContent = message;
   document.getElementById('detachConfirmModal').style.display = 'flex';
 }
@@ -2679,8 +2680,9 @@ function detachEntity(entity) {
       navigateToList();
       loadEntities();
       // Success-only feedback. This toast must NEVER fire on the failure path below.
+      const detachedFacetTitle = (window.facetsData || []).find(f => f.name === detachedFacet)?.title || detachedFacet;
       const doneMessage = (ENT_COPY.ENT_DETACH_DONE || '')
-        .replace('{facet}', detachedFacet)
+        .replace('{facet}', detachedFacetTitle)
         .replace('{name}', entityName);
       window.AppServices.notifications.show({
         app: 'entities',
