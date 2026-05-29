@@ -190,7 +190,14 @@ def build_provider_status(
             if not ram_sufficient:
                 issues.append("ram_insufficient")
             if configured and not server_healthy:
-                issues.append("server_unhealthy")
+                runnable, detail = local_install.probe_binary_runnable(
+                    readiness["binary_path"]
+                )
+                if runnable:
+                    issues.append("server_unhealthy")
+                else:
+                    issues.append(f"failed to launch: {detail}")
+                    issues.append(f"run `{local_install.install_hint()}`")
             if "binary_missing" in issues or "model_missing" in issues:
                 issues.append(f"run `{local_install.install_hint()}`")
 

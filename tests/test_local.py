@@ -226,6 +226,102 @@ def test_build_provider_status_local_readiness(monkeypatch):
     assert status["issues"] == []
 
 
+def test_build_provider_status_local_launch_failure_adds_probe_detail_and_hint(
+    monkeypatch,
+):
+    from solstone.think.providers import build_provider_status
+
+    detail = "dyld: Library not loaded: @rpath/libllama.dylib"
+    monkeypatch.setattr(
+        "solstone.think.providers.local_install.inspect_readiness",
+        lambda: {
+            "binary_installed": True,
+            "model_installed": True,
+            "ram_sufficient": True,
+            "binary_path": "/fake/llama-server",
+        },
+    )
+    monkeypatch.setattr(
+        "solstone.think.providers.local_server.is_healthy", lambda: False
+    )
+    monkeypatch.setattr(
+        "solstone.think.providers.local_install.probe_binary_runnable",
+        lambda _path: (False, detail),
+    )
+
+    status = build_provider_status(
+        [{"name": "local", "label": "Local (on-device)", "env_key": ""}]
+    )["local"]
+
+    assert status["issues"] == [
+        f"failed to launch: {detail}",
+        "run `sol call settings providers install local`",
+    ]
+    assert "server_unhealthy" not in status["issues"]
+
+
+def test_build_provider_status_local_server_unhealthy_when_probe_runnable(
+    monkeypatch,
+):
+    from solstone.think.providers import build_provider_status
+
+    monkeypatch.setattr(
+        "solstone.think.providers.local_install.inspect_readiness",
+        lambda: {
+            "binary_installed": True,
+            "model_installed": True,
+            "ram_sufficient": True,
+            "binary_path": "/fake/llama-server",
+        },
+    )
+    monkeypatch.setattr(
+        "solstone.think.providers.local_server.is_healthy", lambda: False
+    )
+    monkeypatch.setattr(
+        "solstone.think.providers.local_install.probe_binary_runnable",
+        lambda _path: (True, None),
+    )
+
+    status = build_provider_status(
+        [{"name": "local", "label": "Local (on-device)", "env_key": ""}]
+    )["local"]
+
+    assert status["issues"] == ["server_unhealthy"]
+
+
+def test_build_provider_status_local_healthy_skips_probe(monkeypatch):
+    from solstone.think.providers import build_provider_status
+
+    calls: list[str] = []
+
+    def probe(_path):
+        calls.append(_path)
+        return False, "should not run"
+
+    monkeypatch.setattr(
+        "solstone.think.providers.local_install.inspect_readiness",
+        lambda: {
+            "binary_installed": True,
+            "model_installed": True,
+            "ram_sufficient": True,
+            "binary_path": "/fake/llama-server",
+        },
+    )
+    monkeypatch.setattr(
+        "solstone.think.providers.local_server.is_healthy", lambda: True
+    )
+    monkeypatch.setattr(
+        "solstone.think.providers.local_install.probe_binary_runnable", probe
+    )
+
+    status = build_provider_status(
+        [{"name": "local", "label": "Local (on-device)", "env_key": ""}]
+    )["local"]
+
+    assert status["issues"] == []
+    assert calls == []
+
+
 def test_local_provider_status_carries_install_hint_substring(monkeypatch):
     from solstone.think.providers import build_provider_status
 

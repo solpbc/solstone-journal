@@ -37,6 +37,7 @@ from solstone.think.providers.local import (
 from solstone.think.utils import get_journal
 
 LOCAL_PROVIDER_NAME = "local"
+_PROBE_TIMEOUT_SECONDS = 10
 _LOCAL_METADATA_KEYS = frozenset(
     {
         "binary_artifact",
@@ -251,6 +252,33 @@ def _clear_macos_quarantine(path: Path) -> None:
         return
 
 
+def probe_binary_runnable(binary_path: str | Path) -> tuple[bool, str | None]:
+    import subprocess
+
+    try:
+        completed = subprocess.run(
+            [str(binary_path), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=_PROBE_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"timed out after {_PROBE_TIMEOUT_SECONDS}s"
+    except Exception as exc:
+        return False, str(exc)
+
+    if completed.returncode == 0:
+        return True, None
+
+    detail = (
+        (completed.stderr or "").strip()
+        or (completed.stdout or "").strip()
+        or f"exited with status {completed.returncode}"
+    )
+    return False, detail
+
+
 def install_llama_server() -> dict[str, Any]:
     artifact_key = llama_server_artifact_key()
     pin = pin_for_current_platform()
@@ -281,11 +309,13 @@ def install_llama_server() -> dict[str, Any]:
         _safe_extract_tarball(tarball, install_dir)
         extracted = _find_extracted_binary(install_dir, pin["binary_name"])
         final_path = binary_path_for_pin(artifact_key, pin)
-        if extracted != final_path:
-            final_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(extracted, final_path)
+        inner_dir = extracted.parent
+        if inner_dir != install_dir:
+            for item in inner_dir.iterdir():
+                shutil.move(str(item), str(install_dir / item.name))
+            inner_dir.rmdir()
         _chmod_executable(final_path)
-        _clear_macos_quarantine(final_path)
+        _clear_macos_quarantine(install_dir)
         _write_local_metadata(
             {
                 "binary_artifact": pin["filename"],
@@ -401,6 +431,7 @@ __all__ = [
     "install_model",
     "install_local",
     "install_hint",
+    "probe_binary_runnable",
     "inspect_readiness",
     "ensure_artifacts_installed",
 ]
