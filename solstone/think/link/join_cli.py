@@ -3,7 +3,7 @@
 
 """Caller-side `sol link join` implementation.
 
-Manual short-code form posts to `/app/link/by-code`; v2 pair-link URL form
+Manual short-code form posts to `/app/link/by-code`; v3 pair-link URL form
 decodes the embedded nonce and posts to `/app/link/pair?token=<nonce>`.
 
 Observer credentials are written under
@@ -193,11 +193,11 @@ def _parse_pair_link(pair_link: str, home: str | None) -> PairRequest:
         blob = crockford_decode(fragment)
     except ValueError as exc:
         raise ValueError("Invalid pair link") from exc
-    if len(blob) != 32 or blob[0] != 0x02 or blob[1] != 0x01:
+    if len(blob) != 40 or blob[0] != 0x04 or blob[1] != 0x01:
         raise ValueError("Invalid pair link")
     ipv4 = str(ipaddress.IPv4Address(blob[2:6]))
     port = int.from_bytes(blob[6:8], "big")
-    nonce_hex = blob[8:16].hex()
+    nonce_hex = blob[8:24].hex()
     base_url = home.rstrip("/") if home else f"https://{ipv4}:{port}"
     return PairRequest(
         url=f"{base_url}/app/link/pair?token={nonce_hex}",

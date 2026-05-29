@@ -219,9 +219,12 @@ def cert_fingerprint(cert_pem: str | bytes) -> str:
     return f"sha256:{_hex_sha256(cert.public_bytes(serialization.Encoding.DER))}"
 
 
+DIRECT_NONCE_BYTES = 16
+
+
 def generate_nonce() -> str:
-    """16-character hex nonce / 8 bytes for the pair ceremony."""
-    return secrets.token_hex(8)
+    """32-character hex nonce / 16 bytes for the pair ceremony."""
+    return secrets.token_hex(DIRECT_NONCE_BYTES)
 
 
 RELAY_NONCE_BYTES = 16

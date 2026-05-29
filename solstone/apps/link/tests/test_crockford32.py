@@ -13,15 +13,18 @@ from solstone.apps.link.crockford32 import decode, encode
 
 def test_encode_matches_pair_link_reference_vector() -> None:
     payload = (
-        bytes([2, 1])
+        bytes([4, 1])
         + ipaddress.IPv4Address("192.0.2.42").packed
         + (7070).to_bytes(2, "big")
-        + bytes.fromhex("A1B2C3D4E5F60718")
+        + bytes.fromhex("A1B2C3D4E5F607181122334455667788")
         + bytes.fromhex("DEADBEEFCAFEBABE0123456789ABCDEF")
     )
 
-    assert len(payload) == 32
-    assert encode(payload) == "080W000258DSX8DJRFAEBXG733FAVFQFSBZBNFG14D2PF2DBSQQG"
+    assert len(payload) == 40
+    assert (
+        encode(payload)
+        == "0G0W000258DSX8DJRFAEBXG7308J4CT4ANK7F26YNPZEZJQYQAZ028T5CY4TQKFF"
+    )
 
 
 def test_round_trip_random_payloads() -> None:

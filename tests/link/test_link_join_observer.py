@@ -135,14 +135,17 @@ def test_url_happy_path_posts_to_pair_token(
     pair_link = _build_pair_link(
         "192.0.2.42",
         7070,
-        "a1b2c3d4e5f60718",
+        "a1b2c3d4e5f607181122334455667788",
         "deadbeefcafebabe0123456789abcdef",
     )
 
     result = join_cli.main(_args(code=pair_link, home="http://receiver"))
 
     assert result == 0
-    assert calls[0][0] == "http://receiver/app/link/pair?token=a1b2c3d4e5f60718"
+    assert (
+        calls[0][0]
+        == "http://receiver/app/link/pair?token=a1b2c3d4e5f607181122334455667788"
+    )
     assert "code" not in calls[0][1]
     assert calls[0][1]["device_label"] == "laptop"
 

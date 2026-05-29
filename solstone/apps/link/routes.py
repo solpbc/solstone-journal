@@ -204,18 +204,18 @@ def _build_pair_link(
     nonce: str,
     ca_fp: str,
 ) -> str:
-    """Build the v2 pair-link URL.
+    """Build the v3 pair-link URL.
 
     Layout:
-    version(1) | addr_type(1) | ipv4(4) | port_be(2) | nonce(8) | ca_fp[:16].
-    Encoded as 52-char uppercase Crockford base32 in the URL fragment.
+    version(1) | addr_type(1) | ipv4(4) | port_be(2) | nonce(16) | ca_fp[:16].
+    Encoded as 64-char uppercase Crockford base32 in the URL fragment.
     """
     ipv4_bytes = ipaddress.IPv4Address(host).packed
     port_bytes = port.to_bytes(2, "big")
     nonce_bytes = bytes.fromhex(nonce)
     ca_fp_bytes = bytes.fromhex(ca_fp)[:16]
-    blob = b"\x02\x01" + ipv4_bytes + port_bytes + nonce_bytes + ca_fp_bytes
-    assert len(blob) == 32
+    blob = b"\x04\x01" + ipv4_bytes + port_bytes + nonce_bytes + ca_fp_bytes
+    assert len(blob) == 40
     return f"https://{PAIR_LINK_HOST}{PAIR_LINK_PATH}#{crockford_encode(blob)}"
 
 

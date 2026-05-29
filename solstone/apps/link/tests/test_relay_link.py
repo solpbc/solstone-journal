@@ -132,17 +132,17 @@ def test_version_byte_disambiguates_direct_and_relay_forms() -> None:
     direct_url = _build_pair_link(
         "192.0.2.42",
         7070,
-        "a1b2c3d4e5f60718",
+        "a1b2c3d4e5f607181122334455667788",
         "deadbeefcafebabe0123456789abcdef",
     )
     direct_blob = crockford_decode(_fragment(direct_url))
 
     assert len(relay_blob) == 54
     assert relay_blob[0] == 0x03
-    assert not (len(relay_blob) == 32 and relay_blob[0] == 0x02)
+    assert not (len(relay_blob) == 40 and relay_blob[0] == 0x04)
 
-    assert len(direct_blob) == 32
-    assert direct_blob[0] == 0x02
+    assert len(direct_blob) == 40
+    assert direct_blob[0] == 0x04
     assert not (len(direct_blob) >= 54 and direct_blob[0] == 0x03)
 
 

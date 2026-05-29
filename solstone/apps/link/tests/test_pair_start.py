@@ -39,7 +39,7 @@ def test_pair_start_shape_and_locked_order(link_env) -> None:
     payload = response.get_json()
     assert list(payload.keys()) == PAIR_START_KEYS
     assert re.fullmatch(
-        r"^https://link\.solpbc\.org/p#[0-9A-HJKMNP-TV-Z]{52}$",
+        r"^https://link\.solpbc\.org/p#[0-9A-HJKMNP-TV-Z]{64}$",
         payload["pair_link"],
     )
     assert re.fullmatch(
