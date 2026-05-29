@@ -21,10 +21,10 @@ def test_main_runs_with_mocked_prompts(journal_copy, monkeypatch):
         commands_run.append(cmd)
         return True
 
-    def mock_run_daily_prompts(day, refresh, verbose, **kwargs):
+    def mock_run_daily_prompts(day, verbose, **kwargs):
         nonlocal prompts_run
         prompts_run = True
-        return (5, 0, [])  # 5 success, 0 failures, no failed names
+        return (5, 0, [], set())  # 5 success, 0 failures, no failed names
 
     monkeypatch.setattr(mod, "run_command", mock_run_command)
     monkeypatch.setattr(mod, "run_queued_command", mock_run_queued_command)

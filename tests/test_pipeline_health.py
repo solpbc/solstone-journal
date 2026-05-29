@@ -13,6 +13,7 @@ import pytest
 
 from solstone.think.pipeline_health import (
     pipeline_status_message,
+    read_completed_units,
     summarize_pipeline_day,
 )
 
@@ -30,6 +31,143 @@ def pipeline_journal(tmp_path, monkeypatch):
     journal.mkdir()
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
     return journal
+
+
+def test_read_completed_units_missing_health_dir(pipeline_journal):
+    (pipeline_journal / "chronicle" / "20990201").mkdir(parents=True)
+
+    assert read_completed_units("20990201") == set()
+
+
+def test_read_completed_units_terminal_presence(pipeline_journal):
+    day = "20990202"
+    base = pipeline_journal / "chronicle" / day / "health"
+    _write_jsonl(
+        base / "001_daily.jsonl",
+        [
+            {"event": "talent.complete", "ts": 1, "mode": "daily", "name": "done"},
+            {"event": "talent.fail", "ts": 1, "mode": "daily", "name": "failed"},
+            {"event": "talent.dispatch", "ts": 1, "mode": "daily", "name": "sent"},
+            {"event": "talent.skip", "ts": 1, "mode": "daily", "name": "skipped"},
+        ],
+    )
+
+    assert read_completed_units(day) == {("daily", "done", None)}
+
+
+def test_read_completed_units_latest_terminal_wins(pipeline_journal):
+    day = "20990203"
+    base = pipeline_journal / "chronicle" / day / "health"
+    _write_jsonl(
+        base / "001_daily.jsonl",
+        [{"event": "talent.complete", "ts": 1, "mode": "daily", "name": "alpha"}],
+    )
+    _write_jsonl(
+        base / "002_daily.jsonl",
+        [{"event": "talent.fail", "ts": 2, "mode": "daily", "name": "alpha"}],
+    )
+    _write_jsonl(
+        base / "003_daily.jsonl",
+        [{"event": "talent.fail", "ts": 1, "mode": "daily", "name": "beta"}],
+    )
+    _write_jsonl(
+        base / "004_daily.jsonl",
+        [{"event": "talent.complete", "ts": 2, "mode": "daily", "name": "beta"}],
+    )
+
+    assert read_completed_units(day) == {("daily", "beta", None)}
+
+
+def test_read_completed_units_skip_is_non_terminal(pipeline_journal):
+    day = "20990204"
+    base = pipeline_journal / "chronicle" / day / "health"
+    _write_jsonl(
+        base / "001_daily.jsonl",
+        [{"event": "talent.complete", "ts": 1, "mode": "daily", "name": "alpha"}],
+    )
+    _write_jsonl(
+        base / "002_daily.jsonl",
+        [{"event": "talent.skip", "ts": 2, "mode": "daily", "name": "alpha"}],
+    )
+
+    assert read_completed_units(day) == {("daily", "alpha", None)}
+
+
+def test_read_completed_units_equal_ts_later_record_wins(pipeline_journal):
+    day = "20990205"
+    base = pipeline_journal / "chronicle" / day / "health"
+    _write_jsonl(
+        base / "001_daily.jsonl",
+        [{"event": "talent.complete", "ts": 1, "mode": "daily", "name": "alpha"}],
+    )
+    _write_jsonl(
+        base / "002_daily.jsonl",
+        [{"event": "talent.fail", "ts": 1, "mode": "daily", "name": "alpha"}],
+    )
+
+    assert read_completed_units(day) == set()
+
+
+def test_read_completed_units_keys_include_facet(pipeline_journal):
+    day = "20990206"
+    base = pipeline_journal / "chronicle" / day / "health"
+    _write_jsonl(
+        base / "001_daily.jsonl",
+        [
+            {
+                "event": "talent.complete",
+                "ts": 1,
+                "mode": "daily",
+                "name": "facet_newsletter",
+                "facet": "work",
+            },
+            {
+                "event": "talent.fail",
+                "ts": 1,
+                "mode": "daily",
+                "name": "facet_newsletter",
+                "facet": "personal",
+            },
+        ],
+    )
+
+    assert read_completed_units(day) == {("daily", "facet_newsletter", "work")}
+
+
+def test_read_completed_units_skips_malformed_records(pipeline_journal):
+    day = "20990207"
+    path = pipeline_journal / "chronicle" / day / "health" / "001_daily.jsonl"
+    path.parent.mkdir(parents=True)
+    with path.open("w", encoding="utf-8") as handle:
+        handle.write("{bad json\n")
+        handle.write(json.dumps({"event": "talent.complete", "ts": 1, "name": "alpha"}))
+        handle.write("\n")
+        handle.write(json.dumps({"event": "talent.complete", "ts": 1, "mode": "daily"}))
+        handle.write("\n")
+        handle.write(
+            json.dumps(
+                {
+                    "event": "talent.complete",
+                    "ts": "not-int",
+                    "mode": "daily",
+                    "name": "beta",
+                }
+            )
+        )
+        handle.write("\n")
+        handle.write(
+            json.dumps(
+                {
+                    "event": "talent.complete",
+                    "ts": 2,
+                    "mode": "daily",
+                    "name": "gamma",
+                }
+            )
+        )
+        handle.write("\n")
+
+    assert read_completed_units(day) == {("daily", "gamma", None)}
 
 
 def test_empty_day_is_healthy(pipeline_journal):

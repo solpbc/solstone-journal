@@ -39,6 +39,7 @@ from solstone.think.facets import (
     get_enabled_facets,
     load_segment_facets,
 )
+from solstone.think.pipeline_health import read_completed_units
 from solstone.think.runner import run_task
 from solstone.think.sense_splitter import write_idle_stubs, write_sense_outputs
 from solstone.think.talent import get_output_path, get_talent_configs
@@ -232,6 +233,7 @@ def check_callosum_available() -> bool:
 
 
 _SKIPPED: object = object()
+NEVER_SKIP_DAILY = frozenset({"pulse", "awareness_tender"})
 _SEND_RETRY_DELAYS = (0.5, 1.0)  # seconds between retries (3 attempts total)
 
 
@@ -458,17 +460,20 @@ def _has_audio_embeddings(seg_dir: Path) -> bool:
     return False
 
 
-def _should_skip_preflight(
-    prompt_name: str,
+def _check_daily_skip(
+    name: str,
+    facet: str | None,
     *,
-    day: str,
-    segment: str | None,
-    stream: str | None,
+    mode: str,
+    completed: set[tuple[str, str, str | None]],
+    never_skip: frozenset[str],
 ) -> tuple[bool, str | None]:
-    """Return whether a prompt can be skipped before sending a cortex request."""
-    if not segment:
+    if mode != "daily":
         return (False, None)
-
+    if name in never_skip:
+        return (False, None)
+    if (mode, name, facet) in completed:
+        return (True, "already_complete")
     return (False, None)
 
 
@@ -1172,12 +1177,11 @@ def run_segment_sense(
 
 def run_daily_prompts(
     day: str,
-    refresh: bool,
     verbose: bool,
     max_concurrency: int = 2,
     stream: str | None = None,
     timeout: int | None = 610,
-) -> tuple[int, int, list[str]]:
+) -> tuple[int, int, list[str], set[tuple[str, str | None]]]:
     """Run all daily scheduled prompts in priority order.
 
     Loads all daily prompts, groups by priority, and executes each group with
@@ -1187,14 +1191,15 @@ def run_daily_prompts(
 
     Args:
         day: Day in YYYYMMDD format
-        refresh: Whether to regenerate existing outputs
         verbose: Verbose logging
         max_concurrency: Max agents to run concurrently per priority group.
             0 means unlimited (all agents in a group run in parallel).
 
     Returns:
-        Tuple of (success_count, fail_count, failed_names) where
-        failed_names contains descriptions like "digest (error)".
+        Tuple of (success_count, fail_count, failed_names, applicable_units) where
+        failed_names contains descriptions like "digest (error)" and
+        applicable_units contains (name, facet) daily units that survived
+        structural filters.
     """
     target_schedule = "daily"
 
@@ -1203,7 +1208,9 @@ def run_daily_prompts(
 
     if not all_prompts:
         logging.info(f"No prompts found for schedule: {target_schedule}")
-        return (0, 0, [])
+        return (0, 0, [], set())
+
+    completed_units = read_completed_units(day)
 
     # Group prompts by priority
     priority_groups: dict[int, list[tuple[str, dict]]] = {}
@@ -1244,6 +1251,8 @@ def run_daily_prompts(
     total_success = 0
     total_failed = 0
     all_failed_names: list[str] = []
+    applicable_units: set[tuple[str, str | None]] = set()
+    already_complete_skips = 0
 
     # Process each priority group in order
     for priority in sorted(priority_groups.keys()):
@@ -1311,14 +1320,40 @@ def run_daily_prompts(
                             )
                             continue
 
+                        applicable_units.add((prompt_name, facet_name))
+                        skip, reason = _check_daily_skip(
+                            prompt_name,
+                            facet_name,
+                            mode=target_schedule,
+                            completed=completed_units,
+                            never_skip=NEVER_SKIP_DAILY,
+                        )
+                        if skip:
+                            reason = reason or "already_complete"
+                            _log_skip(
+                                prompt_name,
+                                reason,
+                                "unit already complete in health log",
+                                mode=target_schedule,
+                                day=day,
+                                facet=facet_name,
+                            )
+                            logging.debug(
+                                "Skipping %s for %s: %s",
+                                prompt_name,
+                                facet_name,
+                                reason,
+                            )
+                            already_complete_skips += 1
+                            continue
+
                         logging.info(f"Spawning {prompt_name} for facet: {facet_name}")
 
                         # Always pass day for instructions.day context
                         request_config: dict = {"facet": facet_name, "day": day}
                         if is_generate:
                             request_config["output"] = config.get("output", "md")
-                            if refresh:
-                                request_config["refresh"] = True
+                            request_config["refresh"] = True
                         elif config.get("output"):
                             # Cogitate agents with explicit output get auto-persisted
                             request_config["output"] = config["output"]
@@ -1401,14 +1436,34 @@ def run_daily_prompts(
                             )
                 else:
                     # Regular single-instance prompt
+                    applicable_units.add((prompt_name, None))
+                    skip, reason = _check_daily_skip(
+                        prompt_name,
+                        None,
+                        mode=target_schedule,
+                        completed=completed_units,
+                        never_skip=NEVER_SKIP_DAILY,
+                    )
+                    if skip:
+                        reason = reason or "already_complete"
+                        _log_skip(
+                            prompt_name,
+                            reason,
+                            "unit already complete in health log",
+                            mode=target_schedule,
+                            day=day,
+                        )
+                        logging.debug("Skipping %s: %s", prompt_name, reason)
+                        already_complete_skips += 1
+                        continue
+
                     logging.info(f"Spawning {prompt_name}")
 
                     # Always pass day for instructions.day context
                     request_config: dict = {"day": day}
                     if is_generate:
                         request_config["output"] = config.get("output", "md")
-                        if refresh:
-                            request_config["refresh"] = True
+                        request_config["refresh"] = True
                     env: dict[str, str] = {"SOL_DAY": day}
                     request_config["env"] = env
                     request_config["schedule"] = target_schedule
@@ -1513,6 +1568,12 @@ def run_daily_prompts(
             failed=group_failed,
         )
 
+    if already_complete_skips:
+        logging.info(
+            "Daily idempotency: skipped %d already-complete unit(s)",
+            already_complete_skips,
+        )
+
     duration_ms = int((time.time() - start_time) * 1000)
     emit(
         "completed",
@@ -1525,7 +1586,7 @@ def run_daily_prompts(
     )
 
     logging.info(f"Prompts completed: {total_success} succeeded, {total_failed} failed")
-    return (total_success, total_failed, all_failed_names)
+    return (total_success, total_failed, all_failed_names, applicable_units)
 
 
 def run_weekly_prompts(
@@ -2944,18 +3005,6 @@ def main() -> None:
     if args.activity and not args.facet:
         parser.error("--activity requires --facet")
 
-    # Auto-enable refresh for updated days (full daily runs only)
-    if not args.refresh and not args.segment and not args.segments:
-        health_dir = day_dir / "health"
-        stream_marker = health_dir / "stream.updated"
-        daily_marker = health_dir / "daily.updated"
-        if stream_marker.is_file() and (
-            not daily_marker.is_file()
-            or stream_marker.stat().st_mtime > daily_marker.stat().st_mtime
-        ):
-            args.refresh = True
-            logging.info("Day %s has pending stream data, enabling refresh", day)
-
     if args.activity and not args.day:
         parser.error("--activity requires --day")
 
@@ -3210,12 +3259,13 @@ def main() -> None:
                 skip_talents=skip_talents,
             )
         else:
-            success_count, fail_count, failed_names = run_daily_prompts(
-                day=day,
-                refresh=args.refresh,
-                verbose=args.verbose,
-                max_concurrency=args.jobs,
-                stream=resolved_stream,
+            success_count, fail_count, failed_names, applicable_units = (
+                run_daily_prompts(
+                    day=day,
+                    verbose=args.verbose,
+                    max_concurrency=args.jobs,
+                    stream=resolved_stream,
+                )
             )
         _run_result["success"] = success_count
         _run_result["failed"] = fail_count
@@ -3298,13 +3348,25 @@ def main() -> None:
                     "Storage health check failed in post-phase", exc_info=True
                 )
 
-            # Touch daily.updated marker after daily schedule completion
+            # Touch daily.updated marker only after applicable daily units complete.
             try:
-                health_dir = day_path(day) / "health"
-                health_dir.mkdir(parents=True, exist_ok=True)
-                (health_dir / "daily.updated").touch()
+                completed = read_completed_units(day)
+                all_done = all(
+                    ("daily", name, facet) in completed
+                    for name, facet in applicable_units
+                )
+                if all_done:
+                    health_dir = day_path(day) / "health"
+                    health_dir.mkdir(parents=True, exist_ok=True)
+                    (health_dir / "daily.updated").touch()
+                    logging.info("Day %s fully complete; wrote daily.updated", day)
+                else:
+                    logging.info(
+                        "Day %s has incomplete daily unit(s); withholding daily.updated",
+                        day,
+                    )
             except Exception:
-                pass
+                logging.warning("Failed to update daily marker", exc_info=True)
 
             # Set first_daily_ready awareness flag after first daily analysis
             try:

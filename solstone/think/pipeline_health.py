@@ -159,6 +159,81 @@ def summarize_pipeline_day(day: str) -> dict:
     return summary
 
 
+def read_completed_units(day: str) -> set[tuple[str, str, str | None]]:
+    """Return unit keys whose latest terminal health event is complete.
+
+    Folds the day's health JSONL files read-only. Terminal events are only
+    ``talent.complete`` and ``talent.fail``; ``talent.skip``,
+    ``talent.dispatch``, and ``run.*`` events are non-terminal. For each
+    ``(mode, name, facet)`` unit, the latest terminal event wins by ``ts``;
+    when timestamps tie, later records in sorted-file and line order win.
+    Units with no terminal event are incomplete and omitted. Units whose latest
+    terminal event is ``talent.fail`` are incomplete and omitted.
+
+    This function does not create, modify, or delete journal state.
+    """
+    latest: dict[tuple[str, str, str | None], tuple[int, bool]] = {}
+
+    try:
+        health_dir = day_path(day, create=False) / "health"
+        if not health_dir.is_dir():
+            return set()
+
+        for path in sorted(health_dir.glob("*.jsonl")):
+            with path.open(encoding="utf-8") as handle:
+                for raw_line in handle:
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        logger.debug("malformed jsonl line in %s", path)
+                        continue
+
+                    if not isinstance(rec, dict):
+                        logger.debug(
+                            "pipeline_health: skipping invalid record in %s", path
+                        )
+                        continue
+
+                    event = rec.get("event")
+                    if event not in {"talent.complete", "talent.fail"}:
+                        continue
+
+                    mode = rec.get("mode")
+                    name = rec.get("name")
+                    if not isinstance(mode, str) or not isinstance(name, str):
+                        logger.debug(
+                            "pipeline_health: skipping terminal record missing "
+                            "mode/name in %s",
+                            path,
+                        )
+                        continue
+
+                    try:
+                        ts = int(rec["ts"])
+                    except (KeyError, TypeError, ValueError):
+                        logger.debug(
+                            "pipeline_health: skipping terminal record with invalid "
+                            "ts in %s",
+                            path,
+                        )
+                        continue
+
+                    key = (mode, name, rec.get("facet"))
+                    if key not in latest or ts >= latest[key][0]:
+                        latest[key] = (ts, event == "talent.complete")
+    except Exception:
+        logger.warning(
+            "pipeline_health: unexpected error reading completed units for %s",
+            day,
+            exc_info=True,
+        )
+
+    return {key for key, (_ts, is_complete) in latest.items() if is_complete}
+
+
 def pipeline_status_message(summary: dict) -> dict | None:
     """Return a short user-facing message for non-healthy summaries."""
     if summary.get("status") == "healthy":
