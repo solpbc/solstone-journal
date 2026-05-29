@@ -280,17 +280,6 @@
       "title": "Import Facet Reviewer",
       "type": "cogitate"
     },
-    "joke_bot": {
-      "app": null,
-      "color": "#f9a825",
-      "description": "Mines the analysis day's journal for poignant moments and crafts a personalized joke delivered via message",
-      "multi_facet": false,
-      "output_format": "md",
-      "schedule": "daily",
-      "source": "system",
-      "title": "Joke Bot",
-      "type": "cogitate"
-    },
     "morning_briefing": {
       "app": null,
       "color": "#1565c0",

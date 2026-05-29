@@ -294,14 +294,6 @@
       "tier": 2,
       "type": "cogitate"
     },
-    "talent.system.joke_bot": {
-      "disabled": false,
-      "group": "Think",
-      "label": "Joke Bot",
-      "schedule": "daily",
-      "tier": 2,
-      "type": "cogitate"
-    },
     "talent.system.morning_briefing": {
       "disabled": false,
       "group": "Think",
