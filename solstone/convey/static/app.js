@@ -66,9 +66,9 @@
 
     if (isSelected) {
       pill.classList.add('selected');
-      pill.style.background = facet.color || '';
+      pill.style.background = facet.color || 'var(--status-inactive)';
       pill.style.color = 'white';
-      pill.style.borderColor = facet.color || '';
+      pill.style.borderColor = facet.color || 'var(--status-inactive)';
       pill.title = 'Click to show all facets';
     } else {
       pill.classList.remove('selected');
