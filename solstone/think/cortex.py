@@ -480,10 +480,7 @@ class CortexService:
                             "terminal", True
                         )
                         if event.get("event") == "finish" or terminal_error:
-                            # Check for output (only on finish)
                             if event.get("event") == "finish":
-                                result = event.get("result", "")
-
                                 # Get original request (thread-safe access)
                                 with self.lock:
                                     original_request = self.use_requests.get(
@@ -524,14 +521,6 @@ class CortexService:
                                         self.logger.warning(
                                             f"Failed to log token usage for talent {agent.use_id}: {e}"
                                         )
-
-                                # Write output if requested
-                                if original_request and original_request.get("output"):
-                                    self._write_output(
-                                        agent.use_id,
-                                        result,
-                                        original_request,
-                                    )
 
                             # Break to trigger cleanup
                             break
@@ -803,30 +792,6 @@ class CortexService:
             self._complete_use_file(use_id, file_path)
         except Exception as e:
             self.logger.error(f"Failed to write error and complete: {e}")
-
-    def _write_output(self, use_id: str, result: str, config: Dict[str, Any]) -> None:
-        """Write talent output to config["output_path"].
-
-        The output path is set by the caller — either derived by
-        prepare_config in solstone.think.talents (day/segment talents) or computed
-        by thinking.py via get_activity_output_path (activity talents).
-        Cortex does not derive paths itself.
-        """
-        output_path_str = config.get("output_path")
-        if not output_path_str:
-            return
-
-        try:
-            output_path = Path(output_path_str)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(result)
-
-            self.logger.info(f"Wrote talent {use_id} output to {output_path}")
-
-        except Exception as e:
-            self.logger.error(f"Failed to write talent {use_id} output: {e}")
 
     def stop(self) -> None:
         """Stop the Cortex service."""
