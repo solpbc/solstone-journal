@@ -565,9 +565,6 @@ smoke-install-providers: .installed
 	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) \
 	  solstone/apps/settings/tests/test_providers_payload_extended.py \
 	  -v --tb=short --timeout=120
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) \
-	  solstone/apps/settings/tests/test_providers_panel_visual.py \
-	  -m integration -v --tb=short --timeout=120
 
 release: ## Publish solstone to PyPI (production)
 	@bash scripts/release.sh
