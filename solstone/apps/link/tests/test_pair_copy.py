@@ -35,6 +35,13 @@ U4_COPY_VALUES = [
     copy.HERO_HOW_REACH_LABEL,
 ]
 
+U8_COPY_VALUES = [
+    copy.PAIR_ROTATE_NOTE,
+    copy.WINDOW_CLOSED_BUTTON,
+    copy.SUCCESS_VERIFY_NOTE_ANYWHERE,
+    copy.RECENT_NETWORK_LABEL_ANYWHERE,
+]
+
 
 def _normalized_body(body: str) -> str:
     return (
@@ -87,6 +94,19 @@ def test_u4_copy_values_are_locked() -> None:
     assert copy.HERO_HOW_REACH_LABEL == "how reach works ▸"
 
 
+def test_u8_copy_values_are_locked() -> None:
+    assert (
+        copy.PAIR_ROTATE_NOTE
+        == "this code refreshes on its own — keep this page open while you pair."
+    )
+    assert copy.WINDOW_CLOSED_BUTTON == "pairing window closed — open a new one"
+    assert copy.SUCCESS_VERIFY_NOTE_ANYWHERE == (
+        "this device can now reach home from anywhere. check it now — "
+        "this fingerprint should match what it shows. didn't do this?"
+    )
+    assert copy.RECENT_NETWORK_LABEL_ANYWHERE == "from anywhere"
+
+
 def test_u4_copy_stays_in_bounds() -> None:
     banned_terms = ("account",)
     acronym_re = re.compile(r"\b(dl|pl|spl)\b")
@@ -104,6 +124,19 @@ def test_u4_copy_stays_in_bounds() -> None:
         assert not device_noun_re.search(value.lower()), value
 
     assert "phone or laptop" in copy.HERO_BODY.lower()
+
+
+def test_u8_copy_stays_in_bounds() -> None:
+    banned_terms = ("account",)
+    acronym_re = re.compile(r"\b(dl|pl|spl)\b")
+    device_noun_re = re.compile(r"\bphone\b")
+
+    for value in U8_COPY_VALUES:
+        lowered = value.lower()
+        for term in banned_terms:
+            assert term not in lowered, value
+        assert not acronym_re.search(lowered), value
+        assert not device_noun_re.search(lowered), value
 
 
 def test_u4_copy_matches_rendered_body(link_env) -> None:

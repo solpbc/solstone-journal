@@ -22,6 +22,9 @@ MANUAL_CODE_LABEL = "can't scan? type this on the device:"
 PAIR_NETWORK_LINE = (
     "this device needs to be on your network (or your VPN) to pair. expires in 5:00."
 )
+PAIR_ROTATE_NOTE = (
+    "this code refreshes on its own — keep this page open while you pair."
+)
 DETAILS_DISCLOSURE = "verify this is really your home"
 CA_FP_LABEL = "fingerprint"
 CA_FP_NOTE = (
@@ -31,6 +34,7 @@ DEVICE_LABEL_FIELD_LABEL = "name this device"
 DEVICE_LABEL_PLACEHOLDER = "e.g. my iPhone"
 DEVICE_LABEL_DEFAULT_FORMAT = "device — added {month} {day}"
 EXPIRED_BUTTON = "this code expired — show a new one"
+WINDOW_CLOSED_BUTTON = "pairing window closed — open a new one"
 SUCCESS_HEADING = '"{label}" is now paired with your solstone'
 SUCCESS_SUBHEAD = "{short_fp} · paired just now"
 SUCCESS_DONE = "done"
@@ -40,6 +44,10 @@ PAIR_ERROR_BODY = (
 SUCCESS_VERIFY_NOTE = (
     "check the device you just paired — this fingerprint should match what it "
     "shows. didn't do this?"
+)
+SUCCESS_VERIFY_NOTE_ANYWHERE = (
+    "this device can now reach home from anywhere. check it now — this "
+    "fingerprint should match what it shows. didn't do this?"
 )
 SUCCESS_REMOVE_LABEL = "that wasn't me — remove"
 PAIR_WEB_PASSWORD_SETTINGS_LINK = "set a web password for this page in settings →"
@@ -138,6 +146,7 @@ DEVICE_EMPTY_TITLE = "no devices connected yet"
 DEVICE_EMPTY_BODY = "pair a device to read your journal on the go."
 RECENT_SECTION_TITLE = "recently paired"
 RECENT_NETWORK_LABEL = "on your network"
+RECENT_NETWORK_LABEL_ANYWHERE = "from anywhere"
 REFRESH_FAIL_NOTICE = "showing the last state we saw"
 UNPAIR_TITLE_FORMAT = "unpair '{label}'?"
 UNPAIR_BODY = (

@@ -266,7 +266,10 @@ def test_peer_journal_source_mint_failure_does_not_add_authorized(
 
     with pytest.raises(RuntimeError, match="journal source mint failed"):
         link_routes._complete_pairing(
-            _consumed_nonce("peer"), _make_csr("mint"), "Peer Laptop"
+            _consumed_nonce("peer"),
+            _make_csr("mint"),
+            "Peer Laptop",
+            network="network",
         )
 
     assert _journal_source_paths(env) == []
@@ -318,7 +321,10 @@ def test_peer_state_dir_failure_unlinks_journal_source_and_skips_authorized(
 
     with pytest.raises(RuntimeError, match="state dir failed"):
         link_routes._complete_pairing(
-            _consumed_nonce("peer"), _make_csr("state-dir"), "Peer Laptop"
+            _consumed_nonce("peer"),
+            _make_csr("state-dir"),
+            "Peer Laptop",
+            network="network",
         )
 
     assert _journal_source_paths(env) == []
@@ -366,7 +372,10 @@ def test_peer_journal_source_rolls_back_when_authorized_add_fails(
 
     with pytest.raises(RuntimeError, match="ledger write failed"):
         link_routes._complete_pairing(
-            _consumed_nonce("peer"), _make_csr("rollback"), "Peer Laptop"
+            _consumed_nonce("peer"),
+            _make_csr("rollback"),
+            "Peer Laptop",
+            network="network",
         )
 
     assert _journal_source_paths(env) == []

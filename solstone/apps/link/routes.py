@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from cryptography.hazmat.primitives import serialization
-from flask import Blueprint, Response, abort, jsonify, request
+from flask import Blueprint, Response, abort, g, jsonify, request
 
 from solstone.apps.link import copy as link_copy
 from solstone.apps.link.copy import (
@@ -147,6 +147,10 @@ def _default_device_label() -> str:
         month=now.strftime("%b"),
         day=now.strftime("%d"),
     )
+
+
+def _rough_network(mode: str) -> str:
+    return "anywhere" if mode == "pl-via-spl" else "network"
 
 
 def _is_loopback_request() -> bool:
@@ -471,6 +475,7 @@ def _complete_pairing(
     csr_pem: str,
     device_label: str,
     *,
+    network: str,
     sender_instance_id: str | None = None,
 ) -> tuple[dict[str, Any], str, str]:
     ca = load_or_generate_ca(ca_dir())
@@ -515,6 +520,7 @@ def _complete_pairing(
             instance_id=state.instance_id,
             role=consumed.role,
             paired_at=paired_at,
+            network=network,
         )
     except Exception:
         if observer_record_path is not None:
@@ -536,6 +542,8 @@ def _emit_pair_complete(
     device_label: str,
     fingerprint: str,
     paired_at: str,
+    *,
+    network: str,
 ) -> None:
     emit(
         "link",
@@ -544,6 +552,7 @@ def _emit_pair_complete(
         fingerprint=fingerprint,
         fingerprint_short=fingerprint.replace("sha256:", "")[:16],
         paired_at=paired_at,
+        network=network,
     )
 
 
@@ -600,17 +609,19 @@ def pair() -> Any:
 
     effective_label = device_label or (consumed.device_label or _default_device_label())
 
+    network = _rough_network(g.identity.mode)
     try:
         response, fingerprint, paired_at = _complete_pairing(
             consumed,
             csr_pem,
             effective_label,
+            network=network,
             sender_instance_id=sender_instance_id,
         )
     except ValueError as exc:
         logger.info("pair: bad csr: %s", exc)
         return error_response(PAIRING_KEY_INVALID, detail=f"bad csr: {exc}")
-    _emit_pair_complete(effective_label, fingerprint, paired_at)
+    _emit_pair_complete(effective_label, fingerprint, paired_at, network=network)
     return jsonify(response)
 
 
@@ -651,17 +662,19 @@ def by_code() -> Any:
         )
 
     effective_label = device_label or consumed.device_label or _default_device_label()
+    network = _rough_network(g.identity.mode)
     try:
         response, fingerprint, paired_at = _complete_pairing(
             consumed,
             csr_pem,
             effective_label,
+            network=network,
             sender_instance_id=sender_instance_id,
         )
     except ValueError as exc:
         logger.info("by-code: bad csr: %s", exc)
         return error_response(PAIRING_KEY_INVALID, detail=f"bad csr: {exc}")
-    _emit_pair_complete(effective_label, fingerprint, paired_at)
+    _emit_pair_complete(effective_label, fingerprint, paired_at, network=network)
     return jsonify(response)
 
 
@@ -811,6 +824,7 @@ def _entry_to_json(entry: ClientEntry) -> dict[str, Any]:
         "paired_at": entry.paired_at,
         "last_seen_at": entry.last_seen_at,
         "role": entry.role,
+        "network": entry.network,
     }
 
 
@@ -822,4 +836,4 @@ def _entry_to_json(entry: ClientEntry) -> dict[str, Any]:
 @link_bp.app_context_processor
 def _inject_link_helpers() -> dict[str, Any]:
     """Make `url_for` to link endpoints easy from templates."""
-    return {"link_copy": link_copy}
+    return {"link_copy": link_copy, "posture": read_posture()}

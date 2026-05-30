@@ -4,8 +4,8 @@
 """authorized_clients.json — the PL revocation ledger.
 
 Entry shape is fixed by the spl protocol (see github.com/solpbc/spl
-proto/pairing.md §6), plus a solstone-specific `last_seen_at` field for
-UX:
+proto/pairing.md §6), plus solstone-specific `last_seen_at` and `network`
+fields for UX:
 
             {
               "fingerprint": "sha256:<hex>",
@@ -13,7 +13,8 @@ UX:
               "paired_at": "2026-04-19T17:42:13Z",
               "instance_id": "<home_instance_id>",
               "role": "phone",
-              "last_seen_at": "2026-04-19T18:03:12Z"   // optional; null/absent = never
+              "last_seen_at": "2026-04-19T18:03:12Z",  // optional; null/absent = never
+              "network": "network"                     // optional; local display label source
             }
 
 Readers reload the file on mtime change so an unpair action takes effect
@@ -21,7 +22,7 @@ within ~500 ms of the file write. Convey's pair and unpair routes own the
 pairing writer surface; the secure listener updates `last_seen_at` and uses
 this ledger for TLS verification and per-request authorization.
 
-`last_seen_at` is local-only — never transmitted externally.
+`last_seen_at` and `network` are local-only — never transmitted externally.
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ class ClientEntry:
     instance_id: str
     role: str = "phone"
     last_seen_at: str | None = None
+    network: str | None = None
 
 
 class AuthorizedClients:
@@ -91,6 +93,7 @@ class AuthorizedClients:
         *,
         role: str = "phone",
         paired_at: str | None = None,
+        network: str | None = None,
     ) -> None:
         paired_at = paired_at or dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         entry = ClientEntry(
@@ -100,6 +103,7 @@ class AuthorizedClients:
             instance_id=instance_id,
             role=role,
             last_seen_at=None,
+            network=network,
         )
         with self._lock:
             current = self._load_file_locked()
@@ -192,6 +196,7 @@ class AuthorizedClients:
                 if not isinstance(fp, str):
                     continue
                 last_seen = item.get("last_seen_at")
+                network = item.get("network")
                 out[fp] = ClientEntry(
                     fingerprint=fp,
                     device_label=str(item.get("device_label", "")),
@@ -203,6 +208,7 @@ class AuthorizedClients:
                         else "phone"
                     ),
                     last_seen_at=last_seen if isinstance(last_seen, str) else None,
+                    network=network if isinstance(network, str) else None,
                 )
         return out
 
@@ -216,6 +222,7 @@ class AuthorizedClients:
                 "instance_id": e.instance_id,
                 "role": e.role,
                 **({"last_seen_at": e.last_seen_at} if e.last_seen_at else {}),
+                **({"network": e.network} if e.network else {}),
             }
             for e in entries.values()
         ]

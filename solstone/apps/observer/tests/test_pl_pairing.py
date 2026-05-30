@@ -206,7 +206,10 @@ def test_attestation_failure_does_not_write_observer_or_authorized(
 
     with pytest.raises(RuntimeError, match="attestation failed"):
         link_routes._complete_pairing(
-            consumed, _make_csr("attestation"), "Observer Laptop"
+            consumed,
+            _make_csr("attestation"),
+            "Observer Laptop",
+            network="network",
         )
 
     assert _observer_record_paths(env) == []
@@ -239,7 +242,12 @@ def test_observer_record_mint_failure_does_not_add_authorized_client(
     )
 
     with pytest.raises(RuntimeError, match="observer mint failed"):
-        link_routes._complete_pairing(consumed, _make_csr("mint"), "Observer Laptop")
+        link_routes._complete_pairing(
+            consumed,
+            _make_csr("mint"),
+            "Observer Laptop",
+            network="network",
+        )
 
     assert _observer_record_paths(env) == []
 
@@ -268,7 +276,10 @@ def test_observer_record_rolls_back_when_authorized_add_fails(
 
     with pytest.raises(RuntimeError, match="ledger write failed"):
         link_routes._complete_pairing(
-            consumed, _make_csr("rollback"), "Observer Laptop"
+            consumed,
+            _make_csr("rollback"),
+            "Observer Laptop",
+            network="network",
         )
 
     assert _observer_record_paths(env) == []
