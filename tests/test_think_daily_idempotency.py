@@ -90,7 +90,7 @@ def _install_daily_mocks(
     monkeypatch.setattr(mod, "_drain_priority_batch", mock_drain)
 
 
-def _run_daily_with_writer(mod, journal: Path, day: str, filename: str):
+def _run_daily_with_writer(mod, journal: Path, day: str, filename: str, **kwargs):
     path = journal / "chronicle" / day / "health" / filename
     old_writer = mod._jsonl
     writer = mod.ThinkingJSONLWriter(str(path))
@@ -100,6 +100,7 @@ def _run_daily_with_writer(mod, journal: Path, day: str, filename: str):
             day=day,
             verbose=False,
             max_concurrency=0,
+            **kwargs,
         )
     finally:
         writer.close()
@@ -145,6 +146,14 @@ def test_check_daily_skip_predicate():
         completed={("daily", "awareness_tender", None)},
         never_skip=mod.NEVER_SKIP_DAILY,
     ) == (False, None)
+    assert mod._check_daily_skip(
+        "alpha",
+        None,
+        mode="daily",
+        completed=completed,
+        never_skip=frozenset(),
+        from_scratch=True,
+    ) == (False, None)
 
 
 def test_check_daily_skip_has_no_freshness_inputs():
@@ -158,6 +167,7 @@ def test_check_daily_skip_has_no_freshness_inputs():
     assert "stream" not in names
     assert "mtime" not in names
     assert "freshness" not in names
+    assert "from_scratch" in names
 
 
 def test_run_daily_prompts_skips_all_completed_units(daily_journal, monkeypatch):
@@ -184,6 +194,25 @@ def test_run_daily_prompts_skips_all_completed_units(daily_journal, monkeypatch)
     ]
     assert {event["name"] for event in skips} == {"alpha", "beta"}
     assert {event["reason"] for event in skips} == {"already_complete"}
+
+
+def test_run_daily_prompts_from_scratch_reruns_completed_units(
+    daily_journal, monkeypatch
+):
+    mod = importlib.import_module("solstone.think.thinking")
+    _write_health(daily_journal, DAY, "001_daily.jsonl", [_complete("alpha")])
+    dispatched: list[tuple[str, dict]] = []
+    _install_daily_mocks(monkeypatch, mod, _single_configs("alpha"), dispatched)
+
+    _run_daily_with_writer(
+        mod,
+        daily_journal,
+        DAY,
+        "002_daily.jsonl",
+        from_scratch=True,
+    )
+
+    assert [name for name, _config in dispatched] == ["alpha"]
 
 
 def test_run_daily_prompts_repeated_skips_ignore_prior_skips(
@@ -555,5 +584,31 @@ def test_main_does_not_force_refresh_from_stream_marker(journal_copy, monkeypatc
     mod.main()
 
     assert calls == [
-        {"day": day, "verbose": False, "max_concurrency": 2, "stream": None}
+        {
+            "day": day,
+            "verbose": False,
+            "max_concurrency": 2,
+            "stream": None,
+            "from_scratch": False,
+        }
+    ]
+
+
+def test_main_passes_from_scratch_to_daily_prompts(journal_copy, monkeypatch):
+    mod = importlib.import_module("solstone.think.thinking")
+    day = "20990315"
+    _prepare_main_day(journal_copy, day)
+    calls = _patch_main(monkeypatch, mod, set())
+    monkeypatch.setattr("sys.argv", ["sol think", "--day", day, "--from-scratch"])
+
+    mod.main()
+
+    assert calls == [
+        {
+            "day": day,
+            "verbose": False,
+            "max_concurrency": 2,
+            "stream": None,
+            "from_scratch": True,
+        }
     ]

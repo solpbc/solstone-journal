@@ -88,7 +88,8 @@ def test_access_help_groups_match_canonical_membership() -> None:
             ("call", "import", "journal-stats", "segment", "streams", "indexer"),
         ),
         sol_cli.HelpGroup(
-            sol_cli.SOL_HELP_GROUP_DIAGNOSE, ("top", "health", "notify", "doctor")
+            sol_cli.SOL_HELP_GROUP_DIAGNOSE,
+            ("top", "health", "notify", "doctor", "reprocess"),
         ),
         sol_cli.HelpGroup(
             sol_cli.SOL_HELP_GROUP_TOOLS,

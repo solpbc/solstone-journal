@@ -103,6 +103,46 @@ def test_main_runs_segment_think_prephase_before_daily_synthesis(
     assert sense_index < segment_index < daily_index < indexer_index
 
 
+def test_from_scratch_refreshes_segment_think_prephase(
+    journal_copy,
+    monkeypatch,
+):
+    """Test from-scratch daily think refreshes segment-think repair."""
+    mod = importlib.import_module("solstone.think.thinking")
+
+    commands_run = []
+
+    def mock_run_command(cmd, day):
+        commands_run.append(cmd)
+        return True
+
+    def mock_run_queued_command(cmd, day, timeout=600):
+        commands_run.append(cmd)
+        return True
+
+    def mock_run_daily_prompts(day, verbose, **kwargs):
+        commands_run.append(["__daily_synthesis__", kwargs])
+        return (5, 0, [], set())
+
+    monkeypatch.setattr(mod, "run_command", mock_run_command)
+    monkeypatch.setattr(mod, "run_queued_command", mock_run_queued_command)
+    monkeypatch.setattr(mod, "run_daily_prompts", mock_run_daily_prompts)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["sol think", "--day", "20240101", "--from-scratch", "--verbose"],
+    )
+
+    mod.main()
+
+    segment_cmd = next(
+        cmd
+        for cmd in commands_run
+        if len(cmd) >= 4 and cmd[:4] == ["journal", "think", "--segments", "--day"]
+    )
+    assert "--refresh" in segment_cmd
+    assert "-v" in segment_cmd
+
+
 def test_segment_think_prephase_failure_is_non_fatal(
     journal_copy,
     monkeypatch,

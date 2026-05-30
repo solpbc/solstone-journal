@@ -483,10 +483,13 @@ def _check_daily_skip(
     mode: str,
     completed: set[tuple[str, str, str | None]],
     never_skip: frozenset[str],
+    from_scratch: bool = False,
 ) -> tuple[bool, str | None]:
     if mode != "daily":
         return (False, None)
     if name in never_skip:
+        return (False, None)
+    if from_scratch:
         return (False, None)
     if (mode, name, facet) in completed:
         return (True, "already_complete")
@@ -1238,6 +1241,8 @@ def run_daily_prompts(
     max_concurrency: int = 2,
     stream: str | None = None,
     timeout: int | None = 610,
+    *,
+    from_scratch: bool = False,
 ) -> tuple[int, int, list[str], set[tuple[str, str | None]]]:
     """Run all daily scheduled prompts in priority order.
 
@@ -1384,6 +1389,7 @@ def run_daily_prompts(
                             mode=target_schedule,
                             completed=completed_units,
                             never_skip=NEVER_SKIP_DAILY,
+                            from_scratch=from_scratch,
                         )
                         if skip:
                             reason = reason or "already_complete"
@@ -1497,6 +1503,7 @@ def run_daily_prompts(
                         mode=target_schedule,
                         completed=completed_units,
                         never_skip=NEVER_SKIP_DAILY,
+                        from_scratch=from_scratch,
                     )
                     if skip:
                         reason = reason or "already_complete"
@@ -2936,6 +2943,11 @@ def parse_args() -> argparse.ArgumentParser:
         "--refresh", action="store_true", help="Refresh existing outputs"
     )
     parser.add_argument(
+        "--from-scratch",
+        action="store_true",
+        help="Re-run segment and daily units that already completed",
+    )
+    parser.add_argument(
         "--segments",
         action="store_true",
         help="Re-process all segments for the day (incompatible with --segment, --facet)",
@@ -3308,6 +3320,8 @@ def main() -> None:
             cmd = ["journal", "think", "--segments", "--day", day]
             if args.verbose:
                 cmd.append("-v")
+            if args.from_scratch:
+                cmd.append("--refresh")
             day_log(day, f"starting: {' '.join(cmd)}")
             _jsonl_log("phase.start", mode=_run_mode, day=day, phase="segment_think")
             _phase_start = time.time()
@@ -3354,6 +3368,7 @@ def main() -> None:
                     verbose=args.verbose,
                     max_concurrency=args.jobs,
                     stream=resolved_stream,
+                    from_scratch=args.from_scratch,
                 )
             )
         _run_result["success"] = success_count

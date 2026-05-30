@@ -402,9 +402,11 @@ solstone/
 | Observe (capture) | `transcribe`, `describe`, `sense`, `transfer`, `observer` |
 | Talent (AI agents) | `agents`, `cortex`, `talent`, `call`, `engage`, `providers` |
 | Convey (web UI) | `convey`, `restart-convey`, `maint` |
-| Specialized | `config`, `skills`, `streams`, `journal-stats`, `formatter`, `detect-created` |
+| Specialized | `config`, `skills`, `streams`, `journal-stats`, `reprocess`, `formatter`, `detect-created` |
 | Installation | `doctor` |
 | Help | `help`, `chat` |
+
+`reprocess` is the on-demand single-day reprocess command: process-now by default; `--from-scratch` re-runs already-complete units.
 
 ### Call (`sol call <app> <cmd>`)
 

@@ -92,6 +92,7 @@ COMMANDS: dict[str, Command] = {
     "streams": Command("solstone.think.streams", "access"),
     "segment": Command("solstone.think.segment", "access"),
     "journal-stats": Command("solstone.think.journal_stats", "access"),
+    "reprocess": Command("solstone.think.reprocess", "access"),
     # observe package - multimodal capture
     "transcribe": Command("solstone.observe.transcribe", "service"),
     "describe": Command("solstone.observe.describe", "service"),
@@ -144,7 +145,9 @@ ACCESS_HELP_GROUPS: tuple[HelpGroup, ...] = (
         SOL_HELP_GROUP_YOUR_JOURNAL,
         ("call", "import", "journal-stats", "segment", "streams", "indexer"),
     ),
-    HelpGroup(SOL_HELP_GROUP_DIAGNOSE, ("top", "health", "notify", "doctor")),
+    HelpGroup(
+        SOL_HELP_GROUP_DIAGNOSE, ("top", "health", "notify", "doctor", "reprocess")
+    ),
     HelpGroup(
         SOL_HELP_GROUP_TOOLS,
         ("providers", "observer", "skills", "restart-convey", "link"),
