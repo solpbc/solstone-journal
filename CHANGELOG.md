@@ -14,6 +14,20 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), al
 - the built-in `sol observer install` command is gone. linux and tmux observers now install from their own published packages: `pipx install solstone-linux` (or `solstone-tmux`), `solstone-linux install-service` (or `solstone-tmux install-service`), then `sol observer create <name>` mints a key you give the observer. the macOS observer continues to come from the signed app bundle at solstone.app/observers.
 - the bundled per-provider install commands are gone — `sol call settings providers install` now accepts `local` only (cogitate runs out of the box for hosted providers with a key set), and `uninstall`/`disable`/`enable`/`validate-key` are removed entirely. local install continues to work via `sol call settings providers install local`.
 
+## [0.4.5] - 2026-05-30
+
+### Added
+- you can now reach your journal from your phone or laptop even when they aren't on the same network as your home machine. setup lives at the connections page, which is now the single home for how you connect, your network access, and your paired devices. pairing shows a fresh code, lets you name each device, and lets you see and remove any device with one tap.
+- the local model that runs entirely on your machine can now take in images as well as text, so the on-device option works on more of what's in your journal. nothing new leaves your machine.
+
+### Changed
+- the local model is now kept running for you in the background instead of starting up on demand, so it's ready the moment sol needs it. fresh installs launch it reliably the first time, and a model download now shows real progress instead of sitting at 0 percent through several gigabytes.
+- diagnostics are now two clearer commands. `sol doctor` checks that the `sol` command itself is working, from anywhere. the new `journal doctor` checks the health of your journal and its background service. each asks only the question that fits where you run it, so neither raises a false alarm.
+- the entities and devices views read more clearly: plain empty states when there's nothing yet, a retry when something fails to load, and detaching a facet now spells out what will happen and offers a one-tap way to undo it.
+
+### Fixed
+- your journal now shows when a moment has been transcribed but not yet thought through, instead of looking finished, and catches those moments up on its own. day-by-day status and the transcripts view reflect this honestly, so nothing sits half-processed without you knowing.
+
 ## [0.4.4] - 2026-05-27
 
 ### Changed
