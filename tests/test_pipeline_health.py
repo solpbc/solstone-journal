@@ -18,6 +18,7 @@ from solstone.think.pipeline_health import (
     pipeline_status_message,
     read_backlog_view,
     read_completed_units,
+    read_day_stuck,
     read_terminal_states,
     summarize_pipeline_day,
 )
@@ -749,6 +750,52 @@ def test_malformed_json_lines_skipped(pipeline_journal):
 
     assert summary["runs"]["segment"]["count"] == 1
     assert summary["talents"]["dispatched"] == 1
+
+
+def test_read_day_stuck_returns_true_for_genuine_stuck_day(pipeline_journal):
+    day = "20990701"
+    segment = "110000_300"
+    _seed_screen_segment(pipeline_journal, day, segment)
+    last_fail_ts = 3000
+    _write_jsonl(
+        pipeline_journal / "chronicle" / day / "health" / "001_segment.jsonl",
+        [
+            _sense_complete(segment, "active", 1, stream="default"),
+            _dispatch(segment, "documents", 2, stream="default"),
+            _complete(segment, "documents", 3, stream="default"),
+            _dispatch(segment, "entities", 4, stream="default"),
+            _fail(segment, "entities", 1000, stream="default"),
+            _fail(segment, "entities", 2000, stream="default"),
+            _fail(segment, "entities", last_fail_ts, stream="default"),
+        ],
+    )
+    _touch_marker(pipeline_journal, day, "stream.updated", mtime_ms=last_fail_ts)
+
+    assert read_day_stuck(day) is True
+
+
+def test_read_day_stuck_returns_false_for_pending_day(pipeline_journal):
+    day = "20990702"
+    segment = "120000_300"
+    _seed_screen_segment(pipeline_journal, day, segment)
+    _write_jsonl(
+        pipeline_journal / "chronicle" / day / "health" / "001_segment.jsonl",
+        [
+            _sense_complete(segment, "active", 1, stream="default"),
+            _dispatch(segment, "documents", 2, stream="default"),
+            _complete(segment, "documents", 3, stream="default"),
+            _dispatch(segment, "entities", 4, stream="default"),
+            _fail(segment, "entities", 1000, stream="default"),
+            _fail(segment, "entities", 2000, stream="default"),
+        ],
+    )
+    _touch_marker(pipeline_journal, day, "stream.updated", mtime_ms=3000)
+
+    assert read_day_stuck(day) is False
+
+
+def test_read_day_stuck_returns_false_for_missing_day(pipeline_journal):
+    assert read_day_stuck("20200101") is False
 
 
 def test_read_backlog_view_reports_complete_pending_stuck_and_why_axis(

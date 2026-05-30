@@ -697,6 +697,13 @@ def _is_stuck(state: TerminalState | None, stream_updated_ms: int | None) -> boo
     return stream_updated_ms <= state.last_fail_ts
 
 
+def read_day_stuck(day: str) -> bool:
+    """Return True when any terminal unit for a day is stuck."""
+    stream_ms = _stream_updated_ms(day)
+    states = read_terminal_states(day)
+    return any(_is_stuck(state, stream_ms) for state in states.values())
+
+
 def _failed_backlog_unit(
     unit: TerminalUnit,
     state: TerminalState,

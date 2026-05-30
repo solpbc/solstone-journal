@@ -20,7 +20,7 @@ import time
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import psutil
 
@@ -28,6 +28,7 @@ from solstone.think import routines, scheduler
 from solstone.think.callosum import CallosumConnection, CallosumServer
 from solstone.think.maint import run_pending_tasks
 from solstone.think.models import LOCAL_MODEL, is_local_provider_needed
+from solstone.think.pipeline_health import read_day_stuck
 from solstone.think.readiness import clear_ready, signal_ready
 from solstone.think.runner import ManagedProcess as RunnerManagedProcess
 from solstone.think.runner import _command_partition
@@ -1107,6 +1108,20 @@ def _handle_supervisor_request(message: dict) -> None:
     _restart_service(service)
 
 
+def _handle_supervisor_drain(message: dict) -> None:
+    """Handle incoming supervisor catchup drain requests."""
+    if message.get("tract") != "supervisor" or message.get("event") != "drain":
+        return
+    if _is_remote_mode:
+        return
+
+    day = message.get("day")
+    if day:
+        run_catchup_drain(force_days={day})
+    else:
+        run_catchup_drain()
+
+
 def get_task_status(ref: str) -> dict:
     """Get status of a task.
 
@@ -1464,6 +1479,37 @@ async def handle_runner_exits(procs: list[RunnerManagedProcess]) -> None:
             logging.info("Not restarting %s", managed.name)
 
 
+def run_catchup_drain(
+    force_days: Iterable[str] | None = None,
+    *,
+    exclude: set[str] | None = None,
+) -> list[str]:
+    """Submit catchup daily think tasks for pending, non-stuck days."""
+    all_updated = updated_days(exclude=exclude)
+    try:
+        survivors = [day for day in all_updated if not read_day_stuck(day)]
+    except Exception:
+        logging.warning("Stuck-day filter unavailable; draining unfiltered catchup set")
+        survivors = all_updated
+
+    freshest = survivors[-MAX_UPDATED_CATCHUP:]
+    merged = set(freshest) | set(force_days or [])
+    if not merged:
+        logging.info("no updated days to process")
+        return []
+
+    if _task_queue is None:
+        logging.warning("No task queue available for catchup drain: %s", sorted(merged))
+        return []
+
+    days = sorted(merged)
+    logging.info("Queuing catchup drain for %d day(s): %s", len(days), days)
+    for day_str in days:
+        cmd = ["journal", "think", "-v", "--day", day_str]
+        _task_queue.submit(cmd, day=day_str)
+    return days
+
+
 def handle_daily_tasks() -> None:
     """Check for day change and submit daily think for updated days (non-blocking).
 
@@ -1504,41 +1550,7 @@ def handle_daily_tasks() -> None:
             _check_segment_flush(force=True)
 
         today_str = today.strftime("%Y%m%d")
-        all_updated = updated_days(exclude={today_str})
-
-        if not all_updated:
-            logging.info("Day changed to %s, no updated days to process", today)
-            return
-
-        # Take the newest MAX_UPDATED_CATCHUP days (already sorted ascending)
-        days_to_process = all_updated[-MAX_UPDATED_CATCHUP:]
-        skipped = len(all_updated) - len(days_to_process)
-
-        if skipped:
-            logging.warning(
-                "Skipping %d older updated days (max catchup %d): %s",
-                skipped,
-                MAX_UPDATED_CATCHUP,
-                all_updated[:skipped],
-            )
-
-        logging.info(
-            "Day changed to %s, queuing daily think for %d updated day(s): %s",
-            today,
-            len(days_to_process),
-            days_to_process,
-        )
-
-        # Submit oldest-first so yesterday is processed last
-        for day_str in days_to_process:
-            cmd = ["journal", "think", "-v", "--day", day_str]
-            if _task_queue:
-                _task_queue.submit(cmd, day=day_str)
-                logging.debug("Submitted daily think for %s", day_str)
-            else:
-                logging.warning(
-                    "No task queue available for daily processing: %s", day_str
-                )
+        run_catchup_drain(exclude={today_str})
 
 
 def _handle_segment_observed(message: dict) -> None:
@@ -1743,6 +1755,7 @@ def _handle_callosum_message(message: dict) -> None:
     """Dispatch incoming Callosum messages to appropriate handlers."""
     _handle_task_request(message)
     _handle_supervisor_request(message)
+    _handle_supervisor_drain(message)
     _handle_segment_observed(message)
     _handle_activity_recorded(message)
     _handle_think_daily_complete(message)
@@ -2211,34 +2224,7 @@ def main() -> None:
 
     # Startup catchup: submit thinks for days with pending stream data
     if daily_enabled:
-        all_updated = updated_days()
-        if all_updated:
-            days_to_process = all_updated[-MAX_UPDATED_CATCHUP:]
-            skipped = len(all_updated) - len(days_to_process)
-
-            if skipped:
-                logging.warning(
-                    "Startup catchup: skipping %d older updated days (max %d): %s",
-                    skipped,
-                    MAX_UPDATED_CATCHUP,
-                    all_updated[:skipped],
-                )
-
-            logging.info(
-                "Startup catchup: submitted %d day(s) with pending stream data: %s",
-                len(days_to_process),
-                days_to_process,
-            )
-
-            for day_str in days_to_process:
-                cmd = ["journal", "think", "-v", "--day", day_str]
-                if _task_queue:
-                    _task_queue.submit(cmd, day=day_str)
-                    logging.debug("Startup catchup: submitted think for %s", day_str)
-                else:
-                    logging.warning(
-                        "No task queue available for startup catchup: %s", day_str
-                    )
+        run_catchup_drain()
 
     try:
         print("  Supervisor ready", flush=True)
