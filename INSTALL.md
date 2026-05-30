@@ -43,7 +43,7 @@ this runs the setup readiness doctor battery, confirms the journal directory at 
 
 let your human know: **open http://localhost:5015 in a browser**. the first-run wizard walks them through setting their identity and connecting a gemini API key. network access, and the password it requires, can be configured later in settings → security.
 
-if the readiness doctor step (`sol doctor --readiness`) finds missing system libraries or python extras, it will tell you the exact install command to run for your platform. extras (`pdf`, `whisper`) can be added at any time with `uv tool upgrade solstone --extra pdf` or `pip install 'solstone[pdf]'`. on linux, local parakeet transcription needs `solstone[parakeet-onnx-cpu]` (or `[parakeet-onnx-cuda]` for NVIDIA GPUs); install or upgrade the same way as other extras.
+if the readiness doctor step (`sol doctor --readiness`) finds missing system libraries or python extras, it will tell you the exact install command to run for your platform. extras (`pdf`, `whisper`) can be added at any time with `uv tool upgrade solstone --extra pdf` or `pip install 'solstone[pdf]'`. on linux, the default parakeet transcription works out of the box — its runtime ships with the install and `journal setup` downloads the model, so there's no extra to add. NVIDIA GPU owners who want GPU-accelerated transcription can add `solstone[parakeet-onnx-cuda]`; `sol doctor` reports whether the default backend's runtime and model are ready.
 
 if the service fails to start, check `journal service logs`.
 
