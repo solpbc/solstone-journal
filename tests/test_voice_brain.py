@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 from flask import Flask
 
@@ -106,6 +107,16 @@ def test_schedule_refresh_updates_instruction(monkeypatch, journal_copy):
     try:
         future = brain.schedule_refresh(app, force=True)
         assert future.result(timeout=1.0) == ("session-3", "New voice")
+        # The app-state update runs in the future's done-callback. A
+        # concurrent.futures.Future notifies result() waiters *before* it
+        # invokes done-callbacks, so the callback may not have applied the
+        # instruction yet when result() returns -- poll for the side effect
+        # rather than racing it (this was an xdist-only flake under load).
+        deadline = time.monotonic() + 1.0
+        while (
+            app.voice_brain_instruction != "New voice" and time.monotonic() < deadline
+        ):
+            time.sleep(0.01)
         assert app.voice_brain_instruction == "New voice"
     finally:
         stop_voice_runtime(app)

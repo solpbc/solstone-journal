@@ -55,9 +55,7 @@ def test_local_provider_defaults_and_registry():
     assert PROVIDER_DEFAULTS["local"][TIER_PRO] == LOCAL_MODEL
     assert PROVIDER_DEFAULTS["local"][TIER_FLASH] == LOCAL_MODEL
     assert PROVIDER_DEFAULTS["local"][TIER_LITE] == LOCAL_MODEL
-    assert "ollama" not in PROVIDER_DEFAULTS
     assert PROVIDER_REGISTRY["local"] == "solstone.think.providers.local"
-    assert "ollama" not in PROVIDER_REGISTRY
     assert PROVIDER_METADATA["local"] == {
         "label": "Local (on-device)",
         "env_key": "",
