@@ -8,15 +8,17 @@ from pathlib import Path
 
 
 def test_install_md_has_no_ollama_references() -> None:
-    text = Path("INSTALL.md").read_text(encoding="utf-8")
+    # Negative invariant: the ollama -> "local provider" sweep stays done.
+    # Asserting on retired terminology is a rule that must always hold, not a
+    # prose snapshot. We deliberately do NOT pin the verbatim wording of the
+    # install copy (that's a checklist concern, not a test, and breaks on every
+    # legitimate copy edit) -- we assert only the load-bearing concepts survive.
+    text = Path("INSTALL.md").read_text(encoding="utf-8").lower()
 
-    assert "ollama" not in text.lower()
-    assert (
-        "cogitate (sol's tool-calling agent loop, used by chat/digest/"
-        "morning_briefing/etc.) works out of the box as soon as you set a "
-        "provider key — no extra install step."
-    ) in text
-    assert "a local model via the local provider" in text
+    assert "ollama" not in text
+    assert "cogitate" in text
+    assert "no extra install step" in text
+    assert "local provider" in text
 
 
 def test_ollama_grep_returns_zero_lines() -> None:
