@@ -3,7 +3,7 @@
 
 """Caller-side link commands and shared pairing/runtime helpers.
 
-`sol link` dispatches caller-side commands such as `join` and `list`. The
+`sol link` dispatches caller-side commands such as `join`, `list`, and `serve`. The
 supervised home-side spl rendezvous daemon lives in `solstone.think.spl` and is
 launched as `journal spl`.
 """

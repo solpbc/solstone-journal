@@ -22,6 +22,7 @@ from solstone.apps.observer.routes import OBSERVER_CALLOSUM_SSE_ROUTE
 from solstone.think.link.bundle import load_client_identity
 from solstone.think.link.client import StreamResetError
 from solstone.think.link.dialer import TunnelClient, TunnelRequestError
+from solstone.think.link.observer_paths import observer_bundle_dir
 from solstone.think.link.tls import TlsError
 from solstone.think.utils import get_config, get_journal, read_service_port
 
@@ -44,12 +45,6 @@ class PlRequestResult(NamedTuple):
     status: int
     headers: dict[str, str]
     body: bytes
-
-
-def _spl_bundle_dir(label: str) -> Path:
-    config_home = os.environ.get("XDG_CONFIG_HOME")
-    root = Path(config_home) if config_home else Path.home() / ".config"
-    return root / "solstone-observer" / "spl" / label
 
 
 def cleanup_draft(draft_dir: str) -> None:
@@ -222,7 +217,7 @@ class ObserverClient:
             return self._tunnel
         if self._spl_label is None or self._spl_relay_url is None:
             raise TlsError("PL identity not configured")
-        identity = load_client_identity(_spl_bundle_dir(self._spl_label))
+        identity = load_client_identity(observer_bundle_dir(self._spl_label))
         self._pl_fingerprint_prefix = identity.fingerprint.replace("sha256:", "")[:16]
         self._tunnel = TunnelClient(identity, self._spl_relay_url)
         return self._tunnel

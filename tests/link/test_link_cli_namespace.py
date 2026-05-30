@@ -67,23 +67,27 @@ def test_link_list_dispatches_flags_to_list_cli(
     assert calls == [("list", True, True)]
 
 
-def test_link_no_subcommand_help_lists_join_and_list_only(
+def test_link_no_subcommand_help_lists_commands(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert cli.main([]) == 0
 
     out = capsys.readouterr().out
-    assert "{join,list}" in out
+    assert "{join,list,serve}" in out
     assert "join" in out
     assert "list" in out
-    assert "serve" not in out
+    assert "serve" in out
 
 
-def test_link_serve_is_not_registered(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as exc:
-        cli.main(["serve"])
+def test_link_serve_dispatches_to_serve_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
 
-    assert exc.value.code == 2
-    captured = capsys.readouterr()
-    assert "invalid choice" in captured.err
-    assert "serve" in captured.err
+    def fake_serve(args) -> int:
+        calls.append((args.command, args.label, args.port, args.relay_url))
+        return 0
+
+    monkeypatch.setattr("solstone.think.link.serve_cli.main", fake_serve)
+
+    assert cli.main(["serve", "--label", "x", "--port", "5099"]) == 0
+
+    assert calls == [("serve", "x", 5099, None)]

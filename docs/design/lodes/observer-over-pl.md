@@ -282,9 +282,10 @@ Startup validation in `ObserverClient.__init__()`:
 - `pair_mode=dl` keeps today’s behavior unchanged.
 
 Required bundle files are the Lode A set: `private.pem`, `cert.pem`, `chain.pem`,
-`home_attestation.jwt`, and `peer.json` (`solstone/think/link/join_cli.py:50-56`).
+`home_attestation.jwt`, and `peer.json` (`solstone/think/link/bundle.py`).
 The bundle path is `$XDG_CONFIG_HOME/solstone-observer/spl/<label>/` or
-`~/.config/solstone-observer/spl/<label>/` (`solstone/think/link/join_cli.py:197-200`).
+`~/.config/solstone-observer/spl/<label>/`
+(`solstone/think/link/observer_paths.py`).
 
 Implementation deviation: Lode A's `peer.json.fingerprint` is the CA fingerprint,
 not the client certificate fingerprint that Convey stamps into `g.identity`.

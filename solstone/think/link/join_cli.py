@@ -49,6 +49,7 @@ from cryptography.x509.oid import NameOID
 from solstone.apps.link.copy import PAIR_LINK_HOST, PAIR_LINK_PATH
 from solstone.apps.link.crockford32 import decode as crockford_decode
 from solstone.apps.link.manual_code import normalize as normalize_manual_code
+from solstone.think.link.observer_paths import observer_bundle_dir
 from solstone.think.link.paths import LinkState
 from solstone.think.utils import get_journal
 
@@ -122,7 +123,7 @@ def main(args: argparse.Namespace) -> int:
         if existing_error is not None:
             return _fail(existing_error, code=1)
     else:
-        bundle_dir = _bundle_dir(label)
+        bundle_dir = observer_bundle_dir(label)
         existing_error = _existing_dir_error(bundle_dir)
         if existing_error is not None:
             return _fail(existing_error, code=1)
@@ -225,12 +226,6 @@ def _validate_instance_id(value: str) -> str | None:
     if not _INSTANCE_ID_RE.fullmatch(value):
         return f"bad instance_id from receiver: {value!r}"
     return None
-
-
-def _bundle_dir(label: str) -> Path:
-    config_home = os.environ.get("XDG_CONFIG_HOME")
-    base = Path(config_home) if config_home else Path.home() / ".config"
-    return base / "solstone-observer" / "spl" / label
 
 
 def _peer_dir(instance_id: str) -> Path:

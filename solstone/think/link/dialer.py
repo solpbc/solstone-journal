@@ -9,7 +9,7 @@ import threading
 import time
 from collections.abc import Awaitable
 from concurrent.futures import Future
-from typing import Any, Self
+from typing import Any, NamedTuple, Self
 
 from solstone.think.link.bundle import endpoint_label
 from solstone.think.link.client import (
@@ -20,6 +20,11 @@ from solstone.think.link.client import (
     TunnelSession,
 )
 from solstone.think.link.tls import TlsError
+
+
+class TunnelResponseHead(NamedTuple):
+    status: int
+    headers: dict[str, str]
 
 
 class TunnelRequestError(ConnectionError):
@@ -205,6 +210,33 @@ class TunnelClient:
             self._close_session()
             raise TunnelRequestError(type(exc).__name__, str(exc)) from exc
 
+    def proxy_stream_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+        body: bytes = b"",
+        chunks: queue.Queue[TunnelResponseHead | bytes | Exception | None],
+    ) -> Future[None]:
+        """Stream a proxy response to a queue.
+
+        Queue items are one TunnelResponseHead, then zero or more bytes chunks.
+        An Exception may appear before the head for gateway failure or after it
+        for mid-stream truncation. None terminates the stream.
+        """
+        loop = self._ensure_loop()
+        return asyncio.run_coroutine_threadsafe(
+            self._proxy_to_queue(
+                method,
+                path,
+                headers=headers or {},
+                body=body,
+                chunks=chunks,
+            ),
+            loop,
+        )
+
     def stream_request(
         self,
         method: str,
@@ -245,6 +277,40 @@ class TunnelClient:
     ) -> tuple[int, dict[str, str], bytes, Any]:
         session = await self._get_session_async()
         return await session.stream_request(method, path, headers=headers, body=body)
+
+    async def _proxy_to_queue(
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str],
+        body: bytes,
+        chunks: queue.Queue[TunnelResponseHead | bytes | Exception | None],
+    ) -> None:
+        try:
+            (
+                status,
+                resp_headers,
+                initial_body,
+                stream,
+            ) = await self._stream_request_async(
+                method,
+                path,
+                headers=headers,
+                body=body,
+            )
+            chunks.put(TunnelResponseHead(status, dict(resp_headers)))
+            if initial_body:
+                chunks.put(initial_body)
+            async for chunk in stream.read():
+                chunks.put(chunk)
+        except (ConnectionError, OSError, StreamResetError, TlsError) as exc:
+            await self._close_session_async()
+            chunks.put(TunnelRequestError(type(exc).__name__, str(exc)))
+        except Exception as exc:
+            chunks.put(exc)
+        finally:
+            chunks.put(None)
 
     async def _stream_to_queue(
         self,

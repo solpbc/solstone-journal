@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import queue
 
 import pytest
 
@@ -18,7 +19,11 @@ from solstone.think.link.client import (
     TunnelSession,
     _http_request_bytes,
 )
-from solstone.think.link.dialer import TunnelClient, TunnelRequestError
+from solstone.think.link.dialer import (
+    TunnelClient,
+    TunnelRequestError,
+    TunnelResponseHead,
+)
 from solstone.think.link.tls import TlsError
 
 
@@ -127,3 +132,59 @@ def test_cached_session_drops_on_stream_reset(monkeypatch) -> None:
     assert exc_info.value.reason == "StreamResetError"
     assert session.closed is True
     assert client._session is None
+
+
+def test_proxy_stream_request_queues_head_body_and_sentinel(monkeypatch) -> None:
+    class FakeStream:
+        async def read(self):
+            yield b"chunk-a"
+            yield b"chunk-b"
+
+    client = TunnelClient(_identity(endpoints=()), None)
+    calls = []
+
+    async def fake_stream_request_async(method, path, *, headers, body):
+        calls.append((method, path, headers, body))
+        return 418, {"x-test": "yes"}, b"initial", FakeStream()
+
+    monkeypatch.setattr(client, "_stream_request_async", fake_stream_request_async)
+    chunks: queue.Queue[TunnelResponseHead | bytes | Exception | None] = queue.Queue()
+    try:
+        future = client.proxy_stream_request(
+            "POST",
+            "/hello",
+            headers={"Host": "example"},
+            body=b"payload",
+            chunks=chunks,
+        )
+        future.result(timeout=2)
+    finally:
+        client.close()
+
+    assert calls == [("POST", "/hello", {"Host": "example"}, b"payload")]
+    assert chunks.get_nowait() == TunnelResponseHead(418, {"x-test": "yes"})
+    assert chunks.get_nowait() == b"initial"
+    assert chunks.get_nowait() == b"chunk-a"
+    assert chunks.get_nowait() == b"chunk-b"
+    assert chunks.get_nowait() is None
+
+
+def test_proxy_stream_request_queues_tunnel_error_and_sentinel(monkeypatch) -> None:
+    client = TunnelClient(_identity(endpoints=()), None)
+
+    async def fake_stream_request_async(_method, _path, *, headers, body):
+        _ = (headers, body)
+        raise ConnectionError("down")
+
+    monkeypatch.setattr(client, "_stream_request_async", fake_stream_request_async)
+    chunks: queue.Queue[TunnelResponseHead | bytes | Exception | None] = queue.Queue()
+    try:
+        future = client.proxy_stream_request("GET", "/", chunks=chunks)
+        future.result(timeout=2)
+    finally:
+        client.close()
+
+    error = chunks.get_nowait()
+    assert isinstance(error, TunnelRequestError)
+    assert error.reason == "ConnectionError"
+    assert chunks.get_nowait() is None

@@ -8,13 +8,13 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
-import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from solstone.convey.utils import relative_time
+from solstone.think.link.observer_paths import observer_spl_root
 from solstone.think.utils import get_journal
 
 DASH = "—"
@@ -50,7 +50,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 def main(args: argparse.Namespace) -> int:
     peers = _sorted_bundles(_walk_bundle_root(Path(get_journal()) / "peers", "peer"))
     observers = (
-        _sorted_bundles(_walk_bundle_root(_observer_root(), "observer"))
+        _sorted_bundles(_walk_bundle_root(observer_spl_root(), "observer"))
         if args.observers
         else []
     )
@@ -62,12 +62,6 @@ def main(args: argparse.Namespace) -> int:
 
     _print_human(peers, observers, include_observers=args.observers)
     return 0
-
-
-def _observer_root() -> Path:
-    config_home = os.environ.get("XDG_CONFIG_HOME")
-    base = Path(config_home) if config_home else Path.home() / ".config"
-    return base / "solstone-observer" / "spl"
 
 
 def _walk_bundle_root(root: Path, kind: str) -> list[_Bundle]:
