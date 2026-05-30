@@ -76,7 +76,6 @@ SETTINGS_SECURITY_REACH_HINT = (
     "how your devices reach home — managing your connection, paired devices, "
     "and reach-from-anywhere now lives in link →"
 )
-SETTINGS_LAN_URL_LABEL = "local network url"
 SETTINGS_PASSWORD_HINT = "used when network access is on, or when localhost trust is off. not used otherwise."
 OBSERVER_CALLOSUM_LIVE_LABEL = "live"
 
@@ -145,7 +144,6 @@ __all__ = [
     "CONVEY_REPORT_TITLE",
     "LOGIN_NO_PASSWORD_CONFIGURED",
     "OBSERVER_CALLOSUM_LIVE_LABEL",
-    "SETTINGS_LAN_URL_LABEL",
     "SETTINGS_PASSWORD_HINT",
     "SETTINGS_SECURITY_DESC",
     "SETTINGS_SECURITY_REACH_HINT",

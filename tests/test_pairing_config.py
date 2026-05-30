@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
+
 from solstone.think.pairing import config
 
 
@@ -31,11 +33,77 @@ def test_pairing_config_defaults(journal_copy):
 def test_pairing_host_url_reads_trimmed_value(journal_copy):
     payload = _read_config(journal_copy)
     payload["pairing"] = {
-        "host_url": " https://example.test/base ",
+        "host_url": " http://192.168.1.44:6123 ",
     }
     _write_config(journal_copy, payload)
 
-    assert config.get_host_url() == "https://example.test/base"
+    assert config.get_host_url() == "http://192.168.1.44:6123"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("192.168.1.44:5015", "http://192.168.1.44:5015"),
+        (" http://192.168.1.44:5015 ", "http://192.168.1.44:5015"),
+        ("http://192.168.1.44:5015/", "http://192.168.1.44:5015"),
+    ],
+)
+def test_validate_host_url_accepts_ipv4_port(raw: str, expected: str) -> None:
+    assert config.validate_host_url(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "",
+        "   ",
+        "http://",
+        "192.168.1.44",
+        "http://192.168.1.44",
+        "192.168.1.44:0",
+        "192.168.1.44:65536",
+        "192.168.1.44:notaport",
+        "https://192.168.1.44:5015",
+        "http://user@192.168.1.44:5015",
+        "http://192.168.1.44:5015/path",
+        "http://192.168.1.44:5015?x=1",
+        "http://192.168.1.44:5015#frag",
+        "http://[::1]:5015",
+        "http://[fe80::1]:5015",
+    ],
+)
+def test_validate_host_url_rejects_invalid_values(raw: str) -> None:
+    with pytest.raises(config.InvalidHostUrl) as excinfo:
+        config.validate_host_url(raw)
+
+    assert str(excinfo.value) == config.HOST_URL_INVALID
+
+
+@pytest.mark.parametrize("raw", ["mylab.local:5015", "http://home.local:5015"])
+def test_validate_host_url_rejects_hostname_with_sol_private_link_message(
+    raw: str,
+) -> None:
+    with pytest.raises(config.InvalidHostUrl) as excinfo:
+        config.validate_host_url(raw)
+
+    assert str(excinfo.value) == config.HOST_URL_HOSTNAME_UNSUPPORTED
+
+
+def test_host_url_override_round_trip(journal_copy) -> None:
+    canonical = config.validate_host_url("192.168.1.44:5015")
+
+    config.set_host_url(canonical)
+
+    assert _read_config(journal_copy)["pairing"]["host_url"] == canonical
+    assert config.get_host_url_override() == canonical
+    assert config.get_host_url() == canonical
+    assert config.override_host_port() == "192.168.1.44:5015"
+
+    config.clear_host_url()
+
+    assert _read_config(journal_copy)["pairing"]["host_url"] is None
+    assert config.get_host_url_override() is None
+    assert config.override_host_port() is None
 
 
 def test_pairing_host_url_uses_detected_lan_ip_when_network_access_enabled(

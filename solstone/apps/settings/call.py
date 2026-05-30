@@ -11,14 +11,12 @@ import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
 
 import typer
 
 from solstone.apps.settings.copy import (
     CONVEY_HOST_URL_CLEARED,
     CONVEY_HOST_URL_FLAG_CONFLICT,
-    CONVEY_HOST_URL_INVALID,
     CONVEY_HOST_URL_SET_DONE,
     CONVEY_NETWORK_DISABLE_DONE,
     CONVEY_NETWORK_DISABLE_PROGRESS,
@@ -35,7 +33,13 @@ from solstone.convey.network_access import (
     NetworkAccessPasswordRequired,
     set_network_access,
 )
-from solstone.think.pairing.config import get_host_url
+from solstone.think.pairing.config import (
+    InvalidHostUrl,
+    clear_host_url,
+    get_host_url,
+    set_host_url,
+    validate_host_url,
+)
 from solstone.think.service import DEFAULT_SERVICE_PORT
 from solstone.think.utils import get_project_root, require_solstone
 
@@ -117,12 +121,11 @@ def _host_url_status_value(config: dict) -> str:
 
 
 def _validate_host_url_or_exit(url: str) -> str:
-    cleaned = url.strip()
-    parsed = urlparse(cleaned)
-    if not cleaned or not parsed.scheme or not parsed.netloc:
-        typer.echo(CONVEY_HOST_URL_INVALID, err=True)
+    try:
+        return validate_host_url(url)
+    except InvalidHostUrl as exc:
+        typer.echo(str(exc), err=True)
         raise typer.Exit(1)
-    return cleaned
 
 
 def _provider_for_env_var(env_var: str) -> str | None:
@@ -210,17 +213,13 @@ def convey_host_url(
     if show:
         typer.echo(get_host_url())
         return
-    config = _get_config()
-    config.setdefault("pairing", {})
     if auto:
-        config["pairing"]["host_url"] = None
-        _write_config(config)
+        clear_host_url()
         typer.echo(CONVEY_HOST_URL_CLEARED)
         return
     assert url is not None
     cleaned = _validate_host_url_or_exit(url)
-    config["pairing"]["host_url"] = cleaned
-    _write_config(config)
+    set_host_url(cleaned)
     typer.echo(CONVEY_HOST_URL_SET_DONE.format(url=cleaned))
 
 

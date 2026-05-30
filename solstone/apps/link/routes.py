@@ -107,6 +107,13 @@ from solstone.think.link.paths import (
     relay_url,
 )
 from solstone.think.link.window import read_posture
+from solstone.think.pairing.config import (
+    InvalidHostUrl,
+    clear_host_url,
+    override_host_port,
+    set_host_url,
+    validate_host_url,
+)
 from solstone.think.utils import get_config, get_journal, now_ms
 
 logger = logging.getLogger(__name__)
@@ -184,6 +191,14 @@ def _resolve_host_port() -> str:
     except Exception:
         logger.debug("lan ip detection failed", exc_info=True)
     return host
+
+
+def _effective_home_address() -> tuple[bool, str | None]:
+    override_addr = override_host_port()
+    if override_addr is not None:
+        return True, override_addr
+    lan_accessible = _is_lan_accessible()
+    return lan_accessible, _resolve_host_port() if lan_accessible else None
 
 
 def _detect_lan_ip() -> str | None:
@@ -321,7 +336,7 @@ def api_status() -> Any:
     token = load_service_token()
     token_present = token is not None
     ca_fp = _ca_fingerprint() if ca_dir().exists() else None
-    lan_accessible = _is_lan_accessible()
+    lan_accessible, home_address = _effective_home_address()
     posture = read_posture()
     relay_state = (
         _derive_spl_relay_state(token_present, _read_link_connection_event())
@@ -329,7 +344,6 @@ def api_status() -> Any:
         else _derive_relay_state(token_present)
     )
     reachability = _derive_reachability(lan_accessible, posture, relay_state)
-    home_address = _resolve_host_port() if lan_accessible else None
     vpn_candidates = [
         {"label": ep.scope, "address": f"{ep.ip}:{ep.port}"}
         for ep in _current_local_endpoints()
@@ -375,6 +389,24 @@ def network_access() -> Any:
     return jsonify(result)
 
 
+@link_bp.route("/host-address", methods=["POST"])
+def set_host_address() -> Any:
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        payload = {}
+    raw_address = payload.get("address")
+    address = raw_address if isinstance(raw_address, str) else None
+    try:
+        if address is not None and address.strip():
+            set_host_url(validate_host_url(address))
+        else:
+            clear_host_url()
+    except InvalidHostUrl as exc:
+        return error_response(INVALID_CONFIG_VALUE, detail=str(exc))
+    _, home_address = _effective_home_address()
+    return jsonify({"ok": True, "home_address": home_address})
+
+
 @link_bp.get("/local-endpoints")
 def local_endpoints() -> Any:
     if not _is_loopback_request():
@@ -404,7 +436,7 @@ def pair_start() -> Any:
     if not isinstance(role, str) or role not in VALID_ROLES:
         return error_response(PAIRING_REQUEST_INVALID, detail="invalid role")
 
-    lan_url = _resolve_host_port()
+    lan_url = override_host_port() or _resolve_host_port()
     hostname, _, port_str = lan_url.partition(":")
 
     nonce_ttl: int | None = None

@@ -85,6 +85,36 @@ def test_direct_healthy_reports_online(link_env, monkeypatch) -> None:
     assert data["relay_state"] == "not-enrolled"
 
 
+def test_direct_reports_host_address_override(link_env, monkeypatch) -> None:
+    env = link_env()
+    config_path = env.journal / "config" / "journal.json"
+    config = json.loads(config_path.read_text("utf-8"))
+    config["pairing"] = {"host_url": "http://192.168.1.44:7657"}
+    config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    monkeypatch.setattr(link_routes, "_detect_lan_ip", lambda: "192.168.1.50")
+
+    data = _get_status(env)
+
+    assert data["lan_accessible"] is True
+    assert data["home_address"] == "192.168.1.44:7657"
+    assert data["reachability"] == "online"
+
+
+def test_host_address_override_unblocks_lan_unreachable(link_env, monkeypatch) -> None:
+    env = link_env()
+    config_path = env.journal / "config" / "journal.json"
+    config = json.loads(config_path.read_text("utf-8"))
+    config["pairing"] = {"host_url": "http://192.168.1.44:7657"}
+    config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    monkeypatch.setattr(link_routes, "_detect_lan_ip", lambda: None)
+
+    data = _get_status(env)
+
+    assert data["lan_accessible"] is True
+    assert data["home_address"] == "192.168.1.44:7657"
+    assert data["reachability"] == "online"
+
+
 def test_loopback_only_is_lan_unreachable(link_env, monkeypatch) -> None:
     env = link_env()
     monkeypatch.setattr(link_routes, "_detect_lan_ip", lambda: None)

@@ -19,6 +19,7 @@ def _normalized_body(body: str) -> str:
         .replace("\\u00b7", "·")
         .replace("\\u2014", "—")
         .replace("\\u2192", "→")
+        .replace("\\u25b8", "▸")
     )
 
 
@@ -44,7 +45,24 @@ def test_workspace_renders_reach_shell_copy_and_static_guards(link_env) -> None:
         assert value in body_text
     assert copy.REACH_CARD_TITLE in body_text
     assert copy.REACH_DIRECT_LABEL in body_text
+    assert copy.REACH_HOST_ADDRESS_DISCLOSURE in body_text
+    assert copy.REACH_HOST_ADDRESS_PLACEHOLDER in body_text
+    assert copy.REACH_HOST_ADDRESS_APPLY_LABEL in body_text
+    assert copy.REACH_HOST_ADDRESS_CLEAR_LABEL in body_text
     assert copy.REACH_UPGRADE_LINK_LABEL in body_text
+    for expected in (
+        'id="link-host-address-override"',
+        'id="link-host-address-input"',
+        'id="link-host-address-apply"',
+        'id="link-host-address-clear"',
+        'id="link-host-address-error"',
+        "REACH_HOST_ADDRESS_DISCLOSURE",
+        "REACH_HOST_ADDRESS_PLACEHOLDER",
+        "REACH_HOST_ADDRESS_APPLY_LABEL",
+        "REACH_HOST_ADDRESS_CLEAR_LABEL",
+        "'/app/link/host-address'",
+    ):
+        assert expected in body
 
     assert re.search(
         r'<a href="https://services\.solstone\.app/" '

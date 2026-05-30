@@ -15,6 +15,10 @@ U2_COPY_VALUES = [
     copy.REACH_DIRECT_LABEL,
     copy.REACH_DIRECT_DETAIL,
     copy.REACH_HOME_ADDRESS_LABEL,
+    copy.REACH_HOST_ADDRESS_DISCLOSURE,
+    copy.REACH_HOST_ADDRESS_PLACEHOLDER,
+    copy.REACH_HOST_ADDRESS_APPLY_LABEL,
+    copy.REACH_HOST_ADDRESS_CLEAR_LABEL,
     copy.REACH_VPN_CANDIDATE_LABEL,
     copy.REACH_VPN_USE_THIS,
     copy.REACH_CHANGE_LABEL,
@@ -80,6 +84,10 @@ def test_reach_shell_corrected_copy_is_locked() -> None:
     assert copy.REACH_DIRECT_DETAIL == (
         "your devices connect to this solstone directly, with no one in the middle."
     )
+    assert copy.REACH_HOST_ADDRESS_DISCLOSURE == "▸ use a different address"
+    assert copy.REACH_HOST_ADDRESS_PLACEHOLDER == "192.168.1.44:5015"
+    assert copy.REACH_HOST_ADDRESS_APPLY_LABEL == "apply"
+    assert copy.REACH_HOST_ADDRESS_CLEAR_LABEL == "clear"
     assert (
         copy.REACH_SPL_ACTIVE_BODY
         == "your devices reach home over the internet, wherever you are."

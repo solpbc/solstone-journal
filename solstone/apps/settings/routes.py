@@ -65,7 +65,6 @@ from solstone.convey.sol_initiated.settings import (
 )
 from solstone.convey.utils import error_response
 from solstone.think.models import LOCAL_FLASH, QWEN_35_9B
-from solstone.think.pairing.config import get_host_url
 from solstone.think.providers.google import validate_vertex_credentials
 from solstone.think.providers.local import LOCAL_MODEL_SPECS
 from solstone.think.providers.mlx import _MLX_MODEL_REGISTRY
@@ -152,8 +151,6 @@ def _project_public_config(config: dict[str, Any]) -> dict[str, Any]:
     has_pw = bool(convey_config.pop("password_hash", None))
     convey_config.pop("password", None)
     convey_config["has_password"] = has_pw
-    pairing_config = projected.setdefault("pairing", {})
-    pairing_config["effective_host_url"] = get_host_url()
     projected["runtime_env"] = {k: bool(os.getenv(k)) for k in API_KEY_ENV_VARS}
     return projected
 
@@ -223,8 +220,8 @@ def update_config() -> Any:
 
     Accepts JSON with a 'section' key and per-section config fields to update.
     Supported writes include identity and transcribe settings, convey security
-    settings (password, allow_network_access, trust_localhost), pairing.host_url,
-    and API-key env vars.
+    settings (password, allow_network_access, trust_localhost), and API-key env
+    vars.
     """
     try:
         request_data = request.get_json()
@@ -262,7 +259,6 @@ def update_config() -> Any:
             ],
             "transcribe": ["backend", "enrich", "preserve_all", "noise_upgrade"],
             "convey": ["allow_network_access", "password", "trust_localhost"],
-            "pairing": ["host_url"],
             "support": ["enabled", "proactive", "anonymous_feedback", "portal_url"],
             "agent": ["name", "name_status", "named_date", "proposal_count"],
             "env": API_KEY_ENV_VARS,
@@ -350,12 +346,6 @@ def update_config() -> Any:
         for key in allowed_sections[section]:
             if key in data:
                 new_value = data[key]
-                if section == "pairing" and key == "host_url":
-                    new_value = (
-                        new_value.strip() if isinstance(new_value, str) else new_value
-                    )
-                    if new_value == "":
-                        new_value = None
                 old_value = old_section.get(key)
                 if old_value != new_value:
                     changed_fields[key] = {"old": old_value, "new": new_value}

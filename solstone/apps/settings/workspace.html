@@ -2998,13 +2998,6 @@ button:focus:not(:focus-visible) {
       <form class="settings-form" onsubmit="return false;">
 
       <div class="settings-field">
-        <label for="field-host-url">{{ convey_copy.SETTINGS_LAN_URL_LABEL }}</label>
-        <div class="field-display" id="conveyLanUrlDisplay">http://localhost:5015</div>
-        <input type="text" id="field-host-url" data-section="pairing" data-key="host_url" placeholder="">
-        <small></small>
-      </div>
-
-      <div class="settings-field">
         <div class="toggle-container" style="justify-content:flex-start; gap:1em;">
           <label class="toggle-switch toggle-positive">
             <input type="checkbox" id="field-trust-localhost" data-section="convey" data-key="trust_localhost">
@@ -3930,11 +3923,9 @@ function populateFields(config) {
   document.getElementById('field-transcribe-preserve').checked = transcribe.preserve_all || false;
   document.getElementById('field-transcribe-noise-upgrade').checked = transcribe.noise_upgrade !== false;
 
-  // Convey / pairing
+  // Convey
   const convey = config.convey || {};
-  const pairing = config.pairing || {};
   document.getElementById('field-trust-localhost').checked = convey.trust_localhost !== false;
-  setValue('field-host-url', pairing.host_url || '');
   renderConveyHostFields(config);
 
   // Support settings
@@ -4307,11 +4298,8 @@ function applySavedConfigResult(result, runtimeEnv) {
 
 function renderConveyHostFields(config) {
   const convey = config?.convey || {};
-  const pairing = config?.pairing || {};
-  const lanUrl = document.getElementById('conveyLanUrlDisplay');
   const passwordInput = document.getElementById('field-password');
 
-  if (lanUrl) lanUrl.textContent = pairing.effective_host_url || 'http://localhost:5015';
   if (passwordInput) {
     passwordInput.placeholder = convey.has_password
       ? 'Password set (enter to change)'
@@ -4415,9 +4403,6 @@ function handleFieldChange(el) {
     } else {
       value = { subject: '', object: '', possessive: '', reflexive: '' };
     }
-  } else if (section === 'pairing' && key === 'host_url') {
-    value = value.trim();
-    if (!value) value = null;
   }
 
   // Skip save if value unchanged (except env fields which are masked)

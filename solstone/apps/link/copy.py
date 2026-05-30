@@ -93,7 +93,7 @@ LAN_BANNER_DIY_BODY = (
 
 # --- U2 reach-shell copy ---
 # No unconditional header trust line: relay-trust messaging is posture-specific
-# (direct card = "no one in the middle"; spl card = POSTURE_SPL_DESC). An always-on
+# (direct card = "no one in the middle"; sol private link card = POSTURE_SPL_DESC). An always-on
 # "sol pbc carries the connection" claim is false in direct posture (spec § problem).
 POSTURE_MODAL_FOOTER = "switching is gentle — devices you've paired keep working either way, no re-pairing."
 STATUS_SENTENCES = {
@@ -116,6 +116,10 @@ REACH_DIRECT_DETAIL = (
     "your devices connect to this solstone directly, with no one in the middle."
 )
 REACH_HOME_ADDRESS_LABEL = "home address"
+REACH_HOST_ADDRESS_DISCLOSURE = "▸ use a different address"
+REACH_HOST_ADDRESS_PLACEHOLDER = "192.168.1.44:5015"
+REACH_HOST_ADDRESS_APPLY_LABEL = "apply"
+REACH_HOST_ADDRESS_CLEAR_LABEL = "clear"
 REACH_VPN_CANDIDATE_LABEL = "VPN address"
 REACH_VPN_USE_THIS = "use this"
 REACH_CHANGE_LABEL = "change"

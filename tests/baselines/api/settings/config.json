@@ -37,9 +37,6 @@
     },
     "timezone": "America/Denver"
   },
-  "pairing": {
-    "effective_host_url": "http://localhost:5015"
-  },
   "providers": {
     "cogitate": {
       "backup": "anthropic",

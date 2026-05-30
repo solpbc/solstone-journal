@@ -24,6 +24,10 @@ from solstone.apps.settings.copy import (
 )
 from solstone.convey import create_app
 from solstone.think.call import call_app
+from solstone.think.pairing.config import (
+    HOST_URL_HOSTNAME_UNSUPPORTED,
+    HOST_URL_INVALID,
+)
 
 runner = CliRunner()
 
@@ -68,15 +72,14 @@ def test_cli_status_exact_output(journal_copy):
 
 def test_cli_status_reports_manual_host_override(journal_copy):
     config = _read_config(journal_copy)
-    config["pairing"] = {"host_url": "https://manual.example/base"}
+    config["pairing"] = {"host_url": "http://192.168.1.44:5015"}
     _write_config(journal_copy, config)
 
     result = runner.invoke(call_app, ["settings", "convey", "status"])
 
     assert result.exit_code == 0
     assert (
-        "host url:          https://manual.example/base (manual override)"
-        in result.output
+        "host url:          http://192.168.1.44:5015 (manual override)" in result.output
     )
 
 
@@ -208,16 +211,16 @@ def test_cli_trust_localhost_disable_does_not_restart(journal_copy):
 def test_cli_host_url_set_auto_and_show(journal_copy):
     set_result = runner.invoke(
         call_app,
-        ["settings", "convey", "host-url", "https://manual.example/base"],
+        ["settings", "convey", "host-url", "192.168.1.44:5015"],
     )
     assert set_result.exit_code == 0
     assert set_result.stdout == (
-        CONVEY_HOST_URL_SET_DONE.format(url="https://manual.example/base") + "\n"
+        CONVEY_HOST_URL_SET_DONE.format(url="http://192.168.1.44:5015") + "\n"
     )
 
     show_result = runner.invoke(call_app, ["settings", "convey", "host-url", "--show"])
     assert show_result.exit_code == 0
-    assert show_result.stdout == "https://manual.example/base\n"
+    assert show_result.stdout == "http://192.168.1.44:5015\n"
 
     auto_result = runner.invoke(call_app, ["settings", "convey", "host-url", "--auto"])
     assert auto_result.exit_code == 0
@@ -229,10 +232,19 @@ def test_cli_host_url_rejects_relative_url(journal_copy):
     result = runner.invoke(call_app, ["settings", "convey", "host-url", "/bad"])
 
     assert result.exit_code == 1
-    assert result.stderr.strip() == "error: host url must be an absolute URL"
+    assert result.stderr.strip() == HOST_URL_INVALID
 
 
-def test_api_get_config_masks_password_and_includes_effective_host_url(journal_copy):
+def test_cli_host_url_rejects_hostname(journal_copy):
+    result = runner.invoke(
+        call_app, ["settings", "convey", "host-url", "mylab.local:5015"]
+    )
+
+    assert result.exit_code == 1
+    assert result.stderr.strip() == HOST_URL_HOSTNAME_UNSUPPORTED
+
+
+def test_api_get_config_masks_password_without_effective_host_url(journal_copy):
     client = _settings_client(journal_copy)
 
     response = client.get("/app/settings/api/config")
@@ -242,7 +254,7 @@ def test_api_get_config_masks_password_and_includes_effective_host_url(journal_c
     assert payload["convey"]["allow_network_access"] is False
     assert payload["convey"]["has_password"] is True
     assert "password_hash" not in payload["convey"]
-    assert payload["pairing"]["effective_host_url"] == "http://localhost:5015"
+    assert "pairing" not in payload
 
 
 def test_api_put_network_access_refuses_without_password(journal_copy):
@@ -398,23 +410,3 @@ def test_api_put_network_access_timeout_still_saves(journal_copy):
         "restart_timeout": True,
     }
     assert _read_config(journal_copy)["convey"]["allow_network_access"] is True
-
-
-def test_api_put_pairing_host_url_blank_clears_override(journal_copy):
-    client = _settings_client(journal_copy)
-    config = _read_config(journal_copy)
-    config["pairing"] = {"host_url": "https://manual.example/base"}
-    _write_config(journal_copy, config)
-
-    response = client.put(
-        "/app/settings/api/config",
-        json={"section": "pairing", "data": {"host_url": "   "}},
-        content_type="application/json",
-    )
-
-    assert response.status_code == 200
-    payload = response.get_json()
-    assert payload["success"] is True
-    assert payload["config"]["pairing"]["host_url"] is None
-    assert payload["config"]["pairing"]["effective_host_url"] == "http://localhost:5015"
-    assert _read_config(journal_copy)["pairing"]["host_url"] is None

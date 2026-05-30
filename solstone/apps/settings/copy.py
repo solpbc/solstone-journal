@@ -26,7 +26,6 @@ CONVEY_TRUST_DISABLE_DONE = (
 )
 CONVEY_HOST_URL_SET_DONE = "host url set: {url}"
 CONVEY_HOST_URL_CLEARED = "host url cleared. auto-detect is active."
-CONVEY_HOST_URL_INVALID = "error: host url must be an absolute URL"
 CONVEY_HOST_URL_FLAG_CONFLICT = "error: choose exactly one of <url>, --auto, or --show"
 FACET_DETAIL_SUCCESS_HEADING = "{title} is ready"
 FACET_DETAIL_VALUE_FRAMING = (
@@ -61,7 +60,6 @@ def format_convey_status(
 __all__ = [
     "CONVEY_HOST_URL_CLEARED",
     "CONVEY_HOST_URL_FLAG_CONFLICT",
-    "CONVEY_HOST_URL_INVALID",
     "CONVEY_HOST_URL_SET_DONE",
     "CONVEY_NETWORK_DISABLE_DONE",
     "CONVEY_NETWORK_DISABLE_PROGRESS",

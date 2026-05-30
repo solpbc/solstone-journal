@@ -66,6 +66,22 @@
         ></dd>
       </div>
     </dl>
+    <details id="link-host-address-override" class="link-host-address-override">
+      <summary>{{ link_copy.REACH_HOST_ADDRESS_DISCLOSURE }}</summary>
+      <div class="link-host-address-controls">
+        <input
+          type="text"
+          id="link-host-address-input"
+          class="link-host-address-input"
+          placeholder="{{ link_copy.REACH_HOST_ADDRESS_PLACEHOLDER }}"
+          autocomplete="off"
+          inputmode="url"
+        >
+        <button type="button" id="link-host-address-apply">{{ link_copy.REACH_HOST_ADDRESS_APPLY_LABEL }}</button>
+        <button type="button" id="link-host-address-clear">{{ link_copy.REACH_HOST_ADDRESS_CLEAR_LABEL }}</button>
+      </div>
+      <p id="link-host-address-error" class="link-host-address-error" role="alert" hidden></p>
+    </details>
     <div class="link-reach-upgrade">
       <h3>{{ link_copy.REACH_UPGRADE_TITLE }}</h3>
       <p>{{ link_copy.REACH_UPGRADE_BODY }}</p>
@@ -219,6 +235,10 @@
       STATUS_SENTENCES: {{ link_copy.STATUS_SENTENCES|tojson }},
       POSTURE_SPL_SETUP_LABEL: {{ link_copy.POSTURE_SPL_SETUP_LABEL|tojson }},
       POSTURE_SPL_MANAGE_LABEL: {{ link_copy.POSTURE_SPL_MANAGE_LABEL|tojson }},
+      REACH_HOST_ADDRESS_DISCLOSURE: {{ link_copy.REACH_HOST_ADDRESS_DISCLOSURE|tojson }},
+      REACH_HOST_ADDRESS_PLACEHOLDER: {{ link_copy.REACH_HOST_ADDRESS_PLACEHOLDER|tojson }},
+      REACH_HOST_ADDRESS_APPLY_LABEL: {{ link_copy.REACH_HOST_ADDRESS_APPLY_LABEL|tojson }},
+      REACH_HOST_ADDRESS_CLEAR_LABEL: {{ link_copy.REACH_HOST_ADDRESS_CLEAR_LABEL|tojson }},
       REACH_SPL_ACTIVE_BODY: {{ link_copy.REACH_SPL_ACTIVE_BODY|tojson }},
       REACH_SPL_TRUST_LINE: {{ link_copy.REACH_SPL_TRUST_LINE|tojson }},
       REACH_SPL_MANAGE_LABEL: {{ link_copy.REACH_SPL_MANAGE_LABEL|tojson }},
@@ -347,6 +367,13 @@
   .link-reach-detail-row dt { color: #777; font-size: 0.9em; }
   .link-reach-detail-row dd { margin: 0; min-width: 0; }
   .link-reach-detail-row code { font-family: ui-monospace, monospace; color: #555; word-break: break-all; }
+  .link-host-address-override { margin-top: 0.8em; }
+  .link-host-address-override summary { cursor: pointer; color: #1e6bd0; font-weight: 500; }
+  .link-host-address-controls { display: flex; gap: 0.5em; flex-wrap: wrap; margin-top: 0.65em; }
+  .link-host-address-input { min-width: min(18em, 100%); flex: 1 1 12em; border: 1px solid #d6cfc3; border-radius: 5px; padding: 0.55em 0.65em; font: inherit; }
+  .link-host-address-controls button { border: 1px solid #b8cceb; background: #f7fbff; color: #1e6bd0; border-radius: 5px; padding: 0.55em 0.8em; cursor: pointer; font-weight: 500; }
+  .link-host-address-error { color: #8a2d1c; font-weight: 500; margin: 0.5em 0 0; }
+  .link-host-address-error[hidden] { display: none; }
   .link-vpn-candidates { display: flex; flex-direction: column; gap: 0.4em; }
   .link-vpn-candidate { display: flex; gap: 0.45em; align-items: baseline; flex-wrap: wrap; }
   .link-vpn-candidate-label { color: #555; font-weight: 500; }
@@ -526,6 +553,10 @@
   const splCheckAgain = document.getElementById('link-spl-check-again');
   const homeAddressRow = document.getElementById('link-home-address-row');
   const homeAddressEl = document.getElementById('link-home-address');
+  const hostAddressInput = document.getElementById('link-host-address-input');
+  const hostAddressApply = document.getElementById('link-host-address-apply');
+  const hostAddressClear = document.getElementById('link-host-address-clear');
+  const hostAddressError = document.getElementById('link-host-address-error');
   const vpnCandidatesRow = document.getElementById('link-vpn-candidates-row');
   const vpnCandidatesEl = document.getElementById('link-vpn-candidates');
   const reachChange = document.getElementById('link-reach-change');
@@ -641,6 +672,12 @@
     lanBannerError.hidden = !message;
   }
 
+  function setHostAddressError(message) {
+    if (!hostAddressError) return;
+    hostAddressError.textContent = message || '';
+    hostAddressError.hidden = !message;
+  }
+
   function revealLanBanner() {
     if (!lanBanner) return;
     lanBanner.hidden = false;
@@ -744,9 +781,49 @@
     const homeAddress = typeof data.home_address === 'string' ? data.home_address : '';
     homeAddressEl.textContent = homeAddress;
     homeAddressRow.hidden = !homeAddress;
+    if (hostAddressInput && document.activeElement !== hostAddressInput) {
+      hostAddressInput.value = homeAddress;
+    }
 
     const candidates = Array.isArray(data?.vpn?.candidates) ? data.vpn.candidates : [];
     renderVpnCandidates(candidates);
+  }
+
+  async function submitHostAddress(address) {
+    const result = await window.apiJson('/app/link/host-address', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address }),
+    });
+    setHostAddressError('');
+    await refreshStatus();
+    return result;
+  }
+
+  async function applyHostAddressOverride() {
+    if (!hostAddressInput || !hostAddressApply) return;
+    hostAddressApply.disabled = true;
+    try {
+      await submitHostAddress(hostAddressInput.value);
+    } catch (err) {
+      setHostAddressError(err?.rawDetail || err?.serverMessage || err?.message || '');
+      window.logError?.(err, { context: 'link: host address override failed' });
+    } finally {
+      hostAddressApply.disabled = false;
+    }
+  }
+
+  async function clearHostAddressOverride() {
+    if (!hostAddressClear) return;
+    hostAddressClear.disabled = true;
+    try {
+      await submitHostAddress(null);
+    } catch (err) {
+      setHostAddressError(err?.rawDetail || err?.serverMessage || err?.message || '');
+      window.logError?.(err, { context: 'link: host address clear failed' });
+    } finally {
+      hostAddressClear.disabled = false;
+    }
   }
 
   function applyFirstRunGate() {
@@ -1590,6 +1667,9 @@
   pairBtn.addEventListener('click', openPairModal);
   heroPairBtn.addEventListener('click', openPairModal);
   lanBannerEnable.addEventListener('click', submitLanBannerNetworkAccess);
+  hostAddressApply?.addEventListener('click', applyHostAddressOverride);
+  hostAddressClear?.addEventListener('click', clearHostAddressOverride);
+  hostAddressInput?.addEventListener('input', () => setHostAddressError(''));
   splCheckAgain.addEventListener('click', refreshStatus);
   heroHowReach.addEventListener('click', openPostureModal);
   reachChange.addEventListener('click', openPostureModal);

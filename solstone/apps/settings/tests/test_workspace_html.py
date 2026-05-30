@@ -237,7 +237,8 @@ def test_workspace_security_network_mode_ui_removed_and_link_hint_present():
     ):
         assert removed not in text, removed
 
-    assert 'id="conveyLanUrlDisplay"' in text
+    assert 'id="conveyLanUrlDisplay"' not in text
+    assert 'id="field-host-url"' not in text
     assert "function renderConveyHostFields(" in text
     assert 'id="field-password"' in text
     assert 'id="field-trust-localhost"' in text
