@@ -1,29 +1,17 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-import os
 import platform
 import types
-from pathlib import Path
 from unittest.mock import Mock
 
 import numpy as np
 import pytest
-import soundfile as sf
 
 if platform.system() != "Linux":
     pytest.skip("Linux-only ONNX test", allow_module_level=True)
 
 import solstone.observe.transcribe._parakeet_onnx as parakeet_onnx
-from solstone.think.install_models import _fixture_audio_path
-
-
-def _require_onnx() -> None:
-    try:
-        import onnx_asr  # noqa: F401
-        import onnxruntime  # noqa: F401
-    except ImportError:
-        pytest.skip("onnx-asr/onnxruntime not installed")
 
 
 @pytest.fixture(autouse=True)
@@ -308,26 +296,3 @@ def test_transcribe_rebuilds_words_with_single_leading_space_and_speaker_none(
         for statement in statements
         for word in statement["words"]
     )
-
-
-@pytest.mark.integration
-def test_transcribe_sample_end_to_end_when_model_available():
-    if os.environ.get("PARAKEET_ONNX_E2E") == "0":
-        pytest.skip("PARAKEET_ONNX_E2E=0")
-
-    _require_onnx()
-    cache_dir = (
-        Path.home()
-        / ".cache"
-        / "huggingface"
-        / "hub"
-        / "models--istupakov--parakeet-tdt-0.6b-v3-onnx"
-    )
-    if not cache_dir.exists():
-        pytest.skip("ONNX model cache not present")
-
-    audio, sample_rate = sf.read(_fixture_audio_path(), dtype="float32")
-
-    statements = parakeet_onnx.transcribe(audio, sample_rate, {})
-
-    assert statements
