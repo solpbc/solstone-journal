@@ -20,6 +20,11 @@ health/*.log
 # Service port files from make dev
 health/*.port
 
+# Callosum unix sockets left by make dev / make sandbox
+health/*.sock
+*/health/*.sock
+chronicle/*/health/*.sock
+
 # Test-created entities and facets (from test runs that write to fixtures)
 entities/person_a/
 facets/test.facet/
