@@ -61,8 +61,6 @@ USER_BIN := $(HOME)/.local/bin
 	$(MAKE) preflight
 	@echo "Installing package with uv..."
 	$(UV) sync --group dev $(EXTRAS_ARGS)
-	@echo "Installing Playwright Chromium browser..."
-	$(VENV_BIN)/python -m playwright install chromium
 	@# Python 3.14+ needs onnxruntime from nightly (not yet on PyPI)
 	@OS_NAME=$$(uname -s); \
 	PY_MINOR=$$($(PYTHON) -c "import sys; print(sys.version_info.minor)"); \
