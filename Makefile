@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install uninstall test test-cov test-apps test-app test-only test-all format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills dev all sandbox sandbox-stop install-pinchtab install-models parakeet-helper parakeet-helper-clean wheel-macos wheel-macos-clean verify-browser update-browser-baselines review verify verify-api update-api-baselines service-logs check-layer-hygiene smoke-cogitate release release-test FORCE
+.PHONY: install uninstall test test-cov test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills dev all sandbox sandbox-stop install-pinchtab install-models parakeet-helper parakeet-helper-clean wheel-macos wheel-macos-clean verify-browser update-browser-baselines review verify verify-api update-api-baselines service-logs check-layer-hygiene smoke-cogitate release release-test FORCE
 
 # Default target - install package in editable mode
 all: install
@@ -366,21 +366,15 @@ format-check: .installed
 # -n auto --dist loadgroup lives here, not in pyproject addopts, so bare
 # pytest / pytest-watch / IDE runs stay serial.
 test: .installed format-check
-	@echo "Running core tests..."
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -q -n auto --dist loadgroup
+	@echo "Running unit tests (core + apps)..."
+	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ solstone/apps/ -q -n auto --dist loadgroup
 
-# Run core tests with full-repo coverage (used by ci/verify)
+# Same suite with full-repo coverage (used by ci/verify)
 test-cov: .installed format-check
-	@echo "Running core tests with coverage..."
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -q --cov=. -n auto --dist loadgroup
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) solstone/apps/link/tests/test_workspace_qr_size.py -q --cov=. --cov-append
+	@echo "Running unit tests with coverage (core + apps)..."
+	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ solstone/apps/ -q --cov=. -n auto --dist loadgroup
 
-# Run app tests
-test-apps: .installed
-	@echo "Running app tests..."
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) solstone/apps/ -q
-
-# Run specific app tests
+# Run a single app's tests
 test-app: .installed
 	@if [ -z "$(APP)" ]; then \
 		echo "Usage: make test-app APP=<app_name>"; \
@@ -398,11 +392,6 @@ test-only: .installed
 		exit 1; \
 	fi
 	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) $(TEST)
-
-# Run all tests (core + apps)
-test-all: .installed
-	@echo "Running all tests (core + apps)..."
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -v --cov=. && $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) solstone/apps/ -v --cov=. --cov-append
 
 # Auto-format and fix code, then report any remaining issues
 format: .installed
@@ -484,9 +473,9 @@ watch: .installed
 	@$(UV) pip show pytest-watch >/dev/null 2>&1 || { echo "Installing pytest-watch..."; $(UV) pip install pytest-watch; }
 	$(VENV_BIN)/ptw -- -q
 
-# Generate coverage report (core + apps, excluding core integration tests)
+# Generate HTML coverage report (core + apps)
 coverage: .installed
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ --cov=. --cov-report=html --cov-report=term	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) solstone/apps/ --cov=. --cov-report=html --cov-report=term --cov-append
+	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ solstone/apps/ --cov=. --cov-report=html --cov-report=term
 	@echo "Coverage report generated in htmlcov/index.html"
 
 # Update all dependencies to latest versions and refresh genai-prices

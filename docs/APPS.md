@@ -46,7 +46,7 @@ apps/my_app/
 ├── talent/              # Optional: Custom agents, generators, and skills (auto-discovered)
 │   └── my-skill/      #   Optional: Agent Skill directories (SKILL.md + resources)
 ├── maint/             # Optional: One-time maintenance tasks (auto-discovered)
-└── tests/             # Optional: App-specific tests (run via make test-apps)
+└── tests/             # Optional: App-specific tests (run by `make test` with everything else)
 ```
 
 ### File Purposes
@@ -488,8 +488,9 @@ Apps can include their own tests that are discovered and run separately from cor
 
 **Key Points:**
 - Create `tests/` directory with `conftest.py` and `test_*.py` files
+- **Do not add `__init__.py` to the `tests/` dir.** The repo uses pytest `--import-mode=importlib`; a `tests/__init__.py` without a matching app-level `__init__.py` makes every such dir resolve to the bare module `tests.conftest` and collide (`Plugin already registered`) when the whole suite is collected together. Leave test dirs as plain (non-package) directories.
 - App fixtures should be self-contained (only use pytest builtins like `tmp_path`, `monkeypatch`)
-- Tests run via `make test-apps` (all apps) or `make test-app APP=my_app`
+- Tests run as part of `make test` (collected with `tests/` in one parallel run) or focus one app with `make test-app APP=my_app`
 - Keep them fast unit/component tests — no real browser or live network
 
 **Directory structure:**

@@ -23,11 +23,9 @@ The `tests/fixtures/journal/` directory contains a complete mock journal structu
 
 ## Running Tests
 
-- `make test` for unit tests
-- `make test-cov` for unit tests with coverage reporting
-- `make test-apps` to run app tests
-- `make test-all` to run all tests (core + apps)
-- `make test-only TEST=path` to run specific tests
+- `make test` runs all unit tests — `tests/` + every `solstone/apps/*/tests/`, in one parallel run
+- `make test-cov` — the same suite with coverage reporting
+- `make test-app APP=<name>` to run a single app's tests; `make test-only TEST=path` for a specific file/pattern
 - `make coverage` to generate a coverage report
 - `make ci` before committing (formats, lints, tests)
 - Always run `sol restart-convey` after editing `solstone/convey/` or `solstone/apps/` to reload code

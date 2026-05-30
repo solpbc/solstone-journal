@@ -108,12 +108,10 @@ Verified against `Makefile`. Grouped by use.
 |--------|-------------|
 | `make format` | Auto-fix formatting and imports with ruff. Safe to run anytime; modifies files. |
 | `make format-check` | Format dry-run. Part of `make ci`; rarely run alone. |
-| `make test` | Unit tests (`tests/`) without coverage. Format-check runs first; failures block tests. Fast inner loop. |
-| `make test-cov` | Unit tests with full-repo terminal coverage; used by `make ci` / `make verify`. |
-| `make test-apps` | Run all `solstone/apps/*/tests/` suites. |
-| `make test-app APP=<name>` | Run a single app's tests. |
+| `make test` | All unit tests — `tests/` + every `solstone/apps/*/tests/`, one parallel run. Format-check runs first; failures block tests. Fast inner loop. |
+| `make test-cov` | Same suite with full-repo terminal coverage; used by `make ci` / `make verify`. |
+| `make test-app APP=<name>` | Run a single app's tests (focus helper). |
 | `make test-only TEST=<path-or-pattern>` | Run a specific test file or pytest node id (`TEST="-k test_name"` also works). |
-| `make test-all` | Everything — core + apps. Pre-ship gate. |
 | `make coverage` | HTML coverage report under `htmlcov/`. Occasional. |
 | `make watch` | pytest-watch — reruns tests on file change. Useful during a test-heavy sprint. |
 | `make ci` | Format-check + ruff + layer-hygiene + coverage tests. **Run before every commit.** |
@@ -157,8 +155,8 @@ Verified against `Makefile`. Grouped by use.
 
 - **Framework:** pytest. Files `test_*.py`, functions `test_*`. Shared fixtures in `tests/conftest.py`.
 - **Fixture journal:** `tests/fixtures/journal/` — a complete mock journal with facets, entities, segments, index state. The autouse `set_test_journal_path` fixture in `tests/conftest.py` sets `SOLSTONE_JOURNAL` to this path for unit tests. Individual tests may override it with `monkeypatch.setenv` when they need an isolated tmp journal (see §8).
-- **Run one test:** `make test-only TEST=tests/test_utils.py::test_foo` or `TEST="-k test_foo"`.
-- **Run app tests:** `make test-apps` or `make test-app APP=<name>`.
+- **Run one test:** `make test-only TEST=tests/test_utils.py::test_foo` or `TEST="-k test_foo"`. **One app:** `make test-app APP=<name>`.
+- **`make test` runs everything** — `tests/` and every `solstone/apps/*/tests/` in one parallel run. App tests are not a separate step.
 - **All tests are fast unit/component tests** — no real browser, no live network, no API keys. There is no integration/e2e test tier; tests that would need those were removed in favor of live verification via `make sandbox` / `make verify-browser`.
 - **After editing `solstone/convey/` or `solstone/apps/`:** `sol restart-convey` to reload code in a running stack.
 - **`make dev` + `make sandbox`** both write runtime artifacts into the fixtures journal; `tests/fixtures/journal/.gitignore` covers those — never commit them.

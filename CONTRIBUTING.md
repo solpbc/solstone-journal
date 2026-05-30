@@ -113,12 +113,11 @@ Use the Makefile targets. The high-signal commands are:
 ```bash
 make test
 make test-only TEST=tests/test_utils.py::test_foo
-make test-apps
 make test-app APP=settings
 make ci
 ```
 
-`make test` runs unit tests after a format check. `make ci` is the pre-commit gate: format-check, ruff, layer hygiene, and tests. Run it before committing.
+`make test` runs all unit tests — `tests/` plus every `solstone/apps/*/tests/`, in one parallel run — after a format check. `make ci` is the pre-commit gate: format-check, ruff, layer hygiene, and tests. Run it before committing.
 
 ```bash
 make test-only TEST="-k test_foo"              # one test by name/pattern
