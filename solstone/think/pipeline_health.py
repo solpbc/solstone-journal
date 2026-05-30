@@ -157,6 +157,7 @@ class BacklogView:
     stuck_days: int
     oldest_pending_day: str | None
     errors: tuple[BacklogError, ...]
+    degraded: bool = False
 
 
 def summarize_pipeline_day(day: str) -> dict:

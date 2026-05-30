@@ -532,6 +532,191 @@ const Dashboard = (function() {
     container.appendChild(legend);
   }
 
+  function backlogCopy() {
+    return window.BACKLOG_COPY || {};
+  }
+
+  function fmt(template, vals = {}) {
+    return String(template || '')
+      .replace(/\{stuck_n\}/g, String(vals.stuck ?? ''))
+      .replace(/\{pending_n\}/g, String(vals.pending ?? ''));
+  }
+
+  function count(value) {
+    const num = Number(value);
+    return Number.isFinite(num) && num > 0 ? num : 0;
+  }
+
+  function backlogCounts(stats) {
+    const bl = stats.backlog;
+    const totals = stats.totals || {};
+    return {
+      pending: count(bl ? bl.pending_days : totals.backlog_pending_days),
+      stuck: count(bl ? bl.stuck_days : totals.backlog_stuck_days)
+    };
+  }
+
+  function backlogVerdict(stats) {
+    const C = backlogCopy();
+    const bl = stats.backlog;
+    const counts = backlogCounts(stats);
+    const p = counts.pending;
+    const s = counts.stuck;
+
+    if (!bl || bl.degraded === true) return C.VERDICT_CANT_TELL;
+    if (p === 0 && s === 0) return C.VERDICT_CAUGHT_UP;
+    if (s > 0 && p === 0) {
+      return fmt(s === 1 ? C.VERDICT_STUCK_ONLY_SINGULAR : C.VERDICT_STUCK_ONLY_PLURAL, {stuck: s});
+    }
+    if (s === 0 && p > 0) {
+      return fmt(p === 1 ? C.VERDICT_PENDING_ONLY_SINGULAR : C.VERDICT_PENDING_ONLY_PLURAL, {pending: p});
+    }
+
+    const stuckArm = fmt(s === 1 ? C.VERDICT_STUCK_ONLY_SINGULAR : C.VERDICT_STUCK_ONLY_PLURAL, {stuck: s}).replace(/\.$/, '');
+    const pendingTail = fmt((C.VERDICT_BOTH_PLURAL || '').split(' — ')[1], {pending: p});
+    return stuckArm + ' — ' + pendingTail;
+  }
+
+  function backlogDepth(day) {
+    return count(day.segments) + count(day.units);
+  }
+
+  function whyLabel(why, C) {
+    if (why === 'failed') return C.WHY_FAILED;
+    if (why === 'never_attempted') return C.WHY_NEVER_ATTEMPTED;
+    if (why === 'sensed_not_thought') return C.WHY_SENSED_NOT_THOUGHT;
+    return null;
+  }
+
+  function backlogErrorForDay(day, bl) {
+    if (day.error) return day.error;
+    const errors = Array.isArray(bl && bl.errors) ? bl.errors : [];
+    return errors.find(error => error.day === day.day) || null;
+  }
+
+  function dayCopy(day, C) {
+    if (day.state === 'stuck') return C.DAY_BADGE;
+    if (day.state === 'pending' || day.state === 'unknown') return C.CATCHING_UP_DAY;
+    return C.VERDICT_CAUGHT_UP;
+  }
+
+  function needsHandDay(day, bl) {
+    return day.state === 'stuck' || backlogErrorForDay(day, bl) !== null;
+  }
+
+  function catchingUpDay(day, bl) {
+    return day.state === 'pending' && backlogErrorForDay(day, bl) === null;
+  }
+
+  function dayHref(day) {
+    return `/app/transcripts/${encodeURIComponent(day.day)}`;
+  }
+
+  function backlogRow(day, C, bl, options = {}) {
+    const depth = backlogDepth(day);
+    const copy = options.copy || dayCopy(day, C);
+    const mainChildren = [
+      el('span', {className: 'backlog-row-day'}, [fmtDay(day.day)])
+    ];
+    if (options.badge) {
+      mainChildren.push(el('span', {className: 'backlog-badge'}, [options.badge]));
+    }
+    mainChildren.push(el('span', {className: 'backlog-row-copy'}, [copy]));
+    const whyLabels = Array.isArray(day.why)
+      ? day.why.map(unit => whyLabel(unit.why, C)).filter(Boolean)
+      : [];
+    const children = [
+      el('a', {className: 'backlog-row-link', href: dayHref(day)}, [
+        el('div', {className: 'backlog-row-main'}, mainChildren),
+        depth > 0 ? el('span', {className: 'backlog-depth'}, [String(depth)]) : null
+      ])
+    ];
+
+    if (!options.expanded && whyLabels.length > 0) {
+      children.push(
+        el('details', {}, [
+          el('summary', {}, [copy]),
+          el('ul', {className: 'backlog-why-list'}, whyLabels.map(label => el('li', {}, [label])))
+        ])
+      );
+    }
+
+    return el('div', {className: 'backlog-row'}, children);
+  }
+
+  function stuckBucket(bl, C) {
+    const days = (Array.isArray(bl.days) ? bl.days : []).filter(day => needsHandDay(day, bl));
+    if (!days.length) return null;
+
+    return el('section', {className: 'backlog-needs-hand'}, [
+      el('h2', {}, [C.BUCKET_HEADING]),
+      el('p', {className: 'backlog-description'}, [C.BUCKET_DESCRIPTION]),
+      el('div', {className: 'backlog-rows'}, days.map(day => backlogRow(day, C, bl, {
+        badge: C.DAY_BADGE,
+        copy: C.REASON_FAILING_STEP,
+        expanded: true
+      })))
+    ]);
+  }
+
+  function backlogList(bl, counts, C) {
+    const days = (Array.isArray(bl.days) ? bl.days : []).filter(day => catchingUpDay(day, bl));
+    if (!days.length) return null;
+
+    const heading = fmt(C.CATCHING_UP_AGGREGATE, {pending: counts.pending});
+    const children = [
+      el('h2', {}, [heading])
+    ];
+    children.push(el('p', {className: 'backlog-routine-note'}, [C.CATCHING_UP_TAIL]));
+    children.push(
+      el('div', {className: 'backlog-rows'}, days.map(day => backlogRow(day, C, bl)))
+    );
+    return el('section', {className: 'backlog-list'}, children);
+  }
+
+  function renderBacklog(stats) {
+    const main = document.getElementById('mainContent');
+    const statsGrid = document.getElementById('statsGrid');
+    if (!main || !statsGrid) return;
+
+    const existing = document.getElementById('backlogSection');
+    if (existing) existing.remove();
+
+    const C = backlogCopy();
+    const bl = stats.backlog;
+    const counts = backlogCounts(stats);
+    const section = el('section', {className: 'backlog-section', id: 'backlogSection'}, [
+      el('div', {className: 'backlog-hero'}, [
+        el('p', {className: 'backlog-hero-line'}, [backlogVerdict(stats)])
+      ])
+    ]);
+
+    if (bl && bl.degraded !== true) {
+      const needsHand = stuckBucket(bl, C);
+      if (needsHand) section.appendChild(needsHand);
+      const list = backlogList(bl, counts, C);
+      if (list) section.appendChild(list);
+    }
+
+    main.insertBefore(section, statsGrid);
+  }
+
+  function clearDashboardSections() {
+    [
+      'statsGrid',
+      'progressSection',
+      'repairSection',
+      'tokenChart',
+      'audioChart',
+      'heatmap',
+      'facetsChart',
+      'activitiesChart'
+    ].forEach(id => {
+      const node = document.getElementById(id);
+      if (node) node.innerHTML = '';
+    });
+  }
+
   // Main render function
   function render(data) {
     if (!data) return;
@@ -564,10 +749,15 @@ const Dashboard = (function() {
       );
     }
 
+    const main = document.getElementById('mainContent');
+    main.style.display = 'block';
+    renderBacklog(stats);
+
     // Required-field validation (blocking — stops rendering if fields missing)
     const requiredFields = ['days', 'totals', 'heatmap', 'tokens', 'talents', 'facets'];
     const missingFields = requiredFields.filter(f => !(f in stats));
     if (missingFields.length > 0) {
+      clearDashboardSections();
       document.getElementById('notice').appendChild(
         el('div', {className: 'alert alert-warning'}, [
           'your stats aren\'t ready yet. check back in a moment.'
@@ -594,12 +784,9 @@ const Dashboard = (function() {
       freshnessEl.appendChild(refreshLink);
     }
     
-    // Show main content
-    const main = document.getElementById('mainContent');
-    main.style.display = 'block';
-    
     // Handle empty data
     if (!stats.days || Object.keys(stats.days).length === 0) {
+      clearDashboardSections();
       document.getElementById('notice').appendChild(
         el('div', {className: 'alert alert-warning'}, [
           el('strong', {}, ['No data available. ']),
@@ -636,9 +823,6 @@ const Dashboard = (function() {
     progressSection.innerHTML = ''; // Clear existing content
     progressSection.appendChild(
       progressCard('audio processing', totals.transcript_sessions || 0, totals.pending_segments || 0)
-    );
-    progressSection.appendChild(
-      progressCard('agent outputs', totals.outputs_processed || 0, totals.outputs_pending || 0)
     );
     
     // Token usage setup
@@ -720,11 +904,12 @@ const Dashboard = (function() {
     );
     
     // Render repairs if needed
-    const repairs = ['pending_segments', 'segments_pending_think', 'outputs_pending'];
+    const repairs = ['pending_segments', 'segments_pending_think'];
     const hasRepairs = repairs.some(key => (totals[key] || 0) > 0);
+    const repairSection = document.getElementById('repairSection');
+    repairSection.innerHTML = '';
 
     if (hasRepairs) {
-      const repairSection = document.getElementById('repairSection');
       const alert = el('div', {className: 'chart-section alert-repair'}, [
         el('h2', {}, ['items needing processing']),
         el('div', {className: 'stats-grid', id: 'repairGrid'})
@@ -733,8 +918,7 @@ const Dashboard = (function() {
       const repairGrid = alert.querySelector('#repairGrid');
       const repairLabels = {
         pending_segments: 'pending segments',
-        segments_pending_think: 'segments awaiting thinking',
-        outputs_pending: 'agent outputs'
+        segments_pending_think: 'segments awaiting thinking'
       };
 
       repairs.forEach(key => {

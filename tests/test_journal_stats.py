@@ -439,7 +439,32 @@ def test_root_stats_contains_backlog_contract_fields():
         "stuck_days": 0,
         "oldest_pending_day": None,
         "errors": [],
+        "degraded": False,
     }
+
+
+def test_backlog_derivation_failure_marks_stats_degraded(tmp_path, monkeypatch, caplog):
+    stats_mod = importlib.import_module("solstone.think.journal_stats")
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+
+    def fail_backlog_view():
+        raise RuntimeError("backlog unavailable")
+
+    monkeypatch.setattr(stats_mod, "read_backlog_view", fail_backlog_view)
+    caplog.set_level(logging.ERROR, logger=stats_mod.__name__)
+
+    js = stats_mod.JournalStats()
+    js.scan(str(tmp_path), verbose=False, use_cache=False)
+    data = js.to_dict()
+
+    assert js.backlog_view is not None
+    assert js.backlog_view.degraded is True
+    assert data["backlog"]["degraded"] is True
+    assert any(
+        "backlog derivation failed; stats will be flagged degraded"
+        in record.getMessage()
+        for record in caplog.records
+    )
 
 
 def test_token_usage_new_format(tmp_path, monkeypatch):

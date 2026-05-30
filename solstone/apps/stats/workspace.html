@@ -174,6 +174,128 @@ h1 {
   padding: 0 0.25em;
 }
 
+/* Backlog */
+.backlog-section {
+  display: grid;
+  gap: 1em;
+  margin-bottom: 1.5em;
+}
+
+.backlog-hero {
+  background: white;
+  border-radius: 12px;
+  padding: 1.25em 1.5em;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+.backlog-hero-line {
+  color: #2f2a24;
+  font-size: 1.35em;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.backlog-needs-hand {
+  background: #fffaf0;
+  border: 1px solid #f4d08a;
+  border-left: 4px solid #d4a843;
+  border-radius: 12px;
+  padding: 1.25em 1.5em;
+}
+
+.backlog-needs-hand h2,
+.backlog-list h2 {
+  color: #333;
+  font-size: 1.1em;
+  margin: 0 0 0.5em;
+}
+
+.backlog-description {
+  color: #5f564d;
+  margin: 0 0 1em;
+}
+
+.backlog-rows {
+  display: grid;
+  gap: 0.75em;
+}
+
+.backlog-row {
+  background: white;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 8px;
+  padding: 0.9em 1em;
+}
+
+.backlog-row-link {
+  align-items: center;
+  color: inherit;
+  display: grid;
+  gap: 0.75em;
+  grid-template-columns: minmax(7em, 1fr) auto;
+  text-decoration: none;
+}
+
+.backlog-row-main {
+  display: grid;
+  gap: 0.25em;
+}
+
+.backlog-row-day {
+  color: #2f2a24;
+  font-weight: 700;
+}
+
+.backlog-row-copy {
+  color: #675f58;
+  font-size: 0.9em;
+}
+
+.backlog-badge {
+  align-self: start;
+  background: #fff3cd;
+  border: 1px solid #e6c76b;
+  border-radius: 999px;
+  color: #6c4b00;
+  font-size: 0.8em;
+  font-weight: 700;
+  padding: 0.25em 0.65em;
+}
+
+.backlog-depth {
+  color: var(--facet-color, #b06a1a);
+  font-weight: 700;
+}
+
+.backlog-list {
+  background: white;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+  padding: 1.25em 1.5em;
+}
+
+.backlog-routine-note {
+  color: #675f58;
+  margin: 0 0 1em;
+}
+
+.backlog-row details {
+  grid-column: 1 / -1;
+}
+
+.backlog-row summary {
+  cursor: pointer;
+}
+
+.backlog-why-list {
+  color: #675f58;
+  margin: 0.5em 0 0;
+  padding-left: 1.25em;
+}
+
 /* Chart sections */
 .chart-section {
   background: white;
@@ -507,6 +629,12 @@ h1 {
   .alert-repair .stats-grid {
     grid-template-columns: 1fr;
   }
+  .backlog-row {
+    padding: 0.9em;
+  }
+  .backlog-row-link {
+    grid-template-columns: 1fr;
+  }
   .heatmap {
     font-size: 0.8em;
     grid-template-columns: 30px repeat(24, 1fr);
@@ -610,6 +738,30 @@ h1 {
   </div>
 </div>
 
+<script>
+  window.BACKLOG_COPY = {
+    VERDICT_CAUGHT_UP: {{ backlog_copy.BACKLOG_VERDICT_CAUGHT_UP | tojson }},
+    VERDICT_STUCK_ONLY_PLURAL: {{ backlog_copy.BACKLOG_VERDICT_STUCK_ONLY_PLURAL | tojson }},
+    VERDICT_STUCK_ONLY_SINGULAR: {{ backlog_copy.BACKLOG_VERDICT_STUCK_ONLY_SINGULAR | tojson }},
+    VERDICT_PENDING_ONLY_PLURAL: {{ backlog_copy.BACKLOG_VERDICT_PENDING_ONLY_PLURAL | tojson }},
+    VERDICT_PENDING_ONLY_SINGULAR: {{ backlog_copy.BACKLOG_VERDICT_PENDING_ONLY_SINGULAR | tojson }},
+    VERDICT_BOTH_PLURAL: {{ backlog_copy.BACKLOG_VERDICT_BOTH_PLURAL | tojson }},
+    VERDICT_CANT_TELL: {{ backlog_copy.BACKLOG_VERDICT_CANT_TELL | tojson }},
+    BUCKET_HEADING: {{ backlog_copy.BACKLOG_BUCKET_HEADING | tojson }},
+    BUCKET_DESCRIPTION: {{ backlog_copy.BACKLOG_BUCKET_DESCRIPTION | tojson }},
+    DAY_BADGE: {{ backlog_copy.BACKLOG_DAY_BADGE | tojson }},
+    REASON_CORRUPT_RAW: {{ backlog_copy.BACKLOG_REASON_CORRUPT_RAW | tojson }},
+    REASON_FAILING_STEP: {{ backlog_copy.BACKLOG_REASON_FAILING_STEP | tojson }},
+    REASON_MISSING_CONFIG: {{ backlog_copy.BACKLOG_REASON_MISSING_CONFIG | tojson }},
+    REASON_PROVIDER_DOWN: {{ backlog_copy.BACKLOG_REASON_PROVIDER_DOWN | tojson }},
+    WHY_NEVER_ATTEMPTED: {{ backlog_copy.BACKLOG_WHY_NEVER_ATTEMPTED | tojson }},
+    WHY_FAILED: {{ backlog_copy.BACKLOG_WHY_FAILED | tojson }},
+    WHY_SENSED_NOT_THOUGHT: {{ backlog_copy.BACKLOG_WHY_SENSED_NOT_THOUGHT | tojson }},
+    CATCHING_UP_DAY: {{ backlog_copy.BACKLOG_CATCHING_UP_DAY | tojson }},
+    CATCHING_UP_AGGREGATE: {{ backlog_copy.BACKLOG_CATCHING_UP_AGGREGATE | tojson }},
+    CATCHING_UP_TAIL: {{ backlog_copy.BACKLOG_CATCHING_UP_TAIL | tojson }},
+  };
+</script>
 <script src="{{ url_for('app:stats.static', filename='dashboard.js') }}"></script>
 <script>
   // Load dashboard data when page loads
