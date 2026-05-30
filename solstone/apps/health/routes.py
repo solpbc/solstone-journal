@@ -1,14 +1,18 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
+import json
+import logging
+import os
 import re
 import socket
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, render_template, request
 
 from solstone.apps.health import copy as health_copy
-from solstone.convey import state
+from solstone.convey import backlog_copy, state
+from solstone.convey.backlog_view import stuck_rows, verdict
 from solstone.convey.reasons import (
     FILE_NOT_FOUND,
     FILE_READ_FAILED,
@@ -21,6 +25,8 @@ from solstone.convey.utils import error_response
 from solstone.think.callosum import callosum_send
 from solstone.think.streams import stream_name
 
+logger = logging.getLogger(__name__)
+
 health_bp = Blueprint("app:health", __name__, url_prefix="/app/health")
 
 
@@ -29,10 +35,39 @@ def _inject_health_copy() -> dict:
     return {"health_copy": health_copy}
 
 
+@health_bp.app_context_processor
+def _inject_backlog_copy() -> dict:
+    return {"backlog_copy": backlog_copy}
+
+
 # Supervisor currently registers one observer-facing processing service: "sense".
 # Observer rows are per registration key, but reconnect restarts this shared worker.
 # Keep this endpoint whitelist local until supervisor exposes a public service list.
 OBSERVER_RESTART_SERVICES = {"sense"}
+
+
+def _load_backlog() -> dict | None:
+    stats_path = os.path.join(state.journal_root, "stats.json")
+    if not os.path.isfile(stats_path):
+        return None
+    try:
+        with open(stats_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        logger.exception("Failed to read backlog from stats.json")
+        return None
+    backlog = data.get("backlog")
+    return backlog if isinstance(backlog, dict) else None
+
+
+@health_bp.route("/")
+def index():
+    backlog = _load_backlog()
+    return render_template(
+        "app.html",
+        health_backlog_verdict=verdict(backlog),
+        health_stuck_rows=stuck_rows(backlog),
+    )
 
 
 @health_bp.get("/api/log")

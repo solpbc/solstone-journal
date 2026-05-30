@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 from solstone.apps.health import copy as health_copy
+from solstone.convey import backlog_copy
 
 WORKSPACE_PATH = Path(__file__).resolve().parents[1] / "workspace.html"
 LOGS_COPY_KEYS = [
@@ -43,11 +44,68 @@ HEALTH_GLANCE_LITERALS = {
 }
 
 
+def _backlog(
+    *,
+    pending_days=0,
+    stuck_days=0,
+    days=None,
+    errors=None,
+    degraded=False,
+) -> dict:
+    return {
+        "degraded": degraded,
+        "pending_days": pending_days,
+        "stuck_days": stuck_days,
+        "days": days or [],
+        "errors": errors or [],
+    }
+
+
 def _render_health_workspace(health_env) -> str:
     env = health_env()
     response = env.client.get("/app/health/")
     assert response.status_code == 200
     return response.get_data(as_text=True)
+
+
+def _render_health_workspace_with_stats(health_env, stats_payload: dict) -> str:
+    env = health_env()
+    (env.journal / "stats.json").write_text(
+        json.dumps(stats_payload),
+        encoding="utf-8",
+    )
+    response = env.client.get("/app/health/")
+    assert response.status_code == 200
+    return html.unescape(response.get_data(as_text=True))
+
+
+def _copy(key: str, *, pending=None, stuck=None) -> str:
+    return (
+        getattr(backlog_copy, key)
+        .replace("{pending_n}", "" if pending is None else str(pending))
+        .replace("{stuck_n}", "" if stuck is None else str(stuck))
+    )
+
+
+def _section_by_id(rendered: str, section_id: str) -> str:
+    id_pos = rendered.index(f'id="{section_id}"')
+    start = rendered.rfind("<section", 0, id_pos)
+    end = rendered.index("</section>", id_pos) + len("</section>")
+    return rendered[start:end]
+
+
+def _optional_section_by_id(rendered: str, section_id: str) -> str:
+    marker = f'id="{section_id}"'
+    if marker not in rendered:
+        return ""
+    return _section_by_id(rendered, section_id)
+
+
+def _verdict_text(rendered: str) -> str:
+    section = _section_by_id(rendered, "backlogVerdict")
+    match = re.search(r'<p class="backlog-verdict-line">(?P<text>.*?)</p>', section)
+    assert match is not None
+    return match.group("text")
 
 
 def test_logs_copy_and_controls_render(health_env):
@@ -141,11 +199,210 @@ def test_glance_precedence_order(health_env):
 def test_error_summary_dom_order(health_env):
     rendered = _render_health_workspace(health_env)
 
-    assert rendered.index('id="healthGlance"') < rendered.index('class="vitals-bar"')
+    assert rendered.index('id="healthGlance"') < rendered.index('id="backlogVerdict"')
+    assert rendered.index('id="backlogVerdict"') < rendered.index('class="vitals-bar"')
     assert rendered.index('class="vitals-bar"') < rendered.index('id="errorSummary"')
     assert rendered.index('id="errorSummary"') < rendered.index(
         'class="dashboard-card observe-card"'
     )
+
+
+def test_backlog_verdict_caught_up(health_env):
+    rendered = _render_health_workspace_with_stats(
+        health_env,
+        {"backlog": _backlog()},
+    )
+
+    assert _verdict_text(rendered) == backlog_copy.BACKLOG_VERDICT_CAUGHT_UP
+
+
+def test_backlog_verdict_pending_only_singular_and_plural(health_env):
+    rendered = _render_health_workspace_with_stats(
+        health_env,
+        {"backlog": _backlog(pending_days=1)},
+    )
+
+    assert _verdict_text(rendered) == backlog_copy.BACKLOG_VERDICT_PENDING_ONLY_SINGULAR
+    assert "1 day(s)" not in _section_by_id(rendered, "backlogVerdict")
+
+    rendered = _render_health_workspace_with_stats(
+        health_env,
+        {"backlog": _backlog(pending_days=4)},
+    )
+
+    assert _verdict_text(rendered) == _copy(
+        "BACKLOG_VERDICT_PENDING_ONLY_PLURAL",
+        pending=4,
+    )
+
+
+def test_backlog_verdict_stuck_only_singular_and_plural(health_env):
+    rendered = _render_health_workspace_with_stats(
+        health_env,
+        {"backlog": _backlog(stuck_days=1)},
+    )
+
+    assert _verdict_text(rendered) == backlog_copy.BACKLOG_VERDICT_STUCK_ONLY_SINGULAR
+
+    rendered = _render_health_workspace_with_stats(
+        health_env,
+        {"backlog": _backlog(stuck_days=3)},
+    )
+
+    assert _verdict_text(rendered) == _copy(
+        "BACKLOG_VERDICT_STUCK_ONLY_PLURAL",
+        stuck=3,
+    )
+
+
+def test_backlog_verdict_both_does_not_render_sum(health_env):
+    rendered = _render_health_workspace_with_stats(
+        health_env,
+        {"backlog": _backlog(pending_days=3, stuck_days=2)},
+    )
+
+    verdict_region = _section_by_id(rendered, "backlogVerdict")
+    backlog_region = verdict_region + _optional_section_by_id(
+        rendered, "backlogNeedsHand"
+    )
+    assert "2" in verdict_region
+    assert "3" in verdict_region
+    assert "5" not in backlog_region
+
+
+def test_backlog_missing_key_renders_cant_tell(health_env):
+    rendered = _render_health_workspace_with_stats(health_env, {})
+
+    assert _verdict_text(rendered) == backlog_copy.BACKLOG_VERDICT_CANT_TELL
+    assert backlog_copy.BACKLOG_VERDICT_CAUGHT_UP not in _section_by_id(
+        rendered,
+        "backlogVerdict",
+    )
+
+
+def test_backlog_degraded_renders_cant_tell_without_bucket(health_env):
+    rendered = _render_health_workspace_with_stats(
+        health_env,
+        {"backlog": _backlog(degraded=True)},
+    )
+
+    assert _verdict_text(rendered) == backlog_copy.BACKLOG_VERDICT_CANT_TELL
+    assert backlog_copy.BACKLOG_VERDICT_CAUGHT_UP not in _section_by_id(
+        rendered,
+        "backlogVerdict",
+    )
+    assert 'id="backlogNeedsHand"' not in rendered
+
+
+def test_backlog_needs_hand_bucket_rows(health_env):
+    rendered = _render_health_workspace_with_stats(
+        health_env,
+        {
+            "backlog": _backlog(
+                stuck_days=1,
+                days=[
+                    {
+                        "day": "20260320",
+                        "state": "stuck",
+                        "segments": 2,
+                        "units": 1,
+                        "reason": "corrupt_raw",
+                    },
+                    {
+                        "day": "20260321",
+                        "state": "pending",
+                        "segments": 0,
+                        "units": 4,
+                        "reason": "failing_step",
+                    },
+                    {
+                        "day": "20260322",
+                        "state": "pending",
+                        "segments": 8,
+                        "units": 0,
+                        "reason": "failing_step",
+                    },
+                ],
+                errors=[
+                    {
+                        "day": "20260321",
+                        "stage": "terminal_states",
+                        "message": "boom",
+                    }
+                ],
+            )
+        },
+    )
+
+    section = _section_by_id(rendered, "backlogNeedsHand")
+    assert backlog_copy.BACKLOG_BUCKET_HEADING in section
+    assert backlog_copy.BACKLOG_BUCKET_DESCRIPTION in section
+    assert backlog_copy.BACKLOG_DAY_BADGE in section
+    assert "20260320" in section
+    assert "20260321" in section
+    assert "20260322" not in section
+    assert backlog_copy.BACKLOG_REASON_CORRUPT_RAW in section
+    assert backlog_copy.BACKLOG_REASON_FAILING_STEP in section
+    assert '<span class="backlog-depth">3</span>' in section
+    assert '<span class="backlog-depth">4</span>' in section
+    assert "<details" not in section
+
+
+def test_backlog_copy_constants_render_from_shared_source(health_env):
+    rendered = _render_health_workspace_with_stats(
+        health_env,
+        {
+            "backlog": _backlog(
+                pending_days=3,
+                stuck_days=2,
+                days=[
+                    {
+                        "day": "20260320",
+                        "state": "stuck",
+                        "segments": 1,
+                        "units": 0,
+                        "reason": "corrupt_raw",
+                    },
+                    {
+                        "day": "20260321",
+                        "state": "pending",
+                        "segments": 0,
+                        "units": 1,
+                        "reason": "failing_step",
+                    },
+                ],
+                errors=[
+                    {
+                        "day": "20260321",
+                        "stage": "segment_completion",
+                        "message": "boom",
+                    }
+                ],
+            )
+        },
+    )
+
+    assert _verdict_text(rendered) == _copy(
+        "BACKLOG_VERDICT_BOTH_PLURAL",
+        pending=3,
+        stuck=2,
+    )
+    section = _section_by_id(rendered, "backlogNeedsHand")
+    assert re.search(r"<h2>(?P<text>.*?)</h2>", section).group("text") == getattr(
+        backlog_copy, "BACKLOG_BUCKET_HEADING"
+    )
+    assert re.search(
+        r'<p class="backlog-needs-hand-desc">(?P<text>.*?)</p>',
+        section,
+    ).group("text") == getattr(backlog_copy, "BACKLOG_BUCKET_DESCRIPTION")
+    reasons = re.findall(
+        r'<span class="backlog-row-reason">(?P<text>.*?)</span>',
+        section,
+    )
+    assert reasons == [
+        getattr(backlog_copy, "BACKLOG_REASON_CORRUPT_RAW"),
+        getattr(backlog_copy, "BACKLOG_REASON_FAILING_STEP"),
+    ]
 
 
 def test_status_summary_text_removed(health_env):

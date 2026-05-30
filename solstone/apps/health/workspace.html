@@ -317,6 +317,92 @@
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
+/* Processing backlog */
+.backlog-verdict-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-left: 4px solid #d97706;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  padding: 1em 1.25em;
+}
+
+.backlog-verdict-line {
+  color: #111827;
+  font-size: 1.15em;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.backlog-needs-hand {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-left: 4px solid #d97706;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  padding: 1.25em 1.5em;
+}
+
+.backlog-needs-hand h2 {
+  color: #92400e;
+  font-size: 1.1em;
+  margin: 0 0 0.5em;
+}
+
+.backlog-needs-hand-desc {
+  color: #78350f;
+  line-height: 1.4;
+  margin: 0 0 1em;
+}
+
+.backlog-rows {
+  display: grid;
+  gap: 0.75em;
+}
+
+.backlog-row {
+  align-items: center;
+  background: white;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 8px;
+  display: flex;
+  gap: 1em;
+  justify-content: space-between;
+  padding: 0.85em 1em;
+}
+
+.backlog-row-main {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+}
+
+.backlog-row-day {
+  color: #111827;
+  font-weight: 700;
+}
+
+.backlog-badge {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 999px;
+  color: #92400e;
+  font-size: 0.8em;
+  font-weight: 700;
+  padding: 0.2em 0.6em;
+}
+
+.backlog-row-reason {
+  color: #374151;
+}
+
+.backlog-depth {
+  color: #92400e;
+  font-weight: 700;
+}
+
 /* Observe Card (Prominent) */
 .observe-card {
   border-left: 4px solid #22c55e;
@@ -1168,6 +1254,11 @@
     gap: 0.5em;
   }
 
+  .backlog-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .vitals-content > .vitals-section + .vitals-section {
     border-left: none;
     padding-left: 0;
@@ -1238,6 +1329,10 @@
       </a>
     </div>
   </div>
+
+  <section class="backlog-verdict-card" id="backlogVerdict">
+    <p class="backlog-verdict-line">{{ health_backlog_verdict }}</p>
+  </section>
 
   <!-- Vitals Bar -->
   <div class="vitals-bar">
@@ -1363,6 +1458,25 @@
     </div>
     <div class="registered-observers-strip" id="registeredObserversStrip"></div>
   </div>
+
+  {% if health_stuck_rows %}
+  <section class="backlog-needs-hand" id="backlogNeedsHand">
+    <h2>{{ backlog_copy.BACKLOG_BUCKET_HEADING }}</h2>
+    <p class="backlog-needs-hand-desc">{{ backlog_copy.BACKLOG_BUCKET_DESCRIPTION }}</p>
+    <div class="backlog-rows">
+      {% for row in health_stuck_rows %}
+      <div class="backlog-row">
+        <div class="backlog-row-main">
+          <span class="backlog-row-day">{{ row.day }}</span>
+          <span class="backlog-badge">{{ backlog_copy.BACKLOG_DAY_BADGE }}</span>
+          <span class="backlog-row-reason">{{ row.reason }}</span>
+        </div>
+        {% if row.depth %}<span class="backlog-depth">{{ row.depth }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
 
   <!-- Activity Grids -->
   <div class="activity-grids">
