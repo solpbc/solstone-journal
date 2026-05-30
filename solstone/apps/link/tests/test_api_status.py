@@ -10,6 +10,8 @@ from solstone.apps.link import routes as link_routes
 from solstone.think.link.local_endpoints import LocalEndpoint
 from solstone.think.link.window import read_posture
 
+TOTP_SECRET = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+
 
 def _write_config(env: Any, *, link: Any = None, include_link: bool = True) -> None:
     config: dict[str, Any] = {
@@ -99,6 +101,9 @@ def test_lan_unreachable_precedence_over_spl(link_env, monkeypatch) -> None:
     _write_config(env, link={"posture": "spl"})
     _write_service_token(env)
     monkeypatch.setattr(link_routes, "_detect_lan_ip", lambda: None)
+    monkeypatch.setattr(
+        link_routes, "_read_link_connection_event", lambda: "disconnect"
+    )
 
     data = _get_status(env)
 
@@ -123,6 +128,82 @@ def test_spl_reachability_mapping() -> None:
     )
     assert link_routes._derive_reachability(True, "direct", "offline") == "online"
     assert link_routes._derive_reachability(False, "spl", "parked") == "lan-unreachable"
+
+
+def test_spl_relay_state_never_parks_without_connected() -> None:
+    assert link_routes._derive_spl_relay_state(False, "connected") == "not-enrolled"
+    for event in (None, "connecting", "disconnect", "enrolled", "tunnel_pair"):
+        assert link_routes._derive_spl_relay_state(True, event) != "parked"
+    assert link_routes._derive_spl_relay_state(True, "connected") == "parked"
+
+
+def test_spl_status_without_token_reports_not_enrolled(link_env, monkeypatch) -> None:
+    env = link_env(posture="spl", totp_secret=TOTP_SECRET)
+    monkeypatch.setattr(link_routes, "_detect_lan_ip", lambda: "192.168.1.50")
+    monkeypatch.setattr(link_routes, "_read_link_connection_event", lambda: "connected")
+
+    data = _get_status(env)
+
+    assert data["enrolled"] is False
+    assert data["relay_state"] == "not-enrolled"
+    assert data["reachability"] == "finishing-setup"
+
+
+def test_spl_status_without_cached_event_reports_connecting(
+    link_env,
+    monkeypatch,
+) -> None:
+    env = link_env(posture="spl", totp_secret=TOTP_SECRET)
+    _write_service_token(env)
+    monkeypatch.setattr(link_routes, "_detect_lan_ip", lambda: "192.168.1.50")
+    monkeypatch.setattr(link_routes, "_read_link_connection_event", lambda: None)
+
+    data = _get_status(env)
+
+    assert data["relay_state"] == "connecting"
+    assert data["reachability"] == "finishing-setup"
+
+
+def test_spl_status_connecting_event_reports_connecting(link_env, monkeypatch) -> None:
+    env = link_env(posture="spl", totp_secret=TOTP_SECRET)
+    _write_service_token(env)
+    monkeypatch.setattr(link_routes, "_detect_lan_ip", lambda: "192.168.1.50")
+    monkeypatch.setattr(
+        link_routes, "_read_link_connection_event", lambda: "connecting"
+    )
+
+    data = _get_status(env)
+
+    assert data["relay_state"] == "connecting"
+    assert data["reachability"] == "finishing-setup"
+
+
+def test_spl_status_connected_event_reports_parked_online(
+    link_env, monkeypatch
+) -> None:
+    env = link_env(posture="spl", totp_secret=TOTP_SECRET)
+    _write_service_token(env)
+    monkeypatch.setattr(link_routes, "_detect_lan_ip", lambda: "192.168.1.50")
+    monkeypatch.setattr(link_routes, "_read_link_connection_event", lambda: "connected")
+
+    data = _get_status(env)
+
+    assert data["relay_state"] == "parked"
+    assert data["reachability"] == "online"
+
+
+def test_spl_status_disconnect_event_reports_offline(link_env, monkeypatch) -> None:
+    env = link_env(posture="spl", totp_secret=TOTP_SECRET)
+    _write_service_token(env)
+    monkeypatch.setattr(link_routes, "_detect_lan_ip", lambda: "192.168.1.50")
+    monkeypatch.setattr(
+        link_routes, "_read_link_connection_event", lambda: "disconnect"
+    )
+
+    data = _get_status(env)
+
+    assert data["relay_state"] == "offline"
+    assert data["reachability"] == "offline"
 
 
 def test_relay_state_flips_with_real_token(link_env, monkeypatch) -> None:

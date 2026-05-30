@@ -19,10 +19,12 @@ def clear_sse_subscribers() -> Iterator[None]:
     with convey_bridge._SSE_LOCK:
         convey_bridge._SSE_SUBSCRIBERS_BY_KEY.clear()
         convey_bridge._SSE_LAST_CHAT_REQUEST_AT_BY_KEY.clear()
+    convey_bridge._STATE_CACHE["link_connection"] = None
     yield
     with convey_bridge._SSE_LOCK:
         convey_bridge._SSE_SUBSCRIBERS_BY_KEY.clear()
         convey_bridge._SSE_LAST_CHAT_REQUEST_AT_BY_KEY.clear()
+    convey_bridge._STATE_CACHE["link_connection"] = None
 
 
 def _next_chunk(response) -> str:
@@ -95,6 +97,21 @@ def test_callosum_sse_round_trip_payload(convey_env):
         assert parsed == message
     finally:
         resp.close()
+
+
+def test_bridge_caches_link_connection_events_only() -> None:
+    for event in ("connecting", "connected", "disconnect"):
+        convey_bridge._broadcast_callosum_event({"tract": "link", "event": event})
+        assert convey_bridge.get_cached_state()["link_connection"] == event
+
+    convey_bridge._broadcast_callosum_event({"tract": "link", "event": "enrolled"})
+    assert convey_bridge.get_cached_state()["link_connection"] == "disconnect"
+
+    convey_bridge._broadcast_callosum_event({"tract": "link", "event": "tunnel_pair"})
+    assert convey_bridge.get_cached_state()["link_connection"] == "disconnect"
+
+    convey_bridge._broadcast_callosum_event({"tract": "link", "event": "tunnel_close"})
+    assert convey_bridge.get_cached_state()["link_connection"] == "disconnect"
 
 
 def test_callosum_sse_multi_client_fanout(convey_env):

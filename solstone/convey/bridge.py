@@ -29,6 +29,7 @@ _SSE_LOCK = threading.Lock()
 _STATE_CACHE: Dict[str, Any] = {
     "supervisor_status": None,
     "last_observe_ts": None,
+    "link_connection": None,
 }
 
 
@@ -130,6 +131,8 @@ def _broadcast_callosum_event(message: Dict[str, Any]) -> None:
         _STATE_CACHE["supervisor_status"] = message
     if tract == "observe" and event in ("observed", "status"):
         _STATE_CACHE["last_observe_ts"] = time.time()
+    if tract == "link" and event in ("connecting", "connected", "disconnect"):
+        _STATE_CACHE["link_connection"] = event
 
     # Broadcast to SSE clients
     try:

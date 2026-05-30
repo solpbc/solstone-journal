@@ -7,6 +7,8 @@
       <span id="link-status-skeleton" class="skeleton-block link-status-skeleton" aria-hidden="true"></span>
       <span id="link-status-text" hidden>{{ link_copy.STATUS_SENTENCES.checking }}</span>
     </div>
+    <p id="link-spl-connecting-note" class="link-spl-connecting-note" hidden>{{ link_copy.REACH_SPL_CONNECTING_NOTE }}</p>
+    <button type="button" id="link-spl-check-again" class="link-spl-check-again" hidden>[ {{ link_copy.CHECK_AGAIN_LABEL }} ]</button>
   </header>
 
   <section id="link-lan-banner" class="link-lan-banner" hidden tabindex="-1" aria-labelledby="link-lan-banner-title">
@@ -68,6 +70,23 @@
       <h3>{{ link_copy.REACH_UPGRADE_TITLE }}</h3>
       <p>{{ link_copy.REACH_UPGRADE_BODY }}</p>
       <a href="https://services.solstone.app/" target="_blank" rel="noopener noreferrer">{{ link_copy.REACH_UPGRADE_LINK_LABEL }}</a>
+    </div>
+  </section>
+
+  <section id="link-spl-reach-card" class="link-reach-card link-spl-reach-card" aria-labelledby="link-spl-reach-title" hidden>
+    <div class="link-reach-heading-row">
+      <h2 id="link-spl-reach-title">{{ link_copy.REACH_CARD_TITLE }}</h2>
+    </div>
+    <div class="link-reach-current">
+      <p class="link-reach-option link-spl-reach-option">
+        <span class="link-dot is-green" aria-hidden="true"></span>
+        {{ link_copy.POSTURE_SPL_TITLE }}
+      </p>
+      <p class="link-reach-detail">{{ link_copy.REACH_SPL_ACTIVE_BODY }}</p>
+      <p class="link-reach-detail link-spl-trust-line">{{ link_copy.REACH_SPL_TRUST_LINE }}</p>
+    </div>
+    <div class="link-reach-upgrade">
+      <a href="https://services.solstone.app/" target="_blank" rel="noopener noreferrer">{{ link_copy.REACH_SPL_MANAGE_LABEL }}</a>
     </div>
   </section>
 
@@ -182,6 +201,11 @@
       STATUS_SENTENCES: {{ link_copy.STATUS_SENTENCES|tojson }},
       POSTURE_SPL_SETUP_LABEL: {{ link_copy.POSTURE_SPL_SETUP_LABEL|tojson }},
       POSTURE_SPL_MANAGE_LABEL: {{ link_copy.POSTURE_SPL_MANAGE_LABEL|tojson }},
+      REACH_SPL_ACTIVE_BODY: {{ link_copy.REACH_SPL_ACTIVE_BODY|tojson }},
+      REACH_SPL_TRUST_LINE: {{ link_copy.REACH_SPL_TRUST_LINE|tojson }},
+      REACH_SPL_MANAGE_LABEL: {{ link_copy.REACH_SPL_MANAGE_LABEL|tojson }},
+      REACH_SPL_CONNECTING_NOTE: {{ link_copy.REACH_SPL_CONNECTING_NOTE|tojson }},
+      CHECK_AGAIN_LABEL: {{ link_copy.CHECK_AGAIN_LABEL|tojson }},
       DEVICE_STATUS_LABELS: {{ link_copy.DEVICE_STATUS_LABELS|tojson }},
       DEVICE_GROUP_LABELS: {{ link_copy.DEVICE_GROUP_LABELS|tojson }},
       DEVICE_ACTION_LABELS: {{ link_copy.DEVICE_ACTION_LABELS|tojson }},
@@ -312,6 +336,11 @@
   .link-reach-upgrade h3 { margin: 0 0 0.35em; font-size: 1em; color: #444; }
   .link-reach-upgrade p { margin: 0 0 0.55em; color: #666; }
   .link-reach-upgrade a { color: #1e6bd0; font-weight: 500; }
+  .link-spl-reach-option { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; }
+  .link-spl-connecting-note { margin: 0.35em 0 0; color: #666; font-size: 0.95em; }
+  .link-spl-check-again { margin-top: 0.35em; padding: 0; border: 0; background: transparent; color: #1e6bd0; cursor: pointer; font: inherit; font-weight: 500; }
+  .link-spl-check-again:hover { text-decoration: underline; }
+  .link-spl-connecting-note[hidden], .link-spl-check-again[hidden] { display: none; }
 
   .link-section-heading { margin-bottom: 0.75em; }
   .link-paired-section[hidden] { display: none; }
@@ -460,6 +489,9 @@
   const lanBannerStatus = document.getElementById('link-lan-banner-status');
   const lanDiy = document.getElementById('link-lan-diy');
   const reachCard = document.getElementById('link-reach-card');
+  const splReachCard = document.getElementById('link-spl-reach-card');
+  const splConnectingNote = document.getElementById('link-spl-connecting-note');
+  const splCheckAgain = document.getElementById('link-spl-check-again');
   const homeAddressRow = document.getElementById('link-home-address-row');
   const homeAddressEl = document.getElementById('link-home-address');
   const vpnCandidatesRow = document.getElementById('link-vpn-candidates-row');
@@ -589,13 +621,16 @@
     const reachability = data?.reachability;
     const posture = data?.posture;
     if (reachability === 'reconnecting') return 'reconnecting';
-    if (reachability === 'offline') return 'offline';
     if (reachability === 'lan-unreachable') return 'lan_unreachable';
+    if (posture === 'spl') {
+      if (reachability === 'online') return 'spl_online';
+      if (reachability === 'finishing-setup') return 'spl_finishing_setup';
+      if (reachability === 'offline') return 'spl_offline';
+    }
+    if (reachability === 'offline') return 'offline';
     if (posture === 'direct' && reachability === 'online') {
       return data?.vpn?.active != null ? 'direct_online_vpn' : 'direct_online';
     }
-    if (posture === 'spl' && reachability === 'online') return 'spl_online';
-    if (posture === 'spl' && reachability === 'finishing-setup') return 'spl_finishing_setup';
     return 'checking';
   }
 
@@ -639,11 +674,26 @@
     vpnCandidatesRow.hidden = rendered === 0;
   }
 
+  function renderSplState(data) {
+    const isSpl = data?.posture === 'spl';
+    const reachability = data?.reachability;
+    if (splReachCard) splReachCard.hidden = !(isSpl && reachability === 'online');
+    if (splConnectingNote) splConnectingNote.hidden = !(isSpl && reachability === 'finishing-setup');
+    if (splCheckAgain) splCheckAgain.hidden = !(isSpl && reachability === 'offline');
+  }
+
   function renderReach(data) {
-    if (isFirstRun || data?.posture !== 'direct') {
+    if (isFirstRun) {
       reachCard.hidden = true;
+      renderSplState(null);
       return;
     }
+    if (data?.posture !== 'direct') {
+      reachCard.hidden = true;
+      renderSplState(data);
+      return;
+    }
+    renderSplState(null);
     reachCard.hidden = false;
 
     const homeAddress = typeof data.home_address === 'string' ? data.home_address : '';
@@ -659,6 +709,7 @@
     pairedSection.hidden = isFirstRun;
     if (isFirstRun) {
       reachCard.hidden = true;
+      renderSplState(null);
       recentSection.hidden = true;
     } else if (latestStatus) {
       renderReach(latestStatus);
@@ -1405,6 +1456,7 @@
   pairBtn.addEventListener('click', openPairModal);
   heroPairBtn.addEventListener('click', openPairModal);
   lanBannerEnable.addEventListener('click', submitLanBannerNetworkAccess);
+  splCheckAgain.addEventListener('click', refreshStatus);
   heroHowReach.addEventListener('click', openPostureModal);
   reachChange.addEventListener('click', openPostureModal);
   postureCancel.addEventListener('click', closePostureModal);

@@ -96,6 +96,10 @@ STATUS_SENTENCES = {
     "lan_unreachable": "your solstone is running, but devices can't reach it to pair yet.",
     "spl_online": "your solstone is reachable from anywhere.",
     "spl_finishing_setup": "finishing setup with sol private link...",
+    "spl_offline": (
+        "your solstone isn't reaching the network right now — devices can't connect "
+        "from away. on your home wifi they still work."
+    ),
     "checking": "checking your solstone...",
 }
 REACH_CARD_TITLE = "how your devices reach home"
@@ -112,6 +116,14 @@ REACH_UPGRADE_BODY = (
     "when you're away, sol private link can carry the connection for paired devices."
 )
 REACH_UPGRADE_LINK_LABEL = "set up sol private link at services.solstone.app"
+REACH_SPL_ACTIVE_BODY = "your devices reach home over the internet, wherever you are."
+REACH_SPL_TRUST_LINE = (
+    "the connection is end-to-end encrypted — sol pbc and cloudflare can see "
+    "that your device and home met, and nothing inside."
+)
+REACH_SPL_MANAGE_LABEL = "manage sol private link at services.solstone.app →"
+REACH_SPL_CONNECTING_NOTE = "your home is connecting. this is usually quick."
+CHECK_AGAIN_LABEL = "check again"
 POSTURE_MODAL_TITLE = "how should your devices reach home?"
 POSTURE_DIRECT_DESC = "devices connect locally or through your own VPN."
 POSTURE_SPL_TITLE = "from anywhere · sol private link"

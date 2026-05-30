@@ -21,6 +21,11 @@ U2_COPY_VALUES = [
     copy.REACH_UPGRADE_TITLE,
     copy.REACH_UPGRADE_BODY,
     copy.REACH_UPGRADE_LINK_LABEL,
+    copy.REACH_SPL_ACTIVE_BODY,
+    copy.REACH_SPL_TRUST_LINE,
+    copy.REACH_SPL_MANAGE_LABEL,
+    copy.REACH_SPL_CONNECTING_NOTE,
+    copy.CHECK_AGAIN_LABEL,
     copy.POSTURE_MODAL_TITLE,
     copy.POSTURE_DIRECT_DESC,
     copy.POSTURE_SPL_TITLE,
@@ -60,6 +65,10 @@ def test_reach_shell_spec_fixed_copy_is_locked() -> None:
         "lan_unreachable": "your solstone is running, but devices can't reach it to pair yet.",
         "spl_online": "your solstone is reachable from anywhere.",
         "spl_finishing_setup": "finishing setup with sol private link...",
+        "spl_offline": (
+            "your solstone isn't reaching the network right now — devices can't "
+            "connect from away. on your home wifi they still work."
+        ),
         "checking": "checking your solstone...",
     }
 
@@ -71,6 +80,23 @@ def test_reach_shell_corrected_copy_is_locked() -> None:
     assert copy.REACH_DIRECT_DETAIL == (
         "your devices connect to this solstone directly, with no one in the middle."
     )
+    assert (
+        copy.REACH_SPL_ACTIVE_BODY
+        == "your devices reach home over the internet, wherever you are."
+    )
+    assert copy.REACH_SPL_TRUST_LINE == (
+        "the connection is end-to-end encrypted — sol pbc and cloudflare can see "
+        "that your device and home met, and nothing inside."
+    )
+    assert (
+        copy.REACH_SPL_MANAGE_LABEL
+        == "manage sol private link at services.solstone.app →"
+    )
+    assert (
+        copy.REACH_SPL_CONNECTING_NOTE
+        == "your home is connecting. this is usually quick."
+    )
+    assert copy.CHECK_AGAIN_LABEL == "check again"
 
 
 def test_lan_banner_copy_is_locked() -> None:

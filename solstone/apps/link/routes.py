@@ -61,6 +61,7 @@ from solstone.apps.link.relay_link import (
 from solstone.apps.observer.utils import mint_pl_observer_record, revoke_observer_record
 from solstone.apps.utils import log_app_action
 from solstone.convey import emit
+from solstone.convey.bridge import get_cached_state
 from solstone.convey.network_access import (
     NetworkAccessPasswordRequired,
     NetworkAccessPasswordTooShort,
@@ -155,6 +156,11 @@ def _is_loopback_request() -> bool:
 def _convey_password_is_set() -> bool:
     password_hash = get_config().get("convey", {}).get("password_hash", "")
     return bool(str(password_hash or "").strip())
+
+
+def _read_link_connection_event() -> str | None:
+    event = get_cached_state().get("link_connection")
+    return event if isinstance(event, str) else None
 
 
 def _current_local_endpoints() -> list[LocalEndpoint]:
@@ -255,6 +261,24 @@ def _derive_relay_state(token_present: bool) -> str:
     return "offline" if token_present else "not-enrolled"
 
 
+def _derive_spl_relay_state(
+    token_present: bool,
+    connection_event: str | None,
+) -> str:
+    if not token_present:
+        return "not-enrolled"
+    # A missing event usually means convey restarted before observing the link
+    # service transition. Treat it as connecting; a genuinely down relay can
+    # read as finishing setup briefly until a disconnect event arrives.
+    if connection_event == "connected":
+        # Connected has no freshness bound. A hard service crash can leave this
+        # parked until convey restarts, which resets the cache to connecting.
+        return "parked"
+    if connection_event == "disconnect":
+        return "offline"
+    return "connecting"
+
+
 def _derive_reachability(
     lan_accessible: bool,
     posture: str,
@@ -295,7 +319,11 @@ def api_status() -> Any:
     ca_fp = _ca_fingerprint() if ca_dir().exists() else None
     lan_accessible = _is_lan_accessible()
     posture = read_posture()
-    relay_state = _derive_relay_state(token_present)
+    relay_state = (
+        _derive_spl_relay_state(token_present, _read_link_connection_event())
+        if posture == "spl"
+        else _derive_relay_state(token_present)
+    )
     reachability = _derive_reachability(lan_accessible, posture, relay_state)
     home_address = _resolve_host_port() if lan_accessible else None
     vpn_candidates = [
