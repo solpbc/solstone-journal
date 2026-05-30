@@ -2,6 +2,7 @@
 # Copyright (c) 2026 sol pbc
 
 import dataclasses
+import json
 import subprocess
 import sys
 
@@ -12,22 +13,45 @@ from solstone.think import features as features_module
 from solstone.think.features import Feature, MissingExtraError
 
 PROBE = """
+import json
 import sys
 import solstone.apps.reflections.routes  # noqa: F401
 import solstone.think.importers.documents  # noqa: F401
 import solstone.think.importers.text  # noqa: F401
-print("|".join(sorted(sys.modules)))
+print("MODULES_JSON:" + json.dumps(sorted(sys.modules)))
 """
 
 
+# A fresh interpreter is the point: it gives a pristine sys.modules unaffected by
+# whatever else ran on this xdist worker, so the guard measures the real static
+# import graph rather than accumulated in-process state. That import graph is
+# heavyweight (~900 modules incl. numpy + PIL, plus a possible cold .pyc compile),
+# so the 15s default unit-test budget is too tight on a saturated CI box and would
+# intermittently trip pytest-timeout. Give it real headroom and bound the
+# subprocess explicitly (90s < the 120s mark) so a genuine hang surfaces as a
+# clean TimeoutExpired with captured output, not an opaque signal kill.
+@pytest.mark.timeout(120)
 def test_pdf_modules_are_not_loaded_by_static_imports():
     result = subprocess.run(
         [sys.executable, "-c", PROBE],
         capture_output=True,
-        check=True,
         text=True,
+        timeout=90,
     )
-    modules = set(result.stdout.strip().split("|"))
+    assert result.returncode == 0, (
+        f"probe subprocess exited {result.returncode}\n"
+        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+    # Read only the sentinel line, so a stray warning printed to stdout during
+    # import can't corrupt the module set or break the presence assertions.
+    sentinel = [
+        line for line in result.stdout.splitlines() if line.startswith("MODULES_JSON:")
+    ]
+    assert len(sentinel) == 1, (
+        f"expected exactly one MODULES_JSON line, got {len(sentinel)}\n"
+        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+    modules = set(json.loads(sentinel[0][len("MODULES_JSON:") :]))
 
     assert "solstone.apps.reflections.routes" in modules
     assert "solstone.think.importers.documents" in modules
