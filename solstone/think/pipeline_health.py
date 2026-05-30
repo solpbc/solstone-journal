@@ -10,13 +10,16 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from solstone.think.cluster import cluster_segments
 from solstone.think.utils import (
+    DEFAULT_STREAM,
     day_dirs,
     day_is_complete,
     day_path,
     now_ms,
+    segment_path,
     updated_days,
 )
 
@@ -35,8 +38,12 @@ TERMINAL_COMPLETE = "complete"
 TERMINAL_FAIL = "fail"
 
 WHY_FAILED = "failed"
+WHY_CORRUPT_RAW = "corrupt_raw"
 WHY_NEVER_ATTEMPTED = "never_attempted"
 WHY_SENSED_NOT_THOUGHT = "sensed_not_thought"
+
+REASON_CORRUPT_RAW = "corrupt_raw"
+REASON_FAILING_STEP = "failing_step"
 
 BACKLOG_STATE_COMPLETE = "complete"
 BACKLOG_STATE_PENDING = "pending"
@@ -144,6 +151,7 @@ class BacklogDay:
     units: int
     not_sensed: int
     why: tuple[BacklogUnit, ...]
+    reason: str | None
     error: BacklogError | None
 
 
@@ -673,6 +681,54 @@ def _stream_updated_ms(day: str) -> int | None:
     return int(os.path.getmtime(path) * 1000)
 
 
+def _segment_dir_for_backlog(
+    day: str,
+    stream: str | None,
+    segment: str,
+) -> Path:
+    if stream in (None, DEFAULT_STREAM):
+        return day_path(day, create=False) / segment
+    return segment_path(day, segment, stream, create=False)
+
+
+def _read_failed_marker(
+    day: str,
+    stream: str | None,
+    segment: str,
+    modality: str,
+) -> tuple[str, int] | None:
+    marker = (
+        _segment_dir_for_backlog(day, stream, segment) / f".analyze_failed_{modality}"
+    )
+    try:
+        data = json.loads(marker.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            logger.debug("pipeline_health: failed marker is not an object: %s", marker)
+            return None
+
+        reason = data.get("reason")
+        failed_at = data.get("failed_at")
+        if not isinstance(reason, str) or not isinstance(failed_at, str):
+            logger.debug(
+                "pipeline_health: failed marker lacks reason/failed_at strings: %s",
+                marker,
+            )
+            return None
+
+        failed_at_ms = int(
+            datetime.fromisoformat(failed_at.replace("Z", "+00:00")).timestamp() * 1000
+        )
+    except (OSError, json.JSONDecodeError, ValueError, TypeError):
+        logger.debug(
+            "pipeline_health: failed marker unreadable or unparseable: %s",
+            marker,
+            exc_info=True,
+        )
+        return None
+
+    return reason, failed_at_ms
+
+
 def _terminal_unit_for_segment(
     name: str,
     stream: str | None,
@@ -726,6 +782,7 @@ def _failed_backlog_unit(
 
 
 def _segment_backlog_units(
+    day: str,
     segments: list[dict],
     progress: dict[tuple[str | None, str], SegmentProgress],
     terminal_states: dict[TerminalUnit, TerminalState],
@@ -735,6 +792,32 @@ def _segment_backlog_units(
     for seg in segments:
         key = seg["key"]
         if not segment_fully_sensed(seg["data_state"]):
+            for modality, state in seg["data_state"].items():
+                if state != "failed":
+                    continue
+                marker = _read_failed_marker(day, seg["stream"], key, modality)
+                if marker is None:
+                    continue
+                reason, failed_at_ms = marker
+                if reason != "marker_corrupt":
+                    continue
+                if stream_updated_ms is not None and stream_updated_ms > failed_at_ms:
+                    continue
+                why.append(
+                    BacklogUnit(
+                        mode="segment",
+                        name=modality,
+                        facet=None,
+                        stream=seg["stream"],
+                        segment=key,
+                        why=WHY_CORRUPT_RAW,
+                        provider=None,
+                        model=None,
+                        trailing_fail_count=0,
+                        last_fail_ts=failed_at_ms,
+                        stuck=True,
+                    )
+                )
             continue
 
         segment_progress = lookup_segment_progress(progress, seg["stream"], key)
@@ -842,6 +925,7 @@ def _complete_backlog_day(day: str) -> BacklogDay:
         units=0,
         not_sensed=0,
         why=(),
+        reason=None,
         error=None,
     )
 
@@ -874,6 +958,7 @@ def read_backlog_view(window: int = BACKLOG_DEFAULT_WINDOW) -> BacklogView:
                     units=0,
                     not_sensed=0,
                     why=(),
+                    reason=None,
                     error=error,
                 )
             )
@@ -899,6 +984,7 @@ def read_backlog_view(window: int = BACKLOG_DEFAULT_WINDOW) -> BacklogView:
                     units=0,
                     not_sensed=0,
                     why=(),
+                    reason=None,
                     error=error,
                 )
             )
@@ -906,9 +992,16 @@ def read_backlog_view(window: int = BACKLOG_DEFAULT_WINDOW) -> BacklogView:
 
         stream_ms = _stream_updated_ms(day)
         why = _segment_backlog_units(
-            segments, progress, terminal_states, stream_ms
+            day, segments, progress, terminal_states, stream_ms
         ) + _non_segment_failed_units(terminal_states, stream_ms)
         segment_depth = completion.not_sensed + completion.not_thought
+        if any(unit.why == WHY_CORRUPT_RAW and unit.stuck for unit in why):
+            reason = REASON_CORRUPT_RAW
+        elif any(unit.stuck for unit in why):
+            reason = REASON_FAILING_STEP
+        else:
+            reason = None
+
         if any(unit.stuck for unit in why):
             state = BACKLOG_STATE_STUCK
         elif segment_depth > 0 or why:
@@ -924,6 +1017,7 @@ def read_backlog_view(window: int = BACKLOG_DEFAULT_WINDOW) -> BacklogView:
                 units=len(why),
                 not_sensed=completion.not_sensed,
                 why=why,
+                reason=reason,
                 error=None,
             )
         )

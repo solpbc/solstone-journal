@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
 import json
 import os
 from datetime import datetime
@@ -102,11 +104,39 @@ def _seed_screen_segment(
     return segment_dir
 
 
-def _seed_pending_segment(journal: Path, day: str, segment: str) -> Path:
-    segment_dir = journal / "chronicle" / day / "default" / segment
+def _seed_pending_segment(
+    journal: Path,
+    day: str,
+    segment: str,
+    *,
+    stream: str = "default",
+) -> Path:
+    segment_dir = journal / "chronicle" / day / stream / segment
     segment_dir.mkdir(parents=True, exist_ok=True)
     (segment_dir / "screen.webm").write_bytes(b"raw")
     return segment_dir
+
+
+def _write_failed_marker(
+    segment_dir: Path,
+    *,
+    modality: str = "screen",
+    reason: str = "marker_corrupt",
+    failed_at: str = "1970-01-01T00:00:03Z",
+) -> Path:
+    marker = segment_dir / f".analyze_failed_{modality}"
+    marker.write_text(
+        json.dumps(
+            {
+                "modality": modality,
+                "reason": reason,
+                "failed_at": failed_at,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return marker
 
 
 def _touch_marker(
@@ -935,6 +965,250 @@ def test_read_backlog_view_stuck_threshold_and_stream_updated_boundary(
 
     assert backlog_day.state == expected_state
     assert backlog_day.why[0].stuck is expected_stuck
+
+
+def test_read_backlog_view_promotes_corrupt_raw_marker_to_stuck(pipeline_journal):
+    day = "20990404"
+    segment = "121000_300"
+    segment_dir = _seed_pending_segment(pipeline_journal, day, segment)
+    _write_failed_marker(segment_dir)
+    _touch_marker(pipeline_journal, day, "stream.updated", mtime_ms=3000)
+
+    view = read_backlog_view(window=1)
+    backlog_day = view.days[0]
+
+    assert backlog_day.state == "stuck"
+    assert backlog_day.reason == "corrupt_raw"
+    assert view.stuck_days == 1
+    assert view.pending_days == 0
+    assert backlog_day.segments > 0
+    assert backlog_day.state != "complete"
+    assert backlog_day.units == 1
+    unit = backlog_day.why[0]
+    assert unit.why == "corrupt_raw"
+    assert unit.stuck is True
+    assert unit.name == "screen"
+    assert unit.last_fail_ts == 3000
+
+
+def test_read_backlog_view_promotes_named_stream_corrupt_raw_marker(
+    pipeline_journal,
+):
+    day = "20990405"
+    segment = "121500_300"
+    segment_dir = _seed_pending_segment(
+        pipeline_journal,
+        day,
+        segment,
+        stream="import.apple",
+    )
+    _write_failed_marker(segment_dir)
+    _touch_marker(pipeline_journal, day, "stream.updated", mtime_ms=3000)
+
+    backlog_day = read_backlog_view(window=1).days[0]
+
+    assert backlog_day.state == "stuck"
+    assert backlog_day.reason == "corrupt_raw"
+    assert backlog_day.why[0].stream == "import.apple"
+
+
+@pytest.mark.parametrize("reason", ["stale", "exit_7"])
+def test_read_backlog_view_does_not_promote_non_corrupt_failed_markers(
+    pipeline_journal,
+    reason,
+):
+    day = "20990406"
+    segment = "122000_300"
+    segment_dir = _seed_pending_segment(pipeline_journal, day, segment)
+    _write_failed_marker(segment_dir, reason=reason)
+    _touch_marker(pipeline_journal, day, "stream.updated", mtime_ms=3000)
+
+    backlog_day = read_backlog_view(window=1).days[0]
+
+    assert backlog_day.state == "pending"
+    assert backlog_day.reason != "corrupt_raw"
+    assert backlog_day.reason is None
+    assert backlog_day.units == 0
+
+
+def test_read_backlog_view_revives_corrupt_raw_when_stream_is_newer(
+    pipeline_journal,
+):
+    day = "20990407"
+    segment = "122500_300"
+    segment_dir = _seed_pending_segment(pipeline_journal, day, segment)
+    _write_failed_marker(segment_dir)
+    _touch_marker(pipeline_journal, day, "stream.updated", mtime_ms=4000)
+
+    backlog_day = read_backlog_view(window=1).days[0]
+
+    assert backlog_day.state == "pending"
+    assert backlog_day.reason is None
+    assert backlog_day.segments > 0
+    assert backlog_day.state != "complete"
+    assert backlog_day.units == 0
+
+
+def test_read_backlog_view_malformed_failed_marker_stays_pending(
+    pipeline_journal,
+):
+    day = "20990408"
+    segment = "123000_300"
+    segment_dir = _seed_pending_segment(pipeline_journal, day, segment)
+    (segment_dir / ".analyze_failed_screen").write_text(
+        "{not-json\n",
+        encoding="utf-8",
+    )
+    _touch_marker(pipeline_journal, day, "stream.updated", mtime_ms=3000)
+
+    backlog_day = read_backlog_view(window=1).days[0]
+
+    assert backlog_day.state == "pending"
+    assert backlog_day.reason is None
+    assert backlog_day.units == 0
+
+
+def test_read_backlog_view_repeated_talent_fail_reason_is_failing_step(
+    pipeline_journal,
+):
+    day = "20990409"
+    segment = "123500_300"
+    _seed_screen_segment(pipeline_journal, day, segment)
+    _write_jsonl(
+        pipeline_journal / "chronicle" / day / "health" / "001_segment.jsonl",
+        [
+            _sense_complete(segment, "active", 1, stream="default"),
+            _dispatch(segment, "documents", 2, stream="default"),
+            _complete(segment, "documents", 3, stream="default"),
+            _dispatch(segment, "entities", 4, stream="default"),
+            _fail(segment, "entities", 1000, stream="default"),
+            _fail(segment, "entities", 2000, stream="default"),
+            _fail(segment, "entities", 3000, stream="default"),
+        ],
+    )
+    _touch_marker(pipeline_journal, day, "stream.updated", mtime_ms=3000)
+
+    backlog_day = read_backlog_view(window=1).days[0]
+
+    assert backlog_day.state == "stuck"
+    assert backlog_day.reason == "failing_step"
+    assert backlog_day.why[0].why == "failed"
+    assert backlog_day.why[0].stuck is True
+
+
+def test_read_backlog_view_no_config_floor_skip_does_not_stick(
+    pipeline_journal,
+):
+    day = "20990410"
+    segment = "124000_300"
+    _seed_screen_segment(pipeline_journal, day, segment)
+    _write_jsonl(
+        pipeline_journal / "chronicle" / day / "health" / "001_segment.jsonl",
+        [
+            _sense_complete(segment, "active", 1, stream="default"),
+            _segment_event(
+                "talent.skip",
+                segment,
+                "documents",
+                2,
+                stream="default",
+                reason="no_config",
+            ),
+            _segment_event(
+                "talent.skip",
+                segment,
+                "entities",
+                3,
+                stream="default",
+                reason="no_config",
+            ),
+        ],
+    )
+    _touch_marker(pipeline_journal, day, "stream.updated", mtime_ms=3000)
+
+    backlog_day = read_backlog_view(window=1).days[0]
+
+    assert backlog_day.state == "complete"
+    assert backlog_day.reason is None
+    assert backlog_day.units == 0
+    assert not any(unit.stuck for unit in backlog_day.why)
+
+
+def test_read_backlog_view_provider_model_failure_remains_failing_step(
+    pipeline_journal,
+):
+    from solstone.think import pipeline_health
+
+    day = "20990411"
+    segment = "124500_300"
+    _seed_screen_segment(pipeline_journal, day, segment)
+    _write_jsonl(
+        pipeline_journal / "chronicle" / day / "health" / "001_segment.jsonl",
+        [
+            _sense_complete(segment, "active", 1, stream="default"),
+            _dispatch(segment, "documents", 2, stream="default"),
+            _complete(segment, "documents", 3, stream="default"),
+            _dispatch(segment, "entities", 4, stream="default"),
+            _fail(segment, "entities", 1000, stream="default"),
+            _fail(segment, "entities", 2000, stream="default"),
+            _fail(
+                segment,
+                "entities",
+                3000,
+                stream="default",
+                provider="openai",
+                model="gpt-5",
+            ),
+        ],
+    )
+    _touch_marker(pipeline_journal, day, "stream.updated", mtime_ms=3000)
+
+    backlog_day = read_backlog_view(window=1).days[0]
+    imported_modules = []
+    for node in ast.walk(ast.parse(inspect.getsource(pipeline_health))):
+        if isinstance(node, ast.Import):
+            imported_modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported_modules.append(node.module)
+
+    assert backlog_day.state == "stuck"
+    assert backlog_day.reason == "failing_step"
+    assert backlog_day.reason != "provider_down"
+    unit = backlog_day.why[0]
+    assert unit.provider == "openai"
+    assert unit.model == "gpt-5"
+    assert unit.stuck is True
+    assert not any("supervisor" in module for module in imported_modules)
+
+
+def test_read_backlog_view_corrupt_raw_reason_wins_over_failing_step(
+    pipeline_journal,
+):
+    day = "20990412"
+    corrupt_segment = "125000_300"
+    failing_segment = "125500_300"
+    corrupt_dir = _seed_pending_segment(pipeline_journal, day, corrupt_segment)
+    _write_failed_marker(corrupt_dir)
+    _seed_screen_segment(pipeline_journal, day, failing_segment)
+    _write_jsonl(
+        pipeline_journal / "chronicle" / day / "health" / "001_segment.jsonl",
+        [
+            _sense_complete(failing_segment, "active", 1, stream="default"),
+            _dispatch(failing_segment, "documents", 2, stream="default"),
+            _complete(failing_segment, "documents", 3, stream="default"),
+            _dispatch(failing_segment, "entities", 4, stream="default"),
+            _fail(failing_segment, "entities", 1000, stream="default"),
+            _fail(failing_segment, "entities", 2000, stream="default"),
+            _fail(failing_segment, "entities", 3000, stream="default"),
+        ],
+    )
+    _touch_marker(pipeline_journal, day, "stream.updated", mtime_ms=3000)
+
+    backlog_day = read_backlog_view(window=1).days[0]
+
+    assert backlog_day.state == "stuck"
+    assert backlog_day.reason == "corrupt_raw"
+    assert {unit.why for unit in backlog_day.why} == {"corrupt_raw", "failed"}
 
 
 def test_read_backlog_view_dispatch_without_terminal_is_pending_not_in_progress(

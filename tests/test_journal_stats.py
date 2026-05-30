@@ -443,6 +443,46 @@ def test_root_stats_contains_backlog_contract_fields():
     }
 
 
+def test_backlog_day_serialization_includes_reason():
+    stats_mod = importlib.import_module("solstone.think.journal_stats")
+    unit = stats_mod.BacklogUnit(
+        mode="segment",
+        name="screen",
+        facet=None,
+        stream="default",
+        segment="123456_300",
+        why="corrupt_raw",
+        provider=None,
+        model=None,
+        trailing_fail_count=0,
+        last_fail_ts=3000,
+        stuck=True,
+    )
+    day = stats_mod.BacklogDay(
+        day="20990411",
+        state="stuck",
+        segments=1,
+        units=1,
+        not_sensed=1,
+        why=(unit,),
+        reason="corrupt_raw",
+        error=None,
+    )
+    js = stats_mod.JournalStats()
+    js.backlog_view = stats_mod.BacklogView(
+        window=1,
+        days=(day,),
+        pending_days=0,
+        stuck_days=1,
+        oldest_pending_day="20990411",
+        errors=(),
+    )
+
+    data = js.to_dict()
+
+    assert data["backlog"]["days"][0]["reason"] == "corrupt_raw"
+
+
 def test_backlog_derivation_failure_marks_stats_degraded(tmp_path, monkeypatch, caplog):
     stats_mod = importlib.import_module("solstone.think.journal_stats")
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))

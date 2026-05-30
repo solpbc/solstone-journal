@@ -588,6 +588,11 @@ const Dashboard = (function() {
     return null;
   }
 
+  function reasonCopy(day, C) {
+    if (day.reason === 'corrupt_raw') return C.REASON_CORRUPT_RAW;
+    return C.REASON_FAILING_STEP;
+  }
+
   function backlogErrorForDay(day, bl) {
     if (day.error) return day.error;
     const errors = Array.isArray(bl && bl.errors) ? bl.errors : [];
@@ -653,7 +658,7 @@ const Dashboard = (function() {
       el('p', {className: 'backlog-description'}, [C.BUCKET_DESCRIPTION]),
       el('div', {className: 'backlog-rows'}, days.map(day => backlogRow(day, C, bl, {
         badge: C.DAY_BADGE,
-        copy: C.REASON_FAILING_STEP,
+        copy: reasonCopy(day, C),
         expanded: true
       })))
     ]);

@@ -64,6 +64,7 @@ def _serialize_backlog_day(day: BacklogDay) -> dict:
         "segments": day.segments,
         "units": day.units,
         "not_sensed": day.not_sensed,
+        "reason": day.reason,
         "why": [_serialize_backlog_unit(unit) for unit in day.why],
         "error": _serialize_backlog_error(day.error) if day.error else None,
     }
