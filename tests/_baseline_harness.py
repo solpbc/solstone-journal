@@ -13,9 +13,12 @@ oracle.
 
 from __future__ import annotations
 
+import atexit
 import os
 import shutil
 import subprocess
+import tempfile
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -23,11 +26,72 @@ from typing import Iterator
 FROZEN_DATE = "2026-04-15"
 FROZEN_TZ_OFFSET = -7
 
+# The fixture journal is built once per process from an immutable snapshot of
+# HEAD rather than copied file-by-file from the live working tree. make dev /
+# make sandbox write runtime artifacts into tests/fixtures/journal (AGENTS.md
+# §6), so a concurrent writer can delete or replace a tracked file between
+# `git ls-files` and the copy — raising FileNotFoundError at fixture *setup*
+# (a spurious pytest ERROR, not a real failure). `git archive HEAD` reads the
+# committed tree from the object store, never the working tree, so it is immune
+# to concurrent working-tree mutation.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_FIXTURE_JOURNAL_REL = "tests/fixtures/journal"
+_LIVE_FIXTURE_JOURNAL = (_REPO_ROOT / _FIXTURE_JOURNAL_REL).resolve()
+
+_snapshot_lock = threading.Lock()
+_snapshot_root: Path | None = None
+
+
+def _fixture_journal_snapshot() -> Path:
+    """Return an immutable, process-scoped snapshot of the tracked fixture journal.
+
+    Built once per process via `git archive HEAD` → tar, which reads HEAD from
+    the git object store and is therefore unaffected by concurrent writes to the
+    live tests/fixtures/journal tree. The same set of git-tracked files that
+    `git ls-files` selects (working tree clean ⇒ HEAD ≡ index), with symlinks
+    preserved as symlinks. The temp dir is removed at interpreter exit.
+    """
+    global _snapshot_root
+    with _snapshot_lock:
+        if _snapshot_root is not None and _snapshot_root.exists():
+            return _snapshot_root
+        tmp = Path(tempfile.mkdtemp(prefix="solstone-journal-snapshot-"))
+        archive = subprocess.run(
+            ["git", "archive", "HEAD", "--", _FIXTURE_JOURNAL_REL],
+            cwd=str(_REPO_ROOT),
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["tar", "-x", "-C", str(tmp)],
+            input=archive.stdout,
+            check=True,
+        )
+        # `git archive` preserves the tests/fixtures/journal/ prefix in the tar.
+        _snapshot_root = (tmp / _FIXTURE_JOURNAL_REL).resolve()
+        atexit.register(shutil.rmtree, tmp, ignore_errors=True)
+        return _snapshot_root
+
 
 def copytree_tracked(src: Path, dst: Path) -> None:
-    """Copy only git-tracked files from src to dst."""
-    src = Path(src)
+    """Copy only git-tracked files from src to dst.
+
+    For paths within tests/fixtures/journal (the journal fixture and any subtree
+    of it), copy from an immutable, process-scoped snapshot of HEAD instead of
+    enumerating and copying from the live working tree — see
+    `_fixture_journal_snapshot` for why this defeats the concurrent-write race.
+    For any other src, fall back to enumerating tracked files from the live tree.
+    """
+    src = Path(src).resolve()
     dst = Path(dst)
+    try:
+        rel = src.relative_to(_LIVE_FIXTURE_JOURNAL)
+    except ValueError:
+        rel = None
+    if rel is not None:
+        snap_src = _fixture_journal_snapshot() / rel
+        shutil.copytree(snap_src, dst, symlinks=True, dirs_exist_ok=True)
+        return
     result = subprocess.run(
         ["git", "ls-files", "."],
         cwd=str(src),
@@ -35,11 +99,11 @@ def copytree_tracked(src: Path, dst: Path) -> None:
         text=True,
         check=True,
     )
-    for rel in result.stdout.splitlines():
-        if not rel:
+    for rel_path in result.stdout.splitlines():
+        if not rel_path:
             continue
-        src_file = src / rel
-        dst_file = dst / rel
+        src_file = src / rel_path
+        dst_file = dst / rel_path
         dst_file.parent.mkdir(parents=True, exist_ok=True)
         if src_file.is_symlink():
             os.symlink(os.readlink(src_file), dst_file)
