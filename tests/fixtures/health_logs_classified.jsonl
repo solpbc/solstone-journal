@@ -1,6 +1,6 @@
 {"service":"agents","stream":"stdout","line":"✓ google     pro    gemini-3.1-pro-preview             generate  OK (2.4s)","level":"info"}
 {"service":"agents","stream":"stdout","line":"✓ openai     pro    gpt-5.4                            generate  OK (1.3s)","level":"info"}
-{"service":"agents","stream":"stdout","line":"- ollama     pro    ollama-local/qwen3.5:35b-a3b-bf16  generate  Ollama not reachable ([Errno 111] Connection refused) (0.0s)","level":"warning"}
+{"service":"agents","stream":"stdout","line":"- local      pro    local/qwen3.5-4b                   generate  Local provider not reachable ([Errno 111] Connection refused) (0.0s)","level":"warning"}
 {"service":"agents","stream":"stdout","line":"24 checks: 18 passed, 6 skipped, 0 failed","level":"info"}
 {"service":"supervisor","stream":"log","line":"INFO Task indexer (dream-32ab517a) finished successfully","level":"info"}
 {"service":"supervisor","stream":"log","line":"WARNING Task dream (1774648785107) failed with exit code 1","level":"warning"}

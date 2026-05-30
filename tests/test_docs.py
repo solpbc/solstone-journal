@@ -29,10 +29,12 @@ def test_ollama_grep_returns_zero_lines() -> None:
             "-i",
             "ollama",
             "--",
+            # tests/ and docs/design/ legitimately retain the term: test
+            # fixtures simulate old log lines, and design records document the
+            # ollama -> local migration as history. CHANGELOG history likewise
+            # keeps the old term. Everywhere else, ollama must be fully gone.
             ":!tests/",
             ":!docs/design/",
-            ":!solstone/apps/settings/maint/_migrate_ollama_to_local.py",
-            ":!solstone/apps/settings/call.py",
             ":!CHANGELOG.md",
         ],
         check=False,

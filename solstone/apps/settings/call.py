@@ -507,34 +507,6 @@ def providers_install(
     typer.echo(json.dumps(local_install.install_local(), indent=2))
 
 
-@providers_app.command("migrate-ollama-to-local")
-def providers_migrate_ollama_to_local(
-    commit: bool = typer.Option(False, "--commit", help="Persist config rewrites."),
-    json_flag: bool = typer.Option(False, "--json", help="Print JSON output."),
-) -> None:
-    """Dry-run or apply the Ollama-to-Local provider config migration."""
-    from solstone.apps.settings.maint._migrate_ollama_to_local import migrate_config
-
-    config = _get_config()
-    migrated, report = migrate_config(config)
-    report["committed"] = False
-    if commit and report["changed"]:
-        _write_config(migrated)
-        report["committed"] = True
-
-    if json_flag:
-        typer.echo(json.dumps(report, indent=2))
-        return
-    if not report["changed"]:
-        typer.echo("No ollama config entries found.")
-        return
-    if not commit:
-        typer.echo("REPORT ONLY - pass --commit to persist.")
-    for change in report["changes"]:
-        warning = f" ({change['warning']})" if change.get("warning") else ""
-        typer.echo(f"{change['path']}: {change['old']!r} -> {change['new']!r}{warning}")
-
-
 @providers_app.command("set-generate")
 def providers_set_generate(
     provider: str | None = typer.Option(None, "--provider", help="Primary provider."),

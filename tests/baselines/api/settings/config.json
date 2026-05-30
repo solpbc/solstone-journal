@@ -56,7 +56,7 @@
         "provider": "google",
         "tier": 2
       },
-      "test.ollama": {
+      "test.local": {
         "model": "local/qwen3.5-4b",
         "provider": "local"
       },
