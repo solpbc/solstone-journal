@@ -311,6 +311,61 @@ def test_ensure_artifacts_installed_returns_binary_gguf_and_optional_mmproj(
     )
 
 
+def test_inspect_readiness_ignores_stale_model_path_after_model_change(
+    tmp_path, monkeypatch
+):
+    # A record left by a prior model's install (different model_id, gguf under a
+    # different model dir) must NOT be trusted: a LOCAL_MODEL change without a
+    # reinstall would otherwise pair the stale gguf with the new model's mmproj
+    # and abort llama-server with an n_embd text/projector mismatch. Readiness
+    # recomputes both artifact paths from the selected model's spec.
+    _init_journal(tmp_path, monkeypatch)
+    stale_dir = local_install.model_dir("local/old-coder-7b")
+    stale_dir.mkdir(parents=True, exist_ok=True)
+    stale_gguf = stale_dir / "coder-7b-Q4_K_M.gguf"
+    stale_gguf.write_text("stale", encoding="utf-8")
+    local_install._write_local_metadata(
+        {"model_id": "local/old-coder-7b", "model_path": str(stale_gguf)}
+    )
+
+    # Stage the selected model's artifacts in its own directory.
+    gguf = local_install.model_path(LOCAL_MODEL)
+    gguf.parent.mkdir(parents=True, exist_ok=True)
+    gguf.write_text("qwen", encoding="utf-8")
+    mmproj = local_install.mmproj_path(LOCAL_MODEL)
+    assert mmproj is not None
+    mmproj.write_text("mmproj", encoding="utf-8")
+
+    readiness = local_install.inspect_readiness(LOCAL_MODEL)
+
+    assert readiness["model_id"] == LOCAL_MODEL
+    assert readiness["model_path"] == str(gguf)
+    assert readiness["mmproj_path"] == str(mmproj)
+    assert Path(readiness["model_path"]).parent == local_install.model_dir(LOCAL_MODEL)
+    assert readiness["model_path"] != str(stale_gguf)
+    assert readiness["model_installed"] is True
+
+
+def test_inspect_readiness_not_installed_off_stale_record(tmp_path, monkeypatch):
+    # With only the prior model's artifacts on disk and the selected model not
+    # staged, readiness must report not-installed rather than claiming installed
+    # off the stale record's gguf.
+    _init_journal(tmp_path, monkeypatch)
+    stale_dir = local_install.model_dir("local/old-coder-7b")
+    stale_dir.mkdir(parents=True, exist_ok=True)
+    stale_gguf = stale_dir / "coder-7b-Q4_K_M.gguf"
+    stale_gguf.write_text("stale", encoding="utf-8")
+    local_install._write_local_metadata(
+        {"model_id": "local/old-coder-7b", "model_path": str(stale_gguf)}
+    )
+
+    readiness = local_install.inspect_readiness(LOCAL_MODEL)
+
+    assert readiness["model_installed"] is False
+    assert readiness["gguf_installed"] is False
+    assert readiness["model_path"] == str(local_install.model_path(LOCAL_MODEL))
+
+
 def test_install_llama_server_failure_writes_canonical_failed(tmp_path, monkeypatch):
     _init_journal(tmp_path, monkeypatch)
     pin = {

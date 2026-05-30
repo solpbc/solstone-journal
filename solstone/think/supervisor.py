@@ -1198,6 +1198,19 @@ def start_local_server() -> RunnerManagedProcess | None:
         binary_path, gguf_path, mmproj_path = local_install.ensure_artifacts_installed(
             LOCAL_MODEL
         )
+        # Defense in depth: refuse to launch a gguf/mmproj pair that does not
+        # belong to the selected model, even if readiness ever regresses. A
+        # mixed pair (e.g. a stale gguf from a prior model + the current mmproj)
+        # aborts llama-server with an n_embd mismatch, so skip startup instead.
+        expected_dir = local_install.model_dir(LOCAL_MODEL)
+        if gguf_path.parent != expected_dir or (
+            mmproj_path is not None and mmproj_path.parent != expected_dir
+        ):
+            raise RuntimeError(
+                f"local model artifacts are not under {expected_dir} "
+                f"(gguf={gguf_path}, mmproj={mmproj_path}); refusing to launch "
+                "a mismatched gguf/mmproj pair"
+            )
     except Exception as exc:
         logging.info("Local model not ready; skipping llama-server startup: %s", exc)
         return None

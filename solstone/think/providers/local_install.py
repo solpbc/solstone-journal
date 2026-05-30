@@ -409,10 +409,28 @@ def inspect_readiness(model_id: str | None = None) -> dict[str, Any]:
     )
     spec = LOCAL_MODEL_SPECS[selected_model]
     binary_path = Path(record.get("binary_path") or binary_path_for_pin())
-    gguf_path = Path(record.get("model_path") or model_path(selected_model))
-    configured_mmproj = record.get("mmproj_path")
-    spec_mmproj = mmproj_path(selected_model)
-    resolved_mmproj = Path(configured_mmproj) if configured_mmproj else spec_mmproj
+
+    # The persisted record is a cache keyed by model_id. Trust a recorded
+    # artifact path only when the record is for the selected model AND the path
+    # lives under that model's directory; otherwise it is stale (e.g. left by a
+    # prior model's install before a LOCAL_MODEL change) and must be ignored so
+    # we recompute from the spec. Never pair a recorded path from one model with
+    # a freshly-recomputed path from another — a mixed gguf/mmproj pair aborts
+    # llama-server at spawn with an n_embd text/projector mismatch.
+    expected_dir = model_dir(selected_model)
+
+    def _trusted_record_path(value: str | None) -> Path | None:
+        if not value or record.get("model_id") != selected_model:
+            return None
+        candidate = Path(value)
+        return candidate if candidate.parent == expected_dir else None
+
+    gguf_path = _trusted_record_path(record.get("model_path")) or model_path(
+        selected_model
+    )
+    resolved_mmproj = _trusted_record_path(record.get("mmproj_path")) or mmproj_path(
+        selected_model
+    )
     mmproj_installed = resolved_mmproj is None or resolved_mmproj.exists()
     ram_sufficient = _ram_sufficient(spec)
     return {

@@ -1636,8 +1636,12 @@ def test_start_local_server_launches_llama_server_key_and_cmd(
 
     mod._SERVICE_STATE.clear()
     binary = tmp_path / "llama-server"
-    gguf = tmp_path / "model.gguf"
-    mmproj = tmp_path / "mmproj.gguf"
+    # ensure_artifacts_installed always resolves artifacts under the selected
+    # model's directory; the spawn guard rejects anything else, so the stub must
+    # return realistic in-model-dir paths.
+    model_artifact_dir = local_install.model_dir(mod.LOCAL_MODEL)
+    gguf = model_artifact_dir / "model.gguf"
+    mmproj = model_artifact_dir / "mmproj.gguf"
     written_ports = []
     spawned = []
     managed = _TaskManagedStub(cmd=[])
