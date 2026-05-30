@@ -111,6 +111,22 @@ def _candidate_journal(proc: "psutil.Process") -> Path | None:
         return None
 
 
+# The four long-lived managed-service proctitles set by setproctitle at
+# sol_cli.py (f"{binary}:{cmd}"). setproctitle is in-process and persists
+# until the process exits, so an orphaned service still reports its title
+# via proc.name() after the supervisor dies — which is what lets the sweep
+# find it. A future supervisor-owned `llama-server` is a one-line additive
+# entry here (no colon prefix); do not special-case it now.
+_MANAGED_SERVICE_PROCTITLES = frozenset(
+    {
+        "journal:sense",
+        "journal:cortex",
+        "journal:convey",
+        "sol:link",
+    }
+)
+
+
 def _sweep_orphaned_sol_processes(journal: Path, grace: float = 5.0) -> int:
     journal = journal.resolve()
     current_user = getpass.getuser()
@@ -118,7 +134,7 @@ def _sweep_orphaned_sol_processes(journal: Path, grace: float = 5.0) -> int:
     targets: list[int] = []
     for proc in psutil.process_iter(["name", "ppid", "username", "pid"]):
         try:
-            if not proc.name().startswith("sol:"):
+            if proc.name() not in _MANAGED_SERVICE_PROCTITLES:
                 continue
             if proc.ppid() != 1:
                 continue

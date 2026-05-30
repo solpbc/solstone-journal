@@ -15,7 +15,7 @@ import pytest
 
 from solstone.observe.sense import FileSensor, HandlerProcess, QueuedItem
 from solstone.think.runner import DailyLogWriter as ProcessLogWriter
-from solstone.think.runner import ManagedProcess, _format_log_line
+from solstone.think.runner import _format_log_line
 
 
 class FakeProcess:
@@ -830,10 +830,10 @@ def test_file_sensor_segment_observed_no_handlers(tmp_path, monkeypatch, mock_ca
     assert observed_events[0].get("segment") == "143022_300"
 
 
-def test_file_sensor_pdeathsig_regression_uses_long_lived_worker(
+def test_file_sensor_queued_describes_complete_on_long_lived_worker(
     tmp_path, monkeypatch, mock_callosum
 ):
-    """Two queued describe files complete without worker-spawn SIGTERM."""
+    """Two queued describe files both complete on the long-lived handler worker without spurious termination."""
     import solstone.observe.sense as sense_module
     from solstone.think.callosum import CallosumConnection
 
@@ -905,41 +905,6 @@ def test_file_sensor_pdeathsig_regression_uses_long_lived_worker(
     assert "errors" not in observed_events[0]
     assert first.with_suffix(".jsonl").exists()
     assert second.with_suffix(".jsonl").exists()
-
-
-def test_managed_process_spawn_from_short_lived_daemon_thread_gets_pdeathsig(
-    tmp_path, monkeypatch
-):
-    """PDEATHSIG remains keyed to the short-lived spawning thread."""
-    if sys.platform != "linux":
-        pytest.skip("PR_SET_PDEATHSIG is Linux-only")
-
-    from solstone.think import runner
-
-    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-    monkeypatch.setattr(runner, "_current_day", lambda: "20250101")
-    holder = {}
-
-    def spawn_and_return():
-        holder["managed"] = ManagedProcess.spawn(
-            [sys.executable, "-c", "import time; time.sleep(30)"]
-        )
-
-    thread = threading.Thread(target=spawn_and_return, daemon=True)
-    thread.start()
-    thread.join(timeout=5)
-    managed = holder["managed"]
-    deadline = time.time() + 5
-    while managed.process.poll() is None and time.time() < deadline:
-        time.sleep(0.05)
-
-    try:
-        assert managed.process.returncode == -signal.SIGTERM
-    finally:
-        if managed.process.poll() is None:
-            managed.process.terminate()
-            managed.process.wait(timeout=5)
-        managed.cleanup()
 
 
 def test_run_handler_uses_handler_thread_name_prefix(tmp_path, monkeypatch):

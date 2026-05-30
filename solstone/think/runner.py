@@ -22,7 +22,6 @@ import logging
 import os
 import signal
 import subprocess
-import sys
 import threading
 import time
 from collections.abc import Sequence
@@ -34,25 +33,6 @@ from solstone.think.callosum import CallosumConnection
 from solstone.think.utils import CHRONICLE_DIR, get_journal, now_ms
 
 logger = logging.getLogger(__name__)
-
-
-def _set_pdeathsig_on_linux() -> None:
-    """Best-effort: ask the kernel to SIGTERM this child if its parent dies.
-
-    Linux-only. Uses prctl(PR_SET_PDEATHSIG, SIGTERM). Silent on failure —
-    a missing PDEATHSIG must not block process spawn.
-    """
-    if sys.platform != "linux":
-        return
-    try:
-        import ctypes
-
-        PR_SET_PDEATHSIG = 1
-        libc = ctypes.CDLL("libc.so.6", use_errno=True)
-        libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM, 0, 0, 0)
-    except Exception:
-        # Best effort. Failure to set PDEATHSIG must not block spawn.
-        pass
 
 
 def _get_journal_path() -> Path:
@@ -296,17 +276,6 @@ class ManagedProcess:
                 ref="1730476800000",
             )
             # Logs to: {JOURNAL}/{YYYYMMDD}/health/1730476800000_indexer.log
-
-        Caller contract:
-            This method installs _set_pdeathsig_on_linux as subprocess.Popen's
-            preexec_fn. That hook calls prctl(PR_SET_PDEATHSIG, SIGTERM), and
-            man 2 prctl defines PR_SET_PDEATHSIG relative to the calling task's
-            TID: the thread that called Popen, not just the thread-group leader.
-            If that thread exits before the child does, the kernel delivers
-            SIGTERM to the child when the calling task terminates. Never call
-            spawn() from a daemon monitor thread that returns immediately after
-            this call. Use a long-lived worker thread that blocks in
-            process.wait() for the lifetime of the child.
         """
         name = _command_partition(cmd)
 
@@ -334,7 +303,6 @@ class ManagedProcess:
                 bufsize=1,
                 env=env,
                 process_group=0,
-                preexec_fn=_set_pdeathsig_on_linux,
             )
         except Exception as exc:
             log_writer.close()

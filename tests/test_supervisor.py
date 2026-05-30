@@ -65,8 +65,8 @@ def test_start_sense(tmp_path, mock_callosum, monkeypatch):
         text=False,
         bufsize=-1,
         process_group=None,
-        preexec_fn=None,
         env=None,
+        **_kwargs,
     ):
         proc = DummyProc()
         started.append((cmd, stdout, stderr))
