@@ -6,14 +6,19 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from solstone.think.pipeline_health import (
+    STUCK_FAIL_THRESHOLD,
+    TerminalUnit,
     pipeline_status_message,
+    read_backlog_view,
     read_completed_units,
+    read_terminal_states,
     summarize_pipeline_day,
 )
 
@@ -39,16 +44,25 @@ def _segment_event(
     return record
 
 
-def _dispatch(segment: str, name: str, ts: int = 1) -> dict:
-    return _segment_event("talent.dispatch", segment, name, ts)
+def _dispatch(segment: str, name: str, ts: int = 1, **extra) -> dict:
+    return _segment_event("talent.dispatch", segment, name, ts, **extra)
 
 
-def _complete(segment: str, name: str, ts: int = 1) -> dict:
-    return _segment_event("talent.complete", segment, name, ts, state="finish")
+def _complete(segment: str, name: str, ts: int = 1, **extra) -> dict:
+    return _segment_event("talent.complete", segment, name, ts, state="finish", **extra)
 
 
-def _sense_complete(segment: str, density: str = "active", ts: int = 1) -> dict:
-    return _segment_event("sense.complete", segment, ts=ts, density=density)
+def _fail(segment: str, name: str, ts: int = 1, **extra) -> dict:
+    return _segment_event("talent.fail", segment, name, ts, state="error", **extra)
+
+
+def _sense_complete(
+    segment: str,
+    density: str = "active",
+    ts: int = 1,
+    **extra,
+) -> dict:
+    return _segment_event("sense.complete", segment, ts=ts, density=density, **extra)
 
 
 def _complete_segment_events(segment: str, density: str = "active") -> list[dict]:
@@ -85,6 +99,29 @@ def _seed_screen_segment(
         encoding="utf-8",
     )
     return segment_dir
+
+
+def _seed_pending_segment(journal: Path, day: str, segment: str) -> Path:
+    segment_dir = journal / "chronicle" / day / "default" / segment
+    segment_dir.mkdir(parents=True, exist_ok=True)
+    (segment_dir / "screen.webm").write_bytes(b"raw")
+    return segment_dir
+
+
+def _touch_marker(
+    journal: Path,
+    day: str,
+    name: str,
+    *,
+    mtime_ms: int | None = None,
+) -> Path:
+    path = journal / "chronicle" / day / "health" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()
+    if mtime_ms is not None:
+        seconds = mtime_ms / 1000
+        os.utime(path, (seconds, seconds))
+    return path
 
 
 @pytest.fixture
@@ -230,6 +267,151 @@ def test_read_completed_units_skips_malformed_records(pipeline_journal):
         handle.write("\n")
 
     assert read_completed_units(day) == {("daily", "gamma", None)}
+
+
+def test_read_terminal_states_latest_wins_and_preserves_expanded_keys(
+    pipeline_journal,
+):
+    day = "20990208"
+    base = pipeline_journal / "chronicle" / day / "health"
+    _write_jsonl(
+        base / "001_daily.jsonl",
+        [
+            {
+                "event": "talent.fail",
+                "ts": 1,
+                "mode": "daily",
+                "name": "alpha",
+                "provider": "openai",
+                "model": "gpt-4",
+            },
+            {"event": "talent.complete", "ts": 2, "mode": "daily", "name": "alpha"},
+            {
+                "event": "talent.fail",
+                "ts": 3,
+                "mode": "daily",
+                "name": "alpha",
+                "provider": "google",
+                "model": "gemini-2.5-pro",
+            },
+            {
+                "event": "talent.fail",
+                "ts": 4,
+                "mode": "daily",
+                "name": "alpha",
+                "provider": "anthropic",
+                "model": "claude-opus-4-1",
+            },
+            {"event": "talent.fail", "ts": 10, "mode": "daily", "name": "beta"},
+            {
+                "event": "talent.complete",
+                "ts": 10,
+                "mode": "daily",
+                "name": "beta",
+            },
+            _fail("090000_300", "entities", 5, stream="alpha"),
+            _complete("091000_300", "entities", 6, stream="alpha"),
+        ],
+    )
+
+    states = read_terminal_states(day)
+    alpha = states[
+        TerminalUnit(
+            mode="daily",
+            name="alpha",
+            facet=None,
+            stream=None,
+            segment=None,
+            activity=None,
+        )
+    ]
+    beta = states[
+        TerminalUnit(
+            mode="daily",
+            name="beta",
+            facet=None,
+            stream=None,
+            segment=None,
+            activity=None,
+        )
+    ]
+
+    assert alpha.latest_event == "fail"
+    assert alpha.latest_ts == 4
+    assert alpha.trailing_fail_count == 2
+    assert alpha.last_fail_ts == 4
+    assert alpha.provider == "anthropic"
+    assert alpha.model == "claude-opus-4-1"
+    assert beta.latest_event == "complete"
+    assert beta.trailing_fail_count == 0
+    assert read_completed_units(day) == {("daily", "beta", None)}
+    assert (
+        states[
+            TerminalUnit("segment", "entities", None, "alpha", "090000_300", None)
+        ].latest_event
+        == "fail"
+    )
+    assert (
+        states[
+            TerminalUnit("segment", "entities", None, "alpha", "091000_300", None)
+        ].latest_event
+        == "complete"
+    )
+
+
+def test_read_completed_units_returns_old_daily_tuple_shape_and_filters_scoped_units(
+    pipeline_journal,
+):
+    day = "20990209"
+    base = pipeline_journal / "chronicle" / day / "health"
+    _write_jsonl(
+        base / "001_daily.jsonl",
+        [
+            {
+                "event": "talent.fail",
+                "ts": 1,
+                "mode": "daily",
+                "name": "alpha",
+            },
+            {
+                "event": "talent.complete",
+                "ts": 1,
+                "mode": "daily",
+                "name": "alpha",
+            },
+            {
+                "event": "talent.complete",
+                "ts": 2,
+                "mode": "daily",
+                "name": "facet_newsletter",
+                "facet": "work",
+            },
+            {
+                "event": "talent.complete",
+                "ts": 3,
+                "mode": "segment",
+                "name": "entities",
+                "stream": "default",
+                "segment": "090000_300",
+            },
+            {
+                "event": "talent.complete",
+                "ts": 4,
+                "mode": "activity",
+                "name": "summary",
+                "facet": "work",
+                "activity": "meeting_090000_300",
+            },
+        ],
+    )
+
+    completed = read_completed_units(day)
+
+    assert completed == {
+        ("daily", "alpha", None),
+        ("daily", "facet_newsletter", "work"),
+    }
+    assert all(isinstance(unit, tuple) and len(unit) == 3 for unit in completed)
 
 
 def test_empty_day_is_healthy(pipeline_journal):
@@ -567,6 +749,220 @@ def test_malformed_json_lines_skipped(pipeline_journal):
 
     assert summary["runs"]["segment"]["count"] == 1
     assert summary["talents"]["dispatched"] == 1
+
+
+def test_read_backlog_view_reports_complete_pending_stuck_and_why_axis(
+    pipeline_journal,
+):
+    complete_day = "20990305"
+    pending_day = "20990304"
+    stuck_day = "20990303"
+
+    _touch_marker(pipeline_journal, complete_day, "stream.updated", mtime_ms=1000)
+    _touch_marker(pipeline_journal, complete_day, "daily.updated", mtime_ms=1000)
+
+    never_segment = "100000_300"
+    dispatched_segment = "100500_300"
+    not_sensed_segment = "101000_300"
+    for segment in (never_segment, dispatched_segment):
+        _seed_screen_segment(pipeline_journal, pending_day, segment)
+    _seed_pending_segment(pipeline_journal, pending_day, not_sensed_segment)
+    _write_jsonl(
+        pipeline_journal / "chronicle" / pending_day / "health" / "001_segment.jsonl",
+        [
+            _sense_complete(never_segment, "active", 1),
+            _sense_complete(dispatched_segment, "active", 1),
+            _dispatch(dispatched_segment, "entities", 2),
+            _complete(dispatched_segment, "entities", 3),
+            _dispatch(dispatched_segment, "documents", 4),
+            _complete(dispatched_segment, "documents", 5),
+            _dispatch(dispatched_segment, "screen", 6),
+            {
+                "event": "talent.fail",
+                "ts": 7,
+                "mode": "daily",
+                "name": "newsletter",
+                "provider": "openai",
+                "model": "gpt-5",
+            },
+        ],
+    )
+    _touch_marker(pipeline_journal, pending_day, "stream.updated", mtime_ms=8000)
+
+    stuck_segment = "110000_300"
+    _seed_screen_segment(pipeline_journal, stuck_day, stuck_segment)
+    stuck_fail_ts = 3000
+    _write_jsonl(
+        pipeline_journal / "chronicle" / stuck_day / "health" / "001_segment.jsonl",
+        [
+            _sense_complete(stuck_segment, "active", 1, stream="default"),
+            _dispatch(stuck_segment, "documents", 2, stream="default"),
+            _complete(stuck_segment, "documents", 3, stream="default"),
+            _dispatch(stuck_segment, "entities", 4, stream="default"),
+            _fail(stuck_segment, "entities", 1000, stream="default"),
+            _fail(stuck_segment, "entities", 2000, stream="default"),
+            _fail(
+                stuck_segment,
+                "entities",
+                stuck_fail_ts,
+                stream="default",
+                provider="anthropic",
+                model="claude-opus-4-1",
+            ),
+        ],
+    )
+    _touch_marker(
+        pipeline_journal,
+        stuck_day,
+        "stream.updated",
+        mtime_ms=stuck_fail_ts,
+    )
+
+    view = read_backlog_view(window=3)
+    by_day = {day.day: day for day in view.days}
+
+    assert by_day[complete_day].state == "complete"
+    assert by_day[pending_day].state == "pending"
+    assert by_day[pending_day].segments == 3
+    assert by_day[pending_day].not_sensed == 1
+    assert by_day[pending_day].units == 3
+    assert {unit.why for unit in by_day[pending_day].why} == {
+        "never_attempted",
+        "sensed_not_thought",
+        "failed",
+    }
+    assert by_day[stuck_day].state == "stuck"
+    assert by_day[stuck_day].units == 1
+    stuck_unit = by_day[stuck_day].why[0]
+    assert stuck_unit.why == "failed"
+    assert stuck_unit.provider == "anthropic"
+    assert stuck_unit.model == "claude-opus-4-1"
+    assert stuck_unit.trailing_fail_count == STUCK_FAIL_THRESHOLD
+    assert stuck_unit.stuck is True
+    assert view.pending_days == 1
+    assert view.stuck_days == 1
+    assert view.oldest_pending_day == stuck_day
+    assert read_backlog_view(window=3) == view
+
+
+@pytest.mark.parametrize(
+    ("day", "fail_count", "stream_mtime_ms", "expected_state", "expected_stuck"),
+    [
+        ("20990401", STUCK_FAIL_THRESHOLD - 1, 3000, "pending", False),
+        ("20990402", STUCK_FAIL_THRESHOLD, 3000, "stuck", True),
+        ("20990403", STUCK_FAIL_THRESHOLD, 4000, "pending", False),
+    ],
+)
+def test_read_backlog_view_stuck_threshold_and_stream_updated_boundary(
+    pipeline_journal,
+    day,
+    fail_count,
+    stream_mtime_ms,
+    expected_state,
+    expected_stuck,
+):
+    segment = "120000_300"
+    _seed_screen_segment(pipeline_journal, day, segment)
+    events = [
+        _sense_complete(segment, "active", 1, stream="default"),
+        _dispatch(segment, "documents", 2, stream="default"),
+        _complete(segment, "documents", 3, stream="default"),
+        _dispatch(segment, "entities", 4, stream="default"),
+    ]
+    events.extend(
+        _fail(segment, "entities", 1000 + idx * 1000, stream="default")
+        for idx in range(fail_count)
+    )
+    _write_jsonl(
+        pipeline_journal / "chronicle" / day / "health" / "001_segment.jsonl",
+        events,
+    )
+    _touch_marker(
+        pipeline_journal,
+        day,
+        "stream.updated",
+        mtime_ms=stream_mtime_ms,
+    )
+
+    backlog_day = read_backlog_view(window=1).days[0]
+
+    assert backlog_day.state == expected_state
+    assert backlog_day.why[0].stuck is expected_stuck
+
+
+def test_read_backlog_view_dispatch_without_terminal_is_pending_not_in_progress(
+    pipeline_journal,
+):
+    day = "20990404"
+    segment = "123000_300"
+    _seed_screen_segment(pipeline_journal, day, segment)
+    _write_jsonl(
+        pipeline_journal / "chronicle" / day / "health" / "001_segment.jsonl",
+        [
+            {"event": "run.start", "ts": 1, "mode": "segment", "segment": segment},
+            _sense_complete(segment, "active", 2, stream="default"),
+            _dispatch(segment, "entities", 3, stream="default"),
+            _complete(segment, "entities", 4, stream="default"),
+            _dispatch(segment, "documents", 5, stream="default"),
+            _complete(segment, "documents", 6, stream="default"),
+            _dispatch(segment, "screen", 7, stream="default"),
+        ],
+    )
+    _touch_marker(pipeline_journal, day, "stream.updated", mtime_ms=8000)
+
+    backlog_day = read_backlog_view(window=1).days[0]
+
+    assert backlog_day.state == "pending"
+    assert backlog_day.state != "in_progress"
+    assert [unit.why for unit in backlog_day.why] == ["sensed_not_thought"]
+
+
+def test_read_backlog_view_unknown_day_is_retained(pipeline_journal, monkeypatch):
+    from solstone.think import pipeline_health
+
+    day = "20990501"
+    (pipeline_journal / "chronicle" / day / "health").mkdir(parents=True)
+    _touch_marker(pipeline_journal, day, "stream.updated", mtime_ms=1000)
+
+    def fail_terminal_states(target_day: str):
+        raise RuntimeError(f"boom {target_day}")
+
+    monkeypatch.setattr(pipeline_health, "read_terminal_states", fail_terminal_states)
+
+    view = read_backlog_view(window=1)
+
+    assert view.days[0].day == day
+    assert view.days[0].state == "unknown"
+    assert view.days[0].error is not None
+    assert view.errors == (view.days[0].error,)
+    assert view.errors[0].stage == "terminal_states"
+
+
+def test_historical_failures_with_latest_complete_are_not_pending(pipeline_journal):
+    day = "20990601"
+    segment = "130000_300"
+    _seed_screen_segment(pipeline_journal, day, segment)
+    failures = [_fail(segment, "entities", ts, stream="default") for ts in range(1, 8)]
+    _write_jsonl(
+        pipeline_journal / "chronicle" / day / "health" / "001_segment.jsonl",
+        [
+            _sense_complete(segment, "active", 1, stream="default"),
+            _dispatch(segment, "documents", 2, stream="default"),
+            _complete(segment, "documents", 3, stream="default"),
+            _dispatch(segment, "entities", 4, stream="default"),
+            *failures,
+            _complete(segment, "entities", 20, stream="default"),
+        ],
+    )
+    _touch_marker(pipeline_journal, day, "stream.updated", mtime_ms=21000)
+
+    view = read_backlog_view(window=1)
+
+    assert view.pending_days == 0
+    assert view.stuck_days == 0
+    assert view.days[0].state == "complete"
+    assert view.days[0].segments == 0
+    assert view.days[0].units == 0
 
 
 @pytest.mark.parametrize(

@@ -279,6 +279,18 @@ def day_dirs() -> dict[str, str]:
     return days
 
 
+def day_is_complete(day: str) -> bool:
+    """Return True when a day has no pending stream data for daily processing."""
+    path = day_path(day, create=False)
+    stream = os.path.join(path, "health", "stream.updated")
+    if not os.path.isfile(stream):
+        return True
+    daily = os.path.join(path, "health", "daily.updated")
+    if not os.path.isfile(daily):
+        return False
+    return os.path.getmtime(stream) <= os.path.getmtime(daily)
+
+
 def updated_days(exclude: set[str] | None = None) -> list[str]:
     """Return journal days with pending stream data not yet processed daily.
 
@@ -304,11 +316,7 @@ def updated_days(exclude: set[str] | None = None) -> list[str]:
         stream = os.path.join(path, "health", "stream.updated")
         if not os.path.isfile(stream):
             continue
-        daily = os.path.join(path, "health", "daily.updated")
-        if not os.path.isfile(daily):
-            updated.append(name)
-            continue
-        if os.path.getmtime(stream) > os.path.getmtime(daily):
+        if not day_is_complete(name):
             updated.append(name)
     updated.sort()
     return updated

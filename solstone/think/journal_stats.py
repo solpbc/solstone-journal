@@ -16,15 +16,79 @@ from solstone.think.activities import estimate_duration_minutes, load_activity_r
 from solstone.think.cluster import cluster_segments
 from solstone.think.facets import get_facets
 from solstone.think.pipeline_health import (
+    BACKLOG_DEFAULT_WINDOW,
+    BacklogDay,
+    BacklogError,
+    BacklogUnit,
+    BacklogView,
     classify_segment_completion,
+    read_backlog_view,
     read_segment_progress,
 )
-from solstone.think.stats_schema import DAY_FIELDS, SCHEMA_VERSION
+from solstone.think.stats_schema import DAY_FIELDS, SCHEMA_VERSION, TOTAL_FIELDS
 from solstone.think.stats_schema import validate as validate_stats
 from solstone.think.talents import scan_day as generate_scan_day
 from solstone.think.utils import day_dirs, get_journal, segment_parse, setup_cli
 
 logger = logging.getLogger(__name__)
+
+
+def _serialize_backlog_error(error: BacklogError) -> dict:
+    return {
+        "day": error.day,
+        "stage": error.stage,
+        "message": error.message,
+    }
+
+
+def _serialize_backlog_unit(unit: BacklogUnit) -> dict:
+    return {
+        "mode": unit.mode,
+        "name": unit.name,
+        "facet": unit.facet,
+        "stream": unit.stream,
+        "segment": unit.segment,
+        "why": unit.why,
+        "provider": unit.provider,
+        "model": unit.model,
+        "trailing_fail_count": unit.trailing_fail_count,
+        "last_fail_ts": unit.last_fail_ts,
+        "stuck": unit.stuck,
+    }
+
+
+def _serialize_backlog_day(day: BacklogDay) -> dict:
+    return {
+        "day": day.day,
+        "state": day.state,
+        "segments": day.segments,
+        "units": day.units,
+        "not_sensed": day.not_sensed,
+        "why": [_serialize_backlog_unit(unit) for unit in day.why],
+        "error": _serialize_backlog_error(day.error) if day.error else None,
+    }
+
+
+def _serialize_backlog_view(view: BacklogView) -> dict:
+    return {
+        "window": view.window,
+        "days": [_serialize_backlog_day(day) for day in view.days],
+        "pending_days": view.pending_days,
+        "stuck_days": view.stuck_days,
+        "oldest_pending_day": view.oldest_pending_day,
+        "errors": [_serialize_backlog_error(error) for error in view.errors],
+    }
+
+
+def _empty_backlog_view() -> BacklogView:
+    return BacklogView(
+        window=BACKLOG_DEFAULT_WINDOW,
+        days=(),
+        pending_days=0,
+        stuck_days=0,
+        oldest_pending_day=None,
+        errors=(),
+    )
 
 
 class JournalStats:
@@ -46,6 +110,7 @@ class JournalStats:
         self.agent_counts_by_day: Dict[str, Dict[str, int]] = {}
         # Per-day facet counts: {day: {facet: count}}
         self.facet_counts_by_day: Dict[str, Dict[str, int]] = {}
+        self.backlog_view: BacklogView | None = None
 
     def _get_day_mtime(self, day_dir: Path) -> float:
         """Get latest modification time of files we scan."""
@@ -87,7 +152,15 @@ class JournalStats:
 
             if cache_mtime > day_mtime:
                 with open(cache_file, encoding="utf-8") as f:
-                    return json.load(f)
+                    payload = json.load(f)
+                if payload.get("schema_version") != SCHEMA_VERSION:
+                    return None
+                stats = payload.get("stats")
+                if not isinstance(stats, dict):
+                    return None
+                if any(field not in stats for field in DAY_FIELDS):
+                    return None
+                return payload
         except Exception as e:
             logger.debug(f"Cache load failed for {day}: {e}")
 
@@ -97,8 +170,14 @@ class JournalStats:
         """Save day stats to cache."""
         try:
             cache_file = day_dir / "stats.json"
+            payload = dict(stats)
+            day_stats = dict(payload.get("stats", {}))
+            for field in DAY_FIELDS:
+                day_stats.setdefault(field, 0)
+            payload["schema_version"] = SCHEMA_VERSION
+            payload["stats"] = day_stats
             with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(stats, f, indent=2)
+                json.dump(payload, f, indent=2)
         except Exception as e:
             logger.debug(f"Cache save failed: {e}")
 
@@ -490,6 +569,8 @@ class JournalStats:
                 if use_cache:
                     self._save_day_cache(day_dir, day_data)
 
+        self.backlog_view = read_backlog_view()
+
         # Scan tokens directory once after all days are processed
         self.scan_all_tokens(Path(journal), use_cache=use_cache)
 
@@ -512,16 +593,22 @@ class JournalStats:
             day: {field: stats.get(field, 0) for field in DAY_FIELDS}
             for day, stats in self.days.items()
         }
+        backlog_view = self.backlog_view or _empty_backlog_view()
+        totals = dict(self.totals)
+        totals["transcript_duration"] = self.total_transcript_duration
+        totals["percept_duration"] = self.total_percept_duration
+        totals["total_transcript_duration"] = self.total_transcript_duration
+        totals["total_percept_duration"] = self.total_percept_duration
+        totals["backlog_pending_days"] = backlog_view.pending_days
+        totals["backlog_stuck_days"] = backlog_view.stuck_days
+        for field in TOTAL_FIELDS:
+            totals.setdefault(field, 0)
         return {
             "schema_version": SCHEMA_VERSION,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "day_count": len(self.days),
             "days": days,
-            "totals": {
-                **dict(self.totals),
-                "total_transcript_duration": self.total_transcript_duration,
-                "total_percept_duration": self.total_percept_duration,
-            },
+            "totals": totals,
             "heatmap": self.heatmap,
             "tokens": {
                 "by_day": self.token_usage,
@@ -537,6 +624,7 @@ class JournalStats:
                 "minutes": {k: round(v, 2) for k, v in self.facet_minutes.items()},
                 "counts_by_day": self.facet_counts_by_day,
             },
+            "backlog": _serialize_backlog_view(backlog_view),
         }
 
     def save_json(self, journal: str) -> None:

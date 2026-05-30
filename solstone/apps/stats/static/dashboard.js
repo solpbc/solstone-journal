@@ -5,7 +5,7 @@
 const Dashboard = (function() {
   'use strict';
 
-  const EXPECTED_SCHEMA_VERSION = 4;
+  const EXPECTED_SCHEMA_VERSION = 6;
   const DISPLAY_LABELS = { transcript: 'audio', percept: 'screen' };
 
   // DOM element factory

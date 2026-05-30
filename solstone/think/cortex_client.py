@@ -275,6 +275,25 @@ def read_use_events(use_id: str) -> list[Dict[str, Any]]:
     return events
 
 
+def read_use_provider_model(use_id: str) -> tuple[str | None, str | None]:
+    """Return resolved provider/model from a use log's start event, if present."""
+    try:
+        events = read_use_events(use_id)
+    except FileNotFoundError:
+        return None, None
+
+    provider: str | None = None
+    model: str | None = None
+    for event in events:
+        if event.get("event") != "start":
+            continue
+        raw_provider = event.get("provider")
+        raw_model = event.get("model")
+        provider = raw_provider if isinstance(raw_provider, str) else None
+        model = raw_model if isinstance(raw_model, str) else None
+    return provider, model
+
+
 def cortex_uses(
     limit: int = 10,
     offset: int = 0,

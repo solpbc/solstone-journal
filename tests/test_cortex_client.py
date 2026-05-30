@@ -19,6 +19,7 @@ from solstone.think.cortex_client import (
     cortex_uses,
     get_use_end_state,
     get_use_log_status,
+    read_use_provider_model,
     wait_for_uses,
 )
 from solstone.think.models import GPT_5
@@ -345,6 +346,29 @@ def test_get_agent_log_status_running(tmp_path, monkeypatch):
     (unified_dir / f"{use_id}_active.jsonl").write_text('{"event": "start"}\n')
 
     assert get_use_log_status(use_id) == "running"
+
+
+def test_read_use_provider_model_reads_active_log(tmp_path, monkeypatch):
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    talents_dir = tmp_path / "talents" / "chat"
+    talents_dir.mkdir(parents=True)
+
+    use_id = "1234567890123"
+    (talents_dir / f"{use_id}_active.jsonl").write_text(
+        json.dumps({"event": "request", "provider": "openai", "model": "wrong"})
+        + "\n"
+        + json.dumps(
+            {
+                "event": "start",
+                "provider": "anthropic",
+                "model": "claude-opus-4-1",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert read_use_provider_model(use_id) == ("anthropic", "claude-opus-4-1")
 
 
 def test_get_agent_log_status_not_found(tmp_path, monkeypatch):

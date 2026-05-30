@@ -7,11 +7,18 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime
 
 from solstone.think.cluster import cluster_segments
-from solstone.think.utils import day_path, now_ms, updated_days
+from solstone.think.utils import (
+    day_dirs,
+    day_is_complete,
+    day_path,
+    now_ms,
+    updated_days,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +28,20 @@ _now = datetime.now
 _MODES = ("segment", "daily", "activity", "weekly", "flush")
 _FAILED_LIST_CAP = 20
 SEGMENT_FLOOR_TALENTS: tuple[str, ...] = ("entities", "documents")
+STUCK_FAIL_THRESHOLD = 3
+BACKLOG_DEFAULT_WINDOW = 30
+
+TERMINAL_COMPLETE = "complete"
+TERMINAL_FAIL = "fail"
+
+WHY_FAILED = "failed"
+WHY_NEVER_ATTEMPTED = "never_attempted"
+WHY_SENSED_NOT_THOUGHT = "sensed_not_thought"
+
+BACKLOG_STATE_COMPLETE = "complete"
+BACKLOG_STATE_PENDING = "pending"
+BACKLOG_STATE_STUCK = "stuck"
+BACKLOG_STATE_UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True)
@@ -54,6 +75,88 @@ class SegmentBacklog:
     total: int
     per_day: dict[str, SegmentCompletion]
     errors: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TerminalUnit:
+    """Identity for a terminal talent event within one day."""
+
+    mode: str
+    name: str
+    facet: str | None
+    stream: str | None
+    segment: str | None
+    activity: str | None
+
+
+@dataclass(frozen=True)
+class TerminalState:
+    """Latest terminal state and trailing-failure diagnostic metadata."""
+
+    latest_event: str
+    latest_ts: int
+    trailing_fail_count: int
+    last_fail_ts: int | None
+    provider: str | None
+    model: str | None
+
+
+@dataclass(frozen=True)
+class BacklogUnit:
+    """Outstanding unit with why-axis classification.
+
+    ``failed``, ``sensed_not_thought``, and ``stuck`` are derived for all modes
+    that have observed health records. ``never_attempted`` is derived only for
+    segment floor talents in ``SEGMENT_FLOOR_TALENTS``. Its absence on
+    non-segment modes does not prove an attempt occurred; this why-axis is not
+    exhaustive for non-segment never-attempted work.
+    """
+
+    mode: str
+    name: str
+    facet: str | None
+    stream: str | None
+    segment: str | None
+    why: str
+    provider: str | None
+    model: str | None
+    trailing_fail_count: int
+    last_fail_ts: int | None
+    stuck: bool
+
+
+@dataclass(frozen=True)
+class BacklogError:
+    """Per-day backlog derivation error."""
+
+    day: str
+    stage: str
+    message: str
+
+
+@dataclass(frozen=True)
+class BacklogDay:
+    """Backlog state for one day in a bounded window."""
+
+    day: str
+    state: str
+    segments: int
+    units: int
+    not_sensed: int
+    why: tuple[BacklogUnit, ...]
+    error: BacklogError | None
+
+
+@dataclass(frozen=True)
+class BacklogView:
+    """Bounded cross-day backlog derivation."""
+
+    window: int
+    days: tuple[BacklogDay, ...]
+    pending_days: int
+    stuck_days: int
+    oldest_pending_day: str | None
+    errors: tuple[BacklogError, ...]
 
 
 def summarize_pipeline_day(day: str) -> dict:
@@ -215,25 +318,19 @@ def summarize_pipeline_day(day: str) -> dict:
     return summary
 
 
-def read_completed_units(day: str) -> set[tuple[str, str, str | None]]:
-    """Return unit keys whose latest terminal health event is complete.
+def _str_or_none(value: object) -> str | None:
+    return value if isinstance(value, str) else None
 
-    Folds the day's health JSONL files read-only. Terminal events are only
-    ``talent.complete`` and ``talent.fail``; ``talent.skip``,
-    ``talent.dispatch``, and ``run.*`` events are non-terminal. For each
-    ``(mode, name, facet)`` unit, the latest terminal event wins by ``ts``;
-    when timestamps tie, later records in sorted-file and line order win.
-    Units with no terminal event are incomplete and omitted. Units whose latest
-    terminal event is ``talent.fail`` are incomplete and omitted.
 
-    This function does not create, modify, or delete journal state.
-    """
-    latest: dict[tuple[str, str, str | None], tuple[int, bool]] = {}
+def read_terminal_states(day: str) -> dict[TerminalUnit, TerminalState]:
+    """Return latest terminal talent state per unit for one day."""
+    records: dict[TerminalUnit, list[tuple[int, int, str, str | None, str | None]]] = {}
+    sequence = 0
 
     try:
         health_dir = day_path(day, create=False) / "health"
         if not health_dir.is_dir():
-            return set()
+            return {}
 
         for path in sorted(health_dir.glob("*.jsonl")):
             with path.open(encoding="utf-8") as handle:
@@ -277,17 +374,77 @@ def read_completed_units(day: str) -> set[tuple[str, str, str | None]]:
                         )
                         continue
 
-                    key = (mode, name, rec.get("facet"))
-                    if key not in latest or ts >= latest[key][0]:
-                        latest[key] = (ts, event == "talent.complete")
+                    sequence += 1
+                    unit = TerminalUnit(
+                        mode=mode,
+                        name=name,
+                        facet=_str_or_none(rec.get("facet")),
+                        stream=_str_or_none(rec.get("stream")),
+                        segment=_str_or_none(rec.get("segment")),
+                        activity=_str_or_none(rec.get("activity")),
+                    )
+                    latest_event = (
+                        TERMINAL_COMPLETE
+                        if event == "talent.complete"
+                        else TERMINAL_FAIL
+                    )
+                    records.setdefault(unit, []).append(
+                        (
+                            ts,
+                            sequence,
+                            latest_event,
+                            _str_or_none(rec.get("provider")),
+                            _str_or_none(rec.get("model")),
+                        )
+                    )
     except Exception:
         logger.warning(
-            "pipeline_health: unexpected error reading completed units for %s",
+            "pipeline_health: unexpected error reading terminal states for %s",
             day,
             exc_info=True,
         )
+        return {}
 
-    return {key for key, (_ts, is_complete) in latest.items() if is_complete}
+    states: dict[TerminalUnit, TerminalState] = {}
+    for unit, unit_records in records.items():
+        ordered = sorted(unit_records, key=lambda item: (item[0], item[1]))
+        latest_ts, _seq, latest_event, _provider, _model = ordered[-1]
+        trailing_fail_count = 0
+        for _ts, _seq, event, _provider, _model in reversed(ordered):
+            if event != TERMINAL_FAIL:
+                break
+            trailing_fail_count += 1
+        last_fail = next(
+            (record for record in reversed(ordered) if record[2] == TERMINAL_FAIL),
+            None,
+        )
+        states[unit] = TerminalState(
+            latest_event=latest_event,
+            latest_ts=latest_ts,
+            trailing_fail_count=trailing_fail_count,
+            last_fail_ts=last_fail[0] if last_fail else None,
+            provider=last_fail[3] if last_fail else None,
+            model=last_fail[4] if last_fail else None,
+        )
+    return states
+
+
+def read_completed_units(day: str) -> set[tuple[str, str, str | None]]:
+    """Return unit keys whose latest terminal health event is complete.
+
+    Delegates to ``read_terminal_states`` so there is one latest-terminal
+    completion definition. The public return shape is retained for daily
+    idempotency callers.
+
+    This function does not create, modify, or delete journal state.
+    """
+    return {
+        (unit.mode, unit.name, unit.facet)
+        for unit, state in read_terminal_states(day).items()
+        if unit.segment is None
+        and unit.activity is None
+        and state.latest_event == TERMINAL_COMPLETE
+    }
 
 
 def read_segment_progress(day: str) -> dict[tuple[str | None, str], SegmentProgress]:
@@ -505,6 +662,278 @@ def classify_segment_completion(
         not_sensed=not_sensed,
         not_thought=not_thought,
         total=len(segments),
+    )
+
+
+def _stream_updated_ms(day: str) -> int | None:
+    path = day_path(day, create=False) / "health" / "stream.updated"
+    if not path.is_file():
+        return None
+    return int(os.path.getmtime(path) * 1000)
+
+
+def _terminal_unit_for_segment(
+    name: str,
+    stream: str | None,
+    segment: str,
+) -> TerminalUnit:
+    return TerminalUnit(
+        mode="segment",
+        name=name,
+        facet=None,
+        stream=stream,
+        segment=segment,
+        activity=None,
+    )
+
+
+def _is_stuck(state: TerminalState | None, stream_updated_ms: int | None) -> bool:
+    if state is None or state.latest_event != TERMINAL_FAIL:
+        return False
+    if state.trailing_fail_count < STUCK_FAIL_THRESHOLD:
+        return False
+    if state.last_fail_ts is None or stream_updated_ms is None:
+        return False
+    return stream_updated_ms <= state.last_fail_ts
+
+
+def _failed_backlog_unit(
+    unit: TerminalUnit,
+    state: TerminalState,
+    stream_updated_ms: int | None,
+) -> BacklogUnit:
+    return BacklogUnit(
+        mode=unit.mode,
+        name=unit.name,
+        facet=unit.facet,
+        stream=unit.stream,
+        segment=unit.segment,
+        why=WHY_FAILED,
+        provider=state.provider,
+        model=state.model,
+        trailing_fail_count=state.trailing_fail_count,
+        last_fail_ts=state.last_fail_ts,
+        stuck=_is_stuck(state, stream_updated_ms),
+    )
+
+
+def _segment_backlog_units(
+    segments: list[dict],
+    progress: dict[tuple[str | None, str], SegmentProgress],
+    terminal_states: dict[TerminalUnit, TerminalState],
+    stream_updated_ms: int | None,
+) -> tuple[BacklogUnit, ...]:
+    why: list[BacklogUnit] = []
+    for seg in segments:
+        key = seg["key"]
+        if not segment_fully_sensed(seg["data_state"]):
+            continue
+
+        segment_progress = lookup_segment_progress(progress, seg["stream"], key)
+        ok, reason = segment_fully_thought(segment_progress)
+        if ok or reason is None or reason == "no_sense_complete":
+            continue
+
+        if reason.startswith("floor:"):
+            name = reason.split(":", 1)[1]
+            unit = _terminal_unit_for_segment(name, seg["stream"], key)
+            state = terminal_states.get(unit)
+            if state and state.latest_event == TERMINAL_FAIL:
+                why.append(_failed_backlog_unit(unit, state, stream_updated_ms))
+            elif segment_progress and name in segment_progress.dispatched:
+                why.append(
+                    BacklogUnit(
+                        mode=unit.mode,
+                        name=unit.name,
+                        facet=unit.facet,
+                        stream=unit.stream,
+                        segment=unit.segment,
+                        why=WHY_SENSED_NOT_THOUGHT,
+                        provider=None,
+                        model=None,
+                        trailing_fail_count=0,
+                        last_fail_ts=None,
+                        stuck=False,
+                    )
+                )
+            else:
+                # never_attempted is intentionally enumerated only for segment
+                # floor talents. Non-segment modes do not have a persisted
+                # expected-unit set in this pure-read derivation.
+                why.append(
+                    BacklogUnit(
+                        mode=unit.mode,
+                        name=unit.name,
+                        facet=unit.facet,
+                        stream=unit.stream,
+                        segment=unit.segment,
+                        why=WHY_NEVER_ATTEMPTED,
+                        provider=None,
+                        model=None,
+                        trailing_fail_count=0,
+                        last_fail_ts=None,
+                        stuck=False,
+                    )
+                )
+        elif reason.startswith("dispatched:"):
+            name = reason.split(":", 1)[1]
+            unit = _terminal_unit_for_segment(name, seg["stream"], key)
+            state = terminal_states.get(unit)
+            if state and state.latest_event == TERMINAL_FAIL:
+                why.append(_failed_backlog_unit(unit, state, stream_updated_ms))
+            else:
+                why.append(
+                    BacklogUnit(
+                        mode=unit.mode,
+                        name=unit.name,
+                        facet=unit.facet,
+                        stream=unit.stream,
+                        segment=unit.segment,
+                        why=WHY_SENSED_NOT_THOUGHT,
+                        provider=None,
+                        model=None,
+                        trailing_fail_count=0,
+                        last_fail_ts=None,
+                        stuck=False,
+                    )
+                )
+    return tuple(why)
+
+
+def _non_segment_failed_units(
+    terminal_states: dict[TerminalUnit, TerminalState],
+    stream_updated_ms: int | None,
+) -> tuple[BacklogUnit, ...]:
+    why: list[BacklogUnit] = []
+    for unit, state in sorted(
+        terminal_states.items(),
+        key=lambda item: (
+            item[0].mode,
+            item[0].name,
+            item[0].facet or "",
+            item[0].activity or "",
+        ),
+    ):
+        if unit.segment is not None:
+            continue
+        if unit.mode not in {"daily", "activity", "flush"}:
+            continue
+        if state.latest_event != TERMINAL_FAIL:
+            continue
+        # These modes do not have a persisted expected-unit set, so only
+        # observed latest-fail units are surfaced; never-attempted is not inferred.
+        why.append(_failed_backlog_unit(unit, state, stream_updated_ms))
+    return tuple(why)
+
+
+def _complete_backlog_day(day: str) -> BacklogDay:
+    return BacklogDay(
+        day=day,
+        state=BACKLOG_STATE_COMPLETE,
+        segments=0,
+        units=0,
+        not_sensed=0,
+        why=(),
+        error=None,
+    )
+
+
+def read_backlog_view(window: int = BACKLOG_DEFAULT_WINDOW) -> BacklogView:
+    """Return a bounded cross-day backlog view."""
+    backlog_days: list[BacklogDay] = []
+    errors: list[BacklogError] = []
+
+    for day in sorted(day_dirs().keys(), reverse=True)[:window]:
+        if day_is_complete(day):
+            backlog_days.append(_complete_backlog_day(day))
+            continue
+
+        try:
+            terminal_states = read_terminal_states(day)
+        except Exception as exc:
+            logger.warning(
+                "pipeline_health: terminal-state backlog fold failed for %s",
+                day,
+                exc_info=True,
+            )
+            error = BacklogError(day=day, stage="terminal_states", message=str(exc))
+            errors.append(error)
+            backlog_days.append(
+                BacklogDay(
+                    day=day,
+                    state=BACKLOG_STATE_UNKNOWN,
+                    segments=0,
+                    units=0,
+                    not_sensed=0,
+                    why=(),
+                    error=error,
+                )
+            )
+            continue
+
+        try:
+            progress = read_segment_progress(day)
+            segments = cluster_segments(day)
+            completion = classify_segment_completion(segments, progress)
+        except Exception as exc:
+            logger.warning(
+                "pipeline_health: segment backlog fold failed for %s",
+                day,
+                exc_info=True,
+            )
+            error = BacklogError(day=day, stage="segment_completion", message=str(exc))
+            errors.append(error)
+            backlog_days.append(
+                BacklogDay(
+                    day=day,
+                    state=BACKLOG_STATE_UNKNOWN,
+                    segments=0,
+                    units=0,
+                    not_sensed=0,
+                    why=(),
+                    error=error,
+                )
+            )
+            continue
+
+        stream_ms = _stream_updated_ms(day)
+        why = _segment_backlog_units(
+            segments, progress, terminal_states, stream_ms
+        ) + _non_segment_failed_units(terminal_states, stream_ms)
+        segment_depth = completion.not_sensed + completion.not_thought
+        if any(unit.stuck for unit in why):
+            state = BACKLOG_STATE_STUCK
+        elif segment_depth > 0 or why:
+            state = BACKLOG_STATE_PENDING
+        else:
+            state = BACKLOG_STATE_COMPLETE
+
+        backlog_days.append(
+            BacklogDay(
+                day=day,
+                state=state,
+                segments=segment_depth,
+                units=len(why),
+                not_sensed=completion.not_sensed,
+                why=why,
+                error=None,
+            )
+        )
+
+    pending_days = sum(1 for day in backlog_days if day.state == BACKLOG_STATE_PENDING)
+    stuck_days = sum(1 for day in backlog_days if day.state == BACKLOG_STATE_STUCK)
+    outstanding = [
+        day.day
+        for day in backlog_days
+        if day.state in {BACKLOG_STATE_PENDING, BACKLOG_STATE_STUCK}
+    ]
+    return BacklogView(
+        window=window,
+        days=tuple(backlog_days),
+        pending_days=pending_days,
+        stuck_days=stuck_days,
+        oldest_pending_day=min(outstanding) if outstanding else None,
+        errors=tuple(errors),
     )
 
 

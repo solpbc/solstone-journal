@@ -6,6 +6,8 @@ import json
 import logging
 import os
 
+import pytest
+
 
 def _write_jsonl(path, events):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -283,6 +285,9 @@ def test_token_usage(tmp_path, monkeypatch):
     assert data["schema_version"] == schema_mod.SCHEMA_VERSION
     assert "generated_at" in data
     assert data["day_count"] == 2
+    assert "backlog" in data
+    assert "backlog_pending_days" in data["totals"]
+    assert "backlog_stuck_days" in data["totals"]
     assert "tokens" in data
     assert "by_day" in data["tokens"]
     assert "total_transcript_duration" in data["totals"]
@@ -319,6 +324,7 @@ def test_caching(tmp_path, monkeypatch):
     # Load cache and verify contents
     with open(day / "stats.json") as f:
         cached = json.load(f)
+    assert cached["schema_version"] == stats_mod.SCHEMA_VERSION
     assert cached["stats"]["transcript_sessions"] == 1
     assert cached["stats"]["transcript_segments"] == 2
 
@@ -332,6 +338,108 @@ def test_caching(tmp_path, monkeypatch):
     js3 = stats_mod.JournalStats()
     js3.scan(str(journal), verbose=False, use_cache=False)
     assert js3.days["20240101"]["transcript_sessions"] == 1
+
+
+def test_old_day_cache_without_schema_version_recomputes_and_overwrites(
+    tmp_path,
+    monkeypatch,
+):
+    stats_mod = importlib.import_module("solstone.think.journal_stats")
+    journal = tmp_path
+    day = journal / "chronicle" / "20240101"
+    day.mkdir(parents=True)
+    segment = day / "default" / "123456_300"
+    segment.mkdir(parents=True)
+    (segment / "audio.jsonl").write_text(
+        '{"raw": "raw.flac"}\n{"start": "10:00:00", "text": "hello"}\n'
+    )
+    cache_file = day / "stats.json"
+    cache_file.write_text(
+        json.dumps({"stats": {"transcript_sessions": 99}}),
+        encoding="utf-8",
+    )
+    newer = max(path.stat().st_mtime for path in day.rglob("*")) + 2
+    os.utime(cache_file, (newer, newer))
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    js = stats_mod.JournalStats()
+    js.scan(str(journal), verbose=False, use_cache=True)
+
+    assert js.days["20240101"]["transcript_sessions"] == 1
+    payload = json.loads(cache_file.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == stats_mod.SCHEMA_VERSION
+
+
+def test_current_schema_full_day_cache_is_reused(tmp_path, monkeypatch):
+    stats_mod = importlib.import_module("solstone.think.journal_stats")
+    schema_mod = importlib.import_module("solstone.think.stats_schema")
+    journal = tmp_path
+    day = journal / "chronicle" / "20240101"
+    day.mkdir(parents=True)
+    stats = {field: 0 for field in schema_mod.DAY_FIELDS}
+    stats["transcript_sessions"] = 7
+    cache_file = day / "stats.json"
+    cache_file.write_text(
+        json.dumps(
+            {
+                "schema_version": schema_mod.SCHEMA_VERSION,
+                "stats": stats,
+                "agent_data": {},
+                "facet_data": {},
+                "heatmap_data": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fail_scan_day(*_args, **_kwargs):
+        raise AssertionError("cache should have been reused")
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    monkeypatch.setattr(stats_mod.JournalStats, "scan_day", fail_scan_day)
+    js = stats_mod.JournalStats()
+    js.scan(str(journal), verbose=False, use_cache=True)
+
+    assert js.days["20240101"]["transcript_sessions"] == 7
+
+
+def test_day_cache_recompute_failure_leaves_prior_file_intact(tmp_path, monkeypatch):
+    stats_mod = importlib.import_module("solstone.think.journal_stats")
+    journal = tmp_path
+    day = journal / "chronicle" / "20240101"
+    day.mkdir(parents=True)
+    cache_file = day / "stats.json"
+    original = {"stats": {"transcript_sessions": 99}}
+    cache_file.write_text(json.dumps(original), encoding="utf-8")
+
+    def fail_scan_day(*_args, **_kwargs):
+        raise RuntimeError("scan failed")
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    monkeypatch.setattr(stats_mod.JournalStats, "scan_day", fail_scan_day)
+    js = stats_mod.JournalStats()
+
+    with pytest.raises(RuntimeError, match="scan failed"):
+        js.scan(str(journal), verbose=False, use_cache=True)
+
+    assert json.loads(cache_file.read_text(encoding="utf-8")) == original
+
+
+def test_root_stats_contains_backlog_contract_fields():
+    stats_mod = importlib.import_module("solstone.think.journal_stats")
+
+    data = stats_mod.JournalStats().to_dict()
+
+    assert data["totals"]["backlog_pending_days"] == 0
+    assert data["totals"]["backlog_stuck_days"] == 0
+    assert data["backlog"] == {
+        "window": stats_mod.BACKLOG_DEFAULT_WINDOW,
+        "days": [],
+        "pending_days": 0,
+        "stuck_days": 0,
+        "oldest_pending_day": None,
+        "errors": [],
+    }
 
 
 def test_token_usage_new_format(tmp_path, monkeypatch):

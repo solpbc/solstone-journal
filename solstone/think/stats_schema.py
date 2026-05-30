@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 DAY_FIELDS = (
     "transcript_sessions",
@@ -31,6 +31,8 @@ TOTAL_FIELDS = (
     "day_bytes",
     "total_transcript_duration",
     "total_percept_duration",
+    "backlog_pending_days",
+    "backlog_stuck_days",
 )
 
 REQUIRED_TOP_LEVEL = (
@@ -43,11 +45,12 @@ REQUIRED_TOP_LEVEL = (
     "tokens",
     "talents",
     "facets",
+    "backlog",
 )
 
 
 def validate(data: dict) -> list[str]:
-    """Validate stats output against schema v3. Returns list of error strings (empty = valid)."""
+    """Validate stats output against schema v6. Returns list of error strings (empty = valid)."""
     errors = []
 
     # Check schema_version
@@ -76,5 +79,28 @@ def validate(data: dict) -> list[str]:
         for field in DAY_FIELDS:
             if field not in first_day:
                 errors.append(f"day entry missing field '{field}'")
+
+    totals = data.get("totals", {})
+    if not isinstance(totals, dict):
+        errors.append("'totals' must be a dict")
+    else:
+        for field in TOTAL_FIELDS:
+            if field not in totals:
+                errors.append(f"totals missing field '{field}'")
+
+    backlog = data.get("backlog", {})
+    if not isinstance(backlog, dict):
+        errors.append("'backlog' must be a dict")
+    else:
+        for field in (
+            "window",
+            "days",
+            "pending_days",
+            "stuck_days",
+            "oldest_pending_day",
+            "errors",
+        ):
+            if field not in backlog:
+                errors.append(f"backlog missing field '{field}'")
 
     return errors

@@ -6,6 +6,34 @@ import importlib
 import pytest
 
 
+def _minimal_valid_stats(schema_mod):
+    return {
+        "schema_version": schema_mod.SCHEMA_VERSION,
+        "generated_at": "2026-05-30T00:00:00+00:00",
+        "day_count": 0,
+        "days": {},
+        "totals": {field: 0 for field in schema_mod.TOTAL_FIELDS},
+        "heatmap": [],
+        "tokens": {},
+        "talents": {},
+        "facets": {},
+        "backlog": {
+            "window": 30,
+            "days": [],
+            "pending_days": 0,
+            "stuck_days": 0,
+            "oldest_pending_day": None,
+            "errors": [],
+        },
+    }
+
+
+def test_schema_version_is_6():
+    schema_mod = importlib.import_module("solstone.think.stats_schema")
+
+    assert schema_mod.SCHEMA_VERSION == 6
+
+
 def test_validate_passes_on_valid_output(tmp_path, monkeypatch):
     """Build a JournalStats from fixture data, call to_dict(), validate."""
     stats_mod = importlib.import_module("solstone.think.journal_stats")
@@ -72,6 +100,25 @@ def test_save_json_raises_on_invalid(tmp_path, monkeypatch):
     js.to_dict = lambda: {**original(), "schema_version": 99}
     with pytest.raises(ValueError, match="Stats validation failed"):
         js.save_json(str(tmp_path))
+
+
+def test_validate_rejects_missing_backlog_contract_fields():
+    schema_mod = importlib.import_module("solstone.think.stats_schema")
+    data = _minimal_valid_stats(schema_mod)
+
+    del data["totals"]["backlog_pending_days"]
+    errors = schema_mod.validate(data)
+    assert any("backlog_pending_days" in error for error in errors)
+
+    data = _minimal_valid_stats(schema_mod)
+    del data["totals"]["backlog_stuck_days"]
+    errors = schema_mod.validate(data)
+    assert any("backlog_stuck_days" in error for error in errors)
+
+    data = _minimal_valid_stats(schema_mod)
+    del data["backlog"]
+    errors = schema_mod.validate(data)
+    assert any("backlog" in error for error in errors)
 
 
 def test_day_fields_present_in_scan_day(tmp_path, monkeypatch):

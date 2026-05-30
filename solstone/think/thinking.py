@@ -32,6 +32,7 @@ from solstone.think.cluster import cluster_segments
 from solstone.think.cortex_client import (
     CortexSpawnUnavailable,
     cortex_request,
+    read_use_provider_model,
     wait_for_uses,
 )
 from solstone.think.facets import (
@@ -116,6 +117,11 @@ def _jsonl_log(event: str, **fields) -> None:
     """Write a JSONL event if the writer is active."""
     if _jsonl:
         _jsonl.log(event, **fields)
+
+
+def _provider_model_fields(use_id: str) -> dict[str, str | None]:
+    provider, model = read_use_provider_model(use_id)
+    return {"provider": provider, "model": model}
 
 
 def _log_skip(name: str, reason: str, detail: str, **extra) -> None:
@@ -337,6 +343,7 @@ def _drain_priority_batch(
                 name=timed_name,
                 use_id=use_id,
                 state="timeout",
+                **_provider_model_fields(use_id),
                 **({"stream": stream} if stream else {}),
                 **({"facet": timed_facet} if timed_facet else {}),
             )
@@ -414,6 +421,7 @@ def _drain_priority_batch(
                 name=prompt_name,
                 use_id=use_id,
                 state=end_state,
+                **_provider_model_fields(use_id),
                 **({"stream": stream} if stream else {}),
                 **({"facet": agent_facet} if agent_facet else {}),
             )
@@ -2190,6 +2198,7 @@ def run_activity_prompts(
                         name=timed_name,
                         use_id=use_id,
                         state="timeout",
+                        **_provider_model_fields(use_id),
                     )
 
             for use_id, prompt_name, config in spawned:
@@ -2242,6 +2251,7 @@ def run_activity_prompts(
                     name=prompt_name,
                     use_id=use_id,
                     state=end_state,
+                    **(_provider_model_fields(use_id) if end_state != "finish" else {}),
                 )
 
             spawned = []
@@ -2545,6 +2555,7 @@ def run_flush_prompts(
                     name=timed_name,
                     use_id=use_id,
                     state="timeout",
+                    **_provider_model_fields(use_id),
                 )
 
         for use_id, prompt_name, config in spawned:
@@ -2577,6 +2588,7 @@ def run_flush_prompts(
                 name=prompt_name,
                 use_id=use_id,
                 state=end_state,
+                **(_provider_model_fields(use_id) if end_state != "finish" else {}),
             )
         _update_status(
             agents_completed=total_success + total_failed,
