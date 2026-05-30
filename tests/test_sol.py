@@ -384,6 +384,23 @@ class TestCommandRegistry:
         assert scripts["sol"].startswith("solstone.think.sol_cli:")
         assert scripts["journal"].startswith("solstone.think.sol_cli:")
 
+    def test_pyproject_declares_linux_parakeet_base_dependencies(self):
+        """Linux/x86_64 base install includes the default Parakeet runtime."""
+        pyproject = tomllib.loads(
+            (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        )
+        dependencies = pyproject["project"]["dependencies"]
+
+        assert "onnxruntime>=1.20.0,!=1.24.1" in dependencies
+        assert (
+            "onnx-asr>=0.11.0; sys_platform == 'linux' and platform_machine == 'x86_64'"
+            in dependencies
+        )
+        assert (
+            "onnxruntime>=1.25.0,!=1.24.1; sys_platform == 'linux' and platform_machine == 'x86_64'"
+            in dependencies
+        )
+
     def test_every_registry_entry_has_surface_tag(self):
         """All commands and aliases declare the CLI surface they belong to."""
         valid_surfaces = {"access", "service", "universal"}

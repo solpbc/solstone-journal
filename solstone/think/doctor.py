@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import importlib.util
 import json
 import os
 import plistlib
@@ -36,7 +37,7 @@ from functools import partial
 from importlib.metadata import PackageNotFoundError, distribution
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
-from typing import IO, Callable, Sequence
+from typing import IO, Any, Callable, Sequence
 
 from solstone.think import features as _features
 from solstone.think.health_cli import fetch_supervisor_status
@@ -71,6 +72,18 @@ from solstone.think.sync_check import check_journal_sync, format_doctor_report
 from solstone.think.utils import get_journal_info, is_packaged_install
 
 
+class _InstallModelsProxy:
+    """Lazy module proxy; install_models imports observe audio deps at import time."""
+
+    def __getattr__(self, name: str) -> Any:
+        from solstone.think import install_models as module
+
+        return getattr(module, name)
+
+
+install_models = _InstallModelsProxy()
+
+
 @dataclass(frozen=True)
 class Args:
     verbose: bool
@@ -92,6 +105,14 @@ SERVICE_IDENTITY_CHECK = Check("service_identity", "blocker", ("linux", "darwin"
 SERVICE_RUNNING_CHECK = Check("service_running", "blocker", ("linux", "darwin"))
 LAUNCHD_STALE_PLIST_CHECK = Check("launchd_stale_plist", "advisory", ("darwin",))
 JOURNAL_SYNC_CHECK = Check("journal_sync", "blocker", ("linux", "darwin"))
+DEFAULT_STT_READY_CHECK = Check("default_stt_ready", "advisory", ("linux", "darwin"))
+_DEFAULT_STT_RUNTIME_FIX = (
+    "parakeet runtime (onnx-asr) is not installed — reinstall to add it: "
+    "uv tool install --reinstall solstone"
+)
+_DEFAULT_STT_MODEL_FIX = (
+    "parakeet model is not downloaded — fetch it with: journal install-models"
+)
 
 
 def python_sanity_check(args: Args) -> CheckResult:
@@ -547,6 +568,60 @@ def journal_sync_check(args: Args) -> CheckResult:
     return make_result(check, status, format_doctor_report(result))
 
 
+def _resolve_configured_backend() -> str | None:
+    """Read transcribe.backend from an existing journal config without creating anything.
+
+    Returns the configured backend, or None when no config is present (caller
+    treats None as the parakeet default). Never materializes the journal dir.
+    """
+    path_text, _source = get_journal_info()
+    config_path = Path(path_text) / "config" / "journal.json"
+    if not config_path.is_file():
+        return None
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    backend = data.get("transcribe", {}).get("backend")
+    return backend if isinstance(backend, str) else None
+
+
+def default_stt_ready_check(args: Args) -> CheckResult:
+    del args
+    check = DEFAULT_STT_READY_CHECK
+    backend = _resolve_configured_backend()
+    if backend and backend != "parakeet":
+        return make_result(
+            check,
+            "skip",
+            f"configured backend is {backend}; parakeet readiness not applicable",
+        )
+
+    os_name, arch = install_models._platform_info()
+    if (os_name, arch) not in {("linux", "x86_64"), ("darwin", "arm64")}:
+        return make_result(check, "skip", "parakeet not supported on this platform")
+
+    variant = "cpu" if os_name == "linux" else "coreml"
+    if os_name == "linux" and importlib.util.find_spec("onnx_asr") is None:
+        return make_result(
+            check,
+            "warn",
+            "onnx-asr runtime not installed",
+            _DEFAULT_STT_RUNTIME_FIX,
+        )
+
+    try:
+        ready_cache = install_models._check_parakeet_ready(
+            os_name,
+            arch,
+            variant,
+            install_models._sentinel_path(variant),
+        )
+    except RuntimeError as exc:
+        return make_result(check, "warn", str(exc), _DEFAULT_STT_MODEL_FIX)
+    return make_result(check, "ok", f"parakeet model ready at {ready_cache}")
+
+
 def _make_feature_check(
     feat_name: str,
 ) -> tuple[Check, Runner]:
@@ -587,6 +662,7 @@ JOURNAL_CHECKS: list[tuple[Check, Runner]] = [
     (JOURNAL_SYNC_CHECK, journal_sync_check),
     (STALE_ALIAS_CHECK, partial(stale_alias_symlink_check, binary="journal")),
     (LAUNCHD_STALE_PLIST_CHECK, launchd_stale_plist_check),
+    (DEFAULT_STT_READY_CHECK, default_stt_ready_check),
     *FEATURE_CHECKS.values(),
 ]
 
@@ -597,6 +673,7 @@ READINESS_CHECKS: list[tuple[Check, Runner]] = [
     (STALE_ALIAS_CHECK, partial(stale_alias_symlink_check, binary="sol")),
     (DISK_SPACE_CHECK, disk_space_check),
     (JOURNAL_DIR_WRITABLE_CHECK, journal_dir_writable_readiness),
+    (DEFAULT_STT_READY_CHECK, default_stt_ready_check),
     *FEATURE_CHECKS.values(),
 ]
 

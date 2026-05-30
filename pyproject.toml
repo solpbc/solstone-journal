@@ -72,6 +72,10 @@ dependencies = [
     # Audio processing
     "soundfile",
     "onnxruntime>=1.20.0,!=1.24.1",
+    # Linux/x86_64 default-STT (parakeet) ride-along: pull onnx-asr into
+    # base and raise the onnxruntime floor only on supported Linux hosts.
+    "onnx-asr>=0.11.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "onnxruntime>=1.25.0,!=1.24.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "kaldi-native-fbank>=1.22",
     # solstone/apps/speakers/{owner,discovery}.py use sklearn.cluster.HDBSCAN. Previously
     # pulled transitively via resemblyzer; now a direct dep.

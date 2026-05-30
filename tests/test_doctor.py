@@ -198,6 +198,158 @@ class TestPackagedInstall:
         assert result.detail == "import solstone succeeded in packaged install"
 
 
+class TestDefaultSttReady:
+    @staticmethod
+    def setup_linux_parakeet_default(doctor, monkeypatch, tmp_path):
+        journal = tmp_path / "journal"
+        monkeypatch.setattr(doctor, "get_journal_info", lambda: (str(journal), "env"))
+        monkeypatch.setattr(
+            doctor.install_models,
+            "_platform_info",
+            lambda: ("linux", "x86_64"),
+        )
+        monkeypatch.setattr(
+            doctor.install_models,
+            "_sentinel_path",
+            lambda variant: tmp_path / f"{variant}.sentinel",
+        )
+        return journal
+
+    def test_ok_when_linux_runtime_and_model_ready(self, doctor, monkeypatch, tmp_path):
+        ready_cache = tmp_path / "cache"
+        self.setup_linux_parakeet_default(doctor, monkeypatch, tmp_path)
+        monkeypatch.setattr(doctor.importlib.util, "find_spec", lambda name: object())
+
+        def fake_check_ready(os_name, arch, variant, sentinel_path):
+            assert (os_name, arch, variant) == ("linux", "x86_64", "cpu")
+            assert sentinel_path == tmp_path / "cpu.sentinel"
+            return ready_cache
+
+        monkeypatch.setattr(
+            doctor.install_models,
+            "_check_parakeet_ready",
+            fake_check_ready,
+        )
+
+        result = doctor.default_stt_ready_check(args(doctor))
+
+        assert result.status == "ok"
+        assert str(ready_cache) in result.detail
+
+    def test_warns_when_linux_runtime_missing(self, doctor, monkeypatch, tmp_path):
+        self.setup_linux_parakeet_default(doctor, monkeypatch, tmp_path)
+        monkeypatch.setattr(doctor.importlib.util, "find_spec", lambda name: None)
+        monkeypatch.setattr(
+            doctor.install_models,
+            "_check_parakeet_ready",
+            lambda *_args: pytest.fail("model readiness should not run"),
+        )
+
+        result = doctor.default_stt_ready_check(args(doctor))
+
+        assert result.status == "warn"
+        assert result.detail == "onnx-asr runtime not installed"
+        assert result.fix == doctor._DEFAULT_STT_RUNTIME_FIX
+
+    def test_warns_when_linux_model_missing(self, doctor, monkeypatch, tmp_path):
+        self.setup_linux_parakeet_default(doctor, monkeypatch, tmp_path)
+        monkeypatch.setattr(doctor.importlib.util, "find_spec", lambda name: object())
+        monkeypatch.setattr(
+            doctor.install_models,
+            "_check_parakeet_ready",
+            lambda *_args: (_ for _ in ()).throw(RuntimeError("sentinel missing")),
+        )
+
+        result = doctor.default_stt_ready_check(args(doctor))
+
+        assert result.status == "warn"
+        assert result.detail == "sentinel missing"
+        assert result.fix == doctor._DEFAULT_STT_MODEL_FIX
+
+    def test_default_stt_fix_strings_are_distinct(self, doctor):
+        assert doctor._DEFAULT_STT_RUNTIME_FIX != doctor._DEFAULT_STT_MODEL_FIX
+
+    def test_skips_when_configured_backend_is_not_parakeet(
+        self, doctor, monkeypatch, tmp_path
+    ):
+        journal = tmp_path / "journal"
+        config_path = journal / "config" / "journal.json"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text(
+            json.dumps({"transcribe": {"backend": "gemini"}}),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+        monkeypatch.setattr(
+            doctor.install_models,
+            "_platform_info",
+            lambda: pytest.fail("platform should not be checked"),
+        )
+
+        result = doctor.default_stt_ready_check(args(doctor))
+
+        assert result.status == "skip"
+        assert "gemini" in result.detail
+
+    def test_journal_less_host_defaults_to_parakeet_without_creating_journal(
+        self, doctor, monkeypatch, tmp_path
+    ):
+        journal = tmp_path / "missing-journal"
+        ready_cache = tmp_path / "cache"
+        monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+        monkeypatch.setattr(
+            doctor.install_models,
+            "_platform_info",
+            lambda: ("linux", "x86_64"),
+        )
+        monkeypatch.setattr(doctor.importlib.util, "find_spec", lambda name: object())
+        monkeypatch.setattr(
+            doctor.install_models,
+            "_check_parakeet_ready",
+            lambda *_args: ready_cache,
+        )
+
+        result = doctor.default_stt_ready_check(args(doctor))
+
+        assert result.status == "ok"
+        assert "configured backend" not in result.detail
+        assert not journal.exists()
+
+    def test_skips_arm64_linux_in_runner(self, doctor, monkeypatch, tmp_path):
+        self.setup_linux_parakeet_default(doctor, monkeypatch, tmp_path)
+        monkeypatch.setattr(
+            doctor.install_models,
+            "_platform_info",
+            lambda: ("linux", "aarch64"),
+        )
+        monkeypatch.setattr(
+            doctor.importlib.util,
+            "find_spec",
+            lambda name: pytest.fail("runtime should not be checked"),
+        )
+
+        result = doctor.default_stt_ready_check(args(doctor))
+
+        assert result.status == "skip"
+        assert result.detail == "parakeet not supported on this platform"
+
+    def test_registered_for_journal_and_readiness_only(self, doctor):
+        journal_names = {check.name for check, _runner in doctor.JOURNAL_CHECKS}
+        readiness_names = {check.name for check, _runner in doctor.READINESS_CHECKS}
+        universal_names = {check.name for check, _runner in doctor.UNIVERSAL_CHECKS}
+
+        assert "default_stt_ready" in journal_names
+        assert "default_stt_ready" in readiness_names
+        assert "default_stt_ready" not in universal_names
+        assert doctor.DEFAULT_STT_READY_CHECK in {
+            check for check, _runner in doctor.JOURNAL_CHECKS
+        }
+        assert doctor.DEFAULT_STT_READY_CHECK in {
+            check for check, _runner in doctor.READINESS_CHECKS
+        }
+        assert doctor.CHECK_MAP["default_stt_ready"].severity == "advisory"
+
+
 class TestPortCheckRemoved:
     def test_port_check_is_not_registered(self, doctor):
         assert "port_5015_free" not in doctor.CHECK_MAP
