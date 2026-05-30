@@ -12,7 +12,7 @@ import pytest
 from solstone.apps.settings import local_bootstrap
 from solstone.apps.settings.install_copy import INSTALL_FAILED_NO_PROGRESS
 from solstone.convey import create_app
-from solstone.think.models import LOCAL_FLASH, LOCAL_PRO
+from solstone.think.models import LOCAL_MODEL
 from solstone.think.providers.install_state import (
     InstallState,
     InstallStatus,
@@ -114,7 +114,7 @@ def test_local_availability_payload_exact_shape(settings_env, monkeypatch):
         "reason",
     }
     assert payload == {
-        "model": LOCAL_FLASH,
+        "model": LOCAL_MODEL,
         "platform_supported": True,
         "total_memory_gb": 32.0,
         "min_ram_gb": 12,
@@ -134,16 +134,10 @@ def test_local_models_route_returns_settings_shape(settings_env):
     assert response.status_code == 200
     assert response.get_json() == [
         {
-            "name": LOCAL_FLASH,
+            "name": LOCAL_MODEL,
             "label": "qwen 2.5 coder 7B — 12 GB",
             "min_ram_gb": 12,
-            "size_bytes": LOCAL_MODEL_SPECS[LOCAL_FLASH].size_bytes,
-        },
-        {
-            "name": LOCAL_PRO,
-            "label": "qwen3 coder 30B — 32 GB",
-            "min_ram_gb": 32,
-            "size_bytes": LOCAL_MODEL_SPECS[LOCAL_PRO].size_bytes,
+            "size_bytes": LOCAL_MODEL_SPECS[LOCAL_MODEL].size_bytes,
         },
     ]
 
@@ -166,8 +160,7 @@ def test_local_routes_reject_unknown_model(settings_env, method, path):
     payload = response.get_json()
     assert payload["reason_code"] == "invalid_request_value"
     assert "not-real" in payload["detail"]
-    assert LOCAL_FLASH in payload["detail"]
-    assert LOCAL_PRO in payload["detail"]
+    assert LOCAL_MODEL in payload["detail"]
 
 
 @pytest.mark.parametrize(
@@ -209,7 +202,7 @@ def test_local_routes_default_to_flash_model(
     response = getattr(client, method)(path)
 
     assert response.status_code == 200
-    assert calls == [LOCAL_FLASH]
+    assert calls == [LOCAL_MODEL]
 
 
 def test_local_bootstrap_post_rejects_unqualified_host(settings_env, monkeypatch):
@@ -266,7 +259,7 @@ def test_start_bootstrap_payload_for_canonical_states(
     _FakeThread.start_count = 0
     monkeypatch.setattr(local_bootstrap.threading, "Thread", _FakeThread)
 
-    assert local_bootstrap.start_bootstrap(LOCAL_FLASH) == (
+    assert local_bootstrap.start_bootstrap(LOCAL_MODEL) == (
         expected_payload,
         expected_status,
     )
@@ -276,7 +269,7 @@ def test_local_bootstrap_status_returns_canonical_shape(settings_env):
     journal_path, _config = settings_env(_settings_config())
     _write_local_status("downloading", last_progress_at=_fresh_progress_iso())
     with local_bootstrap._INSTALL_LOCK:
-        local_bootstrap._INSTALL_PROGRESS[LOCAL_FLASH] = (12, 24)
+        local_bootstrap._INSTALL_PROGRESS[LOCAL_MODEL] = (12, 24)
     client = _client(journal_path)
 
     response = client.get("/app/settings/api/local/bootstrap/status")
@@ -301,7 +294,7 @@ def test_local_bootstrap_lazy_stall_without_live_thread_fails(settings_env):
     settings_env(_settings_config())
     _write_local_status("downloading", last_progress_at=_old_progress_iso())
 
-    payload = local_bootstrap.get_state(LOCAL_FLASH)
+    payload = local_bootstrap.get_state(LOCAL_MODEL)
 
     assert payload["install_state"] == "failed"
     assert payload["install_error"] == INSTALL_FAILED_NO_PROGRESS
@@ -314,9 +307,9 @@ def test_local_bootstrap_lazy_stall_with_live_thread_stays_in_flight(settings_en
     settings_env(_settings_config())
     _write_local_status("verifying", last_progress_at=_old_progress_iso())
     with local_bootstrap._INSTALL_LOCK:
-        local_bootstrap._INSTALL_THREADS[LOCAL_FLASH] = _FakeThread()
+        local_bootstrap._INSTALL_THREADS[LOCAL_MODEL] = _FakeThread()
 
-    payload = local_bootstrap.get_state(LOCAL_FLASH)
+    payload = local_bootstrap.get_state(LOCAL_MODEL)
 
     assert payload["install_state"] == "verifying"
     assert payload["install_error"] is None
@@ -327,7 +320,7 @@ def test_local_bootstrap_restart_terminal_states_have_no_bytes(settings_env, sta
     settings_env(_settings_config())
     _write_local_status(state, error="boom" if state == "failed" else None)
 
-    payload = local_bootstrap.get_state(LOCAL_FLASH)
+    payload = local_bootstrap.get_state(LOCAL_MODEL)
 
     assert payload["install_state"] == state
     assert payload["progress_bytes_received"] is None
@@ -361,7 +354,7 @@ def test_local_bootstrap_migrates_preexisting_install_without_worker(
         lambda *args, **kwargs: pytest.fail("worker should not be created"),
     )
 
-    assert local_bootstrap.start_bootstrap(LOCAL_FLASH) == (
+    assert local_bootstrap.start_bootstrap(LOCAL_MODEL) == (
         {"install_state": "installed"},
         200,
     )
@@ -394,9 +387,9 @@ def test_local_worker_resets_progress_between_binary_and_model(
         local_bootstrap.local_install, "install_model", fake_install_model
     )
 
-    local_bootstrap._run_bootstrap_worker(LOCAL_FLASH)
+    local_bootstrap._run_bootstrap_worker(LOCAL_MODEL)
 
-    gguf_size = LOCAL_MODEL_SPECS[LOCAL_FLASH].size_bytes
+    gguf_size = LOCAL_MODEL_SPECS[LOCAL_MODEL].size_bytes
     assert observed["install_state"] == "downloading"
     assert observed["progress_bytes_total"] == gguf_size
     assert observed["progress_bytes_received"] <= gguf_size // 100
@@ -406,7 +399,7 @@ def test_local_worker_cleans_registered_thread(settings_env, monkeypatch):
     settings_env(_settings_config())
     current = threading.current_thread()
     with local_bootstrap._INSTALL_LOCK:
-        local_bootstrap._INSTALL_THREADS[LOCAL_FLASH] = current
+        local_bootstrap._INSTALL_THREADS[LOCAL_MODEL] = current
     _write_local_status("downloading", last_progress_at=_fresh_progress_iso())
 
     def fake_install_model(_model):
@@ -423,17 +416,17 @@ def test_local_worker_cleans_registered_thread(settings_env, monkeypatch):
         local_bootstrap.local_install, "install_model", fake_install_model
     )
 
-    local_bootstrap._run_bootstrap_worker(LOCAL_FLASH)
+    local_bootstrap._run_bootstrap_worker(LOCAL_MODEL)
 
     with local_bootstrap._INSTALL_LOCK:
-        assert LOCAL_FLASH not in local_bootstrap._INSTALL_THREADS
+        assert LOCAL_MODEL not in local_bootstrap._INSTALL_THREADS
 
 
 def test_local_worker_cleans_registered_thread_after_failure(settings_env, monkeypatch):
     settings_env(_settings_config())
     current = threading.current_thread()
     with local_bootstrap._INSTALL_LOCK:
-        local_bootstrap._INSTALL_THREADS[LOCAL_FLASH] = current
+        local_bootstrap._INSTALL_THREADS[LOCAL_MODEL] = current
     _write_local_status("downloading", last_progress_at=_fresh_progress_iso())
 
     monkeypatch.setattr(
@@ -442,10 +435,10 @@ def test_local_worker_cleans_registered_thread_after_failure(settings_env, monke
         lambda: (_ for _ in ()).throw(RuntimeError("binary download broke")),
     )
 
-    local_bootstrap._run_bootstrap_worker(LOCAL_FLASH)
+    local_bootstrap._run_bootstrap_worker(LOCAL_MODEL)
 
     with local_bootstrap._INSTALL_LOCK:
-        thread = local_bootstrap._INSTALL_THREADS.get(LOCAL_FLASH)
+        thread = local_bootstrap._INSTALL_THREADS.get(LOCAL_MODEL)
     assert thread is None or not thread.is_alive()
     status = read_install_status(scope="bundled", name="local")
     assert status["install_state"] == "failed"

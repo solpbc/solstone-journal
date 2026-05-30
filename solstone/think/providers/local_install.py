@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from solstone.think.journal_config import read_journal_config, write_journal_config
-from solstone.think.models import LOCAL_FLASH
+from solstone.think.models import LOCAL_MODEL
 from solstone.think.providers.install_state import (
     IN_FLIGHT_STATES,
     InstallStatus,
@@ -46,6 +46,8 @@ _LOCAL_METADATA_KEYS = frozenset(
         "model_id",
         "model_path",
         "model_sha256",
+        "mmproj_path",
+        "mmproj_sha256",
     }
 )
 
@@ -119,6 +121,13 @@ def model_dir(model_id: str) -> Path:
 def model_path(model_id: str) -> Path:
     spec = LOCAL_MODEL_SPECS[normalize_model_id(model_id)]
     return model_dir(spec.model_id) / spec.filename
+
+
+def mmproj_path(model_id: str) -> Path | None:
+    spec = LOCAL_MODEL_SPECS[normalize_model_id(model_id)]
+    if spec.mmproj_filename is None:
+        return None
+    return model_dir(spec.model_id) / spec.mmproj_filename
 
 
 def install_hint() -> str:
@@ -333,10 +342,11 @@ def install_llama_server() -> dict[str, Any]:
         raise
 
 
-def install_model(model_id: str = LOCAL_FLASH) -> dict[str, Any]:
+def install_model(model_id: str = LOCAL_MODEL) -> dict[str, Any]:
     spec = LOCAL_MODEL_SPECS[normalize_model_id(model_id)]
     url = f"https://huggingface.co/{spec.repo}/resolve/{spec.revision}/{spec.filename}"
     dest = model_path(spec.model_id)
+    mmproj_dest = mmproj_path(spec.model_id)
 
     try:
         _write_local_status(
@@ -344,17 +354,26 @@ def install_model(model_id: str = LOCAL_FLASH) -> dict[str, Any]:
         )
         _write_local_metadata({"model_id": spec.model_id})
         _download_file(url, dest, on_progress=_record_local_progress)
+        if spec.mmproj_filename and mmproj_dest is not None:
+            mmproj_url = (
+                f"https://huggingface.co/{spec.repo}/resolve/"
+                f"{spec.revision}/{spec.mmproj_filename}"
+            )
+            _download_file(mmproj_url, mmproj_dest)
         _write_local_status(
             transition_state(_read_local_status(), new_state="verifying")
         )
         _verify_sha256(dest, spec.sha256)
-        _write_local_metadata(
-            {
-                "model_id": spec.model_id,
-                "model_path": str(dest),
-                "model_sha256": spec.sha256,
-            }
-        )
+        metadata = {
+            "model_id": spec.model_id,
+            "model_path": str(dest),
+            "model_sha256": spec.sha256,
+        }
+        if spec.mmproj_sha256 and mmproj_dest is not None:
+            _verify_sha256(mmproj_dest, spec.mmproj_sha256)
+            metadata["mmproj_path"] = str(mmproj_dest)
+            metadata["mmproj_sha256"] = spec.mmproj_sha256
+        _write_local_metadata(metadata)
         return _write_local_status(
             transition_state(_read_local_status(), new_state="installed")
         )
@@ -365,7 +384,7 @@ def install_model(model_id: str = LOCAL_FLASH) -> dict[str, Any]:
         raise
 
 
-def install_local(model_id: str = LOCAL_FLASH) -> dict[str, Any]:
+def install_local(model_id: str = LOCAL_MODEL) -> dict[str, Any]:
     install_llama_server()
     return install_model(model_id)
 
@@ -386,25 +405,32 @@ def inspect_readiness(model_id: str | None = None) -> dict[str, Any]:
         record = {}
     status = _read_local_status()
     selected_model = normalize_model_id(
-        model_id or record.get("model_id") or LOCAL_FLASH
+        model_id or record.get("model_id") or LOCAL_MODEL
     )
     spec = LOCAL_MODEL_SPECS[selected_model]
     binary_path = Path(record.get("binary_path") or binary_path_for_pin())
     gguf_path = Path(record.get("model_path") or model_path(selected_model))
+    configured_mmproj = record.get("mmproj_path")
+    spec_mmproj = mmproj_path(selected_model)
+    resolved_mmproj = Path(configured_mmproj) if configured_mmproj else spec_mmproj
+    mmproj_installed = resolved_mmproj is None or resolved_mmproj.exists()
     ram_sufficient = _ram_sufficient(spec)
     return {
         "install_state": status["install_state"],
         "binary_installed": binary_path.exists() and os.access(binary_path, os.X_OK),
-        "model_installed": gguf_path.exists(),
+        "model_installed": gguf_path.exists() and mmproj_installed,
+        "gguf_installed": gguf_path.exists(),
+        "mmproj_installed": mmproj_installed,
         "ram_sufficient": ram_sufficient,
         "binary_path": str(binary_path),
         "model_path": str(gguf_path),
+        "mmproj_path": str(resolved_mmproj) if resolved_mmproj is not None else None,
         "model_id": selected_model,
         "install_error": status["install_error"],
     }
 
 
-def ensure_artifacts_installed(model_id: str) -> tuple[Path, Path]:
+def ensure_artifacts_installed(model_id: str) -> tuple[Path, Path, Path | None]:
     selected_model = normalize_model_id(model_id)
     readiness = inspect_readiness(selected_model)
     if not readiness["ram_sufficient"]:
@@ -418,7 +444,12 @@ def ensure_artifacts_installed(model_id: str) -> tuple[Path, Path]:
         raise LocalProviderError(
             "model_missing", "Local model files are not installed."
         )
-    return Path(readiness["binary_path"]), Path(readiness["model_path"])
+    mmproj = readiness.get("mmproj_path")
+    return (
+        Path(readiness["binary_path"]),
+        Path(readiness["model_path"]),
+        Path(mmproj) if mmproj else None,
+    )
 
 
 __all__ = [
@@ -427,6 +458,7 @@ __all__ = [
     "pin_for_current_platform",
     "binary_path_for_pin",
     "model_path",
+    "mmproj_path",
     "install_llama_server",
     "install_model",
     "install_local",

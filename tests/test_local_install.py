@@ -7,12 +7,13 @@ import json
 import shutil
 import tarfile
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from solstone.think.journal_config import read_journal_config
-from solstone.think.models import LOCAL_FLASH
+from solstone.think.models import LOCAL_MODEL
 from solstone.think.providers import local_install
 from solstone.think.providers.install_state import read_install_status
 from solstone.think.providers.local import LOCAL_MODEL_SPECS
@@ -211,7 +212,7 @@ def test_probe_binary_runnable_handles_missing_path(tmp_path):
 
 def test_install_model_writes_canonical_sequence(tmp_path, monkeypatch):
     _init_journal(tmp_path, monkeypatch)
-    spec = LOCAL_MODEL_SPECS[LOCAL_FLASH]
+    spec = LOCAL_MODEL_SPECS[LOCAL_MODEL]
     observed: list[tuple[str, str, dict]] = []
 
     def fake_download(_url, _dest, **_kwargs):
@@ -227,19 +228,81 @@ def test_install_model_writes_canonical_sequence(tmp_path, monkeypatch):
     monkeypatch.setattr(local_install, "_download_file", fake_download)
     monkeypatch.setattr(local_install, "_verify_sha256", fake_verify)
 
-    result = local_install.install_model(LOCAL_FLASH)
+    result = local_install.install_model(LOCAL_MODEL)
 
     assert [entry[0] for entry in observed] == ["download", "verify"]
     assert observed[0][1] == "downloading"
-    assert observed[0][2]["model_id"] == LOCAL_FLASH
+    assert observed[0][2]["model_id"] == LOCAL_MODEL
     assert observed[1][1] == "verifying"
     assert result["install_state"] == "installed"
     slot = _local_slot()
     assert slot["install_state"] == "installed"
-    assert slot["model_id"] == LOCAL_FLASH
+    assert slot["model_id"] == LOCAL_MODEL
     assert slot["model_path"] == str(local_install.model_path(spec.model_id))
     assert slot["model_sha256"] == spec.sha256
+    assert "mmproj_path" not in slot
     assert "state" not in slot
+
+
+def test_install_model_threads_optional_mmproj_artifact(tmp_path, monkeypatch):
+    _init_journal(tmp_path, monkeypatch)
+    spec = replace(
+        LOCAL_MODEL_SPECS[LOCAL_MODEL],
+        mmproj_filename="mmproj-test.gguf",
+        mmproj_sha256="mmproj-sha",
+    )
+    downloads: list[Path] = []
+    verifies: list[tuple[Path, str]] = []
+
+    monkeypatch.setitem(local_install.LOCAL_MODEL_SPECS, LOCAL_MODEL, spec)
+
+    def fake_download(_url, dest, **_kwargs):
+        downloads.append(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"artifact")
+
+    def fake_verify(path, expected):
+        verifies.append((path, expected))
+
+    monkeypatch.setattr(local_install, "_download_file", fake_download)
+    monkeypatch.setattr(local_install, "_verify_sha256", fake_verify)
+
+    local_install.install_model(LOCAL_MODEL)
+
+    gguf_path = local_install.model_path(LOCAL_MODEL)
+    mmproj_path = local_install.mmproj_path(LOCAL_MODEL)
+    assert mmproj_path is not None
+    assert downloads == [gguf_path, mmproj_path]
+    assert verifies == [(gguf_path, spec.sha256), (mmproj_path, "mmproj-sha")]
+    slot = _local_slot()
+    assert slot["mmproj_path"] == str(mmproj_path)
+    assert slot["mmproj_sha256"] == "mmproj-sha"
+
+
+def test_ensure_artifacts_installed_returns_binary_gguf_and_optional_mmproj(
+    tmp_path, monkeypatch
+):
+    binary = tmp_path / "llama-server"
+    gguf = tmp_path / "model.gguf"
+    mmproj = tmp_path / "mmproj.gguf"
+    monkeypatch.setattr(
+        local_install,
+        "inspect_readiness",
+        lambda model_id: {
+            "binary_installed": True,
+            "model_installed": True,
+            "ram_sufficient": True,
+            "binary_path": str(binary),
+            "model_path": str(gguf),
+            "mmproj_path": str(mmproj),
+        },
+    )
+
+    assert local_install.ensure_artifacts_installed(LOCAL_MODEL) == (
+        binary,
+        gguf,
+        mmproj,
+    )
 
 
 def test_install_llama_server_failure_writes_canonical_failed(tmp_path, monkeypatch):

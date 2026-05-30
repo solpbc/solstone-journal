@@ -11,7 +11,7 @@ import threading
 import psutil
 
 from solstone.apps.settings.install_copy import INSTALL_FAILED_NO_PROGRESS
-from solstone.think.models import LOCAL_FLASH
+from solstone.think.models import LOCAL_MODEL
 from solstone.think.providers import local_install
 from solstone.think.providers.install_state import (
     IN_FLIGHT_STATES,
@@ -46,7 +46,7 @@ class LocalBootstrapStartError(RuntimeError):
 def check_binary_present() -> bool:
     """Return whether the pinned llama-server binary is installed."""
     try:
-        return bool(local_install.inspect_readiness(LOCAL_FLASH)["binary_installed"])
+        return bool(local_install.inspect_readiness(LOCAL_MODEL)["binary_installed"])
     except Exception:
         return False
 

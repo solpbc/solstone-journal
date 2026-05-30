@@ -22,6 +22,7 @@ from solstone.think.models import (
     GPT_5,
     GPT_5_MINI,
     GPT_5_NANO,
+    LOCAL_MODEL,
     PROMPT_PATHS,
     PROVIDER_DEFAULTS,
     TIER_FLASH,
@@ -43,6 +44,7 @@ from solstone.think.models import (
     get_context_registry,
     get_model_provider,
     get_usage_cost,
+    is_local_provider_needed,
     iter_token_log,
     model_supports,
     request_health_recheck,
@@ -350,6 +352,35 @@ def test_provider_defaults_models():
     assert PROVIDER_DEFAULTS["anthropic"][TIER_PRO] == CLAUDE_OPUS_4
     assert PROVIDER_DEFAULTS["anthropic"][TIER_FLASH] == CLAUDE_SONNET_4
     assert PROVIDER_DEFAULTS["anthropic"][TIER_LITE] == CLAUDE_HAIKU_4
+
+    assert PROVIDER_DEFAULTS["local"][TIER_PRO] == LOCAL_MODEL
+    assert PROVIDER_DEFAULTS["local"][TIER_FLASH] == LOCAL_MODEL
+    assert PROVIDER_DEFAULTS["local"][TIER_LITE] == LOCAL_MODEL
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"providers": {"generate": {"provider": "local"}}},
+        {"providers": {"cogitate": {"provider": "local"}}},
+        {"providers": {"contexts": {"talent.*": {"provider": "local"}}}},
+    ],
+)
+def test_is_local_provider_needed_true_for_selected_surfaces(config):
+    assert is_local_provider_needed(config) is True
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {},
+        {"providers": {"generate": {"provider": "google"}}},
+        {"providers": {"contexts": {"talent.*": {"provider": "anthropic"}}}},
+        {"providers": []},
+    ],
+)
+def test_is_local_provider_needed_false_when_not_selected(config):
+    assert is_local_provider_needed(config) is False
 
 
 def test_resolve_provider_tier_based(use_fixtures_journal):

@@ -11,16 +11,16 @@ import json
 from typing import Any
 
 from solstone.think.journal_config import read_journal_config, write_journal_config
-from solstone.think.models import LOCAL_FLASH, LOCAL_LITE, LOCAL_PRO
+from solstone.think.models import LOCAL_MODEL
 
 OLD_OLLAMA_PRO = "ollama-local/qwen3.5:35b-a3b-bf16"
 OLD_OLLAMA_FLASH = "ollama-local/qwen3.5:9b"
 OLD_OLLAMA_LITE = "ollama-local/qwen3.5:2b"
 
 OLD_MODEL_MAP = {
-    OLD_OLLAMA_PRO: LOCAL_PRO,
-    OLD_OLLAMA_FLASH: LOCAL_FLASH,
-    OLD_OLLAMA_LITE: LOCAL_LITE,
+    OLD_OLLAMA_PRO: LOCAL_MODEL,
+    OLD_OLLAMA_FLASH: LOCAL_MODEL,
+    OLD_OLLAMA_LITE: LOCAL_MODEL,
 }
 
 

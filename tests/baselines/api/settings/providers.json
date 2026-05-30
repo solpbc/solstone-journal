@@ -517,7 +517,8 @@
         "binary_missing",
         "model_missing",
         "run `sol call settings providers install local`"
-      ]
+      ],
+      "selected": true
     },
     "mlx": {
       "cogitate_cli": "",

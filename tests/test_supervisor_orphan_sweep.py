@@ -84,7 +84,9 @@ class TestOrphanSweep:
         monkeypatch.setattr(supervisor.os, "getpid", lambda: 555)
         procs = [
             _FakeProcess(pid=111, username="other"),
+            _FakeProcess(pid=112, name="llama-server", username="other"),
             _FakeProcess(pid=222, ppid=2),
+            _FakeProcess(pid=223, name="llama-server", ppid=2),
             _FakeProcess(pid=333, name="python"),
             _FakeProcess(pid=444, name="solstone:convey"),
             _FakeProcess(pid=555),
@@ -139,7 +141,7 @@ class TestOrphanSweep:
         assert kills == [(111, signal.SIGTERM)]
 
     def test_candidate_in_different_journal_is_skipped(self, monkeypatch):
-        procs = [_FakeProcess(pid=111)]
+        procs = [_FakeProcess(pid=111), _FakeProcess(pid=222, name="llama-server")]
         kills = self._patch_common(monkeypatch, procs)
         monkeypatch.setattr(
             supervisor,

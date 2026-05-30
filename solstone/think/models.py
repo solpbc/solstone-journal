@@ -146,9 +146,7 @@ CLAUDE_OPUS_4 = "claude-opus-4-7"
 CLAUDE_SONNET_4 = "claude-sonnet-4-6"
 CLAUDE_HAIKU_4 = "claude-haiku-4-5"
 
-LOCAL_PRO = "local/qwen3-coder-30b-a3b-q4_k_m"
-LOCAL_FLASH = "local/qwen2.5-coder-7b"
-LOCAL_LITE = "local/qwen2.5-coder-7b"
+LOCAL_MODEL = "local/qwen2.5-coder-7b"
 
 QWEN_35_9B = "qwen3.5:9b"
 GEMMA4_26B_A4B_4BIT = "gemma-4-26b-a4b-it-mlx-4bit"
@@ -191,9 +189,9 @@ PROVIDER_DEFAULTS: Dict[str, Dict[int, str]] = {
         TIER_LITE: CLAUDE_HAIKU_4,
     },
     "local": {
-        TIER_PRO: LOCAL_PRO,
-        TIER_FLASH: LOCAL_FLASH,
-        TIER_LITE: LOCAL_LITE,
+        TIER_PRO: LOCAL_MODEL,
+        TIER_FLASH: LOCAL_MODEL,
+        TIER_LITE: LOCAL_MODEL,
     },
     "mlx": {
         TIER_PRO: MLX_PRO,
@@ -639,6 +637,27 @@ def resolve_provider(context: str, agent_type: str) -> tuple[str, str]:
         model = _resolve_model(provider, default_tier, config_models)
 
     return (provider, model)
+
+
+def is_local_provider_needed(config: dict[str, Any] | None = None) -> bool:
+    """Return True when journal provider config selects local anywhere."""
+    journal_config = config if config is not None else get_config()
+    providers = journal_config.get("providers", {})
+    if not isinstance(providers, dict):
+        return False
+
+    for agent_type in ("generate", "cogitate"):
+        type_config = providers.get(agent_type, {})
+        if isinstance(type_config, dict) and type_config.get("provider") == "local":
+            return True
+
+    contexts = providers.get("contexts", {})
+    if not isinstance(contexts, dict):
+        return False
+    return any(
+        isinstance(context_config, dict) and context_config.get("provider") == "local"
+        for context_config in contexts.values()
+    )
 
 
 def log_token_usage(
@@ -1641,6 +1660,7 @@ __all__ = [
     "CLAUDE_SONNET_4",
     "QWEN_35_9B",
     "GEMMA4_26B_A4B_4BIT",
+    "LOCAL_MODEL",
     "MLX_FLASH",
     # Model capability helpers
     "model_supports",
@@ -1649,6 +1669,7 @@ __all__ = [
     "generate_with_result",
     "agenerate",
     "resolve_provider",
+    "is_local_provider_needed",
     # Utilities
     "log_token_usage",
     "calc_token_cost",

@@ -27,6 +27,7 @@ import psutil
 from solstone.think import routines, scheduler
 from solstone.think.callosum import CallosumConnection, CallosumServer
 from solstone.think.maint import run_pending_tasks
+from solstone.think.models import LOCAL_MODEL, is_local_provider_needed
 from solstone.think.readiness import clear_ready, signal_ready
 from solstone.think.runner import ManagedProcess as RunnerManagedProcess
 from solstone.think.runner import _command_partition
@@ -50,6 +51,7 @@ from solstone.think.utils import (
     read_service_port,
     setup_cli,
     updated_days,
+    write_service_port,
 )
 
 DEFAULT_THRESHOLD = 60
@@ -57,6 +59,10 @@ CHECK_INTERVAL = 30
 MAX_UPDATED_CATCHUP = 4
 TEMPFAIL_DELAY = 15  # seconds to wait before retrying a tempfail exit
 STOPPED_TICKS_THRESHOLD = 2
+LOCAL_SERVER_READY_TIMEOUT_S = 300.0
+LOCAL_SERVER_HEALTH_POLL_INTERVAL_S = 1.0
+# COPY REVIEW: placeholder owner-facing copy; founder-gated before ship.
+LOCAL_MODEL_WARMING_UP_COPY = "Local model is warming up..."
 logger = logging.getLogger(__name__)
 _SERVICE_LIFECYCLE_VERBS = {
     "start",
@@ -111,18 +117,19 @@ def _candidate_journal(proc: "psutil.Process") -> Path | None:
         return None
 
 
-# The four long-lived managed-service proctitles set by setproctitle at
+# The long-lived managed-service proctitles set by setproctitle at
 # sol_cli.py (f"{binary}:{cmd}"). setproctitle is in-process and persists
 # until the process exits, so an orphaned service still reports its title
 # via proc.name() after the supervisor dies — which is what lets the sweep
-# find it. A future supervisor-owned `llama-server` is a one-line additive
-# entry here (no colon prefix); do not special-case it now.
+# find it. The supervisor-owned `llama-server` reports its own bare binary
+# name (no colon prefix) and is included here so the sweep reaps it too.
 _MANAGED_SERVICE_PROCTITLES = frozenset(
     {
         "journal:sense",
         "journal:cortex",
         "journal:convey",
         "sol:link",
+        "llama-server",
     }
 )
 
@@ -1184,6 +1191,62 @@ def start_sense() -> RunnerManagedProcess:
     return _launch_process("sense", ["journal", "sense", "-v"], restart=True)
 
 
+def start_local_server() -> RunnerManagedProcess | None:
+    """Launch the supervisor-owned local llama-server when artifacts are present."""
+    from solstone.think.providers import local_install, local_server
+
+    try:
+        binary_path, gguf_path, mmproj_path = local_install.ensure_artifacts_installed(
+            LOCAL_MODEL
+        )
+    except Exception as exc:
+        logging.info("Local model not ready; skipping llama-server startup: %s", exc)
+        return None
+
+    port = find_available_port()
+    write_service_port("local", port)
+    cmd = [
+        str(binary_path),
+        "-m",
+        str(gguf_path),
+        "--alias",
+        LOCAL_MODEL,
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+    ]
+    if mmproj_path is not None:
+        cmd.extend(["--mmproj", str(mmproj_path)])
+    if "0.0.0.0" in cmd:
+        raise RuntimeError("Local server may not bind 0.0.0.0.")
+
+    managed = _launch_process("llama-server", cmd, restart=True)
+    print(f"  {LOCAL_MODEL_WARMING_UP_COPY}", flush=True)
+
+    deadline = time.monotonic() + LOCAL_SERVER_READY_TIMEOUT_S
+    while time.monotonic() < deadline:
+        if managed.process.poll() is not None:
+            logging.warning(
+                "llama-server exited during warmup with code %s",
+                managed.process.returncode,
+            )
+            return managed
+        state, error = local_server._probe_health(port)
+        if state == local_server.STATE_READY:
+            logging.info("llama-server ready on port %s", port)
+            return managed
+        if state == local_server.STATE_FAILED and error:
+            logging.debug("llama-server health probe failed during warmup: %s", error)
+        time.sleep(LOCAL_SERVER_HEALTH_POLL_INTERVAL_S)
+
+    logging.warning(
+        "llama-server did not become ready within %.0fs; continuing startup",
+        LOCAL_SERVER_READY_TIMEOUT_S,
+    )
+    return managed
+
+
 def start_callosum_in_process() -> CallosumServer:
     """Start Callosum message bus server in-process.
 
@@ -2082,6 +2145,10 @@ def main() -> None:
             procs.append(proc)
             wait_for_convey_ready(proc)
             print("  Convey ready", flush=True)
+        if is_local_provider_needed():
+            proc = start_local_server()
+            if proc is not None:
+                procs.append(proc)
         # Sense handles file processing
         print("  Starting sense...", flush=True)
         procs.append(start_sense())

@@ -16,8 +16,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from solstone.think.models import LOCAL_FLASH, LOCAL_LITE, LOCAL_PRO
-from solstone.think.providers._image import is_image_part
+from solstone.think.models import LOCAL_MODEL
+from solstone.think.providers._image import encode_image_part, is_image_part
 from solstone.think.providers.shared import (
     GenerateResult,
     classify_provider_error,
@@ -39,26 +39,19 @@ class LocalModelSpec:
     sha256: str
     size_bytes: int
     min_ram_bytes: int
+    mmproj_filename: str | None = None
+    mmproj_sha256: str | None = None
 
 
 LOCAL_MODEL_SPECS: dict[str, LocalModelSpec] = {
-    LOCAL_LITE: LocalModelSpec(
-        model_id=LOCAL_LITE,
+    LOCAL_MODEL: LocalModelSpec(
+        model_id=LOCAL_MODEL,
         repo="Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
         filename="qwen2.5-coder-7b-instruct-q4_k_m.gguf",
         revision="main",
         sha256="509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c",
         size_bytes=4_683_073_536,
         min_ram_bytes=12 * 1024**3,
-    ),
-    LOCAL_PRO: LocalModelSpec(
-        model_id=LOCAL_PRO,
-        repo="giladgd/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M-GGUF",
-        filename="qwen3-coder-30b-a3b-instruct-q4_k_m.gguf",
-        revision="main",
-        sha256="ab4fc2b27b2043483a9e346c802809dfbe9b775efbeea7ca74dc2fd1aa4a0f71",
-        size_bytes=18_556_688_704,
-        min_ram_bytes=32 * 1024**3,
     ),
 }
 
@@ -72,7 +65,7 @@ class LocalProviderError(RuntimeError):
 
 
 def normalize_model_id(model: str | None) -> str:
-    model_id = str(model or LOCAL_FLASH)
+    model_id = str(model or LOCAL_MODEL)
     if model_id.startswith("openai/"):
         model_id = model_id[len("openai/") :]
     if not model_id.startswith(_LOCAL_PREFIX):
@@ -80,11 +73,7 @@ def normalize_model_id(model: str | None) -> str:
             "unsupported_model",
             f"Local provider model must start with {_LOCAL_PREFIX!r}: {model_id}",
         )
-    if model_id not in LOCAL_MODEL_SPECS:
-        raise LocalProviderError(
-            "unsupported_model", f"Unsupported local model: {model_id}"
-        )
-    return model_id
+    return LOCAL_MODEL
 
 
 def _contains_image(value: Any) -> bool:
@@ -97,17 +86,40 @@ def _contains_image(value: Any) -> bool:
     return False
 
 
+def _image_content_part(part: Any) -> dict[str, Any]:
+    media_type, b64 = encode_image_part(part)
+    return {
+        "type": "image_url",
+        "image_url": {"url": f"data:{media_type};base64,{b64}"},
+    }
+
+
+def _content_parts(value: Any) -> list[dict[str, Any]]:
+    if is_image_part(value):
+        return [_image_content_part(value)]
+    if isinstance(value, list | tuple):
+        parts: list[dict[str, Any]] = []
+        for item in value:
+            parts.extend(_content_parts(item))
+        return parts
+    return [{"type": "text", "text": str(value)}]
+
+
+def _message_content(value: Any) -> str | list[dict[str, Any]]:
+    if _contains_image(value):
+        return _content_parts(value)
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list | tuple):
+        return "\n".join(str(item) for item in value)
+    return str(value)
+
+
 def _build_messages(
     contents: str | list[Any],
     system_instruction: str | None = None,
-) -> list[dict[str, str]]:
-    if _contains_image(contents):
-        raise LocalProviderError(
-            "unsupported_capability",
-            "Local provider does not support vision inputs in v1.",
-        )
-
-    messages: list[dict[str, str]] = []
+) -> list[dict[str, Any]]:
+    messages: list[dict[str, Any]] = []
     if system_instruction:
         messages.append({"role": "system", "content": system_instruction})
 
@@ -118,16 +130,9 @@ def _build_messages(
             for item in contents:
                 role = str(item.get("role", "user"))
                 content = item.get("content", "")
-                if not isinstance(content, str):
-                    raise LocalProviderError(
-                        "unsupported_capability",
-                        "Local provider supports text message content only in v1.",
-                    )
-                messages.append({"role": role, "content": content})
+                messages.append({"role": role, "content": _message_content(content)})
         else:
-            messages.append(
-                {"role": "user", "content": "\n".join(str(item) for item in contents)}
-            )
+            messages.append({"role": "user", "content": _message_content(contents)})
     else:
         messages.append({"role": "user", "content": str(contents)})
     return messages
@@ -135,7 +140,7 @@ def _build_messages(
 
 def _build_request_body(
     model_id: str,
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     temperature: float,
     max_output_tokens: int,
     json_output: bool,
@@ -218,7 +223,7 @@ def run_generate(
 
     model_id = normalize_model_id(model)
     messages = _build_messages(contents, system_instruction)
-    server = local_server.ensure_running(model_id)
+    server = local_server.connect()
     body = _build_request_body(
         model_id,
         messages,
@@ -272,9 +277,9 @@ async def run_cogitate(
 ) -> str:
     from solstone.think.providers import local_server, openhands
 
-    model_id = normalize_model_id(config.get("model", LOCAL_FLASH))
+    config = {**config, "model": normalize_model_id(config.get("model", LOCAL_MODEL))}
     try:
-        local_server.ensure_running(model_id, on_event=on_event)
+        local_server.connect()
         return await openhands.run_cogitate(config, on_event=on_event)
     except Exception as exc:
         if on_event and not getattr(exc, "_evented", False):
@@ -315,7 +320,7 @@ def validate_key(provider: str = "local", api_key: str = "") -> dict[str, Any]:
     try:
         run_generate(
             "Say OK",
-            model=LOCAL_FLASH,
+            model=LOCAL_MODEL,
             temperature=0,
             max_output_tokens=8,
             timeout_s=10,

@@ -174,15 +174,29 @@ def build_provider_status(
         issues: list[str] = []
 
         if name == "local":
+            from solstone.think.models import is_local_provider_needed
             from solstone.think.providers import local_install, local_server
 
             readiness = local_install.inspect_readiness()
             binary_installed = bool(readiness["binary_installed"])
             model_installed = bool(readiness["model_installed"])
             ram_sufficient = bool(readiness["ram_sufficient"])
-            server_healthy = local_server.is_healthy()
+            selected = is_local_provider_needed()
             configured = binary_installed and model_installed and ram_sufficient
 
+            if not selected:
+                status[name] = {
+                    "configured": configured,
+                    "selected": False,
+                    "generate_ready": False,
+                    "cogitate_ready": False,
+                    "cogitate_cli": "llama-server",
+                    "cogitate_cli_found": binary_installed,
+                    "issues": [],
+                }
+                continue
+
+            server_healthy = local_server.is_healthy()
             if not binary_installed:
                 issues.append("binary_missing")
             if not model_installed:
@@ -204,6 +218,7 @@ def build_provider_status(
             ready = configured and server_healthy
             status[name] = {
                 "configured": configured,
+                "selected": True,
                 "generate_ready": ready,
                 "cogitate_ready": ready,
                 "cogitate_cli": "llama-server",

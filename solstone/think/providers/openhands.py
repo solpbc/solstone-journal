@@ -113,11 +113,10 @@ def _build_llm(provider: str, model: str) -> Any:
 
     if provider == "local":
         from solstone.think.providers import local_server
+        from solstone.think.providers.local import normalize_model_id
 
-        model_id = str(model)
-        if model_id.startswith("openai/"):
-            model_id = model_id[len("openai/") :]
-        server = local_server.ensure_running(model_id)
+        model_id = normalize_model_id(str(model))
+        server = local_server.connect()
         return LLM(
             model=f"openai/{model_id}",
             base_url=f"http://127.0.0.1:{server.port}/v1",
