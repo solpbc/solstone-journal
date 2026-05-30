@@ -25,6 +25,7 @@ from solstone.think.importers.shared import (
 from solstone.think.importers.text import _read_transcript, process_transcript
 from solstone.think.importers.utils import save_import_segments
 from solstone.think.indexer.journal import index_file
+from solstone.think.segment import _touch_health_marker
 from solstone.think.streams import stream_name, update_stream, write_segment_stream
 from solstone.think.utils import (
     day_path,
@@ -832,10 +833,15 @@ def _import_one_from_args(args: argparse.Namespace) -> dict[str, Any] | None:
                         segment=seg_key,
                         day=seg_day,
                         stream=stream,
+                        batch=True,
                     )
                     logger.info(
                         f"Emitted observe.observed for segment: {seg_day}/{seg_key}"
                     )
+
+                for _day in sorted({seg_day for seg_day, _seg_key in result.segments}):
+                    _touch_health_marker(_day)
+                    _callosum.emit("supervisor", "drain", day=_day)
 
             logger.info(
                 "%s import complete: %d entries, %d entities, %d files",
@@ -957,9 +963,17 @@ def _import_one_from_args(args: argparse.Namespace) -> dict[str, Any] | None:
             # Emit observe.observed for text imports (already processed)
             for seg in created_segments:
                 _callosum.emit(
-                    "observe", "observed", segment=seg, day=day, stream=stream
+                    "observe",
+                    "observed",
+                    segment=seg,
+                    day=day,
+                    stream=stream,
+                    batch=True,
                 )
                 logger.info(f"Emitted observe.observed for segment: {day}/{seg}")
+
+            _touch_health_marker(day)
+            _callosum.emit("supervisor", "drain", day=day)
 
         else:
             # Audio processing via observe pipeline
@@ -1025,6 +1039,7 @@ def _import_one_from_args(args: argparse.Namespace) -> dict[str, Any] | None:
                     files=files,
                     meta=meta,
                     stream=stream,
+                    batch=True,
                 )
                 logger.info(f"Emitted observe.observing for segment: {day}/{seg_key}")
 
@@ -1053,6 +1068,8 @@ def _import_one_from_args(args: argparse.Namespace) -> dict[str, Any] | None:
                         f"All {len(created_segments)} segments "
                         f"transcribed successfully ({total_elapsed}s)"
                     )
+
+            _callosum.emit("supervisor", "drain", day=day)
 
         # Complete processing metadata
         processing_results["processing_completed"] = dt.datetime.now().isoformat()

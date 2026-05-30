@@ -618,6 +618,8 @@ class FileSensor:
                 self.segment_files[segment] = set()
                 self.segment_start_time[segment] = time.time()
                 self.segment_day[segment] = day
+                if message.get("batch"):
+                    self.segment_batch[segment] = True
                 if observer:
                     self.segment_observer[segment] = observer
             for file_path in file_paths:

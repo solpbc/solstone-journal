@@ -215,6 +215,66 @@ def test_importer_text(tmp_path, monkeypatch):
     assert stream1_data["stream"] == "import.text"
 
 
+def test_text_import_observed_events_are_batch_and_drain_once(tmp_path, monkeypatch):
+    """Text imports mark observed segments as batch and queue one daily drain."""
+    mod = importlib.import_module("solstone.think.importers.cli")
+    text_mod = importlib.import_module("solstone.think.importers.text")
+    from solstone.think.utils import updated_days
+
+    txt = tmp_path / "sample.txt"
+    txt.write_text("segment text")
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    monkeypatch.setattr(
+        text_mod,
+        "detect_transcript_segment",
+        lambda text, start_time: [("12:00:00", text)],
+    )
+    monkeypatch.setattr(
+        text_mod,
+        "detect_transcript_json",
+        lambda text, segment_start: {
+            "entries": [
+                {
+                    "start": segment_start,
+                    "speaker": "Unknown",
+                    "text": text,
+                }
+            ],
+            "topics": "",
+            "setting": "",
+        },
+    )
+    callosum = MagicMock()
+    monkeypatch.setattr(mod, "CallosumConnection", lambda **kwargs: callosum)
+    monkeypatch.setattr(mod, "get_rev", lambda: "test-rev")
+    monkeypatch.setattr(mod, "_status_emitter", lambda: None)
+
+    health = tmp_path / "chronicle" / "20240101" / "health"
+    health.mkdir(parents=True)
+    (health / "daily.updated").touch()
+    time.sleep(0.05)
+
+    result = mod.import_one(txt, timestamp="20240101_120000")
+
+    assert result is not None
+    observed = [
+        call
+        for call in callosum.emit.call_args_list
+        if call.args[:2] == ("observe", "observed")
+    ]
+    assert observed
+    assert all(call.kwargs.get("batch") is True for call in observed)
+
+    drain_days = [
+        call.kwargs["day"]
+        for call in callosum.emit.call_args_list
+        if call.args[:2] == ("supervisor", "drain")
+    ]
+    assert drain_days == ["20240101"]
+    assert "20240101" in updated_days()
+
+
 def test_importer_pdf(tmp_path, monkeypatch):
     """Test importing a PDF transcript file."""
     mod = importlib.import_module("solstone.think.importers.cli")
@@ -1175,6 +1235,71 @@ def test_file_importer_with_timestamp(tmp_path, monkeypatch):
     assert mock_call.kwargs["import_id"] == "20260303_120000"
     # File importers write a manifest (but not source files) in imports/
     assert (tmp_path / "imports" / "20260303_120000" / "manifest.json").exists()
+
+
+def test_file_importer_observed_events_are_batch_and_drain_distinct_days(
+    tmp_path, monkeypatch
+):
+    """File imports queue one drain per distinct imported day."""
+    mod = importlib.import_module("solstone.think.importers.cli")
+    from solstone.think.utils import updated_days
+
+    ics_file = tmp_path / "calendar.ics"
+    ics_file.write_text("BEGIN:VCALENDAR\nEND:VCALENDAR")
+
+    mock_imp = _make_mock_file_importer()
+    mock_imp.process.return_value = ImportResult(
+        entries_written=3,
+        entities_seeded=0,
+        files_created=[],
+        errors=[],
+        summary="Imported 3 events",
+        segments=[
+            ("20260101", "120000_300"),
+            ("20260101", "120500_300"),
+            ("20260102", "090000_300"),
+        ],
+        date_range=("20260101", "20260102"),
+    )
+    callosum = MagicMock()
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    monkeypatch.setattr(
+        "solstone.think.importers.file_importer.get_file_importer",
+        lambda name: mock_imp,
+    )
+    monkeypatch.setattr(mod, "CallosumConnection", lambda **kwargs: callosum)
+    monkeypatch.setattr(mod, "get_rev", lambda: "test-rev")
+    monkeypatch.setattr(mod, "_status_emitter", lambda: None)
+
+    for day in ("20260101", "20260102"):
+        health = tmp_path / "chronicle" / day / "health"
+        health.mkdir(parents=True)
+        (health / "daily.updated").touch()
+    time.sleep(0.05)
+
+    result = mod.import_one(
+        ics_file,
+        source="ics",
+        timestamp="20260303_120000",
+    )
+
+    assert result is not None
+    observed = [
+        call
+        for call in callosum.emit.call_args_list
+        if call.args[:2] == ("observe", "observed")
+    ]
+    assert len(observed) == 3
+    assert all(call.kwargs.get("batch") is True for call in observed)
+
+    drain_days = [
+        call.kwargs["day"]
+        for call in callosum.emit.call_args_list
+        if call.args[:2] == ("supervisor", "drain")
+    ]
+    assert drain_days == ["20260101", "20260102"]
+    assert {"20260101", "20260102"} <= set(updated_days())
 
 
 def test_import_one_returns_metadata(tmp_path, monkeypatch):

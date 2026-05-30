@@ -775,6 +775,70 @@ def test_file_sensor_segment_observed_includes_day(
     assert observed_events[0].get("segment") == "143022_300"
 
 
+def _observed_event_from_observing(
+    tmp_path, monkeypatch, mock_callosum, *, batch: bool
+):
+    from solstone.think.callosum import CallosumConnection
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+
+    segment_dir = tmp_path / "chronicle" / "20250101" / "default" / "143022_300"
+    segment_dir.mkdir(parents=True)
+    audio_file = segment_dir / "audio.flac"
+    audio_file.write_text("audio content")
+
+    sensor = FileSensor(tmp_path)
+    sensor.register("*.flac", "transcribe", ["echo", "{file}"])
+
+    emitted_events = []
+    sensor.callosum = CallosumConnection()
+    sensor.callosum.start(callback=lambda msg: emitted_events.append(msg))
+
+    message = {
+        "tract": "observe",
+        "event": "observing",
+        "day": "20250101",
+        "stream": "default",
+        "segment": "143022_300",
+        "files": ["audio.flac"],
+    }
+    if batch:
+        message["batch"] = True
+
+    with patch.object(sensor, "_handle_file"):
+        sensor._handle_callosum_message(message)
+
+    sensor._check_segment_observed(audio_file)
+
+    observed_events = [
+        event
+        for event in emitted_events
+        if event.get("tract") == "observe" and event.get("event") == "observed"
+    ]
+    assert len(observed_events) == 1
+    return observed_events[0]
+
+
+def test_file_sensor_observing_batch_propagates_to_observed(
+    tmp_path, monkeypatch, mock_callosum
+):
+    observed = _observed_event_from_observing(
+        tmp_path, monkeypatch, mock_callosum, batch=True
+    )
+
+    assert observed.get("batch") is True
+
+
+def test_file_sensor_observing_without_batch_emits_live_observed(
+    tmp_path, monkeypatch, mock_callosum
+):
+    observed = _observed_event_from_observing(
+        tmp_path, monkeypatch, mock_callosum, batch=False
+    )
+
+    assert "batch" not in observed
+
+
 def test_file_sensor_segment_observed_no_handlers(tmp_path, monkeypatch, mock_callosum):
     """Test that observe.observed is emitted immediately for segments with no matching handlers.
 
