@@ -96,9 +96,6 @@ from solstone.think.entities.observations import (
     save_observations,
 )
 
-# Photos
-from solstone.think.entities.photos import entity_photos_path, save_entity_photos
-
 # Facet relationships and memory
 from solstone.think.entities.relationships import (
     ensure_entity_memory,
@@ -201,9 +198,6 @@ __all__ = [
     "load_entity_voiceprints_file",
     "load_existing_voiceprint_keys",
     "normalize_embedding",
-    # Photos
-    "entity_photos_path",
-    "save_entity_photos",
     # Formatting
     "format_entities",
     "format_observations",
