@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install uninstall test test-cov test-apps test-app test-only test-integration test-all format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills dev all sandbox sandbox-stop install-pinchtab install-models parakeet-helper parakeet-helper-clean wheel-macos wheel-macos-clean verify-browser update-browser-baselines review verify verify-api update-api-baselines service-logs check-layer-hygiene smoke-cogitate release release-test FORCE
+.PHONY: install uninstall test test-cov test-apps test-app test-only test-all format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills dev all sandbox sandbox-stop install-pinchtab install-models parakeet-helper parakeet-helper-clean wheel-macos wheel-macos-clean verify-browser update-browser-baselines review verify verify-api update-api-baselines service-logs check-layer-hygiene smoke-cogitate release release-test FORCE
 
 # Default target - install package in editable mode
 all: install
@@ -352,9 +352,6 @@ review: .installed
 
 # Test environment - use fixtures journal for all tests
 TEST_ENV = SOLSTONE_JOURNAL=tests/fixtures/journal
-# Marker-based exclusion: anything decorated `pytest.mark.integration` is held
-# out of `make test`. New live-network tests need only the marker — no Makefile edit.
-NOT_INTEGRATION = -m "not integration"
 
 # Venv tool shortcuts
 PYTEST := $(VENV_BIN)/pytest
@@ -367,16 +364,15 @@ format-check: .installed
 
 # Run core tests (excluding integration and app tests)
 # -n auto --dist loadgroup lives here, not in pyproject addopts, so bare
-# pytest / pytest-watch / IDE runs stay serial. Integration-marked tests are
-# held out by $(NOT_INTEGRATION); there is no dedicated tests/integration dir.
+# pytest / pytest-watch / IDE runs stay serial.
 test: .installed format-check
 	@echo "Running core tests..."
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -q $(NOT_INTEGRATION) -n auto --dist loadgroup
+	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -q -n auto --dist loadgroup
 
 # Run core tests with full-repo coverage (used by ci/verify)
 test-cov: .installed format-check
 	@echo "Running core tests with coverage..."
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -q --cov=. $(NOT_INTEGRATION) -n auto --dist loadgroup
+	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -q --cov=. -n auto --dist loadgroup
 	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) solstone/apps/link/tests/test_workspace_qr_size.py -q --cov=. --cov-append
 
 # Run app tests
@@ -403,21 +399,10 @@ test-only: .installed
 	fi
 	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) $(TEST)
 
-# Run integration tests — marker-selected (no dedicated dir; integration tests
-# live alongside the code they cover, tagged `pytest.mark.integration`). Scoped
-# to tests/ (apps can't share one collection — see test vs test-apps split); the
-# apps install-state integration test runs under `make smoke-install-providers`.
-# To run one by name, use `make test-only TEST=<path-or-pattern>`.
-test-integration: .installed
-	@echo "Running integration tests..."
-	@$(PYTEST_BASETEMP_INIT) STATUS=0; \
-	$(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -m integration -v --tb=short --timeout=20 || STATUS=$$?; \
-	if [ "$$STATUS" -ne 0 ] && [ "$$STATUS" -ne 5 ]; then exit $$STATUS; fi
-
-# Run all tests (core + apps; integration is marker-selected, see test-integration)
+# Run all tests (core + apps)
 test-all: .installed
 	@echo "Running all tests (core + apps)..."
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -v --cov=. $(NOT_INTEGRATION) && $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) solstone/apps/ -v --cov=. --cov-append
+	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ -v --cov=. && $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) solstone/apps/ -v --cov=. --cov-append
 
 # Auto-format and fix code, then report any remaining issues
 format: .installed
@@ -501,8 +486,7 @@ watch: .installed
 
 # Generate coverage report (core + apps, excluding core integration tests)
 coverage: .installed
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ --cov=. --cov-report=html --cov-report=term $(NOT_INTEGRATION)
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) solstone/apps/ --cov=. --cov-report=html --cov-report=term --cov-append
+	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) tests/ --cov=. --cov-report=html --cov-report=term	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) solstone/apps/ --cov=. --cov-report=html --cov-report=term --cov-append
 	@echo "Coverage report generated in htmlcov/index.html"
 
 # Update all dependencies to latest versions and refresh genai-prices

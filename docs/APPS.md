@@ -490,7 +490,7 @@ Apps can include their own tests that are discovered and run separately from cor
 - Create `tests/` directory with `conftest.py` and `test_*.py` files
 - App fixtures should be self-contained (only use pytest builtins like `tmp_path`, `monkeypatch`)
 - Tests run via `make test-apps` (all apps) or `make test-app APP=my_app`
-- Integration tests can use `@pytest.mark.integration` but live in the same flat structure
+- Keep them fast unit/component tests — no real browser or live network
 
 **Directory structure:**
 ```

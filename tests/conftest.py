@@ -131,17 +131,12 @@ from tests._baseline_harness import copytree_tracked
 
 
 @pytest.fixture(autouse=True)
-def set_test_journal_path(request, monkeypatch):
+def set_test_journal_path(monkeypatch):
     """Set SOLSTONE_JOURNAL to tests/fixtures/journal for all unit tests.
 
     This ensures all tests have a valid SOLSTONE_JOURNAL without needing
-    to explicitly set it in each test. Integration tests are excluded.
+    to explicitly set it in each test.
     """
-    # Skip for integration tests - they may have different requirements
-    if "integration" in request.node.keywords:
-        return
-
-    # Set SOLSTONE_JOURNAL to tests/fixtures/journal for all unit tests
     monkeypatch.setenv(
         "SOLSTONE_JOURNAL",
         str(Path("tests/fixtures/journal").resolve()),
@@ -150,11 +145,8 @@ def set_test_journal_path(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _clear_entity_caches(request):
+def _clear_entity_caches():
     """Clear all entity caches before/after each test."""
-    if "integration" in request.node.keywords:
-        yield
-        return
     clear_entity_loading_cache()
     clear_journal_entity_cache()
     clear_relationship_caches()
@@ -196,11 +188,7 @@ def journal_copy(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def add_module_stubs(request, monkeypatch):
-    # Skip stubbing for integration tests
-    if "integration" in request.node.keywords:
-        return
-
+def add_module_stubs(monkeypatch):
     _install_heavy_module_stubs()
     # Import real observe package first to avoid shadowing with stubs
     if "solstone.observe" not in sys.modules:

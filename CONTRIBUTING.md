@@ -120,14 +120,11 @@ make ci
 
 `make test` runs unit tests after a format check. `make ci` is the pre-commit gate: format-check, ruff, layer hygiene, and tests. Run it before committing.
 
-Integration tests are tagged `@pytest.mark.integration` and hit real backends/relays (require API keys, external CLIs, or a live sandbox). They're held out of `make test` by the marker:
-
 ```bash
-make test-integration                          # all integration-marked tests
 make test-only TEST="-k test_foo"              # one test by name/pattern
 ```
 
-For user-visible web changes, use the sandbox/browser verification targets when relevant:
+All tests are fast unit/component tests (no real browser, live network, or API keys). For user-visible web changes, use the sandbox/browser verification targets when relevant:
 
 ```bash
 make verify-api

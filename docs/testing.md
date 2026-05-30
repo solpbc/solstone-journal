@@ -3,14 +3,10 @@
 ## Test Structure
 
 - **Framework**: pytest; coverage reporting comes from `make test-cov`, `make ci`, or `make coverage`, not bare `make test`
-- **Unit Tests**: `tests/` root directory
-  - Fast, no external API calls
+- **Unit Tests**: live under `tests/` (and each app's `tests/` dir)
+  - Fast, no external API calls, no real browser
   - Use `tests/fixtures/journal/` mock data
   - Test individual functions and modules
-- **Integration Tests**: tagged `@pytest.mark.integration`, located alongside the code they cover (no dedicated directory)
-  - Test real backends (Anthropic, OpenAI, Google), live relays, and end-to-end workflows
-  - Require API keys, external CLIs, or a live sandbox depending on the test
-  - Held out of `make test` by the marker; run via `make test-integration`
 - **Naming**: Files `test_*.py`, functions `test_*`
 - **Fixtures**: Shared fixtures in `tests/conftest.py`
 
@@ -30,8 +26,7 @@ The `tests/fixtures/journal/` directory contains a complete mock journal structu
 - `make test` for unit tests
 - `make test-cov` for unit tests with coverage reporting
 - `make test-apps` to run app tests
-- `make test-integration` for integration tests
-- `make test-all` to run all tests (core + apps + integration)
+- `make test-all` to run all tests (core + apps)
 - `make test-only TEST=path` to run specific tests
 - `make coverage` to generate a coverage report
 - `make ci` before committing (formats, lints, tests)

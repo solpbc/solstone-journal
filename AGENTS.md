@@ -113,7 +113,6 @@ Verified against `Makefile`. Grouped by use.
 | `make test-apps` | Run all `solstone/apps/*/tests/` suites. |
 | `make test-app APP=<name>` | Run a single app's tests. |
 | `make test-only TEST=<path-or-pattern>` | Run a specific test file or pytest node id (`TEST="-k test_name"` also works). |
-| `make test-integration` | All `@pytest.mark.integration` tests (real backends/relays; need keys/CLIs/sandbox). Slow; run before shipping AI-behavior changes. Use `make test-only` for a single one. |
 | `make test-all` | Everything — core + apps. Pre-ship gate. |
 | `make coverage` | HTML coverage report under `htmlcov/`. Occasional. |
 | `make watch` | pytest-watch — reruns tests on file change. Useful during a test-heavy sprint. |
@@ -160,7 +159,7 @@ Verified against `Makefile`. Grouped by use.
 - **Fixture journal:** `tests/fixtures/journal/` — a complete mock journal with facets, entities, segments, index state. The autouse `set_test_journal_path` fixture in `tests/conftest.py` sets `SOLSTONE_JOURNAL` to this path for unit tests. Individual tests may override it with `monkeypatch.setenv` when they need an isolated tmp journal (see §8).
 - **Run one test:** `make test-only TEST=tests/test_utils.py::test_foo` or `TEST="-k test_foo"`.
 - **Run app tests:** `make test-apps` or `make test-app APP=<name>`.
-- **Integration tests** (tagged `@pytest.mark.integration`, located alongside the code they cover — no dedicated dir): hit real backends/relays, require API keys, external CLIs, or a live sandbox. Held out of `make test` by the marker; run via `make test-integration`.
+- **All tests are fast unit/component tests** — no real browser, no live network, no API keys. There is no integration/e2e test tier; tests that would need those were removed in favor of live verification via `make sandbox` / `make verify-browser`.
 - **After editing `solstone/convey/` or `solstone/apps/`:** `sol restart-convey` to reload code in a running stack.
 - **`make dev` + `make sandbox`** both write runtime artifacts into the fixtures journal; `tests/fixtures/journal/.gitignore` covers those — never commit them.
 
@@ -288,7 +287,7 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | `docs/SOLCLI.md` | Adding a new `sol <cmd>` or `sol call <app> <verb>` |
 | `docs/PROMPT_TEMPLATES.md` | Modifying talent prompt format or frontmatter |
 | `docs/PROVIDERS.md` | Adding a new AI provider; debugging model selection |
-| `docs/testing.md` | Writing integration tests; setting up fixtures; debugging test isolation |
+| `docs/testing.md` | Test structure, fixtures, debugging test isolation |
 | `docs/environment.md` | Journal path resolution, managed-wrapper behavior, service install details, and `SOLSTONE_JOURNAL` rules |
 | `docs/coding-standards.md` | Full naming conventions, ruff / mypy config, dep-management details — reference for everything not promoted into this file |
 | `docs/project-structure.md` | Canonical directory layout; resolving "where does this file go" debates |

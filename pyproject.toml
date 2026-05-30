@@ -166,8 +166,6 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 markers = [
-    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
-    "live: marks tests that require an explicit live sandbox opt-in",
     "xdist_group: marks tests to run in the same xdist worker group",
 ]
 timeout = 15
