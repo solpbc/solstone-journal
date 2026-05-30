@@ -681,7 +681,7 @@ MLX_MODEL_LABELS = {
     "gemma-4-26b-a4b-it-mlx-4bit": "gemma 4 (26B) — 24 GB Mac",
 }
 LOCAL_MODEL_LABELS = {
-    LOCAL_MODEL: "qwen 2.5 coder 7B — 12 GB",
+    LOCAL_MODEL: "qwen 3.5 4B VLM — 8 GB",
 }
 
 

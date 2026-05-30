@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from solstone.think.models import (
+    LOCAL_MODEL,
     TYPE_DEFAULTS,
     get_backup_provider,
     is_provider_healthy,
@@ -225,7 +226,7 @@ def test_execute_with_tools_local_failure_does_not_consult_backup(monkeypatch):
             talents._execute_with_tools(
                 {
                     "provider": "local",
-                    "model": "local/qwen2.5-coder-7b",
+                    "model": LOCAL_MODEL,
                     "output_path": None,
                 },
                 lambda _event: None,

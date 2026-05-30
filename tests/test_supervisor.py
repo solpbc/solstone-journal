@@ -1680,6 +1680,7 @@ def test_start_local_server_launches_llama_server_key_and_cmd(
             "127.0.0.1",
             "--port",
             "2468",
+            "--jinja",
             "--mmproj",
             str(mmproj),
         ]

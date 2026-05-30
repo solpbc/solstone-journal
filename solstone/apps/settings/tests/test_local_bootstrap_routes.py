@@ -117,7 +117,7 @@ def test_local_availability_payload_exact_shape(settings_env, monkeypatch):
         "model": LOCAL_MODEL,
         "platform_supported": True,
         "total_memory_gb": 32.0,
-        "min_ram_gb": 12,
+        "min_ram_gb": 8,
         "binary_present": True,
         "model_present": True,
         "available": True,
@@ -135,8 +135,8 @@ def test_local_models_route_returns_settings_shape(settings_env):
     assert response.get_json() == [
         {
             "name": LOCAL_MODEL,
-            "label": "qwen 2.5 coder 7B — 12 GB",
-            "min_ram_gb": 12,
+            "label": "qwen 3.5 4B VLM — 8 GB",
+            "min_ram_gb": 8,
             "size_bytes": LOCAL_MODEL_SPECS[LOCAL_MODEL].size_bytes,
         },
     ]

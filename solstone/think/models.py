@@ -146,7 +146,7 @@ CLAUDE_OPUS_4 = "claude-opus-4-7"
 CLAUDE_SONNET_4 = "claude-sonnet-4-6"
 CLAUDE_HAIKU_4 = "claude-haiku-4-5"
 
-LOCAL_MODEL = "local/qwen2.5-coder-7b"
+LOCAL_MODEL = "local/qwen3.5-4b"
 
 QWEN_35_9B = "qwen3.5:9b"
 GEMMA4_26B_A4B_4BIT = "gemma-4-26b-a4b-it-mlx-4bit"

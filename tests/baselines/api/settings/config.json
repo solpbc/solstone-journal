@@ -57,7 +57,7 @@
         "tier": 2
       },
       "test.ollama": {
-        "model": "local/qwen2.5-coder-7b",
+        "model": "local/qwen3.5-4b",
         "provider": "local"
       },
       "test.openai": {

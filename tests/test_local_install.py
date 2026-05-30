@@ -230,17 +230,23 @@ def test_install_model_writes_canonical_sequence(tmp_path, monkeypatch):
 
     result = local_install.install_model(LOCAL_MODEL)
 
-    assert [entry[0] for entry in observed] == ["download", "verify"]
+    assert [entry[0] for entry in observed] == [
+        "download",
+        "download",
+        "verify",
+        "verify",
+    ]
     assert observed[0][1] == "downloading"
     assert observed[0][2]["model_id"] == LOCAL_MODEL
-    assert observed[1][1] == "verifying"
+    assert observed[2][1] == "verifying"
     assert result["install_state"] == "installed"
     slot = _local_slot()
     assert slot["install_state"] == "installed"
     assert slot["model_id"] == LOCAL_MODEL
     assert slot["model_path"] == str(local_install.model_path(spec.model_id))
     assert slot["model_sha256"] == spec.sha256
-    assert "mmproj_path" not in slot
+    assert slot["mmproj_path"] == str(local_install.mmproj_path(spec.model_id))
+    assert slot["mmproj_sha256"] == spec.mmproj_sha256
     assert "state" not in slot
 
 

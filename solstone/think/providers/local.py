@@ -46,12 +46,14 @@ class LocalModelSpec:
 LOCAL_MODEL_SPECS: dict[str, LocalModelSpec] = {
     LOCAL_MODEL: LocalModelSpec(
         model_id=LOCAL_MODEL,
-        repo="Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
-        filename="qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+        repo="unsloth/Qwen3.5-4B-GGUF",
+        filename="Qwen3.5-4B-Q4_K_M.gguf",
         revision="main",
-        sha256="509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c",
-        size_bytes=4_683_073_536,
-        min_ram_bytes=12 * 1024**3,
+        sha256="00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+        size_bytes=2740937888,
+        min_ram_bytes=8 * 1024**3,
+        mmproj_filename="mmproj-F16.gguf",
+        mmproj_sha256="cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864",
     ),
 }
 
@@ -152,6 +154,7 @@ def _build_request_body(
         "temperature": temperature,
         "max_tokens": max_output_tokens,
         "stream": False,
+        "chat_template_kwargs": {"enable_thinking": False},
     }
     if json_schema is not None:
         body["response_format"] = {

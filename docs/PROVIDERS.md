@@ -314,14 +314,18 @@ OpenAI-compatible ``/v1`` surface. Key differences from cloud providers:
 - **No API key required.** ``validate_key()`` performs a loopback health check
   through a tiny local generation request.
 - **Bundled runtime.** Settings installs the pinned llama-server binary plus the
-  selected GGUF model under the journal cache. v1 ships macOS arm64 Metal and
+  selected GGUF model under the journal cache. The current local model is the
+  vision-capable unified VLM ``local/qwen3.5-4b`` from
+  ``unsloth/Qwen3.5-4B-GGUF``: ``Qwen3.5-4B-Q4_K_M.gguf`` (2740937888 bytes,
+  8 GiB minimum RAM) with ``mmproj-F16.gguf``. v1 ships macOS arm64 Metal and
   Linux x86_64 CPU slices; Linux CUDA is deferred until an upstream Linux CUDA
   tarball is pinned.
 - **Model prefix convention:** Models use the ``local/`` prefix
-  (for example, ``local/qwen2.5-coder-7b``).
+  (for example, ``local/qwen3.5-4b``).
 - **Cogitate through OpenHands.** Cogitate uses the OpenHands + LiteLLM facade
   with ``base_url=http://127.0.0.1:<port>/v1`` and ``api_key=EMPTY``. Generate
-  uses the provider's direct loopback client.
+  uses the provider's direct loopback client. Both paths send
+  ``chat_template_kwargs.enable_thinking=false`` to llama-server.
 - **No cloud fallback.** If the local runtime, model files, RAM gate, or
   loopback server are not ready, the local provider surfaces that recovery
   reason instead of silently falling back to a cloud provider.

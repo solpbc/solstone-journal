@@ -10,7 +10,7 @@ Implementation note: update `solstone/think/providers/__init__.py`. `build_provi
 
 ## D2 OpenHands facade branch
 
-Decision: add a `local` branch to `solstone/think/providers/openhands.py::_build_llm`. The exact kwargs are `model=f"openai/{local_model_id}"`, `base_url=f"http://127.0.0.1:{port}/v1"`, `api_key="EMPTY"`, `native_tool_calling=False`, `input_cost_per_token=0`, and `chat_template_kwargs={"enable_thinking": False}`.
+Decision: add a `local` branch to `solstone/think/providers/openhands.py::_build_llm`. The exact kwargs are `model=f"openai/{local_model_id}"`, `base_url=f"http://127.0.0.1:{port}/v1"`, `api_key="EMPTY"`, `native_tool_calling=False`, `input_cost_per_token=0`, and `litellm_extra_body={"chat_template_kwargs": {"enable_thinking": False}}`.
 
 Justification: llama-server exposes an OpenAI-compatible loopback API, but it does not provide native OpenHands tool calling or cloud API-key semantics. LiteLLM should treat it as an OpenAI-compatible custom endpoint with zero cost.
 
@@ -18,19 +18,19 @@ Implementation note: obtain `port` by calling `solstone.think.providers.local_se
 
 ## D3 Model-id scheme
 
-Decision: replace `ollama-local/` with `local/`. Ship these model ids: `local/qwen2.5-coder-7b` and `local/qwen3-coder-30b-a3b-q4_k_m`.
+Decision: replace `ollama-local/` with `local/`. Ship `local/qwen3.5-4b`.
 
 Justification: the provider prefix must match the new provider identity and should not preserve an Ollama-shaped namespace. Model ids stay stable across binary releases and map to pinned GGUF artifacts.
 
-Implementation note: in `solstone/think/models.py`, add `get_model_provider()` handling for `local/`, add `local` to the zero-cost provider set in `calc_token_cost`, and replace `PROVIDER_DEFAULTS["ollama"]` with `PROVIDER_DEFAULTS["local"]`. Define model specs with fields `model_id`, `repo`, `filename`, `revision`, `sha256`, `size_bytes`, and `min_ram_bytes`. The 7B spec is `Qwen/Qwen2.5-Coder-7B-Instruct-GGUF`, `qwen2.5-coder-7b-instruct-q4_k_m.gguf`, sha256 `509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c`, size `4683073536`. The 30B spec is `giladgd/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M-GGUF`, `qwen3-coder-30b-a3b-instruct-q4_k_m.gguf`, sha256 `ab4fc2b27b2043483a9e346c802809dfbe9b775efbeea7ca74dc2fd1aa4a0f71`, size `18556688704`.
+Implementation note: in `solstone/think/models.py`, add `get_model_provider()` handling for `local/`, add `local` to the zero-cost provider set in `calc_token_cost`, and replace `PROVIDER_DEFAULTS["ollama"]` with `PROVIDER_DEFAULTS["local"]`. Define model specs with fields `model_id`, `repo`, `filename`, `revision`, `sha256`, `size_bytes`, `min_ram_bytes`, `mmproj_filename`, and `mmproj_sha256`. The current spec is `local/qwen3.5-4b`: repo `unsloth/Qwen3.5-4B-GGUF`, filename `Qwen3.5-4B-Q4_K_M.gguf`, revision `main`, sha256 `00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4`, size `2740937888` bytes (~2.74 GB), min RAM `8 * 1024**3`, mmproj filename `mmproj-F16.gguf`, and mmproj sha256 `cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864`.
 
 ## D4 First-slice GGUF default
 
-Decision: ship `Qwen2.5-Coder-7B-Instruct Q4_K_M` as the practical default. Set `LOCAL_LITE = "local/qwen2.5-coder-7b"`, `LOCAL_FLASH = "local/qwen2.5-coder-7b"`, and `LOCAL_PRO = "local/qwen3-coder-30b-a3b-q4_k_m"`.
+Decision: ship `Qwen3.5-4B Q4_K_M` as the practical default unified vision VLM. Set all local tiers to `LOCAL_MODEL = "local/qwen3.5-4b"`.
 
-Justification: the 30B GGUF is about 18.6 GB before runtime overhead and is not a safe default for 16 GB hosts. The 7B GGUF is about 4.68 GB and fits the macOS arm64 and Linux CPU first slice with a reasonable RAM gate.
+Justification: the 4B GGUF is about 2.74 GB before runtime overhead, supports text and vision through the F16 mmproj, and fits the macOS arm64 and Linux CPU first slice with an 8 GiB RAM gate.
 
-Implementation note: set `min_ram_bytes` to `12 * 1024**3` for the 7B spec and `32 * 1024**3` for the 30B spec. Default provider selection that uses tier 2 will resolve to the 7B model. Tier 3 may expose the 30B model only when availability checks pass the RAM gate.
+Implementation note: set `min_ram_bytes` to `8 * 1024**3` for the Qwen3.5-4B spec. Default provider selection for all local tiers resolves to this model.
 
 ## D5 Installer placement and state
 
@@ -54,7 +54,7 @@ Decision: use lazy-start on first `local` generate or cogitate call, not a super
 
 Justification: there is no existing lazy subprocess-daemon pattern, and running llama-server all the time would impose memory cost on users who only occasionally choose the local backend. The provider can own a single loopback daemon and reuse existing process and port primitives without adding a new top-level service.
 
-Implementation note: `local_server.ensure_running(model_id: str) -> LocalServerInfo` must reuse `RunnerManagedProcess.spawn()` to launch `[binary_path, "-m", model_path, "--alias", model_id, "--host", "127.0.0.1", "--port", str(port)]`. Allocate the port with `find_available_port()`, persist it with `write_service_port("local", port)`, and reattach by reading `read_service_port("local")` plus probing `/health`. Poll `/health` until HTTP 200; treat HTTP 503 with "Loading model" as `loading`; timeout becomes `model_load_timeout`. Enforce one instance with a process-local lock plus a file lock at `<journal>/health/local-server.lock` so concurrent first calls do not double-spawn. Provide `stop()` using `ManagedProcess.terminate()`. New state names are `idle`, `starting`, `loading`, `ready`, `failed`, and `stopped`; install/bootstrap keeps the MLX-style `idle`, `downloading`, `verifying`, `installed`, `failed`.
+Implementation note: the local server launch must use `[binary_path, "-m", model_path, "--alias", model_id, "--host", "127.0.0.1", "--port", str(port), "--jinja"]`, with `["--mmproj", mmproj_path]` appended only when the spec has an mmproj. Allocate the port with `find_available_port()`, persist it with `write_service_port("local", port)`, and reattach by reading `read_service_port("local")` plus probing `/health`. Poll `/health` until HTTP 200; treat HTTP 503 with "Loading model" as `loading`; timeout becomes `model_load_timeout`. Enforce one instance with a process-local lock plus a file lock at `<journal>/health/local-server.lock` so concurrent first calls do not double-spawn. Provide `stop()` using `ManagedProcess.terminate()`. New state names are `idle`, `starting`, `loading`, `ready`, `failed`, and `stopped`; install/bootstrap keeps the MLX-style `idle`, `downloading`, `verifying`, `installed`, `failed`.
 
 ## D8 Fallback opt-out
 
@@ -70,7 +70,7 @@ Decision: implement the migration as a manual settings maintenance module at `so
 
 Justification: app `maint/` scripts are auto-discovered and run without flags, but this data-format migration must dry-run by default and require `--commit` per L5. The leading underscore keeps the shared migration implementation under settings maint while preventing accidental automatic execution.
 
-Implementation note: the dry-run prints a JSON-compatible report of every planned rewrite and exits without writing. `--commit` rewrites `providers.generate.provider`, `providers.generate.backup`, `providers.cogitate.provider`, and `providers.cogitate.backup` values from `ollama` to `local`; moves `providers.models.ollama` to `providers.models.local`, filling missing local tier keys and reporting conflicts; moves `providers.auth.ollama` to `providers.auth.local`; moves `providers.key_validation.ollama` to `providers.key_validation.local`; updates every `providers.contexts.*.provider == "ollama"` to `local`; and rewrites model strings with these exact mappings: `ollama-local/qwen3.5:2b` -> `local/qwen2.5-coder-7b`, `ollama-local/qwen3.5:9b` -> `local/qwen2.5-coder-7b`, `ollama-local/qwen3.5:35b-a3b-bf16` -> `local/qwen3-coder-30b-a3b-q4_k_m`, and other `ollama-local/<name>` values -> `local/<name>` with an `unsupported_model` warning. Do not touch `providers.api_keys`. Do not rewrite `providers.contexts` map keys because those are owner-defined context patterns; only rewrite their values. Running twice must produce an empty rewrite report.
+Implementation note: the dry-run prints a JSON-compatible report of every planned rewrite and exits without writing. `--commit` rewrites `providers.generate.provider`, `providers.generate.backup`, `providers.cogitate.provider`, and `providers.cogitate.backup` values from `ollama` to `local`; moves `providers.models.ollama` to `providers.models.local`, filling missing local tier keys and reporting conflicts; moves `providers.auth.ollama` to `providers.auth.local`; moves `providers.key_validation.ollama` to `providers.key_validation.local`; updates every `providers.contexts.*.provider == "ollama"` to `local`; and rewrites known Ollama-local model strings to `local/qwen3.5-4b`, with other `ollama-local/<name>` values becoming `local/<name>` plus an `unsupported_model` warning. Do not touch `providers.api_keys`. Do not rewrite `providers.contexts` map keys because those are owner-defined context patterns; only rewrite their values. Running twice must produce an empty rewrite report.
 
 ## D10 Failure taxonomy and copy
 
@@ -102,7 +102,7 @@ Decision: record these completion notes with the implementation PR.
 
 Justification: they capture resolved scope boundaries and the one founder-facing risk that should not be rediscovered during implementation.
 
-Implementation note: B2 is resolved by shipping tier 1 and tier 2 on `local/qwen2.5-coder-7b`, with tier 3 on the 30B GGUF gated at 32 GiB RAM. B3 is resolved by lazy-start provider ownership in `local_server.py`, not supervisor startup registration. B4 is deferred to v1.1: add a non-gating warning constant named `LOCAL_BOOTSTRAP_DISK_WARNING_THRESHOLD_BYTES` before downloading large models. B5 is deferred: local vision is not in v1; image contents passed to local generate should fail loudly with an unsupported-capability error. D6 remains the explicit CUDA decision point: v1 ships no Linux CUDA slice.
+Implementation note: B2 is resolved by shipping all local tiers on `local/qwen3.5-4b` with an 8 GiB RAM gate. B3 is resolved by supervisor-owned local startup when the local provider is selected. B4 is deferred to v1.1: add a non-gating warning constant named `LOCAL_BOOTSTRAP_DISK_WARNING_THRESHOLD_BYTES` before downloading large models. B5 is resolved by the Qwen3.5-4B unified VLM plus `mmproj-F16.gguf`; image contents passed to local generate use the OpenAI-compatible image-url path. D6 remains the explicit CUDA decision point: v1 ships no Linux CUDA slice.
 
 ## Implementation sequence
 

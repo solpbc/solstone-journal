@@ -123,7 +123,7 @@ def _build_llm(provider: str, model: str) -> Any:
             api_key="EMPTY",
             native_tool_calling=False,
             input_cost_per_token=0,
-            chat_template_kwargs={"enable_thinking": False},
+            litellm_extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
 
     if provider not in _MODEL_PREFIXES:

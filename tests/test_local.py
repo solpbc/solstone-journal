@@ -34,14 +34,19 @@ def test_local_model_specs():
 
     assert set(provider.LOCAL_MODEL_SPECS) == {LOCAL_MODEL}
     spec = provider.LOCAL_MODEL_SPECS[LOCAL_MODEL]
-    assert spec.repo == "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF"
+    assert spec.repo == "unsloth/Qwen3.5-4B-GGUF"
+    assert spec.filename == "Qwen3.5-4B-Q4_K_M.gguf"
     assert (
         spec.sha256
-        == "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c"
+        == "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4"
     )
-    assert spec.min_ram_bytes == 12 * 1024**3
-    assert spec.mmproj_filename is None
-    assert spec.mmproj_sha256 is None
+    assert spec.size_bytes == 2740937888
+    assert spec.min_ram_bytes == 8 * 1024**3
+    assert spec.mmproj_filename == "mmproj-F16.gguf"
+    assert (
+        spec.mmproj_sha256
+        == "cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864"
+    )
 
 
 def test_local_provider_defaults_and_registry():
@@ -63,7 +68,7 @@ def test_list_models_returns_specs():
     models = _provider().list_models("local")
 
     assert [model["model"] for model in models] == [LOCAL_MODEL]
-    assert models[0]["min_ram_bytes"] == 12 * 1024**3
+    assert models[0]["min_ram_bytes"] == 8 * 1024**3
 
 
 def test_validate_key_uses_tiny_generate(monkeypatch):
@@ -124,6 +129,7 @@ def test_run_generate_posts_to_loopback(monkeypatch):
     assert captured["json"]["model"] == LOCAL_MODEL
     assert captured["json"]["messages"] == [{"role": "user", "content": "hello"}]
     assert captured["json"]["max_tokens"] == 16
+    assert captured["json"]["chat_template_kwargs"] == {"enable_thinking": False}
     assert result["text"] == "hello"
     assert result["usage"] == {
         "input_tokens": 3,
@@ -209,8 +215,9 @@ def test_openhands_local_llm_kwargs(monkeypatch):
         "api_key": "EMPTY",
         "native_tool_calling": False,
         "input_cost_per_token": 0,
-        "chat_template_kwargs": {"enable_thinking": False},
+        "litellm_extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
     }
+    assert "chat_template_kwargs" not in captured
     assert openhands._prefixed_model("local", LOCAL_MODEL) == f"openai/{LOCAL_MODEL}"
 
 

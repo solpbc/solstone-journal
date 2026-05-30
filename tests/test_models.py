@@ -786,7 +786,7 @@ def test_calc_token_cost_fallback_keeps_local_free():
     assert (
         calc_token_cost(
             {
-                "model": "local/qwen2.5-coder-7b",
+                "model": LOCAL_MODEL,
                 "usage": {"input_tokens": 1000, "output_tokens": 100},
             }
         )["total_cost"]

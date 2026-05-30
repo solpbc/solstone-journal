@@ -1215,6 +1215,7 @@ def start_local_server() -> RunnerManagedProcess | None:
         "127.0.0.1",
         "--port",
         str(port),
+        "--jinja",
     ]
     if mmproj_path is not None:
         cmd.extend(["--mmproj", str(mmproj_path)])

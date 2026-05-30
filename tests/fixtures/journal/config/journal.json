@@ -59,7 +59,7 @@
       "test.tier.override": {"provider": "openai", "tier": 2},
       "test.config.override": {"provider": "google", "tier": 2},
       "observe.*": {"provider": "google", "tier": 3},
-      "test.ollama": {"provider": "local", "model": "local/qwen2.5-coder-7b"}
+      "test.ollama": {"provider": "local", "model": "local/qwen3.5-4b"}
     },
     "models": {
       "google": {
