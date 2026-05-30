@@ -362,7 +362,7 @@ MYPY := $(VENV_BIN)/mypy
 format-check: .installed
 	@$(RUFF) format --check . || { echo "Run 'make format' to fix formatting"; exit 1; }
 
-# Run core tests (excluding integration and app tests)
+# Run all unit tests — core (tests/) + every app (solstone/apps/*/tests/).
 # -n auto --dist loadgroup lives here, not in pyproject addopts, so bare
 # pytest / pytest-watch / IDE runs stay serial.
 test: .installed format-check
