@@ -113,9 +113,8 @@ Verified against `Makefile`. Grouped by use.
 | `make test-apps` | Run all `solstone/apps/*/tests/` suites. |
 | `make test-app APP=<name>` | Run a single app's tests. |
 | `make test-only TEST=<path-or-pattern>` | Run a specific test file or pytest node id (`TEST="-k test_name"` also works). |
-| `make test-integration` | Full integration suite. Requires `.env` API keys. Slow; run before shipping AI-behavior changes. |
-| `make test-integration-only TEST=<path>` | Single integration test by path or pattern. |
-| `make test-all` | Everything — core + apps + integration. Pre-ship gate. |
+| `make test-integration` | All `@pytest.mark.integration` tests (real backends/relays; need keys/CLIs/sandbox). Slow; run before shipping AI-behavior changes. Use `make test-only` for a single one. |
+| `make test-all` | Everything — core + apps. Pre-ship gate. |
 | `make coverage` | HTML coverage report under `htmlcov/`. Occasional. |
 | `make watch` | pytest-watch — reruns tests on file change. Useful during a test-heavy sprint. |
 | `make ci` | Format-check + ruff + layer-hygiene + coverage tests. **Run before every commit.** |
@@ -161,7 +160,7 @@ Verified against `Makefile`. Grouped by use.
 - **Fixture journal:** `tests/fixtures/journal/` — a complete mock journal with facets, entities, segments, index state. The autouse `set_test_journal_path` fixture in `tests/conftest.py` sets `SOLSTONE_JOURNAL` to this path for unit tests. Individual tests may override it with `monkeypatch.setenv` when they need an isolated tmp journal (see §8).
 - **Run one test:** `make test-only TEST=tests/test_utils.py::test_foo` or `TEST="-k test_foo"`.
 - **Run app tests:** `make test-apps` or `make test-app APP=<name>`.
-- **Integration tests** (`tests/integration/`): hit real provider APIs, require `.env` keys, run via `make test-integration`.
+- **Integration tests** (tagged `@pytest.mark.integration`, located alongside the code they cover — no dedicated dir): hit real backends/relays, require API keys, external CLIs, or a live sandbox. Held out of `make test` by the marker; run via `make test-integration`.
 - **After editing `solstone/convey/` or `solstone/apps/`:** `sol restart-convey` to reload code in a running stack.
 - **`make dev` + `make sandbox`** both write runtime artifacts into the fixtures journal; `tests/fixtures/journal/.gitignore` covers those — never commit them.
 
@@ -295,7 +294,6 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | `docs/project-structure.md` | Canonical directory layout; resolving "where does this file go" debates |
 | `docs/DOCTOR.md` | Diagnostics and debugging a running system |
 | `docs/SCREEN_CATEGORIES.md` | Screen-understanding classifier taxonomy (observe side) |
-| `docs/INTEGRATION_TESTS.md` | Deep integration-test setup |
 | `docs/VENDOR.md` | Vendor-level integrations |
 | `docs/design/` | Per-subsystem design docs |
 | `docs/JOURNAL.md` | **Breadcrumb only** — redirects to `solstone/talent/journal/SKILL.md`, the progressive-disclosure journal-layout reference |

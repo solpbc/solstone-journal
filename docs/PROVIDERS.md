@@ -279,14 +279,13 @@ See `tests/fixtures/journal/config/journal.json` for a complete example and `sol
    - Test parameter handling
    - Test error cases
 
-2. **Integration tests** in `tests/integration/test_<provider>_backend.py`:
+2. **Integration tests** tagged `@pytest.mark.integration` (alongside the provider code, no dedicated dir):
    - Live API calls (require API keys)
    - End-to-end generation
    - Token usage verification
 
 See existing test files for patterns:
 - `tests/test_google.py`, `tests/test_openai.py`, `tests/test_anthropic.py`
-- `tests/integration/test_google_backend.py`, etc.
 
 Run integration tests with: `make test-integration`
 
@@ -381,7 +380,7 @@ as **"MLX (Local, Apple Silicon)"**.
 
 **Testing:**
 11. Create unit tests in `tests/test_<name>.py`
-12. Create integration tests in `tests/integration/test_<name>_backend.py`
+12. Create integration tests tagged `@pytest.mark.integration` (alongside the provider code)
 13. Add test contexts to `tests/fixtures/journal/config/journal.json`
 
 **Documentation:**

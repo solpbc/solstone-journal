@@ -7,10 +7,10 @@
   - Fast, no external API calls
   - Use `tests/fixtures/journal/` mock data
   - Test individual functions and modules
-- **Integration Tests**: `tests/integration/` subdirectory
-  - Test real backends (Anthropic, OpenAI, Google)
-  - Require API keys in `.env`
-  - Test end-to-end workflows
+- **Integration Tests**: tagged `@pytest.mark.integration`, located alongside the code they cover (no dedicated directory)
+  - Test real backends (Anthropic, OpenAI, Google), live relays, and end-to-end workflows
+  - Require API keys, external CLIs, or a live sandbox depending on the test
+  - Held out of `make test` by the marker; run via `make test-integration`
 - **Naming**: Files `test_*.py`, functions `test_*`
 - **Fixtures**: Shared fixtures in `tests/conftest.py`
 
