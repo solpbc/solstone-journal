@@ -7,13 +7,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), al
 ## [Unreleased]
 
 ### Changed
-- cogitate is now baseline — the openhands-sdk runtime that powers sol's tool-calling agents ships in the wheel, so a fresh install with a hosted provider key runs cogitate immediately with no extra install step. wheel size grows by about 337 MB on install to carry openhands-sdk, litellm, and their transitive dependencies.
-- minimum python is now 3.12 (was 3.11) — required by the openhands-sdk runtime that ships baseline. if you installed solstone with a 3.11 interpreter, reinstall under 3.12+ before updating.
 - on linux, the default on-device transcription now works out of the box — its runtime ships with the install and `journal setup` downloads the model, so there's no separate extra to add. NVIDIA GPU owners can still opt into `solstone[parakeet-onnx-cuda]` for GPU acceleration, and `sol doctor` now reports whether the default transcription backend's runtime and model are ready.
-
-### Removed
-- the built-in `sol observer install` command is gone. linux and tmux observers now install from their own published packages: `pipx install solstone-linux` (or `solstone-tmux`), `solstone-linux install-service` (or `solstone-tmux install-service`), then `sol observer create <name>` mints a key you give the observer. the macOS observer continues to come from the signed app bundle at solstone.app/observers.
-- the bundled per-provider install commands are gone — `sol call settings providers install` now accepts `local` only (cogitate runs out of the box for hosted providers with a key set), and `uninstall`/`disable`/`enable`/`validate-key` are removed entirely. local install continues to work via `sol call settings providers install local`.
 
 ## [0.4.5] - 2026-05-30
 
@@ -68,9 +62,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), al
 - **service commands moved fully to `journal`.** Service commands (supervisor, cortex, heartbeat, setup, transcribe, services, etc.) are no longer surfaced under `sol` — they live exclusively under `journal`. Your existing solstone service migrates itself automatically on the next service restart; no action needed.
 - `journal start` is now the canonical run command (replaces `journal supervisor` as the service-unit entry point — old units self-migrate).
 - the `sol` CLI continues to be your day-to-day surface (chat, call, top, import, search across the journal).
+- cogitate is now baseline — the openhands-sdk runtime that powers sol's tool-calling agents ships in the wheel, so a fresh install with a hosted provider key runs cogitate immediately with no extra install step. wheel size grows by about 337 MB on install to carry openhands-sdk, litellm, and their transitive dependencies.
+- minimum python is now 3.12 (was 3.11) — required by the openhands-sdk runtime that ships baseline. if you installed solstone with a 3.11 interpreter, reinstall under 3.12+ before updating.
 
 ### removed
 - `sol <service-cmd>` paths typed by a human now redirect to `journal <cmd>` with a clear error and exit non-zero. Service units still pointing at the old paths self-migrate; nothing on disk breaks.
+- the built-in `sol observer install` command is gone. linux and tmux observers now install from their own published packages: `pipx install solstone-linux` (or `solstone-tmux`), `solstone-linux install-service` (or `solstone-tmux install-service`), then `sol observer create <name>` mints a key you give the observer. the macOS observer continues to come from the signed app bundle at solstone.app/observers.
+- the bundled per-provider install commands are gone — `sol call settings providers install` now accepts `local` only (cogitate runs out of the box for hosted providers with a key set), and `uninstall`/`disable`/`enable`/`validate-key` are removed entirely. local install continues to work via `sol call settings providers install local`.
 
 ## [0.3.10] — 2026-05-26
 
