@@ -61,7 +61,6 @@ TEMPFAIL_DELAY = 15  # seconds to wait before retrying a tempfail exit
 STOPPED_TICKS_THRESHOLD = 2
 LOCAL_SERVER_READY_TIMEOUT_S = 300.0
 LOCAL_SERVER_HEALTH_POLL_INTERVAL_S = 1.0
-# COPY REVIEW: placeholder owner-facing copy; founder-gated before ship.
 LOCAL_MODEL_WARMING_UP_COPY = "Local model is warming up..."
 logger = logging.getLogger(__name__)
 _SERVICE_LIFECYCLE_VERBS = {
