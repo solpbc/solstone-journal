@@ -5,69 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from solstone.think.link import service
-
-
-async def _fake_run_service() -> None:
-    return None
-
-
-def test_bare_link_routes_to_serve(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = []
-    monkeypatch.setattr(service, "run_service", _fake_run_service)
-    monkeypatch.setattr(
-        "solstone.think.link.service.require_solstone", lambda: calls.append("serve")
-    )
-
-    assert service.main([]) == 0
-
-    assert calls == ["serve"]
-
-
-def test_link_dash_v_routes_to_serve(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = []
-    monkeypatch.setattr(service, "run_service", _fake_run_service)
-    monkeypatch.setattr(
-        "solstone.think.link.service.require_solstone", lambda: calls.append("serve")
-    )
-
-    assert service.main(["-v"]) == 0
-
-    assert calls == ["serve"]
-
-
-def test_link_serve_routes_to_serve(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = []
-    monkeypatch.setattr(service, "run_service", _fake_run_service)
-    monkeypatch.setattr(
-        "solstone.think.link.service.require_solstone", lambda: calls.append("serve")
-    )
-
-    assert service.main(["serve"]) == 0
-
-    assert calls == ["serve"]
-
-
-def test_link_serve_dash_v_routes_to_serve(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = []
-    seen_verbose = []
-    monkeypatch.setattr(service, "run_service", _fake_run_service)
-    monkeypatch.setattr(
-        "solstone.think.link.service.require_solstone", lambda: calls.append("serve")
-    )
-
-    original = service._run_service_command
-
-    def capture(args):
-        seen_verbose.append(args.verbose)
-        return original(args)
-
-    monkeypatch.setattr(service, "_run_service_command", capture)
-
-    assert service.main(["serve", "-v"]) == 0
-
-    assert calls == ["serve"]
-    assert seen_verbose == [True]
+from solstone.think.link import cli
 
 
 def test_link_join_dispatches_to_join_cli(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -80,7 +18,7 @@ def test_link_join_dispatches_to_join_cli(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr("solstone.think.link.join_cli.main", fake_join)
 
     assert (
-        service.main(
+        cli.main(
             [
                 "join",
                 "--home",
@@ -108,7 +46,7 @@ def test_link_list_dispatches_to_list_cli(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setattr("solstone.think.link.list_cli.main", fake_list)
 
-    assert service.main(["list"]) == 0
+    assert cli.main(["list"]) == 0
 
     assert calls == [("list", False, False)]
 
@@ -124,19 +62,28 @@ def test_link_list_dispatches_flags_to_list_cli(
 
     monkeypatch.setattr("solstone.think.link.list_cli.main", fake_list)
 
-    assert service.main(["list", "--observers", "--json"]) == 0
+    assert cli.main(["list", "--observers", "--json"]) == 0
 
     assert calls == [("list", True, True)]
 
 
-def test_link_help_lists_serve_join_and_list(
+def test_link_no_subcommand_help_lists_join_and_list_only(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with pytest.raises(SystemExit) as exc:
-        service.main(["--help"])
+    assert cli.main([]) == 0
 
-    assert exc.value.code == 0
     out = capsys.readouterr().out
-    assert "serve" in out
+    assert "{join,list}" in out
     assert "join" in out
     assert "list" in out
+    assert "serve" not in out
+
+
+def test_link_serve_is_not_registered(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["serve"])
+
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "invalid choice" in captured.err
+    assert "serve" in captured.err

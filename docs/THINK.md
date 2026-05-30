@@ -25,7 +25,7 @@ The package exposes several commands:
 ```bash
 sol call transcripts read YYYYMMDD [--start HHMMSS --length MINUTES]
 journal think [--day YYYYMMDD] [--segment HHMMSS_LEN] [--stream NAME] [--refresh] [--flush]
-journal supervisor [--no-daily] [--no-cortex] [--no-link] [--no-convey] [--no-schedule]
+journal supervisor [--no-daily] [--no-cortex] [--no-spl] [--no-convey] [--no-schedule]
 journal cortex [--host HOST] [--port PORT] [--path PATH]
 journal talent list [--schedule daily|segment] [--json]
 journal talent show <name> [--prompt] [--day YYYYMMDD] [--segment HHMMSS_LEN] [--full]

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""CLI commands for the link tunnel service.
+"""CLI commands for link pairing and paired devices.
 
 Auto-discovered by ``think.call`` and mounted as ``sol call link ...``.
 """

@@ -243,8 +243,8 @@ def test_graceful_shutdown_calls_stop_process_for_each_managed_proc(
     monkeypatch.setattr(mod, "CallosumConnection", FakeCallosumConnection)
 
     procs = []
-    for name in ["convey", "sense", "cortex", "link"]:
-        managed = _TaskManagedStub(cmd=[("sol" if name == "link" else "journal"), name])
+    for name in ["convey", "sense", "cortex", "spl"]:
+        managed = _TaskManagedStub(cmd=["journal", name])
         managed.name = name
         procs.append(managed)
 
@@ -255,7 +255,7 @@ def test_graceful_shutdown_calls_stop_process_for_each_managed_proc(
     )
     monkeypatch.setattr(mod, "start_sense", lambda: procs[1])
     monkeypatch.setattr(mod, "start_cortex_server", lambda: procs[2])
-    monkeypatch.setattr(mod, "start_link_server", lambda: procs[3])
+    monkeypatch.setattr(mod, "start_spl_service", lambda: procs[3])
 
     stop_order = []
     monkeypatch.setattr(
@@ -275,7 +275,7 @@ def test_graceful_shutdown_calls_stop_process_for_each_managed_proc(
     finally:
         os.environ.pop("SOL_SUPERVISOR_SPAWNED", None)
 
-    assert stop_order == ["link", "cortex", "sense", "convey"]
+    assert stop_order == ["spl", "cortex", "sense", "convey"]
 
 
 def test_get_command_name():
@@ -1614,10 +1614,10 @@ def test_restart_service_uses_single_termination_path(monkeypatch):
 
 def test_stop_process_uses_service_shutdown_timeout():
     mod = importlib.import_module("solstone.think.supervisor")
-    managed = _TaskManagedStub(cmd=["sol", "link"], start_time=100.0)
-    managed.name = "link"
+    managed = _TaskManagedStub(cmd=["journal", "spl"], start_time=100.0)
+    managed.name = "spl"
     mod._SERVICE_STATE.clear()
-    mod._SERVICE_STATE["link"] = {
+    mod._SERVICE_STATE["spl"] = {
         "restart": True,
         "shutdown_timeout": 9,
     }

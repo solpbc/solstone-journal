@@ -28,8 +28,8 @@ from solstone.think.link.paths import (
     save_service_token,
     save_totp_secret,
 )
-from solstone.think.link.relay_client import enroll_home
 from solstone.think.link.window import read_posture
+from solstone.think.spl.relay_client import enroll_home
 from solstone.think.utils import get_journal
 
 log = logging.getLogger(__name__)
@@ -119,12 +119,12 @@ def disable_spl() -> SplDisableOutcome:
 
     Sets `link.posture="direct"` (the authoritative reach gate -
     `window.read_posture()`/`window_open()` immediately stop admitting cert-less
-    off-LAN pairs, and the status surface reports `direct`). It does NOT: clear
-    the local `totp.json` (kept for quick re-enable), revoke the relay-side copy
-    of the secret (a later lode), or tear down a currently-running link
-    service's listen WS (the RelayClient has no command channel in L8; a running
-    service keeps its socket until it restarts). Direct (LAN/VPN) reach and
-    existing paired-device bundles are untouched - no re-pairing.
+    off-LAN pairs, and the status surface reports `direct`). The supervised
+    `journal spl` daemon observes the posture change and closes its listen WS
+    within its poll interval. It does NOT clear the local `totp.json` (kept for
+    quick re-enable) or revoke the relay-side copy of the secret (a later lode).
+    Direct (LAN/VPN) reach and existing paired-device bundles are untouched -
+    no re-pairing.
     """
     _require_journal_config()
 

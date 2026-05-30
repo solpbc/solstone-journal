@@ -19,7 +19,7 @@ import websockets
 from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed
 
-log = logging.getLogger("link.relay_client")
+log = logging.getLogger("spl.relay_client")
 
 _RECONNECT_MIN = 1.0
 _RECONNECT_MAX = 60.0
@@ -66,40 +66,17 @@ class RelayClient:
         self,
         *,
         instance_id: str,
-        home_label: str,
         relay_endpoint: str,
-        service_token: str | None,
-        on_service_token: Callable[[str], None],
-        ca_pubkey_spki_pem: str,
-        totp_secret: str | None = None,
+        service_token: str,
         callosum_emit: CallosumEmit | None = None,
     ) -> None:
         self._instance_id = instance_id
-        self._home_label = home_label
         self._relay_endpoint = relay_endpoint.rstrip("/")
         self._relay_ws_endpoint = _to_ws(self._relay_endpoint)
         self._service_token = service_token
-        self._on_service_token = on_service_token
-        self._ca_pubkey_spki_pem = ca_pubkey_spki_pem
-        self._totp_secret = totp_secret
         self._emit = callosum_emit or (lambda _event, _fields: None)
         self._running = False
         self._tunnels: dict[str, asyncio.Task[None]] = {}
-
-    async def enroll_if_needed(self) -> None:
-        if self._service_token:
-            return
-        token = await asyncio.to_thread(
-            enroll_home,
-            self._relay_endpoint,
-            instance_id=self._instance_id,
-            ca_pubkey=self._ca_pubkey_spki_pem,
-            home_label=self._home_label,
-            totp_secret=self._totp_secret,
-        )
-        self._service_token = token
-        self._on_service_token(token)
-        self._emit("enrolled", {"instance_id": self._instance_id})
 
     async def run(self) -> None:
         self._running = True
@@ -130,7 +107,6 @@ class RelayClient:
         self._tunnels.clear()
 
     async def _run_once(self) -> None:
-        await self.enroll_if_needed()
         assert self._service_token is not None
         self._emit("connecting", {})
         listen_url = self._url_for("/session/listen", token=self._service_token)

@@ -3,33 +3,16 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import pytest
 
-from solstone.think.link import relay_client
+from solstone.think.spl import relay_client
 
 
 # Built by concatenation so the legacy account-token DATA key does not trip the AC4 grep-clean check; lode L2 renames the relay side.
 def _legacy_token_key() -> str:
     return "account" + "_token"
-
-
-def _client_with_capture(
-    *, totp_secret: str | None = None
-) -> tuple[relay_client.RelayClient, list[str]]:
-    captured_tokens: list[str] = []
-    client = relay_client.RelayClient(
-        instance_id="instance.test",
-        home_label="home.test",
-        relay_endpoint="https://relay.test",
-        service_token=None,
-        on_service_token=captured_tokens.append,
-        ca_pubkey_spki_pem="pem",
-        totp_secret=totp_secret,
-    )
-    return client, captured_tokens
 
 
 @pytest.mark.parametrize(
@@ -44,33 +27,36 @@ def test_enroll_accepts_service_and_legacy_tokens(
     response: dict[str, str],
     expected_token: str,
 ) -> None:
-    client, captured_tokens = _client_with_capture()
-
     def post_json(_url: str, _body: dict[str, Any]) -> dict[str, str]:
         return response
 
     monkeypatch.setattr(relay_client, "_post_json_sync", post_json)
 
-    asyncio.run(client.enroll_if_needed())
+    token = relay_client.enroll_home(
+        "https://relay.test",
+        instance_id="instance.test",
+        ca_pubkey="pem",
+        home_label="home.test",
+    )
 
-    assert captured_tokens == [expected_token]
-    assert client._service_token == expected_token  # noqa: SLF001
+    assert token == expected_token
 
 
 def test_enroll_rejects_response_without_service_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    client, captured_tokens = _client_with_capture()
-
     def post_json(_url: str, _body: dict[str, Any]) -> dict[str, str]:
         return {}
 
     monkeypatch.setattr(relay_client, "_post_json_sync", post_json)
 
     with pytest.raises(RuntimeError, match="service_token"):
-        asyncio.run(client.enroll_if_needed())
-
-    assert captured_tokens == []
+        relay_client.enroll_home(
+            "https://relay.test",
+            instance_id="instance.test",
+            ca_pubkey="pem",
+            home_label="home.test",
+        )
 
 
 def test_enroll_home_includes_totp_secret_when_provided(
@@ -135,21 +121,3 @@ def test_enroll_home_omits_totp_secret_when_none(
             },
         )
     ]
-
-
-def test_enroll_if_needed_threads_totp_secret(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    client, captured_tokens = _client_with_capture(totp_secret="SECRET")
-    captured: list[tuple[str, dict[str, Any]]] = []
-
-    def post_json(url: str, body: dict[str, Any]) -> dict[str, str]:
-        captured.append((url, body))
-        return {"service_token": "tok"}
-
-    monkeypatch.setattr(relay_client, "_post_json_sync", post_json)
-
-    asyncio.run(client.enroll_if_needed())
-
-    assert captured_tokens == ["tok"]
-    assert captured[0][1]["totp_secret"] == "SECRET"

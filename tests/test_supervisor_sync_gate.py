@@ -155,7 +155,7 @@ def test_finally_clears_self_heartbeat_on_normal_shutdown(tmp_path, monkeypatch)
             "--no-schedule",
             "--no-convey",
             "--no-cortex",
-            "--no-link",
+            "--no-spl",
         ],
     )
     monkeypatch.setattr(mod, "start_callosum_in_process", lambda: None)
@@ -206,7 +206,7 @@ def test_finally_does_not_clear_self_heartbeat_after_mid_run_conflict(
             "--no-schedule",
             "--no-convey",
             "--no-cortex",
-            "--no-link",
+            "--no-spl",
         ],
     )
     monkeypatch.setattr(mod, "start_callosum_in_process", lambda: None)

@@ -1,17 +1,16 @@
-# link service
+# link access helpers
 
-The home-side tunnel endpoint for the spl protocol — solstone's long-term home for this code.
+Caller-side link commands and shared pairing helpers.
 
 **Forked from [`github.com/solpbc/spl`](https://github.com/solpbc/spl) `home/` on 2026-04-20.**
 The two copies are now fully independent: no pip dep, no submodule, no sync scripts.
-The `spl` repo's `home/` continues as the open-source reference implementation of the protocol; this module is the canonical production implementation.
+The `spl` repo's `home/` continues as the open-source reference implementation of the protocol; this package keeps the caller-side/shared implementation used by pairing, direct dialing, and the link dashboard. The supervised home-side rendezvous daemon lives in `solstone/think/spl/` and runs as `journal spl`.
 
 ## layout
 
 | File | Purpose |
 |------|---------|
-| `service.py` | Entry point + runtime. `sol link` runs `main()` here. |
-| `relay_client.py` | Listen-WS + per-tunnel raw byte pipe to Convey's secure listener. Spawns a task per incoming tunnel. |
+| `cli.py` | Entry point for caller-side `sol link join` and `sol link list`. |
 | `ca.py` | Local CA lifecycle + CSR signing + home-attestation minting. |
 | `auth.py` | `authorized_clients.json` reader/writer with mtime-reload and last-seen tracking. |
 | `nonces.py` | Pair-ceremony nonce store (shared between CLI and convey pair route). |
@@ -23,9 +22,11 @@ the DL web port and the PL secure-listener port 7657.
 
 ## naming
 
-- **link** — user-facing and architecturally-visible names: service name, convey app, `sol call link`, `journal/link/`, `/link` route.
-- **spl** — protocol-level constructs: wire-format frames, JWT claim schemas, reset reason codes. These reference the external stable spl protocol and keep that name.
+- **link** — user-facing and architecturally-visible names: convey app, `sol link`, `sol call link`, `journal/link/`, `/link` route.
+- **spl** — the home-side relay daemon (`journal spl`) and protocol-level constructs such as wire-format frames, JWT claim schemas, and reset reason codes. These reference the external stable spl protocol and keep that name.
+
+The home-side daemon still emits Callosum relay-status events on the internal `link` tract so the existing dashboard cache key (`link_connection`) remains stable.
 
 ## privacy
 
-No payload bytes are ever logged. The link service is the spl-relay-tunnel client: it opens the outbound relay WebSocket, accepts incoming tunnels, and pipes bytes to Convey's secure listener on `127.0.0.1:7657`. The CA private key never leaves `journal/link/ca/private.pem`; account tokens live in `journal/link/tokens/` and device tokens live on the phone.
+No payload bytes are ever logged. The CA private key never leaves `journal/link/ca/private.pem`; service tokens live in `journal/link/tokens/` and device tokens live on paired devices.

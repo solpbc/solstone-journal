@@ -14,9 +14,9 @@ import pytest
 
 from solstone.think import sol_cli
 from solstone.think.journal_config import write_journal_config
-from solstone.think.link import relay_client
 from solstone.think.link.paths import save_totp_secret, totp_secret_path
 from solstone.think.services import cli, portal_client
+from solstone.think.spl import relay_client
 
 
 class FakeResponse:

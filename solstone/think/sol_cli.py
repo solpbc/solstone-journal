@@ -105,6 +105,7 @@ COMMANDS: dict[str, Command] = {
     "cortex": Command("solstone.think.cortex", "service"),
     "talent": Command("solstone.think.talent_cli", "service"),
     "link": Command("solstone.think.link", "access"),
+    "spl": Command("solstone.think.spl", "service"),
     "call": Command("solstone.think.call", "access"),
     "engage": Command("solstone.think.engage", "access"),
     "chat": Command("solstone.think.chat_cli", "access"),

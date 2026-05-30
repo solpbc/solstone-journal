@@ -128,7 +128,7 @@ _MANAGED_SERVICE_PROCTITLES = frozenset(
         "journal:sense",
         "journal:cortex",
         "journal:convey",
-        "sol:link",
+        "journal:spl",
         "llama-server",
     }
 )
@@ -1361,10 +1361,10 @@ def start_cortex_server() -> RunnerManagedProcess:
     return _launch_process("cortex", cmd, restart=True)
 
 
-def start_link_server() -> RunnerManagedProcess:
-    """Launch the link tunnel service (spl home-side endpoint)."""
-    cmd = ["sol", "link", "-v"]
-    return _launch_process("link", cmd, restart=True)
+def start_spl_service() -> RunnerManagedProcess:
+    """Launch the spl tunnel service."""
+    cmd = ["journal", "spl", "-v"]
+    return _launch_process("spl", cmd, restart=True)
 
 
 def start_convey_server(
@@ -1906,9 +1906,9 @@ def parse_args() -> argparse.ArgumentParser:
         help="Do not start the Cortex server (run it manually for debugging)",
     )
     parser.add_argument(
-        "--no-link",
+        "--no-spl",
         action="store_true",
-        help="Do not start the link tunnel service",
+        help="Do not start the spl tunnel service",
     )
     parser.add_argument(
         "--no-convey",
@@ -2182,10 +2182,10 @@ def main() -> None:
         if not args.no_cortex:
             print("  Starting cortex...", flush=True)
             procs.append(start_cortex_server())
-        # Link tunnel service (opt-out via --no-link)
-        if not args.no_link:
-            print("  Starting link...", flush=True)
-            procs.append(start_link_server())
+        # spl tunnel service (opt-out via --no-spl)
+        if not args.no_spl:
+            print("  Starting spl...", flush=True)
+            procs.append(start_spl_service())
 
     # Make procs accessible to restart handler
     _managed_procs = procs

@@ -13,7 +13,6 @@ from typing import Any
 import pytest
 
 from solstone.think.journal_config import write_journal_config
-from solstone.think.link import relay_client
 from solstone.think.link.paths import (
     authorized_clients_path,
     load_service_token,
@@ -22,6 +21,7 @@ from solstone.think.link.paths import (
     totp_secret_path,
 )
 from solstone.think.services import spl
+from solstone.think.spl import relay_client
 
 
 def _config_path(journal_copy: Path) -> Path:
