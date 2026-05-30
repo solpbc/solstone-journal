@@ -20,6 +20,7 @@ from solstone.apps.settings import mlx_bootstrap
 from solstone.apps.settings.install_copy import INSTALL_FAILED_NO_PROGRESS
 from solstone.convey import create_app
 from solstone.think.models import GEMMA4_26B_A4B_4BIT, QWEN_35_9B
+from solstone.think.providers import mlx_install
 from solstone.think.providers.install_state import (
     InstallState,
     InstallStatus,
@@ -28,7 +29,7 @@ from solstone.think.providers.install_state import (
     transition_state,
     write_install_status,
 )
-from solstone.think.providers.mlx import _MLX_MODEL_REGISTRY
+from solstone.think.providers.mlx_install import _MLX_MODEL_REGISTRY
 
 
 def _client(journal_path):
@@ -61,7 +62,7 @@ def _reset_mlx_state(monkeypatch, tmp_path):
     with mlx_bootstrap._INSTALL_LOCK:
         mlx_bootstrap._INSTALL_THREADS.clear()
         mlx_bootstrap._INSTALL_PROGRESS.clear()
-    monkeypatch.setattr(mlx_bootstrap.constants, "HF_HUB_CACHE", str(tmp_path / "hf"))
+    monkeypatch.setattr(mlx_install.constants, "HF_HUB_CACHE", str(tmp_path / "hf"))
 
 
 def _set_state(
@@ -651,7 +652,7 @@ def _write_snapshot(
     files: dict[str, bytes],
     model: str = QWEN_35_9B,
 ) -> Path:
-    monkeypatch.setattr(mlx_bootstrap.constants, "HF_HUB_CACHE", str(tmp_path / "hf"))
+    monkeypatch.setattr(mlx_install.constants, "HF_HUB_CACHE", str(tmp_path / "hf"))
     snapshot_dir = mlx_bootstrap._snapshot_dir(model)
     snapshot_dir.mkdir(parents=True)
     (snapshot_dir / "model.safetensors.index.json").write_text(

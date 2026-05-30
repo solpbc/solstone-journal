@@ -9,29 +9,25 @@ from __future__ import annotations
 import asyncio
 import importlib
 import logging
-import platform
-from dataclasses import dataclass
 from typing import Any, Callable
 
 import psutil
 
-from solstone.think.models import QWEN_35_9B
+from solstone.think.models import GEMMA4_26B_A4B_4BIT, QWEN_35_9B
 from solstone.think.utils import get_config
 
+from .mlx_install import (
+    _GEMMA4_MIN_POSITION_EMBEDDING_SIZE,
+    _MLX_MODEL_REGISTRY,
+    MLXModelSpec,
+    _check_platform_and_package,
+    is_mlx_available_for_model,
+    is_mlx_platform_supported,
+)
+from .mlx_install import (
+    MLX_SOFT_TOKEN_BUDGET as _GEMMA4_SOFT_TOKENS,
+)
 from .shared import GenerateResult
-
-GEMMA4_26B_A4B_4BIT = "gemma-4-26b-a4b-it-mlx-4bit"
-_GEMMA4_SOFT_TOKENS = 1120
-_GEMMA4_MIN_POSITION_EMBEDDING_SIZE = 10240
-
-
-@dataclass(frozen=True)
-class MLXModelSpec:
-    name: str
-    repo: str
-    revision: str
-    min_ram_bytes: int
-    post_load: Callable[[Any, Any], None] | None = None
 
 
 def _gemma4_post_load(model: Any, processor: Any) -> None:
@@ -55,8 +51,8 @@ def _gemma4_post_load(model: Any, processor: Any) -> None:
     pool_k = model.vision_tower.pooling_kernel_size
     max_patches = _GEMMA4_SOFT_TOKENS * pool_k * pool_k
 
-    # The resize ratio must match max_soft_tokens=1120; otherwise gemma4 regresses
-    # to the smaller visual budget and loses screenshot faithfulness.
+    # The resize ratio must match the configured soft-token budget; otherwise
+    # gemma4 regresses to the smaller visual budget and loses screenshot faithfulness.
     processor.image_processor.max_soft_tokens = _GEMMA4_SOFT_TOKENS
     if hasattr(processor.image_processor, "image_seq_length"):
         processor.image_processor.image_seq_length = _GEMMA4_SOFT_TOKENS
@@ -85,21 +81,8 @@ def _gemma4_post_load(model: Any, processor: Any) -> None:
         )
 
 
-_MLX_MODEL_REGISTRY: dict[str, MLXModelSpec] = {
-    QWEN_35_9B: MLXModelSpec(
-        name=QWEN_35_9B,
-        repo="mlx-community/Qwen3.5-9B-MLX-8bit",
-        revision="84f7c2deea248d8df56240f88102def51c7ed5d6",
-        min_ram_bytes=16 * 1024**3,
-        post_load=None,
-    ),
-    GEMMA4_26B_A4B_4BIT: MLXModelSpec(
-        name=GEMMA4_26B_A4B_4BIT,
-        repo="mlx-community/gemma-4-26b-a4b-it-4bit",
-        revision="efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
-        min_ram_bytes=24 * 1024**3,
-        post_load=_gemma4_post_load,
-    ),
+_POST_LOAD_HOOKS: dict[str, Callable[[Any, Any], None]] = {
+    GEMMA4_26B_A4B_4BIT: _gemma4_post_load,
 }
 
 logger = logging.getLogger(__name__)
@@ -117,32 +100,6 @@ class ModelSnapshotMissingError(RuntimeError):
         return f"model snapshot not present: {text}"
 
 
-def _platform_unsupported_reason() -> str | None:
-    if platform.system() != "Darwin":
-        return "not running on macOS"
-    if platform.machine() != "arm64":
-        return "not running on Apple Silicon"
-    return None
-
-
-def _check_platform_and_package() -> tuple[bool, str]:
-    platform_reason = _platform_unsupported_reason()
-    if platform_reason is not None:
-        return False, platform_reason
-
-    try:
-        importlib.import_module("mlx_vlm")
-    except ImportError:
-        return False, "mlx-vlm package not installed"
-
-    return True, ""
-
-
-def is_mlx_platform_supported() -> bool:
-    """True when the host is Apple Silicon macOS. Does not import mlx_vlm."""
-    return _platform_unsupported_reason() is None
-
-
 def is_mlx_available() -> tuple[bool, str]:
     ok, reason = _check_platform_and_package()
     if not ok:
@@ -151,20 +108,6 @@ def is_mlx_available() -> tuple[bool, str]:
     total_ram = psutil.virtual_memory().total
     if total_ram < spec.min_ram_bytes:
         return False, f"insufficient RAM (need 16 GB, have {total_ram // 1024**3} GB)"
-    return True, ""
-
-
-def is_mlx_available_for_model(spec: MLXModelSpec) -> tuple[bool, str]:
-    ok, reason = _check_platform_and_package()
-    if not ok:
-        return ok, reason
-    total_ram = psutil.virtual_memory().total
-    if total_ram < spec.min_ram_bytes:
-        return False, (
-            f"insufficient RAM for {spec.name} "
-            f"(need {spec.min_ram_bytes // 1024**3} GB, "
-            f"have {total_ram // 1024**3} GB)"
-        )
     return True, ""
 
 
@@ -228,8 +171,9 @@ def _load_model(model_name: str) -> tuple[Any, Any, Any]:
             raise _snapshot_missing_error(spec) from exc
         raise
 
-    if spec.post_load is not None:
-        spec.post_load(model, processor)
+    hook = _POST_LOAD_HOOKS.get(model_name)
+    if hook is not None:
+        hook(model, processor)
 
     config = model.config
     loaded = (model, processor, config)

@@ -64,10 +64,10 @@ from solstone.convey.sol_initiated.settings import (
     save_settings as save_sol_voice_settings,
 )
 from solstone.convey.utils import error_response
-from solstone.think.models import LOCAL_MODEL, QWEN_35_9B
+from solstone.think.models import GEMMA4_26B_A4B_4BIT, LOCAL_MODEL, QWEN_35_9B
 from solstone.think.providers.google import validate_vertex_credentials
 from solstone.think.providers.local import LOCAL_MODEL_SPECS
-from solstone.think.providers.mlx import _MLX_MODEL_REGISTRY
+from solstone.think.providers.mlx_install import _MLX_MODEL_REGISTRY
 from solstone.think.retention import (
     _human_bytes,
     check_storage_health,
@@ -678,7 +678,7 @@ def _sol_voice_response(settings: SolVoiceSettings) -> dict[str, Any]:
 VALID_TIERS = {1, 2, 3}
 MLX_MODEL_LABELS = {
     QWEN_35_9B: "qwen 3.5 — 16 GB Mac",
-    "gemma-4-26b-a4b-it-mlx-4bit": "gemma 4 (26B) — 24 GB Mac",
+    GEMMA4_26B_A4B_4BIT: "gemma 4 (26B) — 24 GB Mac",
 }
 LOCAL_MODEL_LABELS = {
     LOCAL_MODEL: "qwen 3.5 4B VLM — 8 GB",

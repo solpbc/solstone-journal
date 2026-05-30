@@ -330,7 +330,7 @@ def test_run_check_filters_mlx_when_platform_unsupported(tmp_path, monkeypatch):
     monkeypatch.setattr("solstone.think.providers.PROVIDER_REGISTRY", fake_registry)
     monkeypatch.setattr("solstone.think.models.PROVIDER_DEFAULTS", fake_defaults)
     monkeypatch.setattr(
-        "solstone.think.providers.mlx.is_mlx_platform_supported", lambda: False
+        "solstone.think.providers.mlx_install.is_mlx_platform_supported", lambda: False
     )
     monkeypatch.setattr(providers_cli, "get_journal", lambda: str(tmp_path))
     monkeypatch.setattr(providers_cli, "_check_generate", lambda *_args: ("ok", "OK"))
@@ -369,7 +369,7 @@ def test_run_check_includes_mlx_when_platform_supported(tmp_path, monkeypatch):
     monkeypatch.setattr("solstone.think.providers.PROVIDER_REGISTRY", fake_registry)
     monkeypatch.setattr("solstone.think.models.PROVIDER_DEFAULTS", fake_defaults)
     monkeypatch.setattr(
-        "solstone.think.providers.mlx.is_mlx_platform_supported", lambda: True
+        "solstone.think.providers.mlx_install.is_mlx_platform_supported", lambda: True
     )
     monkeypatch.setattr(providers_cli, "get_journal", lambda: str(tmp_path))
     monkeypatch.setattr(providers_cli, "_check_generate", lambda *_args: ("ok", "OK"))

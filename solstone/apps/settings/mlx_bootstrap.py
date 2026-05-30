@@ -16,8 +16,6 @@ from pathlib import Path
 
 import huggingface_hub
 import psutil
-from huggingface_hub import constants
-from huggingface_hub.file_download import repo_folder_name
 
 from solstone.apps.settings.install_copy import INSTALL_FAILED_NO_PROGRESS
 from solstone.think.providers.install_state import (
@@ -30,9 +28,10 @@ from solstone.think.providers.install_state import (
     transition_state,
     write_install_status,
 )
-from solstone.think.providers.mlx import (
+from solstone.think.providers.mlx_install import (
     _MLX_MODEL_REGISTRY,
     is_mlx_available_for_model,
+    snapshot_dir_for_spec,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,12 +55,7 @@ class MlxVerificationError(RuntimeError):
 
 
 def _snapshot_dir(model: str) -> Path:
-    spec = _MLX_MODEL_REGISTRY[model]
-    repo_folder = repo_folder_name(
-        repo_id=spec.repo,
-        repo_type="model",
-    )
-    return Path(constants.HF_HUB_CACHE) / repo_folder / "snapshots" / spec.revision
+    return snapshot_dir_for_spec(_MLX_MODEL_REGISTRY[model])
 
 
 def _safetensors_paths(model: str) -> list[str]:

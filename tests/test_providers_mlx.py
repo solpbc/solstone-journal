@@ -19,6 +19,12 @@ def _provider(monkeypatch):
     return provider
 
 
+def _install_module():
+    import solstone.think.providers.mlx_install as install
+
+    return install
+
+
 def _install_mlx_stub(monkeypatch, *, load_exc=None, text="ok"):
     mlx_module = types.ModuleType("mlx_vlm")
     mlx_module.__path__ = []
@@ -126,8 +132,9 @@ def test_is_mlx_available_parameterized(
     monkeypatch, system, machine, ram_gb, mlx_present, expected
 ):
     provider = _provider(monkeypatch)
-    monkeypatch.setattr(provider.platform, "system", lambda: system)
-    monkeypatch.setattr(provider.platform, "machine", lambda: machine)
+    install = _install_module()
+    monkeypatch.setattr(install.platform, "system", lambda: system)
+    monkeypatch.setattr(install.platform, "machine", lambda: machine)
     monkeypatch.setattr(
         provider.psutil,
         "virtual_memory",
@@ -155,8 +162,9 @@ def test_is_mlx_platform_supported_parameterized(
     monkeypatch, system, machine, expected
 ):
     provider = _provider(monkeypatch)
-    monkeypatch.setattr(provider.platform, "system", lambda: system)
-    monkeypatch.setattr(provider.platform, "machine", lambda: machine)
+    install = _install_module()
+    monkeypatch.setattr(install.platform, "system", lambda: system)
+    monkeypatch.setattr(install.platform, "machine", lambda: machine)
 
     assert provider.is_mlx_platform_supported() is expected
 
@@ -267,7 +275,7 @@ def test_registry_pins_qwen_spec(monkeypatch):
     assert spec.repo == "mlx-community/Qwen3.5-9B-MLX-8bit"
     assert spec.revision == "84f7c2deea248d8df56240f88102def51c7ed5d6"
     assert spec.min_ram_bytes == 16 * 1024**3
-    assert spec.post_load is None
+    assert QWEN_35_9B not in provider._POST_LOAD_HOOKS
 
 
 def test_registry_pins_gemma4_spec(monkeypatch):
@@ -277,7 +285,10 @@ def test_registry_pins_gemma4_spec(monkeypatch):
     assert spec.repo == "mlx-community/gemma-4-26b-a4b-it-4bit"
     assert spec.revision == "efbeee6e582ebfd06abc9d65e90839c4b5d2116b"
     assert spec.min_ram_bytes == 24 * 1024**3
-    assert spec.post_load is provider._gemma4_post_load
+    assert (
+        provider._POST_LOAD_HOOKS[provider.GEMMA4_26B_A4B_4BIT]
+        is provider._gemma4_post_load
+    )
 
 
 @pytest.mark.parametrize("suffix", ["REPO", "REVISION"])
@@ -328,7 +339,6 @@ def test_cache_holds_multiple_models_independently(monkeypatch):
         repo="example/test-mlx",
         revision="test-rev",
         min_ram_bytes=1,
-        post_load=None,
     )
     monkeypatch.setitem(provider._MLX_MODEL_REGISTRY, "test:other", other_spec)
 
@@ -349,18 +359,7 @@ def test_post_load_runs_once_before_cache(monkeypatch):
     provider = _provider(monkeypatch)
     stub = _install_mlx_stub(monkeypatch)
     hook = MagicMock()
-    base_spec = provider._MLX_MODEL_REGISTRY[QWEN_35_9B]
-    monkeypatch.setitem(
-        provider._MLX_MODEL_REGISTRY,
-        QWEN_35_9B,
-        provider.MLXModelSpec(
-            name=base_spec.name,
-            repo=base_spec.repo,
-            revision=base_spec.revision,
-            min_ram_bytes=base_spec.min_ram_bytes,
-            post_load=hook,
-        ),
-    )
+    monkeypatch.setitem(provider._POST_LOAD_HOOKS, QWEN_35_9B, hook)
 
     provider._load_model(QWEN_35_9B)
     provider._load_model(QWEN_35_9B)
@@ -373,17 +372,10 @@ def test_post_load_exception_leaves_cache_empty(monkeypatch):
 
     provider = _provider(monkeypatch)
     _install_mlx_stub(monkeypatch)
-    base_spec = provider._MLX_MODEL_REGISTRY[QWEN_35_9B]
     monkeypatch.setitem(
-        provider._MLX_MODEL_REGISTRY,
+        provider._POST_LOAD_HOOKS,
         QWEN_35_9B,
-        provider.MLXModelSpec(
-            name=base_spec.name,
-            repo=base_spec.repo,
-            revision=base_spec.revision,
-            min_ram_bytes=base_spec.min_ram_bytes,
-            post_load=MagicMock(side_effect=RuntimeError("post-load broke")),
-        ),
+        MagicMock(side_effect=RuntimeError("post-load broke")),
     )
 
     with pytest.raises(RuntimeError, match="post-load broke"):
@@ -396,10 +388,11 @@ def test_is_mlx_available_for_model_low_ram_includes_model_name(monkeypatch):
     from solstone.think.models import QWEN_35_9B
 
     provider = _provider(monkeypatch)
-    monkeypatch.setattr(provider.platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(provider.platform, "machine", lambda: "arm64")
+    install = _install_module()
+    monkeypatch.setattr(install.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(install.platform, "machine", lambda: "arm64")
     monkeypatch.setattr(
-        provider.psutil,
+        install.psutil,
         "virtual_memory",
         lambda: SimpleNamespace(total=8 * 1024**3),
     )
@@ -417,10 +410,11 @@ def test_is_mlx_available_for_model_low_ram_includes_model_name(monkeypatch):
 
 def test_is_mlx_available_for_gemma4_low_ram_includes_model_name(monkeypatch):
     provider = _provider(monkeypatch)
-    monkeypatch.setattr(provider.platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(provider.platform, "machine", lambda: "arm64")
+    install = _install_module()
+    monkeypatch.setattr(install.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(install.platform, "machine", lambda: "arm64")
     monkeypatch.setattr(
-        provider.psutil,
+        install.psutil,
         "virtual_memory",
         lambda: SimpleNamespace(total=16 * 1024**3),
     )
@@ -455,15 +449,16 @@ def test_snapshot_missing_error_contains_repo_and_revision(monkeypatch):
 def test_gemma4_post_load_writes_all_patch_attributes(monkeypatch):
     provider = _provider(monkeypatch)
     model, processor = _gemma4_stubs()
+    budget = provider._GEMMA4_SOFT_TOKENS
 
     provider._gemma4_post_load(model, processor)
 
-    assert processor.image_processor.max_soft_tokens == 1120
-    assert processor.image_processor.image_seq_length == 1120
-    assert processor.image_seq_length == 1120
-    assert model.vision_tower.max_patches == 10080
-    assert model.vision_tower.default_output_length == 1120
-    assert model.vision_tower.pooler.default_output_length == 1120
+    assert processor.image_processor.max_soft_tokens == budget
+    assert processor.image_processor.image_seq_length == budget
+    assert processor.image_seq_length == budget
+    assert model.vision_tower.max_patches == budget * 3 * 3
+    assert model.vision_tower.default_output_length == budget
+    assert model.vision_tower.pooler.default_output_length == budget
 
 
 def test_gemma4_post_load_refuses_small_position_embedding(monkeypatch):
@@ -564,12 +559,13 @@ def test_gemma4_post_load_asserts_required_writes_stick(
 def test_gemma4_post_load_skips_missing_conditional_writes(monkeypatch):
     provider = _provider(monkeypatch)
     model, processor = _gemma4_stubs(optional_attrs=False)
+    budget = provider._GEMMA4_SOFT_TOKENS
 
     provider._gemma4_post_load(model, processor)
 
-    assert processor.image_processor.max_soft_tokens == 1120
-    assert model.vision_tower.max_patches == 10080
-    assert model.vision_tower.default_output_length == 1120
+    assert processor.image_processor.max_soft_tokens == budget
+    assert model.vision_tower.max_patches == budget * 3 * 3
+    assert model.vision_tower.default_output_length == budget
     assert not hasattr(processor.image_processor, "image_seq_length")
     assert not hasattr(processor, "image_seq_length")
     assert not hasattr(model.vision_tower, "pooler")

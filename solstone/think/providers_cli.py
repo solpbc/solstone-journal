@@ -201,7 +201,7 @@ async def _run_check(args: argparse.Namespace) -> None:
                 sys.exit(1)
     else:
         providers = list(PROVIDER_REGISTRY.keys())
-        from solstone.think.providers.mlx import is_mlx_platform_supported
+        from solstone.think.providers.mlx_install import is_mlx_platform_supported
 
         if "mlx" in providers and not is_mlx_platform_supported():
             providers.remove("mlx")
