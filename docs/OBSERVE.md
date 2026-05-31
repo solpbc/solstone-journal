@@ -35,8 +35,7 @@ sol observer revoke <name>
 
 | Command | Purpose |
 |---------|---------|
-| `sol observer` | Screen and audio capture (auto-detects platform) |
-| `sol observe-linux` | Screen and audio capture on Linux (direct) |
+| `sol observer` | Manage observer registrations (see "Managing observers" above) |
 | `journal transcribe` | Audio transcription with faster-whisper |
 | `journal describe` | Visual analysis of screen recordings |
 | `journal grab` | Walk available screen frames and optionally write frame images |
@@ -76,13 +75,13 @@ SCREENCAST  ←→  IDLE
 
 ## Key Components
 
-- **observer.py** — Unified entry point with platform detection
-- **linux/observer.py** — Linux capture: audio + screencast + activity detection
-- **linux/screencast.py** — XDG Portal screencast with PipeWire + GStreamer
-- **gnome/activity.py** — GNOME-specific activity detection (idle, lock, power save)
-- **observer_client.py** — HTTP upload client for observer → server communication
+Capture components (screen/audio grab, platform activity detection, the upload
+client) live in the per-platform observer repos (`solstone-linux`,
+`solstone-macos`, `solstone-tmux`) — see the Observer Architecture table above.
+What remains in this package is the home-side ingest-and-processing pipeline:
+
 - **sense.py** — File watcher that dispatches transcription and description jobs
-- **transcribe.py** — Audio transcription with faster-whisper and sentence-level embeddings
+- **transcribe/** — Audio transcription with sentence-level embeddings
 - **describe.py** — Vision analysis with Gemini, category-based prompts
 - **categories/** — Category-specific prompts for screen content (see [SCREEN_CATEGORIES.md](SCREEN_CATEGORIES.md))
 

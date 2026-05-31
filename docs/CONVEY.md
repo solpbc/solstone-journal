@@ -111,11 +111,9 @@ and relies on producers to keep `tract`/`event`/`ts` discipline. In a hosted or
 multi-tenant mode, the feed will also need scoping by the observer's authorized
 facet or scope set before forwarding any event.
 
-Manual live check: run
-`SOLSTONE_LIVE_SANDBOX=1 .venv/bin/pytest tests/live/test_observer_sse_live.py -m live`.
-The test starts a sandbox convey server, registers an observer, opens the SSE
-feed through `ObserverClient`, emits a Callosum ping through the bridge, and
-checks that `/app/observer/api/list` flips `live` on and back off.
+The observer SSE feed (`/app/observer/api/list` flipping `live` on/off as a
+Callosum ping flows through the bridge) is exercised by the `apps/observer` SSE
+tests; a registered observer client opens the feed and the bridge emits the ping.
 
 ### Adding a New App
 
