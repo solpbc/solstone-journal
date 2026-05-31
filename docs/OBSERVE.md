@@ -44,7 +44,7 @@ sol observer revoke <name>
 ## Architecture
 
 ```
-Observers (standalone or built-in)
+Observers (standalone, per-platform repos)
        ↓ HTTP multipart upload
 Observer Ingest API (/app/observer/ingest/<key>)
        ↓
@@ -54,24 +54,6 @@ journal sense (coordination)
    ├── journal transcribe → audio.jsonl
    └── journal describe → screen.jsonl
 ```
-
-## Linux Observer State Machine
-
-The Linux observer operates in two modes based on desktop activity:
-
-```
-SCREENCAST  ←→  IDLE
-```
-
-| Mode | Trigger | Captures |
-|------|---------|----------|
-| SCREENCAST | Screen active (not idle/locked/power-save) | Video + Audio |
-| IDLE | Screen idle, locked, or power-save | Audio only (if threshold met) |
-
-**Segment boundaries** are triggered by:
-- Transitions between SCREENCAST and IDLE modes
-- Mute state changes
-- 5-minute window elapsed
 
 ## Key Components
 
@@ -87,11 +69,13 @@ What remains in this package is the home-side ingest-and-processing pipeline:
 
 ## Standalone Observers
 
-**Tmux capture** is handled by the `solstone-tmux` package, which runs as its own systemd user service. See `solstone-tmux` repo for setup instructions.
+Each observer is a standalone package in its own repo (see the Observer Architecture table above), with its own capture internals and lifecycle:
 
-**macOS capture** is handled by the `solstone-macos` native Swift app. See `solstone-macos` repo.
+- **`solstone-linux`** — screen + audio capture on Linux; runs as a systemd user service.
+- **`solstone-macos`** — screen + audio capture on macOS; native Swift menu-bar app.
+- **`solstone-tmux`** — tmux terminal-session capture; runs as a systemd user service.
 
-Both upload segments via the same HTTP ingest API used by the built-in Linux observer.
+All upload segments via the same HTTP ingest API (`/app/observer/ingest/<key>`).
 
 ## Output Formats
 
