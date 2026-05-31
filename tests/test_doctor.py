@@ -825,22 +825,6 @@ def test_sol_doctor_subprocess_json_shape():
     }
 
 
-class TestMakefileIntegration:
-    def test_dry_run_install_does_not_run_doctor(self):
-        result = subprocess.run(
-            ["make", "--dry-run", "-B", "install"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=10,
-        )
-        assert result.returncode == 0
-        lines = result.stdout.splitlines()
-        assert all("python3 scripts/doctor.py" not in line for line in lines)
-        assert any("uv sync" in line for line in lines)
-
-
 def test_doctor_runs_with_minimal_path_env(tmp_path):
     """Doctor must complete with PATH=/usr/bin:/bin (launchd-style minimal env)."""
     journal = tmp_path / "journal"

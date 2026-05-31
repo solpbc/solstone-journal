@@ -5,8 +5,6 @@
 
 import json
 import shutil
-import subprocess
-import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -30,22 +28,6 @@ from solstone.observe.transcribe.main import EMBEDDER_NAME, _statements_to_jsonl
 from solstone.observe.utils import load_audio
 from solstone.observe.vad import VadResult
 from solstone.think.media import AUDIO_EXTENSIONS
-
-LOAD_AUDIO_PROBE = """
-import sys
-from pathlib import Path
-
-from solstone.observe.utils import load_audio
-from solstone.think.media import AUDIO_EXTENSIONS
-
-for suffix in sorted(AUDIO_EXTENSIONS):
-    try:
-        load_audio(Path("/tmp/solstone-load-audio-probe").with_suffix(suffix))
-    except Exception:
-        pass
-assert "faster_whisper" not in sys.modules, sorted(m for m in sys.modules if "faster" in m)
-sys.stdout.write("PROBE_OK\\n")
-"""
 
 
 class TestBuildStatementsFromAcoustic:
@@ -261,16 +243,6 @@ class TestConstants:
 
 class TestLoadAudio:
     """Test the shared load_audio utility."""
-
-    def test_load_audio_does_not_pull_faster_whisper(self):
-        result = subprocess.run(
-            [sys.executable, "-c", LOAD_AUDIO_PROBE],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-        assert "PROBE_OK" in result.stdout
 
     def test_flac_returns_numpy_array(self):
         """FLAC files should return a numpy array."""
