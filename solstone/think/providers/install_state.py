@@ -29,7 +29,7 @@ class InstallStatus(TypedDict):
     install_error: str | None
 
 
-_InstallScope = Literal["bundled", "mlx"]
+_InstallScope = Literal["bundled"]
 
 INSTALL_STATE_NO_PROGRESS_SECONDS = 60
 IN_FLIGHT_STATES: frozenset[InstallState] = frozenset(

@@ -25,6 +25,7 @@ from solstone.think.models import (
     LOCAL_MODEL,
     PROMPT_PATHS,
     PROVIDER_DEFAULTS,
+    QWEN_35_9B,
     TIER_FLASH,
     TIER_LITE,
     TIER_PRO,
@@ -122,8 +123,9 @@ def test_calc_token_cost_unknown_model():
     assert result is None
 
 
-def test_get_model_provider_gemma4_is_mlx():
-    assert get_model_provider(GEMMA4_26B_A4B_4BIT) == "mlx"
+def test_get_model_provider_mlx_backend_models_are_local():
+    assert get_model_provider(GEMMA4_26B_A4B_4BIT) == "local"
+    assert get_model_provider(QWEN_35_9B) == "local"
 
 
 def test_calc_token_cost_gemma4_zero_cost():

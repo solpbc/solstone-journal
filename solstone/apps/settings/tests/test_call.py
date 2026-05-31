@@ -284,14 +284,6 @@ class TestProvidersShow:
                 "cogitate_ready": True,
                 "issues": [],
             },
-            "mlx": {
-                "configured": False,
-                "generate_ready": False,
-                "cogitate_ready": False,
-                "cogitate_cli": "",
-                "cogitate_cli_found": False,
-                "issues": [],
-            },
             "local": {
                 "configured": False,
                 "generate_ready": False,
@@ -318,7 +310,13 @@ class TestProvidersShow:
             )
 
         assert result.exit_code == 0
-        assert "local: binary_missing" in result.output.splitlines()
+        lines = result.output.splitlines()
+        assert lines == [
+            "anthropic: ANTHROPIC_API_KEY not set",
+            "google: ready",
+            "local: binary_missing",
+            "openai: ready",
+        ]
         assert not result.output.lstrip().startswith("{")
 
 

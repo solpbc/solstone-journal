@@ -18,7 +18,6 @@ Available providers:
 - openai: OpenAI GPT models
 - anthropic: Anthropic Claude models
 - local: bundled on-device llama-server models
-- mlx: MLX local Apple Silicon models
 """
 
 import os
@@ -42,7 +41,6 @@ PROVIDER_REGISTRY: Dict[str, str] = {
     "openai": "solstone.think.providers.openhands",
     "anthropic": "solstone.think.providers.openhands",
     "local": "solstone.think.providers.local",
-    "mlx": "solstone.think.providers.mlx",
 }
 
 # ---------------------------------------------------------------------------
@@ -71,10 +69,6 @@ PROVIDER_METADATA: Dict[str, Dict[str, Any]] = {
     },
     "local": {
         "label": "Local (on-device)",
-        "env_key": "",
-    },
-    "mlx": {
-        "label": "MLX (Local, Apple Silicon)",
         "env_key": "",
     },
 }

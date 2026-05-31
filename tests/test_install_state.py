@@ -290,15 +290,14 @@ def test_write_install_status_preserves_two_providers_in_same_scope(journal_conf
     assert bundled["openai"]["install_error"] == "missing key"
 
 
-def test_write_install_status_creates_mlx_key_chain(journal_config):
-    config_path = journal_config({"providers": {"bundled": {}}})
-    status = transition_state(make_idle_status("qwen3.5:9b"), new_state="installing")
+def test_write_install_status_creates_bundled_key_chain(journal_config):
+    config_path = journal_config({"providers": {}})
+    status = transition_state(make_idle_status("local"), new_state="installing")
 
-    write_install_status(status, scope="mlx")
+    write_install_status(status, scope="bundled")
 
     persisted = json.loads(config_path.read_text(encoding="utf-8"))
-    assert persisted["providers"]["bundled"] == {}
-    assert persisted["providers"]["mlx"]["qwen3.5:9b"]["install_state"] == "installing"
+    assert persisted["providers"]["bundled"]["local"]["install_state"] == "installing"
 
 
 def test_progress_byte_counters_persist_and_round_trip(journal_config):

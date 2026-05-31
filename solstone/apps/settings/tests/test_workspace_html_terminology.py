@@ -56,10 +56,12 @@ def test_workspace_has_no_legacy_install_state_terms():
 
 def test_workspace_provider_iteration_has_single_source_of_truth():
     text = _workspace_text()
-    provider_names = "const PROVIDER_NAMES = ['anthropic', 'openai', 'local', 'mlx']"
+    provider_names = "const PROVIDER_NAMES = ['anthropic', 'openai', 'local']"
+    removed_provider = "'" + "mlx" + "'"
 
     assert provider_names in text
     assert text.count(provider_names) == 1
+    assert removed_provider not in text
 
 
 def test_provider_card_overflow_has_no_hosted_install_actions():

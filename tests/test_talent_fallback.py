@@ -167,40 +167,17 @@ def test_get_backup_provider_none_when_same_as_primary(monkeypatch):
     assert get_backup_provider("generate") is None
 
 
-@pytest.mark.parametrize(
-    ("primary", "expected_backup"),
-    [
-        ("mlx", None),
-        ("google", "anthropic"),
-        ("openai", "anthropic"),
-        ("anthropic", None),
-        ("local", None),
-    ],
-)
-def test_get_backup_provider_generate_local_and_mlx_disable_backup(
-    monkeypatch, primary, expected_backup
-):
+@pytest.mark.parametrize("agent_type", ["generate", "cogitate"])
+def test_get_backup_provider_local_disables_backup(monkeypatch, agent_type):
     monkeypatch.setattr(
         "solstone.think.models.get_config",
         lambda: {
             "providers": {
-                "generate": {"provider": primary, "backup": "anthropic"},
+                agent_type: {"provider": "local", "backup": "anthropic"},
             }
         },
     )
-    assert get_backup_provider("generate") == expected_backup
-
-
-def test_get_backup_provider_cogitate_local_disables_backup(monkeypatch):
-    monkeypatch.setattr(
-        "solstone.think.models.get_config",
-        lambda: {
-            "providers": {
-                "cogitate": {"provider": "local", "backup": "anthropic"},
-            }
-        },
-    )
-    assert get_backup_provider("cogitate") is None
+    assert get_backup_provider(agent_type) is None
 
 
 def test_execute_with_tools_local_failure_does_not_consult_backup(monkeypatch):

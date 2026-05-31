@@ -2441,17 +2441,6 @@ button:focus:not(:focus-visible) {
           <small></small>
         </div>
       </div>
-      <div id="mlxModelRow" class="provider-row provider-model-row" style="display:none">
-        <div class="settings-field">
-          <label for="field-mlx-active-model">model</label>
-          <select id="field-mlx-active-model">
-            <!-- Populated dynamically from registry -->
-          </select>
-          <small></small>
-          <small id="mlxModelIdentifier" style="display:none"></small>
-          <small id="mlxScopeCopy" style="display:none">vision and text on your device. tool-calling agents continue to use your configured cogitate provider.</small>
-        </div>
-      </div>
       <div id="localModelRow" class="provider-row provider-model-row" style="display:none">
         <div class="settings-field">
           <label for="field-local-active-model">local model</label>
@@ -4972,23 +4961,16 @@ function promptReload() {
 let providersData = null;
 let providersPanelPollTimer = null;
 let providersPanelActionPending = false;
-let mlxBootstrapPostStarted = false;
-let mlxModels = [];
 let localBootstrapPostStarted = false;
 let localModels = [];
 let localStatusLoading = false;
 let localStatusError = '';
 
-const PROVIDER_NAMES = ['anthropic', 'openai', 'local', 'mlx'];
+const PROVIDER_NAMES = ['anthropic', 'openai', 'local'];
 const COGITATE_KEY_GUIDANCE = {
   google: 'This provider needs an API key to run agents. Get one at aistudio.google.com, then add it in API keys below.',
   anthropic: 'This provider needs an API key to run agents. Get one at console.anthropic.com, then add it in API keys below.',
   openai: 'This provider needs an API key to run agents. Get one at platform.openai.com, then add it in API keys below.',
-};
-const MLX_SCOPE_COPY = 'vision and text on your device. tool-calling agents continue to use your configured cogitate provider.';
-const MLX_MODEL_LABELS = {
-  'qwen3.5:9b': 'qwen 3.5 — 16 GB Mac',
-  'gemma-4-26b-a4b-it-mlx-4bit': 'gemma 4 (26B) — 24 GB Mac',
 };
 const LOCAL_SCOPE_COPY = 'on-device generate and cogitate using bundled llama-server.';
 const LOCAL_MODEL_LABELS = {
@@ -5000,9 +4982,6 @@ async function loadProviders() {
     const response = await fetch('api/providers');
     providersData = await response.json();
     if (providersData.error) throw new Error(providersData.error);
-    mlxModels = await loadMlxModels();
-    providersData.mlx_models = mlxModels;
-    providersData.mlx_availability = await loadMlxAvailability();
     localModels = await loadLocalModels();
     providersData.local_models = localModels;
     providersData.local_availability = await loadLocalAvailability();
@@ -5011,21 +4990,6 @@ async function loadProviders() {
     console.error('Error loading providers:', err);
     document.getElementById('providerStatus').textContent = 'error loading providers';
   }
-}
-
-async function loadMlxModels() {
-  const response = await fetch('api/mlx/models');
-  const models = await response.json();
-  if (!response.ok) throw new Error(models.detail || models.error || 'MLX models failed');
-  return models;
-}
-
-async function loadMlxAvailability() {
-  const model = encodeURIComponent(getSelectedMlxModel());
-  const response = await fetch(`api/mlx/availability?model=${model}`);
-  const availability = await response.json();
-  if (!response.ok) throw new Error(availability.detail || availability.error || 'MLX availability failed');
-  return availability;
 }
 
 async function loadLocalModels() {
@@ -5057,15 +5021,9 @@ function populateProviders(data) {
       select.innerHTML = '';
       if (data.providers) {
         for (const p of data.providers) {
-          if (type === 'cogitate' && p.name === 'mlx') continue;
           const opt = document.createElement('option');
           opt.value = p.name;
-          opt.textContent = getProviderOptionLabel(p, type);
-          const disabledReason = getProviderOptionDisabledReason(p, type);
-          if (disabledReason) {
-            opt.disabled = true;
-            opt.title = disabledReason;
-          }
+          opt.textContent = p.label;
           select.appendChild(opt);
         }
       }
@@ -5085,7 +5043,6 @@ function populateProviders(data) {
   if (backendSelect) {
     backendSelect.value = data.google_backend || 'auto';
   }
-  populateMlxModelPicker(data);
   populateLocalModelPicker(data);
   // Show/hide vertex fields
   const vertexFields = document.getElementById('vertexFields');
@@ -5240,20 +5197,6 @@ async function recheckLocalStatus() {
   }
 }
 
-function populateMlxModelPicker(data) {
-  const select = document.getElementById('field-mlx-active-model');
-  if (!select) return;
-  const models = data.mlx_models || mlxModels || [];
-  select.innerHTML = '';
-  for (const model of models) {
-    const opt = document.createElement('option');
-    opt.value = model.name;
-    opt.textContent = MLX_MODEL_LABELS[model.name] || model.label || model.name;
-    select.appendChild(opt);
-  }
-  select.value = data.mlx?.active_model || 'qwen3.5:9b';
-}
-
 function populateLocalModelPicker(data) {
   const select = document.getElementById('field-local-active-model');
   if (!select) return;
@@ -5270,7 +5213,7 @@ function populateLocalModelPicker(data) {
 }
 
 function providerKind(providerId) {
-  if (providerId === 'local' || providerId === 'mlx') return 'local-mlx';
+  if (providerId === 'local') return 'local-mlx';
   return 'cloud';
 }
 
@@ -5280,7 +5223,6 @@ function providerPanelStates(data) {
     anthropic: providerStatus.anthropic,
     openai: providerStatus.openai,
     local: data?.local,
-    mlx: data?.mlx,
   };
 }
 
@@ -5293,17 +5235,12 @@ function mergeProviderPanelData(payload) {
   const previous = providersData || {};
   providersData = {
     ...payload,
-    mlx_models: previous.mlx_models || mlxModels,
     local_models: previous.local_models || localModels,
-    mlx_availability: previous.mlx_availability,
     local_availability: previous.local_availability,
   };
 }
 
 function getProviderAvailability(providerId) {
-  if (providerId === 'mlx' && providersData?.mlx_availability) {
-    return { provider: 'mlx', ...providersData.mlx_availability };
-  }
   if (providerId === 'local' && providersData?.local_availability) {
     return { provider: 'local', ...providersData.local_availability };
   }
@@ -5405,10 +5342,6 @@ function providerCardMetaLine(state, kind) {
 
 function localMlxBlockedReason(state, availability) {
   if (!availability || availability.available !== false || !availability.reason) return '';
-  if (availability.provider === 'mlx') {
-    if (availability.model_present || availability.reason === 'model snapshot not present') return '';
-    return availability.reason;
-  }
   if (availability.provider === 'local') {
     const installableReasons = [
       'local runtime is not installed',
@@ -5581,10 +5514,6 @@ function runProviderAction(providerId, action) {
     startLocalBootstrap();
     return;
   }
-  if (providerId === 'mlx') {
-    startMlxBootstrap();
-    return;
-  }
   providersPanelActionPending = false;
   syncProvidersPanelPolling();
 }
@@ -5623,9 +5552,6 @@ async function pollProvidersPanel() {
     mergeProviderPanelData(payload);
     providersPanelActionPending = false;
     populateProviderStateOnly(providersData);
-    if (payload?.mlx?.install_state === 'installed') {
-      refreshMlxAvailability();
-    }
     if (payload?.local?.install_state === 'installed') {
       refreshLocalAvailability();
     }
@@ -5641,34 +5567,6 @@ function populateProviderStateOnly(data) {
   renderProvidersPanel(data);
   syncProviderModelRows();
   renderLocalCogitateStatus();
-}
-
-function getMlxAvailability() {
-  return providersData?.mlx_availability || null;
-}
-
-function getProviderOptionDisabledReason(provider, type) {
-  if (!provider || provider.name !== 'mlx') return '';
-  const availability = getMlxAvailability();
-  if (availability && availability.available === false) {
-    return availability.reason || 'MLX unavailable';
-  }
-  return '';
-}
-
-function getProviderOptionLabel(provider, type) {
-  let label = provider.label;
-  if (provider.name !== 'mlx') return label;
-  const availability = getMlxAvailability();
-  if (availability && availability.available === false) {
-    label += ' — unavailable';
-  }
-  return label;
-}
-
-function getSelectedMlxModel() {
-  const select = document.getElementById('field-mlx-active-model');
-  return select?.value || providersData?.mlx?.active_model || 'qwen3.5:9b';
 }
 
 function getSelectedLocalModel() {
@@ -5688,37 +5586,6 @@ function formatMlxBytes(value) {
   }
   const digits = size >= 10 ? 1 : 2;
   return `${size.toFixed(digits)} ${units[unitIndex]}`;
-}
-
-function updateMlxModelIdentifier() {
-  const identifier = document.getElementById('mlxModelIdentifier');
-  const scopeCopy = document.getElementById('mlxScopeCopy');
-  const provider = document.getElementById('field-generate-provider')?.value;
-  const modelPresent = !!getMlxAvailability()?.model_present;
-  if (scopeCopy) {
-    scopeCopy.textContent = MLX_SCOPE_COPY;
-    scopeCopy.style.display = provider === 'mlx' ? '' : 'none';
-  }
-  if (!identifier) return;
-  if (provider === 'mlx' && modelPresent) {
-    identifier.textContent = `model: ${getSelectedMlxModel()}`;
-    identifier.style.display = '';
-  } else {
-    identifier.textContent = '';
-    identifier.style.display = 'none';
-  }
-}
-
-async function refreshMlxAvailability() {
-  try {
-    const availability = await loadMlxAvailability();
-    providersData = providersData || {};
-    providersData.mlx_availability = availability;
-    updateMlxModelIdentifier();
-    renderProvidersPanel(providersData);
-  } catch (err) {
-    console.error('Error refreshing MLX availability:', err);
-  }
 }
 
 function getLocalAvailability() {
@@ -5751,40 +5618,15 @@ function isLocalProviderSelected() {
 }
 
 function syncProviderModelRows() {
-  const mlxRow = document.getElementById('mlxModelRow');
   const localRow = document.getElementById('localModelRow');
-  if (mlxRow) {
-    mlxRow.style.display = document.getElementById('field-generate-provider')?.value === 'mlx' ? '' : 'none';
-  }
   if (localRow) {
     localRow.style.display = isLocalProviderSelected() ? '' : 'none';
   }
-  updateMlxModelIdentifier();
   updateLocalModelIdentifier();
 }
 
 function syncProviderAutoFire() {
-  maybeAutoStartMlxBootstrap();
   maybeAutoStartLocalBootstrap();
-}
-
-function maybeAutoStartMlxBootstrap() {
-  if (document.getElementById('field-generate-provider')?.value !== 'mlx') {
-    mlxBootstrapPostStarted = false;
-    return;
-  }
-  const state = providersData?.mlx || {};
-  const availability = getProviderAvailability('mlx');
-  if (
-    state.install_state === 'idle'
-    && availability
-    && !availability.model_present
-    && !localMlxBlockedReason(state, availability)
-    && !mlxBootstrapPostStarted
-  ) {
-    mlxBootstrapPostStarted = true;
-    startMlxBootstrap();
-  }
 }
 
 function maybeAutoStartLocalBootstrap() {
@@ -5803,37 +5645,6 @@ function maybeAutoStartLocalBootstrap() {
   ) {
     localBootstrapPostStarted = true;
     startLocalBootstrap();
-  }
-}
-
-async function startMlxBootstrap() {
-  providersPanelActionPending = true;
-  syncProvidersPanelPolling();
-  try {
-    const model = encodeURIComponent(getSelectedMlxModel());
-    const response = await fetch(`api/mlx/bootstrap?model=${model}`, { method: 'POST' });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail || payload.error || 'MLX bootstrap failed');
-    providersData = providersData || {};
-    providersData.mlx = {
-      ...(providersData.mlx || {}),
-      install_state: payload.install_state || 'resolving',
-      install_error: null,
-    };
-    renderProvidersPanel(providersData);
-    syncProvidersPanelPolling();
-  } catch (err) {
-    mlxBootstrapPostStarted = false;
-    providersPanelActionPending = false;
-    providersData = providersData || {};
-    providersData.mlx = {
-      ...(providersData.mlx || {}),
-      install_state: 'failed',
-      install_error: err.message,
-    };
-    renderProvidersPanel(providersData);
-    syncProvidersPanelPolling();
-    notifyError('MLX bootstrap failed', err.message);
   }
 }
 
@@ -6151,13 +5962,9 @@ for (const type of ['generate', 'cogitate']) {
             body: JSON.stringify({ [type]: { [field]: value } }),
           }],
           onSuccess: (result) => {
-            const previousMlxAvailability = providersData?.mlx_availability;
-            const previousMlxModels = providersData?.mlx_models || mlxModels;
             const previousLocalAvailability = providersData?.local_availability;
             const previousLocalModels = providersData?.local_models || localModels;
             providersData = result;
-            providersData.mlx_availability = previousMlxAvailability;
-            providersData.mlx_models = previousMlxModels;
             providersData.local_availability = previousLocalAvailability;
             providersData.local_models = previousLocalModels;
             if (field === 'provider') {
@@ -6165,13 +5972,6 @@ for (const type of ['generate', 'cogitate']) {
               if (type === 'cogitate') {
                 renderLocalCogitateStatus();
               }
-            }
-            if (type === 'generate' && (field === 'provider' || field === 'tier')) {
-              syncProviderModelRows();
-              refreshMlxAvailability().then(() => {
-                syncProviderAutoFire();
-                syncProvidersPanelPolling();
-              });
             }
             if (field === 'provider' || field === 'tier') {
               syncProviderModelRows();
@@ -6189,48 +5989,6 @@ for (const type of ['generate', 'cogitate']) {
     });
   }
 }
-
-document.getElementById('field-mlx-active-model')?.addEventListener('change', async function() {
-  const select = this;
-  const model = select.value;
-  const errorHost = prepareFieldErrorHost(select);
-  clearProvidersPanelPollTimer();
-  mlxBootstrapPostStarted = false;
-  providersData = providersData || {};
-  providersData.mlx = providersData.mlx || {};
-  providersData.mlx.active_model = model;
-  try {
-    providersData.mlx_availability = await loadMlxAvailability();
-    syncProviderModelRows();
-    renderProvidersPanel(providersData);
-    await window.saveControl({
-      el: select,
-      errorHost,
-      fetchArgs: ['api/providers', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mlx: { active_model: model } }),
-      }],
-      onSuccess: (result) => {
-        const previousMlxAvailability = providersData?.mlx_availability;
-        const previousMlxModels = providersData?.mlx_models || mlxModels;
-        providersData = result;
-        providersData.mlx_availability = previousMlxAvailability;
-        providersData.mlx_models = previousMlxModels;
-        if (!providersData.mlx) providersData.mlx = {};
-        providersData.mlx.active_model = model;
-        populateMlxModelPicker(providersData);
-        syncProviderModelRows();
-        renderProvidersPanel(providersData);
-        syncProviderAutoFire();
-        syncProvidersPanelPolling();
-        showFieldStatus(select, 'saved');
-      },
-    });
-  } catch (err) {
-    notifyError('MLX model save failed', err.message);
-  }
-});
 
 document.getElementById('field-local-active-model')?.addEventListener('change', async function() {
   const select = this;
@@ -6267,9 +6025,7 @@ document.getElementById('field-google-backend')?.addEventListener('change', asyn
         body: JSON.stringify({ google_backend: value }),
       }],
       onSuccess: (result) => {
-        const previousMlxAvailability = providersData?.mlx_availability;
         providersData = result;
-        providersData.mlx_availability = previousMlxAvailability;
         showFieldStatus(this, 'saved');
         const vf = document.getElementById('vertexFields');
         if (vf) vf.style.display = value === 'vertex' ? '' : 'none';

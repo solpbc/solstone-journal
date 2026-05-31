@@ -23,6 +23,7 @@ INSTALL_STATUS_FIELDS = {
     "install_error",
 }
 CANONICAL_INSTALL_STATES = set(get_args(InstallState))
+REMOVED_PROVIDER = "mlx"
 
 
 @pytest.fixture
@@ -44,17 +45,15 @@ def _assert_install_status(payload: dict) -> None:
     assert payload["install_state"] in CANONICAL_INSTALL_STATES
 
 
-def test_get_providers_includes_local_and_mlx_install_state(settings_client):
+def test_get_providers_includes_local_install_state(settings_client):
     response = settings_client.get("/app/settings/api/providers")
 
     assert response.status_code == 200
     payload = response.get_json()
     assert "bundled" not in payload
     assert isinstance(payload["local"], dict)
-    assert isinstance(payload["mlx"], dict)
-    assert "active_model" in payload["mlx"]
+    assert REMOVED_PROVIDER not in payload
     _assert_install_status(payload["local"])
-    _assert_install_status(payload["mlx"])
 
 
 def test_providers_payload_omits_bundled_block(settings_client):
@@ -73,9 +72,8 @@ def test_providers_payload_omits_bundled_block(settings_client):
             "issues",
         }
     assert provider_status["local"]["cogitate_cli"] == "llama-server"
-    assert "active_model" in payload["mlx"]
+    assert REMOVED_PROVIDER not in payload
     _assert_install_status(payload["local"])
-    _assert_install_status(payload["mlx"])
 
 
 def test_providers_payload_omits_auth(settings_client):

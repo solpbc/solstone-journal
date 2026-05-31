@@ -193,11 +193,6 @@ PROVIDER_DEFAULTS: Dict[str, Dict[int, str]] = {
         TIER_FLASH: LOCAL_MODEL,
         TIER_LITE: LOCAL_MODEL,
     },
-    "mlx": {
-        TIER_PRO: MLX_PRO,
-        TIER_FLASH: MLX_FLASH,
-        TIER_LITE: MLX_LITE,
-    },
 }
 
 TYPE_DEFAULTS: Dict[str, Dict[str, Any]] = {
@@ -783,9 +778,9 @@ def get_model_provider(model: str) -> str:
     model_lower = model.lower()
 
     if model_lower == GEMMA4_26B_A4B_4BIT.lower():
-        return "mlx"
+        return "local"
     elif model_lower == QWEN_35_9B.lower():
-        return "mlx"
+        return "local"
     elif model_lower.startswith("local/"):
         return "local"
     elif model_lower.startswith("gpt"):
@@ -848,7 +843,7 @@ def calc_token_cost(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if provider_id == "unknown":
             return None
 
-        if provider_id in {"local", "mlx"}:
+        if provider_id == "local":
             return {
                 "total_cost": 0.0,
                 "input_cost": 0.0,
@@ -1261,8 +1256,6 @@ def get_backup_provider(agent_type: str) -> Optional[str]:
     primary_provider = type_config.get("provider", type_defaults["provider"])
     backup = type_config.get("backup", type_defaults["backup"])
     if primary_provider == "local":
-        return None
-    if agent_type == "generate" and primary_provider == "mlx":
         return None
     if backup == primary_provider:
         return None

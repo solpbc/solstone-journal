@@ -3,7 +3,6 @@
     "anthropic": false,
     "google": false,
     "local": false,
-    "mlx": false,
     "openai": false
   },
   "cogitate": {
@@ -478,16 +477,6 @@
     "progress_bytes_received": null,
     "progress_bytes_total": null
   },
-  "mlx": {
-    "active_model": "qwen3.5:9b",
-    "install_error": null,
-    "install_state": "idle",
-    "last_progress_at": null,
-    "last_transition_at": null,
-    "name": "qwen3.5:9b",
-    "progress_bytes_received": null,
-    "progress_bytes_total": null
-  },
   "provider_status": {
     "anthropic": {
       "cogitate_ready": false,
@@ -520,14 +509,6 @@
       ],
       "selected": true
     },
-    "mlx": {
-      "cogitate_cli": "",
-      "cogitate_cli_found": false,
-      "cogitate_ready": false,
-      "configured": false,
-      "generate_ready": false,
-      "issues": []
-    },
     "openai": {
       "cogitate_ready": false,
       "configured": false,
@@ -543,11 +524,6 @@
       "env_key": "",
       "label": "Local (on-device)",
       "name": "local"
-    },
-    {
-      "env_key": "",
-      "label": "MLX (Local, Apple Silicon)",
-      "name": "mlx"
     },
     {
       "env_key": "ANTHROPIC_API_KEY",
