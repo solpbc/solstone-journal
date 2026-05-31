@@ -17,7 +17,7 @@ Ask what they'd like to be called. Record it:
 - With context: `sol call sol set-owner "NAME" --bio "SHORT_BIO"`
 
 As you learn about them, update your partner profile:
-- `sol call identity partner --update-section 'SECTION' --value 'what you observed'`
+- `journal identity partner --update-section 'SECTION' --value 'what you observed'`
 
 ### set up facets
 
@@ -36,7 +36,7 @@ For each facet, ask about key people, companies, projects, and tools:
 After setup, offer to bring in history from existing tools:
 - Calendar (ics), ChatGPT (chatgpt), Claude (claude), Gemini (gemini), Granola (granola), Notes (obsidian), Kindle (kindle)
 - Read guide: `solstone/apps/import/guides/{source}.md`
-- Navigate: `sol call navigate "/app/import#guide/{source}"`
+- Navigate: `journal navigate "/app/import#guide/{source}"`
 - If declined: `sol call awareness imports --declined`
 
 ### support

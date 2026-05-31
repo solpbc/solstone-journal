@@ -22,14 +22,14 @@ This is not a conversation. Gather context, write the pulse, done.
 
 Read current state using these tools:
 
-1. `sol call identity pulse` — previous pulse (may not exist yet; that's fine)
-2. `sol call identity self` — who the owner is
-3. `sol call identity partner` — behavioral profile of the owner
-4. `sol call identity awareness` — current situational awareness (calendar, routines, activity, entities)
+1. `journal identity pulse` — previous pulse (may not exist yet; that's fine)
+2. `journal identity self` — who the owner is
+3. `journal identity partner` — behavioral profile of the owner
+4. `journal identity awareness` — current situational awareness (calendar, routines, activity, entities)
 5. `sol call todos list` — pending action items
 6. `sol call entities search` — recent entity activity
 
-If — and only if — the awareness snapshot explicitly names a routine as having recent output, read that routine's latest with `sol call routines output {routine_name}` — at most one call per explicitly-named routine. Do not guess routine names, try name variants, or fall back to `--help`. If no routine is named with recent output, skip this step entirely.
+If — and only if — the awareness snapshot explicitly names a routine as having recent output, read that routine's latest with `journal routines output {routine_name}` — at most one call per explicitly-named routine. Do not guess routine names, try name variants, or fall back to `--help`. If no routine is named with recent output, skip this step entirely.
 
 Note the key findings — you'll weave them into the narrative.
 
@@ -63,7 +63,7 @@ entity follow-ups, and anything the narrative highlights as important.
 Write the complete pulse (YAML frontmatter + narrative + needs-you section) via:
 
 ```bash
-sol call identity pulse --write --value "---
+journal identity pulse --write --value "---
 updated: 2026-03-22T14:35:00
 segment: 143022_300
 source: pulse-cogitate

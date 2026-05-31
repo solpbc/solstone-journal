@@ -45,7 +45,7 @@ def _write_probe_script(tmp_path: Path, body: str) -> Path:
 
 
 def test_install_hint_literal() -> None:
-    assert local_install.install_hint() == "sol call settings providers install local"
+    assert local_install.install_hint() == "journal install-provider local"
 
 
 def test_install_llama_server_relocates_binary_and_libraries(tmp_path, monkeypatch):

@@ -217,7 +217,7 @@ def test_startup_submits_digest_once():
     mod._maybe_submit_startup_digest(no_cortex=False)
     mod._maybe_submit_startup_digest(no_cortex=False)
 
-    submit.assert_called_once_with(["sol", "call", "identity", "digest"])
+    submit.assert_called_once_with(["journal", "identity", "digest"])
     assert mod._digest_submitted_this_boot is True
 
 

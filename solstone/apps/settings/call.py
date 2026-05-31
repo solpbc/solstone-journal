@@ -494,17 +494,11 @@ def providers_show(
 
 @providers_app.command("install")
 def providers_install(
-    name: str = typer.Argument(..., help="Provider name."),
+    name: str = typer.Argument(None, help="Provider name."),
 ) -> None:
-    """Install or retry the local provider runtime."""
-    from solstone.think.providers import local_install
-
-    if name != "local":
-        raise typer.BadParameter(
-            f"unsupported provider {name!r}; only 'local' is supported; "
-            "cogitate runs baseline for hosted providers"
-        )
-    typer.echo(json.dumps(local_install.install_local(), indent=2))
+    """Moved to `journal install-provider`."""
+    typer.echo("Moved to `journal install-provider` — run that instead.", err=True)
+    raise typer.Exit(2)
 
 
 @providers_app.command("set-generate")

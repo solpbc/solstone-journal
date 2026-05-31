@@ -13,7 +13,7 @@ You are preparing a weekly energy audit — a reflection on where the owner's ti
 1. Use `sol call activities list --source anticipated --day YYYYMMDD` for each of the past 7 days to map scheduled load.
 2. Use `sol call journal search "" --day-from START --day-to END -n 30` to survey activity patterns.
 3. Use `sol call todos list` to compare intended work against actual activity.
-4. Use `sol call identity pulse` for the current state narrative.
+4. Use `journal identity pulse` for the current state narrative.
 5. Use `sol call journal news FACET --day YYYYMMDD` for representative days across active facets.
 
 ## Synthesize

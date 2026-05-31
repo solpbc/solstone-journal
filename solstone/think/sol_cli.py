@@ -60,7 +60,7 @@ JOURNAL_ACCESS_CMD_ERROR = (
     "('journal' surfaces only journal-service commands; see 'journal --help'.)"
 )
 SOL_SERVICE_CMD_REMOVED_ERROR = (
-    "'{cmd}' moved to 'journal {cmd}' in solstone 0.4.0 — run that instead.\n"
+    "'{cmd}' moved to 'journal {cmd}' — run that instead.\n"
     "('sol' is the journal-access surface; 'journal' surfaces journal-service "
     "commands; see 'journal --help'.)"
 )
@@ -87,6 +87,7 @@ COMMANDS: dict[str, Command] = {
     "doctor": Command("solstone.think.doctor", "universal"),
     "config": Command("solstone.think.config_cli", "service"),
     "install-models": Command("solstone.think.install_models", "service"),
+    "install-provider": Command("solstone.think.install_provider", "service"),
     "skills": Command("solstone.think.skills_cli", "access"),
     "password": Command("solstone.think.password_cli", "service"),
     "streams": Command("solstone.think.streams", "access"),
@@ -108,6 +109,9 @@ COMMANDS: dict[str, Command] = {
     "link": Command("solstone.think.link", "access"),
     "spl": Command("solstone.think.spl", "service"),
     "call": Command("solstone.think.call", "access"),
+    "navigate": Command("solstone.think.tools.navigate", "service"),
+    "routines": Command("solstone.think.tools.routines", "service"),
+    "identity": Command("solstone.think.tools.sol", "service"),
     "engage": Command("solstone.think.engage", "access"),
     "chat": Command("solstone.think.chat_cli", "access"),
     "heartbeat": Command("solstone.think.heartbeat", "service"),

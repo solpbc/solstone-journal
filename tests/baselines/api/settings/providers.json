@@ -505,7 +505,7 @@
       "issues": [
         "binary_missing",
         "model_missing",
-        "run `sol call settings providers install local`"
+        "run `journal install-provider local`"
       ],
       "selected": true
     },

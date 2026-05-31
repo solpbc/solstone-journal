@@ -16,7 +16,7 @@ Gather evidence from the journal first, then synthesize a reflective but actiona
 2. Use `sol call journal search "" --day-from $day_minus_7_YYYYMMDD --day-to $day_YYYYMMDD -n 25` to find notable entries and themes.
 3. Use `sol call todos list` to review outstanding work and infer what likely got completed or deferred.
 4. Use `sol call activities list --source anticipated --day YYYYMMDD` across the last 7 days to understand scheduled load and major time commitments.
-5. Use `sol call identity pulse` for the current state narrative.
+5. Use `journal identity pulse` for the current state narrative.
 6. Use `sol call journal news FACET --day YYYYMMDD` for any facet that needs a richer summary.
 
 ## Synthesize

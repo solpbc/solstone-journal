@@ -223,6 +223,6 @@ def render_routine_suggestion() -> str:
         "- Mention this ONCE, naturally, at the end of your response\n"
         '- Frame as observation: "I\'ve noticed you often... — would a routine help?"\n'
         "- If $name declines or ignores, do not bring it up again this conversation\n"
-        "- After suggesting, run: `sol call routines suggest-respond "
+        "- After suggesting, run: `journal routines suggest-respond "
         f"{suggestion['template_name']} --accepted` or `--declined`"
     )

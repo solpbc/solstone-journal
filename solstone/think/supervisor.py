@@ -1025,7 +1025,7 @@ def _maybe_submit_startup_digest(*, no_cortex: bool) -> None:
     ):
         return
 
-    _task_queue.submit(["sol", "call", "identity", "digest"])
+    _task_queue.submit(["journal", "identity", "digest"])
     _digest_submitted_this_boot = True
     logging.info("startup: submitted identity digest")
 

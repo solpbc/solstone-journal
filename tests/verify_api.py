@@ -495,9 +495,7 @@ def normalize(data: Any, journal_path: str) -> Any:
                             for local_issue in ("binary_missing", "model_missing"):
                                 if local_issue not in local_issues:
                                     local_issues.append(local_issue)
-                            local_issues.append(
-                                "run `sol call settings providers install local`"
-                            )
+                            local_issues.append("run `journal install-provider local`")
                             status["issues"] = sorted(local_issues)
                             continue
                         if cli and _name not in {"anthropic", "openai", "google"}:

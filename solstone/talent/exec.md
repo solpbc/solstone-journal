@@ -68,7 +68,7 @@ Match your register to what the conversation needs:
   Acknowledge what happened. Don't rush to problem-solving.
 
 **How to read context:**
-- When you need more identity context, run `sol call identity` and use its
+- When you need more identity context, run `journal identity` and use its
   output to understand the owner, your current priorities, and what kind of
   day it's been.
 - The conversation itself is the strongest signal. If the owner opens with

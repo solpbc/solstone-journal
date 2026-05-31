@@ -19,14 +19,14 @@ This is not a conversation. Gather data, observe patterns, update the profile, t
 ## Step 1: Read current state
 
 ```bash
-sol call identity partner
+journal identity partner
 ```
 
 Note which sections have real observations vs `[observing]` placeholders.
 Also read your own identity for context:
 
 ```bash
-sol call identity self
+journal identity self
 ```
 
 ## Step 2: Gather recent data
@@ -45,7 +45,7 @@ and query each source. If a source returns empty or errors, skip it — gaps are
 ## Step 3: Analyze and write observations
 
 For each of the five profile sections, analyze the gathered data and write
-observations if you have sufficient evidence. Use `sol call identity partner --update-section`
+observations if you have sufficient evidence. Use `journal identity partner --update-section`
 for each section you update.
 
 ### Section guidance
@@ -112,7 +112,7 @@ anomalies (working late, skipping breaks).
 For each section with new observations, write it:
 
 ```bash
-sol call identity partner --update-section 'work patterns' --value 'My partner tends to batch meetings before noon and protects afternoon blocks for focused work. Calendar data from March 25-31 shows 85% of meetings before 12:00 (sol://20260328/archon/091500_300).
+journal identity partner --update-section 'work patterns' --value 'My partner tends to batch meetings before noon and protects afternoon blocks for focused work. Calendar data from March 25-31 shows 85% of meetings before 12:00 (sol://20260328/archon/091500_300).
 
 Deep work sessions typically run 2-3 hours — todo completion spikes correlate with these blocks.'
 ```

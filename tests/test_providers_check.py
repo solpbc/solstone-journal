@@ -424,7 +424,7 @@ def test_check_cogitate_local_missing_runtime_names_local_install_hint(monkeypat
     status, msg = asyncio.run(providers_cli._check_cogitate("local", 2, 30))
 
     assert status == "skip"
-    assert "sol call settings providers install local" in msg
+    assert "journal install-provider local" in msg
 
 
 def test_all_skip_exits_zero(tmp_path, monkeypatch):

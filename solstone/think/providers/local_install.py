@@ -131,7 +131,7 @@ def mmproj_path(model_id: str) -> Path | None:
 
 
 def install_hint() -> str:
-    return "sol call settings providers install local"
+    return "journal install-provider local"
 
 
 def _read_local_status() -> InstallStatus:

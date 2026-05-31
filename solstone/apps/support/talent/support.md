@@ -31,7 +31,7 @@ These are non-negotiable:
 - `sol call support diagnose` — Run local diagnostics (no network)
 
 ### Navigation
-- `sol call navigate --path /app/support` — Open the support app
+- `journal navigate --path /app/support` — Open the support app
 
 ## How to Handle Support Requests
 

@@ -336,7 +336,7 @@ def test_build_provider_status_local_launch_failure_adds_probe_detail_and_hint(
 
     assert status["issues"] == [
         f"failed to launch: {detail}",
-        "run `sol call settings providers install local`",
+        "run `journal install-provider local`",
     ]
     assert "server_unhealthy" not in status["issues"]
 
@@ -434,12 +434,9 @@ def test_local_provider_status_carries_install_hint_substring(monkeypatch):
         "binary_missing",
         "model_missing",
         "ram_insufficient",
-        "run `sol call settings providers install local`",
+        "run `journal install-provider local`",
     ]
-    assert any(
-        "sol call settings providers install local" in issue
-        for issue in status["issues"]
-    )
+    assert any("journal install-provider local" in issue for issue in status["issues"])
 
 
 def test_local_server_connect_returns_healthy_service(monkeypatch):

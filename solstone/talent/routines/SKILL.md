@@ -5,12 +5,12 @@ description: >
   commitment audits, meeting prep, or custom automations. Create from
   templates, adjust timing, pause/resume, run now, respond to suggestions.
   TRIGGER: routine, schedule, recurring, automate, daily brief, weekly
-  review, sol call routines create/list/edit/run.
+  review, journal routines create/list/edit/run.
 ---
 
 # Routines CLI Skill
 
-Manage recurring routines. Invoke via Bash: `sol call routines <command> [args...]`. Never expose cron syntax, UUIDs, or CLI internals to the owner.
+Manage recurring routines. Invoke via Bash: `journal routines <command> [args...]`. Never expose cron syntax, UUIDs, or CLI internals to the owner.
 
 ## Template guidance
 
@@ -58,22 +58,22 @@ When no template fits, build a custom routine:
 
 | Intent | Command |
 |--------|---------|
-| Create from template | `sol call routines create --template {template} --timezone {tz}` (add `--facets`, `--cadence` if overridden) |
-| Create custom | `sol call routines create --name "{name}" --instruction "{instruction}" --cadence "{cron}" --timezone {tz}` (add `--facets` if specified) |
-| List all | `sol call routines list` |
-| Show templates | `sol call routines templates` |
-| Pause | `sol call routines edit {name} --enabled false` |
-| Resume | `sol call routines edit {name} --enabled true` |
-| Pause until date | `sol call routines edit {name} --enabled false --resume-date {YYYY-MM-DD}` |
-| Change cadence | `sol call routines edit {name} --cadence "{cron}"` |
-| Change facets | `sol call routines edit {name} --facets "{comma-separated}"` |
-| Change instruction | `sol call routines edit {name} --instruction "{new instruction}"` |
-| Delete | `sol call routines delete {name}` |
-| Run immediately | `sol call routines run {name}` |
-| Read output | `sol call routines output {name}` (add `--date YYYY-MM-DD` for a specific day) |
-| Toggle suggestions | `sol call routines suggestions --enable` or `sol call routines suggestions --disable` |
-| Record response to a suggestion | `sol call routines suggest-respond {template} --accepted` or `--declined` |
-| Show suggestion state | `sol call routines suggest-state` |
+| Create from template | `journal routines create --template {template} --timezone {tz}` (add `--facets`, `--cadence` if overridden) |
+| Create custom | `journal routines create --name "{name}" --instruction "{instruction}" --cadence "{cron}" --timezone {tz}` (add `--facets` if specified) |
+| List all | `journal routines list` |
+| Show templates | `journal routines templates` |
+| Pause | `journal routines edit {name} --enabled false` |
+| Resume | `journal routines edit {name} --enabled true` |
+| Pause until date | `journal routines edit {name} --enabled false --resume-date {YYYY-MM-DD}` |
+| Change cadence | `journal routines edit {name} --cadence "{cron}"` |
+| Change facets | `journal routines edit {name} --facets "{comma-separated}"` |
+| Change instruction | `journal routines edit {name} --instruction "{new instruction}"` |
+| Delete | `journal routines delete {name}` |
+| Run immediately | `journal routines run {name}` |
+| Read output | `journal routines output {name}` (add `--date YYYY-MM-DD` for a specific day) |
+| Toggle suggestions | `journal routines suggestions --enable` or `journal routines suggestions --disable` |
+| Record response to a suggestion | `journal routines suggest-respond {template} --accepted` or `--declined` |
+| Show suggestion state | `journal routines suggest-state` |
 
 Use the routine's name for identification, never UUIDs.
 
@@ -123,8 +123,8 @@ When a routine suggestion appears above, the owner's behavior matches a routine 
 - Frame as an observation: "I've noticed this comes up often — would a routine help?"
 - If the owner declines or shows no interest, drop it immediately. Do not bring it up again this conversation.
 - After the owner responds, record the outcome:
-  - Accepted: `sol call routines suggest-respond {template} --accepted`
-  - Declined: `sol call routines suggest-respond {template} --declined`
+  - Accepted: `journal routines suggest-respond {template} --accepted`
+  - Declined: `journal routines suggest-respond {template} --declined`
 
 **Never:**
 - Suggest a routine without the eligible section in your context
@@ -136,8 +136,8 @@ When a routine suggestion appears above, the owner's behavior matches a routine 
 When the system surfaces a routine suggestion and the owner accepts or declines it, record their response so the suggestion engine doesn't re-surface the same template prematurely:
 
 ```bash
-sol call routines suggest-respond morning-briefing --accepted
-sol call routines suggest-respond weekly-review --declined
+journal routines suggest-respond morning-briefing --accepted
+journal routines suggest-respond weekly-review --declined
 ```
 
 Exactly one of `--accepted` or `--declined` is required. `suggest-state` prints the full JSON state for all templates if you need to inspect what the engine already knows.

@@ -25,7 +25,7 @@ Run `sol health` and check recent health logs with `sol health logs --since 1h`.
 Note any service issues, capture gaps, or pipeline failures.
 
 If you find issues: update agency.md's `## system` section via
-`sol call identity agency --write --value '...'`.
+`journal identity agency --write --value '...'`.
 
 ## Step 2: Check journal quality
 
@@ -40,13 +40,13 @@ with `journal think --segment`. Log the action in agency.md.
 
 If you find issues that are NOT reprocessable segments: add to agency.md only.
 
-If you find curation issues: read current agency.md with `sol call identity agency`,
+If you find curation issues: read current agency.md with `journal identity agency`,
 add entries to the curation section, then write it back with
-`sol call identity agency --write --value '...'`.
+`journal identity agency --write --value '...'`.
 
 ## Step 2.5: Check routine health
 
-Run `sol call routines list` and review recent execution status. Cross-reference
+Run `journal routines list` and review recent execution status. Cross-reference
 with `{journal}/health/routines.log` if needed. Look for:
 - Routines that should have run but didn't (missed cron windows)
 - Repeated failures or timeouts
@@ -57,7 +57,7 @@ routine name and failure pattern.
 
 ## Step 3: Tend agency.md
 
-Read agency.md with `sol call identity agency`. For each open item:
+Read agency.md with `journal identity agency`. For each open item:
 - **Resolved?** Check current state. If fixed, mark `[x]` with date.
 - **Stale?** Open 30+ days with no activity? Flag or remove.
 - **Actionable?** Within autonomous boundaries? Act on it.
@@ -73,18 +73,18 @@ run `sol call speakers suggest` and check for entity duplicates via
 processed, skip the speaker scan and go straight to entity duplicate checks.
 
 Add new curation suggestions to agency.md's `## curation` section (read with
-`sol call identity agency`, update and write back with `sol call identity agency --write --value '...'`).
+`journal identity agency`, update and write back with `journal identity agency --write --value '...'`).
 Do NOT act on entity merges or facet changes — those are suggest-and-wait.
 
 ## Step 5: Review self.md (brief)
 
-Read self.md with `sol call identity self`. Consider:
+Read self.md with `journal identity self`. Consider:
 - Did today's processing reveal a new pattern about the owner?
 - Is anything in self.md now stale or inaccurate?
 
 Update self.md ONLY if you have a genuine new observation from background
 analysis. Most heartbeats should not touch self.md. Use
-`sol call identity self --update-section '<heading>' --value '...'` for targeted updates.
+`journal identity self --update-section '<heading>' --value '...'` for targeted updates.
 
 ## Step 6: Commit and close
 

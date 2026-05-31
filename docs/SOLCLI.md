@@ -8,14 +8,14 @@ The CLI has two tiers with distinct purposes:
 
 | Tier | Pattern | Framework | Purpose |
 |------|---------|-----------|---------|
-| **Top-level** | `sol <cmd>` | Custom dispatcher + argparse | System infrastructure — pipelines, daemons, orchestration |
+| **Top-level** | `sol <cmd>` / `journal <cmd>` | Custom dispatcher + argparse | System infrastructure — pipelines, daemons, orchestration, local-only host tools |
 | **Call** | `sol call <app> <cmd>` | Typer (auto-discovered) | Tool-callable functions — what agents and humans invoke for data operations |
 
 ### The boundary
 
-**If an AI agent should tool-call it → `sol call`.** These commands appear in SKILL.md files and are invoked by talent agents during conversations.
+**If an AI agent should tool-call a journal-access data operation → `sol call`.** These commands appear in SKILL.md files and are invoked by talent agents during conversations. Local-only host tools live under `journal`.
 
-**If it's system plumbing → `sol <cmd>`.** Processing pipelines, supervisor, services, capture — things that cron or systemd runs.
+**If it's system plumbing or local-only host control → `journal <cmd>`.** Processing pipelines, supervisor, services, capture — things that cron or systemd runs.
 
 **Interactive entry points** (`sol chat`, `sol help`, `sol engage`) are top-level for discoverability even though they're user-facing. Agents don't invoke these.
 
@@ -88,21 +88,23 @@ apps/entities/call.py   → sol call entities ...
 
 Each `call.py` must export `app = typer.Typer()`. The directory name becomes the sub-command name. Errors in one app don't prevent others from loading.
 
-**Manually mounted built-ins** — for commands tightly coupled to `solstone/think/` internals:
+**Manually mounted built-ins** — journal-access tools that live under `solstone/think/`:
 ```python
 # think/call.py
 from solstone.think.tools.call import app as journal_app
-from solstone.think.tools.navigate import app as navigate_app
-from solstone.think.tools.routines import app as routines_app
-from solstone.think.tools.sol import app as sol_app
+from solstone.think.tools.health import app as health_app
+from solstone.think.tools.ledger import app as ledger_app
+from solstone.think.tools.profile import app as profile_app
 
+call_app.add_typer(health_app, name="health")
 call_app.add_typer(journal_app, name="journal")
-call_app.add_typer(navigate_app, name="navigate")
-call_app.add_typer(routines_app, name="routines")
-call_app.add_typer(sol_app, name="identity")
+call_app.add_typer(ledger_app, name="ledger")
+call_app.add_typer(profile_app, name="profile")
 ```
 
-These live under `solstone/think/tools/` because they import think-internal APIs directly.
+Local-only service tools such as `journal navigate`, `journal routines`, and
+`journal identity` are registered in `COMMANDS` instead of mounted under
+`sol call`.
 
 ### Adding a new auto-discovered app
 
@@ -165,16 +167,13 @@ List items for a day.
 
 5. **Update AGENTS.md** — add the skill to the Skills table.
 
-### Adding a manually-mounted built-in
+### Local-only think tools
 
-Use this when the command depends heavily on `solstone/think/` internals and shouldn't live in `solstone/apps/`.
+Use a top-level `journal <cmd>` entry when the command is meaningful only on
+the journal host and depends heavily on `solstone/think/` internals.
 
-1. **Create `solstone/think/tools/<name>.py`** with `app = typer.Typer()`.
-2. **Mount in `solstone/think/call.py`**:
-```python
-from solstone.think.tools.mytools import app as mytools_app
-call_app.add_typer(mytools_app, name="mytools")
-```
+1. **Create `solstone/think/tools/<name>.py`** with `app = typer.Typer()` and a `main()` that calls `app()`.
+2. **Register in `solstone/think/sol_cli.py`** with `surface="service"`.
 3. **Optionally create a skill** in `solstone/talent/<name>/SKILL.md`.
 
 ### Files to maintain for a new call command
@@ -360,8 +359,9 @@ solstone/
 │   ├── call.py                     # sol call gateway (Typer root + mounts)
 │   ├── tools/
 │   │   ├── call.py                 # sol call journal (built-in)
-│   │   ├── routines.py             # sol call routines (built-in)
-│   │   └── sol.py                  # sol call identity (built-in)
+│   │   ├── navigate.py             # journal navigate (built-in)
+│   │   ├── routines.py             # journal routines (built-in)
+│   │   └── sol.py                  # journal identity (built-in)
 │   └── *.py                        # Top-level command modules
 ├── solstone/apps/
 │   ├── todos/
@@ -393,12 +393,12 @@ solstone/
 
 ## Current Command Inventory
 
-### Top-level (`sol <cmd>`)
+### Top-level (`sol <cmd>` / `journal <cmd>`)
 
 | Group | Commands |
 |-------|----------|
 | Think (processing) | `import`, `think`, `planner`, `indexer`, `supervisor`, `schedule`, `top`, `health`, `callosum`, `notify`, `heartbeat` |
-| Service | `service` (+ aliases `up`, `down`, `start`) |
+| Service | `service` (+ aliases `up`, `down`, `start`), `navigate`, `routines`, `identity`, `install-provider` |
 | Observe (capture) | `transcribe`, `describe`, `sense`, `transfer`, `observer` |
 | Talent (AI agents) | `agents`, `cortex`, `talent`, `call`, `engage`, `providers` |
 | Convey (web UI) | `convey`, `restart-convey`, `maint` |
@@ -420,12 +420,9 @@ solstone/
 | `transcripts` | `solstone/apps/transcripts/call.py` | list, read, segments |
 | `support` | `solstone/apps/support/call.py` | register, search, article, create, list, show, reply, attach, feedback, announcements, diagnose |
 | `sol` | `solstone/apps/sol/call.py` | name, set-name, reset, thickness, set-owner, sol-init |
-| `settings` | `solstone/apps/settings/call.py` | keys (show/set/delete), providers (show/install local), vertex service-account |
+| `settings` | `solstone/apps/settings/call.py` | keys (show/set/delete), providers show, provider selection, vertex service-account. Provider install moved to `journal install-provider local`. |
 | `awareness` | `solstone/apps/awareness/call.py` | status, imports, log, log-read |
 | `journal` | `solstone/think/tools/call.py` | search, events, facets, facet (show/create/update/rename/mute/unmute/delete/merge), news, agents, read, imports, import, retention purge, storage-summary |
-| `routines` | `solstone/think/tools/routines.py` | list, templates, create, edit, delete, run, output, suggestions, suggest-respond, suggest-state |
-| `identity` | `solstone/think/tools/sol.py` | self, partner, agency, pulse, awareness, briefing |
-| `navigate` | `solstone/think/tools/navigate.py` | *(single command)* |
 
 `sol skills` manages coding-agent skill installation; `sol call skills` manages owner-wide journal skill patterns.
 

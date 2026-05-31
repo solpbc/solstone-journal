@@ -15,7 +15,7 @@ This is not a conversation. Gather the information, synthesize it, and write a c
 1. Call `sol call journal facets` to see the active facets if you need broader context.
 2. Call `sol call activities list --source anticipated --day $day_YYYYMMDD` to review today's scheduled items and participants.
 3. Call `sol call todos list` to see pending action items across facets.
-4. Call `sol call identity pulse` to capture current narrative, priorities, and needs-you items.
+4. Call `journal identity pulse` to capture current narrative, priorities, and needs-you items.
 5. Call `sol call journal search "" -a followups -n 10` to find recent follow-up items.
 6. For each person on today's calendar, call `sol call entities intelligence PERSON --brief`.
 7. If a facet needs more detail, call `sol call journal news FACET --day $day_YYYYMMDD`.

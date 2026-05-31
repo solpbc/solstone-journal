@@ -75,18 +75,40 @@ _discover_app_calls()
 from solstone.think.tools.call import app as journal_app
 from solstone.think.tools.health import app as health_app
 from solstone.think.tools.ledger import app as ledger_app
-from solstone.think.tools.navigate import app as navigate_app
 from solstone.think.tools.profile import app as profile_app
-from solstone.think.tools.routines import app as routines_app
-from solstone.think.tools.sol import app as sol_app
+
+
+def _moved_stub(journal_cmd: str) -> typer.Typer:
+    """Placeholder sub-app: the command moved to `journal <cmd>`."""
+    stub = typer.Typer(
+        help=f"Moved to `journal {journal_cmd}`.",
+        invoke_without_command=True,
+        no_args_is_help=False,
+        context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+    )
+
+    @stub.callback(
+        invoke_without_command=True,
+        context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+    )
+    def _moved(
+        ctx: typer.Context,
+        _args: list[str] = typer.Argument(None),
+    ) -> None:
+        del ctx, _args
+        typer.echo(f"Moved to `journal {journal_cmd}` — run that instead.", err=True)
+        raise typer.Exit(2)
+
+    return stub
+
 
 call_app.add_typer(health_app, name="health")
 call_app.add_typer(journal_app, name="journal")
 call_app.add_typer(ledger_app, name="ledger")
-call_app.add_typer(navigate_app, name="navigate")
+call_app.add_typer(_moved_stub("navigate"), name="navigate")
 call_app.add_typer(profile_app, name="profile")
-call_app.add_typer(routines_app, name="routines")
-call_app.add_typer(sol_app, name="identity")
+call_app.add_typer(_moved_stub("routines"), name="routines")
+call_app.add_typer(_moved_stub("identity"), name="identity")
 
 
 def main() -> None:

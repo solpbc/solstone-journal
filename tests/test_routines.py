@@ -12,13 +12,16 @@ from unittest.mock import patch
 
 import frontmatter
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from solstone.think import routines
-from solstone.think.call import call_app
 from solstone.think.routines import cron_matches, get_config, save_config
+from solstone.think.tools.routines import app as _routines_app
 
 runner = CliRunner()
+call_app = typer.Typer()
+call_app.add_typer(_routines_app, name="routines")
 
 
 def _load_chat_context_module():

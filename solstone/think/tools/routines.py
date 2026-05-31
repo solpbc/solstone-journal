@@ -3,7 +3,7 @@
 
 """CLI commands for managing user-defined routines.
 
-Mounted by ``think.call`` as ``sol call routines ...``.
+Top-level ``journal routines`` command.
 """
 
 import json
@@ -439,3 +439,7 @@ def suggest_state() -> None:
     meta = config.get("_meta", {})
     suggestions = meta.get("suggestions", {})
     typer.echo(json.dumps(suggestions, indent=2))
+
+
+def main() -> None:
+    app()

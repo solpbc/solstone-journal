@@ -21,9 +21,9 @@ This is not a conversation. Gather state, write the update, done.
 Read current state using these tools:
 
 1. `sol call awareness status` — processing, import, and journal state
-2. `sol call identity self` — identity summary (skim for key changes)
+2. `journal identity self` — identity summary (skim for key changes)
 3. `sol call activities list --source anticipated` — today's scheduled activity records
-4. `sol call routines list` — active routines and recent outputs
+4. `journal routines list` — active routines and recent outputs
 5. `sol call entities search --limit 5` — recent entity activity
 ## Write awareness.md
 
@@ -54,5 +54,5 @@ Omit sections that have no meaningful content. Never include prose — bullets o
 Write the result:
 
 ```bash
-sol call identity awareness --write --value '{your content here}'
+journal identity awareness --write --value '{your content here}'
 ```

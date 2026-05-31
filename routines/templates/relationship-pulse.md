@@ -16,7 +16,7 @@ Focus on people who matter operationally or personally, especially where contact
 2. Use `sol call journal search "" --facet FACET -n 20` to identify frequently mentioned people or recent interactions in each relevant facet.
 3. For each meaningful person, call `sol call entities intelligence PERSON`.
 4. Use `sol call journal news FACET --day $day_YYYYMMDD` if a facet summary helps explain current context.
-5. Use `sol call identity pulse` for broad priorities that may affect relationship maintenance.
+5. Use `journal identity pulse` for broad priorities that may affect relationship maintenance.
 
 ## Synthesize
 

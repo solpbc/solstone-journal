@@ -11,7 +11,7 @@ def _briefing_prompt() -> str:
 def test_morning_briefing_reads_steward_health_surface():
     prompt = _briefing_prompt()
 
-    assert "`sol call identity health`" in prompt
+    assert "`journal identity health`" in prompt
     assert "`sol call health pipeline --yesterday`" not in prompt
 
 

@@ -24,15 +24,15 @@ Call all sources upfront. Some may return empty — that's expected, especially 
 2. For each facet: `sol call journal news FACET --day $day_YYYYMMDD` — facet newsletter
 3. `sol call activities list --source anticipated --day $day_YYYYMMDD` — today's scheduled items with participants
 4. `sol call todos list` — pending action items across all facets
-5. `sol call identity pulse` — current pulse narrative and needs-you items
-6. `sol call identity partner` — owner behavioral profile (informs tone and emphasis)
+5. `journal identity pulse` — current pulse narrative and needs-you items
+6. `journal identity partner` — owner behavioral profile (informs tone and emphasis)
 7. `sol call journal search "" -d $day_YYYYMMDD -a followups -n 10` — follow-up items from today
 8. `sol call activities list --source anticipated --from $day_YYYYMMDD --to <+7>` — forward-looking scheduled items
 9. `sol call journal search "" -d $day_YYYYMMDD -a decisions -n 10` — yesterday's consequential decisions
 10. For each of the next 7 days after today: `sol call activities list --source anticipated --day YYYYMMDD` — upcoming scheduled items for forward look
 
 Also run:
-11. `sol call identity health` — sol's federated health surface (synthesized by the steward talent)
+11. `journal identity health` — sol's federated health surface (synthesized by the steward talent)
 
 ## Phase 1.5: Pre-pass audit
 
@@ -50,7 +50,7 @@ Before synthesizing, audit what you gathered. This step uses only the data from 
 
 3. **Catalog tool errors.** If any `sol call` in Phase 1 returned an error response, record it as a gap with the error context.
 
-4. **Check the steward health surface.** Read the steward's Needs your attention section. If empty, omit the Pipeline gaps subsection entirely. Otherwise surface those bullets as top-ranked operational gaps in Needs Attention, rendering them verbatim. If `sol call identity health` returned empty content, the file is missing, or the surface failed to parse: add `steward health surface unavailable` to the coverage-preamble `gaps:` list AND omit the Pipeline gaps subsection — do not emit a healthy-looking briefing without acknowledging this gap.
+4. **Check the steward health surface.** Read the steward's Needs your attention section. If empty, omit the Pipeline gaps subsection entirely. Otherwise surface those bullets as top-ranked operational gaps in Needs Attention, rendering them verbatim. If `journal identity health` returned empty content, the file is missing, or the surface failed to parse: add `steward health surface unavailable` to the coverage-preamble `gaps:` list AND omit the Pipeline gaps subsection — do not emit a healthy-looking briefing without acknowledging this gap.
 
 > **CRITICAL: Tool error handling.** When any `sol call` tool returns an error, you MUST:
 > 1. Record the error as a gap with the command or source that failed

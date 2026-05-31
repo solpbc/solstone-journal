@@ -10,7 +10,7 @@ Provides read and write access to ``{journal}/identity/self.md``,
 provides read access to the morning briefing at
 ``{journal}/YYYYMMDD/talents/morning_briefing.md``.
 
-Mounted by ``think.call`` as ``sol call identity ...``.
+Top-level ``journal identity`` command.
 """
 
 import re
@@ -109,7 +109,7 @@ def _identity_dir():
 
 
 def _actor_for_cmd(command: str, flag: str) -> str:
-    return f"sol call identity {command} {flag}"
+    return f"journal identity {command} {flag}"
 
 
 def _resolve_content(value: str | None, *, allow_empty: bool = False) -> str:
@@ -512,3 +512,7 @@ def briefing_cmd(
 
     typer.echo("No briefing found.", err=True)
     raise typer.Exit(1)
+
+
+def main() -> None:
+    app()

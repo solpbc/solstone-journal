@@ -16,7 +16,7 @@ The goal is to surface what is overdue, stale, ambiguous, or at risk of being fo
 2. Use `sol call journal search "" -a followups -n 20` to find follow-up items from recent journal activity.
 3. Use `sol call journal facets` if you need to map commitments back to facets.
 4. Use `sol call journal news FACET --day $day_YYYYMMDD` when a facet summary helps explain why something is still open.
-5. Use `sol call identity pulse` to compare explicit commitments with current focus and needs-you items.
+5. Use `journal identity pulse` to compare explicit commitments with current focus and needs-you items.
 
 ## Synthesize
 

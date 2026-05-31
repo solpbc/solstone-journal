@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Tests for sol call identity — identity directory read/write commands."""
+"""Tests for journal identity — identity directory read/write commands."""
 
 import inspect
 import json
@@ -349,7 +349,7 @@ class TestSolPulseWrite:
 
 
 class TestSolWriteDoesNotEscapeIdentityDir:
-    """Verify that sol call identity only writes to identity/ files."""
+    """Verify that journal identity only writes to identity/ files."""
 
     def test_self_write_stays_in_identity_dir(self, journal_with_identity):
         """Write to self.md goes to identity/self.md, not anywhere else."""
@@ -507,7 +507,7 @@ class TestSolHistoryLogging:
         _assert_history_record(
             records[0],
             file_name="self.md",
-            actor="sol call identity self --write",
+            actor="journal identity self --write",
             op="replace",
             section=None,
             reason="manual replace",
@@ -520,7 +520,7 @@ class TestSolHistoryLogging:
         _assert_history_record(
             records[0],
             file_name="agency.md",
-            actor="sol call identity agency --write",
+            actor="journal identity agency --write",
             op="replace",
             section=None,
             reason="manual replace",
@@ -533,7 +533,7 @@ class TestSolHistoryLogging:
         _assert_history_record(
             records[0],
             file_name="pulse.md",
-            actor="sol call identity pulse --write",
+            actor="journal identity pulse --write",
             op="replace",
             section=None,
             reason="manual replace",
@@ -549,7 +549,7 @@ class TestSolHistoryLogging:
         _assert_history_record(
             records[0],
             file_name="self.md",
-            actor="sol call identity self --update-section <heading>",
+            actor="journal identity self --update-section <heading>",
             op="update_section",
             section="who I'm here for",
             reason="manual section update",
@@ -568,7 +568,7 @@ class TestSolHistoryLogging:
         _assert_history_record(
             records[0],
             file_name="partner.md",
-            actor="sol call identity partner --write",
+            actor="journal identity partner --write",
             op="replace",
             section=None,
             reason="manual replace",
@@ -590,7 +590,7 @@ class TestSolHistoryLogging:
         _assert_history_record(
             records[0],
             file_name="partner.md",
-            actor="sol call identity partner --update-section <heading>",
+            actor="journal identity partner --update-section <heading>",
             op="update_section",
             section="work patterns",
             reason="manual section update",

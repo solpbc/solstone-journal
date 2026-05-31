@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Tests for ``sol call identity digest``."""
+"""Tests for ``journal identity digest``."""
 
 import json
 import re
@@ -72,7 +72,7 @@ def test_digest_write_mode_writes_via_identity(digest_journal):
     _assert_history_record(
         record,
         file_name="digest.md",
-        actor="sol call identity digest --write",
+        actor="journal identity digest --write",
         op="replace",
         section=None,
         reason="manual replace",
@@ -95,7 +95,7 @@ def test_digest_write_mode_stdin(digest_journal):
     _assert_history_record(
         record,
         file_name="digest.md",
-        actor="sol call identity digest --write",
+        actor="journal identity digest --write",
         op="replace",
         section=None,
         reason="manual replace",

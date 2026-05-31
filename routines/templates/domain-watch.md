@@ -15,7 +15,7 @@ Search the journal for meaningful changes, not just keyword repetition.
 1. Confirm the facets in scope with `sol call journal facets` if needed.
 2. Use `sol call journal search QUERY --facet FACET --day-from START --day-to END -n 20` for each important topic or domain you can infer from the routine context.
 3. Use `sol call journal news FACET --day $day_YYYYMMDD` when a facet newsletter can summarize recent movement.
-4. Use `sol call identity pulse` to compare broad narrative priorities with the search results.
+4. Use `journal identity pulse` to compare broad narrative priorities with the search results.
 
 ## Synthesize
 

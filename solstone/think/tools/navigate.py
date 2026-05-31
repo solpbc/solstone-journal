@@ -3,7 +3,7 @@
 
 """CLI commands for browser navigation actions.
 
-Mounted by ``think.call`` as ``sol call navigate ...``.
+Top-level ``journal navigate`` command.
 """
 
 import typer
@@ -40,3 +40,7 @@ def navigate(
     if facet:
         parts.append(f"[{facet}]")
     typer.echo(f"Navigate: {' '.join(parts)}")
+
+
+def main() -> None:
+    app()

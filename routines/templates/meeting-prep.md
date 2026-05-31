@@ -18,7 +18,7 @@ The routine prompt already includes an `Upcoming Activity` section with the titl
 4. Use `sol call journal search QUERY -n 10` to look for recent mentions of the meeting topic, project, or participants.
 5. If a configured facet seems especially relevant, use `sol call journal news FACET --day $day_YYYYMMDD`.
 6. Use `sol call todos list` only if pending action items are directly relevant to the meeting.
-7. Use `sol call identity pulse` if it helps connect the meeting to current priorities or tensions.
+7. Use `journal identity pulse` if it helps connect the meeting to current priorities or tensions.
 
 ## Synthesize
 

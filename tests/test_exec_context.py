@@ -95,7 +95,7 @@ def test_exec_pre_process_populated_state(monkeypatch, tmp_path):
     assert "## Routine Suggestion Eligible" in template_vars["routine_suggestion"]
     assert "meeting-prep" in template_vars["routine_suggestion"]
     assert (
-        "sol call routines suggest-respond meeting-prep --accepted"
+        "journal routines suggest-respond meeting-prep --accepted"
         in template_vars["routine_suggestion"]
     )
 
