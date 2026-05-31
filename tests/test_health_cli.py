@@ -219,7 +219,7 @@ def test_health_check_receives_status(tmp_path, monkeypatch, capsys):
 
 
 def test_main_routes_to_logs(monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["sol health", "logs", "--help"])
+    monkeypatch.setattr(sys, "argv", ["journal health", "logs", "--help"])
 
     with patch(
         "solstone.think.logs_cli.main", side_effect=SystemExit(0)

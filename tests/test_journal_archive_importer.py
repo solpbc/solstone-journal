@@ -129,7 +129,7 @@ def test_journal_archive_importer_process_merges_wrapped_archive(tmp_path, monke
     send.assert_called_once_with(
         "supervisor",
         "request",
-        cmd=["sol", "indexer", "--rescan-full"],
+        cmd=["journal", "indexer", "--rescan-full"],
     )
 
 
@@ -565,7 +565,7 @@ def test_journal_archive_importer_process_requests_async_full_rescan(
     send.assert_called_once_with(
         "supervisor",
         "request",
-        cmd=["sol", "indexer", "--rescan-full"],
+        cmd=["journal", "indexer", "--rescan-full"],
     )
 
 

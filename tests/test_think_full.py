@@ -44,7 +44,7 @@ def test_main_runs_with_mocked_prompts(journal_copy, monkeypatch):
     assert prompts_run, "run_daily_prompts should have been called"
 
     # Verify post-phase: indexer rescan ran
-    indexer_cmds = [c for c in commands_run if c[0] == "sol" and c[1] == "indexer"]
+    indexer_cmds = [c for c in commands_run if c[0] == "journal" and c[1] == "indexer"]
     assert len(indexer_cmds) >= 1
     assert any("--rescan" in cmd for cmd in indexer_cmds)
 
@@ -94,7 +94,7 @@ def test_main_runs_segment_think_prephase_before_daily_synthesis(
     indexer_index = next(
         i
         for i, cmd in enumerate(commands_run)
-        if len(cmd) >= 2 and cmd[:2] == ["sol", "indexer"] and "--rescan" in cmd
+        if len(cmd) >= 2 and cmd[:2] == ["journal", "indexer"] and "--rescan" in cmd
     )
 
     segment_cmd = commands_run[segment_index]

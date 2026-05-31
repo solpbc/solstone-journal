@@ -121,4 +121,4 @@ def test_rename_rebuilds_index(journal, capsys):
 
     # stdout should include the rebuild instruction
     captured = capsys.readouterr()
-    assert "sol indexer --reset --rescan-full" in captured.out
+    assert "journal indexer --reset --rescan-full" in captured.out

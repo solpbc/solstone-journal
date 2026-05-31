@@ -4,7 +4,7 @@
 
 """Gemini provider for agents and direct LLM generation.
 
-This module provides the Google Gemini provider for the ``sol providers check`` CLI
+This module provides the Google Gemini provider for the ``journal providers check`` CLI
 and run_generate/run_agenerate functions returning GenerateResult.
 
 Common Parameters

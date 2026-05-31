@@ -387,7 +387,7 @@ def register_defaults() -> None:
 
     if need_providers and "providers" not in raw:
         raw["providers"] = {
-            "cmd": ["sol", "providers", "check"],
+            "cmd": ["journal", "providers", "check"],
             "every": "daily",
             "enabled": True,
             "max_runtime": "5m",

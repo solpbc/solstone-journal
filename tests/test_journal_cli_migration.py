@@ -23,7 +23,18 @@ EXCLUDED_DIRS = {
     "tmp",
     "vpe",
 }
-TEXT_SUFFIXES = {".html", ".md", ".py", ".sh", ".toml", ".txt", ".yml", ".yaml"}
+TEXT_SUFFIXES = {
+    ".html",
+    ".js",
+    ".md",
+    ".py",
+    ".rules",
+    ".sh",
+    ".toml",
+    ".txt",
+    ".yml",
+    ".yaml",
+}
 ROOT_TEXT_FILES = {
     "AGENTS.md",
     "CONTRIBUTING.md",
@@ -34,8 +45,8 @@ ROOT_TEXT_FILES = {
 ACCESS_POSITIVE_EXPECTATIONS = {
     Path("AGENTS.md"): re.compile(r"\bsol call\b"),
     Path("INSTALL.md"): re.compile(r"\bsol doctor\b"),
-    Path("Makefile"): re.compile(r"\$\(VENV_BIN\)/sol indexer\b"),
-    Path("README.md"): re.compile(r"\bsol indexer\b"),
+    Path("Makefile"): re.compile(r"\$\(VENV_BIN\)/sol skills\b"),
+    Path("README.md"): re.compile(r"\bsol chat\b"),
 }
 
 
@@ -96,6 +107,11 @@ SERVICE_TERMS = sorted(
 SERVICE_SOL_RE = re.compile(
     r"\bsol (" + "|".join(map(re.escape, SERVICE_TERMS)) + r")\b"
 )
+SERVICE_SOL_LITERAL_RE = re.compile(
+    r"""['"]sol['"]\s*,\s*['"](?:"""
+    + "|".join(map(re.escape, SERVICE_TERMS))
+    + r""")['"]"""
+)
 
 
 @pytest.mark.parametrize("path", _candidate_files(), ids=str)
@@ -113,3 +129,22 @@ def test_service_tagged_commands_are_not_documented_as_sol(path: Path) -> None:
     access_expectation = ACCESS_POSITIVE_EXPECTATIONS.get(path)
     if access_expectation is not None:
         assert access_expectation.search(text)
+
+
+def _production_python_files() -> list[Path]:
+    return sorted(
+        path
+        for path in Path("solstone").rglob("*.py")
+        if path.is_file() and "tests" not in path.parts
+    )
+
+
+def test_production_service_commands_do_not_dispatch_through_sol() -> None:
+    matches = []
+    for path in _production_python_files():
+        text = path.read_text(encoding="utf-8")
+        for match in SERVICE_SOL_LITERAL_RE.finditer(text):
+            line_number = text.count("\n", 0, match.start()) + 1
+            matches.append(f"{path}:{line_number}: {match.group(0)!r}")
+
+    assert matches == []

@@ -1429,7 +1429,7 @@ def request_health_recheck() -> None:
     ok = callosum_send(
         "supervisor",
         "request",
-        cmd=["sol", "providers", "check", "--targeted"],
+        cmd=["journal", "providers", "check", "--targeted"],
     )
     if not ok:
         logger.warning("request_health_recheck: callosum_send returned false")

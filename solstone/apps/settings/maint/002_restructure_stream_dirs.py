@@ -165,7 +165,7 @@ def restructure(journal_root: Path, dry_run: bool) -> None:
                 "after restructure. Check for errors."
             )
 
-        print("\nRun 'sol indexer --rebuild' to reindex with new paths.")
+        print("\nRun 'journal indexer --rebuild' to reindex with new paths.")
 
 
 def main():

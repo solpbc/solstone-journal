@@ -70,7 +70,7 @@ solstone needs a platform observer alongside your journal. observers are indepen
 ```bash
 pipx install solstone-linux
 solstone-linux install-service
-sol observer create laptop      # mint a key for this observer
+journal observer create laptop      # mint a key for this observer
 ```
 
 `solstone-linux install-service` walks you through pointing the observer at the key you just minted. swap `laptop` for any name you'd like to identify this machine by.
@@ -80,7 +80,7 @@ sol observer create laptop      # mint a key for this observer
 ```bash
 pipx install solstone-tmux
 solstone-tmux install-service
-sol observer create tmux-laptop
+journal observer create tmux-laptop
 ```
 
 (use `uv tool install` in place of `pipx install` if you prefer uv — they're equivalent.)

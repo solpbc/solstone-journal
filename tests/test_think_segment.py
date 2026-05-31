@@ -650,7 +650,7 @@ class TestRunSegmentSense:
         )
 
         assert len(indexer_calls) == 1
-        assert indexer_calls[0][:2] == ["sol", "indexer"]
+        assert indexer_calls[0][:2] == ["journal", "indexer"]
         assert "--rescan-file" in indexer_calls[0]
 
     def test_send_failure_counted(self, segment_dir, monkeypatch):

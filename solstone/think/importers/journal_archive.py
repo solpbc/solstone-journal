@@ -552,7 +552,7 @@ class JournalArchiveImporter:
                     ok = callosum_send(
                         "supervisor",
                         "request",
-                        cmd=["sol", "indexer", "--rescan-full"],
+                        cmd=["journal", "indexer", "--rescan-full"],
                     )
                     if not ok:
                         logger.warning(

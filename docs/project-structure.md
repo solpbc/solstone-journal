@@ -24,9 +24,9 @@ Each package has a README.md symlink pointing to its documentation in `docs/`.
 - **Python**: Requires Python 3.11+
 - **Modules**: Each top-level folder is a Python package with `__init__.py` unless it is data-only (e.g., `tests/fixtures/`)
 - **Imports**: Prefer absolute imports (e.g., `from solstone.think.utils import setup_cli`) whenever feasible
-- **Entry Points**: Commands are registered in `solstone/think/sol_cli.py`'s `COMMANDS` dict (pyproject.toml just defines the `sol` entry point)
+- **Entry Points**: Commands are registered in `solstone/think/sol_cli.py`'s `COMMANDS` dict (pyproject.toml defines the `sol` and `journal` entry points)
 - **Journal**: Data stored under `journal/` at the project root; day content lives under `journal/chronicle/`
-- **Calling**: When calling other modules as a separate process always use `sol <command>` and never call using `python -m ...` (e.g., use `sol indexer`, NOT `python -m solstone.think.indexer`)
+- **Calling**: When calling other modules as a separate process always use the registered CLI surface and never call using `python -m ...` (e.g., use `journal indexer`, NOT `python -m solstone.think.indexer`)
 
 ## CLI Routing
 

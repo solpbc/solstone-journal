@@ -252,6 +252,6 @@ class TestHandleObserved:
         assert calls == [
             (
                 ("supervisor", "request"),
-                {"cmd": ["sol", "indexer", "--rescan"]},
+                {"cmd": ["journal", "indexer", "--rescan"]},
             )
         ]

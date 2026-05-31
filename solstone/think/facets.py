@@ -1267,5 +1267,5 @@ def rename_facet(old_name: str, new_name: str) -> None:
 
     # Step 3: Advise index rebuild
     print(
-        "Facet renamed. Rebuild the search index with: sol indexer --reset --rescan-full"
+        "Facet renamed. Rebuild the search index with: journal indexer --reset --rescan-full"
     )

@@ -759,7 +759,7 @@ def ingest_upload(key: str | None = None) -> Any:
         logger.warning(
             f"Observer '{observer_name}' ({key_prefix}) connecting from host "
             f"'{effective_host}' — hostname differs from registered name. "
-            f"Use `sol observer rename` to update if the host was renamed."
+            f"Use `journal observer rename` to update if the host was renamed."
         )
 
     if not segment:

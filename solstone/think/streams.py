@@ -379,7 +379,7 @@ def rebuild_stream_state(name: str | None = None) -> dict:
 
 
 def main() -> None:
-    """CLI entry point for sol streams."""
+    """CLI entry point for journal streams."""
     import argparse
 
     from solstone.think.utils import require_solstone, setup_cli

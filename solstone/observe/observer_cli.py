@@ -8,11 +8,11 @@ of observer registrations. Operates directly on the journal
 filesystem — no dependency on the Convey web server.
 
 Usage:
-    sol observer create <name>           Create a new observer
-    sol observer list                    List all registered observers
-    sol observer rename <old> <new>      Rename an observer
-    sol observer revoke <name-or-prefix> Revoke an observer registration
-    sol observer status [name-or-prefix] Show observer status details
+    journal observer create <name>           Create a new observer
+    journal observer list                    List all registered observers
+    journal observer rename <old> <new>      Rename an observer
+    journal observer revoke <name-or-prefix> Revoke an observer registration
+    journal observer status [name-or-prefix] Show observer status details
 """
 
 from __future__ import annotations
@@ -447,9 +447,9 @@ def _status_all(json_output: bool = False) -> int:
 
 
 def main() -> None:
-    """Entry point for sol observer CLI."""
+    """Entry point for journal observer CLI."""
     parser = argparse.ArgumentParser(
-        prog="sol observer",
+        prog="journal observer",
         description="Manage observer registrations",
     )
 

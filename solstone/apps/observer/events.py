@@ -107,7 +107,7 @@ def handle_transferred(ctx: EventContext) -> None:
     # Queue indexer rescan to pick up transferred content
     from solstone.think.callosum import callosum_send
 
-    callosum_send("supervisor", "request", cmd=["sol", "indexer", "--rescan"])
+    callosum_send("supervisor", "request", cmd=["journal", "indexer", "--rescan"])
 
     logger.debug(
         f"Recorded transferred status for observer {observer_name}: {day}/{segment}"

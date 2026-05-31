@@ -4,8 +4,8 @@
 """CLI for service health status and logs.
 
 Usage:
-    sol health                  Show current service health status
-    sol health logs             View service health logs
+    journal health                  Show current service health status
+    journal health logs             View service health logs
 """
 
 from __future__ import annotations
@@ -150,21 +150,21 @@ def health_check() -> int:
 
 
 def main() -> None:
-    """Entry point for ``sol health``."""
+    """Entry point for ``journal health``."""
     args = sys.argv[1:]
     if args and args[0] == "logs":
-        sys.argv = ["sol health logs"] + args[1:]
+        sys.argv = ["journal health logs"] + args[1:]
         from solstone.think.logs_cli import main as logs_main
 
         logs_main()
         return
 
     parser = argparse.ArgumentParser(
-        prog="sol health",
+        prog="journal health",
         description=(
             "Show service health status.\n\n"
             "Subcommands:\n"
-            "  logs    View service health logs (sol health logs -h for details)"
+            "  logs    View service health logs (journal health logs -h for details)"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

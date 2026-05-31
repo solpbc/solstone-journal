@@ -23,7 +23,7 @@ def test_task_queue_defers_submit_when_not_ready(monkeypatch):
     monkeypatch.setattr(mod.threading.Thread, "start", fake_thread_start)
 
     ref = queue.submit(
-        ["sol", "indexer", "--rescan"], ref="pending-ref", day="20260418"
+        ["journal", "indexer", "--rescan"], ref="pending-ref", day="20260418"
     )
 
     assert ref == "pending-ref"
@@ -31,7 +31,7 @@ def test_task_queue_defers_submit_when_not_ready(monkeypatch):
     assert queue._pending == [
         {
             "refs": ["pending-ref"],
-            "cmd": ["sol", "indexer", "--rescan"],
+            "cmd": ["journal", "indexer", "--rescan"],
             "day": "20260418",
             "scheduler_name": None,
         }
@@ -50,7 +50,7 @@ def test_task_queue_set_ready_drains_in_submission_order(monkeypatch):
 
     monkeypatch.setattr(mod.threading.Thread, "start", fake_thread_start)
 
-    queue.submit(["sol", "indexer", "--rescan"], ref="ref-1")
+    queue.submit(["journal", "indexer", "--rescan"], ref="ref-1")
     queue.submit(["sol", "insight", "20260418"], ref="ref-2")
     queue.submit(["journal", "heartbeat"], ref="ref-3")
 
@@ -58,7 +58,7 @@ def test_task_queue_set_ready_drains_in_submission_order(monkeypatch):
 
     assert [args[0] for args in started] == [["ref-1"], ["ref-2"], ["ref-3"]]
     assert [args[1] for args in started] == [
-        ["sol", "indexer", "--rescan"],
+        ["journal", "indexer", "--rescan"],
         ["sol", "insight", "20260418"],
         ["journal", "heartbeat"],
     ]
@@ -76,8 +76,8 @@ def test_task_queue_set_ready_dedupes_same_cmd_in_pending(monkeypatch):
 
     monkeypatch.setattr(mod.threading.Thread, "start", fake_thread_start)
 
-    queue.submit(["sol", "indexer", "--rescan"], ref="ref-1")
-    queue.submit(["sol", "indexer", "--rescan"], ref="ref-2")
+    queue.submit(["journal", "indexer", "--rescan"], ref="ref-1")
+    queue.submit(["journal", "indexer", "--rescan"], ref="ref-2")
 
     queue.set_ready()
 
@@ -86,7 +86,7 @@ def test_task_queue_set_ready_dedupes_same_cmd_in_pending(monkeypatch):
     assert queue._queues["indexer"] == [
         {
             "refs": ["ref-2"],
-            "cmd": ["sol", "indexer", "--rescan"],
+            "cmd": ["journal", "indexer", "--rescan"],
             "day": None,
             "scheduler_name": None,
         }
@@ -104,7 +104,7 @@ def test_task_queue_ready_true_default_dispatches_immediately(monkeypatch):
 
     monkeypatch.setattr(mod.threading.Thread, "start", fake_thread_start)
 
-    ref = queue.submit(["sol", "indexer", "--rescan"], ref="ready-ref")
+    ref = queue.submit(["journal", "indexer", "--rescan"], ref="ready-ref")
 
     assert ref == "ready-ref"
     assert len(started) == 1

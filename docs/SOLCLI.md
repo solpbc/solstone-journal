@@ -17,7 +17,7 @@ The CLI has two tiers with distinct purposes:
 
 **If it's system plumbing or local-only host control → `journal <cmd>`.** Processing pipelines, supervisor, services, capture — things that cron or systemd runs.
 
-**Interactive entry points** (`sol chat`, `sol help`, `sol engage`) are top-level for discoverability even though they're user-facing. Agents don't invoke these.
+**Interactive entry points** (`sol chat`, `sol help`, `journal engage`) are top-level for discoverability even though they're user-facing. Agents don't invoke these.
 
 ## Top-Level Commands (`sol <cmd>`)
 
@@ -281,7 +281,7 @@ failed. `--feature <name>` runs a single feature advisory on either surface.
 
 Use `sol doctor` for “can this CLI run?”, `journal doctor` for “why is this
 journal host unhealthy?”, `make preflight` for the stdlib-only fresh-clone check
-before `.venv`/`uv` exist, and `sol health` for the live supervisor status view.
+before `.venv`/`uv` exist, and `journal health` for the live supervisor status view.
 
 ## Structured output: `journal setup --jsonl` and doctor `--jsonl`
 

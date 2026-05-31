@@ -28,7 +28,7 @@ The `tests/fixtures/journal/` directory contains a complete mock journal structu
 - `make test-app APP=<name>` to run a single app's tests; `make test-only TEST=path` for a specific file/pattern
 - `make coverage` to generate a coverage report
 - `make ci` before committing (formats, lints, tests)
-- Always run `sol restart-convey` after editing `solstone/convey/` or `solstone/apps/` to reload code
+- Always run `journal restart-convey` after editing `solstone/convey/` or `solstone/apps/` to reload code
 
 ### Browser verification status
 

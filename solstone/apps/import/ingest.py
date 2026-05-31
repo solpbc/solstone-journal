@@ -332,7 +332,7 @@ def register_ingest_routes(bp) -> None:
             save_journal_source(source)
 
             try:
-                emit("supervisor", "request", cmd=["sol", "indexer", "--rescan"])
+                emit("supervisor", "request", cmd=["journal", "indexer", "--rescan"])
             except Exception:
                 logger.warning("Failed to trigger indexer rescan via Callosum")
 

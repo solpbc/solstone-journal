@@ -82,19 +82,10 @@ def test_sol_help_heading_order_and_apps_position(monkeypatch, capsys) -> None:
 
 def test_access_help_groups_match_canonical_membership() -> None:
     assert sol_cli.ACCESS_HELP_GROUPS == (
-        sol_cli.HelpGroup(sol_cli.SOL_HELP_GROUP_CONVERSATION, ("chat", "engage")),
-        sol_cli.HelpGroup(
-            sol_cli.SOL_HELP_GROUP_YOUR_JOURNAL,
-            ("call", "import", "journal-stats", "segment", "streams", "indexer"),
-        ),
-        sol_cli.HelpGroup(
-            sol_cli.SOL_HELP_GROUP_DIAGNOSE,
-            ("top", "health", "notify", "doctor", "reprocess"),
-        ),
-        sol_cli.HelpGroup(
-            sol_cli.SOL_HELP_GROUP_TOOLS,
-            ("providers", "observer", "skills", "restart-convey", "link"),
-        ),
+        sol_cli.HelpGroup(sol_cli.SOL_HELP_GROUP_CONVERSATION, ("chat",)),
+        sol_cli.HelpGroup(sol_cli.SOL_HELP_GROUP_YOUR_JOURNAL, ("call", "import")),
+        sol_cli.HelpGroup(sol_cli.SOL_HELP_GROUP_DIAGNOSE, ("notify", "doctor")),
+        sol_cli.HelpGroup(sol_cli.SOL_HELP_GROUP_TOOLS, ("skills", "link")),
     )
 
 

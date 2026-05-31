@@ -370,7 +370,7 @@ def test_cortex_start_emits_providers_check(tmp_path):
             cortex.start()
 
     cortex.callosum.emit.assert_any_call(
-        "supervisor", "request", cmd=["sol", "providers", "check"]
+        "supervisor", "request", cmd=["journal", "providers", "check"]
     )
 
 

@@ -540,7 +540,7 @@ class TestCommandRegistry:
         monkeypatch.setattr(sol, "run_command", lambda _module_path: 0)
         monkeypatch.setattr(sol.setproctitle, "setproctitle", titles.append)
 
-        monkeypatch.setattr(sys, "argv", ["sol", "health"])
+        monkeypatch.setattr(sys, "argv", ["sol", "chat"])
         with pytest.raises(SystemExit):
             sol.main()
 

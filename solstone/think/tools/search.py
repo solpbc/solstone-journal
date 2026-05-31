@@ -197,5 +197,5 @@ def search_journal(
     except Exception as exc:
         return {
             "error": f"Failed to search journal: {exc}",
-            "suggestion": "try adjusting the query or ensure the index exists (run sol indexer --rescan)",
+            "suggestion": "try adjusting the query or ensure the index exists (run journal indexer --rescan)",
         }

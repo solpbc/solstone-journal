@@ -463,7 +463,7 @@ def merge(
     delete_facet(source)
 
     subprocess.run(
-        ["sol", "indexer", "--rescan-full"],
+        ["journal", "indexer", "--rescan-full"],
         check=False,
         capture_output=True,
     )
@@ -1334,7 +1334,7 @@ def journal_merge(
     indexer_returncode = 0
     if not dry_run:
         indexer_result = subprocess.run(
-            ["sol", "indexer", "--rescan-full"],
+            ["journal", "indexer", "--rescan-full"],
             check=False,
             capture_output=True,
         )

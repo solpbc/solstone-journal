@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), al
 
 ### Changed
 - local journal tools now live with the journal service. Navigation, routines, identity hydration, and local provider install moved from `sol call navigate`, `sol call routines`, `sol call identity`, and `sol call settings providers install local` to `journal navigate`, `journal routines`, `journal identity`, and `journal install-provider local`; the old paths now point you to the new form.
+- more local journal commands now run on the journal service. `engage`, `health`, `top`, `indexer`, `segment`, `streams`, `journal-stats`, `reprocess`, `restart-convey`, `observer`, and `providers` moved from `sol <cmd>` to `journal <cmd>`; the old `sol` forms now point you to the new form.
 - on linux, the default on-device transcription now works out of the box — its runtime ships with the install and `journal setup` downloads the model, so there's no separate extra to add. NVIDIA GPU owners can still opt into `solstone[parakeet-onnx-cuda]` for GPU acceleration, and `sol doctor` now reports whether the default transcription backend's runtime and model are ready.
 
 ## [0.4.5] - 2026-05-30

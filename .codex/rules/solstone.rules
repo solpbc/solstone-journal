@@ -1,11 +1,19 @@
 # Execution policy rules for solstone agent CLI commands.
-# Allows "sol" commands to run outside the sandbox without prompting.
+# Allows "sol" and "journal" commands to run outside the sandbox without prompting.
 # See: https://developers.openai.com/codex/exec-policy
 
 prefix_rule(
     pattern=["sol"],
     decision="allow",
     justification="sol invokes journal query, agent, and diagnostic commands",
-    match=["sol call todos list", "sol call entities list", "sol health", "sol muse logs"],
+    match=["sol call todos list", "sol call entities list", "sol muse logs"],
     not_match=["solc", "solid"],
+)
+
+prefix_rule(
+    pattern=["journal"],
+    decision="allow",
+    justification="journal invokes local journal service and diagnostic commands",
+    match=["journal health", "journal indexer --rescan", "journal top"],
+    not_match=["journalctl"],
 )

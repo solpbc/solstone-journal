@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""sol segment - segment inspection and management CLI."""
+"""journal segment - segment inspection and management CLI."""
 
 from __future__ import annotations
 
@@ -801,10 +801,10 @@ def cmd_verify(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    """CLI entry point for sol segment."""
+    """CLI entry point for journal segment."""
     parser = argparse.ArgumentParser(
         description="Inspect and manage journal segments",
-        usage="sol segment <command> [options]",
+        usage="journal segment <command> [options]",
     )
     sub = parser.add_subparsers(dest="subcommand")
 

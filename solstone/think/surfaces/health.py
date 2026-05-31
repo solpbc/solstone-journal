@@ -5,7 +5,7 @@
 
 This surface reports on capture, synthesis, and consumer-facing trust signals
 derived from journal data. For infrastructure and service liveness, use
-``sol health`` instead.
+``journal health`` instead.
 """
 
 from __future__ import annotations

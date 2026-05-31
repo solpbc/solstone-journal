@@ -630,7 +630,7 @@ def test_ingest_callosum_trigger(ingest_env, monkeypatch):
     assert first.status_code == 200
     assert second.status_code == 200
     assert calls == [
-        (("supervisor", "request"), {"cmd": ["sol", "indexer", "--rescan"]})
+        (("supervisor", "request"), {"cmd": ["journal", "indexer", "--rescan"]})
     ]
 
 

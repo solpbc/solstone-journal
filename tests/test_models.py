@@ -1326,7 +1326,7 @@ def test_request_health_recheck_emits_callosum_request():
     send.assert_called_once_with(
         "supervisor",
         "request",
-        cmd=["sol", "providers", "check", "--targeted"],
+        cmd=["journal", "providers", "check", "--targeted"],
     )
 
 

@@ -347,7 +347,7 @@ Rationale: observer record and route behavior belongs with the observer app’s
 existing tests. Dial race mechanics belong with existing link tunnel tests under
 `tests/link/`.
 
-### 11. `sol observer list` and `status` mode column
+### 11. `journal observer list` and `status` mode column
 
 Chosen: add a `Mode` column to human output and a `mode` field to JSON output.
 For PL rows, `Prefix` shows the 16-hex fingerprint prefix.
@@ -560,7 +560,7 @@ route/client change depends on stable PL-safe identity and prefix handling.
 | `solstone/apps/observer/tests/test_pl_pairing.py` | Observer-role pairing writes observer record, phone-role pairing does not, rollback deletes new observer record on ledger write failure. |
 | `solstone/apps/observer/tests/test_routes.py` | Phone-paired PL ingest returns 401 `AUTH_REQUIRED`; observer-paired PL ingest succeeds. |
 | `solstone/apps/observer/tests/test_routes.py` | Re-pair with same label/new fingerprint leaves old record and creates new record. |
-| `tests/test_observer_cli.py` | `sol observer list/status` include mode and show 16-char PL prefix. |
+| `tests/test_observer_cli.py` | `journal observer list/status` include mode and show 16-char PL prefix. |
 | `tests/integration/test_observer_over_pl_e2e.py` | Authored end-to-end: pair as observer, start PL client, upload segment, verify history/status. |
 
 ## Out Of Scope

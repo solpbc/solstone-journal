@@ -19,7 +19,7 @@ UNREACHABLE = "supervisor not reachable - start it (journal start), then retry\n
 
 def _invoke_reprocess(monkeypatch, capsys, journal: Path, *argv: str):
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
-    monkeypatch.setattr("sys.argv", ["sol reprocess", *argv])
+    monkeypatch.setattr("sys.argv", ["journal reprocess", *argv])
 
     exit_code = 0
     try:

@@ -748,7 +748,7 @@ const Dashboard = (function() {
       document.getElementById('notice').appendChild(
         el('div', {className: 'alert alert-warning'}, [
           'These stats were generated with an older format. Run ',
-          el('code', {}, ['sol journal-stats']),
+          el('code', {}, ['journal journal-stats']),
           ' to regenerate.'
         ])
       );

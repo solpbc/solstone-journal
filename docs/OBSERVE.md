@@ -16,26 +16,26 @@ Observers are independent capture agents that upload segments to solstone via th
 
 ```bash
 # List all registered observers
-sol observer list
+journal observer list
 
 # Register a new observer
-sol observer create <name>
+journal observer create <name>
 
 # Check observer status
-sol observer status <name>
+journal observer status <name>
 
 # Rename an observer
-sol observer rename <old> <new>
+journal observer rename <old> <new>
 
 # Revoke an observer's key
-sol observer revoke <name>
+journal observer revoke <name>
 ```
 
 ## Commands
 
 | Command | Purpose |
 |---------|---------|
-| `sol observer` | Manage observer registrations (see "Managing observers" above) |
+| `journal observer` | Manage observer registrations (see "Managing observers" above) |
 | `journal transcribe` | Audio transcription with faster-whisper |
 | `journal describe` | Visual analysis of screen recordings |
 | `journal grab` | Walk available screen frames and optionally write frame images |

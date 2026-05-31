@@ -394,7 +394,7 @@ def _drain_priority_batch(
                 if output_path.exists():
                     logging.debug(f"Indexing {output_path}")
                     run_queued_command(
-                        ["sol", "indexer", "--rescan-file", str(output_path)],
+                        ["journal", "indexer", "--rescan-file", str(output_path)],
                         day,
                         timeout=60,
                     )
@@ -2231,7 +2231,12 @@ def run_activity_prompts(
                         if output_path.exists():
                             logging.debug(f"Indexing {output_path}")
                             run_queued_command(
-                                ["sol", "indexer", "--rescan-file", str(output_path)],
+                                [
+                                    "journal",
+                                    "indexer",
+                                    "--rescan-file",
+                                    str(output_path),
+                                ],
                                 day,
                                 timeout=60,
                             )
@@ -2750,8 +2755,8 @@ def dry_run(
         )
 
     if not segment:
-        print("Post-phase: sol indexer --rescan")
-        print("Post-phase: sol journal-stats")
+        print("Post-phase: journal indexer --rescan")
+        print("Post-phase: journal journal-stats")
 
 
 def _print_prompt_table(
@@ -3386,7 +3391,7 @@ def main() -> None:
         # POST-PHASE: Final indexing and stats (daily only)
         if not args.segment:
             logging.info("Running post-phase: indexer rescan")
-            rescan_cmd = ["sol", "indexer", "--rescan"]
+            rescan_cmd = ["journal", "indexer", "--rescan"]
             if args.verbose:
                 rescan_cmd.append("--verbose")
             _jsonl_log("phase.start", mode=_run_mode, day=day, phase="indexer_rescan")
@@ -3402,7 +3407,7 @@ def main() -> None:
             )
 
             logging.info("Running post-phase: journal stats")
-            stats_cmd = ["sol", "journal-stats"]
+            stats_cmd = ["journal", "journal-stats"]
             if args.verbose:
                 stats_cmd.append("--verbose")
             _jsonl_log("phase.start", mode=_run_mode, day=day, phase="journal_stats")

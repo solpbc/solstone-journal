@@ -1180,7 +1180,7 @@ class TestHeartbeatSchedule:
             raw = json.load(f)
 
         assert raw["providers"] == {
-            "cmd": ["sol", "providers", "check"],
+            "cmd": ["journal", "providers", "check"],
             "every": "daily",
             "enabled": True,
             "max_runtime": "5m",
@@ -1221,7 +1221,7 @@ class TestHeartbeatSchedule:
         import solstone.think.scheduler as mod
 
         existing = {
-            "cmd": ["sol", "providers", "check", "--custom"],
+            "cmd": ["journal", "providers", "check", "--custom"],
             "every": "daily",
             "enabled": False,
         }

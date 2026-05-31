@@ -163,7 +163,7 @@ class CortexService:
             self.callosum.start(callback=self._handle_callosum_message)
             self.logger.info("Connected to Callosum message bus")
             self.callosum.emit(
-                "supervisor", "request", cmd=["sol", "providers", "check"]
+                "supervisor", "request", cmd=["journal", "providers", "check"]
             )
             self.logger.info("Requested providers health check via supervisor")
         except Exception as e:

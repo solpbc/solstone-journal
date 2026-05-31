@@ -21,7 +21,7 @@ check, maintain, close.
 
 ## Step 1: Check system health
 
-Run `sol health` and check recent health logs with `sol health logs --since 1h`.
+Run `journal health` and check recent health logs with `journal health logs --since 1h`.
 Note any service issues, capture gaps, or pipeline failures.
 
 If you find issues: update agency.md's `## system` section via

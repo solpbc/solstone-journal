@@ -17,7 +17,7 @@ from solstone.think.surfaces.types import HealthReport
 from solstone.think.utils import require_solstone
 
 app = typer.Typer(
-    help="Health: journal-data trust signals (for infrastructure/service liveness, use `sol health`).",
+    help="Health: journal-data trust signals (for infrastructure/service liveness, use `journal health`).",
     no_args_is_help=True,
 )
 

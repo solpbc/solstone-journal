@@ -80,15 +80,15 @@ def test_sol_access_commands_still_dispatch(monkeypatch):
 
     monkeypatch.setattr(sol_cli, "run_command", fake_run_command)
     monkeypatch.setattr(sol_cli.setproctitle, "setproctitle", lambda _title: None)
-    monkeypatch.setattr(sys, "argv", ["sol", "health"])
+    monkeypatch.setattr(sys, "argv", ["sol", "chat"])
 
     with pytest.raises(SystemExit) as exc_info:
         sol_cli.main()
 
     assert exc_info.value.code == 0
     assert result == {
-        "module": sol_cli.COMMANDS["health"].module,
-        "argv": ["sol health"],
+        "module": sol_cli.COMMANDS["chat"].module,
+        "argv": ["sol chat"],
     }
 
 

@@ -138,7 +138,7 @@ def migrate_topic_to_agent(*, journal: str, dry_run: bool) -> MigrationCounters:
     print(f"  stats errors:    {counters.stats_errors}")
     print(f"  event rows renamed: {counters.event_records_renamed}")
     print(f"  stats keys renamed: {counters.stats_keys_renamed}")
-    print("After migration, run: sol indexer --rebuild")
+    print("After migration, run: journal indexer --rebuild")
 
     return counters
 

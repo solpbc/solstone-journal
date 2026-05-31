@@ -13,7 +13,7 @@ Usage:
     journal transfer send --to LABEL [--day YYYYMMDD] [--dry-run]
 
 On the RECEIVING host (the machine you are sending TO), run
-`sol observer create <name>` to generate an observer API key, then pass it
+`journal observer create <name>` to generate an observer API key, then pass it
 as `--key`.
 """
 
@@ -54,7 +54,7 @@ from .utils import compute_file_sha256, find_available_segment
 
 OBSERVER_KEY_HINT = (
     "On the RECEIVING host (the machine you are sending TO), run "
-    "`sol observer create <name>` to generate an observer API key, then "
+    "`journal observer create <name>` to generate an observer API key, then "
     "pass it as `--key`."
 )
 
@@ -377,7 +377,7 @@ def import_archive(
     sent = callosum_send(
         "supervisor",
         "request",
-        cmd=["sol", "indexer", "--rescan"],
+        cmd=["journal", "indexer", "--rescan"],
     )
     if sent:
         logger.info("  Indexer rescan queued")
@@ -945,7 +945,7 @@ def main() -> None:
         default=None,
         help=(
             "Observer API key for URL mode (generate on the RECEIVING host with "
-            "`sol observer create <name>`)"
+            "`journal observer create <name>`)"
         ),
     )
     send_parser.add_argument(

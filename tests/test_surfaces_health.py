@@ -1035,7 +1035,7 @@ def test_cli_help_disambiguates_and_lists_health_once(tmp_path, monkeypatch):
 
     assert health_help.exit_code == 0
     assert (
-        "Health: journal-data trust signals (for infrastructure/service liveness, use `sol health`)."
+        "Health: journal-data trust signals (for infrastructure/service liveness, use `journal health`)."
         in normalized_help
     )
     assert root_help.exit_code == 0

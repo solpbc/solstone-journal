@@ -272,7 +272,7 @@ class ManagedProcess:
 
             # With explicit correlation ID:
             managed = ManagedProcess.spawn(
-                ["sol", "indexer", "--rescan"],
+                ["journal", "indexer", "--rescan"],
                 ref="1730476800000",
             )
             # Logs to: {JOURNAL}/{YYYYMMDD}/health/1730476800000_indexer.log
@@ -542,7 +542,7 @@ def run_task(
 
         # With explicit correlation ID:
         success, code, log = run_task(
-            ["sol", "indexer", "--rescan"],
+            ["journal", "indexer", "--rescan"],
             ref="1730476800000",
         )
         # Logs to: {JOURNAL}/{YYYYMMDD}/health/1730476800000_indexer.log

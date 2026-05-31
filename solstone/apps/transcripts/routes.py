@@ -1100,7 +1100,7 @@ def delete_segment(day: str, stream: str, segment_key: str) -> Any:
             emit(
                 "supervisor",
                 "request",
-                cmd=["sol", "indexer", "--rescan-full"],
+                cmd=["journal", "indexer", "--rescan-full"],
             )
             log_app_action(
                 app="transcripts",

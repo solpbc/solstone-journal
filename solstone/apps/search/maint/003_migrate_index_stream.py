@@ -65,7 +65,7 @@ def _request_full_rescan() -> bool:
     return callosum_send(
         "supervisor",
         "request",
-        cmd=["sol", "indexer", "--rescan-full"],
+        cmd=["journal", "indexer", "--rescan-full"],
     )
 
 
@@ -92,7 +92,9 @@ def migrate(journal: str) -> bool:
     if _request_full_rescan():
         print("Full rescan queued")
     else:
-        print("Could not reach supervisor — run 'sol indexer --rescan-full' manually")
+        print(
+            "Could not reach supervisor — run 'journal indexer --rescan-full' manually"
+        )
 
     return True
 

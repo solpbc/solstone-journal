@@ -2,24 +2,24 @@
 name: health
 description: >
   Monitor solstone uptime, troubleshoot capture/processing failures, review
-  agent run costs and errors, pipeline health. CLIs: sol health (service),
+  agent run costs and errors, pipeline health. CLIs: journal health (service),
   journal talent (agent runs), sol call health pipeline (per-day summary).
   TRIGGER: health, status, is it running, service down, errors, agent runs,
-  logs, pipeline, sol health, journal talent logs.
+  logs, pipeline, journal health, journal talent logs.
 ---
 
 # Health CLI Skill
 
-Monitor solstone service uptime, troubleshoot failures, and inspect agent runs. Invoke via Bash: `sol health ...`, `journal talent ...`, or `sol call health <command>`.
+Monitor solstone service uptime, troubleshoot failures, and inspect agent runs. Invoke via Bash: `journal health ...`, `journal talent ...`, or `sol call health <command>`.
 
-**Scope note**: Three CLI surfaces live here: `sol health*` (supervisor/service level), `journal talent*` (agent run level), and `sol call health <command>` (app-level pipeline health). They're grouped together because health troubleshooting routinely crosses the three levels.
+**Scope note**: Three CLI surfaces live here: `journal health*` (supervisor/service level), `journal talent*` (agent run level), and `sol call health <command>` (app-level pipeline health). They're grouped together because health troubleshooting routinely crosses the three levels.
 
-**Typical workflow**: `sol health` → `sol health logs` → `journal talent logs` → `journal talent log <ID>` for agent-run detail → `sol call health pipeline` for a day-level pipeline summary.
+**Typical workflow**: `journal health` → `journal health logs` → `journal talent logs` → `journal talent log <ID>` for agent-run detail → `sol call health pipeline` for a day-level pipeline summary.
 
 ## status
 
 ```bash
-sol health
+journal health
 ```
 
 Show current supervisor status: running services (names, PIDs, uptimes), crashed services, active tasks, queue depths, heartbeat health, and callosum client count.
@@ -29,13 +29,13 @@ Connects to `journal/health/callosum.sock` with a 10-second timeout.
 Example:
 
 ```bash
-sol health
+journal health
 ```
 
 ## logs
 
 ```bash
-sol health logs [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN]
+journal health logs [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN]
 ```
 
 View service health logs from today's log files.
@@ -56,10 +56,10 @@ Behavior notes:
 Examples:
 
 ```bash
-sol health logs
-sol health logs -c 20 --service cortex
-sol health logs --since 30m --grep "ERROR"
-sol health logs -f
+journal health logs
+journal health logs -c 20 --service cortex
+journal health logs --since 30m --grep "ERROR"
+journal health logs -f
 ```
 
 ## agent runs
@@ -187,7 +187,7 @@ Which services write where:
 
 ## Troubleshooting
 
-### `sol health` returns "Connection refused" or times out
+### `journal health` returns "Connection refused" or times out
 The supervisor is not running. Check if `journal supervisor` is active. The owner may need to start solstone with `journal start` or `make dev`.
 
 ### Agent run shows "error" status in `journal talent logs`
@@ -197,15 +197,15 @@ Run `journal talent log <ID> --full` to see the complete event timeline includin
 - Network connectivity
 
 ### Missing segments or capture gaps
-1. Run `sol health` to check observer service status
-2. Run `sol health logs --service sense --since 2h` to check for transcription errors
-3. Check if the stream is active: `sol streams`
+1. Run `journal health` to check observer service status
+2. Run `journal health logs --service sense --since 2h` to check for transcription errors
+3. Check if the stream is active: `journal streams`
 
 ### High agent costs
 Run `journal talent logs --summary` for aggregated cost view. Filter by agent: `journal talent logs <agent-name> --summary`.
 
 ## Gotchas
 
-- **`sol health` times out at 10 seconds.** If the supervisor is slow or hung, you'll hit the timeout before seeing results. Confirm the supervisor process is alive (`ps` / `journal supervisor` status) before assuming the service is down.
+- **`journal health` times out at 10 seconds.** If the supervisor is slow or hung, you'll hit the timeout before seeing results. Confirm the supervisor process is alive (`ps` / `journal supervisor` status) before assuming the service is down.
 - **Talent log IDs are millisecond timestamps.** `journal talent log 1700000000001` expects the full ID from `journal talent logs`, not a seconds-precision value.
 - **`sol call health pipeline` needs today's processing to have run.** Running it at 6am before the daily pipeline has executed will return sparse results for today; use `--yesterday` instead.

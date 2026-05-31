@@ -88,7 +88,7 @@ sol                    # Status overview and command list
 journal supervisor         # Start the full stack (capture + processing + web)
 sol chat               # Interactive AI chat from the terminal
 journal transcribe <file>  # Transcribe an audio file
-sol indexer            # Rebuild the search index
+journal indexer            # Rebuild the search index
 ```
 
 Run `sol help` for the full command reference.

@@ -33,7 +33,7 @@ Use the diagnostic command that matches the question:
   This is the health diagnosis view.
 - `make preflight` — can a fresh source checkout get ready before `.venv` or
   `uv` exist?
-- `sol health` — what live supervisor status is being reported right now?
+- `journal health` — what live supervisor status is being reported right now?
 
 `sol doctor` runs four checks:
 
@@ -87,7 +87,7 @@ The supervisor (`journal supervisor`) manages these services:
 | Service | Command | Purpose | Auto-restart |
 |---------|---------|---------|--------------|
 | Callosum | (in-process) | Message bus for inter-service events | No |
-| Observer | `sol observer` | Screen/audio capture (platform-detected) | Yes |
+| Observer | `journal observer` | Screen/audio capture (platform-detected) | Yes |
 | Sense | `journal sense` | File detection, processing dispatch | Yes |
 
 Cortex (agent execution) connects to Callosum but runs independently via `journal cortex`.
@@ -381,7 +381,7 @@ journal describe /path/to/broken.mov -v
 - The segment duration (DURATION_SECS) comes from the segment folder name (`HHMMSS_LEN` — LEN is duration in seconds)
 - The reference file must be from the same stream/session so codec parameters match
 - PyAV (used by `journal describe`) bundles its own HEVC decoder, so this works even if system ffmpeg lacks one
-- After recovery, run `sol indexer` if you need the new screen extracts searchable
+- After recovery, run `journal indexer` if you need the new screen extracts searchable
 
 ---
 

@@ -278,11 +278,11 @@ Cogitate talents have access to all `sol` commands. The following infrastructure
 - `sol import`
 - `journal config`
 - `journal cortex`
-- `sol providers check`
+- `journal providers check`
 - `sol callosum`
-- `sol observer` / `sol observe-*`
+- `journal observer` / `sol observe-*`
 - `journal sense`
 - `journal transcribe` / `journal describe`
-- `sol indexer --reset`
+- `journal indexer --reset`
 
-Talents should use `sol call` commands for journal interaction and `sol health` / `journal talent logs` for diagnostics.
+Talents should use `sol call` commands for journal interaction and `journal health` / `journal talent logs` for diagnostics.

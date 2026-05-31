@@ -159,10 +159,10 @@ completed, timed_out = wait_for_uses([use_id], timeout=300)
 
 ### Direct CLI Usage (Testing Only)
 
-The `sol providers check` command is an ad-hoc provider check CLI. Cortex does not use it as the talent spawn path. For testing purposes, it can be invoked directly:
+The `journal providers check` command is an ad-hoc provider check CLI. Cortex does not use it as the talent spawn path. For testing purposes, it can be invoked directly:
 
 ```bash
-sol providers check [TASK_FILE] [--provider PROVIDER] [--model MODEL] [--max-tokens N] [-o OUT_FILE]
+journal providers check [TASK_FILE] [--provider PROVIDER] [--model MODEL] [--max-tokens N] [-o OUT_FILE]
 ```
 
 The provider can be ``openai`` (default), ``google``, ``anthropic``, ``local``, or ``mlx``. Configure cloud API keys in the ``env`` section of ``journal/config/journal.json`` (for example, ``OPENAI_API_KEY``, ``GOOGLE_API_KEY``, or ``ANTHROPIC_API_KEY``). The ``local`` provider requires no API key — Settings installs a bundled loopback llama-server runtime and GGUF model on demand. Keys are loaded into ``os.environ`` by ``setup_cli()`` at process startup.
@@ -223,7 +223,7 @@ AI agent system and tool-calling support for solstone.
 | Command | Purpose |
 |---------|---------|
 | `journal cortex` | Agent orchestration service |
-| `sol providers check` | Ad-hoc provider check (testing only) |
+| `journal providers check` | Ad-hoc provider check (testing only) |
 
 ## Architecture
 

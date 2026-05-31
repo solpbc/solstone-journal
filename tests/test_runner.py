@@ -444,7 +444,7 @@ def test_run_task_day_override(journal_path, mock_callosum):
             "flush",
         ),
         (["journal", "think", "--day", "20240115", "--segments"], "segment"),
-        (["sol", "indexer", "--rescan"], "indexer"),
+        (["journal", "indexer", "--rescan"], "indexer"),
     ],
 )
 def test_command_name_derivation(
