@@ -249,6 +249,8 @@ def _rewrite_processor_config(source: Path, target: Path) -> None:
         raise ValueError("processor_config.json missing image_processor")
     image_processor["max_soft_tokens"] = MLX_SOFT_TOKEN_BUDGET
     image_processor["image_seq_length"] = MLX_SOFT_TOKEN_BUDGET
+    if "image_seq_length" in data:
+        data["image_seq_length"] = MLX_SOFT_TOKEN_BUDGET
     _write_json(target, data)
 
 
@@ -262,6 +264,7 @@ def _gemma4_variant_valid(variant_dir: Path) -> bool:
             config["vision_config"]["default_output_length"] == MLX_SOFT_TOKEN_BUDGET
             and image_processor["max_soft_tokens"] == MLX_SOFT_TOKEN_BUDGET
             and image_processor["image_seq_length"] == MLX_SOFT_TOKEN_BUDGET
+            and processor_config["image_seq_length"] == MLX_SOFT_TOKEN_BUDGET
         )
     except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
         return False

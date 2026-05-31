@@ -352,9 +352,11 @@ def test_create_gemma4_variant_rewrites_json_and_symlinks_rest(
     assert config["vision_config"]["default_output_length"] == budget
     assert processor_config["image_processor"]["max_soft_tokens"] == budget
     assert processor_config["image_processor"]["image_seq_length"] == budget
+    assert processor_config["image_seq_length"] == budget
     assert config["vision_config"]["default_output_length"] != 280
     assert processor_config["image_processor"]["max_soft_tokens"] != 280
     assert processor_config["image_processor"]["image_seq_length"] != 280
+    assert processor_config["image_seq_length"] != 280
 
     symlinked = {
         "model.safetensors.index.json",
@@ -374,3 +376,39 @@ def test_create_gemma4_variant_rewrites_json_and_symlinks_rest(
     )
     assert real_files == ["config.json", "processor_config.json"]
     assert sum((variant_dir / path).stat().st_size for path in real_files) < 64 * 1024
+
+
+def test_gemma4_variant_valid_rejects_stale_top_level_image_seq_length(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init_journal(tmp_path, monkeypatch)
+    budget = mlx_install.MLX_SOFT_TOKEN_BUDGET
+    variant_dir = tmp_path / "variant"
+    variant_dir.mkdir()
+    (variant_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "vision_config": {
+                    "default_output_length": budget,
+                    "position_embedding_size": 10240,
+                }
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (variant_dir / "processor_config.json").write_text(
+        json.dumps(
+            {
+                "image_processor": {
+                    "max_soft_tokens": budget,
+                    "image_seq_length": budget,
+                },
+                "image_seq_length": 280,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert not mlx_install._gemma4_variant_valid(variant_dir)
