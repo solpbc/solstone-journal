@@ -128,6 +128,7 @@ parakeet-onnx-cuda = [
 [project.scripts]
 sol = "solstone.think.sol_cli:main"
 journal = "solstone.think.sol_cli:journal_main"
+mlx-vlm-server = "solstone.think.providers.mlx_server:main"
 
 [project.urls]
 Homepage = "https://github.com/solpbc/solstone-journal"

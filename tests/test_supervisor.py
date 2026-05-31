@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import psutil
@@ -1626,6 +1627,93 @@ def test_stop_process_uses_service_shutdown_timeout():
 
     managed.terminate.assert_called_once_with(timeout=9)
     managed.cleanup.assert_called_once_with()
+
+
+def test_start_local_server_launches_mlx_server_on_darwin(
+    tmp_path, monkeypatch, capsys
+):
+    mod = importlib.import_module("solstone.think.supervisor")
+    from solstone.think.providers import local_server, mlx_install
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    mod._SERVICE_STATE.clear()
+    runtime_dir = tmp_path / "gemma4" / "variant-1120"
+    written_ports = []
+    spawned = []
+    managed = _TaskManagedStub(cmd=[])
+    managed.name = "mlx-vlm-server"
+    managed.process.returncode = None
+
+    monkeypatch.setattr(
+        mlx_install,
+        "inspect_readiness",
+        lambda: {
+            "platform_supported": True,
+            "package_available": True,
+            "ram_sufficient": True,
+            "model_installed": True,
+            "runtime_dir": str(runtime_dir),
+            "model_id": "gemma-4-26b-a4b-it-mlx-4bit",
+        },
+    )
+    monkeypatch.setattr(mod, "find_available_port", lambda: 2468)
+    monkeypatch.setattr(
+        mod,
+        "write_service_port",
+        lambda service, port: written_ports.append((service, port)),
+    )
+    monkeypatch.setattr(local_server, "_probe_health", lambda port: ("ready", None))
+
+    def fake_spawn(cmd, *, ref=None, callosum=None, day=None):
+        spawned.append(cmd)
+        managed.cmd = cmd
+        managed.ref = ref
+        return managed
+
+    monkeypatch.setattr(mod.RunnerManagedProcess, "spawn", fake_spawn)
+
+    result = mod.start_local_server()
+
+    assert result is managed
+    assert written_ports == [("local", 2468)]
+    assert spawned == [
+        [
+            str(Path(sys.executable).with_name("mlx-vlm-server")),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "2468",
+            "--model",
+            str(runtime_dir),
+        ]
+    ]
+    assert "0.0.0.0" not in spawned[0]
+    assert "--draft-model" not in spawned[0]
+    assert "--draft-kind" not in spawned[0]
+    assert mod._SERVICE_STATE["mlx-vlm-server"]["restart"] is True
+    assert mod.LOCAL_MODEL_WARMING_UP_COPY in capsys.readouterr().out
+
+
+def test_start_local_server_skips_when_mlx_not_installed_on_darwin(monkeypatch):
+    mod = importlib.import_module("solstone.think.supervisor")
+    from solstone.think.providers import mlx_install
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(
+        mlx_install,
+        "inspect_readiness",
+        lambda: {
+            "platform_supported": True,
+            "package_available": True,
+            "ram_sufficient": True,
+            "model_installed": False,
+        },
+    )
+    launch = MagicMock()
+    monkeypatch.setattr(mod, "_launch_process", launch)
+
+    assert mod.start_local_server() is None
+    launch.assert_not_called()
 
 
 def test_start_local_server_launches_llama_server_key_and_cmd(

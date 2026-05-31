@@ -29,6 +29,7 @@ from solstone.think.callosum import CallosumConnection, CallosumServer
 from solstone.think.maint import run_pending_tasks
 from solstone.think.models import LOCAL_MODEL, is_local_provider_needed
 from solstone.think.pipeline_health import read_day_stuck
+from solstone.think.providers.mlx_server import MLX_SERVER_PROCESS_NAME
 from solstone.think.readiness import clear_ready, signal_ready
 from solstone.think.runner import ManagedProcess as RunnerManagedProcess
 from solstone.think.runner import _command_partition
@@ -124,6 +125,8 @@ def _candidate_journal(proc: "psutil.Process") -> Path | None:
 # via proc.name() after the supervisor dies — which is what lets the sweep
 # find it. The supervisor-owned `llama-server` reports its own bare binary
 # name (no colon prefix) and is included here so the sweep reaps it too.
+# The mlx-vlm server is a Python process, but our launcher sets the same
+# managed proctitle so proc.name() is stable for orphan sweeping.
 _MANAGED_SERVICE_PROCTITLES = frozenset(
     {
         "journal:sense",
@@ -131,6 +134,7 @@ _MANAGED_SERVICE_PROCTITLES = frozenset(
         "journal:convey",
         "journal:spl",
         LOCAL_SERVER_PROCESS_NAME,
+        MLX_SERVER_PROCESS_NAME,
     }
 )
 
@@ -1211,8 +1215,73 @@ def start_sense() -> RunnerManagedProcess:
     return _launch_process("sense", ["journal", "sense", "-v"], restart=True)
 
 
+def _start_mlx_local_server() -> RunnerManagedProcess | None:
+    """Launch the supervisor-owned mlx-vlm server when artifacts are present."""
+    from solstone.think.providers import local_server, mlx_install
+
+    readiness = mlx_install.inspect_readiness()
+    readiness_keys = (
+        "platform_supported",
+        "package_available",
+        "ram_sufficient",
+        "model_installed",
+    )
+    if not all(readiness.get(key) for key in readiness_keys):
+        logging.info(
+            "MLX local model not ready; skipping mlx-vlm server startup: %s",
+            {key: readiness.get(key) for key in readiness_keys},
+        )
+        return None
+
+    runtime_dir = readiness["runtime_dir"]
+    model_id = readiness["model_id"]
+    port = find_available_port()
+    write_service_port("local", port)
+    script_path = str(Path(sys.executable).with_name(MLX_SERVER_PROCESS_NAME))
+    cmd = [
+        script_path,
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--model",
+        str(runtime_dir),
+    ]
+    if "0.0.0.0" in cmd:
+        raise RuntimeError("Local server may not bind 0.0.0.0.")
+
+    logging.info("Starting mlx-vlm server for %s from %s", model_id, runtime_dir)
+    managed = _launch_process(MLX_SERVER_PROCESS_NAME, cmd, restart=True)
+    print(f"  {LOCAL_MODEL_WARMING_UP_COPY}", flush=True)
+
+    deadline = time.monotonic() + LOCAL_SERVER_READY_TIMEOUT_S
+    while time.monotonic() < deadline:
+        if managed.process.poll() is not None:
+            logging.warning(
+                "mlx-vlm server exited during warmup with code %s",
+                managed.process.returncode,
+            )
+            return managed
+        state, error = local_server._probe_health(port)
+        if state == local_server.STATE_READY:
+            logging.info("mlx-vlm server ready on port %s", port)
+            return managed
+        if state == local_server.STATE_FAILED and error:
+            logging.debug("mlx-vlm server health probe failed during warmup: %s", error)
+        time.sleep(LOCAL_SERVER_HEALTH_POLL_INTERVAL_S)
+
+    logging.warning(
+        "mlx-vlm server did not become ready within %.0fs; continuing startup",
+        LOCAL_SERVER_READY_TIMEOUT_S,
+    )
+    return managed
+
+
 def start_local_server() -> RunnerManagedProcess | None:
     """Launch the supervisor-owned local llama-server when artifacts are present."""
+    if sys.platform == "darwin":
+        return _start_mlx_local_server()
+
     from solstone.think.providers import local_install, local_server
 
     try:
