@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import dataclass
 from datetime import date, datetime
+from enum import Enum
 
 from solstone.think.callosum import callosum_send
 from solstone.think.utils import (
@@ -19,26 +21,78 @@ from solstone.think.utils import (
 )
 
 UNREACHABLE_MESSAGE = "supervisor not reachable - start it (journal start), then retry"
+FLAVOR_PROCESS_NOW = "process-now"
+FLAVOR_FROM_SCRATCH = "from-scratch"
 
 
-def _fail(message: str) -> None:
-    print(message, file=sys.stderr)
-    raise SystemExit(1)
+class ReprocessCode(Enum):
+    MALFORMED_DAY = "malformed_day"
+    PAST_ONLY = "past_only"
+    NO_DATA = "no_data"
+    FROM_SCRATCH_SUBMITTED = "from_scratch_submitted"
+    ALREADY_COMPLETE = "already_complete"
+    PROCESS_NOW_SUBMITTED = "process_now_submitted"
+    UNREACHABLE = "unreachable"
 
 
-def _parse_day(day: str) -> date:
+@dataclass(frozen=True)
+class ReprocessOutcome:
+    code: ReprocessCode
+
+
+_CLI_STDOUT = {
+    ReprocessCode.PROCESS_NOW_SUBMITTED: "reprocess (process-now) submitted for {day}",
+    ReprocessCode.FROM_SCRATCH_SUBMITTED: (
+        "reprocess (from-scratch) submitted for {day}"
+    ),
+    ReprocessCode.ALREADY_COMPLETE: (
+        "day {day} already complete; use --from-scratch to force a full re-run"
+    ),
+}
+
+_CLI_STDERR = {
+    ReprocessCode.MALFORMED_DAY: "expected day in YYYYMMDD format",
+    ReprocessCode.PAST_ONLY: (
+        "reprocess is past-only (cannot reprocess today or a future day)"
+    ),
+    ReprocessCode.NO_DATA: "no data for day {day}",
+    ReprocessCode.UNREACHABLE: UNREACHABLE_MESSAGE,
+}
+
+
+def reprocess_day(day: str, flavor: str) -> ReprocessOutcome:
     if not DATE_RE.fullmatch(day):
-        _fail("expected day in YYYYMMDD format")
+        return ReprocessOutcome(ReprocessCode.MALFORMED_DAY)
     try:
-        return datetime.strptime(day, "%Y%m%d").date()
+        parsed = datetime.strptime(day, "%Y%m%d").date()
     except ValueError:
-        _fail("expected day in YYYYMMDD format")
-
-
-def _validate_day_has_data(day: str) -> None:
+        return ReprocessOutcome(ReprocessCode.MALFORMED_DAY)
+    if parsed >= date.today():
+        return ReprocessOutcome(ReprocessCode.PAST_ONLY)
     day_dir = day_path(day, create=False)
     if not day_dir.is_dir() or not iter_segments(day):
-        _fail(f"no data for day {day}")
+        return ReprocessOutcome(ReprocessCode.NO_DATA)
+
+    if flavor == FLAVOR_FROM_SCRATCH:
+        # Supervisor request dedups by the "daily" command partition, not by day.
+        # A successful send means the request reached supervisor, not that it ran.
+        ok = callosum_send(
+            "supervisor",
+            "request",
+            cmd=["journal", "think", "-v", "--day", day, "--from-scratch"],
+            day=day,
+        )
+        return ReprocessOutcome(
+            ReprocessCode.FROM_SCRATCH_SUBMITTED if ok else ReprocessCode.UNREACHABLE
+        )
+
+    if day_is_complete(day):
+        return ReprocessOutcome(ReprocessCode.ALREADY_COMPLETE)
+
+    ok = callosum_send("supervisor", "drain", day=day)
+    return ReprocessOutcome(
+        ReprocessCode.PROCESS_NOW_SUBMITTED if ok else ReprocessCode.UNREACHABLE
+    )
 
 
 def main() -> None:
@@ -53,33 +107,12 @@ def main() -> None:
     )
 
     args = setup_cli(parser)
-    parsed_day = _parse_day(args.day)
-    if parsed_day >= date.today():
-        _fail("reprocess is past-only (cannot reprocess today or a future day)")
-
-    _validate_day_has_data(args.day)
-
-    if args.from_scratch:
-        # Supervisor request dedups by the "daily" command partition, not by day.
-        # A successful send means the request reached supervisor, not that it ran.
-        ok = callosum_send(
-            "supervisor",
-            "request",
-            cmd=["journal", "think", "-v", "--day", args.day, "--from-scratch"],
-            day=args.day,
-        )
-        if not ok:
-            _fail(UNREACHABLE_MESSAGE)
-        print(f"reprocess (from-scratch) submitted for {args.day}")
+    flavor = FLAVOR_FROM_SCRATCH if args.from_scratch else FLAVOR_PROCESS_NOW
+    outcome = reprocess_day(args.day, flavor)
+    code = outcome.code
+    if code in _CLI_STDOUT:
+        print(_CLI_STDOUT[code].format(day=args.day))
         return
 
-    if day_is_complete(args.day):
-        print(
-            f"day {args.day} already complete; use --from-scratch to force a full re-run"
-        )
-        return
-
-    ok = callosum_send("supervisor", "drain", day=args.day)
-    if not ok:
-        _fail(UNREACHABLE_MESSAGE)
-    print(f"reprocess (process-now) submitted for {args.day}")
+    print(_CLI_STDERR[code].format(day=args.day), file=sys.stderr)
+    raise SystemExit(1)

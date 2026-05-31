@@ -16,13 +16,23 @@ from solstone.convey.backlog_view import stuck_rows, verdict
 from solstone.convey.reasons import (
     FILE_NOT_FOUND,
     FILE_READ_FAILED,
+    INVALID_DAY,
     INVALID_PATH,
     INVALID_REQUEST_VALUE,
     MISSING_REQUIRED_FIELD,
     OBSERVER_RESTART_FAILED,
+    REPROCESS_ALREADY_COMPLETE,
+    REPROCESS_PAST_ONLY,
+    REPROCESS_UNREACHABLE,
 )
 from solstone.convey.utils import error_response
 from solstone.think.callosum import callosum_send
+from solstone.think.reprocess import (
+    FLAVOR_FROM_SCRATCH,
+    FLAVOR_PROCESS_NOW,
+    ReprocessCode,
+    reprocess_day,
+)
 from solstone.think.streams import stream_name
 
 logger = logging.getLogger(__name__)
@@ -139,3 +149,34 @@ def restart_observer():
         )
 
     return jsonify(status="restart_requested", service=service)
+
+
+@health_bp.post("/api/reprocess")
+def reprocess():
+    data = request.get_json(silent=True) or {}
+    day = data.get("day")
+    flavor = data.get("flavor")
+    if not day:
+        return error_response(MISSING_REQUIRED_FIELD, detail="Missing day")
+    if flavor not in (FLAVOR_PROCESS_NOW, FLAVOR_FROM_SCRATCH):
+        return error_response(INVALID_REQUEST_VALUE, detail="Unknown reprocess flavor")
+
+    outcome = reprocess_day(day, flavor)
+    code = outcome.code
+    if code in (
+        ReprocessCode.PROCESS_NOW_SUBMITTED,
+        ReprocessCode.FROM_SCRATCH_SUBMITTED,
+    ):
+        return jsonify(status="queued", day=day)
+    if code is ReprocessCode.ALREADY_COMPLETE:
+        return jsonify(
+            status="already_complete",
+            day=day,
+            message=REPROCESS_ALREADY_COMPLETE.message,
+            reason_code=REPROCESS_ALREADY_COMPLETE.code,
+        )
+    if code is ReprocessCode.PAST_ONLY:
+        return error_response(REPROCESS_PAST_ONLY)
+    if code is ReprocessCode.UNREACHABLE:
+        return error_response(REPROCESS_UNREACHABLE)
+    return error_response(INVALID_DAY)

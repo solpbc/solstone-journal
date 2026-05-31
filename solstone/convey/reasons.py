@@ -286,3 +286,22 @@ SPEAKER_NOT_FOUND = Reason(
     "I couldn't find that speaker. They may have been removed — try refreshing the page.",
     404,
 )
+
+# reprocess
+REPROCESS_PAST_ONLY = Reason(
+    "reprocess_past_only",
+    "you can only reprocess past days — today and future days aren't ready yet.",
+    400,
+)
+REPROCESS_UNREACHABLE = Reason(
+    "reprocess_unreachable",
+    "solstone's background service isn't running. start it, then try again.",
+    503,
+)
+# Success-payload reason: intentionally not routed through error_response.
+# Copy is locked verbatim, so this deviates from the "I couldn't…" house style.
+REPROCESS_ALREADY_COMPLETE = Reason(
+    "reprocess_already_complete",
+    "this day's already done. want to redo it from scratch?",
+    200,
+)

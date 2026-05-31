@@ -403,6 +403,38 @@
   font-weight: 700;
 }
 
+.backlog-row-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+}
+
+.backlog-action {
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  color: #374151;
+  cursor: pointer;
+  font-size: 0.75em;
+  padding: 0.25em 0.55em;
+}
+
+.backlog-action:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.backlog-action:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.backlog-action-status {
+  color: #6b7280;
+  font-size: 0.75em;
+}
+
 /* Observe Card (Prominent) */
 .observe-card {
   border-left: 4px solid #22c55e;
@@ -1472,6 +1504,11 @@
           <span class="backlog-row-reason">{{ row.reason }}</span>
         </div>
         {% if row.depth %}<span class="backlog-depth">{{ row.depth }}</span>{% endif %}
+        <div class="backlog-row-actions">
+          <button type="button" class="backlog-action" data-day="{{ row.day }}" data-flavor="process-now">{{ backlog_copy.BACKLOG_ACTION_PROCESS_NOW }}</button>
+          <button type="button" class="backlog-action" data-day="{{ row.day }}" data-flavor="from-scratch" data-confirm="{{ backlog_copy.BACKLOG_CONFIRM_REDO_SCRATCH }}">{{ backlog_copy.BACKLOG_ACTION_REDO_SCRATCH }}</button>
+          <span class="backlog-action-status"></span>
+        </div>
       </div>
       {% endfor %}
     </div>
@@ -1715,6 +1752,7 @@
   let timeoutFired = false;
   const STALE_MS = 30000;
   const HEALTH_GLANCE_COPY = window.HEALTH_GLANCE_COPY;
+  const BACKLOG_QUEUED_FEEDBACK = {{ backlog_copy.BACKLOG_QUEUED_FEEDBACK | tojson }};
 
   // Human-readable service names
   const SERVICE_NAMES = {
@@ -2812,6 +2850,51 @@
 	      });
 	  }
 
+	  function requestBacklogReprocess(button) {
+	    const row = button.closest('.backlog-row');
+	    if (!row) return;
+	    const day = button.dataset.day;
+	    const flavor = button.dataset.flavor;
+	    if (flavor === 'from-scratch' && !window.confirm(button.dataset.confirm)) {
+	      return;
+	    }
+	    const buttons = Array.from(row.querySelectorAll('.backlog-action'));
+	    const statusEl = row.querySelector('.backlog-action-status');
+	    buttons.forEach((rowButton) => { rowButton.disabled = true; });
+	    if (statusEl) statusEl.textContent = '';
+	    window.apiJson('/app/health/api/reprocess', {
+	      method: 'POST',
+	      headers: { 'Content-Type': 'application/json' },
+	      body: JSON.stringify({ day, flavor })
+	    })
+	      .then((result) => {
+	        if (!statusEl) return;
+	        if (result && result.status === 'already_complete') {
+	          statusEl.textContent = result.message || '';
+	          buttons.forEach((rowButton) => { rowButton.disabled = false; });
+	          return;
+	        }
+	        statusEl.textContent = BACKLOG_QUEUED_FEEDBACK;
+	      })
+	      .catch((err) => {
+	        buttons.forEach((rowButton) => { rowButton.disabled = false; });
+	        window.logError(err, { context: 'health: reprocess failed' });
+	        if (statusEl) {
+	          statusEl.textContent = err && err.serverMessage ? err.serverMessage : 'try again';
+	        }
+	      });
+	  }
+
+	  function wireBacklogReprocessActions() {
+	    const host = document.getElementById('backlogNeedsHand');
+	    if (!host) return;
+	    host.querySelectorAll('.backlog-action').forEach((button) => {
+	      if (button.dataset.reprocessBound === 'true') return;
+	      button.dataset.reprocessBound = 'true';
+	      button.addEventListener('click', () => requestBacklogReprocess(button));
+	    });
+	  }
+
   function renderRegisteredObservers(observers) {
     if (!observers || observers.length === 0) {
       elements.registeredObserversCard.classList.add('hidden');
@@ -3784,6 +3867,7 @@
 
 		  // Listen to all Callosum events
   function initHealthRealtime() {
+    wireBacklogReprocessActions();
     if (window.appEvents) {
       window.appEvents.listen('*', handleEvent);
     }

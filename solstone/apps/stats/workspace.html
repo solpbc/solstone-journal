@@ -269,6 +269,39 @@ h1 {
   font-weight: 700;
 }
 
+.backlog-row-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  margin-top: 0.75em;
+}
+
+.backlog-action {
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  color: #374151;
+  cursor: pointer;
+  font-size: 0.8em;
+  padding: 0.35em 0.65em;
+}
+
+.backlog-action:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.backlog-action:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.backlog-action-status {
+  color: #675f58;
+  font-size: 0.85em;
+}
+
 .backlog-list {
   background: white;
   border: 1px solid rgba(0,0,0,0.06);
@@ -740,6 +773,10 @@ h1 {
 
 <script>
   window.BACKLOG_COPY = {
+    ACTION_PROCESS_NOW: {{ backlog_copy.BACKLOG_ACTION_PROCESS_NOW | tojson }},
+    ACTION_REDO_SCRATCH: {{ backlog_copy.BACKLOG_ACTION_REDO_SCRATCH | tojson }},
+    CONFIRM_REDO_SCRATCH: {{ backlog_copy.BACKLOG_CONFIRM_REDO_SCRATCH | tojson }},
+    QUEUED_FEEDBACK: {{ backlog_copy.BACKLOG_QUEUED_FEEDBACK | tojson }},
     VERDICT_CAUGHT_UP: {{ backlog_copy.BACKLOG_VERDICT_CAUGHT_UP | tojson }},
     VERDICT_STUCK_ONLY_PLURAL: {{ backlog_copy.BACKLOG_VERDICT_STUCK_ONLY_PLURAL | tojson }},
     VERDICT_STUCK_ONLY_SINGULAR: {{ backlog_copy.BACKLOG_VERDICT_STUCK_ONLY_SINGULAR | tojson }},

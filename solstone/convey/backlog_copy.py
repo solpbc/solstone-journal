@@ -5,6 +5,13 @@
 
 from __future__ import annotations
 
+BACKLOG_ACTION_PROCESS_NOW = "process now"
+BACKLOG_ACTION_REDO_SCRATCH = "redo from scratch"
+BACKLOG_CONFIRM_REDO_SCRATCH = (
+    "redo this whole day from scratch? this re-does the parts solstone already "
+    "finished, so it'll take longer. the day you see now won't change until it's done."
+)
+BACKLOG_QUEUED_FEEDBACK = "queued — processing now"
 BACKLOG_VERDICT_CAUGHT_UP = "your journal's all caught up."
 BACKLOG_VERDICT_STUCK_ONLY_PLURAL = "caught up except {stuck_n} days that need a hand."
 BACKLOG_VERDICT_STUCK_ONLY_SINGULAR = "caught up except 1 day that needs a hand."
@@ -38,12 +45,16 @@ BACKLOG_CATCHING_UP_TAIL = (
 
 
 __all__ = [
+    "BACKLOG_ACTION_PROCESS_NOW",
+    "BACKLOG_ACTION_REDO_SCRATCH",
     "BACKLOG_BUCKET_DESCRIPTION",
     "BACKLOG_BUCKET_HEADING",
     "BACKLOG_CATCHING_UP_AGGREGATE",
     "BACKLOG_CATCHING_UP_DAY",
     "BACKLOG_CATCHING_UP_TAIL",
+    "BACKLOG_CONFIRM_REDO_SCRATCH",
     "BACKLOG_DAY_BADGE",
+    "BACKLOG_QUEUED_FEEDBACK",
     "BACKLOG_REASON_CORRUPT_RAW",
     "BACKLOG_REASON_FAILING_STEP",
     "BACKLOG_REASON_MISSING_CONFIG",

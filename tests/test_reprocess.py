@@ -202,3 +202,141 @@ def test_supervisor_unreachable_exits_nonzero(tmp_path, monkeypatch, capsys):
     assert out == ""
     assert err == UNREACHABLE
     send.assert_called_once_with("supervisor", "drain", day=DAY)
+
+
+@pytest.mark.parametrize("day", ["2025011", "20250230"])
+def test_reprocess_day_malformed_day_returns_code(tmp_path, monkeypatch, day):
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path / "journal"))
+    send = Mock(return_value=True)
+    monkeypatch.setattr(reprocess, "callosum_send", send)
+
+    outcome = reprocess.reprocess_day(day, reprocess.FLAVOR_PROCESS_NOW)
+
+    assert outcome.code is reprocess.ReprocessCode.MALFORMED_DAY
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "day",
+    [
+        date.today().strftime("%Y%m%d"),
+        (date.today() + timedelta(days=1)).strftime("%Y%m%d"),
+    ],
+)
+def test_reprocess_day_today_and_future_return_past_only(tmp_path, monkeypatch, day):
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path / "journal"))
+    send = Mock(return_value=True)
+    monkeypatch.setattr(reprocess, "callosum_send", send)
+
+    outcome = reprocess.reprocess_day(day, reprocess.FLAVOR_PROCESS_NOW)
+
+    assert outcome.code is reprocess.ReprocessCode.PAST_ONLY
+    send.assert_not_called()
+
+
+def test_reprocess_day_missing_day_returns_no_data(tmp_path, monkeypatch):
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path / "journal"))
+    send = Mock(return_value=True)
+    monkeypatch.setattr(reprocess, "callosum_send", send)
+
+    outcome = reprocess.reprocess_day(DAY, reprocess.FLAVOR_PROCESS_NOW)
+
+    assert outcome.code is reprocess.ReprocessCode.NO_DATA
+    send.assert_not_called()
+
+
+def test_reprocess_day_empty_day_returns_no_data(tmp_path, monkeypatch):
+    journal = tmp_path / "journal"
+    (journal / "chronicle" / DAY / "health").mkdir(parents=True)
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    send = Mock(return_value=True)
+    monkeypatch.setattr(reprocess, "callosum_send", send)
+
+    outcome = reprocess.reprocess_day(DAY, reprocess.FLAVOR_PROCESS_NOW)
+
+    assert outcome.code is reprocess.ReprocessCode.NO_DATA
+    send.assert_not_called()
+
+
+def test_reprocess_day_process_now_submitted(tmp_path, monkeypatch):
+    journal = tmp_path / "journal"
+    _seed_segment(journal)
+    _touch_marker(journal, DAY, "stream.updated", 2_000_000_000)
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    send = Mock(return_value=True)
+    monkeypatch.setattr(reprocess, "callosum_send", send)
+
+    outcome = reprocess.reprocess_day(DAY, reprocess.FLAVOR_PROCESS_NOW)
+
+    assert outcome.code is reprocess.ReprocessCode.PROCESS_NOW_SUBMITTED
+    send.assert_called_once_with("supervisor", "drain", day=DAY)
+
+
+def test_reprocess_day_from_scratch_submitted_before_complete_check(
+    tmp_path, monkeypatch
+):
+    journal = tmp_path / "journal"
+    _seed_segment(journal)
+    _touch_marker(journal, DAY, "stream.updated", 1_000_000_000)
+    _touch_marker(journal, DAY, "daily.updated", 2_000_000_000)
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    send = Mock(return_value=True)
+    monkeypatch.setattr(reprocess, "callosum_send", send)
+
+    outcome = reprocess.reprocess_day(DAY, reprocess.FLAVOR_FROM_SCRATCH)
+
+    assert outcome.code is reprocess.ReprocessCode.FROM_SCRATCH_SUBMITTED
+    send.assert_called_once_with(
+        "supervisor",
+        "request",
+        cmd=["journal", "think", "-v", "--day", DAY, "--from-scratch"],
+        day=DAY,
+    )
+
+
+def test_reprocess_day_already_complete_returns_noop(tmp_path, monkeypatch):
+    journal = tmp_path / "journal"
+    _seed_segment(journal)
+    _touch_marker(journal, DAY, "stream.updated", 1_000_000_000)
+    _touch_marker(journal, DAY, "daily.updated", 2_000_000_000)
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    send = Mock(return_value=True)
+    monkeypatch.setattr(reprocess, "callosum_send", send)
+
+    outcome = reprocess.reprocess_day(DAY, reprocess.FLAVOR_PROCESS_NOW)
+
+    assert outcome.code is reprocess.ReprocessCode.ALREADY_COMPLETE
+    send.assert_not_called()
+
+
+def test_reprocess_day_process_now_unreachable(tmp_path, monkeypatch):
+    journal = tmp_path / "journal"
+    _seed_segment(journal)
+    _touch_marker(journal, DAY, "stream.updated", 2_000_000_000)
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    send = Mock(return_value=False)
+    monkeypatch.setattr(reprocess, "callosum_send", send)
+
+    outcome = reprocess.reprocess_day(DAY, reprocess.FLAVOR_PROCESS_NOW)
+
+    assert outcome.code is reprocess.ReprocessCode.UNREACHABLE
+    send.assert_called_once_with("supervisor", "drain", day=DAY)
+
+
+def test_reprocess_day_from_scratch_unreachable(tmp_path, monkeypatch):
+    journal = tmp_path / "journal"
+    _seed_segment(journal)
+    _touch_marker(journal, DAY, "stream.updated", 2_000_000_000)
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    send = Mock(return_value=False)
+    monkeypatch.setattr(reprocess, "callosum_send", send)
+
+    outcome = reprocess.reprocess_day(DAY, reprocess.FLAVOR_FROM_SCRATCH)
+
+    assert outcome.code is reprocess.ReprocessCode.UNREACHABLE
+    send.assert_called_once_with(
+        "supervisor",
+        "request",
+        cmd=["journal", "think", "-v", "--day", DAY, "--from-scratch"],
+        day=DAY,
+    )

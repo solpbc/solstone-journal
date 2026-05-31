@@ -348,6 +348,35 @@ def test_backlog_needs_hand_bucket_rows(health_env):
     assert "<details" not in section
 
 
+def test_backlog_reprocess_buttons_render(health_env):
+    day = "20260320"
+    rendered = _render_health_workspace_with_stats(
+        health_env,
+        {
+            "backlog": _backlog(
+                stuck_days=1,
+                days=[
+                    {
+                        "day": day,
+                        "state": "stuck",
+                        "segments": 2,
+                        "units": 1,
+                        "reason": "corrupt_raw",
+                    },
+                ],
+            )
+        },
+    )
+
+    section = _section_by_id(rendered, "backlogNeedsHand")
+    assert f'data-day="{day}"' in section
+    assert 'data-flavor="process-now"' in section
+    assert 'data-flavor="from-scratch"' in section
+    assert backlog_copy.BACKLOG_ACTION_PROCESS_NOW in section
+    assert backlog_copy.BACKLOG_ACTION_REDO_SCRATCH in section
+    assert backlog_copy.BACKLOG_CONFIRM_REDO_SCRATCH in section
+
+
 def test_backlog_copy_constants_render_from_shared_source(health_env):
     rendered = _render_health_workspace_with_stats(
         health_env,

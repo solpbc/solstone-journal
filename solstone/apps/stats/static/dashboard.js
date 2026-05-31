@@ -617,6 +617,31 @@ const Dashboard = (function() {
     return `/app/transcripts/${encodeURIComponent(day.day)}`;
   }
 
+  function requestBacklogReprocess(day, flavor, buttons, statusEl, queuedFeedback) {
+    buttons.forEach(button => { button.disabled = true; });
+    statusEl.textContent = '';
+    return window.apiJson('/app/health/api/reprocess', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({day, flavor})
+    })
+      .then(result => {
+        if (result && result.status === 'already_complete') {
+          statusEl.textContent = result.message || '';
+          buttons.forEach(button => { button.disabled = false; });
+          return;
+        }
+        statusEl.textContent = queuedFeedback;
+      })
+      .catch(err => {
+        buttons.forEach(button => { button.disabled = false; });
+        if (window.logError) {
+          window.logError(err, {context: 'stats: reprocess failed'});
+        }
+        statusEl.textContent = err && err.serverMessage ? err.serverMessage : 'try again';
+      });
+  }
+
   function backlogRow(day, C, bl, options = {}) {
     const depth = backlogDepth(day);
     const copy = options.copy || dayCopy(day, C);
@@ -645,6 +670,25 @@ const Dashboard = (function() {
         ])
       );
     }
+
+    const processButton = el('button', {type: 'button', className: 'backlog-action'}, [C.ACTION_PROCESS_NOW]);
+    const redoButton = el('button', {type: 'button', className: 'backlog-action'}, [C.ACTION_REDO_SCRATCH]);
+    const statusEl = el('span', {className: 'backlog-action-status'});
+    const buttons = [processButton, redoButton];
+    processButton.addEventListener('click', () => {
+      requestBacklogReprocess(day.day, 'process-now', buttons, statusEl, C.QUEUED_FEEDBACK);
+    });
+    redoButton.addEventListener('click', () => {
+      if (!window.confirm(C.CONFIRM_REDO_SCRATCH)) return;
+      requestBacklogReprocess(day.day, 'from-scratch', buttons, statusEl, C.QUEUED_FEEDBACK);
+    });
+    children.push(
+      el('div', {className: 'backlog-row-actions'}, [
+        processButton,
+        redoButton,
+        statusEl
+      ])
+    );
 
     return el('div', {className: 'backlog-row'}, children);
   }

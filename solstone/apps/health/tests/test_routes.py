@@ -3,6 +3,28 @@
 
 """Tests for health app routes."""
 
+import os
+from datetime import date
+
+from solstone.convey.reasons import REPROCESS_ALREADY_COMPLETE
+
+DAY = "20250115"
+SEGMENT = "120000_300"
+
+
+def _seed_reprocess_segment(journal, day=DAY):
+    segment_dir = journal / "chronicle" / day / "default" / SEGMENT
+    segment_dir.mkdir(parents=True)
+    return segment_dir
+
+
+def _touch_reprocess_marker(journal, day, name, ns):
+    marker = journal / "chronicle" / day / "health" / name
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+    os.utime(marker, ns=(ns, ns))
+    return marker
+
 
 class TestLogRoute:
     """Tests for GET /app/health/api/log."""
@@ -124,6 +146,190 @@ class TestRestartObserverRoute:
 
         assert response.status_code == 503
         assert response.get_json()["reason_code"] == "observer_restart_failed"
+
+
+class TestReprocessRoute:
+    def test_reprocess_route_reuses_extracted_action_symbol(self):
+        from solstone.apps.health import routes
+        from solstone.think import reprocess
+
+        assert routes.reprocess_day is reprocess.reprocess_day
+
+    def test_reprocess_missing_day_returns_400(self, health_env):
+        env = health_env()
+
+        response = env.client.post(
+            "/app/health/api/reprocess",
+            json={"flavor": "process-now"},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["reason_code"] == "missing_required_field"
+
+    def test_reprocess_bad_flavor_returns_400(self, health_env):
+        env = health_env()
+
+        response = env.client.post(
+            "/app/health/api/reprocess",
+            json={"day": DAY, "flavor": "redo"},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["reason_code"] == "invalid_request_value"
+
+    def test_reprocess_process_now_queues_drain(self, health_env, monkeypatch):
+        env = health_env()
+        _seed_reprocess_segment(env.journal)
+        _touch_reprocess_marker(env.journal, DAY, "stream.updated", 2_000_000_000)
+        calls = []
+
+        def fake_send(tract, event, **fields):
+            calls.append((tract, event, fields))
+            return True
+
+        monkeypatch.setattr("solstone.think.reprocess.callosum_send", fake_send)
+
+        response = env.client.post(
+            "/app/health/api/reprocess",
+            json={"day": DAY, "flavor": "process-now"},
+        )
+
+        assert response.status_code == 200
+        assert response.get_json() == {"status": "queued", "day": DAY}
+        assert calls == [("supervisor", "drain", {"day": DAY})]
+
+    def test_reprocess_from_scratch_queues_request(self, health_env, monkeypatch):
+        env = health_env()
+        _seed_reprocess_segment(env.journal)
+        _touch_reprocess_marker(env.journal, DAY, "stream.updated", 2_000_000_000)
+        calls = []
+
+        def fake_send(tract, event, **fields):
+            calls.append((tract, event, fields))
+            return True
+
+        monkeypatch.setattr("solstone.think.reprocess.callosum_send", fake_send)
+
+        response = env.client.post(
+            "/app/health/api/reprocess",
+            json={"day": DAY, "flavor": "from-scratch"},
+        )
+
+        assert response.status_code == 200
+        assert response.get_json() == {"status": "queued", "day": DAY}
+        assert calls == [
+            (
+                "supervisor",
+                "request",
+                {
+                    "cmd": [
+                        "journal",
+                        "think",
+                        "-v",
+                        "--day",
+                        DAY,
+                        "--from-scratch",
+                    ],
+                    "day": DAY,
+                },
+            )
+        ]
+
+    def test_reprocess_already_complete_returns_success_payload(
+        self, health_env, monkeypatch
+    ):
+        env = health_env()
+        _seed_reprocess_segment(env.journal)
+        _touch_reprocess_marker(env.journal, DAY, "stream.updated", 1_000_000_000)
+        _touch_reprocess_marker(env.journal, DAY, "daily.updated", 2_000_000_000)
+        calls = []
+        monkeypatch.setattr(
+            "solstone.think.reprocess.callosum_send",
+            lambda tract, event, **fields: calls.append((tract, event, fields)) or True,
+        )
+
+        response = env.client.post(
+            "/app/health/api/reprocess",
+            json={"day": DAY, "flavor": "process-now"},
+        )
+
+        assert response.status_code == 200
+        assert response.get_json() == {
+            "status": "already_complete",
+            "day": DAY,
+            "message": REPROCESS_ALREADY_COMPLETE.message,
+            "reason_code": REPROCESS_ALREADY_COMPLETE.code,
+        }
+        assert calls == []
+
+    def test_reprocess_today_returns_past_only(self, health_env, monkeypatch):
+        env = health_env()
+        today = date.today().strftime("%Y%m%d")
+        calls = []
+        monkeypatch.setattr(
+            "solstone.think.reprocess.callosum_send",
+            lambda tract, event, **fields: calls.append((tract, event, fields)) or True,
+        )
+
+        response = env.client.post(
+            "/app/health/api/reprocess",
+            json={"day": today, "flavor": "process-now"},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["reason_code"] == "reprocess_past_only"
+        assert calls == []
+
+    def test_reprocess_unreachable_returns_503(self, health_env, monkeypatch):
+        env = health_env()
+        _seed_reprocess_segment(env.journal)
+        _touch_reprocess_marker(env.journal, DAY, "stream.updated", 2_000_000_000)
+        monkeypatch.setattr(
+            "solstone.think.reprocess.callosum_send",
+            lambda *args, **kwargs: False,
+        )
+
+        response = env.client.post(
+            "/app/health/api/reprocess",
+            json={"day": DAY, "flavor": "process-now"},
+        )
+
+        assert response.status_code == 503
+        assert response.get_json()["reason_code"] == "reprocess_unreachable"
+
+    def test_reprocess_malformed_day_returns_invalid_day(self, health_env, monkeypatch):
+        env = health_env()
+        calls = []
+        monkeypatch.setattr(
+            "solstone.think.reprocess.callosum_send",
+            lambda tract, event, **fields: calls.append((tract, event, fields)) or True,
+        )
+
+        response = env.client.post(
+            "/app/health/api/reprocess",
+            json={"day": "20250230", "flavor": "process-now"},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["reason_code"] == "invalid_day"
+        assert calls == []
+
+    def test_reprocess_no_data_returns_invalid_day(self, health_env, monkeypatch):
+        env = health_env()
+        calls = []
+        monkeypatch.setattr(
+            "solstone.think.reprocess.callosum_send",
+            lambda tract, event, **fields: calls.append((tract, event, fields)) or True,
+        )
+
+        response = env.client.post(
+            "/app/health/api/reprocess",
+            json={"day": DAY, "flavor": "process-now"},
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["reason_code"] == "invalid_day"
+        assert calls == []
 
 
 class TestRetryImportRoute:
