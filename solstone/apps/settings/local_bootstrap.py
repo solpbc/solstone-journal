@@ -222,7 +222,6 @@ def start_bootstrap(model: str) -> tuple[dict[str, str], int]:
             raise LocalBootstrapStartError(str(exc)) from exc
 
         _write_status(transition_state(status, new_state="downloading"))
-        _INSTALL_PROGRESS[model_id] = (0, LOCAL_MODEL_SPECS[model_id].size_bytes)
         _INSTALL_THREADS[model_id] = thread
 
     try:
@@ -249,14 +248,11 @@ def _blocked_reason(availability: dict[str, bool | float | int | str]) -> str:
 
 
 def _run_bootstrap_worker(model: str) -> None:
-    spec = LOCAL_MODEL_SPECS[model]
     current_thread = threading.current_thread()
     try:
         local_install.install_llama_server()
         _write_status(transition_state(_read_status(), new_state="downloading"))
-        _set_progress(model, 0, spec.size_bytes)
         local_install.install_model(model)
-        _set_progress(model, spec.size_bytes, spec.size_bytes)
     except Exception as exc:
         logger.exception("local provider bootstrap failed")
         _write_status(

@@ -389,10 +389,9 @@ def test_local_worker_resets_progress_between_binary_and_model(
 
     local_bootstrap._run_bootstrap_worker(LOCAL_MODEL)
 
-    gguf_size = LOCAL_MODEL_SPECS[LOCAL_MODEL].size_bytes
     assert observed["install_state"] == "downloading"
-    assert observed["progress_bytes_total"] == gguf_size
-    assert observed["progress_bytes_received"] <= gguf_size // 100
+    assert observed["progress_bytes_total"] is None
+    assert observed["progress_bytes_received"] is None
 
 
 def test_local_worker_cleans_registered_thread(settings_env, monkeypatch):

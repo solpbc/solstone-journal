@@ -5491,7 +5491,7 @@ function providerBadgeTone(installState, keyStatus) {
 }
 
 function providerByteLabel(kind, installState, badgeLabel, state) {
-  if (kind !== 'local-mlx' || !['downloading', 'verifying'].includes(installState)) return '';
+  if (!['local-mlx', 'local'].includes(kind) || !['downloading', 'verifying'].includes(installState)) return '';
   const received = state?.progress_bytes_received;
   const total = state?.progress_bytes_total;
   const receivedBytes = Number(received || 0);
