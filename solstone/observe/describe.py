@@ -321,6 +321,15 @@ class VideoProcessor:
     # keeps +13 vs RMS, matches RMS's extraction count, and drops the borderline
     # near-duplicates that 6 was letting through.
     DHASH_THRESHOLD = 8
+    # Hamming distance at or above which a qualified frame is flagged scene_cut=True.
+    # Captures near-complete visual changes (app switch, display blank, new fullscreen
+    # window) while leaving incremental edits untagged. Not yet tuned against real
+    # segments; adjust down if production shows missed scene transitions.
+    SCENE_CUT_THRESHOLD = 40
+    # Minimum elapsed seconds between kept frames. Caps frame density during
+    # busy periods (fast scrolling, animations, video) without dropping scene
+    # cuts — scene_cut frames always bypass this check.
+    MIN_STRIDE_SECONDS = 5.0
     # Skip frame if Convey UI covers more than this fraction of the frame
     MASK_SKIP_THRESHOLD = 0.8
 
@@ -343,6 +352,7 @@ class VideoProcessor:
         """
         # Cache for the last qualified frame hash
         last_hash: Optional[int] = None
+        last_kept_timestamp: float = 0.0
 
         # Imports deferred: av (PyAV) and cv2 (via observe.aruco) bundle
         # mismatched libavdevice majors. Keeping them out of module scope
@@ -422,6 +432,7 @@ class VideoProcessor:
                     if last_hash is None:
                         frame_data["frame_bytes"] = self._frame_to_bytes(pil_img)
                         last_hash = self._dhash(pil_img)
+                        last_kept_timestamp = timestamp
                         pil_img.close()
 
                         self.qualified_frames.append(frame_data)
@@ -438,17 +449,35 @@ class VideoProcessor:
                         pil_img.close()
                         continue
 
+                    is_scene_cut = distance >= self.SCENE_CUT_THRESHOLD
+
+                    # Stride floor: skip non-scene-cut frames that arrive too soon
+                    # after the last kept frame. Scene cuts always bypass this.
+                    if not is_scene_cut and (
+                        timestamp - last_kept_timestamp < self.MIN_STRIDE_SECONDS
+                    ):
+                        pil_img.close()
+                        logger.debug(
+                            f"Stride-filtered frame at {timestamp:.2f}s "
+                            f"(gap: {timestamp - last_kept_timestamp:.2f}s)"
+                        )
+                        continue
+
                     # Qualified - convert full frame to bytes
                     frame_data["frame_bytes"] = self._frame_to_bytes(pil_img)
+                    if is_scene_cut:
+                        frame_data["scene_cut"] = True
                     pil_img.close()
 
                     self.qualified_frames.append(frame_data)
 
-                    # Update cached frame hash
+                    # Update cached hash and stride clock
                     last_hash = current_hash
+                    last_kept_timestamp = timestamp
 
                     logger.debug(
-                        f"Qualified frame at {timestamp:.2f}s (hamming: {distance})"
+                        f"{'Scene cut' if is_scene_cut else 'Qualified'}"
+                        f" frame at {timestamp:.2f}s (hamming: {distance})"
                     )
 
                 logger.info(
@@ -473,7 +502,7 @@ class VideoProcessor:
     def _dhash(self, img: Image.Image) -> int:
         """Compute 64-bit dHash (difference hash) for perceptual comparison."""
         small = img.resize(self.DHASH_SIZE, Image.BILINEAR).convert("L")
-        pixels = list(small.getdata())
+        pixels = list(small.get_flattened_data())
         hash_val = 0
         for row in range(8):
             for col in range(8):
