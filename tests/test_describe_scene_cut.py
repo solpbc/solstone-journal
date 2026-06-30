@@ -11,7 +11,6 @@ from PIL import Image
 
 from solstone.observe.describe import VideoProcessor
 
-
 # ---------------------------------------------------------------------------
 # Image helpers
 # ---------------------------------------------------------------------------
@@ -135,13 +134,17 @@ def test_dhash_distance_zero_for_identical_image():
 def test_dhash_distance_max_for_opposite_gradients():
     """Opposite gradient images → all 64 bits flip → maximum distance."""
     vp = _vp()
-    d = _distance(vp, _gradient_image(bright_left=True), _gradient_image(bright_left=False))
+    d = _distance(
+        vp, _gradient_image(bright_left=True), _gradient_image(bright_left=False)
+    )
     assert d == 64
 
 
 def test_opposite_gradients_exceed_scene_cut_threshold():
     vp = _vp()
-    d = _distance(vp, _gradient_image(bright_left=True), _gradient_image(bright_left=False))
+    d = _distance(
+        vp, _gradient_image(bright_left=True), _gradient_image(bright_left=False)
+    )
     assert d >= VideoProcessor.SCENE_CUT_THRESHOLD
 
 
@@ -163,10 +166,12 @@ def test_scene_cut_frame_tagged(no_aruco, install_av):
     img_a = _gradient_image(bright_left=True)
     img_b = _gradient_image(bright_left=False)
 
-    install_av([
-        _FakeAvFrame(img_a, 0.0),
-        _FakeAvFrame(img_b, 1.0),
-    ])
+    install_av(
+        [
+            _FakeAvFrame(img_a, 0.0),
+            _FakeAvFrame(img_b, 1.0),
+        ]
+    )
     vp = VideoProcessor(Path("dummy.webm"))
     frames = vp.process()
 
@@ -178,10 +183,14 @@ def test_scene_cut_frame_tagged(no_aruco, install_av):
 def test_normal_qualifying_frame_not_tagged(no_aruco, install_av, monkeypatch):
     """A frame with DHASH_THRESHOLD ≤ distance < SCENE_CUT_THRESHOLD has no scene_cut."""
     img = _uniform_image(128)
-    install_av([
-        _FakeAvFrame(img, 0.0),
-        _FakeAvFrame(img.copy(), 6.0),  # beyond MIN_STRIDE_SECONDS so stride doesn't filter it
-    ])
+    install_av(
+        [
+            _FakeAvFrame(img, 0.0),
+            _FakeAvFrame(
+                img.copy(), 6.0
+            ),  # beyond MIN_STRIDE_SECONDS so stride doesn't filter it
+        ]
+    )
     vp = VideoProcessor(Path("dummy.webm"))
 
     # Inject hashes: distance = popcount(0xFFFFFF00 XOR 0x00000000) = 24.
@@ -198,10 +207,12 @@ def test_normal_qualifying_frame_not_tagged(no_aruco, install_av, monkeypatch):
 def test_below_dhash_threshold_frame_still_discarded(no_aruco, install_av, monkeypatch):
     """Scene-cut logic does not resurrect frames dropped by DHASH_THRESHOLD."""
     img = _uniform_image(128)
-    install_av([
-        _FakeAvFrame(img, 0.0),
-        _FakeAvFrame(img.copy(), 1.0),
-    ])
+    install_av(
+        [
+            _FakeAvFrame(img, 0.0),
+            _FakeAvFrame(img.copy(), 1.0),
+        ]
+    )
     vp = VideoProcessor(Path("dummy.webm"))
 
     # Distance = popcount(0xFF XOR 0xF8) = popcount(0x07) = 3 < DHASH_THRESHOLD.
@@ -217,11 +228,13 @@ def test_multiple_scene_cuts_all_tagged(no_aruco, install_av):
     img_a = _gradient_image(bright_left=True)
     img_b = _gradient_image(bright_left=False)
 
-    install_av([
-        _FakeAvFrame(img_a, 0.0),   # first — never tagged
-        _FakeAvFrame(img_b, 1.0),   # scene cut 1
-        _FakeAvFrame(img_a, 2.0),   # scene cut 2
-    ])
+    install_av(
+        [
+            _FakeAvFrame(img_a, 0.0),  # first — never tagged
+            _FakeAvFrame(img_b, 1.0),  # scene cut 1
+            _FakeAvFrame(img_a, 2.0),  # scene cut 2
+        ]
+    )
     vp = VideoProcessor(Path("dummy.webm"))
     frames = vp.process()
 
@@ -236,10 +249,12 @@ def test_scene_cut_frames_carry_frame_bytes(no_aruco, install_av):
     img_a = _gradient_image(bright_left=True)
     img_b = _gradient_image(bright_left=False)
 
-    install_av([
-        _FakeAvFrame(img_a, 0.0),
-        _FakeAvFrame(img_b, 1.0),
-    ])
+    install_av(
+        [
+            _FakeAvFrame(img_a, 0.0),
+            _FakeAvFrame(img_b, 1.0),
+        ]
+    )
     vp = VideoProcessor(Path("dummy.webm"))
     frames = vp.process()
 

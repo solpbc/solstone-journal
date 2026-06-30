@@ -598,6 +598,15 @@ class VideoProcessor:
         # Process video to get qualified frames (synchronous)
         qualified_frames = self.process()
 
+        # Embedding reduction: cluster visually similar frames and keep one
+        # representative per cluster. Falls back gracefully when model absent.
+        from solstone.observe.embed import reduce_frames
+
+        qualified_frames = reduce_frames(qualified_frames)
+        logger.info(
+            f"Phase 0 complete: {len(qualified_frames)} frames after embedding reduction"
+        )
+
         # Create batch processor
         batch = Batch(max_concurrent=max_concurrent)
 
@@ -659,11 +668,10 @@ class VideoProcessor:
                 frame_img = Image.open(io.BytesIO(frame_data["frame_bytes"]))
                 frame_img = resize_for_vlm(frame_img)
 
+                frame_msg = "Analyze this screenshot frame from a screencast recording."
+
                 req = batch.create(
-                    contents=self._user_contents(
-                        "Analyze this screenshot frame from a screencast recording.",
-                        frame_img,
-                    ),
+                    contents=self._user_contents(frame_msg, frame_img),
                     context=FRAME_CONTEXT,
                     model=frame_model,
                     system_instruction=system_instruction,
@@ -1067,6 +1075,59 @@ class VideoProcessor:
             logger.warning(
                 f"{failed_frames}/{total_frames} frame(s) failed categorization."
             )
+
+
+def _preprocess_video_worker(video_path_str: str) -> tuple[str, list[dict]]:
+    """ProcessPoolExecutor worker: dHash → embed for one video path.
+
+    Module-level (not a method) so it is picklable by ProcessPoolExecutor.
+    Strips ``frame_bytes`` before returning to keep the pickled result small —
+    each raw PNG can be hundreds of KB; the returned metadata is ~1 KB/frame.
+    """
+    from pathlib import Path as _Path
+
+    from solstone.observe.embed import reduce_frames
+
+    path = _Path(video_path_str)
+    vp = VideoProcessor(path)
+    frames = vp.process()
+    frames = reduce_frames(frames)
+    for f in frames:
+        f.pop("frame_bytes", None)
+    return video_path_str, frames
+
+
+def batch_preprocess_local(
+    video_paths: list[Path],
+    max_workers: int | None = None,
+) -> dict[str, list[dict]]:
+    """Run dHash → embed for multiple video paths in parallel.
+
+    Uses ProcessPoolExecutor to bypass the GIL for CPU-bound dHash and ONNX
+    inference.  Returns a mapping of ``str(video_path)`` → reduced frames
+    (``frame_bytes`` stripped — cross-process pickling of raw PNG data
+    would cost more than the parallelism saves).
+
+    Caller is responsible for re-opening pixel data if needed downstream (e.g.
+    from disk); for batch benchmarking and local-classification reporting the
+    returned metadata is sufficient.
+    """
+    import os
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    if max_workers is None:
+        max_workers = max(1, (os.cpu_count() or 4) - 2)
+
+    results: dict[str, list[dict]] = {}
+    path_strs = [str(p) for p in video_paths]
+
+    with ProcessPoolExecutor(max_workers=max_workers) as pool:
+        future_map = {pool.submit(_preprocess_video_worker, ps): ps for ps in path_strs}
+        for fut in as_completed(future_map):
+            path_str, frames = fut.result()
+            results[path_str] = frames
+
+    return results
 
 
 def output_qualified_frames(

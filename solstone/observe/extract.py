@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-import random
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -79,6 +78,9 @@ def select_frames_for_extraction(
             selected = _fallback_select_frames(categorized_frames, max_extractions)
     else:
         selected = _fallback_select_frames(categorized_frames, max_extractions)
+
+    # Apply per-category caps (ignore → 0 frames; low → max 2 frames)
+    selected = _apply_category_caps(selected, categorized_frames, config_overrides)
 
     # Ensure first frame is always included
     first_frame_id = categorized_frames[0]["frame_id"]
@@ -287,7 +289,9 @@ def _fallback_select_frames(
     """Fallback frame selection when AI selection is unavailable.
 
     If total frames <= max_extractions: returns all frames.
-    Otherwise: returns random sample of max_extractions frames.
+    Otherwise: greedy max-temporal-spread selection — repeatedly picks the
+    frame whose minimum time-distance from any already-selected frame is
+    largest. Deterministic; covers the full recording without randomness.
 
     Parameters
     ----------
@@ -309,7 +313,87 @@ def _fallback_select_frames(
     if len(all_ids) <= max_extractions:
         return all_ids
 
-    return random.sample(all_ids, max_extractions)
+    timestamps = {f["frame_id"]: f["timestamp"] for f in categorized_frames}
+
+    selected = [all_ids[0]]
+    selected_set: set[int] = {all_ids[0]}
+
+    while len(selected) < max_extractions:
+        best_id = None
+        best_min_dist = -1.0
+        for fid in all_ids:
+            if fid in selected_set:
+                continue
+            min_dist = min(abs(timestamps[fid] - timestamps[s]) for s in selected)
+            if min_dist > best_min_dist:
+                best_min_dist = min_dist
+                best_id = fid
+        if best_id is None:
+            break
+        selected.append(best_id)
+        selected_set.add(best_id)
+
+    return selected
+
+
+def _apply_category_caps(
+    selected_ids: list[int],
+    categorized_frames: list[dict[str, Any]],
+    config_overrides: dict[str, dict],
+) -> list[int]:
+    """Enforce per-category hard caps from journal config.
+
+    Importance levels:
+    - ``ignore`` — drop all frames whose primary category is marked ignore.
+    - ``low``    — keep at most ``_LOW_IMPORTANCE_MAX`` frames per category.
+    - ``normal`` / ``high`` — no hard cap (AI or fallback handles quota).
+
+    The first-frame guarantee is applied by the caller after this function,
+    so the first frame may be re-added even if its category is capped.
+
+    Parameters
+    ----------
+    selected_ids : list[int]
+        Frame IDs chosen by AI or fallback selection.
+    categorized_frames : list[dict]
+        Full categorized frame list (used to look up primary category per ID).
+    config_overrides : dict
+        Per-category overrides loaded from journal config.
+
+    Returns
+    -------
+    list[int]
+        Filtered frame IDs with caps applied, in original selection order.
+    """
+    _LOW_IMPORTANCE_MAX = 2
+
+    category_by_id = {
+        f["frame_id"]: f.get("analysis", {}).get("primary", "")
+        for f in categorized_frames
+    }
+
+    category_counts: dict[str, int] = {}
+    result: list[int] = []
+
+    for fid in selected_ids:
+        cat = category_by_id.get(fid, "")
+        importance = config_overrides.get(cat, {}).get("importance", "normal")
+
+        if importance == "ignore":
+            continue
+
+        if importance == "low":
+            if category_counts.get(cat, 0) >= _LOW_IMPORTANCE_MAX:
+                continue
+
+        category_counts[cat] = category_counts.get(cat, 0) + 1
+        result.append(fid)
+
+    dropped = len(selected_ids) - len(result)
+    if dropped:
+        logger.debug(f"Category caps dropped {dropped} frame(s)")
+
+    return result
 
 
 __all__ = [
