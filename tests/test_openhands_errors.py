@@ -281,9 +281,7 @@ def test_run_cogitate_byo_connection_error_classifies_unreachable_no_wall_clock(
     assert events[0]["event"] == "error"
     assert events[0]["reason_code"] == "local_endpoint_unreachable"
     assert events[0]["error"] == LOCAL_ENDPOINT_UNREACHABLE_COPY
-    assert "wall_clock_exceeded" not in {
-        event.get("reason_code") for event in events
-    }
+    assert "wall_clock_exceeded" not in {event.get("reason_code") for event in events}
     assert sentinel not in json.dumps(events)
     assert all(sentinel not in event.get("trace", "") for event in events)
 

@@ -182,11 +182,7 @@ def classify_byo_cogitate_error(exc: BaseException) -> str | None:
 
     if 400 in statuses or "BadRequestError" in names:
         return "local_endpoint_contract_failed"
-    if (
-        is_byo_network_error(exc)
-        or 500 in statuses
-        or "InternalServerError" in names
-    ):
+    if is_byo_network_error(exc) or 500 in statuses or "InternalServerError" in names:
         return "local_endpoint_unreachable"
     return None
 
