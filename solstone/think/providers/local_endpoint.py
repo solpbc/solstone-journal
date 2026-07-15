@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -201,20 +201,43 @@ def redact_local_endpoint_credential(text: str, endpoint: LocalEndpoint) -> str:
     return text
 
 
+def _exception_graph(exc: BaseException) -> Iterator[BaseException]:
+    """Yield both exception-chain branches once, including cyclic graphs."""
+
+    pending = [exc]
+    seen: set[int] = set()
+    while pending:
+        item = pending.pop()
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
+        yield item
+        if item.__context__ is not None:
+            pending.append(item.__context__)
+        if item.__cause__ is not None:
+            pending.append(item.__cause__)
+
+
 def redact_exception_credential(
     exc: BaseException,
     credential: str | None,
 ) -> BaseException:
-    """Redact ``credential`` from args in every exception in the cause chain."""
+    """Redact ``credential`` from the complete serialized exception graph."""
 
     if not credential:
         return exc
-    for item in _exception_chain(exc):
+    for item in _exception_graph(exc):
         if item.args:
             item.args = tuple(
-                value.replace(credential, "***") if isinstance(value, str) else value
-                for value in item.args
+                redact_event_payload(value, credential) for value in item.args
             )
+        notes = getattr(item, "__notes__", None)
+        if isinstance(notes, list):
+            item.__notes__ = [redact_event_payload(note, credential) for note in notes]
+        attributes = vars(item)
+        for name, value in list(attributes.items()):
+            if isinstance(value, (str, dict, list, tuple)):
+                attributes[name] = redact_event_payload(value, credential)
     return exc
 
 

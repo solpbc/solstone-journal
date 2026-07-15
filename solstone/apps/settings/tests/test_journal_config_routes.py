@@ -180,3 +180,16 @@ def test_settings_config_projection_drops_thinking_provider_secrets(
         "REVAI_ACCESS_TOKEN": True,
         "PLAUD_ACCESS_TOKEN": False,
     }
+
+
+def test_settings_config_projection_treats_malformed_env_as_empty(settings_env):
+    journal_path, _config = settings_env({**_base_config(), "env": "not-a-map"})
+    client = _client(journal_path)
+
+    response = client.get("/app/settings/api/config")
+
+    assert response.status_code == 200
+    assert response.get_json()["env"] == {
+        "REVAI_ACCESS_TOKEN": False,
+        "PLAUD_ACCESS_TOKEN": False,
+    }

@@ -434,6 +434,37 @@ def test_redact_exception_credential_scrubs_chain():
     assert sentinel in str(untouched)
 
 
+def test_redact_exception_credential_scrubs_complete_cyclic_graph():
+    sentinel = "SENTINEL-BYO-CRED-GRAPH-8d17c4"
+    cause = RuntimeError({"cause": [f"Bearer {sentinel}"]})
+    context = RuntimeError(["context", {"credential": sentinel}])
+    raised = ValueError({"outer": (sentinel, 7)})
+    raised.__cause__ = cause
+    raised.__context__ = context
+    cause.__context__ = raised
+    raised.add_note(f"provider note {sentinel}")
+    cause.message = f"provider message {sentinel}"
+    context.payload = {"headers": {"Authorization": f"Bearer {sentinel}"}}
+
+    redacted = local_endpoint.redact_exception_credential(raised, sentinel)
+
+    assert redacted is raised
+    for item in (raised, cause, context):
+        serialized_item = "\n".join(
+            (
+                repr(item.args),
+                repr(getattr(item, "__notes__", [])),
+                repr(vars(item)),
+            )
+        )
+        assert sentinel not in serialized_item
+    serialized_traceback = "".join(
+        traceback.format_exception(type(raised), raised, raised.__traceback__)
+    )
+    assert sentinel not in serialized_traceback
+    assert "***" in serialized_traceback
+
+
 def test_wrap_on_event_redacting_passthrough_without_sink_or_credential():
     events = []
 

@@ -207,9 +207,10 @@ def _project_public_config(config: dict[str, Any]) -> dict[str, Any]:
     if service_validation:
         projected["key_validation"] = service_validation
     projected.pop("service_key_validation", None)
-    projected["env"] = {
-        k: bool((projected.get("env") or {}).get(k)) for k in API_KEY_ENV_VARS
-    }
+    env_config = projected.get("env")
+    if not isinstance(env_config, dict):
+        env_config = {}
+    projected["env"] = {k: bool(env_config.get(k)) for k in API_KEY_ENV_VARS}
     projected.pop("providers", None)
     convey_config = projected.setdefault("convey", {})
     convey_config.pop("secret", None)
