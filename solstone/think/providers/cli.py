@@ -46,6 +46,16 @@ class QuotaExhaustedError(Exception):
         self.retry_delay_ms = retry_delay_ms
 
 
+class ProviderKeyMissingError(Exception):
+    """Raised before any provider request when a cloud provider API key is absent."""
+
+    def __init__(self, provider: str, env_key: str, message: str) -> None:
+        super().__init__(message)
+        self.provider = provider
+        self.env_key = env_key
+        self.reason_code = "provider_key_missing"
+
+
 def _quota_error_from_text(text: str) -> QuotaExhaustedError | None:
     if not any(token in text for token in _QUOTA_TOKENS):
         return None
@@ -640,6 +650,7 @@ class CLIRunner:
 
 __all__ = [
     "CLIRunner",
+    "ProviderKeyMissingError",
     "QuotaExhaustedError",
     "ThinkingAggregator",
     "assemble_prompt",

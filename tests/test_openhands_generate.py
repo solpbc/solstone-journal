@@ -11,12 +11,102 @@ import pytest
 from PIL import Image
 
 from solstone.think.providers import openhands
+from solstone.think.providers.cli import ProviderKeyMissingError
 from tests.openhands_fakes import install_fake_openhands
 
 
 @pytest.fixture
 def fake_openhands(monkeypatch):
     return install_fake_openhands(monkeypatch)
+
+
+@pytest.mark.parametrize(
+    ("provider", "model"),
+    [
+        ("google", "gemini-flash-latest"),
+        ("anthropic", "claude-sonnet-4-6"),
+        ("openai", "gpt-5.5"),
+    ],
+)
+def test_build_generate_llm_missing_env_raises_provider_key_missing(
+    fake_openhands,
+    monkeypatch,
+    provider,
+    model,
+):
+    monkeypatch.delenv(openhands._API_KEY_ENV[provider], raising=False)
+
+    with pytest.raises(ProviderKeyMissingError) as raised:
+        openhands._build_generate_llm(
+            provider,
+            model,
+            max_output_tokens=256,
+            thinking_budget=None,
+            timeout_s=30,
+        )
+
+    assert raised.value.provider == provider
+    assert raised.value.env_key == openhands._API_KEY_ENV[provider]
+    assert raised.value.reason_code == "provider_key_missing"
+    assert "Thinking" in str(raised.value)
+    assert fake_openhands.LLM.instances == []
+
+
+@pytest.mark.parametrize(
+    ("provider", "model"),
+    [
+        ("google", "gemini-flash-latest"),
+        ("anthropic", "claude-sonnet-4-6"),
+        ("openai", "gpt-5.5"),
+    ],
+)
+def test_build_generate_llm_explicit_key_bypasses_env(
+    fake_openhands,
+    monkeypatch,
+    provider,
+    model,
+):
+    monkeypatch.delenv(openhands._API_KEY_ENV[provider], raising=False)
+
+    llm, _api_model = openhands._build_generate_llm(
+        provider,
+        model,
+        max_output_tokens=256,
+        thinking_budget=None,
+        timeout_s=30,
+        api_key="explicit-key",
+    )
+
+    assert llm is fake_openhands.LLM.instances[-1]
+    assert llm.api_key == "explicit-key"
+
+
+@pytest.mark.parametrize(
+    ("provider", "model"),
+    [
+        ("google", "gemini-flash-latest"),
+        ("anthropic", "claude-sonnet-4-6"),
+        ("openai", "gpt-5.5"),
+    ],
+)
+def test_build_generate_llm_blank_env_is_missing(
+    fake_openhands,
+    monkeypatch,
+    provider,
+    model,
+):
+    monkeypatch.setenv(openhands._API_KEY_ENV[provider], "   ")
+
+    with pytest.raises(ProviderKeyMissingError):
+        openhands._build_generate_llm(
+            provider,
+            model,
+            max_output_tokens=256,
+            thinking_budget=None,
+            timeout_s=30,
+        )
+
+    assert fake_openhands.LLM.instances == []
 
 
 def _response(

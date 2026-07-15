@@ -12,7 +12,7 @@ import pytest
 
 from solstone.think.models import LOCAL_MODEL
 from solstone.think.providers import openhands
-from solstone.think.providers.cli import QuotaExhaustedError
+from solstone.think.providers.cli import ProviderKeyMissingError, QuotaExhaustedError
 from solstone.think.providers.local_endpoint import (
     LOCAL_ENDPOINT_CONTRACT_COPY,
     LocalEndpoint,
@@ -181,6 +181,32 @@ def test_run_cogitate_error_before_usage_baseline_omits_usage(
     assert "RuntimeError: llm exploded" in events[0]["trace"]
     assert "usage" not in events[0]
     assert events[0]["ts"] == 123456
+
+
+def test_run_cogitate_missing_key_fails_pre_network(
+    fake_openhands,
+    run_env,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.delenv(openhands._API_KEY_ENV["openai"], raising=False)
+    events: list[dict] = []
+
+    with pytest.raises(ProviderKeyMissingError) as raised:
+        asyncio.run(openhands.run_cogitate(run_env, events.append))
+
+    assert raised.value.provider == "openai"
+    assert raised.value.env_key == openhands._API_KEY_ENV["openai"]
+    assert raised.value.reason_code == "provider_key_missing"
+    assert len(events) == 1
+    assert events[0]["event"] == "error"
+    assert events[0]["reason_code"] == "provider_key_missing"
+    assert events[0]["provider"] == "openai"
+    assert fake_openhands.LLM.instances == []
+    assert fake_openhands.Conversation.instances == []
+    assert not (
+        tmp_path / ".cache" / "cogitate-history" / run_env["session_id"]
+    ).exists()
 
 
 def test_run_cogitate_local_byo_error_event_uses_fixed_copy_and_redacts(

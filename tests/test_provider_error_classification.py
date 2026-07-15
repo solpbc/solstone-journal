@@ -3,7 +3,8 @@
 
 import pytest
 
-from solstone.think.providers.cli import QuotaExhaustedError
+from solstone.think.providers import openhands
+from solstone.think.providers.cli import ProviderKeyMissingError, QuotaExhaustedError
 from solstone.think.providers.shared import classify_provider_error
 
 
@@ -17,6 +18,19 @@ def _require_attrs(module, *names: str):
 def test_classifies_quota_exhausted_error():
     exc = QuotaExhaustedError("quota exhausted", retry_delay_ms=1000)
     assert classify_provider_error(exc, "google") == "provider_quota_exceeded"
+
+
+def test_provider_key_missing_reason_passes_through():
+    exc = ProviderKeyMissingError("google", "GOOGLE_API_KEY", "msg")
+    assert classify_provider_error(exc, "google") == "provider_key_missing"
+
+    wrapped = RuntimeError("wrapper")
+    wrapped.__cause__ = exc
+
+    assert (
+        classify_provider_error(openhands._unwrap_provider_exception(wrapped), "google")
+        == "provider_key_missing"
+    )
 
 
 def test_classifies_litellm_context_window_exceeded():

@@ -46,7 +46,11 @@ from solstone.think.cogitate_policy import (
     CogitatePolicy,
     resolve_read_scope,
 )
-from solstone.think.providers.cli import QuotaExhaustedError, assemble_prompt
+from solstone.think.providers.cli import (
+    ProviderKeyMissingError,
+    QuotaExhaustedError,
+    assemble_prompt,
+)
 from solstone.think.providers.local_admission import (
     LocalAdmissionCancelled,
     LocalSlotLease,
@@ -116,6 +120,28 @@ def _prefixed_model(provider: str, model: str) -> str:
         if candidate_prefix in _KNOWN_MODEL_PREFIXES:
             base_model = candidate_model
     return f"{prefix}/{base_model}"
+
+
+def _resolve_provider_key(provider: str, api_key: str | None = None) -> str:
+    """Resolve the effective cloud key or raise before any provider request.
+
+    Explicit ``api_key`` (probe path) wins over env. A None/blank/whitespace
+    effective key raises ProviderKeyMissingError pointing the owner at Thinking.
+    """
+
+    env_key = _API_KEY_ENV[provider]
+    effective = api_key if api_key is not None else os.getenv(env_key)
+    if effective is None or not effective.strip():
+        from solstone.think.providers import PROVIDER_METADATA
+
+        label = PROVIDER_METADATA[provider]["label"]
+        raise ProviderKeyMissingError(
+            provider,
+            env_key,
+            f"{label} is missing its API key. Open Thinking to add "
+            f"credentials before trying again.",
+        )
+    return effective
 
 
 def _resolve_allowed_roots(config: dict[str, Any]) -> list[Path]:
@@ -191,7 +217,7 @@ def _build_llm(provider: str, model: str) -> Any:
 
     llm_kwargs: dict[str, Any] = {
         "model": _prefixed_model(provider, model),
-        "api_key": os.getenv(_API_KEY_ENV[provider]),
+        "api_key": _resolve_provider_key(provider),
         "native_tool_calling": True,
         "timeout": LLM_TIMEOUT_S,
         "num_retries": LLM_NUM_RETRIES,
@@ -263,9 +289,7 @@ def _build_generate_llm(
     return (
         LLM(
             model=_prefixed_model(provider, api_model),
-            api_key=api_key
-            if api_key is not None
-            else os.getenv(_API_KEY_ENV[provider]),
+            api_key=_resolve_provider_key(provider, api_key),
             timeout=max(1, math.ceil(timeout_s)),
             num_retries=num_retries,
             max_output_tokens=_generate_token_budget(
