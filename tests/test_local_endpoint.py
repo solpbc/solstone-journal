@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import traceback
 
 import pytest
 
@@ -396,6 +397,41 @@ def test_redact_event_payload_recurses_through_values():
     assert redacted["status"] == 503
     assert redacted["ok"] is False
     assert redacted["none"] is None
+
+
+def test_redact_exception_credential_scrubs_chain():
+    sentinel = "SENTINEL-BYO-CRED-9f3a2b"
+    try:
+        try:
+            raise RuntimeError(f"inner {sentinel}")
+        except RuntimeError as cause:
+            raise ValueError(f"outer {sentinel}", 7) from cause
+    except ValueError as exc:
+        raised = exc
+
+    assert sentinel in str(raised)
+    assert raised.__cause__ is not None
+    assert sentinel in str(raised.__cause__)
+    assert sentinel in "".join(
+        traceback.format_exception(type(raised), raised, raised.__traceback__)
+    )
+
+    redacted = local_endpoint.redact_exception_credential(raised, sentinel)
+
+    assert redacted is raised
+    assert sentinel not in str(raised)
+    assert sentinel not in str(raised.__cause__)
+    serialized = "".join(
+        traceback.format_exception(type(raised), raised, raised.__traceback__)
+    )
+    assert sentinel not in serialized
+    assert "***" in serialized
+
+    untouched = RuntimeError(f"still {sentinel}")
+    assert local_endpoint.redact_exception_credential(untouched, None) is untouched
+    assert sentinel in str(untouched)
+    assert local_endpoint.redact_exception_credential(untouched, "") is untouched
+    assert sentinel in str(untouched)
 
 
 def test_wrap_on_event_redacting_passthrough_without_sink_or_credential():

@@ -201,6 +201,23 @@ def redact_local_endpoint_credential(text: str, endpoint: LocalEndpoint) -> str:
     return text
 
 
+def redact_exception_credential(
+    exc: BaseException,
+    credential: str | None,
+) -> BaseException:
+    """Redact ``credential`` from args in every exception in the cause chain."""
+
+    if not credential:
+        return exc
+    for item in _exception_chain(exc):
+        if item.args:
+            item.args = tuple(
+                value.replace(credential, "***") if isinstance(value, str) else value
+                for value in item.args
+            )
+    return exc
+
+
 def redact_event_payload(payload: Any, credential: str | None) -> Any:
     """Recursively replace credential in every string value of an event payload."""
 
@@ -245,6 +262,7 @@ __all__ = [
     "local_endpoint_reason_copy",
     "normalize_local_endpoint_url",
     "probe_local_endpoint",
+    "redact_exception_credential",
     "redact_event_payload",
     "redact_local_endpoint_credential",
     "resolve_local_endpoint",

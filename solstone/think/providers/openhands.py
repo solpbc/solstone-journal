@@ -1837,11 +1837,13 @@ async def run_cogitate(
             from solstone.think.providers.local_endpoint import (
                 classify_byo_cogitate_error,
                 local_endpoint_reason_copy,
+                redact_exception_credential,
             )
 
             local_endpoint = byo_endpoint
             if not local_endpoint.is_bundled:
                 reason_code = classify_byo_cogitate_error(provider_exc)
+                redact_exception_credential(exc, local_endpoint.credential)
                 if reason_code:
                     setattr(exc, "reason_code", reason_code)
                     setattr(provider_exc, "reason_code", reason_code)

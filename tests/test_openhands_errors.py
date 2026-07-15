@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import traceback
 from types import SimpleNamespace
 
 import httpx
@@ -274,7 +275,7 @@ def test_run_cogitate_byo_connection_error_classifies_unreachable_no_wall_clock(
     events: list[dict] = []
     local_env = {**run_env, "provider": "local", "model": LOCAL_MODEL}
 
-    with pytest.raises(exc_type):
+    with pytest.raises(exc_type) as raised:
         asyncio.run(openhands.run_cogitate(local_env, events.append))
 
     assert len(events) == 1
@@ -284,6 +285,15 @@ def test_run_cogitate_byo_connection_error_classifies_unreachable_no_wall_clock(
     assert "wall_clock_exceeded" not in {event.get("reason_code") for event in events}
     assert sentinel not in json.dumps(events)
     assert all(sentinel not in event.get("trace", "") for event in events)
+    assert sentinel not in str(raised.value)
+    serialized = "".join(
+        traceback.format_exception(
+            type(raised.value),
+            raised.value,
+            raised.value.__traceback__,
+        )
+    )
+    assert sentinel not in serialized
 
 
 def test_run_cogitate_propagates_quota_unwrapped(fake_openhands, run_env):

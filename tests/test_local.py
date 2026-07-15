@@ -10,6 +10,7 @@ import importlib
 import json
 import logging
 import sys
+import traceback
 import types
 from pathlib import Path
 from types import SimpleNamespace
@@ -2096,7 +2097,10 @@ def test_run_cogitate_byo_connection_error_records_no_success_telemetry(
     async def fail_cogitate(*_args, **_kwargs):
         import httpx
 
-        raise httpx.ConnectError(f"connection refused {sentinel}")
+        from solstone.think.providers.local_endpoint import redact_exception_credential
+
+        exc = httpx.ConnectError(f"connection refused {sentinel}")
+        raise redact_exception_credential(exc, sentinel)
 
     monkeypatch.setattr(
         "solstone.think.providers.openhands.run_cogitate",
@@ -2111,6 +2115,14 @@ def test_run_cogitate_byo_connection_error_records_no_success_telemetry(
     assert exc.value.reason_code == "local_endpoint_unreachable"
     assert str(exc.value) == provider.LOCAL_ENDPOINT_UNREACHABLE_COPY
     assert sentinel not in str(exc.value)
+    serialized = "".join(
+        traceback.format_exception(
+            type(exc.value),
+            exc.value,
+            exc.value.__traceback__,
+        )
+    )
+    assert sentinel not in serialized
     assert sentinel not in json.dumps(events)
     assert records == []
 
