@@ -26,6 +26,7 @@ from solstone.think.providers.local_endpoint import (
     LOCAL_ENDPOINT_CONTRACT_COPY,
     LOCAL_ENDPOINT_UNREACHABLE_COPY,
     classify_byo_cogitate_error,
+    is_byo_network_error,
     local_endpoint_reason_copy,
     redact_local_endpoint_credential,
     resolve_local_endpoint,
@@ -434,20 +435,7 @@ def _telemetry_record(
 
 
 def _classify_byo_generate_error(exc: BaseException) -> LocalProviderError:
-    import httpx
-
-    if isinstance(
-        exc,
-        (
-            httpx.ConnectError,
-            httpx.ConnectTimeout,
-            httpx.ReadTimeout,
-            httpx.PoolTimeout,
-            httpx.TimeoutException,
-            httpx.NetworkError,
-            httpx.RequestError,
-        ),
-    ):
+    if is_byo_network_error(exc):
         return LocalProviderError(
             "local_endpoint_unreachable",
             LOCAL_ENDPOINT_UNREACHABLE_COPY,

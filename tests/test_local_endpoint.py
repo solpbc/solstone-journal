@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from solstone.think.providers import local_endpoint
@@ -280,6 +282,30 @@ class ConnectError(Exception):
     pass
 
 
+class ConnectTimeout(Exception):
+    pass
+
+
+class ReadTimeout(Exception):
+    pass
+
+
+class PoolTimeout(Exception):
+    pass
+
+
+class TimeoutException(Exception):
+    pass
+
+
+class NetworkError(Exception):
+    pass
+
+
+class RequestError(Exception):
+    pass
+
+
 def test_classify_byo_cogitate_error_contract_by_status_or_name():
     assert (
         local_endpoint.classify_byo_cogitate_error(BadRequestError("bad request"))
@@ -288,7 +314,17 @@ def test_classify_byo_cogitate_error_contract_by_status_or_name():
 
 
 @pytest.mark.parametrize(
-    "inner", [APIConnectionError("api down"), ConnectError("down")]
+    "inner",
+    [
+        ConnectError("down"),
+        APIConnectionError("api down"),
+        ConnectTimeout("connect timeout"),
+        ReadTimeout("read timeout"),
+        PoolTimeout("pool timeout"),
+        TimeoutException("timeout"),
+        NetworkError("network"),
+        RequestError("request"),
+    ],
 )
 def test_classify_byo_cogitate_error_unreachable_by_cause_chain(inner):
     exc = RuntimeError("outer")
@@ -297,6 +333,30 @@ def test_classify_byo_cogitate_error_unreachable_by_cause_chain(inner):
     assert (
         local_endpoint.classify_byo_cogitate_error(exc) == "local_endpoint_unreachable"
     )
+
+
+@pytest.mark.parametrize(
+    "inner",
+    [
+        ConnectError("down"),
+        APIConnectionError("api down"),
+        ConnectTimeout("connect timeout"),
+        ReadTimeout("read timeout"),
+        PoolTimeout("pool timeout"),
+        TimeoutException("timeout"),
+        NetworkError("network"),
+        RequestError("request"),
+    ],
+)
+def test_is_byo_network_error_matches_names_over_cause_chain(inner):
+    exc = RuntimeError("outer")
+    exc.__cause__ = inner
+
+    assert local_endpoint.is_byo_network_error(exc) is True
+
+
+def test_is_byo_network_error_ignores_non_network_names():
+    assert local_endpoint.is_byo_network_error(InternalServerError("server")) is False
 
 
 def test_classify_byo_cogitate_error_unreachable_by_internal_server():
@@ -308,3 +368,75 @@ def test_classify_byo_cogitate_error_unreachable_by_internal_server():
 
 def test_classify_byo_cogitate_error_returns_none_for_unknown():
     assert local_endpoint.classify_byo_cogitate_error(RuntimeError("unknown")) is None
+
+
+def test_redact_event_payload_recurses_through_values():
+    sentinel = "SENTINEL-BYO-CRED-9f3a2b"
+    payload = {
+        "error": f"bad {sentinel}",
+        "raw": {
+            "api_key": sentinel,
+            "headers": {"Authorization": f"Bearer {sentinel}"},
+            "nested": [f"x-{sentinel}", {"trace": sentinel}],
+            "tuple": (sentinel, 7),
+        },
+        "status": 503,
+        "ok": False,
+        "none": None,
+    }
+
+    assert sentinel in json.dumps(payload)
+
+    redacted = local_endpoint.redact_event_payload(payload, sentinel)
+
+    assert sentinel not in json.dumps(redacted)
+    assert redacted["raw"]["api_key"] == "***"
+    assert redacted["raw"]["headers"]["Authorization"] == "Bearer ***"
+    assert redacted["raw"]["tuple"] == ("***", 7)
+    assert redacted["status"] == 503
+    assert redacted["ok"] is False
+    assert redacted["none"] is None
+
+
+def test_wrap_on_event_redacting_passthrough_without_sink_or_credential():
+    events = []
+
+    def on_event(event):
+        events.append(event)
+
+    assert local_endpoint.wrap_on_event_redacting(None, "token") is None
+    assert local_endpoint.wrap_on_event_redacting(on_event, None) is on_event
+    assert local_endpoint.wrap_on_event_redacting(on_event, "") is on_event
+
+
+def test_wrap_on_event_redacting_covers_event_surfaces():
+    sentinel = "SENTINEL-BYO-CRED-9f3a2b"
+    events = [
+        {
+            "event": "error",
+            "error": f"terminal {sentinel}",
+            "trace": f"Trace {sentinel}",
+        },
+        {
+            "event": "tool_start",
+            "raw": {
+                "api_key": sentinel,
+                "headers": {"Authorization": f"Bearer {sentinel}"},
+            },
+        },
+        {"event": "thinking", "raw": {"message": f"thinking {sentinel}"}},
+        {"event": "tool_end", "raw": [{"result": sentinel}]},
+        {
+            "event": "error",
+            "error": f"agent {sentinel}",
+            "raw": {"detail": sentinel},
+        },
+    ]
+    forwarded = []
+    wrapped = local_endpoint.wrap_on_event_redacting(forwarded.append, sentinel)
+
+    assert sentinel in json.dumps(events)
+    for event in events:
+        wrapped(event)
+
+    assert sentinel not in json.dumps(forwarded)

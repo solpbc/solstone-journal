@@ -1625,6 +1625,45 @@ def test_run_generate_byo_network_error_maps_to_unreachable(monkeypatch):
     assert isinstance(exc.value.__cause__, httpx.ConnectError)
 
 
+@pytest.mark.parametrize(
+    "exc_name",
+    [
+        "ConnectError",
+        "APIConnectionError",
+        "ConnectTimeout",
+        "ReadTimeout",
+        "PoolTimeout",
+        "TimeoutException",
+        "NetworkError",
+        "RequestError",
+    ],
+)
+def test_classify_byo_generate_error_uses_shared_network_predicate(exc_name):
+    provider = _provider()
+    inner = type(exc_name, (Exception,), {})(f"{exc_name} failed")
+    exc = RuntimeError("outer")
+    exc.__cause__ = inner
+
+    classified = provider._classify_byo_generate_error(exc)
+
+    assert classified.reason_code == "local_endpoint_unreachable"
+    assert str(classified) == provider.LOCAL_ENDPOINT_UNREACHABLE_COPY
+
+
+def test_classify_byo_generate_error_500_stays_contract_failed():
+    provider = _provider()
+
+    class InternalServerError(Exception):
+        status_code = 500
+
+    classified = provider._classify_byo_generate_error(
+        InternalServerError("server failed")
+    )
+
+    assert classified.reason_code == "local_endpoint_contract_failed"
+    assert str(classified) == provider.LOCAL_ENDPOINT_CONTRACT_COPY
+
+
 def test_run_generate_byo_http_status_maps_to_contract_failed(monkeypatch):
     provider = _provider()
     monkeypatch.setattr(provider, "resolve_local_endpoint", _byo_endpoint)
@@ -2032,6 +2071,50 @@ def test_run_cogitate_byo_classified_error_uses_fixed_copy_and_redacts(
     assert token not in events[0]["trace"]
 
 
+def test_run_cogitate_byo_connection_error_records_no_success_telemetry(
+    monkeypatch,
+):
+    provider = _provider()
+    sentinel = "SENTINEL-BYO-CRED-9f3a2b"
+    events: list[dict] = []
+    records: list[dict] = []
+
+    monkeypatch.setattr(
+        provider,
+        "resolve_local_endpoint",
+        lambda: _byo_endpoint(sentinel),
+    )
+    monkeypatch.setattr(
+        "solstone.think.providers.local_server.connect",
+        lambda: (_ for _ in ()).throw(AssertionError("connect not expected")),
+    )
+
+    from solstone.think.providers import local_admission
+
+    monkeypatch.setattr(local_admission, "record_local_inference", records.append)
+
+    async def fail_cogitate(*_args, **_kwargs):
+        import httpx
+
+        raise httpx.ConnectError(f"connection refused {sentinel}")
+
+    monkeypatch.setattr(
+        "solstone.think.providers.openhands.run_cogitate",
+        fail_cogitate,
+    )
+
+    with pytest.raises(provider.LocalProviderError) as exc:
+        asyncio.run(
+            provider.run_cogitate({"model": LOCAL_MODEL}, on_event=events.append)
+        )
+
+    assert exc.value.reason_code == "local_endpoint_unreachable"
+    assert str(exc.value) == provider.LOCAL_ENDPOINT_UNREACHABLE_COPY
+    assert sentinel not in str(exc.value)
+    assert sentinel not in json.dumps(events)
+    assert records == []
+
+
 def test_run_cogitate_talent_hook_error_bypasses_local_error_event(monkeypatch):
     provider = _provider()
     events: list[dict] = []
@@ -2104,11 +2187,26 @@ def test_openhands_local_byo_llm_kwargs(monkeypatch, credential, expected_key):
         "native_tool_calling": False,
         "timeout": openhands.LLM_TIMEOUT_S,
         "num_retries": openhands.LLM_NUM_RETRIES,
+        "retry_min_wait": 1,
+        "retry_max_wait": 2,
+        "retry_multiplier": 1.0,
         "input_cost_per_token": 0,
         "output_cost_per_token": 0,
         "litellm_extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
     }
     assert "max_input_tokens" not in captured
+    waits = [
+        min(
+            captured["retry_max_wait"],
+            max(
+                captured["retry_min_wait"],
+                captured["retry_multiplier"] * 2 ** (k - 1),
+            ),
+        )
+        for k in range(1, captured["num_retries"])
+    ]
+    assert sum(waits) == 1.0
+    assert sum(waits) < openhands.WALL_CLOCK_GRACE_S
 
 
 def test_openhands_local_confidential_llm_uses_forwarder(monkeypatch):

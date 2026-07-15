@@ -190,6 +190,9 @@ def _build_llm(provider: str, model: str) -> Any:
                 native_tool_calling=False,
                 timeout=LLM_TIMEOUT_S,
                 num_retries=LLM_NUM_RETRIES,
+                retry_min_wait=1,
+                retry_max_wait=2,
+                retry_multiplier=1.0,
                 input_cost_per_token=0,
                 output_cost_per_token=0,
                 litellm_extra_body={"chat_template_kwargs": {"enable_thinking": False}},
@@ -1550,9 +1553,23 @@ async def run_cogitate(
     slot_lease: LocalSlotLease | None = None,
 ) -> str | None:
     """Run a cogitate prompt through OpenHands SDK."""
-    callback = JSONEventCallback(on_event)
     provider = str(config["provider"])
     model = str(config["model"])
+    effective_on_event = on_event
+    byo_endpoint = None
+    if provider == "local":
+        from solstone.think.providers.local_endpoint import (
+            resolve_local_endpoint,
+            wrap_on_event_redacting,
+        )
+
+        byo_endpoint = resolve_local_endpoint()
+        if not byo_endpoint.is_bundled and byo_endpoint.credential:
+            effective_on_event = wrap_on_event_redacting(
+                on_event,
+                byo_endpoint.credential,
+            )
+    callback = JSONEventCallback(effective_on_event)
 
     llm: Any | None = None
     usage_start: dict[str, int] | None = None
@@ -1623,9 +1640,7 @@ async def run_cogitate(
             tool_specs.append(Tool(name="emit_final"))
             default_tools = []
 
-        from solstone.think.providers.local_endpoint import resolve_local_endpoint
-
-        is_bundled_local = provider == "local" and resolve_local_endpoint().is_bundled
+        is_bundled_local = byo_endpoint is not None and byo_endpoint.is_bundled
         agent = _build_cogitate_agent(
             llm=llm,
             is_bundled_local=is_bundled_local,
@@ -1822,11 +1837,9 @@ async def run_cogitate(
             from solstone.think.providers.local_endpoint import (
                 classify_byo_cogitate_error,
                 local_endpoint_reason_copy,
-                redact_local_endpoint_credential,
-                resolve_local_endpoint,
             )
 
-            local_endpoint = resolve_local_endpoint()
+            local_endpoint = byo_endpoint
             if not local_endpoint.is_bundled:
                 reason_code = classify_byo_cogitate_error(provider_exc)
                 if reason_code:
@@ -1839,13 +1852,6 @@ async def run_cogitate(
             fixed_copy = local_endpoint_reason_copy(reason_code)
             if fixed_copy:
                 error_text = fixed_copy
-            if not local_endpoint.is_bundled:
-                error_text = redact_local_endpoint_credential(
-                    error_text, local_endpoint
-                )
-                trace_text = redact_local_endpoint_credential(
-                    trace_text, local_endpoint
-                )
         if reason_code == "provider_quota_exceeded":
             raise QuotaExhaustedError(
                 str(provider_exc), _retry_delay_ms(provider_exc)

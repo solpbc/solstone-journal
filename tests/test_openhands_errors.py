@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 import httpx
@@ -15,6 +16,7 @@ from solstone.think.providers import openhands
 from solstone.think.providers.cli import ProviderKeyMissingError, QuotaExhaustedError
 from solstone.think.providers.local_endpoint import (
     LOCAL_ENDPOINT_CONTRACT_COPY,
+    LOCAL_ENDPOINT_UNREACHABLE_COPY,
     LocalEndpoint,
 )
 from solstone.think.talents import TalentHookError
@@ -244,6 +246,46 @@ def test_run_cogitate_local_byo_error_event_uses_fixed_copy_and_redacts(
     assert events[0]["error"] == LOCAL_ENDPOINT_CONTRACT_COPY
     assert events[0]["reason_code"] == "local_endpoint_contract_failed"
     assert token not in events[0]["trace"]
+
+
+@pytest.mark.parametrize("exc_type", [httpx.ConnectError, httpx.ConnectTimeout])
+def test_run_cogitate_byo_connection_error_classifies_unreachable_no_wall_clock(
+    fake_openhands,
+    run_env,
+    monkeypatch,
+    exc_type,
+):
+    sentinel = "SENTINEL-BYO-CRED-9f3a2b"
+    endpoint = LocalEndpoint(
+        base_url="http://byo.example/openai",
+        served_model_id="served-model",
+        credential=sentinel,
+        is_bundled=False,
+    )
+
+    async def fail(_conversation):
+        raise exc_type(f"connection failed {sentinel}")
+
+    monkeypatch.setattr(
+        "solstone.think.providers.local_endpoint.resolve_local_endpoint",
+        lambda: endpoint,
+    )
+    fake_openhands.Conversation.arun_impl = fail
+    events: list[dict] = []
+    local_env = {**run_env, "provider": "local", "model": LOCAL_MODEL}
+
+    with pytest.raises(exc_type):
+        asyncio.run(openhands.run_cogitate(local_env, events.append))
+
+    assert len(events) == 1
+    assert events[0]["event"] == "error"
+    assert events[0]["reason_code"] == "local_endpoint_unreachable"
+    assert events[0]["error"] == LOCAL_ENDPOINT_UNREACHABLE_COPY
+    assert "wall_clock_exceeded" not in {
+        event.get("reason_code") for event in events
+    }
+    assert sentinel not in json.dumps(events)
+    assert all(sentinel not in event.get("trace", "") for event in events)
 
 
 def test_run_cogitate_propagates_quota_unwrapped(fake_openhands, run_env):

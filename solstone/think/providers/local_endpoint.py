@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -151,6 +152,27 @@ def _exception_chain(exc: BaseException, limit: int = 6) -> list[BaseException]:
     return chain
 
 
+_BYO_NETWORK_EXC_NAMES = frozenset(
+    {
+        "ConnectError",
+        "APIConnectionError",
+        "ConnectTimeout",
+        "ReadTimeout",
+        "PoolTimeout",
+        "TimeoutException",
+        "NetworkError",
+        "RequestError",
+    }
+)
+
+
+def is_byo_network_error(exc: BaseException) -> bool:
+    """True if the cause chain names a connection/timeout/network failure."""
+
+    names = {type(item).__name__ for item in _exception_chain(exc)}
+    return bool(_BYO_NETWORK_EXC_NAMES & names)
+
+
 def classify_byo_cogitate_error(exc: BaseException) -> str | None:
     """Return a BYO local-endpoint reason code for known OpenHands/LiteLLM errors."""
 
@@ -161,7 +183,7 @@ def classify_byo_cogitate_error(exc: BaseException) -> str | None:
     if 400 in statuses or "BadRequestError" in names:
         return "local_endpoint_contract_failed"
     if (
-        {"ConnectError", "APIConnectionError"} & names
+        is_byo_network_error(exc)
         or 500 in statuses
         or "InternalServerError" in names
     ):
@@ -183,15 +205,52 @@ def redact_local_endpoint_credential(text: str, endpoint: LocalEndpoint) -> str:
     return text
 
 
+def redact_event_payload(payload: Any, credential: str | None) -> Any:
+    """Recursively replace credential in every string value of an event payload."""
+
+    if not credential:
+        return payload
+    if isinstance(payload, dict):
+        return {
+            key: redact_event_payload(value, credential)
+            for key, value in payload.items()
+        }
+    if isinstance(payload, list):
+        return [redact_event_payload(item, credential) for item in payload]
+    if isinstance(payload, tuple):
+        return tuple(redact_event_payload(item, credential) for item in payload)
+    if isinstance(payload, str):
+        return payload.replace(credential, "***")
+    return payload
+
+
+def wrap_on_event_redacting(
+    on_event: Callable[[dict], None] | None,
+    credential: str | None,
+) -> Callable[[dict], None] | None:
+    """Return an on_event wrapper that redacts credential before forwarding."""
+
+    if on_event is None or not credential:
+        return on_event
+
+    def redacting_on_event(event: dict) -> None:
+        on_event(redact_event_payload(event, credential))
+
+    return redacting_on_event
+
+
 __all__ = [
     "LOCAL_ENDPOINT_CONTRACT_COPY",
     "LOCAL_ENDPOINT_UNREACHABLE_COPY",
     "LocalEndpoint",
     "classify_byo_cogitate_error",
     "confidential_provenance_block",
+    "is_byo_network_error",
     "local_endpoint_reason_copy",
     "normalize_local_endpoint_url",
     "probe_local_endpoint",
+    "redact_event_payload",
     "redact_local_endpoint_credential",
     "resolve_local_endpoint",
+    "wrap_on_event_redacting",
 ]
