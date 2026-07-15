@@ -16,7 +16,7 @@
     },
     "provider_key_missing": {
       "template": "{provider} needs credentials before it can read your screen descriptions",
-      "action": {"label": "Open Settings", "href": "/app/thinking/#main"}
+      "action": {"label": "Open Thinking", "href": "/app/thinking/#main"}
     },
     "ram_insufficient": {
       "template": "the local model needs more memory than this machine has",
@@ -24,11 +24,11 @@
     },
     "gpu_unavailable": {
       "template": "local models need GPU acceleration on this computer",
-      "action": {"label": "Open Settings", "href": "/app/thinking/#main"}
+      "action": {"label": "Open Thinking", "href": "/app/thinking/#main"}
     },
     "gpu_probe_failed": {
       "template": "local GPU check couldn't finish",
-      "action": {"label": "Open Settings", "href": "/app/thinking/#main"}
+      "action": {"label": "Open Thinking", "href": "/app/thinking/#main"}
     },
     "local_model_missing": {
       "template": "local model setup is not finished",
@@ -60,11 +60,11 @@
     },
     "local_endpoint_unreachable": {
       "template": "The inference endpoint you configured could not be reached.",
-      "action": {"label": "Open Settings", "href": "/app/thinking/#main"}
+      "action": {"label": "Open Thinking", "href": "/app/thinking/#main"}
     },
     "local_endpoint_contract_failed": {
       "template": "The configured endpoint did not respond in the expected format.",
-      "action": {"label": "Open Settings", "href": "/app/thinking/#main"}
+      "action": {"label": "Open Thinking", "href": "/app/thinking/#main"}
     },
     "unsupported_platform": {
       "template": "this machine is not supported for local model setup",
@@ -88,7 +88,7 @@
     },
     "provider_key_invalid": {
       "template": "your {provider} key didn't validate",
-      "action": {"label": "Open Settings", "href": "/app/thinking/#main"}
+      "action": {"label": "Open Thinking", "href": "/app/thinking/#main"}
     },
     "provider_quota_exceeded": {
       "template": "your {provider} quota is spent",

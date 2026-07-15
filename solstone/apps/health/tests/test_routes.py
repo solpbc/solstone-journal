@@ -47,7 +47,7 @@ def _readiness_snapshot(severity: str = "neutral") -> dict:
                 "summary": "Anthropic needs credentials before it can read your screen descriptions",
                 "detail": "Open provider setup.",
                 "recovery_action": {
-                    "label": "Open Settings",
+                    "label": "Open Thinking",
                     "href": "/app/thinking/#main",
                 },
                 "operator_detail": "reason_code=provider_key_missing provider=anthropic",

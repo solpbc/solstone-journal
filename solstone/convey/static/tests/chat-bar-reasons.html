@@ -83,7 +83,7 @@
         const action = statusWrap.querySelector('.chat-bar-status-action');
         assert(`${code} action presence`, hasAction ? !!action : !action);
         if (hasAction) {
-          assert(`${code} action label`, action.textContent === 'Open Settings');
+          assert(`${code} action label`, action.textContent === 'Open Thinking');
           assert(`${code} action href`, action.getAttribute('href') === '/app/thinking/#main');
         }
       });

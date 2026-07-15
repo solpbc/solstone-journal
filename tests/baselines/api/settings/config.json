@@ -14,7 +14,8 @@
     ]
   },
   "env": {
-    "TEST_CONFIG_ENV_VAR": true
+    "PLAUD_ACCESS_TOKEN": false,
+    "REVAI_ACCESS_TOKEN": false
   },
   "identity": {
     "aliases": [

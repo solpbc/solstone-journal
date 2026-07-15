@@ -67,10 +67,6 @@ PROVIDER_LEVEL_CODES = frozenset(
     }
 )
 
-_SETTINGS_ACTION = RecoveryAction(
-    label="Open Settings",
-    target="/app/thinking/#main",
-)
 _THINKING_ACTION = RecoveryAction(
     label="Open Thinking",
     target="/app/thinking/#main",
@@ -96,7 +92,7 @@ _ENTRIES: dict[str, _Entry] = {
         klass="setup",
         summary="{provider} needs credentials before it can read your screen descriptions",
         detail="Open provider setup and add credentials, then try again.",
-        recovery_action=_SETTINGS_ACTION,
+        recovery_action=_THINKING_ACTION,
     ),
     "ram_insufficient": _Entry(
         klass="setup",
@@ -114,7 +110,7 @@ _ENTRIES: dict[str, _Entry] = {
             "Local models require a supported GPU. This computer has no GPU "
             "acceleration available."
         ),
-        recovery_action=_SETTINGS_ACTION,
+        recovery_action=_THINKING_ACTION,
     ),
     "gpu_probe_failed": _Entry(
         klass="setup",
@@ -123,7 +119,7 @@ _ENTRIES: dict[str, _Entry] = {
             "Local model setup couldn't confirm GPU acceleration — try again, "
             "or use a cloud provider if it keeps failing."
         ),
-        recovery_action=_SETTINGS_ACTION,
+        recovery_action=_THINKING_ACTION,
     ),
     "local_model_missing": _Entry(
         klass="setup",
@@ -171,7 +167,7 @@ _ENTRIES: dict[str, _Entry] = {
         klass="provider",
         summary=LOCAL_ENDPOINT_UNREACHABLE_COPY,
         detail="Check the endpoint URL, confirm the server is running, then retry.",
-        recovery_action=_SETTINGS_ACTION,
+        recovery_action=_THINKING_ACTION,
     ),
     "local_endpoint_contract_failed": _Entry(
         klass="generic",
@@ -180,7 +176,7 @@ _ENTRIES: dict[str, _Entry] = {
             "Confirm the endpoint serves /v1/chat/completions with vision and "
             "JSON-schema response_format support."
         ),
-        recovery_action=_SETTINGS_ACTION,
+        recovery_action=_THINKING_ACTION,
     ),
     "unsupported_platform": _Entry(
         klass="setup",
@@ -220,7 +216,7 @@ _ENTRIES: dict[str, _Entry] = {
         klass="provider",
         summary="your {provider} key didn't validate",
         detail="Open provider setup and check the saved credentials.",
-        recovery_action=_SETTINGS_ACTION,
+        recovery_action=_THINKING_ACTION,
     ),
     "provider_quota_exceeded": _Entry(
         klass="provider",
@@ -358,7 +354,7 @@ _FALLBACK_ENTRY = _Entry(
     klass="generic",
     summary="couldn't determine provider readiness — check your provider or local model setup",
     detail="Check provider setup and local model setup, then try again.",
-    recovery_action=_SETTINGS_ACTION,
+    recovery_action=_THINKING_ACTION,
 )
 
 _NEUTRAL_SUMMARY = (

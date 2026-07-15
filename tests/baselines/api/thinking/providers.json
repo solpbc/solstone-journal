@@ -30,7 +30,7 @@
         "reason_code": "provider_key_missing",
         "recovery_action": {
           "href": "/app/thinking/#main",
-          "label": "Open Settings"
+          "label": "Open Thinking"
         },
         "semantic_key": "provider_key_missing:google:",
         "severity": "blocker",
@@ -50,7 +50,7 @@
         "reason_code": "provider_key_missing",
         "recovery_action": {
           "href": "/app/thinking/#main",
-          "label": "Open Settings"
+          "label": "Open Thinking"
         },
         "semantic_key": "provider_key_missing:google:",
         "severity": "blocker",
@@ -68,7 +68,7 @@
         "reason_code": "provider_key_missing",
         "recovery_action": {
           "href": "/app/thinking/#main",
-          "label": "Open Settings"
+          "label": "Open Thinking"
         },
         "semantic_key": "provider_key_missing:google:",
         "severity": "blocker",

@@ -1205,7 +1205,7 @@ def test_get_providers_ai_readiness_missing_key_blocks(settings_client, monkeypa
     group = readiness["groups"][0]
     assert group["reason_code"] == "provider_key_missing"
     assert group["recovery_action"] == {
-        "label": "Open Settings",
+        "label": "Open Thinking",
         "href": "/app/thinking/#main",
     }
 

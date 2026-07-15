@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from solstone.convey import create_app
 from solstone.convey.reasons import INVALID_CONFIG_VALUE
@@ -108,3 +109,74 @@ def test_journal_config_get_without_journal_section(settings_env):
 
     assert response.status_code == 200
     assert "journal" not in response.get_json()
+
+
+def _payload_keys_and_strings(value: Any):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield str(key)
+            yield from _payload_keys_and_strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _payload_keys_and_strings(item)
+    elif isinstance(value, str):
+        yield value
+
+
+def test_settings_config_projection_drops_thinking_provider_secrets(
+    settings_env,
+    monkeypatch,
+):
+    endpoint_credential = "SETTINGS-ENDPOINT-CREDENTIAL-SENTINEL"
+    config = {
+        **_base_config(),
+        "env": {
+            "GOOGLE_API_KEY": "google-secret",
+            "OPENAI_API_KEY": "openai-secret",
+            "ANTHROPIC_API_KEY": "anthropic-secret",
+            "TEST_LEAK_SENTINEL": "arbitrary-secret",
+            "REVAI_ACCESS_TOKEN": "revai-secret",
+        },
+        "providers": {
+            "active": {
+                "provider": "anthropic",
+                "model": "claude-settings-leak-model",
+            },
+            "local": {
+                "endpoint_url": "http://settings-leak.example/v1",
+                "served_model_id": "settings-local-model",
+                "credential": endpoint_credential,
+            },
+        },
+    }
+    journal_path, _config = settings_env(config)
+    monkeypatch.setenv("REVAI_ACCESS_TOKEN", "runtime-revai")
+    monkeypatch.delenv("PLAUD_ACCESS_TOKEN", raising=False)
+    client = _client(journal_path)
+
+    response = client.get("/app/settings/api/config")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    serialized_projection = "\n".join(_payload_keys_and_strings(payload))
+    for forbidden in (
+        "GOOGLE_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "TEST_LEAK_SENTINEL",
+        "anthropic",
+        "claude-settings-leak-model",
+        "endpoint_url",
+        endpoint_credential,
+    ):
+        assert forbidden not in serialized_projection
+    assert set(payload["env"]) == {"REVAI_ACCESS_TOKEN", "PLAUD_ACCESS_TOKEN"}
+    assert payload["env"] == {
+        "REVAI_ACCESS_TOKEN": True,
+        "PLAUD_ACCESS_TOKEN": False,
+    }
+    assert set(payload["runtime_env"]) == {"REVAI_ACCESS_TOKEN", "PLAUD_ACCESS_TOKEN"}
+    assert payload["runtime_env"] == {
+        "REVAI_ACCESS_TOKEN": True,
+        "PLAUD_ACCESS_TOKEN": False,
+    }

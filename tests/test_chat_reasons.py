@@ -131,7 +131,7 @@ def test_render_known_codes():
             assert "Gemini" in rendered["message"]
         if code == "provider_key_invalid":
             assert rendered["action"] == {
-                "label": "Open Settings",
+                "label": "Open Thinking",
                 "href": "/app/thinking/#main",
             }
         else:
