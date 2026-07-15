@@ -122,11 +122,57 @@ class Metrics(FakeModel):
         )
 
 
+def _direct_generation_response(model: str) -> SimpleNamespace:
+    message = SimpleNamespace(
+        content=[SimpleNamespace(text="fake response")],
+        thinking_blocks=[],
+        reasoning_content=None,
+        responses_reasoning_item=None,
+    )
+    return SimpleNamespace(
+        message=message,
+        metrics=Metrics(),
+        raw_response={
+            "model": model,
+            "choices": [{"finish_reason": "stop"}],
+        },
+    )
+
+
 class LLM(FakeModel):
+    instances: list[LLM] = []
+
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.metrics = Metrics()
         self.effective_max_input_tokens = None
+        self.last_completion_messages = None
+        self.last_completion_kwargs = None
+        self.last_completion_merged_kwargs = None
+        self.last_responses_messages = None
+        self.last_responses_kwargs = None
+        self.last_responses_merged_kwargs = None
+        type(self).instances.append(self)
+
+    def completion(self, messages: Any, **kwargs: Any) -> SimpleNamespace:
+        merged = dict(timeout=self.timeout, **kwargs)
+        self.last_completion_messages = messages
+        self.last_completion_kwargs = dict(kwargs)
+        self.last_completion_merged_kwargs = merged
+        return _direct_generation_response(self.model)
+
+    def responses(self, messages: Any, **kwargs: Any) -> SimpleNamespace:
+        merged = {"timeout": self.timeout, **kwargs}
+        self.last_responses_messages = messages
+        self.last_responses_kwargs = dict(kwargs)
+        self.last_responses_merged_kwargs = merged
+        return _direct_generation_response(self.model)
+
+    async def acompletion(self, messages: Any, **kwargs: Any) -> SimpleNamespace:
+        return self.completion(messages, **kwargs)
+
+    async def aresponses(self, messages: Any, **kwargs: Any) -> SimpleNamespace:
+        return self.responses(messages, **kwargs)
 
 
 class Agent(FakeModel):
@@ -190,6 +236,7 @@ class ConversationErrorEvent(FakeModel):
 def install_fake_openhands(monkeypatch: Any) -> types.SimpleNamespace:
     Conversation.instances = []
     Conversation.arun_impl = None
+    LLM.instances = []
     _REGISTERED_TOOLS.clear()
 
     root_mod = types.ModuleType("openhands")

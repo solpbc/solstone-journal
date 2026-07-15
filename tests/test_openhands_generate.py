@@ -11,6 +11,12 @@ import pytest
 from PIL import Image
 
 from solstone.think.providers import openhands
+from tests.openhands_fakes import install_fake_openhands
+
+
+@pytest.fixture
+def fake_openhands(monkeypatch):
+    return install_fake_openhands(monkeypatch)
 
 
 def _response(
@@ -67,6 +73,7 @@ def test_generate_google_uses_openhands_chat_and_normalizes_result(monkeypatch):
     assert messages[0].role == "user"
     assert messages[0].content[0].text == "hello"
     kwargs = llm.completion.call_args.kwargs
+    assert "timeout" not in kwargs
     assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 128}
     assert kwargs["response_format"]["json_schema"]["name"] == "Reply"
     assert result == {
@@ -127,7 +134,9 @@ def test_generate_openai_uses_responses_json_schema(monkeypatch):
 
     llm.responses.assert_called_once()
     assert not llm.completion.called
-    assert llm.responses.call_args.kwargs["text"]["format"] == {
+    kwargs = llm.responses.call_args.kwargs
+    assert "timeout" not in kwargs
+    assert kwargs["text"]["format"] == {
         "type": "json_schema",
         "name": "response",
         "schema": {"type": "object"},
@@ -155,16 +164,17 @@ def test_generate_provider_thinking_and_token_budget_mapping(caplog):
     assert openhands._generate_token_budget("anthropic", 100, 200) == 1201
     assert openhands._generate_token_budget("openai", 100, 200) == 100
     assert openhands._parse_openai_effort("gpt-5.5-xhigh") == ("gpt-5.5", "xhigh")
-    assert openhands._generate_call_kwargs(
+    google_kwargs = openhands._generate_call_kwargs(
         "google",
         "gemini-flash-latest",
         temperature=None,
         json_output=False,
         json_schema=None,
         thinking_budget=0,
-        timeout_s=10,
         responses_api=False,
-    )["thinking"] == {"type": "disabled", "budget_tokens": 0}
+    )
+    assert google_kwargs["thinking"] == {"type": "disabled", "budget_tokens": 0}
+    assert "timeout" not in google_kwargs
 
     assert "temperature" not in openhands._generate_call_kwargs(
         "openai",
@@ -173,7 +183,6 @@ def test_generate_provider_thinking_and_token_budget_mapping(caplog):
         json_output=False,
         json_schema=None,
         thinking_budget=None,
-        timeout_s=10,
         responses_api=True,
     )
     assert "temperature" not in openhands._generate_call_kwargs(
@@ -183,7 +192,6 @@ def test_generate_provider_thinking_and_token_budget_mapping(caplog):
         json_output=False,
         json_schema=None,
         thinking_budget=1_024,
-        timeout_s=10,
         responses_api=False,
     )
 
@@ -209,11 +217,79 @@ async def test_agenerate_uses_async_openhands_transport(monkeypatch):
     )
 
     llm.acompletion.assert_awaited_once()
-    assert llm.acompletion.call_args.kwargs["thinking"] == {
+    kwargs = llm.acompletion.call_args.kwargs
+    assert "timeout" not in kwargs
+    assert kwargs["thinking"] == {
         "type": "enabled",
         "budget_tokens": 1_024,
     }
     assert result["text"] == "hello"
+
+
+def test_fake_openhands_completion_raises_on_duplicate_timeout(fake_openhands):
+    llm = fake_openhands.LLM(model="google/gemini-flash-latest", timeout=10)
+
+    with pytest.raises(
+        TypeError,
+        match="dict\\(\\) got multiple values for keyword argument 'timeout'",
+    ):
+        llm.completion([], timeout=1)
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "transport_attr"),
+    [
+        ("google", "gemini-flash-latest", "last_completion_kwargs"),
+        ("anthropic", "claude-sonnet-4-6", "last_completion_kwargs"),
+        ("openai", "gpt-5.5", "last_responses_kwargs"),
+    ],
+)
+def test_run_generate_transport_kwargs_do_not_shadow_llm_timeout(
+    fake_openhands,
+    monkeypatch,
+    provider,
+    model,
+    transport_attr,
+):
+    monkeypatch.setenv(openhands._API_KEY_ENV[provider], "test-key")
+
+    result = openhands.run_generate("hello", model, provider=provider, timeout_s=7)
+
+    llm = fake_openhands.LLM.instances[-1]
+    assert llm.timeout == 7
+    assert result["text"] == "fake response"
+    assert "timeout" not in getattr(llm, transport_attr)
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "transport_attr"),
+    [
+        ("google", "gemini-flash-latest", "last_completion_kwargs"),
+        ("anthropic", "claude-sonnet-4-6", "last_completion_kwargs"),
+        ("openai", "gpt-5.5", "last_responses_kwargs"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_run_agenerate_transport_kwargs_do_not_shadow_llm_timeout(
+    fake_openhands,
+    monkeypatch,
+    provider,
+    model,
+    transport_attr,
+):
+    monkeypatch.setenv(openhands._API_KEY_ENV[provider], "test-key")
+
+    result = await openhands.run_agenerate(
+        "hello",
+        model,
+        provider=provider,
+        timeout_s=7,
+    )
+
+    llm = fake_openhands.LLM.instances[-1]
+    assert llm.timeout == 7
+    assert result["text"] == "fake response"
+    assert "timeout" not in getattr(llm, transport_attr)
 
 
 def test_validation_uses_runtime_probe_and_classifies_results(monkeypatch):

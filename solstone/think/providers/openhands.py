@@ -370,10 +370,9 @@ def _generate_call_kwargs(
     json_output: bool,
     json_schema: dict | None,
     thinking_budget: int | None,
-    timeout_s: float,
     responses_api: bool,
 ) -> dict[str, Any]:
-    kwargs: dict[str, Any] = {"timeout": timeout_s}
+    kwargs: dict[str, Any] = {}
     # Preserve each direct provider's accepted parameter contract. OpenAI's
     # reasoning models reject temperature, and Anthropic rejects it while
     # extended thinking is enabled (plus a few model-specific cases).
@@ -561,7 +560,6 @@ def _run_generate(
         json_output=json_output,
         json_schema=json_schema,
         thinking_budget=thinking_budget,
-        timeout_s=timeout_s,
         responses_api=responses_api,
     )
     response = (
@@ -602,7 +600,6 @@ async def _run_agenerate(
         json_output=json_output,
         json_schema=json_schema,
         thinking_budget=thinking_budget,
-        timeout_s=timeout_s,
         responses_api=responses_api,
     )
     response = (
