@@ -10,6 +10,7 @@ members = [
     "crates/solstone-core-sol-client",
     "crates/solstone-core-sol-client-cli",
     "crates/solstone-core-sol-link",
+    "crates/solstone-core-convey-http",
     "crates/solstone-core-spl",
     "crates/solstone-core-speakers",
     "crates/solstone-core-speakers-analyze",
@@ -36,8 +37,12 @@ solstone-core-sol = { path = "crates/solstone-core-sol" }
 solstone-core-sol-client = { path = "crates/solstone-core-sol-client" }
 solstone-core-sol-client-cli = { path = "crates/solstone-core-sol-client-cli" }
 solstone-core-sol-link = { path = "crates/solstone-core-sol-link" }
+solstone-core-convey-http = { path = "crates/solstone-core-convey-http" }
 solstone-core-spl = { path = "crates/solstone-core-spl" }
+axum = { version = "0.8.9", default-features = false, features = ["json"] }
 bytes = "1.12.1"
+hyper = { version = "1.11.0", default-features = false, features = ["server", "http1"] }
+hyper-util = { version = "0.1.20", default-features = false, features = ["tokio", "service"] }
 solstone-core-speakers = { path = "crates/solstone-core-speakers" }
 solstone-core-speakers-analyze = { path = "crates/solstone-core-speakers-analyze" }
 solstone-core-speakers-onnx = { path = "crates/solstone-core-speakers-onnx" }
@@ -55,12 +60,14 @@ rcgen = { version = "0.13", default-features = false, features = ["ring", "pem",
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde_json = { version = "1.0.150", features = ["preserve_order", "float_roundtrip"] }
-serde = "1.0.229"
+serde = { version = "1.0.229", features = ["derive"] }
 spl-core = { git = "https://github.com/solpbc/spl-rust", tag = "v0.4.3" }
 spl-transport = { git = "https://github.com/solpbc/spl-rust", tag = "v0.4.3" }
 tokio = { version = "1", default-features = false }
 thiserror = "2.0.19"
 toml_edit = { version = "0.22.27", default-features = false, features = ["parse"] }
+tower = { version = "0.5.3", default-features = false, features = ["util"] }
+tower-http = { version = "0.6.11", default-features = false, features = ["limit"] }
 unicode-normalization = "0.1.25"
 unidecode = "0.3.0"
 ureq = { version = "3.3.0", default-features = false }

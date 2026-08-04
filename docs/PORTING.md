@@ -44,6 +44,15 @@ rather than a product gate. The split is still useful to mobile consumers:
 cross-checkable without a platform toolchain, while only `spl-transport` needs
 the real host toolchain for `ring`'s C build.
 
+`solstone-core-convey-http` is likewise excluded permanently by product shape,
+not deferred iOS debt. It is the substrate for the journal-host `convey` web
+service: the machine hosting the journal runs the server, while phones and
+other devices consume it as HTTP clients over the network. Its currently inert
+library happens to compile for iOS, but that is not a product requirement and
+future TLS and loopback-binding work is host-specific; retaining it in the
+iOS canary would confuse incidental portability with the supported deployment
+shape.
+
 ## Native Dependency Release Proof
 
 A Rust conversion that adds or bumps a dependency with C/C++ build steps or
