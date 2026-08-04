@@ -137,7 +137,9 @@ def _build_contract_payload(*, derivation_wall_seconds: float) -> dict[str, obje
                 "derivation.digest_word_split",
                 "derivation.selection_rules",
                 "assets.glyphs.names",
+                "assets.glyphs.ordering",
                 "assets.colors.entries",
+                "assets.colors.ordering",
                 "assets.words",
                 "reference_vectors",
             ],
@@ -189,11 +191,29 @@ def _build_contract_payload(*, derivation_wall_seconds: float) -> dict[str, obje
                 "provenance": "solstone/think/link/mark_assets/glyphs.json",
                 "count": len(_ICON_NAMES),
                 "names": list(_ICON_NAMES),
+                "ordering": (
+                    "List position is the selection index: mark.py freezes "
+                    "_ICON_NAMES = tuple(_GLYPHS), and pick()/mark_from_jid() index "
+                    "that tuple positionally. glyphs.json insertion order currently "
+                    "matches alphabetical order, so an alphabetically sorting "
+                    "reimplementation passes all four current reference vectors. "
+                    "This coincidence is load-bearing but presently vector-silent; "
+                    "it diverges on the next out-of-order glyph append."
+                ),
             },
             "colors": {
                 "provenance": "solstone/think/link/mark_assets/colors.json",
                 "count": len(_COLORS),
                 "entries": [list(color) for color in _COLORS],
+                "ordering": (
+                    "List position is the selection index: mark.py loads _COLORS, "
+                    "and pick()/mark_from_jid() index it positionally. colors.json "
+                    "is spectrum-ordered (crimson, orange, amber, gold, lime, "
+                    "green, teal, cyan, sky, blue, indigo, violet, purple, "
+                    "magenta, pink, slate), not alphabetical, so a sorting "
+                    "implementation changes current results and existing "
+                    "reference vectors catch it immediately."
+                ),
             },
             "words": {
                 "provenance": "solstone/think/link/mark_assets/words.json",
