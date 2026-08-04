@@ -217,6 +217,96 @@ async fn identity_is_neutral_until_committed_then_returns_a_render_spec() {
     assert_mark_render_spec(&body["mark"]);
 }
 
+/// The mark an owner approves is the mark they get, across a regenerate.
+///
+/// `committed_mark_returns_the_locked_identity_mark` cannot catch a violation of
+/// this: it derives its expected value from whatever `lock_in` committed, so it
+/// passes for an implementation that mints a fresh CA at commit time. This test
+/// takes its expected value from the last preview the owner saw instead, which is
+/// the only oracle that fails when lock-in stops promoting the candidate.
+///
+/// Why it earns a permanent assertion: a wrong mark is not a cosmetic defect. The
+/// mark exists so an owner can recognise their own journal, so a mark that changes
+/// between approval and commit reads as evidence of compromise.
+#[tokio::test]
+async fn the_committed_mark_is_the_last_previewed_mark() {
+    let temporary = TempDir::new();
+
+    let first = response_json(
+        request(
+            temporary.path(),
+            AccessBasis::Localhost,
+            Method::GET,
+            "/init/mark",
+            None,
+        )
+        .await,
+    )
+    .await;
+
+    let regenerated = response_json(
+        request(
+            temporary.path(),
+            AccessBasis::Localhost,
+            Method::POST,
+            "/init/mark/regenerate",
+            None,
+        )
+        .await,
+    )
+    .await;
+
+    // Without this the equality at the end could be comparing one mark to itself
+    // on an implementation that ignores regenerate entirely.
+    assert_ne!(
+        first["mark"], regenerated["mark"],
+        "regenerate must replace the candidate, so the preview must change"
+    );
+
+    let previewed_again = response_json(
+        request(
+            temporary.path(),
+            AccessBasis::Localhost,
+            Method::GET,
+            "/init/mark",
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(
+        regenerated["mark"], previewed_again["mark"],
+        "the candidate must survive between requests, not be minted per request"
+    );
+
+    let locked = request(
+        temporary.path(),
+        AccessBasis::Localhost,
+        Method::POST,
+        "/init/mark/lock",
+        None,
+    )
+    .await;
+    assert_eq!(locked.status(), StatusCode::OK);
+
+    let committed = response_json(
+        request(
+            temporary.path(),
+            AccessBasis::Localhost,
+            Method::GET,
+            "/init/mark",
+            None,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(committed["locked"], true);
+    assert_eq!(
+        committed["mark"], previewed_again["mark"],
+        "the committed CA must be the previewed candidate, not a freshly minted one"
+    );
+}
+
 #[tokio::test]
 async fn mark_preview_returns_only_a_render_spec_and_lock_requires_a_candidate() {
     let temporary = TempDir::new();
