@@ -1078,6 +1078,7 @@ dependencies = [
  "nix",
  "serde_json",
  "solstone-core-journal",
+ "solstone-core-journal-io",
  "spl-core",
  "ureq",
 ]

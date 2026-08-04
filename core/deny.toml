@@ -19,7 +19,12 @@ allow = [
 # Protects against third-party wildcard requirements while allowing unpublished internal path crates, and bans Python runtime bindings.
 wildcards = "deny"
 allow-wildcard-paths = true
-deny = [{ name = "pyo3" }, { name = "pyo3-ffi" }, { name = "cpython" }]
+deny = [
+    { name = "pyo3" },
+    { name = "pyo3-ffi" },
+    { name = "cpython" },
+    { name = "solstone-core-journal-io", wrappers = ["solstone-core-sol-client"], reason = "durable journal I/O primitives are owned by the native sol client in this wave" },
+]
 
 [graph]
 targets = [

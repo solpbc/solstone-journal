@@ -2,13 +2,17 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeMap;
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
+use solstone_core_journal_io::{
+    AtomicWriteOptions, StagedDirOptions, StagedWriteError, publish_staged_dir,
+    write_bytes_exclusive,
+};
 use spl_core::pairlink::{PairLinkError, ParsedPairLink};
 
 use crate::command::{CommandContext, CommandOutput};
@@ -1150,7 +1154,10 @@ fn spent_existing_path_message(path: &Path) -> String {
 }
 
 fn publish_bundle_atomic(bundle_dir: &Path, files: &BTreeMap<String, Vec<u8>>) -> io::Result<()> {
-    publish_bundle_atomic_with_writer(bundle_dir, files, write_bundle_file)
+    publish_bundle_atomic_with_writer(bundle_dir, files, |path, content| {
+        write_bytes_exclusive(path, content, AtomicWriteOptions { mode: Some(0o600) })
+            .map_err(io::Error::other)
+    })
 }
 
 fn publish_bundle_atomic_with_writer<W>(
@@ -1161,143 +1168,39 @@ fn publish_bundle_atomic_with_writer<W>(
 where
     W: Fn(&Path, &[u8]) -> io::Result<()>,
 {
-    let parent = bundle_dir
-        .parent()
-        .ok_or_else(|| io::Error::other("credential path has no parent"))?;
-    fs::create_dir_all(parent)?;
-    if path_lexists(bundle_dir) {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            existing_path_message(bundle_dir),
-        ));
-    }
-    let staging = create_staging_dir(parent, bundle_dir)?;
-    write_bundle_to_staging(staging.path(), files, &write_file)?;
-    fsync_directory(staging.path());
-    fs::rename(staging.path(), bundle_dir)?;
-    fsync_directory(parent);
-    staging.disarm();
-    Ok(())
-}
-
-struct StagingDir {
-    path: PathBuf,
-    armed: bool,
-}
-
-impl StagingDir {
-    fn new(path: PathBuf) -> Self {
-        Self { path, armed: true }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-
-    fn disarm(mut self) {
-        self.armed = false;
-    }
-}
-
-impl Drop for StagingDir {
-    fn drop(&mut self) {
-        if self.armed && path_lexists(&self.path) {
-            let _ = fs::remove_dir_all(&self.path);
-        }
-    }
-}
-
-fn create_staging_dir(parent: &Path, bundle_dir: &Path) -> io::Result<StagingDir> {
-    let bundle_name = bundle_dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("bundle");
-    let pid = std::process::id();
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    for attempt in 0..100u32 {
-        let candidate = parent.join(format!(".{bundle_name}.{pid}.{nanos}.{attempt}"));
-        match fs::create_dir(&candidate) {
-            Ok(()) => {
-                let staging = StagingDir::new(candidate);
-                chmod_dir(staging.path())?;
-                return Ok(staging);
-            }
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(error),
-        }
-    }
-    Err(io::Error::new(
-        io::ErrorKind::AlreadyExists,
-        "could not create credential staging directory",
-    ))
-}
-
-fn write_bundle_to_staging<W>(
-    staging: &Path,
-    files: &BTreeMap<String, Vec<u8>>,
-    write_file: &W,
-) -> io::Result<()>
-where
-    W: Fn(&Path, &[u8]) -> io::Result<()>,
-{
     if files.len() != BUNDLE_FILES.len()
         || BUNDLE_FILES.iter().any(|name| !files.contains_key(*name))
     {
         return Err(io::Error::other("credential bundle file set is incomplete"));
     }
-    for (name, content) in files {
-        write_file(&staging.join(name), content)?;
-    }
-    Ok(())
+    publish_staged_dir(
+        bundle_dir,
+        StagedDirOptions {
+            directory_mode: Some(0o700),
+        },
+        |staging| {
+            for (name, content) in files {
+                write_file(&staging.join(name), content)?;
+            }
+            Ok::<_, io::Error>(())
+        },
+    )
+    .map_err(|error| match &error {
+        StagedWriteError::Io { source, .. } if source.kind() == io::ErrorKind::AlreadyExists => {
+            io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                existing_path_message(bundle_dir),
+            )
+        }
+        _ => io::Error::other(error),
+    })
 }
 
-fn write_bundle_file(path: &Path, content: &[u8]) -> io::Result<()> {
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-
-        options.mode(0o600);
-    }
-    let mut file = options.open(path)?;
-    file.write_all(content)?;
-    file.sync_all()?;
-    chmod_file(path)
-}
-
-fn fsync_directory(path: &Path) {
-    if let Ok(file) = File::open(path) {
-        let _ = file.sync_all();
-    }
-}
-
-#[cfg(unix)]
-fn chmod_dir(path: &Path) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
-}
-
-#[cfg(not(unix))]
-fn chmod_dir(_path: &Path) -> io::Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
-fn chmod_file(path: &Path) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
-}
-
-#[cfg(not(unix))]
-fn chmod_file(_path: &Path) -> io::Result<()> {
-    Ok(())
-}
+/*
+ * The writer parameter above remains a test seam for injected populate
+ * failures. The staging, syncing, rename, cleanup, and permissions are owned
+ * by solstone-core-journal-io.
+ */
 
 #[cfg(test)]
 mod tests {
@@ -2102,7 +2005,8 @@ mod tests {
                     return Err(io::Error::other("injected mid-write failure"));
                 }
                 writes.set(writes.get() + 1);
-                write_bundle_file(path, content)
+                write_bytes_exclusive(path, content, AtomicWriteOptions { mode: Some(0o600) })
+                    .map_err(io::Error::other)
             });
 
         assert_eq!(writes.get(), 1);
