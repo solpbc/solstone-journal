@@ -1095,14 +1095,20 @@ dependencies = [
 name = "solstone-core-sol-link"
 version = "1.0.22"
 dependencies = [
+ "hkdf",
  "rcgen",
+ "ring",
  "rustls",
  "serde_json",
+ "sha2",
+ "solstone-core-journal-io",
  "solstone-core-sol-client",
  "spl-core",
  "spl-transport",
+ "time",
  "tokio",
  "tokio-rustls",
+ "x509-parser",
 ]
 
 [[package]]

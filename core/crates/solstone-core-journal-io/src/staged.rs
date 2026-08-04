@@ -189,7 +189,7 @@ fn io_error(path: &Path, source: io::Error) -> StagedWriteError {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 fn pause_at(step: &str) {
     if std::env::var("JOURNAL_IO_TEST_PAUSE_AT").ok().as_deref() != Some(step) {
         return;
@@ -202,7 +202,7 @@ fn pause_at(step: &str) {
     }
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "test-hooks")))]
 fn pause_at(_step: &str) {}
 
 #[cfg(test)]

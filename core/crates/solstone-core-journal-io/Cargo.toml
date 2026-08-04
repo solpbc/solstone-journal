@@ -14,6 +14,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 solstone-core-journal = { workspace = true }
 
+[features]
+test-hooks = []
+
 [dev-dependencies]
 nix = { workspace = true, features = ["signal"] }
 

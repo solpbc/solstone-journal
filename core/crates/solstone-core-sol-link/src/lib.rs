@@ -12,7 +12,9 @@ use solstone_core_sol_client::seam::{
 use spl_transport::credential::Credential;
 use spl_transport::{RelayControlEndpoint, RelayError, TransportError, tls};
 
+pub mod ca;
 mod direct_seam;
+pub mod establish;
 mod pairing_entry;
 mod serve;
 
