@@ -1,0 +1,283 @@
+{
+  "argon2_secret_parameter_note": "argon2.low_level.hash_secret_raw.__doc__ says \"Hash *password* and return a **raw** hash.\" Its sibling hash_secret documents its secret argument as \"Secret to hash.\" Therefore secret= is Argon2's password/message input P, not a keyed Argon2 secret K; this low-level API exposes no separate K parameter.",
+  "assets": {
+    "colors": {
+      "count": 16,
+      "entries": [
+        [
+          "crimson",
+          "#ef4444"
+        ],
+        [
+          "orange",
+          "#f97316"
+        ],
+        [
+          "amber",
+          "#f59e0b"
+        ],
+        [
+          "gold",
+          "#d4a017"
+        ],
+        [
+          "lime",
+          "#84cc16"
+        ],
+        [
+          "green",
+          "#22c55e"
+        ],
+        [
+          "teal",
+          "#14b8a6"
+        ],
+        [
+          "cyan",
+          "#06b6d4"
+        ],
+        [
+          "sky",
+          "#38bdf8"
+        ],
+        [
+          "blue",
+          "#3b82f6"
+        ],
+        [
+          "indigo",
+          "#6366f1"
+        ],
+        [
+          "violet",
+          "#8b5cf6"
+        ],
+        [
+          "purple",
+          "#a855f7"
+        ],
+        [
+          "magenta",
+          "#d946ef"
+        ],
+        [
+          "pink",
+          "#ec4899"
+        ],
+        [
+          "slate",
+          "#94a3b8"
+        ]
+      ],
+      "provenance": "solstone/think/link/mark_assets/colors.json"
+    },
+    "glyphs": {
+      "count": 60,
+      "names": [
+        "anchor",
+        "banana",
+        "bike",
+        "bug",
+        "cake",
+        "cat",
+        "cherry",
+        "coffee",
+        "cookie",
+        "croissant",
+        "diamond",
+        "dice-5",
+        "donut",
+        "droplet",
+        "drum",
+        "feather",
+        "fish",
+        "flag",
+        "gem",
+        "gift",
+        "glasses",
+        "grape",
+        "hammer",
+        "hourglass",
+        "key",
+        "leaf",
+        "lightbulb",
+        "lock",
+        "lollipop",
+        "magnet",
+        "mic",
+        "mountain",
+        "music",
+        "paperclip",
+        "pencil",
+        "piano",
+        "pill",
+        "pizza",
+        "popsicle",
+        "puzzle",
+        "rabbit",
+        "rocket",
+        "scissors",
+        "ship",
+        "shovel",
+        "shrimp",
+        "snail",
+        "snowflake",
+        "spade",
+        "squirrel",
+        "star",
+        "stethoscope",
+        "sun",
+        "tent",
+        "train",
+        "trees",
+        "truck",
+        "turtle",
+        "tv",
+        "watch"
+      ],
+      "provenance": "solstone/think/link/mark_assets/glyphs.json"
+    },
+    "words": {
+      "first_word": "abacus",
+      "last_word": "zoom",
+      "provenance": "solstone/think/link/mark_assets/words.json",
+      "word_count": 7776
+    }
+  },
+  "contract": "solstone-journal-mark-derivation",
+  "derivation": {
+    "argon2id": {
+      "hash_len": 32,
+      "input": "jid.bytes (16 UUID bytes)",
+      "memory_cost": 65536,
+      "parallelism": 1,
+      "salt": "solstone-journal-mark-v1",
+      "salt_encoding": "ASCII bytes",
+      "time_cost": 3,
+      "type": "ID",
+      "version": 19,
+      "version_hex": "0x13"
+    },
+    "digest_word_split": {
+      "byte_order": "big-endian",
+      "digest_length_bytes": 32,
+      "source_byte_range": "digest[0:28]",
+      "unused_trailing_bytes": 4,
+      "word_count": 7,
+      "word_width_bits": 32
+    },
+    "selection_rules": {
+      "color1": "pick(u[2], color_count)",
+      "color2": "pick_distinct(u[3], color_count, color1_i)",
+      "icon1": "pick(u[0], icon_count)",
+      "icon2": "pick_distinct(u[1], icon_count, icon1_i)",
+      "pick": "w % n",
+      "pick_distinct": "i = w % (n - 1); if i >= not_i: i += 1; return i",
+      "rot1": "u[6] & 1; 0 -> 0 degrees, 1 -> 45 degrees",
+      "rot2": "(u[6] >> 1) & 1; 0 -> 0 degrees, 1 -> 45 degrees",
+      "word1": "pick(u[4], word_count)",
+      "word2": "pick_distinct(u[5], word_count, word1_i)"
+    }
+  },
+  "performance_observation": {
+    "aggregation": "single primary-vector derivation",
+    "metric": "mark_from_jid wall-clock duration",
+    "normative": false,
+    "note": "Argon2id at memory_cost=65536 is deliberately slow; expect roughly 0.09 seconds per derivation, depending on host.",
+    "sample_count": 1,
+    "seconds": 0.113636,
+    "units": "seconds"
+  },
+  "reference_vectors": [
+    {
+      "color1": "blue",
+      "color1_hex": "#3b82f6",
+      "color2": "purple",
+      "color2_hex": "#a855f7",
+      "digest": "4e436f135100f0ecc94146f99ac603b5e31161ed90774e499770618925543fc2",
+      "icon1": "piano",
+      "icon2": "key",
+      "jid": "f30ed159-ef46-8e9c-913f-e49f0fe7d201",
+      "name": "primary",
+      "raw16": "f30ed159ef466e9c113fe49f0fe7d201",
+      "rot1": 45,
+      "rot2": 0,
+      "spki_hex": "3059301306072a8648ce3d020106082a8648ce3d03010703420004471c3e758c4904285bba7e53118ed0f524adeb0757d25bd2f8e7b0d76dfa714cdd520f7aca8a8b917acc37f51de8f0c9bbe3ad858382e702dc25a12d09f7a858",
+      "word1": "liquefy",
+      "word2": "smock"
+    },
+    {
+      "color1": "pink",
+      "color1_hex": "#ec4899",
+      "color2": "cyan",
+      "color2_hex": "#06b6d4",
+      "digest": "15b2e261a06544e78334d07e0e6505d9e657a22193b46221b8e7e9ec6b897f50",
+      "icon1": "turtle",
+      "icon2": "pizza",
+      "jid": "62bde3af-1ef4-8292-84db-1e5ac2c07e8b",
+      "name": "rot-0-0",
+      "raw16": null,
+      "rot1": 0,
+      "rot2": 0,
+      "spki_hex": "3059301306072a8648ce3d020106082a8648ce3d030107034200047cf27b188d034f7e8a52380304b51ac3c08969e277f21b35a60b48fc4766997807775510db8ed040293d9ac69f7430dbba7dade63ce982299e04b79d227873d1",
+      "word1": "distrust",
+      "word2": "chokehold"
+    },
+    {
+      "color1": "magenta",
+      "color1_hex": "#d946ef",
+      "color2": "sky",
+      "color2_hex": "#38bdf8",
+      "digest": "92703a37b827760c681472dd01e1bc86b9003a1f8e0174215837caba1b5ee2a3",
+      "icon1": "dice-5",
+      "icon2": "snail",
+      "jid": "75e46c0d-1c50-892b-98ff-4d174c135add",
+      "name": "rot-0-1",
+      "raw16": null,
+      "rot1": 0,
+      "rot2": 45,
+      "spki_hex": "3059301306072a8648ce3d020106082a8648ce3d030107034200048e533b6fa0bf7b4625bb30667c01fb607ef9f8b8a80fef5b300628703187b2a373eb1dbde03318366d069f83a6f5900053c73633cb041b21c55e1a86c1f400b4",
+      "word1": "delay",
+      "word2": "safari"
+    },
+    {
+      "color1": "orange",
+      "color1_hex": "#f97316",
+      "color2": "teal",
+      "color2_hex": "#14b8a6",
+      "digest": "00d3c5bc17e50c956badedd1a3c02788ac2990261b885c4dabdd7cbf9506a05c",
+      "icon1": "truck",
+      "icon2": "snail",
+      "jid": "bb8f23b4-fd5e-8ca9-98c7-c1dfa927a840",
+      "name": "rot-1-1",
+      "raw16": null,
+      "rot1": 45,
+      "rot2": 45,
+      "spki_hex": "3059301306072a8648ce3d020106082a8648ce3d03010703420004ea68d7b6fedf0b71878938d51d71f8729e0acb8c2c6df8b3d79e8a4b90949ee02a2744c972c9fce787014a964a8ea0c84d714feaa4de823fe85a224a4dd048fa",
+      "word1": "duvet",
+      "word2": "capital"
+    }
+  ],
+  "rust_consumer_status": "No Rust implementation exists yet.",
+  "x-journal-contract": {
+    "allowed_producers": [
+      "solstone.think.link.mark.mark_from_jid",
+      "solstone.think.link.mark.mark_from_spki"
+    ],
+    "file_kind": "derivation-contract",
+    "fixture_generator": "scripts/build_mark_derivation_contract.py",
+    "format_id": "journal-mark-derivation",
+    "key_fields": [
+      "derivation.argon2id",
+      "derivation.digest_word_split",
+      "derivation.selection_rules",
+      "assets.glyphs.names",
+      "assets.colors.entries",
+      "assets.words",
+      "reference_vectors"
+    ],
+    "reference_writer": "solstone.think.link.mark.mark_from_jid",
+    "schema_owner": "solstone.think.link.mark",
+    "write_discipline": "Computed on demand; the mark itself has no at-rest write path. This fixture is the only persisted artifact and is regenerated by scripts/build_mark_derivation_contract.py only after its proof gate against tests/link/test_mark.py:VECTORS passes; never hand-edit."
+  }
+}
