@@ -5,6 +5,7 @@ members = [
     "crates/solstone-core-indexer",
     "crates/solstone-core-indexer-store",
     "crates/solstone-core-journal",
+    "crates/solstone-core-journal-io",
     "crates/solstone-core-sol",
     "crates/solstone-core-sol-client",
     "crates/solstone-core-sol-client-cli",
@@ -30,6 +31,7 @@ solstone-core-cli = { path = "crates/solstone-core-cli" }
 solstone-core-indexer = { path = "crates/solstone-core-indexer" }
 solstone-core-indexer-store = { path = "crates/solstone-core-indexer-store" }
 solstone-core-journal = { path = "crates/solstone-core-journal" }
+solstone-core-journal-io = { path = "crates/solstone-core-journal-io" }
 solstone-core-sol = { path = "crates/solstone-core-sol" }
 solstone-core-sol-client = { path = "crates/solstone-core-sol-client" }
 solstone-core-sol-client-cli = { path = "crates/solstone-core-sol-client-cli" }
@@ -43,6 +45,7 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 chrono-tz = "0.10.4"
 glob = "0.3.3"
 hdbscan = { version = "0.12.0", default-features = false, features = ["serial"] }
+log = "0.4.29"
 md5 = "0.8.1"
 nix = { version = "0.30.1", default-features = false, features = ["fs"] }
 ort = { version = "=2.0.0-rc.12", default-features = false }
@@ -52,6 +55,7 @@ rcgen = { version = "0.13", default-features = false, features = ["ring", "pem",
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde_json = { version = "1.0.150", features = ["preserve_order", "float_roundtrip"] }
+serde = "1.0.229"
 spl-core = { git = "https://github.com/solpbc/spl-rust", tag = "v0.4.3" }
 spl-transport = { git = "https://github.com/solpbc/spl-rust", tag = "v0.4.3" }
 tokio = { version = "1", default-features = false }

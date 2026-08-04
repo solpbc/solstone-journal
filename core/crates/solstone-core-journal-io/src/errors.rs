@@ -1,0 +1,215 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Error types for journal file-I/O primitives.
+
+use std::error::Error;
+use std::fmt;
+use std::io;
+use std::path::PathBuf;
+use std::time::Duration;
+
+/// Raised when a stable sidecar lock is not acquired before the deadline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LockTimeout {
+    /// The protected path, not its sidecar lock path.
+    pub path: PathBuf,
+    /// The requested acquisition timeout.
+    pub timeout: Duration,
+}
+
+impl fmt::Display for LockTimeout {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "could not acquire lock for {} within {}s",
+            self.path.display(),
+            self.timeout.as_secs_f64()
+        )
+    }
+}
+
+impl Error for LockTimeout {}
+
+/// Raised when JSON or JSONL data is malformed under strict policy.
+#[derive(Debug)]
+pub struct MalformedDataError {
+    /// File that contained malformed JSON data.
+    pub path: PathBuf,
+    /// One-based JSONL line number, when applicable.
+    pub line: Option<usize>,
+    /// Underlying JSON parse failure.
+    pub source: serde_json::Error,
+}
+
+impl fmt::Display for MalformedDataError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.line {
+            Some(line) => write!(
+                formatter,
+                "malformed data in {} at line {line}",
+                self.path.display()
+            ),
+            None => write!(formatter, "malformed data in {}", self.path.display()),
+        }
+    }
+}
+
+impl Error for MalformedDataError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+/// Raised when a journal-relative path escapes after symlink resolution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathEscapeError {
+    /// Resolved candidate outside the journal root.
+    pub path: PathBuf,
+    /// Original relative input.
+    pub rel: String,
+}
+
+impl fmt::Display for PathEscapeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "{:?} escapes the journal root (resolved to {})",
+            self.rel,
+            self.path.display()
+        )
+    }
+}
+
+impl Error for PathEscapeError {}
+
+/// Lock acquisition failure.
+#[derive(Debug)]
+pub enum LockError {
+    /// A filesystem operation failed.
+    Io { path: PathBuf, source: io::Error },
+    /// Acquisition exceeded the supplied deadline.
+    Timeout(LockTimeout),
+}
+
+impl fmt::Display for LockError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io { path, source } => write!(formatter, "{}: {source}", path.display()),
+            Self::Timeout(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl Error for LockError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+            Self::Timeout(error) => Some(error),
+        }
+    }
+}
+
+/// Reader failure. It deliberately carries no decoded value.
+#[derive(Debug)]
+pub enum ReadError {
+    /// A filesystem operation failed.
+    Io { path: PathBuf, source: io::Error },
+    /// JSON content was malformed under strict policy.
+    Malformed(MalformedDataError),
+}
+
+impl fmt::Display for ReadError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io { path, source } => write!(formatter, "{}: {source}", path.display()),
+            Self::Malformed(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl Error for ReadError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+            Self::Malformed(error) => Some(error),
+        }
+    }
+}
+
+/// Journal path validation or filesystem failure.
+#[derive(Debug)]
+pub enum PathError {
+    /// The caller supplied an invalid journal-relative path.
+    InvalidRelativePath { rel: String, message: &'static str },
+    /// A symlink-aware containment check failed.
+    Escape(PathEscapeError),
+    /// A filesystem operation failed.
+    Io { path: PathBuf, source: io::Error },
+}
+
+impl fmt::Display for PathError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidRelativePath { message, .. } => formatter.write_str(message),
+            Self::Escape(error) => error.fmt(formatter),
+            Self::Io { path, source } => write!(formatter, "{}: {source}", path.display()),
+        }
+    }
+}
+
+impl Error for PathError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Escape(error) => Some(error),
+            Self::Io { source, .. } => Some(source),
+            Self::InvalidRelativePath { .. } => None,
+        }
+    }
+}
+
+/// Atomic writer failure.
+#[derive(Debug)]
+pub enum AtomicWriteError {
+    /// A filesystem or durability operation failed.
+    Io { path: PathBuf, source: io::Error },
+}
+
+impl fmt::Display for AtomicWriteError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io { path, source } => write!(formatter, "{}: {source}", path.display()),
+        }
+    }
+}
+
+impl Error for AtomicWriteError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+        }
+    }
+}
+
+/// Append writer failure.
+#[derive(Debug)]
+pub enum AppendError {
+    /// A filesystem or durability operation failed.
+    Io { path: PathBuf, source: io::Error },
+}
+
+impl fmt::Display for AppendError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io { path, source } => write!(formatter, "{}: {source}", path.display()),
+        }
+    }
+}
+
+impl Error for AppendError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+        }
+    }
+}
