@@ -205,6 +205,17 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
         assert!(marker.exists(), "helper did not acquire the lock");
+        let contention = hold_lock(
+            &path,
+            LockOptions {
+                timeout: Duration::from_millis(100),
+                ..LockOptions::default()
+            },
+        );
+        assert!(
+            matches!(contention, Err(LockError::Timeout(_))),
+            "child did not create real lock contention"
+        );
         kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL).unwrap();
         child.wait().unwrap();
 

@@ -39,6 +39,15 @@ pub struct JournalConfigTransaction<T> {
 ///
 /// This intentionally carries no decoded map, mutation value, or transaction;
 /// callers cannot obtain a writable configuration from a failed load.
+///
+/// ```compile_fail
+/// use solstone_core_journal_io::ConfigLoadError;
+///
+/// fn extract_writable_config(error: ConfigLoadError) {
+///     let ConfigLoadError::Corrupt { config, .. } = error;
+///     drop(config);
+/// }
+/// ```
 #[derive(Debug)]
 pub enum ConfigLoadError {
     /// The existing file could not be read, parsed, or interpreted as an object.

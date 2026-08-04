@@ -12,7 +12,11 @@ use serde::Serialize;
 use crate::atomic::{fsync_dir, sync_file};
 use crate::errors::AppendError;
 
-/// Append exactly one newline-terminated text record and sync it to storage.
+/// Append one newline-terminated text record through a single raw write.
+///
+/// A successful return means exactly one complete record was appended and
+/// synced. A returned error can still leave a partial write on disk when the
+/// underlying single write reports a short byte count.
 pub fn append_text(path: impl AsRef<Path>, text: &str) -> Result<(), AppendError> {
     let mut contents = Vec::with_capacity(text.len() + 1);
     contents.extend_from_slice(text.as_bytes());
@@ -20,7 +24,11 @@ pub fn append_text(path: impl AsRef<Path>, text: &str) -> Result<(), AppendError
     append_record(path.as_ref(), &contents)
 }
 
-/// Serialize and append exactly one newline-terminated JSON record.
+/// Serialize and append one newline-terminated JSON record through a single raw write.
+///
+/// A successful return means exactly one complete record was appended and
+/// synced. A returned error can still leave a partial write on disk when the
+/// underlying single write reports a short byte count.
 pub fn append_jsonl<T: Serialize>(path: impl AsRef<Path>, record: &T) -> Result<(), AppendError> {
     let path = path.as_ref();
     let mut contents = serde_json::to_vec(record)

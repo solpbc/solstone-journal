@@ -45,11 +45,13 @@ impl Default for JsonWriteOptions {
     }
 }
 
-/// Atomically replace `path` with fully durable `contents`.
+/// Atomically replace `path` with durably prepared `contents`.
 ///
-/// The replacement bytes are synced before rename. The containing directory is
-/// synced afterwards on a best-effort basis; a directory-sync failure is logged
-/// and does not turn an otherwise published replacement into an error.
+/// The replacement bytes are synced before rename. On Apple targets, that sync
+/// also performs `F_FULLFSYNC`; a full-flush failure aborts publication and the
+/// temporary file is removed. The containing directory is synced afterwards on
+/// a best-effort basis; a directory-sync failure is logged and does not turn an
+/// otherwise published replacement into an error.
 pub fn atomic_replace(
     path: impl AsRef<Path>,
     contents: &[u8],
@@ -192,6 +194,12 @@ pub fn write_jsonl<T: Serialize>(
     atomic_replace(path, &contents, options)
 }
 
+/// Sync a file before its name is published.
+///
+/// All sync failures are hard errors. On Apple targets this performs both
+/// `sync_all()` and `F_FULLFSYNC`; an `F_FULLFSYNC` failure propagates to the
+/// caller before rename or hard-link publication. This is distinct from the
+/// best-effort parent-directory sync performed after publication.
 pub(crate) fn sync_file(file: &File) -> io::Result<()> {
     file.sync_all()?;
     #[cfg(any(

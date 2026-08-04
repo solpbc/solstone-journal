@@ -1196,11 +1196,9 @@ where
     })
 }
 
-/*
- * The writer parameter above remains a test seam for injected populate
- * failures. The staging, syncing, rename, cleanup, and permissions are owned
- * by solstone-core-journal-io.
- */
+// The writer parameter above remains a test seam for injected populate
+// failures. The staging, syncing, rename, cleanup, and permissions are owned
+// by solstone-core-journal-io.
 
 #[cfg(test)]
 mod tests {

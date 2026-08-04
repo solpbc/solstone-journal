@@ -61,6 +61,13 @@ impl Error for StagedWriteError {
 /// staging directory. A process killed before rename can leave that private
 /// staging directory orphaned, but the destination remains absent; after rename
 /// it contains the complete, synced set. Parent-directory sync is best effort.
+///
+/// This primitive does not hold a lock across its absence-check-and-rename
+/// sequence. Concurrent, uncoordinated callers targeting the same destination
+/// can race; callers needing strict mutual exclusion across multiple publishers
+/// must coordinate externally, for example with [`crate::hold_lock`]. This
+/// wave's link-bundle consumer publishes to a unique path per pairing session
+/// and does not hit this window in practice.
 pub fn publish_staged_dir<F, E>(
     destination: &Path,
     options: StagedDirOptions,
