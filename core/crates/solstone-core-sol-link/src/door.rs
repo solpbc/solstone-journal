@@ -64,6 +64,10 @@ pub fn spawn_authorization_refresh(
     watch::Receiver<DeviceDoorAuthorization>,
     tokio::task::JoinHandle<()>,
 ) {
+    assert!(
+        interval > Duration::ZERO,
+        "authorization refresh interval must be greater than zero"
+    );
     let (sender, receiver) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
     ));

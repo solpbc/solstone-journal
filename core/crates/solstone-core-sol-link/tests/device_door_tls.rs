@@ -42,7 +42,9 @@ async fn authorized_fingerprint_completes_the_handshake() {
 async fn absent_fingerprint_is_refused_with_access_denied() {
     let temporary = TempDir::new();
     let fixture = TlsFixture::new();
+    let unrelated = TlsFixture::new();
     let mut ledger = AuthorizationLedger::new(temporary.path());
+    ledger.add(unrelated.entry()).unwrap();
     let (_sender, receiver) = authorization_channel(&mut ledger);
     let config = fixture.server_config(receiver);
 
