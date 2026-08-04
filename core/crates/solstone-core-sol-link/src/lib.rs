@@ -16,7 +16,9 @@ pub mod ca;
 mod direct_seam;
 pub mod door;
 pub mod establish;
+pub mod http;
 pub mod ledger;
+pub mod mark;
 mod pairing_entry;
 mod serve;
 
@@ -71,6 +73,9 @@ pub mod test_support {
         }
     }
 }
+
+#[cfg(test)]
+mod http_tests;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SplLinkJoinPairingSeam;
