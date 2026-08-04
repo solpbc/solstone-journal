@@ -14,12 +14,63 @@ use spl_transport::{RelayControlEndpoint, RelayError, TransportError, tls};
 
 pub mod ca;
 mod direct_seam;
+pub mod door;
 pub mod establish;
 pub mod ledger;
 mod pairing_entry;
 mod serve;
 
+pub use door::{
+    DeviceDoorAuthorization, DeviceDoorConfigError, DeviceDoorVerifier,
+    build_device_door_server_config, refresh_once, spawn_authorization_refresh,
+};
 pub use serve::SplLinkServeRunner;
+
+/// Test-only certificate fixtures shared by this package's unit and integration tests.
+#[doc(hidden)]
+pub mod test_support {
+    use rcgen::{
+        BasicConstraints, Certificate, CertificateParams, IsCa, KeyPair, KeyUsagePurpose,
+        PKCS_ECDSA_P256_SHA256,
+    };
+
+    pub struct TestCa {
+        certificate: Certificate,
+        key: KeyPair,
+    }
+
+    impl Default for TestCa {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl TestCa {
+        pub fn new() -> Self {
+            let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("test key");
+            let mut params = CertificateParams::new(Vec::<String>::new()).expect("test params");
+            params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+            params.key_usages.push(KeyUsagePurpose::DigitalSignature);
+            params.key_usages.push(KeyUsagePurpose::KeyCertSign);
+            Self {
+                certificate: params.self_signed(&key).expect("test ca"),
+                key,
+            }
+        }
+
+        pub fn certificate(&self) -> &Certificate {
+            &self.certificate
+        }
+
+        pub fn key(&self) -> &KeyPair {
+            &self.key
+        }
+
+        pub fn fp_prefix(&self) -> Vec<u8> {
+            spl_core::ca::sha256(self.certificate.der())[..16].to_vec()
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SplLinkJoinPairingSeam;
@@ -180,10 +231,7 @@ fn map_relay_control_endpoint(endpoint: RelayControlEndpoint) -> LinkJoinRelayCo
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use rcgen::{
-        BasicConstraints, CertificateParams, CertificateSigningRequestParams, IsCa, KeyPair,
-        KeyUsagePurpose, PKCS_ECDSA_P256_SHA256,
-    };
+    use rcgen::CertificateSigningRequestParams;
     use serde_json::json;
     use solstone_core_sol_client::seam::{
         LinkJoinPairTarget, LinkJoinPairingErrorKind, LinkJoinRelayControlEndpoint,
@@ -201,28 +249,7 @@ mod tests {
 
     use super::*;
 
-    struct TestCa {
-        cert: rcgen::Certificate,
-        key: KeyPair,
-    }
-
-    impl TestCa {
-        fn new() -> Self {
-            let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("test key");
-            let mut params = CertificateParams::new(Vec::<String>::new()).expect("test params");
-            params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-            params.key_usages.push(KeyUsagePurpose::DigitalSignature);
-            params.key_usages.push(KeyUsagePurpose::KeyCertSign);
-            Self {
-                cert: params.self_signed(&key).expect("test ca"),
-                key,
-            }
-        }
-
-        fn fp_prefix(&self) -> Vec<u8> {
-            spl_core::ca::sha256(self.cert.der())[..16].to_vec()
-        }
-    }
+    use crate::test_support::TestCa;
 
     struct FakeDirectPairingSeam {
         calls: Arc<Mutex<Vec<FakeDirectCall>>>,
@@ -304,11 +331,11 @@ mod tests {
         let request: PairRequest = serde_json::from_slice(request_body).expect("pair request");
         let client_cert = CertificateSigningRequestParams::from_pem(&request.csr)
             .expect("csr pem")
-            .signed_by(&ca.cert, &ca.key)
+            .signed_by(ca.certificate(), ca.key())
             .expect("client cert");
         spl_core::PairResponse {
             client_cert: client_cert.pem(),
-            ca_chain: vec![ca.cert.pem()],
+            ca_chain: vec![ca.certificate().pem()],
             instance_id: "receiver-instance".to_string(),
             home_label: "Home".to_string(),
             fingerprint: format!("sha256:{}", spl_core::ca::sha256_hex(client_cert.der())),
@@ -370,7 +397,10 @@ mod tests {
         );
         assert_eq!(
             credential.ca_fingerprint,
-            format!("sha256:{}", spl_core::ca::sha256_hex(ca.cert.der()))
+            format!(
+                "sha256:{}",
+                spl_core::ca::sha256_hex(ca.certificate().der())
+            )
         );
         assert_eq!(credential.local_endpoints[0]["ip"], "192.168.1.10");
         let calls = seam.calls.lock().expect("calls lock");

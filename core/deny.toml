@@ -23,6 +23,8 @@ deny = [
     { name = "pyo3" },
     { name = "pyo3-ffi" },
     { name = "cpython" },
+    { name = "aws-lc-rs" },
+    { name = "aws-lc-sys" },
     { name = "solstone-core-journal-io", wrappers = ["solstone-core-sol-client", "solstone-core-sol-link"], reason = "durable journal I/O primitives are owned by native sol-client and local-link security authorities in this wave" },
 ]
 
