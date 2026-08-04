@@ -98,7 +98,9 @@ The local model lane. ⚠ Not a types boundary — it is loopback HTTP **plus a 
 
 🔴 **Not already Rust** — see [`plates.md`](plates.md) § `P-index`.
 
-⚠ **Fan-in is nine writers across six plates**, not one: `think/backup/restore.py:31`, `convey/chat_stream.py:182`, `think/importers/cli.py:27`, `think/day_accumulator.py:12`, `apps/observer/prune.py:27`, `apps/observer/share_delete.py:19`, `think/entities/merge.py:2043`, `think/segment.py:19`.
+⚠ **Fan-in is nine writers across six plates**, not one — the list previously named eight: `think/backup/restore.py:31`, `convey/chat_stream.py:182`, `think/importers/cli.py:27`, `think/day_accumulator.py:12`, `apps/observer/prune.py:27`, `apps/observer/share_delete.py:19`, `think/entities/merge.py:1234`, `think/segment.py:19`, and **`apps/search/maint/003_migrate_index_stream.py:34`**.
+
+⚠ **A tenth call site bypasses the accessor entirely** — `think/segment.py:211` opens its own bare `sqlite3.connect(db_path)` rather than `get_journal_index()`, so it never runs the schema-ensure path. ⛔ Count it when counting callers of this boundary; an accessor-name grep misses it.
 
 ⚠ Plus an **invisible runtime dependency** on `apps/speakers/edges.py` and the entity store via the `EDGE_SOURCES` registry, so the index build runs `find_matching_entity` — the `rapidfuzz`-at-threshold-90 path.
 
@@ -112,7 +114,11 @@ The indexer's and the convey apps' consumption of consistently formatted structu
 ### `S:index:*` — the read / query path
 **Owner** ⚠ unassigned · **Tier** schema
 
-Nine production readers across search, tools, voice, talents and connections. The `search_journal` / `search_counts` / `known_agents` interface — which `P-thinking` calls **directly, in-process, on every talent that searches** — belongs to no strand yet.
+Nine production readers across search, tools, voice, talents and entity context, plus three more on the edge half (`apps/home/connections.py`, `think/curation.py`, `apps/entities/routes.py`). The `search_journal` / `search_counts` interface — which `P-thinking` calls **directly, in-process, on every talent that searches** — belongs to no strand yet.
+
+⚠ **The in-process talent call is worse than "a search":** `think/tools/search.py` calls **both** `search_journal` *and* `search_counts` on every invocation, on two separate connections, and `search_counts` returns every matching row to the caller to be counted in Python.
+
+⛔ **`known_agents` is NOT on the talent path** — do not group it with the two above. `think/tools/call.py` returns early into `think/tools/search.py` when JSON output is requested, so `known_agents()` is reached only from the human CLI with an explicit `--agent`. Its cost is an owner-CLI cost, not a per-talent one. ⚠ It is still a full scan of the chunk table to list a set whose measured cardinality is 31.
 
 ### `S:*:P-entity` · `S:*:P-facet`
 **Owner** `P-entity` · `P-facet` · **Tier** fixture
