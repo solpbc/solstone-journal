@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::Router;
+use axum::body::Bytes;
 use axum::extract::{Extension, Json, State};
 use axum::http::{HeaderValue, StatusCode, header::LOCATION};
 use axum::response::{Html, IntoResponse, Response};
@@ -383,7 +384,7 @@ async fn init_mark_lock(
 async fn init_finalize(
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
-    request: Option<Json<FinalizeRequest>>,
+    body: Bytes,
 ) -> Response {
     if !is_local(basis) {
         return init_local_only();
@@ -402,7 +403,7 @@ async fn init_finalize(
         Err(error) => return establish_error(error),
     }
 
-    let request = request.map_or_else(FinalizeRequest::default, |Json(request)| request);
+    let request = serde_json::from_slice::<FinalizeRequest>(&body).unwrap_or_default();
     let redirect = match finalize_redirect(request.lane.as_ref()) {
         Some(redirect) => redirect,
         None => return invalid_lane(),
@@ -424,9 +425,23 @@ async fn init_finalize(
         .into_response();
     }
 
+    let config = match materialize_config(&state.journal_root) {
+        Ok(config) => config,
+        Err(error) => return config_error(error),
+    };
+    if let Some(response) = invalid_finalize_config_sections(&config) {
+        return response;
+    }
+
     // Deliberately does not seed config/convey.json — see
     // solstone/convey/config.py:seed_default_app_navigation; out of scope this wave.
     let result = mutate_journal_config(&state.journal_root, &config_defaults(), |config| {
+        if !finalize_config_sections_are_objects(config) {
+            return JournalConfigMutation {
+                changed: false,
+                value: false,
+            };
+        }
         let mut changed = false;
         let convey = object_mut(config, "convey");
         if convey.remove("allow_network_access").is_some() {
@@ -464,10 +479,15 @@ async fn init_finalize(
                 changed = true;
             }
         }
-        JournalConfigMutation { changed, value: () }
+        JournalConfigMutation {
+            changed,
+            value: true,
+        }
     });
-    if let Err(error) = result {
-        return config_error(error);
+    match result {
+        Ok(transaction) if !transaction.value => return corrupt_config(),
+        Ok(_) => {}
+        Err(error) => return config_error(error),
     }
     Json(FinalizeResponse {
         success: true,
@@ -515,6 +535,16 @@ fn config_defaults() -> Map<String, Value> {
     ])
 }
 
+fn invalid_finalize_config_sections(config: &Map<String, Value>) -> Option<Response> {
+    (!finalize_config_sections_are_objects(config)).then(corrupt_config)
+}
+
+fn finalize_config_sections_are_objects(config: &Map<String, Value>) -> bool {
+    ["convey", "identity", "setup", "retention"]
+        .into_iter()
+        .all(|key| config.get(key).is_none_or(Value::is_object))
+}
+
 fn nested_string(config: &Map<String, Value>, section: &str, key: &str) -> String {
     nested_value(config, section, key)
         .and_then(|value| value.as_str().map(str::to_owned))
@@ -533,10 +563,9 @@ fn object_mut<'a>(config: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<
     let value = config
         .entry(key.to_owned())
         .or_insert_with(|| Value::Object(Map::new()));
-    if !value.is_object() {
-        *value = Value::Object(Map::new());
-    }
-    value.as_object_mut().unwrap()
+    value
+        .as_object_mut()
+        .expect("finalize config sections are validated before mutation")
 }
 
 fn setup_is_complete(config: &Map<String, Value>) -> bool {
@@ -578,13 +607,7 @@ fn config_error(error: ConfigMutationError) -> Response {
             StatusCode::SERVICE_UNAVAILABLE,
         )
         .into_response(),
-        ConfigMutationError::Load(_) => error_envelope(
-            "corrupt_config",
-            "Internal Server Error",
-            "I couldn't read your settings.",
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
-        .into_response(),
+        ConfigMutationError::Load(_) => corrupt_config(),
         ConfigMutationError::Write(_) => error_envelope(
             "config_write_failed",
             "Internal Server Error",
@@ -593,6 +616,16 @@ fn config_error(error: ConfigMutationError) -> Response {
         )
         .into_response(),
     }
+}
+
+fn corrupt_config() -> Response {
+    error_envelope(
+        "corrupt_config",
+        "Internal Server Error",
+        "I couldn't read your settings.",
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
+    .into_response()
 }
 
 fn establish_error(error: EstablishError) -> Response {

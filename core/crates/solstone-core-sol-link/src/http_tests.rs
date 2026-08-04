@@ -14,6 +14,7 @@ use tower::ServiceExt;
 use crate::establish;
 use crate::http::router;
 use crate::ledger::{AuthorizationLedger, ClientEntry, ClientRole};
+use crate::mark::mark_from_jid;
 
 #[tokio::test]
 async fn init_routes_reject_linked_devices_and_serve_localhost() {
@@ -247,6 +248,57 @@ async fn mark_preview_returns_only_a_render_spec_and_lock_requires_a_candidate()
 }
 
 #[tokio::test]
+async fn regenerate_is_blocked_when_identity_is_locked() {
+    let temporary = committed_journal();
+    let response = request(
+        temporary.path(),
+        AccessBasis::Localhost,
+        Method::POST,
+        "/init/mark/regenerate",
+        None,
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(response).await,
+        json!({
+            "error":"Bad Request",
+            "reason_code":"invalid_operation_for_state",
+            "detail":"journal id already locked"
+        })
+    );
+}
+
+#[tokio::test]
+async fn committed_mark_returns_the_locked_identity_mark() {
+    let temporary = TempDir::new();
+    establish::current_candidate(temporary.path()).unwrap();
+    let committed = establish::lock_in(temporary.path(), None).unwrap();
+    let expected_mark = serde_json::to_value(
+        mark_from_jid(&committed.instance_id)
+            .unwrap()
+            .to_render_spec(),
+    )
+    .unwrap();
+
+    let response = request(
+        temporary.path(),
+        AccessBasis::Localhost,
+        Method::GET,
+        "/init/mark",
+        None,
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(response).await,
+        json!({"locked":true,"mark":expected_mark})
+    );
+}
+
+#[tokio::test]
 async fn init_state_materializes_config_and_init_redirects_after_finalize() {
     let temporary = TempDir::new();
     let state = request(
@@ -384,6 +436,51 @@ async fn finalize_does_not_write_convey_config() {
 }
 
 #[tokio::test]
+async fn finalize_preserves_non_object_sections_as_corrupt_config() {
+    let temporary = committed_journal();
+    let config_path = temporary.path().join("config").join("journal.json");
+    let contents = br#"{"identity":"not-an-object"}"#;
+    fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+    fs::write(&config_path, contents).unwrap();
+
+    let response = request(
+        temporary.path(),
+        AccessBasis::Localhost,
+        Method::POST,
+        "/init/finalize",
+        Some(json!({})),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        response_json(response).await["reason_code"],
+        "corrupt_config"
+    );
+    assert_eq!(fs::read(config_path).unwrap(), contents);
+}
+
+#[tokio::test]
+async fn finalize_treats_malformed_json_as_an_empty_request() {
+    let temporary = committed_journal();
+    let response = request_body(
+        temporary.path(),
+        AccessBasis::Localhost,
+        Method::POST,
+        "/init/finalize",
+        Body::from("{not json"),
+        Some("application/json"),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response_json(response).await,
+        json!({"success":true,"redirect":"/app/thinking","warnings":[]})
+    );
+}
+
+#[tokio::test]
 async fn finalize_rejects_missing_identity_invalid_lane_and_invalid_retention() {
     let uncommitted = TempDir::new();
     let response = request(
@@ -437,13 +534,26 @@ async fn request(
     uri: &str,
     body: Option<Value>,
 ) -> axum::response::Response {
-    let mut builder = Request::builder().method(method).uri(uri);
-    let body = if let Some(body) = body {
-        builder = builder.header("content-type", "application/json");
-        Body::from(body.to_string())
+    let (body, content_type) = if let Some(body) = body {
+        (Body::from(body.to_string()), Some("application/json"))
     } else {
-        Body::empty()
+        (Body::empty(), None)
     };
+    request_body(journal, basis, method, uri, body, content_type).await
+}
+
+async fn request_body(
+    journal: &Path,
+    basis: AccessBasis,
+    method: Method,
+    uri: &str,
+    body: Body,
+    content_type: Option<&str>,
+) -> axum::response::Response {
+    let mut builder = Request::builder().method(method).uri(uri);
+    if let Some(content_type) = content_type {
+        builder = builder.header("content-type", content_type);
+    }
     router(journal)
         .layer(Extension(basis))
         .oneshot(builder.body(body).unwrap())
