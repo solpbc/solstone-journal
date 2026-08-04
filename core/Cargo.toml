@@ -61,8 +61,8 @@ rusqlite = { version = "0.40.1", features = ["bundled"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde_json = { version = "1.0.150", features = ["preserve_order", "float_roundtrip"] }
 serde = { version = "1.0.229", features = ["derive"] }
-spl-core = { git = "https://github.com/solpbc/spl-rust", tag = "v0.4.3" }
-spl-transport = { git = "https://github.com/solpbc/spl-rust", tag = "v0.4.3" }
+spl-core = { git = "https://github.com/solpbc/spl-rust", tag = "v0.5.0" }
+spl-transport = { git = "https://github.com/solpbc/spl-rust", tag = "v0.5.0" }
 tokio = { version = "1", default-features = false }
 thiserror = "2.0.19"
 toml_edit = { version = "0.22.27", default-features = false, features = ["parse"] }
