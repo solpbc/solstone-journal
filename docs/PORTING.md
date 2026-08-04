@@ -4,6 +4,12 @@ This document is for engineers and coding agents porting solstone behavior from
 Python into the Rust workspace under `core/`. It records the wave-0 rules before
 any behavior moves.
 
+**The map is separate from the doctrine.** This document is *how* to port. The
+boundaries themselves — every plate, every strand, which end owns each contract,
+and what must be carried forward out of the Python — are defined in
+[`conversion/`](conversion/README.md). Read that for what and where; read this
+for how.
+
 ## Workspace Scope
 
 The Rust workspace lives at `core/`. It contains a thin `solstone-core` bin,

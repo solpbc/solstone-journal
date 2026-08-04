@@ -1,0 +1,185 @@
+# strands — the work units
+
+**A strand is the minimum viable path connecting two plates, in Rust, robust.** It may be bi-directional; its contract lives at exactly **one end**, and by convention that end is written second in the name.
+
+Definitions and vocabulary: [`README.md`](README.md). Siblings: [`plates.md`](plates.md) · [`cables.md`](cables.md).
+
+**Read your strand's section, not the file.** Organized for surgical section edits.
+
+⚠ **Every count here is a floor, not a census** — see `README.md` on the two string-keyed dispatch registries that defeat counting.
+
+⛔ **Reserved words:** `health` = journal system health only; owner physiological data is `body`. `activities` = the internal facet model only.
+
+---
+
+## Tier 1 — the core
+
+### `S:device-link:journal`
+**Connects** `P-device-link` → `P-journal` · **Owner** `P-journal` · **Tier** fixture + schema
+
+Link identity. A device proves who it is; the journal decides whether it is authorized.
+
+⚠ **24 production (non-test) modules import `solstone.think.link`**, which makes it the least isolable thing in the tree — an argument for converting it early rather than deferring it.
+
+The identity derivation, the two fingerprint kinds, the `did`, and the mark's exact parameters are in [`plates.md`](plates.md) § `P-device-link`. ⛔ Do not restate them here.
+
+**Carry forward:** the certificate fingerprint is the identity, the label is only a label · revocation is the ledger, not the certificate · **an unreadable `authorized_clients.json` authorizes nobody** · loading never rewrites the ledger.
+
+### `S:device-ingest:segment-media`
+**Connects** `P-device-ingest` → `P-segment-media` · **Owner** `P-device-ingest` · **Tier** schema
+
+Segments arriving from a device. This is the **ingest envelope** — a wire shape, not bytes on disk: `observe/protocol.schema.json` carries `file_kind: "ingest_envelope"` and `producer_write_paths` of the ingest endpoint.
+
+⛔ **The client no longer asserts its own identity.** The journal authenticates the certificate at the transport, derives the `did`, and records it. Nothing routes, authenticates, or names a stream from a client-supplied string.
+
+**Carry forward:** create-exclusive byte writes that never overwrite — on collision compare SHA-256 and record the already-held case · content identity **refuses rather than guesses** · the segment-key timezone semantics — `HHMMSS` is **device-local wall clock, not UTC**.
+
+⚠ The audited client bundle and the plate's declared operations are **different sets**. The bundle omits the owner's location-data delete route — the covenant-critical one — and adds three operations belonging to other plates, so the capture clients contractually depend on chat and callosum.
+
+### `S:segment-media:journal-segment`
+**Connects** `P-segment-media` → `P-journal` · **Owner** `P-journal` · **Tier** fixture
+
+Raw media landing durably, and the **segment sidecars**.
+
+**`device.json`** — optional; when present it carries at minimum the **`did`**, plus optional ephemeral device metadata the device supplies (battery level, screen lock, posture) as **free-form fields opaque to the journal and validated only for the required `did`**.
+
+⛔ **`device.json` is journal-authored, never client-uploaded.** Reserved sidecar names are never written from client bytes and never appear in segment listings as held. The device supplies its fields as data over the API; the journal writes the file.
+
+🔒 **Nothing is ever looked up by stream name. Attribution always reads the segment.** The stream name is a human-friendly, unique, cross-platform-filesystem-safe label — a deterministic projection of a display name like `iPhone (2)` to `iPhone_2`. One device may own several streams (a watch app via a phone is a different stream).
+
+⚠ **The projection's uniqueness must be case-insensitive.** APFS and NTFS fold case by default; ext4 does not, so two names differing only in case collide on two of three platforms and not on the one most likely to be developing them. Also exclude `<>:"/\|?*`, trailing dots and spaces, and the Windows reserved device names.
+
+**Carry forward:** **unresolved error → hold raw**, via `exit 69` — the handler writes nothing, leaves the input, and the scanner records *neither* success nor failure. The deferral emitter deliberately swallows its own bus failure so a down bus cannot turn a deferral into data loss.
+
+### `S:segment-sense:journal-segment`
+**Connects** `P-segment-sense` → `P-journal` · **Owner** `P-journal` · **Tier** fixture
+
+Processed sense output written back.
+
+🔴 `_solstone_processing` has a version string and **no schema**, and is absent from both sibling schemas that enumerate every *other* header key. ⚠ **Read by five planes** — the fifth is `think/retention.py:133`, the highest-stakes one, because it decides irreversible deletion.
+
+**Carry forward:** **terminal-empty written before the raw is unlinked** — die between them and the file survives with a terminal marker, never the reverse · atomic promote through a same-dir temp, header **last** · detections stored raw, filtered at read time.
+
+### `S:segment-sense:system`
+**Connects** `P-segment-sense` → `P-system` · **Owner** `P-system` · **Tier** schema
+
+Callosum events emitted as processing happens.
+
+There **is** a published machine-readable registry — `CALLOSUM_REGISTRY` (`convey/contract/assemble.py:43-99`), emitted as `x-callosum-registry`, 11 tracts and ~60 events, plus two published SSE operations. ⚠ **It is already drifted three ways:** events produced but undeclared · events emitted and prose-documented but absent from the registry · events declared with no literal producer. ⚠ The drift count is a floor — tracts passed through variables are invisible to a literal grep.
+
+### `S:segment-sense:journal-segment-events`
+**Connects** `P-segment-sense` → `P-journal` · **Owner** `P-journal` · **Tier** fixture
+
+The **durable** half of the callosum contract, split from the wire half above. The whole bus envelope is appended verbatim into `{day}/[{stream}/]{segment}/events.jsonl`, with readers in `think/segment.py` and `apps/observer/utils.py`.
+
+⚠ **That writer bypasses `journal_io`** — bare `open(…, "a")` — and swallows failures at debug level. ⛔ The segment-sidecar family wants one write discipline; do not let a new sidecar inherit this one.
+
+### `S:segment-sense:thinking`
+**Connects** `P-segment-sense` → `P-thinking` · **Owner** `P-thinking` · **Tier** schema
+
+⚠ The talent event vocabulary is **NDJSON on stdout** — a real inter-process wire and the run-log format that gets persisted — defined as `total=False` TypedDicts with no schema, fixture, or validator. **The shape most likely to be lost silently.**
+
+### `S:thinking:journal-thinking`
+**Connects** `P-thinking` → `P-journal` · **Owner** `P-journal` · **Tier** fixture
+
+Talent output landing durably. Carries the failure semantics: retries, back-offs, days being complete, segments being complete.
+
+**Carry forward:** the talent-use lifecycle where **the filename is the lock and the state** — exclusive `open(…, "x")` on `{use_id}_active.jsonl` is the claim, rename on completion, and on restart every leftover `_active` is terminalized with an error so an interrupted talent is never indeterminate.
+
+🔴 **`_active.jsonl` is not only a talent convention — it is a deletion gate in two other subsystems.** Seven production readers, including `think/log_retention.py:368` (skips pruning them) and **`think/retention.py:199` (treats presence as "segment incomplete, do not purge raw media")**. A cleaner claim filename is a format change on the writer side and a **silent capability loss on the deletion side.**
+
+### `S:thinking:local`
+**Connects** `P-thinking` → `P-local` · **Owner** `P-thinking` · **Tier** schema + fixture
+
+The local model lane. ⚠ Not a types boundary — it is loopback HTTP **plus a durable record**. See [`plates.md`](plates.md) § `P-local` for the two things not to carry.
+
+### `S:journal:index`
+**Connects** `P-journal` → `P-index` · **Owner** `P-index` · **Tier** fixture
+
+🔴 **Not already Rust** — see [`plates.md`](plates.md) § `P-index`.
+
+⚠ **Fan-in is nine writers across six plates**, not one: `think/backup/restore.py:31`, `convey/chat_stream.py:182`, `think/importers/cli.py:27`, `think/day_accumulator.py:12`, `apps/observer/prune.py:27`, `apps/observer/share_delete.py:19`, `think/entities/merge.py:2043`, `think/segment.py:19`.
+
+⚠ Plus an **invisible runtime dependency** on `apps/speakers/edges.py` and the entity store via the `EDGE_SOURCES` registry, so the index build runs `find_matching_entity` — the `rapidfuzz`-at-threshold-90 path.
+
+**Carry forward:** the index is **always rebuildable** — ephemeral by design, and an interrupted update never leaves a partial result. ⚠ That property is required, not incidental.
+
+### `S:index:format` · `S:web:format`
+**Owner** `P-format` in both · **Tier** schema
+
+The indexer's and the convey apps' consumption of consistently formatted structured journal data. ⚠ `P-format` owns both because it is the one-to-many end — it serves all consumers and cannot negotiate per-consumer. ⛔ The name encodes contract ownership, not data flow.
+
+### `S:index:*` — the read / query path
+**Owner** ⚠ unassigned · **Tier** schema
+
+Nine production readers across search, tools, voice, talents and connections. The `search_journal` / `search_counts` / `known_agents` interface — which `P-thinking` calls **directly, in-process, on every talent that searches** — belongs to no strand yet.
+
+### `S:*:P-entity` · `S:*:P-facet`
+**Owner** `P-entity` · `P-facet` · **Tier** fixture
+
+See [`plates.md`](plates.md) — this store fails by **bricking**, not degrading.
+
+### `S:*:journal-config`
+**Owner** `P-journal-config` · **Tier** fixture
+
+See [`plates.md`](plates.md) § `P-journal-config` for the fail-closed posture that is the house style.
+
+### `S:web:thinking` — chat
+**Owner** `P-thinking` · **Tier** schema
+
+The primary owner-facing use of the model. `convey/chat.py` (2,532 lines) + `chat_stream.py` (512) + `convey/sol_initiated/` (1,034). It **spawns talents**, so it is a producer into `P-thinking`, and it is in the audited native-client bundle — the capture clients depend on it.
+
+⚠ **Push cannot be scoped until this exists** — push's trigger is the **chat tract** (`push/triggers.py:63-64`), so push is a callosum consumer downstream of the chat orchestrator, not a standalone journal→device path.
+
+### `S:*:system` — the command channel
+**Owner** `P-system` · **Tier** schema
+
+`_handle_task_request` takes `message["cmd"]` off the unix socket and hands the argv to the task queue. **This is how the scheduler, importers, backup, and the sense/think pipeline all cause work to run** — six production producers. ⚠ Distinct from liveness/status.
+
+### `S:journal:establish`
+**Owner** ⚠ needs assigning · **Tier** fixture
+
+First-run journal establishment. **Creates the identity root** that `S:device-link:journal` depends on: the mark-lock route promotes the staged CA and persists the instance identity.
+
+⚠ Eight `/init/*` routes are session-gate-exempt and admitted **before** the journal-is-active check. That is the same `localhost:5015` human-entry basis as everything else on `P-web`, before a session exists to gate — **not** a third access path.
+
+---
+
+## Tier 1 — retention
+
+`P-journal-retention` connects through three strands, each a different contract:
+
+| Strand | For | Owner | Tier |
+|---|---|---|---|
+| `S:journal-retention:journal-config` | the **posture / settings** it reads | `P-journal-config` | fixture |
+| `S:journal-retention:system` | **when it runs** | `P-system` | schema |
+| `S:journal-retention:journal` | **tending the files** — changes, and recording status | `P-journal` | fixture |
+
+Where retention is the provider it owns the contract — it is the one-to-many end with ten production call sites. See [`plates.md`](plates.md) for the irreversible-deletion carry-forward.
+
+---
+
+## Tier 2
+
+| Strand | Owner | Note |
+|---|---|---|
+| `S:system:system-health` | `P-system-health` | Liveness and current status of running things |
+| `S:system-health:journal-health` | `P-journal` | 🔴 Per-day health JSONL grammar is entirely Python string literals |
+| `S:web:journal` | `P-journal` | ⛔ 100% of `P-web` is `localhost:5015` or an authorized linked device |
+| `S:cli-journal:journal` | `P-journal` | Same-device only; may modify the journal directly |
+| `S:cli-sol:web` | `P-web` | Any device, API only, over a link. ⚠ May share `S:web:journal`'s contract |
+| `S:segment-sense:speaker-id` | `P-speaker-id` | A refinement of sense |
+| `S:speaker-id:journal-facet` | `P-journal` | ⚠ **Years of voiceprints must survive with no re-teach** — a shipped promise. **Carry forward:** the label-source resolver returns *ambiguous* and warns the owner rather than picking a source |
+| `S:body-source:journal-body` | `P-journal` | Owner **body** data — ingress, not egress. ⚠ The shard format is defined only by its reader; 🔴 excluded from every backup with no rebuild path |
+| `S:file-import:journal-segment` | `P-journal` | Generic import. ⚠ **A second write door into `chronicle/`** that consults no contract and writes with bare `write_bytes` — the create-exclusive guarantee is a property of **one** of the two doors |
+
+## Tier 3 — additive, absent until approved in
+
+`S:thinking:byo` — ⛔ egress, the owner's own key · `S:thinking:spp` — ⛔ egress, attested. ⚠ Fails closed by the *absence* of a fallback branch; make "no downgrade path" an explicitly tested invariant.
+
+## Not yet placed
+
+- **push** — ⚠ cannot be scoped until `S:web:thinking` exists; its trigger is the chat tract. Only reimplemented end-to-end encrypted.
+- **encrypted backup** — blind by construction, but ⚠ **retention imports it**, so a core deletion path depends on it. 🔴 The 64-char recovery key **is** the repository password. **Carry forward:** the exclusion-list comment records a paid-for lesson about basename-at-any-depth matching that a rebuild would otherwise re-learn; and `brain.json` / `scheduler.json` / the supervisor-ready marker are excluded deliberately, so post-restore provider and scheduler state is an intentional blank.
+- **support request** — ⛔ real egress; the `_SECRET_*` redaction is the last thing before an external service.
+- **merge / transfer** — deferred. ⚠ `think/merge.py:30-33` imports three **private** functions out of `think/entities/merge.py`, so the frozen thing depends on the unstranded store.
