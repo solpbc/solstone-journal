@@ -5,10 +5,12 @@
 
 pub mod append;
 pub mod atomic;
+pub mod config;
 pub mod errors;
 pub mod locking;
 pub mod paths;
 pub mod readers;
+pub mod staged;
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -17,6 +19,10 @@ pub use append::{append_jsonl, append_text};
 pub use atomic::{
     AtomicWriteOptions, JsonWriteOptions, atomic_replace, install_file, write_bytes_exclusive,
     write_json, write_jsonl, write_text,
+};
+pub use config::{
+    ConfigLoadError, ConfigMutationError, JournalConfigMutation, JournalConfigTransaction,
+    get_journal_config_path, mutate_journal_config,
 };
 pub use errors::{
     AppendError, AtomicWriteError, LockError, LockTimeout, MalformedDataError, PathError,
@@ -27,3 +33,7 @@ pub use locking::{
 };
 pub use paths::{
     DEFAULT_STREAM, PathOrDay, Segment, contained_path, day_dirs, day_path, iter_segments,
+    path_lexists, resolve_configured_journal, resolve_journal_path, segment_path,
+};
+pub use readers::{MalformedPolicy, read_json, read_jsonl, read_text};
+pub use staged::{StagedDirOptions, StagedWriteError, publish_staged_dir};
