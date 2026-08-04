@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 hkdf = "0.12.4"
+log = { workspace = true }
 rcgen = { workspace = true }
 ring = "0.17.14"
 rustls = { workspace = true }

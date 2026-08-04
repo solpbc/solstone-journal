@@ -15,6 +15,7 @@ use spl_transport::{RelayControlEndpoint, RelayError, TransportError, tls};
 pub mod ca;
 mod direct_seam;
 pub mod establish;
+pub mod ledger;
 mod pairing_entry;
 mod serve;
 
