@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{JsonWriteOptions, LockError, LockOptions, hold_lock, write_json};
-use time::OffsetDateTime;
+use time::{OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
 
 const CERT_KIND: &str = "cert";
 
@@ -165,6 +165,8 @@ pub enum AuthorizedClientsMutationError {
     Lock(LockError),
     Load(AuthorizedClientsLoadError),
     Device(DevicesMutationError),
+    InvalidLabel(&'static str),
+    InvalidLastSeenAt,
     Write(solstone_core_journal_io::AtomicWriteError),
 }
 
@@ -174,6 +176,10 @@ impl fmt::Display for AuthorizedClientsMutationError {
             Self::Lock(error) => error.fmt(formatter),
             Self::Load(error) => error.fmt(formatter),
             Self::Device(error) => error.fmt(formatter),
+            Self::InvalidLabel(message) => formatter.write_str(message),
+            Self::InvalidLastSeenAt => {
+                formatter.write_str("last_seen_at must be an RFC3339 UTC timestamp")
+            }
             Self::Write(error) => error.fmt(formatter),
         }
     }
@@ -185,6 +191,7 @@ impl Error for AuthorizedClientsMutationError {
             Self::Lock(error) => Some(error),
             Self::Load(error) => Some(error),
             Self::Device(error) => Some(error),
+            Self::InvalidLabel(_) | Self::InvalidLastSeenAt => None,
             Self::Write(error) => Some(error),
         }
     }
@@ -371,14 +378,8 @@ impl AuthorizationLedger {
     ) -> Result<Option<ClientEntry>, AuthorizedClientsMutationError> {
         let normalized = label.trim();
         if normalized.is_empty() {
-            return Err(AuthorizedClientsMutationError::Load(
-                AuthorizedClientsLoadError::Malformed {
-                    path: self.authorized_clients_path.clone(),
-                    source: Box::new(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "label must not be empty",
-                    )),
-                },
+            return Err(AuthorizedClientsMutationError::InvalidLabel(
+                "label must not be empty",
             ));
         }
         let _authorization_lock = lock(&self.authorized_clients_path)?;
@@ -393,14 +394,8 @@ impl AuthorizationLedger {
             normalized.to_owned()
         };
         if device_label.len() > 80 {
-            return Err(AuthorizedClientsMutationError::Load(
-                AuthorizedClientsLoadError::Malformed {
-                    path: self.authorized_clients_path.clone(),
-                    source: Box::new(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "label too long",
-                    )),
-                },
+            return Err(AuthorizedClientsMutationError::InvalidLabel(
+                "label too long",
             ));
         }
         let mut updated = existing;
@@ -476,6 +471,11 @@ impl AuthorizationLedger {
         fingerprint: &str,
         last_seen_at: &str,
     ) -> Result<bool, AuthorizedClientsMutationError> {
+        let timestamp = OffsetDateTime::parse(last_seen_at, &Rfc3339)
+            .map_err(|_| AuthorizedClientsMutationError::InvalidLastSeenAt)?;
+        if timestamp.offset() != UtcOffset::UTC {
+            return Err(AuthorizedClientsMutationError::InvalidLastSeenAt);
+        }
         let _authorization_lock = lock(&self.authorized_clients_path)?;
         let clients = load_authorized_for_mutation(&self.authorized_clients_path)
             .map_err(AuthorizedClientsMutationError::Load)?;
@@ -937,6 +937,46 @@ mod tests {
             .to_owned();
         assert!(timestamp.ends_with('Z'));
         assert_eq!(timestamp.len(), 20);
+    }
+
+    #[test]
+    fn touch_last_seen_at_rejects_invalid_or_non_utc_timestamps_without_writing() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(entry("a", "phone", ClientRole::Roleless))
+            .unwrap();
+
+        for timestamp in ["not-a-timestamp", "2026-04-19T18:03:12+01:00"] {
+            assert!(matches!(
+                ledger.touch_last_seen_at("a", timestamp),
+                Err(AuthorizedClientsMutationError::InvalidLastSeenAt)
+            ));
+            assert!(!ledger.devices_path().exists());
+        }
+    }
+
+    #[test]
+    fn update_label_reports_invalid_input_without_claiming_ledger_corruption() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        ledger
+            .add(entry("a", "phone", ClientRole::Roleless))
+            .unwrap();
+        let before = fs::read(ledger.authorized_clients_path()).unwrap();
+
+        for (label, expected) in [
+            ("", "label must not be empty"),
+            (&"x".repeat(81), "label too long"),
+        ] {
+            let error = ledger.update_label("a", label).unwrap_err();
+            assert!(matches!(
+                error,
+                AuthorizedClientsMutationError::InvalidLabel(message) if message == expected
+            ));
+            assert_eq!(error.to_string(), expected);
+            assert_eq!(fs::read(ledger.authorized_clients_path()).unwrap(), before);
+        }
     }
 
     #[test]

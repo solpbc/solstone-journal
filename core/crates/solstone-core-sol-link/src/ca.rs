@@ -30,17 +30,12 @@ pub struct LocalCa {
     certificate: Certificate,
     key: KeyPair,
     certificate_pem: String,
-    certificate_der: Vec<u8>,
     spki_der: Vec<u8>,
 }
 
 impl LocalCa {
     pub fn certificate_pem(&self) -> &str {
         &self.certificate_pem
-    }
-
-    pub fn certificate_der(&self) -> &[u8] {
-        &self.certificate_der
     }
 
     pub fn private_key_pem(&self) -> String {
@@ -113,13 +108,11 @@ pub fn generate_ca() -> Result<LocalCa, CaError> {
     let params = ca_certificate_params(OffsetDateTime::now_utc())?;
     let certificate = params.self_signed(&key)?;
     let certificate_pem = certificate.pem();
-    let certificate_der = certificate.der().to_vec();
     let spki_der = key.public_key_der();
     Ok(LocalCa {
         certificate,
         key,
         certificate_pem,
-        certificate_der,
         spki_der,
     })
 }
@@ -145,7 +138,6 @@ pub fn load_ca(certificate_pem: &str, private_key_pem: &str) -> Result<LocalCa, 
         certificate,
         key,
         certificate_pem: certificate_pem.to_owned(),
-        certificate_der: pem.contents,
         spki_der,
     })
 }
