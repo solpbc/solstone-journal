@@ -125,7 +125,7 @@
 //!    64 KiB HTTP/1 buffer bound.
 //! 6. `identity.rs::tests::access_basis_has_exactly_two_variants` uses
 //!    exhaustive matches over `AccessBasis` and `Carrier`, so adding an
-//!    identity mode is a compile-time test failure.
+//!    AccessBasis variant is a compile-time test failure.
 //!
 //! `gate.rs::tests::carrier_is_observability_only_at_the_access_gate` remains
 //! a supporting test: it proves both `Carrier` variants authorize identically,

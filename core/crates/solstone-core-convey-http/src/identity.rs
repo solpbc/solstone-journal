@@ -21,7 +21,7 @@ mod tests {
 
     #[test]
     fn access_basis_has_exactly_two_variants() {
-        // This match deliberately has no wildcard: adding an identity mode
+        // This match deliberately has no wildcard: adding an AccessBasis variant
         // makes the test fail to compile, enforcing the closed access basis.
         fn assert_access_basis_is_exhaustive(basis: AccessBasis) {
             match basis {
