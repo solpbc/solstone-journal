@@ -21,7 +21,8 @@ use solstone_core_journal_io::{
     StagedWriteError, hold_lock, publish_staged_dir, write_bytes_exclusive, write_json,
 };
 
-use crate::ca::{CaError, generate_ca, jid_from_spki, load_ca};
+use crate::ca::{CaError, LocalCa, generate_ca, jid_from_spki, load_ca};
+use crate::mark::{Mark, MarkError, mark_from_jid};
 
 const DEFAULT_HOME_LABEL: &str = "solstone";
 
@@ -37,6 +38,8 @@ pub enum EstablishError {
     Lock(LockError),
     Publish(StagedWriteError),
     Ca(CaError),
+    Mark(MarkError),
+    NoCandidate,
     State(String),
 }
 
@@ -46,6 +49,8 @@ impl fmt::Display for EstablishError {
             Self::Lock(error) => error.fmt(formatter),
             Self::Publish(error) => error.fmt(formatter),
             Self::Ca(error) => error.fmt(formatter),
+            Self::Mark(error) => error.fmt(formatter),
+            Self::NoCandidate => formatter.write_str("no staged link identity candidate exists"),
             Self::State(message) => write!(formatter, "invalid local link state: {message}"),
         }
     }
@@ -57,7 +62,8 @@ impl std::error::Error for EstablishError {
             Self::Lock(error) => Some(error),
             Self::Publish(error) => Some(error),
             Self::Ca(error) => Some(error),
-            Self::State(_) => None,
+            Self::Mark(error) => Some(error),
+            Self::NoCandidate | Self::State(_) => None,
         }
     }
 }
@@ -80,21 +86,64 @@ impl From<CaError> for EstablishError {
     }
 }
 
+impl From<MarkError> for EstablishError {
+    fn from(error: MarkError) -> Self {
+        Self::Mark(error)
+    }
+}
+
 pub fn lock_in(journal_root: &Path, home_label: Option<&str>) -> Result<LinkState, EstablishError> {
     let bundle = bundle_path(journal_root);
     let _lock = hold_lock(identity_lock_path(journal_root), LockOptions::default())?;
     if bundle.exists() {
-        return load_bundle(&bundle);
+        let state = load_bundle(&bundle)?;
+        discard_candidate_unlocked(&candidate_path(journal_root));
+        return Ok(state);
     }
 
-    let ca = generate_ca()?;
+    let candidate = candidate_path(journal_root);
+    let ca = load_candidate_for_promotion(&candidate)?;
     let state = LinkState {
         instance_id: jid_from_spki(ca.spki_der())?,
         home_label: home_label.unwrap_or(DEFAULT_HOME_LABEL).to_owned(),
         locked_at: now_ms(),
     };
     publish_bundle(&bundle, &ca, &state)?;
+    discard_candidate_unlocked(&candidate);
     Ok(state)
+}
+
+/// Return a valid staged candidate, regenerating a missing or invalid one.
+pub fn current_candidate(journal_root: &Path) -> Result<LocalCa, EstablishError> {
+    let candidate = candidate_path(journal_root);
+    let _lock = hold_lock(identity_lock_path(journal_root), LockOptions::default())?;
+    match load_candidate(&candidate) {
+        Ok(ca) => Ok(ca),
+        Err(_) => {
+            discard_candidate_required(&candidate)?;
+            generate_and_publish_candidate(&candidate)
+        }
+    }
+}
+
+/// Replace any staged candidate with a freshly generated CA.
+pub fn regenerate_candidate(journal_root: &Path) -> Result<LocalCa, EstablishError> {
+    let candidate = candidate_path(journal_root);
+    let _lock = hold_lock(identity_lock_path(journal_root), LockOptions::default())?;
+    discard_candidate_required(&candidate)?;
+    generate_and_publish_candidate(&candidate)
+}
+
+/// Discard the staged candidate, if any.
+pub fn discard_candidate(journal_root: &Path) -> Result<(), EstablishError> {
+    let candidate = candidate_path(journal_root);
+    let _lock = hold_lock(identity_lock_path(journal_root), LockOptions::default())?;
+    discard_candidate_required(&candidate)
+}
+
+/// Derive the preview mark for a staged candidate CA.
+pub fn candidate_mark(ca: &LocalCa) -> Result<Mark, EstablishError> {
+    Ok(mark_from_jid(&jid_from_spki(ca.spki_der())?)?)
 }
 
 pub fn load_committed(journal_root: &Path) -> Result<Option<LinkState>, EstablishError> {
@@ -109,8 +158,72 @@ pub fn bundle_path(journal_root: &Path) -> PathBuf {
     journal_root.join("link").join("ca")
 }
 
+pub fn candidate_path(journal_root: &Path) -> PathBuf {
+    journal_root.join("link").join("ca-staging")
+}
+
 fn identity_lock_path(journal_root: &Path) -> PathBuf {
     journal_root.join("link").join("identity")
+}
+
+fn load_candidate_for_promotion(candidate: &Path) -> Result<LocalCa, EstablishError> {
+    match fs::symlink_metadata(candidate) {
+        Ok(_) => load_candidate(candidate),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Err(EstablishError::NoCandidate),
+        Err(error) => Err(EstablishError::State(format!(
+            "candidate directory: {error}"
+        ))),
+    }
+}
+
+fn load_candidate(candidate: &Path) -> Result<LocalCa, EstablishError> {
+    if !candidate.is_dir() {
+        return Err(EstablishError::State(
+            "candidate CA is not a directory".to_owned(),
+        ));
+    }
+    let certificate_pem = fs::read_to_string(candidate.join("cert.pem"))
+        .map_err(|error| EstablishError::State(format!("candidate cert.pem: {error}")))?;
+    let private_key_pem = fs::read_to_string(candidate.join("private.pem"))
+        .map_err(|error| EstablishError::State(format!("candidate private.pem: {error}")))?;
+    Ok(load_ca(&certificate_pem, &private_key_pem)?)
+}
+
+fn generate_and_publish_candidate(candidate: &Path) -> Result<LocalCa, EstablishError> {
+    let ca = generate_ca()?;
+    publish_candidate(candidate, &ca)?;
+    Ok(ca)
+}
+
+fn publish_candidate(candidate: &Path, ca: &LocalCa) -> Result<(), EstablishError> {
+    publish_staged_dir(
+        candidate,
+        StagedDirOptions {
+            directory_mode: Some(0o700),
+        },
+        |staging| {
+            write_ca_material(staging, ca)?;
+            Ok::<_, io::Error>(())
+        },
+    )?;
+    Ok(())
+}
+
+fn discard_candidate_required(candidate: &Path) -> Result<(), EstablishError> {
+    match fs::symlink_metadata(candidate) {
+        Ok(metadata) if metadata.is_dir() => fs::remove_dir_all(candidate)
+            .map_err(|error| EstablishError::State(format!("candidate directory: {error}"))),
+        Ok(_) => fs::remove_file(candidate)
+            .map_err(|error| EstablishError::State(format!("candidate directory: {error}"))),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(EstablishError::State(format!(
+            "candidate directory: {error}"
+        ))),
+    }
+}
+
+fn discard_candidate_unlocked(candidate: &Path) {
+    let _ = discard_candidate_required(candidate);
 }
 
 fn publish_bundle(
@@ -124,19 +237,9 @@ fn publish_bundle(
             directory_mode: Some(0o700),
         },
         |staging| {
-            write_bytes_exclusive(
-                staging.join("cert.pem"),
-                ca.certificate_pem().as_bytes(),
-                AtomicWriteOptions { mode: Some(0o644) },
-            )
-            .map_err(io::Error::other)?;
+            write_certificate(staging, ca)?;
             pause_at("mid-populate-cert");
-            write_bytes_exclusive(
-                staging.join("private.pem"),
-                ca.private_key_pem().as_bytes(),
-                AtomicWriteOptions { mode: Some(0o600) },
-            )
-            .map_err(io::Error::other)?;
+            write_private_key(staging, ca)?;
             pause_at("mid-populate-key");
             write_json(
                 staging.join("state.json"),
@@ -155,6 +258,29 @@ fn publish_bundle(
         },
     )?;
     Ok(())
+}
+
+fn write_ca_material(staging: &Path, ca: &LocalCa) -> Result<(), io::Error> {
+    write_certificate(staging, ca)?;
+    write_private_key(staging, ca)
+}
+
+fn write_certificate(staging: &Path, ca: &LocalCa) -> Result<(), io::Error> {
+    write_bytes_exclusive(
+        staging.join("cert.pem"),
+        ca.certificate_pem().as_bytes(),
+        AtomicWriteOptions { mode: Some(0o644) },
+    )
+    .map_err(io::Error::other)
+}
+
+fn write_private_key(staging: &Path, ca: &LocalCa) -> Result<(), io::Error> {
+    write_bytes_exclusive(
+        staging.join("private.pem"),
+        ca.private_key_pem().as_bytes(),
+        AtomicWriteOptions { mode: Some(0o600) },
+    )
+    .map_err(io::Error::other)
 }
 
 fn load_bundle(bundle: &Path) -> Result<LinkState, EstablishError> {
@@ -249,6 +375,7 @@ mod tests {
     #[test]
     fn lock_in_publishes_one_complete_bundle_and_is_idempotent() {
         let temporary = TempDir::new();
+        current_candidate(temporary.path()).unwrap();
         let first = lock_in(temporary.path(), Some("laptop")).unwrap();
         let bundle = bundle_path(temporary.path());
         let before = fs::read(bundle.join("state.json")).unwrap();
@@ -278,6 +405,91 @@ mod tests {
         let error = lock_in(temporary.path(), None).unwrap_err();
 
         assert!(error.to_string().contains("invalid local link state"));
+    }
+
+    #[test]
+    fn candidate_survives_between_previews() {
+        let temporary = TempDir::new();
+        let first = current_candidate(temporary.path()).unwrap();
+        let second = current_candidate(temporary.path()).unwrap();
+
+        assert_eq!(first.certificate_pem(), second.certificate_pem());
+        assert_eq!(
+            candidate_mark(&first).unwrap(),
+            candidate_mark(&second).unwrap()
+        );
+        assert!(candidate_path(temporary.path()).join("cert.pem").is_file());
+        assert!(
+            candidate_path(temporary.path())
+                .join("private.pem")
+                .is_file()
+        );
+    }
+
+    #[test]
+    fn regenerate_candidate_replaces_the_existing_candidate() {
+        let temporary = TempDir::new();
+        let first = current_candidate(temporary.path()).unwrap();
+        let first_certificate = first.certificate_pem().to_owned();
+        let second = regenerate_candidate(temporary.path()).unwrap();
+
+        assert_ne!(first_certificate, second.certificate_pem());
+        assert_eq!(
+            fs::read_to_string(candidate_path(temporary.path()).join("cert.pem")).unwrap(),
+            second.certificate_pem()
+        );
+        assert_eq!(
+            fs::read_dir(candidate_path(temporary.path()))
+                .unwrap()
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn discard_candidate_leaves_nothing_to_promote() {
+        let temporary = TempDir::new();
+        current_candidate(temporary.path()).unwrap();
+        discard_candidate(temporary.path()).unwrap();
+
+        assert!(!candidate_path(temporary.path()).exists());
+        assert!(matches!(
+            lock_in(temporary.path(), None),
+            Err(EstablishError::NoCandidate)
+        ));
+    }
+
+    #[test]
+    fn lock_in_commits_the_last_previewed_candidate() {
+        let temporary = TempDir::new();
+        let first = current_candidate(temporary.path()).unwrap();
+        let first_mark = candidate_mark(&first).unwrap();
+        let regenerated = regenerate_candidate(temporary.path()).unwrap();
+        let regenerated_mark = candidate_mark(&regenerated).unwrap();
+        assert_ne!(first.certificate_pem(), regenerated.certificate_pem());
+        let previewed = current_candidate(temporary.path()).unwrap();
+        assert_eq!(candidate_mark(&previewed).unwrap(), regenerated_mark);
+
+        lock_in(temporary.path(), None).unwrap();
+        let committed = load_ca(
+            &fs::read_to_string(bundle_path(temporary.path()).join("cert.pem")).unwrap(),
+            &fs::read_to_string(bundle_path(temporary.path()).join("private.pem")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(candidate_mark(&committed).unwrap(), regenerated_mark);
+        assert_ne!(first_mark, regenerated_mark);
+    }
+
+    #[test]
+    fn committed_lock_in_discards_a_stray_candidate() {
+        let temporary = TempDir::new();
+        current_candidate(temporary.path()).unwrap();
+        let first = lock_in(temporary.path(), None).unwrap();
+        regenerate_candidate(temporary.path()).unwrap();
+        assert!(candidate_path(temporary.path()).exists());
+
+        assert_eq!(lock_in(temporary.path(), None).unwrap(), first);
+        assert!(!candidate_path(temporary.path()).exists());
     }
 
     #[cfg(unix)]
@@ -329,6 +541,7 @@ mod tests {
     #[test]
     fn crash_after_rename_leaves_complete_bundle() {
         let temporary = TempDir::new();
+        current_candidate(temporary.path()).unwrap();
         run_child_until_pause(temporary.path(), "after-rename");
         assert_complete_bundle(temporary.path());
     }
@@ -336,6 +549,7 @@ mod tests {
     #[cfg(unix)]
     fn assert_crash_before_publish_then_retry(checkpoint: &str) {
         let temporary = TempDir::new();
+        current_candidate(temporary.path()).unwrap();
         run_child_until_pause(temporary.path(), checkpoint);
         assert!(
             !bundle_path(temporary.path()).exists(),

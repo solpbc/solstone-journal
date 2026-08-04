@@ -10,12 +10,17 @@ license.workspace = true
 publish = false
 
 [dependencies]
+argon2 = "0.5.3"
+axum = { workspace = true }
 hkdf = "0.12.4"
+indexmap = { version = "2.14.0", features = ["serde"] }
 log = { workspace = true }
 rcgen = { workspace = true }
 ring = "0.17.14"
 rustls = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
+solstone-core-convey-http = { workspace = true }
 sha2 = "0.10.9"
 solstone-core-journal-io = { workspace = true }
 solstone-core-sol-client = { workspace = true }
@@ -35,6 +40,7 @@ x509-parser = "0.16.0"
 [dev-dependencies]
 solstone-core-journal-io = { workspace = true, features = ["test-hooks"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
+tower = { workspace = true }
 
 [lints]
 workspace = true
