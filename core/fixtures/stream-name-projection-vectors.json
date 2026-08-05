@@ -3,7 +3,18 @@
     "format_id": "journal-stream-name-projection",
     "schema_owner": "the segment-media/journal-segment boundary",
     "file_kind": "vectors",
-    "rule": "NFKC normalize -> casefold -> replace runs of [^a-z0-9_-] with '_' -> strip leading/trailing '_-.' -> empty becomes 'device' -> escape a Windows reserved stem with a trailing '_' -> append '_' + projected(source) when source is non-empty -> truncate to 64 bytes. Collisions are resolved by the ordinal allocator, NOT by this function.",
+    "rule": "NFKD normalize, so accents separate from their base letters -> full Unicode casefold -- NOT a lowercase mapping -> drop combining marks (category Mn), so `café` becomes `cafe` -> replace runs of [^a-z0-9_-] with a single '_' -> strip leading and trailing '_-.' -> an empty result becomes 'device' -> a Windows reserved stem gains a trailing '_' -> append '_' + projected(source) when source is non-empty -> truncate to 64 bytes -- AFTER the source is appended. Collisions are resolved by the ordinal allocator, NOT by this function.",
+    "rule_steps": [
+      "decompose",
+      "casefold",
+      "strip-marks",
+      "filter",
+      "strip",
+      "fallback",
+      "reserved",
+      "source",
+      "truncate"
+    ],
     "note": "`project` vectors are AUTHORED from the rule above -- no implementation produces them yet, so they can catch an implementation being wrong. `legacy` vectors are RECORDED from the shipped name derivation; they already exist on disk and must stay readable. The projected name is NEVER required to be invertible, only unique.",
     "known_limitation": "The human-friendly property holds for Latin scripts and degrades to nothing for scripts with no Latin decomposition: a device labelled in Cyrillic, Greek, Hebrew, Arabic or CJK filters to empty and takes the fallback, so an owner with three such devices sees `device`, `device_2`, `device_3`. This is safe -- nothing resolves by the name and uniqueness still holds -- but it is a real gap for those owners, and closing it means a per-script transliteration commitment rather than a rule change."
   },
@@ -139,6 +150,162 @@
       "source": "",
       "expect": "iphone_etc",
       "why": "🔴 path traversal in a display label; separators and dots all filter to `_`"
+    },
+    {
+      "label": "ẞ",
+      "source": "",
+      "expect": "ss",
+      "why": "🔴 capital sharp s. casefold expands it to `ss`; a `to_lowercase()` plus a hand-rolled `ß -> ss` special case gets this WRONG, and without this vector that implementation is corpus-clean"
+    },
+    {
+      "label": "CON",
+      "source": "watch",
+      "expect": "con__watch",
+      "why": "🔴 a reserved stem WITH a source -- the escape and the suffix interact, and the rule's order is what decides the result. No other vector exercises both"
+    },
+    {
+      "label": "iPhone",
+      "source": "!!!",
+      "expect": "iphone",
+      "why": "a source that filters to empty -- must not leave a trailing `_` or take the device fallback in the source position"
+    },
+    {
+      "label": "iPhone",
+      "source": "WATCH.Series (9)",
+      "expect": "iphone_watch_series_9",
+      "why": "the source is the one client-supplied string in the pipeline, so it gets the same projection as the label -- uppercase, dot and parens all handled"
+    },
+    {
+      "label": "com0",
+      "source": "",
+      "expect": "com0",
+      "why": "near-miss: NOT reserved (COM1-9 only), so it must NOT be escaped -- proves the escape is not applied by prefix"
+    },
+    {
+      "label": "console",
+      "source": "",
+      "expect": "console",
+      "why": "near-miss: starts with `con` but is not reserved -- proves the check is on the whole stem, not a prefix"
+    },
+    {
+      "label": "AUX",
+      "source": "",
+      "expect": "aux_",
+      "why": "Windows reserved basename AUX -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "COM2",
+      "source": "",
+      "expect": "com2_",
+      "why": "Windows reserved basename COM2 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "COM3",
+      "source": "",
+      "expect": "com3_",
+      "why": "Windows reserved basename COM3 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "COM4",
+      "source": "",
+      "expect": "com4_",
+      "why": "Windows reserved basename COM4 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "COM5",
+      "source": "",
+      "expect": "com5_",
+      "why": "Windows reserved basename COM5 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "COM6",
+      "source": "",
+      "expect": "com6_",
+      "why": "Windows reserved basename COM6 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "COM7",
+      "source": "",
+      "expect": "com7_",
+      "why": "Windows reserved basename COM7 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "COM8",
+      "source": "",
+      "expect": "com8_",
+      "why": "Windows reserved basename COM8 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "COM9",
+      "source": "",
+      "expect": "com9_",
+      "why": "Windows reserved basename COM9 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "LPT1",
+      "source": "",
+      "expect": "lpt1_",
+      "why": "Windows reserved basename LPT1 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "LPT2",
+      "source": "",
+      "expect": "lpt2_",
+      "why": "Windows reserved basename LPT2 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "LPT3",
+      "source": "",
+      "expect": "lpt3_",
+      "why": "Windows reserved basename LPT3 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "LPT4",
+      "source": "",
+      "expect": "lpt4_",
+      "why": "Windows reserved basename LPT4 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "LPT5",
+      "source": "",
+      "expect": "lpt5_",
+      "why": "Windows reserved basename LPT5 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "LPT6",
+      "source": "",
+      "expect": "lpt6_",
+      "why": "Windows reserved basename LPT6 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "LPT7",
+      "source": "",
+      "expect": "lpt7_",
+      "why": "Windows reserved basename LPT7 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "LPT8",
+      "source": "",
+      "expect": "lpt8_",
+      "why": "Windows reserved basename LPT8 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "LPT9",
+      "source": "",
+      "expect": "lpt9_",
+      "why": "Windows reserved basename LPT9 -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "NUL",
+      "source": "",
+      "expect": "nul_",
+      "why": "Windows reserved basename NUL -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
+    },
+    {
+      "label": "PRN",
+      "source": "",
+      "expect": "prn_",
+      "why": "Windows reserved basename PRN -- the full set is pinned so an implementation cannot satisfy the corpus with a partial list"
     }
   ],
   "legacy": [
@@ -170,6 +337,14 @@
       },
       "expect": "archon.tmux",
       "why": "the dot qualifier form"
+    },
+    {
+      "input": {
+        "host": "workstation",
+        "qualifier": "browser"
+      },
+      "expect": "workstation.browser",
+      "why": "the OTHER live dotted qualifier -- read at two talent sites, and absent from the first version of this corpus, which left read-old with a hole exactly where the kind-switching sites are"
     },
     {
       "input": {
