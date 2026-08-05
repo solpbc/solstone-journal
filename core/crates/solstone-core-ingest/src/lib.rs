@@ -23,7 +23,6 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
-mod events;
 mod model;
 mod read_routes;
 mod router;
@@ -37,7 +36,6 @@ mod architecture_tests {
     // Unlike solstone-core-segment's older scanner, `public_signatures` also
     // recognizes `pub async fn`; handlers must not open a raw byte-write door.
     const SOURCES: &[&str] = &[
-        include_str!("events.rs"),
         include_str!("model.rs"),
         include_str!("read_routes.rs"),
         include_str!("router.rs"),

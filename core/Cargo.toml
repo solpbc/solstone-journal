@@ -8,6 +8,7 @@ members = [
     "crates/solstone-core-entity",
     "crates/solstone-core-journal",
     "crates/solstone-core-journal-io",
+    "crates/solstone-core-callosum",
     "crates/solstone-core-segment",
     "crates/solstone-core-sol",
     "crates/solstone-core-sol-client",
@@ -40,6 +41,7 @@ solstone-core-indexer-store = { path = "crates/solstone-core-indexer-store" }
 solstone-core-ingest-resolve = { path = "crates/solstone-core-ingest-resolve" }
 solstone-core-journal = { path = "crates/solstone-core-journal" }
 solstone-core-journal-io = { path = "crates/solstone-core-journal-io" }
+solstone-core-callosum = { path = "crates/solstone-core-callosum" }
 solstone-core-segment = { path = "crates/solstone-core-segment" }
 solstone-core-sol = { path = "crates/solstone-core-sol" }
 solstone-core-sol-client = { path = "crates/solstone-core-sol-client" }

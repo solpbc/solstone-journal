@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 /// Closed vocabulary for every ingest refusal.
@@ -41,12 +40,11 @@ pub enum ReasonCode {
     EventAppendFailed,
     StreamAdvanceFailed,
     JournalReadFailed,
-    IngestEventLogMalformed,
 }
 
 impl ReasonCode {
     #[cfg(test)]
-    const ALL: [Self; 35] = [
+    const ALL: [Self; 34] = [
         Self::ProtocolVersionRequired,
         Self::ProtocolVersionMalformed,
         Self::ProtocolVersionLegacy,
@@ -81,7 +79,6 @@ impl ReasonCode {
         Self::EventAppendFailed,
         Self::StreamAdvanceFailed,
         Self::JournalReadFailed,
-        Self::IngestEventLogMalformed,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -120,7 +117,6 @@ impl ReasonCode {
             Self::EventAppendFailed => "event_append_failed",
             Self::StreamAdvanceFailed => "stream_advance_failed",
             Self::JournalReadFailed => "journal_read_failed",
-            Self::IngestEventLogMalformed => "ingest_event_log_malformed",
         }
     }
 }
@@ -139,31 +135,6 @@ mod tests {
             .collect();
         assert_eq!(values.len(), ReasonCode::ALL.len());
     }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct FileDescriptor {
-    pub submitted: String,
-    pub written: String,
-    pub size: u64,
-    pub sha256: String,
-    #[serde(flatten)]
-    pub extra: Map<String, Value>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct DeviceIngestEvent {
-    pub record_type: String,
-    pub record_version: u8,
-    pub outcome: String,
-    pub protocol_version: u8,
-    pub did: String,
-    pub source: String,
-    pub stream: String,
-    pub day: String,
-    pub segment: String,
-    pub files: Vec<FileDescriptor>,
-    pub meta: Map<String, Value>,
 }
 
 #[derive(Clone, Debug)]

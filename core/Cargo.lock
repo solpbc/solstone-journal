@@ -1411,6 +1411,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-callosum"
+version = "1.0.22"
+dependencies = [
+ "serde",
+ "serde_json",
+ "solstone-core-journal-io",
+]
+
+[[package]]
 name = "solstone-core-cli"
 version = "1.0.22"
 
@@ -1473,6 +1482,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-callosum",
  "solstone-core-convey-http",
  "solstone-core-ingest-resolve",
  "solstone-core-segment",

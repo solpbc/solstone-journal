@@ -9,12 +9,12 @@ use axum::extract::{Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
+use solstone_core_callosum::{DeviceIngestEvent, read_device_ingest_events};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_segment::lookup_stream;
 use solstone_core_segment::{list_days, list_segments, list_segments_in};
 
-use crate::events::read_events;
-use crate::model::{DeviceIngestEvent, ReasonCode};
+use crate::model::ReasonCode;
 use crate::router::{IngestState, refusal};
 use crate::validation::{validate_access, validate_day, validate_protocol, validate_source};
 
@@ -52,11 +52,11 @@ pub async fn ingest_manifest(
                     .into_iter()
                     .filter(|segment| segment.stream == stream)
                 {
-                    let events = match read_events(&segment.path) {
-                        Ok(events) => events,
-                        Err(code) => {
+                    let events = match read_device_ingest_events(&segment.path) {
+                        Ok(report) => report.records,
+                        Err(_) => {
                             return refusal(
-                                code,
+                                ReasonCode::JournalReadFailed,
                                 StatusCode::INTERNAL_SERVER_ERROR,
                                 "cannot read journal",
                             );
@@ -242,7 +242,9 @@ fn stream_events(
         .into_iter()
         .filter(|segment| segment.stream == stream)
     {
-        for event in read_events(&segment.path)? {
+        let report =
+            read_device_ingest_events(&segment.path).map_err(|_| ReasonCode::JournalReadFailed)?;
+        for event in report.records {
             if event.did == did {
                 events.push(event);
             }

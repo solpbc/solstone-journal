@@ -11,6 +11,9 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{Map, Value, json};
+use solstone_core_callosum::{
+    DeviceIngestEvent, DurableEvent, FileDescriptor, append_durable_event,
+};
 use solstone_core_convey_http::envelope::{error_envelope, not_found_fallback};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_ingest_resolve::{
@@ -18,12 +21,10 @@ use solstone_core_ingest_resolve::{
     IngestNotice, IngestNotifier, LoggingIngestNotifier, Resolution, apply_plan, quarantine_failed,
     resolve_ingest,
 };
-use solstone_core_segment::{
-    ContentName, Kind, StreamHints, advance_bound_stream, append_event, bind_stream,
-};
+use solstone_core_segment::{ContentName, Kind, StreamHints, advance_bound_stream, bind_stream};
 use tower_http::limit::RequestBodyLimitLayer;
 
-use crate::model::{DeviceIngestEvent, FileDescriptor, IncomingFile, ReasonCode};
+use crate::model::{IncomingFile, ReasonCode};
 use crate::read_routes::{ingest_manifest, ingest_manifest_day, ingest_segments};
 use crate::validation::{
     validate_access, validate_day, validate_protocol, validate_segment, validate_source,
@@ -507,8 +508,10 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
         segment: applied.landed_segment.clone(),
         files: descriptors.clone(),
         meta: envelope.meta.clone(),
+        extra: Map::new(),
     };
-    if append_event(&applied.segment, &event).is_err() {
+    let durable_event = DurableEvent::DeviceIngest(event);
+    if append_durable_event(applied.segment.path(), &durable_event).is_err() {
         return outcome_error(
             "failed",
             ReasonCode::EventAppendFailed,
@@ -1654,7 +1657,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn manifest_surfaces_malformed_device_ingest_events() {
+    async fn manifest_skips_malformed_device_ingest_events() {
         let root = root();
         let app = router(&root);
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
@@ -1680,8 +1683,8 @@ mod tests {
             &[],
         )
         .await;
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(body["reason_code"], "ingest_event_log_malformed");
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["days"], json!({}));
         let _ = fs::remove_dir_all(root);
     }
 

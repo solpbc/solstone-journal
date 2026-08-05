@@ -23,7 +23,6 @@ mod identity;
 mod manifest;
 mod projection;
 mod segment_dir;
-mod sidecars;
 mod stream_record;
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -43,7 +42,6 @@ pub use identity::{
 };
 pub use projection::project_stream_name;
 pub use segment_dir::{SegmentDir, list_days, list_segments, list_segments_in};
-pub use sidecars::append_event;
 pub use solstone_core_journal_io::Segment;
 pub use stream_record::{
     BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord, advance_bound_stream,
@@ -65,7 +63,6 @@ mod architecture_tests {
         Manifest,
         Projection,
         SegmentDir,
-        Sidecars,
         StreamRecord,
         Write,
     }
@@ -78,7 +75,6 @@ mod architecture_tests {
         (Source::Manifest, include_str!("manifest.rs")),
         (Source::Projection, include_str!("projection.rs")),
         (Source::SegmentDir, include_str!("segment_dir.rs")),
-        (Source::Sidecars, include_str!("sidecars.rs")),
         (Source::StreamRecord, include_str!("stream_record.rs")),
         (Source::Write, include_str!("write.rs")),
     ];
@@ -120,9 +116,6 @@ mod architecture_tests {
                 Source::StreamRecord => {
                     assert!(source.contains("hold_lock"));
                     assert!(source.contains("write_json"));
-                }
-                Source::Sidecars => {
-                    assert!(source.contains("append_jsonl"));
                 }
                 Source::ContentName
                 | Source::Error
