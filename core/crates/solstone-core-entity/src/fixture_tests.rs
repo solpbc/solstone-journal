@@ -18,6 +18,21 @@ use super::test_support::{
     slug_divergences_fixture, verify_raw_sweep_digest, verify_sweep_digest,
 };
 
+const JOURNAL_IO_ALLOWED: &[&str] = &[
+    "read_json",
+    "read_jsonl",
+    "read_text",
+    "MalformedPolicy",
+    "contained_path",
+    "resolve_journal_path",
+    "path_lexists",
+    "list_dir_entries",
+    "DirEntry",
+    "DirEntryKind",
+    "ReadError",
+    "PathError",
+];
+
 #[test]
 fn non_test_sources_do_not_use_host_io_or_embedded_assets() {
     let sources = production_sources();
@@ -39,37 +54,6 @@ fn non_test_sources_do_not_use_host_io_or_embedded_assets() {
 
 #[test]
 fn journal_io_imports_are_item_level_read_allowlisted() {
-    const ALLOWED: &[&str] = &[
-        "read_json",
-        "read_jsonl",
-        "read_text",
-        "MalformedPolicy",
-        "contained_path",
-        "resolve_journal_path",
-        "path_lexists",
-        "list_dir_entries",
-        "DirEntry",
-        "DirEntryKind",
-        "ReadError",
-        "PathError",
-    ];
-    const FORBIDDEN: &[&str] = &[
-        "mutate_journal_config",
-        "get_journal_config_path",
-        "atomic_replace",
-        "write_json",
-        "write_text",
-        "write_jsonl",
-        "append_jsonl",
-        "append_text",
-        "hold_lock",
-        "publish_staged_dir",
-        "day_path",
-        "day_dirs",
-        "iter_segments",
-        "segment_path",
-    ];
-
     let mut matched = 0;
     for path in production_sources() {
         let source = fs::read_to_string(&path).unwrap();
@@ -79,25 +63,42 @@ fn journal_io_imports_are_item_level_read_allowlisted() {
             }
             matched += 1;
             assert!(
-                !statement.contains('*'),
-                "{} must not glob-import journal-io: {statement}",
-                path.display()
-            );
-            for forbidden in FORBIDDEN {
-                assert!(
-                    !statement.contains(forbidden),
-                    "{} imports forbidden journal-io item {forbidden}: {statement}",
-                    path.display()
-                );
-            }
-            assert!(
-                ALLOWED.iter().any(|allowed| statement.contains(allowed)),
-                "{} has no read-safe journal-io item in allowlist: {statement}",
+                journal_io_statement_is_allowlisted(statement),
+                "{} has a non-allowlisted journal-io reference: {statement}",
                 path.display()
             );
         }
     }
     assert!(matched > 0, "journal-io import sweep must not be vacuous");
+}
+
+#[test]
+fn journal_io_use_allowlist_rejects_mixed_unknown_items() {
+    assert!(journal_io_statement_is_allowlisted(
+        "use solstone_core_journal_io::{read_text, contained_path};"
+    ));
+    assert!(!journal_io_statement_is_allowlisted(
+        "use solstone_core_journal_io::{read_text, install_file};"
+    ));
+}
+
+fn journal_io_statement_is_allowlisted(statement: &str) -> bool {
+    let statement = statement.trim();
+    let Some(imports) = statement.strip_prefix("use solstone_core_journal_io::") else {
+        return JOURNAL_IO_ALLOWED
+            .iter()
+            .any(|item| statement.contains(&format!("solstone_core_journal_io::{item}")));
+    };
+    let imports = imports.trim().trim_end_matches(';').trim();
+    let items = imports
+        .strip_prefix('{')
+        .and_then(|imports| imports.strip_suffix('}'))
+        .map_or_else(|| vec![imports], |imports| imports.split(',').collect());
+    !items.is_empty()
+        && items
+            .into_iter()
+            .map(str::trim)
+            .all(|item| JOURNAL_IO_ALLOWED.contains(&item))
 }
 
 fn production_sources() -> Vec<PathBuf> {

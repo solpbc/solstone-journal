@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
 use serde_json::{Number, Value};
 
 use super::error::EntityStoreError;
@@ -102,11 +105,6 @@ fn float_to_integer(value: f64) -> Option<i128> {
     if !value.is_finite() || value.fract() != 0.0 {
         return None;
     }
-    if value >= i64::MIN as f64 && value <= i64::MAX as f64 {
-        return Some(i128::from(value as i64));
-    }
-    if value >= 0.0 && value <= u64::MAX as f64 {
-        return Some(i128::from(value as u64));
-    }
-    None
+    let integer = value as i128;
+    (integer as f64 == value).then_some(integer)
 }

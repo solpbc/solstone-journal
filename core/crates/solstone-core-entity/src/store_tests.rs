@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
 #![allow(clippy::disallowed_methods, clippy::disallowed_types)]
 
 use std::fs;
@@ -414,6 +417,45 @@ fn reconciliation_fixture_cases_match_recorded_outcomes() {
         };
         assert_eq!(actual, expected, "{}", case["note"]);
     }
+}
+
+#[test]
+fn numeric_history_comparison_preserves_integer_float_boundaries() {
+    let boundary = TempDir::new();
+    let mut integer = history_event(1, "vh_boundary", "update");
+    integer["identity_after"] = json!({"created_at": i64::MAX});
+    let mut rounded_float = history_event(1, "vh_boundary", "update");
+    rounded_float["identity_after"] = json!({"created_at": 9223372036854775808.0});
+    write_json(
+        boundary.path(),
+        "entities/alice_johnson/history/events/00000000000000000001-a.json",
+        &integer,
+    );
+    write_json(
+        boundary.path(),
+        "entities/alice_johnson/history/events/00000000000000000001-b.json",
+        &rounded_float,
+    );
+    let events = read_visible_history(boundary.path(), "alice_johnson").unwrap();
+    assert!(guard_visible_event_collision("alice_johnson", &events[1], Some(&events[0])).is_err());
+
+    let normal = TempDir::new();
+    let mut integer = history_event(1, "vh_normal", "update");
+    integer["identity_after"] = json!({"created_at": 1785889922582_i64});
+    let mut float = history_event(1, "vh_normal", "update");
+    float["identity_after"] = json!({"created_at": 1785889922582.0});
+    write_json(
+        normal.path(),
+        "entities/alice_johnson/history/events/00000000000000000001-a.json",
+        &integer,
+    );
+    write_json(
+        normal.path(),
+        "entities/alice_johnson/history/events/00000000000000000001-b.json",
+        &float,
+    );
+    let events = read_visible_history(normal.path(), "alice_johnson").unwrap();
+    guard_visible_event_collision("alice_johnson", &events[1], Some(&events[0])).unwrap();
 }
 
 #[test]

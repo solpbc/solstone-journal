@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
 use std::error::Error;
 use std::fmt;
 use std::path::PathBuf;
