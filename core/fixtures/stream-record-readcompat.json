@@ -1,0 +1,42 @@
+{
+  "records": {
+    "import.apple.json": {
+      "created_at": 1785891124,
+      "host": null,
+      "last_day": "20260801",
+      "last_segment": "120000_60",
+      "name": "import.apple",
+      "platform": null,
+      "seq": 1,
+      "type": "import"
+    },
+    "recovered.json": {
+      "created_at": 1785891124,
+      "host": null,
+      "last_day": "20260803",
+      "last_segment": "141000_240",
+      "name": "recovered",
+      "platform": null,
+      "seq": 7,
+      "type": "unknown"
+    },
+    "workstation.json": {
+      "created_at": 1785891124,
+      "host": "workstation.local",
+      "last_day": "20260802",
+      "last_segment": "081500_180",
+      "name": "workstation",
+      "platform": "linux",
+      "seq": 3,
+      "type": "observer"
+    }
+  },
+  "x-journal-contract": {
+    "captured_from": "the Python reference writer, before any Rust reader existed",
+    "file_kind": "stream_record",
+    "format_id": "journal-stream-record",
+    "note": "Read-compat fixture. The Rust writer is NOT required to re-emit `type`, `host` or `platform` -- `type` retires into `kind`. What is required is that these records load without loss and that an update preserves `created_at` and a monotonic `seq`.",
+    "reference_writer": "solstone.think.streams.update_stream",
+    "schema_owner": "solstone.think.streams"
+  }
+}
