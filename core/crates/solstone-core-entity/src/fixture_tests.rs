@@ -35,6 +35,15 @@ const JOURNAL_IO_ALLOWED: &[&str] = &[
     "FileLock",
     "LockOptions",
     "LockError",
+    "write_json",
+    "write_text",
+    "AtomicWriteOptions",
+    "JsonWriteOptions",
+    "AtomicWriteError",
+    "publish_staged_dir",
+    "StagedDirOptions",
+    "StagedWriteError",
+    "remove_dir_all",
 ];
 
 #[test]

@@ -6,16 +6,23 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use solstone_core_journal_io::MalformedPolicy;
+use solstone_core_journal_io::{
+    LockError, LockOptions, MalformedPolicy, contained_path, hold_lock,
+};
 
 use crate::{
+    AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityWriteError,
     IdentityMapLoserReason, PreparedHistoryOutcome, classify_prepared_history,
     guard_restore_does_not_cross_merge, guard_visible_event_collision,
     load_resolved_ambiguity_choice, read_ambiguities, read_entity_identity, read_identity_map,
-    read_prepared_history, read_visible_history,
+    read_prepared_history, read_visible_history, record_ambiguity_choice,
+    record_ambiguity_observation, refresh_identity_map_cache, save_entity_identity,
+    save_entity_identity_with_timeout, set_forced_identity_write_failure,
+    write_history_event_json_for_test,
 };
 
 const ENTITY_STORE_FIXTURE: &str = include_str!(concat!(
@@ -420,6 +427,84 @@ fn reconciliation_fixture_cases_match_recorded_outcomes() {
 }
 
 #[test]
+fn identity_writer_runs_every_reconciliation_fixture_case() {
+    let fixture = fixture();
+    let cases = fixture["reconciliation"]["cases"].as_array().unwrap();
+    assert_eq!(
+        cases.len(),
+        fixture["reconciliation"]["case_count"].as_u64().unwrap() as usize
+    );
+
+    for case in cases {
+        let temporary = TempDir::new();
+        let entity_dir = case["entity_dir"].as_str().unwrap_or("alice_johnson");
+        let mut disk = case["disk"].clone();
+        if disk.get("id").is_none() {
+            disk["id"] = Value::String(entity_dir.to_owned());
+        }
+        write_json(
+            temporary.path(),
+            &format!("entities/{entity_dir}/entity.json"),
+            &disk,
+        );
+        let mut event = fixture["inputs"]["history_event"].clone();
+        event["entity_id"] = Value::String(entity_dir.to_owned());
+        event["identity_before"] = case["before"].clone();
+        event["identity_after"] = case["after"].clone();
+        write_json(
+            temporary.path(),
+            &format!("entities/{entity_dir}/history/prepared/vh_case/event.json"),
+            &event,
+        );
+
+        let outcome = case["outcome"].as_str().unwrap();
+        let result = save_entity_identity(temporary.path(), entity_dir, &disk, None);
+        match outcome {
+            "publish" => {
+                assert!(!result.unwrap().changed, "{}", case["note"]);
+                assert_eq!(
+                    read_visible_history(temporary.path(), entity_dir)
+                        .unwrap()
+                        .len(),
+                    1
+                );
+                assert!(
+                    read_prepared_history(temporary.path(), entity_dir)
+                        .unwrap()
+                        .is_empty()
+                );
+            }
+            "discard" => {
+                assert!(!result.unwrap().changed, "{}", case["note"]);
+                assert!(
+                    read_visible_history(temporary.path(), entity_dir)
+                        .unwrap()
+                        .is_empty()
+                );
+                assert!(
+                    read_prepared_history(temporary.path(), entity_dir)
+                        .unwrap()
+                        .is_empty()
+                );
+            }
+            "repair_required" => {
+                assert!(matches!(
+                    result,
+                    Err(EntityWriteError::ReconciliationRepairRequired { .. })
+                ));
+                assert_eq!(
+                    read_prepared_history(temporary.path(), entity_dir)
+                        .unwrap()
+                        .len(),
+                    1
+                );
+            }
+            unexpected => panic!("unexpected reconciliation outcome: {unexpected}"),
+        }
+    }
+}
+
+#[test]
 fn numeric_history_comparison_preserves_integer_float_boundaries() {
     let boundary = TempDir::new();
     let mut integer = history_event(1, "vh_boundary", "update");
@@ -772,6 +857,748 @@ fn public_readers_leave_the_fixture_tree_unchanged() {
     assert_eq!(tree_hash(temporary.path()), before);
 }
 
+#[test]
+fn identity_writer_addresses_the_effective_identity_not_the_directory_name() {
+    let fixture = fixture();
+    let case = &fixture["identity_map"]["cases"][3];
+    let temporary = TempDir::new();
+    for (directory, record) in case["store"].as_object().unwrap() {
+        write_json(
+            temporary.path(),
+            &format!("entities/{directory}/entity.json"),
+            record,
+        );
+    }
+    let mut identity = case["store"]["alpha"].clone();
+    identity["name"] = json!("Alpha updated");
+
+    let result = save_entity_identity(temporary.path(), "beta", &identity, None).unwrap();
+
+    assert_eq!(result.entity_dir, "alpha");
+    assert_eq!(
+        read_entity_identity(temporary.path(), "alpha")
+            .unwrap()
+            .unwrap()
+            .value()["name"],
+        "Alpha updated"
+    );
+    assert_eq!(
+        read_entity_identity(temporary.path(), "beta")
+            .unwrap()
+            .unwrap()
+            .value()["name"],
+        "Beta"
+    );
+    let event = result.event.unwrap();
+    assert_eq!(event["entity_id"], "alpha");
+    assert_eq!(event["identity_after"]["id"], "beta");
+}
+
+#[test]
+fn identity_writer_preserves_identity_artifact_bytes_and_updates_cache() {
+    let fixture = fixture();
+    let temporary = TempDir::new();
+    let identity: Value =
+        serde_json::from_str(artifact(&fixture, "entities/{id}/entity.json")).unwrap();
+
+    let result = save_entity_identity(temporary.path(), "alice_johnson", &identity, None).unwrap();
+
+    assert!(result.changed);
+    assert_eq!(
+        fs::read(temporary.path().join("entities/alice_johnson/entity.json")).unwrap(),
+        artifact(&fixture, "entities/{id}/entity.json").as_bytes()
+    );
+    #[cfg(unix)]
+    assert_eq!(
+        std::os::unix::fs::PermissionsExt::mode(
+            &fs::metadata(temporary.path().join("entities/alice_johnson/entity.json"))
+                .unwrap()
+                .permissions()
+        ) & 0o777,
+        0o600
+    );
+    let cache = refresh_identity_map_cache(temporary.path()).unwrap();
+    assert!(!cache.rebuilt);
+    assert_eq!(
+        cache.resolved.get("alice_johnson"),
+        Some(&"alice_johnson".to_owned())
+    );
+}
+
+#[test]
+fn identity_writer_preserves_unicode_identity_artifact_bytes() {
+    let fixture = fixture();
+    let temporary = TempDir::new();
+    let identity: Value =
+        serde_json::from_str(artifact(&fixture, "entities/{id}/entity.json (unicode)")).unwrap();
+
+    save_entity_identity(temporary.path(), "jose_garcia", &identity, None).unwrap();
+
+    assert_eq!(
+        fs::read(temporary.path().join("entities/jose_garcia/entity.json")).unwrap(),
+        artifact(&fixture, "entities/{id}/entity.json (unicode)").as_bytes()
+    );
+}
+
+#[test]
+fn history_writer_serializes_the_history_artifact_byte_exactly() {
+    let fixture = fixture();
+    let temporary = TempDir::new();
+    let event: Value = serde_json::from_str(artifact(
+        &fixture,
+        "entities/{id}/history/events/{seq}-{version_id}.json",
+    ))
+    .unwrap();
+    let path = temporary.path().join("event.json");
+
+    write_history_event_json_for_test(&path, &event).unwrap();
+
+    assert_eq!(
+        fs::read(path).unwrap(),
+        artifact(
+            &fixture,
+            "entities/{id}/history/events/{seq}-{version_id}.json"
+        )
+        .as_bytes()
+    );
+}
+
+#[test]
+fn identity_writer_stamps_the_addressed_id_and_refuses_to_clobber_a_create_destination() {
+    let temporary = TempDir::new();
+    let payload = json!({"name": "Alice"});
+
+    save_entity_identity(temporary.path(), "alice", &payload, None).unwrap();
+    let written = read_entity_identity(temporary.path(), "alice")
+        .unwrap()
+        .expect("writer created identity");
+    assert_eq!(written.value()["id"], "alice");
+
+    write_text(
+        temporary.path(),
+        "entities/different/entity.json",
+        "not valid JSON\n",
+    );
+    let before = fs::read(temporary.path().join("entities/different/entity.json")).unwrap();
+    let error = save_entity_identity(
+        temporary.path(),
+        "different",
+        &json!({"id": "different", "name": "Different"}),
+        None,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        EntityWriteError::CreateDestinationOccupied { .. }
+    ));
+    assert_eq!(
+        fs::read(temporary.path().join("entities/different/entity.json")).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn identity_writer_noop_leaves_identity_history_and_cache_unchanged() {
+    let temporary = TempDir::new();
+    let payload = json!({"id": "alice", "name": "Alice"});
+    save_entity_identity(temporary.path(), "alice", &payload, None).unwrap();
+    let identity_path = temporary.path().join("entities/alice/entity.json");
+    let cache_path = temporary.path().join("entities/.identity-map-cache.json");
+    let identity_before = fs::read(&identity_path).unwrap();
+    let cache_before = fs::read(&cache_path).unwrap();
+    let events_before = fs::read_dir(temporary.path().join("entities/alice/history/events"))
+        .unwrap()
+        .count();
+
+    let result = save_entity_identity(temporary.path(), "alice", &payload, None).unwrap();
+
+    assert!(!result.changed);
+    assert!(result.event.is_none());
+    assert_eq!(fs::read(identity_path).unwrap(), identity_before);
+    assert_eq!(fs::read(cache_path).unwrap(), cache_before);
+    assert_eq!(
+        fs::read_dir(temporary.path().join("entities/alice/history/events"))
+            .unwrap()
+            .count(),
+        events_before
+    );
+}
+
+#[test]
+fn identity_writer_reconciles_every_recorded_crash_boundary_before_mutating() {
+    let fixture = fixture();
+    let cases = fixture["crash_boundaries"]["cases"].as_array().unwrap();
+    assert_eq!(
+        cases.len(),
+        fixture["crash_boundaries"]["case_count"].as_u64().unwrap() as usize
+    );
+
+    // Keep this divergent so directory reconstruction cannot satisfy the case.
+    let entity_dir = "alpha";
+    let identity_id = "beta";
+    let before = json!({"id": identity_id, "name": "Before"});
+    let after = json!({"id": identity_id, "name": "After"});
+    for case in cases {
+        let temporary = TempDir::new();
+        let on_disk = if case["identity_on_disk"] == "before" {
+            &before
+        } else {
+            &after
+        };
+        write_json(
+            temporary.path(),
+            &format!("entities/{entity_dir}/entity.json"),
+            on_disk,
+        );
+        if case["staged_events"].as_u64() == Some(1) {
+            let mut event = history_event(1, "vh_crash", "update");
+            event["entity_id"] = Value::String(entity_dir.to_owned());
+            event["identity_before"] = before.clone();
+            event["identity_after"] = after.clone();
+            write_json(
+                temporary.path(),
+                &format!("entities/{entity_dir}/history/prepared/vh_crash/event.json"),
+                &event,
+            );
+        }
+        if case["staged_events"].as_u64() == Some(0)
+            && case["visible_events_after"].as_u64().unwrap_or(0) > 0
+        {
+            let mut event = history_event(1, "vh_crash", "update");
+            event["entity_id"] = Value::String(entity_dir.to_owned());
+            event["identity_before"] = before.clone();
+            event["identity_after"] = after.clone();
+            write_json(
+                temporary.path(),
+                &format!("entities/{entity_dir}/history/events/00000000000000000001-vh_crash.json"),
+                &event,
+            );
+        }
+
+        let requested = if case["change_survives"] == true {
+            &after
+        } else {
+            &before
+        };
+        let result = save_entity_identity(temporary.path(), identity_id, requested, None).unwrap();
+
+        assert!(!result.changed, "{}", case["note"]);
+        assert_eq!(
+            read_visible_history(temporary.path(), entity_dir)
+                .unwrap()
+                .len(),
+            case["visible_events_after"].as_u64().unwrap() as usize,
+            "{}",
+            case["note"]
+        );
+        assert!(
+            read_prepared_history(temporary.path(), entity_dir)
+                .unwrap()
+                .is_empty(),
+            "{}",
+            case["note"]
+        );
+    }
+}
+
+#[test]
+fn identity_writer_uses_the_reader_sequence_accessor() {
+    let temporary = TempDir::new();
+    write_json(
+        temporary.path(),
+        "entities/alice/entity.json",
+        &json!({"id": "alice", "name": "Before"}),
+    );
+    let mut boolean_sequence = history_event(1, "vh_boolean", "create");
+    boolean_sequence["seq"] = Value::Bool(true);
+    write_json(
+        temporary.path(),
+        "entities/alice/history/events/00000000000000000001-vh_boolean.json",
+        &boolean_sequence,
+    );
+    let result = save_entity_identity(
+        temporary.path(),
+        "alice",
+        &json!({"id": "alice", "name": "After"}),
+        None,
+    )
+    .unwrap();
+    assert_eq!(result.event.unwrap()["seq"], 2);
+}
+
+#[test]
+fn identity_write_failure_cannot_publish_a_visible_event_first() {
+    let temporary = TempDir::new();
+    set_forced_identity_write_failure(true);
+
+    let result = save_entity_identity(
+        temporary.path(),
+        "alice",
+        &json!({"id": "alice", "name": "Alice"}),
+        None,
+    );
+    set_forced_identity_write_failure(false);
+    assert!(result.is_err());
+    assert!(
+        read_visible_history(temporary.path(), "alice")
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        read_prepared_history(temporary.path(), "alice")
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn prepared_publish_is_idempotent_and_keeps_staging_on_visible_collision() {
+    let identity = json!({"id": "alice", "name": "After"});
+    let mut event = history_event(1, "vh_same", "update");
+    event["entity_id"] = json!("alice");
+    event["identity_before"] = json!({"id": "alice", "name": "Before"});
+    event["identity_after"] = identity.clone();
+
+    let identical = TempDir::new();
+    write_json(identical.path(), "entities/alice/entity.json", &identity);
+    write_json(
+        identical.path(),
+        "entities/alice/history/prepared/vh_same/event.json",
+        &event,
+    );
+    write_json(
+        identical.path(),
+        "entities/alice/history/events/00000000000000000001-vh_same.json",
+        &event,
+    );
+    let visible_before = fs::read(
+        identical
+            .path()
+            .join("entities/alice/history/events/00000000000000000001-vh_same.json"),
+    )
+    .unwrap();
+    assert!(
+        !save_entity_identity(identical.path(), "alice", &identity, None)
+            .unwrap()
+            .changed
+    );
+    assert!(
+        read_prepared_history(identical.path(), "alice")
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        fs::read(
+            identical
+                .path()
+                .join("entities/alice/history/events/00000000000000000001-vh_same.json"),
+        )
+        .unwrap(),
+        visible_before
+    );
+
+    let collision = TempDir::new();
+    write_json(collision.path(), "entities/alice/entity.json", &identity);
+    write_json(
+        collision.path(),
+        "entities/alice/history/prepared/vh_same/event.json",
+        &event,
+    );
+    let mut different = event.clone();
+    different["caller"] = json!("different");
+    write_json(
+        collision.path(),
+        "entities/alice/history/events/00000000000000000001-vh_same.json",
+        &different,
+    );
+    let staged_path = collision
+        .path()
+        .join("entities/alice/history/prepared/vh_same/event.json");
+    let staged_before = fs::read(&staged_path).unwrap();
+    assert!(matches!(
+        save_entity_identity(collision.path(), "alice", &identity, None),
+        Err(EntityWriteError::Read(_))
+    ));
+    assert_eq!(fs::read(staged_path).unwrap(), staged_before);
+}
+
+#[test]
+fn reconciliation_refusal_keeps_only_the_expected_partial_reconciliation() {
+    let actual = TempDir::new();
+    let expected = TempDir::new();
+    let current = json!({"id": "alice", "name": "After"});
+    let before = json!({"id": "alice", "name": "Before"});
+    let unrelated = json!({"id": "alice", "name": "Unrelated"});
+    let mut publish = history_event(1, "vh_publish", "update");
+    publish["entity_id"] = json!("alice");
+    publish["identity_before"] = before;
+    publish["identity_after"] = current.clone();
+    let mut repair = history_event(2, "vh_repair", "update");
+    repair["entity_id"] = json!("alice");
+    repair["identity_before"] = json!({"id": "alice", "name": "Else"});
+    repair["identity_after"] = unrelated;
+
+    write_json(actual.path(), "entities/alice/entity.json", &current);
+    write_json(
+        actual.path(),
+        "entities/alice/history/prepared/vh_a/event.json",
+        &publish,
+    );
+    write_json(
+        actual.path(),
+        "entities/alice/history/prepared/vh_b/event.json",
+        &repair,
+    );
+    write_json(expected.path(), "entities/alice/entity.json", &current);
+    write_history_event_json_for_test(
+        &expected
+            .path()
+            .join("entities/alice/history/events/00000000000000000001-vh_publish.json"),
+        &publish,
+    )
+    .unwrap();
+    write_json(
+        expected.path(),
+        "entities/alice/history/prepared/vh_b/event.json",
+        &repair,
+    );
+    fs::create_dir_all(expected.path().join("health/locks")).unwrap();
+
+    assert!(matches!(
+        save_entity_identity(actual.path(), "alice", &current, None),
+        Err(EntityWriteError::ReconciliationRepairRequired { .. })
+    ));
+    assert_eq!(
+        tree_hash_excluding_locks(actual.path()),
+        tree_hash_excluding_locks(expected.path())
+    );
+}
+
+#[test]
+fn identity_writer_trust_lock_timeout_refuses_without_writing() {
+    let temporary = TempDir::new();
+    let lock_path = contained_path(temporary.path(), "health/locks/entity-trust").unwrap();
+    let held = hold_lock(&lock_path, LockOptions::default()).unwrap();
+    let options = LockOptions {
+        timeout: Duration::from_millis(50),
+        ..LockOptions::default()
+    };
+
+    let error = save_entity_identity_with_timeout(
+        temporary.path(),
+        "alice",
+        &json!({"id": "alice", "name": "Alice"}),
+        None,
+        options,
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        EntityWriteError::TrustLock(crate::EntityTrustLockError::Lock(LockError::Timeout(_)))
+    ));
+    assert!(!temporary.path().join("entities/alice/entity.json").exists());
+    drop(held);
+}
+
+#[test]
+fn ambiguity_writer_preserves_python_default_artifact_bytes_on_a_duplicate_observation() {
+    let fixture = fixture();
+    let temporary = TempDir::new();
+    write_text(
+        temporary.path(),
+        "entities/ambiguities.jsonl",
+        artifact(&fixture, "entities/ambiguities.jsonl"),
+    );
+    let artifact_rows = artifact(&fixture, "entities/ambiguities.jsonl")
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    let input = &artifact_rows[0];
+    let observation = AmbiguityObservation {
+        scope: input["scope"].clone(),
+        query: input["original_query"].as_str().unwrap().to_owned(),
+        normalized_query: input["normalized_query"].as_str().unwrap().to_owned(),
+        observed_tier: input["observed_tier"].as_i64().unwrap(),
+        ranked_candidates: input["ranked_candidates"].as_array().unwrap().clone(),
+        origin: input["origins"][0].clone(),
+    };
+
+    record_ambiguity_observation(temporary.path(), &observation).unwrap();
+
+    assert_eq!(
+        fs::read_to_string(temporary.path().join("entities/ambiguities.jsonl")).unwrap(),
+        artifact(&fixture, "entities/ambiguities.jsonl")
+    );
+}
+
+#[test]
+fn ambiguity_writer_ascii_escapes_sorted_non_ascii_origin_keys() {
+    let temporary = TempDir::new();
+    let observation = AmbiguityObservation {
+        scope: json!({"kind": "facet", "facet": "work"}),
+        query: "Straße".to_owned(),
+        normalized_query: "strasse".to_owned(),
+        observed_tier: 8,
+        ranked_candidates: vec![json!({
+            "id": "strasse_handels_gmbh",
+            "name": "Straße Handels GmbH",
+            "tier": 8,
+            "score": 90.0,
+        })],
+        origin: json!({"source_id": "Straße Verlag", "lane": "import", "field": "author"}),
+    };
+
+    let row = record_ambiguity_observation(temporary.path(), &observation).unwrap();
+
+    assert_eq!(
+        row["origin_keys"][0],
+        "{\"field\":\"author\",\"lane\":\"import\",\"source_id\":\"Stra\\u00dfe Verlag\"}"
+    );
+}
+
+#[test]
+fn ambiguity_writers_validate_before_writing_and_record_changed_choices() {
+    let fixture = fixture();
+    let temporary = TempDir::new();
+    let artifact_rows = artifact(&fixture, "entities/ambiguities.jsonl")
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    let mut invalid_observation = AmbiguityObservation {
+        scope: json!({"kind": "journal"}),
+        query: "Alice".to_owned(),
+        normalized_query: "alice".to_owned(),
+        observed_tier: 5,
+        ranked_candidates: vec![json!({"id": "alice", "name": "Alice", "tier": 4, "score": 1})],
+        origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
+    };
+    write_text(
+        temporary.path(),
+        "entities/ambiguities.jsonl",
+        artifact(&fixture, "entities/ambiguities.jsonl"),
+    );
+    let before = fs::read(temporary.path().join("entities/ambiguities.jsonl")).unwrap();
+    assert!(record_ambiguity_observation(temporary.path(), &invalid_observation).is_err());
+    assert_eq!(
+        fs::read(temporary.path().join("entities/ambiguities.jsonl")).unwrap(),
+        before
+    );
+
+    invalid_observation.scope = artifact_rows[1]["scope"].clone();
+    invalid_observation.query = "Straße".to_owned();
+    invalid_observation.normalized_query = "strasse".to_owned();
+    invalid_observation.observed_tier = 8;
+    invalid_observation.ranked_candidates = artifact_rows[1]["ranked_candidates"]
+        .as_array()
+        .unwrap()
+        .clone();
+    invalid_observation.origin = artifact_rows[1]["origins"][0].clone();
+    record_ambiguity_observation(temporary.path(), &invalid_observation).unwrap();
+
+    let request = AmbiguityChoiceRequest {
+        scope: artifact_rows[1]["scope"].clone(),
+        query: "Straße".to_owned(),
+        entity_id: "alice_chen".to_owned(),
+        origin: Some(json!({"lane": "manual"})),
+    };
+    let updated = record_ambiguity_choice(
+        temporary.path(),
+        &request,
+        &[
+            AmbiguityChoiceEntity {
+                id: "alice_chen".to_owned(),
+                blocked: false,
+            },
+            AmbiguityChoiceEntity {
+                id: "strasse_handels_gmbh".to_owned(),
+                blocked: false,
+            },
+        ],
+    )
+    .unwrap();
+    assert_eq!(updated["resolved_entity_id"], "alice_chen");
+    assert_eq!(
+        updated["audit"]["prior_choices"].as_array().unwrap().len(),
+        1
+    );
+}
+
+#[test]
+fn ambiguity_writer_refuses_all_validator_rules_not_covered_by_the_corpus() {
+    let rules = [
+        "missing_last_seen",
+        "resolved_without_timestamp",
+        "non_object_candidate",
+        "origins_not_list",
+        "non_object_origin",
+        "origin_non_string_value",
+        "invalid_origin_key",
+        "non_object_prior_choice",
+        "prior_without_resolved_at",
+        "prior_without_replaced_at",
+        "invalid_prior_origin",
+    ];
+    assert_eq!(rules.len(), 11);
+
+    for rule in rules {
+        let temporary = TempDir::new();
+        let mut row = valid_ambiguity_row();
+        match rule {
+            "missing_last_seen" => {
+                row.as_object_mut().unwrap().remove("last_seen");
+            }
+            "resolved_without_timestamp" => {
+                row["status"] = json!("resolved");
+                row["resolved_entity_id"] = json!("alice_chen");
+            }
+            "non_object_candidate" => row["ranked_candidates"] = json!(["not an object"]),
+            "origins_not_list" => row["origins"] = json!({}),
+            "non_object_origin" => row["origins"] = json!(["not an object"]),
+            "origin_non_string_value" => row["origins"][0]["rank"] = json!(1),
+            "invalid_origin_key" => row["origin_keys"] = json!([""]),
+            "non_object_prior_choice" => row["audit"]["prior_choices"] = json!(["bad"]),
+            "prior_without_resolved_at" => {
+                row["audit"]["prior_choices"] = json!([valid_prior_choice()]);
+                row["audit"]["prior_choices"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("resolved_at");
+            }
+            "prior_without_replaced_at" => {
+                row["audit"]["prior_choices"] = json!([valid_prior_choice()]);
+                row["audit"]["prior_choices"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("replaced_at");
+            }
+            "invalid_prior_origin" => {
+                row["audit"]["prior_choices"] = json!([valid_prior_choice()]);
+                row["audit"]["prior_choices"][0]["replaced_by_origin"] = json!({"lane": ""});
+            }
+            _ => unreachable!(),
+        }
+        write_json(temporary.path(), "entities/ambiguities.jsonl", &row);
+        let before = fs::read(temporary.path().join("entities/ambiguities.jsonl")).unwrap();
+        let observation = valid_observation();
+
+        assert!(
+            record_ambiguity_observation(temporary.path(), &observation).is_err(),
+            "{rule}"
+        );
+        assert_eq!(
+            fs::read(temporary.path().join("entities/ambiguities.jsonl")).unwrap(),
+            before,
+            "{rule}"
+        );
+    }
+}
+
+#[test]
+fn ambiguity_writer_blocks_preexisting_corrupt_rows_without_changing_them() {
+    for contents in ["[1, 2, 3]\n", "{\"schema_version\": 99}\n"] {
+        let temporary = TempDir::new();
+        write_text(temporary.path(), "entities/ambiguities.jsonl", contents);
+        assert!(read_ambiguities(temporary.path(), MalformedPolicy::Skip).is_ok());
+        assert!(read_ambiguities(temporary.path(), MalformedPolicy::Raise).is_err());
+
+        assert!(record_ambiguity_observation(temporary.path(), &valid_observation()).is_err());
+        assert_eq!(
+            fs::read_to_string(temporary.path().join("entities/ambiguities.jsonl")).unwrap(),
+            contents
+        );
+    }
+}
+
+#[test]
+fn unreadable_identity_map_cache_is_rebuilt_and_reports_it() {
+    let temporary = TempDir::new();
+    write_json(
+        temporary.path(),
+        "entities/alice/entity.json",
+        &json!({"id": "alice", "name": "Alice"}),
+    );
+    write_text(
+        temporary.path(),
+        "entities/.identity-map-cache.json",
+        "not json\n",
+    );
+
+    let cache = refresh_identity_map_cache(temporary.path()).unwrap();
+
+    assert!(cache.rebuilt);
+    assert_eq!(cache.resolved.get("alice"), Some(&"alice".to_owned()));
+    assert!(
+        !fs::read_to_string(temporary.path().join("entities/.identity-map-cache.json"))
+            .unwrap()
+            .contains(&temporary.path().display().to_string())
+    );
+}
+
+#[test]
+fn identity_map_cache_reproduces_every_fixture_case() {
+    let fixture = fixture();
+    let cases = fixture["identity_map"]["cases"].as_array().unwrap();
+    assert_eq!(
+        cases.len(),
+        fixture["identity_map"]["case_count"].as_u64().unwrap() as usize
+    );
+
+    for case in cases {
+        let temporary = TempDir::new();
+        for (directory, identity) in case["store"].as_object().unwrap() {
+            let relative = format!("entities/{directory}/entity.json");
+            if let Some(raw) = identity.as_str() {
+                write_text(temporary.path(), &relative, raw);
+            } else {
+                write_json(temporary.path(), &relative, identity);
+            }
+        }
+        let cache = refresh_identity_map_cache(temporary.path()).unwrap();
+        assert!(cache.rebuilt, "{}", case["note"]);
+        let expected = case["resolves"].as_object().unwrap();
+        assert_eq!(cache.resolved.len(), expected.len(), "{}", case["note"]);
+        for (id, directory) in expected {
+            assert_eq!(
+                cache.resolved.get(id),
+                Some(&directory.as_str().unwrap().to_owned()),
+                "{}",
+                case["note"]
+            );
+        }
+    }
+}
+
+#[test]
+fn identity_map_cache_bytes_are_portable_across_journal_roots() {
+    let source = TempDir::new();
+    let destination = TempDir::new();
+    write_json(
+        source.path(),
+        "entities/alice/entity.json",
+        &json!({"id": "alice", "name": "Alice"}),
+    );
+    let source_cache = refresh_identity_map_cache(source.path()).unwrap();
+    let bytes = fs::read(source.path().join("entities/.identity-map-cache.json")).unwrap();
+    fs::create_dir_all(destination.path().join("entities")).unwrap();
+    fs::write(
+        destination.path().join("entities/.identity-map-cache.json"),
+        &bytes,
+    )
+    .unwrap();
+
+    let loaded = refresh_identity_map_cache(destination.path()).unwrap();
+
+    assert!(!loaded.rebuilt);
+    assert_eq!(loaded.resolved, source_cache.resolved);
+    assert!(
+        !String::from_utf8(bytes)
+            .unwrap()
+            .contains(&source.path().display().to_string())
+    );
+}
+
 fn fixture() -> Value {
     serde_json::from_str(ENTITY_STORE_FIXTURE).unwrap()
 }
@@ -798,6 +1625,18 @@ fn history_event(sequence: i64, version_id: &str, kind: &str) -> Value {
 
 fn valid_ambiguity_row() -> Value {
     fixture()["inputs"]["ambiguity_rows"][0].clone()
+}
+
+fn valid_observation() -> AmbiguityObservation {
+    let row = valid_ambiguity_row();
+    AmbiguityObservation {
+        scope: row["scope"].clone(),
+        query: row["latest_query"].as_str().unwrap().to_owned(),
+        normalized_query: row["normalized_query"].as_str().unwrap().to_owned(),
+        observed_tier: row["observed_tier"].as_i64().unwrap(),
+        ranked_candidates: row["ranked_candidates"].as_array().unwrap().clone(),
+        origin: row["origins"][0].clone(),
+    }
 }
 
 fn valid_prior_choice() -> Value {
@@ -833,6 +1672,12 @@ fn tree_hash(root: &Path) -> [u8; 32] {
     hasher.finalize().into()
 }
 
+fn tree_hash_excluding_locks(root: &Path) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hash_tree_entry_excluding_locks(root, root, &mut hasher);
+    hasher.finalize().into()
+}
+
 fn hash_tree_entry(root: &Path, path: &Path, hasher: &mut Sha256) {
     let metadata = fs::symlink_metadata(path).unwrap();
     let relative = path.strip_prefix(root).unwrap();
@@ -859,6 +1704,43 @@ fn hash_tree_entry(root: &Path, path: &Path, hasher: &mut Sha256) {
         entries.sort();
         for entry in entries {
             hash_tree_entry(root, &entry, hasher);
+        }
+    } else {
+        hasher.update(fs::read(path).unwrap());
+    }
+}
+
+fn hash_tree_entry_excluding_locks(root: &Path, path: &Path, hasher: &mut Sha256) {
+    if path
+        .extension()
+        .is_some_and(|extension| extension == "lock")
+    {
+        return;
+    }
+    let metadata = fs::symlink_metadata(path).unwrap();
+    let relative = path.strip_prefix(root).unwrap();
+    let kind = if metadata.file_type().is_symlink() {
+        b"symlink".as_slice()
+    } else if metadata.is_dir() {
+        b"directory".as_slice()
+    } else {
+        b"file".as_slice()
+    };
+    hasher.update([0]);
+    hasher.update(kind);
+    hasher.update([0]);
+    hasher.update(relative.as_os_str().as_encoded_bytes());
+    hasher.update([0]);
+    if metadata.file_type().is_symlink() {
+        hasher.update(fs::read_link(path).unwrap().as_os_str().as_encoded_bytes());
+    } else if metadata.is_dir() {
+        let mut entries = fs::read_dir(path)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        entries.sort();
+        for entry in entries {
+            hash_tree_entry_excluding_locks(root, &entry, hasher);
         }
     } else {
         hasher.update(fs::read(path).unwrap());

@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 caseless = "0.2.2"
+chrono.workspace = true
 log.workspace = true
 md5.workspace = true
 rapidfuzz.workspace = true

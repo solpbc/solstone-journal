@@ -17,6 +17,16 @@ pub struct HistoryEvent {
 }
 
 impl HistoryEvent {
+    pub(super) fn from_value(value: Value, path: &Path) -> Result<Self, EntityStoreError> {
+        if value.is_object() {
+            Ok(Self { value })
+        } else {
+            Err(EntityStoreError::HistoryEventNotObject {
+                path: path.to_path_buf(),
+            })
+        }
+    }
+
     /// Complete durable event object.
     pub fn value(&self) -> &Value {
         &self.value
@@ -140,13 +150,7 @@ pub fn guard_restore_does_not_cross_merge(
 
 fn read_history_event(path: &Path) -> Result<HistoryEvent, EntityStoreError> {
     let value: Value = read_json(path, Value::Null, MalformedPolicy::Raise)?;
-    if value.is_object() {
-        Ok(HistoryEvent { value })
-    } else {
-        Err(EntityStoreError::HistoryEventNotObject {
-            path: path.to_path_buf(),
-        })
-    }
+    HistoryEvent::from_value(value, path)
 }
 
 fn is_recorded_merge(event: &HistoryEvent) -> bool {

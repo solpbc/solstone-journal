@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{Map, Value};
-use solstone_core_journal_io::{MalformedPolicy, contained_path, read_text};
+use solstone_core_journal_io::{MalformedPolicy, read_text};
 
 use super::error::EntityStoreError;
+use super::paths::ambiguities_path;
 
 const AMBIGUITY_SCHEMA_VERSION: u64 = 1;
 
@@ -74,10 +75,6 @@ pub fn load_resolved_ambiguity_choice(
     Ok(None)
 }
 
-fn ambiguities_path(journal_root: &Path) -> Result<PathBuf, EntityStoreError> {
-    contained_path(journal_root, "entities/ambiguities.jsonl").map_err(Into::into)
-}
-
 fn handle_malformed(
     path: &Path,
     line: usize,
@@ -128,7 +125,7 @@ fn invalid_row(path: &Path, line: usize, detail: impl Into<String>) -> EntitySto
     }
 }
 
-fn validate_row(row: &Map<String, Value>) -> Result<(), &'static str> {
+pub(super) fn validate_row(row: &Map<String, Value>) -> Result<(), &'static str> {
     let schema_version = row.get("schema_version");
     if !is_integer(schema_version)
         || schema_version.and_then(Value::as_u64) != Some(AMBIGUITY_SCHEMA_VERSION)
