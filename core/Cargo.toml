@@ -25,6 +25,7 @@ members = [
     "crates/solstone-core-speakers",
     "crates/solstone-core-speakers-analyze",
     "crates/solstone-core-depict",
+    "crates/solstone-core-generate",
     "crates/solstone-core-speakers-onnx",
 ]
 resolver = "3"

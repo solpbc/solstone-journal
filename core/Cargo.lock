@@ -1657,6 +1657,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-generate"
+version = "1.0.22"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "solstone-core-indexer"
 version = "1.0.22"
 dependencies = [
