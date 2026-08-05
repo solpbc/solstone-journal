@@ -1496,6 +1496,28 @@ fn ambiguity_writer_refuses_all_validator_rules_not_covered_by_the_corpus() {
 }
 
 #[test]
+fn ambiguity_writer_refuses_occurrence_count_overflow_without_writing() {
+    let temporary = TempDir::new();
+    let mut row = valid_ambiguity_row();
+    row["occurrence_count"] = Value::from(i64::MAX);
+    write_json(temporary.path(), "entities/ambiguities.jsonl", &row);
+    let before = fs::read(temporary.path().join("entities/ambiguities.jsonl")).unwrap();
+    let mut observation = valid_observation();
+    observation.origin = json!({"lane": "segment", "day": "20260805", "segment_id": "s2"});
+
+    let error = record_ambiguity_observation(temporary.path(), &observation).unwrap_err();
+
+    assert!(matches!(
+        error,
+        EntityWriteError::AmbiguityCountOverflow { .. }
+    ));
+    assert_eq!(
+        fs::read(temporary.path().join("entities/ambiguities.jsonl")).unwrap(),
+        before
+    );
+}
+
+#[test]
 fn ambiguity_writer_blocks_preexisting_corrupt_rows_without_changing_them() {
     for contents in ["[1, 2, 3]\n", "{\"schema_version\": 99}\n"] {
         let temporary = TempDir::new();

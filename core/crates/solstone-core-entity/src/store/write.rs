@@ -140,6 +140,12 @@ pub enum EntityWriteError {
     InvalidOperationContext {
         detail: String,
     },
+    AmbiguityRowInvalid {
+        detail: String,
+    },
+    AmbiguityCountOverflow {
+        ambiguity_id: String,
+    },
     CreateDestinationOccupied {
         identity_id: String,
         path: PathBuf,
@@ -188,6 +194,15 @@ impl fmt::Display for EntityWriteError {
             }
             Self::InvalidOperationContext { detail } => {
                 write!(formatter, "invalid entity operation context: {detail}")
+            }
+            Self::AmbiguityRowInvalid { detail } => {
+                write!(formatter, "invalid entity ambiguity row: {detail}")
+            }
+            Self::AmbiguityCountOverflow { ambiguity_id } => {
+                write!(
+                    formatter,
+                    "ambiguity occurrence count overflow: {ambiguity_id}"
+                )
             }
             Self::CreateDestinationOccupied { identity_id, path } => write!(
                 formatter,
@@ -249,6 +264,8 @@ impl Error for EntityWriteError {
             Self::AmbiguityLock(error) => Some(error),
             Self::InvalidIdentity { .. }
             | Self::InvalidOperationContext { .. }
+            | Self::AmbiguityRowInvalid { .. }
+            | Self::AmbiguityCountOverflow { .. }
             | Self::CreateDestinationOccupied { .. }
             | Self::ReconciliationRepairRequired { .. }
             | Self::PreparedStageCollision { .. }
@@ -414,8 +431,7 @@ pub fn record_ambiguity_observation(
             let origin_keys = object
                 .get_mut("origin_keys")
                 .and_then(Value::as_array_mut)
-                .ok_or_else(|| EntityWriteError::InvalidIdentity {
-                    identity_id: String::new(),
+                .ok_or_else(|| EntityWriteError::AmbiguityRowInvalid {
                     detail: "ambiguity row has invalid origin_keys".to_owned(),
                 })?;
             if !origin_keys
@@ -426,8 +442,7 @@ pub fn record_ambiguity_observation(
                 object
                     .get_mut("origins")
                     .and_then(Value::as_array_mut)
-                    .ok_or_else(|| EntityWriteError::InvalidIdentity {
-                        identity_id: String::new(),
+                    .ok_or_else(|| EntityWriteError::AmbiguityRowInvalid {
                         detail: "ambiguity row has invalid origins".to_owned(),
                     })?
                     .push(observation.origin.clone());
@@ -435,7 +450,14 @@ pub fn record_ambiguity_observation(
                     .get("occurrence_count")
                     .and_then(Value::as_i64)
                     .unwrap_or(0)
-                    + 1;
+                    .checked_add(1)
+                    .ok_or_else(|| EntityWriteError::AmbiguityCountOverflow {
+                        ambiguity_id: object
+                            .get("ambiguity_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned(),
+                    })?;
                 object.insert("occurrence_count".to_owned(), Value::from(count));
                 object.insert("last_seen".to_owned(), Value::String(now));
             }
@@ -553,15 +575,13 @@ pub fn record_ambiguity_choice(
             let audit = object
                 .get_mut("audit")
                 .and_then(Value::as_object_mut)
-                .ok_or_else(|| EntityWriteError::InvalidIdentity {
-                    identity_id: String::new(),
+                .ok_or_else(|| EntityWriteError::AmbiguityRowInvalid {
                     detail: "ambiguity row has invalid audit".to_owned(),
                 })?;
             let priors = audit
                 .get_mut("prior_choices")
                 .and_then(Value::as_array_mut)
-                .ok_or_else(|| EntityWriteError::InvalidIdentity {
-                    identity_id: String::new(),
+                .ok_or_else(|| EntityWriteError::AmbiguityRowInvalid {
                     detail: "ambiguity row has invalid audit.prior_choices".to_owned(),
                 })?;
             let mut prior = Map::new();
@@ -811,8 +831,7 @@ where
     let result = mutate(&mut rows)?;
     for row in &rows {
         let object = row.as_object().expect("strict reader returns objects");
-        validate_row(object).map_err(|detail| EntityWriteError::InvalidIdentity {
-            identity_id: String::new(),
+        validate_row(object).map_err(|detail| EntityWriteError::AmbiguityRowInvalid {
             detail: format!("invalid ambiguity row: {detail}"),
         })?;
     }
@@ -953,8 +972,7 @@ fn next_version_id() -> String {
 }
 
 fn ambiguity_scope_key(scope: &Value) -> Result<String, EntityWriteError> {
-    scope_key_for_row(scope).ok_or_else(|| EntityWriteError::InvalidIdentity {
-        identity_id: String::new(),
+    scope_key_for_row(scope).ok_or_else(|| EntityWriteError::AmbiguityRowInvalid {
         detail: "invalid ambiguity scope".to_owned(),
     })
 }
@@ -978,8 +996,7 @@ fn origin_key(origin: &Value) -> Result<String, EntityWriteError> {
     let mut origin = origin.clone();
     sort_json_keys(&mut origin);
     serialize_value(&origin, AsciiCompactFormatter).map_err(|error| {
-        EntityWriteError::InvalidIdentity {
-            identity_id: String::new(),
+        EntityWriteError::AmbiguityRowInvalid {
             detail: format!("cannot serialize ambiguity origin: {error}"),
         }
     })
