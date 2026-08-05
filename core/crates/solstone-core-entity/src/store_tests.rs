@@ -19,13 +19,14 @@ use solstone_core_journal_io::{
 use crate::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityIdentityRepairError,
     EntityIdentityRepairGuard, EntityIdentityRepairSkipReason, EntityWriteError,
-    IdentityMapLoserReason, PreparedHistoryOutcome, classify_prepared_history,
+    IdentityMapLoserReason, PreparedHistoryOutcome, ambiguity_id, classify_prepared_history,
     guard_restore_does_not_cross_merge, guard_visible_event_collision,
     load_resolved_ambiguity_choice, read_ambiguities, read_entity_identity, read_identity_map,
     read_prepared_history, read_visible_history, record_ambiguity_choice,
     record_ambiguity_observation, refresh_identity_map_cache, repair_entity_identities,
-    save_entity_identity, save_entity_identity_with_timeout, set_forced_identity_write_failure,
-    set_repair_identity_write_failure_on_attempt, write_history_event_json_for_test,
+    rescope_facet_ambiguities, save_entity_identity, save_entity_identity_with_timeout,
+    set_forced_identity_write_failure, set_repair_identity_write_failure_on_attempt,
+    write_history_event_json_for_test,
 };
 
 const ENTITY_STORE_FIXTURE: &str = include_str!(concat!(
@@ -138,6 +139,48 @@ fn identity_map_distinguishes_written_self_id_from_directory_fallback() {
     assert!(map.losers.iter().any(|loser| {
         loser.entity_dir == "other" && loser.reason == IdentityMapLoserReason::CollisionLost
     }));
+}
+
+#[test]
+fn identity_group_map_retains_every_collision_candidate_in_precedence_order() {
+    let temporary = TempDir::new();
+    write_json(
+        temporary.path(),
+        "entities/written_z/entity.json",
+        &json!({"id": "shared"}),
+    );
+    write_json(
+        temporary.path(),
+        "entities/written_a/entity.json",
+        &json!({"id": "shared"}),
+    );
+    write_json(temporary.path(), "entities/shared/entity.json", &json!({}));
+
+    let groups = crate::read_identity_group_map(temporary.path()).unwrap();
+
+    assert_eq!(
+        groups.groups.get("shared"),
+        Some(&vec![
+            "written_a".to_owned(),
+            "written_z".to_owned(),
+            "shared".to_owned(),
+        ])
+    );
+    assert!(groups.losers.is_empty());
+    let resolved = read_identity_map(temporary.path()).unwrap();
+    assert_eq!(
+        resolved.resolved.get("shared"),
+        Some(&"written_a".to_owned())
+    );
+    assert_eq!(
+        resolved
+            .losers
+            .iter()
+            .filter(|loser| loser.reason == IdentityMapLoserReason::CollisionLost)
+            .map(|loser| loser.entity_dir.as_str())
+            .collect::<Vec<_>>(),
+        vec!["shared", "written_z"]
+    );
 }
 
 #[test]
@@ -568,6 +611,91 @@ fn ambiguity_fixture_rows_obey_strict_validation_in_order() {
             1,
         );
     }
+}
+
+#[test]
+fn ambiguity_rescope_updates_a_facet_scope_and_its_identifier() {
+    let temporary = TempDir::new();
+    let mut row = valid_ambiguity_row();
+    row["scope"] = json!({"kind": "facet", "facet": "old"});
+    let normalized_query = row["normalized_query"].as_str().unwrap().to_owned();
+    row["ambiguity_id"] = json!(ambiguity_id(&format!("facet:old|{normalized_query}")));
+    write_json(temporary.path(), "entities/ambiguities.jsonl", &row);
+
+    let report = rescope_facet_ambiguities(temporary.path(), "old", "new").unwrap();
+    let rows = read_ambiguities(temporary.path(), MalformedPolicy::Raise).unwrap();
+
+    assert_eq!(report.rewritten_ambiguity_ids.len(), 1);
+    assert_eq!(rows[0]["scope"]["facet"], "new");
+    assert_eq!(
+        rows[0]["ambiguity_id"],
+        ambiguity_id(&format!("facet:new|{normalized_query}"))
+    );
+}
+
+#[test]
+fn ambiguity_rescope_updates_facet_origins_without_changing_journal_scope() {
+    let temporary = TempDir::new();
+    let mut row = valid_ambiguity_row();
+    row["origins"] = json!([{
+        "lane": "facet",
+        "facet": "old",
+        "path": "facets/old/entities/alice/entity.json"
+    }]);
+    row["origin_keys"] = json!(["stale"]);
+    write_json(temporary.path(), "entities/ambiguities.jsonl", &row);
+
+    let report = rescope_facet_ambiguities(temporary.path(), "old", "new").unwrap();
+    let rows = read_ambiguities(temporary.path(), MalformedPolicy::Raise).unwrap();
+
+    assert_eq!(
+        report.rewritten_ambiguity_ids,
+        vec![row["ambiguity_id"].as_str().unwrap().to_owned()]
+    );
+    assert_eq!(rows[0]["scope"]["kind"], "journal");
+    assert!(rows[0]["scope"].get("facet").is_none());
+    assert_eq!(rows[0]["origins"][0]["facet"], "new");
+    assert_eq!(
+        rows[0]["origins"][0]["path"],
+        "facets/new/entities/alice/entity.json"
+    );
+    assert_eq!(
+        rows[0]["origin_keys"][0],
+        "{\"facet\":\"new\",\"lane\":\"facet\",\"path\":\"facets/new/entities/alice/entity.json\"}"
+    );
+}
+
+#[test]
+fn ambiguity_rescope_updates_prior_choice_replacement_origins() {
+    let temporary = TempDir::new();
+    let mut row = valid_ambiguity_row();
+    row["audit"]["prior_choices"] = json!([{
+        "resolved_entity_id": "alice_chen",
+        "resolved_at": "2026-08-04T00:00:00Z",
+        "replaced_at": "2026-08-05T00:00:00Z",
+        "replaced_by_origin": {
+            "lane": "facet",
+            "facet": "old",
+            "path": "facets/old/entities/alice/entity.json"
+        }
+    }]);
+    write_json(temporary.path(), "entities/ambiguities.jsonl", &row);
+
+    let report = rescope_facet_ambiguities(temporary.path(), "old", "new").unwrap();
+    let rows = read_ambiguities(temporary.path(), MalformedPolicy::Raise).unwrap();
+
+    assert_eq!(
+        report.rewritten_ambiguity_ids,
+        vec![row["ambiguity_id"].as_str().unwrap().to_owned()]
+    );
+    assert_eq!(
+        rows[0]["audit"]["prior_choices"][0]["replaced_by_origin"]["facet"],
+        "new"
+    );
+    assert_eq!(
+        rows[0]["audit"]["prior_choices"][0]["replaced_by_origin"]["path"],
+        "facets/new/entities/alice/entity.json"
+    );
 }
 
 #[test]

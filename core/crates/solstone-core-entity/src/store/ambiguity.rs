@@ -1,15 +1,235 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::error::Error;
+use std::fmt;
 use std::path::Path;
 
 use serde_json::{Map, Value};
-use solstone_core_journal_io::{MalformedPolicy, read_text};
+use solstone_core_journal_io::AtomicWriteError;
+use solstone_core_journal_io::AtomicWriteOptions;
+use solstone_core_journal_io::LockError;
+use solstone_core_journal_io::LockOptions;
+use solstone_core_journal_io::MalformedPolicy;
+use solstone_core_journal_io::hold_lock;
+use solstone_core_journal_io::read_text;
+use solstone_core_journal_io::write_text;
+
+use crate::{EntityTrustLockError, hold_entity_trust_lock};
 
 use super::error::EntityStoreError;
 use super::paths::ambiguities_path;
+use super::write::{origin_key, serialize_ambiguity_rows};
 
 const AMBIGUITY_SCHEMA_VERSION: u64 = 1;
+
+/// The ambiguity identifiers rewritten by a facet-directory rename.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityAmbiguityRescopeReport {
+    pub rewritten_ambiguity_ids: Vec<String>,
+}
+
+/// Failure while rescoping facet references in durable ambiguity rows.
+#[derive(Debug)]
+pub enum EntityAmbiguityRescopeError {
+    TrustLock(EntityTrustLockError),
+    Read(EntityStoreError),
+    Lock(LockError),
+    Write(AtomicWriteError),
+    InvalidRow {
+        ambiguity_id: Option<String>,
+        detail: String,
+    },
+}
+
+impl fmt::Display for EntityAmbiguityRescopeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TrustLock(error) => error.fmt(formatter),
+            Self::Read(error) => error.fmt(formatter),
+            Self::Lock(error) => error.fmt(formatter),
+            Self::Write(error) => error.fmt(formatter),
+            Self::InvalidRow {
+                ambiguity_id,
+                detail,
+            } => write!(
+                formatter,
+                "invalid ambiguity row {}: {detail}",
+                ambiguity_id.as_deref().unwrap_or("<missing id>")
+            ),
+        }
+    }
+}
+
+impl Error for EntityAmbiguityRescopeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::TrustLock(error) => Some(error),
+            Self::Read(error) => Some(error),
+            Self::Lock(error) => Some(error),
+            Self::Write(error) => Some(error),
+            Self::InvalidRow { .. } => None,
+        }
+    }
+}
+
+/// Rescope every strict ambiguity row that references `old_facet`.
+pub fn rescope_facet_ambiguities(
+    journal_root: &Path,
+    old_facet: &str,
+    new_facet: &str,
+) -> Result<EntityAmbiguityRescopeReport, EntityAmbiguityRescopeError> {
+    let _trust =
+        hold_entity_trust_lock(journal_root).map_err(EntityAmbiguityRescopeError::TrustLock)?;
+    let path = ambiguities_path(journal_root).map_err(EntityAmbiguityRescopeError::Read)?;
+    let _lock = hold_lock(
+        &path,
+        LockOptions {
+            mode: Some(0o600),
+            ..LockOptions::default()
+        },
+    )
+    .map_err(EntityAmbiguityRescopeError::Lock)?;
+    let mut rows = read_ambiguities(journal_root, MalformedPolicy::Raise)
+        .map_err(EntityAmbiguityRescopeError::Read)?;
+    let mut rewritten_ambiguity_ids = Vec::new();
+
+    for row in &mut rows {
+        let ambiguity_id = row
+            .get("ambiguity_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let object =
+            row.as_object_mut()
+                .ok_or_else(|| EntityAmbiguityRescopeError::InvalidRow {
+                    ambiguity_id: ambiguity_id.clone(),
+                    detail: "row is not an object".to_owned(),
+                })?;
+        if !row_references_facet(object, old_facet) {
+            continue;
+        }
+
+        if let Some(scope) = object.get_mut("scope").and_then(Value::as_object_mut)
+            && scope.get("facet").and_then(Value::as_str) == Some(old_facet)
+        {
+            scope.insert("facet".to_owned(), Value::String(new_facet.to_owned()));
+        }
+        if let Some(origins) = object.get_mut("origins").and_then(Value::as_array_mut) {
+            for origin in origins.iter_mut() {
+                rescope_origin(origin, old_facet, new_facet);
+            }
+            let keys = origins
+                .iter()
+                .map(|origin| {
+                    origin_key(origin).map(Value::String).map_err(|error| {
+                        EntityAmbiguityRescopeError::InvalidRow {
+                            ambiguity_id: ambiguity_id.clone(),
+                            detail: error.to_string(),
+                        }
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            object.insert("origin_keys".to_owned(), Value::Array(keys));
+        }
+        if let Some(priors) = object
+            .get_mut("audit")
+            .and_then(Value::as_object_mut)
+            .and_then(|audit| audit.get_mut("prior_choices"))
+            .and_then(Value::as_array_mut)
+        {
+            for prior in priors {
+                if let Some(origin) = prior
+                    .as_object_mut()
+                    .and_then(|prior| prior.get_mut("replaced_by_origin"))
+                {
+                    rescope_origin(origin, old_facet, new_facet);
+                }
+            }
+        }
+
+        let scope_key = object.get("scope").and_then(scope_key).ok_or_else(|| {
+            EntityAmbiguityRescopeError::InvalidRow {
+                ambiguity_id: ambiguity_id.clone(),
+                detail: "invalid scope".to_owned(),
+            }
+        })?;
+        let normalized_query =
+            non_empty_string(object.get("normalized_query")).ok_or_else(|| {
+                EntityAmbiguityRescopeError::InvalidRow {
+                    ambiguity_id: ambiguity_id.clone(),
+                    detail: "missing normalized_query".to_owned(),
+                }
+            })?;
+        let rewritten_id = crate::ambiguity_id(&format!("{scope_key}|{normalized_query}"));
+        object.insert(
+            "ambiguity_id".to_owned(),
+            Value::String(rewritten_id.clone()),
+        );
+        validate_row(object).map_err(|detail| EntityAmbiguityRescopeError::InvalidRow {
+            ambiguity_id,
+            detail: detail.to_owned(),
+        })?;
+        rewritten_ambiguity_ids.push(rewritten_id);
+    }
+
+    let contents = serialize_ambiguity_rows(&rows).map_err(EntityAmbiguityRescopeError::Write)?;
+    write_text(&path, &contents, AtomicWriteOptions { mode: Some(0o600) })
+        .map_err(EntityAmbiguityRescopeError::Write)?;
+    Ok(EntityAmbiguityRescopeReport {
+        rewritten_ambiguity_ids,
+    })
+}
+
+fn row_references_facet(row: &Map<String, Value>, facet: &str) -> bool {
+    row.get("scope")
+        .and_then(Value::as_object)
+        .and_then(|scope| scope.get("facet"))
+        .and_then(Value::as_str)
+        == Some(facet)
+        || row
+            .get("origins")
+            .and_then(Value::as_array)
+            .is_some_and(|origins| origins.iter().any(|origin| origin_facet_is(origin, facet)))
+        || row
+            .get("audit")
+            .and_then(Value::as_object)
+            .and_then(|audit| audit.get("prior_choices"))
+            .and_then(Value::as_array)
+            .is_some_and(|priors| {
+                priors.iter().any(|prior| {
+                    prior
+                        .as_object()
+                        .and_then(|prior| prior.get("replaced_by_origin"))
+                        .is_some_and(|origin| origin_facet_is(origin, facet))
+                })
+            })
+}
+
+fn origin_facet_is(origin: &Value, facet: &str) -> bool {
+    origin
+        .as_object()
+        .and_then(|origin| origin.get("facet"))
+        .and_then(Value::as_str)
+        == Some(facet)
+}
+
+fn rescope_origin(origin: &mut Value, old_facet: &str, new_facet: &str) {
+    let Some(origin) = origin.as_object_mut() else {
+        return;
+    };
+    if origin.get("facet").and_then(Value::as_str) == Some(old_facet) {
+        origin.insert("facet".to_owned(), Value::String(new_facet.to_owned()));
+    }
+    if let Some(path) = origin.get("path").and_then(Value::as_str) {
+        let old_segment = format!("facets/{old_facet}/");
+        if path.contains(&old_segment) {
+            origin.insert(
+                "path".to_owned(),
+                Value::String(path.replace(&old_segment, &format!("facets/{new_facet}/"))),
+            );
+        }
+    }
+}
 
 /// Read durable ambiguity rows with Python-compatible strictness behavior.
 pub fn read_ambiguities(
@@ -285,7 +505,7 @@ pub(super) fn validate_row(row: &Map<String, Value>) -> Result<(), &'static str>
     Ok(())
 }
 
-fn scope_key(scope: &Value) -> Option<String> {
+pub(super) fn scope_key(scope: &Value) -> Option<String> {
     let scope = scope.as_object()?;
     match scope.get("kind").and_then(Value::as_str) {
         Some("journal") if scope.get("facet").is_none_or(Value::is_null) => {

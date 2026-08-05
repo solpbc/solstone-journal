@@ -13,14 +13,20 @@ mod reconcile;
 mod repair;
 mod write;
 
-pub use ambiguity::{load_resolved_ambiguity_choice, read_ambiguities};
+pub use ambiguity::{
+    EntityAmbiguityRescopeError, EntityAmbiguityRescopeReport, load_resolved_ambiguity_choice,
+    read_ambiguities, rescope_facet_ambiguities,
+};
 pub use error::EntityStoreError;
 pub use history::{
     HistoryEvent, PreparedHistoryEvent, guard_restore_does_not_cross_merge,
     guard_visible_event_collision, read_prepared_history, read_visible_history,
 };
 pub use identity::{IdentitySnapshot, read_entity_identity};
-pub use map::{EntityIdentityMap, IdentityMapLoser, IdentityMapLoserReason, read_identity_map};
+pub use map::{
+    EntityIdentityGroupMap, EntityIdentityMap, IdentityMapLoser, IdentityMapLoserReason,
+    read_identity_group_map, read_identity_map,
+};
 pub use reconcile::{PreparedHistoryOutcome, classify_prepared_history};
 pub use repair::{
     EntityIdentityRepairError, EntityIdentityRepairGuard, EntityIdentityRepairRefusal,

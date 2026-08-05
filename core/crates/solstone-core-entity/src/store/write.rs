@@ -995,7 +995,7 @@ fn scope_key_for_row(scope: &Value) -> Option<String> {
     }
 }
 
-fn origin_key(origin: &Value) -> Result<String, EntityWriteError> {
+pub(super) fn origin_key(origin: &Value) -> Result<String, EntityWriteError> {
     let mut origin = origin.clone();
     sort_json_keys(&mut origin);
     serialize_value(&origin, AsciiCompactFormatter).map_err(|error| {
@@ -1005,7 +1005,7 @@ fn origin_key(origin: &Value) -> Result<String, EntityWriteError> {
     })
 }
 
-fn serialize_ambiguity_rows(rows: &[Value]) -> Result<String, AtomicWriteError> {
+pub(super) fn serialize_ambiguity_rows(rows: &[Value]) -> Result<String, AtomicWriteError> {
     let mut contents = String::new();
     for row in rows {
         let line =

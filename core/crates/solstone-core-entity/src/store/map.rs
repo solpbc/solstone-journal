@@ -16,6 +16,16 @@ pub struct EntityIdentityMap {
     pub losers: Vec<IdentityMapLoser>,
 }
 
+/// In-memory grouping from effective identity id to every matching directory.
+///
+/// Each group is ordered deterministically: explicit written identities first,
+/// then directory fallbacks, with lexical directory-name tie breaking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityIdentityGroupMap {
+    pub groups: HashMap<String, Vec<String>>,
+    pub losers: Vec<IdentityMapLoser>,
+}
+
 /// An entity omitted from the identity map with its visible reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdentityMapLoser {
@@ -45,6 +55,32 @@ struct Candidate {
 
 /// Build a deterministic, non-persisted durable identity lookup.
 pub fn read_identity_map(journal_root: &Path) -> Result<EntityIdentityMap, EntityStoreError> {
+    let group_map = read_identity_group_map(journal_root)?;
+    let mut resolved = HashMap::new();
+    let mut losers = group_map.losers;
+    for (identity_id, candidates) in group_map.groups {
+        let winner = candidates
+            .first()
+            .expect("non-empty identity candidate group");
+        resolved.insert(identity_id, winner.clone());
+        losers.extend(
+            candidates
+                .into_iter()
+                .skip(1)
+                .map(|entity_dir| IdentityMapLoser {
+                    entity_dir,
+                    reason: IdentityMapLoserReason::CollisionLost,
+                }),
+        );
+    }
+    losers.sort_by(|left, right| left.entity_dir.cmp(&right.entity_dir));
+    Ok(EntityIdentityMap { resolved, losers })
+}
+
+/// Build deterministic effective-identity groups without discarding collisions.
+pub fn read_identity_group_map(
+    journal_root: &Path,
+) -> Result<EntityIdentityGroupMap, EntityStoreError> {
     let entities_dir = contained_path(journal_root, "entities")?;
     let mut candidates = Vec::new();
     let mut losers = Vec::new();
@@ -84,22 +120,21 @@ pub fn read_identity_map(journal_root: &Path) -> Result<EntityIdentityMap, Entit
             .push(candidate);
     }
 
-    let mut resolved = HashMap::new();
+    let mut groups = HashMap::new();
     for (identity_id, candidates) in &mut grouped {
         candidates.sort_by(|left, right| {
             left.source
                 .cmp(&right.source)
                 .then_with(|| left.entity_dir.cmp(&right.entity_dir))
         });
-        let winner = candidates
-            .first()
-            .expect("non-empty identity candidate group");
-        resolved.insert(identity_id.clone(), winner.entity_dir.clone());
-        losers.extend(candidates.iter().skip(1).map(|candidate| IdentityMapLoser {
-            entity_dir: candidate.entity_dir.clone(),
-            reason: IdentityMapLoserReason::CollisionLost,
-        }));
+        groups.insert(
+            identity_id.clone(),
+            candidates
+                .iter()
+                .map(|candidate| candidate.entity_dir.clone())
+                .collect(),
+        );
     }
     losers.sort_by(|left, right| left.entity_dir.cmp(&right.entity_dir));
-    Ok(EntityIdentityMap { resolved, losers })
+    Ok(EntityIdentityGroupMap { groups, losers })
 }
