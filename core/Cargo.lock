@@ -1605,6 +1605,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-facets"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "log",
+ "serde",
+ "serde_json",
+ "solstone-core-entity",
+ "solstone-core-journal-io",
+]
+
+[[package]]
 name = "solstone-core-indexer"
 version = "1.0.22"
 dependencies = [
