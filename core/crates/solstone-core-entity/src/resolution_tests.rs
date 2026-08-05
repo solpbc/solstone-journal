@@ -213,6 +213,39 @@ fn low_confidence_tiers_are_ambiguous_without_matcher_uniqueness_guards() {
 }
 
 #[test]
+fn low_confidence_first_word_uses_unified_unicode_normalization() {
+    let entities = vec![
+        entity(Some("strasse_atlas"), "STRASSE Atlas", false),
+        entity(Some("strasse_beacon"), "STRASSE Beacon", false),
+    ];
+    let query = "Straße";
+
+    assert_eq!(find_matching_entity(query, &adapt(&entities), 90.0), None);
+
+    let temporary = TempDir::new();
+    let result = resolve(
+        temporary.path(),
+        query,
+        &entities,
+        journal_scope(),
+        origin("unicode-first-word"),
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(result.outcome, EntityResolutionOutcome::Ambiguous);
+    assert_eq!(result.tier, Some(MatchTier::FirstWord));
+    let candidate_ids: Vec<_> = result
+        .candidates
+        .iter()
+        .map(|candidate| candidate.id.as_str())
+        .collect();
+    assert_eq!(candidate_ids.len(), 2);
+    assert!(candidate_ids.contains(&"strasse_atlas"));
+    assert!(candidate_ids.contains(&"strasse_beacon"));
+}
+
+#[test]
 fn idless_low_confidence_candidates_are_dropped_after_collection() {
     let entities = vec![
         entity(None, "Sarah Connor", false),
