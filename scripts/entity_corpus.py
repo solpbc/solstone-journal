@@ -857,7 +857,99 @@ def _negative_cases() -> list[dict[str, Any]]:
         broken(lambda r: r.pop("original_query"), "original_query is required"),
         broken(lambda r: r.update(observed_tier=4),
                "observed_tier is one of the low-confidence tiers 5-8"),
+        # Beyond here are the rule families the first cut never reached. A
+        # validator that stopped at observed_tier passed every case above it.
+        broken(lambda r: r.update(status="maybe"), "status is open or resolved"),
+        broken(lambda r: r.update(status="resolved"),
+               "a resolved row names the entity chosen"),
+        broken(lambda r: r.update(resolved_entity_id="alice_chen"),
+               "an open row carries no resolved choice"),
+        broken(lambda r: r.update(ranked_candidates=[]),
+               "ranked_candidates is populated"),
+        broken(lambda r: r["ranked_candidates"][0].pop("id"),
+               "a ranked candidate has an id"),
+        broken(lambda r: r["ranked_candidates"][0].pop("name"),
+               "a ranked candidate has a name"),
+        broken(lambda r: r["ranked_candidates"][0].update(tier=7),
+               "a ranked candidate's tier equals the observed tier"),
+        broken(lambda r: r["ranked_candidates"][0].update(score="high"),
+               "a ranked candidate's score is numeric"),
+        broken(lambda r: r.update(origins=[]),
+               "origins and origin_keys are consistent and populated"),
+        broken(lambda r: r["origins"][0].pop("lane"), "an origin names its lane"),
+        broken(lambda r: r.update(origin_keys=["a", "b"]),
+               "origins and origin_keys are the same length"),
+        broken(lambda r: r.update(occurrence_count=0),
+               "occurrence_count is at least one"),
+        broken(lambda r: r.pop("audit"), "the audit block is present"),
+        broken(lambda r: r.update(audit={"prior_choices": [{}]}),
+               "a prior choice carries its entity, timestamp and replacement"),
+        broken(lambda r: r.pop("latest_query"), "latest_query is required"),
+        broken(lambda r: r.pop("first_seen"), "first_seen is required"),
     ]
+
+
+def _read_edge_artifacts() -> dict[str, Any]:
+    """Shapes a reader meets on real data that the happy path never produces.
+
+    Each is a place where an obvious implementation refuses something the
+    reference accepts. In a store that fails by refusing, "stricter than the
+    reference" is not a safe default -- it is the bricking direction.
+    """
+    fractionless = {
+        **_HISTORY_EVENT_FIXED,
+        "ts": "2026-08-05T00:32:02Z",
+        "version_id": "vh_0000000000000000000000000000fffe",
+    }
+    boolean_seq = {
+        **_HISTORY_EVENT_FIXED,
+        "seq": True,
+        "version_id": "vh_0000000000000000000000000000ffff",
+    }
+    with _temp_journal():
+        fractionless_bytes = _capture_event_bytes(fractionless)
+        boolean_seq_bytes = _capture_event_bytes(boolean_seq)
+
+    return {
+        "history_event_without_fractional_seconds": {
+            "note": (
+                "The producer omits the fractional part entirely when the "
+                "microsecond component is zero, so the timestamp is VARIABLE "
+                "WIDTH and roughly one event in 10^6 looks like this. A reader "
+                "with a fixed six-digit format refuses it, and because history "
+                "is iterated whole, one such event takes out that entity's "
+                "entire history."
+            ),
+            "event": fractionless,
+            "bytes": fractionless_bytes,
+            "must": "parse",
+        },
+        "history_event_with_boolean_sequence": {
+            "note": (
+                "A boolean IS an integer in the reference language, so its "
+                "sequence guard accepts this as 1 and orders the event first. "
+                "A faithful-looking guard elsewhere refuses it -- refusing "
+                "where the reference recovers. ⚠ The adjacent ambiguity "
+                "validator explicitly excludes booleans, so the two modules "
+                "genuinely disagree; this pins the history side."
+            ),
+            "event": boolean_seq,
+            "bytes": boolean_seq_bytes,
+            "must": "parse",
+            "sequence_value": 1,
+        },
+        "ambiguity_line_that_is_not_an_object": {
+            "note": (
+                "A third strict-read branch, distinct from malformed JSON and "
+                "from a validation failure: a line that parses cleanly and is "
+                "not an object. It is rejected BEFORE row validation and has "
+                "its own message, so a reader handling only the other two "
+                "either mis-types or lets it through."
+            ),
+            "line": "[1, 2, 3]",
+            "must": "refuse under a strict read, and be skipped under a lenient one",
+        },
+    }
 
 
 def build_entity_store_fixture() -> dict[str, Any]:
@@ -886,9 +978,12 @@ def build_entity_store_fixture() -> dict[str, Any]:
             )
         reconciliation.append({**case, "outcome": observed})
 
+    read_edges = _read_edge_artifacts()
+
     return {
         "generated_by": "make core-fixtures",
         "versions": _versions(),
+        "read_edges": read_edges,
         "serialization": {
             "note": (
                 "Two conventions live one directory apart and both are load "
