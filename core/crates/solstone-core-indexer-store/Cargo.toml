@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 rusqlite.workspace = true
+sha2.workspace = true
 solstone-core-indexer.workspace = true
 
 [dev-dependencies]

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 pub mod db;
+pub mod merge;
 pub mod scan;
 
 use std::fmt;
@@ -23,6 +24,7 @@ pub enum StoreError {
     OutsideJournal(PathBuf),
     NonUtf8Path(PathBuf),
     MissingFile(PathBuf),
+    EdgeRebuildFailed(scan::EdgeRebuildReport),
 }
 
 impl fmt::Display for StoreError {
@@ -57,6 +59,9 @@ impl fmt::Display for StoreError {
             }
             StoreError::MissingFile(path) => {
                 write!(formatter, "file not found: {}", path.display())
+            }
+            StoreError::EdgeRebuildFailed(report) => {
+                write!(formatter, "edge rebuild failed: {report:?}")
             }
         }
     }
