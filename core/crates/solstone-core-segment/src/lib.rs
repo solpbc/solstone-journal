@@ -29,7 +29,8 @@ pub use content_name::{
 };
 pub use error::SegmentError;
 pub use identity::{
-    ContentIdentity, ContentIdentityEvidence, ContentIdentityFile, load_content_identity,
+    ContentIdentity, ContentIdentityEvidence, ContentIdentityFile, TerminalProofVerifier,
+    load_content_identity,
 };
 pub use segment_dir::SegmentDir;
 pub use sidecars::append_event;

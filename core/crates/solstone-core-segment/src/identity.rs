@@ -193,8 +193,9 @@ mod tests {
     use std::path::Path;
 
     use serde_json::json;
+    use sha2::{Digest, Sha256};
 
-    use crate::test_support::TempDir;
+    use crate::{RESERVED_SEGMENT_FILENAMES, test_support::TempDir};
 
     use super::*;
 
@@ -298,16 +299,35 @@ mod tests {
     }
 
     #[test]
-    fn reserved_manifest_names_are_unconditionally_excluded() {
+    fn legacy_media_scan_hashes_present_media() {
         let temporary = TempDir::new();
         let segment = segment(temporary.path());
-        write_manifest(
-            &segment,
-            json!({"schema_version": 1, "files": {"events.jsonl": []}}),
+        let bytes = b"legacy media";
+        fs::write(segment.path.join("audio.flac"), bytes).unwrap();
+
+        let identity = load_content_identity(&segment, &no_proof).unwrap();
+        let name = ContentName::new("audio.flac").unwrap();
+        let file = identity.files().get(&name).unwrap();
+        assert_eq!(file.evidence, ContentIdentityEvidence::Present);
+        assert_eq!(file.descriptor.size, bytes.len() as u64);
+        assert_eq!(
+            file.descriptor.sha256,
+            format!("{:x}", Sha256::digest(bytes))
         );
-        assert!(matches!(
-            load_content_identity(&segment, &no_proof),
-            Err(SegmentError::IdentityRefusal { .. })
-        ));
+    }
+
+    #[test]
+    fn reserved_manifest_names_are_unconditionally_excluded() {
+        for name in RESERVED_SEGMENT_FILENAMES {
+            let temporary = TempDir::new();
+            let segment = segment(temporary.path());
+            let mut files = serde_json::Map::new();
+            files.insert(name.to_owned(), json!({"sha256": "a", "size": 1}));
+            write_manifest(&segment, json!({"schema_version": 1, "files": files}));
+            assert!(matches!(
+                load_content_identity(&segment, &no_proof),
+                Err(SegmentError::IdentityRefusal { .. })
+            ));
+        }
     }
 }

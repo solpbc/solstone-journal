@@ -3,13 +3,14 @@
 
 use std::path::{Path, PathBuf};
 
-use solstone_core_journal_io::{DEFAULT_STREAM, contained_path, day_path, segment_path};
+use solstone_core_journal_io::{DEFAULT_STREAM, contained_path, day_path};
 
 use crate::SegmentError;
 
 /// A resolved journal segment directory with no creation side effect.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SegmentDir {
+    pub(crate) journal: PathBuf,
     pub(crate) path: PathBuf,
     pub(crate) day: String,
     pub(crate) segment: String,
@@ -26,13 +27,14 @@ impl SegmentDir {
     ) -> Result<Self, SegmentError> {
         validate_component(segment, "segment")?;
         validate_component(stream, "stream")?;
+        let day_dir = day_path(journal, Some(day), false)?;
         let path = if stream == DEFAULT_STREAM {
-            let day_dir = day_path(journal, Some(day), false)?;
             contained_path(&day_dir, segment)?
         } else {
-            segment_path(journal, day, segment, stream, false)?
+            contained_path(&day_dir, &format!("{stream}/{segment}"))?
         };
         Ok(Self {
+            journal: journal.to_path_buf(),
             path,
             day: day.to_owned(),
             segment: segment.to_owned(),
@@ -59,6 +61,11 @@ fn validate_component(value: &str, kind: &'static str) -> Result<(), SegmentErro
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
+
+    #[cfg(unix)]
+    use solstone_core_journal_io::PathError;
 
     use crate::test_support::TempDir;
 
@@ -71,5 +78,22 @@ mod tests {
         fs::create_dir_all(root.join("chronicle/20260804")).unwrap();
         let resolved = SegmentDir::resolve(root, "20260804", "120000_60", DEFAULT_STREAM).unwrap();
         assert_eq!(resolved.path, root.join("chronicle/20260804/120000_60"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_named_stream_symlink_escape() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        let day_dir = root.join("chronicle/20260804");
+        let outside = root.join("outside");
+        fs::create_dir_all(&day_dir).unwrap();
+        fs::create_dir(&outside).unwrap();
+        symlink(&outside, day_dir.join("workstation")).unwrap();
+
+        assert!(matches!(
+            SegmentDir::resolve(root, "20260804", "120000_60", "workstation"),
+            Err(SegmentError::Path(PathError::Escape(_)))
+        ));
     }
 }

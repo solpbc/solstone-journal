@@ -1,5 +1,7 @@
 # Production code in this crate may read existing segment bytes and enumerate
 # legacy files, but all filesystem writes must pass through journal-io.
+# The unavailable Tokio and libc namespaces below are a defense-in-depth floor,
+# not live dependency-graph enforcement.
 disallowed-methods = [
     { path = "std::fs::write", reason = "use solstone-core-journal-io" },
     { path = "std::fs::create_dir", reason = "journal-io creates writer parents" },
@@ -16,7 +18,23 @@ disallowed-methods = [
     { path = "std::fs::OpenOptions::open", reason = "use solstone-core-journal-io" },
     { path = "std::fs::DirBuilder::create", reason = "use solstone-core-journal-io" },
     { path = "std::os::unix::fs::symlink", reason = "segment door never creates symlinks" },
-    { path = "std::os::unix::fs::hard_link", reason = "use solstone-core-journal-io", allow-invalid = true },
+    { path = "std::os::unix::fs::chown", reason = "segment door never changes ownership" },
+    { path = "std::os::unix::fs::lchown", reason = "segment door never changes ownership" },
+    { path = "std::os::unix::fs::chroot", reason = "segment door never changes process roots" },
+    { path = "tokio::fs::write", reason = "Tokio filesystem writes are not permitted here", allow-invalid = true },
+    { path = "tokio::fs::create_dir", reason = "Tokio filesystem writes are not permitted here", allow-invalid = true },
+    { path = "tokio::fs::create_dir_all", reason = "Tokio filesystem writes are not permitted here", allow-invalid = true },
+    { path = "tokio::fs::remove_file", reason = "Tokio filesystem writes are not permitted here", allow-invalid = true },
+    { path = "tokio::fs::remove_dir", reason = "Tokio filesystem writes are not permitted here", allow-invalid = true },
+    { path = "tokio::fs::remove_dir_all", reason = "Tokio filesystem writes are not permitted here", allow-invalid = true },
+    { path = "tokio::fs::rename", reason = "Tokio filesystem writes are not permitted here", allow-invalid = true },
+    { path = "tokio::fs::copy", reason = "Tokio filesystem writes are not permitted here", allow-invalid = true },
+    { path = "tokio::fs::hard_link", reason = "Tokio filesystem writes are not permitted here", allow-invalid = true },
+    { path = "tokio::fs::File::create", reason = "Tokio filesystem writes are not permitted here", allow-invalid = true },
+    { path = "libc::rename", reason = "libc filesystem writes are not permitted here", allow-invalid = true },
+    { path = "libc::unlink", reason = "libc filesystem writes are not permitted here", allow-invalid = true },
+    { path = "libc::symlink", reason = "libc filesystem writes are not permitted here", allow-invalid = true },
+    { path = "libc::link", reason = "libc filesystem writes are not permitted here", allow-invalid = true },
 ]
 disallowed-types = [
     { path = "std::fs::OpenOptions", reason = "use solstone-core-journal-io" },

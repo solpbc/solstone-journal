@@ -6,8 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{
-    JsonWriteOptions, LockOptions, MalformedPolicy, ReadError, hold_lock, read_json,
-    resolve_journal_path, write_json,
+    JsonWriteOptions, LockOptions, MalformedPolicy, ReadError, hold_lock, read_json, write_json,
 };
 
 use crate::{SegmentDir, SegmentError};
@@ -48,9 +47,13 @@ struct StreamMarker {
     seq: u64,
 }
 
-/// Advance one stream and atomically write its matching segment marker.
+/// Advance one stream, then atomically write its matching segment marker.
+///
+/// This is deliberately two durable writes, not a cross-file transaction. The
+/// state is written before the marker because stream-state rebuild tooling
+/// treats markers as ground truth and can recover by skipping an orphaned
+/// advance after a marker failure. That rebuild tooling is outside this crate.
 pub fn advance_stream(
-    journal: &Path,
     name: &str,
     day: &str,
     segment: &str,
@@ -67,7 +70,10 @@ pub fn advance_stream(
             "stream advance does not match segment directory",
         ));
     }
-    let state_path = resolve_journal_path(journal, &format!("streams/{name}.json"))?;
+    let state_path = segment_dir
+        .journal
+        .join("streams")
+        .join(format!("{name}.json"));
     let _lock = hold_lock(&state_path, LockOptions::default())?;
     let record = read_stream_record(&state_path)?;
     let (record, advance) = update_record(record, name, day, segment, hints)?;
@@ -183,7 +189,6 @@ mod tests {
             SegmentDir::resolve(temporary.path(), "20260804", "120000_60", "workstation").unwrap();
 
         let result = advance_stream(
-            temporary.path(),
             "workstation",
             "20260804",
             "120000_60",
@@ -207,7 +212,6 @@ mod tests {
             SegmentDir::resolve(temporary.path(), "20260804", "120000_60", "workstation").unwrap();
         assert!(matches!(
             advance_stream(
-                temporary.path(),
                 "workstation",
                 "20260804",
                 "120000_60",
@@ -226,7 +230,6 @@ mod tests {
             SegmentDir::resolve(temporary.path(), "20260804", "120000_60", "workstation").unwrap();
         assert!(
             advance_stream(
-                temporary.path(),
                 "workstation",
                 "20260804",
                 "120000_60",
@@ -235,5 +238,31 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn marker_write_failure_is_returned_after_state_advance() {
+        let temporary = TempDir::new();
+        let segment =
+            SegmentDir::resolve(temporary.path(), "20260804", "120000_60", "workstation").unwrap();
+        let marker_parent = temporary.path().join("chronicle/20260804/workstation");
+        fs::create_dir_all(marker_parent.parent().unwrap()).unwrap();
+        fs::write(&marker_parent, b"not a directory").unwrap();
+
+        assert!(
+            advance_stream(
+                "workstation",
+                "20260804",
+                "120000_60",
+                &segment,
+                StreamHints::default(),
+            )
+            .is_err()
+        );
+
+        let state = temporary.path().join("streams/workstation.json");
+        let record: StreamRecord = serde_json::from_slice(&fs::read(state).unwrap()).unwrap();
+        assert_eq!(record.seq, 1);
+        assert!(!segment.path.join("stream.json").exists());
     }
 }

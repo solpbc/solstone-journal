@@ -24,11 +24,11 @@ mod tests {
     #[test]
     fn append_failure_propagates() {
         let temporary = TempDir::new();
+        let segment =
+            SegmentDir::resolve(temporary.path(), "20260804", "120000_60", "workstation").unwrap();
         let blocked = temporary.path().join("chronicle/20260804/workstation");
         fs::create_dir_all(blocked.parent().unwrap()).unwrap();
         fs::write(&blocked, b"not a directory").unwrap();
-        let segment =
-            SegmentDir::resolve(temporary.path(), "20260804", "120000_60", "workstation").unwrap();
         assert!(append_event(&segment, &serde_json::json!({"event": "x"})).is_err());
     }
 }

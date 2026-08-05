@@ -65,7 +65,6 @@ fn python_stream_record_fixture_loads_and_advances_monotonically() {
         SegmentDir::resolve(temporary.path(), "20260804", "120000_60", "workstation").unwrap();
 
     let advance = advance_stream(
-        temporary.path(),
         "workstation",
         "20260804",
         "120000_60",
