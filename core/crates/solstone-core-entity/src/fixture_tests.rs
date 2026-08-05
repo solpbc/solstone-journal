@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)]
+
 use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use crate::{
     EntityNameCandidate, MatchTier, ambiguity_id, entity_slug, find_matching_entity,
@@ -16,18 +20,107 @@ use super::test_support::{
 
 #[test]
 fn non_test_sources_do_not_use_host_io_or_embedded_assets() {
-    for (path, source) in [
-        ("lib.rs", include_str!("lib.rs")),
-        ("slug.rs", include_str!("slug.rs")),
-        ("matcher.rs", include_str!("matcher.rs")),
-        ("normalize.rs", include_str!("normalize.rs")),
-        ("ambiguity.rs", include_str!("ambiguity.rs")),
-    ] {
-        for forbidden in ["std::fs", "std::path", "include_str!"] {
+    let sources = production_sources();
+    assert!(
+        !sources.is_empty(),
+        "production-source sweep must not be vacuous"
+    );
+    for path in sources {
+        let source = fs::read_to_string(&path).unwrap();
+        for forbidden in ["std::fs", "include_str!"] {
             assert!(
                 !source.contains(forbidden),
-                "{path} must not reference {forbidden}"
+                "{} must not reference {forbidden}",
+                path.display()
             );
+        }
+    }
+}
+
+#[test]
+fn journal_io_imports_are_item_level_read_allowlisted() {
+    const ALLOWED: &[&str] = &[
+        "read_json",
+        "read_jsonl",
+        "read_text",
+        "MalformedPolicy",
+        "contained_path",
+        "resolve_journal_path",
+        "path_lexists",
+        "list_dir_entries",
+        "DirEntry",
+        "DirEntryKind",
+        "ReadError",
+        "PathError",
+    ];
+    const FORBIDDEN: &[&str] = &[
+        "mutate_journal_config",
+        "get_journal_config_path",
+        "atomic_replace",
+        "write_json",
+        "write_text",
+        "write_jsonl",
+        "append_jsonl",
+        "append_text",
+        "hold_lock",
+        "publish_staged_dir",
+        "day_path",
+        "day_dirs",
+        "iter_segments",
+        "segment_path",
+    ];
+
+    let mut matched = 0;
+    for path in production_sources() {
+        let source = fs::read_to_string(&path).unwrap();
+        for statement in source.split(';') {
+            if !statement.contains("solstone_core_journal_io") {
+                continue;
+            }
+            matched += 1;
+            assert!(
+                !statement.contains('*'),
+                "{} must not glob-import journal-io: {statement}",
+                path.display()
+            );
+            for forbidden in FORBIDDEN {
+                assert!(
+                    !statement.contains(forbidden),
+                    "{} imports forbidden journal-io item {forbidden}: {statement}",
+                    path.display()
+                );
+            }
+            assert!(
+                ALLOWED.iter().any(|allowed| statement.contains(allowed)),
+                "{} has no read-safe journal-io item in allowlist: {statement}",
+                path.display()
+            );
+        }
+    }
+    assert!(matched > 0, "journal-io import sweep must not be vacuous");
+}
+
+fn production_sources() -> Vec<PathBuf> {
+    let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut sources = Vec::new();
+    collect_production_sources(&source_root, &mut sources);
+    sources.sort();
+    sources
+}
+
+fn collect_production_sources(directory: &Path, sources: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(directory).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_dir() {
+            collect_production_sources(&path, sources);
+        } else if path.extension().is_some_and(|extension| extension == "rs")
+            && !matches!(
+                path.file_name().and_then(|name| name.to_str()),
+                Some("fixture_tests.rs" | "store_tests.rs" | "test_support.rs")
+            )
+        {
+            sources.push(path);
         }
     }
 }
