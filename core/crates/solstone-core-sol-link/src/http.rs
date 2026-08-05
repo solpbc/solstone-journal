@@ -236,7 +236,7 @@ async fn init_state(
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
 ) -> Response {
-    if !is_local(basis) {
+    if !is_local(&basis) {
         return init_local_only();
     }
     let config = match materialize_config(&state.journal_root) {
@@ -264,7 +264,7 @@ async fn init_state(
 }
 
 async fn init_local_capability(Extension(basis): Extension<AccessBasis>) -> Response {
-    if !is_local(basis) {
+    if !is_local(&basis) {
         return init_local_only();
     }
     Json(LocalCapabilityResponse {
@@ -278,7 +278,7 @@ async fn init(
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
 ) -> Response {
-    if !is_local(basis) {
+    if !is_local(&basis) {
         return init_local_only();
     }
     let config = match materialize_config(&state.journal_root) {
@@ -299,7 +299,7 @@ async fn init_mark(
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
 ) -> Response {
-    if !is_local(basis) {
+    if !is_local(&basis) {
         return init_local_only();
     }
     match establish::load_committed(&state.journal_root) {
@@ -329,7 +329,7 @@ async fn init_mark_regenerate(
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
 ) -> Response {
-    if !is_local(basis) {
+    if !is_local(&basis) {
         return init_local_only();
     }
     match establish::load_committed(&state.journal_root) {
@@ -358,7 +358,7 @@ async fn init_mark_lock(
     Extension(basis): Extension<AccessBasis>,
     State(state): State<LinkHttpState>,
 ) -> Response {
-    if !is_local(basis) {
+    if !is_local(&basis) {
         return init_local_only();
     }
     match establish::lock_in(&state.journal_root, None) {
@@ -386,7 +386,7 @@ async fn init_finalize(
     State(state): State<LinkHttpState>,
     body: Bytes,
 ) -> Response {
-    if !is_local(basis) {
+    if !is_local(&basis) {
         return init_local_only();
     }
     match establish::load_committed(&state.journal_root) {
@@ -497,7 +497,7 @@ async fn init_finalize(
     .into_response()
 }
 
-fn is_local(basis: AccessBasis) -> bool {
+fn is_local(basis: &AccessBasis) -> bool {
     require_access(basis) && matches!(basis, AccessBasis::Localhost)
 }
 
