@@ -5,6 +5,46 @@
     "entities/{id}/entity.json (unicode)": "{\n  \"id\": \"jose_garcia\",\n  \"name\": \"Jos\u00e9 Garc\u00eda\",\n  \"type\": \"Person\",\n  \"created_at\": 1785889922583,\n  \"description\": \"raw UTF-8 on disk, never \\\\u escapes\"\n}\n",
     "entities/{id}/history/events/{seq}-{version_id}.json": "{\n  \"actor\": null,\n  \"caller\": null,\n  \"entity_id\": \"alice_johnson\",\n  \"identity_after\": {\n    \"aka\": [\n      \"Ali\",\n      \"AJ\"\n    ],\n    \"created_at\": 1785889922582,\n    \"emails\": [\n      \"alice@example.com\"\n    ],\n    \"id\": \"alice_johnson\",\n    \"name\": \"Alice Johnson\",\n    \"type\": \"Person\"\n  },\n  \"identity_before\": null,\n  \"kind\": \"create\",\n  \"operation\": {},\n  \"schema_version\": 1,\n  \"seq\": 1,\n  \"ts\": \"2026-08-05T00:32:02.582506Z\",\n  \"version_id\": \"vh_49d7adcbf786461cb11c00081afa9780\"\n}\n"
   },
+  "crash_boundaries": {
+    "case_count": 4,
+    "cases": [
+      {
+        "change_survives": false,
+        "identity_on_disk": "before",
+        "note": "interrupted before anything was staged",
+        "reconciles": true,
+        "staged_events": 0,
+        "visible_events_after": 0
+      },
+      {
+        "change_survives": false,
+        "detail": "the staged event is discarded \u2014 intent without commit",
+        "identity_on_disk": "before",
+        "note": "interrupted after staging, before the identity write",
+        "reconciles": true,
+        "staged_events": 1,
+        "visible_events_after": 0
+      },
+      {
+        "change_survives": true,
+        "detail": "the staged event is published \u2014 the commit already happened",
+        "identity_on_disk": "after",
+        "note": "interrupted after the identity write, before publishing",
+        "reconciles": true,
+        "staged_events": 1,
+        "visible_events_after": 1
+      },
+      {
+        "change_survives": true,
+        "identity_on_disk": "after",
+        "note": "all three steps completed",
+        "reconciles": true,
+        "staged_events": 0,
+        "visible_events_after": 1
+      }
+    ],
+    "note": "The write protocol is prepare \u2192 write identity \u2192 publish. Every interruption point reconciles cleanly, and which ones preserve the change identifies the commit point: the IDENTITY WRITE. \u26d4 The order is therefore not negotiable \u2014 publishing first would durably record a change that did not happen, and writing the identity last would lose committed changes on every interruption."
+  },
   "generated_by": "make core-fixtures",
   "identity_map": {
     "case_count": 5,

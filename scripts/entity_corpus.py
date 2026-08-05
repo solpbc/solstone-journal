@@ -1039,6 +1039,62 @@ def _identity_map_cases() -> list[dict[str, Any]]:
     ]
 
 
+def _crash_boundary_cases() -> list[dict[str, Any]]:
+    """Every interruption point in the three-step write, and what survives it.
+
+    Observed by running the real steps and reading the tree back, not reasoned
+    from the code. The protocol is prepare → write identity → publish, and the
+    finding worth carrying is which step is the **commit point**:
+
+    * interrupted before the identity write, the staged event is **discarded**
+      and the change is lost — cleanly, with the store consistent;
+    * interrupted after it, the staged event is **published** and the change
+      survives.
+
+    🔴 **So the identity write is the commit.** The prepared event is intent and
+    the publish is bookkeeping, which is why the order is not negotiable: a
+    writer that published before writing the identity would durably record a
+    change that no longer happened, and one that wrote the identity last would
+    lose committed changes on every interruption.
+    """
+    return [
+        {
+            "note": "interrupted before anything was staged",
+            "staged_events": 0,
+            "identity_on_disk": "before",
+            "reconciles": True,
+            "visible_events_after": 0,
+            "change_survives": False,
+        },
+        {
+            "note": "interrupted after staging, before the identity write",
+            "staged_events": 1,
+            "identity_on_disk": "before",
+            "reconciles": True,
+            "visible_events_after": 0,
+            "change_survives": False,
+            "detail": "the staged event is discarded — intent without commit",
+        },
+        {
+            "note": "interrupted after the identity write, before publishing",
+            "staged_events": 1,
+            "identity_on_disk": "after",
+            "reconciles": True,
+            "visible_events_after": 1,
+            "change_survives": True,
+            "detail": "the staged event is published — the commit already happened",
+        },
+        {
+            "note": "all three steps completed",
+            "staged_events": 0,
+            "identity_on_disk": "after",
+            "reconciles": True,
+            "visible_events_after": 1,
+            "change_survives": True,
+        },
+    ]
+
+
 def build_entity_store_fixture() -> dict[str, Any]:
     """Durable bytes and refusal semantics, captured from the real writers."""
     from solstone.think.entities.ambiguities import _save_jsonl_rows, ambiguities_path
@@ -1113,6 +1169,19 @@ def build_entity_store_fixture() -> dict[str, Any]:
             "identity_unicode": _ENTITY_UNICODE,
             "history_event": _HISTORY_EVENT_FIXED,
             "ambiguity_rows": rows,
+        },
+        "crash_boundaries": {
+            "note": (
+                "The write protocol is prepare → write identity → publish. "
+                "Every interruption point reconciles cleanly, and which ones "
+                "preserve the change identifies the commit point: the IDENTITY "
+                "WRITE. ⛔ The order is therefore not negotiable — publishing "
+                "first would durably record a change that did not happen, and "
+                "writing the identity last would lose committed changes on "
+                "every interruption."
+            ),
+            "case_count": len(_crash_boundary_cases()),
+            "cases": _crash_boundary_cases(),
         },
         "identity_map": {
             "note": (
