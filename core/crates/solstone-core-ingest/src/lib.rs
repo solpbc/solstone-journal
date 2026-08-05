@@ -11,6 +11,14 @@
 //! D2: only a linked-device `AccessBasis` admits these routes.  Localhost has
 //! no device identity and is refused rather than being implicitly attributed.
 //!
+//! D3: this crate serves four of nine published `observer.*` operations:
+//! `ingestUpload`, `ingestSegments`, `ingestManifest`, and
+//! `ingestManifestDay`. `register` and bearer-credential issuance are removed
+//! by the hard cut; `ingestEvent` and `callosumStream` await a Rust Callosum
+//! client; `health` has no settled semantics; and `deleteSource` belongs to a
+//! later delete/tombstone wave. Those five deferred operations are an
+//! intentional strand delta, not missing routes.
+//!
 //! Segment bytes and sidecars are written only through `solstone-core-segment`.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]

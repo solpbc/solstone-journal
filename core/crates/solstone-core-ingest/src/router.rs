@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{Map, Value, json};
-use solstone_core_convey_http::envelope::{ErrorEnvelope, not_found_fallback};
+use solstone_core_convey_http::envelope::{error_envelope, not_found_fallback};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_journal_io::DEFAULT_STREAM;
 use solstone_core_segment::{
@@ -56,15 +56,7 @@ pub fn router(journal_root: impl AsRef<Path>) -> Router {
 }
 
 pub(crate) fn refusal(code: ReasonCode, status: StatusCode, detail: impl Into<String>) -> Response {
-    (
-        status,
-        Json(ErrorEnvelope {
-            error: "Ingest request refused".to_owned(),
-            reason_code: code.as_str().to_owned(),
-            detail: detail.into(),
-        }),
-    )
-        .into_response()
+    error_envelope(code.as_str(), "Ingest request refused", detail, status).into_response()
 }
 
 async fn ingest_upload(
@@ -371,6 +363,15 @@ fn required_string(
     }
 }
 
+/// Write one multipart envelope through the segment crate's single-file door.
+///
+/// `solstone-core-segment` deliberately offers exclusive writes per file, not
+/// a batch transaction. A multi-file request can therefore hold earlier files
+/// before a later conflict, leaving them without an event or processing signal
+/// for that attempt. This is bounded and self-healing: exclusive writes are
+/// idempotent, so a retry sees those files as `AlreadyHeld` and can complete
+/// with its corroborating event and stream advance. A transactional repair
+/// requires a new segment-crate batch primitive and is out of scope here.
 fn write_envelope(state: &IngestState, did: &str, stream: String, envelope: Envelope) -> Response {
     let requested = envelope.segment.clone();
     let content_identity = envelope.files.iter().any(|file| is_media(&file.submitted));
@@ -465,32 +466,30 @@ fn write_envelope(state: &IngestState, did: &str, stream: String, envelope: Enve
         } else {
             "collision"
         };
-        if outcome != "collision" {
-            let event = DeviceIngestEvent {
-                record_type: "device_ingest".to_owned(),
-                record_version: 1,
-                outcome: if outcome == "duplicate" {
-                    "duplicate".to_owned()
-                } else {
-                    "accepted".to_owned()
-                },
-                protocol_version: 3,
-                did: did.to_owned(),
-                source: envelope.source.clone(),
-                stream: stream.clone(),
-                day: envelope.day.clone(),
-                segment: segment_key.clone(),
-                files: descriptors.clone(),
-                meta: envelope.meta.clone(),
-            };
-            if append_event(&segment, &event).is_err() {
-                return outcome_error(
-                    "failed",
-                    ReasonCode::EventAppendFailed,
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "cannot append ingest event",
-                );
-            }
+        let event = DeviceIngestEvent {
+            record_type: "device_ingest".to_owned(),
+            record_version: 1,
+            outcome: if outcome == "duplicate" {
+                "duplicate".to_owned()
+            } else {
+                "accepted".to_owned()
+            },
+            protocol_version: 3,
+            did: did.to_owned(),
+            source: envelope.source.clone(),
+            stream: stream.clone(),
+            day: envelope.day.clone(),
+            segment: segment_key.clone(),
+            files: descriptors.clone(),
+            meta: envelope.meta.clone(),
+        };
+        if append_event(&segment, &event).is_err() {
+            return outcome_error(
+                "failed",
+                ReasonCode::EventAppendFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot append ingest event",
+            );
         }
         if outcome != "duplicate"
             && advance_stream(
@@ -734,6 +733,31 @@ mod tests {
         let last: Value = serde_json::from_str(events.lines().last().unwrap()).unwrap();
         assert_eq!(last["meta"]["unknown"], true);
         assert_eq!(last["files"][0]["extension"], json!({"a": 1}));
+        let (_, manifest) = call(
+            &app,
+            "GET",
+            "/app/observer/ingest/manifest",
+            None,
+            Vec::new(),
+            basis(DID_A),
+            Some("3"),
+            &[],
+        )
+        .await;
+        assert_eq!(manifest["days"]["20260804"]["segments"], 1);
+        let (_, segments) = call(
+            &app,
+            "GET",
+            "/app/observer/ingest/segments/20260804",
+            None,
+            Vec::new(),
+            basis(DID_A),
+            Some("3"),
+            &[],
+        )
+        .await;
+        assert_eq!(segments["total"], 1);
+        assert_eq!(segments["items"][0]["key"], "120000_1");
         let _ = fs::remove_dir_all(root);
     }
 
@@ -956,6 +980,40 @@ mod tests {
             )
             .unwrap(),
             b"second"
+        );
+        let remapped = body["segment"].as_str().unwrap();
+        let (_, day) = call(
+            &app,
+            "GET",
+            "/app/observer/ingest/manifest/20260804",
+            None,
+            Vec::new(),
+            basis(DID_A),
+            Some("3"),
+            &[],
+        )
+        .await;
+        assert_eq!(
+            day["segments"][remapped]["files"][0]["submitted"],
+            "audio.flac"
+        );
+        let (_, segments) = call(
+            &app,
+            "GET",
+            "/app/observer/ingest/segments/20260804",
+            None,
+            Vec::new(),
+            basis(DID_A),
+            Some("3"),
+            &[],
+        )
+        .await;
+        assert!(
+            segments["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item["key"] == remapped)
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -1236,6 +1294,32 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(refusal["reason_code"], "protocol_version_required");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn manifest_surfaces_malformed_device_ingest_events() {
+        let root = root();
+        fs::create_dir_all(root.join("chronicle/20260804/120000_1")).unwrap();
+        fs::write(
+            root.join("chronicle/20260804/120000_1/events.jsonl"),
+            "{\"record_type\":\"device_ingest\"}\n",
+        )
+        .unwrap();
+        let app = router(&root);
+        let (status, body) = call(
+            &app,
+            "GET",
+            "/app/observer/ingest/manifest",
+            None,
+            Vec::new(),
+            basis(DID_A),
+            Some("3"),
+            &[],
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "ingest_event_log_malformed");
         let _ = fs::remove_dir_all(root);
     }
 

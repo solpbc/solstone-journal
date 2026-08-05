@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 
 use axum::Json;
@@ -9,7 +10,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
-use solstone_core_journal_io::{PathOrDay, day_dirs, iter_segments};
+use solstone_core_journal_io::{DEFAULT_STREAM, PathOrDay, day_dirs, iter_segments};
 
 use crate::events::read_events;
 use crate::model::{DeviceIngestEvent, ReasonCode};
@@ -49,13 +50,31 @@ pub async fn ingest_manifest(
     let mut result = Map::new();
     for (day, path) in days {
         let count = match iter_segments(&state.journal_root, PathOrDay::Directory(&path)) {
-            Ok(segments) => segments
-                .into_iter()
-                .filter(|segment| segment.stream == stream)
-                .filter_map(|segment| read_events(&segment.path).ok())
-                .flatten()
-                .filter(|event| event.did == did)
-                .count(),
+            Ok(segments) => {
+                let mut keys = HashSet::new();
+                for segment in segments
+                    .into_iter()
+                    .filter(|segment| segment.stream == stream)
+                {
+                    let events = match read_events(&segment.path) {
+                        Ok(events) => events,
+                        Err(code) => {
+                            return refusal(
+                                code,
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "cannot read journal",
+                            );
+                        }
+                    };
+                    keys.extend(
+                        events
+                            .into_iter()
+                            .filter(|event| event.did == did)
+                            .map(|event| event.segment),
+                    );
+                }
+                keys.len()
+            }
             Err(_) => {
                 return refusal(
                     ReasonCode::JournalReadFailed,
@@ -146,9 +165,13 @@ pub async fn ingest_segments(
             );
         }
     };
-    let mut items = Vec::new();
+    let mut unique_events = BTreeMap::new();
     for event in events {
-        let path = if stream == "_default" {
+        unique_events.entry(event.segment.clone()).or_insert(event);
+    }
+    let mut items = Vec::new();
+    for (_, event) in unique_events {
+        let path = if stream == DEFAULT_STREAM {
             state
                 .journal_root
                 .join("chronicle")
@@ -200,7 +223,7 @@ fn admitted(
 }
 
 fn state_stream(source: Option<String>) -> String {
-    source.unwrap_or_else(|| "_default".to_owned())
+    source.unwrap_or_else(|| DEFAULT_STREAM.to_owned())
 }
 
 fn stream_events(
