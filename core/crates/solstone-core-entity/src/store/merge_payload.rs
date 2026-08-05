@@ -65,7 +65,6 @@ pub(crate) fn record_entity_merge_payload(
     Ok(payload_relative_path(entity_id, merge_id))
 }
 
-#[allow(dead_code)]
 pub(crate) fn load_entity_merge_payload(
     journal: &Path,
     entity_id: &str,
@@ -93,7 +92,6 @@ pub(crate) fn load_entity_merge_payload(
     Ok(payload)
 }
 
-#[allow(dead_code)]
 pub(crate) fn move_entity_merge_payload(
     journal: &Path,
     source_id: &str,
@@ -119,7 +117,6 @@ pub(crate) fn move_entity_merge_payload(
     Ok((payload, target_rel))
 }
 
-#[allow(dead_code)]
 pub(crate) fn remove_entity_merge_payload(
     journal: &Path,
     entity_id: &str,
@@ -154,7 +151,6 @@ fn payload_relative_path(entity_id: &str, merge_id: &str) -> String {
     format!("entities/{entity_id}/history/private/{merge_id}.json")
 }
 
-#[allow(dead_code)]
 pub(crate) fn list_entity_merge_payload_ids(
     journal: &Path,
     entity_id: &str,

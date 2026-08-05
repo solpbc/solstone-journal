@@ -15,7 +15,6 @@ mod paths;
 mod reconcile;
 mod repair;
 mod undo;
-#[allow(dead_code)]
 pub(crate) mod voiceprints;
 mod write;
 

@@ -754,14 +754,16 @@ fn facets_undo_injection_rolls_back_and_retry_succeeds() {
     let moved_target = journal.join("facets/moved/entities/target/entity.json");
     let moved_after_merge = fs::read(&moved_target).unwrap();
     let merged_after_merge = fs::read(merged_target.join("entity.json")).unwrap();
-    assert!(
-        undo_entity_merge_with_injector(
-            &journal,
-            &merge.merge_id,
-            Value::Null,
-            Some(&|phase, artifact_index| phase == "facets" && artifact_index == 0),
-        )
-        .is_err()
+    let error = undo_entity_merge_with_injector(
+        &journal,
+        &merge.merge_id,
+        Value::Null,
+        Some(&|phase, artifact_index| phase == "facets" && artifact_index == 0),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "entity merge undo failed during facets: injected failure after facets artifact 0"
     );
     assert_eq!(fs::read(&moved_target).unwrap(), moved_after_merge);
     assert_eq!(

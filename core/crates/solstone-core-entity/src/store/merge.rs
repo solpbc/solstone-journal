@@ -82,20 +82,21 @@ pub struct EntityMergeReport {
     pub emails_added: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct VoiceprintMergeStats {
     pub added: usize,
     pub skipped_duplicate: usize,
     pub target_total: usize,
+    pub support: Vec<Value>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct FacetMergeStats {
     pub moved_count: usize,
     pub merged_count: usize,
+    pub observations_appended: usize,
     pub touched_facets: Vec<String>,
     pub entries: Vec<Value>,
 }
-#[allow(dead_code)]
 #[derive(Debug, Default)]
 struct MergeStats {
     voiceprints_added: usize,
@@ -149,6 +150,13 @@ impl fmt::Display for EntityMergeError {
             Self::Snapshot(error) => error.fmt(f),
             Self::Index(error) => error.fmt(f),
             Self::Audit(error) => error.fmt(f),
+            Self::Failed {
+                failed_phase,
+                rollback_error: Some(error),
+                ..
+            } => {
+                write!(f, "entity merge failed during {failed_phase}: {error}")
+            }
             Self::Failed { failed_phase, .. } => {
                 write!(f, "entity merge failed during {failed_phase}")
             }
@@ -241,8 +249,8 @@ pub(crate) fn commit_entity_merge_with_injector(
     for phase in PHASES {
         let result = match phase {
             "private_payload" => record_entity_merge_payload(journal, target_id, &merge_id, &payload).map(|_| ()).map_err(Into::into),
-            "voiceprints" => merge_voiceprints(journal, source_id, target_id).map(|result| { stats.voiceprints_added=result.added; stats.voiceprints_skipped_duplicate=result.skipped_duplicate; stats.voiceprints_target_total=result.target_total; }),
-            "facets" => merge_facets(journal, source_id, target_id, Some(&mut rollback), injector).map(|result| { stats.facets_moved=result.moved_count; stats.facets_merged=result.merged_count; touched_facets = result.touched_facets; payload["manifest"]["facets"]["entries"] = Value::Array(result.entries); }),
+            "voiceprints" => merge_voiceprints(journal, source_id, target_id).map(|result| { stats.voiceprints_added=result.added; stats.voiceprints_skipped_duplicate=result.skipped_duplicate; stats.voiceprints_target_total=result.target_total; payload["manifest"]["voiceprints"]["support"] = Value::Array(result.support); }),
+            "facets" => merge_facets(journal, source_id, target_id, Some(&mut rollback), injector).map(|result| { stats.facets_moved=result.moved_count; stats.facets_merged=result.merged_count; stats.facets_observations_appended=result.observations_appended; touched_facets = result.touched_facets; payload["manifest"]["facets"]["entries"] = Value::Array(result.entries); }),
             "history" => save_entity_identity(journal, target_id, &plan.target_after, Some(&EntityOperationContext { kind: EntityOperationKind::Merge, caller: Value::Null, actor: Value::Null, metadata: json!({"merge_id": merge_id, "source_id": source_id, "target_id": target_id}) })).map_err(EntityMergeError::Write).and_then(|saved| { let sequence = saved.event.and_then(|event| event.get("seq").cloned()).ok_or_else(|| EntityMergeError::Refused("merge history event was not written".to_owned()))?; payload["commit_seq"] = sequence; record_entity_merge_payload(journal, target_id, &merge_id, &payload)?; Ok(()) }),
             "cleanup" => cleanup_merge(journal, source_id, &touched_facets, Some(&mut rollback)),
             "edges" => solstone_core_indexer_store::merge::fold_entity_edges_for_recorded_merge(journal, source_id, target_id).map_err(EntityMergeError::Index).and_then(|result| { stats.edges_rows_folded=result.rows_folded; stats.edges_self_edges_dropped=result.self_edges_dropped; payload["result_counts"] = audit_counts(&stats, plan.aliases_added, plan.emails_added, plan.principal_transferred); record_entity_merge_payload(journal, target_id, &merge_id, &payload)?; Ok(()) }),
@@ -768,9 +776,12 @@ pub(crate) fn merge_facets(
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
             inject_failure(injector, "facets", artifact_index)?;
             artifact_index += 1;
+            let merged_observations = dedupe_observations(&source_obs, &target_obs);
+            stats.observations_appended +=
+                merged_observations.len().saturating_sub(target_obs.len());
             write_jsonl(
                 target_obs_path,
-                dedupe_observations(&source_obs, &target_obs),
+                merged_observations,
                 AtomicWriteOptions::default(),
             )
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
@@ -907,11 +918,16 @@ pub(crate) fn merge_voiceprints(
         .iter()
         .map(|metadata| voiceprint_key(metadata))
         .collect::<Result<HashSet<_>, _>>()?;
+    let target_existing = existing.clone();
     let mut stats = VoiceprintMergeStats::default();
     for (embedding, metadata) in source.embeddings.chunks_exact(256).zip(&source.metadata) {
         let key = voiceprint_key(metadata)?;
-        if !existing.insert(key) {
+        let target_preexisting = target_existing.contains(&key);
+        if !existing.insert(key.clone()) {
             stats.skipped_duplicate += 1;
+            stats
+                .support
+                .push(voiceprint_support_entry(&key, target_preexisting, false));
             continue;
         }
         let norm = embedding
@@ -925,6 +941,13 @@ pub(crate) fn merge_voiceprints(
                 .extend(embedding.iter().map(|value| value / norm));
             target.metadata.push(metadata.clone());
             stats.added += 1;
+            stats
+                .support
+                .push(voiceprint_support_entry(&key, target_preexisting, true));
+        } else {
+            stats
+                .support
+                .push(voiceprint_support_entry(&key, target_preexisting, false));
         }
     }
     target.rows = target.metadata.len();
@@ -936,6 +959,19 @@ pub(crate) fn merge_voiceprints(
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
     }
     Ok(stats)
+}
+
+fn voiceprint_support_entry(key: &VoiceprintKey, target_preexisting: bool, added: bool) -> Value {
+    json!({
+        "key": {
+            "day": &key.0,
+            "segment_key": &key.1,
+            "source": &key.2,
+            "sentence_id": &key.3,
+        },
+        "target_preexisting": target_preexisting,
+        "added": added,
+    })
 }
 
 fn load_voiceprints(path: &Path) -> Result<Option<VoiceprintArchive>, EntityMergeError> {
@@ -1140,7 +1176,6 @@ pub(crate) fn dedupe_emails(target_values: &[String], source_values: &[String]) 
         .cloned()
         .collect()
 }
-#[allow(dead_code)]
 pub(crate) fn dedupe_observations(source: &[Value], target: &[Value]) -> Vec<Value> {
     let mut seen = HashSet::new();
     let mut result = Vec::new();

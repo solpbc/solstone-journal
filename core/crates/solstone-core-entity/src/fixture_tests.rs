@@ -57,9 +57,6 @@ const JOURNAL_IO_ALLOWED: &[&str] = &[
     "AppendError",
     "atomic_replace",
     "read_bytes",
-    "read_json",
-    "read_jsonl",
-    "write_json",
     "write_jsonl",
 ];
 

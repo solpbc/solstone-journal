@@ -67,6 +67,16 @@ impl fmt::Display for EntityUndoError {
             Self::Write(error) => error.fmt(formatter),
             Self::Snapshot(error) => error.fmt(formatter),
             Self::Index(error) => error.fmt(formatter),
+            Self::Failed {
+                failed_phase,
+                rollback_error: Some(error),
+                ..
+            } => {
+                write!(
+                    formatter,
+                    "entity merge undo failed during {failed_phase}: {error}"
+                )
+            }
             Self::Failed { failed_phase, .. } => {
                 write!(formatter, "entity merge undo failed during {failed_phase}")
             }

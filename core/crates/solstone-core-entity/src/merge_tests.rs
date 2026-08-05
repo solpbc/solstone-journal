@@ -524,6 +524,23 @@ fn commit_records_matching_payload_and_audit_counts() {
     let facet = journal.join("facets/work/entities/source");
     fs::create_dir_all(&facet).unwrap();
     fs::write(facet.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
+    fs::write(
+        facet.join("observations.jsonl"),
+        b"{\"content\":\"source observation\",\"observed_at\":\"2026-01-01\"}\n",
+    )
+    .unwrap();
+    let target_facet = journal.join("facets/work/entities/target");
+    fs::create_dir_all(&target_facet).unwrap();
+    fs::write(
+        target_facet.join("entity.json"),
+        br#"{"entity_id":"target"}"#,
+    )
+    .unwrap();
+    fs::write(
+        target_facet.join("observations.jsonl"),
+        b"{\"content\":\"target observation\",\"observed_at\":\"2026-01-01\"}\n",
+    )
+    .unwrap();
     let activity = journal.join("facets/work/activities/20260102.jsonl");
     fs::create_dir_all(activity.parent().unwrap()).unwrap();
     fs::write(&activity, b"{\"active_entities\":[\"source\"]}\n").unwrap();
@@ -538,7 +555,8 @@ fn commit_records_matching_payload_and_audit_counts() {
     assert_eq!(audit["principal_transferred"], false);
     assert_eq!(audit["caller"], serde_json::Value::Null);
     assert!(audit.get("kind").is_none());
-    assert!(audit["counts"]["facets"]["moved"].as_u64().unwrap() > 0);
+    assert!(audit["counts"]["facets"]["merged"].as_u64().unwrap() > 0);
+    assert_eq!(audit["counts"]["facets"]["observations_appended"], 1);
     assert!(audit["counts"]["voiceprints"]["added"].as_u64().unwrap() > 0);
     assert!(
         audit["counts"]["activities"]["records_rewritten"]
@@ -552,6 +570,25 @@ fn commit_records_matching_payload_and_audit_counts() {
         .unwrap();
     let payload = load_entity_merge_payload(&journal, "target", &merge_id).unwrap();
     assert_eq!(payload["result_counts"], audit["counts"]);
+    assert_eq!(
+        payload["manifest"]["voiceprints"]["support"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        payload["manifest"]["voiceprints"]["support"][0]["key"]["sentence_id"],
+        "count"
+    );
+    assert_eq!(
+        payload["manifest"]["voiceprints"]["support"][0]["target_preexisting"],
+        false
+    );
+    assert_eq!(
+        payload["manifest"]["voiceprints"]["support"][0]["added"],
+        true
+    );
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -1011,6 +1048,10 @@ fn audit_phase_injection_rolls_back_and_retry_succeeds() {
         Some(&|phase, artifact_index| phase == "audit" && artifact_index == 0),
     )
     .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "entity merge failed during audit: injected failure after audit artifact 0"
+    );
     let merge_id = match error {
         crate::EntityMergeError::Failed { report, .. } => report.merge_id,
         _ => panic!("expected injected merge failure"),
