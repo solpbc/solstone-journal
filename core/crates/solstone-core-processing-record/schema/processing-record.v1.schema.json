@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solstone-journal-format:processing-record.v1",
+  "title": "Solstone processing record v1",
+  "description": "Examples are hand-verified against this schema at authoring time; no automated Rust validator is wired up in this wave.",
+  "type": "object",
+  "required": ["schema", "state", "reason_code", "handler", "attempted_at", "input_size"],
+  "additionalProperties": true,
+  "properties": {
+    "schema": {"const": "solstone.processing.v1"},
+    "state": {"enum": ["analyzed", "empty", "failed"]},
+    "reason_code": {"enum": ["ok", "no_decodable_frames", "no_decodable_audio", "corrupt_input", "analysis_failed"]},
+    "handler": {"enum": ["describe", "transcribe"]},
+    "attempted_at": {"type": "string"},
+    "input_size": {"type": "integer", "minimum": 0},
+    "attempts": {"type": "integer"},
+    "source": {"type": "string"}
+  },
+  "examples": [
+    {"schema": "solstone.processing.v1", "state": "analyzed", "reason_code": "ok", "handler": "transcribe", "attempted_at": "2026-07-25T05:14:46Z", "input_size": 5},
+    {"schema": "solstone.processing.v1", "state": "empty", "reason_code": "no_decodable_audio", "handler": "transcribe", "attempted_at": "2026-07-25T05:14:46Z", "input_size": 0},
+    {"schema": "solstone.processing.v1", "state": "failed", "reason_code": "corrupt_input", "handler": "transcribe", "attempted_at": "2026-07-25T05:14:46Z", "input_size": 5, "attempts": 1},
+    {"schema": "solstone.processing.v1", "state": "empty", "reason_code": "no_decodable_frames", "handler": "describe", "attempted_at": "2026-07-25T05:14:46Z", "input_size": 0, "source": "backfill"}
+  ],
+  "x-journal-contract": {
+    "format_id": "solstone-processing-record.v1",
+    "schema_owner": "solstone-core-processing-record",
+    "reference_writer": "solstone.observe.processing_record",
+    "allowed_producers": ["observe.describe", "observe.transcribe"],
+    "write_discipline": "embedded metadata-header field; enclosing formats own file paths",
+    "file_kind": "embedded_header_record",
+    "key_fields": ["schema", "state", "reason_code", "handler", "attempted_at", "input_size"],
+    "header_field_of": ["screen-jsonl", "audio-jsonl"]
+  },
+  "x-known-asymmetries": [
+    "Observed, not decided: backfill-stamped empty records with source backfill grant terminal proof and retention purge eligibility without a handler having run; source is not checked by current proof implementations.",
+    "Observed, not decided: should_reenter_analysis_output applies the failed-attempt bound only to describe outputs, never to audio/transcribe failures.",
+    "Observed, not decided: transcribe non-decode failure paths write no _solstone_processing record, so those inputs are re-processed indefinitely.",
+    "Observed, not decided: retention reads this record through derive_modality_state using only state, plus is_failure_exhausted for failed records; unlike terminal proof, it does not check schema, handler, or input_size."
+  ]
+}

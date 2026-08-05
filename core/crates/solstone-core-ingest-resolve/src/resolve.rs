@@ -573,12 +573,16 @@ mod tests {
     }
 
     fn resolve_with_processing_record(record: Value) -> ApplyPlan {
+        resolve_with_processing_record_for_file("audio.flac", record)
+    }
+
+    fn resolve_with_processing_record_for_file(name: &str, record: Value) -> ApplyPlan {
         let temporary = root();
         let journal = temporary.path.join("journal");
         let bytes = b"sound";
         let directory = segment(&journal, "20260804", "device", "120000_60");
         fs::write(
-            directory.join("audio.jsonl"),
+            directory.join(Path::new(name).with_extension("jsonl")),
             json!({"_solstone_processing":record}).to_string() + "\nsecond\n",
         )
         .unwrap();
@@ -589,7 +593,7 @@ mod tests {
                 "20260804",
                 "device",
                 "120000_60",
-                &[file("audio.flac", bytes)],
+                &[file(name, bytes)],
             )
             .unwrap(),
         )
@@ -777,6 +781,48 @@ mod tests {
             "handler":"transcribe",
             "input_size":6,
         }));
+
+        assert_eq!(
+            result.files[0].disposition,
+            FileDisposition::NeedsWrite {
+                reason: MissingWriteReason::MissingContent
+            }
+        );
+        assert_eq!(result.status, PlanStatus::Ok);
+    }
+
+    #[test]
+    fn terminal_proof_refuses_stemmed_video_handler_mismatch() {
+        let result = resolve_with_processing_record_for_file(
+            "video.mp4",
+            json!({
+                "schema":"solstone.processing.v1",
+                "state":"analyzed",
+                "handler":"transcribe",
+                "input_size":5,
+            }),
+        );
+
+        assert_eq!(
+            result.files[0].disposition,
+            FileDisposition::NeedsWrite {
+                reason: MissingWriteReason::MissingContent
+            }
+        );
+        assert_eq!(result.status, PlanStatus::Ok);
+    }
+
+    #[test]
+    fn terminal_proof_refuses_stemmed_audio_handler_mismatch() {
+        let result = resolve_with_processing_record_for_file(
+            "audio.flac",
+            json!({
+                "schema":"solstone.processing.v1",
+                "state":"analyzed",
+                "handler":"describe",
+                "input_size":5,
+            }),
+        );
 
         assert_eq!(
             result.files[0].disposition,

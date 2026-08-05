@@ -5,10 +5,10 @@ use std::fs::File;
 use std::io::Read;
 
 use serde_json::Value;
+use solstone_core_processing_record::{TerminalProofOutcome, evaluate_terminal_proof};
 use solstone_core_segment::{ContentName, SegmentDir, TerminalProofVerifier};
 
 const MAX_FIRST_ROW_BYTES: usize = 64 * 1024;
-const PROCESSING_SCHEMA: &str = "solstone.processing.v1";
 
 /// Read-only terminal-processing verifier bound to one resolved segment.
 pub struct SegmentTerminalProof<'a> {
@@ -51,16 +51,10 @@ impl TerminalProofVerifier for SegmentTerminalProof<'_> {
         let Ok(Value::Object(row)) = serde_json::from_str::<Value>(first_line) else {
             return false;
         };
-        let Some(record) = row.get("_solstone_processing").and_then(Value::as_object) else {
-            return false;
-        };
-        record.get("schema").and_then(Value::as_str) == Some(PROCESSING_SCHEMA)
-            && matches!(
-                record.get("state").and_then(Value::as_str),
-                Some("analyzed" | "empty")
-            )
-            && record.get("handler").and_then(Value::as_str) == Some(expected_handler)
-            && record.get("input_size").and_then(Value::as_u64) == Some(size)
+        matches!(
+            evaluate_terminal_proof(row.get("_solstone_processing"), expected_handler, size,),
+            TerminalProofOutcome::Held
+        )
     }
 }
 

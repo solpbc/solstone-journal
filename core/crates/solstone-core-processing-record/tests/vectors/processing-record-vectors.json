@@ -1,0 +1,241 @@
+{
+  "_provenance": {
+    "generated_from_commit": "87b9b426a5077b8bd3a91824d551b256d27bd1c3",
+    "equivalence_proof": "Verdicts are read from the Python reference and encoded here; tests never execute Python. Non-synthetic producer/reason pairings preserve describe for analysis_failed and no_decodable_frames, and transcribe for no_decodable_audio and corrupt_input."
+  },
+  "terminal_proof": [
+    {
+      "name": "minimal_terminal_record",
+      "expected_handler": "transcribe",
+      "input_size": 5,
+      "record": {"schema": "solstone.processing.v1", "state": "analyzed", "handler": "transcribe", "input_size": 5},
+      "expected_verdict": "held",
+      "provenance_tag": "constructed",
+      "citation": "solstone/apps/observer/processing_proof.py:64-76; solstone/observe/processing_record.py:178-185"
+    },
+    {
+      "name": "unknown_state_is_refused",
+      "expected_handler": "transcribe",
+      "input_size": 5,
+      "record": {"schema": "solstone.processing.v1", "state": "bogus", "handler": "transcribe", "input_size": 5},
+      "expected_verdict": "refused",
+      "provenance_tag": "synthetic",
+      "citation": "solstone/apps/observer/processing_proof.py:64-76"
+    },
+    {
+      "name": "unknown_reason_is_not_a_terminal_proof_condition",
+      "expected_handler": "transcribe",
+      "input_size": 5,
+      "record": {"schema": "solstone.processing.v1", "state": "analyzed", "reason_code": "unknown_reason", "handler": "transcribe", "input_size": 5},
+      "expected_verdict": "held",
+      "provenance_tag": "constructed",
+      "citation": "solstone/apps/observer/processing_proof.py:64-76"
+    },
+    {
+      "name": "unknown_schema_is_distinguished",
+      "expected_handler": "transcribe",
+      "input_size": 5,
+      "record": {"schema": "solstone.processing.v0", "state": "analyzed", "handler": "transcribe", "input_size": 5},
+      "expected_verdict": "schema_unrecognized",
+      "provenance_tag": "synthetic",
+      "citation": "solstone/apps/observer/processing_proof.py:64-65"
+    },
+    {
+      "name": "absent_record",
+      "expected_handler": "describe",
+      "input_size": 5,
+      "record": null,
+      "expected_verdict": "record_absent",
+      "provenance_tag": "observed",
+      "citation": "solstone/apps/observer/processing_proof.py:61-63"
+    },
+    {
+      "name": "observed_79_record",
+      "expected_handler": "transcribe",
+      "input_size": 514158,
+      "record": {"schema": "solstone.processing.v1", "state": "analyzed", "reason_code": "ok", "handler": "transcribe", "attempted_at": "2026-07-25T05:14:46Z", "input_size": 514158},
+      "expected_verdict": "held",
+      "provenance_tag": "observed",
+      "citation": "externally supplied real-journal data (79-record corpus); not derivable from this repository"
+    },
+    {
+      "name": "observed_11_recordless_screen_header_before_backfill",
+      "expected_handler": "describe",
+      "input_size": 0,
+      "header": {"raw": "<name>"},
+      "record": null,
+      "expected_verdict": "record_absent",
+      "provenance_tag": "observed",
+      "citation": "externally supplied real-journal data (11-record corpus); solstone/apps/observer/processing_proof.py:61-63"
+    },
+    {
+      "name": "recordless_screen_header_after_backfill",
+      "expected_handler": "describe",
+      "input_size": 123,
+      "record": {"schema": "solstone.processing.v1", "state": "empty", "reason_code": "no_decodable_frames", "handler": "describe", "attempted_at": "2026-07-25T05:14:46Z", "input_size": 123, "source": "backfill"},
+      "expected_verdict": "held",
+      "provenance_tag": "constructed",
+      "citation": "solstone/think/backfill_processing_records.py:170-198"
+    },
+    {
+      "name": "backfill_without_sibling_uses_zero_size",
+      "expected_handler": "describe",
+      "input_size": 0,
+      "record": {"schema": "solstone.processing.v1", "state": "empty", "reason_code": "no_decodable_frames", "handler": "describe", "attempted_at": "2026-07-25T05:14:46Z", "input_size": 0, "source": "backfill"},
+      "expected_verdict": "held",
+      "provenance_tag": "constructed",
+      "citation": "solstone/think/backfill_processing_records.py:170-176; recorded-not-resolved asymmetry #1 is pinned, not resolved"
+    },
+    {
+      "name": "attempted_at_is_not_parsed",
+      "expected_handler": "transcribe",
+      "input_size": 5,
+      "record": {"schema": "solstone.processing.v1", "state": "analyzed", "handler": "transcribe", "attempted_at": "not-a-date", "input_size": 5},
+      "expected_verdict": "held",
+      "provenance_tag": "synthetic",
+      "citation": "solstone/apps/observer/processing_proof.py:64-76"
+    },
+    {
+      "name": "unknown_top_level_field_is_ignored",
+      "expected_handler": "transcribe",
+      "input_size": 5,
+      "record": {"schema": "solstone.processing.v1", "state": "analyzed", "handler": "transcribe", "input_size": 5, "operator_note": "x"},
+      "expected_verdict": "held",
+      "provenance_tag": "synthetic",
+      "citation": "solstone/apps/observer/processing_proof.py:64-76"
+    },
+    {
+      "name": "empty_audio_no_decodable_audio",
+      "expected_handler": "transcribe",
+      "input_size": 5,
+      "record": {"schema": "solstone.processing.v1", "state": "empty", "reason_code": "no_decodable_audio", "handler": "transcribe", "input_size": 5},
+      "expected_verdict": "held",
+      "provenance_tag": "constructed",
+      "citation": "solstone/observe/processing_record.py:35-41; solstone/apps/observer/processing_proof.py:64-76"
+    },
+    {
+      "name": "input_size_bool_is_refused",
+      "expected_handler": "transcribe",
+      "input_size": 5,
+      "record": {"schema": "solstone.processing.v1", "state": "analyzed", "handler": "transcribe", "input_size": true},
+      "expected_verdict": "refused",
+      "provenance_tag": "synthetic",
+      "citation": "solstone/apps/observer/processing_proof.py:71-76; Python explicitly rejects bool while Rust as_u64 rejects it, yielding the same verdict"
+    },
+    {
+      "name": "input_size_string_is_refused",
+      "expected_handler": "transcribe",
+      "input_size": 5,
+      "record": {"schema": "solstone.processing.v1", "state": "analyzed", "handler": "transcribe", "input_size": "5"},
+      "expected_verdict": "refused",
+      "provenance_tag": "synthetic",
+      "citation": "solstone/apps/observer/processing_proof.py:71-76; Rust as_u64 rejects strings, yielding the same verdict"
+    },
+    {
+      "name": "input_size_null_is_refused",
+      "expected_handler": "transcribe",
+      "input_size": 5,
+      "record": {"schema": "solstone.processing.v1", "state": "analyzed", "handler": "transcribe", "input_size": null},
+      "expected_verdict": "refused",
+      "provenance_tag": "synthetic",
+      "citation": "solstone/apps/observer/processing_proof.py:71-76; Rust as_u64 rejects null, yielding the same verdict"
+    },
+    {
+      "name": "input_size_float_is_refused",
+      "expected_handler": "transcribe",
+      "input_size": 5,
+      "record": {"schema": "solstone.processing.v1", "state": "analyzed", "handler": "transcribe", "input_size": 5.0},
+      "expected_verdict": "refused",
+      "provenance_tag": "synthetic",
+      "citation": "solstone/apps/observer/processing_proof.py:71-76; Rust as_u64 rejects floats, yielding the same verdict"
+    },
+    {
+      "name": "input_size_negative_is_refused",
+      "expected_handler": "transcribe",
+      "input_size": 5,
+      "record": {"schema": "solstone.processing.v1", "state": "analyzed", "handler": "transcribe", "input_size": -5},
+      "expected_verdict": "refused",
+      "provenance_tag": "synthetic",
+      "citation": "solstone/apps/observer/processing_proof.py:71-76; Rust as_u64 rejects negative integers, yielding the same verdict"
+    }
+  ],
+  "failure_exhaustion": [
+    {
+      "name": "corrupt_input_is_immediately_exhausted",
+      "record": {"state": "failed", "reason_code": "corrupt_input", "handler": "transcribe", "attempts": 1},
+      "expected_exhausted": true,
+      "provenance_tag": "constructed",
+      "citation": "solstone/observe/processing_record.py:48-54"
+    },
+    {
+      "name": "analysis_failed_attempt_one",
+      "record": {"state": "failed", "reason_code": "analysis_failed", "handler": "describe", "attempts": 1},
+      "expected_exhausted": false,
+      "provenance_tag": "constructed",
+      "citation": "solstone/observe/processing_record.py:48-64"
+    },
+    {
+      "name": "analysis_failed_attempt_two",
+      "record": {"state": "failed", "reason_code": "analysis_failed", "handler": "describe", "attempts": 2},
+      "expected_exhausted": false,
+      "provenance_tag": "constructed",
+      "citation": "solstone/observe/processing_record.py:48-64"
+    },
+    {
+      "name": "analysis_failed_attempt_three",
+      "record": {"state": "failed", "reason_code": "analysis_failed", "handler": "describe", "attempts": 3},
+      "expected_exhausted": true,
+      "provenance_tag": "constructed",
+      "citation": "solstone/observe/processing_record.py:48-64"
+    },
+    {
+      "name": "analysis_failed_attempt_four",
+      "record": {"state": "failed", "reason_code": "analysis_failed", "handler": "describe", "attempts": 4},
+      "expected_exhausted": true,
+      "provenance_tag": "constructed",
+      "citation": "solstone/observe/processing_record.py:48-64"
+    },
+    {
+      "name": "attempts_absent",
+      "record": {"state": "failed", "reason_code": "analysis_failed", "handler": "describe"},
+      "expected_exhausted": false,
+      "provenance_tag": "constructed",
+      "citation": "solstone/observe/processing_record.py:57-64"
+    },
+    {
+      "name": "attempts_null",
+      "record": {"state": "failed", "reason_code": "analysis_failed", "handler": "describe", "attempts": null},
+      "expected_exhausted": false,
+      "provenance_tag": "synthetic",
+      "citation": "solstone/observe/processing_record.py:57-64"
+    },
+    {
+      "name": "attempts_string",
+      "record": {"state": "failed", "reason_code": "analysis_failed", "handler": "describe", "attempts": "3"},
+      "expected_exhausted": false,
+      "provenance_tag": "synthetic",
+      "citation": "solstone/observe/processing_record.py:57-64"
+    },
+    {
+      "name": "attempts_bool",
+      "record": {"state": "failed", "reason_code": "analysis_failed", "handler": "describe", "attempts": true},
+      "expected_exhausted": false,
+      "provenance_tag": "synthetic",
+      "citation": "solstone/observe/processing_record.py:57-64"
+    },
+    {
+      "name": "attempts_negative_one_is_not_exhausted",
+      "record": {"state": "failed", "reason_code": "analysis_failed", "handler": "describe", "attempts": -1},
+      "expected_exhausted": false,
+      "provenance_tag": "synthetic",
+      "citation": "solstone/observe/processing_record.py:57-64; record_attempts preserves -1 verbatim while this boolean verdict remains false"
+    },
+    {
+      "name": "nonfailed_corrupt_input_is_not_exhausted",
+      "record": {"state": "analyzed", "reason_code": "corrupt_input", "handler": "transcribe", "attempts": 1},
+      "expected_exhausted": false,
+      "provenance_tag": "constructed",
+      "citation": "solstone/observe/processing_record.py:48-54"
+    }
+  ]
+}

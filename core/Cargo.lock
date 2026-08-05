@@ -1501,6 +1501,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "solstone-core-journal-io",
+ "solstone-core-processing-record",
  "solstone-core-segment",
 ]
 
@@ -1534,6 +1535,14 @@ dependencies = [
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
  "solstone-core-segment",
+]
+
+[[package]]
+name = "solstone-core-processing-record"
+version = "1.0.22"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
