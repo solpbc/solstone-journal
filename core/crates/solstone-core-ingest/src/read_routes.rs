@@ -10,8 +10,8 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
-use solstone_core_journal_io::{PathOrDay, day_dirs, iter_segments};
 use solstone_core_segment::lookup_stream;
+use solstone_core_segment::{list_days, list_segments, list_segments_in};
 
 use crate::events::read_events;
 use crate::model::{DeviceIngestEvent, ReasonCode};
@@ -33,7 +33,7 @@ pub async fn ingest_manifest(
         Ok(None) => return Json(json!({"days": {}})).into_response(),
         Err((code, status)) => return refusal(code, status, "cannot resolve journal stream"),
     };
-    let days = match day_dirs(&state.journal_root) {
+    let days = match list_days(&state.journal_root) {
         Ok(days) => days,
         Err(_) => {
             return refusal(
@@ -45,7 +45,7 @@ pub async fn ingest_manifest(
     };
     let mut result = Map::new();
     for (day, path) in days {
-        let count = match iter_segments(&state.journal_root, PathOrDay::Directory(&path)) {
+        let count = match list_segments_in(&state.journal_root, &path) {
             Ok(segments) => {
                 let mut keys = HashSet::new();
                 for segment in segments
@@ -235,8 +235,8 @@ fn stream_events(
     stream: &str,
     did: &str,
 ) -> Result<Vec<DeviceIngestEvent>, ReasonCode> {
-    let segments = iter_segments(&state.journal_root, PathOrDay::Day(day))
-        .map_err(|_| ReasonCode::JournalReadFailed)?;
+    let segments =
+        list_segments(&state.journal_root, day).map_err(|_| ReasonCode::JournalReadFailed)?;
     let mut events = Vec::new();
     for segment in segments
         .into_iter()

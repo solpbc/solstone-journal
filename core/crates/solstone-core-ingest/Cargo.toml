@@ -15,7 +15,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10.9"
 solstone-core-convey-http = { workspace = true }
-solstone-core-journal-io = { workspace = true }
 solstone-core-segment = { workspace = true }
 tower-http = { workspace = true }
 

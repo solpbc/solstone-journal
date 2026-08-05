@@ -1470,7 +1470,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "solstone-core-convey-http",
- "solstone-core-journal-io",
  "solstone-core-segment",
  "tokio",
  "tower",

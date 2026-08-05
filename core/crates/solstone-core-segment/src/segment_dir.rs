@@ -3,7 +3,9 @@
 
 use std::path::{Path, PathBuf};
 
-use solstone_core_journal_io::{DEFAULT_STREAM, contained_path, day_path};
+use solstone_core_journal_io::{
+    DEFAULT_STREAM, PathOrDay, Segment, contained_path, day_dirs, day_path, iter_segments,
+};
 
 use crate::SegmentError;
 
@@ -57,6 +59,30 @@ fn validate_component(value: &str, kind: &'static str) -> Result<(), SegmentErro
         }));
     }
     Ok(())
+}
+
+/// Every `YYYYMMDD` chronicle day directory present in the journal, sorted.
+///
+/// Segment enumeration belongs to the crate that owns segments. A caller that
+/// merely lists is otherwise pushed into depending on `journal-io` directly,
+/// which routes it around the single write door *and* around the reviewed
+/// write-owner allowlist that keeps that door narrow. Listing is a read, so
+/// nothing here writes -- but the dependency edge is the thing being kept
+/// narrow, not the operation.
+pub fn list_days(journal: &Path) -> Result<Vec<(String, PathBuf)>, SegmentError> {
+    let mut days: Vec<(String, PathBuf)> = day_dirs(journal)?.into_iter().collect();
+    days.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(days)
+}
+
+/// Segment `(stream, key)` pairs under one chronicle day.
+pub fn list_segments(journal: &Path, day: &str) -> Result<Vec<Segment>, SegmentError> {
+    Ok(iter_segments(journal, PathOrDay::Day(day))?)
+}
+
+/// Segment `(stream, key)` pairs under an already-resolved day directory.
+pub fn list_segments_in(journal: &Path, day_dir: &Path) -> Result<Vec<Segment>, SegmentError> {
+    Ok(iter_segments(journal, PathOrDay::Directory(day_dir))?)
 }
 
 #[cfg(test)]

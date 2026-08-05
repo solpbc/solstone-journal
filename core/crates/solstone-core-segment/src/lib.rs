@@ -37,8 +37,9 @@ pub use identity::{
     load_content_identity,
 };
 pub use projection::project_stream_name;
-pub use segment_dir::SegmentDir;
+pub use segment_dir::{SegmentDir, list_days, list_segments, list_segments_in};
 pub use sidecars::append_event;
+pub use solstone_core_journal_io::Segment;
 pub use stream_record::{
     BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord, advance_bound_stream,
     bind_stream, lookup_stream, resolve_stream,

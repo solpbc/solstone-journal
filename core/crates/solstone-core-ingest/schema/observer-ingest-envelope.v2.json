@@ -2,32 +2,76 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Observer ingest envelope v2",
   "type": "object",
-  "required": ["day", "segment", "files"],
+  "required": [
+    "day",
+    "segment",
+    "files"
+  ],
   "additionalProperties": true,
   "properties": {
-    "day": { "type": "string" },
-    "segment": { "type": "string" },
-    "source": { "type": "string" },
-    "meta": { "type": "object", "additionalProperties": true },
+    "day": {
+      "type": "string"
+    },
+    "segment": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true
+    },
     "files": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["submitted"],
+        "required": [
+          "submitted"
+        ],
         "additionalProperties": true,
-        "properties": { "submitted": { "type": "string" } }
+        "properties": {
+          "submitted": {
+            "type": "string"
+          }
+        }
       }
     }
   },
   "x-journal-contract": {
+    "allowed_producers": [
+      "solstone-core-ingest"
+    ],
     "contract_version": 2,
+    "file_kind": "ingest_envelope",
+    "format_id": "observer-ingest-envelope.v2",
+    "forward_compatible": true,
+    "identity_source": "access_basis",
+    "journal_domain": "chronicle",
+    "key_fields": [
+      "day",
+      "segment",
+      "source",
+      "files[].written",
+      "files[].sha256"
+    ],
+    "key_semantics": {
+      "timezone": "device-local wall-clock; not UTC-normalized",
+      "day": "YYYYMMDD device-local calendar day at capture start",
+      "segment": "HHMMSS_LEN; HHMMSS device-local wall-clock start",
+      "segment_len": "real captured whole-second media duration; stamped at capture finish; bounded by the segment rotation ceiling (300 seconds standard); crash-recovered LEN <= real media duration; descriptive only, not grammar-enforced -- an implementation that enforces a ceiling refuses exactly the crash-recovered uploads the looseness exists to permit",
+      "on_disk_segment_key": "after a content collision the directory name carries an incremented duration field and is an allocation artifact; requested_segment in the segment manifest is the device truth. No reader may infer capture duration from a directory name",
+      "source": "a device-chosen sub-stream discriminator, empty for the primary capture. It is not identity and authenticates nothing -- it selects within an already-authenticated device own namespace"
+    },
+    "producer_write_paths": [
+      "POST /app/observer/ingest"
+    ],
     "protocol_version": 3,
     "reference_writer": "solstone-core-ingest",
-    "allowed_producers": ["solstone-core-ingest"],
-    "journal_domain": "chronicle",
-    "write_door": "solstone-core-segment",
+    "schema_owner": "solstone-core-ingest",
     "wire_format": "multipart-envelope",
-    "identity_source": "access_basis",
-    "forward_compatible": true
-  }
+    "write_discipline": "multipart envelope validated before segment write",
+    "write_door": "solstone-core-segment"
+  },
+  "$id": "solstone-journal-format:observer-ingest-envelope.v2"
 }
