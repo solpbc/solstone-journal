@@ -1,0 +1,670 @@
+{
+  "ambiguity_id": {
+    "description": "amb_ + sha256(scope_key|normalized_query)[:24]; the normalized query folds case, so the fold is inside an identity",
+    "vectors": [
+      {
+        "ambiguity_id": "amb_499fa5f27708c6120de29157",
+        "key": "journal|alice johnson",
+        "normalized_query": "alice johnson",
+        "query": "Alice Johnson",
+        "scope": {
+          "kind": "journal"
+        }
+      },
+      {
+        "ambiguity_id": "amb_5360119936afbcb54a899a1a",
+        "key": "journal|strasse",
+        "normalized_query": "strasse",
+        "query": "Stra\u00dfe",
+        "scope": {
+          "kind": "journal"
+        }
+      },
+      {
+        "ambiguity_id": "amb_bd9133539afc88274ce885bc",
+        "key": "journal|\u03bf\u03b4\u03c5\u03c3\u03c3\u03b5\u03c5\u03c3",
+        "normalized_query": "\u03bf\u03b4\u03c5\u03c3\u03c3\u03b5\u03c5\u03c3",
+        "query": "\u039f\u0394\u03a5\u03a3\u03a3\u0395\u03a5\u03a3",
+        "scope": {
+          "kind": "journal"
+        }
+      },
+      {
+        "ambiguity_id": "amb_3166d173a9e1fd09ebd9b0b9",
+        "key": "journal|file",
+        "normalized_query": "file",
+        "query": "\ufb01le",
+        "scope": {
+          "kind": "journal"
+        }
+      },
+      {
+        "ambiguity_id": "amb_c0983834b3fa2689b17d3e2d",
+        "key": "journal|spaced out",
+        "normalized_query": "spaced out",
+        "query": "  spaced  out  ",
+        "scope": {
+          "kind": "journal"
+        }
+      },
+      {
+        "ambiguity_id": "amb_234c62de94e1f384a85ad1ce",
+        "key": "facet:work|alice johnson",
+        "normalized_query": "alice johnson",
+        "query": "Alice Johnson",
+        "scope": {
+          "facet": "work",
+          "kind": "facet"
+        }
+      },
+      {
+        "ambiguity_id": "amb_7ffaa5cbbfc8319f825215a2",
+        "key": "facet:work|strasse",
+        "normalized_query": "strasse",
+        "query": "Stra\u00dfe",
+        "scope": {
+          "facet": "work",
+          "kind": "facet"
+        }
+      },
+      {
+        "ambiguity_id": "amb_b0e5d609a2d687d9078f0660",
+        "key": "facet:work|\u03bf\u03b4\u03c5\u03c3\u03c3\u03b5\u03c5\u03c3",
+        "normalized_query": "\u03bf\u03b4\u03c5\u03c3\u03c3\u03b5\u03c5\u03c3",
+        "query": "\u039f\u0394\u03a5\u03a3\u03a3\u0395\u03a5\u03a3",
+        "scope": {
+          "facet": "work",
+          "kind": "facet"
+        }
+      },
+      {
+        "ambiguity_id": "amb_5d7d26ddecb70a489a190d10",
+        "key": "facet:work|file",
+        "normalized_query": "file",
+        "query": "\ufb01le",
+        "scope": {
+          "facet": "work",
+          "kind": "facet"
+        }
+      },
+      {
+        "ambiguity_id": "amb_20935b59c2215594d6a12b0b",
+        "key": "facet:work|spaced out",
+        "normalized_query": "spaced out",
+        "query": "  spaced  out  ",
+        "scope": {
+          "facet": "work",
+          "kind": "facet"
+        }
+      }
+    ]
+  },
+  "entity_slug": {
+    "max_length": 200,
+    "sweep": {
+      "description": "entity_slug('A' + chr(cp) + 'B') for every Unicode scalar value, in ascending codepoint order, one result per line",
+      "scalar_values": 1112064,
+      "sha256": "ccf541e524e22fa29b68da73d42a556f255381150d77cc30c583142976da5ce2"
+    },
+    "vectors": [
+      {
+        "name": "Alice Johnson",
+        "slug": "alice_johnson"
+      },
+      {
+        "name": "O'Brien",
+        "slug": "o_brien"
+      },
+      {
+        "name": "AT&T",
+        "slug": "at_t"
+      },
+      {
+        "name": "C++",
+        "slug": "c"
+      },
+      {
+        "name": "PostgreSQL",
+        "slug": "postgresql"
+      },
+      {
+        "name": "Jos\u00e9 Garc\u00eda",
+        "slug": "jose_garcia"
+      },
+      {
+        "name": "Jose\u0301 Garci\u0301a",
+        "slug": "jose_garcia"
+      },
+      {
+        "name": "M\u00fcller",
+        "slug": "muller"
+      },
+      {
+        "name": "Mu\u0308ller",
+        "slug": "muller"
+      },
+      {
+        "name": "\u5317\u4eac",
+        "slug": "bei_jing"
+      },
+      {
+        "name": "\u041c\u043e\u0441\u043a\u0432\u0430",
+        "slug": "moskva"
+      },
+      {
+        "name": "\u0391\u03b8\u03ae\u03bd\u03b1",
+        "slug": "athena"
+      },
+      {
+        "name": "\u0130stanbul",
+        "slug": "istanbul"
+      },
+      {
+        "name": "\u0131rmak",
+        "slug": "irmak"
+      },
+      {
+        "name": "Stra\u00dfe",
+        "slug": "strasse"
+      },
+      {
+        "name": "STRASSE",
+        "slug": "strasse"
+      },
+      {
+        "name": "  Spaced  Out  ",
+        "slug": "spaced_out"
+      },
+      {
+        "name": "Tab\tSeparated",
+        "slug": "tab_separated"
+      },
+      {
+        "name": "New\nLine",
+        "slug": "new_line"
+      },
+      {
+        "name": "",
+        "slug": ""
+      },
+      {
+        "name": "   ",
+        "slug": ""
+      },
+      {
+        "name": "\u00c5ngstr\u00f6m",
+        "slug": "angstrom"
+      },
+      {
+        "name": "\u2460 Project",
+        "slug": "1_project"
+      },
+      {
+        "name": "caf\u00e9",
+        "slug": "cafe"
+      },
+      {
+        "name": "cafe\u0301",
+        "slug": "cafe"
+      },
+      {
+        "name": "emoji \ud83c\udf89 name",
+        "slug": "emoji_name"
+      },
+      {
+        "name": "Ann-Marie",
+        "slug": "ann_marie"
+      },
+      {
+        "name": "Jean_Luc",
+        "slug": "jean_luc"
+      },
+      {
+        "name": "van der Berg",
+        "slug": "van_der_berg"
+      },
+      {
+        "name": "\ufb01re",
+        "slug": "fire"
+      },
+      {
+        "name": "\u216b legion",
+        "slug": "xii_legion"
+      },
+      {
+        "name": "\uff46\uff55\uff4c\uff4c\uff57\uff49\uff44\uff54\uff48",
+        "slug": "fullwidth"
+      },
+      {
+        "name": "x\u00a0y",
+        "slug": "x_y"
+      },
+      {
+        "name": "a\u2028b",
+        "slug": "a_b"
+      },
+      {
+        "name": "Dr. Smith, Jr.",
+        "slug": "dr_smith_jr"
+      },
+      {
+        "name": "\u00c9cole",
+        "slug": "ecole"
+      },
+      {
+        "name": "\u00c6gis",
+        "slug": "aegis"
+      },
+      {
+        "name": "\u0152uvre",
+        "slug": "oeuvre"
+      },
+      {
+        "name": "\u00df only",
+        "slug": "ss_only"
+      },
+      {
+        "name": "Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller ",
+        "slug": "bartholomew_fitzgerald_muller_bartholomew_fitzgerald_muller_bartholomew_fitzgerald_muller_bartholomew_fitzgerald_muller_bartholomew_fitzgerald_muller_bartholomew_fitzgerald_muller_bartholomew_7bd87951"
+      },
+      {
+        "name": "Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller ",
+        "slug": "bartholomew_fitzgerald_muller_bartholomew_fitzgerald_muller_bartholomew_fitzgerald_muller_bartholomew_fitzgerald_muller_bartholomew_fitzgerald_muller_bartholomew_fitzgerald_muller_bartholomew_bb43d6af"
+      },
+      {
+        "name": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_e993f498"
+      },
+      {
+        "name": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA Alpha",
+        "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_d9607989"
+      },
+      {
+        "name": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA Beta",
+        "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_e6b59ad4"
+      },
+      {
+        "codepoint": "U+0009",
+        "name": "A\tB",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+000A",
+        "name": "A\nB",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+000B",
+        "name": "A\u000bB",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+000C",
+        "name": "A\fB",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+000D",
+        "name": "A\rB",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+001C",
+        "name": "A\u001cB",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+001D",
+        "name": "A\u001dB",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+001E",
+        "name": "A\u001eB",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+001F",
+        "name": "A\u001fB",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+0020",
+        "name": "A B",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+0085",
+        "name": "A\u0085B",
+        "slug": "ab"
+      },
+      {
+        "codepoint": "U+00A0",
+        "name": "A\u00a0B",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+1680",
+        "name": "A\u1680B",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+2000",
+        "name": "A\u2000B",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+2028",
+        "name": "A\u2028B",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+2029",
+        "name": "A\u2029B",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+202F",
+        "name": "A\u202fB",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+205F",
+        "name": "A\u205fB",
+        "slug": "a_b"
+      },
+      {
+        "codepoint": "U+3000",
+        "name": "A\u3000B",
+        "slug": "a_b"
+      }
+    ]
+  },
+  "generated_by": "make core-fixtures",
+  "normalize_resolution_query": {
+    "sweep": {
+      "description": "normalize_resolution_query('A' + chr(cp) + 'B') for every Unicode scalar value, in ascending codepoint order",
+      "scalar_values": 1112064,
+      "sha256": "e79746779dcc65fc4ff9b128b1065d27b205eebe7a6235353f7859e46ae8d08f"
+    },
+    "vectors": [
+      {
+        "normalized": "alice johnson",
+        "query": "Alice Johnson"
+      },
+      {
+        "normalized": "o'brien",
+        "query": "O'Brien"
+      },
+      {
+        "normalized": "at&t",
+        "query": "AT&T"
+      },
+      {
+        "normalized": "c++",
+        "query": "C++"
+      },
+      {
+        "normalized": "postgresql",
+        "query": "PostgreSQL"
+      },
+      {
+        "normalized": "jos\u00e9 garc\u00eda",
+        "query": "Jos\u00e9 Garc\u00eda"
+      },
+      {
+        "normalized": "jos\u00e9 garc\u00eda",
+        "query": "Jose\u0301 Garci\u0301a"
+      },
+      {
+        "normalized": "m\u00fcller",
+        "query": "M\u00fcller"
+      },
+      {
+        "normalized": "m\u00fcller",
+        "query": "Mu\u0308ller"
+      },
+      {
+        "normalized": "\u5317\u4eac",
+        "query": "\u5317\u4eac"
+      },
+      {
+        "normalized": "\u043c\u043e\u0441\u043a\u0432\u0430",
+        "query": "\u041c\u043e\u0441\u043a\u0432\u0430"
+      },
+      {
+        "normalized": "\u03b1\u03b8\u03ae\u03bd\u03b1",
+        "query": "\u0391\u03b8\u03ae\u03bd\u03b1"
+      },
+      {
+        "normalized": "i\u0307stanbul",
+        "query": "\u0130stanbul"
+      },
+      {
+        "normalized": "\u0131rmak",
+        "query": "\u0131rmak"
+      },
+      {
+        "normalized": "strasse",
+        "query": "Stra\u00dfe"
+      },
+      {
+        "normalized": "strasse",
+        "query": "STRASSE"
+      },
+      {
+        "normalized": "spaced out",
+        "query": "  Spaced  Out  "
+      },
+      {
+        "normalized": "tab separated",
+        "query": "Tab\tSeparated"
+      },
+      {
+        "normalized": "new line",
+        "query": "New\nLine"
+      },
+      {
+        "normalized": "",
+        "query": ""
+      },
+      {
+        "normalized": "",
+        "query": "   "
+      },
+      {
+        "normalized": "\u00e5ngstr\u00f6m",
+        "query": "\u00c5ngstr\u00f6m"
+      },
+      {
+        "normalized": "1 project",
+        "query": "\u2460 Project"
+      },
+      {
+        "normalized": "caf\u00e9",
+        "query": "caf\u00e9"
+      },
+      {
+        "normalized": "caf\u00e9",
+        "query": "cafe\u0301"
+      },
+      {
+        "normalized": "emoji \ud83c\udf89 name",
+        "query": "emoji \ud83c\udf89 name"
+      },
+      {
+        "normalized": "ann-marie",
+        "query": "Ann-Marie"
+      },
+      {
+        "normalized": "jean_luc",
+        "query": "Jean_Luc"
+      },
+      {
+        "normalized": "van der berg",
+        "query": "van der Berg"
+      },
+      {
+        "normalized": "fire",
+        "query": "\ufb01re"
+      },
+      {
+        "normalized": "xii legion",
+        "query": "\u216b legion"
+      },
+      {
+        "normalized": "fullwidth",
+        "query": "\uff46\uff55\uff4c\uff4c\uff57\uff49\uff44\uff54\uff48"
+      },
+      {
+        "normalized": "x y",
+        "query": "x\u00a0y"
+      },
+      {
+        "normalized": "a b",
+        "query": "a\u2028b"
+      },
+      {
+        "normalized": "dr. smith, jr.",
+        "query": "Dr. Smith, Jr."
+      },
+      {
+        "normalized": "\u00e9cole",
+        "query": "\u00c9cole"
+      },
+      {
+        "normalized": "\u00e6gis",
+        "query": "\u00c6gis"
+      },
+      {
+        "normalized": "\u0153uvre",
+        "query": "\u0152uvre"
+      },
+      {
+        "normalized": "ss only",
+        "query": "\u00df only"
+      },
+      {
+        "normalized": "bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller",
+        "query": "Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller Bartholomew Fitzgerald M\u00fcller "
+      },
+      {
+        "normalized": "bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller bartholomew fitzgerald m\u00fcller",
+        "query": "Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller Bartholomew Fitzgerald Mu\u0308ller "
+      },
+      {
+        "normalized": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "query": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      {
+        "normalized": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa alpha",
+        "query": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA Alpha"
+      },
+      {
+        "normalized": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa beta",
+        "query": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA Beta"
+      },
+      {
+        "codepoint": "U+0009",
+        "normalized": "a b",
+        "query": "A\tB"
+      },
+      {
+        "codepoint": "U+000A",
+        "normalized": "a b",
+        "query": "A\nB"
+      },
+      {
+        "codepoint": "U+000B",
+        "normalized": "a b",
+        "query": "A\u000bB"
+      },
+      {
+        "codepoint": "U+000C",
+        "normalized": "a b",
+        "query": "A\fB"
+      },
+      {
+        "codepoint": "U+000D",
+        "normalized": "a b",
+        "query": "A\rB"
+      },
+      {
+        "codepoint": "U+001C",
+        "normalized": "a b",
+        "query": "A\u001cB"
+      },
+      {
+        "codepoint": "U+001D",
+        "normalized": "a b",
+        "query": "A\u001dB"
+      },
+      {
+        "codepoint": "U+001E",
+        "normalized": "a b",
+        "query": "A\u001eB"
+      },
+      {
+        "codepoint": "U+001F",
+        "normalized": "a b",
+        "query": "A\u001fB"
+      },
+      {
+        "codepoint": "U+0020",
+        "normalized": "a b",
+        "query": "A B"
+      },
+      {
+        "codepoint": "U+0085",
+        "normalized": "a b",
+        "query": "A\u0085B"
+      },
+      {
+        "codepoint": "U+00A0",
+        "normalized": "a b",
+        "query": "A\u00a0B"
+      },
+      {
+        "codepoint": "U+1680",
+        "normalized": "a b",
+        "query": "A\u1680B"
+      },
+      {
+        "codepoint": "U+2000",
+        "normalized": "a b",
+        "query": "A\u2000B"
+      },
+      {
+        "codepoint": "U+2028",
+        "normalized": "a b",
+        "query": "A\u2028B"
+      },
+      {
+        "codepoint": "U+2029",
+        "normalized": "a b",
+        "query": "A\u2029B"
+      },
+      {
+        "codepoint": "U+202F",
+        "normalized": "a b",
+        "query": "A\u202fB"
+      },
+      {
+        "codepoint": "U+205F",
+        "normalized": "a b",
+        "query": "A\u205fB"
+      },
+      {
+        "codepoint": "U+3000",
+        "normalized": "a b",
+        "query": "A\u3000B"
+      }
+    ]
+  },
+  "versions": {
+    "python_slugify": "8.0.4",
+    "rapidfuzz": "3.14.3",
+    "text_unidecode": "1.3",
+    "unicodedata": "15.1.0"
+  }
+}

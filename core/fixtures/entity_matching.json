@@ -1,0 +1,2120 @@
+{
+  "fuzzy_threshold": 90,
+  "generated_by": "make core-fixtures",
+  "high_confidence_max_tier": 4,
+  "note": "Tiers 1-4 are high confidence and resolve silently. Tiers 5-8 are low confidence, and the caller surfaces them to the owner rather than guessing. A reimplementation that moves a case across the tier-4 boundary changes whether an owner is asked at all.",
+  "tiers": {
+    "1": "exact name, id or aka",
+    "2": "case-insensitive name, id or aka",
+    "3": "email",
+    "4": "slugified query against id",
+    "5": "first word, bidirectional, unambiguous only, min 3 chars",
+    "6": "token subset, unambiguous only, min 2 tokens in the shorter",
+    "7": "prefix token, unambiguous only, 4-char minimum prefix",
+    "8": "fuzzy, rapidfuzz token_sort_ratio at or above the threshold"
+  },
+  "vectors": [
+    {
+      "candidates": [
+        {
+          "aka": [
+            "Bob",
+            "Bobby"
+          ],
+          "emails": [
+            "bob@example.com"
+          ],
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        }
+      ],
+      "note": "tier 1 \u2014 exact name",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "Robert Johnson"
+    },
+    {
+      "candidates": [
+        {
+          "aka": [
+            "Bob",
+            "Bobby"
+          ],
+          "emails": [
+            "bob@example.com"
+          ],
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        }
+      ],
+      "note": "tier 1 \u2014 exact aka",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "Bob"
+    },
+    {
+      "candidates": [
+        {
+          "aka": [
+            "Bob",
+            "Bobby"
+          ],
+          "emails": [
+            "bob@example.com"
+          ],
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        }
+      ],
+      "note": "tier 1 \u2014 exact id",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "robert_johnson"
+    },
+    {
+      "candidates": [
+        {
+          "aka": [
+            "Bob",
+            "Bobby"
+          ],
+          "emails": [
+            "bob@example.com"
+          ],
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        }
+      ],
+      "note": "tier 2 \u2014 case-insensitive",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "robert johnson"
+    },
+    {
+      "candidates": [
+        {
+          "aka": [
+            "Bob",
+            "Bobby"
+          ],
+          "emails": [
+            "bob@example.com"
+          ],
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        }
+      ],
+      "note": "tier 3 \u2014 email, case-folded",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 3
+      },
+      "query": "BOB@EXAMPLE.COM"
+    },
+    {
+      "candidates": [
+        {
+          "aka": [
+            "Bob",
+            "Bobby"
+          ],
+          "emails": [
+            "bob@example.com"
+          ],
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        }
+      ],
+      "note": "tier 4 \u2014 slugified query against id",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "Robert  Johnson!"
+    },
+    {
+      "candidates": [
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        }
+      ],
+      "note": "tier 5 \u2014 first word, unambiguous",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": false,
+        "matched": true,
+        "tier": 5
+      },
+      "query": "Roberta"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        }
+      ],
+      "note": "REFUSAL \u2014 first word is ambiguous, so no match",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Robert"
+    },
+    {
+      "candidates": [
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        }
+      ],
+      "note": "tier 6 \u2014 token subset",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": false,
+        "matched": true,
+        "tier": 6
+      },
+      "query": "Jose Garcia"
+    },
+    {
+      "candidates": [
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez_lopez",
+          "name": "Maria Sanchez Lopez",
+          "type": "Person"
+        }
+      ],
+      "note": "REFUSAL \u2014 token subset is ambiguous",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Maria Sanchez"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        }
+      ],
+      "note": "tier 7 \u2014 prefix token",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Robe"
+    },
+    {
+      "candidates": [
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        }
+      ],
+      "note": "REFUSAL \u2014 prefix is ambiguous",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Alic"
+    },
+    {
+      "candidates": [
+        {
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        }
+      ],
+      "note": "tier 8 \u2014 fuzzy at or above the threshold",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Alicia Johnson"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        }
+      ],
+      "note": "no match at any tier",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Completely Different"
+    },
+    {
+      "candidates": [
+        {
+          "id": "jo_nesbo",
+          "name": "Jo Nesbo",
+          "type": "Person"
+        }
+      ],
+      "note": "first word below the 3-char floor",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Jo"
+    },
+    {
+      "candidates": [],
+      "note": "empty candidate set",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Robert Johnson"
+    },
+    {
+      "candidates": [
+        {
+          "aka": [
+            "Bob",
+            "Bobby"
+          ],
+          "emails": [
+            "bob@example.com"
+          ],
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        }
+      ],
+      "note": "empty query",
+      "outcome": {
+        "matched": false
+      },
+      "query": ""
+    },
+    {
+      "candidates": [
+        {
+          "name": "Alice Chen",
+          "type": "Person"
+        }
+      ],
+      "note": "id absent \u2014 slug of the name backs the id map",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "alice_chen"
+    },
+    {
+      "candidates": [
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        }
+      ],
+      "note": "unicode pair \u2014 '\u0130stanbul Metal Works' against 'Istanbul Metal Works'",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "\u0130stanbul Metal Works"
+    },
+    {
+      "candidates": [
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Strasse Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "unicode pair \u2014 'Stra\u00dfe Handels GmbH' against 'Strasse Handels GmbH'",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "Stra\u00dfe Handels GmbH"
+    },
+    {
+      "candidates": [
+        {
+          "id": "muller_werke",
+          "name": "M\u00fcller Werke",
+          "type": "Person"
+        }
+      ],
+      "note": "unicode pair \u2014 'Mu\u0308ller Werke' against 'M\u00fcller Werke'",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "Mu\u0308ller Werke"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "full population",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "Robert Johnson"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "first word against the full population",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Robert"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "full population",
+      "outcome": {
+        "candidate_index": 1,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "Robert Smith"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "first word against the full population",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Robert"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "full population",
+      "outcome": {
+        "candidate_index": 2,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "Roberta Kim"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "first word against the full population",
+      "outcome": {
+        "candidate_index": 2,
+        "high_confidence": false,
+        "matched": true,
+        "tier": 5
+      },
+      "query": "Roberta"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "full population",
+      "outcome": {
+        "candidate_index": 3,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "Alice Chen"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "first word against the full population",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Alice"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "full population",
+      "outcome": {
+        "candidate_index": 4,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "Alice Chan"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "first word against the full population",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Alice"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "full population",
+      "outcome": {
+        "candidate_index": 5,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "Jose Garcia Marquez"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "first word against the full population",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Jose"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "full population",
+      "outcome": {
+        "candidate_index": 6,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "Jose Garcia"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "first word against the full population",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Jose"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "full population",
+      "outcome": {
+        "candidate_index": 7,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "Maria Elena Sanchez"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "first word against the full population",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Maria"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "full population",
+      "outcome": {
+        "candidate_index": 8,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "Maria Sanchez"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "first word against the full population",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Maria"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "full population",
+      "outcome": {
+        "candidate_index": 9,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "\u0130stanbul Metal Works"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "first word against the full population",
+      "outcome": {
+        "candidate_index": 9,
+        "high_confidence": false,
+        "matched": true,
+        "tier": 5
+      },
+      "query": "\u0130stanbul"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "full population",
+      "outcome": {
+        "candidate_index": 10,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "Istanbul Metal Works"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "first word against the full population",
+      "outcome": {
+        "candidate_index": 10,
+        "high_confidence": false,
+        "matched": true,
+        "tier": 5
+      },
+      "query": "Istanbul"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "full population",
+      "outcome": {
+        "candidate_index": 11,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 1
+      },
+      "query": "Stra\u00dfe Handels GmbH"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert_johnson",
+          "name": "Robert Johnson",
+          "type": "Person"
+        },
+        {
+          "id": "robert_smith",
+          "name": "Robert Smith",
+          "type": "Person"
+        },
+        {
+          "id": "roberta_kim",
+          "name": "Roberta Kim",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chen",
+          "name": "Alice Chen",
+          "type": "Person"
+        },
+        {
+          "id": "alice_chan",
+          "name": "Alice Chan",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        },
+        {
+          "id": "jose_garcia",
+          "name": "Jose Garcia",
+          "type": "Person"
+        },
+        {
+          "id": "maria_elena_sanchez",
+          "name": "Maria Elena Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "maria_sanchez",
+          "name": "Maria Sanchez",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "\u0130stanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "istanbul_metal_works",
+          "name": "Istanbul Metal Works",
+          "type": "Person"
+        },
+        {
+          "id": "strasse_handels_gmbh",
+          "name": "Stra\u00dfe Handels GmbH",
+          "type": "Person"
+        }
+      ],
+      "note": "first word against the full population",
+      "outcome": {
+        "candidate_index": 11,
+        "high_confidence": false,
+        "matched": true,
+        "tier": 5
+      },
+      "query": "Stra\u00dfe"
+    }
+  ],
+  "versions": {
+    "python_slugify": "8.0.4",
+    "rapidfuzz": "3.14.3",
+    "text_unidecode": "1.3",
+    "unicodedata": "15.1.0"
+  }
+}

@@ -127,6 +127,9 @@ from tests.speaker_oracle.overlap import (
     WINDOW_S as OVERLAP_WINDOW_S,
 )
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import entity_corpus  # noqa: E402  — sibling module, not a package
+
 FIXTURE_DIR = ROOT / "core" / "fixtures"
 CALLOSUM_ARTIFACT_PATH = FIXTURE_DIR / "callosum_registry.json"
 COGITATE_ARTIFACT_PATH = FIXTURE_DIR / "cogitate_contract.json"
@@ -134,6 +137,9 @@ EDGE_SCHEMA_ARTIFACT_PATH = FIXTURE_DIR / "edge_schema.json"
 MARKDOWN_CHUNKS_ARTIFACT_PATH = FIXTURE_DIR / "markdown_chunks.json"
 SPEAKER_FILTERBANK_ARTIFACT_PATH = FIXTURE_DIR / "speaker_filterbank.json"
 SPEAKER_STAGE_BOUNDARIES_ARTIFACT_PATH = FIXTURE_DIR / "speaker_stage_boundaries.json"
+ENTITY_IDENTITY_ARTIFACT_PATH = FIXTURE_DIR / "entity_identity.json"
+ENTITY_MATCHING_ARTIFACT_PATH = FIXTURE_DIR / "entity_matching.json"
+ENTITY_STORE_ARTIFACT_PATH = FIXTURE_DIR / "entity_store.json"
 OVERSIZED_SIZE_NORMALIZATION = "oversized_size"
 OVERSIZED_SIZE_TOKEN = "normalizedsize"
 # Filterbank rows are a scale/regime oracle for the production fbank stage. The
@@ -1326,6 +1332,15 @@ def expected_outputs() -> dict[Path, ArtifactDescriptor]:
         ),
         MARKDOWN_CHUNKS_ARTIFACT_PATH: ArtifactDescriptor(
             build_markdown_chunks_fixture,
+        ),
+        ENTITY_IDENTITY_ARTIFACT_PATH: ArtifactDescriptor(
+            entity_corpus.build_entity_identity_fixture,
+        ),
+        ENTITY_MATCHING_ARTIFACT_PATH: ArtifactDescriptor(
+            entity_corpus.build_entity_matching_fixture,
+        ),
+        ENTITY_STORE_ARTIFACT_PATH: ArtifactDescriptor(
+            entity_corpus.build_entity_store_fixture,
         ),
         SPEAKER_FILTERBANK_ARTIFACT_PATH: ArtifactDescriptor(
             build_speaker_filterbank_fixture,

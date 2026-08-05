@@ -1,0 +1,993 @@
+{
+  "artifacts": {
+    "entities/ambiguities.jsonl": "{\"schema_version\": 1, \"ambiguity_id\": \"amb_04374a01e8579a661fb1d1aa\", \"scope\": {\"kind\": \"journal\"}, \"normalized_query\": \"alice\", \"original_query\": \"Alice\", \"latest_query\": \"Alice\", \"first_seen\": \"2026-08-04T00:00:00Z\", \"last_seen\": \"2026-08-04T00:00:00Z\", \"observed_tier\": 5, \"occurrence_count\": 1, \"status\": \"open\", \"ranked_candidates\": [{\"id\": \"alice_chen\", \"name\": \"Alice Chen\", \"tier\": 5, \"score\": 92.3076923076923}, {\"id\": \"alice_chan\", \"name\": \"Alice Chan\", \"tier\": 5, \"score\": 90.0}], \"origins\": [{\"lane\": \"segment\", \"day\": \"20260804\", \"segment_id\": \"s1\"}], \"origin_keys\": [\"{\\\"day\\\":\\\"20260804\\\",\\\"lane\\\":\\\"segment\\\",\\\"segment_id\\\":\\\"s1\\\"}\"], \"audit\": {\"prior_choices\": []}}\n{\"schema_version\": 1, \"ambiguity_id\": \"amb_7ffaa5cbbfc8319f825215a2\", \"scope\": {\"kind\": \"facet\", \"facet\": \"work\"}, \"normalized_query\": \"strasse\", \"original_query\": \"Stra\u00dfe\", \"latest_query\": \"Stra\u00dfe\", \"first_seen\": \"2026-08-04T00:00:00Z\", \"last_seen\": \"2026-08-04T00:00:00Z\", \"observed_tier\": 8, \"occurrence_count\": 1, \"status\": \"resolved\", \"ranked_candidates\": [{\"id\": \"alice_chen\", \"name\": \"Alice Chen\", \"tier\": 8, \"score\": 92.3076923076923}, {\"id\": \"alice_chan\", \"name\": \"Alice Chan\", \"tier\": 8, \"score\": 90.0}], \"origins\": [{\"lane\": \"import\", \"source_id\": \"kindle\", \"field\": \"author\"}], \"origin_keys\": [\"{\\\"field\\\":\\\"author\\\",\\\"lane\\\":\\\"import\\\",\\\"source_id\\\":\\\"kindle\\\"}\"], \"audit\": {\"prior_choices\": []}, \"resolved_entity_id\": \"strasse_handels_gmbh\", \"resolved_at\": \"2026-08-04T00:00:00Z\"}\n",
+    "entities/{id}/entity.json": "{\n  \"id\": \"alice_johnson\",\n  \"name\": \"Alice Johnson\",\n  \"type\": \"Person\",\n  \"created_at\": 1785889922582,\n  \"aka\": [\n    \"Ali\",\n    \"AJ\"\n  ],\n  \"emails\": [\n    \"alice@example.com\"\n  ]\n}\n",
+    "entities/{id}/entity.json (unicode)": "{\n  \"id\": \"jose_garcia\",\n  \"name\": \"Jos\u00e9 Garc\u00eda\",\n  \"type\": \"Person\",\n  \"created_at\": 1785889922583,\n  \"description\": \"raw UTF-8 on disk, never \\\\u escapes\"\n}\n",
+    "entities/{id}/history/events/{seq}-{version_id}.json": "{\n  \"actor\": null,\n  \"caller\": null,\n  \"entity_id\": \"alice_johnson\",\n  \"identity_after\": {\n    \"aka\": [\n      \"Ali\",\n      \"AJ\"\n    ],\n    \"created_at\": 1785889922582,\n    \"emails\": [\n      \"alice@example.com\"\n    ],\n    \"id\": \"alice_johnson\",\n    \"name\": \"Alice Johnson\",\n    \"type\": \"Person\"\n  },\n  \"identity_before\": null,\n  \"kind\": \"create\",\n  \"operation\": {},\n  \"schema_version\": 1,\n  \"seq\": 1,\n  \"ts\": \"2026-08-05T00:32:02.582506Z\",\n  \"version_id\": \"vh_49d7adcbf786461cb11c00081afa9780\"\n}\n"
+  },
+  "generated_by": "make core-fixtures",
+  "inputs": {
+    "ambiguity_rows": [
+      {
+        "ambiguity_id": "amb_04374a01e8579a661fb1d1aa",
+        "audit": {
+          "prior_choices": []
+        },
+        "first_seen": "2026-08-04T00:00:00Z",
+        "last_seen": "2026-08-04T00:00:00Z",
+        "latest_query": "Alice",
+        "normalized_query": "alice",
+        "observed_tier": 5,
+        "occurrence_count": 1,
+        "origin_keys": [
+          "{\"day\":\"20260804\",\"lane\":\"segment\",\"segment_id\":\"s1\"}"
+        ],
+        "original_query": "Alice",
+        "origins": [
+          {
+            "day": "20260804",
+            "lane": "segment",
+            "segment_id": "s1"
+          }
+        ],
+        "ranked_candidates": [
+          {
+            "id": "alice_chen",
+            "name": "Alice Chen",
+            "score": 92.3076923076923,
+            "tier": 5
+          },
+          {
+            "id": "alice_chan",
+            "name": "Alice Chan",
+            "score": 90.0,
+            "tier": 5
+          }
+        ],
+        "schema_version": 1,
+        "scope": {
+          "kind": "journal"
+        },
+        "status": "open"
+      },
+      {
+        "ambiguity_id": "amb_7ffaa5cbbfc8319f825215a2",
+        "audit": {
+          "prior_choices": []
+        },
+        "first_seen": "2026-08-04T00:00:00Z",
+        "last_seen": "2026-08-04T00:00:00Z",
+        "latest_query": "Stra\u00dfe",
+        "normalized_query": "strasse",
+        "observed_tier": 8,
+        "occurrence_count": 1,
+        "origin_keys": [
+          "{\"field\":\"author\",\"lane\":\"import\",\"source_id\":\"kindle\"}"
+        ],
+        "original_query": "Stra\u00dfe",
+        "origins": [
+          {
+            "field": "author",
+            "lane": "import",
+            "source_id": "kindle"
+          }
+        ],
+        "ranked_candidates": [
+          {
+            "id": "alice_chen",
+            "name": "Alice Chen",
+            "score": 92.3076923076923,
+            "tier": 8
+          },
+          {
+            "id": "alice_chan",
+            "name": "Alice Chan",
+            "score": 90.0,
+            "tier": 8
+          }
+        ],
+        "resolved_at": "2026-08-04T00:00:00Z",
+        "resolved_entity_id": "strasse_handels_gmbh",
+        "schema_version": 1,
+        "scope": {
+          "facet": "work",
+          "kind": "facet"
+        },
+        "status": "resolved"
+      }
+    ],
+    "history_event": {
+      "actor": null,
+      "caller": null,
+      "entity_id": "alice_johnson",
+      "identity_after": {
+        "aka": [
+          "Ali",
+          "AJ"
+        ],
+        "created_at": 1785889922582,
+        "emails": [
+          "alice@example.com"
+        ],
+        "id": "alice_johnson",
+        "name": "Alice Johnson",
+        "type": "Person"
+      },
+      "identity_before": null,
+      "kind": "create",
+      "operation": {},
+      "schema_version": 1,
+      "seq": 1,
+      "ts": "2026-08-05T00:32:02.582506Z",
+      "version_id": "vh_49d7adcbf786461cb11c00081afa9780"
+    },
+    "identity": {
+      "aka": [
+        "Ali",
+        "AJ"
+      ],
+      "created_at": 1785889922582,
+      "emails": [
+        "alice@example.com"
+      ],
+      "id": "alice_johnson",
+      "name": "Alice Johnson",
+      "type": "Person"
+    },
+    "identity_unicode": {
+      "created_at": 1785889922583,
+      "description": "raw UTF-8 on disk, never \\u escapes",
+      "id": "jose_garcia",
+      "name": "Jos\u00e9 Garc\u00eda",
+      "type": "Person"
+    }
+  },
+  "negative": {
+    "ambiguity_rows": [
+      {
+        "refusal": "unsupported or missing schema_version",
+        "row": {
+          "ambiguity_id": "amb_04374a01e8579a661fb1d1aa",
+          "audit": {
+            "prior_choices": []
+          },
+          "first_seen": "2026-08-04T00:00:00Z",
+          "last_seen": "2026-08-04T00:00:00Z",
+          "latest_query": "Alice",
+          "normalized_query": "alice",
+          "observed_tier": 5,
+          "occurrence_count": 1,
+          "origin_keys": [
+            "{\"day\":\"20260804\",\"lane\":\"segment\",\"segment_id\":\"s1\"}"
+          ],
+          "original_query": "Alice",
+          "origins": [
+            {
+              "day": "20260804",
+              "lane": "segment",
+              "segment_id": "s1"
+            }
+          ],
+          "ranked_candidates": [
+            {
+              "id": "alice_chen",
+              "name": "Alice Chen",
+              "score": 92.3076923076923,
+              "tier": 5
+            },
+            {
+              "id": "alice_chan",
+              "name": "Alice Chan",
+              "score": 90.0,
+              "tier": 5
+            }
+          ],
+          "scope": {
+            "kind": "journal"
+          },
+          "status": "open"
+        },
+        "rule": "schema_version is required"
+      },
+      {
+        "refusal": "unsupported or missing schema_version",
+        "row": {
+          "ambiguity_id": "amb_04374a01e8579a661fb1d1aa",
+          "audit": {
+            "prior_choices": []
+          },
+          "first_seen": "2026-08-04T00:00:00Z",
+          "last_seen": "2026-08-04T00:00:00Z",
+          "latest_query": "Alice",
+          "normalized_query": "alice",
+          "observed_tier": 5,
+          "occurrence_count": 1,
+          "origin_keys": [
+            "{\"day\":\"20260804\",\"lane\":\"segment\",\"segment_id\":\"s1\"}"
+          ],
+          "original_query": "Alice",
+          "origins": [
+            {
+              "day": "20260804",
+              "lane": "segment",
+              "segment_id": "s1"
+            }
+          ],
+          "ranked_candidates": [
+            {
+              "id": "alice_chen",
+              "name": "Alice Chen",
+              "score": 92.3076923076923,
+              "tier": 5
+            },
+            {
+              "id": "alice_chan",
+              "name": "Alice Chan",
+              "score": 90.0,
+              "tier": 5
+            }
+          ],
+          "schema_version": 99,
+          "scope": {
+            "kind": "journal"
+          },
+          "status": "open"
+        },
+        "rule": "schema_version must match"
+      },
+      {
+        "refusal": "unsupported or missing schema_version",
+        "row": {
+          "ambiguity_id": "amb_04374a01e8579a661fb1d1aa",
+          "audit": {
+            "prior_choices": []
+          },
+          "first_seen": "2026-08-04T00:00:00Z",
+          "last_seen": "2026-08-04T00:00:00Z",
+          "latest_query": "Alice",
+          "normalized_query": "alice",
+          "observed_tier": 5,
+          "occurrence_count": 1,
+          "origin_keys": [
+            "{\"day\":\"20260804\",\"lane\":\"segment\",\"segment_id\":\"s1\"}"
+          ],
+          "original_query": "Alice",
+          "origins": [
+            {
+              "day": "20260804",
+              "lane": "segment",
+              "segment_id": "s1"
+            }
+          ],
+          "ranked_candidates": [
+            {
+              "id": "alice_chen",
+              "name": "Alice Chen",
+              "score": 92.3076923076923,
+              "tier": 5
+            },
+            {
+              "id": "alice_chan",
+              "name": "Alice Chan",
+              "score": 90.0,
+              "tier": 5
+            }
+          ],
+          "schema_version": true,
+          "scope": {
+            "kind": "journal"
+          },
+          "status": "open"
+        },
+        "rule": "a bool is not a version"
+      },
+      {
+        "refusal": "missing ambiguity_id",
+        "row": {
+          "audit": {
+            "prior_choices": []
+          },
+          "first_seen": "2026-08-04T00:00:00Z",
+          "last_seen": "2026-08-04T00:00:00Z",
+          "latest_query": "Alice",
+          "normalized_query": "alice",
+          "observed_tier": 5,
+          "occurrence_count": 1,
+          "origin_keys": [
+            "{\"day\":\"20260804\",\"lane\":\"segment\",\"segment_id\":\"s1\"}"
+          ],
+          "original_query": "Alice",
+          "origins": [
+            {
+              "day": "20260804",
+              "lane": "segment",
+              "segment_id": "s1"
+            }
+          ],
+          "ranked_candidates": [
+            {
+              "id": "alice_chen",
+              "name": "Alice Chen",
+              "score": 92.3076923076923,
+              "tier": 5
+            },
+            {
+              "id": "alice_chan",
+              "name": "Alice Chan",
+              "score": 90.0,
+              "tier": 5
+            }
+          ],
+          "schema_version": 1,
+          "scope": {
+            "kind": "journal"
+          },
+          "status": "open"
+        },
+        "rule": "ambiguity_id is required"
+      },
+      {
+        "refusal": "ambiguity_id does not match scope/query",
+        "row": {
+          "ambiguity_id": "amb_wrong",
+          "audit": {
+            "prior_choices": []
+          },
+          "first_seen": "2026-08-04T00:00:00Z",
+          "last_seen": "2026-08-04T00:00:00Z",
+          "latest_query": "Alice",
+          "normalized_query": "alice",
+          "observed_tier": 5,
+          "occurrence_count": 1,
+          "origin_keys": [
+            "{\"day\":\"20260804\",\"lane\":\"segment\",\"segment_id\":\"s1\"}"
+          ],
+          "original_query": "Alice",
+          "origins": [
+            {
+              "day": "20260804",
+              "lane": "segment",
+              "segment_id": "s1"
+            }
+          ],
+          "ranked_candidates": [
+            {
+              "id": "alice_chen",
+              "name": "Alice Chen",
+              "score": 92.3076923076923,
+              "tier": 5
+            },
+            {
+              "id": "alice_chan",
+              "name": "Alice Chan",
+              "score": 90.0,
+              "tier": 5
+            }
+          ],
+          "schema_version": 1,
+          "scope": {
+            "kind": "journal"
+          },
+          "status": "open"
+        },
+        "rule": "ambiguity_id must equal the recomputed scope|query digest"
+      },
+      {
+        "refusal": "scope is not an object",
+        "row": {
+          "ambiguity_id": "amb_04374a01e8579a661fb1d1aa",
+          "audit": {
+            "prior_choices": []
+          },
+          "first_seen": "2026-08-04T00:00:00Z",
+          "last_seen": "2026-08-04T00:00:00Z",
+          "latest_query": "Alice",
+          "normalized_query": "alice",
+          "observed_tier": 5,
+          "occurrence_count": 1,
+          "origin_keys": [
+            "{\"day\":\"20260804\",\"lane\":\"segment\",\"segment_id\":\"s1\"}"
+          ],
+          "original_query": "Alice",
+          "origins": [
+            {
+              "day": "20260804",
+              "lane": "segment",
+              "segment_id": "s1"
+            }
+          ],
+          "ranked_candidates": [
+            {
+              "id": "alice_chen",
+              "name": "Alice Chen",
+              "score": 92.3076923076923,
+              "tier": 5
+            },
+            {
+              "id": "alice_chan",
+              "name": "Alice Chan",
+              "score": 90.0,
+              "tier": 5
+            }
+          ],
+          "schema_version": 1,
+          "scope": "journal",
+          "status": "open"
+        },
+        "rule": "scope must be an object"
+      },
+      {
+        "refusal": "scope has an unknown kind",
+        "row": {
+          "ambiguity_id": "amb_04374a01e8579a661fb1d1aa",
+          "audit": {
+            "prior_choices": []
+          },
+          "first_seen": "2026-08-04T00:00:00Z",
+          "last_seen": "2026-08-04T00:00:00Z",
+          "latest_query": "Alice",
+          "normalized_query": "alice",
+          "observed_tier": 5,
+          "occurrence_count": 1,
+          "origin_keys": [
+            "{\"day\":\"20260804\",\"lane\":\"segment\",\"segment_id\":\"s1\"}"
+          ],
+          "original_query": "Alice",
+          "origins": [
+            {
+              "day": "20260804",
+              "lane": "segment",
+              "segment_id": "s1"
+            }
+          ],
+          "ranked_candidates": [
+            {
+              "id": "alice_chen",
+              "name": "Alice Chen",
+              "score": 92.3076923076923,
+              "tier": 5
+            },
+            {
+              "id": "alice_chan",
+              "name": "Alice Chan",
+              "score": 90.0,
+              "tier": 5
+            }
+          ],
+          "schema_version": 1,
+          "scope": {
+            "kind": "elsewhere"
+          },
+          "status": "open"
+        },
+        "rule": "scope kind must be journal or facet"
+      },
+      {
+        "refusal": "journal scope includes a facet",
+        "row": {
+          "ambiguity_id": "amb_04374a01e8579a661fb1d1aa",
+          "audit": {
+            "prior_choices": []
+          },
+          "first_seen": "2026-08-04T00:00:00Z",
+          "last_seen": "2026-08-04T00:00:00Z",
+          "latest_query": "Alice",
+          "normalized_query": "alice",
+          "observed_tier": 5,
+          "occurrence_count": 1,
+          "origin_keys": [
+            "{\"day\":\"20260804\",\"lane\":\"segment\",\"segment_id\":\"s1\"}"
+          ],
+          "original_query": "Alice",
+          "origins": [
+            {
+              "day": "20260804",
+              "lane": "segment",
+              "segment_id": "s1"
+            }
+          ],
+          "ranked_candidates": [
+            {
+              "id": "alice_chen",
+              "name": "Alice Chen",
+              "score": 92.3076923076923,
+              "tier": 5
+            },
+            {
+              "id": "alice_chan",
+              "name": "Alice Chan",
+              "score": 90.0,
+              "tier": 5
+            }
+          ],
+          "schema_version": 1,
+          "scope": {
+            "facet": "work",
+            "kind": "journal"
+          },
+          "status": "open"
+        },
+        "rule": "a journal scope carries no facet"
+      },
+      {
+        "refusal": "facet scope has no facet",
+        "row": {
+          "ambiguity_id": "amb_04374a01e8579a661fb1d1aa",
+          "audit": {
+            "prior_choices": []
+          },
+          "first_seen": "2026-08-04T00:00:00Z",
+          "last_seen": "2026-08-04T00:00:00Z",
+          "latest_query": "Alice",
+          "normalized_query": "alice",
+          "observed_tier": 5,
+          "occurrence_count": 1,
+          "origin_keys": [
+            "{\"day\":\"20260804\",\"lane\":\"segment\",\"segment_id\":\"s1\"}"
+          ],
+          "original_query": "Alice",
+          "origins": [
+            {
+              "day": "20260804",
+              "lane": "segment",
+              "segment_id": "s1"
+            }
+          ],
+          "ranked_candidates": [
+            {
+              "id": "alice_chen",
+              "name": "Alice Chen",
+              "score": 92.3076923076923,
+              "tier": 5
+            },
+            {
+              "id": "alice_chan",
+              "name": "Alice Chan",
+              "score": 90.0,
+              "tier": 5
+            }
+          ],
+          "schema_version": 1,
+          "scope": {
+            "kind": "facet"
+          },
+          "status": "open"
+        },
+        "rule": "a facet scope requires a facet"
+      },
+      {
+        "refusal": "missing normalized_query",
+        "row": {
+          "ambiguity_id": "amb_04374a01e8579a661fb1d1aa",
+          "audit": {
+            "prior_choices": []
+          },
+          "first_seen": "2026-08-04T00:00:00Z",
+          "last_seen": "2026-08-04T00:00:00Z",
+          "latest_query": "Alice",
+          "normalized_query": "",
+          "observed_tier": 5,
+          "occurrence_count": 1,
+          "origin_keys": [
+            "{\"day\":\"20260804\",\"lane\":\"segment\",\"segment_id\":\"s1\"}"
+          ],
+          "original_query": "Alice",
+          "origins": [
+            {
+              "day": "20260804",
+              "lane": "segment",
+              "segment_id": "s1"
+            }
+          ],
+          "ranked_candidates": [
+            {
+              "id": "alice_chen",
+              "name": "Alice Chen",
+              "score": 92.3076923076923,
+              "tier": 5
+            },
+            {
+              "id": "alice_chan",
+              "name": "Alice Chan",
+              "score": 90.0,
+              "tier": 5
+            }
+          ],
+          "schema_version": 1,
+          "scope": {
+            "kind": "journal"
+          },
+          "status": "open"
+        },
+        "rule": "normalized_query must be non-empty"
+      },
+      {
+        "refusal": "missing original_query",
+        "row": {
+          "ambiguity_id": "amb_04374a01e8579a661fb1d1aa",
+          "audit": {
+            "prior_choices": []
+          },
+          "first_seen": "2026-08-04T00:00:00Z",
+          "last_seen": "2026-08-04T00:00:00Z",
+          "latest_query": "Alice",
+          "normalized_query": "alice",
+          "observed_tier": 5,
+          "occurrence_count": 1,
+          "origin_keys": [
+            "{\"day\":\"20260804\",\"lane\":\"segment\",\"segment_id\":\"s1\"}"
+          ],
+          "origins": [
+            {
+              "day": "20260804",
+              "lane": "segment",
+              "segment_id": "s1"
+            }
+          ],
+          "ranked_candidates": [
+            {
+              "id": "alice_chen",
+              "name": "Alice Chen",
+              "score": 92.3076923076923,
+              "tier": 5
+            },
+            {
+              "id": "alice_chan",
+              "name": "Alice Chan",
+              "score": 90.0,
+              "tier": 5
+            }
+          ],
+          "schema_version": 1,
+          "scope": {
+            "kind": "journal"
+          },
+          "status": "open"
+        },
+        "rule": "original_query is required"
+      },
+      {
+        "refusal": "observed_tier is not a low-confidence tier",
+        "row": {
+          "ambiguity_id": "amb_04374a01e8579a661fb1d1aa",
+          "audit": {
+            "prior_choices": []
+          },
+          "first_seen": "2026-08-04T00:00:00Z",
+          "last_seen": "2026-08-04T00:00:00Z",
+          "latest_query": "Alice",
+          "normalized_query": "alice",
+          "observed_tier": 4,
+          "occurrence_count": 1,
+          "origin_keys": [
+            "{\"day\":\"20260804\",\"lane\":\"segment\",\"segment_id\":\"s1\"}"
+          ],
+          "original_query": "Alice",
+          "origins": [
+            {
+              "day": "20260804",
+              "lane": "segment",
+              "segment_id": "s1"
+            }
+          ],
+          "ranked_candidates": [
+            {
+              "id": "alice_chen",
+              "name": "Alice Chen",
+              "score": 92.3076923076923,
+              "tier": 5
+            },
+            {
+              "id": "alice_chan",
+              "name": "Alice Chan",
+              "score": 90.0,
+              "tier": 5
+            }
+          ],
+          "schema_version": 1,
+          "scope": {
+            "kind": "journal"
+          },
+          "status": "open"
+        },
+        "rule": "observed_tier is one of the low-confidence tiers 5-8"
+      }
+    ],
+    "note": "One malformed row per validation rule. A row set is validated in full before any bytes are written, and both mutation entry points re-read strictly under the lock first \u2014 so one bad row makes the whole file unwritable while it stays readable."
+  },
+  "reconciliation": {
+    "cases": [
+      {
+        "after": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "description": "a friend",
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "before": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "disk": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "description": "a friend",
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "note": "disk equals identity_after \u2014 publish",
+        "outcome": "publish"
+      },
+      {
+        "after": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "description": "a friend",
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "before": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "disk": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "note": "disk equals identity_before \u2014 discard",
+        "outcome": "discard"
+      },
+      {
+        "after": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "description": "a friend",
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "before": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "disk": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "schema_version": 2,
+          "type": "Person"
+        },
+        "note": "disk matches neither \u2014 repair required, journal unchanged",
+        "outcome": "repair_required"
+      },
+      {
+        "after": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "description": "a friend",
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "before": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "disk": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582.0,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "note": "int vs float on created_at \u2014 equal under this interpreter's structural equality, so it DISCARDS rather than refusing",
+        "outcome": "discard"
+      },
+      {
+        "after": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "description": "a friend",
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "before": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "disk": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "note": "key order is not part of equality \u2014 discard",
+        "outcome": "discard"
+      },
+      {
+        "after": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "description": "a friend",
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "before": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "disk": {
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "note": "a missing optional field is not the same as an empty one",
+        "outcome": "repair_required"
+      }
+    ],
+    "note": "Run before every mutation. Publish when the identity on disk equals identity_after, discard when it equals identity_before, otherwise refuse and leave the journal unchanged. The refusal is permanent for that entity until a human repairs it, and reads keep working throughout."
+  },
+  "serialization": {
+    "ambiguities": {
+      "empty_file": "an empty row set writes a zero-byte file rather than removing it",
+      "flags": "ensure_ascii=False, one compact object per line"
+    },
+    "history_event": {
+      "filename": "{seq:020d}-{version_id}.json",
+      "filename_note": "zero-padded, so lexical order is chronological order",
+      "flags": "indent=2, ensure_ascii=False, sort_keys=True",
+      "mode": "0600"
+    },
+    "identity": {
+      "flags": "indent=2, ensure_ascii=False, sort_keys absent",
+      "mode": "0600"
+    },
+    "note": "Two conventions live one directory apart and both are load bearing: the identity file preserves insertion order, history events sort their keys. Both write raw UTF-8 and one trailing newline, and both land at mode 0600 through an atomic replace."
+  },
+  "timestamps": {
+    "ambiguity_ts": "ISO-8601 UTC ending in Z, second precision",
+    "created_at": "epoch milliseconds, integer",
+    "history_ts": "ISO-8601 UTC ending in Z, VARIABLE WIDTH \u2014 the fractional part is omitted entirely when the microsecond component is zero, so a reader that requires six digits fails on those records"
+  },
+  "versions": {
+    "python_slugify": "8.0.4",
+    "rapidfuzz": "3.14.3",
+    "text_unidecode": "1.3",
+    "unicodedata": "15.1.0"
+  }
+}
