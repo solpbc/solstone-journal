@@ -1,0 +1,196 @@
+{
+  "x-journal-contract": {
+    "format_id": "journal-stream-name-projection",
+    "schema_owner": "the segment-media/journal-segment boundary",
+    "file_kind": "vectors",
+    "rule": "NFKC normalize -> casefold -> replace runs of [^a-z0-9_-] with '_' -> strip leading/trailing '_-.' -> empty becomes 'device' -> escape a Windows reserved stem with a trailing '_' -> append '_' + projected(source) when source is non-empty -> truncate to 64 bytes. Collisions are resolved by the ordinal allocator, NOT by this function.",
+    "note": "`project` vectors are AUTHORED from the rule above -- no implementation produces them yet, so they can catch an implementation being wrong. `legacy` vectors are RECORDED from the shipped name derivation; they already exist on disk and must stay readable. The projected name is NEVER required to be invertible, only unique.",
+    "known_limitation": "The human-friendly property holds for Latin scripts and degrades to nothing for scripts with no Latin decomposition: a device labelled in Cyrillic, Greek, Hebrew, Arabic or CJK filters to empty and takes the fallback, so an owner with three such devices sees `device`, `device_2`, `device_3`. This is safe -- nothing resolves by the name and uniqueness still holds -- but it is a real gap for those owners, and closing it means a per-script transliteration commitment rather than a rule change."
+  },
+  "project": [
+    {
+      "label": "iPhone",
+      "source": "",
+      "expect": "iphone",
+      "why": "the ordinary case"
+    },
+    {
+      "label": "iPhone (2)",
+      "source": "",
+      "expect": "iphone_2",
+      "why": "the founder's worked example; the ordinal form the label allocator already emits"
+    },
+    {
+      "label": "IPHONE (2)",
+      "source": "",
+      "expect": "iphone_2",
+      "why": "🔴 case-collision pair with the row above -- the SAME output is the whole point. On APFS and NTFS these two collide; on ext4 they would not. Casefolding first makes them collide everywhere, so the ordinal allocator resolves it."
+    },
+    {
+      "label": "iPhone (2)",
+      "source": "watch",
+      "expect": "iphone_2_watch",
+      "why": "one device, two streams -- the sub-stream discriminator, which is why `did` alone cannot select a stream"
+    },
+    {
+      "label": "my.phone",
+      "source": "",
+      "expect": "my_phone",
+      "why": "⛔ the dot is the legacy kind separator and `import.` is a live prefix; a projected `my.phone` would read as a qualified name at seven call sites"
+    },
+    {
+      "label": "workstation.browser",
+      "source": "",
+      "expect": "workstation_browser",
+      "why": "a legacy kind-carrying name arriving as a label -- the dot still goes"
+    },
+    {
+      "label": "  Jer's MacBook Pro  ",
+      "source": "",
+      "expect": "jer_s_macbook_pro",
+      "why": "apostrophe, spaces, and leading/trailing whitespace in one label"
+    },
+    {
+      "label": "CON",
+      "source": "",
+      "expect": "con_",
+      "why": "Windows reserved basename, bare"
+    },
+    {
+      "label": "com1",
+      "source": "",
+      "expect": "com1_",
+      "why": "Windows reserved, already lowercase -- the check is case-insensitive on the stem"
+    },
+    {
+      "label": "nul.txt",
+      "source": "",
+      "expect": "nul_txt",
+      "why": "reserved stem with an extension; the dot becomes `_` first, so the stem is `nul_txt` and is NOT reserved. Pins that the escape is not over-applied."
+    },
+    {
+      "label": "!!!",
+      "source": "",
+      "expect": "device",
+      "why": "everything filters out -- must not produce an empty directory name"
+    },
+    {
+      "label": "...",
+      "source": "",
+      "expect": "device",
+      "why": "dots only; strips to empty via a different path than the row above"
+    },
+    {
+      "label": "-_-",
+      "source": "",
+      "expect": "device",
+      "why": "only strip characters -- empty after strip, not after filter"
+    },
+    {
+      "label": "Ｆｕｌｌｗｉｄｔｈ",
+      "source": "",
+      "expect": "fullwidth",
+      "why": "NFKC folds fullwidth forms to ASCII before casefold; without normalization every character would filter to `_`"
+    },
+    {
+      "label": "Straße",
+      "source": "",
+      "expect": "strasse",
+      "why": "🔴 casefold maps ß to ss where lower() does not -- the vector that catches `to_lowercase()` used in place of a real casefold"
+    },
+    {
+      "label": "İstanbul",
+      "source": "",
+      "expect": "istanbul",
+      "why": "dotted capital I -- casefold yields `i` plus a combining dot, which mark-stripping removes. Pins the pipeline order: NFKD → casefold → strip marks → filter."
+    },
+    {
+      "label": "café",
+      "source": "",
+      "expect": "cafe",
+      "why": "a composed accent decomposes and its mark is stripped, so the owner gets `cafe` rather than `caf`"
+    },
+    {
+      "label": "Téléphone d'Amélie",
+      "source": "",
+      "expect": "telephone_d_amelie",
+      "why": "🔴 the human-friendliness vector. Without mark-stripping this is `t_l_phone_d_am_lie` -- unreadable, and the contract asks for a human-friendly label. Any owner whose language uses accents hits this on their first device."
+    },
+    {
+      "label": "Владимир",
+      "source": "",
+      "expect": "device",
+      "why": "a script with no Latin decomposition correctly filters out entirely -- the name is a label, NOT a transliteration, and nothing resolves by it"
+    },
+    {
+      "label": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "source": "",
+      "expect": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "why": "length cap; ASCII by construction so the byte cap cannot split a character"
+    },
+    {
+      "label": "device",
+      "source": "",
+      "expect": "device",
+      "why": "a label that is literally the empty-fallback value -- must be indistinguishable from the fallback, which is fine because nothing resolves by the name"
+    },
+    {
+      "label": "iPhone/../../etc",
+      "source": "",
+      "expect": "iphone_etc",
+      "why": "🔴 path traversal in a display label; separators and dots all filter to `_`"
+    }
+  ],
+  "legacy": [
+    {
+      "input": {
+        "host": "archon"
+      },
+      "expect": "archon",
+      "why": "the plain local host"
+    },
+    {
+      "input": {
+        "host": "ja1r.local"
+      },
+      "expect": "ja1r",
+      "why": "domain suffix stripped to the first label"
+    },
+    {
+      "input": {
+        "host": "192.168.1.1"
+      },
+      "expect": "192-168-1-1",
+      "why": "an IP address joins with dashes, not dots"
+    },
+    {
+      "input": {
+        "host": "archon",
+        "qualifier": "tmux"
+      },
+      "expect": "archon.tmux",
+      "why": "the dot qualifier form"
+    },
+    {
+      "input": {
+        "observer": "laptop.local"
+      },
+      "expect": "laptop",
+      "why": "an observer name, domain stripped"
+    },
+    {
+      "input": {
+        "import_source": "apple"
+      },
+      "expect": "import.apple",
+      "why": "the live `import.` prefix"
+    },
+    {
+      "input": {
+        "import_source": "chatgpt"
+      },
+      "expect": "import.chatgpt",
+      "why": "one of the hardcoded speaker-bootstrap set"
+    }
+  ]
+}
