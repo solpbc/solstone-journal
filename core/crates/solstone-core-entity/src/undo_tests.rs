@@ -198,11 +198,16 @@ fn undo_refuses_invalid_active_sibling_payload_without_mutation() {
         second.merge_id
     ));
     fs::write(&sibling_path, b"not json").unwrap();
+    let index_before = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
     let before = journal_tree(&journal);
 
     let error = undo_entity_merge(&journal, &first.merge_id, Value::Null).unwrap_err();
     assert!(error.to_string().contains(&second.merge_id));
     assert_eq!(journal_tree(&journal), before);
+    assert_eq!(
+        solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap(),
+        index_before
+    );
     assert!(
         journal
             .join(format!(
@@ -210,6 +215,39 @@ fn undo_refuses_invalid_active_sibling_payload_without_mutation() {
                 first.merge_id
             ))
             .exists()
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_refuses_hostile_payload_without_mutation() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let payload_path = journal.join(format!(
+        "entities/target/history/private/{}.json",
+        merge.merge_id
+    ));
+    let mut payload: Value = serde_json::from_slice(&fs::read(&payload_path).unwrap()).unwrap();
+    payload["source_id"] = json!("../outside");
+    fs::write(&payload_path, serde_json::to_vec(&payload).unwrap()).unwrap();
+    let index_before = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    let tree_before = journal_tree(&journal);
+
+    assert!(undo_entity_merge(&journal, &merge.merge_id, Value::Null).is_err());
+    assert_eq!(journal_tree(&journal), tree_before);
+    assert_eq!(
+        solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap(),
+        index_before
     );
     fs::remove_dir_all(journal).unwrap();
 }
