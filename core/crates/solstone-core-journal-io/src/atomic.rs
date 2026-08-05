@@ -324,7 +324,11 @@ fn sort_json_keys(value: &mut serde_json::Value) {
     }
 }
 
-#[cfg(test)]
+// Gated on `test-hooks` as well as `test` so a dependent that enables the feature
+// can inject a crash on this path. `staged.rs` already honours both; this half was
+// `cfg(test)`-only, which left the hook unreachable outside this crate even for a
+// dependent that asked for it by name (`solstone-core-sol-link`).
+#[cfg(any(test, feature = "test-hooks"))]
 fn pause_at(step: &str) {
     if std::env::var("JOURNAL_IO_TEST_PAUSE_AT").ok().as_deref() != Some(step) {
         return;
@@ -337,7 +341,7 @@ fn pause_at(step: &str) {
     }
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "test-hooks")))]
 fn pause_at(_step: &str) {}
 
 #[cfg(test)]
