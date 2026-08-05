@@ -1,0 +1,27 @@
+# Production code in this crate may read existing segment bytes and enumerate
+# legacy files, but all filesystem writes must pass through journal-io.
+disallowed-methods = [
+    { path = "std::fs::write", reason = "use solstone-core-journal-io" },
+    { path = "std::fs::create_dir", reason = "journal-io creates writer parents" },
+    { path = "std::fs::create_dir_all", reason = "journal-io creates writer parents" },
+    { path = "std::fs::remove_file", reason = "segment door never deletes" },
+    { path = "std::fs::remove_dir", reason = "segment door never deletes" },
+    { path = "std::fs::remove_dir_all", reason = "segment door never deletes" },
+    { path = "std::fs::rename", reason = "use solstone-core-journal-io" },
+    { path = "std::fs::copy", reason = "use solstone-core-journal-io" },
+    { path = "std::fs::hard_link", reason = "use solstone-core-journal-io" },
+    { path = "std::fs::set_permissions", reason = "segment door never changes permissions" },
+    { path = "std::fs::File::create", reason = "use solstone-core-journal-io" },
+    { path = "std::fs::File::create_new", reason = "use solstone-core-journal-io" },
+    { path = "std::fs::OpenOptions::open", reason = "use solstone-core-journal-io" },
+    { path = "std::fs::DirBuilder::create", reason = "use solstone-core-journal-io" },
+    { path = "std::os::unix::fs::symlink", reason = "segment door never creates symlinks" },
+    { path = "std::os::unix::fs::hard_link", reason = "use solstone-core-journal-io", allow-invalid = true },
+]
+disallowed-types = [
+    { path = "std::fs::OpenOptions", reason = "use solstone-core-journal-io" },
+    { path = "std::fs::DirBuilder", reason = "use solstone-core-journal-io" },
+    { path = "tokio::fs::File", reason = "Tokio filesystem I/O is not permitted here", allow-invalid = true },
+    { path = "tokio::fs::OpenOptions", reason = "Tokio filesystem I/O is not permitted here", allow-invalid = true },
+    { path = "libc::FILE", reason = "libc filesystem I/O is not permitted here", allow-invalid = true },
+]

@@ -6,6 +6,7 @@ members = [
     "crates/solstone-core-indexer-store",
     "crates/solstone-core-journal",
     "crates/solstone-core-journal-io",
+    "crates/solstone-core-segment",
     "crates/solstone-core-sol",
     "crates/solstone-core-sol-client",
     "crates/solstone-core-sol-client-cli",
