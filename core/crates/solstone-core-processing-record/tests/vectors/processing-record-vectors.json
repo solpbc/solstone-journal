@@ -28,7 +28,7 @@
       "input_size": 5,
       "record": {"schema": "solstone.processing.v1", "state": "analyzed", "reason_code": "unknown_reason", "handler": "transcribe", "input_size": 5},
       "expected_verdict": "held",
-      "provenance_tag": "constructed",
+      "provenance_tag": "synthetic",
       "citation": "solstone/apps/observer/processing_proof.py:64-76"
     },
     {
