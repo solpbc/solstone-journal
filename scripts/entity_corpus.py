@@ -695,11 +695,35 @@ def _identity_repair_cases() -> list[dict[str, Any]]:
             "reachable": True,
         },
         {
-            "note": "identity disagrees with the directory — defensive only",
+            "note": (
+                "identity disagrees with the directory — 🔴 the DANGEROUS branch"
+            ),
             "entity_dir": "alice_johnson",
             "before_repair": {**before, "id": "some_other_identity"},
             "after_repair": {**before, "id": "alice_johnson"},
-            "reachable": False,
+            "reachable_in_reference": False,
+            "hazard": (
+                "🔴 This branch rewrites the exact field the reconciliation "
+                "comparison keys on. Once a reader resolves identity from the "
+                "WRITTEN value, overwriting it changes that entity's effective "
+                "identity — so an entity carrying a staged prepared event whose "
+                "snapshots record the written value reconciles cleanly BEFORE "
+                "the repair and is permanently unmutatable AFTER it. The repair "
+                "becomes the thing that bricks."
+            ),
+            "guards": (
+                "⛔ The repair is ONE-SHOT, guarded by a durable completion "
+                "marker. ⚠ 'Idempotent' is true only WITHIN the migration, so "
+                "an interrupted run can resume; it is NOT a licence to re-run "
+                "afterwards, which is destructive. ⛔ And the repair refuses any "
+                "entity carrying a staged prepared event, or reconciles it "
+                "first — it must never rewrite an identity out from under a "
+                "pending comparison."
+            ),
+            "invariant": (
+                "The repair may never change an entity's EFFECTIVE identity: "
+                "the resolved map before and after must be equal."
+            ),
         },
         {
             "note": "already correct — the repair is a no-op, and idempotent",

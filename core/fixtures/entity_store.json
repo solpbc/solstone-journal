@@ -217,8 +217,11 @@
           "type": "Person"
         },
         "entity_dir": "alice_johnson",
-        "note": "identity disagrees with the directory \u2014 defensive only",
-        "reachable": false
+        "guards": "\u26d4 The repair is ONE-SHOT, guarded by a durable completion marker. \u26a0 'Idempotent' is true only WITHIN the migration, so an interrupted run can resume; it is NOT a licence to re-run afterwards, which is destructive. \u26d4 And the repair refuses any entity carrying a staged prepared event, or reconciles it first \u2014 it must never rewrite an identity out from under a pending comparison.",
+        "hazard": "\ud83d\udd34 This branch rewrites the exact field the reconciliation comparison keys on. Once a reader resolves identity from the WRITTEN value, overwriting it changes that entity's effective identity \u2014 so an entity carrying a staged prepared event whose snapshots record the written value reconciles cleanly BEFORE the repair and is permanently unmutatable AFTER it. The repair becomes the thing that bricks.",
+        "invariant": "The repair may never change an entity's EFFECTIVE identity: the resolved map before and after must be equal.",
+        "note": "identity disagrees with the directory \u2014 \ud83d\udd34 the DANGEROUS branch",
+        "reachable_in_reference": false
       },
       {
         "after_repair": {
