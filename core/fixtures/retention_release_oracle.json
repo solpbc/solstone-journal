@@ -14,6 +14,7 @@
       "image_sidecar_writer": "solstone/observe/depict.py:49",
       "extraction_globs": "solstone/think/retention.py:207"
     },
+    "rebuild": "each row is fully self-describing: write `size` copies of `media_byte` to `media`, and if `sidecar_lines` is non-null write those lines to `sidecar_file`, newline separated with a trailing newline. \u26d4 Do NOT reconstruct the sidecar from `sidecar` -- that field is the record VALUE, and the record lives under the `_solstone_processing` key of a metadata header, not as the whole first line. Guessing wrong yields header-only semantics on every record-bearing row, and most of those already report held, so the mistake stays green.",
     "reading": "reference_gate 'eligible' means the reference unlinks the owner's raw media. reference_proof is the four-condition conjunction the resolve path runs on the same bytes. They disagree in both directions, which is why this file exists.",
     "invariant": "no row may carry disposition 'widened'. A port that releases raw the reference held has loosened an irreversible path, and each such row needs its own argument before it is recorded here."
   },
@@ -28,6 +29,11 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"record_terminal_no_row\", \"_solstone_processing\": {\"schema\": \"solstone.processing.v1\", \"state\": \"analyzed\", \"reason_code\": \"ok\", \"handler\": \"transcribe\", \"attempted_at\": \"2026-08-05T00:00:00Z\", \"input_size\": 104}}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "schema": "solstone.processing.v1",
           "state": "analyzed",
@@ -55,6 +61,12 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"record_terminal_with_row\", \"_solstone_processing\": {\"schema\": \"solstone.processing.v1\", \"state\": \"analyzed\", \"reason_code\": \"ok\", \"handler\": \"transcribe\", \"attempted_at\": \"2026-08-05T00:00:00Z\", \"input_size\": 104}}",
+          "{\"start\": 0.0, \"end\": 1.0, \"text\": \"hello\"}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "schema": "solstone.processing.v1",
           "state": "analyzed",
@@ -86,6 +98,12 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"record_absent_with_row\"}",
+          "{\"start\": 0.0, \"end\": 1.0, \"text\": \"hello\"}"
+        ],
+        "media_byte": "f",
         "sidecar": "header-only",
         "analysis_row": {
           "start": 0.0,
@@ -110,6 +128,11 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"record_absent_no_row\"}"
+        ],
+        "media_byte": "f",
         "sidecar": "header-only",
         "analysis_row": null
       },
@@ -130,6 +153,11 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"state_empty_bare\", \"_solstone_processing\": {\"state\": \"empty\"}}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "state": "empty"
         },
@@ -152,6 +180,11 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"state_empty_wrong_schema\", \"_solstone_processing\": {\"schema\": \"bogus.v9\", \"state\": \"empty\", \"reason_code\": \"ok\", \"handler\": \"transcribe\", \"attempted_at\": \"2026-08-05T00:00:00Z\", \"input_size\": 104}}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "schema": "bogus.v9",
           "state": "empty",
@@ -178,6 +211,11 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"state_empty_wrong_handler\", \"_solstone_processing\": {\"schema\": \"solstone.processing.v1\", \"state\": \"empty\", \"reason_code\": \"ok\", \"handler\": \"describe\", \"attempted_at\": \"2026-08-05T00:00:00Z\", \"input_size\": 104}}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "schema": "solstone.processing.v1",
           "state": "empty",
@@ -204,6 +242,11 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"state_empty_size_mismatch\", \"_solstone_processing\": {\"schema\": \"solstone.processing.v1\", \"state\": \"empty\", \"reason_code\": \"ok\", \"handler\": \"transcribe\", \"attempted_at\": \"2026-08-05T00:00:00Z\", \"input_size\": 999999}}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "schema": "solstone.processing.v1",
           "state": "empty",
@@ -231,6 +274,11 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"state_empty_no_schema_key\", \"_solstone_processing\": {\"state\": \"empty\", \"reason_code\": \"ok\", \"handler\": \"transcribe\", \"attempted_at\": \"2026-08-05T00:00:00Z\", \"input_size\": 104}}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "state": "empty",
           "reason_code": "ok",
@@ -256,6 +304,11 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"state_empty_no_handler_key\", \"_solstone_processing\": {\"schema\": \"solstone.processing.v1\", \"state\": \"empty\", \"reason_code\": \"ok\", \"attempted_at\": \"2026-08-05T00:00:00Z\", \"input_size\": 104}}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "schema": "solstone.processing.v1",
           "state": "empty",
@@ -281,6 +334,11 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"state_empty_no_size_key\", \"_solstone_processing\": {\"schema\": \"solstone.processing.v1\", \"state\": \"empty\", \"reason_code\": \"ok\", \"handler\": \"transcribe\", \"attempted_at\": \"2026-08-05T00:00:00Z\"}}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "schema": "solstone.processing.v1",
           "state": "empty",
@@ -306,6 +364,11 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"state_analyzed_bare\", \"_solstone_processing\": {\"state\": \"analyzed\"}}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "state": "analyzed"
         },
@@ -327,6 +390,12 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"state_unrecognized_with_row\", \"_solstone_processing\": {\"state\": \"banana\"}}",
+          "{\"start\": 0.0, \"end\": 1.0, \"text\": \"hello\"}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "state": "banana"
         },
@@ -352,6 +421,12 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"record_empty_object_with_row\", \"_solstone_processing\": {}}",
+          "{\"start\": 0.0, \"end\": 1.0, \"text\": \"hello\"}"
+        ],
+        "media_byte": "f",
         "sidecar": {},
         "analysis_row": {
           "start": 0.0,
@@ -376,6 +451,12 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"marker_key_only_row\"}",
+          "{\"start\": 0.0}"
+        ],
+        "media_byte": "f",
         "sidecar": "header-only",
         "analysis_row": {
           "start": 0.0
@@ -398,6 +479,12 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"non_analysis_row\"}",
+          "{\"text\": \"hello\"}"
+        ],
+        "media_byte": "f",
         "sidecar": "header-only",
         "analysis_row": {
           "text": "hello"
@@ -419,6 +506,11 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"state_failed\", \"_solstone_processing\": {\"schema\": \"solstone.processing.v1\", \"state\": \"failed\", \"reason_code\": \"ok\", \"handler\": \"transcribe\", \"attempted_at\": \"2026-08-05T00:00:00Z\", \"input_size\": 104}}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "schema": "solstone.processing.v1",
           "state": "failed",
@@ -445,6 +537,12 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"state_failed_with_row\", \"_solstone_processing\": {\"schema\": \"solstone.processing.v1\", \"state\": \"failed\", \"reason_code\": \"ok\", \"handler\": \"transcribe\", \"attempted_at\": \"2026-08-05T00:00:00Z\", \"input_size\": 104}}",
+          "{\"start\": 0.0, \"end\": 1.0, \"text\": \"hello\"}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "schema": "solstone.processing.v1",
           "state": "failed",
@@ -476,6 +574,12 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"record_terminal_wrong_handler_with_row\", \"_solstone_processing\": {\"schema\": \"solstone.processing.v1\", \"state\": \"analyzed\", \"reason_code\": \"ok\", \"handler\": \"describe\", \"attempted_at\": \"2026-08-05T00:00:00Z\", \"input_size\": 104}}",
+          "{\"start\": 0.0, \"end\": 1.0, \"text\": \"hello\"}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "schema": "solstone.processing.v1",
           "state": "analyzed",
@@ -507,6 +611,12 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"record_terminal_size_mismatch_with_row\", \"_solstone_processing\": {\"schema\": \"solstone.processing.v1\", \"state\": \"analyzed\", \"reason_code\": \"ok\", \"handler\": \"transcribe\", \"attempted_at\": \"2026-08-05T00:00:00Z\", \"input_size\": 999999}}",
+          "{\"start\": 0.0, \"end\": 1.0, \"text\": \"hello\"}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "schema": "solstone.processing.v1",
           "state": "analyzed",
@@ -538,6 +648,11 @@
       "shape": {
         "media": "chunk_audio.flac",
         "size": 104,
+        "sidecar_file": "chunk_audio.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"record_empty_full_no_row\", \"_solstone_processing\": {\"schema\": \"solstone.processing.v1\", \"state\": \"empty\", \"reason_code\": \"no_decodable_audio\", \"handler\": \"transcribe\", \"attempted_at\": \"2026-08-05T00:00:00Z\", \"input_size\": 104}}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "schema": "solstone.processing.v1",
           "state": "empty",
@@ -565,6 +680,11 @@
       "shape": {
         "media": "photo.png",
         "size": 104,
+        "sidecar_file": "photo.jsonl",
+        "sidecar_lines": [
+          "{\"segment\": \"image_with_record\", \"_solstone_processing\": {\"schema\": \"solstone.processing.v1\", \"state\": \"empty\", \"reason_code\": \"ok\", \"handler\": \"depict\", \"attempted_at\": \"2026-08-05T00:00:00Z\", \"input_size\": 104}}"
+        ],
+        "media_byte": "f",
         "sidecar": {
           "schema": "solstone.processing.v1",
           "state": "empty",
@@ -592,6 +712,9 @@
       "shape": {
         "media": "photo.png",
         "size": 104,
+        "sidecar_file": "photo.jsonl",
+        "sidecar_lines": null,
+        "media_byte": "f",
         "sidecar": "absent",
         "analysis_row": null
       },

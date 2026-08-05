@@ -60,6 +60,7 @@ from solstone.think.retention import resolve_segment_gate  # noqa: E402
 FIXTURE = REPO / "core" / "fixtures" / "retention_release_oracle.json"
 
 MEDIA = "chunk_audio.flac"
+MEDIA_BYTE = b"f"  # media content is arbitrary; only its LENGTH is load-bearing
 IMAGE = "photo.png"
 SIZE = 104
 
@@ -257,19 +258,35 @@ SHAPES = [
 ]
 
 
-def build(root: Path, shape: Shape) -> Path:
-    segment = root / shape.id
-    segment.mkdir(parents=True)
-    (segment / shape.media).write_bytes(b"f" * SIZE)
+def sidecar_lines(shape: Shape) -> list[str] | None:
+    """The sidecar's literal lines, or None when there is no sidecar file.
+
+    This is the single source for both the on-disk file `build()` writes and the
+    `sidecar_lines` the fixture publishes, so a consumer rebuilding a row cannot
+    construct a different file than the reference was measured against. The
+    metadata-header wrapper is the reason it matters: the record is a VALUE UNDER
+    `_solstone_processing`, not the whole first line, and a consumer that guesses
+    otherwise gets header-only semantics on every record-bearing row -- which
+    most rows already report as held, so the mistake stays green.
+    """
     if shape.omit_sidecar:
-        return segment
+        return None
     header: dict = {"segment": shape.id}
     if not shape.omit_record_key:
         header["_solstone_processing"] = shape.record
     lines = [json.dumps(header)]
     if shape.row is not None:
         lines.append(json.dumps(shape.row))
-    (segment / sidecar_name(shape.media)).write_text("\n".join(lines) + "\n")
+    return lines
+
+
+def build(root: Path, shape: Shape) -> Path:
+    segment = root / shape.id
+    segment.mkdir(parents=True)
+    (segment / shape.media).write_bytes(MEDIA_BYTE * SIZE)
+    lines = sidecar_lines(shape)
+    if lines is not None:
+        (segment / sidecar_name(shape.media)).write_text("\n".join(lines) + "\n")
     return segment
 
 
@@ -387,6 +404,51 @@ def disposition(gate: str, decision: dict) -> str:
     return "narrowed" if released_by_reference else "widened"
 
 
+def rebuild_check(document: dict) -> list[str]:
+    """Rebuild every row using ONLY the published JSON and re-measure it.
+
+    This is what makes the fixture a usable acceptance input rather than a
+    description of one. A consumer that has never read this script must be able
+    to reconstruct each row's on-disk shape and get `reference_gate` and
+    `reference_proof` back; if it cannot, any test built on this file is
+    asserting against a shape the reference never saw.
+
+    \u26a0 The reference verdicts are the self-check. Measured: a consumer that
+    reconstructs the sidecar from the `sidecar` field instead of `sidecar_lines`
+    -- the natural wrong guess, since `sidecar` looks like the file's first line
+    -- reproduces 11 of 23 rows and fails 12 once both reference verdicts are
+    compared. Comparing only a port's own verdict would leave most of them green.
+    """
+    failures = []
+    root = Path(tempfile.mkdtemp(prefix="retention-oracle-rebuild-"))
+    try:
+        for row in document["rows"]:
+            shape = row["shape"]
+            segment = root / row["id"]
+            segment.mkdir(parents=True)
+            media = segment / shape["media"]
+            media.write_bytes(shape["media_byte"].encode() * shape["size"])
+            if shape["sidecar_lines"] is not None:
+                (segment / shape["sidecar_file"]).write_text(
+                    "\n".join(shape["sidecar_lines"]) + "\n"
+                )
+            gate = resolve_segment_gate(segment).verdict
+            proof = has_terminal_processing_proof(media, shape["size"])
+            if gate != row["reference_gate"]:
+                failures.append(
+                    f"{row['id']}: reference_gate {row['reference_gate']!r} "
+                    f"but a JSON-only rebuild measured {gate!r}"
+                )
+            if proof != row["reference_proof"]:
+                failures.append(
+                    f"{row['id']}: reference_proof {row['reference_proof']!r} "
+                    f"but a JSON-only rebuild measured {proof!r}"
+                )
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    return failures
+
+
 def main() -> int:
     check = "--check" in sys.argv[1:]
     root = Path(tempfile.mkdtemp(prefix="retention-oracle-"))
@@ -402,6 +464,12 @@ def main() -> int:
                 "shape": {
                     "media": shape.media,
                     "size": SIZE,
+                    # Everything a consumer needs to rebuild this row byte for
+                    # byte. `sidecar_lines` is the literal file content, newline
+                    # separated with a trailing newline; null means no file.
+                    "sidecar_file": sidecar_name(shape.media),
+                    "sidecar_lines": sidecar_lines(shape),
+                    "media_byte": MEDIA_BYTE.decode(),
                     # Three distinguishable states, because two of them are
                     # different on disk and a consumer rebuilding this fixture
                     # must be able to tell them apart:
@@ -442,6 +510,17 @@ def main() -> int:
             ),
             "source_revision": revision(),
             "reference": REFERENCE,
+            "rebuild": (
+                "each row is fully self-describing: write `size` copies of "
+                "`media_byte` to `media`, and if `sidecar_lines` is non-null write "
+                "those lines to `sidecar_file`, newline separated with a trailing "
+                "newline. \u26d4 Do NOT reconstruct the sidecar from `sidecar` -- "
+                "that field is the record VALUE, and the record lives under the "
+                "`_solstone_processing` key of a metadata header, not as the whole "
+                "first line. Guessing wrong yields header-only semantics on every "
+                "record-bearing row, and most of those already report held, so the "
+                "mistake stays green."
+            ),
             "reading": (
                 "reference_gate 'eligible' means the reference unlinks the owner's raw "
                 "media. reference_proof is the four-condition conjunction the resolve "
@@ -467,6 +546,15 @@ def main() -> int:
         )
         return 1
 
+    rebuild_failures = rebuild_check(document)
+    if rebuild_failures:
+        print(
+            "FAIL: rows do not rebuild from the published JSON alone:", file=sys.stderr
+        )
+        for failure in rebuild_failures:
+            print(f"  {failure}", file=sys.stderr)
+        return 1
+
     if check:
         if not FIXTURE.exists():
             print(f"FAIL: {FIXTURE} does not exist", file=sys.stderr)
@@ -475,12 +563,18 @@ def main() -> int:
         if current != rendered:
             print(f"FAIL: {FIXTURE} is stale; regenerate it", file=sys.stderr)
             return 1
-        print(f"ok: {FIXTURE.relative_to(REPO)} matches the reference")
+        print(
+            f"ok: {FIXTURE.relative_to(REPO)} matches the reference, "
+            f"and all {len(rows)} rows rebuild from the JSON alone"
+        )
         return 0
 
     FIXTURE.parent.mkdir(parents=True, exist_ok=True)
     FIXTURE.write_text(rendered)
-    print(f"wrote {FIXTURE.relative_to(REPO)}: {len(rows)} rows")
+    print(
+        f"wrote {FIXTURE.relative_to(REPO)}: {len(rows)} rows, "
+        f"all rebuildable from the JSON alone"
+    )
     for name, count in tally(rows).items():
         print(f"  {name}: {count}")
     return 0
