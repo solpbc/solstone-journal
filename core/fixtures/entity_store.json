@@ -5,25 +5,12 @@
     "entities/{id}/entity.json (unicode)": "{\n  \"id\": \"jose_garcia\",\n  \"name\": \"Jos\u00e9 Garc\u00eda\",\n  \"type\": \"Person\",\n  \"created_at\": 1785889922583,\n  \"description\": \"raw UTF-8 on disk, never \\\\u escapes\"\n}\n",
     "entities/{id}/history/events/{seq}-{version_id}.json": "{\n  \"actor\": null,\n  \"caller\": null,\n  \"entity_id\": \"alice_johnson\",\n  \"identity_after\": {\n    \"aka\": [\n      \"Ali\",\n      \"AJ\"\n    ],\n    \"created_at\": 1785889922582,\n    \"emails\": [\n      \"alice@example.com\"\n    ],\n    \"id\": \"alice_johnson\",\n    \"name\": \"Alice Johnson\",\n    \"type\": \"Person\"\n  },\n  \"identity_before\": null,\n  \"kind\": \"create\",\n  \"operation\": {},\n  \"schema_version\": 1,\n  \"seq\": 1,\n  \"ts\": \"2026-08-05T00:32:02.582506Z\",\n  \"version_id\": \"vh_49d7adcbf786461cb11c00081afa9780\"\n}\n"
   },
-  "declared_divergences": {
-    "case_count": 1,
+  "generated_by": "make core-fixtures",
+  "identity_repair": {
+    "case_count": 3,
     "cases": [
       {
-        "after": {
-          "aka": [
-            "Ali",
-            "AJ"
-          ],
-          "created_at": 1785889922582,
-          "description": "a friend",
-          "emails": [
-            "alice@example.com"
-          ],
-          "id": "alice_johnson",
-          "name": "Alice Johnson",
-          "type": "Person"
-        },
-        "before": {
+        "after_repair": {
           "aka": [
             "Ali",
             "AJ"
@@ -36,8 +23,37 @@
           "name": "Alice Johnson",
           "type": "Person"
         },
-        "consequence": "\ud83d\udd34 An entity in this state reconciles cleanly today and becomes permanently unmutatable after the change. The population is unsized: the written field has never been authoritative, so a stale disagreement can persist unnoticed -- though the load-modify-save round trip converges the two, which is why it is expected to be small rather than known to be. It must be normalized by a first-run backfill BEFORE the new resolution rule is authoritative, not discovered by an owner afterwards.",
-        "disk": {
+        "before_repair": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "entity_dir": "alice_johnson",
+        "note": "no identity written \u2014 the real population",
+        "reachable": true
+      },
+      {
+        "after_repair": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "before_repair": {
           "aka": [
             "Ali",
             "AJ"
@@ -51,16 +67,45 @@
           "type": "Person"
         },
         "entity_dir": "alice_johnson",
-        "note": "the written identity disagrees with the directory name",
-        "rebuild_outcome": "repair_required",
-        "rebuild_reason": "once identity is resolved from the written value, the stamped identity is that value, and it matches neither snapshot",
-        "reference_outcome": "discard",
-        "reference_reason": "the reference stamps the DIRECTORY name into the object before comparing, unconditionally, so the written value never reaches the comparison and the two snapshots match"
+        "note": "identity disagrees with the directory \u2014 defensive only",
+        "reachable": false
+      },
+      {
+        "after_repair": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "before_repair": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "entity_dir": "alice_johnson",
+        "note": "already correct \u2014 the repair is a no-op, and idempotent",
+        "reachable": true
       }
     ],
-    "note": "\u26d4 NOT oracle cases. The reference and the rebuild resolve these differently ON PURPOSE, so each records both answers. A reimplementation asserts the rebuild_outcome and must not treat reference_outcome as a target."
+    "note": "\u26d4 NOT oracle cases \u2014 the reference has no repair. This is the one-time capture that makes the written identity authoritative: for each entity, the identity in force is its DIRECTORY NAME, and the repair writes that into the file. Add it when absent, overwrite it when it disagrees, leave it when it already matches. Idempotent, so an interrupted run resumes by rerunning.",
+    "ordering": "\ud83d\udd34 The repair runs BEFORE the written identity is authoritative. Inverted, a record with no written identity resolves to nothing.",
+    "reader_obligation": "\u26a0 Read-compat does not retire when the repair completes. A restored backup arrives un-repaired, so the fallback to the directory name is permanent, not transitional."
   },
-  "generated_by": "make core-fixtures",
   "inputs": {
     "ambiguity_rows": [
       {

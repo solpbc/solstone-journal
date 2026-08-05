@@ -614,51 +614,6 @@ def _reconciliation_cases() -> list[dict[str, Any]]:
     ]
 
 
-def _declared_divergence_cases() -> list[dict[str, Any]]:
-    """Cases the reference resolves one way and the rebuild resolves another.
-
-    ⛔ These are NOT oracle cases. Everywhere else in this corpus the reference
-    is the authority; here it is the thing being changed, so recording only its
-    answer would tell a reimplementation to reproduce the behaviour it exists to
-    replace. Both answers are recorded, and which one is correct is a statement
-    about the rebuild rather than about the reference.
-    """
-    before = dict(_ENTITY_FIXED)
-    after = {**_ENTITY_FIXED, "description": "a friend"}
-    return [
-        {
-            "note": (
-                "the written identity disagrees with the directory name"
-            ),
-            "entity_dir": "alice_johnson",
-            "disk": {**before, "id": "some_other_identity"},
-            "before": before,
-            "after": after,
-            "reference_outcome": "discard",
-            "reference_reason": (
-                "the reference stamps the DIRECTORY name into the object before "
-                "comparing, unconditionally, so the written value never reaches "
-                "the comparison and the two snapshots match"
-            ),
-            "rebuild_outcome": "repair_required",
-            "rebuild_reason": (
-                "once identity is resolved from the written value, the stamped "
-                "identity is that value, and it matches neither snapshot"
-            ),
-            "consequence": (
-                "🔴 An entity in this state reconciles cleanly today and becomes "
-                "permanently unmutatable after the change. The population is "
-                "unsized: the written field has never been authoritative, so a "
-                "stale disagreement can persist unnoticed -- though the "
-                "load-modify-save round trip converges the two, which is why it "
-                "is expected to be small rather than known to be. It must be "
-                "normalized by a first-run backfill BEFORE the new resolution "
-                "rule is authoritative, not discovered by an owner afterwards."
-            ),
-        },
-    ]
-
-
 def _observe_reconciliation(case: dict[str, Any]) -> str:
     """Drive the real reconciliation and report what it actually did.
 
@@ -709,6 +664,57 @@ def _observe_reconciliation(case: dict[str, Any]) -> str:
                 f"for {case['note']!r}"
             )
         return "publish" if published else "discard"
+
+
+def _identity_repair_cases() -> list[dict[str, Any]]:
+    """The repair that makes the written identity authoritative, and its inputs.
+
+    Identity is currently carried by the *directory name*: the loader overwrites
+    whatever is in the file with it, the scan enumerates by it, and nothing
+    anywhere reads the written field. Making the written field authoritative
+    therefore needs a one-time capture — seed it from the identity that is
+    actually in force, then stop deriving. ⚠ That is not a rule-4a violation; it
+    is how a rule-4a migration begins, and it is the same shape the segment
+    sidecar used when its stream name stopped being load-bearing.
+
+    The capture has to happen **before** the new resolution rule is authoritative.
+    Run it after, and a record with no written identity resolves to nothing.
+
+    Reachability, established by reading the write paths rather than assumed:
+
+    * **missing identity — REAL.** Records predate the field being persisted.
+    * **divergent identity — UNREACHABLE by any write path.** Create writes the
+      id into the directory named by that id, and save resolves its path *from*
+      the id it carries, so the two agree by construction. A journal-level
+      rename does not move the directory or rewrite the field — it creates a
+      second entity at the new slug. The divergent case is kept below because
+      the repair is cheap and total, and because a hand-edited file is not a
+      code path but is still a file.
+    """
+    before = dict(_ENTITY_FIXED)
+    return [
+        {
+            "note": "no identity written — the real population",
+            "entity_dir": "alice_johnson",
+            "before_repair": {k: v for k, v in before.items() if k != "id"},
+            "after_repair": {**before, "id": "alice_johnson"},
+            "reachable": True,
+        },
+        {
+            "note": "identity disagrees with the directory — defensive only",
+            "entity_dir": "alice_johnson",
+            "before_repair": {**before, "id": "some_other_identity"},
+            "after_repair": {**before, "id": "alice_johnson"},
+            "reachable": False,
+        },
+        {
+            "note": "already correct — the repair is a no-op, and idempotent",
+            "entity_dir": "alice_johnson",
+            "before_repair": dict(before),
+            "after_repair": dict(before),
+            "reachable": True,
+        },
+    ]
 
 
 def _ambiguity_rows() -> list[dict[str, Any]]:
@@ -926,15 +932,26 @@ def build_entity_store_fixture() -> dict[str, Any]:
             "history_event": _HISTORY_EVENT_FIXED,
             "ambiguity_rows": rows,
         },
-        "declared_divergences": {
+        "identity_repair": {
             "note": (
-                "⛔ NOT oracle cases. The reference and the rebuild resolve these "
-                "differently ON PURPOSE, so each records both answers. A "
-                "reimplementation asserts the rebuild_outcome and must not treat "
-                "reference_outcome as a target."
+                "⛔ NOT oracle cases — the reference has no repair. This is the "
+                "one-time capture that makes the written identity authoritative: "
+                "for each entity, the identity in force is its DIRECTORY NAME, "
+                "and the repair writes that into the file. Add it when absent, "
+                "overwrite it when it disagrees, leave it when it already "
+                "matches. Idempotent, so an interrupted run resumes by rerunning."
             ),
-            "case_count": len(_declared_divergence_cases()),
-            "cases": _declared_divergence_cases(),
+            "ordering": (
+                "🔴 The repair runs BEFORE the written identity is authoritative. "
+                "Inverted, a record with no written identity resolves to nothing."
+            ),
+            "reader_obligation": (
+                "⚠ Read-compat does not retire when the repair completes. A "
+                "restored backup arrives un-repaired, so the fallback to the "
+                "directory name is permanent, not transitional."
+            ),
+            "case_count": len(_identity_repair_cases()),
+            "cases": _identity_repair_cases(),
         },
         "reconciliation": {
             "case_count": len(reconciliation),
