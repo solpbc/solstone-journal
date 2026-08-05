@@ -814,7 +814,10 @@ fn discard_staged_event(
     .map_err(EntityWriteError::PreparedEventRemoval)
 }
 
-fn mutate_ambiguities<F>(journal_root: &Path, mutate: F) -> Result<Value, EntityWriteError>
+pub(super) fn mutate_ambiguities<F>(
+    journal_root: &Path,
+    mutate: F,
+) -> Result<Value, EntityWriteError>
 where
     F: FnOnce(&mut Vec<Value>) -> Result<Value, EntityWriteError>,
 {
@@ -841,7 +844,7 @@ where
     Ok(result)
 }
 
-fn rewrite_identity_map_cache(journal_root: &Path) -> Result<(), EntityWriteError> {
+pub(super) fn rewrite_identity_map_cache(journal_root: &Path) -> Result<(), EntityWriteError> {
     let map = read_identity_map(journal_root)?;
     write_identity_map_cache(journal_root, &map.resolved)
 }

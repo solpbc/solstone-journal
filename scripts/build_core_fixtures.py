@@ -146,6 +146,7 @@ SPEAKER_STAGE_BOUNDARIES_ARTIFACT_PATH = FIXTURE_DIR / "speaker_stage_boundaries
 ENTITY_IDENTITY_ARTIFACT_PATH = FIXTURE_DIR / "entity_identity.json"
 ENTITY_MATCHING_ARTIFACT_PATH = FIXTURE_DIR / "entity_matching.json"
 ENTITY_STORE_ARTIFACT_PATH = FIXTURE_DIR / "entity_store.json"
+ENTITY_LIFECYCLE_ARTIFACT_PATH = FIXTURE_DIR / "entity_lifecycle.json"
 OVERSIZED_SIZE_NORMALIZATION = "oversized_size"
 OVERSIZED_SIZE_TOKEN = "normalizedsize"
 # Filterbank rows are a scale/regime oracle for the production fbank stage. The
@@ -1544,6 +1545,9 @@ def expected_outputs() -> dict[Path, ArtifactDescriptor]:
         ),
         ENTITY_STORE_ARTIFACT_PATH: ArtifactDescriptor(
             entity_corpus.build_entity_store_fixture,
+        ),
+        ENTITY_LIFECYCLE_ARTIFACT_PATH: ArtifactDescriptor(
+            entity_corpus.build_entity_lifecycle_fixture,
         ),
         SPEAKER_FILTERBANK_ARTIFACT_PATH: ArtifactDescriptor(
             build_speaker_filterbank_fixture,

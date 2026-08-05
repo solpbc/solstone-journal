@@ -19,7 +19,7 @@ use crate::{EntityTrustLockError, hold_entity_trust_lock};
 
 use super::error::EntityStoreError;
 use super::paths::ambiguities_path;
-use super::write::{origin_key, serialize_ambiguity_rows};
+use super::write::{EntityWriteError, mutate_ambiguities, origin_key, serialize_ambiguity_rows};
 
 const AMBIGUITY_SCHEMA_VERSION: u64 = 1;
 
@@ -27,6 +27,13 @@ const AMBIGUITY_SCHEMA_VERSION: u64 = 1;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntityAmbiguityRescopeReport {
     pub rewritten_ambiguity_ids: Vec<String>,
+}
+
+/// Durable ambiguity rows changed or removed while deleting one entity's references.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityAmbiguityRemovalReport {
+    pub rewritten_ambiguity_ids: Vec<String>,
+    pub removed_ambiguity_ids: Vec<String>,
 }
 
 /// Failure while rescoping facet references in durable ambiguity rows.
@@ -178,6 +185,58 @@ pub fn rescope_facet_ambiguities(
     Ok(EntityAmbiguityRescopeReport {
         rewritten_ambiguity_ids,
     })
+}
+
+/// Remove one entity from ambiguity candidates and reopen its resolved choices.
+pub fn remove_entity_ambiguity_references(
+    journal_root: &Path,
+    entity_id: &str,
+) -> Result<EntityAmbiguityRemovalReport, EntityWriteError> {
+    let _trust = hold_entity_trust_lock(journal_root)?;
+    let mut report = EntityAmbiguityRemovalReport {
+        rewritten_ambiguity_ids: Vec::new(),
+        removed_ambiguity_ids: Vec::new(),
+    };
+
+    mutate_ambiguities(journal_root, |rows| {
+        rows.retain_mut(|row| {
+            let object = row
+                .as_object_mut()
+                .expect("strict ambiguity reader returns objects");
+            let ambiguity_id = object
+                .get("ambiguity_id")
+                .and_then(Value::as_str)
+                .expect("strict ambiguity rows have ids")
+                .to_owned();
+            let candidates = object
+                .get_mut("ranked_candidates")
+                .and_then(Value::as_array_mut)
+                .expect("strict ambiguity rows have candidates");
+            let candidates_before = candidates.len();
+            candidates
+                .retain(|candidate| candidate.get("id").and_then(Value::as_str) != Some(entity_id));
+            let candidates_changed = candidates.len() != candidates_before;
+            if candidates.is_empty() {
+                report.removed_ambiguity_ids.push(ambiguity_id);
+                return false;
+            }
+
+            let resolved_changed =
+                object.get("resolved_entity_id").and_then(Value::as_str) == Some(entity_id);
+            if resolved_changed {
+                object.insert("status".to_owned(), Value::String("open".to_owned()));
+                object.remove("resolved_entity_id");
+                object.remove("resolved_at");
+            }
+            if candidates_changed || resolved_changed {
+                report.rewritten_ambiguity_ids.push(ambiguity_id);
+            }
+            true
+        });
+        Ok(Value::Null)
+    })?;
+
+    Ok(report)
 }
 
 fn row_references_facet(row: &Map<String, Value>, facet: &str) -> bool {

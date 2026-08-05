@@ -147,6 +147,7 @@ fn collect_production_sources(directory: &Path, sources: &mut Vec<PathBuf>) {
                 path.file_name().and_then(|name| name.to_str()),
                 Some(
                     "fixture_tests.rs"
+                        | "lifecycle_tests.rs"
                         | "resolution_tests.rs"
                         | "merge_payload_tests.rs"
                         | "merge_tests.rs"

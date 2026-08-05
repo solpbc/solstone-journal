@@ -7,13 +7,15 @@ use std::path::Path;
 use serde_json::{Map, Value};
 use solstone_core_entity::{EntityAmbiguityRescopeReport, rescope_facet_ambiguities};
 use solstone_core_journal_io::{
-    JsonWriteOptions, LockOptions, MalformedPolicy, hold_lock, path_lexists, read_json, write_json,
+    JsonWriteOptions, LockOptions, MalformedPolicy, hold_lock, path_lexists, read_json,
+    remove_dir_all, write_json,
 };
 
 use crate::hold_facet_trust_lock;
 
 use super::declaration::read_facet_declaration;
 use super::error::{FacetRenameError, FacetStoreError, FacetWriteError};
+use super::identity::read_facet_entity_link;
 use super::paths::{convey_config_path, declaration_path, facet_dir_path, facet_entity_link_path};
 
 /// Structured successful result for a physical facet-directory rename.
@@ -122,6 +124,57 @@ pub fn save_facet_entity_link(
     let path = facet_entity_link_path(journal_root, facet_dir, entity_dir)?;
     write_json(&path, &Value::Object(relationship), json_options())
         .map_err(FacetWriteError::EntityLinkWrite)
+}
+
+/// Set or clear a relationship's detached marker while retaining every other field.
+pub fn set_facet_entity_link_detached(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_dir: &str,
+    detached: bool,
+) -> Result<bool, FacetWriteError> {
+    let _trust = hold_facet_trust_lock(journal_root)?;
+    let Some(snapshot) = read_facet_entity_link(journal_root, facet_dir, entity_dir)? else {
+        return Ok(false);
+    };
+    let mut relationship = snapshot.value().clone();
+    let object = relationship
+        .as_object_mut()
+        .expect("facet entity link reader returns an object");
+    let changed = if detached {
+        if object.get("detached") == Some(&Value::Bool(true)) {
+            false
+        } else {
+            object.insert("detached".to_owned(), Value::Bool(true));
+            true
+        }
+    } else {
+        object.remove("detached").is_some()
+    };
+    if !changed {
+        return Ok(false);
+    }
+    let path = facet_entity_link_path(journal_root, facet_dir, entity_dir)?;
+    write_json(&path, &relationship, json_options()).map_err(FacetWriteError::EntityLinkWrite)?;
+    Ok(true)
+}
+
+/// Remove one complete facet relationship directory when its link exists.
+pub fn delete_facet_entity_link(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_dir: &str,
+) -> Result<bool, FacetWriteError> {
+    let _trust = hold_facet_trust_lock(journal_root)?;
+    if read_facet_entity_link(journal_root, facet_dir, entity_dir)?.is_none() {
+        return Ok(false);
+    }
+    remove_dir_all(
+        journal_root,
+        &format!("facets/{facet_dir}/entities/{entity_dir}"),
+    )
+    .map_err(FacetWriteError::EntityLinkRemoval)?;
+    Ok(true)
 }
 
 /// Physically rename one facet directory and rescope durable ambiguity rows.

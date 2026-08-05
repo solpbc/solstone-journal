@@ -1,0 +1,42 @@
+{
+  "expected_counts": {
+    "activity": 0,
+    "aka_crossref": 1,
+    "ambiguity": 0,
+    "candidate_pair": 1,
+    "dismissal": 1,
+    "entity_review_candidate": 1,
+    "facet_relationship": 1,
+    "identify_operation": 1,
+    "keep_separate": 1,
+    "observation": 2,
+    "segment_correction": 1,
+    "segment_label": 1,
+    "speaker_candidate": 1,
+    "speaker_review_candidate": 1,
+    "unreadable": 0,
+    "unrecognized_file": 0
+  },
+  "journal_files": {
+    "awareness/speaker_candidates.json": "{\"candidates\": [{\"confirmed_entity\": \"target\"}]}",
+    "chronicle/20260805/stream/seg/talents/speaker_corrections.json": "{\"corrections\": [{\"original_speaker\": \"target\"}]}",
+    "chronicle/20260805/stream/seg/talents/speaker_labels.json": "{\"labels\": [{\"speaker\": \"target\"}]}",
+    "entities/other/entity.json": "{\n  \"id\": \"other\",\n  \"name\": \"Other\",\n  \"type\": \"Person\",\n  \"aka\": [\n    \"target\"\n  ]\n}\n",
+    "entities/review-candidates.jsonl": "{\"source_slug\": \"target\"}\n",
+    "entities/target/entity.json": "{\n  \"id\": \"target\",\n  \"name\": \"Target\",\n  \"type\": \"Person\"\n}\n",
+    "facets/work/activities/activities.jsonl": "{\"id\": \"activity\", \"custom\": true}\n",
+    "facets/work/entities/target/entity.json": "{\n  \"role\": \"member\",\n  \"entity_id\": \"target\"\n}\n",
+    "facets/work/entities/target/observations.jsonl": "{\"target_entity_id\": \"target\"}\n",
+    "speakers/candidate-pair-review-candidates.jsonl": "{\"ids\": [\"target\"]}\n",
+    "speakers/cluster-dismissals.jsonl": "{\"entity_id\": \"target\"}\n",
+    "speakers/identify-operations.jsonl": "{\"target_entity_id\": \"target\"}\n",
+    "speakers/keep-separate.jsonl": "{\"entity_id_a\": \"target\", \"entity_id_b\": \"other\"}\n",
+    "speakers/review-candidates.jsonl": "{\"source_id\": \"target\"}\n"
+  },
+  "synthetic_divergent_relationship": {
+    "directory": "legacy-target",
+    "entity_id": "target",
+    "note": "Python relationship writer always stamps the directory id; Rust tests add this legacy input directly."
+  },
+  "target_entity_id": "target"
+}

@@ -1293,3 +1293,78 @@ def build_entity_store_fixture() -> dict[str, Any]:
             "ambiguity_rows": _negative_cases(),
         },
     }
+
+
+def build_entity_lifecycle_fixture() -> dict[str, Any]:
+    """Capture lifecycle scanner inputs from owner writers plus fixed hostile rows."""
+    from solstone.think.activities import save_facet_activities
+    from solstone.think.entities.journal import save_journal_entity
+    from solstone.think.entities.observations import save_observations
+    from solstone.think.entities.relationships import save_facet_relationship
+
+    with _temp_journal() as root:
+        save_journal_entity({"id": "target", "name": "Target", "type": "Person"})
+        save_journal_entity(
+            {"id": "other", "name": "Other", "type": "Person", "aka": ["target"]}
+        )
+        save_facet_relationship("work", "target", {"role": "member"})
+        save_observations("work", "target", [{"target_entity_id": "target"}])
+        save_facet_activities("work", [{"id": "activity", "active_entities": ["target"]}])
+
+        # These surfaces have no compact writer invocation suitable for a stable
+        # fixture input. They are scanner inputs, not writer-oracle assertions.
+        raw = {
+            "chronicle/20260805/stream/seg/talents/speaker_labels.json": {"labels": [{"speaker": "target"}]},
+            "chronicle/20260805/stream/seg/talents/speaker_corrections.json": {"corrections": [{"original_speaker": "target"}]},
+            "awareness/speaker_candidates.json": {"candidates": [{"confirmed_entity": "target"}]},
+        }
+        for relative, value in raw.items():
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
+        jsonl = {
+            "speakers/keep-separate.jsonl": {"entity_id_a": "target", "entity_id_b": "other"},
+            # This is a live reference row, not a fully-restored/undone operation.
+            "speakers/identify-operations.jsonl": {"target_entity_id": "target"},
+            "entities/review-candidates.jsonl": {"source_slug": "target"},
+            "speakers/review-candidates.jsonl": {"source_id": "target"},
+            "speakers/candidate-pair-review-candidates.jsonl": {"ids": ["target"]},
+            "speakers/cluster-dismissals.jsonl": {"entity_id": "target"},
+        }
+        for relative, row in jsonl.items():
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
+
+        files: dict[str, str] = {}
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or "history" in path.parts or path.name.endswith(".lock"):
+                continue
+            files[str(path.relative_to(root))] = path.read_text(encoding="utf-8")
+    return {
+        "target_entity_id": "target",
+        "journal_files": files,
+        "expected_counts": {
+            "unrecognized_file": 0,
+            "facet_relationship": 1,
+            "observation": 2,
+            "activity": 0,
+            "segment_label": 1,
+            "segment_correction": 1,
+            "aka_crossref": 1,
+            "speaker_candidate": 1,
+            "keep_separate": 1,
+            "identify_operation": 1,
+            "ambiguity": 0,
+            "entity_review_candidate": 1,
+            "speaker_review_candidate": 1,
+            "candidate_pair": 1,
+            "dismissal": 1,
+            "unreadable": 0,
+        },
+        "synthetic_divergent_relationship": {
+            "note": "Python relationship writer always stamps the directory id; Rust tests add this legacy input directly.",
+            "directory": "legacy-target",
+            "entity_id": "target",
+        },
+    }

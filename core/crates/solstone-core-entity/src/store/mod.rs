@@ -7,6 +7,7 @@ mod ambiguity;
 mod error;
 mod history;
 mod identity;
+mod lifecycle;
 mod map;
 pub(crate) mod merge;
 pub(crate) mod merge_payload;
@@ -19,8 +20,9 @@ pub(crate) mod voiceprints;
 mod write;
 
 pub use ambiguity::{
-    EntityAmbiguityRescopeError, EntityAmbiguityRescopeReport, load_resolved_ambiguity_choice,
-    read_ambiguities, rescope_facet_ambiguities,
+    EntityAmbiguityRemovalReport, EntityAmbiguityRescopeError, EntityAmbiguityRescopeReport,
+    load_resolved_ambiguity_choice, read_ambiguities, remove_entity_ambiguity_references,
+    rescope_facet_ambiguities,
 };
 pub use error::EntityStoreError;
 pub use history::{
@@ -28,6 +30,10 @@ pub use history::{
     guard_visible_event_collision, read_prepared_history, read_visible_history,
 };
 pub use identity::{IdentitySnapshot, read_entity_identity};
+pub use lifecycle::{
+    EntityLifecycleError, delete_entity_directory, has_journal_principal, read_journal_principal,
+    restore_journal_entity_version, unblock_journal_entity,
+};
 pub use map::{
     EntityIdentityGroupMap, EntityIdentityMap, IdentityMapLoser, IdentityMapLoserReason,
     read_identity_group_map, read_identity_map,

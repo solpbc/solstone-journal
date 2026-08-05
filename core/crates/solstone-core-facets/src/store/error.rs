@@ -81,6 +81,7 @@ pub enum FacetWriteError {
     DeclarationMissing { path: PathBuf },
     DeclarationWrite(AtomicWriteError),
     EntityLinkWrite(AtomicWriteError),
+    EntityLinkRemoval(PathError),
     ContentWrite(AtomicWriteError),
 }
 
@@ -99,6 +100,7 @@ impl fmt::Display for FacetWriteError {
             Self::DeclarationWrite(error)
             | Self::EntityLinkWrite(error)
             | Self::ContentWrite(error) => error.fmt(formatter),
+            Self::EntityLinkRemoval(error) => error.fmt(formatter),
         }
     }
 }
@@ -111,6 +113,7 @@ impl Error for FacetWriteError {
             Self::DeclarationWrite(error)
             | Self::EntityLinkWrite(error)
             | Self::ContentWrite(error) => Some(error),
+            Self::EntityLinkRemoval(error) => Some(error),
             Self::DeclarationMissing { .. } => None,
         }
     }
