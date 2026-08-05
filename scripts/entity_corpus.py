@@ -611,19 +611,50 @@ def _reconciliation_cases() -> list[dict[str, Any]]:
             "before": before, "after": after,
             "outcome": "discard",
         },
+    ]
+
+
+def _declared_divergence_cases() -> list[dict[str, Any]]:
+    """Cases the reference resolves one way and the rebuild resolves another.
+
+    ⛔ These are NOT oracle cases. Everywhere else in this corpus the reference
+    is the authority; here it is the thing being changed, so recording only its
+    answer would tell a reimplementation to reproduce the behaviour it exists to
+    replace. Both answers are recorded, and which one is correct is a statement
+    about the rebuild rather than about the reference.
+    """
+    before = dict(_ENTITY_FIXED)
+    after = {**_ENTITY_FIXED, "description": "a friend"}
+    return [
         {
-            # The same mechanism seen from the other side: whatever is written
-            # in the file, the comparison sees the resolved identity. This case
-            # pins that the stamping is unconditional, so a reader cannot make
-            # it conditional on the two agreeing.
             "note": (
-                "written identity disagrees with the directory — the stamped "
-                "identity is what the comparison sees"
+                "the written identity disagrees with the directory name"
             ),
             "entity_dir": "alice_johnson",
             "disk": {**before, "id": "some_other_identity"},
-            "before": before, "after": after,
-            "outcome": "discard",
+            "before": before,
+            "after": after,
+            "reference_outcome": "discard",
+            "reference_reason": (
+                "the reference stamps the DIRECTORY name into the object before "
+                "comparing, unconditionally, so the written value never reaches "
+                "the comparison and the two snapshots match"
+            ),
+            "rebuild_outcome": "repair_required",
+            "rebuild_reason": (
+                "once identity is resolved from the written value, the stamped "
+                "identity is that value, and it matches neither snapshot"
+            ),
+            "consequence": (
+                "🔴 An entity in this state reconciles cleanly today and becomes "
+                "permanently unmutatable after the change. The population is "
+                "unsized: the written field has never been authoritative, so a "
+                "stale disagreement can persist unnoticed -- though the "
+                "load-modify-save round trip converges the two, which is why it "
+                "is expected to be small rather than known to be. It must be "
+                "normalized by a first-run backfill BEFORE the new resolution "
+                "rule is authoritative, not discovered by an owner afterwards."
+            ),
         },
     ]
 
@@ -894,6 +925,16 @@ def build_entity_store_fixture() -> dict[str, Any]:
             "identity_unicode": _ENTITY_UNICODE,
             "history_event": _HISTORY_EVENT_FIXED,
             "ambiguity_rows": rows,
+        },
+        "declared_divergences": {
+            "note": (
+                "⛔ NOT oracle cases. The reference and the rebuild resolve these "
+                "differently ON PURPOSE, so each records both answers. A "
+                "reimplementation asserts the rebuild_outcome and must not treat "
+                "reference_outcome as a target."
+            ),
+            "case_count": len(_declared_divergence_cases()),
+            "cases": _declared_divergence_cases(),
         },
         "reconciliation": {
             "case_count": len(reconciliation),
