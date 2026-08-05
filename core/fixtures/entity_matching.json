@@ -414,7 +414,7 @@
           "type": "Person"
         }
       ],
-      "note": "case-fold divergent \u2014 German sharp s against its uppercase expansion",
+      "note": "case-operation \u2014 German sharp s against its uppercase expansion",
       "outcome": {
         "candidate_index": 0,
         "high_confidence": true,
@@ -436,7 +436,7 @@
           "type": "Person"
         }
       ],
-      "note": "case-fold divergent with competition \u2014 German sharp s against its uppercase expansion",
+      "note": "case-operation with competition \u2014 German sharp s against its uppercase expansion",
       "outcome": {
         "candidate_index": 0,
         "high_confidence": true,
@@ -453,7 +453,7 @@
           "type": "Person"
         }
       ],
-      "note": "case-fold divergent \u2014 the same pair, reversed",
+      "note": "case-operation \u2014 the same pair, reversed",
       "outcome": {
         "candidate_index": 0,
         "high_confidence": true,
@@ -475,7 +475,7 @@
           "type": "Person"
         }
       ],
-      "note": "case-fold divergent with competition \u2014 the same pair, reversed",
+      "note": "case-operation with competition \u2014 the same pair, reversed",
       "outcome": {
         "candidate_index": 0,
         "high_confidence": true,
@@ -487,90 +487,12 @@
     {
       "candidates": [
         {
-          "id": "odusseus_shipping",
-          "name": "\u03bf\u03b4\u03c5\u03c3\u03c3\u03b5\u03c5\u03c2 Shipping",
-          "type": "Person"
-        }
-      ],
-      "note": "case-fold divergent \u2014 Greek final sigma",
-      "outcome": {
-        "candidate_index": 0,
-        "high_confidence": true,
-        "matched": true,
-        "tier": 2
-      },
-      "query": "\u039f\u0394\u03a5\u03a3\u03a3\u0395\u03a5\u03a3 Shipping"
-    },
-    {
-      "candidates": [
-        {
-          "id": "odusseus_shipping",
-          "name": "\u03bf\u03b4\u03c5\u03c3\u03c3\u03b5\u03c5\u03c2 Shipping",
-          "type": "Person"
-        },
-        {
-          "id": "zeta_holdings",
-          "name": "Zeta Holdings",
-          "type": "Person"
-        }
-      ],
-      "note": "case-fold divergent with competition \u2014 Greek final sigma",
-      "outcome": {
-        "candidate_index": 0,
-        "high_confidence": true,
-        "matched": true,
-        "tier": 2
-      },
-      "query": "\u039f\u0394\u03a5\u03a3\u03a3\u0395\u03a5\u03a3 Shipping"
-    },
-    {
-      "candidates": [
-        {
-          "id": "odusseus_shipping",
-          "name": "\u039f\u0394\u03a5\u03a3\u03a3\u0395\u03a5\u03a3 Shipping",
-          "type": "Person"
-        }
-      ],
-      "note": "case-fold divergent \u2014 Greek final sigma, reversed",
-      "outcome": {
-        "candidate_index": 0,
-        "high_confidence": true,
-        "matched": true,
-        "tier": 2
-      },
-      "query": "\u03bf\u03b4\u03c5\u03c3\u03c3\u03b5\u03c5\u03c2 Shipping"
-    },
-    {
-      "candidates": [
-        {
-          "id": "odusseus_shipping",
-          "name": "\u039f\u0394\u03a5\u03a3\u03a3\u0395\u03a5\u03a3 Shipping",
-          "type": "Person"
-        },
-        {
-          "id": "zeta_holdings",
-          "name": "Zeta Holdings",
-          "type": "Person"
-        }
-      ],
-      "note": "case-fold divergent with competition \u2014 Greek final sigma, reversed",
-      "outcome": {
-        "candidate_index": 0,
-        "high_confidence": true,
-        "matched": true,
-        "tier": 2
-      },
-      "query": "\u03bf\u03b4\u03c5\u03c3\u03c3\u03b5\u03c5\u03c2 Shipping"
-    },
-    {
-      "candidates": [
-        {
           "id": "firefly_labs",
           "name": "firefly labs",
           "type": "Person"
         }
       ],
-      "note": "case-fold divergent \u2014 the fi ligature against its expansion",
+      "note": "case-operation \u2014 the fi ligature against its expansion",
       "outcome": {
         "candidate_index": 0,
         "high_confidence": true,
@@ -592,7 +514,7 @@
           "type": "Person"
         }
       ],
-      "note": "case-fold divergent with competition \u2014 the fi ligature against its expansion",
+      "note": "case-operation with competition \u2014 the fi ligature against its expansion",
       "outcome": {
         "candidate_index": 0,
         "high_confidence": true,
@@ -609,7 +531,7 @@
           "type": "Person"
         }
       ],
-      "note": "case-fold divergent \u2014 the ffl ligature against its expansion",
+      "note": "case-operation \u2014 the ffl ligature against its expansion",
       "outcome": {
         "candidate_index": 0,
         "high_confidence": true,
@@ -631,7 +553,7 @@
           "type": "Person"
         }
       ],
-      "note": "case-fold divergent with competition \u2014 the ffl ligature against its expansion",
+      "note": "case-operation with competition \u2014 the ffl ligature against its expansion",
       "outcome": {
         "candidate_index": 0,
         "high_confidence": true,
@@ -648,7 +570,7 @@
           "type": "Person"
         }
       ],
-      "note": "case-fold divergent \u2014 micro sign against Greek mu",
+      "note": "case-operation \u2014 micro sign against Greek mu",
       "outcome": {
         "candidate_index": 0,
         "high_confidence": true,
@@ -670,7 +592,7 @@
           "type": "Person"
         }
       ],
-      "note": "case-fold divergent with competition \u2014 micro sign against Greek mu",
+      "note": "case-operation with competition \u2014 micro sign against Greek mu",
       "outcome": {
         "candidate_index": 0,
         "high_confidence": true,
@@ -682,33 +604,59 @@
     {
       "candidates": [
         {
-          "id": "trading",
-          "name": "\uabb3\uab85\uab79 Trading",
+          "id": "xx_opaque_identity",
+          "name": "STRASSE HANDEL",
           "type": "Person"
         }
       ],
-      "note": "case-fold divergent \u2014 Cherokee, which folds toward uppercase",
+      "note": "case-operation across the confidence boundary \u2014 German sharp s, slug tier disabled",
       "outcome": {
         "matched": false
       },
-      "query": "\u13e3\u13b3\u13a9 Trading"
+      "query": "Stra\u00dfe Handel"
+    },
+    {
+      "candidates": [
+        {
+          "id": "xx_opaque_identity",
+          "name": "\u03bf\u03b4\u03c5\u03c3\u03c3\u03b5\u03c5\u03c3",
+          "type": "Person"
+        }
+      ],
+      "note": "case-operation across the confidence boundary \u2014 Greek medial sigma, slug tier disabled",
+      "outcome": {
+        "matched": false
+      },
+      "query": "\u039f\u0394\u03a5\u03a3\u03a3\u0395\u03a5\u03a3"
+    },
+    {
+      "candidates": [
+        {
+          "id": "xx_opaque_identity",
+          "name": "firefly labs",
+          "type": "Person"
+        }
+      ],
+      "note": "case-operation across the confidence boundary \u2014 the fi ligature, slug tier disabled",
+      "outcome": {
+        "matched": false
+      },
+      "query": "\ufb01refly labs"
     },
     {
       "candidates": [
         {
           "id": "trading",
-          "name": "\uabb3\uab85\uab79 Trading",
-          "type": "Person"
-        },
-        {
-          "id": "zeta_holdings",
-          "name": "Zeta Holdings",
+          "name": "\uabb3\uab83\uab79 Trading",
           "type": "Person"
         }
       ],
-      "note": "case-fold divergent with competition \u2014 Cherokee, which folds toward uppercase",
+      "note": "case-neutral control \u2014 Cherokee \u2014 case-neutral under both operations",
       "outcome": {
-        "matched": false
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
       },
       "query": "\u13e3\u13b3\u13a9 Trading"
     },
@@ -720,7 +668,7 @@
           "type": "Person"
         }
       ],
-      "note": "case-fold divergent \u2014 Turkish dotted capital I",
+      "note": "case-neutral control \u2014 Turkish dotted capital I \u2014 neutral outside the Turkic profile",
       "outcome": {
         "candidate_index": 0,
         "high_confidence": true,
@@ -732,24 +680,86 @@
     {
       "candidates": [
         {
-          "id": "istanbul_works",
-          "name": "istanbul works",
-          "type": "Person"
-        },
-        {
-          "id": "zeta_holdings",
-          "name": "Zeta Holdings",
+          "id": "odusseus_shipping",
+          "name": "\u03bf\u03b4\u03c5\u03c3\u03c3\u03b5\u03c5\u03c2 Shipping",
           "type": "Person"
         }
       ],
-      "note": "case-fold divergent with competition \u2014 Turkish dotted capital I",
+      "note": "case-neutral control \u2014 Greek FINAL sigma \u2014 neutral; the medial form is the divergent one",
       "outcome": {
         "candidate_index": 0,
         "high_confidence": true,
         "matched": true,
-        "tier": 4
+        "tier": 2
       },
-      "query": "\u0130stanbul Works"
+      "query": "\u039f\u0394\u03a5\u03a3\u03a3\u0395\u03a5\u03a3 Shipping"
+    },
+    {
+      "candidates": [
+        {
+          "id": "bartholomew_kensington",
+          "name": "Bartholomew Kensington",
+          "type": "Person"
+        }
+      ],
+      "note": "tier 7 \u2014 prefix token, same token count, unambiguous",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": false,
+        "matched": true,
+        "tier": 7
+      },
+      "query": "Barth Kensington"
+    },
+    {
+      "candidates": [
+        {
+          "id": "bartholomew_kensington",
+          "name": "Bartholomew Kensington",
+          "type": "Person"
+        },
+        {
+          "id": "barthelemy_kensington",
+          "name": "Barthelemy Kensington",
+          "type": "Person"
+        }
+      ],
+      "note": "REFUSAL \u2014 prefix token is ambiguous across two candidates",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Barth Kensington"
+    },
+    {
+      "candidates": [
+        {
+          "id": "jonathan_smythe",
+          "name": "Jonathan Smythe",
+          "type": "Person"
+        }
+      ],
+      "note": "tier 8 \u2014 fuzzy, above the threshold",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": false,
+        "matched": true,
+        "tier": 8
+      },
+      "query": "Jonathon Smythe"
+    },
+    {
+      "candidates": [
+        {
+          "id": "jonathan_smythe",
+          "name": "Jonathan Smythe",
+          "type": "Person"
+        }
+      ],
+      "note": "tier 8 \u2014 fuzzy, far below the threshold, no match",
+      "outcome": {
+        "matched": false
+      },
+      "query": "Zxqvwm Ptkkkl"
     },
     {
       "candidates": [

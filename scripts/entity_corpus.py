@@ -351,26 +351,70 @@ def _match_cases() -> list[dict[str, Any]]:
     ):
         case(a, [_candidate(b)], f"unicode pair — {a!r} against {b!r}")
 
-    # 🔴 Case-fold-divergent pairs. These exist to pin which case operation the
-    # matcher uses. Simple lowercasing and full case folding disagree on every
-    # pair below, and the disagreement lands on the tier — which is to say, on
-    # whether the store resolves silently or stops and asks the owner. Without
-    # them nothing in the corpus can tell the two operations apart, because
-    # every other vector here is case-fold-neutral.
+    # 🔴 Case-operation vectors. These exist to pin *which* case operation the
+    # matcher applies, because simple lowercasing and full case folding are
+    # different functions and the difference lands on the tier — which is to
+    # say, on whether the store resolves silently or stops and asks the owner.
+    # Without them the corpus cannot tell the two apart: every other vector
+    # here is case-neutral.
     for a, b, note in (
         ("Straße Handel", "STRASSE HANDEL", "German sharp s against its uppercase expansion"),
         ("STRASSE HANDEL", "Straße Handel", "the same pair, reversed"),
-        ("ΟΔΥΣΣΕΥΣ Shipping", "οδυσσευς Shipping", "Greek final sigma"),
-        ("οδυσσευς Shipping", "ΟΔΥΣΣΕΥΣ Shipping", "Greek final sigma, reversed"),
         ("ﬁrefly labs", "firefly labs", "the fi ligature against its expansion"),
         ("ﬄuent works", "ffluent works", "the ffl ligature against its expansion"),
         ("µ-lab research", "μ-lab research", "micro sign against Greek mu"),
-        ("ᏣᎳᎩ Trading", "ꮳꮅꭹ Trading", "Cherokee, which folds toward uppercase"),
-        ("İstanbul Works", "istanbul works", "Turkish dotted capital I"),
     ):
-        case(a, [_candidate(b)], f"case-fold divergent — {note}")
+        case(a, [_candidate(b)], f"case-operation — {note}")
         case(a, [_candidate(b), _candidate("Zeta Holdings")],
-             f"case-fold divergent with competition — {note}")
+             f"case-operation with competition — {note}")
+
+    # 🔴 The same phenomena, with the slug tier DISABLED. The vectors above all
+    # resolve through the slug tier, because a candidate's id is the slug of its
+    # own name and transliteration already erases the distinction — so swapping
+    # the case operation only moves them between two high-confidence tiers.
+    # Giving the candidate an id that is *not* the slug of its name removes that
+    # path, and the case operation alone then decides between "no match at all"
+    # and a high-confidence match. That is the tier-4 boundary — the line
+    # between asking the owner and deciding for them — and nothing else in this
+    # corpus crosses it.
+    for a, b, note in (
+        ("Straße Handel", "STRASSE HANDEL", "German sharp s, slug tier disabled"),
+        ("ΟΔΥΣΣΕΥΣ", "οδυσσευσ", "Greek medial sigma, slug tier disabled"),
+        ("ﬁrefly labs", "firefly labs", "the fi ligature, slug tier disabled"),
+    ):
+        cases.append(
+            {
+                "query": a,
+                "candidates": [
+                    {"id": "xx_opaque_identity", "name": b, "type": "Person"}
+                ],
+                "note": f"case-operation across the confidence boundary — {note}",
+            }
+        )
+
+    # Controls: real case pairs that are case-neutral, kept so the corpus does
+    # not imply coverage it lacks. Cherokee is the interesting one — its cases
+    # agree under BOTH operations, so it cannot produce a divergence here at
+    # all, and a reader who assumes otherwise will misread what is covered.
+    for a, b, note in (
+        ("ᏣᎳᎩ Trading", "ꮳꮃꭹ Trading", "Cherokee — case-neutral under both operations"),
+        ("İstanbul Works", "istanbul works", "Turkish dotted capital I — neutral outside the Turkic profile"),
+        ("ΟΔΥΣΣΕΥΣ Shipping", "οδυσσευς Shipping", "Greek FINAL sigma — neutral; the medial form is the divergent one"),
+    ):
+        case(a, [_candidate(b)], f"case-neutral control — {note}")
+
+    # Tiers 7 and 8 are otherwise unrepresented, so a move that hollowed them
+    # out would keep every count and drop two tiers.
+    # Tier 7 requires the SAME token count, pairwise equal or a >=4-char prefix.
+    case("Barth Kensington", [_candidate("Bartholomew Kensington")],
+         "tier 7 — prefix token, same token count, unambiguous")
+    case("Barth Kensington",
+         [_candidate("Bartholomew Kensington"), _candidate("Barthelemy Kensington")],
+         "REFUSAL — prefix token is ambiguous across two candidates")
+    case("Jonathon Smythe", [_candidate("Jonathan Smythe")],
+         "tier 8 — fuzzy, above the threshold")
+    case("Zxqvwm Ptkkkl", [_candidate("Jonathan Smythe")],
+         "tier 8 — fuzzy, far below the threshold, no match")
     # Larger populations, so ambiguity detection sees real competition.
     for name in _MATCH_NAMES:
         case(name, [_candidate(n) for n in _MATCH_NAMES], "full population")
