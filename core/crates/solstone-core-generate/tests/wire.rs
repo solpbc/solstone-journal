@@ -295,7 +295,6 @@ fn bundled_local_round_trip_generates_and_logs_one_usage_record() {
     let output = spawn_v2(&journal, &request());
     stub.finish();
     assert_eq!(output.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("provider=local"));
     assert_eq!(
         output.stdout.iter().filter(|byte| **byte == b'\n').count(),
         1
@@ -318,6 +317,36 @@ fn bundled_local_round_trip_generates_and_logs_one_usage_record() {
         })
         .sum::<usize>();
     assert_eq!(token_lines, 1);
+}
+
+#[test]
+fn bundled_local_schema_validation_log_stays_off_stdout() {
+    let stub = LocalStub::with_completion(Completion {
+        text: "{}",
+        finish_reason: "stop",
+    });
+    let journal = Journal::bundled_local(stub.port);
+    let mut generated_request = request();
+    generated_request.json_schema = Some(serde_json::json!({
+        "type": "object",
+        "required": ["answer"],
+    }));
+    let output = spawn_v2(&journal, &generated_request);
+    stub.finish();
+    assert_eq!(output.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("schema_validation:"));
+    assert_eq!(
+        output.stdout.iter().filter(|byte| **byte == b'\n').count(),
+        1
+    );
+    let response = solstone_core_generate::decode_one_shot_response(
+        std::str::from_utf8(&output.stdout).unwrap(),
+    )
+    .unwrap();
+    let GenerateResponse::Generated(generated) = response else {
+        panic!("expected generated response")
+    };
+    assert!(generated.schema_validation.is_some());
 }
 
 #[test]
@@ -381,13 +410,6 @@ fn byo_unreachable_refuses_with_diagnostics_and_one_stdout_record() {
     assert_eq!(output.status.code(), Some(0));
     assert!(matches!(output.status.code(), Some(0 | 64 | 70)));
     assert_ne!(output.status.code(), Some(69));
-    let diagnostics = String::from_utf8_lossy(&output.stderr);
-    assert!(diagnostics.contains("provider=local"));
-    assert!(
-        diagnostics.contains("solstone-generate-wire v2:"),
-        "expected wire diagnostic, got: {diagnostics}"
-    );
-    assert!(diagnostics.lines().count() >= 2);
     assert_eq!(
         output.stdout.iter().filter(|byte| **byte == b'\n').count(),
         1

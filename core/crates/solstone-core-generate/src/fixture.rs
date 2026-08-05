@@ -20,6 +20,18 @@ pub(crate) fn schema(name: &str) -> &'static str {
         .expect("generate contract schema identifier is a string")
 }
 
+pub(crate) fn request_allows_field(name: &str) -> bool {
+    contract()["request"]["fields"]
+        .as_array()
+        .expect("generate contract request fields are an array")
+        .iter()
+        .any(|field| field.as_str() == Some(name))
+}
+
+pub(crate) fn request_default(name: &str) -> &'static Value {
+    &contract()["request"]["defaults"][name]
+}
+
 pub(crate) fn known_reason_code(code: &str) -> bool {
     contract()["reason_codes"]
         .as_array()

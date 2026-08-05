@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use serde_json::{Map, Value, json};
 
-use crate::fixture::schema;
+use crate::fixture::{request_allows_field, request_default, schema};
 use crate::types::{
     ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse, ProtocolError,
     ReasonCodeValue, RefusalReason, RefusedResponse,
@@ -36,6 +36,41 @@ fn optional_string(object: &Map<String, Value>, name: &str) -> Result<Option<Str
 
 fn optional_value(object: &Map<String, Value>, name: &str) -> Option<Value> {
     object.get(name).filter(|value| !value.is_null()).cloned()
+}
+
+fn value_or_default<'a>(object: &'a Map<String, Value>, name: &str) -> &'a Value {
+    object
+        .get(name)
+        .filter(|value| !value.is_null())
+        .unwrap_or_else(|| request_default(name))
+}
+
+fn optional_string_value(value: &Value, name: &str) -> Result<Option<String>, String> {
+    match value {
+        Value::Null => Ok(None),
+        Value::String(value) => Ok(Some(value.clone())),
+        _ => Err(format!("{name} must be a string or null")),
+    }
+}
+
+fn optional_u64_value(value: &Value, name: &str) -> Result<Option<u64>, String> {
+    match value {
+        Value::Null => Ok(None),
+        _ => value
+            .as_u64()
+            .map(Some)
+            .ok_or_else(|| format!("{name} must be an integer or null")),
+    }
+}
+
+fn optional_f64_value(value: &Value, name: &str) -> Result<Option<f64>, String> {
+    match value {
+        Value::Null => Ok(None),
+        _ => value
+            .as_f64()
+            .map(Some)
+            .ok_or_else(|| format!("{name} must be a number or null")),
+    }
 }
 
 fn require_schema(object: &Map<String, Value>, expected: &str) -> Result<(), String> {
@@ -82,6 +117,9 @@ pub fn encode_one_shot_request(request: &GenerateRequest) -> Result<String, Stri
 
 pub fn decode_one_shot_request(input: &str) -> Result<GenerateRequest, String> {
     let object = object(serde_json::from_str(input).map_err(|error| error.to_string())?)?;
+    if let Some(name) = object.keys().find(|name| !request_allows_field(name)) {
+        return Err(format!("unknown request field: {name}"));
+    }
     require_schema(&object, schema("request"))?;
     let contents = object
         .get("contents")
@@ -111,35 +149,42 @@ pub fn decode_one_shot_request(input: &str) -> Result<GenerateRequest, String> {
         id: optional_string(&object, "id")?,
         context: string(&object, "context")?,
         contents,
-        system_instruction: optional_string(&object, "system_instruction")?,
-        temperature: object
-            .get("temperature")
-            .and_then(Value::as_f64)
+        system_instruction: optional_string_value(
+            value_or_default(&object, "system_instruction"),
+            "system_instruction",
+        )?,
+        temperature: value_or_default(&object, "temperature")
+            .as_f64()
             .ok_or_else(|| "temperature must be a number".to_owned())?,
-        max_output_tokens: object
-            .get("max_output_tokens")
-            .and_then(Value::as_u64)
+        max_output_tokens: value_or_default(&object, "max_output_tokens")
+            .as_u64()
             .ok_or_else(|| "max_output_tokens must be an integer".to_owned())?,
-        thinking_budget: object.get("thinking_budget").and_then(Value::as_u64),
-        timeout_s: object.get("timeout_s").and_then(Value::as_f64),
-        json_output: object
-            .get("json_output")
-            .and_then(Value::as_bool)
+        thinking_budget: optional_u64_value(
+            value_or_default(&object, "thinking_budget"),
+            "thinking_budget",
+        )?,
+        timeout_s: optional_f64_value(value_or_default(&object, "timeout_s"), "timeout_s")?,
+        json_output: value_or_default(&object, "json_output")
+            .as_bool()
             .ok_or_else(|| "json_output must be a boolean".to_owned())?,
-        json_schema: optional_value(&object, "json_schema"),
-        enforce_responsiveness: object
-            .get("enforce_responsiveness")
-            .and_then(Value::as_bool)
+        json_schema: match value_or_default(&object, "json_schema") {
+            Value::Null => None,
+            value if value.is_object() => Some(value.clone()),
+            _ => return Err("json_schema must be an object or null".to_owned()),
+        },
+        enforce_responsiveness: value_or_default(&object, "enforce_responsiveness")
+            .as_bool()
             .ok_or_else(|| "enforce_responsiveness must be a boolean".to_owned())?,
-        attempt_index: object
-            .get("attempt_index")
-            .and_then(Value::as_u64)
+        attempt_index: value_or_default(&object, "attempt_index")
+            .as_u64()
             .ok_or_else(|| "attempt_index must be an integer".to_owned())?,
-        exclusive_admission: object
-            .get("exclusive_admission")
-            .and_then(Value::as_bool)
+        exclusive_admission: value_or_default(&object, "exclusive_admission")
+            .as_bool()
             .ok_or_else(|| "exclusive_admission must be a boolean".to_owned())?,
-        transport_retries: object.get("transport_retries").and_then(Value::as_u64),
+        transport_retries: optional_u64_value(
+            value_or_default(&object, "transport_retries"),
+            "transport_retries",
+        )?,
     })
 }
 
@@ -321,6 +366,47 @@ mod tests {
                 framing => panic!("unexpected fixture framing {framing}"),
             }
         }
+    }
+
+    #[test]
+    fn request_decoder_applies_fixture_defaults() {
+        let request = decode_one_shot_request(
+            &json!({
+                "schema": schema("request"),
+                "context": "test.generate",
+                "contents": [{"type": "text", "text": "OK"}],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(request.id, None);
+        assert_eq!(request.system_instruction, None);
+        assert_eq!(request.temperature, 0.3);
+        assert_eq!(request.max_output_tokens, 16_384);
+        assert_eq!(request.thinking_budget, None);
+        assert_eq!(request.timeout_s, None);
+        assert!(!request.json_output);
+        assert_eq!(request.json_schema, None);
+        assert!(request.enforce_responsiveness);
+        assert_eq!(request.attempt_index, 0);
+        assert!(!request.exclusive_admission);
+        assert_eq!(request.transport_retries, None);
+    }
+
+    #[test]
+    fn request_decoder_rejects_unknown_fields() {
+        assert!(
+            decode_one_shot_request(
+                &json!({
+                    "schema": schema("request"),
+                    "context": "test.generate",
+                    "contents": [{"type": "text", "text": "OK"}],
+                    "unknown": true,
+                })
+                .to_string(),
+            )
+            .is_err()
+        );
     }
 
     #[test]

@@ -272,6 +272,20 @@ def _v2_protocol_error(detail: str, *, request_id: str | None = None) -> dict[st
     }
 
 
+def _write_v2_error(error: dict[str, Any], exit_code: int) -> None:
+    sys.stderr.write(json.dumps(error, allow_nan=False) + "\n")
+    raise SystemExit(exit_code)
+
+
+def _v2_internal_error(request_id: str | None) -> dict[str, Any]:
+    return {
+        "schema": _generate_contract()["schema_identifiers"]["error"],
+        "id": request_id,
+        "reason": "internal-failure",
+        "detail": "failed to encode provider result",
+    }
+
+
 def _v2_request_kwargs(request: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
     contract = _generate_contract()
     allowed = frozenset(contract["request"]["fields"])
@@ -400,28 +414,40 @@ def _main_v2_one_shot() -> None:
         error = _v2_protocol_error(
             "stdin is not valid JSON" if isinstance(exc, json.JSONDecodeError) else str(exc)
         )
-        sys.stderr.write(json.dumps(error, allow_nan=False) + "\n")
-        raise SystemExit(_generate_contract()["exit_codes"]["malformed_request"])
+        _write_v2_error(error, _generate_contract()["exit_codes"]["malformed_request"])
     try:
         provider, model = resolve_provider("generate")
-        print(f"solstone-generate-wire v2: provider={provider}", file=sys.stderr)
         result = generate_with_result(**kwargs)
     except Exception as exc:
-        print(f"solstone-generate-wire v2: {exc}", file=sys.stderr)
-        response = _v2_refusal(exc, request_id, locals().get("provider"))
+        try:
+            response = _v2_refusal(exc, request_id, locals().get("provider"))
+        except Exception:
+            _write_v2_error(
+                _v2_internal_error(request_id),
+                _generate_contract()["exit_codes"]["internal_failure"],
+            )
     else:
         try:
             response = _v2_generated(result, request_id, model)
         except Exception:
-            error = {
-                "schema": _generate_contract()["schema_identifiers"]["error"],
-                "id": request_id,
-                "reason": "internal-failure",
-                "detail": "failed to encode provider result",
-            }
-            sys.stderr.write(json.dumps(error, allow_nan=False) + "\n")
-            raise SystemExit(_generate_contract()["exit_codes"]["internal_failure"])
-    sys.stdout.write(json.dumps(response, allow_nan=False) + "\n")
+            _write_v2_error(
+                _v2_internal_error(request_id),
+                _generate_contract()["exit_codes"]["internal_failure"],
+            )
+    try:
+        encoded = json.dumps(response, allow_nan=False)
+    except Exception:
+        _write_v2_error(
+            _v2_internal_error(request_id),
+            _generate_contract()["exit_codes"]["internal_failure"],
+        )
+    try:
+        sys.stdout.write(encoded + "\n")
+    except Exception:
+        _write_v2_error(
+            _v2_internal_error(request_id),
+            _generate_contract()["exit_codes"]["internal_failure"],
+        )
 
 
 def main() -> None:
