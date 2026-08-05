@@ -1,0 +1,919 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)]
+
+use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use serde_json::{Value, json};
+use solstone_core_journal_io::{AtomicWriteOptions, JsonWriteOptions, write_json, write_jsonl};
+
+use super::store::undo_entity_merge_with_injector;
+use super::store::voiceprints::write_voiceprints_npz;
+use crate::{
+    EntityMergeOptions, commit_entity_merge, guard_restore_does_not_cross_merge,
+    read_entity_identity, read_visible_history, save_entity_identity, undo_entity_merge,
+};
+
+static NEXT_UNDO_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+fn undo_journal() -> PathBuf {
+    let path = std::env::temp_dir().join(format!(
+        "solstone-undo-{}-{}",
+        std::process::id(),
+        NEXT_UNDO_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&path).unwrap();
+    path
+}
+
+fn journal_tree(journal: &std::path::Path) -> Vec<(String, Vec<u8>)> {
+    fn collect(
+        root: &std::path::Path,
+        directory: &std::path::Path,
+        files: &mut Vec<(String, Vec<u8>)>,
+    ) {
+        let mut entries = fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            if entry.file_type().unwrap().is_dir() {
+                files.push((format!("{relative}/"), Vec::new()));
+                collect(root, &path, files);
+            } else if entry.file_type().unwrap().is_file() {
+                files.push((relative, fs::read(path).unwrap()));
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    collect(journal, journal, &mut files);
+    files
+}
+
+fn comparable_journal_tree(journal: &std::path::Path, target_id: &str) -> Vec<(String, Vec<u8>)> {
+    fn excluded(relative: &str, target_id: &str) -> bool {
+        relative.ends_with(".lock")
+            || relative == "indexer/"
+            || relative.starts_with("indexer/")
+            || relative == format!("entities/{target_id}/history/")
+            || relative.starts_with(&format!("entities/{target_id}/history/"))
+            || relative == "logs/entity-merges.jsonl"
+            || relative == "awareness/discovery_clusters.json"
+    }
+
+    fn collect(
+        root: &std::path::Path,
+        directory: &std::path::Path,
+        target_id: &str,
+        files: &mut Vec<(String, Vec<u8>)>,
+    ) {
+        let mut entries = fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let relative_directory = format!("{relative}/");
+            if excluded(&relative, target_id) || excluded(&relative_directory, target_id) {
+                continue;
+            }
+            if entry.file_type().unwrap().is_dir() {
+                files.push((relative_directory, Vec::new()));
+                collect(root, &path, target_id, files);
+            } else if entry.file_type().unwrap().is_file() {
+                files.push((relative, fs::read(path).unwrap()));
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    collect(journal, journal, target_id, &mut files);
+    files
+}
+
+#[test]
+fn undo_reverts_target_identity_restores_source_and_removes_payload() {
+    let journal = undo_journal();
+    let source = json!({"id":"source","name":"Source","aka":[],"emails":[],"title":"Engineer"});
+    let target = json!({"id":"target","name":"Target","aka":[],"emails":[],"title":"Director"});
+    save_entity_identity(&journal, "source", &source, None).unwrap();
+    save_entity_identity(&journal, "target", &target, None).unwrap();
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    assert_eq!(
+        read_entity_identity(&journal, "target")
+            .unwrap()
+            .unwrap()
+            .value(),
+        &target
+    );
+    assert!(journal.join("entities/source/entity.json").exists());
+    assert!(read_entity_identity(&journal, "source").unwrap().is_some());
+    assert!(
+        !journal
+            .join(format!(
+                "entities/target/history/private/{}.json",
+                merge.merge_id
+            ))
+            .exists()
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_produces_merge_undo_event_that_arms_the_restore_guard() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    let events = read_visible_history(&journal, "target").unwrap();
+    let merge_undo = events
+        .iter()
+        .find(|event| event.value()["kind"] == "merge_undo")
+        .unwrap();
+    assert_eq!(
+        guard_restore_does_not_cross_merge(merge_undo, &events)
+            .unwrap_err()
+            .to_string(),
+        "generic identity restore cannot target a recorded merge event; use recorded-merge undo instead"
+    );
+    let earlier = events
+        .iter()
+        .find(|event| !matches!(event.value()["kind"].as_str(), Some("merge" | "merge_undo")))
+        .unwrap();
+    assert_eq!(
+        guard_restore_does_not_cross_merge(earlier, &events)
+            .unwrap_err()
+            .to_string(),
+        "generic identity restore cannot cross a recorded merge event; use recorded-merge undo instead"
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_refuses_invalid_active_sibling_payload_without_mutation() {
+    let journal = undo_journal();
+    for id in ["source1", "source2", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let first =
+        commit_entity_merge(&journal, "source1", "target", EntityMergeOptions::default()).unwrap();
+    let second =
+        commit_entity_merge(&journal, "source2", "target", EntityMergeOptions::default()).unwrap();
+    let sibling_path = journal.join(format!(
+        "entities/target/history/private/{}.json",
+        second.merge_id
+    ));
+    fs::write(&sibling_path, b"not json").unwrap();
+    let index_before = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    let before = journal_tree(&journal);
+
+    let error = undo_entity_merge(&journal, &first.merge_id, Value::Null).unwrap_err();
+    assert!(error.to_string().contains(&second.merge_id));
+    assert_eq!(journal_tree(&journal), before);
+    assert_eq!(
+        solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap(),
+        index_before
+    );
+    assert!(
+        journal
+            .join(format!(
+                "entities/target/history/private/{}.json",
+                first.merge_id
+            ))
+            .exists()
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_refuses_hostile_payload_without_mutation() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let payload_path = journal.join(format!(
+        "entities/target/history/private/{}.json",
+        merge.merge_id
+    ));
+    let mut payload: Value = serde_json::from_slice(&fs::read(&payload_path).unwrap()).unwrap();
+    payload["source_id"] = json!("../outside");
+    fs::write(&payload_path, serde_json::to_vec(&payload).unwrap()).unwrap();
+    let index_before = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    let tree_before = journal_tree(&journal);
+
+    assert!(undo_entity_merge(&journal, &merge.merge_id, Value::Null).is_err());
+    assert_eq!(journal_tree(&journal), tree_before);
+    assert_eq!(
+        solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap(),
+        index_before
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_respects_sibling_alias_support() {
+    let journal = undo_journal();
+    save_entity_identity(
+        &journal,
+        "target",
+        &json!({"id":"target","name":"Target","aka":[],"emails":[]}),
+        None,
+    )
+    .unwrap();
+    for id in ["source1", "source2"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":["Shared Alias"],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+
+    let first =
+        commit_entity_merge(&journal, "source1", "target", EntityMergeOptions::default()).unwrap();
+    commit_entity_merge(&journal, "source2", "target", EntityMergeOptions::default()).unwrap();
+
+    undo_entity_merge(&journal, &first.merge_id, Value::Null).unwrap();
+    assert_eq!(
+        read_entity_identity(&journal, "target")
+            .unwrap()
+            .unwrap()
+            .value()["aka"],
+        json!(["Shared Alias"])
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_preserves_later_owner_edit() {
+    let journal = undo_journal();
+    save_entity_identity(
+        &journal,
+        "source",
+        &json!({"id":"source","name":"Source","aka":["Merge Alias"],"emails":[],"title":"Engineer"}),
+        None,
+    )
+    .unwrap();
+    save_entity_identity(
+        &journal,
+        "target",
+        &json!({"id":"target","name":"Target","aka":[],"emails":[]}),
+        None,
+    )
+    .unwrap();
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let mut owner_edit = read_entity_identity(&journal, "target")
+        .unwrap()
+        .unwrap()
+        .value()
+        .clone();
+    owner_edit["aka"] = json!(["Merge Alias", "Owner Alias"]);
+    owner_edit["title"] = json!("Lead");
+    save_entity_identity(&journal, "target", &owner_edit, None).unwrap();
+
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    let target = read_entity_identity(&journal, "target").unwrap().unwrap();
+    assert_eq!(target.value()["aka"], json!(["Owner Alias"]));
+    assert_eq!(target.value()["title"], json!("Lead"));
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn undo_restores_file_modes_not_directory_modes() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    let source_directory = journal.join("entities/source");
+    let source_identity = source_directory.join("entity.json");
+    fs::set_permissions(&source_identity, fs::Permissions::from_mode(0o640)).unwrap();
+    fs::set_permissions(&source_directory, fs::Permissions::from_mode(0o750)).unwrap();
+    let source_facet = journal.join("facets/work/entities/source");
+    fs::create_dir_all(&source_facet).unwrap();
+    fs::write(
+        source_facet.join("entity.json"),
+        br#"{"entity_id":"source"}"#,
+    )
+    .unwrap();
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+
+    assert_eq!(
+        fs::metadata(&source_identity).unwrap().permissions().mode() & 0o7777,
+        0o640
+    );
+    let default_directory = journal.join("default-directory-mode");
+    fs::create_dir(&default_directory).unwrap();
+    assert_eq!(
+        fs::metadata(&source_directory)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o7777,
+        fs::metadata(&default_directory)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o7777
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_restores_byte_identical_journal_outside_excluded_paths() {
+    let journal = undo_journal();
+    for id in ["source", "target", "other"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    fs::create_dir_all(journal.join("logs")).unwrap();
+    let discovery = journal.join("awareness/discovery_clusters.json");
+    fs::create_dir_all(discovery.parent().unwrap()).unwrap();
+    fs::write(&discovery, b"{\"clusters\":[]}").unwrap();
+
+    let source_facet = journal.join("facets/work/entities/source");
+    fs::create_dir_all(&source_facet).unwrap();
+    write_json(
+        source_facet.join("entity.json"),
+        &json!({"entity_id":"source","description":"source relationship"}),
+        JsonWriteOptions {
+            indent: Some(2),
+            sort_keys: false,
+            mode: None,
+        },
+    )
+    .unwrap();
+    let labels = journal.join("chronicle/20260102/080000_300/talents/speaker_labels.json");
+    fs::create_dir_all(labels.parent().unwrap()).unwrap();
+    write_json(
+        &labels,
+        &json!({"labels":[{"speaker":"source"}]}),
+        JsonWriteOptions {
+            indent: Some(2),
+            sort_keys: false,
+            mode: None,
+        },
+    )
+    .unwrap();
+    let activity = journal.join("facets/work/activities/20260102.jsonl");
+    fs::create_dir_all(activity.parent().unwrap()).unwrap();
+    write_jsonl(
+        &activity,
+        vec![json!({"id":"activity","active_entities":["source"]})],
+        AtomicWriteOptions::default(),
+    )
+    .unwrap();
+    let observations = journal.join("facets/work/entities/other/observations.jsonl");
+    fs::create_dir_all(observations.parent().unwrap()).unwrap();
+    write_jsonl(
+        &observations,
+        vec![json!({"observed_at":1,"relation":{"kind":"works-with","target_entity_id":"source","target_name":"source"}})],
+        AtomicWriteOptions::default(),
+    )
+    .unwrap();
+    let source_voiceprints = journal.join("entities/source/voiceprints.npz");
+    fs::write(
+        &source_voiceprints,
+        write_voiceprints_npz(
+            &[2.0; 256],
+            &[
+                "{\"day\":\"d\",\"segment_key\":\"s\",\"source\":\"x\",\"sentence_id\":\"1\"}"
+                    .to_owned(),
+            ],
+        )
+        .unwrap(),
+    )
+    .unwrap();
+
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+    let index_before = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    let tree_before = comparable_journal_tree(&journal, "target");
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+
+    assert_eq!(comparable_journal_tree(&journal, "target"), tree_before);
+    assert_eq!(
+        solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap(),
+        index_before
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_rebase_chain_restores_intermediate_target() {
+    let journal = undo_journal();
+    for id in ["a", "b", "c"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+
+    let child = commit_entity_merge(&journal, "a", "b", EntityMergeOptions::default()).unwrap();
+    let child_path = journal.join(format!(
+        "entities/b/history/private/{}.json",
+        child.merge_id
+    ));
+    let child_before_rebase = fs::read(&child_path).unwrap();
+    let parent = commit_entity_merge(&journal, "b", "c", EntityMergeOptions::default()).unwrap();
+    let parent_payload: Value = serde_json::from_slice(
+        &fs::read(journal.join(format!(
+            "entities/c/history/private/{}.json",
+            parent.merge_id
+        )))
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        parent_payload["manifest"]["rebased_merge_ids"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::String(child.merge_id.clone()))
+    );
+    assert!(!child_path.exists());
+
+    undo_entity_merge(&journal, &parent.merge_id, Value::Null).unwrap();
+    assert!(read_entity_identity(&journal, "b").unwrap().is_some());
+    assert_eq!(fs::read(&child_path).unwrap(), child_before_rebase);
+
+    undo_entity_merge(&journal, &child.merge_id, Value::Null).unwrap();
+    assert!(read_entity_identity(&journal, "a").unwrap().is_some());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_removes_moved_target_facet_relationship() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let source_facet = journal.join("facets/work/entities/source");
+    fs::create_dir_all(&source_facet).unwrap();
+    fs::write(
+        source_facet.join("entity.json"),
+        br#"{"entity_id":"source"}"#,
+    )
+    .unwrap();
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let target_facet = journal.join("facets/work/entities/target");
+    assert!(target_facet.exists());
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    assert!(!target_facet.exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_restores_merged_target_facet_relationship() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let source_facet = journal.join("facets/work/entities/source");
+    let target_facet = journal.join("facets/work/entities/target");
+    fs::create_dir_all(&source_facet).unwrap();
+    fs::create_dir_all(&target_facet).unwrap();
+    fs::write(
+        source_facet.join("entity.json"),
+        br#"{"entity_id":"source","attached_at":"2026-01-01"}"#,
+    )
+    .unwrap();
+    let target_before = json!({
+        "entity_id": "target",
+        "attached_at": "2026-02-01",
+        "description": "target description"
+    });
+    fs::write(
+        target_facet.join("entity.json"),
+        serde_json::to_vec(&target_before).unwrap(),
+    )
+    .unwrap();
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    let restored: Value =
+        serde_json::from_slice(&fs::read(target_facet.join("entity.json")).unwrap()).unwrap();
+    assert_eq!(restored, target_before);
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_restores_target_observations_from_merged_facet() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let source_facet = journal.join("facets/work/entities/source");
+    let target_facet = journal.join("facets/work/entities/target");
+    fs::create_dir_all(&source_facet).unwrap();
+    fs::create_dir_all(&target_facet).unwrap();
+    fs::write(
+        source_facet.join("entity.json"),
+        br#"{"entity_id":"source"}"#,
+    )
+    .unwrap();
+    fs::write(
+        target_facet.join("entity.json"),
+        br#"{"entity_id":"target"}"#,
+    )
+    .unwrap();
+    let source_observation = json!({"content": "source", "observed_at": "2026-01-01"});
+    let target_observation = json!({"content": "target", "observed_at": "2026-01-02"});
+    fs::write(
+        source_facet.join("observations.jsonl"),
+        format!("{}\n", source_observation),
+    )
+    .unwrap();
+    fs::write(
+        target_facet.join("observations.jsonl"),
+        format!("{}\n", target_observation),
+    )
+    .unwrap();
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    let restored = fs::read_to_string(target_facet.join("observations.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(restored, vec![target_observation]);
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_restores_observation_relation_target() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let observations = journal.join("facets/work/entities/other/observations.jsonl");
+    fs::create_dir_all(observations.parent().unwrap()).unwrap();
+    fs::write(
+        &observations,
+        b"{\"content\":\"note\",\"observed_at\":\"2026-01-01\",\"relation\":{\"kind\":\"works-with\",\"target_entity_id\":\"source\"}}\n",
+    )
+    .unwrap();
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let remapped: Value =
+        serde_json::from_str(&fs::read_to_string(&observations).unwrap()).unwrap();
+    assert_eq!(remapped["relation"]["target_entity_id"], "target");
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    let restored: Value =
+        serde_json::from_str(&fs::read_to_string(&observations).unwrap()).unwrap();
+    assert_eq!(restored["relation"]["target_entity_id"], "source");
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_restores_segment_speaker_label() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let labels = journal.join("chronicle/20260102/080000_300/talents/speaker_labels.json");
+    fs::create_dir_all(labels.parent().unwrap()).unwrap();
+    fs::write(&labels, br#"{"labels":[{"speaker":"source"}]}"#).unwrap();
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let rewritten: Value = serde_json::from_slice(&fs::read(&labels).unwrap()).unwrap();
+    assert_eq!(rewritten["labels"][0]["speaker"], "target");
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    let restored: Value = serde_json::from_slice(&fs::read(&labels).unwrap()).unwrap();
+    assert_eq!(restored["labels"][0]["speaker"], "source");
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_restores_activity_active_entity() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let activities = journal.join("facets/work/activities/20260102.jsonl");
+    fs::create_dir_all(activities.parent().unwrap()).unwrap();
+    fs::write(
+        &activities,
+        b"{\"id\":\"activity\",\"active_entities\":[\"source\"]}\n",
+    )
+    .unwrap();
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let rewritten: Value = serde_json::from_str(&fs::read_to_string(&activities).unwrap()).unwrap();
+    assert_eq!(rewritten["active_entities"][0], "target");
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    let restored: Value = serde_json::from_str(&fs::read_to_string(&activities).unwrap()).unwrap();
+    assert_eq!(restored["active_entities"][0], "source");
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn facets_undo_injection_rolls_back_and_retry_succeeds() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let moved_source = journal.join("facets/moved/entities/source");
+    fs::create_dir_all(&moved_source).unwrap();
+    fs::write(
+        moved_source.join("entity.json"),
+        br#"{"entity_id":"source"}"#,
+    )
+    .unwrap();
+    let merged_source = journal.join("facets/merged/entities/source");
+    let merged_target = journal.join("facets/merged/entities/target");
+    fs::create_dir_all(&merged_source).unwrap();
+    fs::create_dir_all(&merged_target).unwrap();
+    fs::write(
+        merged_source.join("entity.json"),
+        br#"{"entity_id":"source","attached_at":"2026-01-01"}"#,
+    )
+    .unwrap();
+    let merged_before = json!({"entity_id":"target","attached_at":"2026-02-01"});
+    fs::write(
+        merged_target.join("entity.json"),
+        serde_json::to_vec(&merged_before).unwrap(),
+    )
+    .unwrap();
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let moved_target = journal.join("facets/moved/entities/target/entity.json");
+    let moved_after_merge = fs::read(&moved_target).unwrap();
+    let merged_after_merge = fs::read(merged_target.join("entity.json")).unwrap();
+    let error = undo_entity_merge_with_injector(
+        &journal,
+        &merge.merge_id,
+        Value::Null,
+        Some(&|phase, artifact_index| phase == "facets" && artifact_index == 0),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "entity merge undo failed during facets: injected failure after facets artifact 0"
+    );
+    assert_eq!(fs::read(&moved_target).unwrap(), moved_after_merge);
+    assert_eq!(
+        fs::read(merged_target.join("entity.json")).unwrap(),
+        merged_after_merge
+    );
+
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    assert!(!moved_target.exists());
+    let restored: Value =
+        serde_json::from_slice(&fs::read(merged_target.join("entity.json")).unwrap()).unwrap();
+    assert_eq!(restored, merged_before);
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn observations_undo_injection_rolls_back_and_retry_succeeds() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let first = journal.join("facets/one/entities/other/observations.jsonl");
+    let second = journal.join("facets/two/entities/other/observations.jsonl");
+    for path in [&first, &second] {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            path,
+            b"{\"relation\":{\"kind\":\"works-with\",\"target_entity_id\":\"source\"}}\n",
+        )
+        .unwrap();
+    }
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let first_after_merge = fs::read(&first).unwrap();
+    let second_after_merge = fs::read(&second).unwrap();
+    assert!(
+        undo_entity_merge_with_injector(
+            &journal,
+            &merge.merge_id,
+            Value::Null,
+            Some(&|phase, artifact_index| phase == "observations" && artifact_index == 0),
+        )
+        .is_err()
+    );
+    assert_eq!(fs::read(&first).unwrap(), first_after_merge);
+    assert_eq!(fs::read(&second).unwrap(), second_after_merge);
+
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    for path in [&first, &second] {
+        let restored: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(restored["relation"]["target_entity_id"], "source");
+    }
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn segments_undo_injection_rolls_back_and_retry_succeeds() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let first = journal.join("chronicle/20260102/080000_300/talents/speaker_labels.json");
+    let second = journal.join("chronicle/20260102/090000_300/talents/speaker_labels.json");
+    for path in [&first, &second] {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, br#"{"labels":[{"speaker":"source"}]}"#).unwrap();
+    }
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let first_after_merge = fs::read(&first).unwrap();
+    let second_after_merge = fs::read(&second).unwrap();
+    assert!(
+        undo_entity_merge_with_injector(
+            &journal,
+            &merge.merge_id,
+            Value::Null,
+            Some(&|phase, artifact_index| phase == "segments" && artifact_index == 0),
+        )
+        .is_err()
+    );
+    assert_eq!(fs::read(&first).unwrap(), first_after_merge);
+    assert_eq!(fs::read(&second).unwrap(), second_after_merge);
+
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    for path in [&first, &second] {
+        let restored: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(restored["labels"][0]["speaker"], "source");
+    }
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn activities_undo_injection_rolls_back_and_retry_succeeds() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let first = journal.join("facets/work/activities/20260102.jsonl");
+    let second = journal.join("facets/work/activities/20260103.jsonl");
+    for path in [&first, &second] {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            path,
+            b"{\"id\":\"activity\",\"active_entities\":[\"source\"]}\n",
+        )
+        .unwrap();
+    }
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let first_after_merge = fs::read(&first).unwrap();
+    let second_after_merge = fs::read(&second).unwrap();
+    assert!(
+        undo_entity_merge_with_injector(
+            &journal,
+            &merge.merge_id,
+            Value::Null,
+            Some(&|phase, artifact_index| phase == "activities" && artifact_index == 0),
+        )
+        .is_err()
+    );
+    assert_eq!(fs::read(&first).unwrap(), first_after_merge);
+    assert_eq!(fs::read(&second).unwrap(), second_after_merge);
+
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    for path in [&first, &second] {
+        let restored: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(restored["active_entities"][0], "source");
+    }
+    fs::remove_dir_all(journal).unwrap();
+}

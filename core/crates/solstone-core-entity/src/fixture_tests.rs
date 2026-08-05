@@ -7,9 +7,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::{
-    EntityNameCandidate, MatchTier, ambiguity_id, entity_slug, find_matching_entity,
-    normalize_resolution_query,
+use crate::ambiguity_id;
+use solstone_core_entity_matching::{
+    EntityNameCandidate, MatchTier, entity_slug, find_matching_entity, normalize_resolution_query,
 };
 
 use super::test_support::{
@@ -21,6 +21,9 @@ use super::test_support::{
 const JOURNAL_IO_ALLOWED: &[&str] = &[
     "read_json",
     "read_jsonl",
+    "day_dirs",
+    "iter_segments",
+    "PathOrDay",
     "read_text",
     "MalformedPolicy",
     "contained_path",
@@ -44,6 +47,17 @@ const JOURNAL_IO_ALLOWED: &[&str] = &[
     "StagedDirOptions",
     "StagedWriteError",
     "remove_dir_all",
+    "append_jsonl",
+    "capture_snapshot",
+    "restore_snapshot",
+    "JournalSnapshot",
+    "SnapshotDirectory",
+    "SnapshotFile",
+    "SnapshotError",
+    "AppendError",
+    "atomic_replace",
+    "read_bytes",
+    "write_jsonl",
 ];
 
 #[test]
@@ -134,9 +148,12 @@ fn collect_production_sources(directory: &Path, sources: &mut Vec<PathBuf>) {
                 Some(
                     "fixture_tests.rs"
                         | "resolution_tests.rs"
+                        | "merge_payload_tests.rs"
+                        | "merge_tests.rs"
                         | "store_tests.rs"
                         | "test_support.rs"
                         | "trust_lock_tests.rs"
+                        | "undo_tests.rs"
                 )
             )
         {
@@ -157,7 +174,7 @@ fn entity_slug_vectors_match_fixture() {
 
     assert_eq!(
         fixture.entity_slug.max_length,
-        crate::MAX_ENTITY_SLUG_LENGTH
+        solstone_core_entity_matching::MAX_ENTITY_SLUG_LENGTH
     );
     // A loader that parses the file, misses the array and yields nothing would
     // satisfy every assertion below perfectly. The declared count is what makes

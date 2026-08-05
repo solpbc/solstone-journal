@@ -6,6 +6,7 @@ members = [
     "crates/solstone-core-indexer-store",
     "crates/solstone-core-observer-delete",
     "crates/solstone-core-entity",
+    "crates/solstone-core-entity-matching",
     "crates/solstone-core-facets",
     "crates/solstone-core-journal",
     "crates/solstone-core-journal-io",
@@ -39,6 +40,7 @@ unsafe_code = "forbid"
 [workspace.dependencies]
 solstone-core-cli = { path = "crates/solstone-core-cli" }
 solstone-core-entity = { path = "crates/solstone-core-entity" }
+solstone-core-entity-matching = { path = "crates/solstone-core-entity-matching" }
 solstone-core-facets = { path = "crates/solstone-core-facets" }
 solstone-core-indexer = { path = "crates/solstone-core-indexer" }
 solstone-core-indexer-store = { path = "crates/solstone-core-indexer-store" }

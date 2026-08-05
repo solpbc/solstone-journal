@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-entity-matching"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+caseless = "0.2.2"
+md5.workspace = true
+rapidfuzz.workspace = true
+unicode-normalization.workspace = true
+unidecode.workspace = true
+
+[lints]
+workspace = true

@@ -8,9 +8,14 @@ mod error;
 mod history;
 mod identity;
 mod map;
+pub(crate) mod merge;
+pub(crate) mod merge_payload;
+mod merge_rollback;
 mod paths;
 mod reconcile;
 mod repair;
+mod undo;
+pub(crate) mod voiceprints;
 mod write;
 
 pub use ambiguity::{
@@ -27,12 +32,17 @@ pub use map::{
     EntityIdentityGroupMap, EntityIdentityMap, IdentityMapLoser, IdentityMapLoserReason,
     read_identity_group_map, read_identity_map,
 };
+pub use merge::{
+    EntityMergeError, EntityMergeOptions, EntityMergePreview, EntityMergeReport,
+    commit_entity_merge, preview_entity_merge,
+};
 pub use reconcile::{PreparedHistoryOutcome, classify_prepared_history};
 pub use repair::{
     EntityIdentityRepairError, EntityIdentityRepairGuard, EntityIdentityRepairRefusal,
     EntityIdentityRepairReport, EntityIdentityRepairSkip, EntityIdentityRepairSkipReason,
     repair_entity_identities,
 };
+pub use undo::{EntityUndoError, EntityUndoReport, undo_entity_merge};
 pub use write::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,
     EntityOperationKind, EntitySaveResult, EntityWriteError, IdentityMapCacheLoad,
@@ -42,6 +52,8 @@ pub use write::{
 
 #[cfg(test)]
 pub(crate) use repair::set_repair_identity_write_failure_on_attempt;
+#[cfg(test)]
+pub(crate) use undo::undo_entity_merge_with_injector;
 #[cfg(test)]
 pub(crate) use write::{
     save_entity_identity_with_timeout, set_forced_identity_write_failure,

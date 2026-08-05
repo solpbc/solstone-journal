@@ -10,15 +10,15 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::matcher::{
-    char_len, first_word_match, prefix_token_match, single_token_first_word_match, token_sort,
-    token_subset_match,
+use solstone_core_entity_matching::{
+    EntityNameCandidate, MatchTier, char_len, find_matching_entity, first_word_match,
+    matchable_resolution_query, normalize_resolution_query, prefix_token_match,
+    single_token_first_word_match, token_sort, token_subset_match,
 };
-use crate::normalize::matchable_resolution_query;
+
 use crate::{
-    AmbiguityObservation, EntityNameCandidate, EntityStoreError, EntityTrustLockError,
-    EntityWriteError, MatchTier, find_matching_entity, hold_entity_trust_lock,
-    load_resolved_ambiguity_choice, normalize_resolution_query, record_ambiguity_observation,
+    AmbiguityObservation, EntityStoreError, EntityTrustLockError, EntityWriteError,
+    hold_entity_trust_lock, load_resolved_ambiguity_choice, record_ambiguity_observation,
 };
 
 /// One caller-supplied entity available for resolution.

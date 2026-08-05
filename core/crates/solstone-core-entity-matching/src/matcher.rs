@@ -221,7 +221,7 @@ fn entity_match(candidate_index: usize, tier: MatchTier) -> EntityNameMatch {
     }
 }
 
-pub(crate) fn token_subset_match(name_a_lower: &str, name_b_lower: &str) -> bool {
+pub fn token_subset_match(name_a_lower: &str, name_b_lower: &str) -> bool {
     let tokens_a: Vec<&str> = unique_sorted_tokens(name_a_lower);
     let tokens_b: Vec<&str> = unique_sorted_tokens(name_b_lower);
     let (shorter, longer) = match tokens_a.len().cmp(&tokens_b.len()) {
@@ -231,7 +231,7 @@ pub(crate) fn token_subset_match(name_a_lower: &str, name_b_lower: &str) -> bool
     shorter.len() >= 2 && shorter.iter().all(|token| longer.contains(token))
 }
 
-pub(crate) fn prefix_token_match(name_a_lower: &str, name_b_lower: &str) -> bool {
+pub fn prefix_token_match(name_a_lower: &str, name_b_lower: &str) -> bool {
     let mut sorted_a: Vec<&str> = name_a_lower.split_whitespace().collect();
     let mut sorted_b: Vec<&str> = name_b_lower.split_whitespace().collect();
     sorted_a.sort_unstable();
@@ -254,11 +254,11 @@ fn first_word_key(name: &str) -> Option<String> {
     (char_len(&first_word) >= 3).then_some(first_word)
 }
 
-pub(crate) fn first_word_match(query_lower: &str, entity_name: &str) -> bool {
+pub fn first_word_match(query_lower: &str, entity_name: &str) -> bool {
     char_len(query_lower) >= 3 && first_word_key(entity_name).as_deref() == Some(query_lower)
 }
 
-pub(crate) fn single_token_first_word_match(query_first: &str, entity_name: &str) -> bool {
+pub fn single_token_first_word_match(query_first: &str, entity_name: &str) -> bool {
     !entity_name.is_empty()
         && entity_name.split_whitespace().count() == 1
         && first_word_match(query_first, entity_name)
@@ -271,7 +271,7 @@ fn unique_sorted_tokens(text: &str) -> Vec<&str> {
     tokens
 }
 
-pub(crate) fn token_sort(text: &str) -> String {
+pub fn token_sort(text: &str) -> String {
     let mut tokens: Vec<&str> = text.split_whitespace().collect();
     tokens.sort_unstable();
     tokens.join(" ")
@@ -297,7 +297,7 @@ fn extract_one_fuzzy(
     best.map(|(_score, candidate_index)| candidate_index)
 }
 
-pub(crate) fn char_len(text: &str) -> usize {
+pub fn char_len(text: &str) -> usize {
     text.chars().count()
 }
 
