@@ -56,6 +56,10 @@ where
 }
 
 /// Load a strict, nonempty identity from a manifest or legacy media files.
+///
+/// A tombstone is deliberately distinct from a manifest-less legacy empty
+/// segment: callers must not conflate an owner-authorized deletion with a
+/// segment that was never fully written.
 pub fn load_content_identity(
     segment: &SegmentDir,
     terminal_proof: &dyn TerminalProofVerifier,
@@ -307,11 +311,21 @@ mod tests {
     #[test]
     fn tombstoned_segment_is_distinct_from_legacy_empty() {
         let temporary = TempDir::new();
-        let segment = segment(temporary.path());
-        fs::write(segment.path.join("tombstone.json"), b"{}").unwrap();
+        let tombstoned = segment(temporary.path());
+        fs::write(tombstoned.path.join("tombstone.json"), b"{}").unwrap();
         assert!(matches!(
-            load_content_identity(&segment, &no_proof),
+            load_content_identity(&tombstoned, &no_proof),
             Err(SegmentError::Tombstoned { .. })
+        ));
+
+        let legacy =
+            SegmentDir::resolve(temporary.path(), "20260805", "120000_60", "workstation").unwrap();
+        fs::create_dir_all(legacy.path()).unwrap();
+        assert!(matches!(
+            load_content_identity(&legacy, &no_proof),
+            Err(SegmentError::IdentityRefusal { name, reason })
+                if name == "ingest.json"
+                    && reason == "identity has no non-reserved content files"
         ));
     }
 

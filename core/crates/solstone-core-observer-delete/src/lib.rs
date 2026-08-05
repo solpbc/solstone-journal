@@ -28,6 +28,8 @@ use solstone_core_segment::{
 
 const LOCATION_STREAM: &str = "location";
 const LOCATION_ORIGINAL: &str = "location.jsonl";
+/// Matches Python's location-only classifier, but remains removable in a
+/// tombstone because the final segment whitelist is `tombstone.json` alone.
 const ITEM_SIDECAR: &str = "item.json";
 const TOMBSTONE: &str = "tombstone.json";
 const LEDGER_EVENT: &str = "location_source_delete";
@@ -286,6 +288,10 @@ fn prune_outside_chronicle(journal: &Path, receipt: &mut DeleteReceipt) {
 
 enum Classification {
     Mixed,
+    /// A tombstone intentionally removes `stream.json` along with every other
+    /// pre-existing file. That prevents `rebuild_stream_state` from resurrecting
+    /// the deleted location identity; a resulting chain-identity refusal is
+    /// limited to the affected duplicate group rather than a global prune stall.
     LocationOnly(Vec<String>),
 }
 
@@ -580,6 +586,7 @@ fn observer_prefixes(journal: &Path) -> Vec<String> {
     };
     let mut prefixes = BTreeSet::new();
     for entry in entries.flatten() {
+        let file_name = entry.file_name();
         let path = entry.path();
         if !path.is_file() || path.extension().is_none_or(|extension| extension != "json") {
             continue;
@@ -593,9 +600,22 @@ fn observer_prefixes(journal: &Path) -> Vec<String> {
         let Some(key) = value.get("key").and_then(Value::as_str) else {
             continue;
         };
-        if key.len() >= 8 {
-            prefixes.insert(key[..8].to_owned());
+        if key.len() < 8 || !key.is_char_boundary(8) {
+            continue;
         }
+        if value
+            .get("fingerprint")
+            .and_then(Value::as_str)
+            .is_some_and(|fingerprint| !fingerprint.is_empty())
+        {
+            continue;
+        }
+        let prefix = &key[..8];
+        let expected_file_name = format!("{prefix}.json");
+        if file_name != expected_file_name.as_str() {
+            continue;
+        }
+        prefixes.insert(prefix.to_owned());
     }
     prefixes.into_iter().collect()
 }
@@ -740,6 +760,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use solstone_core_indexer_store::db::open_index;
+    use solstone_core_segment::RESERVED_SEGMENT_FILENAMES;
 
     use super::*;
 
@@ -782,14 +803,30 @@ mod tests {
 
     fn location_only(journal: &Path, day: &str, stream: &str, key: &str) -> PathBuf {
         let path = segment(journal, day, stream, key);
+        // Tombstone publication is create-exclusive, so an already-present
+        // tombstone is intentionally not a location-only fixture input.
+        for name in RESERVED_SEGMENT_FILENAMES
+            .iter()
+            .copied()
+            .filter(|name| *name != TOMBSTONE)
+        {
+            fs::write(path.join(name), b"{}").unwrap();
+        }
         fs::write(path.join(LOCATION_ORIGINAL), b"location").unwrap();
-        fs::write(path.join("stream.json"), b"{}").unwrap();
+        fs::write(path.join(ITEM_SIDECAR), b"{}").unwrap();
         fs::write(
             path.join("device.json"),
             format!(r#"{{"did":"{}","jid":"wrong"}}"#, did()),
         )
         .unwrap();
         path
+    }
+
+    fn entry_names(path: &Path) -> BTreeSet<std::ffi::OsString> {
+        fs::read_dir(path)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect()
     }
 
     fn mixed(journal: &Path, day: &str, stream: &str, key: &str) -> PathBuf {
@@ -833,6 +870,43 @@ mod tests {
         .unwrap();
     }
 
+    fn write_observer_record(journal: &Path, file_name: &str, record: &str) {
+        let observers = journal.join("apps/observer/observers");
+        fs::create_dir_all(&observers).unwrap();
+        fs::write(observers.join(file_name), record).unwrap();
+    }
+
+    #[test]
+    fn observer_prefixes_skip_keys_with_non_character_byte_boundary() {
+        let temporary = TempDir::new();
+        let journal = temporary.journal();
+        write_observer_record(&journal, "ignored.json", r#"{"key":"aaaaaaaé"}"#);
+
+        assert!(observer_prefixes(&journal).is_empty());
+    }
+
+    #[test]
+    fn observer_prefixes_skip_fingerprint_keyed_records() {
+        let temporary = TempDir::new();
+        let journal = temporary.journal();
+        write_observer_record(
+            &journal,
+            "abcd1234.json",
+            r#"{"key":"abcd1234ffffffff","fingerprint":"legacy"}"#,
+        );
+
+        assert!(observer_prefixes(&journal).is_empty());
+    }
+
+    #[test]
+    fn observer_prefixes_skip_mismatched_record_filenames() {
+        let temporary = TempDir::new();
+        let journal = temporary.journal();
+        write_observer_record(&journal, "other.json", r#"{"key":"abcd1234ffffffff"}"#);
+
+        assert!(observer_prefixes(&journal).is_empty());
+    }
+
     #[test]
     fn location_only_ends_with_only_tombstone_and_real_did() {
         let temporary = TempDir::new();
@@ -841,14 +915,23 @@ mod tests {
 
         let receipt = delete_location_source(&journal).unwrap();
 
-        let names: BTreeSet<_> = fs::read_dir(&path)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect();
+        let names = entry_names(&path);
         assert_eq!(names, BTreeSet::from([std::ffi::OsString::from(TOMBSTONE)]));
         let tombstone: Value =
             serde_json::from_slice(&fs::read(path.join(TOMBSTONE)).unwrap()).unwrap();
-        assert_eq!(tombstone.as_object().unwrap().len(), 3);
+        assert_eq!(
+            tombstone
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                "deleted_at".to_owned(),
+                "did".to_owned(),
+                "reason".to_owned(),
+            ])
+        );
         assert_eq!(tombstone["did"], did());
         assert_eq!(receipt.removed.originals, 1);
         assert_eq!(receipt.removed.segments, 1);
@@ -865,12 +948,12 @@ mod tests {
         let temporary = TempDir::new();
         let journal = temporary.journal();
         let path = mixed(&journal, "20260804", "pixel", "120000_60");
+        let mut expected = entry_names(&path);
+        assert!(expected.remove(&std::ffi::OsString::from(LOCATION_ORIGINAL)));
 
         let receipt = delete_location_source(&journal).unwrap();
 
-        assert!(!path.join(LOCATION_ORIGINAL).exists());
-        assert_eq!(fs::read(path.join("audio.m4a")).unwrap(), b"audio");
-        assert!(path.join("stream.json").is_file());
+        assert_eq!(entry_names(&path), expected);
         assert!(!path.join(TOMBSTONE).exists());
         assert_eq!(receipt.removed.mixed_segments, 1);
         assert_eq!(receipt.removed.segments, 0);
@@ -892,7 +975,9 @@ mod tests {
         assert!(!path.join("device.json").exists());
         assert!(!path.join("events.jsonl").exists());
         assert!(path.join("ingest.json").exists());
+        assert!(path.join(ITEM_SIDECAR).exists());
         assert!(path.join(LOCATION_ORIGINAL).exists());
+        assert!(path.join("stream.json").exists());
         assert!(!path.join(TOMBSTONE).exists());
         assert_eq!(
             receipt.not_removed[0].what,
@@ -906,11 +991,13 @@ mod tests {
         let journal = temporary.journal();
         location_only(&journal, "20260804", "location", "120000_60");
         mixed(&journal, "20260805", "pixel", "120000_60");
+        mixed(&journal, "20260805", "watch", "130000_60");
         for day in ["20260804", "20260805"] {
             for facet in ["personal", "work"] {
                 add_facet_artifacts(&journal, facet, day);
             }
         }
+        fs::remove_file(journal.join("facets/personal/news/20260805.md")).unwrap();
         add_history(&journal, "pixel");
 
         delete_location_source(&journal).unwrap();
@@ -924,7 +1011,6 @@ mod tests {
             "work 2026-08-04: news",
             "work 2026-08-04: people and topics",
             "personal 2026-08-05: activity summary",
-            "personal 2026-08-05: news",
             "personal 2026-08-05: people and topics",
             "work 2026-08-05: activity summary",
             "work 2026-08-05: news",
@@ -940,6 +1026,7 @@ mod tests {
             .map(|entry| entry.what.clone())
             .collect();
         assert_eq!(actual, expected);
+        assert!(!actual.contains("watch: import history"));
         assert_eq!(second.removed.days, 0);
     }
 
@@ -968,30 +1055,43 @@ mod tests {
         assert_eq!(receipt.removed.history_rows, 1);
         assert!(!journal.join("streams/location.json").exists());
         assert!(!has_history_for_stream(&journal, LOCATION_STREAM));
+        let conn = open_index(&journal).unwrap();
+        let chunks: i64 = conn
+            .query_row("SELECT count(*) FROM chunks", [], |row| row.get(0))
+            .unwrap();
+        let files: i64 = conn
+            .query_row("SELECT count(*) FROM files", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(chunks, 0);
+        assert_eq!(files, 0);
     }
 
     #[test]
     fn unknown_device_provenance_is_literal_unknown() {
-        let temporary = TempDir::new();
-        let journal = temporary.journal();
-        let path = segment(&journal, "20260804", "location", "120000_60");
-        fs::write(path.join(LOCATION_ORIGINAL), "location").unwrap();
-        fs::write(path.join("device.json"), r#"{"jid":"wrong"}"#).unwrap();
+        for device in [r#"{"jid":"wrong"}"#, r#"{"did":"not-a-canonical-did"}"#] {
+            let temporary = TempDir::new();
+            let journal = temporary.journal();
+            let path = segment(&journal, "20260804", "location", "120000_60");
+            fs::write(path.join(LOCATION_ORIGINAL), "location").unwrap();
+            fs::write(path.join("device.json"), device).unwrap();
 
-        delete_location_source(&journal).unwrap();
+            delete_location_source(&journal).unwrap();
 
-        let value: Value =
-            serde_json::from_slice(&fs::read(path.join(TOMBSTONE)).unwrap()).unwrap();
-        assert_eq!(value["did"], "unknown");
+            let value: Value =
+                serde_json::from_slice(&fs::read(path.join(TOMBSTONE)).unwrap()).unwrap();
+            assert_eq!(value["did"], "unknown");
+        }
     }
 
     #[test]
     fn ledger_prior_evidence_survives_a_later_failed_removal() {
         let temporary = TempDir::new();
         let journal = temporary.journal();
-        location_only(&journal, "20260804", "location", "120000_60");
+        let prior = mixed(&journal, "20260804", "pixel", "120000_60");
         add_facet_artifacts(&journal, "work", "20260804");
         delete_location_source(&journal).unwrap();
+        assert!(!prior.join(TOMBSTONE).exists());
+        assert!(!prior.join(LOCATION_ORIGINAL).exists());
         let retry = location_only(&journal, "20260805", "location", "120000_60");
         REMOVE_FAILURE.with(|value| *value.borrow_mut() = Some("device.json".into()));
 
@@ -1022,7 +1122,14 @@ mod tests {
         let outside = temporary.path.join("outside");
         fs::create_dir_all(&day).unwrap();
         fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("sentinel"), b"outside data").unwrap();
         symlink(&outside, day.join("120000_60")).unwrap();
-        assert!(delete_location_source(&journal).is_err());
+        assert!(matches!(
+            delete_location_source(&journal),
+            Err(DeleteError::Segment(SegmentError::Path(PathError::Escape(
+                _
+            ))))
+        ));
+        assert_eq!(fs::read(outside.join("sentinel")).unwrap(), b"outside data");
     }
 }
