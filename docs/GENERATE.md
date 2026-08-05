@@ -71,6 +71,15 @@ crate and the Python shim read that file. ⛔ **Neither language holds its own c
   what usage is recorded against. It is **not** a provider selector.
 - **`contents`** — non-empty array of parts. A `text` part carries `text`; an `image` part carries
   `mime_type` and base64 `data`. Unknown part types are refused.
+  🔴 **Owner media travels inline, over the pipe, and is never written to a temp file.** The obvious
+  alternative — hand the child a path — is what the speaker-analysis boundary does for bulk audio, and
+  it puts an owner's frames at rest outside the journal, outside retention, with a cleanup step that a
+  killed child never runs. ⛔ Inline is the covenant-correct choice and it is not negotiable for
+  convenience: **content crossing this boundary is in flight or it is nowhere.**
+  ⚠ It has a cost, and it lands on the caller: a screen recording's frames are megabytes each, so **a
+  client must write requests and read responses concurrently.** A client that writes a large request
+  while the child is blocked writing a response nobody is reading deadlocks both. See § the two
+  framings.
 - **`attempt_index`, `exclusive_admission`, `transport_retries`** — retry and admission hints. Each is
   meaningful to one lane and ignored by the others. ⚠ These are deliberately named for what they
   *do* rather than for the lane that honours them; a lane name in a field name is the provider leak
