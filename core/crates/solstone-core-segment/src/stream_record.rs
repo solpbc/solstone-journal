@@ -58,6 +58,18 @@ pub struct ResolvedStream {
     pub advance: StreamAdvance,
 }
 
+/// A (did, source)-bound stream identity, not yet advanced.
+///
+/// Produced by `bind_stream`, which resolves identity but performs no chain
+/// mutation. This lets a caller search several segment-key candidates against
+/// the same bound identity — e.g. retrying past a content collision — without
+/// minting a chain link for every candidate it tries.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BoundStream {
+    pub stream: String,
+    pub segment: SegmentDir,
+}
+
 #[derive(Serialize)]
 struct StreamMarker {
     stream: String,
@@ -72,6 +84,92 @@ struct StreamBinding<'a> {
     source: &'a str,
 }
 
+/// Resolve a device-owned stream by authenticated identity, without advancing
+/// its chain. Callers that want both steps in one call should use
+/// `resolve_stream` instead.
+pub fn bind_stream(
+    journal: &Path,
+    day: &str,
+    segment: &str,
+    label: &str,
+    did: &str,
+    source: &str,
+    hints: &StreamHints,
+) -> Result<BoundStream, SegmentError> {
+    validate_did(did)?;
+    let _ = SegmentDir::resolve(journal, day, segment, DEFAULT_STREAM)?;
+    let binding = StreamBinding { did, source };
+    loop {
+        let name = {
+            let registry_target = journal.join("streams").join(REGISTRY_LOCK_NAME);
+            let registry_lock = hold_lock(registry_target, LockOptions::default())?;
+            allocate(&registry_lock, journal, label, binding, hints)?
+        };
+        let segment_dir = SegmentDir::resolve(journal, day, segment, &name)?;
+        let state_path = stream_record_path(journal, &name);
+        let _lock = hold_lock(&state_path, LockOptions::default())?;
+        match read_stream_record(&state_path)? {
+            Some(record) if !binding_matches(&record, binding) => {
+                // A non-native writer may have replaced a reservation after the
+                // registry lock was released. Re-enter allocation rather than
+                // adopting its record.
+                continue;
+            }
+            _ => {
+                return Ok(BoundStream {
+                    stream: name,
+                    segment: segment_dir,
+                });
+            }
+        }
+    }
+}
+
+/// Advance a stream previously bound by `bind_stream`, for the segment
+/// directory that actually received the write — which may differ from the one
+/// `bind_stream` returned if the caller retried past a content collision under
+/// a different segment key. Re-resolve `SegmentDir` for the landed key with
+/// the SAME bound `stream` name before calling this; never invent a name.
+///
+/// This re-verifies the (did, source) binding under a freshly acquired lock,
+/// as close to the mutation as possible, so a hijack in the window between
+/// `bind_stream` and this call is still caught rather than silently adopted.
+pub fn advance_bound_stream(
+    stream: &str,
+    day: &str,
+    segment: &str,
+    segment_dir: &SegmentDir,
+    hints: StreamHints,
+    did: &str,
+    source: &str,
+) -> Result<StreamAdvance, SegmentError> {
+    validate_did(did)?;
+    advance_stream(
+        stream,
+        day,
+        segment,
+        segment_dir,
+        hints,
+        StreamBinding { did, source },
+    )
+}
+
+/// Look up the stream currently bound to `(did, source)`, if any content has
+/// ever been written for it. Read-only: never allocates, reserves, or writes.
+pub fn lookup_stream(
+    journal: &Path,
+    did: &str,
+    source: &str,
+) -> Result<Option<String>, SegmentError> {
+    validate_did(did)?;
+    let records = read_registry_records(journal)?;
+    let binding = StreamBinding { did, source };
+    Ok(records
+        .iter()
+        .find(|(_, record)| binding_matches(record, binding))
+        .map(|(name, _)| name.clone()))
+}
+
 /// Resolve a device-owned stream by authenticated identity, then advance it.
 pub fn resolve_stream(
     journal: &Path,
@@ -82,27 +180,27 @@ pub fn resolve_stream(
     source: &str,
     hints: StreamHints,
 ) -> Result<ResolvedStream, SegmentError> {
-    validate_did(did)?;
-    let _ = SegmentDir::resolve(journal, day, segment, DEFAULT_STREAM)?;
-    let binding = StreamBinding { did, source };
     loop {
-        let name = {
-            let registry_target = journal.join("streams").join(REGISTRY_LOCK_NAME);
-            let registry_lock = hold_lock(registry_target, LockOptions::default())?;
-            allocate(&registry_lock, journal, label, binding, &hints)?
-        };
-        let segment_dir = SegmentDir::resolve(journal, day, segment, &name)?;
-        match advance_stream(&name, day, segment, &segment_dir, hints.clone(), binding) {
+        let bound = bind_stream(journal, day, segment, label, did, source, &hints)?;
+        match advance_bound_stream(
+            &bound.stream,
+            day,
+            segment,
+            &bound.segment,
+            hints.clone(),
+            did,
+            source,
+        ) {
             Ok(advance) => {
                 return Ok(ResolvedStream {
-                    stream: name,
-                    segment: segment_dir,
+                    stream: bound.stream,
+                    segment: bound.segment,
                     advance,
                 });
             }
             Err(SegmentError::StreamBindingConflict { .. }) => {
-                // A non-native writer may have replaced a reservation after the
-                // registry lock was released. Re-enter allocation rather than
+                // A non-native writer may have replaced a reservation after
+                // bind_stream's own check. Re-enter allocation rather than
                 // adopting its record.
             }
             Err(error) => return Err(error),
@@ -660,6 +758,129 @@ mod tests {
         .unwrap();
         drop(held);
         assert_eq!(worker.join().unwrap().stream, "iphone_2");
+    }
+
+    #[test]
+    fn bind_stream_resolves_identity_without_advancing() {
+        let temporary = TempDir::new();
+        let bound = bind_stream(
+            temporary.path(),
+            "20260804",
+            "120000_60",
+            "iPhone",
+            DID_A,
+            "",
+            &hints(),
+        )
+        .unwrap();
+        assert_eq!(bound.stream, "iphone");
+        let record: StreamRecord = serde_json::from_slice(
+            &fs::read(stream_record_path(temporary.path(), "iphone")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(record.seq, 0);
+        assert_eq!(record.last_day, None);
+        assert_eq!(record.last_segment, None);
+
+        // A second bind for the same (did, source) is idempotent and still
+        // does not advance.
+        let rebound = bind_stream(
+            temporary.path(),
+            "20260804",
+            "120100_60",
+            "iPhone",
+            DID_A,
+            "",
+            &hints(),
+        )
+        .unwrap();
+        assert_eq!(rebound.stream, "iphone");
+        let record: StreamRecord = serde_json::from_slice(
+            &fs::read(stream_record_path(temporary.path(), "iphone")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(record.seq, 0);
+    }
+
+    #[test]
+    fn advance_bound_stream_advances_for_the_landed_segment_not_the_bound_one() {
+        let temporary = TempDir::new();
+        let bound = bind_stream(
+            temporary.path(),
+            "20260804",
+            "120000_1",
+            "iPhone",
+            DID_A,
+            "",
+            &hints(),
+        )
+        .unwrap();
+
+        // The content collision-retry search landed the write under a
+        // different segment key than the one `bind_stream` was given.
+        let landed =
+            SegmentDir::resolve(temporary.path(), "20260804", "120000_2", &bound.stream).unwrap();
+        let advance = advance_bound_stream(
+            &bound.stream,
+            "20260804",
+            "120000_2",
+            &landed,
+            hints(),
+            DID_A,
+            "",
+        )
+        .unwrap();
+        assert_eq!(advance.seq, 1);
+        assert_eq!(advance.prev_day, None);
+        assert_eq!(advance.prev_segment, None);
+
+        let record: StreamRecord = serde_json::from_slice(
+            &fs::read(stream_record_path(temporary.path(), &bound.stream)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(record.seq, 1);
+        assert_eq!(record.last_day.as_deref(), Some("20260804"));
+        assert_eq!(record.last_segment.as_deref(), Some("120000_2"));
+        let marker: Value =
+            serde_json::from_slice(&fs::read(landed.path.join("stream.json")).unwrap()).unwrap();
+        assert_eq!(marker["seq"], 1);
+
+        // The originally-bound (but never written) segment never gets a
+        // marker of its own.
+        let unwritten =
+            SegmentDir::resolve(temporary.path(), "20260804", "120000_1", &bound.stream).unwrap();
+        assert!(!unwritten.path.join("stream.json").exists());
+    }
+
+    #[test]
+    fn lookup_stream_is_read_only_and_finds_nothing_before_a_bind() {
+        let temporary = TempDir::new();
+        assert_eq!(
+            lookup_stream(temporary.path(), DID_A, "").unwrap(),
+            None,
+            "lookup must not allocate"
+        );
+        assert!(!temporary.path().join("streams").exists());
+
+        let bound = bind_stream(
+            temporary.path(),
+            "20260804",
+            "120000_60",
+            "iPhone",
+            DID_A,
+            "",
+            &hints(),
+        )
+        .unwrap();
+        assert_eq!(
+            lookup_stream(temporary.path(), DID_A, "").unwrap(),
+            Some(bound.stream)
+        );
+        assert_eq!(
+            lookup_stream(temporary.path(), DID_A, "watch").unwrap(),
+            None
+        );
+        assert_eq!(lookup_stream(temporary.path(), DID_B, "").unwrap(), None);
     }
 
     #[test]

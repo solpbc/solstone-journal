@@ -10,7 +10,8 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
-use solstone_core_journal_io::{DEFAULT_STREAM, PathOrDay, day_dirs, iter_segments};
+use solstone_core_journal_io::{PathOrDay, day_dirs, iter_segments};
+use solstone_core_segment::lookup_stream;
 
 use crate::events::read_events;
 use crate::model::{DeviceIngestEvent, ReasonCode};
@@ -27,15 +28,10 @@ pub async fn ingest_manifest(
         Ok(did) => did,
         Err((code, status, detail)) => return refusal(code, status, detail),
     };
-    let stream = match query
-        .source
-        .as_deref()
-        .map(|value| validate_source(value.as_bytes()))
-        .transpose()
-    {
-        Ok(Some(source)) => state_stream(Some(source)),
-        Ok(None) => state_stream(None),
-        Err(code) => return refusal(code, StatusCode::BAD_REQUEST, "invalid source"),
+    let stream = match resolved_stream(&state, &did, &query) {
+        Ok(Some(stream)) => stream,
+        Ok(None) => return Json(json!({"days": {}})).into_response(),
+        Err((code, status)) => return refusal(code, status, "cannot resolve journal stream"),
     };
     let days = match day_dirs(&state.journal_root) {
         Ok(days) => days,
@@ -104,15 +100,12 @@ pub async fn ingest_manifest_day(
     if let Err(code) = validate_day(&day) {
         return refusal(code, StatusCode::BAD_REQUEST, "invalid day");
     }
-    let stream = match query
-        .source
-        .as_deref()
-        .map(|value| validate_source(value.as_bytes()))
-        .transpose()
-    {
-        Ok(Some(source)) => state_stream(Some(source)),
-        Ok(None) => state_stream(None),
-        Err(code) => return refusal(code, StatusCode::BAD_REQUEST, "invalid source"),
+    let stream = match resolved_stream(&state, &did, &query) {
+        Ok(Some(stream)) => stream,
+        Ok(None) => {
+            return Json(json!({"version": 1, "day": day, "segments": Map::new()})).into_response();
+        }
+        Err((code, status)) => return refusal(code, status, "cannot resolve journal stream"),
     };
     let events = match stream_events(&state, &day, &stream, &did) {
         Ok(events) => events,
@@ -145,15 +138,12 @@ pub async fn ingest_segments(
     if let Err(code) = validate_day(&day) {
         return refusal(code, StatusCode::BAD_REQUEST, "invalid day");
     }
-    let stream = match query
-        .source
-        .as_deref()
-        .map(|value| validate_source(value.as_bytes()))
-        .transpose()
-    {
-        Ok(Some(source)) => state_stream(Some(source)),
-        Ok(None) => state_stream(None),
-        Err(code) => return refusal(code, StatusCode::BAD_REQUEST, "invalid source"),
+    let stream = match resolved_stream(&state, &did, &query) {
+        Ok(Some(stream)) => stream,
+        Ok(None) => {
+            return Json(json!({"protocol_version": 3, "total": 0, "items": []})).into_response();
+        }
+        Err((code, status)) => return refusal(code, status, "cannot resolve journal stream"),
     };
     let events = match stream_events(&state, &day, &stream, &did) {
         Ok(events) => events,
@@ -171,20 +161,12 @@ pub async fn ingest_segments(
     }
     let mut items = Vec::new();
     for (_, event) in unique_events {
-        let path = if stream == DEFAULT_STREAM {
-            state
-                .journal_root
-                .join("chronicle")
-                .join(&day)
-                .join(&event.segment)
-        } else {
-            state
-                .journal_root
-                .join("chronicle")
-                .join(&day)
-                .join(&stream)
-                .join(&event.segment)
-        };
+        let path = state
+            .journal_root
+            .join("chronicle")
+            .join(&day)
+            .join(&stream)
+            .join(&event.segment);
         let files: Vec<Value> = event
             .files
             .into_iter()
@@ -222,8 +204,29 @@ fn admitted(
     validate_access(basis)
 }
 
-fn state_stream(source: Option<String>) -> String {
-    source.unwrap_or_else(|| DEFAULT_STREAM.to_owned())
+/// Resolve the (did, source)-bound stream for a read request, if any content
+/// has ever been written for it. `Ok(None)` means the caller can return an
+/// empty result directly rather than guessing a directory name to scan.
+fn resolved_stream(
+    state: &IngestState,
+    did: &str,
+    query: &SourceQuery,
+) -> Result<Option<String>, (ReasonCode, StatusCode)> {
+    let source = match query
+        .source
+        .as_deref()
+        .map(|value| validate_source(value.as_bytes()))
+        .transpose()
+    {
+        Ok(source) => source.unwrap_or_default(),
+        Err(code) => return Err((code, StatusCode::BAD_REQUEST)),
+    };
+    lookup_stream(&state.journal_root, did, &source).map_err(|_| {
+        (
+            ReasonCode::JournalReadFailed,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })
 }
 
 fn stream_events(

@@ -12,10 +12,9 @@ use axum::{Json, Router};
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::{error_envelope, not_found_fallback};
 use solstone_core_convey_http::identity::AccessBasis;
-use solstone_core_journal_io::DEFAULT_STREAM;
 use solstone_core_segment::{
-    ContentName, ContentWriteOutcome, SegmentDir, StreamHints, advance_stream, append_event,
-    write_content,
+    ContentName, ContentWriteOutcome, Kind, SegmentDir, StreamHints, advance_bound_stream,
+    append_event, bind_stream, write_content,
 };
 use tower_http::limit::RequestBodyLimitLayer;
 
@@ -79,12 +78,7 @@ async fn ingest_upload(
         Ok(envelope) => envelope,
         Err((code, detail)) => return refusal(code, StatusCode::BAD_REQUEST, detail),
     };
-    let stream = if envelope.source.is_empty() {
-        DEFAULT_STREAM.to_owned()
-    } else {
-        envelope.source.clone()
-    };
-    write_envelope(&state, &did, stream, envelope)
+    write_envelope(&state, &did, envelope)
 }
 
 struct MultipartInput {
@@ -363,6 +357,11 @@ fn required_string(
     }
 }
 
+/// The device display label is not carried on the wire at this protocol
+/// version. An empty label lets `bind_stream` fall back to its own default,
+/// disambiguated per (did, source) exactly like any other label.
+const STREAM_LABEL: &str = "";
+
 /// Write one multipart envelope through the segment crate's single-file door.
 ///
 /// `solstone-core-segment` deliberately offers exclusive writes per file, not
@@ -372,7 +371,41 @@ fn required_string(
 /// idempotent, so a retry sees those files as `AlreadyHeld` and can complete
 /// with its corroborating event and stream advance. A transactional repair
 /// requires a new segment-crate batch primitive and is out of scope here.
-fn write_envelope(state: &IngestState, did: &str, stream: String, envelope: Envelope) -> Response {
+///
+/// The stream identity is bound once, up front, and advanced once, for
+/// whichever segment key the content actually lands under. A rare
+/// `StreamBindingConflict` at advance time (a non-native writer hijacked the
+/// binding between the bind-time check and this call) surfaces as a `failed`
+/// outcome; it is self-healing the same way, since the content and its event
+/// are already durably written and idempotent by the time it can occur.
+fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Response {
+    let hints = StreamHints {
+        kind: Some(Kind::Observed),
+        host: None,
+        platform: None,
+    };
+    // Bind the (did, source)-owned stream identity once, up front. The chain
+    // is advanced separately, below, only once we know which segment key the
+    // content actually landed under — never once per collision-retry attempt.
+    let bound = match bind_stream(
+        &state.journal_root,
+        &envelope.day,
+        &envelope.segment,
+        STREAM_LABEL,
+        did,
+        &envelope.source,
+        &hints,
+    ) {
+        Ok(bound) => bound,
+        Err(_) => {
+            return outcome_error(
+                "failed",
+                ReasonCode::JournalWriteFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot resolve journal stream",
+            );
+        }
+    };
     let requested = envelope.segment.clone();
     let content_identity = envelope.files.iter().any(|file| is_media(&file.submitted));
     for offset in 0..MAX_SEGMENT_ATTEMPTS {
@@ -384,8 +417,18 @@ fn write_envelope(state: &IngestState, did: &str, stream: String, envelope: Enve
                 "segment allocation overflow",
             );
         };
-        let segment =
-            match SegmentDir::resolve(&state.journal_root, &envelope.day, &segment_key, &stream) {
+        // `bind_stream` already resolved the requested (offset 0) segment
+        // directory under the bound stream name; only later collision-retry
+        // candidates need a fresh resolution against that same bound name.
+        let segment = if segment_key == requested {
+            bound.segment.clone()
+        } else {
+            match SegmentDir::resolve(
+                &state.journal_root,
+                &envelope.day,
+                &segment_key,
+                &bound.stream,
+            ) {
                 Ok(segment) => segment,
                 Err(_) => {
                     return outcome_error(
@@ -395,7 +438,8 @@ fn write_envelope(state: &IngestState, did: &str, stream: String, envelope: Enve
                         "cannot resolve journal segment",
                     );
                 }
-            };
+            }
+        };
         let mut descriptors = Vec::new();
         let mut written = 0usize;
         let mut content_conflict = false;
@@ -477,7 +521,7 @@ fn write_envelope(state: &IngestState, did: &str, stream: String, envelope: Enve
             protocol_version: 3,
             did: did.to_owned(),
             source: envelope.source.clone(),
-            stream: stream.clone(),
+            stream: bound.stream.clone(),
             day: envelope.day.clone(),
             segment: segment_key.clone(),
             files: descriptors.clone(),
@@ -492,16 +536,14 @@ fn write_envelope(state: &IngestState, did: &str, stream: String, envelope: Enve
             );
         }
         if outcome != "duplicate"
-            && advance_stream(
-                &stream,
+            && advance_bound_stream(
+                &bound.stream,
                 &envelope.day,
                 &segment_key,
                 &segment,
-                StreamHints {
-                    kind: Some("device_ingest".to_owned()),
-                    host: None,
-                    platform: None,
-                },
+                hints.clone(),
+                did,
+                &envelope.source,
             )
             .is_err()
         {
@@ -705,7 +747,8 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"], "ok");
         let events =
-            fs::read_to_string(root.join("chronicle/20260804/120000_1/events.jsonl")).unwrap();
+            fs::read_to_string(root.join("chronicle/20260804/device/120000_1/events.jsonl"))
+                .unwrap();
         let event: Value = serde_json::from_str(&events).unwrap();
         assert_eq!(event["did"], DID_A);
         assert_eq!(event["meta"]["did"], DID_B);
@@ -728,11 +771,19 @@ mod tests {
         assert_eq!(body["meta"]["unknown"], true);
         assert_eq!(body["file_descriptors"][0]["extension"], json!({"a": 1}));
         let events =
-            fs::read_to_string(root.join("chronicle/20260804/120000_1/events.jsonl")).unwrap();
+            fs::read_to_string(root.join("chronicle/20260804/device/120000_1/events.jsonl"))
+                .unwrap();
         assert_eq!(events.lines().count(), 2);
         let last: Value = serde_json::from_str(events.lines().last().unwrap()).unwrap();
         assert_eq!(last["meta"]["unknown"], true);
         assert_eq!(last["files"][0]["extension"], json!({"a": 1}));
+        let stream_record: Value =
+            serde_json::from_str(&fs::read_to_string(root.join("streams/device.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            stream_record["seq"], 1,
+            "a byte-identical duplicate upload must not advance the stream chain a second time"
+        );
         let (_, manifest) = call(
             &app,
             "GET",
@@ -969,12 +1020,12 @@ mod tests {
         assert_eq!(body["status"], "collision");
         assert_ne!(body["segment"], body["segment_original"]);
         assert_eq!(
-            fs::read(root.join("chronicle/20260804/120000_1/audio.flac")).unwrap(),
+            fs::read(root.join("chronicle/20260804/device/120000_1/audio.flac")).unwrap(),
             b"first"
         );
         assert_eq!(
             fs::read(
-                root.join("chronicle/20260804")
+                root.join("chronicle/20260804/device")
                     .join(body["segment"].as_str().unwrap())
                     .join("audio.flac")
             )
@@ -982,6 +1033,28 @@ mod tests {
             b"second"
         );
         let remapped = body["segment"].as_str().unwrap();
+        let stream_record: Value =
+            serde_json::from_str(&fs::read_to_string(root.join("streams/device.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            stream_record["seq"], 2,
+            "the collision-remapped write is not a duplicate, so it advances the chain"
+        );
+        assert_eq!(
+            stream_record["last_segment"], remapped,
+            "the chain must advance for the segment that actually received the write, not the \
+             originally requested one"
+        );
+        let marker: Value = serde_json::from_str(
+            &fs::read_to_string(
+                root.join("chronicle/20260804/device")
+                    .join(remapped)
+                    .join("stream.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(marker["seq"], 2);
         let (_, day) = call(
             &app,
             "GET",
@@ -1113,7 +1186,8 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"], "ok");
         let event: Value = serde_json::from_str(
-            &fs::read_to_string(root.join("chronicle/20260804/120000_1/events.jsonl")).unwrap(),
+            &fs::read_to_string(root.join("chronicle/20260804/device/120000_1/events.jsonl"))
+                .unwrap(),
         )
         .unwrap();
         assert_eq!(event["did"], DID_A);
@@ -1213,9 +1287,11 @@ mod tests {
             );
         }
         let first =
-            fs::read_to_string(root.join("chronicle/20260804/120000_1/events.jsonl")).unwrap();
+            fs::read_to_string(root.join("chronicle/20260804/device/120000_1/events.jsonl"))
+                .unwrap();
         let second =
-            fs::read_to_string(root.join("chronicle/20260805/120001_1/events.jsonl")).unwrap();
+            fs::read_to_string(root.join("chronicle/20260805/device_2/120001_1/events.jsonl"))
+                .unwrap();
         assert!(first.contains(DID_A));
         assert!(!first.contains(DID_B));
         assert!(second.contains(DID_B));
@@ -1300,13 +1376,19 @@ mod tests {
     #[tokio::test]
     async fn manifest_surfaces_malformed_device_ingest_events() {
         let root = root();
-        fs::create_dir_all(root.join("chronicle/20260804/120000_1")).unwrap();
+        let app = router(&root);
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        assert_eq!(
+            call_upload(&app, request, "audio.flac", b"sound").await.1["status"],
+            "ok"
+        );
+        // Simulate the event log becoming malformed after a valid write, so
+        // the bound stream directory it lives under genuinely exists.
         fs::write(
-            root.join("chronicle/20260804/120000_1/events.jsonl"),
+            root.join("chronicle/20260804/device/120000_1/events.jsonl"),
             "{\"record_type\":\"device_ingest\"}\n",
         )
         .unwrap();
-        let app = router(&root);
         let (status, body) = call(
             &app,
             "GET",

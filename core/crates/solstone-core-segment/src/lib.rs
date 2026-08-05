@@ -39,7 +39,10 @@ pub use identity::{
 pub use projection::project_stream_name;
 pub use segment_dir::SegmentDir;
 pub use sidecars::append_event;
-pub use stream_record::{ResolvedStream, StreamAdvance, StreamHints, StreamRecord, resolve_stream};
+pub use stream_record::{
+    BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord, advance_bound_stream,
+    bind_stream, lookup_stream, resolve_stream,
+};
 pub use write::{ContentDescriptor, ContentWriteOutcome, write_content};
 
 #[cfg(test)]
