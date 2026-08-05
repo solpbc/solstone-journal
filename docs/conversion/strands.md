@@ -114,7 +114,9 @@ The local model lane. ⚠ Not a types boundary — it is loopback HTTP **plus a 
 
 ⚠ **A tenth call site bypasses the accessor entirely** — `think/segment.py:211` opens its own bare `sqlite3.connect(db_path)` rather than `get_journal_index()`, so it never runs the schema-ensure path. ⛔ Count it when counting callers of this boundary; an accessor-name grep misses it.
 
-⚠ Plus an **invisible runtime dependency** on `apps/speakers/edges.py` and the entity store via the `EDGE_SOURCES` registry, so the index build runs `find_matching_entity` — the `rapidfuzz`-at-threshold-90 path.
+⚠ Plus an **invisible runtime dependency** on `apps/speakers/edges.py` and the entity store via the `EDGE_SOURCES` registry — real, and invisible to any import graph. ⛔ **CORRECTED 2026-08-05: the index build does NOT run `find_matching_entity`.** `edges.py` imports exactly one entity symbol (`load_all_journal_entities`) and has zero references to `find_matching_entity` or `think.entities.matching`. Its name-variant matching is an **independent reimplementation** with its own process-global cache, and it stats entity files directly. ⚠ The previous wording asserted two matchers were one, which is exactly the merge a future scope would make on this document's authority.
+
+🔴 **Three independent name-variant matchers exist** — `think.entities.matching`, `apps/speakers/edges.py`, and `entity_name_matcher.rs` — and under rule 1 only one may own the contract. **The name-variant matching contract belongs to `P-entity`**, the identity-bearing store and the one-to-many end that every matcher's consumers resolve against. ⛔ **Consolidating them is not in flight and is not required of any current lane** — this is recorded so the class stops being representable, not as work to start. ⚠ A wrong identity decision here re-partitions an owner's people silently.
 
 **Carry forward:** the index is **always rebuildable** — ephemeral by design, and an interrupted update never leaves a partial result. ⚠ That property is required, not incidental.
 
