@@ -1506,7 +1506,7 @@
         "rule": "first_seen is required"
       }
     ],
-    "note": "A row set is validated in full before any bytes are written, and both mutation entry points re-read strictly under the lock first \u2014 so one bad row makes the whole file unwritable while it stays readable. \u26a0 These rows are NOT one per validation rule: they reach the schema-version, identity, scope, required-query-field and observed-tier rules and stop there. The status/choice, ranked-candidate, origin-pairing, occurrence-count and audit rules have no row here, and a validator that stops after the covered ones passes every case below. Read this as a floor, not a census.",
+    "note": "A row set is validated in full before any bytes are written, and both mutation entry points re-read strictly under the lock first \u2014 so one bad row makes the whole file unwritable while it stays readable. \u26a0 These rows are a FLOOR, not a census: 11 of the validator's rules still have no row, several of them type-confusion rules that a typed deserialisation papers over \u2014 which is exactly the class a port loses silently. A reimplementation asserts every row here AND enumerates the rules that have none.",
     "row_count": 28
   },
   "read_edges": {
@@ -1578,7 +1578,8 @@
     }
   },
   "reconciliation": {
-    "case_count": 7,
+    "absent_by_design": "There is no key-order case. The reference does reconcile a reordered identity file, but this artifact is serialised with sorted keys, so such a case would reach a consumer as a byte-identical duplicate of the discard case \u2014 present, green, and testing nothing. \u26a0 This corpus verifies OUTCOMES by driving the real code; it does not verify that serialisation preserved the INPUT distinction a case exists to encode. That gap is real and this note stands in for it.",
+    "case_count": 6,
     "cases": [
       {
         "after": {
@@ -1756,50 +1757,6 @@
           "type": "Person"
         },
         "note": "int vs float on created_at \u2014 equal under this interpreter's structural equality, so it DISCARDS rather than refusing",
-        "outcome": "discard"
-      },
-      {
-        "after": {
-          "aka": [
-            "Ali",
-            "AJ"
-          ],
-          "created_at": 1785889922582,
-          "description": "a friend",
-          "emails": [
-            "alice@example.com"
-          ],
-          "id": "alice_johnson",
-          "name": "Alice Johnson",
-          "type": "Person"
-        },
-        "before": {
-          "aka": [
-            "Ali",
-            "AJ"
-          ],
-          "created_at": 1785889922582,
-          "emails": [
-            "alice@example.com"
-          ],
-          "id": "alice_johnson",
-          "name": "Alice Johnson",
-          "type": "Person"
-        },
-        "disk": {
-          "aka": [
-            "Ali",
-            "AJ"
-          ],
-          "created_at": 1785889922582,
-          "emails": [
-            "alice@example.com"
-          ],
-          "id": "alice_johnson",
-          "name": "Alice Johnson",
-          "type": "Person"
-        },
-        "note": "key order is not part of equality \u2014 discard",
         "outcome": "discard"
       },
       {

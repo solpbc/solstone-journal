@@ -555,7 +555,6 @@ def _reconciliation_cases() -> list[dict[str, Any]]:
     before = dict(_ENTITY_FIXED)
     after = {**_ENTITY_FIXED, "description": "a friend"}
     numeric = {**_ENTITY_FIXED, "created_at": float(_ENTITY_FIXED["created_at"])}
-    reordered = {k: _ENTITY_FIXED[k] for k in reversed(list(_ENTITY_FIXED))}
     return [
         {
             "note": "disk equals identity_after — publish",
@@ -579,11 +578,6 @@ def _reconciliation_cases() -> list[dict[str, Any]]:
                 "structural equality, so it DISCARDS rather than refusing"
             ),
             "disk": numeric, "before": before, "after": after,
-            "outcome": "discard",
-        },
-        {
-            "note": "key order is not part of equality — discard",
-            "disk": reordered, "before": before, "after": after,
             "outcome": "discard",
         },
         {
@@ -1050,6 +1044,16 @@ def build_entity_store_fixture() -> dict[str, Any]:
         },
         "reconciliation": {
             "case_count": len(reconciliation),
+            "absent_by_design": (
+                "There is no key-order case. The reference does reconcile a "
+                "reordered identity file, but this artifact is serialised with "
+                "sorted keys, so such a case would reach a consumer as a "
+                "byte-identical duplicate of the discard case — present, green, "
+                "and testing nothing. ⚠ This corpus verifies OUTCOMES by driving "
+                "the real code; it does not verify that serialisation preserved "
+                "the INPUT distinction a case exists to encode. That gap is real "
+                "and this note stands in for it."
+            ),
             "note": (
                 "Run before every mutation. Publish when the identity on disk "
                 "equals identity_after, discard when it equals identity_before, "
@@ -1065,13 +1069,12 @@ def build_entity_store_fixture() -> dict[str, Any]:
                 "A row set is validated in full before any bytes are written, "
                 "and both mutation entry points re-read strictly under the lock "
                 "first — so one bad row makes the whole file unwritable while "
-                "it stays readable. ⚠ These rows are NOT one per validation "
-                "rule: they reach the schema-version, identity, scope, "
-                "required-query-field and observed-tier rules and stop there. "
-                "The status/choice, ranked-candidate, origin-pairing, "
-                "occurrence-count and audit rules have no row here, and a "
-                "validator that stops after the covered ones passes every case "
-                "below. Read this as a floor, not a census."
+                "it stays readable. ⚠ These rows are a FLOOR, not a census: "
+                "11 of the validator's rules still have no row, several of "
+                "them type-confusion rules that a typed deserialisation papers "
+                "over — which is exactly the class a port loses silently. A "
+                "reimplementation asserts every row here AND enumerates the "
+                "rules that have none."
             ),
             "ambiguity_rows": _negative_cases(),
         },
