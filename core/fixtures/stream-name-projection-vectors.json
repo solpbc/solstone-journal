@@ -3,7 +3,7 @@
     "format_id": "journal-stream-name-projection",
     "schema_owner": "the segment-media/journal-segment boundary",
     "file_kind": "vectors",
-    "rule": "NFKD normalize, so accents separate from their base letters -> full Unicode casefold -- NOT a lowercase mapping -> drop combining marks (category Mn), so `café` becomes `cafe` -> replace runs of [^a-z0-9_-] with a single '_' -> strip leading and trailing '_-.' -> an empty result becomes 'device' -> a Windows reserved stem gains a trailing '_' -> append '_' + projected(source) when source is non-empty -> truncate to 64 bytes -- AFTER the source is appended. Collisions are resolved by the ordinal allocator, NOT by this function.",
+    "rule": "NFKD normalize, so accents separate from their base letters -> full Unicode casefold -- NOT a lowercase mapping -> drop combining marks (category Mn), so `café` becomes `cafe` -> replace runs of [^a-z0-9_-] with a single '_' -> strip leading and trailing '_-.' -> a LABEL that projects to empty becomes 'device' -- this fallback applies to the label only, never to the source -> a Windows reserved stem gains a trailing '_' -> append '_' + projected(source) when the PROJECTED source is non-empty -- a source that projects to empty appends nothing and does NOT take the fallback -> truncate to 64 bytes -- AFTER the source is appended. Collisions are resolved by the ordinal allocator, NOT by this function.",
     "rule_steps": [
       "decompose",
       "casefold",
