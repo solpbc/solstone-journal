@@ -11,10 +11,12 @@ publish = false
 
 [dependencies]
 axum = { workspace = true }
+log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10.9"
 solstone-core-convey-http = { workspace = true }
+solstone-core-ingest-resolve = { workspace = true }
 solstone-core-segment = { workspace = true }
 tower-http = { workspace = true }
 

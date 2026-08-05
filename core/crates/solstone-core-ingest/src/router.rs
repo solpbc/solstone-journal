@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use axum::extract::{DefaultBodyLimit, Extension, FromRequest, Multipart, Request, State};
 use axum::http::StatusCode;
@@ -12,9 +13,13 @@ use axum::{Json, Router};
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::{error_envelope, not_found_fallback};
 use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_ingest_resolve::{
+    AppliedDisposition, AppliedFile, ApplyError, ApplyResult, ConflictPlan, FailedPlan, IngestFile,
+    IngestNotice, IngestNotifier, LoggingIngestNotifier, Resolution, apply_plan, quarantine_failed,
+    resolve_ingest,
+};
 use solstone_core_segment::{
-    ContentName, ContentWriteOutcome, Kind, SegmentDir, StreamHints, advance_bound_stream,
-    append_event, bind_stream, write_content,
+    ContentName, Kind, StreamHints, advance_bound_stream, append_event, bind_stream,
 };
 use tower_http::limit::RequestBodyLimitLayer;
 
@@ -29,15 +34,21 @@ const MAX_FILES: usize = 8;
 const MAX_PARTS: usize = 12;
 const MAX_FILENAME_BYTES: usize = 128;
 const MAX_HEADERS: usize = 16;
-const MAX_SEGMENT_ATTEMPTS: u64 = 1_024;
-
 #[derive(Clone)]
 pub(crate) struct IngestState {
     pub(crate) journal_root: PathBuf,
+    pub(crate) notifier: Arc<dyn IngestNotifier>,
 }
 
 /// Build the four linked-device segment-arrival routes.
 pub fn router(journal_root: impl AsRef<Path>) -> Router {
+    router_with_notifier(journal_root, Arc::new(LoggingIngestNotifier))
+}
+
+fn router_with_notifier(
+    journal_root: impl AsRef<Path>,
+    notifier: Arc<dyn IngestNotifier>,
+) -> Router {
     Router::new()
         .route("/app/observer/ingest", post(ingest_upload))
         .route("/app/observer/ingest/manifest", get(ingest_manifest))
@@ -50,6 +61,7 @@ pub fn router(journal_root: impl AsRef<Path>) -> Router {
         .layer(RequestBodyLimitLayer::new(128 * 1024 * 1024))
         .with_state(IngestState {
             journal_root: journal_root.as_ref().to_path_buf(),
+            notifier,
         })
         .fallback(not_found_fallback)
 }
@@ -362,14 +374,15 @@ fn required_string(
 /// disambiguated per (did, source) exactly like any other label.
 const STREAM_LABEL: &str = "";
 
-/// Write one multipart envelope through the segment crate's single-file door.
+/// Write one multipart envelope through the resolve/apply segment boundary.
 ///
 /// `solstone-core-segment` deliberately offers exclusive writes per file, not
 /// a batch transaction. A multi-file request can therefore hold earlier files
 /// before a later conflict, leaving them without an event or processing signal
-/// for that attempt. This is bounded and self-healing: exclusive writes are
-/// idempotent, so a retry sees those files as `AlreadyHeld` and can complete
-/// with its corroborating event and stream advance. A transactional repair
+/// for that attempt. This is bounded and self-healing: resolution re-enters
+/// exactly once when apply detects drift, so earlier idempotent writes become
+/// held files on the fresh plan. A second consecutive drift surfaces honestly
+/// as an error; it is not silently retried a third time. A transactional repair
 /// requires a new segment-crate batch primitive and is out of scope here.
 ///
 /// The stream identity is bound once, up front, and advanced once, for
@@ -407,95 +420,39 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
         }
     };
     let requested = envelope.segment.clone();
-    let content_identity = envelope.files.iter().any(|file| is_media(&file.submitted));
-    for offset in 0..MAX_SEGMENT_ATTEMPTS {
-        let Some(segment_key) = allocated_segment(&requested, offset) else {
+    let files = match envelope
+        .files
+        .iter()
+        .map(|file| {
+            ContentName::new(&file.submitted)
+                .map(|name| IngestFile {
+                    name,
+                    bytes: file.bytes.as_slice(),
+                })
+                .map_err(|_| ())
+        })
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(files) => files,
+        Err(()) => {
             return outcome_error(
                 "failed",
-                ReasonCode::SegmentAllocationFailed,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "segment allocation overflow",
+                ReasonCode::FileNameInvalid,
+                StatusCode::BAD_REQUEST,
+                "invalid file name",
             );
-        };
-        // `bind_stream` already resolved the requested (offset 0) segment
-        // directory under the bound stream name; only later collision-retry
-        // candidates need a fresh resolution against that same bound name.
-        let segment = if segment_key == requested {
-            bound.segment.clone()
-        } else {
-            match SegmentDir::resolve(
-                &state.journal_root,
-                &envelope.day,
-                &segment_key,
-                &bound.stream,
-            ) {
-                Ok(segment) => segment,
-                Err(_) => {
-                    return outcome_error(
-                        "failed",
-                        ReasonCode::JournalWriteFailed,
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "cannot resolve journal segment",
-                    );
-                }
-            }
-        };
-        let mut descriptors = Vec::new();
-        let mut written = 0usize;
-        let mut content_conflict = false;
-        let mut sidecar_conflict = false;
-        for file in &envelope.files {
-            let name = match ContentName::new(&file.submitted) {
-                Ok(name) => name,
-                Err(_) => {
-                    return outcome_error(
-                        "failed",
-                        ReasonCode::FileNameInvalid,
-                        StatusCode::BAD_REQUEST,
-                        "invalid file name",
-                    );
-                }
-            };
-            match write_content(&segment, name, &file.bytes) {
-                Ok(ContentWriteOutcome::Written(content)) => {
-                    written += 1;
-                    descriptors.push(descriptor(
-                        file,
-                        content.name.as_str(),
-                        content.size,
-                        content.sha256,
-                    ));
-                }
-                Ok(ContentWriteOutcome::AlreadyHeld(content)) => descriptors.push(descriptor(
-                    file,
-                    content.name.as_str(),
-                    content.size,
-                    content.sha256,
-                )),
-                Ok(ContentWriteOutcome::Conflict { .. })
-                    if is_media(&file.submitted) || !content_identity =>
-                {
-                    content_conflict = true;
-                    break;
-                }
-                Ok(ContentWriteOutcome::Conflict { .. }) => {
-                    sidecar_conflict = true;
-                    break;
-                }
-                Err(_) => {
-                    return outcome_error(
-                        "failed",
-                        ReasonCode::JournalWriteFailed,
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "cannot write journal content",
-                    );
-                }
-            }
         }
-        if content_conflict {
-            continue;
-        }
-        if sidecar_conflict {
+    };
+    let applied = match resolve_and_apply(
+        state,
+        &envelope.day,
+        &bound.stream,
+        &requested,
+        &files,
+        true,
+    ) {
+        Ok(ApplyPhase::Applied(result)) => result,
+        Ok(ApplyPhase::Conflict(_plan)) => {
             return outcome_error(
                 "conflict",
                 ReasonCode::ContentConflict,
@@ -503,106 +460,176 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
                 "held sidecar bytes conflict",
             );
         }
-        let outcome = if written == 0 {
-            "duplicate"
-        } else if offset == 0 {
-            "ok"
+        Ok(ApplyPhase::Failed(plan)) => {
+            if quarantine_failed(&state.journal_root, &envelope.day, &plan, &files).is_err() {
+                return outcome_error(
+                    "failed",
+                    ReasonCode::JournalWriteFailed,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "cannot quarantine failed ingest",
+                );
+            }
+            return outcome_error(
+                "failed",
+                ReasonCode::SegmentAllocationFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "segment allocation attempts exhausted",
+            );
+        }
+        Err(_) => {
+            return outcome_error(
+                "failed",
+                ReasonCode::JournalWriteFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot resolve or write journal content",
+            );
+        }
+    };
+    let descriptors = descriptors(&envelope.files, &applied.files);
+    let outcome = match applied.status {
+        solstone_core_ingest_resolve::PlanStatus::Ok => "ok",
+        solstone_core_ingest_resolve::PlanStatus::Collision => "collision",
+        solstone_core_ingest_resolve::PlanStatus::Duplicate => "duplicate",
+    };
+    let event = DeviceIngestEvent {
+        record_type: "device_ingest".to_owned(),
+        record_version: 1,
+        outcome: if outcome == "duplicate" {
+            "duplicate".to_owned()
         } else {
-            "collision"
-        };
-        let event = DeviceIngestEvent {
-            record_type: "device_ingest".to_owned(),
-            record_version: 1,
-            outcome: if outcome == "duplicate" {
-                "duplicate".to_owned()
-            } else {
-                "accepted".to_owned()
-            },
-            protocol_version: 3,
-            did: did.to_owned(),
-            source: envelope.source.clone(),
-            stream: bound.stream.clone(),
-            day: envelope.day.clone(),
-            segment: segment_key.clone(),
-            files: descriptors.clone(),
-            meta: envelope.meta.clone(),
-        };
-        if append_event(&segment, &event).is_err() {
-            return outcome_error(
-                "failed",
-                ReasonCode::EventAppendFailed,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "cannot append ingest event",
-            );
-        }
-        if outcome != "duplicate"
-            && advance_bound_stream(
-                &bound.stream,
-                &envelope.day,
-                &segment_key,
-                &segment,
-                hints.clone(),
-                did,
-                &envelope.source,
-            )
-            .is_err()
-        {
-            return outcome_error(
-                "failed",
-                ReasonCode::StreamAdvanceFailed,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "cannot advance stream",
-            );
-        }
-        let written_names: Vec<String> = descriptors
-            .iter()
-            .map(|file| file.written.clone())
-            .collect();
-        let body = match outcome {
-            "duplicate" => {
-                json!({"status":"duplicate", "existing_segment": segment_key, "message":"All files already received", "file_descriptors":descriptors, "meta": envelope.meta})
-            }
-            "collision" => {
-                json!({"status":"collision", "segment":segment_key, "segment_original":requested, "files":written_names, "bytes":total_size(&envelope.files), "file_descriptors":descriptors, "meta":envelope.meta})
-            }
-            _ => {
-                json!({"status":"ok", "segment":segment_key, "files":written_names, "bytes":total_size(&envelope.files), "file_descriptors":descriptors, "meta":envelope.meta})
-            }
-        };
-        return Json(body).into_response();
+            "accepted".to_owned()
+        },
+        protocol_version: 3,
+        did: did.to_owned(),
+        source: envelope.source.clone(),
+        stream: bound.stream.clone(),
+        day: envelope.day.clone(),
+        segment: applied.landed_segment.clone(),
+        files: descriptors.clone(),
+        meta: envelope.meta.clone(),
+    };
+    if append_event(&applied.segment, &event).is_err() {
+        return outcome_error(
+            "failed",
+            ReasonCode::EventAppendFailed,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "cannot append ingest event",
+        );
     }
-    outcome_error(
-        "failed",
-        ReasonCode::SegmentAllocationFailed,
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "segment allocation attempts exhausted",
-    )
+    let advance_error = if applied.should_advance {
+        advance_bound_stream(
+            &bound.stream,
+            &envelope.day,
+            &applied.landed_segment,
+            &applied.segment,
+            hints.clone(),
+            did,
+            &envelope.source,
+        )
+        .err()
+    } else {
+        None
+    };
+    // Notification deliberately follows stream advancement, matching the
+    // Python route order even though today's payload needs no advance data.
+    if applied.should_advance {
+        let notice = IngestNotice {
+            did,
+            source: &envelope.source,
+            day: &envelope.day,
+            stream: &bound.stream,
+            segment: &applied.landed_segment,
+            files: &applied.files,
+            meta: &envelope.meta,
+        };
+        if let Err(error) = state.notifier.notify(&notice) {
+            log::warn!("observer ingest notification degraded: {error}");
+        }
+    }
+    if advance_error.is_some() {
+        return outcome_error(
+            "failed",
+            ReasonCode::StreamAdvanceFailed,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "cannot advance stream",
+        );
+    }
+    let written_names: Vec<String> = descriptors
+        .iter()
+        .map(|file| file.written.clone())
+        .collect();
+    let body = match outcome {
+        "duplicate" => {
+            json!({"status":"duplicate", "existing_segment": applied.landed_segment, "message":"All files already received", "file_descriptors":descriptors, "meta": envelope.meta})
+        }
+        "collision" => {
+            json!({"status":"collision", "segment":applied.landed_segment, "segment_original":requested, "files":written_names, "bytes":total_size(&envelope.files), "file_descriptors":descriptors, "meta":envelope.meta})
+        }
+        _ => {
+            json!({"status":"ok", "segment":applied.landed_segment, "files":written_names, "bytes":total_size(&envelope.files), "file_descriptors":descriptors, "meta":envelope.meta})
+        }
+    };
+    Json(body).into_response()
 }
 
-fn descriptor(file: &IncomingFile, written: &str, size: u64, sha256: String) -> FileDescriptor {
-    FileDescriptor {
-        submitted: file.submitted.clone(),
-        written: written.to_owned(),
-        size,
-        sha256,
-        extra: file.descriptor_extra.clone(),
+enum ApplyPhase {
+    Applied(ApplyResult),
+    Conflict(ConflictPlan),
+    Failed(FailedPlan),
+}
+
+fn resolve_and_apply(
+    state: &IngestState,
+    day: &str,
+    stream: &str,
+    requested_segment: &str,
+    files: &[IngestFile<'_>],
+    retry_stale: bool,
+) -> Result<ApplyPhase, ()> {
+    match resolve_ingest(&state.journal_root, day, stream, requested_segment, files)
+        .map_err(|_| ())?
+    {
+        Resolution::Conflict(plan) => Ok(ApplyPhase::Conflict(plan)),
+        Resolution::Failed(plan) => Ok(ApplyPhase::Failed(plan)),
+        Resolution::Apply(plan) => match apply_plan(&plan, files) {
+            Ok(result) => Ok(ApplyPhase::Applied(result)),
+            Err(ApplyError::Stale) if retry_stale => {
+                resolve_and_apply(state, day, stream, requested_segment, files, false)
+            }
+            Err(_) => Err(()),
+        },
     }
+}
+
+fn descriptors(files: &[IncomingFile], applied: &[AppliedFile]) -> Vec<FileDescriptor> {
+    files
+        .iter()
+        .zip(applied)
+        .map(|(file, applied)| {
+            let mut extra = file.descriptor_extra.clone();
+            extra.insert(
+                "disposition".to_owned(),
+                Value::String(
+                    match applied.disposition {
+                        AppliedDisposition::Written => "written",
+                        AppliedDisposition::AlreadyHeld => "already_held",
+                        AppliedDisposition::Unwritten => "received_not_written",
+                    }
+                    .to_owned(),
+                ),
+            );
+            FileDescriptor {
+                submitted: file.submitted.clone(),
+                written: applied.name.as_str().to_owned(),
+                size: applied.size,
+                sha256: applied.sha256.clone(),
+                extra,
+            }
+        })
+        .collect()
 }
 fn total_size(files: &[IncomingFile]) -> u64 {
     files.iter().map(|file| file.bytes.len() as u64).sum()
-}
-fn is_media(name: &str) -> bool {
-    matches!(name.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase()), Some(ref ext) if matches!(ext.as_str(), "flac" | "opus" | "ogg" | "m4a" | "mp3" | "wav" | "webm" | "mp4" | "mov"))
-}
-fn allocated_segment(requested: &str, offset: u64) -> Option<String> {
-    if offset == 0 {
-        return Some(requested.to_owned());
-    }
-    let (start, len) = requested.split_once('_')?;
-    Some(format!(
-        "{start}_{}",
-        len.parse::<u64>().ok()?.checked_add(offset)?
-    ))
 }
 fn outcome_error(outcome: &str, code: ReasonCode, status: StatusCode, detail: &str) -> Response {
     (status, Json(json!({"status":outcome,"error":"Ingest request failed","reason_code":code.as_str(),"detail":detail}))).into_response()
@@ -612,20 +639,42 @@ fn outcome_error(outcome: &str, code: ReasonCode, status: StatusCode, detail: &s
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::fs;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode, header};
     use serde_json::{Value, json};
+    use sha2::Digest;
     use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
     use solstone_core_convey_http::serve::{REQUEST_BODY_LIMIT, mux_builder, serve_connection};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tower::ServiceExt;
 
-    use super::{MAX_PART_BYTES, allocated_segment, router};
+    use super::{MAX_PART_BYTES, router, router_with_notifier};
 
     const DID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const DID_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    struct SpyNotifier {
+        calls: AtomicUsize,
+        fails: bool,
+    }
+
+    impl solstone_core_ingest_resolve::IngestNotifier for SpyNotifier {
+        fn notify(
+            &self,
+            _notice: &solstone_core_ingest_resolve::IngestNotice<'_>,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.fails {
+                Err(Box::new(std::io::Error::other("bus unavailable")))
+            } else {
+                Ok(())
+            }
+        }
+    }
 
     fn root() -> std::path::PathBuf {
         let suffix = SystemTime::now()
@@ -777,6 +826,11 @@ mod tests {
         let last: Value = serde_json::from_str(events.lines().last().unwrap()).unwrap();
         assert_eq!(last["meta"]["unknown"], true);
         assert_eq!(last["files"][0]["extension"], json!({"a": 1}));
+        assert_eq!(
+            last["files"][0]["sha256"],
+            format!("{:x}", sha2::Sha256::digest(b"sound"))
+        );
+        assert_eq!(last["files"][0]["disposition"], "already_held");
         let stream_record: Value =
             serde_json::from_str(&fs::read_to_string(root.join("streams/device.json")).unwrap())
                 .unwrap();
@@ -796,6 +850,25 @@ mod tests {
         )
         .await;
         assert_eq!(manifest["days"]["20260804"]["segments"], 1);
+        let (_, day) = call(
+            &app,
+            "GET",
+            "/app/observer/ingest/manifest/20260804",
+            None,
+            Vec::new(),
+            basis(DID_A),
+            Some("3"),
+            &[],
+        )
+        .await;
+        assert_eq!(
+            day["segments"]["120000_1"]["files"][0]["sha256"],
+            format!("{:x}", sha2::Sha256::digest(b"sound"))
+        );
+        assert_eq!(
+            day["segments"]["120000_1"]["files"][0]["disposition"],
+            "already_held"
+        );
         let (_, segments) = call(
             &app,
             "GET",
@@ -809,6 +882,103 @@ mod tests {
         .await;
         assert_eq!(segments["total"], 1);
         assert_eq!(segments["items"][0]["key"], "120000_1");
+        assert_eq!(
+            segments["items"][0]["files"][0]["sha256"],
+            format!("{:x}", sha2::Sha256::digest(b"sound"))
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn notification_is_once_for_success_and_never_breaks_durability() {
+        for fails in [false, true] {
+            let root = root();
+            let spy = Arc::new(SpyNotifier {
+                calls: AtomicUsize::new(0),
+                fails,
+            });
+            let app = router_with_notifier(&root, spy.clone());
+            let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+            let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body["status"], "ok");
+            assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+            assert!(
+                root.join("chronicle/20260804/device/120000_1/events.jsonl")
+                    .exists()
+            );
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+
+    #[tokio::test]
+    async fn exhausted_resolution_quarantines_without_history_or_notification() {
+        let root = root();
+        for offset in 0..solstone_core_ingest_resolve::MAX_INGEST_SEGMENT_ATTEMPTS {
+            let directory = root
+                .join("chronicle/20260804/device")
+                .join(format!("120000_{}", 1 + offset));
+            fs::create_dir_all(&directory).unwrap();
+            fs::write(directory.join("audio.flac"), b"old").unwrap();
+        }
+        let spy = Arc::new(SpyNotifier {
+            calls: AtomicUsize::new(0),
+            fails: false,
+        });
+        let app = router_with_notifier(&root, spy.clone());
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, body) = call_upload(&app, request, "audio.flac", b"new").await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["status"], "failed");
+        let quarantines: Vec<_> =
+            fs::read_dir(root.join("chronicle/20260804/observer/failed/120000_1"))
+                .unwrap()
+                .collect();
+        assert_eq!(quarantines.len(), 1);
+        assert_eq!(
+            fs::read(quarantines[0].as_ref().unwrap().path().join("audio.flac")).unwrap(),
+            b"new"
+        );
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
+        assert!(
+            fs::read_dir(root.join("chronicle/20260804/device"))
+                .unwrap()
+                .all(|entry| !entry.unwrap().path().join("events.jsonl").exists())
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn append_failure_is_a_hard_error_and_never_notifies() {
+        let root = root();
+        let segment = root.join("chronicle/20260804/device/120000_1");
+        fs::create_dir_all(segment.join("events.jsonl")).unwrap();
+        let spy = Arc::new(SpyNotifier {
+            calls: AtomicUsize::new(0),
+            fails: false,
+        });
+        let app = router_with_notifier(&root, spy.clone());
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "event_append_failed");
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn resolution_io_failure_has_no_history_or_manifest() {
+        let root = root();
+        let stream = root.join("chronicle/20260804/device");
+        fs::create_dir_all(stream.parent().unwrap()).unwrap();
+        fs::write(&stream, b"blocked").unwrap();
+        let app = router(&root);
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["status"], "failed");
+        assert!(!stream.join("120000_1/events.jsonl").exists());
+        assert!(!stream.join("120000_1/ingest.json").exists());
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1142,11 +1312,6 @@ mod tests {
         assert_eq!(body["status"], "conflict");
         assert_eq!(body["reason_code"], "content_conflict");
         let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn overflowed_segment_allocation_reaches_failed_path() {
-        assert_eq!(allocated_segment("120000_18446744073709551615", 1), None);
     }
 
     #[tokio::test]
