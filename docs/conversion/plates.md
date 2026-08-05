@@ -162,7 +162,19 @@ Consistent formatting of **structured journal data** for its consumers — the i
 
 ⚠ **Ten of the eleven are one-shot; one is a fan-out.** `think/batch.py` is the only caller that needs many completions in flight, and it has three consumers of its own (`observe/describe.py`, `apps/timeline/rollup.py`, `apps/timeline/maintenance.py`). That single asymmetry is why `generate` is one vocabulary in **two framings** rather than one shape or two contracts.
 
-🔴 **The retry and hold-raw decisions are keyed on a reason code, and the classification belongs here.** `RUNTIME_REASON_CODES` (`providers/shared.py:253`) is a closed 17-member set; `is_non_retryable_generate_reason` (same file) and `is_blocking_reason` (`convey/provider_readiness.py:420`) map it to *retry or not* and *hold the owner's raw media or not*. Those two predicates live in two modules outside this plate. ⛔ A caller that re-derives them owns a copy of this plate's contract — the boundary publishes the decisions.
+🔴 **The retry and hold-raw decisions are keyed on a reason code, and the classification belongs here.** `is_non_retryable_generate_reason` (`providers/shared.py:275`) and `is_blocking_reason` (`convey/provider_readiness.py:420`) map a reason code to *retry or not* and *hold the owner's raw media or not*. ⛔ A caller that re-derives them owns a copy of this plate's contract — the boundary publishes the decisions.
+
+🔴 **FIVE reason-code vocabularies exist, three of them share the name `RUNTIME_REASON_CODES`, and two spell the same concept differently.** Measured 2026-08-05:
+
+| set | size | case | what it serves |
+|---|---|---|---|
+| `providers/shared.RUNTIME_REASON_CODES` | 16 | snake | generate-path error classification |
+| `providers/brain_state.RUNTIME_REASON_CODES` (`get_args(ReasonCode)`) | 42 | **kebab** | local-runtime health records |
+| `brain_cli.RUNTIME_REASON_CODES` — an **alias import** of `REASON_CODES` | 41 | | CLI presentation |
+| `brain_health.LOCAL_RUNTIME_REASON_CODES` | 8 | snake | local health grouping |
+| `convey/provider_readiness._ENTRIES` | 43 | snake | owner-facing presentation **and the blocking decision** |
+
+⚠ `gpu_probe_failed` and `gpu-probe-failed` are the same concept in two of these. ✅ The 16 are a proper subset of the 43. 🔴 **The vocabulary a `generate` consumer needs is the 43** — `blocking` is decided over it (24 of 43 are blocking), and the sole non-retryable code, `non_responsive`, is in the 43 and **not** in the 16. ⛔ Wiring the 16 into a caller loses both decisions.
 
 ⚠ **Four near-identical entry points, three error semantics.** `generate` / `generate_with_result` / `agenerate` / `agenerate_with_result` each repeat the same nine-step policy sequence; the two `_with_result` forms make schema validation advisory while the two plain forms raise on it. Only `generate_with_result` accepts `num_retries`, `inference_retry_index`, `local_exclusive_admission` and `enforce_responsiveness`. One boundary, four doors, differing on what a schema failure means.
 

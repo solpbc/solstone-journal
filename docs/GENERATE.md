@@ -132,8 +132,25 @@ record, and the process exits `0`. It is not an error. See § exit codes.
 ### The three classifications on a refusal
 
 `reason` is the boundary's own closed vocabulary — what kind of thing went wrong, derived from the
-failure class. `reason_code` is the operational classification from the runtime reason-code set, and
-may be `null` when the failure has no operational code.
+failure class. `reason_code` is the operational classification, and may be `null` when the failure
+carries no operational code.
+
+🔴 **`reason_code` is drawn from the provider-readiness taxonomy, and the contract names it because
+five overlapping reason-code vocabularies exist in this tree** — three of them under the same
+identifier, and two spelling the same concept in different cases:
+
+| set | size | serves |
+|---|---|---|
+| `convey/provider_readiness` entries | **43** | ✅ **this contract**, owner-facing presentation, and the blocking decision |
+| `think/providers/shared.RUNTIME_REASON_CODES` | 16 | generate-path error classification — a proper subset of the 43 |
+| `think/providers/brain_state.RUNTIME_REASON_CODES` | 42 | local-runtime health records, **kebab-cased** |
+| `think/brain_cli.RUNTIME_REASON_CODES` (an alias import) | 41 | command-line presentation |
+| `think/brain_health.LOCAL_RUNTIME_REASON_CODES` | 8 | local health grouping |
+
+⛔ **Wiring the 16 into a caller loses both decisions this contract exists to deliver**: 24 of the 43
+are blocking and only 4 of those are in the 16, and the sole non-retryable code — `non_responsive` —
+is in the 43 and not in the 16. The fixture carries the set this contract uses, so no caller has to
+choose.
 
 🔴 **`retryable` and `blocking` are computed by the boundary and carried as answers, not left for each
 consumer to derive.**
