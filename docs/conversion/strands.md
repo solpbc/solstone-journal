@@ -246,18 +246,23 @@ First-run journal establishment. **Creates the identity root** that `S:device-li
 
 ## Tier 1 — retention
 
-`P-journal-retention` connects through four strands, each a different contract:
+`P-journal-retention` connects through five strands, each a different contract:
 
 | Strand | For | Owner | Tier |
 |---|---|---|---|
 | `S:journal-retention:journal-config` | the **posture / settings** it reads | `P-journal-config` | fixture |
 | `S:journal-retention:system` | **when it runs** | `P-system` | schema |
 | `S:journal-retention:journal` | **tending the files** — changes, and recording status | `P-journal` | fixture |
-| 🆕 `S:journal-retention:index` | **telling the indexer what was removed**, after the removal | `P-index` | schema |
+| `S:journal-retention:index` | **telling the indexer what was removed**, after the removal | `P-index` | schema |
+| 🆕 `S:*:journal-retention` | **asking retention to remove owner media** — the only way in | `P-journal-retention` | schema |
 
 🔴 **The segment is the unit of deletion, retention executes every removal, and retention tells the indexer afterwards.** That ordering is the design: removal happens first and the index is informed, never the reverse. The fourth strand above exists because of it.
 
-⚠ **Retention is the consumer on all four** — every one of these contracts sits at the other end. The relationship in which retention is the *provider* is the **removal request**, and it has no strand name here; rule 1 puts that contract at retention's end because it serves many requesters and cannot negotiate per-caller. See [`plates.md`](plates.md) § the removal-request contract.
+🆕 🔴 **The fifth strand is the removal request, and retention owns it** — minted 2026-08-05 by operator authorization. Retention is the **consumer** on the other four; every one of those contracts sits at the far end. This is the one relationship where it is the provider, and rule 1 puts the contract at retention's end because it serves all comers and cannot negotiate per-caller. ⚠ **Four plates request removals** — the owner's segment delete, `P-segment-sense`'s terminal-empty hand-off, the backup offload, and retention's own configured policy — and until this strand existed that contract had four callers and no name, which is the two-places-own-one-thing class rule 1 makes unrepresentable rather than merely detectable.
+
+🔴 **A removal request carries its own precondition, because consolidating the removers must not weaken the strongest one.** The offload pass archives to backup, **confirms the snapshot holds every byte at the recorded size**, appends its ledger, and only then removes — where retention's own path hashes the bytes and removes with no archive. When that removal becomes a request, the confirmed-snapshot precondition travels **with the request**. ⛔ A request type constructible without it has moved the guard out of the executor and into the caller.
+
+⛔ **Two units, and the request names which.** Whole segments — one, or a set — leaving a `tombstone.json`; or the proven raw originals, leaving every derived output. ⛔ There is no third unit and no partial owner-directed delete. See [`plates.md`](plates.md) § `P-journal-retention`.
 
 ⚠ **`S:journal-retention:system` has two shapes that must not be conflated:** *when the policy sweep runs* — a schedule entry, `P-system`'s contract — and *a removal request arriving from another plate*, which is synchronous and needs no schedule. 🔴 **Today the first does not exist**: nothing schedules the raw-media pass, so two of the three configured retention modes never execute. See [`plates.md`](plates.md).
 

@@ -263,15 +263,23 @@ The logic that decides what raw media is retained, and what logs are retained fo
 2. ⛔ **`transcribe` stops unlinking VAD-empty raw audio.** It writes the terminal-empty marker exactly as it does today and hands the raw to retention. One subsystem, one policy, one place to look when owner media went.
 3. 🔴 **Retention notifies `P-index` of the paths it actually removed, after removing them.** ⛔ Ordering is the contract: the index is told about removals that have happened, never about removals that are intended. An index prune is not a removal — the index is rebuildable by design, so pruning it is a cache invalidation and a rebuild undoes it. **Anything an owner is told was removed must be removed from the chronicle first.**
 
-⚠ **Open, and not settled by that ruling: legacy segments holding one source's data beside another's.** An owner asking to delete one source from such a segment either loses the segment whole, including material they did not ask to delete, or keeps the data they asked to remove. Rule 4's unacceptable outcome is older journal data left *unseen*; this is the sibling — older journal data left **undeletable**.
+🆕 ⛔ **CLOSED 2026-08-05 by operator ruling, by removing the question rather than answering it. Do not re-derive it.** This entry used to record an open call: legacy segments holding one source's data beside another's, where an owner deleting one source either loses the segment whole or keeps the data they asked to remove.
+
+🔴 **There is no source-delete affordance.** The owner deletes **a segment, or a set of segments** — that is the only owner-facing removal there is, and ⛔ **there is no affordance for a partial owner-directed delete of any kind.** The legacy-mixed problem existed only as a *resolution* step, turning "delete my ⟨source⟩ data" into a set of segments; with the owner naming segments directly there is nothing to resolve and no disposition to choose.
+
+✅ **The surface already exists** — the per-segment delete route under the transcripts app, with containment via `commonpath` and a **10-second undo window**. ⛔ Retention never resolves anything; it receives owner-chosen targets. Selection lives with the surface.
+
+🔴 **The whole-segment verb therefore takes a SET.** One receipt covers it, and per-target failures are receipt rows. ⛔ It is not all-or-nothing: an owner deleting forty segments must not lose the thirty-nine that succeeded because the fortieth was unreadable.
+
+⛔ **Retired with it:** the owner-facing source-delete route · the source-delete implementation and both of its branches · the deletable-source-stream allowlist · the mixed / location-only classification and its discovery helper. ⚠ **The reserved-name set divergence loses its last load-bearing consumer** — it fed the mixed classifier, and there is no classifier.
 
 ### Two units of removal, and the plate serves both
 
-🔴 **The plate removes owner media under two different units, and reading it as one unit makes § 2 above contradictory** — handing retention a VAD-empty raw would destroy the terminal-empty marker `transcribe` had just written, along with the segment's transcript and every derived output. The distinguishing property is **what the owner asked for**, not what is on disk.
+🔴 **Ruled 2026-08-05: § 1 binds owner-directed deletion ONLY, and the plate keeps two units.** Reading § 1 as binding every removal makes § 2 above contradictory — handing retention a VAD-empty raw would destroy the terminal-empty marker `transcribe` had just written, along with the segment's transcript and every derived output. The distinguishing property is **what the owner asked for**, not what is on disk.
 
 | unit | the owner asked for | what goes | what survives |
 |---|---|---|---|
-| **the segment** | *"delete my ⟨source⟩ data"* | every file in the segment | `tombstone.json` only |
+| **the segment**, or a set of them | *"delete these segments"* | every file in each | `tombstone.json` only |
 | **the proven originals** | nothing — this is the retention lifecycle | raw media whose processing is proven terminal | every derived output |
 
 ⛔ **§ 1 binds the first unit.** What it forbids is a *deletion* that leaves part of its target behind — the failure it was ruled against was a segment keeping derived output on disk, undisclosed, after the owner asked for that data to go. The second unit is the plate's standing scope (`retention.py:12-14`: *"Scope: raw media ONLY. Chronicle JSONL, derived outputs, `talents/` directories … persist indefinitely"*), and derived output surviving is the point of it.
@@ -280,7 +288,9 @@ The logic that decides what raw media is retained, and what logs are retained fo
 
 ### The removal-request contract
 
-🔴 **Retention is the one-to-many end for removal requests and that relationship has no strand name.** All four strands in [`strands.md`](strands.md) § Tier 1 are ones where retention is the *consumer* and the other plate owns the contract. The requesters — the source delete, the terminal-empty hand-off, the offload pass, the configured policy — are many, and rule 1 puts the contract at the one-to-many end. ⛔ Naming the strand is not decided in this repo.
+🆕 ✅ **Minted 2026-08-05 as `S:*:journal-retention`, and retention owns it.** Retention is the one-to-many end: it serves all comers and cannot negotiate per-caller, so rule 1 puts the contract here. The other four strands are ones where retention is the *consumer* and the far plate owns the contract; this is the one where it is the provider. ⚠ **Four requesters** — the owner's segment delete, the terminal-empty hand-off, the offload pass, and the configured policy — and until this strand existed that contract had four callers and no name. See [`strands.md`](strands.md) § Tier 1.
+
+⛔ **The request names its unit**: whole segments (one, or a set) leaving a `tombstone.json`, or the proven raw originals leaving every derived output. ⛔ There is no third unit, and ⛔ no partial owner-directed delete.
 
 🔴 **A removal request must carry its own precondition, because consolidating the removers must not weaken the strongest one.** `think/offload.py:257-312` archives to backup, **confirms the snapshot holds every byte at the recorded size**, appends its ledger, and only then unlinks — where retention's own path hashes the bytes and unlinks with no archive. When that removal becomes a request, the confirmed-snapshot precondition travels **with the request**; a request type that can be constructed without it has moved the guard out of the executor and into the caller.
 
