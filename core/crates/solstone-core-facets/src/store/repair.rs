@@ -14,7 +14,7 @@ use solstone_core_entity::{
 };
 use solstone_core_journal_io::{
     AtomicWriteError, DirEntryKind, JsonWriteOptions, PathError, ReadError, list_dir_entries,
-    path_lexists, read_json, write_json,
+    path_lexists, read_text, write_json,
 };
 
 use crate::{FacetTrustLockError, hold_facet_trust_lock};
@@ -620,28 +620,22 @@ fn write_marker<T: Serialize>(path: &Path, report: &T) -> Result<(), AtomicWrite
 }
 
 fn read_facet_marker(path: &Path) -> Result<FacetEntityLinkReport, FacetStoreError> {
-    let marker: FacetEntityLinkCompletionMarker = read_json(
-        path,
-        marker_default(),
-        solstone_core_journal_io::MalformedPolicy::Raise,
-    )?;
+    let contents = read_text(path, String::new())?;
+    if contents.trim().is_empty() {
+        return Err(FacetStoreError::CorruptCompletionMarker {
+            path: path.to_path_buf(),
+        });
+    }
+    let marker: FacetEntityLinkCompletionMarker =
+        serde_json::from_str(&contents).map_err(|_| FacetStoreError::CorruptCompletionMarker {
+            path: path.to_path_buf(),
+        })?;
     let FacetEntityLinkCompletionMarker {
         completed_at,
         report,
     } = marker;
     let _ = completed_at;
     Ok(report)
-}
-
-fn marker_default() -> FacetEntityLinkCompletionMarker {
-    FacetEntityLinkCompletionMarker {
-        completed_at: String::new(),
-        report: FacetEntityLinkReport {
-            facet: String::new(),
-            branches: Vec::new(),
-            completion_marker: PathBuf::new(),
-        },
-    }
 }
 
 fn is_unparseable_link(error: &FacetStoreError) -> bool {

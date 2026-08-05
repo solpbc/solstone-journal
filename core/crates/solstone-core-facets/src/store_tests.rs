@@ -14,7 +14,7 @@ use solstone_core_entity::{
 };
 
 use crate::{
-    FacetEntityLinkRepairBranch, FacetEntityLinkRepairError, create_facet,
+    FacetEntityLinkRepairBranch, FacetEntityLinkRepairError, FacetStoreError, create_facet,
     list_facet_entity_directories, read_activity_file, read_facet_declaration,
     read_facet_entity_link, read_facet_entity_observations, read_log_file, read_news_file,
     read_todo_file, rename_facet, repair_facet_entity_links,
@@ -710,6 +710,35 @@ fn journal_wide_link_repair_reuses_completed_facet_markers_without_rescanning() 
                 FacetEntityLinkRepairBranch::RefusedUnparseable { .. }
             ))
     );
+}
+
+#[test]
+fn journal_wide_link_repair_rejects_a_corrupt_per_facet_marker_instead_of_trusting_it() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "work");
+    write_journal_entity(temporary.path(), "person", None);
+    write_facet_relationship(temporary.path(), "work", "person", json!({}));
+    let marker = facet_marker_path(temporary.path(), "work");
+    fs::create_dir_all(marker.parent().unwrap()).unwrap();
+    fs::write(&marker, "").unwrap();
+
+    let error = repair_facet_entity_links_journal_wide(temporary.path()).unwrap_err();
+
+    assert!(matches!(
+        error,
+        FacetEntityLinkRepairError::CachedMarkerRead { facet, source, .. }
+            if facet == "work"
+                && matches!(
+                    source.as_ref(),
+                    FacetStoreError::CorruptCompletionMarker { path } if path == &marker
+                )
+    ));
+    assert!(
+        relationship_value(temporary.path(), "work", "person")
+            .get("entity_id")
+            .is_none()
+    );
+    assert!(!journal_marker_path(temporary.path()).exists());
 }
 
 fn declaration_value(root: &Path, facet_dir: &str) -> Value {

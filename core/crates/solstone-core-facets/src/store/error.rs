@@ -18,6 +18,7 @@ pub enum FacetStoreError {
     Path(PathError),
     DeclarationNotObject { path: PathBuf },
     EntityLinkNotObject { path: PathBuf },
+    CorruptCompletionMarker { path: PathBuf },
 }
 
 impl fmt::Display for FacetStoreError {
@@ -39,6 +40,11 @@ impl fmt::Display for FacetStoreError {
                     path.display()
                 )
             }
+            Self::CorruptCompletionMarker { path } => write!(
+                formatter,
+                "facet entity-link repair completion marker is empty or malformed: {}",
+                path.display()
+            ),
         }
     }
 }
@@ -48,7 +54,9 @@ impl Error for FacetStoreError {
         match self {
             Self::Read(error) => Some(error),
             Self::Path(error) => Some(error),
-            Self::DeclarationNotObject { .. } | Self::EntityLinkNotObject { .. } => None,
+            Self::DeclarationNotObject { .. }
+            | Self::EntityLinkNotObject { .. }
+            | Self::CorruptCompletionMarker { .. } => None,
         }
     }
 }
