@@ -35,11 +35,11 @@ tokio = { workspace = true, features = [
     "io-util",
     "sync",
 ] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
 x509-parser = "0.16.0"
 
 [dev-dependencies]
 solstone-core-journal-io = { workspace = true, features = ["test-hooks"] }
-tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
 tower = { workspace = true }
 
 [lints]

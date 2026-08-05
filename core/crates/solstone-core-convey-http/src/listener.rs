@@ -47,7 +47,10 @@ mod tests {
 
     use super::bind_loopback;
     use crate::envelope::probe_router;
-    use crate::identity::{AccessBasis, Carrier};
+    use crate::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+
+    const VALID_DID: &str =
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     use crate::serve::{mux_builder, serve_connection, tcp_builder};
 
     #[tokio::test]
@@ -108,14 +111,16 @@ mod tests {
 
         let direct = duplex_probe(AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
+            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
         })
         .await;
-        assert!(direct.contains("LinkedDevice { carrier: Direct }"));
+        assert!(direct.contains("LinkedDevice { carrier: Direct, did: LinkedDeviceDid"));
 
         let via_spl = duplex_probe(AccessBasis::LinkedDevice {
             carrier: Carrier::ViaSpl,
+            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
         })
         .await;
-        assert!(via_spl.contains("LinkedDevice { carrier: ViaSpl }"));
+        assert!(via_spl.contains("LinkedDevice { carrier: ViaSpl, did: LinkedDeviceDid"));
     }
 }

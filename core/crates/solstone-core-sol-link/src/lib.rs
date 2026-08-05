@@ -12,6 +12,7 @@ use solstone_core_sol_client::seam::{
 use spl_transport::credential::Credential;
 use spl_transport::{RelayControlEndpoint, RelayError, TransportError, tls};
 
+pub mod acceptor;
 pub mod ca;
 mod direct_seam;
 pub mod door;
@@ -22,6 +23,10 @@ pub mod mark;
 mod pairing_entry;
 mod serve;
 
+pub use acceptor::{
+    DEVICE_DOOR_AUTHORIZATION_REFRESH_INTERVAL, build_device_door_acceptor,
+    serve_device_door_connection,
+};
 pub use door::{
     DeviceDoorAuthorization, DeviceDoorConfigError, DeviceDoorVerifier,
     build_device_door_server_config, refresh_once, spawn_authorization_refresh,
@@ -35,6 +40,10 @@ pub mod test_support {
         BasicConstraints, Certificate, CertificateParams, IsCa, KeyPair, KeyUsagePurpose,
         PKCS_ECDSA_P256_SHA256,
     };
+
+    pub const FIXED_CERTIFICATE_PEM: &str = "-----BEGIN CERTIFICATE-----\nMIIBqTCCAU+gAwIBAgIUKZ4GlQ+jaITZjYye0LTx71Oqx/kwCgYIKoZIzj0EAwIw\nKjEoMCYGA1UEAwwfc29sc3RvbmUgZml4ZWQgZG9vciBsb29rdXAgdGVzdDAeFw0y\nNjA4MDQyMjMyNDFaFw0zNjA4MDEyMjMyNDFaMCoxKDAmBgNVBAMMH3NvbHN0b25l\nIGZpeGVkIGRvb3IgbG9va3VwIHRlc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNC\nAAQLWc/O7vh+eaolXyLl4UttktPMSL8L53AtLdpZnRxmQC0eA73pSSSHXyUricim\ncdS9bsJS5CKw4vsk+W8Oh8rGo1MwUTAdBgNVHQ4EFgQUrMksIzdtNTRky8Sk8RLe\nM0kYEQMwHwYDVR0jBBgwFoAUrMksIzdtNTRky8Sk8RLeM0kYEQMwDwYDVR0TAQH/\nBAUwAwEB/zAKBggqhkjOPQQDAgNIADBFAiAVugzqjG4CX0sUgtnU3Xuo4gh9XK1P\nKJnZhZwLOZPNdgIhAMNXOb63RcTM0DDHjfwiz6hLCvQ10aPUkW8izj8nv36W\n-----END CERTIFICATE-----\n";
+    pub const FIXED_CERTIFICATE_SHA256: &str =
+        "fbce31e7e99dbb0361851f0a27fe1909df27dc85ec268a9326c719dc8351d83e";
 
     pub struct TestCa {
         certificate: Certificate,

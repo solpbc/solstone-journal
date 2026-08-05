@@ -38,7 +38,7 @@ pub fn error_envelope(
 pub async fn not_found_fallback(
     Extension(basis): Extension<AccessBasis>,
 ) -> (StatusCode, Json<ErrorEnvelope>) {
-    require_access(basis);
+    require_access(&basis);
     error_envelope(
         "not_found",
         "Not Found",

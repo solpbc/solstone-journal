@@ -265,11 +265,10 @@ mod tests {
     use x509_parser::pem::parse_x509_pem;
 
     use super::*;
-    use crate::ledger::{ClientEntry, ClientRole};
-
-    const FIXED_CERTIFICATE_PEM: &str = "-----BEGIN CERTIFICATE-----\nMIIBqTCCAU+gAwIBAgIUKZ4GlQ+jaITZjYye0LTx71Oqx/kwCgYIKoZIzj0EAwIw\nKjEoMCYGA1UEAwwfc29sc3RvbmUgZml4ZWQgZG9vciBsb29rdXAgdGVzdDAeFw0y\nNjA4MDQyMjMyNDFaFw0zNjA4MDEyMjMyNDFaMCoxKDAmBgNVBAMMH3NvbHN0b25l\nIGZpeGVkIGRvb3IgbG9va3VwIHRlc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNC\nAAQLWc/O7vh+eaolXyLl4UttktPMSL8L53AtLdpZnRxmQC0eA73pSSSHXyUricim\ncdS9bsJS5CKw4vsk+W8Oh8rGo1MwUTAdBgNVHQ4EFgQUrMksIzdtNTRky8Sk8RLe\nM0kYEQMwHwYDVR0jBBgwFoAUrMksIzdtNTRky8Sk8RLeM0kYEQMwDwYDVR0TAQH/\nBAUwAwEB/zAKBggqhkjOPQQDAgNIADBFAiAVugzqjG4CX0sUgtnU3Xuo4gh9XK1P\nKJnZhZwLOZPNdgIhAMNXOb63RcTM0DDHjfwiz6hLCvQ10aPUkW8izj8nv36W\n-----END CERTIFICATE-----\n";
-    const FIXED_CERTIFICATE_SHA256: &str =
-        "fbce31e7e99dbb0361851f0a27fe1909df27dc85ec268a9326c719dc8351d83e";
+    use crate::{
+        ledger::{ClientEntry, ClientRole},
+        test_support::{FIXED_CERTIFICATE_PEM, FIXED_CERTIFICATE_SHA256},
+    };
 
     #[test]
     fn lookup_key_uses_fixed_leaf_der_digest() {
