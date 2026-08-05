@@ -36,6 +36,28 @@ pub struct Segment {
     pub path: PathBuf,
 }
 
+/// Kind of one entry returned by [`list_dir_entries`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirEntryKind {
+    /// A regular file.
+    File,
+    /// A directory.
+    Directory,
+    /// Any other filesystem entry, including a symlink.
+    Other,
+}
+
+/// One deterministic entry from a journal directory listing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirEntry {
+    /// Entry basename.
+    pub name: std::ffi::OsString,
+    /// Full path to the entry.
+    pub path: PathBuf,
+    /// Entry kind without following symlinks.
+    pub kind: DirEntryKind,
+}
+
 /// Re-export the existing core journal-root resolver.
 pub use solstone_core_journal::resolve_journal_path as resolve_configured_journal;
 
@@ -75,6 +97,45 @@ pub fn path_lexists(path: &Path) -> Result<bool, PathError> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(source) => Err(path_io(path, source)),
     }
+}
+
+/// List direct directory entries by name without creating anything.
+///
+/// A missing path or a path that is not a directory produces no entries. This
+/// mirrors readers that treat absent durable-store subdirectories as empty.
+pub fn list_dir_entries(dir: &Path) -> Result<Vec<DirEntry>, PathError> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return Ok(Vec::new());
+        }
+        Err(source) => return Err(path_io(dir, source)),
+    };
+
+    let mut listed = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|source| path_io(dir, source))?;
+        let path = entry.path();
+        let kind = entry.file_type().map_err(|source| path_io(&path, source))?;
+        listed.push(DirEntry {
+            name: entry.file_name(),
+            path,
+            kind: if kind.is_file() {
+                DirEntryKind::File
+            } else if kind.is_dir() {
+                DirEntryKind::Directory
+            } else {
+                DirEntryKind::Other
+            },
+        });
+    }
+    listed.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(listed)
 }
 
 /// Resolve `rel` below `root`, rejecting a symlink-aware escape.
@@ -308,6 +369,35 @@ mod tests {
         assert_eq!(
             contained_path(&root, "safe/file").unwrap(),
             root.join("safe/file")
+        );
+    }
+
+    #[test]
+    fn list_dir_entries_is_sorted_and_missing_is_empty() {
+        let temporary = TempDir::new();
+        let directory = temporary.path().join("entries");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("z.json"), b"z").unwrap();
+        fs::create_dir(directory.join("a")).unwrap();
+
+        assert_eq!(
+            list_dir_entries(&temporary.path().join("missing")).unwrap(),
+            []
+        );
+        assert_eq!(
+            list_dir_entries(&directory).unwrap(),
+            vec![
+                DirEntry {
+                    name: "a".into(),
+                    path: directory.join("a"),
+                    kind: DirEntryKind::Directory,
+                },
+                DirEntry {
+                    name: "z.json".into(),
+                    path: directory.join("z.json"),
+                    kind: DirEntryKind::File,
+                },
+            ]
         );
     }
 

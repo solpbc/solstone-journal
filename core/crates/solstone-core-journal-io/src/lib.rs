@@ -32,8 +32,9 @@ pub use locking::{
     DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, FileLock, LockOptions, hold_lock,
 };
 pub use paths::{
-    DEFAULT_STREAM, PathOrDay, Segment, contained_path, day_dirs, day_path, iter_segments,
-    path_lexists, resolve_configured_journal, resolve_journal_path, segment_path,
+    DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, Segment, contained_path, day_dirs, day_path,
+    iter_segments, list_dir_entries, path_lexists, resolve_configured_journal,
+    resolve_journal_path, segment_path,
 };
 pub use readers::{MalformedPolicy, read_json, read_jsonl, read_text};
 pub use staged::{StagedDirOptions, StagedWriteError, publish_staged_dir};

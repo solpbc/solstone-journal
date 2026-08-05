@@ -1431,11 +1431,13 @@ name = "solstone-core-entity"
 version = "1.0.22"
 dependencies = [
  "caseless",
+ "log",
  "md5",
  "rapidfuzz",
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-journal-io",
  "unicode-normalization",
  "unidecode",
 ]

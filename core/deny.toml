@@ -25,7 +25,7 @@ deny = [
     { name = "cpython" },
     { name = "aws-lc-rs" },
     { name = "aws-lc-sys" },
-    { name = "solstone-core-journal-io", wrappers = ["solstone-core-segment", "solstone-core-sol-client", "solstone-core-sol-link"], reason = "durable journal I/O primitives are owned by the native segment write door, sol-client, and local-link security authorities in this wave" },
+    { name = "solstone-core-journal-io", wrappers = ["solstone-core-segment", "solstone-core-sol-client", "solstone-core-sol-link", "solstone-core-entity"], reason = "durable journal I/O primitives are owned by the native segment write door, sol-client and local-link security authorities, and the read-only entity-store authority in this wave" },
 ]
 
 [graph]
