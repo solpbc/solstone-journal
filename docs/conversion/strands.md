@@ -55,7 +55,9 @@ Raw media landing durably, and the **segment sidecars**.
 
 🔴 **Uniqueness must be allocated over the PROJECTED name, never over the display label — the projection is many-to-one.** `my.phone` and `my_phone` both project to `my_phone`; `café` and `cafe` both project to `cafe`; and a device labelled `iPhone` taking ordinal 2 projects to exactly what a device labelled `iPhone (2)` at ordinal 1 projects to. Allocating on the label leaves all three colliding on one directory and one stream record, which means one **chain** — and duplicate grouping walks that chain into an irreversible delete. ⚠ The taken-set is `journal/streams/*.json` **plus** the authorization registry: the registry alone cannot see stream directories that predate it, and a `chronicle/` directory can outlive its record.
 
-🔴 **A new sidecar name changes what the owner's location delete removes.** The delete classifies a segment as *location-only* (remove the whole directory) or *mixed* (remove one file) using `RESERVED_SEGMENT_FILENAMES` as its non-content set. **Every name added to that set silently reclassifies segments from mixed to location-only — silently widening deletion.** ⛔ Pin the derivation, never a literal list, and make an addition turn a test red rather than change behaviour quietly.
+⛔ **RETIRED 2026-08-05 by operator ruling — do not re-derive it.** This entry used to say that a new sidecar name silently widens what the owner's delete removes, because the delete classified a segment as *location-only* or *mixed* using `RESERVED_SEGMENT_FILENAMES` as its non-content set. **The classification is gone**: the segment is the unit of deletion, a segment is removed whole or not at all, and no name set decides anything about it. See [`plates.md`](plates.md) § `P-journal-retention`.
+
+📌 **What the retirement is worth keeping.** The divergence was real and was measured before the rule changed: Python's set is 3 names (`think/segment_files.py`) against the segment crate's 6, which produced *different delete outcomes on the same journal* — `segments: 0 / mixed: 6` in Python against `segments: 3 / mixed: 3` in Rust. ⚠ The set still matters for what a client may not upload (`is_reserved_name`), and **`device.json` and `tombstone.json` are in neither Python's reserved set nor `is_structural_derived_file`**, so `apps/observer/prune.py` refuses any segment carrying one as a `derived-output` unknown. That arms at cutover. `events.jsonl` is fine — structural-derived covers it by name.
 
 ⚠ **`stream.json` is read far more widely than the plate's own notes suggest — 17 production call sites across 8 modules**, led by `think/segment.py` (6), `apps/settings/maint/*` (4) and `apps/observer/prune.py` (3), plus `think/cluster.py`, `think/streams.py`, `think/indexer/journal.py` and `observe/sense.py`. 📌 An earlier count of "six sites in `prune.py`" was counting error-message string literals, not readers. It matters because the marker carries `prev_day`/`prev_segment`/`seq`, and the reference writer **resets `seq` to 1 and stamps a fresh `created_at` whenever the stream record fails to parse** (`think/streams.py:214-232`, a swallowed `JSONDecodeError | OSError`) — forking the chain for all 17, silently, on a path that looks like a successful write.
 
@@ -68,18 +70,45 @@ Raw media landing durably, and the **segment sidecars**.
 
 Processed sense output written back.
 
-🔴 `_solstone_processing` has a version string and **no schema**, and is absent from both sibling schemas that enumerate every *other* header key — `observe/screen.schema.json` and `observe/transcribe/audio.schema.json` both carry `additionalProperties: true`, so it is permitted and undeclared and can never fail validation. ⚠ Ten more written keys are undeclared the same way (`_solstone_thinking`, and audio's `overlap_fraction`, `overlap_detector`, `device`, `compute_type`, `speaker_analysis_producer`, `noisy_rms`, `noisy_s`, `loud_windows`, `speech_loud_windows`, `loud_speech_ratio`).
+⚠ **The `_solstone_processing` header moved out of this strand 2026-08-05** — it is now `S:segment-sense:segment-processing`, below. What stays here is the analysis output itself: `<stem>.jsonl` rows and the `<stem>.npz` speaker-embedding sidecar, whose formats `observe/screen.schema.json` and `observe/transcribe/audio.schema.json` own.
 
-⚠ **CORRECTED 2026-08-05, measured: "read by five planes" is a floor.** There are **9 production read sites in 8 modules across two languages** — `observe/sense.py:1066` (batch re-entry) · `observe/describe.py:1577`+`:178` (self-skip, incremental merge) · `think/data_state.py:54` (the shared derivation, consumed by `think/cluster.py:503` and `apps/transcripts/routes.py:747`) · `think/retention.py:133` (irreversible deletion) · `apps/observer/processing_proof.py:61` (the device's confirm-before-delete proof) · **`core/crates/solstone-core-ingest-resolve/src/terminal_proof.rs:54`** · `think/backfill_processing_records.py:158`. 🔴 **The Rust reader was named nowhere, and it is the one that holds a second hand-maintained copy of the version string** — `PROCESSING_SCHEMA` (`terminal_proof.rs:11`) against `SCHEMA` (`observe/processing_record.py:23`), with nothing binding them. Two places, one contract, which is the class rule 1 exists to make unrepresentable.
+⚠ Both of those schemas **under-declare their own headers**, and both carry `additionalProperties: true`, so nothing ever fails validation. Undeclared but written: `_solstone_thinking` (`describe.py:653-657`) and audio's `overlap_fraction`, `overlap_detector`, `device`, `compute_type`, `speaker_analysis_producer`, `noisy_rms`, `noisy_s`, `loud_windows`, `speech_loud_windows`, `loud_speech_ratio`.
 
-⚠ Producers are **describe and transcribe only**. `observe/depict.py` writes no record at all, so image outputs are invisible to all nine readers — and both terminal-proof implementations refuse any extension outside audio/video anyway (`processing_proof.py:26-33`, `terminal_proof.rs:71-77`), so **an ingested image can never be proven consumed** and its device copy is never released.
-
-**Carry forward:** **terminal-empty written before the raw is unlinked** — die between them and the file survives with a terminal marker, never the reverse · atomic promote through a same-dir temp, header **last** · detections stored raw, filtered at read time.
+**Carry forward:** **terminal-empty written before the raw is released** — die between them and the file survives with a terminal marker, never the reverse · atomic promote through a same-dir temp, header **last** · detections stored raw, filtered at read time.
 
 ⚠ **Three scope corrections to those three, all verified by reading the code:**
-- **Terminal-empty-before-unlink is transcribe-only** (`transcribe/main.py:1182-1209`, `:810-836`; durable because `write_text` fsyncs the temp, `os.replace`s, then fsyncs the parent). Describe writes the empty marker and **never unlinks the video** — raw video deletion happens later, in `think/retention.py`.
+- 🔴 **The unlink half of terminal-empty is RETIRED 2026-08-05 by operator ruling — the marker discipline is not.** `transcribe` writes the terminal-empty marker exactly as it does today (`transcribe/main.py:1182-1191`, `:810-819`; durable because `write_text` fsyncs the temp, `os.replace`s, then fsyncs the parent) and then **hands the raw to `P-journal-retention` instead of calling `unlink()`** (`:1209`, `:836`). ⛔ Retention is the only plate that removes owner media. ⚠ The *ordering* invariant survives intact and still matters — the marker must be durable before the raw is handed over, never after. The discipline was transcribe-only in any case: describe writes the empty marker and never unlinked the video.
 - **"Header last" is true of the *decision*, false of the *byte order*.** In the promoted file the header is physically line 1; what happens last is *determining* it, inside `_promote` (`describe.py:896-925`), once the run knows its verdict. ⛔ A rebuild that appends the header at the end of the file has read this backwards.
 - **Detections are filtered at exactly one read site** — `qualified_objects` (`observe/detect.py:106-122`) has a single production caller, `observe/screen.py:225`. ⚠ So `depict`'s stored `source="still"` detections are **never** filtered on any read path.
+
+### `S:segment-sense:segment-processing`
+**Connects** `P-segment-sense` → `P-segment-processing` · **Owner** `P-segment-processing` · **Tier** fixture
+
+🆕 **Added 2026-08-05 by operator ruling**, split out of `S:segment-sense:journal-segment`. The per-file outcome ledger — `_solstone_processing` — and the predicates every reader decides against. See [`plates.md`](plates.md) § `P-segment-processing` for why it is its own boundary.
+
+**Producers are `describe` and `transcribe` only** — `observe/describe.py:915`, `observe/transcribe/main.py:611-612`, both via `build_processing_record` (`observe/processing_record.py:160-190`), plus the operator bulk stamp `think/backfill_processing_records.py:177-197`.
+
+⚠ **`observe/depict.py` writes no record at all**, so image outputs are invisible to every reader — and both terminal-proof implementations refuse any extension outside audio/video anyway (`apps/observer/processing_proof.py:26-33`, `terminal_proof.rs:71-77`), so **an ingested image can never be proven consumed** and the sending device never releases its local copy. 🆕 **Operator ruling 2026-08-05: `depict` is promoted to first class** — it gains a record, a schema, re-entry and a formatter entry, and this hole closes.
+
+**The 9 production read sites, measured** — ⚠ "read by five planes" was a floor:
+
+| Reader | Decides |
+|---|---|
+| `observe/sense.py:1066` | whether a batch scan re-enters a file |
+| `observe/describe.py:1577`, `:178` | handler self-skip, and which rows an incremental re-run reuses |
+| `think/data_state.py:54` | the shared modality state, consumed by `think/cluster.py:503` and `apps/transcripts/routes.py:747` |
+| `think/retention.py:133` | 🔴 **irreversible raw-media deletion** |
+| `apps/observer/processing_proof.py:61` | 🔴 **that a device may drop its local copy** |
+| `core/crates/solstone-core-ingest-resolve/src/terminal_proof.rs:54` | the same, in Rust |
+| `think/backfill_processing_records.py:158` | its own skip guard |
+
+🔴 **The version string exists twice** — `SCHEMA` (`processing_record.py:23`) and `PROCESSING_SCHEMA` (`terminal_proof.rs:11`), hand-maintained with nothing binding them. **Removing that is this strand's first job.**
+
+⚠ The two strictest readers agree on more than the schema does: `processing_proof.py:64-76` and `terminal_proof.rs:57-63` both require `schema` match, `state ∈ {analyzed, empty}`, `handler` matching the extension, **and `input_size == recorded_size`**. That conjunction is the contract, and it is written down in neither place.
+
+⚠ **Re-entry is describe-only in practice.** `should_reenter_analysis_output` (`processing_record.py:118-152`) returns `True` only for `handler == "describe"`, and transcribe's own decode-failure writer then blocks re-entry at three separate guards — so `FAILED_ATTEMPT_BOUND` (3) never applies to audio. ⛔ Whether that asymmetry is intended is a contract question this strand owns, not a bug to fix silently: `tests/test_data_state.py:145` encodes it as deliberate, while the *other* transcribe failure paths write no record at all and re-pay decode + VAD + STT forever.
+
+**Carry forward:** the closed sets are the contract — `state ∈ {analyzed, empty, failed}`, `reason_code ∈ {ok, no_decodable_frames, no_decodable_audio, corrupt_input, analysis_failed}`, `handler ∈ {describe, transcribe}` — and `corrupt_input` is terminal immediately while everything else exhausts at `attempts >= 3`.
 
 ### `S:segment-sense:system`
 **Connects** `P-segment-sense` → `P-system` · **Owner** `P-system` · **Tier** schema

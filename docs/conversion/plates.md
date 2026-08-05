@@ -48,11 +48,36 @@ The ingest **API**. Deliberately separate from `P-segment-media`. ⚠ 9 publishe
 
 An ingested, not-yet-processed segment.
 
+## `P-segment-processing`
+
+🆕 **Added 2026-08-05 by operator ruling.** The per-file **outcome ledger** — the record of
+what processing decided about one media file: `state` (`analyzed` / `empty` / `failed`),
+`reason_code`, `handler`, `attempted_at`, `input_size`, and `attempts` on failing records.
+Written into the analysis header as `_solstone_processing`, plus the predicates every reader
+decides against — failure exhaustion, re-entry eligibility, and terminal proof.
+
+🔴 **It is its own boundary because four plates read it for four different purposes, and two
+of those decide irreversible deletion.** `P-segment-sense` writes it and re-enters on it ·
+`P-journal-retention` purges raw media on it · `P-device-ingest` proves to a device that its
+upload was consumed so the device may drop its local copy · `P-web` and `P-index` derive
+displayed and clustered state from it. Leaving it as a field of a storage format made it
+nobody's contract while being everybody's decision input.
+
+⚠ **9 production read sites in 8 modules across two languages** — see
+[`strands.md`](strands.md) § `S:segment-sense:segment-processing` for the enumeration.
+🔴 **The version string exists twice today** — `observe/processing_record.py:23` and
+`core/crates/solstone-core-ingest-resolve/src/terminal_proof.rs:11` — hand-maintained, with
+nothing binding them. That is the two-places-one-contract class rule 1 exists to make
+unrepresentable, and it is the first thing this plate removes.
+
+⛔ **No schema exists.** It is absent from both sibling schemas that enumerate every *other*
+header key, and both carry `additionalProperties: true`, so it can never fail validation.
+
 ## `P-segment-sense`
 
 Media processing: an ingested segment's raw media becoming analysed output on disk.
 
-⚠ **"Emits two strands" is stale** — it predates the wire/durable split. This plate emits **four** Tier-1 strands with four different contracts (`:journal-segment` fixture · `:system` schema · `:journal-segment-events` fixture · `:thinking` schema) plus the Tier-2 `S:segment-sense:speaker-id`. ⛔ The wire and durable halves of the event contract are deliberately separate; do not re-merge them.
+⚠ **"Emits two strands" is stale** — it predates the wire/durable split. This plate emits **five** Tier-1 strands with five different contracts (`:journal-segment` fixture · `:system` schema · `:journal-segment-events` fixture · `:thinking` schema · `:segment-processing` fixture) plus the Tier-2 `S:segment-sense:speaker-id`. ⛔ The wire and durable halves of the event contract are deliberately separate; do not re-merge them.
 
 **Shape, measured 2026-08-05.** One long-running dispatcher plus three handlers, all separate processes:
 
@@ -180,6 +205,14 @@ Facets and their per-facet contents, including facet-scoped entity and speaker m
 ## `P-journal-retention`
 
 The logic that decides what raw media is retained, and what logs are retained for how long. `think/retention.py` (708 lines) **irreversibly deletes owner raw media**; `log_retention.py` (1,006) prunes logs.
+
+🆕 🔴 **Widened 2026-08-05 by operator ruling: this plate EXECUTES every removal of owner media, and it is the only plate that does.** Other plates **request**; retention removes. Three consequences that are not local to retention:
+
+1. ⛔ **The segment is the unit of deletion.** A segment is removed whole — every file, leaving a `tombstone.json` — or it is not removed. **There is no partial-segment delete.** The *mixed* classification and the reserved-name set that fed it existed only to serve a capability the product no longer offers.
+2. ⛔ **`transcribe` stops unlinking VAD-empty raw audio.** It writes the terminal-empty marker exactly as it does today and hands the raw to retention. One subsystem, one policy, one place to look when owner media went.
+3. 🔴 **Retention notifies `P-index` of the paths it actually removed, after removing them.** ⛔ Ordering is the contract: the index is told about removals that have happened, never about removals that are intended. An index prune is not a removal — the index is rebuildable by design, so pruning it is a cache invalidation and a rebuild undoes it. **Anything an owner is told was removed must be removed from the chronicle first.**
+
+⚠ **Open, and not settled by that ruling: legacy segments holding one source's data beside another's.** An owner asking to delete one source from such a segment either loses the segment whole, including material they did not ask to delete, or keeps the data they asked to remove. Rule 4's unacceptable outcome is older journal data left *unseen*; this is the sibling — older journal data left **undeletable**.
 
 🔴 **Carry forward:** *read one extraction file strictly enough for irreversible deletion* (`retention.py:110`) — reads at most two lines and treats any `OSError` / `JSONDecodeError` / non-dict as **`"malformed"`, never as "empty, safe to purge"**, with an explicit guard at `:136-139` against a stray marker key making a header-only file look chunk-bearing. Plus `resolve_segment_gate`: `.npz` without `talents/speaker_labels.json` ⇒ incomplete.
 
