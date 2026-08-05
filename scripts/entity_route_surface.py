@@ -132,6 +132,34 @@ def main() -> int:
                 }
             )
 
+    # Which store operations each route depends on. A route cannot be served
+    # until every operation beneath it exists, so this is the real ordering
+    # constraint on porting the surface.
+    store_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module and "entities" in node.module:
+            for alias in node.names:
+                store_names.add(alias.asname or alias.name)
+
+    route_dependencies: list[dict] = []
+    operation_use: dict[str, int] = {}
+    for function in functions:
+        pairs = handler_of.get(function.name)
+        if not pairs:
+            continue
+        calls = sorted(
+            {
+                call.func.id
+                for call in ast.walk(function)
+                if isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id in store_names
+            }
+        )
+        for name in calls:
+            operation_use[name] = operation_use.get(name, 0) + len(pairs)
+        route_dependencies.append({"routes": pairs, "store_operations": calls})
+
     by_code: dict[str, dict] = {}
     for site in sites:
         entry = by_code.setdefault(
@@ -176,6 +204,7 @@ def main() -> int:
             "classifier_sites": sum(1 for s in sites if s["site"] == "classifier"),
             "codes_reachable_only_through_the_classifier": len(classifier_only),
             "sites_overriding_their_declared_status": len(overrides),
+            "distinct_store_operations_the_surface_depends_on": len(operation_use),
         },
         "codes_reachable_only_through_the_classifier": classifier_only,
         "status_overrides": [
@@ -187,6 +216,15 @@ def main() -> int:
             }
             for s in overrides
         ],
+        "why_the_store_dependencies_matter": (
+            "A route cannot be served until every store operation beneath it exists. "
+            "These names are the real ordering constraint on porting this surface -- "
+            "scoping the routes without checking them assumes a complete store."
+        ),
+        "store_operation_use": dict(
+            sorted(operation_use.items(), key=lambda kv: (-kv[1], kv[0]))
+        ),
+        "route_store_dependencies": route_dependencies,
         "by_code": dict(sorted(by_code.items())),
         "routes": sorted(routes, key=lambda pair: (pair["route"], pair["method"])),
         "refusal_sites": sites,

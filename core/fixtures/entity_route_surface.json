@@ -10,7 +10,8 @@
   "route_level_sites": 105,
   "classifier_sites": 7,
   "codes_reachable_only_through_the_classifier": 0,
-  "sites_overriding_their_declared_status": 3
+  "sites_overriding_their_declared_status": 3,
+  "distinct_store_operations_the_surface_depends_on": 37
  },
  "codes_reachable_only_through_the_classifier": [],
  "status_overrides": [
@@ -45,6 +46,549 @@
      "route": "/api/journal/entity/<entity_id>/unblock",
      "method": "POST"
     }
+   ]
+  }
+ ],
+ "why_the_store_dependencies_matter": "A route cannot be served until every store operation beneath it exists. These names are the real ordering constraint on porting this surface -- scoping the routes without checking them assumes a complete store.",
+ "store_operation_use": {
+  "load_journal_entity": 10,
+  "load_entities": 7,
+  "is_valid_entity_type": 4,
+  "entity_slug": 3,
+  "ResolutionOrigin": 2,
+  "attach_or_reactivate_entity": 2,
+  "load_ambiguities": 2,
+  "load_observations": 2,
+  "resolve_entity": 2,
+  "update_facet_entity_description": 2,
+  "add_entity_aka": 1,
+  "add_observation": 1,
+  "block_journal_entity": 1,
+  "delete_detected_entity": 1,
+  "delete_journal_entity": 1,
+  "detach_facet_entity": 1,
+  "entities_copy_payload": 1,
+  "entity_last_active_day": 1,
+  "entity_last_active_ts": 1,
+  "get_journal_principal": 1,
+  "last_active_day_for_ts": 1,
+  "load_all_journal_entities": 1,
+  "load_candidates": 1,
+  "load_facet_relationship": 1,
+  "merge_entity": 1,
+  "move_facet_entity": 1,
+  "observation_day_counts": 1,
+  "record_ambiguity_choice": 1,
+  "record_entity_merge_candidate": 1,
+  "record_entity_resolution": 1,
+  "restore_journal_entity_version": 1,
+  "save_detected_entity": 1,
+  "save_journal_entity": 1,
+  "unblock_journal_entity": 1,
+  "undo_entity_merge": 1,
+  "update_detected_entity": 1,
+  "update_facet_entity_identity": 1
+ },
+ "route_store_dependencies": [
+  {
+   "routes": [
+    {
+     "route": "/",
+     "method": "GET"
+    }
+   ],
+   "store_operations": []
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/state",
+     "method": "GET"
+    }
+   ],
+   "store_operations": [
+    "entities_copy_payload"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/network",
+     "method": "GET"
+    }
+   ],
+   "store_operations": []
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/history",
+     "method": "GET"
+    }
+   ],
+   "store_operations": [
+    "get_journal_principal"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/overview",
+     "method": "GET"
+    }
+   ],
+   "store_operations": []
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>",
+     "method": "GET"
+    }
+   ],
+   "store_operations": []
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/resolve",
+     "method": "GET"
+    }
+   ],
+   "store_operations": [
+    "resolve_entity"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/detected",
+     "method": "GET"
+    }
+   ],
+   "store_operations": [
+    "load_entities"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/detected",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "ResolutionOrigin",
+    "is_valid_entity_type",
+    "load_entities",
+    "record_entity_resolution",
+    "resolve_entity",
+    "save_detected_entity"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/attach",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "attach_or_reactivate_entity",
+    "is_valid_entity_type"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/update-description",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "update_facet_entity_description"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/update-detected",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "update_detected_entity"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/move",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "move_facet_entity"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/aka",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "add_entity_aka"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/record-merge-candidate",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "entity_slug",
+    "record_entity_merge_candidate"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/merge-candidates",
+     "method": "GET"
+    }
+   ],
+   "store_operations": [
+    "load_candidates"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/accept-merge-candidate",
+     "method": "POST"
+    }
+   ],
+   "store_operations": []
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/dismiss-merge-candidate",
+     "method": "POST"
+    }
+   ],
+   "store_operations": []
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/merge",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "merge_entity"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/merge/<merge_id>/undo",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "undo_entity_merge"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/journal/entity/<entity_id>/history",
+     "method": "GET"
+    }
+   ],
+   "store_operations": [
+    "load_journal_entity"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/journal/entity/<entity_id>/restore",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "load_journal_entity",
+    "restore_journal_entity_version"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/ambiguities",
+     "method": "GET"
+    }
+   ],
+   "store_operations": [
+    "load_ambiguities"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/ambiguities/<ambiguity_id>/resolve",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "ResolutionOrigin",
+    "load_all_journal_entities",
+    "load_ambiguities",
+    "load_entities",
+    "record_ambiguity_choice"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/observations",
+     "method": "GET"
+    }
+   ],
+   "store_operations": [
+    "load_observations"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/observe",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "add_observation"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/search",
+     "method": "GET"
+    }
+   ],
+   "store_operations": []
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/entity/<entity_id>",
+     "method": "GET"
+    }
+   ],
+   "store_operations": [
+    "entity_last_active_day",
+    "entity_last_active_ts",
+    "entity_slug",
+    "load_entities",
+    "load_journal_entity",
+    "load_observations"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/entity/<entity_id>/grid",
+     "method": "GET"
+    }
+   ],
+   "store_operations": [
+    "load_entities",
+    "load_journal_entity",
+    "observation_day_counts"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "attach_or_reactivate_entity",
+    "is_valid_entity_type"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/entity/<entity_id>",
+     "method": "DELETE"
+    }
+   ],
+   "store_operations": [
+    "detach_facet_entity",
+    "load_journal_entity"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/update",
+     "method": "PUT"
+    }
+   ],
+   "store_operations": [
+    "entity_slug",
+    "load_journal_entity",
+    "update_facet_entity_identity"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/entity/<entity_id>/description",
+     "method": "PUT"
+    }
+   ],
+   "store_operations": [
+    "load_facet_relationship",
+    "load_journal_entity",
+    "update_facet_entity_description"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/generate-description",
+     "method": "POST"
+    }
+   ],
+   "store_operations": []
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/assist",
+     "method": "POST"
+    }
+   ],
+   "store_operations": []
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/detected/preview",
+     "method": "GET"
+    }
+   ],
+   "store_operations": [
+    "load_entities"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/<facet_name>/detected",
+     "method": "DELETE"
+    }
+   ],
+   "store_operations": [
+    "delete_detected_entity",
+    "load_entities"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/types",
+     "method": "GET"
+    }
+   ],
+   "store_operations": []
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/journal",
+     "method": "GET"
+    }
+   ],
+   "store_operations": []
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/journal/entity/<entity_id>",
+     "method": "GET"
+    }
+   ],
+   "store_operations": [
+    "last_active_day_for_ts",
+    "load_journal_entity"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/journal/entity/<entity_id>",
+     "method": "PUT"
+    }
+   ],
+   "store_operations": [
+    "is_valid_entity_type",
+    "load_journal_entity",
+    "save_journal_entity"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/journal/entity/<entity_id>",
+     "method": "DELETE"
+    }
+   ],
+   "store_operations": [
+    "delete_journal_entity",
+    "load_journal_entity"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/cancel-delete/<pending_id>",
+     "method": "POST"
+    }
+   ],
+   "store_operations": []
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/journal/entity/<entity_id>/block",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "block_journal_entity"
+   ]
+  },
+  {
+   "routes": [
+    {
+     "route": "/api/journal/entity/<entity_id>/unblock",
+     "method": "POST"
+    }
+   ],
+   "store_operations": [
+    "unblock_journal_entity"
    ]
   }
  ],
