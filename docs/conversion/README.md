@@ -71,6 +71,8 @@ Known instances and what is left of each:
 
 **The work: make the written identity mandatory, delete the derivation fallback, persist `sentence_id`.**
 
+⚠ **This applies to instruments, not just to stored data.** A tool that matches by directory name, filename or label is deriving identity from a position — the same defect one layer up, and it fails by **attributing** rather than by forking. A bundle sweep that matched consumers by directory basename reported one consumer NOT SWEPT in the same run that swept it and found it current, and in a sandbox would have attributed a stranger's repository to a declared consumer. ⛔ **And a tool that measured nothing must not report success** — check that the count of things examined is non-zero before believing a green result.
+
 ## 🔴 Reserved words — two live collisions
 
 Two words mean an internal thing and an owner-facing thing at once, and **both collisions are already in shipped code.**
