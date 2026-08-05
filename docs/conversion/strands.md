@@ -253,6 +253,9 @@ First-run journal establishment. **Creates the identity root** that `S:device-li
 | `S:journal-retention:journal-config` | the **posture / settings** it reads | `P-journal-config` | fixture |
 | `S:journal-retention:system` | **when it runs** | `P-system` | schema |
 | `S:journal-retention:journal` | **tending the files** — changes, and recording status | `P-journal` | fixture |
+| 🆕 `S:journal-retention:index` | **telling the indexer what was removed**, after the removal | `P-index` | schema |
+
+🔴 **The segment is the unit of deletion, retention executes every removal, and retention tells the indexer afterwards.** That ordering is the design: removal happens first and the index is informed, never the reverse. The fourth strand above exists because of it.
 
 Where retention is the provider it owns the contract — it is the one-to-many end with ten production call sites. See [`plates.md`](plates.md) for the irreversible-deletion carry-forward.
 
