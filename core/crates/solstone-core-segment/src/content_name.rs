@@ -13,9 +13,23 @@ pub const RESERVED_SEGMENT_FILENAMES: [&str; 6] = [
     "tombstone.json",
 ];
 
-/// Return whether `name` is one of the exact, case-sensitive reserved names.
+/// Return whether `name` is a reserved sidecar name, compared case-insensitively.
+///
+/// The comparison ignores case because the filesystem does. APFS and NTFS fold
+/// case by default and ext4 does not, so an exact comparison accepts
+/// `TOMBSTONE.JSON` as client content and then resolves it to the journal's own
+/// `tombstone.json` on two of the three platforms this ships to -- and not on
+/// the one it is most likely to be developed on. The sidecars are
+/// journal-authored by definition; a client that can place bytes at one of
+/// their paths can pre-empt an attribution record, or an owner's evidence that
+/// a deletion happened.
+///
+/// ASCII case folding is sufficient and deliberate: every reserved name is
+/// ASCII, and Unicode folding would make the predicate depend on locale.
 pub fn is_reserved_name(name: &str) -> bool {
-    RESERVED_SEGMENT_FILENAMES.contains(&name)
+    RESERVED_SEGMENT_FILENAMES
+        .iter()
+        .any(|reserved| reserved.eq_ignore_ascii_case(name))
 }
 
 /// A validated, non-reserved single filename for client content bytes.
@@ -85,14 +99,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rejects_exact_reserved_names_without_case_folding() {
+    fn rejects_reserved_names_in_any_case() {
         for name in RESERVED_SEGMENT_FILENAMES {
             assert!(matches!(
                 ContentName::new(name),
                 Err(ContentNameError::Reserved(_))
             ));
+            // The filesystem folds case on APFS and NTFS, so these resolve to
+            // the same path as the journal's own sidecar. Accepting them lets a
+            // client pre-empt an attribution record or an owner's evidence of a
+            // deletion, on two of the three platforms this ships to.
+            assert!(
+                matches!(
+                    ContentName::new(&name.to_uppercase()),
+                    Err(ContentNameError::Reserved(_))
+                ),
+                "{name} accepted in upper case"
+            );
+            let mixed: String = name
+                .chars()
+                .enumerate()
+                .map(|(index, character)| {
+                    if index % 2 == 0 {
+                        character.to_ascii_uppercase()
+                    } else {
+                        character
+                    }
+                })
+                .collect();
+            assert!(
+                matches!(ContentName::new(&mixed), Err(ContentNameError::Reserved(_))),
+                "{mixed} accepted in mixed case"
+            );
         }
-        assert!(ContentName::new("EVENTS.JSONL").is_ok());
+        // A name that merely resembles one is still ordinary content.
+        assert!(ContentName::new("events.jsonl.bak").is_ok());
+        assert!(ContentName::new("my-tombstone.json").is_ok());
     }
 
     #[test]
