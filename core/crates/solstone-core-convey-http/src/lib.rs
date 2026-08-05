@@ -31,8 +31,8 @@
 //!
 //! ## D3: identity injection — accept-time `Extension<AccessBasis>`
 //!
-//! `identity.rs` will define `AccessBasis::{Localhost, LinkedDevice { carrier
-//! }}` and `Carrier::{Direct, ViaSpl}` with `Debug`, `Clone`, `Copy`,
+//! `identity.rs` defines `AccessBasis::{Localhost, LinkedDevice { carrier, did
+//! }}` and `Carrier::{Direct, ViaSpl}`. `AccessBasis` derives `Debug`, `Clone`,
 //! `PartialEq`, and `Eq`. The acceptor constructs this value from connection
 //! provenance and passes it to `serve_connection`; no request header, path,
 //! query, or body can construct or replace it. For each connection,
