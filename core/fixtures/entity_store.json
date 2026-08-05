@@ -693,9 +693,11 @@
         "rule": "observed_tier is one of the low-confidence tiers 5-8"
       }
     ],
-    "note": "One malformed row per validation rule. A row set is validated in full before any bytes are written, and both mutation entry points re-read strictly under the lock first \u2014 so one bad row makes the whole file unwritable while it stays readable."
+    "note": "A row set is validated in full before any bytes are written, and both mutation entry points re-read strictly under the lock first \u2014 so one bad row makes the whole file unwritable while it stays readable. \u26a0 These rows are NOT one per validation rule: they reach the schema-version, identity, scope, required-query-field and observed-tier rules and stop there. The status/choice, ranked-candidate, origin-pairing, occurrence-count and audit rules have no row here, and a validator that stops after the covered ones passes every case below. Read this as a floor, not a census.",
+    "row_count": 12
   },
   "reconciliation": {
+    "case_count": 8,
     "cases": [
       {
         "after": {
@@ -958,6 +960,95 @@
         },
         "note": "a missing optional field is not the same as an empty one",
         "outcome": "repair_required"
+      },
+      {
+        "after": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "description": "a friend",
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "before": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "disk": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "entity_dir": "alice_johnson",
+        "note": "no identity written on disk at all \u2014 the read-compat population; reconciles because the resolved identity is stamped into the object before comparison",
+        "outcome": "discard"
+      },
+      {
+        "after": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "description": "a friend",
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "before": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "alice_johnson",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "disk": {
+          "aka": [
+            "Ali",
+            "AJ"
+          ],
+          "created_at": 1785889922582,
+          "emails": [
+            "alice@example.com"
+          ],
+          "id": "some_other_identity",
+          "name": "Alice Johnson",
+          "type": "Person"
+        },
+        "entity_dir": "alice_johnson",
+        "note": "written identity disagrees with the directory \u2014 the stamped identity is what the comparison sees",
+        "outcome": "discard"
       }
     ],
     "note": "Run before every mutation. Publish when the identity on disk equals identity_after, discard when it equals identity_before, otherwise refuse and leave the journal unchanged. The refusal is permanent for that entity until a human repairs it, and reads keep working throughout."

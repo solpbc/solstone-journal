@@ -592,6 +592,39 @@ def _reconciliation_cases() -> list[dict[str, Any]]:
             "before": before, "after": after,
             "outcome": "repair_required",
         },
+        {
+            # 🔴 The oldest records on disk predate the identity being persisted
+            # at all. The store loads one by stamping the identity it resolved
+            # INTO the object before comparing, so the absent field is supplied
+            # rather than missing. A reader that skips that step compares an
+            # object with no identity against snapshots that carry one, matches
+            # neither, and makes the entity permanently unmutatable -- and it
+            # does so on the oldest journals, which is the population least able
+            # to afford it.
+            "note": (
+                "no identity written on disk at all — the read-compat "
+                "population; reconciles because the resolved identity is "
+                "stamped into the object before comparison"
+            ),
+            "entity_dir": "alice_johnson",
+            "disk": {k: v for k, v in before.items() if k != "id"},
+            "before": before, "after": after,
+            "outcome": "discard",
+        },
+        {
+            # The same mechanism seen from the other side: whatever is written
+            # in the file, the comparison sees the resolved identity. This case
+            # pins that the stamping is unconditional, so a reader cannot make
+            # it conditional on the two agreeing.
+            "note": (
+                "written identity disagrees with the directory — the stamped "
+                "identity is what the comparison sees"
+            ),
+            "entity_dir": "alice_johnson",
+            "disk": {**before, "id": "some_other_identity"},
+            "before": before, "after": after,
+            "outcome": "discard",
+        },
     ]
 
 
@@ -614,7 +647,7 @@ def _observe_reconciliation(case: dict[str, Any]) -> str:
         consolidate_prepared_history,
     )
 
-    entity_id = str(case["before"]["id"])
+    entity_id = str(case.get("entity_dir") or case["before"]["id"])
     with _temp_journal():
         event = _build_history_event(
             entity_id=entity_id,
@@ -863,6 +896,7 @@ def build_entity_store_fixture() -> dict[str, Any]:
             "ambiguity_rows": rows,
         },
         "reconciliation": {
+            "case_count": len(reconciliation),
             "note": (
                 "Run before every mutation. Publish when the identity on disk "
                 "equals identity_after, discard when it equals identity_before, "
@@ -873,11 +907,18 @@ def build_entity_store_fixture() -> dict[str, Any]:
             "cases": reconciliation,
         },
         "negative": {
+            "row_count": len(_negative_cases()),
             "note": (
-                "One malformed row per validation rule. A row set is validated "
-                "in full before any bytes are written, and both mutation entry "
-                "points re-read strictly under the lock first — so one bad row "
-                "makes the whole file unwritable while it stays readable."
+                "A row set is validated in full before any bytes are written, "
+                "and both mutation entry points re-read strictly under the lock "
+                "first — so one bad row makes the whole file unwritable while "
+                "it stays readable. ⚠ These rows are NOT one per validation "
+                "rule: they reach the schema-version, identity, scope, "
+                "required-query-field and observed-tier rules and stop there. "
+                "The status/choice, ranked-candidate, origin-pairing, "
+                "occurrence-count and audit rules have no row here, and a "
+                "validator that stops after the covered ones passes every case "
+                "below. Read this as a floor, not a census."
             ),
             "ambiguity_rows": _negative_cases(),
         },
