@@ -8,10 +8,10 @@ use std::path::{Path, PathBuf};
 
 use chrono_tz::Tz;
 use serde_json::{Map, Value};
+use solstone_core_entity::{EntityNameCandidate, find_matching_entity};
 
 use crate::edges::speaker::MentionCandidateIndex;
 use crate::edges::{EdgeContext, EdgeError};
-use crate::entity_name_matcher::{EntityNameCandidate, find_matching_entity};
 
 type JsonObject = Map<String, Value>;
 

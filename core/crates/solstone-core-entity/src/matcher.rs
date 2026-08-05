@@ -22,7 +22,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
-use crate::entity_slug::entity_slug;
+use crate::slug::entity_slug;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
