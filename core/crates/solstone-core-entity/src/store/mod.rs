@@ -11,6 +11,8 @@ mod map;
 mod paths;
 mod reconcile;
 mod repair;
+#[allow(dead_code)]
+pub(crate) mod voiceprints;
 mod write;
 
 pub use ambiguity::{
