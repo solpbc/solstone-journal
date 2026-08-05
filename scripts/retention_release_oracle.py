@@ -402,7 +402,19 @@ def main() -> int:
                 "shape": {
                     "media": shape.media,
                     "size": SIZE,
-                    "record": "absent" if shape.omit_record_key else shape.record,
+                    # Three distinguishable states, because two of them are
+                    # different on disk and a consumer rebuilding this fixture
+                    # must be able to tell them apart:
+                    #   sidecar "absent"          -> no <stem>.jsonl file at all
+                    #   sidecar "header-only"     -> the file exists, no record key
+                    #   sidecar {...}             -> the file exists with that record
+                    "sidecar": (
+                        "absent"
+                        if shape.omit_sidecar
+                        else "header-only"
+                        if shape.omit_record_key
+                        else shape.record
+                    ),
                     "analysis_row": shape.row,
                 },
                 "reference_gate": gate,
