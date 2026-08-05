@@ -169,6 +169,20 @@ identifier, and two spelling the same concept in different cases:
 | `think/brain_cli.RUNTIME_REASON_CODES` (an alias import) | 41 | command-line presentation |
 | `think/brain_health.LOCAL_RUNTIME_REASON_CODES` | 8 | local health grouping |
 
+⚠ **Two declared reasons are reachable only through the raising entry points, not through this
+boundary**, and a caller reads the evidence instead:
+
+| reason | what a one-shot caller reads instead |
+|---|---|
+| `schema-validation-failed` | `schema_validation.valid` on the **generated** response |
+| `incomplete-text` | `finish_reason` on the **generated** response |
+
+🔴 **So a completion the provider cut off arrives as `generated`, not as a refusal**, and it is the
+caller's job to notice. That is deliberate — the result-returning path exists so a caller decides for
+itself — but it means **`finish_reason` is load-bearing, not decorative**. ⚠ And it is *normalised* on
+the way through: an endpoint saying `length` reaches the caller as `max_tokens`, so a consumer matching
+the provider's spelling sees nothing wrong.
+
 ⛔ **Wiring the 16 into a caller loses both decisions this contract exists to deliver**: 24 of the 43
 are blocking and only 4 of those are in the 16, and the sole non-retryable code — `non_responsive` —
 is in the 43 and not in the 16. The fixture carries the set this contract uses, so no caller has to
