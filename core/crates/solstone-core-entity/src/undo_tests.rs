@@ -423,6 +423,51 @@ fn undo_restores_byte_identical_journal_outside_excluded_paths() {
 }
 
 #[test]
+fn undo_rebase_chain_restores_intermediate_target() {
+    let journal = undo_journal();
+    for id in ["a", "b", "c"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+
+    let child = commit_entity_merge(&journal, "a", "b", EntityMergeOptions::default()).unwrap();
+    let child_path = journal.join(format!(
+        "entities/b/history/private/{}.json",
+        child.merge_id
+    ));
+    let child_before_rebase = fs::read(&child_path).unwrap();
+    let parent = commit_entity_merge(&journal, "b", "c", EntityMergeOptions::default()).unwrap();
+    let parent_payload: Value = serde_json::from_slice(
+        &fs::read(journal.join(format!(
+            "entities/c/history/private/{}.json",
+            parent.merge_id
+        )))
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        parent_payload["manifest"]["rebased_merge_ids"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::String(child.merge_id.clone()))
+    );
+    assert!(!child_path.exists());
+
+    undo_entity_merge(&journal, &parent.merge_id, Value::Null).unwrap();
+    assert!(read_entity_identity(&journal, "b").unwrap().is_some());
+    assert_eq!(fs::read(&child_path).unwrap(), child_before_rebase);
+
+    undo_entity_merge(&journal, &child.merge_id, Value::Null).unwrap();
+    assert!(read_entity_identity(&journal, "a").unwrap().is_some());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
 fn undo_removes_moved_target_facet_relationship() {
     let journal = undo_journal();
     for id in ["source", "target"] {

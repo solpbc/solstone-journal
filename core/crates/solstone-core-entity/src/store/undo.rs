@@ -31,7 +31,8 @@ use crate::{
 
 use super::merge_payload::{
     MergePayloadError, list_entity_merge_payload_ids, load_entity_merge_payload,
-    remove_entity_merge_payload, snapshot_from_payload,
+    move_entity_merge_payload, record_entity_merge_payload, remove_entity_merge_payload,
+    snapshot_from_payload,
 };
 use super::merge_rollback::MergeRollback;
 
@@ -156,6 +157,8 @@ pub(crate) fn undo_entity_merge_with_injector(
         phase = "facets";
         undo_facets(journal, &target_id, &payload, &mut rollback)?;
         inject_failure(injector, phase)?;
+        phase = "lineage";
+        undo_rebased_payloads(journal, &source_id, &target_id, &payload, &mut rollback)?;
         phase = "identity";
         let target_after_undo =
             replay_target_identity(journal, &target_id, &payload, &active_payloads)?;
@@ -690,6 +693,39 @@ fn undo_voiceprints(
     }
     rollback.capture(journal, &path)?;
     restore_snapshot(journal, &snapshot)?;
+    Ok(())
+}
+
+fn undo_rebased_payloads(
+    journal: &Path,
+    source_id: &str,
+    target_id: &str,
+    payload: &Value,
+    rollback: &mut MergeRollback,
+) -> Result<(), EntityUndoError> {
+    let rebased = payload
+        .get("manifest")
+        .and_then(|manifest| manifest.get("rebased_merge_ids"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            EntityUndoError::Refused("merge payload missing rebased_merge_ids".to_owned())
+        })?;
+    for merge_id in rebased {
+        let merge_id = merge_id.as_str().ok_or_else(|| {
+            EntityUndoError::Refused("merge payload rebased merge id is not a string".to_owned())
+        })?;
+        rollback.capture(
+            journal,
+            &format!("entities/{target_id}/history/private/{merge_id}.json"),
+        )?;
+        let (mut descendant, _) =
+            move_entity_merge_payload(journal, target_id, source_id, merge_id, None)?;
+        descendant
+            .as_object_mut()
+            .expect("validated merge payload")
+            .remove("rebased_from_entity_id");
+        record_entity_merge_payload(journal, source_id, merge_id, &descendant)?;
+    }
     Ok(())
 }
 
