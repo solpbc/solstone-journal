@@ -246,7 +246,7 @@ First-run journal establishment. **Creates the identity root** that `S:device-li
 
 ## Tier 1 — retention
 
-`P-journal-retention` connects through three strands, each a different contract:
+`P-journal-retention` connects through four strands, each a different contract:
 
 | Strand | For | Owner | Tier |
 |---|---|---|---|
@@ -257,7 +257,15 @@ First-run journal establishment. **Creates the identity root** that `S:device-li
 
 🔴 **The segment is the unit of deletion, retention executes every removal, and retention tells the indexer afterwards.** That ordering is the design: removal happens first and the index is informed, never the reverse. The fourth strand above exists because of it.
 
-Where retention is the provider it owns the contract — it is the one-to-many end with ten production call sites. See [`plates.md`](plates.md) for the irreversible-deletion carry-forward.
+⚠ **Retention is the consumer on all four** — every one of these contracts sits at the other end. The relationship in which retention is the *provider* is the **removal request**, and it has no strand name here; rule 1 puts that contract at retention's end because it serves many requesters and cannot negotiate per-caller. See [`plates.md`](plates.md) § the removal-request contract.
+
+⚠ **`S:journal-retention:system` has two shapes that must not be conflated:** *when the policy sweep runs* — a schedule entry, `P-system`'s contract — and *a removal request arriving from another plate*, which is synchronous and needs no schedule. 🔴 **Today the first does not exist**: nothing schedules the raw-media pass, so two of the three configured retention modes never execute. See [`plates.md`](plates.md).
+
+🔴 **`S:journal-retention:index` has no entry point to call.** The only path-keyed native index verb refuses a path that no longer exists, and the only prune is keyed by **stream name**, not by removed path — so a segment under one stream that held another source's originals keeps its rows after those originals are gone. The Python reference has the right shape (`think/indexer/journal.py:184-215`, `DELETE FROM chunks WHERE path = ? OR path LIKE ?`, segment-prefix-scoped) and has never been ported.
+
+🔴 **Why the ordering is a safety property and not a preference.** Index discovery is a pure filesystem glob with no database input, and the scan deletes any row the glob no longer produces — so the index re-converges on the chronicle every run. **Remove, then notify:** a crash between them leaves stale rows the next scan deletes, because the file is gone; self-healing, and the owner is never told something is gone that is not. **Notify, then remove:** a crash leaves the index missing rows for a file *still on disk*, so in that window the owner has been told their data is out of search while it is still there — and the next scan **puts it back**. Only one order is safe from the owner's point of view.
+
+Where retention is the provider it owns the contract — it is the one-to-many end, reached from **11 import sites across 7 production modules**. ⚠ Those 11 are not 11 decisions: one is the purge itself, two consult the deletion gate, and the rest read storage totals, the config, or a byte formatter. **Count the callers of the irreversible verb, not of the module.** See [`plates.md`](plates.md) for the irreversible-deletion carry-forward and the measured predicate.
 
 ---
 

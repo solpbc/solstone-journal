@@ -253,7 +253,7 @@ Facets and their per-facet contents, including facet-scoped entity and speaker m
 
 ## `P-journal-retention`
 
-The logic that decides what raw media is retained, and what logs are retained for how long. `think/retention.py` (708 lines) **irreversibly deletes owner raw media**; `log_retention.py` (1,006) prunes logs.
+The logic that decides what raw media is retained, and what logs are retained for how long. `think/retention.py` (709 lines) **irreversibly deletes owner raw media**; `log_retention.py` (1,006) prunes logs.
 
 🆕 🔴 **Widened 2026-08-05 by operator ruling: this plate EXECUTES every removal of owner media, and it is the only plate that does.** Other plates **request**; retention removes. Three consequences that are not local to retention:
 
@@ -263,9 +263,75 @@ The logic that decides what raw media is retained, and what logs are retained fo
 
 ⚠ **Open, and not settled by that ruling: legacy segments holding one source's data beside another's.** An owner asking to delete one source from such a segment either loses the segment whole, including material they did not ask to delete, or keeps the data they asked to remove. Rule 4's unacceptable outcome is older journal data left *unseen*; this is the sibling — older journal data left **undeletable**.
 
-🔴 **Carry forward:** *read one extraction file strictly enough for irreversible deletion* (`retention.py:110`) — reads at most two lines and treats any `OSError` / `JSONDecodeError` / non-dict as **`"malformed"`, never as "empty, safe to purge"**, with an explicit guard at `:136-139` against a stray marker key making a header-only file look chunk-bearing. Plus `resolve_segment_gate`: `.npz` without `talents/speaker_labels.json` ⇒ incomplete.
+### Two units of removal, and the plate serves both
 
-⚠ Retention imports `apps/backup/copy` and `think/offload.py` imports back out of retention, so deletion is coupled to backup.
+🔴 **The plate removes owner media under two different units, and reading it as one unit makes § 2 above contradictory** — handing retention a VAD-empty raw would destroy the terminal-empty marker `transcribe` had just written, along with the segment's transcript and every derived output. The distinguishing property is **what the owner asked for**, not what is on disk.
+
+| unit | the owner asked for | what goes | what survives |
+|---|---|---|---|
+| **the segment** | *"delete my ⟨source⟩ data"* | every file in the segment | `tombstone.json` only |
+| **the proven originals** | nothing — this is the retention lifecycle | raw media whose processing is proven terminal | every derived output |
+
+⛔ **§ 1 binds the first unit.** What it forbids is a *deletion* that leaves part of its target behind — the failure it was ruled against was a segment keeping derived output on disk, undisclosed, after the owner asked for that data to go. The second unit is the plate's standing scope (`retention.py:12-14`: *"Scope: raw media ONLY. Chronicle JSONL, derived outputs, `talents/` directories … persist indefinitely"*), and derived output surviving is the point of it.
+
+⚠ **The second unit needs a guardrail or it becomes a back door to the first.** A releasing caller must not be able to name a path: it names *proven* originals only, and the proof is the predicate below. A sidecar, a derived output, a `talents/` entry or a reserved name must be **unnameable** in a release request, not merely refused by a check.
+
+### The removal-request contract
+
+🔴 **Retention is the one-to-many end for removal requests and that relationship has no strand name.** All four strands in [`strands.md`](strands.md) § Tier 1 are ones where retention is the *consumer* and the other plate owns the contract. The requesters — the source delete, the terminal-empty hand-off, the offload pass, the configured policy — are many, and rule 1 puts the contract at the one-to-many end. ⛔ Naming the strand is not decided in this repo.
+
+🔴 **A removal request must carry its own precondition, because consolidating the removers must not weaken the strongest one.** `think/offload.py:257-312` archives to backup, **confirms the snapshot holds every byte at the recorded size**, appends its ledger, and only then unlinks — where retention's own path hashes the bytes and unlinks with no archive. When that removal becomes a request, the confirmed-snapshot precondition travels **with the request**; a request type that can be constructed without it has moved the guard out of the executor and into the caller.
+
+### 🔴 The predicate — measured, because the two irreversible readers disagree
+
+**Retention does not decide on the processing record's `state`.** `derive_modality_state` (`think/data_state.py:121-158`) consults `state` for exactly two values — `failed` and `empty` — and derives *analyzed* from something else: the presence of a **second JSONL line carrying the modality's marker key** (`start` for audio, `timestamp` for screen), via `_classify_marker(has_chunks=True) → "chunks_win"`. So there are two doors, and only one looks at a record at all.
+
+Measured against hand-built segments, `eligible` meaning the owner's raw audio is unlinked:
+
+| on-disk shape | retention | terminal proof |
+|---|---|---|
+| full valid record, **no** analysis row | `incomplete` | ✅ holds |
+| full valid record + analysis row | **`eligible`** | ✅ holds |
+| **no record at all** + analysis row | **`eligible`** | ✗ refuses |
+| `{"state": "empty"}` and nothing else | **`eligible`** | ✗ refuses |
+| `state=empty` with a **wrong schema**, a **wrong handler**, or a **mismatched `input_size`** | **`eligible`** | ✗ refuses |
+| `{"state": "analyzed"}` and nothing else | `incomplete` | ✗ refuses |
+| an unrecognized `state` + analysis row | **`eligible`** | ✗ refuses |
+| `{}` as the record + analysis row | **`eligible`** | ✗ refuses |
+| an analysis row carrying **only** the marker key | **`eligible`** | ✗ refuses |
+| `state=failed` | `failed`, blocks | ✗ refuses |
+
+🔴 **The divergence runs in both directions.** Retention releases raw media on eight shapes terminal proof refuses, **and holds it forever on one shape proof accepts.** A rebuild that only tightens retention toward proof fixes eight rows and leaves one; making them the same call fixes all nine and makes re-divergence unrepresentable rather than merely detectable.
+
+⚠ **The `has_chunks` door consults no processing record whatsoever** — `{}` releases, an unrecognized `state` releases. This is not *"no schema check"*; it is *no record check*, and it is the door most pre-record data arrives through. Rule 4 (read old) says that evidence is real and must keep being honoured — analysis rows **are** evidence the media was consumed — but a rebuild that honours it silently cannot tell an owner which files were released on the weaker evidence. **Tag it and disclose it.**
+
+⚠ **An analysis row carrying only the marker key satisfies the row test.** A real transcript row carries `start`, `end` and `text`. The row-key test is `P-segment-processing`'s evidence vocabulary, not retention's — but retention is the reader that acts irreversibly on it.
+
+### 🔴 Two facts about the current boundary that a rebuild must not reproduce
+
+**An image-only segment is releasable with no evidence, and with no sidecar at all.** `resolve_segment_gate` globs `audio.jsonl`, `*_audio.jsonl`, `screen.jsonl`, `*_screen.jsonl` (`retention.py:207-212`) while `is_raw_media` accepts all eight still-image formats (`:57`). The still-image handler writes its sidecar as `<stem>.jsonl` (`observe/depict.py:49`), which matches neither glob, so `has_audio_raw` and `has_video_raw` are both false, both incompleteness checks are skipped, and the verdict is `eligible` with `processed_at = None`. ⚠ The comment at `:216-218` claims `monitor_*_diff.png` diffs *"ride the whole-segment gate"* — true only when audio or video is **also** present. ✅ A predicate that resolves an expected handler **before** reading a record closes this by construction: no handler in the closed set means no obtainable proof, which must never release.
+
+**The raw-media policy has no runner.** `purge()` has no schedule entry, no maintenance routine and no timer; its only two callers are a CLI command and one HTTP route. So `retention.raw_media: "days"` and `"processed"` are owner-settable, rendered in the owner UI, and **never executed**. ⚠ The two doors also carry **opposite destructive defaults** — `--dry-run` defaults *false* on the CLI, *true* on the route — and the route requires `older_than_days >= 1`, so it cannot express the configured policy at all. A rebuild that ports the executor without a runner ports a feature that does not run.
+
+### Carry forward
+
+🔴 *Read one extraction file strictly enough for irreversible deletion* (`retention.py:110`) — reads at most two lines and treats any `OSError` / `JSONDecodeError` / non-dict as **`"malformed"`, never as "empty, safe to purge"**, with an explicit guard at `:136-139` against a stray marker key making a header-only file look chunk-bearing. Plus `resolve_segment_gate`: `.npz` without `talents/speaker_labels.json` ⇒ incomplete.
+
+✅ **The decision unit is the segment even when the removal unit is the originals.** One blocked file holds the whole segment. `monitor_*_diff.png` files have no extraction record of their own and depend on this (`:216-218`); checked, still relevant.
+
+✅ **Append the removal intent before removing, not after.** The current whole-segment path appends its ledger row before any unlink, so a crash leaves evidence of what was in flight. ⚠ The append primitive can leave a **partial line** on a short write, so a torn intent row must read as *"unknown, go look"* and never as *"nothing happened."*
+
+⚠ **`.npz` gating is defeated by the speaker wipe.** `apps/speakers/wipe.py:76` deletes `chronicle/*/*/*/*.npz` **and** both `speaker_labels.json` paths, so after a wipe the `.npz`-without-labels check cannot fire and previously-held segments become releasable.
+
+⚠ Retention imports `apps/backup/copy` and `think/offload.py` imports back out of retention, so deletion is coupled to backup. ✅ **No cycle** — `apps/backup/copy.py` is a leaf with two imports.
+
+⚠ **Two logs this plate writes and never prunes**: `health/retention.log` and `health/pruning-runs/{day}.jsonl`. The log-retention class list covers `chronicle/{day}/health/`, not the journal root's `health/`, so the subsystem that prunes logs does not prune its own. Both grow without bound.
+
+⚠ **Two of this plate's writes bypass the journal write discipline** and pass the access lint by not importing the primitives it inspects: `_write_retention_log` uses a bare `open(path, "a")` (`retention.py:707-708`), as does `write_prune_audit` (`think/pruning_audit.py:55-56`).
+
+⚠ **Two config keys are dead.** `retention.storage_warning_disk_percent` and `retention.storage_warning_raw_media_gb` are read (`retention.py:413`, `:439`) and written nowhere — no route, CLI, migration or UI. The owner cannot change either.
+
+⚠ **`retention.raw_media` accepts an arbitrary string.** The init-finalize route validates the day count and never checks the mode for membership, and `RetentionPolicy.is_eligible` (`:273-281`) reads an unknown mode as *keep* by falling off the end — it fails closed **by accident**, not by construction.
 
 ## `P-web`
 
