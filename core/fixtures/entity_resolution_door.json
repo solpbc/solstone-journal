@@ -4,7 +4,9 @@
  "vector_source": "entity_matching.json",
  "vector_count": 65,
  "counts": {
-  "total": 27,
+  "route_visible_total": 35,
+  "outcome_changed": 27,
+  "body_changed_only": 8,
   "silently_guessed_now_asks": 8,
   "found_nothing_now_asks": 11,
   "same_entity_stronger_tier": 8,
@@ -432,5 +434,6 @@
     "entity_id": null
    }
   }
- ]
+ ],
+ "counts_note": "route_visible_total is outcome_changed PLUS body_changed_only, and the two sets are disjoint. The entries list below holds only the 27 whose OUTCOME changed. The other 8 are listed separately under outcome_identical_candidate_list_emptied because no enumeration keyed on the outcome can see them -- reading entries alone and reporting its length undercounts the owner-visible change by 8."
 }
