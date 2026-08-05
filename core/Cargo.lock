@@ -1598,6 +1598,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "serde",
+ "serde_json",
  "tokio",
  "tower-http",
 ]
@@ -1759,6 +1760,16 @@ dependencies = [
  "sha2",
  "solstone-core-journal-io",
  "unicode-normalization",
+]
+
+[[package]]
+name = "solstone-core-serving"
+version = "1.0.22"
+dependencies = [
+ "serde_json",
+ "solstone-core-entity",
+ "solstone-core-facets",
+ "tokio",
 ]
 
 [[package]]
