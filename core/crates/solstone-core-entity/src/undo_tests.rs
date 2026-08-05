@@ -759,7 +759,7 @@ fn facets_undo_injection_rolls_back_and_retry_succeeds() {
             &journal,
             &merge.merge_id,
             Value::Null,
-            Some(&|phase| phase == "facets"),
+            Some(&|phase, artifact_index| phase == "facets" && artifact_index == 0),
         )
         .is_err()
     );
@@ -809,7 +809,7 @@ fn observations_undo_injection_rolls_back_and_retry_succeeds() {
             &journal,
             &merge.merge_id,
             Value::Null,
-            Some(&|phase| phase == "observations"),
+            Some(&|phase, artifact_index| phase == "observations" && artifact_index == 0),
         )
         .is_err()
     );
@@ -852,7 +852,7 @@ fn segments_undo_injection_rolls_back_and_retry_succeeds() {
             &journal,
             &merge.merge_id,
             Value::Null,
-            Some(&|phase| phase == "segments"),
+            Some(&|phase, artifact_index| phase == "segments" && artifact_index == 0),
         )
         .is_err()
     );
@@ -899,7 +899,7 @@ fn activities_undo_injection_rolls_back_and_retry_succeeds() {
             &journal,
             &merge.merge_id,
             Value::Null,
-            Some(&|phase| phase == "activities"),
+            Some(&|phase, artifact_index| phase == "activities" && artifact_index == 0),
         )
         .is_err()
     );

@@ -56,6 +56,7 @@ const PHASES: [&str; 11] = [
     "audit",
 ];
 type VoiceprintKey = (Option<Value>, Option<Value>, Option<Value>, Option<Value>);
+type FailureInjector = dyn Fn(&str, usize) -> bool;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct EntityMergeOptions {
@@ -206,7 +207,7 @@ pub(crate) fn commit_entity_merge_with_injector(
     source_id: &str,
     target_id: &str,
     options: EntityMergeOptions,
-    injector: Option<&dyn Fn(&str) -> bool>,
+    injector: Option<&FailureInjector>,
 ) -> Result<EntityMergeReport, EntityMergeError> {
     let _trust = hold_entity_trust_lock(journal).map_err(EntityWriteError::TrustLock)?;
     let plan = plan_merge(journal, source_id, target_id, options)?;
@@ -241,14 +242,14 @@ pub(crate) fn commit_entity_merge_with_injector(
         let result = match phase {
             "private_payload" => record_entity_merge_payload(journal, target_id, &merge_id, &payload).map(|_| ()).map_err(Into::into),
             "voiceprints" => merge_voiceprints(journal, source_id, target_id).map(|result| { stats.voiceprints_added=result.added; stats.voiceprints_skipped_duplicate=result.skipped_duplicate; stats.voiceprints_target_total=result.target_total; }),
-            "facets" => merge_facets(journal, source_id, target_id, Some(&mut rollback)).map(|result| { stats.facets_moved=result.moved_count; stats.facets_merged=result.merged_count; touched_facets = result.touched_facets; payload["manifest"]["facets"]["entries"] = Value::Array(result.entries); }),
+            "facets" => merge_facets(journal, source_id, target_id, Some(&mut rollback), injector).map(|result| { stats.facets_moved=result.moved_count; stats.facets_merged=result.merged_count; touched_facets = result.touched_facets; payload["manifest"]["facets"]["entries"] = Value::Array(result.entries); }),
             "history" => save_entity_identity(journal, target_id, &plan.target_after, Some(&EntityOperationContext { kind: EntityOperationKind::Merge, caller: Value::Null, actor: Value::Null, metadata: json!({"merge_id": merge_id, "source_id": source_id, "target_id": target_id}) })).map_err(EntityMergeError::Write).and_then(|saved| { let sequence = saved.event.and_then(|event| event.get("seq").cloned()).ok_or_else(|| EntityMergeError::Refused("merge history event was not written".to_owned()))?; payload["commit_seq"] = sequence; record_entity_merge_payload(journal, target_id, &merge_id, &payload)?; Ok(()) }),
             "cleanup" => cleanup_merge(journal, source_id, &touched_facets, Some(&mut rollback)),
             "edges" => solstone_core_indexer_store::merge::fold_entity_edges_for_recorded_merge(journal, source_id, target_id).map_err(EntityMergeError::Index).and_then(|result| { stats.edges_rows_folded=result.rows_folded; stats.edges_self_edges_dropped=result.self_edges_dropped; payload["result_counts"] = audit_counts(&stats, plan.aliases_added, plan.emails_added, plan.principal_transferred); record_entity_merge_payload(journal, target_id, &merge_id, &payload)?; Ok(()) }),
             "audit" => { let path = contained_path(journal, "logs/entity-merges.jsonl").map_err(|error| EntityMergeError::Refused(error.to_string()))?; rollback.capture(journal, "logs/entity-merges.jsonl")?; let ts = u64::try_from(SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| EntityMergeError::Refused(error.to_string()))?.as_millis()).map_err(|_| EntityMergeError::Refused("merge audit timestamp exceeds u64".to_owned()))?; append_jsonl(path, &json!({"ts":ts,"merge_id":merge_id,"source_id":source_id,"source_display_name":plan.source_display_name,"target_id":target_id,"target_display_name":plan.target_display_name,"principal_transferred":plan.principal_transferred,"counts":audit_counts(&stats, plan.aliases_added, plan.emails_added, plan.principal_transferred),"caller":Value::Null})).map_err(EntityMergeError::Audit) },
-            "segments" => merge_segment_labels(journal, source_id, target_id, Some(&mut rollback)).map(|result| { stats.segments_labels_rewritten=result.labels_rewritten; stats.segments_corrections_rewritten=result.corrections_rewritten; stats.segments_files_scanned=result.files_scanned; payload["manifest"]["segments"]["entries"] = Value::Array(result.entries); }),
-            "activities" => merge_activities(journal, source_id, target_id, Some(&mut rollback)).map(|result| { stats.activities_records_rewritten=result.records_rewritten; stats.activities_fields_rewritten=result.fields_rewritten; stats.activities_files_scanned=result.files_scanned; stats.activities_files_rewritten=result.files_rewritten; payload["manifest"]["activities"]["entries"] = Value::Array(result.entries); }),
-            "observation relation remap" => merge_observation_relations(journal, source_id, target_id, Some(&mut rollback)).map(|result| { stats.observation_relations_rewritten=result.rows_rewritten; payload["manifest"]["observation_relations"]["entries"] = Value::Array(result.entries); }),
+            "segments" => merge_segment_labels(journal, source_id, target_id, Some(&mut rollback), injector).map(|result| { stats.segments_labels_rewritten=result.labels_rewritten; stats.segments_corrections_rewritten=result.corrections_rewritten; stats.segments_files_scanned=result.files_scanned; payload["manifest"]["segments"]["entries"] = Value::Array(result.entries); }),
+            "activities" => merge_activities(journal, source_id, target_id, Some(&mut rollback), injector).map(|result| { stats.activities_records_rewritten=result.records_rewritten; stats.activities_fields_rewritten=result.fields_rewritten; stats.activities_files_scanned=result.files_scanned; stats.activities_files_rewritten=result.files_rewritten; payload["manifest"]["activities"]["entries"] = Value::Array(result.entries); }),
+            "observation relation remap" => merge_observation_relations(journal, source_id, target_id, Some(&mut rollback), injector).map(|result| { stats.observation_relations_rewritten=result.rows_rewritten; payload["manifest"]["observation_relations"]["entries"] = Value::Array(result.entries); }),
             "lineage" => rebase_lineage(journal, source_id, target_id, &plan.target_after).and_then(|ids| { if !ids.is_empty() { payload["manifest"]["rebased_merge_ids"] = Value::Array(ids.into_iter().map(Value::String).collect()); record_entity_merge_payload(journal, target_id, &merge_id, &payload)?; } Ok(()) }),
             _ => unreachable!("merge phase list is fixed"),
         };
@@ -263,7 +264,11 @@ pub(crate) fn commit_entity_merge_with_injector(
                 rollback_error: rollback_error.or_else(|| Some(error.to_string())),
             });
         }
-        if injector.is_some_and(|injector| injector(phase)) {
+        if !matches!(
+            phase,
+            "facets" | "segments" | "activities" | "observation relation remap"
+        ) && injector.is_some_and(|injector| injector(phase, 0))
+        {
             let rollback_error = rollback
                 .restore(journal)
                 .err()
@@ -272,12 +277,25 @@ pub(crate) fn commit_entity_merge_with_injector(
                 failed_phase: phase.to_owned(),
                 report: Box::new(report),
                 rollback_error: rollback_error
-                    .or_else(|| Some(format!("injected failure after phase {phase}"))),
+                    .or_else(|| Some(format!("injected failure after {phase} artifact 0"))),
             });
         }
         report.completed_phases.push(phase.to_owned());
     }
     Ok(report)
+}
+
+fn inject_failure(
+    injector: Option<&FailureInjector>,
+    phase: &str,
+    artifact_index: usize,
+) -> Result<(), EntityMergeError> {
+    if injector.is_some_and(|injector| injector(phase, artifact_index)) {
+        return Err(EntityMergeError::Refused(format!(
+            "injected failure after {phase} artifact {artifact_index}"
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -290,10 +308,12 @@ pub(crate) fn merge_observation_relations(
     source_id: &str,
     target_id: &str,
     mut rollback: Option<&mut MergeRollback>,
+    injector: Option<&FailureInjector>,
 ) -> Result<ObservationRelationMergeStats, EntityMergeError> {
     let facets = contained_path(journal, "facets")
         .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
     let mut stats = ObservationRelationMergeStats::default();
+    let mut artifact_index = 0;
     for facet in
         list_dir_entries(&facets).map_err(|error| EntityMergeError::Refused(error.to_string()))?
     {
@@ -343,6 +363,8 @@ pub(crate) fn merge_observation_relations(
                 capture_rollback_file(&mut rollback, journal, &path)?;
                 write_jsonl(&path, rows, AtomicWriteOptions::default())
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+                inject_failure(injector, "observation relation remap", artifact_index)?;
+                artifact_index += 1;
             }
         }
     }
@@ -362,10 +384,12 @@ pub(crate) fn merge_activities(
     source_id: &str,
     target_id: &str,
     mut rollback: Option<&mut MergeRollback>,
+    injector: Option<&FailureInjector>,
 ) -> Result<ActivityMergeStats, EntityMergeError> {
     let facets = contained_path(journal, "facets")
         .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
     let mut stats = ActivityMergeStats::default();
+    let mut artifact_index = 0;
     for facet in
         list_dir_entries(&facets).map_err(|error| EntityMergeError::Refused(error.to_string()))?
     {
@@ -470,6 +494,8 @@ pub(crate) fn merge_activities(
                 capture_rollback_file(&mut rollback, journal, &file.path)?;
                 write_jsonl(&file.path, rows, AtomicWriteOptions::default())
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+                inject_failure(injector, "activities", artifact_index)?;
+                artifact_index += 1;
                 stats.files_rewritten += 1;
             }
         }
@@ -490,8 +516,10 @@ pub(crate) fn merge_segment_labels(
     source_id: &str,
     target_id: &str,
     mut rollback: Option<&mut MergeRollback>,
+    injector: Option<&FailureInjector>,
 ) -> Result<SegmentMergeStats, EntityMergeError> {
     let mut stats = SegmentMergeStats::default();
+    let mut artifact_index = 0;
     for day in day_dirs(journal)
         .map_err(|error| EntityMergeError::Refused(error.to_string()))?
         .into_values()
@@ -551,6 +579,8 @@ pub(crate) fn merge_segment_labels(
                         },
                     )
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+                    inject_failure(injector, "segments", artifact_index)?;
+                    artifact_index += 1;
                     stats.labels_rewritten += 1;
                 }
             }
@@ -610,6 +640,8 @@ pub(crate) fn merge_segment_labels(
                     },
                 )
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+                inject_failure(injector, "segments", artifact_index)?;
+                artifact_index += 1;
                 stats.corrections_rewritten += 1;
             }
         }
@@ -641,10 +673,12 @@ pub(crate) fn merge_facets(
     source_id: &str,
     target_id: &str,
     mut rollback: Option<&mut MergeRollback>,
+    injector: Option<&FailureInjector>,
 ) -> Result<FacetMergeStats, EntityMergeError> {
     let facets = contained_path(journal, "facets")
         .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
     let mut stats = FacetMergeStats::default();
+    let mut artifact_index = 0;
     for entry in
         list_dir_entries(&facets).map_err(|error| EntityMergeError::Refused(error.to_string()))?
     {
@@ -694,6 +728,8 @@ pub(crate) fn merge_facets(
                 },
             )
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            inject_failure(injector, "facets", artifact_index)?;
+            artifact_index += 1;
             if path_lexists(&source_obs_path)
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?
             {
@@ -703,6 +739,8 @@ pub(crate) fn merge_facets(
                     AtomicWriteOptions::default(),
                 )
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+                inject_failure(injector, "facets", artifact_index)?;
+                artifact_index += 1;
             }
             stats.moved_count += 1;
             stats.touched_facets.push(facet.clone());
@@ -728,12 +766,16 @@ pub(crate) fn merge_facets(
                 },
             )
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            inject_failure(injector, "facets", artifact_index)?;
+            artifact_index += 1;
             write_jsonl(
                 target_obs_path,
                 dedupe_observations(&source_obs, &target_obs),
                 AtomicWriteOptions::default(),
             )
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            inject_failure(injector, "facets", artifact_index)?;
+            artifact_index += 1;
             stats.merged_count += 1;
             stats.touched_facets.push(facet.clone());
             stats.entries.push(json!({

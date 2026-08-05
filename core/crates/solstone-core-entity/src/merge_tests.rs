@@ -152,7 +152,7 @@ fn facets_move_relationship_and_observations() {
     )
     .unwrap();
     assert_eq!(
-        merge_facets(&journal, "source", "target", None)
+        merge_facets(&journal, "source", "target", None, None)
             .unwrap()
             .moved_count,
         1
@@ -567,22 +567,28 @@ fn facets_phase_injection_rolls_back_and_retry_succeeds() {
         )
         .unwrap();
     }
-    let source = journal.join("facets/work/entities/source");
-    fs::create_dir_all(&source).unwrap();
-    fs::write(source.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
+    let sources = [
+        journal.join("facets/work/entities/source"),
+        journal.join("facets/personal/entities/source"),
+    ];
+    for source in &sources {
+        fs::create_dir_all(source).unwrap();
+        fs::write(source.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
+    }
     let result = commit_entity_merge_with_injector(
         &journal,
         "source",
         "target",
         EntityMergeOptions::default(),
-        Some(&|phase: &str| phase == "facets"),
+        Some(&|phase: &str, artifact_index| phase == "facets" && artifact_index == 0),
     );
     assert!(result.is_err());
-    assert!(source.exists());
+    assert!(sources.iter().all(|source| source.exists()));
     assert!(journal.join("entities/source").exists());
     assert!(!journal.join("facets/work/entities/target").exists());
+    assert!(!journal.join("facets/personal/entities/target").exists());
     commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
-    assert!(!source.exists());
+    assert!(sources.iter().all(|source| !source.exists()));
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -605,7 +611,7 @@ fn voiceprints_phase_injection_rolls_back_and_retry_succeeds() {
             "source",
             "target",
             EntityMergeOptions::default(),
-            Some(&|phase| phase == "voiceprints")
+            Some(&|phase, artifact_index| phase == "voiceprints" && artifact_index == 0)
         )
         .is_err()
     );
@@ -630,30 +636,39 @@ fn segments_phase_injection_rolls_back_and_retry_succeeds() {
         )
         .unwrap();
     }
-    let path = journal.join("chronicle/20260102/080000_300/talents/speaker_labels.json");
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(&path, br#"{"labels":[{"speaker":"source"}]}"#).unwrap();
+    let paths = [
+        journal.join("chronicle/20260102/080000_300/talents/speaker_labels.json"),
+        journal.join("chronicle/20260102/090000_300/talents/speaker_labels.json"),
+    ];
+    for path in &paths {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, br#"{"labels":[{"speaker":"source"}]}"#).unwrap();
+    }
     assert!(
         commit_entity_merge_with_injector(
             &journal,
             "source",
             "target",
             EntityMergeOptions::default(),
-            Some(&|phase| phase == "segments")
+            Some(&|phase, artifact_index| phase == "segments" && artifact_index == 0)
         )
         .is_err()
     );
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&fs::read(&path).unwrap()).unwrap()["labels"]
-            [0]["speaker"],
-        "source"
-    );
+    for path in &paths {
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&fs::read(path).unwrap()).unwrap()["labels"]
+                [0]["speaker"],
+            "source"
+        );
+    }
     commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&fs::read(&path).unwrap()).unwrap()["labels"]
-            [0]["speaker"],
-        "target"
-    );
+    for path in &paths {
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&fs::read(path).unwrap()).unwrap()["labels"]
+                [0]["speaker"],
+            "target"
+        );
+    }
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -669,30 +684,39 @@ fn activities_phase_injection_rolls_back_and_retry_succeeds() {
         )
         .unwrap();
     }
-    let path = journal.join("facets/work/activities/20260102.jsonl");
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(&path, b"{\"active_entities\":[\"source\"]}\n").unwrap();
+    let paths = [
+        journal.join("facets/work/activities/20260102.jsonl"),
+        journal.join("facets/work/activities/20260103.jsonl"),
+    ];
+    for path in &paths {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"{\"active_entities\":[\"source\"]}\n").unwrap();
+    }
     assert!(
         commit_entity_merge_with_injector(
             &journal,
             "source",
             "target",
             EntityMergeOptions::default(),
-            Some(&|phase| phase == "activities")
+            Some(&|phase, artifact_index| phase == "activities" && artifact_index == 0)
         )
         .is_err()
     );
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path).unwrap()).unwrap()["active_entities"]
-            [0],
-        "source"
-    );
+    for path in &paths {
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&fs::read_to_string(path).unwrap()).unwrap()
+                ["active_entities"][0],
+            "source"
+        );
+    }
     commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path).unwrap()).unwrap()["active_entities"]
-            [0],
-        "target"
-    );
+    for path in &paths {
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&fs::read_to_string(path).unwrap()).unwrap()
+                ["active_entities"][0],
+            "target"
+        );
+    }
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -708,30 +732,42 @@ fn observation_relations_phase_injection_rolls_back_and_retry_succeeds() {
         )
         .unwrap();
     }
-    let path = journal.join("facets/work/entities/other/observations.jsonl");
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(&path, b"{\"relation\":{\"target_entity_id\":\"source\"}}\n").unwrap();
+    let paths = [
+        journal.join("facets/work/entities/other-one/observations.jsonl"),
+        journal.join("facets/work/entities/other-two/observations.jsonl"),
+    ];
+    for path in &paths {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"{\"relation\":{\"target_entity_id\":\"source\"}}\n").unwrap();
+    }
     assert!(
         commit_entity_merge_with_injector(
             &journal,
             "source",
             "target",
             EntityMergeOptions::default(),
-            Some(&|phase| phase == "observation relation remap")
+            Some(
+                &|phase, artifact_index| phase == "observation relation remap"
+                    && artifact_index == 0
+            )
         )
         .is_err()
     );
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path).unwrap()).unwrap()["relation"]
-            ["target_entity_id"],
-        "source"
-    );
+    for path in &paths {
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&fs::read_to_string(path).unwrap()).unwrap()
+                ["relation"]["target_entity_id"],
+            "source"
+        );
+    }
     commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path).unwrap()).unwrap()["relation"]
-            ["target_entity_id"],
-        "target"
-    );
+    for path in &paths {
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&fs::read_to_string(path).unwrap()).unwrap()
+                ["relation"]["target_entity_id"],
+            "target"
+        );
+    }
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -753,7 +789,7 @@ fn private_payload_phase_injection_rolls_back_and_retry_succeeds() {
             "source",
             "target",
             EntityMergeOptions::default(),
-            Some(&|phase| phase == "private_payload")
+            Some(&|phase, artifact_index| phase == "private_payload" && artifact_index == 0)
         )
         .is_err()
     );
@@ -801,7 +837,7 @@ fn lineage_phase_injection_rolls_back_and_retry_succeeds() {
             "source",
             "target",
             EntityMergeOptions::default(),
-            Some(&|phase| phase == "lineage")
+            Some(&|phase, artifact_index| phase == "lineage" && artifact_index == 0)
         )
         .is_err()
     );
@@ -853,7 +889,7 @@ fn cleanup_phase_injection_rolls_back_and_retry_succeeds() {
             "source",
             "target",
             EntityMergeOptions::default(),
-            Some(&|phase| phase == "cleanup")
+            Some(&|phase, artifact_index| phase == "cleanup" && artifact_index == 0)
         )
         .is_err()
     );
@@ -884,7 +920,7 @@ fn history_phase_injection_rolls_back_and_retry_succeeds() {
             "source",
             "target",
             EntityMergeOptions::default(),
-            Some(&|phase| phase == "history")
+            Some(&|phase, artifact_index| phase == "history" && artifact_index == 0)
         )
         .is_err()
     );
@@ -928,7 +964,7 @@ fn edges_phase_injection_rolls_back_and_retry_succeeds() {
             "source",
             "target",
             EntityMergeOptions::default(),
-            Some(&|phase| phase == "edges")
+            Some(&|phase, artifact_index| phase == "edges" && artifact_index == 0)
         )
         .is_err()
     );
@@ -972,7 +1008,7 @@ fn audit_phase_injection_rolls_back_and_retry_succeeds() {
         "source",
         "target",
         EntityMergeOptions::default(),
-        Some(&|phase| phase == "audit"),
+        Some(&|phase, artifact_index| phase == "audit" && artifact_index == 0),
     )
     .unwrap_err();
     let merge_id = match error {

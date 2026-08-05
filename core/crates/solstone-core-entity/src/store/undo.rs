@@ -36,6 +36,8 @@ use super::merge_payload::{
 };
 use super::merge_rollback::MergeRollback;
 
+type FailureInjector = dyn Fn(&str, usize) -> bool;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntityUndoReport {
     pub merge_id: String,
@@ -104,7 +106,7 @@ pub(crate) fn undo_entity_merge_with_injector(
     journal: &Path,
     merge_id: &str,
     caller: Value,
-    injector: Option<&dyn Fn(&str) -> bool>,
+    injector: Option<&FailureInjector>,
 ) -> Result<EntityUndoReport, EntityUndoError> {
     let target_id = find_payload_holder(journal, merge_id)?;
     let payload = load_entity_merge_payload(journal, &target_id, merge_id)?;
@@ -146,17 +148,13 @@ pub(crate) fn undo_entity_merge_with_injector(
         phase = "voiceprints";
         undo_voiceprints(journal, &target_id, &payload, &mut rollback)?;
         phase = "segments";
-        undo_segments(journal, &payload, &mut rollback)?;
-        inject_failure(injector, phase)?;
+        undo_segments(journal, &payload, &mut rollback, injector)?;
         phase = "activities";
-        undo_activities(journal, &payload, &mut rollback)?;
-        inject_failure(injector, phase)?;
+        undo_activities(journal, &payload, &mut rollback, injector)?;
         phase = "observations";
-        undo_observation_relations(journal, &payload, &mut rollback)?;
-        inject_failure(injector, phase)?;
+        undo_observation_relations(journal, &payload, &mut rollback, injector)?;
         phase = "facets";
-        undo_facets(journal, &target_id, &payload, &mut rollback)?;
-        inject_failure(injector, phase)?;
+        undo_facets(journal, &target_id, &payload, &mut rollback, injector)?;
         phase = "lineage";
         undo_rebased_payloads(journal, &source_id, &target_id, &payload, &mut rollback)?;
         phase = "identity";
@@ -488,12 +486,13 @@ fn is_missing_value(value: Option<&Value>) -> bool {
 }
 
 fn inject_failure(
-    injector: Option<&dyn Fn(&str) -> bool>,
+    injector: Option<&FailureInjector>,
     phase: &str,
+    artifact_index: usize,
 ) -> Result<(), EntityUndoError> {
-    if injector.is_some_and(|injector| injector(phase)) {
+    if injector.is_some_and(|injector| injector(phase, artifact_index)) {
         return Err(EntityUndoError::Refused(format!(
-            "injected failure after phase {phase}"
+            "injected failure after {phase} artifact {artifact_index}"
         )));
     }
     Ok(())
@@ -504,6 +503,7 @@ fn undo_facets(
     target_id: &str,
     payload: &Value,
     rollback: &mut MergeRollback,
+    injector: Option<&FailureInjector>,
 ) -> Result<(), EntityUndoError> {
     let entries = payload
         .get("manifest")
@@ -515,6 +515,7 @@ fn undo_facets(
         .ok_or_else(|| {
             EntityUndoError::Refused("merge payload facets entries are missing".to_owned())
         })?;
+    let mut artifact_index = 0;
     for entry in entries {
         let facet = entry
             .get("facet")
@@ -531,6 +532,8 @@ fn undo_facets(
             "move" => {
                 rollback.capture(journal, &directory)?;
                 restore_snapshot(journal, &JournalSnapshot::Missing { path: directory })?;
+                inject_failure(injector, "facets", artifact_index)?;
+                artifact_index += 1;
             }
             "merge" => {
                 let target_before = entry
@@ -555,6 +558,8 @@ fn undo_facets(
                     },
                 )
                 .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+                inject_failure(injector, "facets", artifact_index)?;
+                artifact_index += 1;
                 let observations_before = entry
                     .get("target_observations_before")
                     .and_then(Value::as_array)
@@ -592,6 +597,8 @@ fn undo_facets(
                         },
                     )?;
                 }
+                inject_failure(injector, "facets", artifact_index)?;
+                artifact_index += 1;
             }
             _ => {
                 return Err(EntityUndoError::Refused(format!(
@@ -607,6 +614,7 @@ fn undo_observation_relations(
     journal: &Path,
     payload: &Value,
     rollback: &mut MergeRollback,
+    injector: Option<&FailureInjector>,
 ) -> Result<(), EntityUndoError> {
     let entries = payload
         .get("manifest")
@@ -620,7 +628,7 @@ fn undo_observation_relations(
                 "merge payload observation relation entries are missing".to_owned(),
             )
         })?;
-    for entry in entries {
+    for (artifact_index, entry) in entries.iter().enumerate() {
         let path = entry.get("path").and_then(Value::as_str).ok_or_else(|| {
             EntityUndoError::Refused(
                 "merge payload observation relation entry is missing path".to_owned(),
@@ -667,6 +675,7 @@ fn undo_observation_relations(
         rollback.capture(journal, path)?;
         write_jsonl(destination, rows, AtomicWriteOptions::default())
             .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+        inject_failure(injector, "observations", artifact_index)?;
     }
     Ok(())
 }
@@ -733,9 +742,10 @@ fn undo_segments(
     journal: &Path,
     payload: &Value,
     rollback: &mut MergeRollback,
+    injector: Option<&FailureInjector>,
 ) -> Result<(), EntityUndoError> {
     let entries = manifest_entries(payload, "segments")?;
-    for entry in entries {
+    for (artifact_index, entry) in entries.iter().enumerate() {
         let path = entry_path(entry, "segment")?;
         let section = entry
             .get("section")
@@ -778,6 +788,7 @@ fn undo_segments(
             },
         )
         .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+        inject_failure(injector, "segments", artifact_index)?;
     }
     Ok(())
 }
@@ -786,9 +797,10 @@ fn undo_activities(
     journal: &Path,
     payload: &Value,
     rollback: &mut MergeRollback,
+    injector: Option<&FailureInjector>,
 ) -> Result<(), EntityUndoError> {
     let entries = manifest_entries(payload, "activities")?;
-    for entry in entries {
+    for (artifact_index, entry) in entries.iter().enumerate() {
         let path = entry_path(entry, "activity")?;
         let row_index = entry_index(entry, "row_index", "activity")?;
         let container = entry
@@ -842,6 +854,7 @@ fn undo_activities(
         rollback.capture(journal, path)?;
         write_jsonl(destination, rows, AtomicWriteOptions::default())
             .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+        inject_failure(injector, "activities", artifact_index)?;
     }
     Ok(())
 }
