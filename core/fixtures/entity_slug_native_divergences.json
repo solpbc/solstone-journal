@@ -1,0 +1,707 @@
+{
+  "cause": "The two implementations transliterate through different data tables, and the native one carries the newer set. This is a data difference, not a logic difference, which is why it is invisible to review and has to be pinned by a sweep.",
+  "counts": {
+    "assigned_in_reference_unicode": 62,
+    "letters": 21,
+    "total": 99
+  },
+  "entries": [
+    {
+      "category": "Cc",
+      "codepoint": "U+0080",
+      "name": null,
+      "native_slug": "aeurb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0082",
+      "name": null,
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0083",
+      "name": null,
+      "native_slug": "afb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0084",
+      "name": null,
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0085",
+      "name": null,
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0086",
+      "name": null,
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0087",
+      "name": null,
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0088",
+      "name": null,
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0089",
+      "name": null,
+      "native_slug": "a_0b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+008A",
+      "name": null,
+      "native_slug": "asb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+008B",
+      "name": null,
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+008C",
+      "name": null,
+      "native_slug": "aoeb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+008E",
+      "name": null,
+      "native_slug": "azb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0093",
+      "name": null,
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0094",
+      "name": null,
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0095",
+      "name": null,
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0096",
+      "name": null,
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0097",
+      "name": null,
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0098",
+      "name": null,
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+0099",
+      "name": null,
+      "native_slug": "atmb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+009A",
+      "name": null,
+      "native_slug": "asb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+009B",
+      "name": null,
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+009C",
+      "name": null,
+      "native_slug": "aoeb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+009E",
+      "name": null,
+      "native_slug": "azb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cc",
+      "codepoint": "U+009F",
+      "name": null,
+      "native_slug": "ayb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Sk",
+      "codepoint": "U+02E5",
+      "name": "MODIFIER LETTER EXTRA-HIGH TONE BAR",
+      "native_slug": "a5b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Sk",
+      "codepoint": "U+02E6",
+      "name": "MODIFIER LETTER HIGH TONE BAR",
+      "native_slug": "a4b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Sk",
+      "codepoint": "U+02E7",
+      "name": "MODIFIER LETTER MID TONE BAR",
+      "native_slug": "a3b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Sk",
+      "codepoint": "U+02E8",
+      "name": "MODIFIER LETTER LOW TONE BAR",
+      "native_slug": "a2b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Sk",
+      "codepoint": "U+02E9",
+      "name": "MODIFIER LETTER EXTRA-LOW TONE BAR",
+      "native_slug": "a1b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Sk",
+      "codepoint": "U+02EA",
+      "name": "MODIFIER LETTER YIN DEPARTING TONE MARK",
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Sk",
+      "codepoint": "U+02EB",
+      "name": "MODIFIER LETTER YANG DEPARTING TONE MARK",
+      "native_slug": "a_b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Sk",
+      "codepoint": "U+02EF",
+      "name": "MODIFIER LETTER LOW DOWN ARROWHEAD",
+      "native_slug": "avb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Sk",
+      "codepoint": "U+02F3",
+      "name": "MODIFIER LETTER LOW RING",
+      "native_slug": "aob",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Sm",
+      "codepoint": "U+03F6",
+      "name": "GREEK REVERSED LUNATE EPSILON SYMBOL",
+      "native_slug": "aeb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Lu",
+      "codepoint": "U+03F7",
+      "name": "GREEK CAPITAL LETTER SHO",
+      "native_slug": "ashb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Ll",
+      "codepoint": "U+03F8",
+      "name": "GREEK SMALL LETTER SHO",
+      "native_slug": "ashb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Ll",
+      "codepoint": "U+03FC",
+      "name": "GREEK RHO WITH STROKE SYMBOL",
+      "native_slug": "ar_b",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Lu",
+      "codepoint": "U+03FD",
+      "name": "GREEK CAPITAL REVERSED LUNATE SIGMA SYMBOL",
+      "native_slug": "asb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Lu",
+      "codepoint": "U+03FE",
+      "name": "GREEK CAPITAL DOTTED LUNATE SIGMA SYMBOL",
+      "native_slug": "as_b",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Lu",
+      "codepoint": "U+03FF",
+      "name": "GREEK CAPITAL REVERSED DOTTED LUNATE SIGMA SYMBOL",
+      "native_slug": "as_b",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Lo",
+      "codepoint": "U+06FF",
+      "name": "ARABIC LETTER HEH WITH INVERTED V",
+      "native_slug": "ahb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Sc",
+      "codepoint": "U+0AF1",
+      "name": "GUJARATI RUPEE SIGN",
+      "native_slug": "arb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Lo",
+      "codepoint": "U+0AF9",
+      "name": "GUJARATI LETTER ZHA",
+      "native_slug": "azhb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Lu",
+      "codepoint": "U+13F5",
+      "name": "CHEROKEE LETTER MV",
+      "native_slug": "amvb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Ll",
+      "codepoint": "U+13F8",
+      "name": "CHEROKEE SMALL LETTER YE",
+      "native_slug": "ayeb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Ll",
+      "codepoint": "U+13F9",
+      "name": "CHEROKEE SMALL LETTER YI",
+      "native_slug": "ayib",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Ll",
+      "codepoint": "U+13FA",
+      "name": "CHEROKEE SMALL LETTER YO",
+      "native_slug": "ayob",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Ll",
+      "codepoint": "U+13FB",
+      "name": "CHEROKEE SMALL LETTER YU",
+      "native_slug": "ayub",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Ll",
+      "codepoint": "U+13FC",
+      "name": "CHEROKEE SMALL LETTER YV",
+      "native_slug": "ayvb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Ll",
+      "codepoint": "U+13FD",
+      "name": "CHEROKEE SMALL LETTER MV",
+      "native_slug": "amvb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Lu",
+      "codepoint": "U+1EFA",
+      "name": "LATIN CAPITAL LETTER MIDDLE-WELSH LL",
+      "native_slug": "allb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Ll",
+      "codepoint": "U+1EFB",
+      "name": "LATIN SMALL LETTER MIDDLE-WELSH LL",
+      "native_slug": "allb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Lu",
+      "codepoint": "U+1EFC",
+      "name": "LATIN CAPITAL LETTER MIDDLE-WELSH V",
+      "native_slug": "avb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Ll",
+      "codepoint": "U+1EFD",
+      "name": "LATIN SMALL LETTER MIDDLE-WELSH V",
+      "native_slug": "avb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Lu",
+      "codepoint": "U+1EFE",
+      "name": "LATIN CAPITAL LETTER Y WITH LOOP",
+      "native_slug": "ayb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Ll",
+      "codepoint": "U+1EFF",
+      "name": "LATIN SMALL LETTER Y WITH LOOP",
+      "native_slug": "ayb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "So",
+      "codepoint": "U+25F4",
+      "name": "WHITE CIRCLE WITH UPPER LEFT QUADRANT",
+      "native_slug": "aob",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "So",
+      "codepoint": "U+25F5",
+      "name": "WHITE CIRCLE WITH LOWER LEFT QUADRANT",
+      "native_slug": "aob",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "So",
+      "codepoint": "U+25F6",
+      "name": "WHITE CIRCLE WITH LOWER RIGHT QUADRANT",
+      "native_slug": "aob",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "So",
+      "codepoint": "U+25F7",
+      "name": "WHITE CIRCLE WITH UPPER RIGHT QUADRANT",
+      "native_slug": "aob",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+A7F1",
+      "name": null,
+      "native_slug": "asb",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "So",
+      "codepoint": "U+FDFD",
+      "name": "ARABIC LIGATURE BISMILLAH AR-RAHMAN AR-RAHEEM",
+      "native_slug": "a_bismillah_ar_rahman_ar_rahimi_b",
+      "reference_slug": "a_b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCD6",
+      "name": null,
+      "native_slug": "aab",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCD7",
+      "name": null,
+      "native_slug": "abb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCD8",
+      "name": null,
+      "native_slug": "acb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCD9",
+      "name": null,
+      "native_slug": "adb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCDA",
+      "name": null,
+      "native_slug": "aeb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCDB",
+      "name": null,
+      "native_slug": "afb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCDC",
+      "name": null,
+      "native_slug": "agb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCDD",
+      "name": null,
+      "native_slug": "ahb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCDE",
+      "name": null,
+      "native_slug": "aib",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCDF",
+      "name": null,
+      "native_slug": "ajb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE0",
+      "name": null,
+      "native_slug": "akb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE1",
+      "name": null,
+      "native_slug": "alb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE2",
+      "name": null,
+      "native_slug": "amb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE3",
+      "name": null,
+      "native_slug": "anb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE4",
+      "name": null,
+      "native_slug": "aob",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE5",
+      "name": null,
+      "native_slug": "apb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE6",
+      "name": null,
+      "native_slug": "aqb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE7",
+      "name": null,
+      "native_slug": "arb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE8",
+      "name": null,
+      "native_slug": "asb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE9",
+      "name": null,
+      "native_slug": "atb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCEA",
+      "name": null,
+      "native_slug": "aub",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCEB",
+      "name": null,
+      "native_slug": "avb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCEC",
+      "name": null,
+      "native_slug": "awb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCED",
+      "name": null,
+      "native_slug": "axb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCEE",
+      "name": null,
+      "native_slug": "ayb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCEF",
+      "name": null,
+      "native_slug": "azb",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF0",
+      "name": null,
+      "native_slug": "a0b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF1",
+      "name": null,
+      "native_slug": "a1b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF2",
+      "name": null,
+      "native_slug": "a2b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF3",
+      "name": null,
+      "native_slug": "a3b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF4",
+      "name": null,
+      "native_slug": "a4b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF5",
+      "name": null,
+      "native_slug": "a5b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF6",
+      "name": null,
+      "native_slug": "a6b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF7",
+      "name": null,
+      "native_slug": "a7b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF8",
+      "name": null,
+      "native_slug": "a8b",
+      "reference_slug": "ab"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF9",
+      "name": null,
+      "native_slug": "a9b",
+      "reference_slug": "ab"
+    }
+  ],
+  "note": "Codepoints where the native entity_slug intentionally differs from the reference implementation. NOT produced by `make core-fixtures` -- it needs both implementations, and the fixture generator only has one. The native test is what keeps it honest: it recomputes the whole sweep, substitutes reference_slug for each codepoint listed here, and asserts the resulting digest equals the reference digest in entity_identity.json. A divergence appearing anywhere else, or one listed here disappearing, fails that test.",
+  "reachability": "A slug is a directory label, and identity is written beside the data rather than derived from it, so a differing slug does not fork an identity. The reachable surface is the tier-4 lookup, where a query typed as an id may fall through to the fuzzy tier for one of these names; a query typed as the NAME still matches at the earlier tiers.",
+  "reference_unicode_version": "15.1.0",
+  "why_the_newer_table_wins": "The older table maps several living-script letters to nothing, so two distinct names collapse to the same slug -- and a facet-scoped save then raises `names may slugify to same value` rather than storing them. Cherokee is the clearest case: seven of its letters are in this list. Preserving the older behaviour would preserve that collision."
+}
