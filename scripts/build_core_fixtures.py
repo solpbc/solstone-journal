@@ -72,6 +72,10 @@ from solstone.apps.speakers.encoder_config import (
     VP_OUTLIER_MIN_SIMILARITY,
 )
 from solstone.convey.contract.assemble import CALLOSUM_REGISTRY
+from solstone.convey.provider_readiness import (
+    is_blocking_reason,
+    mapped_reason_codes,
+)
 from solstone.think import markdown as markdown_formatter
 from solstone.think.cogitate_contract import (
     COGITATE_ACCESS_TIERS,
@@ -82,6 +86,7 @@ from solstone.think.cogitate_contract import (
     capabilities_for_access_tier,
 )
 from solstone.think.indexer.edges import EDGES_SCHEMA_VERSION, _ensure_edges_schema
+from solstone.think.providers.shared import is_non_retryable_generate_reason
 from tests.speaker_oracle.diarize import (
     AHC_LINKAGE,
     AHC_METRIC,
@@ -133,6 +138,7 @@ import entity_corpus  # noqa: E402  — sibling module, not a package
 FIXTURE_DIR = ROOT / "core" / "fixtures"
 CALLOSUM_ARTIFACT_PATH = FIXTURE_DIR / "callosum_registry.json"
 COGITATE_ARTIFACT_PATH = FIXTURE_DIR / "cogitate_contract.json"
+GENERATE_ARTIFACT_PATH = FIXTURE_DIR / "generate_contract.json"
 EDGE_SCHEMA_ARTIFACT_PATH = FIXTURE_DIR / "edge_schema.json"
 MARKDOWN_CHUNKS_ARTIFACT_PATH = FIXTURE_DIR / "markdown_chunks.json"
 SPEAKER_FILTERBANK_ARTIFACT_PATH = FIXTURE_DIR / "speaker_filterbank.json"
@@ -228,6 +234,200 @@ def build_cogitate_contract_fixture() -> dict[str, Any]:
             "encoding": "utf-8",
             "byte_length": len(preamble_bytes),
         },
+    }
+
+
+def build_generate_contract_fixture() -> dict[str, Any]:
+    """Build the cross-language generate boundary contract."""
+
+    schemas = {
+        "request": "solstone-generate-request-v2",
+        "response": "solstone-generate-response-v2",
+        "error": "solstone-generate-error-v2",
+    }
+    attestation_codes = {
+        "attestation_not_yet_verified",
+        "attestation_failed",
+        "attestation_stale",
+    }
+    live_codes = mapped_reason_codes()
+    reason_codes = [
+        {
+            "code": code,
+            "blocking": True if code in attestation_codes else is_blocking_reason(code),
+            "retryable": not is_non_retryable_generate_reason(code),
+            "overrides_live_taxonomy": code in attestation_codes,
+        }
+        for code in sorted(live_codes | attestation_codes)
+    ]
+    request = {
+        "schema": schemas["request"],
+        "id": "fixture-request",
+        "context": "fixture.generate",
+        "contents": [{"type": "text", "text": "Reply with OK."}],
+        "system_instruction": None,
+        "temperature": 0.3,
+        "max_output_tokens": 16384,
+        "thinking_budget": None,
+        "timeout_s": None,
+        "json_output": False,
+        "json_schema": None,
+        "enforce_responsiveness": True,
+        "attempt_index": 0,
+        "exclusive_admission": False,
+        "transport_retries": None,
+    }
+    generated = {
+        "schema": schemas["response"],
+        "id": request["id"],
+        "outcome": "generated",
+        "text": "OK",
+        "model": "fixture-model",
+        "usage": {"input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
+        "finish_reason": "stop",
+        "thinking": None,
+        "schema_validation": None,
+        "input_budget": None,
+        "request_budget": None,
+        "inference": None,
+    }
+    typed_refusals = [
+        ("attestation-not-verified", "AttestationNotVerifiedError", "attestation_not_yet_verified"),
+        ("attestation-failed", "AttestationFailedError", "attestation_failed"),
+        ("attestation-stale", "AttestationStaleError", "attestation_stale"),
+        ("no-engine-configured", "NoBrainConfiguredError", "thinking_engine_not_chosen"),
+        ("incomplete-json", "IncompleteJSONError", "incomplete_json_length"),
+        ("incomplete-text", "IncompleteTextError", "incomplete_text_length"),
+        ("provider-response-invalid", "ProviderResponseInvalidError", "provider_response_invalid"),
+        ("schema-validation-failed", "SchemaValidationError", None),
+        ("non-responsive-output", "NonResponsiveOutputError", "non_responsive"),
+    ]
+    by_code = {entry["code"]: entry for entry in reason_codes}
+    vectors: list[dict[str, Any]] = [
+        {
+            "id": "generated",
+            "framing": "one_shot",
+            "request": request,
+            "response": generated,
+            "exit_code": 0,
+            "source": {"path": "generated"},
+        }
+    ]
+    for reason, exception, reason_code in typed_refusals:
+        classification = (
+            by_code[reason_code]
+            if reason_code is not None
+            else {"blocking": True, "retryable": False}
+        )
+        vectors.append(
+            {
+                "id": f"refused-{reason}",
+                "framing": "one_shot",
+                "request": request,
+                "response": {
+                    "schema": schemas["response"],
+                    "id": request["id"],
+                    "outcome": "refused",
+                    "reason": reason,
+                    "reason_code": reason_code,
+                    "retryable": classification["retryable"],
+                    "blocking": classification["blocking"],
+                    "reset_at_ms": None,
+                    "provider": "none" if reason == "no-engine-configured" else "local",
+                    "detail": f"fixture {reason}",
+                },
+                "exit_code": 0,
+                "source": {"path": "typed_exception", "exception": exception, "reason_code": reason_code},
+            }
+        )
+    vectors.extend(
+        [
+            {
+                "id": "malformed-request",
+                "framing": "protocol_error",
+                "stdin": "{",
+                "protocol_error": {
+                    "schema": schemas["error"],
+                    "id": None,
+                    "reason": "malformed-request",
+                    "detail": "stdin is not valid JSON",
+                },
+                "exit_code": 64,
+                "source": {"path": "malformed_request"},
+            },
+            {
+                "id": "unknown-refusal-reason",
+                "framing": "one_shot",
+                "response": {
+                    "schema": schemas["response"],
+                    "id": request["id"],
+                    "outcome": "refused",
+                    "reason": "future-reason",
+                    "reason_code": None,
+                    "retryable": False,
+                    "blocking": True,
+                    "reset_at_ms": None,
+                    "provider": None,
+                    "detail": "future",
+                },
+                "exit_code": 0,
+                "source": {"path": "reader_tolerance"},
+            },
+            {
+                "id": "unknown-reason-code",
+                "framing": "one_shot",
+                "response": {
+                    "schema": schemas["response"],
+                    "id": request["id"],
+                    "outcome": "refused",
+                    "reason": "provider-response-invalid",
+                    "reason_code": "future_code",
+                    "retryable": False,
+                    "blocking": True,
+                    "reset_at_ms": None,
+                    "provider": None,
+                    "detail": "future",
+                },
+                "exit_code": 0,
+                "source": {"path": "reader_tolerance"},
+            },
+        ]
+    )
+    return {
+        "fixture": "solstone-generate-contract",
+        "fixture_version": 1,
+        "generated_by": "make core-fixtures",
+        "schema_identifiers": schemas,
+        "request": {
+            "fields": list(request),
+            "required_fields": ["schema", "context", "contents"],
+            "one_shot_optional_fields": ["id"],
+            "session_required_fields": ["id"],
+            "forbidden_fields": ["provider", "model"],
+            "defaults": {key: value for key, value in request.items() if key not in {"schema", "id", "context", "contents"}},
+            "content_parts": {
+                "text": {"fields": ["type", "text"]},
+                "image": {"fields": ["type", "mime_type", "data"]},
+            },
+        },
+        "response": {
+            "outcome_field": "outcome",
+            "outcomes": {
+                "generated": {"fields": list(generated)},
+                "refused": {"fields": ["schema", "id", "outcome", "reason", "reason_code", "retryable", "blocking", "reset_at_ms", "provider", "detail"]},
+            },
+        },
+        "protocol_error": {"fields": ["schema", "id", "reason", "detail"]},
+        "outcomes": ["generated", "refused"],
+        "refusal_reasons": [reason for reason, _, _ in typed_refusals] + ["unknown"],
+        "unknown_member": {"refusal_reason": "unknown", "retryable": False, "blocking": True},
+        "reason_codes": reason_codes,
+        "exit_codes": {"response": 0, "malformed_request": 64, "internal_failure": 70},
+        "framing": {
+            "one_shot": {"selector": "--one-shot", "stdin": "json-eof", "id": "optional"},
+            "session": {"selector": "--session", "stdin": "ndjson", "id": "required", "concurrency": {"flag": "--max-in-flight", "minimum": 1}},
+        },
+        "conformance_vectors": vectors,
     }
 
 
@@ -1326,6 +1526,9 @@ def expected_outputs() -> dict[Path, ArtifactDescriptor]:
         ),
         COGITATE_ARTIFACT_PATH: ArtifactDescriptor(
             build_cogitate_contract_fixture,
+        ),
+        GENERATE_ARTIFACT_PATH: ArtifactDescriptor(
+            build_generate_contract_fixture,
         ),
         EDGE_SCHEMA_ARTIFACT_PATH: ArtifactDescriptor(
             build_edge_schema_fixture,

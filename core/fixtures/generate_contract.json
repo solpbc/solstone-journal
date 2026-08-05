@@ -1,0 +1,936 @@
+{
+  "conformance_vectors": [
+    {
+      "exit_code": 0,
+      "framing": "one_shot",
+      "id": "generated",
+      "request": {
+        "attempt_index": 0,
+        "contents": [
+          {
+            "text": "Reply with OK.",
+            "type": "text"
+          }
+        ],
+        "context": "fixture.generate",
+        "enforce_responsiveness": true,
+        "exclusive_admission": false,
+        "id": "fixture-request",
+        "json_output": false,
+        "json_schema": null,
+        "max_output_tokens": 16384,
+        "schema": "solstone-generate-request-v2",
+        "system_instruction": null,
+        "temperature": 0.3,
+        "thinking_budget": null,
+        "timeout_s": null,
+        "transport_retries": null
+      },
+      "response": {
+        "finish_reason": "stop",
+        "id": "fixture-request",
+        "inference": null,
+        "input_budget": null,
+        "model": "fixture-model",
+        "outcome": "generated",
+        "request_budget": null,
+        "schema": "solstone-generate-response-v2",
+        "schema_validation": null,
+        "text": "OK",
+        "thinking": null,
+        "usage": {
+          "input_tokens": 2,
+          "output_tokens": 1,
+          "total_tokens": 3
+        }
+      },
+      "source": {
+        "path": "generated"
+      }
+    },
+    {
+      "exit_code": 0,
+      "framing": "one_shot",
+      "id": "refused-attestation-not-verified",
+      "request": {
+        "attempt_index": 0,
+        "contents": [
+          {
+            "text": "Reply with OK.",
+            "type": "text"
+          }
+        ],
+        "context": "fixture.generate",
+        "enforce_responsiveness": true,
+        "exclusive_admission": false,
+        "id": "fixture-request",
+        "json_output": false,
+        "json_schema": null,
+        "max_output_tokens": 16384,
+        "schema": "solstone-generate-request-v2",
+        "system_instruction": null,
+        "temperature": 0.3,
+        "thinking_budget": null,
+        "timeout_s": null,
+        "transport_retries": null
+      },
+      "response": {
+        "blocking": true,
+        "detail": "fixture attestation-not-verified",
+        "id": "fixture-request",
+        "outcome": "refused",
+        "provider": "local",
+        "reason": "attestation-not-verified",
+        "reason_code": "attestation_not_yet_verified",
+        "reset_at_ms": null,
+        "retryable": true,
+        "schema": "solstone-generate-response-v2"
+      },
+      "source": {
+        "exception": "AttestationNotVerifiedError",
+        "path": "typed_exception",
+        "reason_code": "attestation_not_yet_verified"
+      }
+    },
+    {
+      "exit_code": 0,
+      "framing": "one_shot",
+      "id": "refused-attestation-failed",
+      "request": {
+        "attempt_index": 0,
+        "contents": [
+          {
+            "text": "Reply with OK.",
+            "type": "text"
+          }
+        ],
+        "context": "fixture.generate",
+        "enforce_responsiveness": true,
+        "exclusive_admission": false,
+        "id": "fixture-request",
+        "json_output": false,
+        "json_schema": null,
+        "max_output_tokens": 16384,
+        "schema": "solstone-generate-request-v2",
+        "system_instruction": null,
+        "temperature": 0.3,
+        "thinking_budget": null,
+        "timeout_s": null,
+        "transport_retries": null
+      },
+      "response": {
+        "blocking": true,
+        "detail": "fixture attestation-failed",
+        "id": "fixture-request",
+        "outcome": "refused",
+        "provider": "local",
+        "reason": "attestation-failed",
+        "reason_code": "attestation_failed",
+        "reset_at_ms": null,
+        "retryable": true,
+        "schema": "solstone-generate-response-v2"
+      },
+      "source": {
+        "exception": "AttestationFailedError",
+        "path": "typed_exception",
+        "reason_code": "attestation_failed"
+      }
+    },
+    {
+      "exit_code": 0,
+      "framing": "one_shot",
+      "id": "refused-attestation-stale",
+      "request": {
+        "attempt_index": 0,
+        "contents": [
+          {
+            "text": "Reply with OK.",
+            "type": "text"
+          }
+        ],
+        "context": "fixture.generate",
+        "enforce_responsiveness": true,
+        "exclusive_admission": false,
+        "id": "fixture-request",
+        "json_output": false,
+        "json_schema": null,
+        "max_output_tokens": 16384,
+        "schema": "solstone-generate-request-v2",
+        "system_instruction": null,
+        "temperature": 0.3,
+        "thinking_budget": null,
+        "timeout_s": null,
+        "transport_retries": null
+      },
+      "response": {
+        "blocking": true,
+        "detail": "fixture attestation-stale",
+        "id": "fixture-request",
+        "outcome": "refused",
+        "provider": "local",
+        "reason": "attestation-stale",
+        "reason_code": "attestation_stale",
+        "reset_at_ms": null,
+        "retryable": true,
+        "schema": "solstone-generate-response-v2"
+      },
+      "source": {
+        "exception": "AttestationStaleError",
+        "path": "typed_exception",
+        "reason_code": "attestation_stale"
+      }
+    },
+    {
+      "exit_code": 0,
+      "framing": "one_shot",
+      "id": "refused-no-engine-configured",
+      "request": {
+        "attempt_index": 0,
+        "contents": [
+          {
+            "text": "Reply with OK.",
+            "type": "text"
+          }
+        ],
+        "context": "fixture.generate",
+        "enforce_responsiveness": true,
+        "exclusive_admission": false,
+        "id": "fixture-request",
+        "json_output": false,
+        "json_schema": null,
+        "max_output_tokens": 16384,
+        "schema": "solstone-generate-request-v2",
+        "system_instruction": null,
+        "temperature": 0.3,
+        "thinking_budget": null,
+        "timeout_s": null,
+        "transport_retries": null
+      },
+      "response": {
+        "blocking": true,
+        "detail": "fixture no-engine-configured",
+        "id": "fixture-request",
+        "outcome": "refused",
+        "provider": "none",
+        "reason": "no-engine-configured",
+        "reason_code": "thinking_engine_not_chosen",
+        "reset_at_ms": null,
+        "retryable": true,
+        "schema": "solstone-generate-response-v2"
+      },
+      "source": {
+        "exception": "NoBrainConfiguredError",
+        "path": "typed_exception",
+        "reason_code": "thinking_engine_not_chosen"
+      }
+    },
+    {
+      "exit_code": 0,
+      "framing": "one_shot",
+      "id": "refused-incomplete-json",
+      "request": {
+        "attempt_index": 0,
+        "contents": [
+          {
+            "text": "Reply with OK.",
+            "type": "text"
+          }
+        ],
+        "context": "fixture.generate",
+        "enforce_responsiveness": true,
+        "exclusive_admission": false,
+        "id": "fixture-request",
+        "json_output": false,
+        "json_schema": null,
+        "max_output_tokens": 16384,
+        "schema": "solstone-generate-request-v2",
+        "system_instruction": null,
+        "temperature": 0.3,
+        "thinking_budget": null,
+        "timeout_s": null,
+        "transport_retries": null
+      },
+      "response": {
+        "blocking": false,
+        "detail": "fixture incomplete-json",
+        "id": "fixture-request",
+        "outcome": "refused",
+        "provider": "local",
+        "reason": "incomplete-json",
+        "reason_code": "incomplete_json_length",
+        "reset_at_ms": null,
+        "retryable": true,
+        "schema": "solstone-generate-response-v2"
+      },
+      "source": {
+        "exception": "IncompleteJSONError",
+        "path": "typed_exception",
+        "reason_code": "incomplete_json_length"
+      }
+    },
+    {
+      "exit_code": 0,
+      "framing": "one_shot",
+      "id": "refused-incomplete-text",
+      "request": {
+        "attempt_index": 0,
+        "contents": [
+          {
+            "text": "Reply with OK.",
+            "type": "text"
+          }
+        ],
+        "context": "fixture.generate",
+        "enforce_responsiveness": true,
+        "exclusive_admission": false,
+        "id": "fixture-request",
+        "json_output": false,
+        "json_schema": null,
+        "max_output_tokens": 16384,
+        "schema": "solstone-generate-request-v2",
+        "system_instruction": null,
+        "temperature": 0.3,
+        "thinking_budget": null,
+        "timeout_s": null,
+        "transport_retries": null
+      },
+      "response": {
+        "blocking": false,
+        "detail": "fixture incomplete-text",
+        "id": "fixture-request",
+        "outcome": "refused",
+        "provider": "local",
+        "reason": "incomplete-text",
+        "reason_code": "incomplete_text_length",
+        "reset_at_ms": null,
+        "retryable": true,
+        "schema": "solstone-generate-response-v2"
+      },
+      "source": {
+        "exception": "IncompleteTextError",
+        "path": "typed_exception",
+        "reason_code": "incomplete_text_length"
+      }
+    },
+    {
+      "exit_code": 0,
+      "framing": "one_shot",
+      "id": "refused-provider-response-invalid",
+      "request": {
+        "attempt_index": 0,
+        "contents": [
+          {
+            "text": "Reply with OK.",
+            "type": "text"
+          }
+        ],
+        "context": "fixture.generate",
+        "enforce_responsiveness": true,
+        "exclusive_admission": false,
+        "id": "fixture-request",
+        "json_output": false,
+        "json_schema": null,
+        "max_output_tokens": 16384,
+        "schema": "solstone-generate-request-v2",
+        "system_instruction": null,
+        "temperature": 0.3,
+        "thinking_budget": null,
+        "timeout_s": null,
+        "transport_retries": null
+      },
+      "response": {
+        "blocking": false,
+        "detail": "fixture provider-response-invalid",
+        "id": "fixture-request",
+        "outcome": "refused",
+        "provider": "local",
+        "reason": "provider-response-invalid",
+        "reason_code": "provider_response_invalid",
+        "reset_at_ms": null,
+        "retryable": true,
+        "schema": "solstone-generate-response-v2"
+      },
+      "source": {
+        "exception": "ProviderResponseInvalidError",
+        "path": "typed_exception",
+        "reason_code": "provider_response_invalid"
+      }
+    },
+    {
+      "exit_code": 0,
+      "framing": "one_shot",
+      "id": "refused-schema-validation-failed",
+      "request": {
+        "attempt_index": 0,
+        "contents": [
+          {
+            "text": "Reply with OK.",
+            "type": "text"
+          }
+        ],
+        "context": "fixture.generate",
+        "enforce_responsiveness": true,
+        "exclusive_admission": false,
+        "id": "fixture-request",
+        "json_output": false,
+        "json_schema": null,
+        "max_output_tokens": 16384,
+        "schema": "solstone-generate-request-v2",
+        "system_instruction": null,
+        "temperature": 0.3,
+        "thinking_budget": null,
+        "timeout_s": null,
+        "transport_retries": null
+      },
+      "response": {
+        "blocking": true,
+        "detail": "fixture schema-validation-failed",
+        "id": "fixture-request",
+        "outcome": "refused",
+        "provider": "local",
+        "reason": "schema-validation-failed",
+        "reason_code": null,
+        "reset_at_ms": null,
+        "retryable": false,
+        "schema": "solstone-generate-response-v2"
+      },
+      "source": {
+        "exception": "SchemaValidationError",
+        "path": "typed_exception",
+        "reason_code": null
+      }
+    },
+    {
+      "exit_code": 0,
+      "framing": "one_shot",
+      "id": "refused-non-responsive-output",
+      "request": {
+        "attempt_index": 0,
+        "contents": [
+          {
+            "text": "Reply with OK.",
+            "type": "text"
+          }
+        ],
+        "context": "fixture.generate",
+        "enforce_responsiveness": true,
+        "exclusive_admission": false,
+        "id": "fixture-request",
+        "json_output": false,
+        "json_schema": null,
+        "max_output_tokens": 16384,
+        "schema": "solstone-generate-request-v2",
+        "system_instruction": null,
+        "temperature": 0.3,
+        "thinking_budget": null,
+        "timeout_s": null,
+        "transport_retries": null
+      },
+      "response": {
+        "blocking": false,
+        "detail": "fixture non-responsive-output",
+        "id": "fixture-request",
+        "outcome": "refused",
+        "provider": "local",
+        "reason": "non-responsive-output",
+        "reason_code": "non_responsive",
+        "reset_at_ms": null,
+        "retryable": false,
+        "schema": "solstone-generate-response-v2"
+      },
+      "source": {
+        "exception": "NonResponsiveOutputError",
+        "path": "typed_exception",
+        "reason_code": "non_responsive"
+      }
+    },
+    {
+      "exit_code": 64,
+      "framing": "protocol_error",
+      "id": "malformed-request",
+      "protocol_error": {
+        "detail": "stdin is not valid JSON",
+        "id": null,
+        "reason": "malformed-request",
+        "schema": "solstone-generate-error-v2"
+      },
+      "source": {
+        "path": "malformed_request"
+      },
+      "stdin": "{"
+    },
+    {
+      "exit_code": 0,
+      "framing": "one_shot",
+      "id": "unknown-refusal-reason",
+      "response": {
+        "blocking": true,
+        "detail": "future",
+        "id": "fixture-request",
+        "outcome": "refused",
+        "provider": null,
+        "reason": "future-reason",
+        "reason_code": null,
+        "reset_at_ms": null,
+        "retryable": false,
+        "schema": "solstone-generate-response-v2"
+      },
+      "source": {
+        "path": "reader_tolerance"
+      }
+    },
+    {
+      "exit_code": 0,
+      "framing": "one_shot",
+      "id": "unknown-reason-code",
+      "response": {
+        "blocking": true,
+        "detail": "future",
+        "id": "fixture-request",
+        "outcome": "refused",
+        "provider": null,
+        "reason": "provider-response-invalid",
+        "reason_code": "future_code",
+        "reset_at_ms": null,
+        "retryable": false,
+        "schema": "solstone-generate-response-v2"
+      },
+      "source": {
+        "path": "reader_tolerance"
+      }
+    }
+  ],
+  "exit_codes": {
+    "internal_failure": 70,
+    "malformed_request": 64,
+    "response": 0
+  },
+  "fixture": "solstone-generate-contract",
+  "fixture_version": 1,
+  "framing": {
+    "one_shot": {
+      "id": "optional",
+      "selector": "--one-shot",
+      "stdin": "json-eof"
+    },
+    "session": {
+      "concurrency": {
+        "flag": "--max-in-flight",
+        "minimum": 1
+      },
+      "id": "required",
+      "selector": "--session",
+      "stdin": "ndjson"
+    }
+  },
+  "generated_by": "make core-fixtures",
+  "outcomes": [
+    "generated",
+    "refused"
+  ],
+  "protocol_error": {
+    "fields": [
+      "schema",
+      "id",
+      "reason",
+      "detail"
+    ]
+  },
+  "reason_codes": [
+    {
+      "blocking": true,
+      "code": "archive_path_traversal",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "attestation_failed",
+      "overrides_live_taxonomy": true,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "attestation_not_yet_verified",
+      "overrides_live_taxonomy": true,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "attestation_stale",
+      "overrides_live_taxonomy": true,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "binary_missing",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "chat_pipeline_unavailable",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "chat_timeout",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "context_budget_exceeded",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "context_window_exceeded",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "cuda_runtime_incomplete",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "gpu_probe_failed",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "gpu_unavailable",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "host_unfit",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "incomplete_json_length",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "incomplete_text_length",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "install_busy",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "local_artifact_proof_unavailable",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "local_capacity_exhausted",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "local_endpoint_contract_failed",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "local_endpoint_unreachable",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "local_model_installing",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "local_model_loading",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "local_model_missing",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "local_model_not_ready",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "local_queue_timeout",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "local_server_unhealthy",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "max_turns_exhausted",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "model_missing",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "model_not_found",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "network_unreachable",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "no_output",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "non_responsive",
+      "overrides_live_taxonomy": false,
+      "retryable": false
+    },
+    {
+      "blocking": true,
+      "code": "provider_key_invalid",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "provider_key_missing",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "provider_quota_exceeded",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "provider_request_rejected",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "provider_response_invalid",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "provider_unavailable",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "ram_insufficient",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "sha256_mismatch",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "thinking_engine_not_chosen",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "token_budget_exceeded",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "unknown",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "unsupported_model",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": true,
+      "code": "unsupported_platform",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    },
+    {
+      "blocking": false,
+      "code": "wall_clock_exceeded",
+      "overrides_live_taxonomy": false,
+      "retryable": true
+    }
+  ],
+  "refusal_reasons": [
+    "attestation-not-verified",
+    "attestation-failed",
+    "attestation-stale",
+    "no-engine-configured",
+    "incomplete-json",
+    "incomplete-text",
+    "provider-response-invalid",
+    "schema-validation-failed",
+    "non-responsive-output",
+    "unknown"
+  ],
+  "request": {
+    "content_parts": {
+      "image": {
+        "fields": [
+          "type",
+          "mime_type",
+          "data"
+        ]
+      },
+      "text": {
+        "fields": [
+          "type",
+          "text"
+        ]
+      }
+    },
+    "defaults": {
+      "attempt_index": 0,
+      "enforce_responsiveness": true,
+      "exclusive_admission": false,
+      "json_output": false,
+      "json_schema": null,
+      "max_output_tokens": 16384,
+      "system_instruction": null,
+      "temperature": 0.3,
+      "thinking_budget": null,
+      "timeout_s": null,
+      "transport_retries": null
+    },
+    "fields": [
+      "schema",
+      "id",
+      "context",
+      "contents",
+      "system_instruction",
+      "temperature",
+      "max_output_tokens",
+      "thinking_budget",
+      "timeout_s",
+      "json_output",
+      "json_schema",
+      "enforce_responsiveness",
+      "attempt_index",
+      "exclusive_admission",
+      "transport_retries"
+    ],
+    "forbidden_fields": [
+      "provider",
+      "model"
+    ],
+    "one_shot_optional_fields": [
+      "id"
+    ],
+    "required_fields": [
+      "schema",
+      "context",
+      "contents"
+    ],
+    "session_required_fields": [
+      "id"
+    ]
+  },
+  "response": {
+    "outcome_field": "outcome",
+    "outcomes": {
+      "generated": {
+        "fields": [
+          "schema",
+          "id",
+          "outcome",
+          "text",
+          "model",
+          "usage",
+          "finish_reason",
+          "thinking",
+          "schema_validation",
+          "input_budget",
+          "request_budget",
+          "inference"
+        ]
+      },
+      "refused": {
+        "fields": [
+          "schema",
+          "id",
+          "outcome",
+          "reason",
+          "reason_code",
+          "retryable",
+          "blocking",
+          "reset_at_ms",
+          "provider",
+          "detail"
+        ]
+      }
+    }
+  },
+  "schema_identifiers": {
+    "error": "solstone-generate-error-v2",
+    "request": "solstone-generate-request-v2",
+    "response": "solstone-generate-response-v2"
+  },
+  "unknown_member": {
+    "blocking": true,
+    "refusal_reason": "unknown",
+    "retryable": false
+  }
+}
