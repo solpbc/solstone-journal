@@ -4,12 +4,13 @@
 use std::fmt;
 
 /// Filenames reserved for journal-authored segment metadata.
-pub const RESERVED_SEGMENT_FILENAMES: [&str; 5] = [
+pub const RESERVED_SEGMENT_FILENAMES: [&str; 6] = [
     "stream.json",
     "ingest.json",
     "ingest.json.lock",
     "device.json",
     "events.jsonl",
+    "tombstone.json",
 ];
 
 /// Return whether `name` is one of the exact, case-sensitive reserved names.

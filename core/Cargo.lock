@@ -1499,6 +1499,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-observer-delete"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "solstone-core-indexer-store",
+ "solstone-core-journal-io",
+ "solstone-core-segment",
+]
+
+[[package]]
 name = "solstone-core-segment"
 version = "1.0.22"
 dependencies = [

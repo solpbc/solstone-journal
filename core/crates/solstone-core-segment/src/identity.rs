@@ -4,6 +4,8 @@
 use std::collections::BTreeMap;
 use std::fs;
 
+use solstone_core_journal_io::path_lexists;
+
 use crate::manifest::{ManifestRead, read_manifest};
 use crate::write::descriptor;
 use crate::{ContentDescriptor, ContentName, SegmentDir, SegmentError, is_reserved_name};
@@ -58,6 +60,10 @@ pub fn load_content_identity(
     segment: &SegmentDir,
     terminal_proof: &dyn TerminalProofVerifier,
 ) -> Result<ContentIdentity, SegmentError> {
+    let tombstone = segment.path.join("tombstone.json");
+    if path_lexists(&tombstone)? {
+        return Err(SegmentError::Tombstoned { path: tombstone });
+    }
     match read_manifest(segment)? {
         ManifestRead::Present(files) => identity_from_manifest(segment, files, terminal_proof),
         ManifestRead::Missing => identity_from_legacy_media(segment),
@@ -295,6 +301,17 @@ mod tests {
         assert!(matches!(
             load_content_identity(&segment, &no_proof),
             Err(SegmentError::IdentityRefusal { .. })
+        ));
+    }
+
+    #[test]
+    fn tombstoned_segment_is_distinct_from_legacy_empty() {
+        let temporary = TempDir::new();
+        let segment = segment(temporary.path());
+        fs::write(segment.path.join("tombstone.json"), b"{}").unwrap();
+        assert!(matches!(
+            load_content_identity(&segment, &no_proof),
+            Err(SegmentError::Tombstoned { .. })
         ));
     }
 

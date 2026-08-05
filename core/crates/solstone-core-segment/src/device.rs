@@ -111,6 +111,11 @@ pub(crate) fn validate_did(did: &str) -> Result<(), SegmentError> {
     Ok(())
 }
 
+/// Return whether a device identifier has the supported canonical form.
+pub fn is_valid_device_did(did: &str) -> bool {
+    validate_did(did).is_ok()
+}
+
 fn validate_device_did_value(did: Option<&Value>) -> Result<&str, SegmentError> {
     let did = match did {
         None => return Err(SegmentError::InvalidDeviceDid("missing")),

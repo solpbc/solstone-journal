@@ -11,6 +11,8 @@
 //! distinguishing a crash
 //! partial write from a legacy manifest-less segment requires an ingest writer
 //! and coordinated Python-reader change, both outside this wave.
+//! A `tombstone.json` sidecar marks a terminal content-identity state. Deletion
+//! itself is owned by a separate crate; this crate never removes segment files.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
@@ -25,12 +27,15 @@ mod sidecars;
 mod stream_record;
 #[cfg(test)]
 pub(crate) mod test_support;
+mod tombstone;
 mod write;
 
 pub use content_name::{
     ContentName, ContentNameError, RESERVED_SEGMENT_FILENAMES, is_reserved_name,
 };
-pub use device::{AiChatSource, DeviceSidecarInput, ImportSource, Kind, write_device};
+pub use device::{
+    AiChatSource, DeviceSidecarInput, ImportSource, Kind, is_valid_device_did, write_device,
+};
 pub use error::SegmentError;
 pub use identity::{
     ContentIdentity, ContentIdentityEvidence, ContentIdentityFile, TerminalProofVerifier,
@@ -44,6 +49,7 @@ pub use stream_record::{
     BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord, advance_bound_stream,
     bind_stream, lookup_stream, resolve_stream,
 };
+pub use tombstone::write_tombstone;
 pub use write::{ContentDescriptor, ContentWriteOutcome, write_content};
 
 #[cfg(test)]

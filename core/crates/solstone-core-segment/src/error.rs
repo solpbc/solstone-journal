@@ -35,6 +35,9 @@ pub enum SegmentError {
         name: String,
         reason: &'static str,
     },
+    Tombstoned {
+        path: PathBuf,
+    },
     MalformedStreamRecord {
         path: PathBuf,
         source: ReadError,
@@ -78,6 +81,9 @@ impl fmt::Display for SegmentError {
             Self::IdentityRefusal { name, reason } => {
                 write!(formatter, "content identity refused for {name}: {reason}")
             }
+            Self::Tombstoned { path } => {
+                write!(formatter, "segment is tombstoned: {}", path.display())
+            }
             Self::MalformedStreamRecord { path, source } => {
                 write!(
                     formatter,
@@ -113,6 +119,7 @@ impl Error for SegmentError {
             Self::MalformedManifest { .. }
             | Self::UnsupportedManifestSchema { .. }
             | Self::IdentityRefusal { .. }
+            | Self::Tombstoned { .. }
             | Self::StreamInput(_)
             | Self::InvalidDeviceDid(_)
             | Self::InvalidDeviceJid(_)

@@ -11,6 +11,13 @@ use crate::StoreError;
 pub const INDEX_DIR: &str = "indexer";
 pub const DB_NAME: &str = "journal.sqlite";
 
+/// Counts removed by a stream-scoped index cleanup.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StreamPruneCounts {
+    pub chunks: u64,
+    pub files: u64,
+}
+
 const CREATE_FILES: &str = "CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, mtime INTEGER)";
 const CREATE_CHUNKS: &str = "\
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks USING fts5(
@@ -97,6 +104,28 @@ pub fn reset_index(journal: &Path) -> Result<(), StoreError> {
     create_schema(&tx)?;
     tx.commit()?;
     Ok(())
+}
+
+/// Remove indexed chunks for one stream and their corresponding file rows.
+pub fn prune_chunks_by_stream(
+    journal: &Path,
+    stream: &str,
+) -> Result<StreamPruneCounts, StoreError> {
+    let mut conn = open_index(journal)?;
+    let tx = conn.transaction()?;
+    let paths = {
+        let mut statement = tx.prepare("SELECT DISTINCT path FROM chunks WHERE stream=?")?;
+        statement
+            .query_map([stream], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let chunks = tx.execute("DELETE FROM chunks WHERE stream=?", [stream])? as u64;
+    let mut files = 0;
+    for path in paths {
+        files += tx.execute("DELETE FROM files WHERE path=?", [path])? as u64;
+    }
+    tx.commit()?;
+    Ok(StreamPruneCounts { chunks, files })
 }
 
 fn ensure_schema(conn: &mut Connection) -> Result<(), StoreError> {
@@ -446,6 +475,39 @@ CREATE TABLE edge_files(path TEXT PRIMARY KEY, mtime INTEGER);
         );
         assert_sqlite_integrity(&conn);
         fs::remove_dir_all(root).expect("cleanup reset root");
+    }
+
+    #[test]
+    fn prunes_only_the_requested_stream_and_its_file_rows() {
+        let root = temp_root("stream-prune");
+        let conn = open_index(&root).expect("open index");
+        for (path, stream) in [("location.md", "location"), ("pixel.md", "pixel")] {
+            conn.execute(
+                "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES ('content', ?, '', '', 'test', ?, 0, '')",
+                [path, stream],
+            )
+            .expect("seed chunk");
+            conn.execute("INSERT INTO files(path, mtime) VALUES (?, 1)", [path])
+                .expect("seed file");
+        }
+        drop(conn);
+
+        assert_eq!(
+            prune_chunks_by_stream(&root, "location").expect("prune stream"),
+            StreamPruneCounts {
+                chunks: 1,
+                files: 1,
+            }
+        );
+        let conn = open_index(&root).expect("reopen index");
+        assert_eq!(count_rows(&conn, "chunks"), 1);
+        assert_eq!(count_rows(&conn, "files"), 1);
+        let stream: String = conn
+            .query_row("SELECT stream FROM chunks", [], |row| row.get(0))
+            .expect("remaining stream");
+        assert_eq!(stream, "pixel");
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup stream prune root");
     }
 
     fn count_rows(conn: &Connection, table: &str) -> i64 {

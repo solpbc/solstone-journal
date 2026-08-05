@@ -4,7 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use solstone_core_journal_io::{
-    DEFAULT_STREAM, PathOrDay, Segment, contained_path, day_dirs, day_path, iter_segments,
+    DEFAULT_STREAM, PathError, PathEscapeError, PathOrDay, Segment, contained_path, day_dirs,
+    day_path, iter_segments,
 };
 
 use crate::SegmentError;
@@ -29,12 +30,20 @@ impl SegmentDir {
     ) -> Result<Self, SegmentError> {
         validate_component(segment, "segment")?;
         validate_component(stream, "stream")?;
-        let day_dir = day_path(journal, Some(day), false)?;
-        let path = if stream == DEFAULT_STREAM {
-            contained_path(&day_dir, segment)?
+        let _ = day_path(journal, Some(day), false)?;
+        let rel = if stream == DEFAULT_STREAM {
+            format!("chronicle/{day}/{segment}")
         } else {
-            contained_path(&day_dir, &format!("{stream}/{segment}"))?
+            format!("chronicle/{day}/{stream}/{segment}")
         };
+        let chronicle = contained_path(journal, "chronicle")?;
+        let path = contained_path(journal, &rel)?;
+        if !path.starts_with(&chronicle) {
+            return Err(SegmentError::Path(PathError::Escape(PathEscapeError {
+                path,
+                rel,
+            })));
+        }
         Ok(Self {
             journal: journal.to_path_buf(),
             path,
@@ -42,6 +51,14 @@ impl SegmentDir {
             segment: segment.to_owned(),
             stream: stream.to_owned(),
         })
+    }
+
+    /// Return the contained path resolved by this segment handle.
+    ///
+    /// Delete-owning crates may use this after resolving a `(day, stream,
+    /// segment)` name triple; callers must not substitute walked directory paths.
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 }
 
@@ -121,6 +138,23 @@ mod tests {
 
         assert!(matches!(
             SegmentDir::resolve(root, "20260804", "120000_60", "workstation"),
+            Err(SegmentError::Path(PathError::Escape(_)))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_day_symlink_escape() {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        let chronicle = root.join("chronicle");
+        let outside = root.join("outside");
+        fs::create_dir(&chronicle).unwrap();
+        fs::create_dir(&outside).unwrap();
+        symlink(&outside, chronicle.join("20260804")).unwrap();
+
+        assert!(matches!(
+            SegmentDir::resolve(root, "20260804", "120000_60", DEFAULT_STREAM),
             Err(SegmentError::Path(PathError::Escape(_)))
         ));
     }
