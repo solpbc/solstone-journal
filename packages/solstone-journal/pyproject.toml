@@ -30,6 +30,7 @@ dependencies = [
 [project.scripts]
 journal = "solstone.think.sol_cli:journal_main"
 mlx-vlm-server = "solstone.think.providers.mlx_server:main"
+solstone-generate-wire = "solstone.think.generate_wire:main"
 
 [tool.setuptools]
 packages = []

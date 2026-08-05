@@ -72,6 +72,7 @@ ROOT_SCRIPT_FILES = tuple(
 HOST_SCRIPTS = {
     "journal": "solstone.think.sol_cli:journal_main",
     "mlx-vlm-server": "solstone.think.providers.mlx_server:main",
+    "solstone-generate-wire": "solstone.think.generate_wire:main",
 }
 TOMBSTONE_PIN = "solstone-journal-host==0.7.0"
 LITELLM_PIN = "litellm==1.86.1"
