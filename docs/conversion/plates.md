@@ -154,9 +154,21 @@ Consistent formatting of **structured journal data** for its consumers — the i
 
 ## `P-thinking`
 
-🔴 **A grouping plate.** Holds **two contracts: `generate` and `cogitate`**. Everything connects to it. `P-local`, `P-BYO` and `P-SPP` sit behind it.
+🔴 **A grouping plate.** Holds **two contracts: `generate` and `cogitate`**. Everything connects to it. `P-local`, `P-BYO` and `P-SPP` sit behind it. `resolve_provider()` accepts exactly those two interface names and no others (`models.py:512`).
 
-⚠ The runtime preamble every talent is written against exists as a **sha256 only** in the cross-language fixture — drift is detectable, the text is not reproducible.
+**`generate` is defined in [`../GENERATE.md`](../GENERATE.md).** Tier **schema + fixture** — an interface format whose closed vocabularies and conformance vectors are pinned as data in `core/fixtures/generate_contract.json`.
+
+🔴 **The plate's import count is not the contract's fan-out, and the difference is tenfold.** 46 production modules import `think.models`; **11 of them import a `generate` entry point** (`generate`, `generate_with_result`, `agenerate`, `agenerate_with_result`), and one of those 11 is the wire itself. The other 35 import model constants, the error classes, `resolve_provider`, or cost helpers — `think.models` is a grab-bag module and its import count is a property of the module, not of this boundary. ⛔ Do not size `generate` work from the module's importers.
+
+⚠ **Ten of the eleven are one-shot; one is a fan-out.** `think/batch.py` is the only caller that needs many completions in flight, and it has three consumers of its own (`observe/describe.py`, `apps/timeline/rollup.py`, `apps/timeline/maintenance.py`). That single asymmetry is why `generate` is one vocabulary in **two framings** rather than one shape or two contracts.
+
+🔴 **The retry and hold-raw decisions are keyed on a reason code, and the classification belongs here.** `RUNTIME_REASON_CODES` (`providers/shared.py:253`) is a closed 17-member set; `is_non_retryable_generate_reason` (same file) and `is_blocking_reason` (`convey/provider_readiness.py:420`) map it to *retry or not* and *hold the owner's raw media or not*. Those two predicates live in two modules outside this plate. ⛔ A caller that re-derives them owns a copy of this plate's contract — the boundary publishes the decisions.
+
+⚠ **Four near-identical entry points, three error semantics.** `generate` / `generate_with_result` / `agenerate` / `agenerate_with_result` each repeat the same nine-step policy sequence; the two `_with_result` forms make schema validation advisory while the two plain forms raise on it. Only `generate_with_result` accepts `num_retries`, `inference_retry_index`, `local_exclusive_admission` and `enforce_responsiveness`. One boundary, four doors, differing on what a schema failure means.
+
+⚠ **The runtime preamble is `cogitate`'s, not `generate`'s.** `COGITATE_RUNTIME_PREAMBLE` is prepended by `providers/cli.assemble_prompt`, reached only from `run_cogitate` (`providers/openhands.py:1744`); `run_generate` and `run_agenerate` never touch it. It exists as a **sha256 only** in `core/fixtures/cogitate_contract.json` — 1,989 bytes, not reconstructible. ⚠ **And "cross-language" is a location, not yet a fact: zero Rust files read that fixture**, so today the digest detects only Python-source-versus-fixture drift. It would catch real drift the moment a native `cogitate` exists — and would then be unable to tell it what text to send.
+
+⚠ **Only two provider modules implement `run_generate`** — `providers/local.py` (1,444 lines) and `providers/openhands.py` (2,248). `providers/` totals 21,029 lines; the remainder is install, health and attestation machinery belonging to `P-local` and `P-SPP`, not to this call path.
 
 ## `P-local`
 
