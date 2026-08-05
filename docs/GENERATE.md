@@ -32,9 +32,9 @@ Three record types, three schema identifiers:
 
 | | identifier |
 |---|---|
-| request | `solstone-generate-request-v1` |
-| response | `solstone-generate-response-v1` |
-| protocol error | `solstone-generate-error-v1` |
+| request | `solstone-generate-request-v2` |
+| response | `solstone-generate-response-v2` |
+| protocol error | `solstone-generate-error-v2` |
 
 The **contract fixture** `core/fixtures/generate_contract.json` is the single source for the schema
 identifiers, every closed vocabulary, the exit-code table and the conformance vectors. Both the Rust
@@ -44,7 +44,7 @@ crate and the Python shim read that file. ⛔ **Neither language holds its own c
 
 ```json
 {
-  "schema": "solstone-generate-request-v1",
+  "schema": "solstone-generate-request-v2",
   "id": "f3a1",
   "context": "observe.depict",
   "contents": [
@@ -87,7 +87,7 @@ know is a caller that believes something false about the contract.
 
 ```json
 {
-  "schema": "solstone-generate-response-v1",
+  "schema": "solstone-generate-response-v2",
   "id": "f3a1",
   "outcome": "generated",
   "text": "A desk with two monitors…",
@@ -106,7 +106,7 @@ know is a caller that believes something false about the contract.
 
 ```json
 {
-  "schema": "solstone-generate-response-v1",
+  "schema": "solstone-generate-response-v2",
   "id": "f3a1",
   "outcome": "refused",
   "reason": "attestation-stale",
@@ -171,7 +171,7 @@ presentation.
 Reserved for the boundary being unable to parse the question at all.
 
 ```json
-{"schema": "solstone-generate-error-v1", "id": null, "reason": "malformed-request", "detail": "…"}
+{"schema": "solstone-generate-error-v2", "id": null, "reason": "malformed-request", "detail": "…"}
 ```
 
 Written to **stderr**, with a non-zero exit code. ⛔ Never to stdout — stdout is the protocol channel.
@@ -250,6 +250,10 @@ accepting.
 
 - The **schema identifier's `-vN`** changes only on a break: a removed field, a narrowed type, a
   changed meaning.
+- 📌 **`-v1` was a one-record predecessor with no adopters and is removed rather than redefined.** It
+  had no `id`, no `outcome` tag, no reason code and no session framing, and it exited `69` for a
+  no-engine refusal. Redefining a published identifier in place would have meant two shapes answering
+  to one name across the tree's own history for no gain, since nothing had adopted it.
 - The **fixture's `fixture_version`** changes on any additive change: a new refusal reason, a new
   runtime reason code, a new optional field.
 - Because every closed vocabulary lives in the fixture rather than in either language's source,
