@@ -51,6 +51,7 @@ const JOURNAL_IO_ALLOWED: &[&str] = &[
     "capture_snapshot",
     "restore_snapshot",
     "JournalSnapshot",
+    "SnapshotDirectory",
     "SnapshotError",
     "AppendError",
     "atomic_replace",
@@ -154,6 +155,7 @@ fn collect_production_sources(directory: &Path, sources: &mut Vec<PathBuf>) {
                         | "store_tests.rs"
                         | "test_support.rs"
                         | "trust_lock_tests.rs"
+                        | "undo_tests.rs"
                 )
             )
         {

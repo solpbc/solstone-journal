@@ -14,6 +14,7 @@ mod merge_rollback;
 mod paths;
 mod reconcile;
 mod repair;
+mod undo;
 #[allow(dead_code)]
 pub(crate) mod voiceprints;
 mod write;
@@ -42,6 +43,7 @@ pub use repair::{
     EntityIdentityRepairReport, EntityIdentityRepairSkip, EntityIdentityRepairSkipReason,
     repair_entity_identities,
 };
+pub use undo::{EntityUndoError, EntityUndoReport, undo_entity_merge};
 pub use write::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,
     EntityOperationKind, EntitySaveResult, EntityWriteError, IdentityMapCacheLoad,
@@ -51,6 +53,8 @@ pub use write::{
 
 #[cfg(test)]
 pub(crate) use repair::set_repair_identity_write_failure_on_attempt;
+#[cfg(test)]
+pub(crate) use undo::undo_entity_merge_with_injector;
 #[cfg(test)]
 pub(crate) use write::{
     save_entity_identity_with_timeout, set_forced_identity_write_failure,
