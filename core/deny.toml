@@ -25,7 +25,7 @@ deny = [
     { name = "cpython" },
     { name = "aws-lc-rs" },
     { name = "aws-lc-sys" },
-    { name = "solstone-core-journal-io", wrappers = ["solstone-core-segment", "solstone-core-sol-client", "solstone-core-sol-link", "solstone-core-entity", "solstone-core-observer-delete", "solstone-core-ingest-resolve", "solstone-core-depict", "solstone-core-callosum"], reason = "durable journal I/O primitives are owned by the native segment write door, sol-client and local-link security authorities, the read-only entity-store authority, the observer-delete authority, the ingest-manifest and quarantine writer authority, the still-image depiction writer, and the durable event-append authority in this wave" },
+    { name = "solstone-core-journal-io", wrappers = ["solstone-core-segment", "solstone-core-sol-client", "solstone-core-sol-link", "solstone-core-entity", "solstone-core-observer-delete", "solstone-core-ingest-resolve", "solstone-core-depict", "solstone-core-callosum", "solstone-core-facets"], reason = "durable journal I/O primitives are owned by the native segment write door, sol-client and local-link security authorities, the entity-store and facet-store authorities, the observer-delete authority, the ingest-manifest and quarantine writer authority, the still-image depiction writer, and the durable event-append authority in this wave" },
 ]
 
 [graph]
