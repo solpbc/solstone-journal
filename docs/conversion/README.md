@@ -65,11 +65,15 @@ Known instances and what is left of each:
 
 | Instance | State | Residue |
 |---|---|---|
-| `entity_slug()` | `id` is written into `entity.json` on create (`think/entities/journal.py:59`, `:201`); `loading.py:86` reads `data.get("id") **or** entity_slug(name)` — the derivation is a **fallback** | the fallback branch, and the `entities/{entity_id}/` directory name |
-| `ambiguity_id` | required on the row and hard-rejected when absent (`ambiguities.py:157-159` raises `missing ambiguity_id`) | essentially none |
-| `sentence_id` | 🔴 **the real instance** — a 1-based ordinal recomputed at read time and stored nowhere | all of it |
+| `entity_slug()` — journal level | 🔴 **the derivation is not a fallback, it is the identity.** `id` is written on create (`think/entities/journal.py:201`) and **never read back**: `load_journal_entity` overwrites it from the path (`:59`, `data["id"] = entity_id`), `scan_journal_entities` enumerates the store by **directory name** (`:87-104`, its own docstring says so), and `load_all_journal_entities` keys by that (`:107-120`). Persist an `id` that disagrees with its directory and the directory wins; the written value is unreachable | **all of it** — the written field is decoration |
+| `entity_slug()` — facet level | 🔴 **no identity is persisted at all.** `entity_memory_path()` (`relationships.py:306-326`) resolves `facets/{facet}/entities/{entity_slug(name)}/` from the **name**, on every access, and `rename_entity_memory()` (`:346-378`) physically moves the directory when the name changes. `loading.py:86`'s `data.get("id") **or** entity_slug(name)` is the one genuine fallback | all of it |
+| `ambiguity_id` | required on the row and hard-rejected when absent (`ambiguities.py:157-159` raises `missing ambiguity_id`). ⚠ Derived from **content** — `sha256(scope\|normalized_query)` — which is not what this rule prohibits, but it puts `casefold` inside an identity: see the reserved note below | essentially none |
+| `sentence_id` | 🔴 a 1-based ordinal recomputed at read time and stored nowhere | all of it |
+| facet name | `facet.json` carries **no id**; the slug is derived from the title once at creation and is otherwise stable — `update_facet` does not move the directory. ⚠ `rename_facet()` (`facets.py:1246-1320`) is the one re-derivation, and it updates only `config/convey.json` | that one verb |
 
-**The work: make the written identity mandatory, delete the derivation fallback, persist `sentence_id`.**
+**The work: persist an identity that readers actually resolve by, delete the derivations, persist `sentence_id`.** ⛔ Not "delete a fallback" — at both entity levels the derived string *is* the identity today, so there is nothing to fall back from.
+
+⚠ **A content-derived id is only as stable as its normalization.** `ambiguity_id` folds `NFKC` → whitespace-collapse → **`str.casefold()`** (`ambiguities.py:112-127`). Rust's `str::to_lowercase` is **not** Python's `casefold`. Reaching for the obvious function changes the hash, so the same query yields a different id, the existing row is missed, and **the owner is asked again a question they already answered while their recorded choice is orphaned.**
 
 ⚠ **This applies to instruments, not just to stored data.** A tool that matches by directory name, filename or label is deriving identity from a position — the same defect one layer up, and it fails by **attributing** rather than by forking. A bundle sweep that matched consumers by directory basename reported one consumer NOT SWEPT in the same run that swept it and found it current, and in a sandbox would have attributed a stranger's repository to a declared consumer. ⛔ **And a tool that measured nothing must not report success** — check that the count of things examined is non-zero before believing a green result.
 
