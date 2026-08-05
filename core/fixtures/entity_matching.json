@@ -2,7 +2,9 @@
   "fuzzy_threshold": 90,
   "generated_by": "make core-fixtures",
   "high_confidence_max_tier": 4,
+  "matched_count": 43,
   "note": "Tiers 1-4 are high confidence and resolve silently. Tiers 5-8 are low confidence, and the caller surfaces them to the owner rather than guessing. A reimplementation that moves a case across the tier-4 boundary changes whether an owner is asked at all.",
+  "refusal_count": 22,
   "tiers": {
     "1": "exact name, id or aka",
     "2": "case-insensitive name, id or aka",
@@ -13,6 +15,7 @@
     "7": "prefix token, unambiguous only, 4-char minimum prefix",
     "8": "fuzzy, rapidfuzz token_sort_ratio at or above the threshold"
   },
+  "vector_count": 65,
   "vectors": [
     {
       "candidates": [

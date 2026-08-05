@@ -1,6 +1,7 @@
 {
   "ambiguity_id": {
     "description": "amb_ + sha256(scope_key|normalized_query)[:24]; the normalized query folds case, so the fold is inside an identity",
+    "vector_count": 10,
     "vectors": [
       {
         "ambiguity_id": "amb_499fa5f27708c6120de29157",
@@ -106,6 +107,7 @@
       "scalar_values": 1112064,
       "sha256": "ccf541e524e22fa29b68da73d42a556f255381150d77cc30c583142976da5ce2"
     },
+    "vector_count": 63,
     "vectors": [
       {
         "name": "Alice Johnson",
@@ -387,6 +389,7 @@
       "scalar_values": 1112064,
       "sha256": "e79746779dcc65fc4ff9b128b1065d27b205eebe7a6235353f7859e46ae8d08f"
     },
+    "vector_count": 63,
     "vectors": [
       {
         "normalized": "alice johnson",

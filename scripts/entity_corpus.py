@@ -241,6 +241,10 @@ def build_entity_identity_fixture() -> dict[str, Any]:
         "versions": _versions(),
         "entity_slug": {
             "max_length": MAX_ENTITY_SLUG_LENGTH,
+            # Declared so a consumer can assert it before iterating. A loader
+            # that parses the file, misses the array and yields nothing would
+            # otherwise satisfy "every vector reproduces" perfectly.
+            "vector_count": len(slug_vectors),
             "sweep": {
                 "description": (
                     "entity_slug('A' + chr(cp) + 'B') for every Unicode scalar "
@@ -252,6 +256,7 @@ def build_entity_identity_fixture() -> dict[str, Any]:
             "vectors": slug_vectors,
         },
         "normalize_resolution_query": {
+            "vector_count": len(normalize_vectors),
             "sweep": {
                 "description": (
                     "normalize_resolution_query('A' + chr(cp) + 'B') for every "
@@ -263,6 +268,7 @@ def build_entity_identity_fixture() -> dict[str, Any]:
             "vectors": normalize_vectors,
         },
         "ambiguity_id": {
+            "vector_count": len(ambiguity_vectors),
             "description": (
                 "amb_ + sha256(scope_key|normalized_query)[:24]; the normalized "
                 "query folds case, so the fold is inside an identity"
@@ -462,6 +468,9 @@ def build_entity_matching_fixture() -> dict[str, Any]:
             "7": "prefix token, unambiguous only, 4-char minimum prefix",
             "8": "fuzzy, rapidfuzz token_sort_ratio at or above the threshold",
         },
+        "vector_count": len(vectors),
+        "matched_count": sum(1 for v in vectors if v["outcome"]["matched"]),
+        "refusal_count": sum(1 for v in vectors if not v["outcome"]["matched"]),
         "high_confidence_max_tier": 4,
         "note": (
             "Tiers 1-4 are high confidence and resolve silently. Tiers 5-8 are "

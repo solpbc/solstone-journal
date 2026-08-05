@@ -33,12 +33,14 @@ pub(crate) struct EntityIdentityFixture {
 #[derive(Debug, Deserialize)]
 pub(crate) struct SlugIdentityFixture {
     pub(crate) max_length: usize,
+    pub(crate) vector_count: usize,
     pub(crate) sweep: SweepFixture,
     pub(crate) vectors: Vec<SlugVector>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct NormalizationIdentityFixture {
+    pub(crate) vector_count: usize,
     pub(crate) sweep: SweepFixture,
     pub(crate) vectors: Vec<NormalizationVector>,
 }
@@ -63,6 +65,7 @@ pub(crate) struct NormalizationVector {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct AmbiguityIdentityFixture {
+    pub(crate) vector_count: usize,
     pub(crate) vectors: Vec<AmbiguityVector>,
 }
 
@@ -84,6 +87,9 @@ pub(crate) struct ScopeFixture {
 #[derive(Debug, Deserialize)]
 pub(crate) struct EntityMatchingFixture {
     pub(crate) fuzzy_threshold: f64,
+    pub(crate) vector_count: usize,
+    pub(crate) matched_count: usize,
+    pub(crate) refusal_count: usize,
     pub(crate) high_confidence_max_tier: u8,
     pub(crate) vectors: Vec<MatchingVector>,
 }

@@ -46,6 +46,13 @@ fn entity_slug_vectors_match_fixture() {
         fixture.entity_slug.max_length,
         crate::MAX_ENTITY_SLUG_LENGTH
     );
+    // A loader that parses the file, misses the array and yields nothing would
+    // satisfy every assertion below perfectly. The declared count is what makes
+    // these tests rather than formalities.
+    assert_eq!(
+        fixture.entity_slug.vectors.len(),
+        fixture.entity_slug.vector_count
+    );
     for vector in fixture.entity_slug.vectors {
         let native = entity_slug(&vector.name);
         if let Some(codepoint) = scalar_probe_codepoint(&vector.name)
@@ -62,6 +69,13 @@ fn entity_slug_vectors_match_fixture() {
 #[test]
 fn normalize_resolution_query_vectors_match_fixture() {
     let fixture = entity_identity_fixture();
+    // A loader that parses the file, misses the array and yields nothing would
+    // satisfy every assertion below perfectly. The declared count is what makes
+    // these tests rather than formalities.
+    assert_eq!(
+        fixture.normalize_resolution_query.vectors.len(),
+        fixture.normalize_resolution_query.vector_count
+    );
     for vector in fixture.normalize_resolution_query.vectors {
         assert_eq!(
             normalize_resolution_query(&vector.query),
@@ -75,6 +89,13 @@ fn normalize_resolution_query_vectors_match_fixture() {
 #[test]
 fn ambiguity_id_vectors_match_fixture() {
     let fixture = entity_identity_fixture();
+    // A loader that parses the file, misses the array and yields nothing would
+    // satisfy every assertion below perfectly. The declared count is what makes
+    // these tests rather than formalities.
+    assert_eq!(
+        fixture.ambiguity_id.vectors.len(),
+        fixture.ambiguity_id.vector_count
+    );
     for vector in fixture.ambiguity_id.vectors {
         let normalized_query = normalize_resolution_query(&vector.query);
         assert_eq!(
@@ -104,6 +125,24 @@ fn ambiguity_id_vectors_match_fixture() {
 #[test]
 fn matching_vectors_match_fixture() {
     let fixture = entity_matching_fixture();
+    // A loader that parses the file, misses the array and yields nothing would
+    // satisfy every assertion below perfectly. The declared count is what makes
+    // these tests rather than formalities.
+    assert_eq!(fixture.vectors.len(), fixture.vector_count);
+    // The refusal half is where the store declines to guess; without its own
+    // count a corpus that lost every refusal vector would still read as full.
+    assert_eq!(
+        fixture.vectors.iter().filter(|v| v.outcome.matched).count(),
+        fixture.matched_count
+    );
+    assert_eq!(
+        fixture
+            .vectors
+            .iter()
+            .filter(|v| !v.outcome.matched)
+            .count(),
+        fixture.refusal_count
+    );
     for vector in fixture.vectors {
         let candidates: Vec<EntityNameCandidate> = vector
             .candidates
