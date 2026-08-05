@@ -427,6 +427,9 @@ fn classify_candidate(
 }
 
 fn conflict_for(content_identity: bool) -> CandidateDisposition {
+    // With no incoming media, content identity is every non-reserved incoming
+    // file. Any conflict is therefore content, never sidecar: reject this
+    // candidate and reallocate instead of silently dropping the file as `ok`.
     if content_identity {
         CandidateDisposition::ContentConflict
     } else {

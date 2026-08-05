@@ -14,7 +14,7 @@ axum = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = "0.10.9"
+sha2.workspace = true
 solstone-core-convey-http = { workspace = true }
 solstone-core-ingest-resolve = { workspace = true }
 solstone-core-segment = { workspace = true }

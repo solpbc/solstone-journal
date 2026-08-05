@@ -578,6 +578,40 @@ enum ApplyPhase {
     Failed(FailedPlan),
 }
 
+#[cfg(test)]
+type BeforeApplyHook = Box<dyn FnMut(&solstone_core_ingest_resolve::ApplyPlan)>;
+
+#[cfg(test)]
+thread_local! {
+    static BEFORE_APPLY_HOOK: std::cell::RefCell<Option<BeforeApplyHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn set_before_apply_hook(hook: impl FnMut(&solstone_core_ingest_resolve::ApplyPlan) + 'static) {
+    BEFORE_APPLY_HOOK.with(|slot| {
+        assert!(
+            slot.borrow().is_none(),
+            "test apply hook is already installed"
+        );
+        *slot.borrow_mut() = Some(Box::new(hook));
+    });
+}
+
+#[cfg(test)]
+fn clear_before_apply_hook() {
+    BEFORE_APPLY_HOOK.with(|slot| *slot.borrow_mut() = None);
+}
+
+#[cfg(test)]
+fn run_before_apply_hook(plan: &solstone_core_ingest_resolve::ApplyPlan) {
+    BEFORE_APPLY_HOOK.with(|slot| {
+        if let Some(hook) = slot.borrow_mut().as_mut() {
+            hook(plan);
+        }
+    });
+}
+
 fn resolve_and_apply(
     state: &IngestState,
     day: &str,
@@ -591,13 +625,17 @@ fn resolve_and_apply(
     {
         Resolution::Conflict(plan) => Ok(ApplyPhase::Conflict(plan)),
         Resolution::Failed(plan) => Ok(ApplyPhase::Failed(plan)),
-        Resolution::Apply(plan) => match apply_plan(&plan, files) {
-            Ok(result) => Ok(ApplyPhase::Applied(result)),
-            Err(ApplyError::Stale) if retry_stale => {
-                resolve_and_apply(state, day, stream, requested_segment, files, false)
+        Resolution::Apply(plan) => {
+            #[cfg(test)]
+            run_before_apply_hook(&plan);
+            match apply_plan(&plan, files) {
+                Ok(result) => Ok(ApplyPhase::Applied(result)),
+                Err(ApplyError::Stale) if retry_stale => {
+                    resolve_and_apply(state, day, stream, requested_segment, files, false)
+                }
+                Err(_) => Err(()),
             }
-            Err(_) => Err(()),
-        },
+        }
     }
 }
 
@@ -652,7 +690,10 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tower::ServiceExt;
 
-    use super::{MAX_PART_BYTES, router, router_with_notifier};
+    use super::{
+        ApplyPhase, IngestState, MAX_PART_BYTES, clear_before_apply_hook, resolve_and_apply,
+        router, router_with_notifier, set_before_apply_hook,
+    };
 
     const DID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const DID_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -785,6 +826,79 @@ mod tests {
 
     fn envelope(day: &str, segment: &str, files: Value) -> Value {
         json!({"day": day, "segment": segment, "files": files})
+    }
+
+    #[test]
+    fn resolve_and_apply_reenters_once_after_stale_drift() {
+        let root = root();
+        let state = IngestState {
+            journal_root: root.clone(),
+            notifier: Arc::new(solstone_core_ingest_resolve::LoggingIngestNotifier),
+        };
+        let files = [solstone_core_ingest_resolve::IngestFile {
+            name: solstone_core_segment::ContentName::new("audio.flac").unwrap(),
+            bytes: b"upload",
+        }];
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_for_hook = attempts.clone();
+        set_before_apply_hook(move |plan| {
+            if attempts_for_hook.fetch_add(1, Ordering::SeqCst) == 0 {
+                fs::create_dir_all(plan.segment.path()).unwrap();
+                fs::write(plan.segment.path().join("audio.flac"), b"racer").unwrap();
+            }
+        });
+
+        let result = resolve_and_apply(&state, "20260804", "device", "120000_1", &files, true);
+        clear_before_apply_hook();
+        let ApplyPhase::Applied(result) = result.expect("one fresh re-resolution must succeed")
+        else {
+            panic!("expected applied result after re-resolution");
+        };
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            result.status,
+            solstone_core_ingest_resolve::PlanStatus::Collision
+        );
+        assert_eq!(result.landed_segment, "120000_2");
+        assert_eq!(
+            fs::read(root.join("chronicle/20260804/device/120000_1/audio.flac")).unwrap(),
+            b"racer"
+        );
+        assert_eq!(
+            fs::read(root.join("chronicle/20260804/device/120000_2/audio.flac")).unwrap(),
+            b"upload"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn resolve_and_apply_does_not_retry_a_second_stale_plan() {
+        let root = root();
+        let state = IngestState {
+            journal_root: root.clone(),
+            notifier: Arc::new(solstone_core_ingest_resolve::LoggingIngestNotifier),
+        };
+        let files = [solstone_core_ingest_resolve::IngestFile {
+            name: solstone_core_segment::ContentName::new("audio.flac").unwrap(),
+            bytes: b"upload",
+        }];
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_for_hook = attempts.clone();
+        set_before_apply_hook(move |plan| {
+            attempts_for_hook.fetch_add(1, Ordering::SeqCst);
+            fs::create_dir_all(plan.segment.path()).unwrap();
+            fs::write(plan.segment.path().join("audio.flac"), b"racer").unwrap();
+        });
+
+        assert!(resolve_and_apply(&state, "20260804", "device", "120000_1", &files, true).is_err());
+        clear_before_apply_hook();
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        assert!(
+            !root
+                .join("chronicle/20260804/device/120000_3/audio.flac")
+                .exists()
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
@@ -979,6 +1093,7 @@ mod tests {
         assert_eq!(body["status"], "failed");
         assert!(!stream.join("120000_1/events.jsonl").exists());
         assert!(!stream.join("120000_1/ingest.json").exists());
+        assert!(!root.join("chronicle/20260804/observer/failed").exists());
         let _ = fs::remove_dir_all(root);
     }
 

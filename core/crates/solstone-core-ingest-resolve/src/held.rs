@@ -81,6 +81,12 @@ pub(crate) fn absent_target_held(
 }
 
 /// Re-check one resolve-time held file immediately before the apply commit.
+///
+/// An existing target with mismatched bytes is deliberately treated as drift
+/// without consulting terminal proof. Python falls through to that proof in
+/// this narrow case; this new layer is intentionally more conservative, so
+/// unexpected on-disk bytes trigger bounded honest re-resolution instead of
+/// being silently accepted.
 pub(crate) fn is_currently_held(
     segment: &SegmentDir,
     file: &IngestFile<'_>,
