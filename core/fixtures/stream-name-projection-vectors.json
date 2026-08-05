@@ -18,7 +18,7 @@
       "label": "iPhone (2)",
       "source": "",
       "expect": "iphone_2",
-      "why": "the founder's worked example; the ordinal form the label allocator already emits"
+      "why": "the worked example the contract names; the ordinal form the label allocator already emits"
     },
     {
       "label": "IPHONE (2)",
@@ -45,9 +45,9 @@
       "why": "a legacy kind-carrying name arriving as a label -- the dot still goes"
     },
     {
-      "label": "  Jer's MacBook Pro  ",
+      "label": "  Ada's MacBook Pro  ",
       "source": "",
-      "expect": "jer_s_macbook_pro",
+      "expect": "ada_s_macbook_pro",
       "why": "apostrophe, spaces, and leading/trailing whitespace in one label"
     },
     {
