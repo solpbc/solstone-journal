@@ -482,9 +482,19 @@ def tally(rows: list[dict]) -> dict[str, int]:
 
 
 def revision() -> str:
+    """The revision of the reference this oracle was read from.
+
+    ⛔ Deliberately NOT ``rev-parse HEAD``. Pinning HEAD makes the committed
+    fixture stale on every unrelated commit in the repository, so the gate reds
+    for a reason that has nothing to do with the reference it guards -- which
+    means the gate is the defect. Pinning the last commit that touched the
+    reference files goes stale exactly when the fixture should be regenerated,
+    and not otherwise.
+    """
+    sources = sorted({citation.split(":", 1)[0] for citation in REFERENCE.values()})
     try:
         return subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            ["git", "log", "-1", "--format=%H", "--", *sources],
             cwd=REPO,
             capture_output=True,
             text=True,
