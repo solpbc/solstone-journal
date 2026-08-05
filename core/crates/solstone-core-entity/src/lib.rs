@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Entity identity, matching primitives, and read-only durable-store access.
+//! Entity identity, matching primitives, durable-store access, and mutation-support plumbing.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
@@ -10,6 +10,7 @@ mod matcher;
 mod normalize;
 mod slug;
 mod store;
+mod trust_lock;
 
 pub use ambiguity::ambiguity_id;
 pub use matcher::{EntityNameCandidate, EntityNameMatch, MatchTier, find_matching_entity};
@@ -22,6 +23,7 @@ pub use store::{
     load_resolved_ambiguity_choice, read_ambiguities, read_entity_identity, read_identity_map,
     read_prepared_history, read_visible_history,
 };
+pub use trust_lock::{EntityTrustLock, EntityTrustLockError, hold_entity_trust_lock};
 
 #[cfg(test)]
 mod fixture_tests;
@@ -29,3 +31,5 @@ mod fixture_tests;
 mod store_tests;
 #[cfg(test)]
 mod test_support;
+#[cfg(test)]
+mod trust_lock_tests;

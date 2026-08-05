@@ -10,6 +10,7 @@ pub mod errors;
 pub mod locking;
 pub mod paths;
 pub mod readers;
+pub mod removal;
 pub mod staged;
 
 #[cfg(test)]
@@ -37,4 +38,5 @@ pub use paths::{
     resolve_journal_path, segment_path,
 };
 pub use readers::{MalformedPolicy, read_json, read_jsonl, read_text};
+pub use removal::remove_dir_all;
 pub use staged::{StagedDirOptions, StagedWriteError, publish_staged_dir};

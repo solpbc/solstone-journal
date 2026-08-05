@@ -31,6 +31,10 @@ const JOURNAL_IO_ALLOWED: &[&str] = &[
     "DirEntryKind",
     "ReadError",
     "PathError",
+    "hold_lock",
+    "FileLock",
+    "LockOptions",
+    "LockError",
 ];
 
 #[test]
@@ -118,7 +122,12 @@ fn collect_production_sources(directory: &Path, sources: &mut Vec<PathBuf>) {
         } else if path.extension().is_some_and(|extension| extension == "rs")
             && !matches!(
                 path.file_name().and_then(|name| name.to_str()),
-                Some("fixture_tests.rs" | "store_tests.rs" | "test_support.rs")
+                Some(
+                    "fixture_tests.rs"
+                        | "store_tests.rs"
+                        | "test_support.rs"
+                        | "trust_lock_tests.rs"
+                )
             )
         {
             sources.push(path);
