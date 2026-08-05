@@ -9,8 +9,13 @@ pub fn normalize_resolution_query(query: &str) -> String {
     let normalized: String = query.nfkc().collect();
     let collapsed = collapse_python_whitespace(&normalized);
     // Python uses full case folding for ambiguity identity; unlike simple lowercase,
-    // it handles equivalences such as ß → ss. Matcher tiers intentionally use lowercase.
+    // it handles equivalences such as ß → ss.
     default_case_fold_str(&collapsed)
+}
+
+pub(crate) fn matchable_resolution_query(query: &str) -> String {
+    let normalized: String = query.nfkc().collect();
+    collapse_python_whitespace(&normalized)
 }
 
 fn collapse_python_whitespace(value: &str) -> String {
@@ -52,7 +57,9 @@ fn is_python_regex_whitespace(ch: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_python_regex_whitespace, normalize_resolution_query};
+    use super::{
+        is_python_regex_whitespace, matchable_resolution_query, normalize_resolution_query,
+    };
 
     #[test]
     fn python_regex_whitespace_table_is_exact() {
@@ -83,5 +90,10 @@ mod tests {
             assert!(is_python_regex_whitespace(ch));
         }
         assert_eq!(normalize_resolution_query("A\u{1C}B"), "a b");
+    }
+
+    #[test]
+    fn matchable_resolution_query_normalizes_without_case_folding() {
+        assert_eq!(matchable_resolution_query("  ﬁ  Straße  "), "fi Straße");
     }
 }

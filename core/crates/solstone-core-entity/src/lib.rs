@@ -8,6 +8,7 @@
 mod ambiguity;
 mod matcher;
 mod normalize;
+mod resolution;
 mod slug;
 mod store;
 mod trust_lock;
@@ -15,6 +16,10 @@ mod trust_lock;
 pub use ambiguity::ambiguity_id;
 pub use matcher::{EntityNameCandidate, EntityNameMatch, MatchTier, find_matching_entity};
 pub use normalize::normalize_resolution_query;
+pub use resolution::{
+    EntityResolution, EntityResolutionEntity, EntityResolutionError, EntityResolutionOutcome,
+    ResolutionCandidate, record_entity_resolution,
+};
 pub use slug::{MAX_ENTITY_SLUG_LENGTH, entity_slug};
 pub use store::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityIdentityMap,
@@ -39,6 +44,8 @@ pub(crate) use store::{
 
 #[cfg(test)]
 mod fixture_tests;
+#[cfg(test)]
+mod resolution_tests;
 #[cfg(test)]
 mod store_tests;
 #[cfg(test)]
