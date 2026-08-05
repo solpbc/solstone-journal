@@ -6,6 +6,116 @@
     "entities/{id}/history/events/{seq}-{version_id}.json": "{\n  \"actor\": null,\n  \"caller\": null,\n  \"entity_id\": \"alice_johnson\",\n  \"identity_after\": {\n    \"aka\": [\n      \"Ali\",\n      \"AJ\"\n    ],\n    \"created_at\": 1785889922582,\n    \"emails\": [\n      \"alice@example.com\"\n    ],\n    \"id\": \"alice_johnson\",\n    \"name\": \"Alice Johnson\",\n    \"type\": \"Person\"\n  },\n  \"identity_before\": null,\n  \"kind\": \"create\",\n  \"operation\": {},\n  \"schema_version\": 1,\n  \"seq\": 1,\n  \"ts\": \"2026-08-05T00:32:02.582506Z\",\n  \"version_id\": \"vh_49d7adcbf786461cb11c00081afa9780\"\n}\n"
   },
   "generated_by": "make core-fixtures",
+  "identity_map": {
+    "case_count": 5,
+    "cases": [
+      {
+        "does_not_resolve": [
+          "alpha"
+        ],
+        "note": "written identity wins over the directory it sits in",
+        "reference_would_resolve": {
+          "alpha": "alpha"
+        },
+        "resolves": {
+          "written_alpha": "alpha"
+        },
+        "store": {
+          "alpha": {
+            "created_at": 1785889922582,
+            "id": "written_alpha",
+            "name": "Alpha",
+            "type": "Person"
+          }
+        }
+      },
+      {
+        "does_not_resolve": [],
+        "note": "no written identity \u2014 the directory name stands in. \u26a0 This is the ONLY case where a directory name resolves anything, and it does not retire when the repair lands: a restored backup arrives un-repaired, so this path is permanent.",
+        "reference_would_resolve": {
+          "legacy": "legacy"
+        },
+        "resolves": {
+          "legacy": "legacy"
+        },
+        "store": {
+          "legacy": {
+            "created_at": 1785889922582,
+            "name": "Legacy",
+            "type": "Person"
+          }
+        }
+      },
+      {
+        "does_not_resolve": [
+          "alpha"
+        ],
+        "entry_count": 3,
+        "note": "mixed store, no collision \u2014 one entry per entity",
+        "resolves": {
+          "gamma": "gamma",
+          "legacy": "legacy",
+          "written_alpha": "alpha"
+        },
+        "store": {
+          "alpha": {
+            "created_at": 1785889922582,
+            "id": "written_alpha",
+            "name": "Alpha",
+            "type": "Person"
+          },
+          "gamma": {
+            "created_at": 1785889922582,
+            "id": "gamma",
+            "name": "Gamma",
+            "type": "Person"
+          },
+          "legacy": {
+            "created_at": 1785889922582,
+            "name": "Legacy",
+            "type": "Person"
+          }
+        }
+      },
+      {
+        "entry_count": 1,
+        "loser": "beta",
+        "loser_obligation": "\u26d4 The loser is RETURNED, in the result. A warning log is not surfacing \u2014 it is the silent drop this boundary exists to prevent, wearing a different coat. An entity that is merely old must not become unreachable without the caller learning of it.",
+        "note": "\ud83d\udd34 collision \u2014 one entity's WRITTEN identity is another's DIRECTORY name. Two entities, one key, by construction: the map holds one fewer entry than the store has entities.",
+        "resolves": {
+          "beta": "alpha"
+        },
+        "store": {
+          "alpha": {
+            "created_at": 1785889922582,
+            "id": "beta",
+            "name": "Alpha",
+            "type": "Person"
+          },
+          "beta": {
+            "created_at": 1785889922582,
+            "name": "Beta",
+            "type": "Person"
+          }
+        },
+        "store_entity_count": 2,
+        "winner": "alpha",
+        "winner_rule": "the entity whose WRITTEN identity claims the key wins, consistent with the written value being authoritative"
+      },
+      {
+        "entry_count": 0,
+        "loser": "broken",
+        "loser_obligation": "surfaced in the result, not dropped",
+        "note": "a malformed identity file. \u26a0 The reference swallows the parse error and drops the entity with no trace, which is defensible for a fail-open read and indefensible for a map that decides identity.",
+        "reference_behaviour": "dropped silently",
+        "resolves": {},
+        "store": {
+          "broken": "<<<not json>>>"
+        }
+      }
+    ],
+    "note": "\u26d4 NOT reference behaviour \u2014 the reference resolves identity from the directory name everywhere and cannot produce this oracle. These cases SPECIFY the rebuild, and each records what the reference would answer so the difference is legible."
+  },
   "identity_repair": {
     "case_count": 3,
     "cases": [

@@ -946,6 +946,99 @@ def _read_edge_artifacts() -> dict[str, Any]:
     }
 
 
+def _identity_map_cases() -> list[dict[str, Any]]:
+    """Stores, and the identity map each must produce.
+
+    ⛔ NOT reference behaviour. The reference resolves identity from the
+    DIRECTORY NAME everywhere, so it cannot produce this oracle; these cases
+    specify the rebuild. Each records the reference's answer alongside, because
+    the difference is the whole point and a reader who meets only one of them
+    cannot tell a specification from a bug.
+    """
+    def ent(name: str, written: str | None) -> dict[str, Any]:
+        e: dict[str, Any] = {"name": name, "type": "Person", "created_at": 1785889922582}
+        if written is not None:
+            e["id"] = written
+        return e
+
+    return [
+        {
+            "note": "written identity wins over the directory it sits in",
+            "store": {"alpha": ent("Alpha", "written_alpha")},
+            "resolves": {"written_alpha": "alpha"},
+            "does_not_resolve": ["alpha"],
+            "reference_would_resolve": {"alpha": "alpha"},
+        },
+        {
+            "note": (
+                "no written identity — the directory name stands in. ⚠ This is "
+                "the ONLY case where a directory name resolves anything, and it "
+                "does not retire when the repair lands: a restored backup "
+                "arrives un-repaired, so this path is permanent."
+            ),
+            "store": {"legacy": ent("Legacy", None)},
+            "resolves": {"legacy": "legacy"},
+            "does_not_resolve": [],
+            "reference_would_resolve": {"legacy": "legacy"},
+        },
+        {
+            "note": "mixed store, no collision — one entry per entity",
+            "store": {
+                "alpha": ent("Alpha", "written_alpha"),
+                "legacy": ent("Legacy", None),
+                "gamma": ent("Gamma", "gamma"),
+            },
+            "resolves": {
+                "written_alpha": "alpha",
+                "legacy": "legacy",
+                "gamma": "gamma",
+            },
+            "does_not_resolve": ["alpha"],
+            "entry_count": 3,
+        },
+        {
+            "note": (
+                "🔴 collision — one entity's WRITTEN identity is another's "
+                "DIRECTORY name. Two entities, one key, by construction: the "
+                "map holds one fewer entry than the store has entities."
+            ),
+            "store": {
+                "alpha": ent("Alpha", "beta"),
+                "beta": ent("Beta", None),
+            },
+            "resolves": {"beta": "alpha"},
+            "entry_count": 1,
+            "store_entity_count": 2,
+            "winner": "alpha",
+            "winner_rule": (
+                "the entity whose WRITTEN identity claims the key wins, "
+                "consistent with the written value being authoritative"
+            ),
+            "loser": "beta",
+            "loser_obligation": (
+                "⛔ The loser is RETURNED, in the result. A warning log is not "
+                "surfacing — it is the silent drop this boundary exists to "
+                "prevent, wearing a different coat. An entity that is merely "
+                "old must not become unreachable without the caller learning of it."
+            ),
+        },
+        {
+            "note": (
+                "a malformed identity file. ⚠ The reference swallows the parse "
+                "error and drops the entity with no trace, which is defensible "
+                "for a fail-open read and indefensible for a map that decides "
+                "identity."
+            ),
+            "store": {"broken": "<<<not json>>>"},
+            "resolves": {},
+            "entry_count": 0,
+            "loser": "broken",
+            "loser_obligation": "surfaced in the result, not dropped",
+            "reference_behaviour": "dropped silently",
+        },
+    ]
+
+
 def build_entity_store_fixture() -> dict[str, Any]:
     """Durable bytes and refusal semantics, captured from the real writers."""
     from solstone.think.entities.ambiguities import _save_jsonl_rows, ambiguities_path
@@ -1020,6 +1113,16 @@ def build_entity_store_fixture() -> dict[str, Any]:
             "identity_unicode": _ENTITY_UNICODE,
             "history_event": _HISTORY_EVENT_FIXED,
             "ambiguity_rows": rows,
+        },
+        "identity_map": {
+            "note": (
+                "⛔ NOT reference behaviour — the reference resolves identity "
+                "from the directory name everywhere and cannot produce this "
+                "oracle. These cases SPECIFY the rebuild, and each records what "
+                "the reference would answer so the difference is legible."
+            ),
+            "case_count": len(_identity_map_cases()),
+            "cases": _identity_map_cases(),
         },
         "identity_repair": {
             "note": (
