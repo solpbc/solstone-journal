@@ -195,6 +195,29 @@ fn spawn_v2(journal: &Journal, request: &GenerateRequest) -> std::process::Outpu
         .unwrap()
 }
 
+fn spawn_raw_v2(journal: &Journal, input: &str) -> std::process::Output {
+    Command::new(support::generate_wire())
+        .arg("--one-shot")
+        .env("SOLSTONE_JOURNAL", &journal.path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            child.stdin.as_mut().unwrap().write_all(input.as_bytes())?;
+            child.wait_with_output()
+        })
+        .unwrap()
+}
+
+fn assert_malformed_request(output: std::process::Output) {
+    assert_eq!(output.status.code(), Some(64));
+    assert!(output.stdout.is_empty());
+    let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["schema"], contract()["schema_identifiers"]["error"]);
+    assert_eq!(error["reason"], "malformed-request");
+}
+
 fn bundled_refusal(
     completion: Completion,
     configure: impl FnOnce(&mut GenerateRequest),
@@ -252,29 +275,43 @@ fn real_wire_rejects_unknown_v2_request_field_on_stderr() {
     let mut value: serde_json::Value =
         serde_json::from_str(&encode_one_shot_request(&request()).unwrap()).unwrap();
     value["unknown"] = serde_json::json!(true);
-    let output = Command::new(support::generate_wire())
-        .arg("--one-shot")
-        .env("SOLSTONE_JOURNAL", &journal.path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .and_then(|mut child| {
-            use std::io::Write;
-            child
-                .stdin
-                .as_mut()
-                .unwrap()
-                .write_all(value.to_string().as_bytes())?;
-            child.wait_with_output()
-        })
-        .unwrap();
-    assert_eq!(output.status.code(), Some(64));
-    assert!(matches!(output.status.code(), Some(0 | 64 | 70)));
-    assert_ne!(output.status.code(), Some(69));
-    assert!(output.stdout.is_empty());
-    let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(error["schema"], contract()["schema_identifiers"]["error"]);
+    assert_malformed_request(spawn_raw_v2(&journal, &value.to_string()));
+}
+
+#[test]
+fn real_wire_rejects_other_malformed_v2_request_shapes() {
+    let journal = Journal::no_engine();
+    let valid: serde_json::Value =
+        serde_json::from_str(&encode_one_shot_request(&request()).unwrap()).unwrap();
+    let mut contents_string = valid.clone();
+    contents_string["contents"] = serde_json::json!("wrong");
+    let mut context_number = valid.clone();
+    context_number["context"] = serde_json::json!(3);
+    let mut text_number = valid;
+    text_number["contents"][0]["text"] = serde_json::json!(3);
+    for malformed in [
+        serde_json::json!({}),
+        contents_string,
+        context_number,
+        text_number,
+    ] {
+        assert_malformed_request(spawn_raw_v2(&journal, &malformed.to_string()));
+    }
+}
+
+#[test]
+fn real_wire_rejects_retired_v1_request_schema() {
+    let journal = Journal::no_engine();
+    let mut value: serde_json::Value =
+        serde_json::from_str(&encode_one_shot_request(&request()).unwrap()).unwrap();
+    value["schema"] = serde_json::json!("solstone-generate-request-v1");
+    assert_malformed_request(spawn_raw_v2(&journal, &value.to_string()));
+}
+
+#[test]
+fn real_wire_rejects_unparseable_stdin() {
+    let journal = Journal::no_engine();
+    assert_malformed_request(spawn_raw_v2(&journal, "{"));
 }
 
 #[test]

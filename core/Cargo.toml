@@ -67,6 +67,7 @@ hyper-util = { version = "0.1.20", default-features = false, features = ["tokio"
 solstone-core-speakers = { path = "crates/solstone-core-speakers" }
 solstone-core-speakers-analyze = { path = "crates/solstone-core-speakers-analyze" }
 solstone-core-depict = { path = "crates/solstone-core-depict" }
+solstone-core-generate = { path = "crates/solstone-core-generate" }
 solstone-core-speakers-onnx = { path = "crates/solstone-core-speakers-onnx" }
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 chrono-tz = "0.10.4"

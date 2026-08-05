@@ -9,7 +9,7 @@
 use std::env;
 use std::ffi::OsString;
 use std::fs;
-use std::io::{Cursor, Write};
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
@@ -18,11 +18,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use base64::Engine;
 use image::{DynamicImage, GenericImageView, ImageFormat, imageops::FilterType};
 use serde_json::{Map, Value, json};
+use solstone_core_generate::{
+    ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient, RefusalReason,
+};
 use solstone_core_journal_io::{AtomicWriteOptions, write_jsonl};
 
-pub const REQUEST_SCHEMA: &str = "solstone-generate-request-v1";
-pub const RESPONSE_SCHEMA: &str = "solstone-generate-response-v1";
-pub const ERROR_SCHEMA: &str = "solstone-generate-error-v1";
+pub const ERROR_SCHEMA: &str = "solstone-depict-error-v1";
 pub const DESCRIPTION_PROMPT: &str = "Describe this image in detail. Include any visible text, people, objects, setting, and notable context. Return a concise natural-language description.";
 pub const USAGE: &str = "Usage: solstone-core-depict <image_path> [--redo]";
 const MAX_VLM_DIM: u32 = 1920;
@@ -43,7 +44,11 @@ pub struct Arguments {
 pub enum DepictError {
     Usage(String),
     Image(String),
-    Wire(String),
+    Wire {
+        detail: String,
+        blocking: bool,
+        reason_code: Option<String>,
+    },
     Metadata(String),
     Output(String),
 }
@@ -53,7 +58,7 @@ impl DepictError {
         match self {
             Self::Usage(_) => "malformed-request",
             Self::Image(_) => "image-invalid",
-            Self::Wire(_) => "generate-wire-failed",
+            Self::Wire { .. } => "generate-wire-failed",
             Self::Metadata(_) => "metadata-invalid",
             Self::Output(_) => "output-unwritable",
         }
@@ -68,15 +73,36 @@ impl DepictError {
         match self {
             Self::Usage(detail)
             | Self::Image(detail)
-            | Self::Wire(detail)
+            | Self::Wire { detail, .. }
             | Self::Metadata(detail)
             | Self::Output(detail) => detail,
+        }
+    }
+
+    pub fn blocking(&self) -> bool {
+        match self {
+            Self::Wire { blocking, .. } => *blocking,
+            Self::Usage(_) | Self::Image(_) | Self::Metadata(_) | Self::Output(_) => false,
+        }
+    }
+
+    pub fn reason_code(&self) -> Option<&str> {
+        match self {
+            Self::Wire { reason_code, .. } => reason_code.as_deref(),
+            Self::Usage(_) | Self::Image(_) | Self::Metadata(_) | Self::Output(_) => None,
         }
     }
 }
 
 pub fn error_json_line(error: &DepictError) -> String {
-    json!({"schema": ERROR_SCHEMA, "reason": error.reason(), "detail": error.detail()}).to_string()
+    json!({
+        "schema": ERROR_SCHEMA,
+        "reason": error.reason(),
+        "detail": error.detail(),
+        "blocking": error.blocking(),
+        "reason_code": error.reason_code(),
+    })
+    .to_string()
 }
 
 pub fn parse_args(args: &[OsString]) -> Result<Arguments, DepictError> {
@@ -93,14 +119,8 @@ pub fn parse_args(args: &[OsString]) -> Result<Arguments, DepictError> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum WireFailure {
-    NoEngine,
-    Failure { reason: String, detail: String },
-}
-
 pub trait WireClient {
-    fn describe(&self, image_png: &[u8]) -> Result<String, WireFailure>;
+    fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError>;
 }
 
 pub trait Detector {
@@ -110,71 +130,8 @@ pub trait Detector {
 pub struct SystemWireClient;
 
 impl WireClient for SystemWireClient {
-    fn describe(&self, image_png: &[u8]) -> Result<String, WireFailure> {
-        let helper = sibling_executable("solstone-generate-wire").map_err(|detail| {
-            WireFailure::Failure {
-                reason: "wire-launch-failed".to_owned(),
-                detail,
-            }
-        })?;
-        let request = json!({
-            "schema": REQUEST_SCHEMA,
-            "contents": [
-                {"type": "text", "text": DESCRIPTION_PROMPT},
-                {"type": "image", "data": base64::engine::general_purpose::STANDARD.encode(image_png), "mime_type": "image/png"}
-            ],
-            "context": "observe.depict"
-        });
-        let mut child = Command::new(helper)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| WireFailure::Failure {
-                reason: "wire-launch-failed".to_owned(),
-                detail: error.to_string(),
-            })?;
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin
-                .write_all(request.to_string().as_bytes())
-                .map_err(|error| WireFailure::Failure {
-                    reason: "wire-write-failed".to_owned(),
-                    detail: error.to_string(),
-                })?;
-        }
-        let output = child
-            .wait_with_output()
-            .map_err(|error| WireFailure::Failure {
-                reason: "wire-wait-failed".to_owned(),
-                detail: error.to_string(),
-            })?;
-        if output.status.success() {
-            let parsed: Value =
-                serde_json::from_slice(&output.stdout).map_err(|error| WireFailure::Failure {
-                    reason: "malformed-response".to_owned(),
-                    detail: error.to_string(),
-                })?;
-            let text = parsed
-                .get("result")
-                .and_then(Value::as_object)
-                .and_then(|result| result.get("text"))
-                .and_then(Value::as_str)
-                .ok_or_else(|| WireFailure::Failure {
-                    reason: "malformed-response".to_owned(),
-                    detail: "response has no result text".to_owned(),
-                })?;
-            if parsed.get("schema").and_then(Value::as_str) != Some(RESPONSE_SCHEMA) {
-                return Err(WireFailure::Failure {
-                    reason: "malformed-response".to_owned(),
-                    detail: "response schema is not supported".to_owned(),
-                });
-            }
-            return Ok(text.to_owned());
-        }
-        Err(wire_failure_from_stderr(
-            output.status.code(),
-            &output.stderr,
-        ))
+    fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+        OneShotClient::sibling()?.execute(request)
     }
 }
 
@@ -212,27 +169,6 @@ impl Detector for SystemDetector {
         let parsed = serde_json::from_slice(&fs::read(output).map_err(|error| error.to_string())?)
             .map_err(|error| error.to_string())?;
         Ok(Some(parsed))
-    }
-}
-
-fn wire_failure_from_stderr(exit_code: Option<i32>, stderr: &[u8]) -> WireFailure {
-    let error: Value = serde_json::from_slice(stderr).unwrap_or(Value::Null);
-    let schema_matches = error.get("schema").and_then(Value::as_str) == Some(ERROR_SCHEMA);
-    let reason = error
-        .get("reason")
-        .and_then(Value::as_str)
-        .unwrap_or("wire-failed");
-    let detail = error
-        .get("detail")
-        .and_then(Value::as_str)
-        .unwrap_or("generate wire failed");
-    if schema_matches && reason == "no-engine-configured" && exit_code == Some(69) {
-        WireFailure::NoEngine
-    } else {
-        WireFailure::Failure {
-            reason: reason.to_owned(),
-            detail: detail.to_owned(),
-        }
     }
 }
 
@@ -287,22 +223,6 @@ fn query_rfdetr_paths() -> Result<RfdetrPaths, String> {
     })
 }
 
-fn sibling_executable(name: &str) -> Result<PathBuf, String> {
-    let current = env::current_exe().map_err(|error| error.to_string())?;
-    let candidate = current
-        .parent()
-        .ok_or("native executable has no parent")?
-        .join(name);
-    if candidate.is_file() {
-        Ok(candidate)
-    } else {
-        Err(format!(
-            "missing sibling executable {}",
-            candidate.display()
-        ))
-    }
-}
-
 fn sibling_python() -> Result<PathBuf, String> {
     let current = env::current_exe().map_err(|error| error.to_string())?;
     let directory = current.parent().ok_or("native executable has no parent")?;
@@ -344,6 +264,74 @@ pub enum RunOutcome {
     NoEngine,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Description {
+    Generated(String),
+    NoEngine,
+}
+
+fn wire_error(detail: String, blocking: bool, reason_code: Option<String>) -> DepictError {
+    DepictError::Wire {
+        detail,
+        blocking,
+        reason_code,
+    }
+}
+
+fn interpret_generate(
+    response: Result<GenerateResponse, ClientError>,
+) -> Result<Description, DepictError> {
+    match response {
+        Ok(GenerateResponse::Generated(generated)) => Ok(Description::Generated(generated.text)),
+        Ok(GenerateResponse::Refused(refusal))
+            if refusal.reason == RefusalReason::NoEngineConfigured =>
+        {
+            Ok(Description::NoEngine)
+        }
+        Ok(GenerateResponse::Refused(refusal)) => Err(wire_error(
+            format!("{}: {}", refusal.reason.as_str(), refusal.detail),
+            refusal.blocking,
+            refusal.reason_code.map(|code| code.as_wire().to_owned()),
+        )),
+        Err(ClientError::Protocol(error)) => Err(wire_error(
+            format!("{}: {}", error.reason, error.detail),
+            true,
+            None,
+        )),
+        Err(ClientError::Decode(detail)) => Err(wire_error(detail, true, None)),
+        Err(ClientError::Io(detail)) | Err(ClientError::Resolve(detail)) => {
+            Err(wire_error(detail, true, None))
+        }
+    }
+}
+
+fn build_generate_request(prepared_png: &[u8]) -> GenerateRequest {
+    GenerateRequest {
+        id: None,
+        context: "observe.depict".to_owned(),
+        contents: vec![
+            ContentPart::Text {
+                text: DESCRIPTION_PROMPT.to_owned(),
+            },
+            ContentPart::Image {
+                mime_type: "image/png".to_owned(),
+                data: base64::engine::general_purpose::STANDARD.encode(prepared_png),
+            },
+        ],
+        system_instruction: None,
+        temperature: 0.3,
+        max_output_tokens: 16_384,
+        thinking_budget: None,
+        timeout_s: None,
+        json_output: false,
+        json_schema: None,
+        enforce_responsiveness: true,
+        attempt_index: 0,
+        exclusive_admission: false,
+        transport_retries: None,
+    }
+}
+
 pub fn run_with_clients(
     image_path: &Path,
     redo: bool,
@@ -361,19 +349,17 @@ pub fn run_with_clients(
     let full_png = encode_png(&image)?;
     let prepared = resize_for_vlm(image);
     let prepared_png = encode_png(&prepared)?;
-    let description = match wire.describe(&prepared_png) {
-        Ok(description) => description.trim().to_owned(),
-        Err(WireFailure::NoEngine) => return Ok(RunOutcome::NoEngine),
-        Err(WireFailure::Failure { reason, detail }) => {
-            return Err(DepictError::Wire(format!("{reason}: {detail}")));
-        }
-    };
+    let description =
+        match interpret_generate(wire.execute(&build_generate_request(&prepared_png)))? {
+            Description::Generated(description) => description.trim().to_owned(),
+            Description::NoEngine => return Ok(RunOutcome::NoEngine),
+        };
     let header = build_header(&image_path.file_name().unwrap_or_default().to_string_lossy())?;
     let mut entry = Map::new();
     entry.insert("start".to_owned(), Value::String("00:00:00".to_owned()));
     entry.insert("text".to_owned(), Value::String(description));
     match detector.detect(&full_png) {
-        Ok(Some(result)) => match detections_block(result) {
+        Ok(Some(detection)) => match detections_block(detection) {
             Ok(block) => {
                 entry.insert("detections".to_owned(), block);
             }
@@ -490,8 +476,8 @@ fn build_header_from_values(
     Ok(header)
 }
 
-fn detections_block(result: Value) -> Result<Value, String> {
-    let object = result
+fn detections_block(value: Value) -> Result<Value, String> {
+    let object = value
         .as_object()
         .ok_or("detector output is not an object")?;
     let image = object
@@ -527,37 +513,92 @@ pub fn run(arguments: Arguments) -> Result<RunOutcome, DepictError> {
 mod tests {
     use super::*;
     use image::{ImageBuffer, Rgb};
+    use solstone_core_generate::{
+        GeneratedResponse, ProtocolError, ReasonCode, ReasonCodeValue, RefusedResponse,
+        decode_one_shot_response, decode_protocol_error,
+    };
+
+    fn generated(text: &str) -> GenerateResponse {
+        GenerateResponse::Generated(Box::new(GeneratedResponse {
+            id: None,
+            text: text.to_owned(),
+            model: "test-model".to_owned(),
+            usage: json!({}),
+            finish_reason: "stop".to_owned(),
+            thinking: None,
+            schema_validation: None,
+            input_budget: None,
+            request_budget: None,
+            inference: None,
+        }))
+    }
+
+    fn refused(
+        reason: RefusalReason,
+        reason_code: Option<&str>,
+        blocking: bool,
+    ) -> GenerateResponse {
+        GenerateResponse::Refused(RefusedResponse {
+            id: None,
+            reason,
+            reason_code: reason_code.map(|code| {
+                ReasonCodeValue::Known(ReasonCode::new(code).expect("test reason code is known"))
+            }),
+            retryable: false,
+            blocking,
+            reset_at_ms: None,
+            provider: None,
+            detail: "wire detail".to_owned(),
+        })
+    }
 
     struct SuccessWire;
     impl WireClient for SuccessWire {
-        fn describe(&self, _: &[u8]) -> Result<String, WireFailure> {
-            Ok("  detail  ".to_owned())
+        fn execute(&self, _: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+            Ok(generated("  detail  "))
         }
     }
+
     struct NoEngineWire;
     impl WireClient for NoEngineWire {
-        fn describe(&self, _: &[u8]) -> Result<String, WireFailure> {
-            Err(WireFailure::NoEngine)
+        fn execute(&self, _: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+            Ok(refused(RefusalReason::NoEngineConfigured, None, true))
         }
     }
+
     struct FailingWire;
     impl WireClient for FailingWire {
-        fn describe(&self, _: &[u8]) -> Result<String, WireFailure> {
-            Err(WireFailure::Failure {
-                reason: "incomplete-text".to_owned(),
-                detail: "bad".to_owned(),
-            })
-        }
-    }
-    struct WrongSchemaNoEngineWire;
-    impl WireClient for WrongSchemaNoEngineWire {
-        fn describe(&self, _: &[u8]) -> Result<String, WireFailure> {
-            Err(wire_failure_from_stderr(
-                Some(69),
-                br#"{"schema":"wrong-schema","reason":"no-engine-configured","detail":"none"}"#,
+        fn execute(&self, _: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+            Ok(refused(
+                RefusalReason::IncompleteText,
+                Some("incomplete_text_length"),
+                false,
             ))
         }
     }
+
+    struct WrongSchemaNoEngineWire;
+    impl WireClient for WrongSchemaNoEngineWire {
+        fn execute(&self, _: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+            decode_one_shot_response(
+                &json!({"schema": "solstone-generate-response-v1", "outcome": "refused"})
+                    .to_string(),
+            )
+            .map_err(ClientError::Decode)
+        }
+    }
+
+    struct StaleWire;
+    impl WireClient for StaleWire {
+        fn execute(&self, _: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+            Ok(refused(
+                RefusalReason::AttestationStale,
+                Some("attestation_stale"),
+                true,
+            ))
+        }
+    }
+
     struct NoDetector;
     impl Detector for NoDetector {
         fn detect(&self, _: &[u8]) -> Result<Option<Value>, String> {
@@ -615,6 +656,161 @@ mod tests {
     }
 
     #[test]
+    fn handler_error_record_uses_depict_schema_and_uniform_metadata() {
+        let error = DepictError::Wire {
+            detail: "wire detail".to_owned(),
+            blocking: true,
+            reason_code: Some("attestation_stale".to_owned()),
+        };
+        let line: Value = serde_json::from_str(&error_json_line(&error)).unwrap();
+        assert_eq!(line["schema"], "solstone-depict-error-v1");
+        assert_eq!(line["reason"], "generate-wire-failed");
+        assert_eq!(line["blocking"], true);
+        assert_eq!(line["reason_code"], "attestation_stale");
+
+        let line: Value =
+            serde_json::from_str(&error_json_line(&DepictError::Image("bad".to_owned()))).unwrap();
+        assert_eq!(line["blocking"], false);
+        assert!(line["reason_code"].is_null());
+    }
+
+    #[test]
+    fn interpret_generate_result_handles_all_client_error_doors() {
+        for detail in ["unparseable stdout", "empty stdout", "non-protocol stderr"] {
+            let error = interpret_generate(Err(ClientError::Decode(detail.to_owned())))
+                .expect_err("decode failures must not produce a description");
+            assert!(matches!(
+                error,
+                DepictError::Wire {
+                    blocking: true,
+                    reason_code: None,
+                    ..
+                }
+            ));
+        }
+        let error = interpret_generate(Err(ClientError::Protocol(ProtocolError {
+            id: None,
+            reason: "internal-failure".to_owned(),
+            detail: "failed to encode provider result".to_owned(),
+        })))
+        .expect_err("protocol error must not produce a description");
+        assert!(matches!(
+            error,
+            DepictError::Wire {
+                blocking: true,
+                reason_code: None,
+                ..
+            }
+        ));
+        for error in [
+            ClientError::Io("io".to_owned()),
+            ClientError::Resolve("resolve".to_owned()),
+        ] {
+            assert!(matches!(
+                interpret_generate(Err(error)),
+                Err(DepictError::Wire {
+                    blocking: true,
+                    reason_code: None,
+                    ..
+                })
+            ));
+        }
+    }
+
+    #[test]
+    fn interpret_generate_result_handles_generated_and_refused_responses() {
+        assert_eq!(
+            interpret_generate(Ok(generated("description"))).unwrap(),
+            Description::Generated("description".to_owned())
+        );
+        assert_eq!(
+            interpret_generate(Ok(refused(RefusalReason::NoEngineConfigured, None, true))).unwrap(),
+            Description::NoEngine
+        );
+        let error = interpret_generate(Ok(refused(
+            RefusalReason::AttestationStale,
+            Some("attestation_stale"),
+            true,
+        )))
+        .expect_err("non-no-engine refusal must fail the handler");
+        assert_eq!(error.reason(), "generate-wire-failed");
+        assert!(error.blocking());
+        assert_eq!(error.reason_code(), Some("attestation_stale"));
+    }
+
+    #[test]
+    fn interpret_generate_result_refuses_v1_records_as_decode_failures() {
+        let response = decode_one_shot_response(
+            &json!({"schema": "solstone-generate-response-v1", "outcome": "refused"}).to_string(),
+        )
+        .map_err(ClientError::Decode);
+        let error = interpret_generate(response).expect_err("v1 response must be rejected");
+        assert!(matches!(
+            error,
+            DepictError::Wire {
+                blocking: true,
+                reason_code: None,
+                ..
+            }
+        ));
+
+        let detail = decode_protocol_error(
+            &json!({
+                "schema": "solstone-generate-error-v1",
+                "reason": "no-engine-configured",
+                "detail": "none",
+            })
+            .to_string(),
+        )
+        .expect_err("v1 error schema must be rejected");
+        let error = interpret_generate(Err(ClientError::Decode(detail)))
+            .expect_err("v1 error must be rejected");
+        assert!(matches!(
+            error,
+            DepictError::Wire {
+                blocking: true,
+                reason_code: None,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn request_builder_preserves_resized_image_and_contract_defaults() {
+        let prepared = resize_for_vlm(DynamicImage::new_rgb8(3840, 2160));
+        assert_eq!(prepared.dimensions(), (1920, 1080));
+        let request = build_generate_request(&encode_png(&prepared).unwrap());
+        assert_eq!(request.id, None);
+        assert_eq!(request.context, "observe.depict");
+        assert_eq!(request.system_instruction, None);
+        assert_eq!(request.temperature, 0.3);
+        assert_eq!(request.max_output_tokens, 16_384);
+        assert_eq!(request.thinking_budget, None);
+        assert_eq!(request.timeout_s, None);
+        assert!(!request.json_output);
+        assert_eq!(request.json_schema, None);
+        assert!(request.enforce_responsiveness);
+        assert_eq!(request.attempt_index, 0);
+        assert!(!request.exclusive_admission);
+        assert_eq!(request.transport_retries, None);
+        assert!(matches!(
+            &request.contents[0],
+            ContentPart::Text { text } if text == DESCRIPTION_PROMPT
+        ));
+        let ContentPart::Image { mime_type, data } = &request.contents[1] else {
+            panic!("second content part must be an image")
+        };
+        assert_eq!(mime_type, "image/png");
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .unwrap();
+        assert_eq!(
+            image::load_from_memory(&decoded).unwrap().dimensions(),
+            (1920, 1080)
+        );
+    }
+
+    #[test]
     fn skip_redo_and_no_engine_preserve_output_rules() {
         let (root, image) = fixture_image();
         let output = image.with_extension("jsonl");
@@ -642,7 +838,7 @@ mod tests {
         let output = image.with_extension("jsonl");
         assert!(matches!(
             run_with_clients(&image, false, &FailingWire, &NoDetector),
-            Err(DepictError::Wire(_))
+            Err(DepictError::Wire { .. })
         ));
         assert!(!output.exists());
         assert_eq!(
@@ -673,9 +869,22 @@ mod tests {
         let (root, image) = fixture_image();
         assert!(matches!(
             run_with_clients(&image, false, &WrongSchemaNoEngineWire, &NoDetector),
-            Err(DepictError::Wire(_))
+            Err(DepictError::Wire { .. })
         ));
         assert!(!image.with_extension("jsonl").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn stale_refusal_preserves_metadata_without_writing_output() {
+        let (root, image) = fixture_image();
+        let error = run_with_clients(&image, false, &StaleWire, &NoDetector)
+            .expect_err("attestation refusal must not write");
+        assert_eq!(error.exit_code(), 1);
+        assert!(!image.with_extension("jsonl").exists());
+        let record: Value = serde_json::from_str(&error_json_line(&error)).unwrap();
+        assert_eq!(record["blocking"], true);
+        assert_eq!(record["reason_code"], "attestation_stale");
         let _ = fs::remove_dir_all(root);
     }
 
@@ -694,7 +903,11 @@ mod tests {
         for error in [
             DepictError::Usage("x".to_owned()),
             DepictError::Image("x".to_owned()),
-            DepictError::Wire("x".to_owned()),
+            DepictError::Wire {
+                detail: "x".to_owned(),
+                blocking: false,
+                reason_code: None,
+            },
             DepictError::Metadata("x".to_owned()),
             DepictError::Output("x".to_owned()),
         ] {
