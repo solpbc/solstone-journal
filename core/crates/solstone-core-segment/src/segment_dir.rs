@@ -48,6 +48,8 @@ fn validate_component(value: &str, kind: &'static str) -> Result<(), SegmentErro
         || value.contains('/')
         || value.contains('\\')
         || matches!(value, "." | "..")
+        || value.starts_with('.')
+        || value.chars().any(|ch| ch.is_ascii_uppercase())
     {
         return Err(SegmentError::StreamInput(match kind {
             "segment" => "segment must be a plain path component",

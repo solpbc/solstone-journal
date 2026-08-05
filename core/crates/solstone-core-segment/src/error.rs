@@ -40,6 +40,11 @@ pub enum SegmentError {
         source: ReadError,
     },
     StreamInput(&'static str),
+    InvalidDeviceDid(&'static str),
+    InvalidDeviceJid(&'static str),
+    StreamBindingConflict {
+        name: String,
+    },
     Serialization {
         path: PathBuf,
         source: serde_json::Error,
@@ -81,6 +86,11 @@ impl fmt::Display for SegmentError {
                 )
             }
             Self::StreamInput(message) => formatter.write_str(message),
+            Self::InvalidDeviceDid(reason) => write!(formatter, "invalid device did: {reason}"),
+            Self::InvalidDeviceJid(reason) => write!(formatter, "invalid device jid: {reason}"),
+            Self::StreamBindingConflict { name } => {
+                write!(formatter, "stream record binding changed for {name}")
+            }
             Self::Serialization { path, source } => {
                 write!(formatter, "{}: {source}", path.display())
             }
@@ -103,7 +113,10 @@ impl Error for SegmentError {
             Self::MalformedManifest { .. }
             | Self::UnsupportedManifestSchema { .. }
             | Self::IdentityRefusal { .. }
-            | Self::StreamInput(_) => None,
+            | Self::StreamInput(_)
+            | Self::InvalidDeviceDid(_)
+            | Self::InvalidDeviceJid(_)
+            | Self::StreamBindingConflict { .. } => None,
         }
     }
 }
