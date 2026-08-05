@@ -80,10 +80,22 @@ crate and the Python shim read that file. ⛔ **Neither language holds its own c
   client must write requests and read responses concurrently.** A client that writes a large request
   while the child is blocked writing a response nobody is reading deadlocks both. See § the two
   framings.
-- **`attempt_index`, `exclusive_admission`, `transport_retries`** — retry and admission hints. Each is
-  meaningful to one lane and ignored by the others. ⚠ These are deliberately named for what they
-  *do* rather than for the lane that honours them; a lane name in a field name is the provider leak
-  arriving by the side door.
+- **`attempt_index`, `exclusive_admission`, `transport_retries`** — retry and admission **hints**. ⚠ They
+  are deliberately named for what they *do* rather than for the lane that honours them; a lane name in
+  a field name is the provider leak arriving by the side door.
+  🔴 **A hint is the one category of field a lane may decline to apply, and the response says so.** Each
+  is meaningful to one lane and meaningless to the others — and a caller **cannot see which lane it
+  resolved to**, by design. So refusing a request because its lane cannot honour a hint would punish a
+  caller for a fact the contract deliberately hides from it: the talent path sets an admission hint on
+  every local retry, and it would start being refused whenever the journal happens to resolve to a
+  cloud provider.
+  ✅ **The resolution is neither refuse nor drop: a generated response reports `hints_applied`**, the
+  subset that took effect. Nothing is silently ignored, because the answer carries what happened, and
+  nothing is refused for asking. ⛔ This exemption is for **hints only** — every other declared field is
+  honoured or the request is refused.
+  ⚠ **Today one lane accepts both admission hints and discards them**: the non-bundled local path pops
+  them and then takes a branch that never reads them. That is exactly the state `hints_applied` makes
+  visible instead of invisible.
 
 ⛔ **Unknown request fields are refused, not ignored.** A caller sending a field the boundary does not
 know is a caller that believes something false about the contract.
@@ -107,7 +119,8 @@ know is a caller that believes something false about the contract.
   "schema_validation": null,
   "input_budget": null,
   "request_budget": null,
-  "inference": null
+  "inference": null,
+  "hints_applied": ["attempt_index"]
 }
 ```
 
@@ -243,10 +256,29 @@ child outlives a single request, and an undrained pipe fills — at which point 
 a log line and every outstanding request stalls behind it. In one-shot framing this cannot happen; in
 session framing it is a hang wearing a performance costume.
 
-⚠ **Request fields are honoured or refused, never accepted and dropped.** Some retry and admission
-hints reach only one of the two internal call paths today. A field this contract declares must either
-take effect or come back as a refusal naming itself — silently ignoring a declared field is a contract
-that lies, which is worse than one that says no.
+⚠ **Request fields are honoured or refused, never accepted and dropped** — with the single, named
+exception of the three **hints**, which a lane may decline to apply and which the response reports back
+in `hints_applied`. See § Request. Silently ignoring a declared field is a contract that lies, which is
+worse than one that says no; reporting what was applied is better than either.
+
+### 🔴 Closing a session, and the two ways stdin ends
+
+**A caller closes a session by writing a terminal record, then closing stdin.** On seeing it the child
+drains its outstanding requests, answers them, and exits `0`.
+
+⛔ **Bare end-of-file without that record means the caller is gone, and the child aborts.** It answers
+nothing further, writes no further usage, and exits.
+
+📌 **This exists because the two cases are otherwise indistinguishable.** When a caller is killed, the
+kernel closes its write end exactly as a deliberate close does — so a child with only one shutdown
+signal must guess between *finish the work* and *your owner is dead*, and both guesses are wrong half
+the time. Draining for a dead owner means completions nobody receives, usage logged against work
+nobody asked for, and a child outliving the process containment it was supposed to inherit.
+
+⚠ **The obvious alternatives do not work here.** A process group does not die when its leader dies —
+something must send the signal, and a killed caller cannot. A parent-death signal is Linux-only and
+this tree builds for Apple targets. A supervising reaper is a third process with the same problem one
+level up. **One JSON line settles it portably.**
 
 🔴 **One child per consumer process, never a shared daemon.** The child is launched by the consumer,
 lives as long as the consumer, and dies with it. The pipeline's failure containment — one process per
