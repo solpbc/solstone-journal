@@ -86,7 +86,15 @@ Processed sense output written back.
 
 🆕 **Added 2026-08-05 by operator ruling**, split out of `S:segment-sense:journal-segment`. The per-file outcome ledger — `_solstone_processing` — and the predicates every reader decides against. See [`plates.md`](plates.md) § `P-segment-processing` for why it is its own boundary.
 
-**Producers are `describe` and `transcribe` only** — `observe/describe.py:915`, `observe/transcribe/main.py:611-612`, both via `build_processing_record` (`observe/processing_record.py:160-190`), plus the operator bulk stamp `think/backfill_processing_records.py:177-197`.
+🔴 **There are THREE producers, and the third is the one that matters most.** ⚠ This line previously read *"describe and transcribe only"* and then named a third in the same sentence — a self-contradiction that is exactly how the third gets omitted downstream.
+
+| producer | writes | via |
+|---|---|---|
+| `observe/describe.py:915` | screen verdicts | `build_processing_record` (`observe/processing_record.py:160-190`) |
+| `observe/transcribe/main.py` at **`:652`** (empty), **`:679`** (failed), **`:900`** (analyzed) | audio verdicts | same ⚠ `:611-612` is the metadata-assembly line, not a call site |
+| 🔴 **`think/backfill_processing_records.py:170-198`** | `state=empty` with `source="backfill"`, and `input_size` from the media sibling — **or `0` when the sibling is absent or `stat()` raises** | same |
+
+🔴 **The third stamps a verdict no handler produced, and both terminal-proof implementations ignore `source` entirely.** So an operator-stamped `empty` licenses retention to purge and licenses a device to drop its only copy, with nothing having processed the file. ⚠ Measured: a real journal's screen outputs that carry **no record at all** — and therefore cannot grant proof — are precisely this tool's target population, so one operator command converts them from proof-less to proof-bearing. ⛔ `source` is the record's only provenance field; a rebuild must carry it, and must not quietly resolve this.
 
 ⚠ **`observe/depict.py` writes no record at all**, so image outputs are invisible to every reader — and both terminal-proof implementations refuse any extension outside audio/video anyway (`apps/observer/processing_proof.py:26-33`, `terminal_proof.rs:71-77`), so **an ingested image can never be proven consumed** and the sending device never releases its local copy. 🆕 **Operator ruling 2026-08-05: `depict` is promoted to first class** — it gains a record, a schema, re-entry and a formatter entry, and this hole closes.
 
