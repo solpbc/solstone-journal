@@ -765,7 +765,14 @@ def _ambiguity_rows() -> list[dict[str, Any]]:
             ResolutionScope.facet_scope("work"),
             "Straße",
             8,
-            ResolutionOrigin(lane="import", source_id="kindle", field="author"),
+            # 🔴 Non-ASCII on purpose. The origin KEY is serialised with
+            # ensure_ascii left on, so it carries \uXXXX escapes, while the
+            # surrounding row is raw UTF-8. Two encodings, one row. With only
+            # ASCII origins the difference is invisible, and getting it wrong
+            # duplicates an origin instead of matching it -- silently, and
+            # without ever tripping the same-length rule, because a duplicate
+            # appends to both lists.
+            ResolutionOrigin(lane="import", source_id="Straße Verlag", field="author"),
             "strasse_handels_gmbh",
         ),
     )
@@ -1188,6 +1195,17 @@ def build_entity_store_fixture() -> dict[str, Any]:
             "entities/{id}/history/events/{seq}-{version_id}.json": event_bytes,
             "entities/ambiguities.jsonl": ambiguities_bytes,
         },
+        "inputs_note": (
+            "⚠ These are the VALUES that produced the artifacts, and their key "
+            "order is NOT the artifacts' key order — this whole file is "
+            "serialised with sorted keys, which normalises it away. The "
+            "identity file and the ambiguity rows preserve INSERTION order on "
+            "disk, so re-serialising an input from here yields alphabetical "
+            "keys and will not match the artifact bytes. ⛔ Do not read that as "
+            "a corpus defect. For a byte comparison the ARTIFACT is its own "
+            "oracle: parse it order-preservingly, re-serialise, compare. These "
+            "inputs are for semantic assertions."
+        ),
         "inputs": {
             "identity": _ENTITY_FIXED,
             "identity_unicode": _ENTITY_UNICODE,

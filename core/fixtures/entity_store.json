@@ -1,6 +1,6 @@
 {
   "artifacts": {
-    "entities/ambiguities.jsonl": "{\"schema_version\": 1, \"ambiguity_id\": \"amb_04374a01e8579a661fb1d1aa\", \"scope\": {\"kind\": \"journal\"}, \"normalized_query\": \"alice\", \"original_query\": \"Alice\", \"latest_query\": \"Alice\", \"first_seen\": \"2026-08-04T00:00:00Z\", \"last_seen\": \"2026-08-04T00:00:00Z\", \"observed_tier\": 5, \"occurrence_count\": 1, \"status\": \"open\", \"ranked_candidates\": [{\"id\": \"alice_chen\", \"name\": \"Alice Chen\", \"tier\": 5, \"score\": 92.3076923076923}, {\"id\": \"alice_chan\", \"name\": \"Alice Chan\", \"tier\": 5, \"score\": 90.0}], \"origins\": [{\"lane\": \"segment\", \"day\": \"20260804\", \"segment_id\": \"s1\"}], \"origin_keys\": [\"{\\\"day\\\":\\\"20260804\\\",\\\"lane\\\":\\\"segment\\\",\\\"segment_id\\\":\\\"s1\\\"}\"], \"audit\": {\"prior_choices\": []}}\n{\"schema_version\": 1, \"ambiguity_id\": \"amb_7ffaa5cbbfc8319f825215a2\", \"scope\": {\"kind\": \"facet\", \"facet\": \"work\"}, \"normalized_query\": \"strasse\", \"original_query\": \"Stra\u00dfe\", \"latest_query\": \"Stra\u00dfe\", \"first_seen\": \"2026-08-04T00:00:00Z\", \"last_seen\": \"2026-08-04T00:00:00Z\", \"observed_tier\": 8, \"occurrence_count\": 1, \"status\": \"resolved\", \"ranked_candidates\": [{\"id\": \"alice_chen\", \"name\": \"Alice Chen\", \"tier\": 8, \"score\": 92.3076923076923}, {\"id\": \"alice_chan\", \"name\": \"Alice Chan\", \"tier\": 8, \"score\": 90.0}], \"origins\": [{\"lane\": \"import\", \"source_id\": \"kindle\", \"field\": \"author\"}], \"origin_keys\": [\"{\\\"field\\\":\\\"author\\\",\\\"lane\\\":\\\"import\\\",\\\"source_id\\\":\\\"kindle\\\"}\"], \"audit\": {\"prior_choices\": []}, \"resolved_entity_id\": \"strasse_handels_gmbh\", \"resolved_at\": \"2026-08-04T00:00:00Z\"}\n",
+    "entities/ambiguities.jsonl": "{\"schema_version\": 1, \"ambiguity_id\": \"amb_04374a01e8579a661fb1d1aa\", \"scope\": {\"kind\": \"journal\"}, \"normalized_query\": \"alice\", \"original_query\": \"Alice\", \"latest_query\": \"Alice\", \"first_seen\": \"2026-08-04T00:00:00Z\", \"last_seen\": \"2026-08-04T00:00:00Z\", \"observed_tier\": 5, \"occurrence_count\": 1, \"status\": \"open\", \"ranked_candidates\": [{\"id\": \"alice_chen\", \"name\": \"Alice Chen\", \"tier\": 5, \"score\": 92.3076923076923}, {\"id\": \"alice_chan\", \"name\": \"Alice Chan\", \"tier\": 5, \"score\": 90.0}], \"origins\": [{\"lane\": \"segment\", \"day\": \"20260804\", \"segment_id\": \"s1\"}], \"origin_keys\": [\"{\\\"day\\\":\\\"20260804\\\",\\\"lane\\\":\\\"segment\\\",\\\"segment_id\\\":\\\"s1\\\"}\"], \"audit\": {\"prior_choices\": []}}\n{\"schema_version\": 1, \"ambiguity_id\": \"amb_7ffaa5cbbfc8319f825215a2\", \"scope\": {\"kind\": \"facet\", \"facet\": \"work\"}, \"normalized_query\": \"strasse\", \"original_query\": \"Stra\u00dfe\", \"latest_query\": \"Stra\u00dfe\", \"first_seen\": \"2026-08-04T00:00:00Z\", \"last_seen\": \"2026-08-04T00:00:00Z\", \"observed_tier\": 8, \"occurrence_count\": 1, \"status\": \"resolved\", \"ranked_candidates\": [{\"id\": \"alice_chen\", \"name\": \"Alice Chen\", \"tier\": 8, \"score\": 92.3076923076923}, {\"id\": \"alice_chan\", \"name\": \"Alice Chan\", \"tier\": 8, \"score\": 90.0}], \"origins\": [{\"lane\": \"import\", \"source_id\": \"Stra\u00dfe Verlag\", \"field\": \"author\"}], \"origin_keys\": [\"{\\\"field\\\":\\\"author\\\",\\\"lane\\\":\\\"import\\\",\\\"source_id\\\":\\\"Stra\\\\u00dfe Verlag\\\"}\"], \"audit\": {\"prior_choices\": []}, \"resolved_entity_id\": \"strasse_handels_gmbh\", \"resolved_at\": \"2026-08-04T00:00:00Z\"}\n",
     "entities/{id}/entity.json": "{\n  \"id\": \"alice_johnson\",\n  \"name\": \"Alice Johnson\",\n  \"type\": \"Person\",\n  \"created_at\": 1785889922582,\n  \"aka\": [\n    \"Ali\",\n    \"AJ\"\n  ],\n  \"emails\": [\n    \"alice@example.com\"\n  ]\n}\n",
     "entities/{id}/entity.json (unicode)": "{\n  \"id\": \"jose_garcia\",\n  \"name\": \"Jos\u00e9 Garc\u00eda\",\n  \"type\": \"Person\",\n  \"created_at\": 1785889922583,\n  \"description\": \"raw UTF-8 on disk, never \\\\u escapes\"\n}\n",
     "entities/{id}/history/events/{seq}-{version_id}.json": "{\n  \"actor\": null,\n  \"caller\": null,\n  \"entity_id\": \"alice_johnson\",\n  \"identity_after\": {\n    \"aka\": [\n      \"Ali\",\n      \"AJ\"\n    ],\n    \"created_at\": 1785889922582,\n    \"emails\": [\n      \"alice@example.com\"\n    ],\n    \"id\": \"alice_johnson\",\n    \"name\": \"Alice Johnson\",\n    \"type\": \"Person\"\n  },\n  \"identity_before\": null,\n  \"kind\": \"create\",\n  \"operation\": {},\n  \"schema_version\": 1,\n  \"seq\": 1,\n  \"ts\": \"2026-08-05T00:32:02.582506Z\",\n  \"version_id\": \"vh_49d7adcbf786461cb11c00081afa9780\"\n}\n"
@@ -315,14 +315,14 @@
         "observed_tier": 8,
         "occurrence_count": 1,
         "origin_keys": [
-          "{\"field\":\"author\",\"lane\":\"import\",\"source_id\":\"kindle\"}"
+          "{\"field\":\"author\",\"lane\":\"import\",\"source_id\":\"Stra\\u00dfe Verlag\"}"
         ],
         "original_query": "Stra\u00dfe",
         "origins": [
           {
             "field": "author",
             "lane": "import",
-            "source_id": "kindle"
+            "source_id": "Stra\u00dfe Verlag"
           }
         ],
         "ranked_candidates": [
@@ -395,6 +395,7 @@
       "type": "Person"
     }
   },
+  "inputs_note": "\u26a0 These are the VALUES that produced the artifacts, and their key order is NOT the artifacts' key order \u2014 this whole file is serialised with sorted keys, which normalises it away. The identity file and the ambiguity rows preserve INSERTION order on disk, so re-serialising an input from here yields alphabetical keys and will not match the artifact bytes. \u26d4 Do not read that as a corpus defect. For a byte comparison the ARTIFACT is its own oracle: parse it order-preservingly, re-serialise, compare. These inputs are for semantic assertions.",
   "negative": {
     "ambiguity_rows": [
       {
