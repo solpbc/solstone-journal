@@ -15,6 +15,7 @@ members = [
     "crates/solstone-core-sol-link",
     "crates/solstone-core-convey-http",
     "crates/solstone-core-ingest",
+    "crates/solstone-core-ingest-resolve",
     "crates/solstone-core-spl",
     "crates/solstone-core-speakers",
     "crates/solstone-core-speakers-analyze",
@@ -36,6 +37,7 @@ solstone-core-cli = { path = "crates/solstone-core-cli" }
 solstone-core-entity = { path = "crates/solstone-core-entity" }
 solstone-core-indexer = { path = "crates/solstone-core-indexer" }
 solstone-core-indexer-store = { path = "crates/solstone-core-indexer-store" }
+solstone-core-ingest-resolve = { path = "crates/solstone-core-ingest-resolve" }
 solstone-core-journal = { path = "crates/solstone-core-journal" }
 solstone-core-journal-io = { path = "crates/solstone-core-journal-io" }
 solstone-core-segment = { path = "crates/solstone-core-segment" }
@@ -67,6 +69,7 @@ rusqlite = { version = "0.40.1", features = ["bundled"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde_json = { version = "1.0.150", features = ["preserve_order", "float_roundtrip"] }
 serde = { version = "1.0.229", features = ["derive"] }
+sha2 = "0.10.9"
 spl-core = { git = "https://github.com/solpbc/spl-rust", tag = "v0.5.0" }
 spl-transport = { git = "https://github.com/solpbc/spl-rust", tag = "v0.5.0" }
 tokio = { version = "1", default-features = false }
