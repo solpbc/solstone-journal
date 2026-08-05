@@ -10,10 +10,12 @@ license.workspace = true
 publish = false
 
 [dependencies]
+caseless = "0.2.2"
 serde = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["raw_value"] }
 sha2 = "0.10.9"
 solstone-core-journal-io = { workspace = true }
+unicode-normalization.workspace = true
 
 [lints]
 workspace = true
