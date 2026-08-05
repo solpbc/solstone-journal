@@ -6,6 +6,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -15,14 +17,15 @@ use solstone_core_journal_io::{
 };
 
 use crate::{
-    AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityWriteError,
+    AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityIdentityRepairError,
+    EntityIdentityRepairGuard, EntityIdentityRepairSkipReason, EntityWriteError,
     IdentityMapLoserReason, PreparedHistoryOutcome, classify_prepared_history,
     guard_restore_does_not_cross_merge, guard_visible_event_collision,
     load_resolved_ambiguity_choice, read_ambiguities, read_entity_identity, read_identity_map,
     read_prepared_history, read_visible_history, record_ambiguity_choice,
-    record_ambiguity_observation, refresh_identity_map_cache, save_entity_identity,
-    save_entity_identity_with_timeout, set_forced_identity_write_failure,
-    write_history_event_json_for_test,
+    record_ambiguity_observation, refresh_identity_map_cache, repair_entity_identities,
+    save_entity_identity, save_entity_identity_with_timeout, set_forced_identity_write_failure,
+    set_repair_identity_write_failure_on_attempt, write_history_event_json_for_test,
 };
 
 const ENTITY_STORE_FIXTURE: &str = include_str!(concat!(
@@ -1781,4 +1784,494 @@ fn write_bytes(root: &Path, relative: &str, contents: &[u8]) {
     let path = root.join(relative);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, contents).unwrap();
+}
+
+#[test]
+fn identity_repair_fixture_cases_stamp_directory_ids() {
+    let fixture = fixture();
+    let cases = fixture["identity_repair"]["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 3);
+    assert_eq!(
+        cases.len(),
+        fixture["identity_repair"]["case_count"].as_u64().unwrap() as usize
+    );
+
+    for case in cases {
+        let temporary = TempDir::new();
+        let entity_dir = case["entity_dir"].as_str().unwrap();
+        write_json(
+            temporary.path(),
+            &format!("entities/{entity_dir}/entity.json"),
+            &case["before_repair"],
+        );
+
+        let report = repair_entity_identities(temporary.path()).unwrap();
+
+        let actual = read_entity_identity(temporary.path(), entity_dir)
+            .unwrap()
+            .unwrap()
+            .value()
+            .clone();
+        assert_eq!(actual, case["after_repair"], "{}", case["note"]);
+        match case["before_repair"].get("id").and_then(Value::as_str) {
+            None => assert_eq!(report.added, vec![entity_dir.to_owned()]),
+            Some(id) if id == entity_dir => {
+                assert_eq!(report.left_alone, vec![entity_dir.to_owned()])
+            }
+            Some(_) => assert_eq!(report.overwritten, vec![entity_dir.to_owned()]),
+        }
+    }
+}
+
+#[test]
+fn identity_repair_adds_id_first_with_exact_ascii_and_unicode_artifacts() {
+    let fixture = fixture();
+    for (entity_dir, artifact_name) in [
+        ("alice_johnson", "entities/{id}/entity.json"),
+        ("jose_garcia", "entities/{id}/entity.json (unicode)"),
+    ] {
+        let temporary = TempDir::new();
+        let artifact_identity: Value =
+            serde_json::from_str(artifact(&fixture, artifact_name)).unwrap();
+        let identity = Value::Object(
+            artifact_identity
+                .as_object()
+                .unwrap()
+                .iter()
+                .filter(|(key, _)| key.as_str() != "id")
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect(),
+        );
+        write_json(
+            temporary.path(),
+            &format!("entities/{entity_dir}/entity.json"),
+            &identity,
+        );
+
+        repair_entity_identities(temporary.path()).unwrap();
+
+        let path = temporary
+            .path()
+            .join(format!("entities/{entity_dir}/entity.json"));
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            artifact(&fixture, artifact_name).as_bytes()
+        );
+        #[cfg(unix)]
+        assert_eq!(
+            std::os::unix::fs::PermissionsExt::mode(&fs::metadata(path).unwrap().permissions())
+                & 0o777,
+            0o600
+        );
+    }
+}
+
+#[test]
+fn identity_repair_leaves_correct_identity_inode_unchanged_and_preserves_overwrite_fields() {
+    let temporary = TempDir::new();
+    let correct = json!({"id": "correct", "name": "Correct", "aka": ["C"]});
+    let divergent = json!({"name": "Divergent", "id": "elsewhere", "aka": ["D"]});
+    write_json(temporary.path(), "entities/correct/entity.json", &correct);
+    write_json(
+        temporary.path(),
+        "entities/divergent/entity.json",
+        &divergent,
+    );
+    let correct_path = temporary.path().join("entities/correct/entity.json");
+    let correct_before = fs::read(&correct_path).unwrap();
+    #[cfg(unix)]
+    let correct_inode = std::os::unix::fs::MetadataExt::ino(&fs::metadata(&correct_path).unwrap());
+
+    let report = repair_entity_identities(temporary.path()).unwrap();
+
+    assert_eq!(report.left_alone, vec!["correct"]);
+    assert_eq!(report.overwritten, vec!["divergent"]);
+    assert_eq!(fs::read(&correct_path).unwrap(), correct_before);
+    #[cfg(unix)]
+    assert_eq!(
+        std::os::unix::fs::MetadataExt::ino(&fs::metadata(&correct_path).unwrap()),
+        correct_inode
+    );
+    let repaired = read_entity_identity(temporary.path(), "divergent")
+        .unwrap()
+        .unwrap()
+        .value()
+        .clone();
+    let mut expected = divergent;
+    expected["id"] = json!("divergent");
+    assert_eq!(repaired, expected);
+}
+
+#[test]
+fn identity_repair_collects_every_report_branch_without_writing_refused_or_skipped_entries() {
+    let temporary = TempDir::new();
+    write_json(
+        temporary.path(),
+        "entities/added/entity.json",
+        &json!({"name": "Added"}),
+    );
+    write_json(
+        temporary.path(),
+        "entities/overwritten/entity.json",
+        &json!({"id": "old", "name": "Overwrite"}),
+    );
+    write_json(
+        temporary.path(),
+        "entities/left/entity.json",
+        &json!({"id": "left", "name": "Left"}),
+    );
+    write_json(
+        temporary.path(),
+        "entities/staged/entity.json",
+        &json!({"id": "old", "name": "Staged"}),
+    );
+    let staged = history_event(1, "vh_staged", "update");
+    write_json(
+        temporary.path(),
+        "entities/staged/history/prepared/vh_staged/event.json",
+        &staged,
+    );
+    write_text(
+        temporary.path(),
+        "entities/malformed/entity.json",
+        "not json",
+    );
+    fs::create_dir_all(temporary.path().join("entities/not_an_entity")).unwrap();
+    write_bytes(temporary.path(), "entities/empty/entity.json", b"");
+    write_text(temporary.path(), "entities/null/entity.json", "null");
+    let staged_before = fs::read(temporary.path().join("entities/staged/entity.json")).unwrap();
+    let malformed_before =
+        fs::read(temporary.path().join("entities/malformed/entity.json")).unwrap();
+
+    let report = incomplete_repair_report(temporary.path());
+
+    assert_eq!(report.added, vec!["added"]);
+    assert_eq!(report.overwritten, vec!["overwritten"]);
+    assert_eq!(report.left_alone, vec!["left"]);
+    assert_eq!(
+        report
+            .refused
+            .iter()
+            .map(|refusal| (&refusal.entity_dir, &refusal.guard))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                &"malformed".to_owned(),
+                &EntityIdentityRepairGuard::Malformed
+            ),
+            (
+                &"staged".to_owned(),
+                &EntityIdentityRepairGuard::StagedPreparedHistory
+            ),
+        ]
+    );
+    assert!(report.refused.iter().all(|refusal| {
+        refusal.detail.contains(&refusal.entity_dir)
+            && refusal.detail.contains("guard")
+            && refusal.detail.contains("before re-running")
+    }));
+    assert_eq!(
+        report.skipped,
+        vec![
+            crate::EntityIdentityRepairSkip {
+                entity_dir: "empty".to_owned(),
+                reason: EntityIdentityRepairSkipReason::EmptyIdentityFile,
+            },
+            crate::EntityIdentityRepairSkip {
+                entity_dir: "not_an_entity".to_owned(),
+                reason: EntityIdentityRepairSkipReason::NotAnEntity,
+            },
+            crate::EntityIdentityRepairSkip {
+                entity_dir: "null".to_owned(),
+                reason: EntityIdentityRepairSkipReason::EmptyIdentityFile,
+            },
+        ]
+    );
+    assert_eq!(
+        fs::read(temporary.path().join("entities/staged/entity.json")).unwrap(),
+        staged_before
+    );
+    assert_eq!(
+        fs::read(temporary.path().join("entities/malformed/entity.json")).unwrap(),
+        malformed_before
+    );
+    assert!(
+        !temporary
+            .path()
+            .join("entities/not_an_entity/entity.json")
+            .exists()
+    );
+    assert!(!repair_marker_path(temporary.path()).exists());
+}
+
+#[test]
+fn identity_repair_refuses_publish_classified_staged_history_without_reconciling() {
+    let temporary = TempDir::new();
+    let current = json!({"id": "old", "name": "Current"});
+    write_json(temporary.path(), "entities/staged/entity.json", &current);
+    write_json(
+        temporary.path(),
+        "entities/added/entity.json",
+        &json!({"name": "Added"}),
+    );
+    let mut event = history_event(1, "vh_publish", "update");
+    event["entity_id"] = json!("staged");
+    event["identity_before"] = json!({"id": "old", "name": "Before"});
+    event["identity_after"] = current.clone();
+    write_json(
+        temporary.path(),
+        "entities/staged/history/prepared/vh_publish/event.json",
+        &event,
+    );
+    let before = fs::read(temporary.path().join("entities/staged/entity.json")).unwrap();
+    assert_prepared_outcome(temporary.path(), "staged", PreparedHistoryOutcome::Publish);
+
+    let report = incomplete_repair_report(temporary.path());
+
+    assert_eq!(report.added, vec!["added"]);
+    assert_eq!(
+        fs::read(temporary.path().join("entities/staged/entity.json")).unwrap(),
+        before
+    );
+    assert_prepared_outcome(temporary.path(), "staged", PreparedHistoryOutcome::Publish);
+    assert_eq!(
+        read_prepared_history(temporary.path(), "staged")
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn identity_repair_refuses_discard_classified_staged_history_without_reconciling() {
+    let temporary = TempDir::new();
+    let current = json!({"id": "old", "name": "Current"});
+    write_json(temporary.path(), "entities/staged/entity.json", &current);
+    let mut event = history_event(1, "vh_discard", "update");
+    event["entity_id"] = json!("staged");
+    event["identity_before"] = current.clone();
+    event["identity_after"] = json!({"id": "old", "name": "After"});
+    write_json(
+        temporary.path(),
+        "entities/staged/history/prepared/vh_discard/event.json",
+        &event,
+    );
+    assert_prepared_outcome(temporary.path(), "staged", PreparedHistoryOutcome::Discard);
+
+    let report = incomplete_repair_report(temporary.path());
+
+    assert_eq!(report.refused.len(), 1);
+    assert_prepared_outcome(temporary.path(), "staged", PreparedHistoryOutcome::Discard);
+    assert_eq!(
+        read_prepared_history(temporary.path(), "staged")
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn identity_repair_resolves_every_non_refused_directory_to_its_own_id_including_swaps() {
+    let temporary = TempDir::new();
+    write_json(
+        temporary.path(),
+        "entities/added/entity.json",
+        &json!({"name": "Added"}),
+    );
+    write_json(
+        temporary.path(),
+        "entities/x/entity.json",
+        &json!({"id": "y", "name": "X"}),
+    );
+    write_json(
+        temporary.path(),
+        "entities/y/entity.json",
+        &json!({"id": "x", "name": "Y"}),
+    );
+
+    repair_entity_identities(temporary.path()).unwrap();
+
+    let map = read_identity_map(temporary.path()).unwrap();
+    assert_eq!(map.resolved.len(), 3);
+    assert!(map.losers.is_empty());
+    for (identity_id, entity_dir) in map.resolved {
+        assert_eq!(identity_id, entity_dir);
+    }
+}
+
+#[test]
+fn identity_repair_leaves_a_refused_entity_as_the_sole_loser_when_its_stale_id_collides() {
+    let temporary = TempDir::new();
+    write_json(
+        temporary.path(),
+        "entities/bob/entity.json",
+        &json!({"id": "bob", "name": "Bob"}),
+    );
+    write_json(
+        temporary.path(),
+        "entities/zed/entity.json",
+        &json!({"id": "bob", "name": "Zed"}),
+    );
+    let mut staged = history_event(1, "vh_staged", "update");
+    staged["entity_id"] = json!("zed");
+    write_json(
+        temporary.path(),
+        "entities/zed/history/prepared/vh_staged/event.json",
+        &staged,
+    );
+
+    let report = incomplete_repair_report(temporary.path());
+    let map = read_identity_map(temporary.path()).unwrap();
+
+    assert_eq!(report.refused.len(), 1);
+    assert_eq!(report.refused[0].entity_dir, "zed");
+    assert_eq!(
+        report.refused[0].guard,
+        EntityIdentityRepairGuard::StagedPreparedHistory
+    );
+    assert_eq!(
+        map.resolved,
+        std::collections::HashMap::from([(String::from("bob"), String::from("bob"))])
+    );
+    assert_eq!(map.losers.len(), 1);
+    assert_eq!(map.losers[0].entity_dir, "zed");
+    assert_eq!(map.losers[0].reason, IdentityMapLoserReason::CollisionLost);
+}
+
+#[test]
+fn identity_repair_uses_marker_presence_for_one_shot_refusal() {
+    let temporary = TempDir::new();
+    write_json(
+        temporary.path(),
+        "entities/alice/entity.json",
+        &json!({"name": "Alice"}),
+    );
+    repair_entity_identities(temporary.path()).unwrap();
+    let path = temporary.path().join("entities/alice/entity.json");
+    write_json(
+        temporary.path(),
+        "entities/alice/entity.json",
+        &json!({"name": "Changed"}),
+    );
+    let before_second_run = fs::read(&path).unwrap();
+
+    let error = repair_entity_identities(temporary.path()).unwrap_err();
+
+    assert!(matches!(
+        error,
+        EntityIdentityRepairError::AlreadyCompleted { .. }
+    ));
+    assert_eq!(fs::read(path).unwrap(), before_second_run);
+}
+
+#[test]
+fn identity_repair_marks_a_clean_zero_write_run_complete() {
+    let temporary = TempDir::new();
+    write_json(
+        temporary.path(),
+        "entities/alice/entity.json",
+        &json!({"id": "alice", "name": "Alice"}),
+    );
+
+    let report = repair_entity_identities(temporary.path()).unwrap();
+
+    assert_eq!(report.left_alone, vec!["alice"]);
+    assert!(repair_marker_path(temporary.path()).is_file());
+}
+
+#[test]
+fn identity_repair_aborts_without_marker_and_resumes_after_a_partial_write_failure() {
+    let temporary = TempDir::new();
+    write_json(
+        temporary.path(),
+        "entities/alpha/entity.json",
+        &json!({"name": "Alpha"}),
+    );
+    write_json(
+        temporary.path(),
+        "entities/beta/entity.json",
+        &json!({"name": "Beta"}),
+    );
+    set_repair_identity_write_failure_on_attempt(Some(2));
+
+    let error = repair_entity_identities(temporary.path()).unwrap_err();
+    set_repair_identity_write_failure_on_attempt(None);
+
+    let partial = match error {
+        EntityIdentityRepairError::IdentityWrite { report, .. } => *report,
+        other => panic!("unexpected repair error: {other}"),
+    };
+    assert_eq!(partial.added, vec!["alpha"]);
+    assert!(!repair_marker_path(temporary.path()).exists());
+    assert!(
+        read_entity_identity(temporary.path(), "alpha")
+            .unwrap()
+            .unwrap()
+            .was_written()
+    );
+    assert!(
+        !read_entity_identity(temporary.path(), "beta")
+            .unwrap()
+            .unwrap()
+            .was_written()
+    );
+
+    let resumed = repair_entity_identities(temporary.path()).unwrap();
+
+    assert_eq!(resumed.left_alone, vec!["alpha"]);
+    assert_eq!(resumed.added, vec!["beta"]);
+    assert!(repair_marker_path(temporary.path()).is_file());
+}
+
+#[test]
+fn identity_repair_waits_for_the_journal_trust_lock() {
+    let temporary = TempDir::new();
+    write_json(
+        temporary.path(),
+        "entities/alice/entity.json",
+        &json!({"name": "Alice"}),
+    );
+    let outer = crate::hold_entity_trust_lock(temporary.path()).unwrap();
+    let root = temporary.path().to_path_buf();
+    let (started_tx, started_rx) = mpsc::channel();
+    let (finished_tx, finished_rx) = mpsc::channel();
+    let worker = thread::spawn(move || {
+        started_tx.send(()).unwrap();
+        finished_tx.send(repair_entity_identities(&root)).unwrap();
+    });
+
+    started_rx.recv().unwrap();
+    assert!(
+        finished_rx
+            .recv_timeout(Duration::from_millis(100))
+            .is_err()
+    );
+    drop(outer);
+    assert!(
+        finished_rx
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .is_ok()
+    );
+    worker.join().unwrap();
+}
+
+fn incomplete_repair_report(root: &Path) -> crate::EntityIdentityRepairReport {
+    match repair_entity_identities(root).unwrap_err() {
+        EntityIdentityRepairError::Incomplete { report } => *report,
+        other => panic!("unexpected repair error: {other}"),
+    }
+}
+
+fn repair_marker_path(root: &Path) -> PathBuf {
+    root.join("health/migrations/entity-identity-repair.json")
+}
+
+fn assert_prepared_outcome(root: &Path, entity_dir: &str, expected: PreparedHistoryOutcome) {
+    let current = read_entity_identity(root, entity_dir).unwrap();
+    let prepared = read_prepared_history(root, entity_dir).unwrap();
+    assert_eq!(
+        classify_prepared_history(entity_dir, &prepared[0].event, current.as_ref()).unwrap(),
+        expected
+    );
 }

@@ -10,6 +10,7 @@ mod identity;
 mod map;
 mod paths;
 mod reconcile;
+mod repair;
 mod write;
 
 pub use ambiguity::{load_resolved_ambiguity_choice, read_ambiguities};
@@ -21,6 +22,11 @@ pub use history::{
 pub use identity::{IdentitySnapshot, read_entity_identity};
 pub use map::{EntityIdentityMap, IdentityMapLoser, IdentityMapLoserReason, read_identity_map};
 pub use reconcile::{PreparedHistoryOutcome, classify_prepared_history};
+pub use repair::{
+    EntityIdentityRepairError, EntityIdentityRepairGuard, EntityIdentityRepairRefusal,
+    EntityIdentityRepairReport, EntityIdentityRepairSkip, EntityIdentityRepairSkipReason,
+    repair_entity_identities,
+};
 pub use write::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,
     EntityOperationKind, EntitySaveResult, EntityWriteError, IdentityMapCacheLoad,
@@ -28,6 +34,8 @@ pub use write::{
     save_entity_identity,
 };
 
+#[cfg(test)]
+pub(crate) use repair::set_repair_identity_write_failure_on_attempt;
 #[cfg(test)]
 pub(crate) use write::{
     save_entity_identity_with_timeout, set_forced_identity_write_failure,

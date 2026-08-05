@@ -906,7 +906,10 @@ fn identity_json_options() -> JsonWriteOptions {
     }
 }
 
-fn write_identity_snapshot(path: &Path, identity: &Value) -> Result<(), AtomicWriteError> {
+pub(super) fn write_identity_snapshot(
+    path: &Path,
+    identity: &Value,
+) -> Result<(), AtomicWriteError> {
     #[cfg(test)]
     if FORCE_IDENTITY_WRITE_FAILURE.with(Cell::get) {
         return Err(AtomicWriteError::Io {
