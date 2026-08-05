@@ -50,7 +50,28 @@ An ingested, not-yet-processed segment.
 
 ## `P-segment-sense`
 
-Media processing. ⚠ Emits **two** strands with different contracts — processed data back to storage, and callosum events out.
+Media processing: an ingested segment's raw media becoming analysed output on disk.
+
+⚠ **"Emits two strands" is stale** — it predates the wire/durable split. This plate emits **four** Tier-1 strands with four different contracts (`:journal-segment` fixture · `:system` schema · `:journal-segment-events` fixture · `:thinking` schema) plus the Tier-2 `S:segment-sense:speaker-id`. ⛔ The wire and durable halves of the event contract are deliberately separate; do not re-merge them.
+
+**Shape, measured 2026-08-05.** One long-running dispatcher plus three handlers, all separate processes:
+
+| | Module | Reads | Writes | Notes |
+|---|---|---|---|---|
+| dispatcher | `observe/sense.py` (1,508) | the `observe.observing` bus event, or a `--day` scan | nothing in the segment | spawns handlers by **file extension**, one `ThreadPoolExecutor` per handler, memory-gated, per-job wall-clock caps (`describe` 1800s · `transcribe` 2700s · `depict` 600s) |
+| audio | `observe/transcribe/` (~3,100) | `.flac .opus .ogg .m4a .mp3 .wav` | `<stem>.jsonl`, `<stem>.npz` | VAD → silence reduction → backend registry → STT → native speaker analysis |
+| screen | `observe/describe.py` (1,660) | `.webm .mp4 .mov` | `<stem>.jsonl` | dHash winnow → ArUco mask → categorize → select → extract |
+| image | `observe/depict.py` (104) | `.png .jpg .jpeg .heic .heif .gif .webp .tiff` | `<stem>.jsonl` | one VLM call |
+
+🔴 **The dispatcher is the plate.** Its behaviour is not incidental: skip and defer gates, re-entry rules, the memory gate, the watchdog, `exit 69` hold-raw, and segment completion all live there, and none of it is in a handler. ⚠ `observe/{hear,screen,see,grab,pdf_worker}.py` (2,269 lines) carry `observe/` names but are **read-side or other plates entirely** — sense reaches none of them.
+
+⚠ **Handler exit codes are a contract of their own** and `observe/exit_codes.py` declares only part of it: `EXIT_PROVIDER_BLOCKED = 69`, plus `WATCHDOG_TIMEOUT`, which despite the module name is **a log string compared against nothing**. Also live and undeclared there: **78** (`sense.py:1423`, speakers-analyze generation guard) and **1** (transcribe hard failure and speaker-analysis failure).
+
+🔴 **Two silent-success paths.** `describe.py:964-967` and `depict.py:64-69` **return exit 0 having written nothing** when no thinking engine is configured, and the dispatcher reads that as success — it records a successful contact and marks the file done (`sense.py:562-571`). The live path is protected by a gate (`sense.py:817-825`); ⚠ **the `--day` batch path is not**, and the daily sense-repair pre-phase (`think/thinking.py:4592-4632`) is exactly that path. Re-entry eventually recovers because no output exists, but the success signal is false while it does.
+
+⚠ **The retry budget is describe-only in practice.** `should_reenter_analysis_output` (`observe/processing_record.py:118-152`) returns `True` **only** for `handler == "describe"`, and transcribe writes its `corrupt_input` output through `_write_failed_processing_jsonl`, which then blocks re-entry at three separate guards. `FAILED_ATTEMPT_BOUND` never applies to audio.
+
+**What is already Rust** — the speaker math only, behind a one-record argv+stdio contract: `solstone-core-speakers` (3,749), `-speakers-analyze` (2,049), `-speakers-onnx` (662), reached through the 765-line Python adapter. ⛔ **Nothing else in this plate is Rust** — no dispatcher, no describe, no transcribe driver, no depict, and no `_solstone_processing` *writer*; the one Rust touch on that header is a reader (`solstone-core-ingest-resolve/src/terminal_proof.rs`).
 
 ## `P-index`
 
