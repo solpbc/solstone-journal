@@ -350,6 +350,27 @@ def _match_cases() -> list[dict[str, Any]]:
         (unicodedata.normalize("NFD", "Müller Werke"), "Müller Werke"),
     ):
         case(a, [_candidate(b)], f"unicode pair — {a!r} against {b!r}")
+
+    # 🔴 Case-fold-divergent pairs. These exist to pin which case operation the
+    # matcher uses. Simple lowercasing and full case folding disagree on every
+    # pair below, and the disagreement lands on the tier — which is to say, on
+    # whether the store resolves silently or stops and asks the owner. Without
+    # them nothing in the corpus can tell the two operations apart, because
+    # every other vector here is case-fold-neutral.
+    for a, b, note in (
+        ("Straße Handel", "STRASSE HANDEL", "German sharp s against its uppercase expansion"),
+        ("STRASSE HANDEL", "Straße Handel", "the same pair, reversed"),
+        ("ΟΔΥΣΣΕΥΣ Shipping", "οδυσσευς Shipping", "Greek final sigma"),
+        ("οδυσσευς Shipping", "ΟΔΥΣΣΕΥΣ Shipping", "Greek final sigma, reversed"),
+        ("ﬁrefly labs", "firefly labs", "the fi ligature against its expansion"),
+        ("ﬄuent works", "ffluent works", "the ffl ligature against its expansion"),
+        ("µ-lab research", "μ-lab research", "micro sign against Greek mu"),
+        ("ᏣᎳᎩ Trading", "ꮳꮅꭹ Trading", "Cherokee, which folds toward uppercase"),
+        ("İstanbul Works", "istanbul works", "Turkish dotted capital I"),
+    ):
+        case(a, [_candidate(b)], f"case-fold divergent — {note}")
+        case(a, [_candidate(b), _candidate("Zeta Holdings")],
+             f"case-fold divergent with competition — {note}")
     # Larger populations, so ambiguity detection sees real competition.
     for name in _MATCH_NAMES:
         case(name, [_candidate(n) for n in _MATCH_NAMES], "full population")

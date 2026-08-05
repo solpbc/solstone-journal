@@ -1,0 +1,461 @@
+{
+  "cause": "Unicode data versions, not logic. The reference interpreter carries one revision of the character database; the native normalization and case-folding tables carry later ones. A codepoint assigned after the reference's revision has no case folding and no compatibility decomposition there, and does have one here.",
+  "counts": {
+    "assigned_in_reference_unicode": 0,
+    "total": 64
+  },
+  "entries": [
+    {
+      "category": "Cn",
+      "codepoint": "U+1C89",
+      "name": null,
+      "native_normalized": "aᲊb",
+      "reference_normalized": "aᲉb"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+A7CB",
+      "name": null,
+      "native_normalized": "aɤb",
+      "reference_normalized": "aꟋb"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+A7CC",
+      "name": null,
+      "native_normalized": "aꟍb",
+      "reference_normalized": "aꟌb"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+A7DA",
+      "name": null,
+      "native_normalized": "aꟛb",
+      "reference_normalized": "aꟚb"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+A7DC",
+      "name": null,
+      "native_normalized": "aƛb",
+      "reference_normalized": "aꟜb"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+A7F1",
+      "name": null,
+      "native_normalized": "asb",
+      "reference_normalized": "a꟱b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D50",
+      "name": null,
+      "native_normalized": "a𐵰b",
+      "reference_normalized": "a𐵐b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D51",
+      "name": null,
+      "native_normalized": "a𐵱b",
+      "reference_normalized": "a𐵑b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D52",
+      "name": null,
+      "native_normalized": "a𐵲b",
+      "reference_normalized": "a𐵒b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D53",
+      "name": null,
+      "native_normalized": "a𐵳b",
+      "reference_normalized": "a𐵓b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D54",
+      "name": null,
+      "native_normalized": "a𐵴b",
+      "reference_normalized": "a𐵔b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D55",
+      "name": null,
+      "native_normalized": "a𐵵b",
+      "reference_normalized": "a𐵕b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D56",
+      "name": null,
+      "native_normalized": "a𐵶b",
+      "reference_normalized": "a𐵖b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D57",
+      "name": null,
+      "native_normalized": "a𐵷b",
+      "reference_normalized": "a𐵗b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D58",
+      "name": null,
+      "native_normalized": "a𐵸b",
+      "reference_normalized": "a𐵘b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D59",
+      "name": null,
+      "native_normalized": "a𐵹b",
+      "reference_normalized": "a𐵙b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D5A",
+      "name": null,
+      "native_normalized": "a𐵺b",
+      "reference_normalized": "a𐵚b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D5B",
+      "name": null,
+      "native_normalized": "a𐵻b",
+      "reference_normalized": "a𐵛b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D5C",
+      "name": null,
+      "native_normalized": "a𐵼b",
+      "reference_normalized": "a𐵜b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D5D",
+      "name": null,
+      "native_normalized": "a𐵽b",
+      "reference_normalized": "a𐵝b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D5E",
+      "name": null,
+      "native_normalized": "a𐵾b",
+      "reference_normalized": "a𐵞b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D5F",
+      "name": null,
+      "native_normalized": "a𐵿b",
+      "reference_normalized": "a𐵟b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D60",
+      "name": null,
+      "native_normalized": "a𐶀b",
+      "reference_normalized": "a𐵠b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D61",
+      "name": null,
+      "native_normalized": "a𐶁b",
+      "reference_normalized": "a𐵡b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D62",
+      "name": null,
+      "native_normalized": "a𐶂b",
+      "reference_normalized": "a𐵢b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D63",
+      "name": null,
+      "native_normalized": "a𐶃b",
+      "reference_normalized": "a𐵣b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D64",
+      "name": null,
+      "native_normalized": "a𐶄b",
+      "reference_normalized": "a𐵤b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+10D65",
+      "name": null,
+      "native_normalized": "a𐶅b",
+      "reference_normalized": "a𐵥b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCD6",
+      "name": null,
+      "native_normalized": "aab",
+      "reference_normalized": "a𜳖b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCD7",
+      "name": null,
+      "native_normalized": "abb",
+      "reference_normalized": "a𜳗b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCD8",
+      "name": null,
+      "native_normalized": "acb",
+      "reference_normalized": "a𜳘b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCD9",
+      "name": null,
+      "native_normalized": "adb",
+      "reference_normalized": "a𜳙b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCDA",
+      "name": null,
+      "native_normalized": "aeb",
+      "reference_normalized": "a𜳚b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCDB",
+      "name": null,
+      "native_normalized": "afb",
+      "reference_normalized": "a𜳛b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCDC",
+      "name": null,
+      "native_normalized": "agb",
+      "reference_normalized": "a𜳜b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCDD",
+      "name": null,
+      "native_normalized": "ahb",
+      "reference_normalized": "a𜳝b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCDE",
+      "name": null,
+      "native_normalized": "aib",
+      "reference_normalized": "a𜳞b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCDF",
+      "name": null,
+      "native_normalized": "ajb",
+      "reference_normalized": "a𜳟b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE0",
+      "name": null,
+      "native_normalized": "akb",
+      "reference_normalized": "a𜳠b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE1",
+      "name": null,
+      "native_normalized": "alb",
+      "reference_normalized": "a𜳡b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE2",
+      "name": null,
+      "native_normalized": "amb",
+      "reference_normalized": "a𜳢b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE3",
+      "name": null,
+      "native_normalized": "anb",
+      "reference_normalized": "a𜳣b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE4",
+      "name": null,
+      "native_normalized": "aob",
+      "reference_normalized": "a𜳤b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE5",
+      "name": null,
+      "native_normalized": "apb",
+      "reference_normalized": "a𜳥b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE6",
+      "name": null,
+      "native_normalized": "aqb",
+      "reference_normalized": "a𜳦b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE7",
+      "name": null,
+      "native_normalized": "arb",
+      "reference_normalized": "a𜳧b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE8",
+      "name": null,
+      "native_normalized": "asb",
+      "reference_normalized": "a𜳨b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCE9",
+      "name": null,
+      "native_normalized": "atb",
+      "reference_normalized": "a𜳩b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCEA",
+      "name": null,
+      "native_normalized": "aub",
+      "reference_normalized": "a𜳪b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCEB",
+      "name": null,
+      "native_normalized": "avb",
+      "reference_normalized": "a𜳫b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCEC",
+      "name": null,
+      "native_normalized": "awb",
+      "reference_normalized": "a𜳬b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCED",
+      "name": null,
+      "native_normalized": "axb",
+      "reference_normalized": "a𜳭b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCEE",
+      "name": null,
+      "native_normalized": "ayb",
+      "reference_normalized": "a𜳮b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCEF",
+      "name": null,
+      "native_normalized": "azb",
+      "reference_normalized": "a𜳯b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF0",
+      "name": null,
+      "native_normalized": "a0b",
+      "reference_normalized": "a𜳰b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF1",
+      "name": null,
+      "native_normalized": "a1b",
+      "reference_normalized": "a𜳱b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF2",
+      "name": null,
+      "native_normalized": "a2b",
+      "reference_normalized": "a𜳲b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF3",
+      "name": null,
+      "native_normalized": "a3b",
+      "reference_normalized": "a𜳳b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF4",
+      "name": null,
+      "native_normalized": "a4b",
+      "reference_normalized": "a𜳴b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF5",
+      "name": null,
+      "native_normalized": "a5b",
+      "reference_normalized": "a𜳵b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF6",
+      "name": null,
+      "native_normalized": "a6b",
+      "reference_normalized": "a𜳶b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF7",
+      "name": null,
+      "native_normalized": "a7b",
+      "reference_normalized": "a𜳷b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF8",
+      "name": null,
+      "native_normalized": "a8b",
+      "reference_normalized": "a𜳸b"
+    },
+    {
+      "category": "Cn",
+      "codepoint": "U+1CCF9",
+      "name": null,
+      "native_normalized": "a9b",
+      "reference_normalized": "a𜳹b"
+    }
+  ],
+  "note": "Codepoints where the native normalize_resolution_query intentionally differs from the reference implementation. NOT produced by `make core-fixtures` -- it needs both implementations, and the fixture generator only has one. The native test recomputes the whole sweep, substitutes reference_normalized for each codepoint listed here, and asserts the digest equals the reference digest in entity_identity.json. It ALSO asserts, per entry and before any substitution, that the native result equals native_normalized -- otherwise the substitution would discard the implementation's output on exactly the codepoints most likely to be wrong.",
+  "reachability": "EVERY entry is unassigned in the reference's Unicode revision, so no such character can appear in a name typed today, and none can already be stored. The set is expected to SHRINK toward empty as the reference revision advances -- an entry disappearing is convergence, not regression, but it must still be a deliberate edit rather than a silent one, which is what the per-entry assertion enforces.",
+  "reference_unicode_version": "15.1.0",
+  "why_not_pinned_to_the_reference": "Matching the older tables would mean hand-special-casing these codepoints inside the function that derives ambiguity identity. That function's output is hashed into an id an owner's recorded answers are found by, so it is the last place to accumulate special cases for characters nobody can type."
+}

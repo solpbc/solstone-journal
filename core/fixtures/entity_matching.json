@@ -409,6 +409,351 @@
     {
       "candidates": [
         {
+          "id": "strasse_handel",
+          "name": "STRASSE HANDEL",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent \u2014 German sharp s against its uppercase expansion",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "Stra\u00dfe Handel"
+    },
+    {
+      "candidates": [
+        {
+          "id": "strasse_handel",
+          "name": "STRASSE HANDEL",
+          "type": "Person"
+        },
+        {
+          "id": "zeta_holdings",
+          "name": "Zeta Holdings",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent with competition \u2014 German sharp s against its uppercase expansion",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "Stra\u00dfe Handel"
+    },
+    {
+      "candidates": [
+        {
+          "id": "strasse_handel",
+          "name": "Stra\u00dfe Handel",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent \u2014 the same pair, reversed",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "STRASSE HANDEL"
+    },
+    {
+      "candidates": [
+        {
+          "id": "strasse_handel",
+          "name": "Stra\u00dfe Handel",
+          "type": "Person"
+        },
+        {
+          "id": "zeta_holdings",
+          "name": "Zeta Holdings",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent with competition \u2014 the same pair, reversed",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "STRASSE HANDEL"
+    },
+    {
+      "candidates": [
+        {
+          "id": "odusseus_shipping",
+          "name": "\u03bf\u03b4\u03c5\u03c3\u03c3\u03b5\u03c5\u03c2 Shipping",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent \u2014 Greek final sigma",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "\u039f\u0394\u03a5\u03a3\u03a3\u0395\u03a5\u03a3 Shipping"
+    },
+    {
+      "candidates": [
+        {
+          "id": "odusseus_shipping",
+          "name": "\u03bf\u03b4\u03c5\u03c3\u03c3\u03b5\u03c5\u03c2 Shipping",
+          "type": "Person"
+        },
+        {
+          "id": "zeta_holdings",
+          "name": "Zeta Holdings",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent with competition \u2014 Greek final sigma",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "\u039f\u0394\u03a5\u03a3\u03a3\u0395\u03a5\u03a3 Shipping"
+    },
+    {
+      "candidates": [
+        {
+          "id": "odusseus_shipping",
+          "name": "\u039f\u0394\u03a5\u03a3\u03a3\u0395\u03a5\u03a3 Shipping",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent \u2014 Greek final sigma, reversed",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "\u03bf\u03b4\u03c5\u03c3\u03c3\u03b5\u03c5\u03c2 Shipping"
+    },
+    {
+      "candidates": [
+        {
+          "id": "odusseus_shipping",
+          "name": "\u039f\u0394\u03a5\u03a3\u03a3\u0395\u03a5\u03a3 Shipping",
+          "type": "Person"
+        },
+        {
+          "id": "zeta_holdings",
+          "name": "Zeta Holdings",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent with competition \u2014 Greek final sigma, reversed",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "\u03bf\u03b4\u03c5\u03c3\u03c3\u03b5\u03c5\u03c2 Shipping"
+    },
+    {
+      "candidates": [
+        {
+          "id": "firefly_labs",
+          "name": "firefly labs",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent \u2014 the fi ligature against its expansion",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "\ufb01refly labs"
+    },
+    {
+      "candidates": [
+        {
+          "id": "firefly_labs",
+          "name": "firefly labs",
+          "type": "Person"
+        },
+        {
+          "id": "zeta_holdings",
+          "name": "Zeta Holdings",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent with competition \u2014 the fi ligature against its expansion",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "\ufb01refly labs"
+    },
+    {
+      "candidates": [
+        {
+          "id": "ffluent_works",
+          "name": "ffluent works",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent \u2014 the ffl ligature against its expansion",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "\ufb04uent works"
+    },
+    {
+      "candidates": [
+        {
+          "id": "ffluent_works",
+          "name": "ffluent works",
+          "type": "Person"
+        },
+        {
+          "id": "zeta_holdings",
+          "name": "Zeta Holdings",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent with competition \u2014 the ffl ligature against its expansion",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "\ufb04uent works"
+    },
+    {
+      "candidates": [
+        {
+          "id": "m_lab_research",
+          "name": "\u03bc-lab research",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent \u2014 micro sign against Greek mu",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "\u00b5-lab research"
+    },
+    {
+      "candidates": [
+        {
+          "id": "m_lab_research",
+          "name": "\u03bc-lab research",
+          "type": "Person"
+        },
+        {
+          "id": "zeta_holdings",
+          "name": "Zeta Holdings",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent with competition \u2014 micro sign against Greek mu",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "\u00b5-lab research"
+    },
+    {
+      "candidates": [
+        {
+          "id": "trading",
+          "name": "\uabb3\uab85\uab79 Trading",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent \u2014 Cherokee, which folds toward uppercase",
+      "outcome": {
+        "matched": false
+      },
+      "query": "\u13e3\u13b3\u13a9 Trading"
+    },
+    {
+      "candidates": [
+        {
+          "id": "trading",
+          "name": "\uabb3\uab85\uab79 Trading",
+          "type": "Person"
+        },
+        {
+          "id": "zeta_holdings",
+          "name": "Zeta Holdings",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent with competition \u2014 Cherokee, which folds toward uppercase",
+      "outcome": {
+        "matched": false
+      },
+      "query": "\u13e3\u13b3\u13a9 Trading"
+    },
+    {
+      "candidates": [
+        {
+          "id": "istanbul_works",
+          "name": "istanbul works",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent \u2014 Turkish dotted capital I",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "\u0130stanbul Works"
+    },
+    {
+      "candidates": [
+        {
+          "id": "istanbul_works",
+          "name": "istanbul works",
+          "type": "Person"
+        },
+        {
+          "id": "zeta_holdings",
+          "name": "Zeta Holdings",
+          "type": "Person"
+        }
+      ],
+      "note": "case-fold divergent with competition \u2014 Turkish dotted capital I",
+      "outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      },
+      "query": "\u0130stanbul Works"
+    },
+    {
+      "candidates": [
+        {
           "id": "robert_johnson",
           "name": "Robert Johnson",
           "type": "Person"
