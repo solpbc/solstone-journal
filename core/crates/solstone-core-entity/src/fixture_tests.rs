@@ -21,6 +21,9 @@ use super::test_support::{
 const JOURNAL_IO_ALLOWED: &[&str] = &[
     "read_json",
     "read_jsonl",
+    "day_dirs",
+    "iter_segments",
+    "PathOrDay",
     "read_text",
     "MalformedPolicy",
     "contained_path",
@@ -44,6 +47,18 @@ const JOURNAL_IO_ALLOWED: &[&str] = &[
     "StagedDirOptions",
     "StagedWriteError",
     "remove_dir_all",
+    "append_jsonl",
+    "capture_snapshot",
+    "restore_snapshot",
+    "JournalSnapshot",
+    "SnapshotError",
+    "AppendError",
+    "atomic_replace",
+    "read_bytes",
+    "read_json",
+    "read_jsonl",
+    "write_json",
+    "write_jsonl",
 ];
 
 #[test]
@@ -134,6 +149,8 @@ fn collect_production_sources(directory: &Path, sources: &mut Vec<PathBuf>) {
                 Some(
                     "fixture_tests.rs"
                         | "resolution_tests.rs"
+                        | "merge_payload_tests.rs"
+                        | "merge_tests.rs"
                         | "store_tests.rs"
                         | "test_support.rs"
                         | "trust_lock_tests.rs"

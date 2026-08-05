@@ -1626,6 +1626,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "solstone-core-entity-matching",
+ "solstone-core-indexer-store",
  "solstone-core-journal-io",
  "unicode-normalization",
  "zip",

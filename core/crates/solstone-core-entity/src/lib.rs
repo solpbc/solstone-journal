@@ -20,14 +20,16 @@ pub use store::{
     EntityAmbiguityRescopeError, EntityAmbiguityRescopeReport, EntityIdentityGroupMap,
     EntityIdentityMap, EntityIdentityRepairError, EntityIdentityRepairGuard,
     EntityIdentityRepairRefusal, EntityIdentityRepairReport, EntityIdentityRepairSkip,
-    EntityIdentityRepairSkipReason, EntityOperationContext, EntityOperationKind, EntitySaveResult,
+    EntityIdentityRepairSkipReason, EntityMergeError, EntityMergeOptions, EntityMergePreview,
+    EntityMergeReport, EntityOperationContext, EntityOperationKind, EntitySaveResult,
     EntityStoreError, EntityWriteError, HistoryEvent, IdentityMapCacheLoad, IdentityMapLoser,
     IdentityMapLoserReason, IdentitySnapshot, PreparedHistoryEvent, PreparedHistoryOutcome,
-    classify_prepared_history, guard_restore_does_not_cross_merge, guard_visible_event_collision,
-    load_resolved_ambiguity_choice, read_ambiguities, read_entity_identity,
-    read_identity_group_map, read_identity_map, read_prepared_history, read_visible_history,
-    record_ambiguity_choice, record_ambiguity_observation, refresh_identity_map_cache,
-    repair_entity_identities, rescope_facet_ambiguities, save_entity_identity,
+    classify_prepared_history, commit_entity_merge, guard_restore_does_not_cross_merge,
+    guard_visible_event_collision, load_resolved_ambiguity_choice, preview_entity_merge,
+    read_ambiguities, read_entity_identity, read_identity_group_map, read_identity_map,
+    read_prepared_history, read_visible_history, record_ambiguity_choice,
+    record_ambiguity_observation, refresh_identity_map_cache, repair_entity_identities,
+    rescope_facet_ambiguities, save_entity_identity,
 };
 pub use trust_lock::{EntityTrustLock, EntityTrustLockError, hold_entity_trust_lock};
 
@@ -39,6 +41,10 @@ pub(crate) use store::{
 
 #[cfg(test)]
 mod fixture_tests;
+#[cfg(test)]
+mod merge_payload_tests;
+#[cfg(test)]
+mod merge_tests;
 #[cfg(test)]
 mod resolution_tests;
 #[cfg(test)]
