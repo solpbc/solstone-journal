@@ -13,7 +13,7 @@ pub fn normalize_resolution_query(query: &str) -> String {
     default_case_fold_str(&collapsed)
 }
 
-pub(crate) fn matchable_resolution_query(query: &str) -> String {
+pub fn matchable_resolution_query(query: &str) -> String {
     let normalized: String = query.nfkc().collect();
     collapse_python_whitespace(&normalized)
 }

@@ -12,11 +12,13 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
+use solstone_core_entity_matching::{EntityNameCandidate, MatchTier, find_matching_entity};
+
 use crate::resolution::collect_low_confidence_candidates;
 use crate::{
-    AmbiguityChoiceEntity, AmbiguityChoiceRequest, EntityNameCandidate, EntityResolutionEntity,
-    EntityResolutionError, EntityResolutionOutcome, MatchTier, find_matching_entity,
-    hold_entity_trust_lock, record_ambiguity_choice, record_entity_resolution,
+    AmbiguityChoiceEntity, AmbiguityChoiceRequest, EntityResolutionEntity,
+    EntityResolutionError, EntityResolutionOutcome, hold_entity_trust_lock,
+    record_ambiguity_choice, record_entity_resolution,
 };
 
 static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);

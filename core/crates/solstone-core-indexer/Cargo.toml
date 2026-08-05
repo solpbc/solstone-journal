@@ -15,4 +15,4 @@ chrono-tz.workspace = true
 glob.workspace = true
 pulldown-cmark.workspace = true
 serde_json.workspace = true
-solstone-core-entity.workspace = true
+solstone-core-entity-matching.workspace = true

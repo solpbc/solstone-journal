@@ -1599,7 +1599,18 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-entity-matching",
  "solstone-core-journal-io",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "solstone-core-entity-matching"
+version = "1.0.22"
+dependencies = [
+ "caseless",
+ "md5",
+ "rapidfuzz",
  "unicode-normalization",
  "unidecode",
 ]
@@ -1625,7 +1636,7 @@ dependencies = [
  "glob",
  "pulldown-cmark",
  "serde_json",
- "solstone-core-entity",
+ "solstone-core-entity-matching",
 ]
 
 [[package]]

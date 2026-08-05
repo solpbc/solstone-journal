@@ -2,7 +2,7 @@
 # Copyright (c) 2026 sol pbc
 
 [package]
-name = "solstone-core-entity"
+name = "solstone-core-entity-matching"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,18 +11,10 @@ publish = false
 
 [dependencies]
 caseless = "0.2.2"
-chrono.workspace = true
-log.workspace = true
 md5.workspace = true
 rapidfuzz.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-sha2 = "0.10.9"
-solstone-core-journal-io.workspace = true
 unicode-normalization.workspace = true
-solstone-core-entity-matching.workspace = true
-
-[dev-dependencies]
+unidecode.workspace = true
 
 [lints]
 workspace = true

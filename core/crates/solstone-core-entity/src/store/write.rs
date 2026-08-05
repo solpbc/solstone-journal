@@ -531,7 +531,7 @@ pub fn record_ambiguity_choice(
             detail: "resolved entity choice is blocked".to_owned(),
         });
     }
-    let normalized_query = crate::normalize_resolution_query(&choice.query);
+    let normalized_query = solstone_core_entity_matching::normalize_resolution_query(&choice.query);
     mutate_ambiguities(journal_root, |rows| {
         let scope_key = ambiguity_scope_key(&choice.scope)?;
         let row = rows
