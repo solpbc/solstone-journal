@@ -104,7 +104,7 @@ Media processing: an ingested segment's raw media becoming analysed output on di
 
 ⚠ **The retry budget is describe-only in practice.** `should_reenter_analysis_output` (`observe/processing_record.py:118-152`) returns `True` **only** for `handler == "describe"`, and transcribe writes its `corrupt_input` output through `_write_failed_processing_jsonl`, which then blocks re-entry at three separate guards. `FAILED_ATTEMPT_BOUND` never applies to audio.
 
-**What is already Rust** — the speaker math only, behind a one-record argv+stdio contract: `solstone-core-speakers` (3,749), `-speakers-analyze` (2,049), `-speakers-onnx` (662), reached through the 765-line Python adapter. ⛔ **Nothing else in this plate is Rust** — no dispatcher, no describe, no transcribe driver, no depict, and no `_solstone_processing` *writer*; the one Rust touch on that header is a reader (`solstone-core-ingest-resolve/src/terminal_proof.rs`).
+**What is already Rust** — the speaker math, behind a one-record argv+stdio contract: `solstone-core-speakers` (3,749), `-speakers-analyze` (2,049), `-speakers-onnx` (662), reached through the 765-line Python adapter. 🆕 `solstone-core-depict` (`core/crates/solstone-core-depict/src/lib.rs`) is a standalone generate-wire consumer added 2026-08-05, but it is not dispatcher-wired: `journal depict` still resolves to `observe/depict.py`. ⛔ No dispatcher, describe, transcribe driver, or `_solstone_processing` *writer* is Rust; the one Rust touch on that header is a reader (`solstone-core-ingest-resolve/src/terminal_proof.rs`).
 
 ## `P-index`
 

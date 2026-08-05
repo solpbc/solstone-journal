@@ -11,11 +11,12 @@ use std::ffi::OsString;
 use std::fs;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
-use image::{DynamicImage, ImageFormat};
+use image::{DynamicImage, GenericImageView, ImageFormat, imageops::FilterType};
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{AtomicWriteOptions, write_jsonl};
 
@@ -29,6 +30,8 @@ const ENGINE_NAME: &str = "rf-detr.cpp";
 const ENGINE_REF: &str = "65c0ffcc";
 const MODEL_NAME: &str = "rfdetr-nano-f16";
 const THRESHOLD: f64 = 0.25;
+const RFDETR_TIMEOUT: Duration = Duration::from_secs(120);
+const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
@@ -168,23 +171,10 @@ impl WireClient for SystemWireClient {
             }
             return Ok(text.to_owned());
         }
-        let error: Value = serde_json::from_slice(&output.stderr).unwrap_or(Value::Null);
-        let reason = error
-            .get("reason")
-            .and_then(Value::as_str)
-            .unwrap_or("wire-failed");
-        let detail = error
-            .get("detail")
-            .and_then(Value::as_str)
-            .unwrap_or("generate wire failed");
-        if reason == "no-engine-configured" && output.status.code() == Some(69) {
-            Err(WireFailure::NoEngine)
-        } else {
-            Err(WireFailure::Failure {
-                reason: reason.to_owned(),
-                detail: detail.to_owned(),
-            })
-        }
+        Err(wire_failure_from_stderr(
+            output.status.code(),
+            &output.stderr,
+        ))
     }
 }
 
@@ -204,7 +194,7 @@ impl Detector for SystemDetector {
         let input = temporary.path.join("input.png");
         let output = temporary.path.join("output.json");
         fs::write(&input, full_png).map_err(|error| error.to_string())?;
-        let process = Command::new(binary)
+        let mut process = Command::new(binary)
             .args(["detect", "--model"])
             .arg(model)
             .args(["--input"])
@@ -212,14 +202,55 @@ impl Detector for SystemDetector {
             .args(["--output"])
             .arg(&output)
             .args(["--threshold", "0.25", "--threads", "4"])
-            .output()
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
             .map_err(|error| error.to_string())?;
-        if !process.status.success() {
+        if !wait_for_child(&mut process, RFDETR_TIMEOUT)?.success() {
             return Err("rfdetr-cli detect failed".to_owned());
         }
         let parsed = serde_json::from_slice(&fs::read(output).map_err(|error| error.to_string())?)
             .map_err(|error| error.to_string())?;
         Ok(Some(parsed))
+    }
+}
+
+fn wire_failure_from_stderr(exit_code: Option<i32>, stderr: &[u8]) -> WireFailure {
+    let error: Value = serde_json::from_slice(stderr).unwrap_or(Value::Null);
+    let schema_matches = error.get("schema").and_then(Value::as_str) == Some(ERROR_SCHEMA);
+    let reason = error
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or("wire-failed");
+    let detail = error
+        .get("detail")
+        .and_then(Value::as_str)
+        .unwrap_or("generate wire failed");
+    if schema_matches && reason == "no-engine-configured" && exit_code == Some(69) {
+        WireFailure::NoEngine
+    } else {
+        WireFailure::Failure {
+            reason: reason.to_owned(),
+            detail: detail.to_owned(),
+        }
+    }
+}
+
+fn wait_for_child(child: &mut Child, timeout: Duration) -> Result<ExitStatus, String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            return Ok(status);
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            child.wait().map_err(|error| error.to_string())?;
+            return Err(format!(
+                "rfdetr-cli detect timed out after {}s",
+                timeout.as_secs()
+            ));
+        }
+        thread::sleep(CHILD_POLL_INTERVAL);
     }
 }
 
@@ -361,11 +392,29 @@ pub fn run_with_clients(
 }
 
 pub fn resize_for_vlm(image: DynamicImage) -> DynamicImage {
-    if image.width().max(image.height()) <= MAX_VLM_DIM {
+    let (width, height) = vlm_dimensions(image.width(), image.height());
+    if (width, height) == image.dimensions() {
         image
     } else {
-        image.thumbnail(MAX_VLM_DIM, MAX_VLM_DIM)
+        image.resize_exact(width, height, FilterType::Lanczos3)
     }
+}
+
+fn vlm_dimensions(width: u32, height: u32) -> (u32, u32) {
+    let longest = width.max(height);
+    if longest <= MAX_VLM_DIM {
+        return (width, height);
+    }
+    (
+        ((u64::from(width) * u64::from(MAX_VLM_DIM)) / u64::from(longest))
+            .max(1)
+            .try_into()
+            .expect("scaled image width fits u32"),
+        ((u64::from(height) * u64::from(MAX_VLM_DIM)) / u64::from(longest))
+            .max(1)
+            .try_into()
+            .expect("scaled image height fits u32"),
+    )
 }
 
 fn encode_png(image: &DynamicImage) -> Result<Vec<u8>, DepictError> {
@@ -500,6 +549,15 @@ mod tests {
             })
         }
     }
+    struct WrongSchemaNoEngineWire;
+    impl WireClient for WrongSchemaNoEngineWire {
+        fn describe(&self, _: &[u8]) -> Result<String, WireFailure> {
+            Err(wire_failure_from_stderr(
+                Some(69),
+                br#"{"schema":"wrong-schema","reason":"no-engine-configured","detail":"none"}"#,
+            ))
+        }
+    }
     struct NoDetector;
     impl Detector for NoDetector {
         fn detect(&self, _: &[u8]) -> Result<Option<Value>, String> {
@@ -608,6 +666,27 @@ mod tests {
             .collect();
         assert_eq!(rows[1]["detections"]["gate"], "still");
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn wrong_wire_error_schema_is_not_no_engine() {
+        let (root, image) = fixture_image();
+        assert!(matches!(
+            run_with_clients(&image, false, &WrongSchemaNoEngineWire, &NoDetector),
+            Err(DepictError::Wire(_))
+        ));
+        assert!(!image.with_extension("jsonl").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn vlm_resize_preserves_small_images_and_caps_large_images() {
+        assert_eq!(vlm_dimensions(1920, 1080), (1920, 1080));
+        assert_eq!(vlm_dimensions(3840, 2160), (1920, 1080));
+        assert_eq!(
+            resize_for_vlm(DynamicImage::new_rgb8(3840, 2160)).dimensions(),
+            (1920, 1080)
+        );
     }
 
     #[test]
