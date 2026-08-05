@@ -170,6 +170,63 @@ fn facets_move_relationship_and_observations() {
 }
 
 #[test]
+fn committed_merge_payload_records_facet_inverse_entries() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let moved = journal.join("facets/moved/entities/source");
+    fs::create_dir_all(&moved).unwrap();
+    fs::write(
+        moved.join("entity.json"),
+        br#"{"entity_id":"source","description":"moved"}"#,
+    )
+    .unwrap();
+
+    let source_merged = journal.join("facets/merged/entities/source");
+    let target_merged = journal.join("facets/merged/entities/target");
+    fs::create_dir_all(&source_merged).unwrap();
+    fs::create_dir_all(&target_merged).unwrap();
+    fs::write(
+        source_merged.join("entity.json"),
+        br#"{"entity_id":"source","attached_at":"2026-01-01"}"#,
+    )
+    .unwrap();
+    let target_before = json!({
+        "entity_id": "target",
+        "attached_at": "2026-02-01",
+        "description": "target description"
+    });
+    fs::write(
+        target_merged.join("entity.json"),
+        serde_json::to_vec(&target_before).unwrap(),
+    )
+    .unwrap();
+
+    let report =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let payload = load_entity_merge_payload(&journal, "target", &report.merge_id).unwrap();
+    let entries = payload["manifest"]["facets"]["entries"].as_array().unwrap();
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry == &json!({"facet": "moved", "kind": "move"}))
+    );
+    assert!(entries.iter().any(|entry| {
+        entry["facet"] == "merged"
+            && entry["kind"] == "merge"
+            && entry["target_before"] == target_before
+    }));
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
 fn email_dedup_keeps_first_seen_order() {
     assert_eq!(
         dedupe_emails(

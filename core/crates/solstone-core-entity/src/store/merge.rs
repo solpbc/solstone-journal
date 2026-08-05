@@ -91,6 +91,7 @@ pub(crate) struct FacetMergeStats {
     pub moved_count: usize,
     pub merged_count: usize,
     pub touched_facets: Vec<String>,
+    pub entries: Vec<Value>,
 }
 #[allow(dead_code)]
 #[derive(Debug, Default)]
@@ -239,14 +240,14 @@ pub(crate) fn commit_entity_merge_with_injector(
         let result = match phase {
             "private_payload" => record_entity_merge_payload(journal, target_id, &merge_id, &payload).map(|_| ()).map_err(Into::into),
             "voiceprints" => merge_voiceprints(journal, source_id, target_id).map(|result| { stats.voiceprints_added=result.added; stats.voiceprints_skipped_duplicate=result.skipped_duplicate; stats.voiceprints_target_total=result.target_total; }),
-            "facets" => merge_facets(journal, source_id, target_id, Some(&mut rollback)).map(|result| { stats.facets_moved=result.moved_count; stats.facets_merged=result.merged_count; touched_facets = result.touched_facets; }),
+            "facets" => merge_facets(journal, source_id, target_id, Some(&mut rollback)).map(|result| { stats.facets_moved=result.moved_count; stats.facets_merged=result.merged_count; touched_facets = result.touched_facets; payload["manifest"]["facets"]["entries"] = Value::Array(result.entries); }),
             "history" => save_entity_identity(journal, target_id, &plan.target_after, Some(&EntityOperationContext { kind: EntityOperationKind::Merge, caller: Value::Null, actor: Value::Null, metadata: json!({"merge_id": merge_id, "source_id": source_id, "target_id": target_id}) })).map_err(EntityMergeError::Write).and_then(|saved| { let sequence = saved.event.and_then(|event| event.get("seq").cloned()).ok_or_else(|| EntityMergeError::Refused("merge history event was not written".to_owned()))?; payload["commit_seq"] = sequence; record_entity_merge_payload(journal, target_id, &merge_id, &payload)?; Ok(()) }),
             "cleanup" => cleanup_merge(journal, source_id, &touched_facets, Some(&mut rollback)),
             "edges" => solstone_core_indexer_store::merge::fold_entity_edges_for_recorded_merge(journal, source_id, target_id).map_err(EntityMergeError::Index).and_then(|result| { stats.edges_rows_folded=result.rows_folded; stats.edges_self_edges_dropped=result.self_edges_dropped; payload["result_counts"] = audit_counts(&stats, plan.aliases_added, plan.emails_added, plan.principal_transferred); record_entity_merge_payload(journal, target_id, &merge_id, &payload)?; Ok(()) }),
             "audit" => { let path = contained_path(journal, "logs/entity-merges.jsonl").map_err(|error| EntityMergeError::Refused(error.to_string()))?; rollback.capture(journal, "logs/entity-merges.jsonl")?; let ts = u64::try_from(SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| EntityMergeError::Refused(error.to_string()))?.as_millis()).map_err(|_| EntityMergeError::Refused("merge audit timestamp exceeds u64".to_owned()))?; append_jsonl(path, &json!({"ts":ts,"merge_id":merge_id,"source_id":source_id,"source_display_name":plan.source_display_name,"target_id":target_id,"target_display_name":plan.target_display_name,"principal_transferred":plan.principal_transferred,"counts":audit_counts(&stats, plan.aliases_added, plan.emails_added, plan.principal_transferred),"caller":Value::Null})).map_err(EntityMergeError::Audit) },
-            "segments" => merge_segment_labels(journal, source_id, target_id, Some(&mut rollback)).map(|result| { stats.segments_labels_rewritten=result.labels_rewritten; stats.segments_corrections_rewritten=result.corrections_rewritten; stats.segments_files_scanned=result.files_scanned; }),
-            "activities" => merge_activities(journal, source_id, target_id, Some(&mut rollback)).map(|result| { stats.activities_records_rewritten=result.records_rewritten; stats.activities_fields_rewritten=result.fields_rewritten; stats.activities_files_scanned=result.files_scanned; stats.activities_files_rewritten=result.files_rewritten; }),
-            "observation relation remap" => merge_observation_relations(journal, source_id, target_id, Some(&mut rollback)).map(|result| { stats.observation_relations_rewritten=result.rows_rewritten; }),
+            "segments" => merge_segment_labels(journal, source_id, target_id, Some(&mut rollback)).map(|result| { stats.segments_labels_rewritten=result.labels_rewritten; stats.segments_corrections_rewritten=result.corrections_rewritten; stats.segments_files_scanned=result.files_scanned; payload["manifest"]["segments"]["entries"] = Value::Array(result.entries); }),
+            "activities" => merge_activities(journal, source_id, target_id, Some(&mut rollback)).map(|result| { stats.activities_records_rewritten=result.records_rewritten; stats.activities_fields_rewritten=result.fields_rewritten; stats.activities_files_scanned=result.files_scanned; stats.activities_files_rewritten=result.files_rewritten; payload["manifest"]["activities"]["entries"] = Value::Array(result.entries); }),
+            "observation relation remap" => merge_observation_relations(journal, source_id, target_id, Some(&mut rollback)).map(|result| { stats.observation_relations_rewritten=result.rows_rewritten; payload["manifest"]["observation_relations"]["entries"] = Value::Array(result.entries); }),
             "lineage" => rebase_lineage(journal, source_id, target_id, &plan.target_after).and_then(|ids| { if !ids.is_empty() { payload["manifest"]["rebased_merge_ids"] = Value::Array(ids.into_iter().map(Value::String).collect()); record_entity_merge_payload(journal, target_id, &merge_id, &payload)?; } Ok(()) }),
             _ => unreachable!("merge phase list is fixed"),
         };
@@ -278,9 +279,10 @@ pub(crate) fn commit_entity_merge_with_injector(
     Ok(report)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct ObservationRelationMergeStats {
     pub rows_rewritten: usize,
+    pub entries: Vec<Value>,
 }
 pub(crate) fn merge_observation_relations(
     journal: &Path,
@@ -310,8 +312,16 @@ pub(crate) fn merge_observation_relations(
             }
             let mut rows: Vec<Value> = read_jsonl(&path, Vec::new(), MalformedPolicy::Raise)
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            let relative_path = path
+                .strip_prefix(journal)
+                .map_err(|error| EntityMergeError::Refused(error.to_string()))?
+                .to_str()
+                .ok_or_else(|| {
+                    EntityMergeError::Refused(format!("path is not UTF-8: {}", path.display()))
+                })?
+                .to_owned();
             let mut changed = false;
-            for row in &mut rows {
+            for (row_index, row) in rows.iter_mut().enumerate() {
                 if let Some(relation) = row.get_mut("relation").and_then(Value::as_object_mut)
                     && relation.get("target_entity_id").and_then(Value::as_str) == Some(source_id)
                 {
@@ -320,6 +330,11 @@ pub(crate) fn merge_observation_relations(
                         Value::String(target_id.to_owned()),
                     );
                     stats.rows_rewritten += 1;
+                    stats.entries.push(json!({
+                        "path": relative_path.clone(),
+                        "row_index": row_index,
+                        "target_before": source_id,
+                    }));
                     changed = true;
                 }
             }
@@ -333,12 +348,13 @@ pub(crate) fn merge_observation_relations(
     Ok(stats)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct ActivityMergeStats {
     pub files_scanned: usize,
     pub files_rewritten: usize,
     pub records_rewritten: usize,
     pub fields_rewritten: usize,
+    pub entries: Vec<Value>,
 }
 pub(crate) fn merge_activities(
     journal: &Path,
@@ -368,23 +384,39 @@ pub(crate) fn merge_activities(
             let mut rows: Vec<Value> =
                 read_jsonl(&file.path, Vec::new(), MalformedPolicy::Raise)
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            let relative_path = file
+                .path
+                .strip_prefix(journal)
+                .map_err(|error| EntityMergeError::Refused(error.to_string()))?
+                .to_str()
+                .ok_or_else(|| {
+                    EntityMergeError::Refused(format!("path is not UTF-8: {}", file.path.display()))
+                })?
+                .to_owned();
             let mut file_changed = false;
-            for row in &mut rows {
+            for (row_index, row) in rows.iter_mut().enumerate() {
                 let mut changed = false;
                 if let Some(object) = row.as_object_mut() {
                     if let Some(active) = object
                         .get_mut("active_entities")
                         .and_then(Value::as_array_mut)
                     {
-                        for value in active {
+                        for (item_index, value) in active.iter_mut().enumerate() {
                             if value.as_str() == Some(source_id) {
                                 *value = Value::String(target_id.to_owned());
                                 stats.fields_rewritten += 1;
+                                stats.entries.push(json!({
+                                    "path": relative_path.clone(),
+                                    "row_index": row_index,
+                                    "container": "active_entities",
+                                    "item_index": item_index,
+                                    "before": source_id,
+                                }));
                                 changed = true;
                             }
                         }
                     }
-                    for (field, keys) in [
+                    for (container, keys) in [
                         ("participation", &["entity_id"][..]),
                         (
                             "commitments",
@@ -400,8 +432,9 @@ pub(crate) fn merge_activities(
                         ),
                         ("relations", &["from_entity_id", "to_entity_id"][..]),
                     ] {
-                        if let Some(items) = object.get_mut(field).and_then(Value::as_array_mut) {
-                            for item in items {
+                        if let Some(items) = object.get_mut(container).and_then(Value::as_array_mut)
+                        {
+                            for (item_index, item) in items.iter_mut().enumerate() {
                                 if let Some(item) = item.as_object_mut() {
                                     for key in keys {
                                         if item.get(*key).and_then(Value::as_str) == Some(source_id)
@@ -411,6 +444,14 @@ pub(crate) fn merge_activities(
                                                 Value::String(target_id.to_owned()),
                                             );
                                             stats.fields_rewritten += 1;
+                                            stats.entries.push(json!({
+                                                "path": relative_path.clone(),
+                                                "row_index": row_index,
+                                                "container": container,
+                                                "item_index": item_index,
+                                                "field": key,
+                                                "before": source_id,
+                                            }));
                                             changed = true;
                                         }
                                     }
@@ -435,11 +476,12 @@ pub(crate) fn merge_activities(
     Ok(stats)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct SegmentMergeStats {
     pub files_scanned: usize,
     pub labels_rewritten: usize,
     pub corrections_rewritten: usize,
+    pub entries: Vec<Value>,
 }
 
 pub(crate) fn merge_segment_labels(
@@ -469,14 +511,29 @@ pub(crate) fn merge_segment_labels(
                 }
                 let mut value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+                let relative_path = path
+                    .strip_prefix(journal)
+                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?
+                    .to_str()
+                    .ok_or_else(|| {
+                        EntityMergeError::Refused(format!("path is not UTF-8: {}", path.display()))
+                    })?
+                    .to_owned();
                 let mut changed = false;
                 if let Some(labels) = value.get_mut("labels").and_then(Value::as_array_mut) {
-                    for label in labels {
+                    for (row_index, label) in labels.iter_mut().enumerate() {
                         if let Some(object) = label.as_object_mut()
                             && object.get("speaker").and_then(Value::as_str) == Some(source_id)
                         {
                             object
                                 .insert("speaker".to_owned(), Value::String(target_id.to_owned()));
+                            stats.entries.push(json!({
+                                "path": relative_path.clone(),
+                                "section": "labels",
+                                "row_index": row_index,
+                                "field": "speaker",
+                                "before": source_id,
+                            }));
                             changed = true;
                         }
                     }
@@ -511,14 +568,29 @@ pub(crate) fn merge_segment_labels(
             }
             let mut value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            let relative_path = path
+                .strip_prefix(journal)
+                .map_err(|error| EntityMergeError::Refused(error.to_string()))?
+                .to_str()
+                .ok_or_else(|| {
+                    EntityMergeError::Refused(format!("path is not UTF-8: {}", path.display()))
+                })?
+                .to_owned();
             let mut changed = false;
             if let Some(corrections) = value.get_mut("corrections").and_then(Value::as_array_mut) {
-                for correction in corrections {
+                for (row_index, correction) in corrections.iter_mut().enumerate() {
                     if let Some(object) = correction.as_object_mut() {
                         for field in ["original_speaker", "corrected_speaker"] {
                             if object.get(field).and_then(Value::as_str) == Some(source_id) {
                                 object
                                     .insert(field.to_owned(), Value::String(target_id.to_owned()));
+                                stats.entries.push(json!({
+                                    "path": relative_path.clone(),
+                                    "section": "corrections",
+                                    "row_index": row_index,
+                                    "field": field,
+                                    "before": source_id,
+                                }));
                                 changed = true;
                             }
                         }
@@ -578,7 +650,7 @@ pub(crate) fn merge_facets(
         if entry.kind != DirEntryKind::Directory {
             continue;
         }
-        let facet = entry.name.to_string_lossy();
+        let facet = entry.name.to_string_lossy().into_owned();
         let source_rel = contained_path(
             journal,
             &format!("facets/{facet}/entities/{source_id}/entity.json"),
@@ -632,11 +704,15 @@ pub(crate) fn merge_facets(
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
             }
             stats.moved_count += 1;
-            stats.touched_facets.push(facet.into_owned());
+            stats.touched_facets.push(facet.clone());
+            stats.entries.push(json!({"facet": facet, "kind": "move"}));
         } else {
             let mut target: Value = read_json(&target_rel, Value::Null, MalformedPolicy::Raise)
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            let target_before = target.clone();
             let target_obs_path = target_rel.parent().unwrap().join("observations.jsonl");
+            let target_observations_existed = path_lexists(&target_obs_path)
+                .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
             let target_obs: Vec<Value> =
                 read_jsonl(&target_obs_path, Vec::new(), MalformedPolicy::Raise)
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
@@ -658,7 +734,14 @@ pub(crate) fn merge_facets(
             )
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
             stats.merged_count += 1;
-            stats.touched_facets.push(facet.into_owned());
+            stats.touched_facets.push(facet.clone());
+            stats.entries.push(json!({
+                "facet": facet,
+                "kind": "merge",
+                "target_before": target_before,
+                "target_observations_before": target_obs,
+                "target_observations_existed": target_observations_existed,
+            }));
         }
     }
     Ok(stats)
@@ -836,6 +919,7 @@ fn voiceprint_key(metadata: &str) -> Result<VoiceprintKey, EntityMergeError> {
 }
 
 struct MergePlan {
+    source_before: Value,
     target_before: Value,
     target_after: Value,
     aliases_added: usize,
@@ -945,14 +1029,16 @@ fn plan_merge(
         .and_then(Value::as_str)
         .unwrap_or(target_id)
         .to_owned();
+    let principal_transferred = source.get("is_principal").and_then(Value::as_bool) == Some(true);
     Ok(MergePlan {
+        source_before: source,
         target_before: target,
         target_after: after,
         aliases_added: aliases.len().saturating_sub(aliases_before.len()),
         emails_added: emails.len().saturating_sub(emails_before.len()),
         source_display_name,
         target_display_name,
-        principal_transferred: source.get("is_principal").and_then(Value::as_bool) == Some(true),
+        principal_transferred,
     })
 }
 
@@ -1045,5 +1131,5 @@ fn check_aka_cross_references(
     }
 }
 fn payload_for_merge(merge_id: &str, source_id: &str, target_id: &str, plan: &MergePlan) -> Value {
-    json!({"schema_version":1,"merge_id":merge_id,"source_id":source_id,"target_id":target_id,"commit_seq":null,"source_state":{"snapshots":[{"rel":format!("entities/{source_id}"),"files":[]}]},"result_counts":{},"manifest":{"identity":{"target_before":plan.target_before,"aka_support":[],"email_support":[],"scalar_support":[]},"voiceprints":{"support":[]},"facets":{"entries":[]},"segments":{"entries":[]},"activities":{"entries":[]},"observation_relations":{"entries":[]},"rebased_merge_ids":[]}})
+    json!({"schema_version":1,"merge_id":merge_id,"source_id":source_id,"target_id":target_id,"commit_seq":null,"source_state":{"identity":plan.source_before,"snapshots":[{"rel":format!("entities/{source_id}"),"files":[]}]},"result_counts":{},"manifest":{"identity":{"target_before":plan.target_before,"aka_support":[],"email_support":[],"scalar_support":[]},"voiceprints":{"support":[]},"facets":{"entries":[]},"segments":{"entries":[]},"activities":{"entries":[]},"observation_relations":{"entries":[]},"rebased_merge_ids":[]}})
 }
