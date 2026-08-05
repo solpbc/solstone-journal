@@ -1,0 +1,611 @@
+{
+  "_provenance": {
+    "generator": "scripts/retention_release_oracle.py",
+    "method": "the reference verdicts are OBSERVED by running the reference over constructed segments on a real filesystem; the unified verdicts are derived mechanically from one rule, not chosen per row",
+    "source_revision": "ba31b082b8588298a229df8d925cb42c1825a09d",
+    "reference": {
+      "segment_gate": "solstone/think/retention.py:190",
+      "state_derivation": "solstone/think/data_state.py:121",
+      "chunks_win": "solstone/think/data_state.py:145",
+      "empty_arm": "solstone/think/data_state.py:147",
+      "failed_arm": "solstone/think/data_state.py:139",
+      "terminal_proof": "solstone/apps/observer/processing_proof.py:24",
+      "raw_media_test": "solstone/think/retention.py:48",
+      "image_sidecar_writer": "solstone/observe/depict.py:49",
+      "extraction_globs": "solstone/think/retention.py:207"
+    },
+    "reading": "reference_gate 'eligible' means the reference unlinks the owner's raw media. reference_proof is the four-condition conjunction the resolve path runs on the same bytes. They disagree in both directions, which is why this file exists.",
+    "invariant": "no row may carry disposition 'widened'. A port that releases raw the reference held has loosened an irreversible path, and each such row needs its own argument before it is recorded here."
+  },
+  "summary": {
+    "agrees": 8,
+    "narrowed": 13,
+    "narrowed_legacy": 2
+  },
+  "rows": [
+    {
+      "id": "record_terminal_no_row",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "schema": "solstone.processing.v1",
+          "state": "analyzed",
+          "reason_code": "ok",
+          "handler": "transcribe",
+          "attempted_at": "2026-08-05T00:00:00Z",
+          "input_size": 104
+        },
+        "analysis_row": null
+      },
+      "reference_gate": "incomplete",
+      "reference_releases_raw": false,
+      "reference_proof": true,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "the record claims analyzed and the analysis rows are gone; the raw is the only surviving copy"
+      },
+      "disposition": "agrees",
+      "provenance": "observed",
+      "note": "a record claiming analyzed with no analysis row on disk -- the derived output is missing and the raw is the only surviving copy"
+    },
+    {
+      "id": "record_terminal_with_row",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "schema": "solstone.processing.v1",
+          "state": "analyzed",
+          "reason_code": "ok",
+          "handler": "transcribe",
+          "attempted_at": "2026-08-05T00:00:00Z",
+          "input_size": 104
+        },
+        "analysis_row": {
+          "start": 0.0,
+          "end": 1.0,
+          "text": "hello"
+        }
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": true,
+      "unified": {
+        "verdict": "releasable",
+        "evidence": "record",
+        "because": "the conjunction held and the derived output is on disk"
+      },
+      "disposition": "agrees",
+      "provenance": "observed",
+      "note": "the ordinary processed shape"
+    },
+    {
+      "id": "record_absent_with_row",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": "absent",
+        "analysis_row": {
+          "start": 0.0,
+          "end": 1.0,
+          "text": "hello"
+        }
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "releasable",
+        "evidence": "legacy_rows",
+        "because": "no processing record; analysis rows present"
+      },
+      "disposition": "narrowed_legacy",
+      "provenance": "observed",
+      "note": "pre-record data: analysis rows, no processing record"
+    },
+    {
+      "id": "record_absent_no_row",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": "absent",
+        "analysis_row": null
+      },
+      "reference_gate": "incomplete",
+      "reference_releases_raw": false,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "no processing record and no analysis rows"
+      },
+      "disposition": "agrees",
+      "provenance": "observed",
+      "note": "nothing has run"
+    },
+    {
+      "id": "state_empty_bare",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "state": "empty"
+        },
+        "analysis_row": null
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "schema is absent or unrecognized"
+      },
+      "disposition": "narrowed",
+      "provenance": "observed",
+      "note": "the entire record is a state field"
+    },
+    {
+      "id": "state_empty_wrong_schema",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "schema": "bogus.v9",
+          "state": "empty",
+          "reason_code": "ok",
+          "handler": "transcribe",
+          "attempted_at": "2026-08-05T00:00:00Z",
+          "input_size": 104
+        },
+        "analysis_row": null
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "schema is absent or unrecognized"
+      },
+      "disposition": "narrowed",
+      "provenance": "observed"
+    },
+    {
+      "id": "state_empty_wrong_handler",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "schema": "solstone.processing.v1",
+          "state": "empty",
+          "reason_code": "ok",
+          "handler": "describe",
+          "attempted_at": "2026-08-05T00:00:00Z",
+          "input_size": 104
+        },
+        "analysis_row": null
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "the recorded handler is not the one that claims this content"
+      },
+      "disposition": "narrowed",
+      "provenance": "observed"
+    },
+    {
+      "id": "state_empty_size_mismatch",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "schema": "solstone.processing.v1",
+          "state": "empty",
+          "reason_code": "ok",
+          "handler": "transcribe",
+          "attempted_at": "2026-08-05T00:00:00Z",
+          "input_size": 999999
+        },
+        "analysis_row": null
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "the bytes on disk are not the bytes that were processed"
+      },
+      "disposition": "narrowed",
+      "provenance": "observed",
+      "note": "the bytes on disk are not the bytes that were processed"
+    },
+    {
+      "id": "state_empty_no_schema_key",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "state": "empty",
+          "reason_code": "ok",
+          "handler": "transcribe",
+          "attempted_at": "2026-08-05T00:00:00Z",
+          "input_size": 104
+        },
+        "analysis_row": null
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "schema is absent or unrecognized"
+      },
+      "disposition": "narrowed",
+      "provenance": "observed"
+    },
+    {
+      "id": "state_empty_no_handler_key",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "schema": "solstone.processing.v1",
+          "state": "empty",
+          "reason_code": "ok",
+          "attempted_at": "2026-08-05T00:00:00Z",
+          "input_size": 104
+        },
+        "analysis_row": null
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "the recorded handler is not the one that claims this content"
+      },
+      "disposition": "narrowed",
+      "provenance": "observed"
+    },
+    {
+      "id": "state_empty_no_size_key",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "schema": "solstone.processing.v1",
+          "state": "empty",
+          "reason_code": "ok",
+          "handler": "transcribe",
+          "attempted_at": "2026-08-05T00:00:00Z"
+        },
+        "analysis_row": null
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "the bytes on disk are not the bytes that were processed"
+      },
+      "disposition": "narrowed",
+      "provenance": "observed"
+    },
+    {
+      "id": "state_analyzed_bare",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "state": "analyzed"
+        },
+        "analysis_row": null
+      },
+      "reference_gate": "incomplete",
+      "reference_releases_raw": false,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "schema is absent or unrecognized"
+      },
+      "disposition": "agrees",
+      "provenance": "observed"
+    },
+    {
+      "id": "state_unrecognized_with_row",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "state": "banana"
+        },
+        "analysis_row": {
+          "start": 0.0,
+          "end": 1.0,
+          "text": "hello"
+        }
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "schema is absent or unrecognized"
+      },
+      "disposition": "narrowed",
+      "provenance": "observed"
+    },
+    {
+      "id": "record_empty_object_with_row",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {},
+        "analysis_row": {
+          "start": 0.0,
+          "end": 1.0,
+          "text": "hello"
+        }
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "schema is absent or unrecognized"
+      },
+      "disposition": "narrowed",
+      "provenance": "observed",
+      "note": "an empty record object still releases the owner's raw today"
+    },
+    {
+      "id": "marker_key_only_row",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": "absent",
+        "analysis_row": {
+          "start": 0.0
+        }
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "releasable",
+        "evidence": "legacy_rows",
+        "because": "no processing record; analysis rows present"
+      },
+      "disposition": "narrowed_legacy",
+      "provenance": "observed",
+      "note": "a row carrying the marker key and nothing else; a real transcript row carries start, end and text"
+    },
+    {
+      "id": "non_analysis_row",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": "absent",
+        "analysis_row": {
+          "text": "hello"
+        }
+      },
+      "reference_gate": "incomplete",
+      "reference_releases_raw": false,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "no processing record and no analysis rows"
+      },
+      "disposition": "agrees",
+      "provenance": "observed"
+    },
+    {
+      "id": "state_failed",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "schema": "solstone.processing.v1",
+          "state": "failed",
+          "reason_code": "ok",
+          "handler": "transcribe",
+          "attempted_at": "2026-08-05T00:00:00Z",
+          "input_size": 104
+        },
+        "analysis_row": null
+      },
+      "reference_gate": "failed",
+      "reference_releases_raw": false,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "failed",
+        "because": "processing failed; disclose, never release"
+      },
+      "disposition": "agrees",
+      "provenance": "observed"
+    },
+    {
+      "id": "state_failed_with_row",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "schema": "solstone.processing.v1",
+          "state": "failed",
+          "reason_code": "ok",
+          "handler": "transcribe",
+          "attempted_at": "2026-08-05T00:00:00Z",
+          "input_size": 104
+        },
+        "analysis_row": {
+          "start": 0.0,
+          "end": 1.0,
+          "text": "hello"
+        }
+      },
+      "reference_gate": "failed",
+      "reference_releases_raw": false,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "failed",
+        "because": "processing failed; disclose, never release"
+      },
+      "disposition": "agrees",
+      "provenance": "observed",
+      "note": "a failed record beside rows that exist"
+    },
+    {
+      "id": "record_terminal_wrong_handler_with_row",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "schema": "solstone.processing.v1",
+          "state": "analyzed",
+          "reason_code": "ok",
+          "handler": "describe",
+          "attempted_at": "2026-08-05T00:00:00Z",
+          "input_size": 104
+        },
+        "analysis_row": {
+          "start": 0.0,
+          "end": 1.0,
+          "text": "hello"
+        }
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "the recorded handler is not the one that claims this content"
+      },
+      "disposition": "narrowed",
+      "provenance": "observed",
+      "note": "the audio was consumed by the screen handler, which cannot be true"
+    },
+    {
+      "id": "record_terminal_size_mismatch_with_row",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "schema": "solstone.processing.v1",
+          "state": "analyzed",
+          "reason_code": "ok",
+          "handler": "transcribe",
+          "attempted_at": "2026-08-05T00:00:00Z",
+          "input_size": 999999
+        },
+        "analysis_row": {
+          "start": 0.0,
+          "end": 1.0,
+          "text": "hello"
+        }
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "incomplete",
+        "because": "the bytes on disk are not the bytes that were processed"
+      },
+      "disposition": "narrowed",
+      "provenance": "observed",
+      "note": "rows exist but the file has changed size since it was processed"
+    },
+    {
+      "id": "record_empty_full_no_row",
+      "shape": {
+        "media": "chunk_audio.flac",
+        "size": 104,
+        "record": {
+          "schema": "solstone.processing.v1",
+          "state": "empty",
+          "reason_code": "no_decodable_audio",
+          "handler": "transcribe",
+          "attempted_at": "2026-08-05T00:00:00Z",
+          "input_size": 104
+        },
+        "analysis_row": null
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": true,
+      "unified": {
+        "verdict": "releasable",
+        "evidence": "record",
+        "because": "the conjunction held and the handler determined there was nothing to derive, so no analysis rows are expected"
+      },
+      "disposition": "agrees",
+      "provenance": "observed",
+      "note": "terminal-empty: the handler ran, determined there was nothing to transcribe, and recorded it. This is the shape the raw hand-off produces"
+    },
+    {
+      "id": "image_with_record",
+      "shape": {
+        "media": "photo.png",
+        "size": 104,
+        "record": {
+          "schema": "solstone.processing.v1",
+          "state": "empty",
+          "reason_code": "ok",
+          "handler": "depict",
+          "attempted_at": "2026-08-05T00:00:00Z",
+          "input_size": 104
+        },
+        "analysis_row": null
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "unprovable",
+        "because": "no handler in the closed set claims this content, so no proof is obtainable for it at any point"
+      },
+      "disposition": "narrowed",
+      "provenance": "observed",
+      "note": "an image whose sidecar names a handler that is not in the closed set"
+    },
+    {
+      "id": "image_no_sidecar",
+      "shape": {
+        "media": "photo.png",
+        "size": 104,
+        "record": "absent",
+        "analysis_row": null
+      },
+      "reference_gate": "eligible",
+      "reference_releases_raw": true,
+      "reference_proof": false,
+      "unified": {
+        "verdict": "held",
+        "blocker": "unprovable",
+        "because": "no handler in the closed set claims this content, so no proof is obtainable for it at any point"
+      },
+      "disposition": "narrowed",
+      "provenance": "observed",
+      "note": "an image alone. The reference releases it with no evidence it was ever processed and none that it was ever looked at"
+    }
+  ]
+}
