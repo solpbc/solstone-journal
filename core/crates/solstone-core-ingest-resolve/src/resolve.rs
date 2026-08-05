@@ -516,7 +516,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use serde_json::json;
+    use serde_json::{Value, json};
     use solstone_core_segment::ContentName;
 
     use super::*;
@@ -570,6 +570,29 @@ mod tests {
             Resolution::Apply(plan) => plan,
             other => panic!("expected apply plan, got {other:?}"),
         }
+    }
+
+    fn resolve_with_processing_record(record: Value) -> ApplyPlan {
+        let temporary = root();
+        let journal = temporary.path.join("journal");
+        let bytes = b"sound";
+        let directory = segment(&journal, "20260804", "device", "120000_60");
+        fs::write(
+            directory.join("audio.jsonl"),
+            json!({"_solstone_processing":record}).to_string() + "\nsecond\n",
+        )
+        .unwrap();
+
+        plan(
+            resolve_ingest(
+                &journal,
+                "20260804",
+                "device",
+                "120000_60",
+                &[file("audio.flac", bytes)],
+            )
+            .unwrap(),
+        )
     }
 
     #[test]
@@ -690,6 +713,78 @@ mod tests {
             }
         );
         assert_eq!(result.status, PlanStatus::Duplicate);
+    }
+
+    #[test]
+    fn terminal_proof_refuses_schema_mismatch() {
+        let result = resolve_with_processing_record(json!({
+            "schema":"solstone.processing.v0",
+            "state":"analyzed",
+            "handler":"transcribe",
+            "input_size":5,
+        }));
+
+        assert_eq!(
+            result.files[0].disposition,
+            FileDisposition::NeedsWrite {
+                reason: MissingWriteReason::MissingContent
+            }
+        );
+        assert_eq!(result.status, PlanStatus::Ok);
+    }
+
+    #[test]
+    fn terminal_proof_refuses_state_mismatch() {
+        let result = resolve_with_processing_record(json!({
+            "schema":"solstone.processing.v1",
+            "state":"failed",
+            "handler":"transcribe",
+            "input_size":5,
+        }));
+
+        assert_eq!(
+            result.files[0].disposition,
+            FileDisposition::NeedsWrite {
+                reason: MissingWriteReason::MissingContent
+            }
+        );
+        assert_eq!(result.status, PlanStatus::Ok);
+    }
+
+    #[test]
+    fn terminal_proof_refuses_handler_mismatch() {
+        let result = resolve_with_processing_record(json!({
+            "schema":"solstone.processing.v1",
+            "state":"analyzed",
+            "handler":"describe",
+            "input_size":5,
+        }));
+
+        assert_eq!(
+            result.files[0].disposition,
+            FileDisposition::NeedsWrite {
+                reason: MissingWriteReason::MissingContent
+            }
+        );
+        assert_eq!(result.status, PlanStatus::Ok);
+    }
+
+    #[test]
+    fn terminal_proof_refuses_input_size_mismatch() {
+        let result = resolve_with_processing_record(json!({
+            "schema":"solstone.processing.v1",
+            "state":"analyzed",
+            "handler":"transcribe",
+            "input_size":6,
+        }));
+
+        assert_eq!(
+            result.files[0].disposition,
+            FileDisposition::NeedsWrite {
+                reason: MissingWriteReason::MissingContent
+            }
+        );
+        assert_eq!(result.status, PlanStatus::Ok);
     }
 
     #[test]
