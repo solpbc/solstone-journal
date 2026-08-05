@@ -1114,6 +1114,37 @@ mod tests {
     }
 
     #[test]
+    fn day_symlink_escape_is_rejected_before_delete() {
+        // The segment-symlink case above was already contained before this
+        // wave. A symlinked *day* directory was not: containment used to be
+        // checked against the day directory, which `realpath` resolves to the
+        // symlink's target, so everything beneath it was "contained" by
+        // construction and the journal root was never the root. This pins the
+        // fix -- the full `chronicle/<day>/<stream>/<segment>` relative path is
+        // resolved against the canonical journal root -- because an
+        // optimisation back to day-relative resolution would leave the
+        // segment-symlink test green and silently restore the escape.
+        let temporary = TempDir::new();
+        let journal = temporary.journal();
+        let outside = temporary.path.join("outside");
+        let outside_segment = outside.join("location/120000_60");
+        fs::create_dir_all(&outside_segment).unwrap();
+        fs::write(outside_segment.join("location.jsonl"), b"{}\n").unwrap();
+        fs::write(outside.join("sentinel"), b"outside data").unwrap();
+        fs::create_dir_all(journal.join("chronicle")).unwrap();
+        symlink(&outside, journal.join("chronicle/20260804")).unwrap();
+
+        assert!(matches!(
+            delete_location_source(&journal),
+            Err(DeleteError::Segment(SegmentError::Path(PathError::Escape(
+                _
+            ))))
+        ));
+        assert_eq!(fs::read(outside.join("sentinel")).unwrap(), b"outside data");
+        assert!(outside_segment.join("location.jsonl").exists());
+    }
+
+    #[test]
     #[cfg(unix)]
     fn segment_symlink_escape_is_rejected_before_delete() {
         let temporary = TempDir::new();
