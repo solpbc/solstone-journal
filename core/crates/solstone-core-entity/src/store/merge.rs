@@ -1177,6 +1177,10 @@ fn payload_for_merge(
         journal,
         &format!("entities/{source_id}"),
     )?];
+    let target_voiceprints = snapshot_payload(&capture_snapshot(
+        journal,
+        &format!("entities/{target_id}/voiceprints.npz"),
+    )?);
     let facets = contained_path(journal, "facets")
         .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
     for entry in
@@ -1194,7 +1198,7 @@ fn payload_for_merge(
         }
     }
     Ok(
-        json!({"schema_version":1,"merge_id":merge_id,"source_id":source_id,"target_id":target_id,"commit_seq":null,"source_state":{"identity":plan.source_before,"snapshots":snapshots},"result_counts":{},"manifest":{"identity":{"target_before":plan.target_before,"aka_support":plan.aka_support,"email_support":plan.email_support,"scalar_support":plan.scalar_support},"voiceprints":{"support":[]},"facets":{"entries":[]},"segments":{"entries":[]},"activities":{"entries":[]},"observation_relations":{"entries":[]},"rebased_merge_ids":[]}}),
+        json!({"schema_version":1,"merge_id":merge_id,"source_id":source_id,"target_id":target_id,"commit_seq":null,"source_state":{"identity":plan.source_before,"snapshots":snapshots},"result_counts":{},"manifest":{"identity":{"target_before":plan.target_before,"aka_support":plan.aka_support,"email_support":plan.email_support,"scalar_support":plan.scalar_support},"voiceprints":{"support":[],"target_before":target_voiceprints},"facets":{"entries":[]},"segments":{"entries":[]},"activities":{"entries":[]},"observation_relations":{"entries":[]},"rebased_merge_ids":[]}}),
     )
 }
 

@@ -8,8 +8,10 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Value, json};
+use solstone_core_journal_io::{AtomicWriteOptions, JsonWriteOptions, write_json, write_jsonl};
 
 use super::store::undo_entity_merge_with_injector;
+use super::store::voiceprints::write_voiceprints_npz;
 use crate::{
     EntityMergeOptions, commit_entity_merge, guard_restore_does_not_cross_merge,
     read_entity_identity, read_visible_history, save_entity_identity, undo_entity_merge,
@@ -56,6 +58,53 @@ fn journal_tree(journal: &std::path::Path) -> Vec<(String, Vec<u8>)> {
 
     let mut files = Vec::new();
     collect(journal, journal, &mut files);
+    files
+}
+
+fn comparable_journal_tree(journal: &std::path::Path, target_id: &str) -> Vec<(String, Vec<u8>)> {
+    fn excluded(relative: &str, target_id: &str) -> bool {
+        relative.ends_with(".lock")
+            || relative == "indexer/"
+            || relative.starts_with("indexer/")
+            || relative == format!("entities/{target_id}/history/")
+            || relative.starts_with(&format!("entities/{target_id}/history/"))
+            || relative == "logs/entity-merges.jsonl"
+            || relative == "awareness/discovery_clusters.json"
+    }
+
+    fn collect(
+        root: &std::path::Path,
+        directory: &std::path::Path,
+        target_id: &str,
+        files: &mut Vec<(String, Vec<u8>)>,
+    ) {
+        let mut entries = fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let relative_directory = format!("{relative}/");
+            if excluded(&relative, target_id) || excluded(&relative_directory, target_id) {
+                continue;
+            }
+            if entry.file_type().unwrap().is_dir() {
+                files.push((relative_directory, Vec::new()));
+                collect(root, &path, target_id, files);
+            } else if entry.file_type().unwrap().is_file() {
+                files.push((relative, fs::read(path).unwrap()));
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    collect(journal, journal, target_id, &mut files);
     files
 }
 
@@ -282,6 +331,93 @@ fn undo_restores_file_modes_not_directory_modes() {
             .permissions()
             .mode()
             & 0o7777
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_restores_byte_identical_journal_outside_excluded_paths() {
+    let journal = undo_journal();
+    for id in ["source", "target", "other"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    fs::create_dir_all(journal.join("logs")).unwrap();
+    let discovery = journal.join("awareness/discovery_clusters.json");
+    fs::create_dir_all(discovery.parent().unwrap()).unwrap();
+    fs::write(&discovery, b"{\"clusters\":[]}").unwrap();
+
+    let source_facet = journal.join("facets/work/entities/source");
+    fs::create_dir_all(&source_facet).unwrap();
+    write_json(
+        source_facet.join("entity.json"),
+        &json!({"entity_id":"source","description":"source relationship"}),
+        JsonWriteOptions {
+            indent: Some(2),
+            sort_keys: false,
+            mode: None,
+        },
+    )
+    .unwrap();
+    let labels = journal.join("chronicle/20260102/080000_300/talents/speaker_labels.json");
+    fs::create_dir_all(labels.parent().unwrap()).unwrap();
+    write_json(
+        &labels,
+        &json!({"labels":[{"speaker":"source"}]}),
+        JsonWriteOptions {
+            indent: Some(2),
+            sort_keys: false,
+            mode: None,
+        },
+    )
+    .unwrap();
+    let activity = journal.join("facets/work/activities/20260102.jsonl");
+    fs::create_dir_all(activity.parent().unwrap()).unwrap();
+    write_jsonl(
+        &activity,
+        vec![json!({"id":"activity","active_entities":["source"]})],
+        AtomicWriteOptions::default(),
+    )
+    .unwrap();
+    let observations = journal.join("facets/work/entities/other/observations.jsonl");
+    fs::create_dir_all(observations.parent().unwrap()).unwrap();
+    write_jsonl(
+        &observations,
+        vec![json!({"observed_at":1,"relation":{"kind":"works-with","target_entity_id":"source","target_name":"source"}})],
+        AtomicWriteOptions::default(),
+    )
+    .unwrap();
+    let source_voiceprints = journal.join("entities/source/voiceprints.npz");
+    fs::write(
+        &source_voiceprints,
+        write_voiceprints_npz(
+            &[2.0; 256],
+            &[
+                "{\"day\":\"d\",\"segment_key\":\"s\",\"source\":\"x\",\"sentence_id\":\"1\"}"
+                    .to_owned(),
+            ],
+        )
+        .unwrap(),
+    )
+    .unwrap();
+
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+    let index_before = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    let tree_before = comparable_journal_tree(&journal, "target");
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+
+    assert_eq!(comparable_journal_tree(&journal, "target"), tree_before);
+    assert_eq!(
+        solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap(),
+        index_before
     );
     fs::remove_dir_all(journal).unwrap();
 }

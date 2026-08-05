@@ -142,6 +142,8 @@ pub(crate) fn undo_entity_merge_with_injector(
         for snapshot in &source_snapshots {
             restore_snapshot(journal, snapshot)?;
         }
+        phase = "voiceprints";
+        undo_voiceprints(journal, &target_id, &payload, &mut rollback)?;
         phase = "segments";
         undo_segments(journal, &payload, &mut rollback)?;
         inject_failure(injector, phase)?;
@@ -663,6 +665,31 @@ fn undo_observation_relations(
         write_jsonl(destination, rows, AtomicWriteOptions::default())
             .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
     }
+    Ok(())
+}
+
+fn undo_voiceprints(
+    journal: &Path,
+    target_id: &str,
+    payload: &Value,
+    rollback: &mut MergeRollback,
+) -> Result<(), EntityUndoError> {
+    let snapshot = payload
+        .get("manifest")
+        .and_then(|manifest| manifest.get("voiceprints"))
+        .and_then(|voiceprints| voiceprints.get("target_before"))
+        .ok_or_else(|| {
+            EntityUndoError::Refused("merge payload voiceprints missing target_before".to_owned())
+        })?;
+    let snapshot = snapshot_from_payload(snapshot)?;
+    let path = format!("entities/{target_id}/voiceprints.npz");
+    if snapshot_path(&snapshot) != path {
+        return Err(EntityUndoError::Refused(
+            "merge payload voiceprints snapshot path does not match target".to_owned(),
+        ));
+    }
+    rollback.capture(journal, &path)?;
+    restore_snapshot(journal, &snapshot)?;
     Ok(())
 }
 
