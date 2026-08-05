@@ -45,6 +45,7 @@ pub struct DeviceIngestEvent {
 }
 
 /// One recognized durable event-log row.
+/// Its `day` and `segment` values may be restamped after a segment move.
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum DurableEvent {
