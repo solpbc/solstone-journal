@@ -123,6 +123,8 @@ Media processing: an ingested segment's raw media becoming analysed output on di
 
 ## `P-index`
 
+🔴 **`day` semantics — one meaning, not three.** `day` is **the day the content originated from**: the source segment's day, or for an activity its **start** time. ⛔ It is not the recording day, not the last-seen day, and not the ingest day. For content that is genuinely not day-based, the **only** permitted fallback is the day it was last updated, and a fallback must be named as one rather than silently occupying the same field. ⚠ Before this, `day` conflated recording, source and last-seen meanings.
+
 The SQLite index. **Ephemeral by design and always rebuildable — that property is required, not incidental.** ⚠ The index schema needs architecture work.
 
 🔴 **Half of it IS already Rust, and the half that is has the larger share of the code.** ⛔ Do not read `think/indexer/native.py:6-11` as "this plate is Python" — it is accurate about what went native and silent about how much. `core/crates/solstone-core-indexer` (11,825 lines) + `solstone-core-indexer-store` (4,411) = **16,236 lines of Rust owning the entire CLI write path** — `--reset`, `--rescan`, `--rescan-full`, `--rescan-file`, `--rebuild-edges`. That is 5.5× the Python it fronts (`indexer/journal.py` 1,693 + `edges.py` 1,263). **A full rebuild is already native.** What remains Python is **the whole read/query path** plus the in-process writers.
