@@ -1,0 +1,171 @@
+{
+  "_provenance": {
+    "generator": "scripts/segment_name_oracle.py",
+    "method": "both verdicts are OBSERVED by executing the references -- Python by import, Rust by compiling a harness that reproduces the crate's function, with the crate's own source asserted to still contain the lines the harness reproduces",
+    "source_revision": "c926cef42d529f5116a7fc5b1b72d85a9436a04d",
+    "reference": {
+      "rust_segment_key": "core/crates/solstone-core-journal-io/src/paths.rs",
+      "python_segment_key": "solstone/think/utils.py"
+    },
+    "invariant": "the two languages must agree on every row. A disagreement means a directory that is a segment to one half of the tree and not to the other, which arms at cutover.",
+    "why_this_exists": "these verdicts decide where owner media may be moved to during an irreversible removal. A staging name that is still classified as a segment puts two entries with one key in front of every reader; a key rebuilt into a path misses the real directory entirely."
+  },
+  "summary": {
+    "cases": 15,
+    "disagreements": 0,
+    "segments": 8,
+    "key_differs_from_name": 6
+  },
+  "rows": [
+    {
+      "name": "070000_17",
+      "pins": "the ordinary shape",
+      "rust_key": "070000_17",
+      "python_key": "070000_17",
+      "agree": true,
+      "is_segment": true,
+      "key_equals_name": true,
+      "provenance": "observed"
+    },
+    {
+      "name": "093000_300_summary",
+      "pins": "key is not the directory name",
+      "rust_key": "093000_300",
+      "python_key": "093000_300",
+      "agree": true,
+      "is_segment": true,
+      "key_equals_name": false,
+      "provenance": "observed"
+    },
+    {
+      "name": ".removing_070000_17",
+      "pins": "LEADING decoration: not a segment in either language",
+      "rust_key": null,
+      "python_key": null,
+      "agree": true,
+      "is_segment": false,
+      "key_equals_name": false,
+      "provenance": "observed"
+    },
+    {
+      "name": "070000_17.removing",
+      "pins": "TRAILING decoration: still a segment, under the bare key",
+      "rust_key": "070000_17",
+      "python_key": "070000_17",
+      "agree": true,
+      "is_segment": true,
+      "key_equals_name": false,
+      "provenance": "observed"
+    },
+    {
+      "name": "070000_17.deleted",
+      "pins": "trailing decoration, the suffix the field's prior art uses",
+      "rust_key": "070000_17",
+      "python_key": "070000_17",
+      "agree": true,
+      "is_segment": true,
+      "key_equals_name": false,
+      "provenance": "observed"
+    },
+    {
+      "name": "070000_17-removing",
+      "pins": "trailing decoration without a dot",
+      "rust_key": "070000_17",
+      "python_key": "070000_17",
+      "agree": true,
+      "is_segment": true,
+      "key_equals_name": false,
+      "provenance": "observed"
+    },
+    {
+      "name": "removing.070000_17",
+      "pins": "leading decoration ending in a NON-word byte",
+      "rust_key": "070000_17",
+      "python_key": "070000_17",
+      "agree": true,
+      "is_segment": true,
+      "key_equals_name": false,
+      "provenance": "observed"
+    },
+    {
+      "name": "070000_17.lock",
+      "pins": "a lock sidecar's name, were it ever a directory",
+      "rust_key": "070000_17",
+      "python_key": "070000_17",
+      "agree": true,
+      "is_segment": true,
+      "key_equals_name": false,
+      "provenance": "observed"
+    },
+    {
+      "name": "x070000_17",
+      "pins": "prefixed by an alphanumeric",
+      "rust_key": null,
+      "python_key": null,
+      "agree": true,
+      "is_segment": false,
+      "key_equals_name": false,
+      "provenance": "observed"
+    },
+    {
+      "name": "070000_1",
+      "pins": "single-digit tail",
+      "rust_key": "070000_1",
+      "python_key": "070000_1",
+      "agree": true,
+      "is_segment": true,
+      "key_equals_name": true,
+      "provenance": "observed"
+    },
+    {
+      "name": "070000_",
+      "pins": "no tail",
+      "rust_key": null,
+      "python_key": null,
+      "agree": true,
+      "is_segment": false,
+      "key_equals_name": false,
+      "provenance": "observed"
+    },
+    {
+      "name": "70000_17",
+      "pins": "five leading digits",
+      "rust_key": null,
+      "python_key": null,
+      "agree": true,
+      "is_segment": false,
+      "key_equals_name": false,
+      "provenance": "observed"
+    },
+    {
+      "name": "0700000_17",
+      "pins": "seven leading digits",
+      "rust_key": null,
+      "python_key": null,
+      "agree": true,
+      "is_segment": false,
+      "key_equals_name": false,
+      "provenance": "observed"
+    },
+    {
+      "name": "health",
+      "pins": "the day-level directory both iterators skip",
+      "rust_key": null,
+      "python_key": null,
+      "agree": true,
+      "is_segment": false,
+      "key_equals_name": false,
+      "provenance": "observed"
+    },
+    {
+      "name": "_default",
+      "pins": "the default stream name",
+      "rust_key": null,
+      "python_key": null,
+      "agree": true,
+      "is_segment": false,
+      "key_equals_name": false,
+      "provenance": "observed"
+    }
+  ]
+}
