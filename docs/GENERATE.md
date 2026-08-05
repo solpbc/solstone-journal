@@ -166,6 +166,24 @@ consequence of any one of them getting it wrong is deleted owner data. The bound
 code means; it publishes the decision. Consumers still receive `reason_code` for recording and
 presentation.
 
+🔴 **The readiness taxonomy alone does not deliver this, and the gap is on the egress lane.** The three
+attestation failures — not-verified, failed, stale — carry reason codes that are **absent from that
+taxonomy entirely**, so a lookup returns not-found and the blocking predicate answers `false`. That is
+the one failure class meaning *the confidential processing environment could not be verified*, and the
+taxonomy classifies it as an ordinary bad response, while a missing provider key classifies as
+blocking.
+
+⛔ **This contract classifies the attestation family as `blocking: true`.** An unverifiable
+confidential environment is *the provider is unusable, preserve the owner's source material* — the same
+shape as a missing key and strictly more serious. The fixture carries that classification explicitly
+rather than deriving it from a lookup that would answer `false`.
+
+🔴 **An unknown or absent `reason_code` resolves to `retryable: false, blocking: true`.** The safe
+direction is the one that preserves the owner's material: holding is recoverable and consuming is not.
+⚠ This is the opposite of what a not-found lookup returns today, and it is deliberate — a code the
+boundary does not recognise is a failure it does not understand, and a failure it does not understand
+must not license discarding an owner's source.
+
 ### Protocol error
 
 Reserved for the boundary being unable to parse the question at all.
@@ -196,6 +214,30 @@ stdin drains the outstanding requests and exits `0`.
 Session framing exists for callers that make many completions for one unit of work — a screen
 recording's qualified frames, a day's rollups. Under one-shot framing those are one operating-system
 process per completion.
+
+**Entering it, and bounding it.** ⛔ **The framing is not auto-detected** — one-shot reads stdin to
+end-of-file, which is structurally incompatible with a session that keeps stdin open, so a child that
+guessed wrong would hang rather than error. The caller declares the framing and its concurrency bound
+on the command line when it launches the child. The declared selector and bound live in the contract
+fixture alongside everything else.
+
+**Two failure classes exist only in this framing, and both carry the same classifications a refusal
+does.** A **desynchronised stream** — a non-record line on stdout, or a well-formed record bearing an
+unknown or already-retired `id` — is terminal for the session: every outstanding request completes as
+a failure and no further request is accepted. A **child that dies** fails every outstanding request.
+🔴 **Both carry `retryable: false, blocking: true`**, for the same reason an unknown reason code does:
+the caller has lost the ability to know what happened to work it submitted, and that must not license
+discarding the owner's source material.
+
+⚠ **The caller must drain the child's stderr continuously.** Diagnostics go to stderr by design, the
+child outlives a single request, and an undrained pipe fills — at which point the child blocks writing
+a log line and every outstanding request stalls behind it. In one-shot framing this cannot happen; in
+session framing it is a hang wearing a performance costume.
+
+⚠ **Request fields are honoured or refused, never accepted and dropped.** Some retry and admission
+hints reach only one of the two internal call paths today. A field this contract declares must either
+take effect or come back as a refusal naming itself — silently ignoring a declared field is a contract
+that lies, which is worse than one that says no.
 
 🔴 **One child per consumer process, never a shared daemon.** The child is launched by the consumer,
 lives as long as the consumer, and dies with it. The pipeline's failure containment — one process per
@@ -241,8 +283,15 @@ assume them.
 ⚠ **A consumer receiving an unrecognised `reason` or `reason_code` maps it to the declared unknown
 member rather than failing.** Reader tolerance over reader strictness: an older consumer meeting a
 newer boundary degrades to a less specific answer; it does not refuse a response it could have acted
-on. Unrecognised **request** fields are still refused — tolerance applies to reading, never to
-accepting.
+on. ⚠ **And it degrades to the safe classification** — an unrecognised member arrives with
+`retryable: false, blocking: true`, so tolerance never costs the owner's source material.
+
+⛔ **Tolerance covers vocabulary members. It does not cover the schema identifier.** A record whose
+`schema` is not this contract's is refused as a protocol error, not read leniently — the identifier is
+what tells a reader which shape it is holding, and reading it tolerantly is how a predecessor's records
+survive a migration that was supposed to end them.
+
+⛔ **And unrecognised request fields are refused.** Tolerance applies to reading, never to accepting.
 
 ---
 
