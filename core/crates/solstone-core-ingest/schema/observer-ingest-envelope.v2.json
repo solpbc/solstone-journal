@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Observer ingest envelope v2",
+  "type": "object",
+  "required": ["day", "segment", "files"],
+  "additionalProperties": true,
+  "properties": {
+    "day": { "type": "string" },
+    "segment": { "type": "string" },
+    "source": { "type": "string" },
+    "meta": { "type": "object", "additionalProperties": true },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["submitted"],
+        "additionalProperties": true,
+        "properties": { "submitted": { "type": "string" } }
+      }
+    }
+  },
+  "x-journal-contract": {
+    "contract_version": 2,
+    "protocol_version": 3,
+    "reference_writer": "solstone-core-ingest",
+    "allowed_producers": ["solstone-core-ingest"],
+    "journal_domain": "chronicle",
+    "write_door": "solstone-core-segment",
+    "wire_format": "multipart-envelope",
+    "identity_source": "access_basis",
+    "forward_compatible": true
+  }
+}

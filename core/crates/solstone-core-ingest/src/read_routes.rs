@@ -1,0 +1,231 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use std::fs;
+
+use axum::Json;
+use axum::extract::{Extension, Path, Query, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
+use serde_json::{Map, Value, json};
+use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_journal_io::{PathOrDay, day_dirs, iter_segments};
+
+use crate::events::read_events;
+use crate::model::{DeviceIngestEvent, ReasonCode};
+use crate::router::{IngestState, refusal};
+use crate::validation::{validate_access, validate_day, validate_protocol, validate_source};
+
+pub async fn ingest_manifest(
+    Extension(basis): Extension<AccessBasis>,
+    State(state): State<IngestState>,
+    headers: HeaderMap,
+    Query(query): Query<SourceQuery>,
+) -> Response {
+    let did = match admitted(&basis, &headers) {
+        Ok(did) => did,
+        Err((code, status, detail)) => return refusal(code, status, detail),
+    };
+    let stream = match query
+        .source
+        .as_deref()
+        .map(|value| validate_source(value.as_bytes()))
+        .transpose()
+    {
+        Ok(Some(source)) => state_stream(Some(source)),
+        Ok(None) => state_stream(None),
+        Err(code) => return refusal(code, StatusCode::BAD_REQUEST, "invalid source"),
+    };
+    let days = match day_dirs(&state.journal_root) {
+        Ok(days) => days,
+        Err(_) => {
+            return refusal(
+                ReasonCode::JournalReadFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot read journal",
+            );
+        }
+    };
+    let mut result = Map::new();
+    for (day, path) in days {
+        let count = match iter_segments(&state.journal_root, PathOrDay::Directory(&path)) {
+            Ok(segments) => segments
+                .into_iter()
+                .filter(|segment| segment.stream == stream)
+                .filter_map(|segment| read_events(&segment.path).ok())
+                .flatten()
+                .filter(|event| event.did == did)
+                .count(),
+            Err(_) => {
+                return refusal(
+                    ReasonCode::JournalReadFailed,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "cannot read segments",
+                );
+            }
+        };
+        if count > 0 {
+            result.insert(day, json!({"segments": count}));
+        }
+    }
+    Json(json!({"days": result})).into_response()
+}
+
+pub async fn ingest_manifest_day(
+    Extension(basis): Extension<AccessBasis>,
+    State(state): State<IngestState>,
+    headers: HeaderMap,
+    Path(day): Path<String>,
+    Query(query): Query<SourceQuery>,
+) -> Response {
+    let did = match admitted(&basis, &headers) {
+        Ok(did) => did,
+        Err((code, status, detail)) => return refusal(code, status, detail),
+    };
+    if let Err(code) = validate_day(&day) {
+        return refusal(code, StatusCode::BAD_REQUEST, "invalid day");
+    }
+    let stream = match query
+        .source
+        .as_deref()
+        .map(|value| validate_source(value.as_bytes()))
+        .transpose()
+    {
+        Ok(Some(source)) => state_stream(Some(source)),
+        Ok(None) => state_stream(None),
+        Err(code) => return refusal(code, StatusCode::BAD_REQUEST, "invalid source"),
+    };
+    let events = match stream_events(&state, &day, &stream, &did) {
+        Ok(events) => events,
+        Err(code) => {
+            return refusal(
+                code,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot read journal",
+            );
+        }
+    };
+    let mut segments = Map::new();
+    for event in events {
+        segments.insert(event.segment.clone(), json!({"files": event.files}));
+    }
+    Json(json!({"version": 1, "day": day, "segments": segments})).into_response()
+}
+
+pub async fn ingest_segments(
+    Extension(basis): Extension<AccessBasis>,
+    State(state): State<IngestState>,
+    headers: HeaderMap,
+    Path(day): Path<String>,
+    Query(query): Query<SourceQuery>,
+) -> Response {
+    let did = match admitted(&basis, &headers) {
+        Ok(did) => did,
+        Err((code, status, detail)) => return refusal(code, status, detail),
+    };
+    if let Err(code) = validate_day(&day) {
+        return refusal(code, StatusCode::BAD_REQUEST, "invalid day");
+    }
+    let stream = match query
+        .source
+        .as_deref()
+        .map(|value| validate_source(value.as_bytes()))
+        .transpose()
+    {
+        Ok(Some(source)) => state_stream(Some(source)),
+        Ok(None) => state_stream(None),
+        Err(code) => return refusal(code, StatusCode::BAD_REQUEST, "invalid source"),
+    };
+    let events = match stream_events(&state, &day, &stream, &did) {
+        Ok(events) => events,
+        Err(code) => {
+            return refusal(
+                code,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot read journal",
+            );
+        }
+    };
+    let mut items = Vec::new();
+    for event in events {
+        let path = if stream == "_default" {
+            state
+                .journal_root
+                .join("chronicle")
+                .join(&day)
+                .join(&event.segment)
+        } else {
+            state
+                .journal_root
+                .join("chronicle")
+                .join(&day)
+                .join(&stream)
+                .join(&event.segment)
+        };
+        let files: Vec<Value> = event
+            .files
+            .into_iter()
+            .map(|file| {
+                let status = match fs::read(path.join(&file.written)) {
+                    Ok(bytes)
+                        if bytes.len() as u64 == file.size && sha256(&bytes) == file.sha256 =>
+                    {
+                        "present"
+                    }
+                    _ => "missing",
+                };
+                let mut value = serde_json::to_value(file).unwrap_or(Value::Null);
+                if let Value::Object(ref mut object) = value {
+                    object.insert("status".to_owned(), Value::String(status.to_owned()));
+                }
+                value
+            })
+            .collect();
+        items.push(json!({"key": event.segment, "observed": true, "files": files}));
+    }
+    Json(json!({"protocol_version": 3, "total": items.len(), "items": items})).into_response()
+}
+
+#[derive(serde::Deserialize)]
+pub struct SourceQuery {
+    pub source: Option<String>,
+}
+
+fn admitted(
+    basis: &AccessBasis,
+    headers: &HeaderMap,
+) -> Result<String, (ReasonCode, StatusCode, String)> {
+    validate_protocol(headers)?;
+    validate_access(basis)
+}
+
+fn state_stream(source: Option<String>) -> String {
+    source.unwrap_or_else(|| "_default".to_owned())
+}
+
+fn stream_events(
+    state: &IngestState,
+    day: &str,
+    stream: &str,
+    did: &str,
+) -> Result<Vec<DeviceIngestEvent>, ReasonCode> {
+    let segments = iter_segments(&state.journal_root, PathOrDay::Day(day))
+        .map_err(|_| ReasonCode::JournalReadFailed)?;
+    let mut events = Vec::new();
+    for segment in segments
+        .into_iter()
+        .filter(|segment| segment.stream == stream)
+    {
+        for event in read_events(&segment.path)? {
+            if event.did == did {
+                events.push(event);
+            }
+        }
+    }
+    Ok(events)
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    format!("{:x}", sha2::Sha256::digest(bytes))
+}
