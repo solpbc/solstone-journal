@@ -30,6 +30,7 @@ regression.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -585,14 +586,56 @@ def _reconciliation_cases() -> list[dict[str, Any]]:
     ]
 
 
-def _resolve_reconciliation(case: dict[str, Any]) -> str:
-    """Compute the outcome with the same predicate the store uses."""
-    disk, before, after = case["disk"], case["before"], case["after"]
-    if disk == after:
-        return "publish"
-    if disk == before:
-        return "discard"
-    return "repair_required"
+def _observe_reconciliation(case: dict[str, Any]) -> str:
+    """Drive the real reconciliation and report what it actually did.
+
+    ⚠ Deliberately not a restatement of the predicate. Reconciliation is what
+    decides whether an entity stays mutable at all, and a corpus that
+    re-implemented it here would agree with itself forever while drifting from
+    the code. Each case is staged into a scratch journal, the real entry point
+    runs, and the outcome is read back off the filesystem.
+    """
+    from solstone.think.entities.history import (
+        EntityHistoryRepairRequired,
+        _build_history_event,
+        _events_dir,
+        _identity_path,
+        _prepare_history_event,
+        _prepared_dir,
+        consolidate_prepared_history,
+    )
+
+    entity_id = str(case["before"]["id"])
+    with _temp_journal():
+        event = _build_history_event(
+            entity_id=entity_id,
+            kind="update",
+            before=copy.deepcopy(case["before"]),
+            after=copy.deepcopy(case["after"]),
+            operation=None,
+        )
+        _prepare_history_event(entity_id, event)
+
+        path = _identity_path(entity_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(case["disk"], ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        try:
+            consolidate_prepared_history(entity_id)
+        except EntityHistoryRepairRequired:
+            return "repair_required"
+
+        published = sorted(_events_dir(entity_id).glob("*.json"))
+        staged = sorted(_prepared_dir(entity_id).glob("*/event.json"))
+        if staged:  # pragma: no cover - corpus guard
+            raise AssertionError(
+                f"reconciliation left {len(staged)} prepared event(s) staged "
+                f"for {case['note']!r}"
+            )
+        return "publish" if published else "discard"
 
 
 def _ambiguity_rows() -> list[dict[str, Any]]:
@@ -750,21 +793,19 @@ def build_entity_store_fixture() -> dict[str, Any]:
         _save_jsonl_rows(ambiguities_path(), rows)
         ambiguities_bytes = ambiguities_path().read_text(encoding="utf-8")
 
-    reconciliation = [
-        {**case, "outcome": _resolve_reconciliation(case)}
-        for case in _reconciliation_cases()
-    ]
-    # The table above states its own expected outcome; recomputing it here and
-    # asserting agreement is what keeps the prose honest as the code moves.
-    for case in reconciliation:
-        expected = next(
-            c["outcome"] for c in _reconciliation_cases() if c["note"] == case["note"]
-        )
-        if case["outcome"] != expected:  # pragma: no cover - corpus guard
+    # Each case declares the outcome it exists to demonstrate; the real
+    # reconciliation is then driven and the two must agree. A case whose
+    # declared outcome stops matching what the code does fails the build rather
+    # than quietly re-baselining to the new behaviour.
+    reconciliation = []
+    for case in _reconciliation_cases():
+        observed = _observe_reconciliation(case)
+        if observed != case["outcome"]:  # pragma: no cover - corpus guard
             raise AssertionError(
-                f"reconciliation case drifted: {case['note']!r} "
-                f"expected {expected}, computed {case['outcome']}"
+                f"reconciliation case drifted: {case['note']!r} declares "
+                f"{case['outcome']}, the store did {observed}"
             )
+        reconciliation.append({**case, "outcome": observed})
 
     return {
         "generated_by": "make core-fixtures",
