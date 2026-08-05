@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)]
+
 use super::store::merge::commit_entity_merge_with_injector;
 use super::store::merge::merge_facets;
 use super::store::merge::merge_voiceprints;
