@@ -79,6 +79,8 @@ Consistent formatting of **structured journal data** for its consumers — the i
 
 🔴 **No import graph shows this plate's fan-out.** `FORMATTERS` (`think/formatters.py:139-265`) reaches 12 modules by **string key** via `import_module` + `getattr` (`:283-286`), with zero static import edges. It is the de facto read-side inventory of every on-disk shape, and it lives only in Python.
 
+🔴 **LIVE DEFECT, recorded 2026-08-05.** Dispatch is by **`fnmatch` on the journal path**, and **9 of 36 patterns embed a stream name**. Projected stream names match none of them, so `get_formatter()` returns `None` and **the read path silently loses its formatter** — no error, no fallback, just no formatting. Projected names are now being written. ⚠ This also forced the segment `kind` to carry a source dimension rather than being a flat enum. Enumeration: `vpe/workspace/ingest-cable-260804/tools/stream-name-dependents.md`.
+
 ## `P-thinking`
 
 🔴 **A grouping plate.** Holds **two contracts: `generate` and `cogitate`**. Everything connects to it. `P-local`, `P-BYO` and `P-SPP` sit behind it.

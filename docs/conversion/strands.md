@@ -155,7 +155,9 @@ The primary owner-facing use of the model. `convey/chat.py` (2,532 lines) + `cha
 `_handle_task_request` takes `message["cmd"]` off the unix socket and hands the argv to the task queue. **This is how the scheduler, importers, backup, and the sense/think pipeline all cause work to run** — six production producers. ⚠ Distinct from liveness/status.
 
 ### `S:journal:establish`
-**Owner** ⚠ needs assigning · **Tier** fixture
+**Owner** `P-device-link` · **Tier** fixture
+
+⚠ **Owner assigned 2026-08-05.** What establishment produces is the **identity root** — the promoted CA and the persisted instance identity — and `P-device-link` is the plate that owns identity and must serve every device that later pairs against that root. One-to-many end, so it owns the contract.
 
 First-run journal establishment. **Creates the identity root** that `S:device-link:journal` depends on: the mark-lock route promotes the staged CA and persists the instance identity.
 
