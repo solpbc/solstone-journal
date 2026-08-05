@@ -122,7 +122,7 @@ Recommended rendered content by mode:
 ### Ground truth
 
 - `talent.fail` records include `name`, `use_id`, `state`, and optional `facet`, but `summarize_pipeline_day()` counts every failure and drops `facet` from `failed_list`. See `solstone/think/pipeline_health.py:81-99`.
-- `stats.json.facet_data` is not a newsletter ledger. It is built from `events.jsonl` durations in `solstone/think/journal_stats.py:296-319` and surfaced in `solstone/apps/home/routes.py:616-621`.
+- `stats.json.facet_data` is not a newsletter ledger. It is accumulated per facet in `solstone/think/journal_stats.py:453-456` from activity records, with durations estimated by `estimate_duration_minutes()` over each record's segments, and surfaced in `solstone/apps/home/routes.py:616-621`. Corrected 2026-08-05: this previously said it is built from `events.jsonl` durations, which is false — `journal_stats.py` does not reference `events.jsonl` anywhere. The claim mattered because it named a reader of the per-segment event log that does not exist.
 - The facet newsletter writer is `sol call journal news`, implemented by `solstone/think/tools/facets.py:61-106`.
 - The newsletter prompt key is stable: `facet_newsletter`.
   Reason:
