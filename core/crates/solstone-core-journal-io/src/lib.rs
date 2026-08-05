@@ -11,6 +11,7 @@ pub mod locking;
 pub mod paths;
 pub mod readers;
 pub mod removal;
+pub mod snapshot;
 pub mod staged;
 
 #[cfg(test)]
@@ -27,7 +28,7 @@ pub use config::{
 };
 pub use errors::{
     AppendError, AtomicWriteError, LockError, LockTimeout, MalformedDataError, PathError,
-    PathEscapeError, ReadError,
+    PathEscapeError, ReadError, SnapshotError,
 };
 pub use locking::{
     DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, FileLock, LockOptions, hold_lock,
@@ -37,6 +38,9 @@ pub use paths::{
     iter_segments, list_dir_entries, path_lexists, resolve_configured_journal,
     resolve_journal_path, segment_path,
 };
-pub use readers::{MalformedPolicy, read_json, read_jsonl, read_text};
+pub use readers::{MalformedPolicy, read_bytes, read_json, read_jsonl, read_text};
 pub use removal::remove_dir_all;
+pub use snapshot::{
+    JournalSnapshot, SnapshotDirectory, SnapshotFile, capture_snapshot, restore_snapshot,
+};
 pub use staged::{StagedDirOptions, StagedWriteError, publish_staged_dir};

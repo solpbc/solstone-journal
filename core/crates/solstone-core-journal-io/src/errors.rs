@@ -198,6 +198,50 @@ pub enum AppendError {
     Io { path: PathBuf, source: io::Error },
 }
 
+/// Recursive snapshot capture or restore failure.
+#[derive(Debug)]
+pub enum SnapshotError {
+    /// A journal-relative path was invalid or escaped the journal root.
+    Path(PathError),
+    /// A filesystem operation failed.
+    Io { path: PathBuf, source: io::Error },
+    /// Atomic file publication failed during restore.
+    Atomic(AtomicWriteError),
+    /// A symlink or other unsupported filesystem object was encountered.
+    UnsupportedFileType { path: PathBuf },
+    /// The supplied snapshot has an invalid structure.
+    InvalidSnapshot { path: String, message: &'static str },
+}
+
+impl fmt::Display for SnapshotError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Path(error) => error.fmt(formatter),
+            Self::Io { path, source } => write!(formatter, "{}: {source}", path.display()),
+            Self::Atomic(error) => error.fmt(formatter),
+            Self::UnsupportedFileType { path } => {
+                write!(
+                    formatter,
+                    "unsupported filesystem object at {}",
+                    path.display()
+                )
+            }
+            Self::InvalidSnapshot { message, .. } => formatter.write_str(message),
+        }
+    }
+}
+
+impl Error for SnapshotError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Path(error) => Some(error),
+            Self::Io { source, .. } => Some(source),
+            Self::Atomic(error) => Some(error),
+            Self::UnsupportedFileType { .. } | Self::InvalidSnapshot { .. } => None,
+        }
+    }
+}
+
 impl fmt::Display for AppendError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

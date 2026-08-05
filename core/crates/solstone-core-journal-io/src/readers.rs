@@ -89,6 +89,16 @@ pub fn read_text(path: impl AsRef<Path>, default: String) -> Result<String, Read
     }
 }
 
+/// Read raw bytes, treating a missing path as `default`.
+pub fn read_bytes(path: impl AsRef<Path>, default: Vec<u8>) -> Result<Vec<u8>, ReadError> {
+    let path = path.as_ref();
+    match fs::read(path) {
+        Ok(contents) => Ok(contents),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(default),
+        Err(source) => Err(io_error(path, source)),
+    }
+}
+
 fn read_missing_as_empty(path: &Path) -> Result<Vec<u8>, ReadError> {
     match fs::read(path) {
         Ok(contents) => Ok(contents),
@@ -191,6 +201,19 @@ mod tests {
         assert_eq!(
             read_jsonl::<u8>(&empty, vec![4], MalformedPolicy::Raise).unwrap(),
             vec![4]
+        );
+    }
+
+    #[test]
+    fn read_bytes_preserves_binary_contents_and_uses_missing_default() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("data.bin");
+        fs::write(&path, [0, 255, 1]).unwrap();
+
+        assert_eq!(read_bytes(&path, Vec::new()).unwrap(), vec![0, 255, 1]);
+        assert_eq!(
+            read_bytes(temporary.path().join("missing.bin"), vec![9]).unwrap(),
+            vec![9]
         );
     }
 
