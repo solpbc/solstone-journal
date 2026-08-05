@@ -14,6 +14,7 @@ use solstone_core_journal_io::JsonWriteOptions;
 use solstone_core_journal_io::MalformedPolicy;
 use solstone_core_journal_io::SnapshotDirectory;
 use solstone_core_journal_io::SnapshotError;
+use solstone_core_journal_io::SnapshotFile;
 use solstone_core_journal_io::contained_path;
 use solstone_core_journal_io::list_dir_entries;
 use solstone_core_journal_io::path_lexists;
@@ -25,11 +26,12 @@ use solstone_core_journal_io::write_jsonl;
 
 use crate::{
     EntityOperationContext, EntityOperationKind, EntityWriteError, hold_entity_trust_lock,
-    save_entity_identity,
+    read_entity_identity, read_visible_history, save_entity_identity,
 };
 
 use super::merge_payload::{
-    MergePayloadError, load_entity_merge_payload, remove_entity_merge_payload,
+    MergePayloadError, list_entity_merge_payload_ids, load_entity_merge_payload,
+    remove_entity_merge_payload, snapshot_from_payload,
 };
 use super::merge_rollback::MergeRollback;
 
@@ -105,6 +107,7 @@ pub(crate) fn undo_entity_merge_with_injector(
 ) -> Result<EntityUndoReport, EntityUndoError> {
     let target_id = find_payload_holder(journal, merge_id)?;
     let payload = load_entity_merge_payload(journal, &target_id, merge_id)?;
+    let active_payloads = load_active_sibling_payloads(journal, &target_id, merge_id)?;
     let source_id = payload
         .get("source_id")
         .and_then(Value::as_str)
@@ -112,27 +115,7 @@ pub(crate) fn undo_entity_merge_with_injector(
             EntityUndoError::Refused("merge payload missing source entity id".to_owned())
         })?
         .to_owned();
-    let snapshot_paths = snapshot_paths(&payload)?;
-    let source_identity = payload
-        .get("source_state")
-        .and_then(Value::as_object)
-        .and_then(|source_state| source_state.get("identity"))
-        .filter(|identity| identity.is_object())
-        .cloned()
-        .ok_or_else(|| {
-            EntityUndoError::Refused("merge payload source_state is missing identity".to_owned())
-        })?;
-    let target_before = payload
-        .get("manifest")
-        .and_then(Value::as_object)
-        .and_then(|manifest| manifest.get("identity"))
-        .and_then(Value::as_object)
-        .and_then(|identity| identity.get("target_before"))
-        .filter(|identity| identity.is_object())
-        .cloned()
-        .ok_or_else(|| {
-            EntityUndoError::Refused("merge payload identity missing target_before".to_owned())
-        })?;
+    let source_snapshots = source_state_snapshots(&payload)?;
     let report = EntityUndoReport {
         merge_id: merge_id.to_owned(),
         source_id: source_id.clone(),
@@ -151,21 +134,14 @@ pub(crate) fn undo_entity_merge_with_injector(
             format!("entities/{source_id}"),
             "indexer".to_owned(),
         ]);
-        paths.extend(snapshot_paths.iter().cloned());
+        paths.extend(source_snapshots.iter().map(snapshot_path));
         for path in paths {
             rollback.capture(journal, &path)?;
         }
         phase = "source_state";
-        for path in &snapshot_paths {
-            restore_snapshot(
-                journal,
-                &JournalSnapshot::Directory(SnapshotDirectory {
-                    path: path.clone(),
-                    entries: Vec::new(),
-                }),
-            )?;
+        for snapshot in &source_snapshots {
+            restore_snapshot(journal, snapshot)?;
         }
-        save_entity_identity(journal, &source_id, &source_identity, None)?;
         phase = "segments";
         undo_segments(journal, &payload, &mut rollback)?;
         inject_failure(injector, phase)?;
@@ -179,10 +155,12 @@ pub(crate) fn undo_entity_merge_with_injector(
         undo_facets(journal, &target_id, &payload, &mut rollback)?;
         inject_failure(injector, phase)?;
         phase = "identity";
+        let target_after_undo =
+            replay_target_identity(journal, &target_id, &payload, &active_payloads)?;
         save_entity_identity(
             journal,
             &target_id,
-            &target_before,
+            &target_after_undo,
             Some(&EntityOperationContext {
                 kind: EntityOperationKind::MergeUndo,
                 caller,
@@ -213,6 +191,295 @@ pub(crate) fn undo_entity_merge_with_injector(
         });
     }
     Ok(report)
+}
+
+fn load_active_sibling_payloads(
+    journal: &Path,
+    target_id: &str,
+    merge_id: &str,
+) -> Result<Vec<Value>, EntityUndoError> {
+    let mut payloads = Vec::new();
+    for sibling_id in list_entity_merge_payload_ids(journal, target_id)? {
+        if sibling_id == merge_id {
+            continue;
+        }
+        let payload = load_entity_merge_payload(journal, target_id, &sibling_id).map_err(|error| {
+            EntityUndoError::Refused(format!(
+                "cannot undo recorded merge {merge_id}: active merge payload {sibling_id} is invalid: {error}"
+            ))
+        })?;
+        payloads.push(payload);
+    }
+    Ok(payloads)
+}
+
+fn replay_target_identity(
+    journal: &Path,
+    target_id: &str,
+    payload: &Value,
+    active_payloads: &[Value],
+) -> Result<Value, EntityUndoError> {
+    let mut current = read_entity_identity(journal, target_id)
+        .map_err(|error| EntityUndoError::Refused(error.to_string()))?
+        .ok_or_else(|| EntityUndoError::Refused(format!("target entity not found: {target_id}")))?
+        .value()
+        .clone();
+    let identity = payload
+        .get("manifest")
+        .and_then(|manifest| manifest.get("identity"))
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            EntityUndoError::Refused("merge payload identity manifest is missing".to_owned())
+        })?;
+    let merge_seq = payload_sequence(payload);
+    remove_supported_set_values(
+        journal,
+        target_id,
+        &mut current,
+        "aka",
+        identity.get("aka_support"),
+        active_payloads,
+        merge_seq,
+    )?;
+    remove_supported_set_values(
+        journal,
+        target_id,
+        &mut current,
+        "emails",
+        identity.get("email_support"),
+        active_payloads,
+        merge_seq,
+    )?;
+    replay_supported_scalars(
+        journal,
+        target_id,
+        &mut current,
+        identity.get("scalar_support"),
+        active_payloads,
+        merge_seq,
+    )?;
+    Ok(current)
+}
+
+fn remove_supported_set_values(
+    journal: &Path,
+    target_id: &str,
+    current: &mut Value,
+    field: &str,
+    support: Option<&Value>,
+    active_payloads: &[Value],
+    merge_seq: i128,
+) -> Result<(), EntityUndoError> {
+    let entries = support.and_then(Value::as_array).ok_or_else(|| {
+        EntityUndoError::Refused(format!("merge payload identity {field}_support is missing"))
+    })?;
+    let mut remove_keys = HashSet::new();
+    for entry in entries {
+        if entry
+            .get("target_preexisting")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        let key = entry.get("key").and_then(Value::as_str).ok_or_else(|| {
+            EntityUndoError::Refused(format!(
+                "merge payload {field} support entry is missing key"
+            ))
+        })?;
+        if other_payload_supports(field, key, active_payloads)
+            || later_owner_event_introduced(journal, target_id, field, key, merge_seq)?
+        {
+            continue;
+        }
+        remove_keys.insert(key.to_owned());
+    }
+    if remove_keys.is_empty() {
+        return Ok(());
+    }
+    if let Some(values) = current.get_mut(field).and_then(Value::as_array_mut) {
+        values.retain(|value| {
+            value
+                .as_str()
+                .is_none_or(|value| !remove_keys.contains(&value.to_lowercase()))
+        });
+    }
+    Ok(())
+}
+
+fn replay_supported_scalars(
+    journal: &Path,
+    target_id: &str,
+    current: &mut Value,
+    support: Option<&Value>,
+    active_payloads: &[Value],
+    merge_seq: i128,
+) -> Result<(), EntityUndoError> {
+    let entries = support.and_then(Value::as_array).ok_or_else(|| {
+        EntityUndoError::Refused("merge payload identity scalar_support is missing".to_owned())
+    })?;
+    let object = current
+        .as_object_mut()
+        .ok_or_else(|| EntityUndoError::Refused(format!("target entity not found: {target_id}")))?;
+    for entry in entries {
+        let key = entry.get("key").and_then(Value::as_str).ok_or_else(|| {
+            EntityUndoError::Refused("merge payload scalar support entry is missing key".to_owned())
+        })?;
+        if later_owner_scalar_changed(journal, target_id, key, merge_seq)? {
+            continue;
+        }
+        let mut missing = entry
+            .get("target_prevalue_missing")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let mut value = entry.get("target_prevalue").cloned().unwrap_or(Value::Null);
+        for sibling in active_payloads {
+            if payload_sequence(sibling) <= merge_seq {
+                continue;
+            }
+            let Some(support) = sibling
+                .get("manifest")
+                .and_then(|manifest| manifest.get("identity"))
+                .and_then(|identity| identity.get("scalar_support"))
+                .and_then(Value::as_array)
+            else {
+                continue;
+            };
+            for other in support {
+                if other.get("key").and_then(Value::as_str) != Some(key) {
+                    continue;
+                }
+                if missing && !is_missing_value(other.get("source_value")) {
+                    value = other.get("source_value").cloned().unwrap_or(Value::Null);
+                    missing = false;
+                }
+            }
+        }
+        if missing {
+            object.remove(key);
+        } else {
+            object.insert(key.to_owned(), value);
+        }
+    }
+    Ok(())
+}
+
+fn other_payload_supports(field: &str, key: &str, payloads: &[Value]) -> bool {
+    let section = if field == "aka" {
+        "aka_support"
+    } else {
+        "email_support"
+    };
+    payloads.iter().any(|payload| {
+        payload
+            .get("manifest")
+            .and_then(|manifest| manifest.get("identity"))
+            .and_then(|identity| identity.get(section))
+            .and_then(Value::as_array)
+            .is_some_and(|entries| {
+                entries
+                    .iter()
+                    .any(|entry| entry.get("key").and_then(Value::as_str) == Some(key))
+            })
+    })
+}
+
+fn later_owner_event_introduced(
+    journal: &Path,
+    target_id: &str,
+    field: &str,
+    key: &str,
+    merge_seq: i128,
+) -> Result<bool, EntityUndoError> {
+    for event in read_visible_history(journal, target_id)
+        .map_err(|error| EntityUndoError::Refused(error.to_string()))?
+    {
+        let event = event.value();
+        if event_sequence(event) <= merge_seq || !is_owner_event(event) {
+            continue;
+        }
+        let before = event
+            .get("identity_before")
+            .and_then(|identity| identity.get(field))
+            .and_then(Value::as_array);
+        let after = event
+            .get("identity_after")
+            .and_then(|identity| identity.get(field))
+            .and_then(Value::as_array);
+        if !set_contains(before, key) && set_contains(after, key) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn later_owner_scalar_changed(
+    journal: &Path,
+    target_id: &str,
+    key: &str,
+    merge_seq: i128,
+) -> Result<bool, EntityUndoError> {
+    for event in read_visible_history(journal, target_id)
+        .map_err(|error| EntityUndoError::Refused(error.to_string()))?
+    {
+        let event = event.value();
+        if event_sequence(event) > merge_seq
+            && is_owner_event(event)
+            && event
+                .get("identity_before")
+                .and_then(|identity| identity.get(key))
+                != event
+                    .get("identity_after")
+                    .and_then(|identity| identity.get(key))
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn is_owner_event(event: &Value) -> bool {
+    matches!(
+        event.get("kind").and_then(Value::as_str),
+        Some("create" | "update" | "restore")
+    )
+}
+
+fn event_sequence(event: &Value) -> i128 {
+    event
+        .get("seq")
+        .and_then(Value::as_i64)
+        .map(i128::from)
+        .or_else(|| event.get("seq").and_then(Value::as_u64).map(i128::from))
+        .unwrap_or_default()
+}
+
+fn payload_sequence(payload: &Value) -> i128 {
+    payload
+        .get("commit_seq")
+        .and_then(Value::as_i64)
+        .map(i128::from)
+        .or_else(|| {
+            payload
+                .get("commit_seq")
+                .and_then(Value::as_u64)
+                .map(i128::from)
+        })
+        .unwrap_or_default()
+}
+
+fn set_contains(values: Option<&Vec<Value>>, key: &str) -> bool {
+    values.is_some_and(|values| {
+        values.iter().any(|value| {
+            value
+                .as_str()
+                .is_some_and(|value| value.to_lowercase() == key)
+        })
+    })
+}
+
+fn is_missing_value(value: Option<&Value>) -> bool {
+    value.is_none_or(|value| value.is_null() || value.as_str() == Some(""))
 }
 
 fn inject_failure(
@@ -570,7 +837,7 @@ fn find_payload_holder(journal: &Path, merge_id: &str) -> Result<String, EntityU
     )))
 }
 
-fn snapshot_paths(payload: &Value) -> Result<Vec<String>, EntityUndoError> {
+fn source_state_snapshots(payload: &Value) -> Result<Vec<JournalSnapshot>, EntityUndoError> {
     payload
         .get("source_state")
         .and_then(Value::as_object)
@@ -579,13 +846,27 @@ fn snapshot_paths(payload: &Value) -> Result<Vec<String>, EntityUndoError> {
         .ok_or_else(|| EntityUndoError::Refused("merge payload missing snapshots".to_owned()))?
         .iter()
         .map(|snapshot| {
-            snapshot
-                .get("rel")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .ok_or_else(|| {
-                    EntityUndoError::Refused("manifest snapshot missing relative path".to_owned())
-                })
+            let relative = snapshot.get("rel").and_then(Value::as_str).ok_or_else(|| {
+                EntityUndoError::Refused("manifest snapshot missing relative path".to_owned())
+            })?;
+            let image = snapshot.get("snapshot").ok_or_else(|| {
+                EntityUndoError::Refused("merge payload snapshot is missing image".to_owned())
+            })?;
+            let image = snapshot_from_payload(image)?;
+            if snapshot_path(&image) != relative {
+                return Err(EntityUndoError::Refused(
+                    "merge payload snapshot image path does not match relative path".to_owned(),
+                ));
+            }
+            Ok(image)
         })
         .collect()
+}
+
+fn snapshot_path(snapshot: &JournalSnapshot) -> String {
+    match snapshot {
+        JournalSnapshot::Missing { path } => path.clone(),
+        JournalSnapshot::File(SnapshotFile { path, .. }) => path.clone(),
+        JournalSnapshot::Directory(SnapshotDirectory { path, .. }) => path.clone(),
+    }
 }

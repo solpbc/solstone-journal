@@ -2,6 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -9,8 +11,8 @@ use serde_json::{Value, json};
 
 use super::store::undo_entity_merge_with_injector;
 use crate::{
-    EntityMergeOptions, commit_entity_merge, read_entity_identity, save_entity_identity,
-    undo_entity_merge,
+    EntityMergeOptions, commit_entity_merge, guard_restore_does_not_cross_merge,
+    read_entity_identity, read_visible_history, save_entity_identity, undo_entity_merge,
 };
 
 static NEXT_UNDO_DIRECTORY: AtomicU64 = AtomicU64::new(0);
@@ -23,6 +25,38 @@ fn undo_journal() -> PathBuf {
     ));
     fs::create_dir_all(&path).unwrap();
     path
+}
+
+fn journal_tree(journal: &std::path::Path) -> Vec<(String, Vec<u8>)> {
+    fn collect(
+        root: &std::path::Path,
+        directory: &std::path::Path,
+        files: &mut Vec<(String, Vec<u8>)>,
+    ) {
+        let mut entries = fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            if entry.file_type().unwrap().is_dir() {
+                files.push((format!("{relative}/"), Vec::new()));
+                collect(root, &path, files);
+            } else if entry.file_type().unwrap().is_file() {
+                files.push((relative, fs::read(path).unwrap()));
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    collect(journal, journal, &mut files);
+    files
 }
 
 #[test]
@@ -51,6 +85,203 @@ fn undo_reverts_target_identity_restores_source_and_removes_payload() {
                 merge.merge_id
             ))
             .exists()
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_produces_merge_undo_event_that_arms_the_restore_guard() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    let events = read_visible_history(&journal, "target").unwrap();
+    let merge_undo = events
+        .iter()
+        .find(|event| event.value()["kind"] == "merge_undo")
+        .unwrap();
+    assert_eq!(
+        guard_restore_does_not_cross_merge(merge_undo, &events)
+            .unwrap_err()
+            .to_string(),
+        "generic identity restore cannot target a recorded merge event; use recorded-merge undo instead"
+    );
+    let earlier = events
+        .iter()
+        .find(|event| !matches!(event.value()["kind"].as_str(), Some("merge" | "merge_undo")))
+        .unwrap();
+    assert_eq!(
+        guard_restore_does_not_cross_merge(earlier, &events)
+            .unwrap_err()
+            .to_string(),
+        "generic identity restore cannot cross a recorded merge event; use recorded-merge undo instead"
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_refuses_invalid_active_sibling_payload_without_mutation() {
+    let journal = undo_journal();
+    for id in ["source1", "source2", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id": id, "name": id, "aka": [], "emails": []}),
+            None,
+        )
+        .unwrap();
+    }
+    let first =
+        commit_entity_merge(&journal, "source1", "target", EntityMergeOptions::default()).unwrap();
+    let second =
+        commit_entity_merge(&journal, "source2", "target", EntityMergeOptions::default()).unwrap();
+    let sibling_path = journal.join(format!(
+        "entities/target/history/private/{}.json",
+        second.merge_id
+    ));
+    fs::write(&sibling_path, b"not json").unwrap();
+    let before = journal_tree(&journal);
+
+    let error = undo_entity_merge(&journal, &first.merge_id, Value::Null).unwrap_err();
+    assert!(error.to_string().contains(&second.merge_id));
+    assert_eq!(journal_tree(&journal), before);
+    assert!(
+        journal
+            .join(format!(
+                "entities/target/history/private/{}.json",
+                first.merge_id
+            ))
+            .exists()
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_respects_sibling_alias_support() {
+    let journal = undo_journal();
+    save_entity_identity(
+        &journal,
+        "target",
+        &json!({"id":"target","name":"Target","aka":[],"emails":[]}),
+        None,
+    )
+    .unwrap();
+    for id in ["source1", "source2"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":["Shared Alias"],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+
+    let first =
+        commit_entity_merge(&journal, "source1", "target", EntityMergeOptions::default()).unwrap();
+    commit_entity_merge(&journal, "source2", "target", EntityMergeOptions::default()).unwrap();
+
+    undo_entity_merge(&journal, &first.merge_id, Value::Null).unwrap();
+    assert_eq!(
+        read_entity_identity(&journal, "target")
+            .unwrap()
+            .unwrap()
+            .value()["aka"],
+        json!(["Shared Alias"])
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn undo_preserves_later_owner_edit() {
+    let journal = undo_journal();
+    save_entity_identity(
+        &journal,
+        "source",
+        &json!({"id":"source","name":"Source","aka":["Merge Alias"],"emails":[],"title":"Engineer"}),
+        None,
+    )
+    .unwrap();
+    save_entity_identity(
+        &journal,
+        "target",
+        &json!({"id":"target","name":"Target","aka":[],"emails":[]}),
+        None,
+    )
+    .unwrap();
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let mut owner_edit = read_entity_identity(&journal, "target")
+        .unwrap()
+        .unwrap()
+        .value()
+        .clone();
+    owner_edit["aka"] = json!(["Merge Alias", "Owner Alias"]);
+    owner_edit["title"] = json!("Lead");
+    save_entity_identity(&journal, "target", &owner_edit, None).unwrap();
+
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    let target = read_entity_identity(&journal, "target").unwrap().unwrap();
+    assert_eq!(target.value()["aka"], json!(["Owner Alias"]));
+    assert_eq!(target.value()["title"], json!("Lead"));
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn undo_restores_file_modes_not_directory_modes() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    let source_directory = journal.join("entities/source");
+    let source_identity = source_directory.join("entity.json");
+    fs::set_permissions(&source_identity, fs::Permissions::from_mode(0o640)).unwrap();
+    fs::set_permissions(&source_directory, fs::Permissions::from_mode(0o750)).unwrap();
+    let source_facet = journal.join("facets/work/entities/source");
+    fs::create_dir_all(&source_facet).unwrap();
+    fs::write(
+        source_facet.join("entity.json"),
+        br#"{"entity_id":"source"}"#,
+    )
+    .unwrap();
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+
+    assert_eq!(
+        fs::metadata(&source_identity).unwrap().permissions().mode() & 0o7777,
+        0o640
+    );
+    let default_directory = journal.join("default-directory-mode");
+    fs::create_dir(&default_directory).unwrap();
+    assert_eq!(
+        fs::metadata(&source_directory)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o7777,
+        fs::metadata(&default_directory)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o7777
     );
     fs::remove_dir_all(journal).unwrap();
 }
