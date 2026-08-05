@@ -48,7 +48,7 @@ def _install_native_stubs(binary: Path, detector: Path | None = None, descriptio
     directory = binary.parent
     _executable(
         directory / "solstone-generate-wire",
-        f"#!/usr/bin/env python3\nimport json, sys\njson.load(sys.stdin)\nprint(json.dumps({{'schema':'solstone-generate-response-v1','result':{{'text':{description!r}}}}}))\n",
+        f"#!/usr/bin/env python3\nimport json, sys\njson.load(sys.stdin)\nprint(json.dumps({{'schema':'solstone-generate-response-v2','outcome':'generated','text':{description!r},'model':'stub','usage':{{}},'finish_reason':'stop'}}))\n",
     )
     if detector is None:
         _executable(directory / "python3", "#!/bin/sh\nprintf '%s\\n' '{\"status\":\"not_installed\",\"binary_path\":null,\"model_path\":null}'\n")
@@ -101,6 +101,6 @@ def test_native_and_python_agree_on_skip_redo_and_no_engine(tmp_path, monkeypatc
     py_output.unlink(); native_output.unlink()
     monkeypatch.setattr(depict, "generate", lambda **_: (_ for _ in ()).throw(depict.NoBrainConfiguredError()))
     assert depict.run(py_image) is None
-    _executable(binary.parent / "solstone-generate-wire", "#!/bin/sh\nprintf '%s\\n' '{\"schema\":\"solstone-generate-error-v1\",\"reason\":\"no-engine-configured\",\"detail\":\"none\"}' >&2\nexit 69\n")
+    _executable(binary.parent / "solstone-generate-wire", "#!/bin/sh\nprintf '%s\\n' '{\"schema\":\"solstone-generate-response-v2\",\"outcome\":\"refused\",\"id\":null,\"reason\":\"no-engine-configured\",\"reason_code\":null,\"retryable\":false,\"blocking\":true,\"reset_at_ms\":null,\"provider\":\"none\",\"detail\":\"none\"}'\n")
     subprocess.run([binary, native_image], check=True)
     assert not py_output.exists() and not native_output.exists()
