@@ -22,6 +22,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
+use crate::normalize_resolution_query;
 use crate::slug::entity_slug;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -66,7 +67,7 @@ pub fn find_matching_entity(
         return None;
     }
 
-    let detected_lower = detected_name.to_lowercase();
+    let detected_lower = normalize_resolution_query(detected_name);
     let detected_slug = entity_slug(detected_name);
 
     let mut exact_case_map: BTreeMap<String, usize> = BTreeMap::new();
@@ -84,7 +85,7 @@ pub fn find_matching_entity(
         }
 
         exact_case_map.insert(name.to_string(), candidate_index);
-        lower_map.insert(name.to_lowercase(), candidate_index);
+        lower_map.insert(normalize_resolution_query(name), candidate_index);
 
         if entity_id.is_empty() {
             let name_slug = entity_slug(name);
@@ -93,20 +94,20 @@ pub fn find_matching_entity(
             }
         } else {
             exact_case_map.insert(entity_id.to_string(), candidate_index);
-            lower_map.insert(entity_id.to_lowercase(), candidate_index);
+            lower_map.insert(normalize_resolution_query(entity_id), candidate_index);
             id_map.insert(entity_id.to_string(), candidate_index);
         }
 
         for aka in &candidate.aka {
             if !aka.is_empty() {
                 exact_case_map.insert(aka.clone(), candidate_index);
-                lower_map.insert(aka.to_lowercase(), candidate_index);
+                lower_map.insert(normalize_resolution_query(aka), candidate_index);
             }
         }
 
         for email in &candidate.emails {
             if !email.is_empty() {
-                email_map.insert(email.to_lowercase(), candidate_index);
+                email_map.insert(normalize_resolution_query(email), candidate_index);
             }
         }
 
@@ -153,7 +154,7 @@ pub fn find_matching_entity(
         }
 
         if let Some(detected_first) = detected_name.split_whitespace().next() {
-            let detected_first = detected_first.to_lowercase();
+            let detected_first = normalize_resolution_query(detected_first);
             if detected_first != detected_lower
                 && char_len(&detected_first) >= 3
                 && let Some(matches) = first_word_map.get(&detected_first)
@@ -174,8 +175,11 @@ pub fn find_matching_entity(
             if candidate.name.is_empty() {
                 return None;
             }
-            token_subset_match(&detected_lower, &candidate.name.to_lowercase())
-                .then_some(candidate_index)
+            token_subset_match(
+                &detected_lower,
+                &normalize_resolution_query(&candidate.name),
+            )
+            .then_some(candidate_index)
         })
         .collect();
     if subset_matches.len() == 1 {
@@ -189,8 +193,11 @@ pub fn find_matching_entity(
             if candidate.name.is_empty() {
                 return None;
             }
-            prefix_token_match(&detected_lower, &candidate.name.to_lowercase())
-                .then_some(candidate_index)
+            prefix_token_match(
+                &detected_lower,
+                &normalize_resolution_query(&candidate.name),
+            )
+            .then_some(candidate_index)
         })
         .collect();
     if prefix_matches.len() == 1 {
@@ -214,7 +221,7 @@ fn entity_match(candidate_index: usize, tier: MatchTier) -> EntityNameMatch {
     }
 }
 
-fn token_subset_match(name_a_lower: &str, name_b_lower: &str) -> bool {
+pub(crate) fn token_subset_match(name_a_lower: &str, name_b_lower: &str) -> bool {
     let tokens_a: Vec<&str> = unique_sorted_tokens(name_a_lower);
     let tokens_b: Vec<&str> = unique_sorted_tokens(name_b_lower);
     let (shorter, longer) = match tokens_a.len().cmp(&tokens_b.len()) {
@@ -224,7 +231,7 @@ fn token_subset_match(name_a_lower: &str, name_b_lower: &str) -> bool {
     shorter.len() >= 2 && shorter.iter().all(|token| longer.contains(token))
 }
 
-fn prefix_token_match(name_a_lower: &str, name_b_lower: &str) -> bool {
+pub(crate) fn prefix_token_match(name_a_lower: &str, name_b_lower: &str) -> bool {
     let mut sorted_a: Vec<&str> = name_a_lower.split_whitespace().collect();
     let mut sorted_b: Vec<&str> = name_b_lower.split_whitespace().collect();
     sorted_a.sort_unstable();
@@ -240,15 +247,18 @@ fn prefix_token_match(name_a_lower: &str, name_b_lower: &str) -> bool {
 }
 
 fn first_word_key(name: &str) -> Option<String> {
-    let first_word = name.split_whitespace().next()?.to_lowercase();
+    let first_word = normalize_resolution_query(name)
+        .split_whitespace()
+        .next()?
+        .to_owned();
     (char_len(&first_word) >= 3).then_some(first_word)
 }
 
-fn first_word_match(query_lower: &str, entity_name: &str) -> bool {
+pub(crate) fn first_word_match(query_lower: &str, entity_name: &str) -> bool {
     char_len(query_lower) >= 3 && first_word_key(entity_name).as_deref() == Some(query_lower)
 }
 
-fn single_token_first_word_match(query_first: &str, entity_name: &str) -> bool {
+pub(crate) fn single_token_first_word_match(query_first: &str, entity_name: &str) -> bool {
     !entity_name.is_empty()
         && entity_name.split_whitespace().count() == 1
         && first_word_match(query_first, entity_name)
@@ -261,7 +271,7 @@ fn unique_sorted_tokens(text: &str) -> Vec<&str> {
     tokens
 }
 
-fn token_sort(text: &str) -> String {
+pub(crate) fn token_sort(text: &str) -> String {
     let mut tokens: Vec<&str> = text.split_whitespace().collect();
     tokens.sort_unstable();
     tokens.join(" ")
@@ -287,7 +297,7 @@ fn extract_one_fuzzy(
     best.map(|(_score, candidate_index)| candidate_index)
 }
 
-fn char_len(text: &str) -> usize {
+pub(crate) fn char_len(text: &str) -> usize {
     text.chars().count()
 }
 
@@ -448,6 +458,26 @@ mod tests {
             Some("robert_johnson"),
             MatchTier::CaseInsensitive,
         );
+    }
+
+    #[test]
+    fn unified_normalization_resolves_opaque_unicode_pairs_at_tier_2() {
+        let cases = [
+            ("Straße Handel", "STRASSE HANDEL"),
+            ("ΟΔΥΣΣΕΥΣ", "οδυσσευσ"),
+            ("ﬁrefly labs", "firefly labs"),
+        ];
+        for (query, name) in cases {
+            let candidates = [candidate(Some("xx_opaque_identity"), name, &[], &[])];
+            assert_match(
+                query,
+                &candidates,
+                90.0,
+                0,
+                Some("xx_opaque_identity"),
+                MatchTier::CaseInsensitive,
+            );
+        }
     }
 
     #[test]
@@ -816,10 +846,24 @@ mod tests {
     }
 
     #[test]
-    fn leading_and_trailing_space_queries_miss_first_word() {
+    fn leading_and_trailing_space_queries_match_first_word_after_normalization() {
         let candidates = [candidate(Some("jg"), "Javier Garcia", &[], &[])];
-        assert_no_match(" Javier", &candidates, 100.0);
-        assert_no_match("Javier ", &candidates, 100.0);
+        assert_match(
+            " Javier",
+            &candidates,
+            100.0,
+            0,
+            Some("jg"),
+            MatchTier::FirstWord,
+        );
+        assert_match(
+            "Javier ",
+            &candidates,
+            100.0,
+            0,
+            Some("jg"),
+            MatchTier::FirstWord,
+        );
     }
 
     #[test]

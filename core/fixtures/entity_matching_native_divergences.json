@@ -1,0 +1,309 @@
+{
+  "cause": "The native matcher now uses NFKC, Python-compatible whitespace collapse, and full Unicode case folding for its tier-2, tier-3, tier-5, tier-6, and tier-7 comparisons. The recorded matching fixture remains the pre-unification reference, so entries here state the deliberate native answers where that reference differs.",
+  "counts": {
+    "refusal_to_match": 3,
+    "tier_changes": 12,
+    "total": 15
+  },
+  "entries": [
+    {
+      "candidate_ids": [
+        "strasse_handels_gmbh"
+      ],
+      "fixture_index": 19,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "Straße Handels GmbH",
+      "reason": "U+00DF sharp s full-case-folds to ss, so tier 2 matches the candidate instead of falling through to slug tier 4.",
+      "reference_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      }
+    },
+    {
+      "candidate_ids": [
+        "muller_werke"
+      ],
+      "fixture_index": 20,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "Müller Werke",
+      "reason": "NFKC composes the decomposed umlaut before the tier-2 comparison, so the candidate matches before slug tier 4.",
+      "reference_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      }
+    },
+    {
+      "candidate_ids": [
+        "strasse_handel"
+      ],
+      "fixture_index": 21,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "Straße Handel",
+      "reason": "U+00DF sharp s full-case-folds to ss, so tier 2 matches the uppercase expansion instead of slug tier 4.",
+      "reference_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      }
+    },
+    {
+      "candidate_ids": [
+        "strasse_handel",
+        "zeta_holdings"
+      ],
+      "fixture_index": 22,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "Straße Handel",
+      "reason": "U+00DF sharp s full-case-folds to ss, so tier 2 selects the same first candidate before slug tier 4.",
+      "reference_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      }
+    },
+    {
+      "candidate_ids": [
+        "strasse_handel"
+      ],
+      "fixture_index": 23,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "STRASSE HANDEL",
+      "reason": "U+00DF sharp s full-case-folds to ss, so tier 2 matches the reverse pair instead of slug tier 4.",
+      "reference_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      }
+    },
+    {
+      "candidate_ids": [
+        "strasse_handel",
+        "zeta_holdings"
+      ],
+      "fixture_index": 24,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "STRASSE HANDEL",
+      "reason": "U+00DF sharp s full-case-folds to ss, so tier 2 selects the same first candidate before slug tier 4.",
+      "reference_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      }
+    },
+    {
+      "candidate_ids": [
+        "firefly_labs"
+      ],
+      "fixture_index": 25,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "ﬁrefly labs",
+      "reason": "NFKC expands the U+FB01 fi ligature before tier 2, so the match no longer waits for slug tier 4.",
+      "reference_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      }
+    },
+    {
+      "candidate_ids": [
+        "firefly_labs",
+        "zeta_holdings"
+      ],
+      "fixture_index": 26,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "ﬁrefly labs",
+      "reason": "NFKC expands the U+FB01 fi ligature before tier 2, preserving the selected candidate while bypassing slug tier 4.",
+      "reference_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      }
+    },
+    {
+      "candidate_ids": [
+        "ffluent_works"
+      ],
+      "fixture_index": 27,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "ﬄuent works",
+      "reason": "NFKC expands the U+FB04 ffl ligature before tier 2, so the match no longer waits for slug tier 4.",
+      "reference_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      }
+    },
+    {
+      "candidate_ids": [
+        "ffluent_works",
+        "zeta_holdings"
+      ],
+      "fixture_index": 28,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "ﬄuent works",
+      "reason": "NFKC expands the U+FB04 ffl ligature before tier 2, preserving the selected candidate while bypassing slug tier 4.",
+      "reference_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      }
+    },
+    {
+      "candidate_ids": [
+        "m_lab_research"
+      ],
+      "fixture_index": 29,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "µ-lab research",
+      "reason": "NFKC maps U+00B5 micro sign to Greek mu before tier 2, so the match no longer waits for slug tier 4.",
+      "reference_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      }
+    },
+    {
+      "candidate_ids": [
+        "m_lab_research",
+        "zeta_holdings"
+      ],
+      "fixture_index": 30,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "µ-lab research",
+      "reason": "NFKC maps U+00B5 micro sign to Greek mu before tier 2, preserving the selected candidate while bypassing slug tier 4.",
+      "reference_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 4
+      }
+    },
+    {
+      "candidate_ids": [
+        "xx_opaque_identity"
+      ],
+      "fixture_index": 31,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "Straße Handel",
+      "reason": "U+00DF sharp s full-case-folds to ss, turning the former non-slug refusal into a tier-2 match.",
+      "reference_outcome": {
+        "matched": false
+      }
+    },
+    {
+      "candidate_ids": [
+        "xx_opaque_identity"
+      ],
+      "fixture_index": 32,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "ΟΔΥΣΣΕΥΣ",
+      "reason": "Full case folding maps Greek final sigma and medial sigma to the same comparison form, turning the former non-slug refusal into a tier-2 match.",
+      "reference_outcome": {
+        "matched": false
+      }
+    },
+    {
+      "candidate_ids": [
+        "xx_opaque_identity"
+      ],
+      "fixture_index": 33,
+      "native_outcome": {
+        "candidate_index": 0,
+        "high_confidence": true,
+        "matched": true,
+        "tier": 2
+      },
+      "query": "ﬁrefly labs",
+      "reason": "NFKC expands the U+FB01 fi ligature, turning the former non-slug refusal into a tier-2 match.",
+      "reference_outcome": {
+        "matched": false
+      }
+    }
+  ],
+  "note": "Deliberate native matcher divergences from entity_matching.json after matcher comparison keys unified on normalize_resolution_query. The existing matching fixture remains the pre-unification reference corpus.",
+  "when_this_file_reddens": "A later failure is a finding that matcher tier behavior changed again. Re-evaluate every matching vector and make a deliberate decision; do not silently regenerate this file to absorb the change.",
+  "why_the_per_entry_assertion_is_required": "The declared total can still be correct when a divergence points at the wrong vector, records the wrong reference outcome, or describes a native answer that no longer occurs. Each entry must therefore be checked against both the frozen reference vector and the native matcher result, so the narrow confidence-boundary changes cannot be hidden by an aggregate count."
+}

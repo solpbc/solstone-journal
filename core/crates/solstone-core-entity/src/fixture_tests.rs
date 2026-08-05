@@ -14,8 +14,8 @@ use crate::{
 
 use super::test_support::{
     SweepVerificationError, entity_identity_fixture, entity_matching_fixture,
-    normalization_divergences, normalization_divergences_fixture, slug_divergences,
-    slug_divergences_fixture, verify_raw_sweep_digest, verify_sweep_digest,
+    matching_divergences_fixture, normalization_divergences, normalization_divergences_fixture,
+    slug_divergences, slug_divergences_fixture, verify_raw_sweep_digest, verify_sweep_digest,
 };
 
 const JOURNAL_IO_ALLOWED: &[&str] = &[
@@ -133,6 +133,7 @@ fn collect_production_sources(directory: &Path, sources: &mut Vec<PathBuf>) {
                 path.file_name().and_then(|name| name.to_str()),
                 Some(
                     "fixture_tests.rs"
+                        | "resolution_tests.rs"
                         | "store_tests.rs"
                         | "test_support.rs"
                         | "trust_lock_tests.rs"
@@ -237,6 +238,7 @@ fn ambiguity_id_vectors_match_fixture() {
 #[test]
 fn matching_vectors_match_fixture() {
     let fixture = entity_matching_fixture();
+    let divergences_fixture = matching_divergences_fixture();
     // A loader that parses the file, misses the array and yields nothing would
     // satisfy every assertion below perfectly. The declared count is what makes
     // these tests rather than formalities.
@@ -255,7 +257,61 @@ fn matching_vectors_match_fixture() {
             .count(),
         fixture.refusal_count
     );
-    for vector in fixture.vectors {
+    assert_eq!(
+        divergences_fixture.entries.len(),
+        divergences_fixture.counts.total
+    );
+    assert_eq!(
+        divergences_fixture.counts.tier_changes + divergences_fixture.counts.refusal_to_match,
+        divergences_fixture.counts.total
+    );
+    let mut divergences = HashMap::with_capacity(divergences_fixture.entries.len());
+    for divergence in divergences_fixture.entries {
+        assert!(
+            divergence.fixture_index < fixture.vectors.len(),
+            "divergence fixture index is out of range: {}",
+            divergence.fixture_index
+        );
+        assert_ne!(
+            divergence.reference_outcome, divergence.native_outcome,
+            "divergence fixture entry is a no-op: {}",
+            divergence.fixture_index
+        );
+        assert!(
+            divergences
+                .insert(divergence.fixture_index, divergence)
+                .is_none(),
+            "duplicate divergence fixture index"
+        );
+    }
+    for (index, vector) in fixture.vectors.into_iter().enumerate() {
+        let expected = if let Some(divergence) = divergences.remove(&index) {
+            assert_eq!(
+                divergence.query, vector.query,
+                "divergence query does not match matching fixture at index {index}"
+            );
+            let candidate_ids = vector
+                .candidates
+                .iter()
+                .map(|candidate| {
+                    candidate
+                        .id
+                        .as_deref()
+                        .expect("divergence candidates include ids")
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                divergence.candidate_ids, candidate_ids,
+                "divergence candidates do not match matching fixture at index {index}"
+            );
+            assert_eq!(
+                divergence.reference_outcome, vector.outcome,
+                "divergence reference does not match matching fixture at index {index}"
+            );
+            divergence.native_outcome
+        } else {
+            vector.outcome.clone()
+        };
         let candidates: Vec<EntityNameCandidate> = vector
             .candidates
             .into_iter()
@@ -268,7 +324,7 @@ fn matching_vectors_match_fixture() {
             .collect();
         let result = find_matching_entity(&vector.query, &candidates, fixture.fuzzy_threshold);
 
-        if !vector.outcome.matched {
+        if !expected.matched {
             assert_eq!(result, None, "{:?}", vector.query);
             continue;
         }
@@ -276,8 +332,7 @@ fn matching_vectors_match_fixture() {
         let result = result.expect("matched fixture vector resolves a candidate");
         assert_eq!(
             result.candidate_index,
-            vector
-                .outcome
+            expected
                 .candidate_index
                 .expect("matched fixture vector has candidate index"),
             "{:?}",
@@ -285,17 +340,13 @@ fn matching_vectors_match_fixture() {
         );
         assert_eq!(
             result.tier as u8,
-            vector
-                .outcome
-                .tier
-                .expect("matched fixture vector has tier"),
+            expected.tier.expect("matched fixture vector has tier"),
             "{:?}",
             vector.query
         );
         assert_eq!(
             result.tier.is_high_confidence(),
-            vector
-                .outcome
+            expected
                 .high_confidence
                 .expect("matched fixture vector has confidence"),
             "{:?}",
@@ -313,6 +364,10 @@ fn matching_vectors_match_fixture() {
             result.tier as u8 <= fixture.high_confidence_max_tier
         );
     }
+    assert!(
+        divergences.is_empty(),
+        "divergence fixture index was not visited"
+    );
 }
 
 #[test]

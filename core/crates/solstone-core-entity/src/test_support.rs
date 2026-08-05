@@ -22,6 +22,10 @@ const ENTITY_NORMALIZATION_DIVERGENCES_FIXTURE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../fixtures/entity_normalization_native_divergences.json"
 ));
+const ENTITY_MATCHING_DIVERGENCES_FIXTURE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../fixtures/entity_matching_native_divergences.json"
+));
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct EntityIdentityFixture {
@@ -111,12 +115,34 @@ pub(crate) struct MatchingCandidate {
     pub(crate) emails: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub(crate) struct MatchingOutcome {
     pub(crate) matched: bool,
     pub(crate) candidate_index: Option<usize>,
     pub(crate) tier: Option<u8>,
     pub(crate) high_confidence: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct MatchingDivergencesFixture {
+    pub(crate) counts: MatchingDivergenceCounts,
+    pub(crate) entries: Vec<MatchingDivergenceRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct MatchingDivergenceCounts {
+    pub(crate) total: usize,
+    pub(crate) tier_changes: usize,
+    pub(crate) refusal_to_match: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct MatchingDivergenceRecord {
+    pub(crate) candidate_ids: Vec<String>,
+    pub(crate) fixture_index: usize,
+    pub(crate) reference_outcome: MatchingOutcome,
+    pub(crate) native_outcome: MatchingOutcome,
+    pub(crate) query: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -173,6 +199,11 @@ pub(crate) fn entity_identity_fixture() -> EntityIdentityFixture {
 
 pub(crate) fn entity_matching_fixture() -> EntityMatchingFixture {
     serde_json::from_str(ENTITY_MATCHING_FIXTURE).expect("parse entity matching fixture")
+}
+
+pub(crate) fn matching_divergences_fixture() -> MatchingDivergencesFixture {
+    serde_json::from_str(ENTITY_MATCHING_DIVERGENCES_FIXTURE)
+        .expect("parse entity matching divergences fixture")
 }
 
 pub(crate) fn slug_divergences_fixture() -> SlugDivergencesFixture {
