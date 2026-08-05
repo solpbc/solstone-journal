@@ -17,6 +17,7 @@ use solstone_core_journal_io::PathOrDay;
 use solstone_core_journal_io::SnapshotError;
 use solstone_core_journal_io::append_jsonl;
 use solstone_core_journal_io::atomic_replace;
+use solstone_core_journal_io::capture_snapshot;
 use solstone_core_journal_io::contained_path;
 use solstone_core_journal_io::day_dirs;
 use solstone_core_journal_io::iter_segments;
@@ -36,7 +37,7 @@ use crate::{
 
 use super::merge_payload::{
     MergePayloadError, list_entity_merge_payload_ids, move_entity_merge_payload,
-    record_entity_merge_payload,
+    record_entity_merge_payload, snapshot_payload,
 };
 use super::merge_rollback::MergeRollback;
 use super::voiceprints::{VoiceprintArchive, read_voiceprints_npz, write_voiceprints_npz};
@@ -233,7 +234,7 @@ pub(crate) fn commit_entity_merge_with_injector(
         aliases_added: plan.aliases_added,
         emails_added: plan.emails_added,
     };
-    let mut payload = payload_for_merge(&merge_id, source_id, target_id, &plan);
+    let mut payload = payload_for_merge(journal, &merge_id, source_id, target_id, &plan)?;
     let mut touched_facets = Vec::new();
     let mut stats = MergeStats::default();
     for phase in PHASES {
@@ -924,6 +925,9 @@ struct MergePlan {
     target_after: Value,
     aliases_added: usize,
     emails_added: usize,
+    aka_support: Vec<Value>,
+    email_support: Vec<Value>,
+    scalar_support: Vec<Value>,
     source_display_name: String,
     target_display_name: String,
     principal_transferred: bool,
@@ -980,11 +984,14 @@ fn plan_merge(
     })?;
     let aliases_before = values(&target, "aka");
     let mut alias_values = aliases_before.clone();
-    alias_values.extend(values(&source, "aka"));
+    let mut source_aliases = values(&source, "aka");
+    alias_values.extend(source_aliases.iter().cloned());
     if options.keep_source_as_aka
         && let Some(name) = source.get("name").and_then(Value::as_str)
     {
-        alias_values.push(name.to_owned());
+        let name = name.to_owned();
+        alias_values.push(name.clone());
+        source_aliases.push(name);
     }
     let aliases = dedupe_akas(&alias_values);
     object.insert(
@@ -992,11 +999,13 @@ fn plan_merge(
         Value::Array(aliases.iter().cloned().map(Value::String).collect()),
     );
     let emails_before = values(&target, "emails");
-    let emails = dedupe_emails(&emails_before, &values(&source, "emails"));
+    let source_emails = values(&source, "emails");
+    let emails = dedupe_emails(&emails_before, &source_emails);
     object.insert(
         "emails".to_owned(),
         Value::Array(emails.iter().cloned().map(Value::String).collect()),
     );
+    let mut scalar_support = Vec::new();
     for (field, value) in source.as_object().expect("identity object") {
         if ![
             "id",
@@ -1010,10 +1019,18 @@ fn plan_merge(
             "is_principal",
         ]
         .contains(&field.as_str())
-            && is_blank(object.get(field))
             && !is_blank(Some(value))
         {
-            object.insert(field.clone(), value.clone());
+            let target_prevalue = target.get(field).cloned().unwrap_or(Value::Null);
+            scalar_support.push(json!({
+                "key": field,
+                "target_prevalue": target_prevalue,
+                "target_prevalue_missing": target.get(field).is_none(),
+                "source_value": value,
+            }));
+            if is_blank(object.get(field)) {
+                object.insert(field.clone(), value.clone());
+            }
         }
     }
     if source.get("is_principal").and_then(Value::as_bool) == Some(true) {
@@ -1036,10 +1053,29 @@ fn plan_merge(
         target_after: after,
         aliases_added: aliases.len().saturating_sub(aliases_before.len()),
         emails_added: emails.len().saturating_sub(emails_before.len()),
+        aka_support: support_for_values(&source_aliases, &aliases_before),
+        email_support: support_for_values(&source_emails, &emails_before),
+        scalar_support,
         source_display_name,
         target_display_name,
         principal_transferred,
     })
+}
+
+fn support_for_values(source_values: &[String], target_values: &[String]) -> Vec<Value> {
+    let target_keys = target_values
+        .iter()
+        .map(|value| value.to_lowercase())
+        .collect::<HashSet<_>>();
+    let mut seen = HashSet::new();
+    source_values
+        .iter()
+        .filter_map(|value| {
+            let key = value.to_lowercase();
+            seen.insert(key.clone())
+                .then(|| json!({"key": key, "target_preexisting": target_keys.contains(&key)}))
+        })
+        .collect()
 }
 
 pub(crate) fn dedupe_akas(values: &[String]) -> Vec<String> {
@@ -1130,6 +1166,39 @@ fn check_aka_cross_references(
         )))
     }
 }
-fn payload_for_merge(merge_id: &str, source_id: &str, target_id: &str, plan: &MergePlan) -> Value {
-    json!({"schema_version":1,"merge_id":merge_id,"source_id":source_id,"target_id":target_id,"commit_seq":null,"source_state":{"identity":plan.source_before,"snapshots":[{"rel":format!("entities/{source_id}"),"files":[]}]},"result_counts":{},"manifest":{"identity":{"target_before":plan.target_before,"aka_support":[],"email_support":[],"scalar_support":[]},"voiceprints":{"support":[]},"facets":{"entries":[]},"segments":{"entries":[]},"activities":{"entries":[]},"observation_relations":{"entries":[]},"rebased_merge_ids":[]}})
+fn payload_for_merge(
+    journal: &Path,
+    merge_id: &str,
+    source_id: &str,
+    target_id: &str,
+    plan: &MergePlan,
+) -> Result<Value, EntityMergeError> {
+    let mut snapshots = vec![source_snapshot_payload(
+        journal,
+        &format!("entities/{source_id}"),
+    )?];
+    let facets = contained_path(journal, "facets")
+        .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+    for entry in
+        list_dir_entries(&facets).map_err(|error| EntityMergeError::Refused(error.to_string()))?
+    {
+        if entry.kind != DirEntryKind::Directory {
+            continue;
+        }
+        let facet = entry.name.to_string_lossy();
+        let relative = format!("facets/{facet}/entities/{source_id}");
+        let path = contained_path(journal, &relative)
+            .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+        if path_lexists(&path).map_err(|error| EntityMergeError::Refused(error.to_string()))? {
+            snapshots.push(source_snapshot_payload(journal, &relative)?);
+        }
+    }
+    Ok(
+        json!({"schema_version":1,"merge_id":merge_id,"source_id":source_id,"target_id":target_id,"commit_seq":null,"source_state":{"identity":plan.source_before,"snapshots":snapshots},"result_counts":{},"manifest":{"identity":{"target_before":plan.target_before,"aka_support":plan.aka_support,"email_support":plan.email_support,"scalar_support":plan.scalar_support},"voiceprints":{"support":[]},"facets":{"entries":[]},"segments":{"entries":[]},"activities":{"entries":[]},"observation_relations":{"entries":[]},"rebased_merge_ids":[]}}),
+    )
+}
+
+fn source_snapshot_payload(journal: &Path, relative: &str) -> Result<Value, EntityMergeError> {
+    let snapshot = capture_snapshot(journal, relative)?;
+    Ok(json!({"rel":relative,"files":[],"snapshot":snapshot_payload(&snapshot)}))
 }

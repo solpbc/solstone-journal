@@ -12,7 +12,9 @@ use solstone_core_journal_io::JournalSnapshot;
 use solstone_core_journal_io::JsonWriteOptions;
 use solstone_core_journal_io::MalformedPolicy;
 use solstone_core_journal_io::PathError;
+use solstone_core_journal_io::SnapshotDirectory;
 use solstone_core_journal_io::SnapshotError;
+use solstone_core_journal_io::SnapshotFile;
 use solstone_core_journal_io::contained_path;
 use solstone_core_journal_io::list_dir_entries;
 use solstone_core_journal_io::path_lexists;
@@ -315,6 +317,75 @@ pub(crate) fn validate_merge_payload(
         "merge payload rebased_merge_ids is not a list",
     )?;
     Ok(())
+}
+
+pub(crate) fn snapshot_payload(snapshot: &JournalSnapshot) -> Value {
+    match snapshot {
+        JournalSnapshot::Missing { path } => serde_json::json!({"kind":"missing","path":path}),
+        JournalSnapshot::File(file) => {
+            serde_json::json!({"kind":"file","path":file.path,"bytes":file.bytes,"mode":file.mode})
+        }
+        JournalSnapshot::Directory(directory) => serde_json::json!({
+            "kind":"directory",
+            "path":directory.path,
+            "entries":directory.entries.iter().map(snapshot_payload).collect::<Vec<_>>(),
+        }),
+    }
+}
+
+pub(crate) fn snapshot_from_payload(value: &Value) -> Result<JournalSnapshot, MergePayloadError> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| invalid("merge payload snapshot image is not an object"))?;
+    let kind = optional_string(object, "kind", "merge payload snapshot image missing kind")?;
+    let path = optional_string(object, "path", "merge payload snapshot image missing path")?;
+    match kind {
+        "missing" => Ok(JournalSnapshot::Missing {
+            path: path.to_owned(),
+        }),
+        "file" => {
+            let bytes = required_array(
+                object,
+                "bytes",
+                "merge payload snapshot file missing bytes",
+                "merge payload snapshot file bytes is not a list",
+            )?
+            .iter()
+            .map(|value| {
+                value
+                    .as_u64()
+                    .and_then(|value| u8::try_from(value).ok())
+                    .ok_or_else(|| invalid("merge payload snapshot file bytes are invalid"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+            let mode = object
+                .get("mode")
+                .and_then(Value::as_u64)
+                .and_then(|value| u32::try_from(value).ok())
+                .ok_or_else(|| invalid("merge payload snapshot file missing mode"))?;
+            Ok(JournalSnapshot::File(SnapshotFile {
+                path: path.to_owned(),
+                bytes,
+                mode,
+            }))
+        }
+        "directory" => {
+            let entries = required_array(
+                object,
+                "entries",
+                "merge payload snapshot directory missing entries",
+                "merge payload snapshot directory entries is not a list",
+            )?
+            .iter()
+            .map(snapshot_from_payload)
+            .collect::<Result<Vec<_>, _>>()?;
+            Ok(JournalSnapshot::Directory(SnapshotDirectory {
+                path: path.to_owned(),
+                entries,
+            }))
+        }
+        _ => Err(invalid("merge payload snapshot image has unknown kind")),
+    }
 }
 fn required_string<'a>(
     object: &'a serde_json::Map<String, Value>,

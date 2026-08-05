@@ -227,6 +227,67 @@ fn committed_merge_payload_records_facet_inverse_entries() {
 }
 
 #[test]
+fn committed_merge_payload_records_identity_support() {
+    let journal = voiceprint_journal();
+    let source = json!({
+        "id": "source",
+        "name": "Source",
+        "aka": ["New Alias", "Existing Alias"],
+        "emails": ["new@example.test", "existing@example.test"],
+        "title": "Engineer"
+    });
+    let target = json!({
+        "id": "target",
+        "name": "Target",
+        "aka": ["Existing Alias"],
+        "emails": ["existing@example.test"]
+    });
+    save_entity_identity(&journal, "source", &source, None).unwrap();
+    save_entity_identity(&journal, "target", &target, None).unwrap();
+
+    let report =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let payload = load_entity_merge_payload(&journal, "target", &report.merge_id).unwrap();
+    let identity = &payload["manifest"]["identity"];
+    assert!(
+        identity["aka_support"]
+            .as_array()
+            .unwrap()
+            .contains(&json!({"key":"new alias","target_preexisting":false}))
+    );
+    assert!(
+        identity["aka_support"]
+            .as_array()
+            .unwrap()
+            .contains(&json!({"key":"existing alias","target_preexisting":true}))
+    );
+    assert!(
+        identity["email_support"]
+            .as_array()
+            .unwrap()
+            .contains(&json!({"key":"new@example.test","target_preexisting":false}))
+    );
+    assert!(
+        identity["email_support"]
+            .as_array()
+            .unwrap()
+            .contains(&json!({"key":"existing@example.test","target_preexisting":true}))
+    );
+    assert!(
+        identity["scalar_support"]
+            .as_array()
+            .unwrap()
+            .contains(&json!({
+                "key":"title",
+                "target_prevalue":null,
+                "target_prevalue_missing":true,
+                "source_value":"Engineer"
+            }))
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
 fn email_dedup_keeps_first_seen_order() {
     assert_eq!(
         dedupe_emails(

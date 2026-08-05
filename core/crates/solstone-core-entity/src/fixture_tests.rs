@@ -52,6 +52,7 @@ const JOURNAL_IO_ALLOWED: &[&str] = &[
     "restore_snapshot",
     "JournalSnapshot",
     "SnapshotDirectory",
+    "SnapshotFile",
     "SnapshotError",
     "AppendError",
     "atomic_replace",
