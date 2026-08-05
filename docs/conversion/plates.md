@@ -65,13 +65,28 @@ nobody's contract while being everybody's decision input.
 
 ⚠ **9 production read sites in 8 modules across two languages** — see
 [`strands.md`](strands.md) § `S:segment-sense:segment-processing` for the enumeration.
-🔴 **The version string exists twice today** — `observe/processing_record.py:23` and
-`core/crates/solstone-core-ingest-resolve/src/terminal_proof.rs:11` — hand-maintained, with
-nothing binding them. That is the two-places-one-contract class rule 1 exists to make
-unrepresentable, and it is the first thing this plate removes.
+✅ **BUILT 2026-08-05 — `core/crates/solstone-core-processing-record`.** The record, its closed
+vocabularies, the terminal-proof predicate and a published schema now live in one crate, and
+`solstone-core-ingest-resolve` consumes the predicate instead of restating it.
 
-⛔ **No schema exists.** It is absent from both sibling schemas that enumerate every *other*
-header key, and both carry `additionalProperties: true`, so it can never fail validation.
+- ✅ **One version string in the Rust tree.** `vocab::SCHEMA` is the only declaration, and a
+  committed test `include_str!`s `terminal_proof.rs` to assert neither the literal nor the old
+  constant name can come back. ⚠ **Cross-language equality with `processing_record.py:23` is
+  still confirmed by inspection only** — nothing mechanically enforces it, and that is an
+  accepted residual until Python is deleted.
+- ✅ **The predicate is field-wise and missing-tolerant**, reading `record.get(...)` over a map
+  rather than deserializing into a struct. ⛔ **Do not "improve" this into a typed struct with
+  required fields** — the reference tolerates a record carrying only `schema`, `state`,
+  `handler` and `input_size`, and a typed reader would withdraw terminal proof from partial
+  records already on owner disks.
+- ✅ A vectors fixture carries per-row `provenance_tag` and a `citation` to the reference
+  `file:line` that determines each verdict, and its header records that **tests never execute
+  Python**.
+
+⚠ **A published schema now exists** (`schema/processing-record.v1.schema.json`) but it is
+published **for readers**: the record still lives inside two other formats' headers, both of
+which carry `additionalProperties: true`, so a malformed record still cannot fail validation
+against a real journal file. ⛔ Enforcement is a later wave, not a solved problem.
 
 ## `P-segment-sense`
 
