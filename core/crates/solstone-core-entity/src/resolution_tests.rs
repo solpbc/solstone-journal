@@ -16,9 +16,9 @@ use solstone_core_entity_matching::{EntityNameCandidate, MatchTier, find_matchin
 
 use crate::resolution::collect_low_confidence_candidates;
 use crate::{
-    AmbiguityChoiceEntity, AmbiguityChoiceRequest, EntityResolutionEntity,
-    EntityResolutionError, EntityResolutionOutcome, hold_entity_trust_lock,
-    record_ambiguity_choice, record_entity_resolution,
+    AmbiguityChoiceEntity, AmbiguityChoiceRequest, EntityResolutionEntity, EntityResolutionError,
+    EntityResolutionOutcome, hold_entity_trust_lock, record_ambiguity_choice,
+    record_entity_resolution,
 };
 
 static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
