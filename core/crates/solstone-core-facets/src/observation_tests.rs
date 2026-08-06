@@ -8,7 +8,9 @@ use serde_json::json;
 use solstone_core_journal_io::{AtomicWriteError, LockError, LockTimeout};
 
 use crate::store::{retry_add_for_test, retry_record_for_test};
-use crate::store_tests::{TempDir, create_test_facet, write_facet_relationship};
+use crate::store_tests::{
+    TempDir, create_test_facet, write_facet_relationship, write_journal_entity,
+};
 use crate::{
     FacetTrustLockError, FacetWriteError, ObservationLookup, ObservationLookupError,
     ObservationWriteError, add_observation, count_observations, load_observations,
@@ -54,6 +56,48 @@ fn query_lookup_resolves_a_journal_id_to_a_divergent_relationship_directory() {
         ObservationLookup::Resolved {
             entity_dir: "legacy_label".to_owned(),
             observations: vec![json!({"content":"durable"})],
+        }
+    );
+}
+
+#[test]
+fn resolution_matches_the_resolved_directory_not_the_raw_stored_link_id() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "work");
+    write_journal_entity(temporary.path(), "canonical_a", Some("shared-effective-id"));
+    write_journal_entity(temporary.path(), "other_z", Some("shared-effective-id"));
+    assert_eq!(
+        solstone_core_entity::read_identity_map(temporary.path())
+            .unwrap()
+            .resolved
+            .get("shared-effective-id"),
+        Some(&"canonical_a".to_owned())
+    );
+    write_facet_relationship(
+        temporary.path(),
+        "work",
+        "relationship-label",
+        json!({"entity_id":"shared-effective-id"}),
+    );
+    save_observations(
+        temporary.path(),
+        "work",
+        "relationship-label",
+        &[json!({"content":"resolved through the winner"})],
+    )
+    .unwrap();
+
+    assert_eq!(
+        resolve_observation_entity_dir(temporary.path(), "work", "canonical_a").unwrap(),
+        crate::ObservationEntityResolution::Resolved {
+            entity_dir: "relationship-label".to_owned(),
+        }
+    );
+    assert_eq!(
+        load_observations_for_query(temporary.path(), "work", "canonical_a").unwrap(),
+        ObservationLookup::Resolved {
+            entity_dir: "relationship-label".to_owned(),
+            observations: vec![json!({"content":"resolved through the winner"})],
         }
     );
 }
