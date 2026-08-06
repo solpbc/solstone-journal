@@ -35,6 +35,15 @@ CONTENT = b"audio-v1"
 SHA = hashlib.sha256(CONTENT).hexdigest()
 
 
+@pytest.fixture(autouse=True)
+def _stub_offload_mark_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        offload_restore.retention_executor,
+        "resolve_offload_mark",
+        Mock(return_value={}),
+    )
+
+
 def _config_path(journal: Path) -> Path:
     return journal / "config" / "journal.json"
 
@@ -454,7 +463,11 @@ def test_tool_failure_rolls_back_remnant_before_later_offload_can_replace_ledger
 
     monkeypatch.setattr(offload, "run_archive_backup", fake_archive)
     monkeypatch.setattr(offload, "check_archive_snapshot_files", fake_check)
-    monkeypatch.setattr(offload, "device_free_bytes", lambda: 0)
+    monkeypatch.setattr(
+        offload.retention_executor,
+        "marks",
+        Mock(return_value={"ok": True, "verb": "marks", "marks": {"marks": {}}}),
+    )
 
     offload_result = offload.run_offload()
 
@@ -467,6 +480,77 @@ def test_tool_failure_rolls_back_remnant_before_later_offload_can_replace_ledger
         "audio.wav",
         "call.wav",
         "room.wav",
+    )
+
+
+def test_restore_only_requests_missing_files_and_preserves_preexisting_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    _write_config(tmp_path, _backup_config())
+    segment_dir = _segment_dir(tmp_path)
+    recorded_files = (
+        _offload_file("audio.wav", b"original"),
+        _offload_file("call.wav", b"missing"),
+    )
+    append_offload_event(
+        day=DAY,
+        stream=DEFAULT_STREAM,
+        segment=SEGMENT,
+        snapshot_id="snap1",
+        files=recorded_files,
+        time=100,
+    )
+    original = segment_dir / "audio.wav"
+    original.write_bytes(b"corrupted")
+    restored = segment_dir / "call.wav"
+    calls: list[list[str]] = []
+
+    def fake_run_restic(args: list[str], **_kwargs: Any) -> ResticResult:
+        calls.append(args)
+        restored.write_bytes(b"missing")
+        return _restic_result(0, args)
+
+    monkeypatch.setattr(engine, "ensure_restic", Mock(return_value=Path("/restic")))
+    monkeypatch.setattr(offload_restore, "device_free_bytes", lambda: 5_000_000_000)
+    monkeypatch.setattr(offload_restore, "run_restic", fake_run_restic)
+
+    result = offload_restore.restore_day(DAY)
+
+    assert result.status == "error"
+    assert result.reason == "verification_failed"
+    assert calls[0][-2:] == ["--include", "/call.wav"]
+    assert "/audio.wav" not in calls[0]
+    assert original.read_bytes() == b"corrupted"
+    assert not restored.exists()
+    offload_restore.retention_executor.resolve_offload_mark.assert_not_called()
+
+
+def test_restore_all_present_files_skips_restic_and_resolves_mark(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    _write_config(tmp_path, _backup_config())
+    segment_dir = _segment_dir(tmp_path)
+    _seed_ledger()
+    (segment_dir / "audio.wav").write_bytes(CONTENT)
+    run_restic = Mock()
+    monkeypatch.setattr(engine, "ensure_restic", Mock(return_value=Path("/restic")))
+    monkeypatch.setattr(offload_restore, "device_free_bytes", lambda: 5_000_000_000)
+    monkeypatch.setattr(offload_restore, "run_restic", run_restic)
+
+    result = offload_restore.restore_day(DAY)
+
+    assert result.status == "ok"
+    run_restic.assert_not_called()
+    offload_restore.retention_executor.resolve_offload_mark.assert_called_once_with(
+        journal=str(tmp_path),
+        day=DAY,
+        segment_dir=SEGMENT,
+        files=["audio.wav"],
+        stream=DEFAULT_STREAM,
     )
 
 

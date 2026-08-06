@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from solstone.think import retention_executor
 from solstone.think.backup.engine import (
     _RcloneUnavailable,
     _resolve_runtime,
@@ -40,7 +41,7 @@ from solstone.think.offload_measurement import (
     measure_raw_media_usage,
     suggest_offload_defaults,
 )
-from solstone.think.utils import DATE_RE, resolve_segment_dir
+from solstone.think.utils import DATE_RE, get_journal, resolve_segment_dir
 
 logger = logging.getLogger(__name__)
 
@@ -363,37 +364,48 @@ def _restore_segment(
     if not segment_dir.is_dir():
         return _segment_error(summary, "segment_missing")
 
-    include_args: list[str] = []
-    for file in summary.files:
-        include_args.extend(["--include", f"/{file.name}"])
-
-    result = run_restic(
-        _session_args(
-            backend,
-            [
-                "restore",
-                f"{summary.snapshot_id}:{segment_dir}",
-                "--target",
-                str(segment_dir),
-                *include_args,
-            ],
-        ),
-        repository=backend.destination.repository,
-        password=runtime.keys.daily_key,
-        restic_path=runtime.restic_path,
-        backend_env=backend.backend_env,
-        json=True,
-        timeout=OFFLOAD_RESTORE_TIMEOUT_SECONDS,
+    missing_before = tuple(
+        file for file in summary.files if not (segment_dir / file.name).is_file()
     )
-    if result.returncode != 0:
-        _rollback_attempted_files(segment_dir, summary.files)
-        return _segment_error(summary, reason_for_returncode(result.returncode))
+    if missing_before:
+        include_args: list[str] = []
+        for file in missing_before:
+            include_args.extend(["--include", f"/{file.name}"])
+
+        result = run_restic(
+            _session_args(
+                backend,
+                [
+                    "restore",
+                    f"{summary.snapshot_id}:{segment_dir}",
+                    "--target",
+                    str(segment_dir),
+                    *include_args,
+                ],
+            ),
+            repository=backend.destination.repository,
+            password=runtime.keys.daily_key,
+            restic_path=runtime.restic_path,
+            backend_env=backend.backend_env,
+            json=True,
+            timeout=OFFLOAD_RESTORE_TIMEOUT_SECONDS,
+        )
+        if result.returncode != 0:
+            _rollback_attempted_files(segment_dir, missing_before)
+            return _segment_error(summary, reason_for_returncode(result.returncode))
 
     reason = _verification_reason(segment_dir, summary.files)
     if reason is not None:
-        _rollback_attempted_files(segment_dir, summary.files)
+        _rollback_attempted_files(segment_dir, missing_before)
         return _segment_error(summary, reason)
 
+    retention_executor.resolve_offload_mark(
+        journal=str(get_journal()),
+        day=summary.day,
+        segment_dir=summary.segment,
+        files=sorted(file.name for file in summary.files),
+        stream=summary.stream,
+    )
     append_restore_event(
         day=summary.day,
         stream=summary.stream,

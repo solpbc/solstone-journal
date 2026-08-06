@@ -616,6 +616,37 @@ def mark_offload(
     raise ExecutorUnavailable(f"the offload mark was rejected (exit {code}): {receipt.get('error', receipt)}")
 
 
+def resolve_offload_mark(
+    journal: str,
+    day: str,
+    segment_dir: str,
+    files: list[str],
+    *,
+    stream: str = "_default",
+) -> dict[str, Any]:
+    """Clear an OffloadRawRelease mark for a segment whose files are confirmed present."""
+    argv = [
+        executor_path(),
+        "resolve-offload",
+        "--journal",
+        journal,
+        "--day",
+        day,
+        "--stream",
+        stream,
+        "--dir",
+        segment_dir,
+    ]
+    for name in files:
+        argv.extend(["--file", name])
+    code, receipt = _run(argv)
+    if code == EXIT_OK:
+        return receipt
+    if code in (EXIT_REFUSED, EXIT_HALTED):
+        raise RemovalRefused(Refused(receipt))
+    raise ExecutorUnavailable(f"the offload mark resolve was rejected (exit {code}): {receipt.get('error', receipt)}")
+
+
 def remove_marked(
     journal: str, mark_ids: list[str], policy: dict[str, Any], *, today: str, now: str
 ) -> dict[str, Any]:
