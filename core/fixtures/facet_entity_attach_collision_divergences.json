@@ -1,0 +1,35 @@
+{
+  "cause": "The facet entity store compares written display names with NFKC, Python-compatible whitespace collapse, and full Unicode case folding, while the legacy Python attach path compares lowercased strings and derives lookup placement from slugs.",
+  "counts": {"total": 3},
+  "entries": [
+    {
+      "fixture_index": 0,
+      "query": "Straße Handel",
+      "candidate_ids": ["opaque_identity"],
+      "candidate_name": "STRASSE HANDEL",
+      "reference_outcome": {"kind": "created"},
+      "native_outcome": {"kind": "attached_existing"},
+      "reason": "Full case folding makes Straße Handel equal STRASSE HANDEL without consulting a slug-derived identity."
+    },
+    {
+      "fixture_index": 1,
+      "query": "ﬁrefly Labs",
+      "candidate_ids": ["opaque_identity"],
+      "candidate_name": "firefly Labs",
+      "reference_outcome": {"kind": "created"},
+      "native_outcome": {"kind": "attached_existing"},
+      "reason": "NFKC expands the fi ligature before name comparison, while Python lower leaves the ligature distinct."
+    },
+    {
+      "fixture_index": 2,
+      "query": "Ada\u001cLovelace",
+      "candidate_ids": ["opaque_identity"],
+      "candidate_name": "Ada Lovelace",
+      "reference_outcome": {"kind": "created"},
+      "native_outcome": {"kind": "attached_existing"},
+      "reason": "Python-compatible whitespace collapse treats U+001C as a separator, while Python lower does not equate the two names."
+    }
+  ],
+  "note": "The reference outcome was captured from the Python attach operation against the same opaque written-id journal fixture; the native outcome is executed by facet_entity_fixture_tests.",
+  "when_this_file_reddens": "Treat a failure as a behavior change requiring review; do not regenerate this fixture automatically."
+}

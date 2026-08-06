@@ -1654,6 +1654,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-entity",
+ "solstone-core-entity-matching",
  "solstone-core-journal-io",
 ]
 

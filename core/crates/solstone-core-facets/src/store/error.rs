@@ -131,6 +131,134 @@ impl From<FacetTrustLockError> for FacetWriteError {
     }
 }
 
+/// Failure while changing a facet entity relationship or its journal identity.
+#[derive(Debug)]
+pub enum FacetEntityWriteError {
+    TrustLock(FacetTrustLockError),
+    EntityTrustLock(solstone_core_entity::EntityTrustLockError),
+    FacetStore(FacetStoreError),
+    FacetWrite(FacetWriteError),
+    EntityStore(solstone_core_entity::EntityStoreError),
+    EntityWrite(solstone_core_entity::EntityWriteError),
+    EntityExists {
+        name: String,
+    },
+    EntityBlocked {
+        entity_id: String,
+    },
+    EntityNotFound {
+        entity_id: String,
+    },
+    AkaConflict {
+        alias: String,
+        conflict_name: String,
+    },
+    IdentityMapLoser {
+        entity_id: String,
+        entity_dir: String,
+    },
+    MoveConflict {
+        path: PathBuf,
+    },
+    Io(io::Error),
+}
+
+impl fmt::Display for FacetEntityWriteError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TrustLock(error) => error.fmt(formatter),
+            Self::EntityTrustLock(error) => error.fmt(formatter),
+            Self::FacetStore(error) => error.fmt(formatter),
+            Self::FacetWrite(error) => error.fmt(formatter),
+            Self::EntityStore(error) => error.fmt(formatter),
+            Self::EntityWrite(error) => error.fmt(formatter),
+            Self::EntityExists { name } => write!(formatter, "entity already exists: {name:?}"),
+            Self::EntityBlocked { entity_id } => {
+                write!(formatter, "entity is blocked: {entity_id}")
+            }
+            Self::EntityNotFound { entity_id } => {
+                write!(formatter, "entity not found: {entity_id}")
+            }
+            Self::AkaConflict {
+                alias,
+                conflict_name,
+            } => write!(
+                formatter,
+                "alias {alias:?} conflicts with entity {conflict_name:?}"
+            ),
+            Self::IdentityMapLoser {
+                entity_id,
+                entity_dir,
+            } => write!(
+                formatter,
+                "identity-map loser {entity_dir} for effective id {entity_id}"
+            ),
+            Self::MoveConflict { path } => write!(
+                formatter,
+                "cannot account for conflicting moved file: {}",
+                path.display()
+            ),
+            Self::Io(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl Error for FacetEntityWriteError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::TrustLock(error) => Some(error),
+            Self::EntityTrustLock(error) => Some(error),
+            Self::FacetStore(error) => Some(error),
+            Self::FacetWrite(error) => Some(error),
+            Self::EntityStore(error) => Some(error),
+            Self::EntityWrite(error) => Some(error),
+            Self::Io(error) => Some(error),
+            Self::EntityExists { .. }
+            | Self::EntityBlocked { .. }
+            | Self::EntityNotFound { .. }
+            | Self::AkaConflict { .. }
+            | Self::IdentityMapLoser { .. }
+            | Self::MoveConflict { .. } => None,
+        }
+    }
+}
+
+impl From<FacetTrustLockError> for FacetEntityWriteError {
+    fn from(value: FacetTrustLockError) -> Self {
+        Self::TrustLock(value)
+    }
+}
+impl From<solstone_core_entity::EntityTrustLockError> for FacetEntityWriteError {
+    fn from(value: solstone_core_entity::EntityTrustLockError) -> Self {
+        Self::EntityTrustLock(value)
+    }
+}
+impl From<FacetStoreError> for FacetEntityWriteError {
+    fn from(value: FacetStoreError) -> Self {
+        Self::FacetStore(value)
+    }
+}
+impl From<FacetWriteError> for FacetEntityWriteError {
+    fn from(value: FacetWriteError) -> Self {
+        Self::FacetWrite(value)
+    }
+}
+impl From<solstone_core_entity::EntityStoreError> for FacetEntityWriteError {
+    fn from(value: solstone_core_entity::EntityStoreError) -> Self {
+        Self::EntityStore(value)
+    }
+}
+impl From<solstone_core_entity::EntityWriteError> for FacetEntityWriteError {
+    fn from(value: solstone_core_entity::EntityWriteError) -> Self {
+        Self::EntityWrite(value)
+    }
+}
+impl From<io::Error> for FacetEntityWriteError {
+    fn from(value: io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
 /// Failure while renaming one facet directory and its dependent references.
 #[derive(Debug)]
 pub enum FacetRenameError {
