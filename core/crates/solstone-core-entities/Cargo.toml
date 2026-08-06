@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-entities"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+axum.workspace = true
+chrono.workspace = true
+log.workspace = true
+rapidfuzz.workspace = true
+ring = "0.17.14"
+serde.workspace = true
+serde_json.workspace = true
+solstone-core-convey-http.workspace = true
+solstone-core-entity.workspace = true
+solstone-core-entity-matching.workspace = true
+solstone-core-facets.workspace = true
+solstone-core-journal-io.workspace = true
+solstone-core-serving = { path = "../solstone-core-serving" }
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tower.workspace = true
+
+[lints]
+workspace = true

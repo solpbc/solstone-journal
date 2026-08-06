@@ -1781,6 +1781,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-entities"
+version = "1.0.22"
+dependencies = [
+ "axum",
+ "chrono",
+ "log",
+ "rapidfuzz",
+ "ring",
+ "serde",
+ "serde_json",
+ "solstone-core-convey-http",
+ "solstone-core-entity",
+ "solstone-core-entity-matching",
+ "solstone-core-facets",
+ "solstone-core-journal-io",
+ "solstone-core-serving",
+ "tokio",
+ "tower",
+]
+
+[[package]]
 name = "solstone-core-entity"
 version = "1.0.22"
 dependencies = [
