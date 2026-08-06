@@ -610,6 +610,61 @@ def sweep(
     )
 
 
+def mark(journal: str, policy: dict[str, Any], *, today: str, now: str) -> dict[str, Any]:
+    """Refresh policy raw-release proposals without removing media."""
+    code, receipt = _run([
+        executor_path(), "mark", "--journal", journal, "--today", today,
+        "--now", now, "--policy", json.dumps(policy),
+    ])
+    if code == EXIT_OK:
+        return receipt
+    if code in (EXIT_REFUSED, EXIT_HALTED):
+        raise RemovalRefused(Refused(receipt))
+    raise ExecutorUnavailable(f"the retention mark was rejected (exit {code}): {receipt.get('error', receipt)}")
+
+
+def marks(journal: str) -> dict[str, Any]:
+    """Read the durable retention removal register."""
+    code, receipt = _run([executor_path(), "marks", "--journal", journal])
+    if code == EXIT_OK:
+        return receipt
+    if code in (EXIT_REFUSED, EXIT_HALTED):
+        raise RemovalRefused(Refused(receipt))
+    raise ExecutorUnavailable(f"the retention marks read was rejected (exit {code}): {receipt.get('error', receipt)}")
+
+
+def mark_offload(
+    journal: str, day: str, segment_dir: str, files: list[str], reason: str, *, now: str, stream: str = "_default"
+) -> dict[str, Any]:
+    """Record an archive-backed raw-release proposal."""
+    argv = [executor_path(), "mark-offload", "--journal", journal, "--day", day,
+            "--stream", stream, "--dir", segment_dir, "--reason", reason, "--now", now]
+    for name in files:
+        argv.extend(["--file", name])
+    code, receipt = _run(argv)
+    if code == EXIT_OK:
+        return receipt
+    if code in (EXIT_REFUSED, EXIT_HALTED):
+        raise RemovalRefused(Refused(receipt))
+    raise ExecutorUnavailable(f"the offload mark was rejected (exit {code}): {receipt.get('error', receipt)}")
+
+
+def remove_marked(
+    journal: str, mark_ids: list[str], policy: dict[str, Any], *, today: str, now: str
+) -> dict[str, Any]:
+    """Execute only explicit, approval-required retention marks."""
+    argv = [executor_path(), "remove-marked", "--journal", journal, "--today", today,
+            "--now", now, "--policy", json.dumps(policy)]
+    for mark_id in mark_ids:
+        argv.extend(["--mark", mark_id])
+    code, receipt = _run(argv)
+    if code == EXIT_OK:
+        return receipt
+    if code in (EXIT_REFUSED, EXIT_HALTED):
+        raise RemovalRefused(Refused(receipt))
+    raise ExecutorUnavailable(f"the marked removal was rejected (exit {code}): {receipt.get('error', receipt)}")
+
+
 def confirmation(retention: dict[str, Any]) -> str | None:
     """The fingerprint the owner has confirmed, if any."""
     recorded = retention.get(CONFIRM_KEY)
