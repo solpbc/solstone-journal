@@ -103,6 +103,9 @@ pub(crate) fn scan_entity_references(
         },
         |counts| &mut counts.speaker_review_candidate,
     )?;
+    // These stores normally retain pre-resolution capture-cluster coordinates,
+    // not journal entity ids. Keep the generic scan for exceptional rows, with
+    // dedicated synthetic coverage, but production writer output is rarely nonzero.
     count_jsonl_surface(
         journal_root,
         "speakers/candidate-pair-review-candidates.jsonl",
@@ -189,11 +192,13 @@ fn count_activities(
             continue;
         }
         let activity_dir = entry.path.join("activities");
-        for path in descendant_files(&activity_dir)? {
-            if path.extension() != Some("jsonl".as_ref()) {
+        for activity in list_dir_entries(&activity_dir)? {
+            if activity.kind != DirEntryKind::File
+                || activity.path.extension() != Some("jsonl".as_ref())
+            {
                 continue;
             }
-            for row in jsonl_rows(&path, counts) {
+            for row in jsonl_rows(&activity.path, counts) {
                 if key_value_contains(
                     &row,
                     entity_id,
@@ -223,44 +228,61 @@ fn count_segment_speakers(
     counts: &mut EntityReferenceBreakdown,
 ) -> Result<(), FacetStoreError> {
     let chronicle = contained_path(root, "chronicle")?;
-    for path in descendant_files(&chronicle)? {
-        match path.file_name().and_then(|name| name.to_str()) {
-            Some("speaker_labels.json") => {
-                if let Some(value) = json_object(&path, counts) {
-                    for label in value
-                        .get("labels")
-                        .and_then(Value::as_array)
-                        .into_iter()
-                        .flatten()
-                    {
-                        if label.get("speaker").and_then(Value::as_str) == Some(entity_id) {
-                            counts.segment_label += 1;
-                        }
-                    }
-                }
+    for day in list_dir_entries(&chronicle)? {
+        if day.kind != DirEntryKind::Directory {
+            continue;
+        }
+        for stream in list_dir_entries(&day.path)? {
+            if stream.kind != DirEntryKind::Directory {
+                continue;
             }
-            Some("speaker_corrections.json") => {
-                if let Some(value) = json_object(&path, counts) {
-                    for correction in value
-                        .get("corrections")
-                        .and_then(Value::as_array)
-                        .into_iter()
-                        .flatten()
-                    {
-                        if correction.get("original_speaker").and_then(Value::as_str)
-                            == Some(entity_id)
-                            || correction.get("corrected_speaker").and_then(Value::as_str)
-                                == Some(entity_id)
-                        {
-                            counts.segment_correction += 1;
-                        }
-                    }
+            for segment in list_dir_entries(&stream.path)? {
+                if segment.kind != DirEntryKind::Directory {
+                    continue;
                 }
+                let talents = segment.path.join("talents");
+                count_segment_labels(&talents.join("speaker_labels.json"), entity_id, counts);
+                count_segment_corrections(
+                    &talents.join("speaker_corrections.json"),
+                    entity_id,
+                    counts,
+                );
             }
-            _ => {}
         }
     }
     Ok(())
+}
+
+fn count_segment_labels(path: &Path, entity_id: &str, counts: &mut EntityReferenceBreakdown) {
+    if let Some(value) = json_object(path, counts) {
+        for label in value
+            .get("labels")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if label.get("speaker").and_then(Value::as_str) == Some(entity_id) {
+                counts.segment_label += 1;
+            }
+        }
+    }
+}
+
+fn count_segment_corrections(path: &Path, entity_id: &str, counts: &mut EntityReferenceBreakdown) {
+    if let Some(value) = json_object(path, counts) {
+        for correction in value
+            .get("corrections")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if correction.get("original_speaker").and_then(Value::as_str) == Some(entity_id)
+                || correction.get("corrected_speaker").and_then(Value::as_str) == Some(entity_id)
+            {
+                counts.segment_correction += 1;
+            }
+        }
+    }
 }
 
 fn count_aka_crossrefs(
@@ -334,6 +356,9 @@ fn jsonl_rows(path: &Path, counts: &mut EntityReferenceBreakdown) -> Vec<Value> 
     match read_jsonl(path, Vec::new(), MalformedPolicy::Raise) {
         Ok(rows) => rows,
         Err(_) => {
+            // The shared reader exposes only fail-fast and silent-skip policies, not
+            // the number of skipped records. Keep parsing centralized there and
+            // report one unreadable file rather than duplicate its JSONL parser here.
             counts.unreadable += 1;
             read_jsonl(path, Vec::new(), MalformedPolicy::Skip).unwrap_or_default()
         }

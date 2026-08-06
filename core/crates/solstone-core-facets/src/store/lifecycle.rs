@@ -7,10 +7,12 @@
 //! references, then removes the entity directory, while returning fixed per-surface
 //! counts gathered before mutation. Remaining observation, activity, chronicle,
 //! cross-reference, speaker, and review references deliberately remain dangling.
-//! The largest scanner test records one of each named surface (and one unreadable
-//! JSONL record): unrecognized file, facet link, observation, activity, label,
-//! correction, AKA cross-reference, speaker candidate, keep-separate assertion,
-//! identify operation, ambiguity, each review surface, candidate pair, and dismissal.
+//! The scanner suite records each named surface (and one unreadable JSONL record):
+//! unrecognized file, facet link, observation, activity, label, correction, AKA
+//! cross-reference, speaker candidate, keep-separate assertion, identify operation,
+//! ambiguity, each review surface, candidate pair, and dismissal.
+//! Candidate-pair and dismissal rows normally retain pre-resolution audio-cluster
+//! coordinates rather than journal entity ids, so those counts are rarely nonzero.
 //! Identify-operation and segment-correction counts are intentionally conservative:
 //! restored speaker operations are not modeled here, so their matching rows remain
 //! visible in the advisory report rather than being riskily excluded.
@@ -77,7 +79,10 @@ impl fmt::Display for FacetEntityLifecycleError {
             Self::FacetStore(error) => error.fmt(formatter),
             Self::FacetWrite(error) => error.fmt(formatter),
             Self::PrincipalEntityProtected { entity_id } => {
-                write!(formatter, "principal entity cannot be blocked: {entity_id}")
+                write!(
+                    formatter,
+                    "principal entity is protected from this operation: {entity_id}"
+                )
             }
         }
     }

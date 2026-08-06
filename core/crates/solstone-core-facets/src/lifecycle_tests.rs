@@ -163,6 +163,62 @@ fn block_holds_entity_trust_through_relationship_detachment() {
 }
 
 #[test]
+fn delete_holds_entity_trust_through_relationship_removal() {
+    let temporary = TempDir::new();
+    write_journal_entity(temporary.path(), "target", Some("target"));
+    create_test_facet(temporary.path(), "work");
+    for index in 0..300 {
+        write_facet_relationship(
+            temporary.path(),
+            "work",
+            &format!("legacy-{index}"),
+            json!({"entity_id": "target"}),
+        );
+    }
+
+    let returned = Arc::new(AtomicBool::new(false));
+    let attempted_before_return = Arc::new(AtomicBool::new(false));
+    let acquired_before_return = Arc::new(AtomicBool::new(false));
+    let contender_root = temporary.path().to_path_buf();
+    let contender_returned = Arc::clone(&returned);
+    let contender_attempted = Arc::clone(&attempted_before_return);
+    let contender_acquired = Arc::clone(&acquired_before_return);
+    let contender = thread::spawn(move || {
+        loop {
+            let identity = contender_root.join("entities/target/entity.json");
+            let relationship = contender_root.join("facets/work/entities/legacy-0");
+            if identity.exists() && !relationship.exists() {
+                contender_attempted
+                    .store(!contender_returned.load(Ordering::SeqCst), Ordering::SeqCst);
+                let _trust = hold_entity_trust_lock(&contender_root).unwrap();
+                contender_acquired
+                    .store(!contender_returned.load(Ordering::SeqCst), Ordering::SeqCst);
+                return;
+            }
+            if contender_returned.load(Ordering::SeqCst) {
+                return;
+            }
+            thread::yield_now();
+        }
+    });
+    let delete_root = temporary.path().to_path_buf();
+    let delete_returned = Arc::clone(&returned);
+    let delete = thread::spawn(move || {
+        let result = delete_journal_entity(&delete_root, "target");
+        delete_returned.store(true, Ordering::SeqCst);
+        result
+    });
+    delete.join().unwrap().unwrap();
+    contender.join().unwrap();
+
+    assert!(attempted_before_return.load(Ordering::SeqCst));
+    assert!(
+        !acquired_before_return.load(Ordering::SeqCst),
+        "this catches a naive implementation that releases entity trust before deleting every relationship"
+    );
+}
+
+#[test]
 fn relationship_detach_and_delete_preserve_or_remove_the_expected_tree() {
     let temporary = TempDir::new();
     create_test_facet(temporary.path(), "work");
@@ -315,6 +371,11 @@ fn reference_breakdown_reports_each_surface_independently() {
     );
     write_text(
         temporary.path(),
+        "facets/work/activities/archive/day.jsonl",
+        "{\"active_entities\":[\"target\"]}\n",
+    );
+    write_text(
+        temporary.path(),
         "chronicle/20260805/stream/seg/talents/speaker_labels.json",
         "{\"labels\":[{\"speaker\":\"target\"}]}",
     );
@@ -322,6 +383,11 @@ fn reference_breakdown_reports_each_surface_independently() {
         temporary.path(),
         "chronicle/20260805/stream/seg/talents/speaker_corrections.json",
         "{\"corrections\":[{\"original_speaker\":\"target\"}]}",
+    );
+    write_text(
+        temporary.path(),
+        "chronicle/other/speaker_labels.json",
+        "{\"labels\":[{\"speaker\":\"target\"}]}",
     );
     write_text(
         temporary.path(),
@@ -353,16 +419,6 @@ fn reference_breakdown_reports_each_surface_independently() {
         "speakers/review-candidates.jsonl",
         "{\"source_id\":\"target\"}\n",
     );
-    write_text(
-        temporary.path(),
-        "speakers/candidate-pair-review-candidates.jsonl",
-        "{\"ids\":[\"target\"]}\n",
-    );
-    write_text(
-        temporary.path(),
-        "speakers/cluster-dismissals.jsonl",
-        "{\"entity_id\":\"target\"}\n",
-    );
     let counts =
         crate::store::reference_scan::scan_entity_references(temporary.path(), "target", "target")
             .unwrap();
@@ -379,9 +435,31 @@ fn reference_breakdown_reports_each_surface_independently() {
     assert_eq!(counts.ambiguity, 1);
     assert_eq!(counts.entity_review_candidate, 1);
     assert_eq!(counts.speaker_review_candidate, 1);
-    assert_eq!(counts.candidate_pair, 1);
-    assert_eq!(counts.dismissal, 1);
+    assert_eq!(counts.candidate_pair, 0);
+    assert_eq!(counts.dismissal, 0);
     assert_eq!(counts.unreadable, 1);
+}
+
+#[test]
+fn scan_counts_synthetic_candidate_pair_entity_reference() {
+    let counts = scan_synthetic_entity_reference(
+        "speakers/candidate-pair-review-candidates.jsonl",
+        "{\"entity_id\":\"target\"}\n",
+    );
+
+    assert_eq!(counts.candidate_pair, 1);
+    assert_eq!(counts.dismissal, 0);
+}
+
+#[test]
+fn scan_counts_synthetic_dismissal_entity_reference() {
+    let counts = scan_synthetic_entity_reference(
+        "speakers/cluster-dismissals.jsonl",
+        "{\"entity_id\":\"target\"}\n",
+    );
+
+    assert_eq!(counts.candidate_pair, 0);
+    assert_eq!(counts.dismissal, 1);
 }
 
 #[test]
@@ -520,6 +598,17 @@ fn write_text(root: &std::path::Path, relative: &str, contents: &str) {
     let path = root.join(relative);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, contents).unwrap();
+}
+
+fn scan_synthetic_entity_reference(
+    relative: &str,
+    contents: &str,
+) -> crate::store::reference_scan::EntityReferenceBreakdown {
+    let temporary = TempDir::new();
+    write_journal_entity(temporary.path(), "target", Some("target"));
+    write_text(temporary.path(), relative, contents);
+    crate::store::reference_scan::scan_entity_references(temporary.path(), "target", "target")
+        .unwrap()
 }
 
 fn tree_bytes(root: &std::path::Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {

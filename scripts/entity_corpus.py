@@ -1296,45 +1296,167 @@ def build_entity_store_fixture() -> dict[str, Any]:
 
 
 def build_entity_lifecycle_fixture() -> dict[str, Any]:
-    """Capture lifecycle scanner inputs from owner writers plus fixed hostile rows."""
-    from solstone.think.activities import save_facet_activities
+    """Capture lifecycle scanner inputs from their owning durable writers."""
+    from unittest.mock import patch
+
+    import numpy as np
+
+    from solstone.apps.speakers.attribution import (
+        append_speaker_correction,
+        save_speaker_labels,
+    )
+    from solstone.apps.speakers.candidate_tracker import CandidateProfile, CandidateTracker
+    from solstone.think.activities import append_activity_record
+    from solstone.think.entities import ambiguities
+    from solstone.think.entities.ambiguities import (
+        ResolutionOrigin,
+        ResolutionScope,
+        record_ambiguity_choice,
+        record_ambiguity_observation,
+    )
     from solstone.think.entities.journal import save_journal_entity
     from solstone.think.entities.observations import save_observations
+    from solstone.think.entities import review_candidates
     from solstone.think.entities.relationships import save_facet_relationship
+    from solstone.think import speaker_candidate_pair_review_candidates as candidate_pairs
+    from solstone.think import speaker_cluster_dismissals as cluster_dismissals
+    from solstone.think import speaker_identify_operations as identify_operations
+    from solstone.think import speaker_keep_separate as keep_separate
+    from solstone.think import speaker_review_candidates as speaker_review
 
     with _temp_journal() as root:
-        save_journal_entity({"id": "target", "name": "Target", "type": "Person"})
-        save_journal_entity(
-            {"id": "other", "name": "Other", "type": "Person", "aka": ["target"]}
-        )
-        save_facet_relationship("work", "target", {"role": "member"})
-        save_observations("work", "target", [{"target_entity_id": "target"}])
-        save_facet_activities("work", [{"id": "activity", "active_entities": ["target"]}])
+        fixed_now = "2026-08-05T12:00:00Z"
+        with (
+            patch.object(ambiguities, "utc_now_iso", return_value=fixed_now),
+            patch.object(keep_separate, "utc_now_iso", return_value=fixed_now),
+            patch.object(review_candidates, "utc_now_iso", return_value=fixed_now),
+            patch.object(cluster_dismissals, "utc_now_iso", return_value=fixed_now),
+            patch.object(candidate_pairs, "utc_now_iso", return_value=fixed_now),
+            patch.object(speaker_review, "utc_now_iso", return_value=fixed_now),
+        ):
+            save_journal_entity({"id": "target", "name": "Target", "type": "Person"})
+            save_journal_entity(
+                {"id": "survivor", "name": "Survivor", "type": "Person"}
+            )
+            save_journal_entity(
+                {"id": "other", "name": "Other", "type": "Person", "aka": ["target"]}
+            )
+            save_facet_relationship("work", "target", {"role": "member"})
+            save_observations("work", "target", [{"target_entity_id": "target"}])
+            append_activity_record(
+                "work",
+                "20260805",
+                {"id": "activity", "active_entities": ["target"]},
+            )
 
-        # These surfaces have no compact writer invocation suitable for a stable
-        # fixture input. They are scanner inputs, not writer-oracle assertions.
-        raw = {
-            "chronicle/20260805/stream/seg/talents/speaker_labels.json": {"labels": [{"speaker": "target"}]},
-            "chronicle/20260805/stream/seg/talents/speaker_corrections.json": {"corrections": [{"original_speaker": "target"}]},
-            "awareness/speaker_candidates.json": {"candidates": [{"confirmed_entity": "target"}]},
-        }
-        for relative, value in raw.items():
-            path = root / relative
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
-        jsonl = {
-            "speakers/keep-separate.jsonl": {"entity_id_a": "target", "entity_id_b": "other"},
-            # This is a live reference row, not a fully-restored/undone operation.
-            "speakers/identify-operations.jsonl": {"target_entity_id": "target"},
-            "entities/review-candidates.jsonl": {"source_slug": "target"},
-            "speakers/review-candidates.jsonl": {"source_id": "target"},
-            "speakers/candidate-pair-review-candidates.jsonl": {"ids": ["target"]},
-            "speakers/cluster-dismissals.jsonl": {"entity_id": "target"},
-        }
-        for relative, row in jsonl.items():
-            path = root / relative
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
+            segment = root / "chronicle/20260805/stream/seg"
+            save_speaker_labels(segment, [{"sentence_id": 1, "speaker": "target"}], {})
+            append_speaker_correction(
+                segment,
+                {
+                    "sentence_id": 1,
+                    "original_speaker": "target",
+                    "corrected_speaker": "survivor",
+                },
+            )
+
+            tracker = CandidateTracker()
+            tracker._candidates[1] = CandidateProfile(
+                cand_id=1,
+                centroid=np.array([1.0], dtype=np.float32),
+                n_segments=1,
+                n_intervals=1,
+                total_duration_s=1.0,
+                confirmed_entity="target",
+                status="confirmed",
+            )
+            tracker._next_id = 2
+            tracker.save()
+
+            scope = ResolutionScope.journal()
+            origin = ResolutionOrigin(lane="fixture", segment_id="seg")
+            candidates = [
+                {"id": "target", "name": "Target", "tier": 5, "score": 1.0},
+                {"id": "survivor", "name": "Survivor", "tier": 5, "score": 0.9},
+            ]
+            record_ambiguity_observation(
+                scope=scope,
+                query="first",
+                normalized_query="first",
+                observed_tier=5,
+                ranked_candidates=candidates,
+                origin=origin,
+            )
+            record_ambiguity_choice("first", "target", candidates, scope=scope)
+            survivor_candidate = [candidates[1]]
+            record_ambiguity_observation(
+                scope=scope,
+                query="second",
+                normalized_query="second",
+                observed_tier=5,
+                ranked_candidates=survivor_candidate,
+                origin=origin,
+            )
+            record_ambiguity_choice("second", "survivor", survivor_candidate, scope=scope)
+
+            keep_separate.record_keep_separate_assertion(
+                "target",
+                "survivor",
+                source_kind="fixture",
+                operation_id=None,
+                detection_count=1,
+            )
+            identify_operations.append_event(
+                _lifecycle_identify_prepared_event(identify_operations, "target", "survivor")
+            )
+            review_candidates.record_merge_candidate(
+                facet="work",
+                day="20260805",
+                source="fixture",
+                source_slug="target",
+                target="Survivor",
+                target_slug="survivor",
+                evidence="fixture reference",
+            )
+            speaker_review.record_name_variant_candidate(
+                source_id="target",
+                source_label="Target",
+                target_id="survivor",
+                target_label="Survivor",
+                similarity=0.9,
+            )
+            # Candidate-pair and dismissal rows retain capture-cluster coordinates,
+            # not journal entity ids, so their expected lifecycle counts are zero.
+            anchor_target = '["20260805","stream","seg","audio",1]'
+            anchor_survivor = '["20260805","stream","other-seg","audio",2]'
+            candidate_pairs.record_candidate_pair(
+                source_anchor=anchor_target,
+                target_anchor=anchor_survivor,
+                source_anchors={anchor_target},
+                target_anchors={anchor_survivor},
+                similarity=0.9,
+                source_intervals=1,
+                target_intervals=1,
+                source_samples=[],
+                target_samples=[],
+            )
+            cluster_dismissals.record_cluster_dismissal(
+                [
+                    {
+                        "day": "20260805",
+                        "stream": "stream",
+                        "segment_key": "seg",
+                        "source": "audio",
+                        "sentence_id": 1,
+                    }
+                ],
+                "quiet",
+            )
+
+        # Deliberate corruption exercises the scanner's unreadable category after
+        # every valid row above has been produced by its owning writer.
+        with (root / "entities/ambiguities.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write("not json\n")
 
         files: dict[str, str] = {}
         for path in sorted(root.rglob("*")):
@@ -1348,23 +1470,91 @@ def build_entity_lifecycle_fixture() -> dict[str, Any]:
             "unrecognized_file": 0,
             "facet_relationship": 1,
             "observation": 2,
-            "activity": 0,
+            "activity": 1,
             "segment_label": 1,
             "segment_correction": 1,
             "aka_crossref": 1,
             "speaker_candidate": 1,
             "keep_separate": 1,
             "identify_operation": 1,
-            "ambiguity": 0,
+            "ambiguity": 1,
             "entity_review_candidate": 1,
             "speaker_review_candidate": 1,
-            "candidate_pair": 1,
-            "dismissal": 1,
-            "unreadable": 0,
+            "candidate_pair": 0,
+            "dismissal": 0,
+            "unreadable": 1,
         },
         "synthetic_divergent_relationship": {
             "note": "Python relationship writer always stamps the directory id; Rust tests add this legacy input directly.",
             "directory": "legacy-target",
             "entity_id": "target",
         },
+    }
+
+
+def _lifecycle_identify_prepared_event(
+    ledger: Any,
+    target_entity_id: str,
+    survivor_entity_id: str,
+) -> dict[str, Any]:
+    """Build a valid, unfinished identify event for the lifecycle fixture."""
+    request_id = "entity-lifecycle-fixture"
+    operation_id = ledger.operation_id_for_request(request_id)
+    members = [
+        {
+            "day": "20260805",
+            "stream": "stream",
+            "segment_key": "seg",
+            "source": "audio",
+            "sentence_id": 1,
+        }
+    ]
+    fingerprint = ledger.request_fingerprint(
+        cluster_members=members,
+        target_entity_id=target_entity_id,
+        will_create=False,
+        entity_type="Person",
+        reviewed_near_match_entity_ids=[survivor_entity_id],
+    )
+    plan = {
+        "plan_schema_version": 1,
+        "operation_id": operation_id,
+        "request_id": request_id,
+        "planned_at": "2026-08-05T12:00:00Z",
+        "request": {
+            "cluster_id": 1,
+            "name": "Target",
+            "entity_id": target_entity_id,
+            "resolve_only": False,
+            "create_new": False,
+            "entity_type": "Person",
+            "reviewed_near_match_entity_ids": [survivor_entity_id],
+        },
+        "cluster": {"cluster_id": 1, "member_count": 1, "members": members},
+        "target": {
+            "entity_id": target_entity_id,
+            "entity_name": "Target",
+            "entity_type": "Person",
+            "will_create": False,
+        },
+        "entity_identity": {"prior_identity": {}, "intended_identity": {}},
+        "direct_voiceprints": {"preexisting_keys": [], "entries_to_add": []},
+        "segments": [],
+        "retro_confirm": {},
+        "sentinel": {},
+        "keep_separate_assertions": [
+            {"entity_id_a": target_entity_id, "entity_id_b": survivor_entity_id}
+        ],
+    }
+    return {
+        "schema_version": ledger.IDENTIFY_OPERATION_SCHEMA_VERSION,
+        "event_id": f"{operation_id}:prepared",
+        "operation_id": operation_id,
+        "request_id": request_id,
+        "event_kind": "prepared",
+        "ts": "2026-08-05T12:00:00Z",
+        "caller": "fixture",
+        "actor": None,
+        "request_fingerprint": fingerprint,
+        "prepared_plan": plan,
     }
