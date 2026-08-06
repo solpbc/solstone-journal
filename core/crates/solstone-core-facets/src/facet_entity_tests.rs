@@ -327,7 +327,7 @@ fn email_case_normalization_is_not_full_case_folding() {
 }
 
 #[test]
-fn aka_filters_blocked_differently_from_identity_update() {
+fn aka_does_not_conflict_with_a_blocked_entitys_name() {
     let temporary = TempDir::new();
     create_test_facet(temporary.path(), "scope");
     for (dir, id, name, blocked) in [
@@ -342,10 +342,10 @@ fn aka_filters_blocked_differently_from_identity_update() {
         .unwrap();
         write_facet_relationship(temporary.path(), "scope", dir, json!({"entity_id":id}));
     }
-    assert!(matches!(
-        add_entity_aka(temporary.path(), "scope", "target", "reserved"),
-        Err(FacetEntityWriteError::AkaConflict { .. })
-    ));
+    // Blocking is what frees a name for reuse: the reference's guard filters
+    // blocked candidates out before comparing, so an alias matching a blocked
+    // entity's name is accepted. Verified against the reference by execution.
+    assert!(add_entity_aka(temporary.path(), "scope", "target", "reserved").is_ok());
     update_facet_entity_identity(
         temporary.path(),
         "scope",

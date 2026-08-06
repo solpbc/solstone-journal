@@ -278,7 +278,10 @@ pub fn add_entity_aka(
     let entities = list_scoped_facet_entities(journal_root, facet_dir, true, true)?;
     let query = normalize_resolution_query(aka);
     for entity in &entities {
-        if entity.entity_id == entity_id || entity.detached {
+        // The reference's guard filters detached AND blocked candidates before
+        // comparing. Blocking an entity is what frees its name for reuse, so a
+        // blocked entity must not reserve an alias against a live one.
+        if entity.entity_id == entity_id || entity.detached || entity.blocked {
             continue;
         }
         if identity_name(&entity.identity) == query
