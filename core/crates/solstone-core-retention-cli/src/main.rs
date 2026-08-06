@@ -55,9 +55,13 @@ use solstone_core_retention::logs::{
     CLASSES, COMPACTABLE, Compaction, EntryKind, Kept, LogPlan, LogPolicy, day_key,
     plan as plan_logs, plan_compactions,
 };
+use solstone_core_retention::marks::{
+    Failure, MarkId, Proposal, RemovalClass, load, reconcile, reconcile_recovered, record_failure,
+};
 use solstone_core_retention::notify::{IndexNotify, NotifyError, PruneCounts};
 use solstone_core_retention::policy::Policy;
 use solstone_core_retention::receipt::{Outcome, RemovedPath, Target};
+use solstone_core_retention::remove_marked::remove_marked;
 use solstone_core_retention::scan::scan_segment;
 use solstone_core_retention::sweep::{Plan, execute as execute_sweep, plan as plan_sweep};
 use solstone_core_retention::tombstone::RemovalReason;
@@ -248,6 +252,10 @@ fn parse_segment(spec: &str) -> Result<Target, String> {
 /// Remove, then tell the index, then report both.
 fn finish(journal: &Path, outcome: Outcome, extra: serde_json::Value) -> ExitCode {
     let code = code_for(&outcome);
+    let verb = extra
+        .get("verb")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     let index = RealIndex { journal };
     // ⚠ A failed notification does not undo a removal and must not be reported as
     // one. It is a separate field, and it does not change the exit code: the files
@@ -263,6 +271,7 @@ fn finish(journal: &Path, outcome: Outcome, extra: serde_json::Value) -> ExitCod
     emit(
         serde_json::json!({
             "ok": code == EXIT_OK,
+            "verb": verb,
             "outcome": receipt,
             "index": notified,
             "detail": extra,
@@ -310,10 +319,35 @@ fn run_remove_segments(args: &Args) -> ExitCode {
         }
     }
     let outcome = remove_segments(&journal, &targets, at, reason, did);
+    let mut register_errors = Vec::new();
+    for target_outcome in &outcome.targets {
+        let Some(failure) = target_outcome.not_removed.iter().find_map(|item| {
+            item.staged.as_ref().map(|staged| Failure {
+                at: at.to_owned(),
+                reason: item.reason.clone(),
+                staged: Some(staged.clone()),
+            })
+        }) else {
+            continue;
+        };
+        if let Err(error) = record_failure(
+            &journal,
+            RemovalClass::OwnerSegmentRemoval,
+            &target_outcome.target,
+            &[],
+            failure,
+            at,
+        ) {
+            register_errors.push(error.to_string());
+        }
+    }
     finish(
         &journal,
         outcome,
-        serde_json::json!({ "verb": "remove-segments" }),
+        serde_json::json!({
+            "verb": "remove-segments",
+            "register_error": (!register_errors.is_empty()).then(|| register_errors.join("; ")),
+        }),
     )
 }
 
@@ -335,6 +369,12 @@ fn run_recover(args: &Args) -> ExitCode {
         Err(error) => return fail(&error),
     };
     let outcome = recover(&journal, at, reason, did);
+    if let Err(error) = reconcile_recovered(&journal) {
+        return emit(
+            serde_json::json!({ "ok": false, "verb": "recover", "error": error.to_string() }),
+            EXIT_REFUSED,
+        );
+    }
     finish(&journal, outcome, serde_json::json!({ "verb": "recover" }))
 }
 
@@ -350,6 +390,10 @@ fn run_recover(args: &Args) -> ExitCode {
 fn run_release_raw(args: &Args) -> ExitCode {
     let journal = match args.required("--journal") {
         Ok(value) => PathBuf::from(value),
+        Err(error) => return fail(&error),
+    };
+    let at = match args.required("--at") {
+        Ok(value) => value,
         Err(error) => return fail(&error),
     };
     let specs = args.all("--segment");
@@ -394,6 +438,38 @@ fn run_release_raw(args: &Args) -> ExitCode {
     }
 
     let (outcome, tally) = release_raw(&journal, &proven);
+    let mut register_errors = Vec::new();
+    for target_outcome in &outcome.targets {
+        let Some(failure) = target_outcome.not_removed.iter().find_map(|item| {
+            item.staged.as_ref().map(|staged| Failure {
+                at: at.to_owned(),
+                reason: item.reason.clone(),
+                staged: Some(staged.clone()),
+            })
+        }) else {
+            continue;
+        };
+        let mut names = proven
+            .iter()
+            .filter(|item| {
+                item.day() == target_outcome.target.day
+                    && item.stream() == target_outcome.target.stream
+                    && item.dir() == target_outcome.target.dir
+            })
+            .map(|item| item.name().to_owned())
+            .collect::<Vec<_>>();
+        names.sort();
+        if let Err(error) = record_failure(
+            &journal,
+            RemovalClass::OwnerRawRelease,
+            &target_outcome.target,
+            &names,
+            failure,
+            at,
+        ) {
+            register_errors.push(error.to_string());
+        }
+    }
     finish(
         &journal,
         outcome,
@@ -401,6 +477,7 @@ fn run_release_raw(args: &Args) -> ExitCode {
             "verb": "release-raw",
             "held": held,
             "evidence": { "on_record": tally.on_record, "on_legacy_rows": tally.on_legacy_rows },
+            "register_error": (!register_errors.is_empty()).then(|| register_errors.join("; ")),
         }),
     )
 }
@@ -419,6 +496,7 @@ fn plan_json(plan: &Plan) -> serde_json::Value {
         "bytes": plan.bytes(),
         "skipped": plan.skipped.len(),
         "unreadable_days": plan.unreadable_days,
+        "chronicle_unavailable": plan.chronicle_unavailable,
         "segments": plan
             .candidates
             .iter()
@@ -659,7 +737,7 @@ fn run_sweep(args: &Args) -> ExitCode {
     // ⛔ Planning is the default. A destructive pass must be asked for.
     if !args.has("--execute") {
         return emit(
-            serde_json::json!({ "ok": true, "executed": false, "plan": plan_json(&plan) }),
+            serde_json::json!({ "ok": true, "verb": "sweep", "executed": false, "plan": plan_json(&plan) }),
             EXIT_OK,
         );
     }
@@ -674,6 +752,262 @@ fn run_sweep(args: &Args) -> ExitCode {
             "evidence": { "on_record": tally.on_record, "on_legacy_rows": tally.on_legacy_rows },
         }),
     )
+}
+
+fn parse_policy(args: &Args) -> Result<Policy, String> {
+    match args.one("--policy") {
+        None => Ok(Policy::default()),
+        Some(text) => serde_json::from_str::<Policy>(text)
+            .map_err(|error| format!("--policy is not a retention policy: {error}")),
+    }
+}
+
+fn parse_today(args: &Args) -> Result<NaiveDate, String> {
+    args.required("--today").and_then(|value| {
+        NaiveDate::parse_from_str(value, "%Y-%m-%d")
+            .map_err(|_| format!("--today must be YYYY-MM-DD, not `{value}`"))
+    })
+}
+
+fn parse_now(args: &Args) -> Result<DateTime<Utc>, String> {
+    args.required("--now").and_then(|value| {
+        DateTime::parse_from_rfc3339(value)
+            .map(|when| when.with_timezone(&Utc))
+            .map_err(|_| format!("--now must be an RFC 3339 instant, not `{value}`"))
+    })
+}
+
+/// Report a command-specific argument refusal without losing the verb identifier.
+fn verb_fail(verb: &str, error: &str) -> ExitCode {
+    emit(
+        serde_json::json!({ "ok": false, "verb": verb, "error": error }),
+        EXIT_USAGE,
+    )
+}
+
+fn run_mark(args: &Args) -> ExitCode {
+    let journal = match args.required("--journal") {
+        Ok(value) => PathBuf::from(value),
+        Err(error) => return verb_fail("mark", &error),
+    };
+    let today = match parse_today(args) {
+        Ok(value) => value,
+        Err(error) => return verb_fail("mark", &error),
+    };
+    let now = match parse_now(args) {
+        Ok(value) => value,
+        Err(error) => return verb_fail("mark", &error),
+    };
+    let policy = match parse_policy(args) {
+        Ok(value) => value,
+        Err(error) => return verb_fail("mark", &error),
+    };
+    let plan = plan_sweep(
+        &journal,
+        &policy,
+        &ClosedHandlerSet,
+        &JournalMedia,
+        today,
+        now,
+    );
+    if plan.chronicle_unavailable {
+        return emit(
+            serde_json::json!({
+                "ok": false,
+                "verb": "mark",
+                "error": "the journal chronicle directory is unavailable",
+            }),
+            EXIT_REFUSED,
+        );
+    }
+    if !plan.unreadable_days.is_empty() {
+        return emit(
+            serde_json::json!({
+                "ok": false,
+                "verb": "mark",
+                "error": format!(
+                    "one or more chronicle days could not be read: {}",
+                    plan.unreadable_days.join(", ")
+                ),
+            }),
+            EXIT_REFUSED,
+        );
+    }
+    let proposals = plan
+        .candidates
+        .iter()
+        .map(|candidate| {
+            let mut names = candidate
+                .proven
+                .iter()
+                .map(|item| item.name().to_owned())
+                .collect::<Vec<_>>();
+            names.sort();
+            (
+                candidate.target.clone(),
+                Proposal {
+                    bytes: candidate.bytes(),
+                    reason: format!("policy eligibility: {:?}", candidate.eligibility),
+                    names,
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    match reconcile(
+        &journal,
+        RemovalClass::PolicyRawRelease,
+        &proposals,
+        args.required("--now").unwrap_or_default(),
+    ) {
+        Ok(register) => emit(
+            serde_json::json!({ "ok": true, "verb": "mark", "marks": register }),
+            EXIT_OK,
+        ),
+        Err(error) => emit(
+            serde_json::json!({ "ok": false, "verb": "mark", "error": error.to_string() }),
+            EXIT_REFUSED,
+        ),
+    }
+}
+
+fn run_marks(args: &Args) -> ExitCode {
+    let journal = match args.required("--journal") {
+        Ok(value) => PathBuf::from(value),
+        Err(error) => return verb_fail("marks", &error),
+    };
+    match load(&journal) {
+        Ok(register) => emit(
+            serde_json::json!({ "ok": true, "verb": "marks", "marks": register }),
+            EXIT_OK,
+        ),
+        Err(error) => emit(
+            serde_json::json!({ "ok": false, "verb": "marks", "error": error.to_string() }),
+            EXIT_REFUSED,
+        ),
+    }
+}
+
+fn run_mark_offload(args: &Args) -> ExitCode {
+    let journal = match args.required("--journal") {
+        Ok(value) => PathBuf::from(value),
+        Err(error) => return verb_fail("mark-offload", &error),
+    };
+    let day = match args.required("--day") {
+        Ok(value) => value,
+        Err(error) => return verb_fail("mark-offload", &error),
+    };
+    let dir = match args.required("--dir") {
+        Ok(value) => value,
+        Err(error) => return verb_fail("mark-offload", &error),
+    };
+    let reason = match args.required("--reason") {
+        Ok(value) => value,
+        Err(error) => return verb_fail("mark-offload", &error),
+    };
+    let now = match args.required("--now") {
+        Ok(value) => value,
+        Err(error) => return verb_fail("mark-offload", &error),
+    };
+    let stream = args.one("--stream").unwrap_or("_default");
+    let mut names = args
+        .all("--file")
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if names.is_empty() {
+        return verb_fail("mark-offload", "at least one --file is required");
+    }
+    names.sort();
+    if names.windows(2).any(|names| names[0] == names[1]) {
+        return verb_fail("mark-offload", "--file names must be unique");
+    }
+    let target = Target {
+        day: day.to_owned(),
+        stream: stream.to_owned(),
+        dir: dir.to_owned(),
+    };
+    let found = scan_segment(
+        &journal.join(crate_layout_segment_rel(&target)),
+        &ClosedHandlerSet,
+        &JournalMedia,
+    );
+    let mut bytes = 0u64;
+    for name in &names {
+        let Some(item) = found.iter().find(|item| item.name.as_str() == name) else {
+            return emit(
+                serde_json::json!({
+                    "ok": false,
+                    "verb": "mark-offload",
+                    "error": format!("`{name}` is not a present owner-media file in this segment"),
+                }),
+                EXIT_REFUSED,
+            );
+        };
+        bytes = bytes.saturating_add(item.size);
+    }
+    let proposal = Proposal {
+        bytes,
+        reason: reason.to_owned(),
+        names,
+    };
+    match reconcile(
+        &journal,
+        RemovalClass::OffloadRawRelease,
+        &[(target, proposal)],
+        now,
+    ) {
+        Ok(register) => emit(
+            serde_json::json!({ "ok": true, "verb": "mark-offload", "marks": register }),
+            EXIT_OK,
+        ),
+        Err(error) => emit(
+            serde_json::json!({ "ok": false, "verb": "mark-offload", "error": error.to_string() }),
+            EXIT_REFUSED,
+        ),
+    }
+}
+
+fn run_remove_marked(args: &Args) -> ExitCode {
+    let journal = match args.required("--journal") {
+        Ok(value) => PathBuf::from(value),
+        Err(error) => return verb_fail("remove-marked", &error),
+    };
+    let today = match parse_today(args) {
+        Ok(value) => value,
+        Err(error) => return verb_fail("remove-marked", &error),
+    };
+    let now = match parse_now(args) {
+        Ok(value) => value,
+        Err(error) => return verb_fail("remove-marked", &error),
+    };
+    let policy = match parse_policy(args) {
+        Ok(value) => value,
+        Err(error) => return verb_fail("remove-marked", &error),
+    };
+    let at = match args.required("--now") {
+        Ok(value) => value,
+        Err(error) => return verb_fail("remove-marked", &error),
+    };
+    let ids = match args
+        .all("--mark")
+        .into_iter()
+        .map(|value| MarkId::parse(value).ok_or_else(|| format!("`{value}` is not a mark ID")))
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(value) => value,
+        Err(error) => return verb_fail("remove-marked", &error),
+    };
+    match remove_marked(&journal, &ids, &policy, today, now, at) {
+        Ok(outcome) => finish(
+            &journal,
+            outcome,
+            serde_json::json!({ "verb": "remove-marked" }),
+        ),
+        Err(error) => emit(
+            serde_json::json!({ "ok": false, "verb": "remove-marked", "error": error }),
+            EXIT_REFUSED,
+        ),
+    }
 }
 
 fn run_prune_logs(args: &Args) -> ExitCode {
@@ -705,7 +1039,7 @@ fn run_prune_logs(args: &Args) -> ExitCode {
     let described = log_plan_json(&journal, &plan, &compactions, None, false);
     if !args.has("--execute") {
         return emit(
-            serde_json::json!({ "ok": true, "executed": false, "plan": described }),
+            serde_json::json!({ "ok": true, "verb": "prune-logs", "executed": false, "plan": described }),
             EXIT_OK,
         );
     }
@@ -730,10 +1064,14 @@ solstone-retention — the retention executor
 
   remove-segments --journal P --at ISO --did ID --segment DAY/STREAM/DIR [--segment ...] \
 [--reason owner|policy]
-  release-raw     --journal P --segment DAY/STREAM/DIR [--segment ...]
+  release-raw     --journal P --at ISO --segment DAY/STREAM/DIR [--segment ...]
   recover         --journal P --at ISO --did ID [--reason owner|policy]
   sweep           --journal P --today YYYY-MM-DD --now ISO [--policy JSON] [--execute true]
   prune-logs      --journal P --today YYYY-MM-DD --days N [--execute true]
+  mark            --journal P --today YYYY-MM-DD --now ISO [--policy JSON]
+  marks           --journal P
+  mark-offload    --journal P --day DAY [--stream STREAM] --dir DIR --file NAME [--file ...] --reason REF --now ISO
+  remove-marked   --journal P --today YYYY-MM-DD --now ISO [--policy JSON] --mark ID [--mark ...]
 
 Always prints one JSON object. Exit 0 all removed, 2 usage, 3 something refused, \
 4 run halted.
@@ -760,6 +1098,10 @@ fn main() -> ExitCode {
         "recover" => run_recover(&args),
         "sweep" => run_sweep(&args),
         "prune-logs" => run_prune_logs(&args),
+        "mark" => run_mark(&args),
+        "marks" => run_marks(&args),
+        "mark-offload" => run_mark_offload(&args),
+        "remove-marked" => run_remove_marked(&args),
         other => fail(&format!("unknown verb `{other}`")),
     }
 }
