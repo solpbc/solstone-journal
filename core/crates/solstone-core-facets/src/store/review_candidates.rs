@@ -64,12 +64,9 @@ pub fn accept_candidate(
     name_key: &str,
 ) -> Result<Option<Value>, FacetReviewCandidateError> {
     modify_candidates(journal_root, |rows| {
-        let Some(row) = rows
+        let row = rows
             .iter_mut()
-            .find(|row| row.get("name_key").and_then(Value::as_str) == Some(name_key))
-        else {
-            return None;
-        };
+            .find(|row| row.get("name_key").and_then(Value::as_str) == Some(name_key))?;
         let object = row
             .as_object_mut()
             .expect("candidate reader returns objects");
@@ -85,12 +82,9 @@ pub fn dismiss_candidate(
     name_key: &str,
 ) -> Result<Option<Value>, FacetReviewCandidateError> {
     modify_candidates(journal_root, |rows| {
-        let Some(row) = rows
+        let row = rows
             .iter_mut()
-            .find(|row| row.get("name_key").and_then(Value::as_str) == Some(name_key))
-        else {
-            return None;
-        };
+            .find(|row| row.get("name_key").and_then(Value::as_str) == Some(name_key))?;
         let object = row
             .as_object_mut()
             .expect("candidate reader returns objects");

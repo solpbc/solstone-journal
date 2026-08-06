@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)]
+
 use std::fs;
 
 use serde_json::json;

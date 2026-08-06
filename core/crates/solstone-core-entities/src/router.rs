@@ -368,6 +368,12 @@ fn resolution_error_response(error: FacetResolutionError) -> Response {
             ReasonCode::ResolvedChoiceEntityBlocked,
             "recorded entity choice is blocked",
         ),
+        FacetResolutionError::Resolution(solstone_core_entity::EntityResolutionError::Read(
+            solstone_core_entity::EntityStoreError::AmbiguityInvalidRow { path, .. },
+        )) => refusal(
+            ReasonCode::EntityAmbiguityCorrupt,
+            format!("ambiguity file {} contains a corrupt row", path.display()),
+        ),
         FacetResolutionError::Facet(error) => {
             refusal(ReasonCode::EntityOperationFailed, error.to_string())
         }
@@ -3225,31 +3231,30 @@ async fn history_route(
                 "restore_available".to_owned(),
                 json!(kind != "merge" && kind != "merge_undo" && seq > latest_merge_seq),
             );
-            if kind == "merge" {
-                if let Some(operation) = object
+            if kind == "merge"
+                && let Some(operation) = object
                     .get("operation")
                     .and_then(serde_json::Value::as_object)
-                {
-                    let merge_id = operation
-                        .get("merge_id")
-                        .and_then(serde_json::Value::as_str)
-                        .map(str::to_owned);
-                    object.insert(
-                        "merge_id".to_owned(),
-                        merge_id
-                            .clone()
-                            .map(serde_json::Value::String)
-                            .unwrap_or(serde_json::Value::Null),
-                    );
-                    object.insert(
-                        "merge_state".to_owned(),
-                        json!(if merge_id.is_some_and(|id| undone_ids.contains(&id)) {
-                            "undone"
-                        } else {
-                            "open"
-                        }),
-                    );
-                }
+            {
+                let merge_id = operation
+                    .get("merge_id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned);
+                object.insert(
+                    "merge_id".to_owned(),
+                    merge_id
+                        .clone()
+                        .map(serde_json::Value::String)
+                        .unwrap_or(serde_json::Value::Null),
+                );
+                object.insert(
+                    "merge_state".to_owned(),
+                    json!(if merge_id.is_some_and(|id| undone_ids.contains(&id)) {
+                        "undone"
+                    } else {
+                        "open"
+                    }),
+                );
             }
         }
         Ok(Some((id, items)))
@@ -3273,13 +3278,17 @@ async fn index(Extension(basis): Extension<AccessBasis>) -> Response {
         .into_response()
 }
 
-fn index_plate_integer(value: Option<&str>, name: &str, default: i64) -> Result<i64, Response> {
+fn index_plate_integer(
+    value: Option<&str>,
+    name: &str,
+    default: i64,
+) -> Result<i64, Box<Response>> {
     match value.map(str::trim).filter(|value| !value.is_empty()) {
         Some(value) => value.parse::<i64>().map_err(|_| {
-            refusal(
+            Box::new(refusal(
                 ReasonCode::InvalidRequestValue,
                 format!("{name} must be an integer"),
-            )
+            ))
         }),
         None => Ok(default),
     }
@@ -3288,7 +3297,7 @@ fn index_plate_integer(value: Option<&str>, name: &str, default: i64) -> Result<
 fn validate_index_plate_pagination(
     route: IndexPlateRoute,
     query: &IndexPlateQuery,
-) -> Result<(), Response> {
+) -> Result<(), Box<Response>> {
     match route {
         IndexPlateRoute::Network => {
             let _limit = index_plate_integer(query.limit.as_deref(), "limit", 25)?;
@@ -3324,7 +3333,7 @@ fn index_plate_response(
         return refusal(ReasonCode::AgentUnavailable, "access denied");
     }
     if let Err(response) = validate_index_plate_pagination(route, &query) {
-        return response;
+        return *response;
     }
     refusal(
         ReasonCode::IndexPlateNotPorted,

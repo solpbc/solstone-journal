@@ -16,6 +16,10 @@ pub static ENTITIES_COPY: LazyLock<serde_json::Value> = LazyLock::new(|| {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReasonCode {
     AgentUnavailable,
+    /// Declared for oracle-vocabulary completeness; the 4 routes that would
+    /// emit it (`/api/network`, `/api/history`, `/api/overview`, `/api/search`)
+    /// serve `IndexPlateNotPorted` instead, so this port never constructs it.
+    #[allow(dead_code)]
     EdgeIndexUnavailable,
     EntityAliasConflict,
     EntityAlreadyExists,
