@@ -16,6 +16,13 @@ struct Tombstone<'a> {
 }
 
 /// Create the terminal tombstone sidecar without overwriting an existing one.
+///
+/// ⚠ **Superseded.** `reason` is hard-coded to a source-scoped delete, and deleting
+/// a source is no longer an operation an owner can request — so this would stamp a
+/// durable, owner-facing claim that outlived the feature it described. It also
+/// cannot serve a staged removal, because `SegmentDir` rejects a leading-dot
+/// component. The retention executor owns tombstone contents now; this goes with
+/// the retired partial-delete path that is its only caller.
 pub fn write_tombstone(
     segment: &SegmentDir,
     deleted_at: &str,

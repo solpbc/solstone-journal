@@ -39,6 +39,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("door", include_str!("../src/door.rs")),
     ("eligibility", include_str!("../src/eligibility.rs")),
     ("receipt", include_str!("../src/receipt.rs")),
+    ("tombstone", include_str!("../src/tombstone.rs")),
 ];
 
 const LIB: &str = include_str!("../src/lib.rs");
