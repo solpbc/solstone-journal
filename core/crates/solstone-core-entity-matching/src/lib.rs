@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 mod batch;
+mod comparison_guard;
 mod matcher;
 mod normalize;
 mod slug;
