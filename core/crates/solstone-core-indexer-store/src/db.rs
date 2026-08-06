@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OpenFlags, params};
 
 use crate::StoreError;
 
@@ -60,6 +60,12 @@ const CREATE_EDGES_DST_INDEX: &str =
 
 pub fn db_path(journal: &Path) -> PathBuf {
     journal.join(INDEX_DIR).join(DB_NAME)
+}
+
+/// Whether an existing journal index can be opened without mutating it.
+pub fn is_index_readable(journal: &Path) -> bool {
+    let path = db_path(journal);
+    path.is_file() && Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).is_ok()
 }
 
 pub fn open_index(journal: &Path) -> Result<Connection, StoreError> {
@@ -225,6 +231,17 @@ mod tests {
             .expect("time should be available")
             .as_nanos();
         std::env::temp_dir().join(format!("solstone-core-indexer-store-{name}-{stamp}"))
+    }
+
+    #[test]
+    fn index_readability_does_not_create_a_missing_database() {
+        let root = temp_root("index-readable");
+        assert!(!is_index_readable(&root));
+        assert!(!root.join(INDEX_DIR).exists());
+
+        open_index(&root).expect("create index");
+        assert!(is_index_readable(&root));
+        fs::remove_dir_all(root).expect("remove test index");
     }
 
     fn table_schema_json(conn: &Connection, table: &str) -> serde_json::Value {

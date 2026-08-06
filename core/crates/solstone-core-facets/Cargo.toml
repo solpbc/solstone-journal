@@ -16,6 +16,7 @@ serde.workspace = true
 serde_json.workspace = true
 solstone-core-entity.workspace = true
 solstone-core-entity-matching.workspace = true
+solstone-core-indexer-store.workspace = true
 solstone-core-journal-io.workspace = true
 
 [dev-dependencies]

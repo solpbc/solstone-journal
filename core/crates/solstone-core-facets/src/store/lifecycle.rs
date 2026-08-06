@@ -227,7 +227,7 @@ pub fn delete_journal_entity(
             entity_id: entity_id.to_owned(),
         });
     }
-    let references = scan_entity_references(journal_root, entity_id, &entity_dir)?;
+    let references = scan_entity_references(journal_root, entity_id, &entity_dir, None)?;
     let mut facets_deleted = Vec::new();
     for entry in list_dir_entries(&facets_dir(journal_root)?)
         .map_err(FacetStoreError::from)?

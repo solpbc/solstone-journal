@@ -419,9 +419,13 @@ fn reference_breakdown_reports_each_surface_independently() {
         "speakers/review-candidates.jsonl",
         "{\"source_id\":\"target\"}\n",
     );
-    let counts =
-        crate::store::reference_scan::scan_entity_references(temporary.path(), "target", "target")
-            .unwrap();
+    let counts = crate::store::reference_scan::scan_entity_references(
+        temporary.path(),
+        "target",
+        "target",
+        None,
+    )
+    .unwrap();
     assert_eq!(counts.unrecognized_file, 1);
     assert_eq!(counts.facet_relationship, 1);
     assert_eq!(counts.observation, 1);
@@ -607,7 +611,7 @@ fn scan_synthetic_entity_reference(
     let temporary = TempDir::new();
     write_journal_entity(temporary.path(), "target", Some("target"));
     write_text(temporary.path(), relative, contents);
-    crate::store::reference_scan::scan_entity_references(temporary.path(), "target", "target")
+    crate::store::reference_scan::scan_entity_references(temporary.path(), "target", "target", None)
         .unwrap()
 }
 

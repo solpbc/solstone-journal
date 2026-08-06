@@ -72,6 +72,7 @@ fn lifecycle_fixture_scans_python_writer_backed_inputs() {
         temporary.path(),
         &fixture.target_entity_id,
         &fixture.target_entity_id,
+        None,
     )
     .unwrap();
     assert_eq!(

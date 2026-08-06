@@ -42,12 +42,13 @@ pub(crate) fn scan_entity_references(
     journal_root: &Path,
     entity_id: &str,
     entity_dir: &str,
+    operation_id: Option<&str>,
 ) -> Result<EntityReferenceBreakdown, FacetStoreError> {
     let mut breakdown = EntityReferenceBreakdown::default();
     count_unrecognized_files(journal_root, entity_dir, &mut breakdown)?;
     count_facet_relationships_and_observations(journal_root, entity_id, &mut breakdown)?;
     count_activities(journal_root, entity_id, &mut breakdown)?;
-    count_segment_speakers(journal_root, entity_id, &mut breakdown)?;
+    count_segment_speakers(journal_root, entity_id, operation_id, &mut breakdown)?;
     count_aka_crossrefs(journal_root, entity_id, &mut breakdown)?;
     count_speaker_candidates(journal_root, entity_id, &mut breakdown)?;
     // Fully-restored identify operations are not folded here: faithfully proving
@@ -70,7 +71,11 @@ pub(crate) fn scan_entity_references(
         "speakers/identify-operations.jsonl",
         entity_id,
         &mut breakdown,
-        identify_operation_references,
+        |row, id| {
+            !operation_id.is_some_and(|operation_id| {
+                row.get("operation_id").and_then(Value::as_str) == Some(operation_id)
+            }) && identify_operation_references(row, id)
+        },
         |counts| &mut counts.identify_operation,
     )?;
     count_jsonl_surface(
@@ -122,6 +127,9 @@ pub(crate) fn scan_entity_references(
         value_contains,
         |counts| &mut counts.dismissal,
     )?;
+    if operation_id.is_some() && !solstone_core_indexer_store::db::is_index_readable(journal_root) {
+        breakdown.unreadable += 1;
+    }
     Ok(breakdown)
 }
 
@@ -225,6 +233,7 @@ fn count_activities(
 fn count_segment_speakers(
     root: &Path,
     entity_id: &str,
+    operation_id: Option<&str>,
     counts: &mut EntityReferenceBreakdown,
 ) -> Result<(), FacetStoreError> {
     let chronicle = contained_path(root, "chronicle")?;
@@ -245,6 +254,7 @@ fn count_segment_speakers(
                 count_segment_corrections(
                     &talents.join("speaker_corrections.json"),
                     entity_id,
+                    operation_id,
                     counts,
                 );
             }
@@ -268,7 +278,12 @@ fn count_segment_labels(path: &Path, entity_id: &str, counts: &mut EntityReferen
     }
 }
 
-fn count_segment_corrections(path: &Path, entity_id: &str, counts: &mut EntityReferenceBreakdown) {
+fn count_segment_corrections(
+    path: &Path,
+    entity_id: &str,
+    operation_id: Option<&str>,
+    counts: &mut EntityReferenceBreakdown,
+) {
     if let Some(value) = json_object(path, counts) {
         for correction in value
             .get("corrections")
@@ -276,6 +291,11 @@ fn count_segment_corrections(path: &Path, entity_id: &str, counts: &mut EntityRe
             .into_iter()
             .flatten()
         {
+            if operation_id.is_some_and(|operation_id| {
+                correction.get("operation_id").and_then(Value::as_str) == Some(operation_id)
+            }) {
+                continue;
+            }
             if correction.get("original_speaker").and_then(Value::as_str) == Some(entity_id)
                 || correction.get("corrected_speaker").and_then(Value::as_str) == Some(entity_id)
             {
