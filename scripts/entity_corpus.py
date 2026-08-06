@@ -1492,6 +1492,171 @@ def build_entity_lifecycle_fixture() -> dict[str, Any]:
     }
 
 
+def build_voiceprint_operations_fixture() -> dict[str, Any]:
+    """Capture voiceprint operation inputs from their owning Python writers."""
+    import numpy as np
+
+    from solstone.think.entities.journal import save_journal_entity
+    from solstone.think.entities.voiceprints import (
+        rewrite_voiceprint_metadata,
+        save_voiceprints_batch,
+    )
+
+    entity_id = "voiceprint_fixture"
+
+    def embedding(value: float) -> np.ndarray:
+        vector = np.zeros(256, dtype=np.float32)
+        vector[0] = value
+        return vector
+
+    null_key = {
+        "day": "20260805",
+        "segment_key": "null-pair",
+        "source": None,
+        "sentence_id": 1,
+        "note": "explicit-null",
+    }
+    absent_key = {
+        "day": "20260805",
+        "segment_key": "null-pair",
+        "sentence_id": 1,
+        "note": "field-absent",
+    }
+    width_removal = {
+        "day": "20260805",
+        "segment_key": "width",
+        "source": "mic_audio",
+        "sentence_id": 2,
+        "long_note": "this metadata row is intentionally much longer than survivors",
+    }
+    survivor = {
+        "day": "20260805",
+        "segment_key": "survivor",
+        "source": "mic_audio",
+        "sentence_id": 3,
+        "note": "short",
+    }
+    numeric = {
+        "day": "20260805",
+        "segment_key": "numeric",
+        "source": "mic_audio",
+        "sentence_id": 4,
+        "rank": 1,
+    }
+    duplicate_int = {
+        "day": "20260805",
+        "segment_key": "duplicate",
+        "source": "mic_audio",
+        "sentence_id": 5,
+        "rank": 7,
+    }
+    duplicate_float = {
+        "day": "20260805",
+        "segment_key": "duplicate",
+        "source": "mic_audio",
+        "sentence_id": 5.0,
+        "rank": 7.0,
+    }
+    with _temp_journal() as root:
+        save_journal_entity({"id": entity_id, "name": "Voiceprint Fixture", "type": "Person"})
+        save_voiceprints_batch(
+            entity_id,
+            [
+                (embedding(1.0), null_key),
+                (embedding(2.0), absent_key),
+                (embedding(3.0), width_removal),
+                (embedding(4.0), survivor),
+                (embedding(5.0), numeric),
+                (embedding(6.0), duplicate_int),
+                (embedding(7.0), duplicate_float),
+            ],
+        )
+
+        def stamp_writer_probe(rows: list[dict]) -> int:
+            rows[3]["writer_rewrite_probe"] = True
+            return 1
+
+        assert rewrite_voiceprint_metadata(entity_id, stamp_writer_probe) == 1
+        archive_path = root / "entities" / entity_id / "voiceprints.npz"
+        with np.load(archive_path, allow_pickle=False) as archive:
+            rows = [
+                {
+                    "embedding": embedding.tolist(),
+                    "metadata": json.loads(str(metadata)),
+                }
+                for embedding, metadata in zip(archive["embeddings"], archive["metadata"])
+            ]
+
+    numeric_removal = {
+        "key": {
+            "day": "20260805",
+            "segment_key": "numeric",
+            "source": "mic_audio",
+            "sentence_id": 4.0,
+        },
+        "expected_metadata": {
+            **numeric,
+            "sentence_id": 4.0,
+            "rank": 1.0,
+        },
+    }
+    duplicate_removal = {
+        "key": {
+            "day": "20260805",
+            "segment_key": "duplicate",
+            "source": "mic_audio",
+            "sentence_id": 5.0,
+        },
+        "expected_metadata": duplicate_float,
+    }
+    mismatch_removal = {
+        "key": {
+            "day": "20260805",
+            "segment_key": "survivor",
+            "source": "mic_audio",
+            "sentence_id": 3,
+        },
+        "expected_metadata": {**survivor, "note": "different"},
+    }
+    missing_removal = {
+        "key": {
+            "day": "20260805",
+            "segment_key": "missing",
+            "source": "mic_audio",
+            "sentence_id": 99,
+        },
+        "expected_metadata": {"missing": True},
+    }
+    return {
+        "entity_id": entity_id,
+        "rows": rows,
+        "metadata": {
+            "null_key": null_key,
+            "absent_key": absent_key,
+            "width_removal": width_removal,
+            "survivor": {**survivor, "writer_rewrite_probe": True},
+            "numeric": numeric,
+            "duplicate_int": duplicate_int,
+            "duplicate_float": duplicate_float,
+        },
+        "removals": {
+            "numeric": numeric_removal,
+            "duplicate": duplicate_removal,
+            "mismatch": mismatch_removal,
+            "missing": missing_removal,
+            "width": {
+                "key": {
+                    "day": "20260805",
+                    "segment_key": "width",
+                    "source": "mic_audio",
+                    "sentence_id": 2,
+                },
+                "expected_metadata": width_removal,
+            },
+        },
+    }
+
+
 def _lifecycle_identify_prepared_event(
     ledger: Any,
     target_entity_id: str,

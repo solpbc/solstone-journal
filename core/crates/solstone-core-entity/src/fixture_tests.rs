@@ -48,6 +48,8 @@ const JOURNAL_IO_ALLOWED: &[&str] = &[
     "StagedDirOptions",
     "StagedWriteError",
     "remove_dir_all",
+    "remove_file",
+    "Removed",
     "append_jsonl",
     "capture_snapshot",
     "restore_snapshot",
@@ -156,6 +158,7 @@ fn collect_production_sources(directory: &Path, sources: &mut Vec<PathBuf>) {
                         | "test_support.rs"
                         | "trust_lock_tests.rs"
                         | "undo_tests.rs"
+                        | "voiceprint_tests.rs"
                 )
             )
         {
