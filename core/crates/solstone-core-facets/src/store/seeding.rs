@@ -13,8 +13,8 @@ use serde_json::{Map, Value, json};
 use solstone_core_entity::{
     EntityLifecycleError, EntityOperationContext, EntityOperationKind, EntityResolutionEntity,
     EntityResolutionError, EntityResolutionOutcome, EntityStoreError, EntityWriteError,
-    create_journal_entity, read_entity_identity, read_identity_map, record_entity_resolution,
-    save_entity_identity,
+    create_journal_entity, hold_entity_trust_lock, read_entity_identity, read_identity_map,
+    record_entity_resolution, save_entity_identity,
 };
 use solstone_core_entity_matching::{EntityNameCandidate, entity_slug, find_entity_by_email};
 
@@ -22,9 +22,8 @@ use super::declaration::read_facet_declaration;
 use super::error::{
     FacetEntityWriteError, FacetStoreError, FacetWriteError, ObservationWriteError,
 };
-use super::observations::{
-    ObservationEntityResolution, add_observation, load_observations, resolve_observation_entity_dir,
-};
+use super::facet_entities::list_scoped_facet_entities;
+use super::observations::{add_observation, load_observations};
 use super::write::{create_facet, save_facet_entity_link};
 
 const FUZZY_THRESHOLD: f64 = 90.0;
@@ -88,6 +87,7 @@ pub enum SeedEntitiesError {
     FacetWrite(FacetWriteError),
     FacetEntityWrite(FacetEntityWriteError),
     ObservationWrite(ObservationWriteError),
+    ResolvedEntityVanished { entity_id: String },
 }
 
 impl fmt::Display for SeedEntitiesError {
@@ -101,6 +101,12 @@ impl fmt::Display for SeedEntitiesError {
             Self::FacetWrite(error) => error.fmt(formatter),
             Self::FacetEntityWrite(error) => error.fmt(formatter),
             Self::ObservationWrite(error) => error.fmt(formatter),
+            Self::ResolvedEntityVanished { entity_id } => {
+                write!(
+                    formatter,
+                    "resolved entity vanished before email merge: {entity_id}"
+                )
+            }
         }
     }
 }
@@ -116,6 +122,7 @@ impl Error for SeedEntitiesError {
             Self::FacetWrite(error) => Some(error),
             Self::FacetEntityWrite(error) => Some(error),
             Self::ObservationWrite(error) => Some(error),
+            Self::ResolvedEntityVanished { .. } => None,
         }
     }
 }
@@ -413,13 +420,18 @@ fn merge_email(
     {
         return Ok(());
     }
+    let _trust = hold_entity_trust_lock(journal_root).map_err(EntityLifecycleError::from)?;
     let identity_map = read_identity_map(journal_root)?;
-    let entity_dir = identity_map
-        .resolved
-        .get(entity_id)
-        .expect("resolved seed candidate remains in the identity map");
-    let identity = read_entity_identity(journal_root, entity_dir)?
-        .expect("resolved seed candidate has an identity");
+    let Some(entity_dir) = identity_map.resolved.get(entity_id) else {
+        return Err(SeedEntitiesError::ResolvedEntityVanished {
+            entity_id: entity_id.to_owned(),
+        });
+    };
+    let Some(identity) = read_entity_identity(journal_root, entity_dir)? else {
+        return Err(SeedEntitiesError::ResolvedEntityVanished {
+            entity_id: entity_id.to_owned(),
+        });
+    };
     let mut updated = identity.value().clone();
     let mut emails: BTreeSet<String> = string_array(&updated, "emails")
         .into_iter()
@@ -465,22 +477,23 @@ fn ensure_facet_relationship(
     entity_id: &str,
     name: &str,
 ) -> Result<String, SeedEntitiesError> {
-    match resolve_observation_entity_dir(journal_root, facet_dir, entity_id)? {
-        ObservationEntityResolution::Resolved { entity_dir } => Ok(entity_dir),
-        ObservationEntityResolution::NoSuchEntity => {
-            let relationship_dir = entity_slug(name);
-            let mut relationship = Map::new();
-            relationship.insert("attached_at".to_owned(), Value::String(now_iso()));
-            save_facet_entity_link(
-                journal_root,
-                facet_dir,
-                &relationship_dir,
-                entity_id,
-                &relationship,
-            )?;
-            Ok(relationship_dir)
-        }
+    if let Some(entity) = list_scoped_facet_entities(journal_root, facet_dir, true, true)?
+        .into_iter()
+        .find(|entity| entity.entity_id == entity_id)
+    {
+        return Ok(entity.relationship_dir);
     }
+    let relationship_dir = entity_slug(name);
+    let mut relationship = Map::new();
+    relationship.insert("attached_at".to_owned(), Value::String(now_iso()));
+    save_facet_entity_link(
+        journal_root,
+        facet_dir,
+        &relationship_dir,
+        entity_id,
+        &relationship,
+    )?;
+    Ok(relationship_dir)
 }
 
 fn normal_outcome(entity_id: &str, outcome: SeedEntityBaseOutcome) -> SeedEntityOutcome {
@@ -596,7 +609,7 @@ fn forced_observation_timeout() -> ObservationWriteError {
 mod tests {
     use super::*;
     use crate::store_tests::TempDir;
-    use solstone_core_entity::{create_journal_entity, read_identity_map};
+    use solstone_core_entity::{create_journal_entity, delete_entity_directory, read_identity_map};
 
     fn input(name: &str) -> SeedEntityInput {
         SeedEntityInput {
@@ -773,5 +786,82 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn seed_entities_reuses_relationships_by_entity_id_when_directory_labels_diverge() {
+        let temporary = TempDir::new();
+        create_entity(temporary.path(), "alice", "Alice Chen");
+        std::fs::rename(
+            temporary.path().join("entities/alice"),
+            temporary.path().join("entities/legacy-alice-directory"),
+        )
+        .unwrap();
+        create_facet(temporary.path(), "work", "Work", "", "#667eea", "📦").unwrap();
+        save_facet_entity_link(
+            temporary.path(),
+            "work",
+            "legacy-alice-label",
+            "alice",
+            &Map::new(),
+        )
+        .unwrap();
+        let mut observed = input("Alice Chen");
+        observed.observations = vec!["already linked".to_owned()];
+
+        seed_entities(temporary.path(), "work", "20260806", &[observed]).unwrap();
+
+        let relationships =
+            list_scoped_facet_entities(temporary.path(), "work", true, true).unwrap();
+        assert_eq!(relationships.len(), 1);
+        assert_eq!(relationships[0].entity_id, "alice");
+        assert_eq!(relationships[0].relationship_dir, "legacy-alice-label");
+        assert_eq!(
+            load_observations(temporary.path(), "work", "legacy-alice-label")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            load_observations(temporary.path(), "work", "alice_chen")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn merge_email_reports_a_resolved_entity_that_vanished_before_the_merge() {
+        let temporary = TempDir::new();
+        create_entity(temporary.path(), "alice", "Alice Chen");
+        delete_entity_directory(temporary.path(), "alice").unwrap();
+        let mut resolution_entity = EntityResolutionEntity {
+            id: Some("alice".to_owned()),
+            name: "Alice Chen".to_owned(),
+            aka: Vec::new(),
+            emails: Vec::new(),
+            blocked: false,
+        };
+        let mut candidate = EntityNameCandidate {
+            id: Some("alice".to_owned()),
+            name: "Alice Chen".to_owned(),
+            aka: Vec::new(),
+            emails: Vec::new(),
+        };
+
+        let error = merge_email(
+            temporary.path(),
+            "alice",
+            &mut resolution_entity,
+            &mut candidate,
+            "alice@example.com",
+            "work",
+            "20260806",
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            SeedEntitiesError::ResolvedEntityVanished { entity_id } if entity_id == "alice"
+        ));
     }
 }
