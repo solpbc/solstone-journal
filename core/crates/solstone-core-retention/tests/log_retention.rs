@@ -204,7 +204,7 @@ fn a_live_talent_run_log_is_exempt_however_old() {
     bed.file("talents/scribe/1767225600000.jsonl", b"old run");
     bed.file("talents/scribe/1767225600000_active.jsonl", b"live run");
     // The day-index class sits one level up, dated YYYYMMDD.
-    bed.file("talents/20260101.jsonl", b"old index");
+    bed.file("talents/20260101.jsonl", b"{\"ts\":1767225600000}\n");
 
     let built = bed.plan(7, "2026-08-05");
     assert_eq!(
@@ -229,7 +229,7 @@ fn a_live_talent_run_log_is_exempt_however_old() {
 #[test]
 fn the_talent_classes_do_not_take_each_others_entries() {
     let bed = Bed::new("talent-levels");
-    bed.file("talents/20260101.jsonl", b"index");
+    bed.file("talents/20260101.jsonl", b"{\"ts\":1767225600000}\n");
     bed.file("talents/scribe/1767225600000.jsonl", b"run");
 
     let built = bed.plan(7, "2026-08-05");
@@ -241,6 +241,36 @@ fn the_talent_classes_do_not_take_each_others_entries() {
         built.by_class("talent_run_logs")[0].rel(),
         "talents/scribe/1767225600000.jsonl"
     );
+    teardown(&bed);
+}
+
+/// An old filename is only a first filter: every index row must also be old.
+#[test]
+fn talent_day_indexes_require_wholly_old_valid_rows() {
+    let bed = Bed::new("talent-day-index-content");
+    bed.file(
+        "talents/20260101.jsonl",
+        b"{\"ts\":1767225600000}\n{\"ts\":1767312000000}\n",
+    );
+    bed.file("talents/20260102.jsonl", b"{\"ts\":1786492800000}\n");
+    bed.file("talents/20260103.jsonl", b"{not json}\n");
+
+    let built = bed.plan(7, "2026-08-05");
+    assert_eq!(
+        built
+            .by_class("talent_day_index")
+            .iter()
+            .map(|target| target.rel())
+            .collect::<Vec<&str>>(),
+        vec!["talents/20260101.jsonl"],
+        "only the wholly old index is prunable: {built:?}"
+    );
+    assert!(built.retained.iter().any(|kept| {
+        kept.rel == "talents/20260102.jsonl" && kept.reason == Kept::ContentNotFullyOld
+    }));
+    assert!(built.retained.iter().any(|kept| {
+        kept.rel == "talents/20260103.jsonl" && matches!(kept.reason, Kept::ContentMalformed { .. })
+    }));
     teardown(&bed);
 }
 
@@ -281,6 +311,53 @@ fn the_cache_class_removes_directories_by_mtime() {
             .exists(),
         "the recent one survives"
     );
+    teardown(&bed);
+}
+
+/// A contained directory removal refuses a cache symlink rather than following it.
+#[test]
+fn the_cache_class_does_not_follow_a_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let bed = Bed::new("cache-symlink");
+    let external = std::env::temp_dir().join(format!(
+        "retention-cache-target-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&external).expect("external dir");
+    let external_file = external.join("kept.txt");
+    fs::write(&external_file, b"outside the journal").expect("external file");
+    filetime_set(
+        &external,
+        std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_577_836_800),
+    );
+    let link = bed.root.join(".cache/cogitate-history/session-link");
+    fs::create_dir_all(link.parent().expect("cache root")).expect("cache root");
+    symlink(&external, &link).expect("cache link");
+
+    let built = bed.plan(7, "2026-08-05");
+    let mine = built.by_class("cogitate_history_cache");
+    assert!(mine.is_empty(), "{built:?}");
+    assert!(built.retained.iter().any(|kept| {
+        kept.rel == ".cache/cogitate-history/session-link" && kept.reason == Kept::NotAMatch
+    }));
+    assert!(
+        solstone_core_journal_io::removal::remove_dir_all(
+            &bed.root,
+            ".cache/cogitate-history/session-link",
+        )
+        .is_err(),
+        "the contained removal rejects a link that resolves outside the journal"
+    );
+    assert!(link.exists(), "the link is retained rather than followed");
+    assert!(external.is_dir(), "the external directory survives");
+    assert!(external_file.is_file(), "the external file survives");
+
+    fs::remove_dir_all(&external).expect("external teardown");
     teardown(&bed);
 }
 
@@ -410,7 +487,7 @@ fn every_class_in_the_table_can_produce_a_target() {
     let bed = Bed::new("every-class");
     bed.file("chronicle/20260101/health/x.log", b"a");
     bed.file("talents/scribe/1767225600000.jsonl", b"a");
-    bed.file("talents/20260101.jsonl", b"a");
+    bed.file("talents/20260101.jsonl", b"{\"ts\":1767225600000}\n");
     let cache = bed.dir(".cache/cogitate-history/session");
     filetime_set(
         &cache,

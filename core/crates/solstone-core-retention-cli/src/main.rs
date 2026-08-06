@@ -40,6 +40,7 @@
 //! forbids itself the clock so a verdict is reproducible from a receipt; a binary
 //! that silently supplied `now` would hand that property back.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -47,10 +48,13 @@ use chrono::{DateTime, NaiveDate, Utc};
 use solstone_core_indexer_store::db::prune_by_paths;
 use solstone_core_retention::content::{ClosedHandlerSet, JournalMedia};
 use solstone_core_retention::door::{
-    notify_index, recover, release_raw, remove_logs, remove_segments,
+    compact_log, notify_index, recover, release_raw, remove_logs, remove_segments,
 };
 use solstone_core_retention::eligibility::{RawRelease, resolve};
-use solstone_core_retention::logs::{LogPolicy, plan as plan_logs};
+use solstone_core_retention::logs::{
+    CLASSES, COMPACTABLE, Compaction, EntryKind, Kept, LogPlan, LogPolicy, day_key,
+    plan as plan_logs, plan_compactions,
+};
 use solstone_core_retention::notify::{IndexNotify, NotifyError, PruneCounts};
 use solstone_core_retention::policy::Policy;
 use solstone_core_retention::receipt::{Outcome, RemovedPath, Target};
@@ -67,6 +71,51 @@ const EXIT_USAGE: u8 = 2;
 const EXIT_REFUSED: u8 = 3;
 /// The run halted part way. Some targets were never reached.
 const EXIT_HALTED: u8 = 4;
+
+#[derive(Clone, serde::Serialize)]
+struct PruneError {
+    class: String,
+    path: String,
+    day: Option<String>,
+    reason: String,
+    hint: Option<String>,
+}
+
+#[derive(Default, serde::Serialize)]
+struct ClassCounts {
+    planned_files: u64,
+    planned_dirs: u64,
+    planned_bytes: u64,
+    removed_files: u64,
+    removed_dirs: u64,
+    removed_bytes: u64,
+    skipped: u64,
+    errors: Vec<PruneError>,
+}
+
+#[derive(Default, serde::Serialize)]
+struct DayCounts {
+    planned_files: u64,
+    planned_dirs: u64,
+    planned_bytes: u64,
+    removed_files: u64,
+    removed_dirs: u64,
+    removed_bytes: u64,
+}
+
+#[derive(serde::Serialize)]
+struct CompactionCounts {
+    exists: bool,
+    planned: bool,
+    rewritten: bool,
+    lines_total: usize,
+    lines_dropped: usize,
+    lines_kept: usize,
+    undateable_kept: usize,
+    bytes_before: u64,
+    bytes_after: u64,
+    errors: Vec<PruneError>,
+}
 
 /// The real search index, behind the boundary the executor addresses it through.
 struct RealIndex<'a> {
@@ -388,6 +437,180 @@ fn plan_json(plan: &Plan) -> serde_json::Value {
     })
 }
 
+fn count_target(class: &mut ClassCounts, day: &mut DayCounts, kind: EntryKind, bytes: u64) {
+    match kind {
+        EntryKind::File => {
+            class.planned_files = class.planned_files.saturating_add(1);
+            day.planned_files = day.planned_files.saturating_add(1);
+        }
+        EntryKind::Directory => {
+            class.planned_dirs = class.planned_dirs.saturating_add(1);
+            day.planned_dirs = day.planned_dirs.saturating_add(1);
+        }
+    }
+    class.planned_bytes = class.planned_bytes.saturating_add(bytes);
+    day.planned_bytes = day.planned_bytes.saturating_add(bytes);
+}
+
+fn count_removed(class: &mut ClassCounts, day: &mut DayCounts, kind: EntryKind, bytes: u64) {
+    match kind {
+        EntryKind::File => {
+            class.removed_files = class.removed_files.saturating_add(1);
+            day.removed_files = day.removed_files.saturating_add(1);
+        }
+        EntryKind::Directory => {
+            class.removed_dirs = class.removed_dirs.saturating_add(1);
+            day.removed_dirs = day.removed_dirs.saturating_add(1);
+        }
+    }
+    class.removed_bytes = class.removed_bytes.saturating_add(bytes);
+    day.removed_bytes = day.removed_bytes.saturating_add(bytes);
+}
+
+fn add_prune_error(
+    classes: &mut BTreeMap<String, ClassCounts>,
+    errors: &mut Vec<PruneError>,
+    class: &str,
+    path: &str,
+    day: Option<String>,
+    reason: String,
+) {
+    let error = PruneError {
+        class: class.to_owned(),
+        path: path.to_owned(),
+        day,
+        reason,
+        hint: None,
+    };
+    if let Some(counts) = classes.get_mut(class) {
+        counts.skipped = counts.skipped.saturating_add(1);
+        counts.errors.push(error.clone());
+    }
+    errors.push(error);
+}
+
+/// The log plan and its line-compaction companions in the executor's stable receipt.
+///
+/// The bridge must not recreate the class table or date parser, so both the planned and
+/// completed totals stay beside the plan that made the decision.
+fn log_plan_json(
+    journal: &Path,
+    plan: &LogPlan,
+    compactions: &[Compaction],
+    outcome: Option<&Outcome>,
+    executed: bool,
+) -> serde_json::Value {
+    let mut classes: BTreeMap<String, ClassCounts> = CLASSES
+        .iter()
+        .map(|class| (class.name.to_owned(), ClassCounts::default()))
+        .collect();
+    let mut days: BTreeMap<String, DayCounts> = BTreeMap::new();
+    let mut errors = Vec::new();
+    let failures: BTreeMap<String, String> = outcome
+        .into_iter()
+        .flat_map(|done| done.targets.iter())
+        .flat_map(|target| target.not_removed.iter())
+        .map(|failure| (failure.entry.clone(), failure.reason.clone()))
+        .collect();
+
+    for target in &plan.prunable {
+        let day_name = day_key(target.day());
+        let Some(class) = classes.get_mut(target.class()) else {
+            continue;
+        };
+        let day = days.entry(day_name).or_default();
+        count_target(class, day, target.kind(), target.bytes());
+        if executed {
+            if let Some(reason) = failures.get(target.rel()) {
+                add_prune_error(
+                    &mut classes,
+                    &mut errors,
+                    target.class(),
+                    target.rel(),
+                    Some(day_key(target.day())),
+                    reason.clone(),
+                );
+            } else if let (Some(class), Some(day)) = (
+                classes.get_mut(target.class()),
+                days.get_mut(&day_key(target.day())),
+            ) {
+                count_removed(class, day, target.kind(), target.bytes());
+            }
+        }
+    }
+
+    for retained in &plan.retained {
+        let (day, reason) = match &retained.reason {
+            Kept::Undateable => (
+                None,
+                Some("the entry's retention date could not be determined".to_owned()),
+            ),
+            Kept::ContentMalformed { day, detail } => (
+                Some(day_key(*day)),
+                Some(format!("malformed talent day-index row: {detail}")),
+            ),
+            Kept::TooYoung(_) | Kept::Exempt | Kept::NotAMatch | Kept::ContentNotFullyOld => {
+                (None, None)
+            }
+        };
+        if let Some(reason) = reason {
+            add_prune_error(
+                &mut classes,
+                &mut errors,
+                retained.class,
+                &retained.rel,
+                day,
+                reason,
+            );
+        }
+    }
+
+    let compaction_rows = COMPACTABLE
+        .iter()
+        .map(|log| {
+            let planned = compactions
+                .iter()
+                .find(|planned| planned.name() == log.name);
+            let path = journal.join(log.rel);
+            let failure = failures.get(log.rel).map(|reason| PruneError {
+                class: log.name.to_owned(),
+                path: log.rel.to_owned(),
+                day: None,
+                reason: reason.clone(),
+                hint: None,
+            });
+            if let Some(error) = &failure {
+                errors.push(error.clone());
+            }
+            let counts = CompactionCounts {
+                exists: path.exists(),
+                planned: planned.is_some(),
+                rewritten: executed && planned.is_some() && failure.is_none(),
+                lines_total: planned.map_or(0, |item| item.lines_total),
+                lines_dropped: planned.map_or(0, |item| item.lines_dropped),
+                lines_kept: planned.map_or(0, Compaction::lines_kept),
+                undateable_kept: planned.map_or(0, |item| item.undateable_kept),
+                bytes_before: planned.map_or(0, |item| item.bytes_before),
+                bytes_after: planned.map_or(0, |item| item.bytes_after),
+                errors: failure.into_iter().collect(),
+            };
+            (log.name, counts)
+        })
+        .collect::<BTreeMap<&str, CompactionCounts>>();
+
+    serde_json::json!({
+        "examined": plan.examined(),
+        "prunable": plan.prunable.len(),
+        "bytes": plan.bytes(),
+        "retained": plan.retained.len(),
+        "absent_classes": plan.absent_classes,
+        "by_class": classes,
+        "by_day": days,
+        "errors": errors,
+        "compactions": compaction_rows,
+    })
+}
+
 fn run_sweep(args: &Args) -> ExitCode {
     let journal = match args.required("--journal") {
         Ok(value) => PathBuf::from(value),
@@ -469,20 +692,23 @@ fn run_prune_logs(args: &Args) -> ExitCode {
         enabled: true,
     };
     let plan = plan_logs(&journal, &policy, today);
-    let described = serde_json::json!({
-        "examined": plan.examined(),
-        "prunable": plan.prunable.len(),
-        "bytes": plan.bytes(),
-        "retained": plan.retained.len(),
-        "absent_classes": plan.absent_classes,
-    });
+    let compactions = plan_compactions(&journal, &policy, today);
+    let described = log_plan_json(&journal, &plan, &compactions, None, false);
     if !args.has("--execute") {
         return emit(
             serde_json::json!({ "ok": true, "executed": false, "plan": described }),
             EXIT_OK,
         );
     }
-    let outcome = remove_logs(&journal, &plan.prunable);
+    let mut outcome = remove_logs(&journal, &plan.prunable);
+    for compaction in &compactions {
+        let compacted = compact_log(&journal, compaction);
+        outcome.targets.extend(compacted.targets);
+        if outcome.halted.is_none() {
+            outcome.halted = compacted.halted;
+        }
+    }
+    let described = log_plan_json(&journal, &plan, &compactions, Some(&outcome), true);
     finish(
         &journal,
         outcome,

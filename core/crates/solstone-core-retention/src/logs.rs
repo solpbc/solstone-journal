@@ -138,6 +138,9 @@ pub const CLASSES: &[Class] = &[
         extensions: &[],
         dated_by: DatedBy::Mtime,
         entry: EntryKind::Directory,
+        // ⚠ A cache session may be a symlink, but the contained removal door
+        // resolves and refuses such a link instead of unlinking it. Keep it out
+        // of this class until the door can offer an explicit link-only primitive.
         exempt_stem_suffixes: &[],
     },
     Class {
@@ -249,6 +252,10 @@ pub enum Kept {
     Undateable,
     /// Not the kind of entry this class removes, or not a matching extension.
     NotAMatch,
+    /// An old-named talent index had no rows, or at least one row was still recent.
+    ContentNotFullyOld,
+    /// A talent index could not be read as wholly valid dated JSONL.
+    ContentMalformed { day: NaiveDate, detail: String },
 }
 
 /// One examined-and-kept entry.
@@ -329,6 +336,46 @@ fn split_name(name: &str) -> (&str, Option<&str>) {
         Some((stem, extension)) if !stem.is_empty() => (stem, Some(extension)),
         _ => (name, None),
     }
+}
+
+/// Whether an old-named talent day index is safe to remove.
+///
+/// An index is a denormalized view across talent runs, so its filename is only a
+/// first filter. Every nonblank row must carry an epoch-millisecond `ts`, and every
+/// row's UTC day must be outside the window before the index can go.
+fn talent_day_index_is_fully_old(path: &Path, cutoff: NaiveDate) -> Result<bool, String> {
+    let contents = std::fs::read_to_string(path)
+        .map_err(|error| format!("could not read talent day-index: {error}"))?;
+    let mut rows = 0usize;
+    for (number, line) in contents.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row: serde_json::Value = serde_json::from_str(line)
+            .map_err(|_| format!("line {}: malformed JSON", number.saturating_add(1)))?;
+        let object = row
+            .as_object()
+            .ok_or_else(|| format!("line {}: non-object row", number.saturating_add(1)))?;
+        let timestamp = object
+            .get("ts")
+            .and_then(serde_json::Value::as_i64)
+            .ok_or_else(|| {
+                format!(
+                    "line {}: missing or non-integer ts",
+                    number.saturating_add(1)
+                )
+            })?;
+        let Some(row_day) =
+            DateTime::from_timestamp_millis(timestamp).map(|when| when.date_naive())
+        else {
+            return Err(format!("line {}: invalid ts", number.saturating_add(1)));
+        };
+        rows = rows.saturating_add(1);
+        if row_day >= cutoff {
+            return Ok(false);
+        }
+    }
+    Ok(rows > 0)
 }
 
 /// Every directory a class's entries are found in, with the expanded component.
@@ -455,6 +502,21 @@ pub fn plan(journal: &Path, policy: &LogPolicy, today: NaiveDate) -> LogPlan {
                 if day >= cutoff {
                     built.retained.push(retained(Kept::TooYoung(day)));
                     continue;
+                }
+                if class.name == "talent_day_index" {
+                    match talent_day_index_is_fully_old(&entry.path, cutoff) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            built.retained.push(retained(Kept::ContentNotFullyOld));
+                            continue;
+                        }
+                        Err(detail) => {
+                            built
+                                .retained
+                                .push(retained(Kept::ContentMalformed { day, detail }));
+                            continue;
+                        }
+                    }
                 }
                 let bytes = entry
                     .path
