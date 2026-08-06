@@ -48,6 +48,11 @@ const ALLOWED: &[(&str, &str)] = &[
         "read-compat fallback only, after stored facet identity resolution finds no match \
          -- legacy directory labels remain readable",
     ),
+    (
+        "solstone-core-facets/src/store/seeding.rs",
+        "names a NEW entity id on the create path and a NEW facet-relationship directory when \
+         attaching a resolved entity for the first time -- never used to look one up",
+    ),
 ];
 
 fn crates_root() -> PathBuf {

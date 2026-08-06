@@ -18,6 +18,7 @@ mod paths;
 pub(crate) mod reference_scan;
 mod relationship_scans;
 mod repair;
+mod seeding;
 mod todos;
 mod write;
 
@@ -69,6 +70,10 @@ pub use relationship_scans::{
 pub use repair::{
     FacetEntityLinkRepairBranch, FacetEntityLinkRepairError, FacetEntityLinkRepairReport,
     FacetEntityLinkReport, repair_facet_entity_links, repair_facet_entity_links_journal_wide,
+};
+pub use seeding::{
+    SeedEntitiesError, SeedEntityBaseOutcome, SeedEntityInput, SeedEntityItemResult,
+    SeedEntityOutcome, seed_entities,
 };
 pub use todos::{read_todo_file, write_todo_file};
 pub use write::{
