@@ -2712,8 +2712,8 @@ button:focus:not(:focus-visible) {
 
     <!-- Storage Section -->
     <section class="settings-section" id="section-storage" role="tabpanel" aria-labelledby="tab-storage">
-      <h2>your original media (raw audio and screencast files)</h2>
-      <p class="settings-section-desc">manage raw media retention and view storage usage.</p>
+      <h2>your original media (audio, video, screen frames)</h2>
+      <p class="settings-section-desc">manage original-media retention and view storage usage.</p>
       <div id="storageLoadState" class="settings-load-state" aria-live="polite"></div>
       <div id="storageWarnings"></div>
 
@@ -2738,8 +2738,9 @@ button:focus:not(:focus-visible) {
       </div>
 
       <div class="settings-field" id="retentionModeField">
-        <label>retention mode</label>
-        <small>controls how long raw media files (audio, video, screen frames) are kept after processing. <a href="https://solpbc.org/privacy#recording-laws" target="_blank" rel="noopener">recording-consent laws</a> may apply in your jurisdiction.</small>
+        <label>original media</label>
+        <small>choose how long to keep your original audio, video, and screen frames after processing. <a href="https://solpbc.org/privacy#recording-laws" target="_blank" rel="noopener">recording-consent laws</a> may apply in your jurisdiction.</small>
+        <small>keep everything, or set a number of days.</small>
         <div id="retentionDaysField" class="retention-days-row" style="margin-top: 0.5em;">
           <button type="button" class="settings-preset-btn" data-days="7">7</button>
           <button type="button" class="settings-preset-btn" data-days="30">30</button>
@@ -2749,16 +2750,16 @@ button:focus:not(:focus-visible) {
         </div>
         <label for="retentionDontRetain" style="display: flex; align-items: center; gap: 0.5em; margin-top: 0.75em; color: #666; font-size: 0.9em;">
           <input type="checkbox" id="retentionDontRetain">
-          <span>don't retain original media (mark originals as eligible after processing)</span>
+          <span>list originals for removal after processing</span>
         </label>
-        <div id="retentionStatus" style="margin-top: 0.75em; color: #666; font-size: 0.9em;">currently: always retain — no expiration</div>
+        <div id="retentionStatus" style="margin-top: 0.75em; color: #666; font-size: 0.9em;">currently: keep everything.</div>
       </div>
 
       <div id="streamOverridesMount"></div>
 
       <div class="settings-field" id="logRetentionField">
         <label>operational logs</label>
-        <small>cleans up the operational logs sol keeps while working. this does not affect your original media or durable journal content.</small>
+        <small>cleans up the operational logs sol keeps while working. this does not affect your original media or the rest of your journal.</small>
         <div class="toggle-container" style="justify-content: flex-start; gap: 1em; margin-top: 0.75em;">
           <label class="toggle-switch toggle-positive">
             <input type="checkbox" id="logRetentionEnabled">
@@ -2781,8 +2782,8 @@ button:focus:not(:focus-visible) {
       </div>
 
       <div class="settings-danger-section">
-        <button type="button" id="cleanupNowBtn" class="action-button-danger">mark eligible originals</button>
-        <small style="display: block; margin-top: 0.5em; color: #666;">review raw media eligible under your retention policy. originals stay on disk until you act.</small>
+        <button type="button" id="cleanupNowBtn" class="action-button-danger">build the list</button>
+        <small style="display: block; margin-top: 0.5em; color: #666;">build the list of original media ready for removal, based on your retention settings. building the list does not delete anything.</small>
       </div>
       </form>
     </section>
@@ -3079,8 +3080,8 @@ button:focus:not(:focus-visible) {
 <div id="cleanupModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="cleanupHeading">
   <div class="color-modal-content" style="max-width: 480px;">
     <span class="color-close" id="cleanupModalClose">&times;</span>
-    <h3 id="cleanupHeading">mark eligible originals</h3>
-    <p style="color: #666; font-size: 0.9em; margin-bottom: 1em;">review raw media eligible under your retention policy. this marks eligible originals in a held list; originals stay on disk until you act.</p>
+    <h3 id="cleanupHeading">build the list</h3>
+    <p style="color: #666; font-size: 0.9em; margin-bottom: 1em;">lists original media ready for removal, based on your retention settings.</p>
 
     <div class="settings-field" style="margin-bottom: 1em;">
       <label for="cleanupStreamFilter">stream filter (optional)</label>
@@ -3095,7 +3096,7 @@ button:focus:not(:focus-visible) {
     </div>
 
     <div style="display: flex; gap: 0.75em; justify-content: flex-end;">
-      <button type="button" id="cleanupPreviewBtn" class="cleanup-preview-btn">mark eligible originals</button>
+      <button type="button" id="cleanupPreviewBtn" class="cleanup-preview-btn">build the list</button>
       <button type="button" id="cleanupConfirmBtn" class="cleanup-confirm-btn" disabled>done</button>
     </div>
   </div>
@@ -3106,7 +3107,7 @@ button:focus:not(:focus-visible) {
   <div class="color-modal-content" style="max-width: 560px;">
     <span class="color-close" id="cleanupLogsModalClose">&times;</span>
     <h3 id="cleanupLogsHeading">clean up logs</h3>
-    <p style="color: #666; font-size: 0.9em; margin-bottom: 1em;">prune operational logs older than the specified number of days. this does not affect your original media or durable journal content.</p>
+    <p style="color: #666; font-size: 0.9em; margin-bottom: 1em;">prune operational logs older than the specified number of days. this does not affect your original media or the rest of your journal.</p>
 
     <div class="settings-field" style="margin-bottom: 1em;">
       <label for="cleanupLogsDaysInput">older than</label>
@@ -6116,10 +6117,10 @@ if (resetAgentBtn) {
 let storageData = null;
 
 function deriveRetention(daysValue, dontRetain) {
-  if (dontRetain) return { mode: 'processed', days: null, statusText: 'currently: mark originals as eligible after processing' };
+  if (dontRetain) return { mode: 'processed', days: null, statusText: 'currently: list originals for removal after processing.' };
   const n = parseInt(daysValue, 10);
-  if (Number.isFinite(n) && n >= 1) return { mode: 'days', days: n, statusText: `currently: keep ${n} days` };
-  return { mode: 'keep', days: null, statusText: 'currently: always retain — no expiration' };
+  if (Number.isFinite(n) && n >= 1) return { mode: 'days', days: n, statusText: `currently: keep ${n} days.` };
+  return { mode: 'keep', days: null, statusText: 'currently: keep everything.' };
 }
 
 async function loadStorage() {
@@ -6240,9 +6241,9 @@ function populateStreamOverrides(streams, perStream) {
     const select = document.createElement('select');
     select.className = 'stream-override-select';
     select.innerHTML = '<option value="">use global default</option>'
-      + '<option value="keep">keep forever</option>'
+      + '<option value="keep">keep everything</option>'
       + '<option value="days">keep N days</option>'
-      + '<option value="processed">eligible after processing</option>';
+      + '<option value="processed">list originals for removal after processing</option>';
     select.value = mode;
 
     const daysInput = document.createElement('input');
@@ -6343,7 +6344,7 @@ async function saveLogRetentionConfig() {
   const daysInput = document.getElementById('logRetentionDaysInput');
   const days = parseInt(daysInput.value, 10);
   if (!Number.isFinite(days) || days < 1) {
-    showFieldStatus(el, 'error', 'Enter a positive number of days.');
+    showFieldStatus(el, 'error', 'enter a positive number of days.');
     return;
   }
 
@@ -6484,7 +6485,7 @@ async function runCleanupMark() {
   const previewDiv = document.getElementById('cleanupPreview');
   const previewText = document.getElementById('cleanupPreviewText');
 
-  previewText.textContent = 'checking retention policy and marking eligible originals...';
+  previewText.textContent = 'building the list...';
   previewDiv.style.display = '';
 
   try {
@@ -6506,16 +6507,16 @@ async function runCleanupMark() {
     if (!marked.length && !held.length && !noMedia.length && !notEligible.length && !unreadableDays.length) {
       const standingTotal = result.standing_total || 0;
       previewText.textContent = standingTotal
-        ? `nothing new to mark under the current retention policy. ${standingTotal} removal mark${standingTotal === 1 ? '' : 's'} ${standingTotal === 1 ? 'is' : 'are'} held; originals stay on disk until you act.`
-        : 'nothing to mark under the current retention policy.';
+        ? `nothing new to add to the list. standing total: ${standingTotal}.`
+        : 'nothing new to add to the list.';
     } else {
       const details = [
-        `${marked.length} new removal mark${marked.length === 1 ? '' : 's'}.`,
-        `${result.standing_total || 0} removal mark${result.standing_total === 1 ? '' : 's'} ${(result.standing_total || 0) === 1 ? 'is' : 'are'} held; originals stay on disk until you act.`,
+        `New items: ${marked.length}.`,
+        `Standing total: ${result.standing_total || 0}.`,
       ];
-      if (held.length) details.push(`${held.length} segment${held.length === 1 ? '' : 's'} held.`);
-      if (noMedia.length) details.push(`${noMedia.length} segment${noMedia.length === 1 ? '' : 's'} with no raw media.`);
-      if (notEligible.length) details.push(`${notEligible.length} segment${notEligible.length === 1 ? '' : 's'} not yet eligible.`);
+      if (held.length) details.push(`${held.length} segment${held.length === 1 ? '' : 's'} blocked.`);
+      if (noMedia.length) details.push(`${noMedia.length} segment${noMedia.length === 1 ? '' : 's'} with no original media.`);
+      if (notEligible.length) details.push(`${notEligible.length} segment${notEligible.length === 1 ? '' : 's'} not ready yet.`);
       if (unreadableDays.length) details.push(`unreadable chronicle days: ${unreadableDays.join(', ')}.`);
       previewText.textContent = details.join(' ');
     }
