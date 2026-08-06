@@ -2,7 +2,7 @@
   "_provenance": {
     "generator": "scripts/retention_release_oracle.py",
     "method": "the reference verdicts are OBSERVED by running the reference over constructed segments on a real filesystem; the unified verdicts are derived mechanically from one rule, not chosen per row",
-    "source_revision": "6a3b35b269cd8fd5d1aea8d40ff63d1d215d0ad0",
+    "source_revision": "312a84c8cfb6550e398c33ecc192d7b6a4ca432e",
     "reference": {
       "segment_gate": "solstone/think/retention.py:190",
       "state_derivation": "solstone/think/data_state.py:121",
