@@ -2,7 +2,7 @@
   "_provenance": {
     "generator": "scripts/segment_name_oracle.py",
     "method": "both verdicts are OBSERVED by executing the references -- Python by import, Rust by compiling a harness that reproduces the crate's function, with the crate's own source asserted to still contain the lines the harness reproduces",
-    "source_revision": "c926cef42d529f5116a7fc5b1b72d85a9436a04d",
+    "reference_digest": "sha256:ab5e4138c7731a54c3fe67358e0ac60381c4187b2181cc548d18558d566d04f1",
     "reference": {
       "rust_segment_key": "core/crates/solstone-core-journal-io/src/paths.rs",
       "python_segment_key": "solstone/think/utils.py"

@@ -27,6 +27,7 @@ the fixture cannot drift from the implementation without the gate noticing.
 Usage:  python scripts/segment_name_oracle.py [--check]
 """
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -155,17 +156,75 @@ def python_verdict(name: str) -> str | None:
     return python_segment_key(name)
 
 
-def reference_revision() -> str:
+def _rust_fn(source: str, signature: str) -> str:
+    """One Rust function's text, by brace matching from its signature.
+
+    ⛔ Brace matching rather than a sentinel for the next item: the function after
+    `segment_key` is a private helper, so a closer keyed on `pub fn` finds nothing and
+    the extraction silently yields nothing at all.
+    """
+    start = source.index(signature)
+    depth = 0
+    for offset in range(start, len(source)):
+        char = source[offset]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : offset + 1]
+    raise ValueError(f"unbalanced braces after {signature!r}")
+
+
+def _python_fn(source: str, signature: str) -> str:
+    """One Python function's text, from its signature to the next top-level `def`."""
+    start = source.index(signature)
+    end = source.index("\ndef ", start)
+    return source[start:end]
+
+
+#: Every implementation that decides a verdict in this fixture.
+#:
+#: ⚠ `is_word_byte` is here because `segment_key` delegates the word-boundary test to
+#: it, so a change there changes verdicts without touching `segment_key` itself.
+RUST_FUNCTIONS = (
+    "fn segment_key(value: &str) -> Option<&str> {",
+    "fn is_word_byte(byte: u8) -> bool {",
+)
+
+
+def reference_digest() -> str:
+    """A digest of the implementations that decide every verdict below.
+
+    📌 This replaced a git revision over the two WHOLE FILES, which made the fixture
+    report itself stale on any commit touching either one -- and both are large shared
+    modules. It fired on a commit that added five unrelated lines to `paths.rs` for
+    entity path helpers and never touched `segment_key`.
+
+    ⛔ That failure mode is worse than no gate. The remedy it printed was "regenerate
+    it", so a spurious red trains whoever hits it to regenerate without looking, and the
+    next regeneration rubber-stamps a real cross-language divergence. A digest over the
+    implementations themselves goes stale exactly when the thing being pinned changes.
+
+    ⛔ An unreadable reference raises rather than returning a placeholder. The first
+    version of this returned `"unreadable"`, which compared EQUAL on both sides of the
+    check -- so a broken extraction made the gate pass while pinning nothing at all.
+    """
+    rust_source = RUST_SOURCE.read_text(encoding="utf-8")
+    python_source = (REPO / REFERENCE["python_segment_key"]).read_text(encoding="utf-8")
     try:
-        return subprocess.run(
-            ["git", "log", "-1", "--format=%H", "--", *sorted(REFERENCE.values())],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
+        parts = [_rust_fn(rust_source, sig) for sig in RUST_FUNCTIONS]
+        parts.append(_python_fn(python_source, "def segment_key("))
+    except ValueError as error:
+        raise SystemExit(
+            "FAIL: cannot locate a reference implementation, so this fixture cannot "
+            f"pin anything: {error}"
+        ) from error
+    digest = hashlib.sha256()
+    for part in parts:
+        digest.update(part.encode("utf-8"))
+        digest.update(b"\x00")
+    return f"sha256:{digest.hexdigest()}"
 
 
 def main() -> int:
@@ -201,7 +260,7 @@ def main() -> int:
                 "function, with the crate's own source asserted to still contain the "
                 "lines the harness reproduces"
             ),
-            "source_revision": reference_revision(),
+            "reference_digest": reference_digest(),
             "reference": REFERENCE,
             "invariant": (
                 "the two languages must agree on every row. A disagreement means a "
