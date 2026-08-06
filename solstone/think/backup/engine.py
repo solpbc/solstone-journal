@@ -66,6 +66,13 @@ BACKUP_EXCLUDES = (
     # the durable deletion audit (retention.log, pruning-runs/) and per-day
     # talent-provenance/ from every snapshot. These narrow basenames drop only
     # runtime ephemera; excluding temps is unconditionally correct (never data).
+    # A segment mid-removal. The retention executor moves a segment aside under this
+    # prefix, empties it there, and moves it back holding only its tombstone -- so a
+    # snapshot taken during a removal would capture a PARTIALLY EMPTIED segment at a
+    # path no iterator returns, and a restore would hand the owner data they cannot
+    # see. ⛔ Matched by basename at any depth, which is what restic does with a
+    # no-slash pattern and what this needs.
+    ".removing_*",
     "*.sock",
     "*.pid",
     "*.port",
