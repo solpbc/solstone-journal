@@ -25,7 +25,6 @@ use solstone_core_indexer::paths::{relative_to_journal, resolve_journal_path};
 use solstone_core_indexer::segment::{is_historical_day, segment_key, time_bucket};
 use solstone_core_indexer::segment_aggregate::build_segment_aggregate;
 use solstone_core_indexer::stream::extract_stream;
-use solstone_core_journal_io::read_journal_config;
 
 use crate::StoreError;
 use crate::db::{EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, open_index};
@@ -772,8 +771,31 @@ fn index_file(
     Ok(warnings)
 }
 
+/// Read `config/journal.json` without depending on the durable-write crate.
+///
+/// `solstone-core-journal-io` is banned outside the write authorities that own
+/// durable journal I/O (`core/deny.toml`), and the indexer is a reader. This
+/// mirrors how this crate's sibling already reads a stream marker, and how the
+/// spl service reads this same file: a plain read of something we never write.
+/// A missing file stays distinct from a malformed one — only the former is
+/// `Ok(None)`, so a corrupt config cannot masquerade as an absent one.
+fn read_journal_config_for_labels(
+    journal: &Path,
+) -> Result<Option<serde_json::Map<String, serde_json::Value>>, ()> {
+    let config_path = journal.join("config").join("journal.json");
+    let text = match fs::read_to_string(&config_path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(()),
+    };
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(serde_json::Value::Object(config)) => Ok(Some(config)),
+        Ok(_) | Err(_) => Err(()),
+    }
+}
+
 fn resolve_chat_labels(journal: &Path) -> (ChatLabels, Option<String>) {
-    match read_journal_config(journal) {
+    match read_journal_config_for_labels(journal) {
         Ok(Some(config)) => {
             let identity = config
                 .get("identity")
