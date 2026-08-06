@@ -39,7 +39,7 @@ pub fn classify_prepared_history(
     }
 }
 
-fn python_optional_json_equal(left: Option<&Value>, right: Option<&Value>) -> bool {
+pub(crate) fn python_optional_json_equal(left: Option<&Value>, right: Option<&Value>) -> bool {
     match (left, right) {
         (None, None) | (None, Some(Value::Null)) | (Some(Value::Null), None) => true,
         (Some(left), Some(right)) => python_json_equal(left, right),
@@ -94,14 +94,14 @@ fn python_number_equal(left: &Number, right: &Number) -> bool {
     }
 }
 
-fn integer_value(number: &Number) -> Option<i128> {
+pub(crate) fn integer_value(number: &Number) -> Option<i128> {
     number
         .as_i64()
         .map(i128::from)
         .or_else(|| number.as_u64().map(i128::from))
 }
 
-fn float_to_integer(value: f64) -> Option<i128> {
+pub(crate) fn float_to_integer(value: f64) -> Option<i128> {
     if !value.is_finite() || value.fract() != 0.0 {
         return None;
     }

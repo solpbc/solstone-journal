@@ -1,27 +1,45 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::error::Error;
 use std::fmt;
 use std::io::{Cursor, Read, Write};
+use std::path::{Path, PathBuf};
 
+use serde_json::{Number, Value};
+use solstone_core_journal_io::AtomicWriteError;
+use solstone_core_journal_io::AtomicWriteOptions;
+use solstone_core_journal_io::LockError;
+use solstone_core_journal_io::LockOptions;
+use solstone_core_journal_io::PathError;
+use solstone_core_journal_io::ReadError;
+use solstone_core_journal_io::Removed;
+use solstone_core_journal_io::atomic_replace;
+use solstone_core_journal_io::hold_lock;
+use solstone_core_journal_io::path_lexists;
+use solstone_core_journal_io::read_bytes;
+use solstone_core_journal_io::remove_file;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
+
+use super::entity_paths::entity_memory_path;
+use super::lifecycle::EntityLifecycleError;
+use super::reconcile::{float_to_integer, integer_value, python_optional_json_equal};
 
 const EMBEDDING_WIDTH: usize = 256;
 const EMBEDDINGS_MEMBER: &str = "embeddings.npy";
 const METADATA_MEMBER: &str = "metadata.npy";
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct VoiceprintArchive {
+pub struct VoiceprintArchive {
     pub embeddings: Vec<f32>,
     pub rows: usize,
     pub metadata: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum VoiceprintNpzError {
+pub enum VoiceprintNpzError {
     Archive(String),
     Invalid(String),
 }
@@ -35,6 +53,470 @@ impl fmt::Display for VoiceprintNpzError {
 }
 
 impl Error for VoiceprintNpzError {}
+
+/// One voiceprint row supplied to the durable batch writer.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VoiceprintItem {
+    pub embedding: Vec<f32>,
+    pub metadata: Value,
+}
+
+/// A canonical, Python-equality-compatible metadata key field.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum CanonicalKeyField {
+    Absent,
+    Bool(bool),
+    Int(i128),
+    Float(u64),
+    Str(String),
+}
+
+/// The four metadata fields that identify a voiceprint row.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct VoiceprintKey(pub [CanonicalKeyField; 4]);
+
+/// One requested row removal with its expected complete metadata value.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VoiceprintRemoval {
+    pub key: Value,
+    pub expected_metadata: Option<Value>,
+}
+
+/// Per-cause count for rows that were not removed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct VoiceprintSkipReasons {
+    pub missing: usize,
+    pub metadata_mismatch: usize,
+}
+
+/// Result of applying one or more voiceprint removals.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct VoiceprintRemovalReport {
+    pub removed_count: usize,
+    pub skipped_count: usize,
+    pub skipped_reasons: VoiceprintSkipReasons,
+    pub file_removed: bool,
+}
+
+/// Failure while reading or mutating an entity voiceprint archive.
+#[derive(Debug)]
+pub enum VoiceprintOperationError {
+    Lifecycle(EntityLifecycleError),
+    Lock(LockError),
+    Read(ReadError),
+    Write(AtomicWriteError),
+    Path(PathError),
+    Npz(VoiceprintNpzError),
+    MetadataJson(String),
+    MetadataNotObject,
+    InvalidRemovalKey,
+    UnsupportedKeyField { field: &'static str },
+    DuplicateExactMatch,
+}
+
+impl fmt::Display for VoiceprintOperationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Lifecycle(error) => error.fmt(formatter),
+            Self::Lock(error) => error.fmt(formatter),
+            Self::Read(error) => error.fmt(formatter),
+            Self::Write(error) => error.fmt(formatter),
+            Self::Path(error) => error.fmt(formatter),
+            Self::Npz(error) => error.fmt(formatter),
+            Self::MetadataJson(error) => {
+                write!(formatter, "invalid voiceprint metadata JSON: {error}")
+            }
+            Self::MetadataNotObject => formatter.write_str("voiceprint metadata must be an object"),
+            Self::InvalidRemovalKey => {
+                formatter.write_str("voiceprint removal key must be an object")
+            }
+            Self::UnsupportedKeyField { field } => {
+                write!(formatter, "voiceprint key field {field} must be a scalar")
+            }
+            Self::DuplicateExactMatch => {
+                formatter.write_str("voiceprint removal locator matched multiple rows")
+            }
+        }
+    }
+}
+
+impl Error for VoiceprintOperationError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Lifecycle(error) => Some(error),
+            Self::Lock(error) => Some(error),
+            Self::Read(error) => Some(error),
+            Self::Write(error) => Some(error),
+            Self::Path(error) => Some(error),
+            Self::Npz(error) => Some(error),
+            Self::MetadataJson(_)
+            | Self::MetadataNotObject
+            | Self::InvalidRemovalKey
+            | Self::UnsupportedKeyField { .. }
+            | Self::DuplicateExactMatch => None,
+        }
+    }
+}
+
+impl From<EntityLifecycleError> for VoiceprintOperationError {
+    fn from(error: EntityLifecycleError) -> Self {
+        Self::Lifecycle(error)
+    }
+}
+
+impl From<LockError> for VoiceprintOperationError {
+    fn from(error: LockError) -> Self {
+        Self::Lock(error)
+    }
+}
+
+impl From<ReadError> for VoiceprintOperationError {
+    fn from(error: ReadError) -> Self {
+        Self::Read(error)
+    }
+}
+
+impl From<AtomicWriteError> for VoiceprintOperationError {
+    fn from(error: AtomicWriteError) -> Self {
+        Self::Write(error)
+    }
+}
+
+impl From<PathError> for VoiceprintOperationError {
+    fn from(error: PathError) -> Self {
+        Self::Path(error)
+    }
+}
+
+impl From<VoiceprintNpzError> for VoiceprintOperationError {
+    fn from(error: VoiceprintNpzError) -> Self {
+        Self::Npz(error)
+    }
+}
+
+/// L2-normalize an embedding vector, returning `None` for a zero vector.
+pub fn normalize_embedding(embedding: &[f32]) -> Option<Vec<f32>> {
+    let norm = embedding
+        .iter()
+        .map(|value| value * value)
+        .sum::<f32>()
+        .sqrt();
+    (norm > 0.0).then(|| embedding.iter().map(|value| value / norm).collect())
+}
+
+/// Load a valid entity voiceprint archive, collapsing absence and read failures to `None`.
+pub fn load_entity_voiceprints_file(
+    journal_root: &Path,
+    entity_id: &str,
+) -> Option<VoiceprintArchive> {
+    let Ok((_directory, path)) = resolve_voiceprint_path(journal_root, entity_id, false) else {
+        return None;
+    };
+    match load_voiceprints(&path) {
+        Ok(archive) => archive,
+        Err(error) => {
+            log::warn!(
+                "failed to load voiceprints for entity {}: {}",
+                entity_id,
+                error
+            );
+            None
+        }
+    }
+}
+
+/// Return saved voiceprint identity keys for idempotency checks.
+pub fn load_existing_voiceprint_keys(
+    journal_root: &Path,
+    entity_id: &str,
+) -> HashSet<VoiceprintKey> {
+    let Some(archive) = load_entity_voiceprints_file(journal_root, entity_id) else {
+        return HashSet::new();
+    };
+    let mut keys = HashSet::with_capacity(archive.metadata.len());
+    for metadata in &archive.metadata {
+        match voiceprint_removal_key(metadata) {
+            Ok(key) => {
+                keys.insert(key);
+            }
+            Err(error) => {
+                log::warn!(
+                    "failed to read voiceprint key for entity {}: {}",
+                    entity_id,
+                    error
+                );
+                return HashSet::new();
+            }
+        }
+    }
+    keys
+}
+
+/// Append a batch of caller-normalized voiceprints in one locked write.
+pub fn save_voiceprints_batch(
+    journal_root: &Path,
+    entity_id: &str,
+    new_items: &[VoiceprintItem],
+) -> Result<usize, VoiceprintOperationError> {
+    if new_items.is_empty() {
+        return Ok(0);
+    }
+    let (_directory, path) = resolve_voiceprint_path(journal_root, entity_id, true)?;
+    let _lock = hold_lock(&path, LockOptions::default())?;
+    let mut archive = load_voiceprints(&path)?.unwrap_or_else(empty_archive);
+    for item in new_items {
+        archive.embeddings.extend_from_slice(&item.embedding);
+        archive.metadata.push(serialize_metadata(&item.metadata)?);
+    }
+    archive.rows = archive.metadata.len();
+    write_and_verify_voiceprints(&path, &archive)?;
+    Ok(new_items.len())
+}
+
+/// Rewrite metadata in place only when the mutator reports changes.
+pub fn rewrite_voiceprint_metadata<F>(
+    journal_root: &Path,
+    entity_id: &str,
+    mutator: F,
+) -> Result<usize, VoiceprintOperationError>
+where
+    F: FnOnce(&mut [Value]) -> usize,
+{
+    let Ok((_directory, path)) = resolve_voiceprint_path(journal_root, entity_id, false) else {
+        return Ok(0);
+    };
+    if !path_lexists(&path)? {
+        return Ok(0);
+    }
+    let _lock = hold_lock(&path, LockOptions::default())?;
+    let Some(mut archive) = load_voiceprints(&path)? else {
+        return Ok(0);
+    };
+    let mut metadata = parse_metadata_values(&archive.metadata)?;
+    let updates = mutator(&mut metadata);
+    if updates == 0 {
+        return Ok(0);
+    }
+    archive.metadata = metadata
+        .iter()
+        .map(serialize_metadata)
+        .collect::<Result<_, _>>()?;
+    write_and_verify_voiceprints(&path, &archive)?;
+    Ok(updates)
+}
+
+/// Remove rows by exact Python-equality-compatible key and metadata match.
+pub fn remove_voiceprints_by_key(
+    journal_root: &Path,
+    entity_id: &str,
+    removals: &[VoiceprintRemoval],
+) -> Result<VoiceprintRemovalReport, VoiceprintOperationError> {
+    let mut report = VoiceprintRemovalReport::default();
+    if removals.is_empty() {
+        return Ok(report);
+    }
+    let Ok((directory, path)) = resolve_voiceprint_path(journal_root, entity_id, false) else {
+        mark_all_missing(&mut report, removals.len());
+        return Ok(report);
+    };
+    if !path_lexists(&path)? {
+        mark_all_missing(&mut report, removals.len());
+        return Ok(report);
+    }
+    let normalized_removals = removals
+        .iter()
+        .map(removal_key)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let _lock = hold_lock(&path, LockOptions::default())?;
+    let Some(archive) = load_voiceprints(&path)? else {
+        mark_all_missing(&mut report, removals.len());
+        return Ok(report);
+    };
+    let metadata = parse_metadata_values(&archive.metadata)?;
+    let keys = archive
+        .metadata
+        .iter()
+        .map(|value| voiceprint_removal_key(value))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut remove_indexes = HashSet::new();
+    for (removal, key) in removals.iter().zip(&normalized_removals) {
+        let exact_matches = metadata
+            .iter()
+            .enumerate()
+            .filter_map(|(index, stored)| {
+                (keys[index] == *key
+                    && python_optional_json_equal(Some(stored), removal.expected_metadata.as_ref()))
+                .then_some(index)
+            })
+            .collect::<Vec<_>>();
+        if exact_matches.len() > 1 {
+            return Err(VoiceprintOperationError::DuplicateExactMatch);
+        }
+        if let Some(index) = exact_matches.first() {
+            remove_indexes.insert(*index);
+            continue;
+        }
+        if keys.iter().any(|stored_key| stored_key == key) {
+            report.skipped_reasons.metadata_mismatch += 1;
+        } else {
+            report.skipped_reasons.missing += 1;
+        }
+    }
+    report.skipped_count =
+        report.skipped_reasons.missing + report.skipped_reasons.metadata_mismatch;
+    if remove_indexes.is_empty() {
+        return Ok(report);
+    }
+    report.removed_count = remove_indexes.len();
+    if remove_indexes.len() == archive.rows {
+        let removed = remove_file(&directory, "voiceprints.npz")?;
+        report.file_removed = matches!(removed, Removed::Unlinked);
+        return Ok(report);
+    }
+    let mut kept = empty_archive();
+    for (index, (embedding, metadata)) in archive
+        .embeddings
+        .chunks_exact(EMBEDDING_WIDTH)
+        .zip(metadata.iter())
+        .enumerate()
+    {
+        if !remove_indexes.contains(&index) {
+            kept.embeddings.extend_from_slice(embedding);
+            kept.metadata.push(serialize_metadata(metadata)?);
+        }
+    }
+    kept.rows = kept.metadata.len();
+    write_and_verify_voiceprints(&path, &kept)?;
+    Ok(report)
+}
+
+/// Extract the normalized four-field key from one serialized metadata row.
+pub(crate) fn voiceprint_removal_key(
+    metadata: &str,
+) -> Result<VoiceprintKey, VoiceprintOperationError> {
+    let value = serde_json::from_str(metadata)
+        .map_err(|error| VoiceprintOperationError::MetadataJson(error.to_string()))?;
+    key_from_metadata_value(&value)
+}
+
+fn resolve_voiceprint_path(
+    journal_root: &Path,
+    entity_id: &str,
+    create: bool,
+) -> Result<(PathBuf, PathBuf), EntityLifecycleError> {
+    let directory = entity_memory_path(journal_root, entity_id, create)?;
+    Ok((directory.clone(), directory.join("voiceprints.npz")))
+}
+
+fn empty_archive() -> VoiceprintArchive {
+    VoiceprintArchive {
+        embeddings: Vec::new(),
+        rows: 0,
+        metadata: Vec::new(),
+    }
+}
+
+fn load_voiceprints(path: &Path) -> Result<Option<VoiceprintArchive>, VoiceprintOperationError> {
+    if !path_lexists(path)? {
+        return Ok(None);
+    }
+    let bytes = read_bytes(path, Vec::new())?;
+    read_voiceprints_npz(&bytes).map(Some).map_err(Into::into)
+}
+
+fn write_and_verify_voiceprints(
+    path: &Path,
+    archive: &VoiceprintArchive,
+) -> Result<(), VoiceprintOperationError> {
+    let bytes = write_voiceprints_npz(&archive.embeddings, &archive.metadata)?;
+    atomic_replace(path, &bytes, AtomicWriteOptions::default())?;
+    let verified = load_voiceprints(path)?.ok_or_else(|| {
+        VoiceprintOperationError::Npz(VoiceprintNpzError::Invalid(
+            "voiceprint archive disappeared after write".to_owned(),
+        ))
+    })?;
+    if verified != *archive {
+        return Err(VoiceprintOperationError::Npz(VoiceprintNpzError::Invalid(
+            "voiceprint archive changed after write".to_owned(),
+        )));
+    }
+    Ok(())
+}
+
+fn parse_metadata_values(values: &[String]) -> Result<Vec<Value>, VoiceprintOperationError> {
+    values
+        .iter()
+        .map(|value| {
+            serde_json::from_str(value)
+                .map_err(|error| VoiceprintOperationError::MetadataJson(error.to_string()))
+        })
+        .collect()
+}
+
+fn serialize_metadata(value: &Value) -> Result<String, VoiceprintOperationError> {
+    serde_json::to_string(value)
+        .map_err(|error| VoiceprintOperationError::MetadataJson(error.to_string()))
+}
+
+fn removal_key(removal: &VoiceprintRemoval) -> Result<VoiceprintKey, VoiceprintOperationError> {
+    if !removal.key.is_object() {
+        return Err(VoiceprintOperationError::InvalidRemovalKey);
+    }
+    key_from_metadata_value(&removal.key)
+}
+
+fn key_from_metadata_value(value: &Value) -> Result<VoiceprintKey, VoiceprintOperationError> {
+    let object = value
+        .as_object()
+        .ok_or(VoiceprintOperationError::MetadataNotObject)?;
+    Ok(VoiceprintKey([
+        canonical_key_field(object.get("day"), "day")?,
+        canonical_key_field(object.get("segment_key"), "segment_key")?,
+        canonical_key_field(object.get("source"), "source")?,
+        canonical_key_field(object.get("sentence_id"), "sentence_id")?,
+    ]))
+}
+
+fn canonical_key_field(
+    value: Option<&Value>,
+    field: &'static str,
+) -> Result<CanonicalKeyField, VoiceprintOperationError> {
+    match value {
+        None | Some(Value::Null) => Ok(CanonicalKeyField::Absent),
+        Some(Value::Bool(value)) => Ok(CanonicalKeyField::Bool(*value)),
+        Some(Value::String(value)) => Ok(CanonicalKeyField::Str(value.clone())),
+        Some(Value::Number(value)) => canonical_number(value),
+        Some(Value::Array(_)) | Some(Value::Object(_)) => {
+            Err(VoiceprintOperationError::UnsupportedKeyField { field })
+        }
+    }
+}
+
+fn canonical_number(value: &Number) -> Result<CanonicalKeyField, VoiceprintOperationError> {
+    if let Some(integer) = integer_value(value) {
+        return Ok(CanonicalKeyField::Int(integer));
+    }
+    let float = value.as_f64().ok_or_else(|| {
+        VoiceprintOperationError::MetadataJson(
+            "voiceprint key number is not representable".to_owned(),
+        )
+    })?;
+    if let Some(integer) = float_to_integer(float) {
+        return Ok(CanonicalKeyField::Int(integer));
+    }
+    let bits = if float == 0.0 {
+        0.0_f64.to_bits()
+    } else {
+        float.to_bits()
+    };
+    Ok(CanonicalKeyField::Float(bits))
+}
+
+fn mark_all_missing(report: &mut VoiceprintRemovalReport, count: usize) {
+    report.skipped_reasons.missing = count;
+    report.skipped_count = count;
+}
 
 pub(crate) fn read_voiceprints_npz(bytes: &[u8]) -> Result<VoiceprintArchive, VoiceprintNpzError> {
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|error| {
