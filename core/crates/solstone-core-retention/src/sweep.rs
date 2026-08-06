@@ -141,6 +141,8 @@ pub fn plan(
         built.chronicle_unavailable = true;
         return built;
     }
+    // A non-directory chronicle root is deterministic to exercise; permission-based
+    // unreadability is not when tests run as root. Per-day failures remain named below.
     let Ok(days) = day_dirs(journal) else {
         built.chronicle_unavailable = true;
         return built;

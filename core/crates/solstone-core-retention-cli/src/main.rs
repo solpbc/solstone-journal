@@ -319,6 +319,8 @@ fn run_remove_segments(args: &Args) -> ExitCode {
         }
     }
     let outcome = remove_segments(&journal, &targets, at, reason, did);
+    // An integration test cannot cleanly fail only the register write after a real
+    // removal. Preserve the completed outcome even if that secondary write fails.
     let mut register_errors = Vec::new();
     for target_outcome in &outcome.targets {
         let Some(failure) = target_outcome.not_removed.iter().find_map(|item| {
@@ -438,6 +440,9 @@ fn run_release_raw(args: &Args) -> ExitCode {
     }
 
     let (outcome, tally) = release_raw(&journal, &proven);
+    // Raw-file release has no `.removing_` rename, so door::release_raw cannot
+    // currently produce a staged row. Keep this defensive registration path for a
+    // future door change, and preserve the completed outcome if its register write fails.
     let mut register_errors = Vec::new();
     for target_outcome in &outcome.targets {
         let Some(failure) = target_outcome.not_removed.iter().find_map(|item| {

@@ -69,7 +69,7 @@ pub enum RemovalClass {
     /// The narrower "raw release doesn't need approval" reading from decision
     /// record `260806-founder-retention-marks-for-removal-and-the-owner-approves`
     /// is a one-field edit from [`Approval::Required`] to [`Approval::NotRequired`].
-    /// This class has no producer in this scope; W3 wires it.
+    /// Produced by the retention CLI's `mark-offload` verb.
     OffloadRawRelease,
 }
 
@@ -137,7 +137,7 @@ impl MarkId {
     /// Parse the canonical hexadecimal digest form emitted by the register.
     pub fn parse(value: &str) -> Option<Self> {
         (value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
-            .then(|| Self(value.to_owned()))
+            .then(|| Self(value.to_ascii_lowercase()))
     }
 }
 
