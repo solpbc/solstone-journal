@@ -61,6 +61,8 @@ pub fn move_facet_entity(
     let manifest = collect_files(&source)?;
     let source_link = read_facet_entity_link(journal_root, from_facet, &entity_dir)?;
     let destination_link = read_facet_entity_link(journal_root, to_facet, &entity_dir)?;
+    let source_link_handled = source_link.is_some();
+    preflight_move_conflicts(&manifest, &source, &destination, source_link_handled)?;
     if let (Some(source_link), Some(destination_link)) = (&source_link, &destination_link) {
         let relationship = reconcile_relationship(source_link.value(), destination_link.value())?;
         save_facet_entity_link(
@@ -81,7 +83,7 @@ pub fn move_facet_entity(
         )?;
     }
     for relative in manifest {
-        if relative == Path::new("entity.json") {
+        if relative == Path::new("entity.json") && source_link_handled {
             continue;
         }
         let source_file = source.join(&relative);
@@ -107,6 +109,31 @@ pub fn move_facet_entity(
         moved_to: to_facet.to_owned(),
         merged: true,
     })
+}
+
+fn preflight_move_conflicts(
+    manifest: &[PathBuf],
+    source: &Path,
+    destination: &Path,
+    source_link_handled: bool,
+) -> Result<(), FacetEntityWriteError> {
+    for relative in manifest {
+        if relative == Path::new("entity.json") && source_link_handled {
+            continue;
+        }
+        if relative == Path::new("observations.jsonl") {
+            continue;
+        }
+        let destination_file = destination.join(relative);
+        if destination_file.exists()
+            && fs::read(source.join(relative))? != fs::read(&destination_file)?
+        {
+            return Err(FacetEntityWriteError::MoveConflict {
+                path: relative.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn merge_observations(source: &Path, destination: &Path) -> Result<(), FacetEntityWriteError> {

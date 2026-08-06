@@ -54,3 +54,34 @@ fn move_merge_reconciles_link_fields_and_accounts_for_extra_files() {
             .exists()
     );
 }
+
+#[test]
+fn move_merge_preserves_unresolved_source_entity_file() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "from");
+    create_test_facet(temporary.path(), "to");
+    let source = temporary
+        .path()
+        .join("facets/from/entities/subject/entity.json");
+    fs::create_dir_all(source.parent().unwrap()).unwrap();
+    fs::write(&source, "null\n").unwrap();
+    fs::create_dir_all(temporary.path().join("facets/to/entities/subject")).unwrap();
+
+    move_facet_entity(temporary.path(), "subject", "from", "to", true).unwrap();
+
+    assert_eq!(
+        fs::read_to_string(
+            temporary
+                .path()
+                .join("facets/to/entities/subject/entity.json")
+        )
+        .unwrap(),
+        "null\n"
+    );
+    assert!(
+        !temporary
+            .path()
+            .join("facets/from/entities/subject")
+            .exists()
+    );
+}
