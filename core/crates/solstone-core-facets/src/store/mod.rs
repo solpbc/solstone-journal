@@ -15,6 +15,7 @@ mod news;
 mod observations;
 mod paths;
 pub(crate) mod reference_scan;
+mod relationship_scans;
 mod repair;
 mod todos;
 mod write;
@@ -54,6 +55,10 @@ pub use observations::{
 #[cfg(test)]
 pub(crate) use observations::{retry_add_for_test, retry_record_for_test};
 pub use reference_scan::EntityReferenceBreakdown;
+pub use relationship_scans::{
+    FacetRelationshipRecord, enrich_relationship_with_journal, load_all_facet_relationships,
+    load_all_facet_relationships_across_facets, scan_facet_relationships,
+};
 pub use repair::{
     FacetEntityLinkRepairBranch, FacetEntityLinkRepairError, FacetEntityLinkRepairReport,
     FacetEntityLinkReport, repair_facet_entity_links, repair_facet_entity_links_journal_wide,
