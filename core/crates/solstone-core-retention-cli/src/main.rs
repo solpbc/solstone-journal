@@ -64,7 +64,7 @@ use solstone_core_retention::policy::Policy;
 use solstone_core_retention::receipt::{Outcome, RemovedPath, Target};
 use solstone_core_retention::remove_marked::remove_marked;
 use solstone_core_retention::scan::scan_segment;
-use solstone_core_retention::sweep::{Plan, execute as execute_sweep, plan as plan_sweep};
+use solstone_core_retention::sweep::{Plan, Skip, execute as execute_sweep, plan as plan_sweep};
 use solstone_core_retention::tombstone::RemovalReason;
 
 /// Everything removed, and the index told.
@@ -501,6 +501,32 @@ fn plan_json(plan: &Plan) -> serde_json::Value {
         "files": plan.files(),
         "bytes": plan.bytes(),
         "skipped": plan.skipped.len(),
+        "skipped_segments": plan
+            .skipped
+            .iter()
+            .map(|skipped| match &skipped.reason {
+                Skip::NoMedia => serde_json::json!({
+                    "day": skipped.target.day,
+                    "stream": skipped.target.stream,
+                    "dir": skipped.target.dir,
+                    "reason": "no_media",
+                }),
+                Skip::Policy(eligibility) => serde_json::json!({
+                    "day": skipped.target.day,
+                    "stream": skipped.target.stream,
+                    "dir": skipped.target.dir,
+                    "reason": "policy",
+                    "eligibility": eligibility,
+                }),
+                Skip::Held(blockers) => serde_json::json!({
+                    "day": skipped.target.day,
+                    "stream": skipped.target.stream,
+                    "dir": skipped.target.dir,
+                    "reason": "held",
+                    "blockers": blockers,
+                }),
+            })
+            .collect::<Vec<serde_json::Value>>(),
         "unreadable_days": plan.unreadable_days,
         "chronicle_unavailable": plan.chronicle_unavailable,
         "segments": plan
@@ -826,20 +852,7 @@ fn run_mark(args: &Args) -> ExitCode {
             EXIT_REFUSED,
         );
     }
-    if !plan.unreadable_days.is_empty() {
-        return emit(
-            serde_json::json!({
-                "ok": false,
-                "verb": "mark",
-                "error": format!(
-                    "one or more chronicle days could not be read: {}",
-                    plan.unreadable_days.join(", ")
-                ),
-            }),
-            EXIT_REFUSED,
-        );
-    }
-    let proposals = plan
+    let mut proposals = plan
         .candidates
         .iter()
         .map(|candidate| {
@@ -859,6 +872,27 @@ fn run_mark(args: &Args) -> ExitCode {
             )
         })
         .collect::<Vec<_>>();
+    if !plan.unreadable_days.is_empty() {
+        let register = match load(&journal) {
+            Ok(register) => register,
+            Err(error) => {
+                return emit(
+                    serde_json::json!({ "ok": false, "verb": "mark", "error": error.to_string() }),
+                    EXIT_REFUSED,
+                );
+            }
+        };
+        proposals.extend(
+            register
+                .marks
+                .values()
+                .filter(|mark| {
+                    mark.class == RemovalClass::PolicyRawRelease
+                        && plan.unreadable_days.contains(&mark.target.day)
+                })
+                .map(|mark| (mark.target.clone(), mark.proposal.clone())),
+        );
+    }
     match reconcile(
         &journal,
         RemovalClass::PolicyRawRelease,
@@ -866,7 +900,7 @@ fn run_mark(args: &Args) -> ExitCode {
         args.required("--now").unwrap_or_default(),
     ) {
         Ok(register) => emit(
-            serde_json::json!({ "ok": true, "verb": "mark", "marks": register }),
+            serde_json::json!({ "ok": true, "verb": "mark", "marks": register, "plan": plan_json(&plan) }),
             EXIT_OK,
         ),
         Err(error) => emit(

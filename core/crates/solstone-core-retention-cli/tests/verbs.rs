@@ -11,6 +11,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -140,6 +141,14 @@ fn keys(body: &Value) -> BTreeSet<&str> {
         .collect()
 }
 
+fn make_day_unreadable(day: &Path) {
+    fs::set_permissions(day, fs::Permissions::from_mode(0o000)).unwrap();
+}
+
+fn restore_day_permissions(day: &Path) {
+    fs::set_permissions(day, fs::Permissions::from_mode(0o700)).unwrap();
+}
+
 #[test]
 fn marks_is_read_only_and_reports_an_empty_register() {
     let bed = Bed::new("marks-empty");
@@ -237,6 +246,156 @@ fn mark_is_non_destructive_and_keeps_marked_at_for_the_same_proposal() {
     assert_eq!(
         fs::read(segment.join("audio.flac")).unwrap(),
         b"the owner's recording"
+    );
+}
+
+#[test]
+fn mark_receipt_discloses_each_skipped_segment_reason() {
+    let bed = Bed::new("mark-skipped-segments");
+    let no_media = bed
+        .journal()
+        .join("chronicle/20260701/field.audio/010000_17");
+    fs::create_dir_all(&no_media).unwrap();
+    bed.proven_segment(
+        "20260806",
+        "field.audio",
+        "020000_17",
+        "2026-08-06T00:00:00Z",
+    );
+    let held = bed
+        .journal()
+        .join("chronicle/20260701/field.audio/030000_17");
+    fs::create_dir_all(&held).unwrap();
+    fs::write(held.join("audio.flac"), b"not yet proven").unwrap();
+    let policy = armed_policy();
+
+    let output = bed.run(
+        "mark",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            &policy,
+        ],
+    );
+    let body = receipt(&output);
+    let skipped = body["plan"]["skipped_segments"].as_array().unwrap();
+    let by_dir = skipped
+        .iter()
+        .map(|entry| (entry["dir"].as_str().unwrap(), entry))
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(body["plan"]["skipped"], 3);
+    assert_eq!(by_dir["010000_17"]["reason"], "no_media");
+    assert_eq!(by_dir["010000_17"]["day"], "20260701");
+    assert_eq!(by_dir["010000_17"]["stream"], "field.audio");
+    assert_eq!(by_dir["020000_17"]["reason"], "policy");
+    assert!(by_dir["020000_17"]["eligibility"].is_object());
+    assert_eq!(by_dir["020000_17"]["day"], "20260806");
+    assert_eq!(by_dir["020000_17"]["stream"], "field.audio");
+    assert_eq!(by_dir["030000_17"]["reason"], "held");
+    assert!(
+        !by_dir["030000_17"]["blockers"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(by_dir["030000_17"]["day"], "20260701");
+    assert_eq!(by_dir["030000_17"]["stream"], "field.audio");
+}
+
+#[test]
+fn mark_continues_past_an_unreadable_day() {
+    let bed = Bed::new("mark-unreadable-day");
+    bed.proven_segment(
+        "20260701",
+        "field.audio",
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let unreadable = bed.journal().join("chronicle/20260702");
+    fs::create_dir_all(&unreadable).unwrap();
+    make_day_unreadable(&unreadable);
+    let policy = armed_policy();
+
+    let output = bed.run(
+        "mark",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            &policy,
+        ],
+    );
+    restore_day_permissions(&unreadable);
+    let body = receipt(&output);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["plan"]["unreadable_days"], json!(["20260702"]));
+    assert_eq!(body["marks"]["marks"].as_object().unwrap().len(), 1);
+}
+
+#[test]
+fn mark_preserves_existing_marks_under_an_unreadable_day() {
+    let bed = Bed::new("mark-preserves-unreadable-day");
+    let day = "20260701";
+    bed.proven_segment(day, "field.audio", "070000_17", "2026-07-01T00:00:00Z");
+    let policy = armed_policy();
+    let first = bed.run(
+        "mark",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            &policy,
+        ],
+    );
+    let first_body = receipt(&first);
+    let (mark_id, original_mark) = first_body["marks"]["marks"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .next()
+        .map(|(id, mark)| (id.clone(), mark.clone()))
+        .unwrap();
+    let unreadable = bed.journal().join(format!("chronicle/{day}"));
+    make_day_unreadable(&unreadable);
+
+    let second = bed.run(
+        "mark",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--today",
+            "2026-08-07",
+            "--now",
+            "2026-08-07T00:00:00Z",
+            "--policy",
+            &policy,
+        ],
+    );
+    restore_day_permissions(&unreadable);
+    let second_body = receipt(&second);
+
+    assert_eq!(second.status.code(), Some(0));
+    assert_eq!(second_body["plan"]["unreadable_days"], json!([day]));
+    assert_eq!(
+        second_body["marks"]["marks"][mark_id.as_str()],
+        original_mark
     );
 }
 
@@ -1028,7 +1187,10 @@ fn every_new_verb_and_unknown_verb_returns_json_with_its_identifier() {
     );
     let mark_body = receipt(&mark);
     assert_eq!(mark_body["verb"], "mark");
-    assert_eq!(keys(&mark_body), BTreeSet::from(["marks", "ok", "verb"]));
+    assert_eq!(
+        keys(&mark_body),
+        BTreeSet::from(["marks", "ok", "plan", "verb"])
+    );
     let marks = bed.run("marks", &["--journal", journal]);
     let marks_body = receipt(&marks);
     assert_eq!(marks_body["verb"], "marks");

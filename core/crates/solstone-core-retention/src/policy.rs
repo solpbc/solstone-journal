@@ -111,7 +111,8 @@ pub struct SegmentAge {
 }
 
 /// Why a segment is or is not eligible, in terms a receipt can carry.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "status")]
 pub enum Eligibility {
     Eligible {
         anchor: Anchor,
