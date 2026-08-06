@@ -279,6 +279,10 @@ fn talent_day_indexes_require_wholly_old_valid_rows() {
 fn the_cache_class_removes_directories_by_mtime() {
     let bed = Bed::new("cache");
     let old = bed.dir(".cache/cogitate-history/session-old");
+    bed.file(
+        ".cache/cogitate-history/session-old/events/event-00000.json",
+        b"cache payload",
+    );
     bed.dir(".cache/cogitate-history/session-new");
     bed.file(
         ".cache/cogitate-history/stray.txt",
@@ -294,6 +298,10 @@ fn the_cache_class_removes_directories_by_mtime() {
     assert_eq!(mine.len(), 1, "{built:?}");
     assert_eq!(mine[0].rel(), ".cache/cogitate-history/session-old");
     assert_eq!(mine[0].kind(), EntryKind::Directory);
+    assert!(
+        mine[0].bytes() > 0,
+        "cache content contributes reclaimed bytes"
+    );
     assert!(
         built
             .retained
@@ -311,6 +319,70 @@ fn the_cache_class_removes_directories_by_mtime() {
             .exists(),
         "the recent one survives"
     );
+    teardown(&bed);
+}
+
+/// A file-class symlink is an entry to unlink, while an escaping parent is refused.
+#[test]
+fn file_classes_unlink_leaf_symlinks_but_refuse_escaping_parents() {
+    use std::os::unix::fs::symlink;
+
+    let bed = Bed::new("file-symlink");
+    let external_file = std::env::temp_dir().join(format!(
+        "retention-file-target-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos()
+    ));
+    fs::write(&external_file, b"outside the journal").expect("external file");
+    let link = bed.root.join("tokens/20260101.jsonl");
+    fs::create_dir_all(link.parent().expect("tokens root")).expect("tokens root");
+    symlink(&external_file, &link).expect("token link");
+
+    let built = bed.plan(7, "2026-08-05");
+    let target = built.by_class("tokens");
+    assert_eq!(target.len(), 1, "the leaf link is a file target: {built:?}");
+    let outcome = remove_logs(&bed.root, &[target[0].clone()]);
+    assert!(outcome.targets[0].not_removed.is_empty(), "{outcome:?}");
+    assert!(link.symlink_metadata().is_err(), "the link was unlinked");
+    assert!(external_file.is_file(), "the link target survives");
+
+    fs::remove_dir_all(bed.root.join("tokens")).expect("remove token directory");
+    let external_dir = std::env::temp_dir().join(format!(
+        "retention-file-parent-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&external_dir).expect("external directory");
+    let external_child = external_dir.join("20260101.jsonl");
+    fs::write(&external_child, b"outside the journal").expect("external child");
+    symlink(&external_dir, bed.root.join("tokens")).expect("escaping token directory");
+
+    let built = bed.plan(7, "2026-08-05");
+    let target = built.by_class("tokens");
+    assert_eq!(
+        target.len(),
+        1,
+        "the root still plans a dated file: {built:?}"
+    );
+    let outcome = remove_logs(&bed.root, &[target[0].clone()]);
+    assert!(
+        outcome.targets[0]
+            .not_removed
+            .iter()
+            .any(|entry| entry.entry == "tokens/20260101.jsonl"),
+        "the escaping parent is refused: {outcome:?}"
+    );
+    assert!(external_child.is_file(), "the external file survives");
+
+    fs::remove_file(bed.root.join("tokens")).expect("remove token link");
+    fs::remove_file(&external_file).expect("external file teardown");
+    fs::remove_dir_all(&external_dir).expect("external directory teardown");
     teardown(&bed);
 }
 

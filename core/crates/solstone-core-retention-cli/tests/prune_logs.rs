@@ -149,6 +149,14 @@ fn prune_logs_removes_every_class_compacts_both_logs_and_keeps_negative_twins() 
         receipt["detail"]["plan"]["compactions"]["retention_log"]["rewritten"],
         true
     );
+    assert_eq!(
+        receipt["detail"]["plan"]["by_class"]["talent_run_logs"]["skipped"],
+        1
+    );
+    assert_eq!(
+        receipt["detail"]["plan"]["by_class"]["talent_day_index"]["skipped"],
+        2
+    );
 
     for rel in [
         "chronicle/20260101/health/observer.log",

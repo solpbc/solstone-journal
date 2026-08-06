@@ -175,6 +175,12 @@ def test_storage_prune_logs_serializes_root_task_log_dry_run(settings_env):
     old_line = _root_task_log_line(_old_day(), "old root line")
     root_log = journal_path / "task_log.txt"
     root_log.write_bytes(old_line)
+    old_retention_line = (
+        f'{{"timestamp":"{datetime.strptime(_old_day(), "%Y%m%d"):%Y-%m-%d}T12:00:00"}}\n'
+    ).encode("utf-8")
+    retention_log = journal_path / "health" / "retention.log"
+    retention_log.parent.mkdir(parents=True, exist_ok=True)
+    retention_log.write_bytes(old_retention_line)
     client = _client(journal_path)
 
     response = client.post("/app/settings/api/storage/prune-logs", json={})
@@ -183,12 +189,17 @@ def test_storage_prune_logs_serializes_root_task_log_dry_run(settings_env):
     payload = response.get_json()
     assert payload["files_deleted"] == 0
     assert payload["dirs_deleted"] == 0
-    assert payload["bytes_freed"] == len(old_line)
+    assert payload["bytes_freed"] == len(old_line) + len(old_retention_line)
     assert payload["root_task_log"]["exists"] is True
     assert payload["root_task_log"]["lines_removed"] == 1
     assert payload["root_task_log"]["bytes_freed"] == len(old_line)
     assert payload["root_task_log"]["rewritten"] is False
+    assert payload["retention_log"]["exists"] is True
+    assert payload["retention_log"]["lines_removed"] == 1
+    assert payload["retention_log"]["bytes_freed"] == len(old_retention_line)
+    assert payload["retention_log"]["rewritten"] is False
     assert root_log.read_bytes() == old_line
+    assert retention_log.read_bytes() == old_retention_line
 
 
 def test_storage_prune_logs_disabled_config_deletes_nothing(settings_env):
@@ -255,8 +266,8 @@ def test_storage_prune_logs_serializes_partial_errors(settings_env, monkeypatch)
                 "class": "tokens",
                 "path": "tokens/20260525.jsonl",
                 "day": "20260525",
-                "reason": "global_record_failed",
-                "message": "failed to append pruning run entry",
+                "reason": "the log entry could not be removed: permission denied",
+                "message": "the log entry could not be removed: permission denied",
                 "hint": None,
             }
         ],
@@ -274,5 +285,5 @@ def test_storage_prune_logs_serializes_partial_errors(settings_env, monkeypatch)
     payload = response.get_json()
     assert payload["partial_error"] is True
     assert payload["audit_written"] is False
-    assert payload["errors"][0]["reason"] == "global_record_failed"
+    assert payload["errors"][0]["reason"] == "the log entry could not be removed: permission denied"
     assert payload["by_class"]["tokens"]["errors"] == ["failed"]

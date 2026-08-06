@@ -16,14 +16,14 @@
 //!
 //! # 🔴 The subsystem that prunes logs did not prune its own
 //!
-//! `health/pruning-runs/<day>.jsonl` is written by every prune run and pruned by
-//! none. The class that looks like it should cover it, `chronicle_health_logs`, walks
-//! `chronicle/<day>/health/` — not the journal root's `health/`. So it grew without
-//! bound on every owner's disk. It is a **row in the table below**.
+//! `health/pruning-runs/<day>.jsonl` is written by raw-media pruning and offload, but
+//! `chronicle_health_logs` walks `chronicle/<day>/health/` rather than the journal
+//! root's `health/`. It is therefore a separate **row in the table below**, so the
+//! audit records do not grow without bound.
 //!
-//! ⚠ `health/retention.log` has the same defect and is *not* fixed here: it is one
-//! append-only file rather than a set of dated ones, so it needs line-date compaction
-//! rather than deletion. Named in the outcome, not silently omitted.
+//! ⚠ `health/retention.log` is one append-only file rather than a set of dated ones,
+//! so it needs line-date compaction rather than deletion. It is a [`Compactable`]
+//! below and `prune-logs` executes its planned rewrite.
 //!
 //! # ⛔ Two classes reach inside the chronicle
 //!
@@ -338,6 +338,31 @@ fn split_name(name: &str) -> (&str, Option<&str>) {
     }
 }
 
+/// Bytes reclaimed by removing a real cache directory, without following symlinks.
+fn directory_bytes(path: &Path) -> u64 {
+    let own = path.symlink_metadata().map_or(0, |meta| meta.len());
+    let Ok(entries) = list_dir_entries(path) else {
+        return own;
+    };
+    entries.into_iter().fold(own, |total, entry| {
+        let bytes = if entry.kind == DirEntryKind::Directory {
+            directory_bytes(&entry.path)
+        } else {
+            entry.path.symlink_metadata().map_or(0, |meta| meta.len())
+        };
+        total.saturating_add(bytes)
+    })
+}
+
+fn entry_bytes(path: &Path, kind: EntryKind) -> u64 {
+    match kind {
+        EntryKind::File => path
+            .symlink_metadata()
+            .map_or(0, |meta| if meta.is_file() { meta.len() } else { 0 }),
+        EntryKind::Directory => directory_bytes(path),
+    }
+}
+
 /// Whether an old-named talent day index is safe to remove.
 ///
 /// An index is a denormalized view across talent runs, so its filename is only a
@@ -453,7 +478,13 @@ pub fn plan(journal: &Path, policy: &LogPolicy, today: NaiveDate) -> LogPlan {
                     EntryKind::File => DirEntryKind::File,
                     EntryKind::Directory => DirEntryKind::Directory,
                 };
-                if entry.kind != wanted {
+                let matches_file_symlink = class.entry == EntryKind::File
+                    && entry.kind == DirEntryKind::Other
+                    && matches!(entry.path.symlink_metadata(), Ok(meta) if meta.file_type().is_symlink())
+                    // A link to a directory is not a file target. Keep the directory
+                    // case closed until the door has a link-only removal primitive.
+                    && !entry.path.is_dir();
+                if entry.kind != wanted && !matches_file_symlink {
                     built.retained.push(retained(Kept::NotAMatch));
                     continue;
                 }
@@ -518,10 +549,7 @@ pub fn plan(journal: &Path, policy: &LogPolicy, today: NaiveDate) -> LogPlan {
                         }
                     }
                 }
-                let bytes = entry
-                    .path
-                    .symlink_metadata()
-                    .map_or(0, |meta| if meta.is_file() { meta.len() } else { 0 });
+                let bytes = entry_bytes(&entry.path, class.entry);
                 built.prunable.push(LogTarget {
                     class: class.name,
                     rel,

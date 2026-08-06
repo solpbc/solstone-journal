@@ -6597,7 +6597,8 @@ function readLogCleanupDays() {
 
 function logCleanupHasWork(result) {
   const rootRemoved = result.root_task_log?.lines_removed || 0;
-  return ((result.files_deleted || 0) + (result.dirs_deleted || 0) + rootRemoved) > 0;
+  const retentionRemoved = result.retention_log?.lines_removed || 0;
+  return ((result.files_deleted || 0) + (result.dirs_deleted || 0) + rootRemoved + retentionRemoved) > 0;
 }
 
 function logCleanupClassLabel(name) {
@@ -6635,6 +6636,12 @@ function renderLogCleanupResult(result, phase) {
   if (rootStats.lines_removed) {
     const rootBytes = rootStats.bytes_freed || 0;
     html += `<p>${rootStats.lines_removed} root task-log line(s) ${phase === 'preview' ? 'would be compacted' : 'compacted'} (${rootBytes} B).</p>`;
+  }
+
+  const retentionStats = result.retention_log || {};
+  if (retentionStats.lines_removed) {
+    const retentionBytes = retentionStats.bytes_freed || 0;
+    html += `<p>${retentionStats.lines_removed} retention-log line(s) ${phase === 'preview' ? 'would be compacted' : 'compacted'} (${retentionBytes} B).</p>`;
   }
 
   const classRows = Object.entries(result.by_class || {})

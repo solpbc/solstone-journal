@@ -128,6 +128,7 @@ class PruneResult:
     audit_written: bool
     partial_error: bool
     root_task_log: dict = field(default_factory=dict)
+    retention_log: dict = field(default_factory=dict)
 
 
 def load_log_retention_config() -> LogRetentionConfig:
@@ -187,6 +188,23 @@ def _compaction_bytes(stats: dict, *, dry_run: bool) -> int:
     return _count(stats.get("bytes_before")) - _count(stats.get("bytes_after"))
 
 
+def _compaction_result(stats: dict, *, dry_run: bool) -> dict:
+    return {
+        "exists": bool(stats.get("exists", False)),
+        "lines_total": _count(stats.get("lines_total")),
+        "lines_kept": _count(stats.get("lines_kept")),
+        "lines_removed": _count(stats.get("lines_dropped")),
+        "unparseable_lines_kept": _count(stats.get("undateable_kept")),
+        "bytes_freed": _compaction_bytes(stats, dry_run=dry_run),
+        "rewritten": bool(stats.get("rewritten", False)),
+        "errors": [
+            str(error.get("reason", "unknown error"))
+            for error in (stats.get("errors") or [])
+            if isinstance(error, dict)
+        ],
+    }
+
+
 def prune_result_from_receipt(
     receipt: dict[str, Any], *, dry_run: bool, days: int
 ) -> PruneResult:
@@ -235,29 +253,16 @@ def prune_result_from_receipt(
     compactions = plan.get("compactions") or {}
     root = compactions.get("root_task_log") if isinstance(compactions, dict) else {}
     root = root if isinstance(root, dict) else {}
-    root_task_log = {
-        "exists": bool(root.get("exists", False)),
-        "lines_total": _count(root.get("lines_total")),
-        "lines_kept": _count(root.get("lines_kept")),
-        "lines_removed": _count(root.get("lines_dropped")),
-        "unparseable_lines_kept": _count(root.get("undateable_kept")),
-        "bytes_freed": _compaction_bytes(root, dry_run=dry_run),
-        "rewritten": bool(root.get("rewritten", False)),
-        "errors": [
-            str(error.get("reason", "unknown error"))
-            for error in (root.get("errors") or [])
-            if isinstance(error, dict)
-        ],
-    }
+    root_task_log = _compaction_result(root, dry_run=dry_run)
     retention_log = (
         compactions.get("retention_log") if isinstance(compactions, dict) else {}
     )
     retention_log = retention_log if isinstance(retention_log, dict) else {}
+    retention_log_result = _compaction_result(retention_log, dry_run=dry_run)
     # 🔴 Unlike the Python writer, Rust also compacts health/retention.log. Its
     # reclaimed bytes now contribute to journal_logs retention accounting.
-    compaction_bytes = sum(
-        _compaction_bytes(compaction, dry_run=dry_run)
-        for compaction in (root, retention_log)
+    compaction_bytes = (
+        root_task_log["bytes_freed"] + retention_log_result["bytes_freed"]
     )
 
     return PruneResult(
@@ -275,6 +280,7 @@ def prune_result_from_receipt(
         audit_written=False,
         partial_error=bool(errors),
         root_task_log=root_task_log,
+        retention_log=retention_log_result,
     )
 
 
@@ -305,6 +311,7 @@ def prune_logs(
             audit_written=False,
             partial_error=False,
             root_task_log={},
+            retention_log={},
         )
 
     today = date.today()

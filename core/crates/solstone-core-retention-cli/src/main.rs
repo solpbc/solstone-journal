@@ -489,6 +489,12 @@ fn add_prune_error(
     errors.push(error);
 }
 
+fn add_skip(classes: &mut BTreeMap<String, ClassCounts>, class: &str) {
+    if let Some(counts) = classes.get_mut(class) {
+        counts.skipped = counts.skipped.saturating_add(1);
+    }
+}
+
 /// The log plan and its line-compaction companions in the executor's stable receipt.
 ///
 /// The bridge must not recreate the class table or date parser, so both the planned and
@@ -540,6 +546,9 @@ fn log_plan_json(
     }
 
     for retained in &plan.retained {
+        if matches!(retained.reason, Kept::Exempt | Kept::ContentNotFullyOld) {
+            add_skip(&mut classes, retained.class);
+        }
         let (day, reason) = match &retained.reason {
             Kept::Undateable => (
                 None,
