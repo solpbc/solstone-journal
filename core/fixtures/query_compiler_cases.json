@@ -1,0 +1,1099 @@
+{
+  "cases": [
+    {
+      "case": "empty",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": ""
+      },
+      "input": "",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": ""
+      }
+    },
+    {
+      "case": "whitespace_only",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": ""
+      },
+      "input": "   ",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "   "
+      }
+    },
+    {
+      "case": "interior_whitespace_run",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(alpha beta, 10) OR (alpha AND beta)"
+      },
+      "input": "alpha     beta",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "alpha     beta"
+      }
+    },
+    {
+      "case": "leading_trailing_whitespace",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(alpha beta, 10) OR (alpha AND beta)"
+      },
+      "input": "  alpha beta  ",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "  alpha beta  "
+      }
+    },
+    {
+      "case": "single_term",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "standup"
+      },
+      "input": "standup",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "standup"
+      }
+    },
+    {
+      "case": "two_terms",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(weekly meeting, 10) OR (weekly AND meeting)"
+      },
+      "input": "weekly meeting",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "weekly meeting"
+      }
+    },
+    {
+      "case": "four_terms",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(quarterly planning review notes, 10) OR (quarterly AND planning AND review AND notes)"
+      },
+      "input": "quarterly planning review notes",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "quarterly planning review notes"
+      }
+    },
+    {
+      "case": "mixed_case_terms",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(Weekly Meeting, 10) OR (Weekly AND Meeting)"
+      },
+      "input": "Weekly Meeting",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "Weekly Meeting"
+      }
+    },
+    {
+      "case": "operator_or",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "standup OR retro"
+      },
+      "input": "standup OR retro",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "standup OR retro"
+      }
+    },
+    {
+      "case": "operator_and",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "standup AND retro"
+      },
+      "input": "standup AND retro",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "standup AND retro"
+      }
+    },
+    {
+      "case": "operator_not",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "standup NOT retro"
+      },
+      "input": "standup NOT retro",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "standup NOT retro"
+      }
+    },
+    {
+      "case": "operator_or_three",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "alpha OR beta OR gamma"
+      },
+      "input": "alpha OR beta OR gamma",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "alpha OR beta OR gamma"
+      }
+    },
+    {
+      "case": "lowercase_and_is_a_word",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(salt and pepper, 10) OR (salt AND and AND pepper)"
+      },
+      "input": "salt and pepper",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "salt and pepper"
+      }
+    },
+    {
+      "case": "lowercase_or_is_a_word",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(this or that, 10) OR (this AND or AND that)"
+      },
+      "input": "this or that",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "this or that"
+      }
+    },
+    {
+      "case": "balanced_quoted_phrase",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "\"release train\""
+      },
+      "input": "\"release train\"",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "\"release train\""
+      }
+    },
+    {
+      "case": "quoted_phrase_plus_term",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "\"release train\" schedule"
+      },
+      "input": "\"release train\" schedule",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "\"release train\" schedule"
+      }
+    },
+    {
+      "case": "unterminated_quote",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(release train, 10) OR (release AND train)"
+      },
+      "input": "\"release train",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "\"release train"
+      }
+    },
+    {
+      "case": "quote_inside_terms",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "say \"hi\" now"
+      },
+      "input": "say \"hi\" now",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "say \"hi\" now"
+      }
+    },
+    {
+      "case": "two_quoted_phrases",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "\"alpha beta\" \"gamma delta\""
+      },
+      "input": "\"alpha beta\" \"gamma delta\"",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "\"alpha beta\" \"gamma delta\""
+      }
+    },
+    {
+      "case": "apostrophe_proper_noun",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "\"O'Brien\""
+      },
+      "input": "O'Brien",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "O'Brien"
+      }
+    },
+    {
+      "case": "apostrophe_contraction",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "\"it's\""
+      },
+      "input": "it's",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "it's"
+      }
+    },
+    {
+      "case": "apostrophe_with_wildcard",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "\"O'Bri\"*"
+      },
+      "input": "O'Bri*",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "O'Bri*"
+      }
+    },
+    {
+      "case": "trailing_wildcard",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "plan*"
+      },
+      "input": "plan*",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "plan*"
+      }
+    },
+    {
+      "case": "short_trailing_wildcard",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "a*"
+      },
+      "input": "a*",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "a*"
+      }
+    },
+    {
+      "case": "wildcard_inside_quotes",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "\"plan*\""
+      },
+      "input": "\"plan*\"",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "\"plan*\""
+      }
+    },
+    {
+      "case": "wildcard_midword",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "pl*an"
+      },
+      "input": "pl*an",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "pl*an"
+      }
+    },
+    {
+      "case": "accented_latin_jose",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "Jos"
+      },
+      "input": "José",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "José"
+      }
+    },
+    {
+      "case": "accented_latin_cafe",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "caf"
+      },
+      "input": "café",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "café"
+      }
+    },
+    {
+      "case": "accented_latin_phrase",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(Jos caf meeting, 10) OR (Jos AND caf AND meeting)"
+      },
+      "input": "José café meeting",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "José café meeting"
+      }
+    },
+    {
+      "case": "umlaut",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(M ller, 10) OR (M AND ller)"
+      },
+      "input": "Müller",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "Müller"
+      }
+    },
+    {
+      "case": "cedilla",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(fa ade, 10) OR (fa AND ade)"
+      },
+      "input": "façade",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "façade"
+      }
+    },
+    {
+      "case": "greek",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": ""
+      },
+      "input": "Αθήνα",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "Αθήνα"
+      }
+    },
+    {
+      "case": "cyrillic",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": ""
+      },
+      "input": "Москва",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "Москва"
+      }
+    },
+    {
+      "case": "cjk_han",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": ""
+      },
+      "input": "会議",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "会議"
+      }
+    },
+    {
+      "case": "cjk_kana",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": ""
+      },
+      "input": "ミーティング",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "ミーティング"
+      }
+    },
+    {
+      "case": "hangul",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": ""
+      },
+      "input": "회의",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "회의"
+      }
+    },
+    {
+      "case": "arabic",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": ""
+      },
+      "input": "اجتماع",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "اجتماع"
+      }
+    },
+    {
+      "case": "hebrew",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": ""
+      },
+      "input": "פגישה",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "פגישה"
+      }
+    },
+    {
+      "case": "devanagari",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": ""
+      },
+      "input": "बैठक",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "बैठक"
+      }
+    },
+    {
+      "case": "emoji",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "meeting"
+      },
+      "input": "meeting 📅",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "meeting 📅"
+      }
+    },
+    {
+      "case": "mixed_script",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(meeting r union, 10) OR (meeting AND r AND union)"
+      },
+      "input": "meeting 会議 réunion",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "meeting 会議 réunion"
+      }
+    },
+    {
+      "case": "nfc_composed",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "caf"
+      },
+      "input": "café",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "café"
+      }
+    },
+    {
+      "case": "nfd_decomposed",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "cafe"
+      },
+      "input": "café",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "café"
+      }
+    },
+    {
+      "case": "email_address",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(someone example com, 10) OR (someone AND example AND com)"
+      },
+      "input": "someone@example.com",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "someone@example.com"
+      }
+    },
+    {
+      "case": "domain",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(example com, 10) OR (example AND com)"
+      },
+      "input": "example.com",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "example.com"
+      }
+    },
+    {
+      "case": "posix_path",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(notes 2026 plan md, 10) OR (notes AND 2026 AND plan AND md)"
+      },
+      "input": "notes/2026/plan.md",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "notes/2026/plan.md"
+      }
+    },
+    {
+      "case": "windows_path",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(notes 2026 plan md, 10) OR (notes AND 2026 AND plan AND md)"
+      },
+      "input": "notes\\2026\\plan.md",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "notes\\2026\\plan.md"
+      }
+    },
+    {
+      "case": "hyphenated_compound",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(follow up, 10) OR (follow AND up)"
+      },
+      "input": "follow-up",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "follow-up"
+      }
+    },
+    {
+      "case": "underscored_identifier",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(weekly reflection, 10) OR (weekly AND reflection)"
+      },
+      "input": "weekly_reflection",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "weekly_reflection"
+      }
+    },
+    {
+      "case": "dotted_version",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(version 1 0 22, 10) OR (version AND 1 AND 0 AND 22)"
+      },
+      "input": "version 1.0.22",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "version 1.0.22"
+      }
+    },
+    {
+      "case": "url",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(https example com notes, 10) OR (https AND example AND com AND notes)"
+      },
+      "input": "https://example.com/notes",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "https://example.com/notes"
+      }
+    },
+    {
+      "case": "parenthesised",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(planning draft, 10) OR (planning AND draft)"
+      },
+      "input": "planning (draft)",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "planning (draft)"
+      }
+    },
+    {
+      "case": "colon_separated",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(note draft, 10) OR (note AND draft)"
+      },
+      "input": "note:draft",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "note:draft"
+      }
+    },
+    {
+      "case": "tab_separated",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(alpha beta, 10) OR (alpha AND beta)"
+      },
+      "input": "alpha\tbeta",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "alpha\tbeta"
+      }
+    },
+    {
+      "case": "newline_separated",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(alpha beta, 10) OR (alpha AND beta)"
+      },
+      "input": "alpha\nbeta",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "alpha\nbeta"
+      }
+    },
+    {
+      "case": "null_byte",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(alpha beta, 10) OR (alpha AND beta)"
+      },
+      "input": "alpha\u0000beta",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "alpha\u0000beta"
+      }
+    },
+    {
+      "case": "bell_character",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(alpha beta, 10) OR (alpha AND beta)"
+      },
+      "input": "alpha\u0007beta",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "alpha\u0007beta"
+      }
+    },
+    {
+      "case": "temporal_yesterday",
+      "compiled": {
+        "day_from": "20260805",
+        "day_to": "20260805",
+        "expression": ""
+      },
+      "input": "yesterday",
+      "temporal": {
+        "day_from": "20260805",
+        "day_to": "20260805",
+        "remaining_text": ""
+      }
+    },
+    {
+      "case": "temporal_today",
+      "compiled": {
+        "day_from": "20260806",
+        "day_to": "20260806",
+        "expression": ""
+      },
+      "input": "today",
+      "temporal": {
+        "day_from": "20260806",
+        "day_to": "20260806",
+        "remaining_text": ""
+      }
+    },
+    {
+      "case": "temporal_last_week",
+      "compiled": {
+        "day_from": "20260727",
+        "day_to": "20260802",
+        "expression": ""
+      },
+      "input": "last week",
+      "temporal": {
+        "day_from": "20260727",
+        "day_to": "20260802",
+        "remaining_text": ""
+      }
+    },
+    {
+      "case": "temporal_this_week",
+      "compiled": {
+        "day_from": "20260803",
+        "day_to": "20260809",
+        "expression": ""
+      },
+      "input": "this week",
+      "temporal": {
+        "day_from": "20260803",
+        "day_to": "20260809",
+        "remaining_text": ""
+      }
+    },
+    {
+      "case": "temporal_last_month",
+      "compiled": {
+        "day_from": "20260701",
+        "day_to": "20260731",
+        "expression": ""
+      },
+      "input": "last month",
+      "temporal": {
+        "day_from": "20260701",
+        "day_to": "20260731",
+        "remaining_text": ""
+      }
+    },
+    {
+      "case": "temporal_this_month",
+      "compiled": {
+        "day_from": "20260801",
+        "day_to": "20260831",
+        "expression": ""
+      },
+      "input": "this month",
+      "temporal": {
+        "day_from": "20260801",
+        "day_to": "20260831",
+        "remaining_text": ""
+      }
+    },
+    {
+      "case": "temporal_weekend_over",
+      "compiled": {
+        "day_from": "20260801",
+        "day_to": "20260802",
+        "expression": ""
+      },
+      "input": "over the weekend",
+      "temporal": {
+        "day_from": "20260801",
+        "day_to": "20260802",
+        "remaining_text": ""
+      }
+    },
+    {
+      "case": "temporal_weekend_on",
+      "compiled": {
+        "day_from": "20260801",
+        "day_to": "20260802",
+        "expression": ""
+      },
+      "input": "on the weekend",
+      "temporal": {
+        "day_from": "20260801",
+        "day_to": "20260802",
+        "remaining_text": ""
+      }
+    },
+    {
+      "case": "temporal_last_monday",
+      "compiled": {
+        "day_from": "20260803",
+        "day_to": "20260803",
+        "expression": ""
+      },
+      "input": "last monday",
+      "temporal": {
+        "day_from": "20260803",
+        "day_to": "20260803",
+        "remaining_text": ""
+      }
+    },
+    {
+      "case": "temporal_last_sunday",
+      "compiled": {
+        "day_from": "20260802",
+        "day_to": "20260802",
+        "expression": ""
+      },
+      "input": "last sunday",
+      "temporal": {
+        "day_from": "20260802",
+        "day_to": "20260802",
+        "remaining_text": ""
+      }
+    },
+    {
+      "case": "temporal_last_friday_mixed_case",
+      "compiled": {
+        "day_from": "20260731",
+        "day_to": "20260731",
+        "expression": ""
+      },
+      "input": "last Friday",
+      "temporal": {
+        "day_from": "20260731",
+        "day_to": "20260731",
+        "remaining_text": ""
+      }
+    },
+    {
+      "case": "temporal_with_terms",
+      "compiled": {
+        "day_from": "20260805",
+        "day_to": "20260805",
+        "expression": "NEAR(standup notes from, 10) OR (standup AND notes AND from)"
+      },
+      "input": "standup notes from yesterday",
+      "temporal": {
+        "day_from": "20260805",
+        "day_to": "20260805",
+        "remaining_text": "standup notes from"
+      }
+    },
+    {
+      "case": "temporal_leading",
+      "compiled": {
+        "day_from": "20260805",
+        "day_to": "20260805",
+        "expression": "NEAR(standup notes, 10) OR (standup AND notes)"
+      },
+      "input": "yesterday standup notes",
+      "temporal": {
+        "day_from": "20260805",
+        "day_to": "20260805",
+        "remaining_text": "standup notes"
+      }
+    },
+    {
+      "case": "temporal_quoted_is_literal",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "\"yesterday\" standup"
+      },
+      "input": "\"yesterday\" standup",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "\"yesterday\" standup"
+      }
+    },
+    {
+      "case": "temporal_two_phrases",
+      "compiled": {
+        "day_from": "20260805",
+        "day_to": "20260805",
+        "expression": "NEAR(and last week, 10) OR (and AND last AND week)"
+      },
+      "input": "yesterday and last week",
+      "temporal": {
+        "day_from": "20260805",
+        "day_to": "20260805",
+        "remaining_text": "and last week"
+      }
+    },
+    {
+      "case": "temporal_inside_longer_phrase",
+      "compiled": {
+        "day_from": "20260803",
+        "day_to": "20260803",
+        "expression": "NEAR(notes from about planning, 10) OR (notes AND from AND about AND planning)"
+      },
+      "input": "notes from last monday about planning",
+      "temporal": {
+        "day_from": "20260803",
+        "day_to": "20260803",
+        "remaining_text": "notes from about planning"
+      }
+    },
+    {
+      "case": "temporal_with_quoted_phrase",
+      "compiled": {
+        "day_from": "20260727",
+        "day_to": "20260802",
+        "expression": "\"release train\""
+      },
+      "input": "\"release train\" last week",
+      "temporal": {
+        "day_from": "20260727",
+        "day_to": "20260802",
+        "remaining_text": "\"release train\""
+      }
+    },
+    {
+      "case": "operator_after_quote",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "\"release train\" OR standup"
+      },
+      "input": "\"release train\" OR standup",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "\"release train\" OR standup"
+      }
+    },
+    {
+      "case": "or_binds_looser_than_implicit_and",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "alpha OR beta gamma"
+      },
+      "input": "alpha OR beta gamma",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "alpha OR beta gamma"
+      }
+    },
+    {
+      "case": "stopword_heavy",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "NEAR(what did i do about the meeting, 10) OR (what AND did AND i AND do AND about AND the AND meeting)"
+      },
+      "input": "what did i do about the meeting",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "what did i do about the meeting"
+      }
+    },
+    {
+      "case": "single_stopword",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": "the"
+      },
+      "input": "the",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "the"
+      }
+    }
+  ],
+  "reference_instant": "2026-08-06T12:00:00",
+  "reference_weekday": "Thursday",
+  "tz": "UTC"
+}
