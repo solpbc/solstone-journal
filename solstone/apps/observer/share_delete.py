@@ -1,22 +1,28 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Delete an allowed source stream from the observer-owned journal surface."""
+"""Erase the owner's location data, by deleting every segment that contains it.
+
+🔴 Segment-scoped since the founder ruling of 2026-08-05. This module previously
+unlinked `location.jsonl` out of a segment that also held audio and kept the rest --
+a partial owner-directed delete, which the ruling forbids. Now every segment holding
+location data is deleted whole, through the retention executor.
+
+⚠ The cost is disclosed, not hidden: `mixed_segments` in the receipt counts the
+segments that also held recordings, and those recordings are gone too.
+"""
 
 from __future__ import annotations
 
 import logging
-import shutil
 from collections.abc import Iterable
 from pathlib import Path
 
-from solstone.apps.observer.source_discovery import (
-    LOCATION_ORIGINAL,
-    find_location_sources,
-)
+from solstone.apps.observer.source_discovery import find_location_sources
 from solstone.apps.observer.utils import has_history_for_stream, prune_history_by_stream
 from solstone.think.facets import get_facets
 from solstone.think.indexer.journal import prune_chunks_by_stream
+from solstone.think import retention_executor
 from solstone.think.streams import delete_stream_state
 from solstone.think.utils import get_journal
 
@@ -109,53 +115,77 @@ def delete_source_stream(stream: str) -> dict:
     location_only_parents: set[Path] = set()
     mobile_streams_touched: set[str] = set()
 
-    for src in find_location_sources():
-        day_fmt = _day_display(src.day)
-        if src.is_mixed:
-            try:
-                (src.path / LOCATION_ORIGINAL).unlink()
-            except OSError as exc:
-                logger.warning(
-                    "Failed to remove location original in %s: %s",
-                    src.path,
-                    exc,
-                )
+    # 🔴 Segment-scoped, per the founder ruling of 2026-08-05: erasing location data
+    # deletes every segment that CONTAINS location data, whole. The previous shape
+    # unlinked `location.jsonl` out of a segment that also held audio and kept the
+    # rest -- a partial owner-directed delete, which the ruling forbids.
+    #
+    # ⚠ What that costs the owner is disclosed rather than hidden: `mixed_segments`
+    # counts the segments that also held recordings, and those recordings are gone
+    # too. It is the price of the no-partial-deletes rule.
+    #
+    # ⛔ Every removal goes through the retention executor, so each deleted segment
+    # gets a tombstone (the owner's evidence a deletion happened), staging (no
+    # half-removed segment under its real name), and a path-keyed index prune.
+    sources = find_location_sources()
+    by_segment = {(src.day, src.stream, src.segment): src for src in sources}
+    receipt: dict[str, object] = {}
+    if sources:
+        try:
+            receipt = retention_executor.remove_segments(
+                journal, list(by_segment), reason="owner"
+            )
+        except retention_executor.RemovalRefused as refused:
+            # Partial progress is real: read the receipt rather than assuming none of
+            # it happened.
+            receipt = refused.refused.receipt
+        except retention_executor.ExecutorUnavailable as unavailable:
+            logger.error("The retention executor is unavailable: %s", unavailable)
+            not_removed.append(
+                {
+                    "what": "location data",
+                    "plain_reason": (
+                        "The component that deletes recordings could not be run, so "
+                        "nothing was deleted. Try again after reinstalling."
+                    ),
+                }
+            )
+            receipt = {}
+
+    # Attribute the executor's per-segment outcome back to what the owner asked for.
+    refused_segments: set[str] = set()
+    for target in receipt.get("outcome", {}).get("targets", []):  # type: ignore[union-attr]
+        spec = target.get("target", {})
+        key = (spec.get("day", ""), spec.get("stream", ""), spec.get("dir", ""))
+        src = by_segment.get(key)
+        if src is None:
+            continue
+        if target.get("not_removed"):
+            refused_segments.add(src.segment)
+            for entry in target["not_removed"]:
                 not_removed.append(
                     {
-                        "what": f"{src.stream} {day_fmt} {src.segment}: location data",
-                        "plain_reason": _ORIGINAL_NOT_REMOVED_REASON,
-                    }
-                )
-                continue
-            originals += 1
-            mixed_segments += 1
-            days.add(src.day)
-            if src.stream != LOCATION_STREAM:
-                mobile_streams_touched.add(src.stream)
-        else:
-            try:
-                shutil.rmtree(src.path)
-            except OSError as exc:
-                logger.warning(
-                    "Failed to remove %s segment %s: %s",
-                    src.stream,
-                    src.path,
-                    exc,
-                )
-                not_removed.append(
-                    {
-                        "what": f"{src.stream} {day_fmt} {src.segment}: segment",
+                        "what": (
+                            f"{src.stream} {_day_display(src.day)} {src.segment}: "
+                            "segment"
+                        ),
                         "plain_reason": _SEGMENT_NOT_REMOVED_REASON,
                     }
                 )
-                continue
-            originals += 1
-            segments += 1
-            days.add(src.day)
-            if src.stream == LOCATION_STREAM:
-                location_only_parents.add(src.path.parent)
-            else:
-                mobile_streams_touched.add(src.stream)
+            continue
+        originals += 1
+        segments += 1
+        days.add(src.day)
+        if src.is_mixed:
+            mixed_segments += 1
+        if src.stream == LOCATION_STREAM:
+            location_only_parents.add(src.path.parent)
+        else:
+            mobile_streams_touched.add(src.stream)
+
+    index_from_executor = receipt.get("index", {})
+    if isinstance(index_from_executor, dict):
+        in_segment_derived += int(index_from_executor.get("files", 0) or 0)
 
     for parent in location_only_parents:
         try:

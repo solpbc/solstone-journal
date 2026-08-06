@@ -30,6 +30,41 @@ from solstone.apps.observer.utils import (
 from solstone.think.streams import update_stream, write_segment_stream
 
 
+@pytest.fixture(autouse=True)
+def _retention_executor(monkeypatch):
+    """Erasing location data now goes through the retention executor.
+
+    ⚠ The REAL binary, not a fake. These tests exist to prove that a segment holding
+    both location data and a recording loses BOTH -- the founder ruling of 2026-08-05
+    against partial owner-directed deletes -- and a stand-in for the remover cannot
+    prove that. When it is not built, say so rather than assert against a substitute.
+    """
+    import os
+    import shutil as _shutil
+
+    override = os.environ.get("SOLSTONE_RETENTION_BIN")
+    if override and os.access(override, os.X_OK):
+        monkeypatch.setenv("SOLSTONE_RETENTION_BIN", override)
+        return
+    found = _shutil.which("solstone-retention")
+    if found:
+        monkeypatch.setenv("SOLSTONE_RETENTION_BIN", found)
+        return
+    for profile in ("debug", "release"):
+        candidate = (
+            Path(__file__).resolve().parents[4]
+            / "core" / "target" / profile / "solstone-retention"
+        )
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            monkeypatch.setenv("SOLSTONE_RETENTION_BIN", str(candidate))
+            return
+    pytest.skip(
+        "solstone-retention is not built; erasing location data goes through it, so "
+        "this test has nothing real to assert against "
+        "(cargo build -p solstone-core-retention-cli)"
+    )
+
+
 def _set_journal(tmp_path, monkeypatch) -> Path:
     journal = tmp_path / "journal"
     journal.mkdir()
@@ -209,10 +244,16 @@ def test_removes_location_across_two_days_leaves_other_streams(tmp_path, monkeyp
 
     receipt = delete_source_stream(LOCATION_STREAM)
 
-    assert not location_day_1.exists()
-    assert not location_day_2.exists()
-    assert not (journal / "chronicle" / "20260106" / LOCATION_STREAM).exists()
-    assert not (journal / "chronicle" / "20260107" / LOCATION_STREAM).exists()
+    # ⛔ The directory survives holding ONLY its tombstone: the owner's evidence a
+    # deletion happened, and what lets a later pass recognise it restored from backup.
+    assert sorted(e.name for e in location_day_1.iterdir()) == ["tombstone.json"]
+    assert sorted(e.name for e in location_day_2.iterdir()) == ["tombstone.json"]
+    # ⚠ The stream directory PERSISTS now, because it holds a tombstoned segment. The
+    # old path removed the segment directory outright and then rmdir'd the emptied
+    # parent; the tombstone is the owner's evidence a deletion happened and must
+    # survive, so its parents survive with it.
+    for segment_dir in (location_day_1, location_day_2):
+        assert sorted(e.name for e in segment_dir.iterdir()) == ["tombstone.json"]
     assert not (journal / "streams" / f"{LOCATION_STREAM}.json").exists()
     assert apple_segment.exists()
     assert (journal / "streams" / "import.apple.json").exists()
@@ -243,7 +284,7 @@ def test_location_non_attributable_aggregate_is_not_confirmed(tmp_path, monkeypa
     receipt = delete_source_stream(LOCATION_STREAM)
 
     assert aggregate.exists()
-    assert not location_segment.exists()
+    assert sorted(e.name for e in location_segment.iterdir()) == ["tombstone.json"]
     assert receipt["not_confirmed"] == [
         {
             "what": "work 2026-01-09: people and topics",
@@ -291,14 +332,44 @@ def test_location_failure_uses_location_in_not_removed(tmp_path, monkeypatch):
         history_prefix=prefix,
     )
 
-    def fail_rmtree(path):
-        raise OSError("permission denied")
+    # The removal is the executor's now, so a failure is its refusal rather than a
+    # raised OSError. ⛔ What matters is unchanged and is what this pins: a segment the
+    # remover could not remove is reported, never counted as removed.
+    def refuse(journal, segments, **kwargs):
+        raise share_delete.retention_executor.RemovalRefused(
+            share_delete.retention_executor.Refused(
+                {
+                    "outcome": {
+                        "targets": [
+                            {
+                                "target": {
+                                    "day": "20260111",
+                                    "stream": "location",
+                                    "dir": "090000_300",
+                                },
+                                "removed": [],
+                                "not_removed": [
+                                    {
+                                        "entry": "chronicle/20260111/location/090000_300",
+                                        "reason": "permission denied",
+                                    }
+                                ],
+                            }
+                        ],
+                        "halted": None,
+                    }
+                }
+            )
+        )
 
-    monkeypatch.setattr(share_delete.shutil, "rmtree", fail_rmtree)
+    monkeypatch.setattr(
+        share_delete.retention_executor, "remove_segments", refuse
+    )
 
     receipt = delete_source_stream(LOCATION_STREAM)
 
     assert seg_dir.exists()
+    assert (seg_dir / "location.jsonl").exists(), "a refused removal removes nothing"
     assert receipt["removed"]["segments"] == 0
     assert receipt["not_removed"] == [
         {
@@ -308,7 +379,17 @@ def test_location_failure_uses_location_in_not_removed(tmp_path, monkeypatch):
     ]
 
 
-def test_mixed_segment_removes_only_location(tmp_path, monkeypatch):
+def test_a_mixed_segment_loses_everything_not_just_its_location(tmp_path, monkeypatch):
+    """🔴 The founder ruling of 2026-08-05, inverted from what this test asserted.
+
+    It previously asserted `audio.m4a` SURVIVED while `location.jsonl` was unlinked --
+    a partial owner-directed delete. The ruling forbids that affordance anywhere, so
+    erasing location data now deletes the whole segment.
+
+    ⚠ The cost is real and is what `mixed_segments` discloses: the owner asked to erase
+    their location history and also lost the recording that shared the segment. That was
+    chosen knowingly over keeping location data the owner asked to be rid of.
+    """
     journal = _set_journal(tmp_path, monkeypatch)
     prefix = _observer_prefix("loc0040")
     seg_dir = _write_mixed_mobile_segment(
@@ -317,16 +398,21 @@ def test_mixed_segment_removes_only_location(tmp_path, monkeypatch):
         "090000_300",
         history_prefix=prefix,
     )
+    assert (seg_dir / "audio.m4a").exists(), "the fixture must start mixed"
 
     receipt = delete_source_stream(LOCATION_STREAM)
 
     assert not (seg_dir / "location.jsonl").exists()
-    assert (seg_dir / "audio.m4a").exists()
-    assert (seg_dir / "audio.jsonl").exists()
-    assert (seg_dir / "stream.json").exists()
-    assert seg_dir.exists()
+    assert not (seg_dir / "audio.m4a").exists(), (
+        "a partial owner-directed delete is forbidden: the recording goes too"
+    )
+    assert not (seg_dir / "audio.jsonl").exists()
+    # ⛔ The segment directory survives holding ONLY its tombstone -- the owner's
+    # evidence that a deletion happened, and what lets a later pass recognise the same
+    # segment restored from a backup.
+    assert sorted(entry.name for entry in seg_dir.iterdir()) == ["tombstone.json"]
     assert receipt["removed"]["mixed_segments"] == 1
-    assert receipt["removed"]["segments"] == 0
+    assert receipt["removed"]["segments"] == 1
     assert receipt["removed"]["originals"] == 1
     assert receipt["removed"]["history_rows"] == 0
     assert (journal / "streams" / "pixel.json").exists()
@@ -349,7 +435,9 @@ def test_mixed_segment_idempotent(tmp_path, monkeypatch):
     assert second["removed"]["mixed_segments"] == 0
     assert second["removed"]["originals"] == 0
     assert second["not_removed"] == []
-    assert (seg_dir / "audio.m4a").exists()
+    # The recording went with the first pass; the second finds nothing to do.
+    assert not (seg_dir / "audio.m4a").exists()
+    assert sorted(e.name for e in seg_dir.iterdir()) == ["tombstone.json"]
 
 
 def test_find_location_sources_sees_then_stops(tmp_path, monkeypatch):
@@ -398,7 +486,9 @@ def test_mobile_location_only_segment_removed(tmp_path, monkeypatch):
 
     receipt = delete_source_stream(LOCATION_STREAM)
 
-    assert not seg_dir.exists()
+    assert sorted(e.name for e in seg_dir.iterdir()) == ["tombstone.json"], (
+        "the segment is emptied and keeps its tombstone"
+    )
     assert receipt["removed"]["segments"] == 1
     assert receipt["removed"]["mixed_segments"] == 0
     assert (journal / "streams" / "pixel.json").exists()

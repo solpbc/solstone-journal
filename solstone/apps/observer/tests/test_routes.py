@@ -1135,8 +1135,10 @@ def test_delete_source_location_happy_path(observer_env):
     assert receipt["target"]["stream"] == "location"
     assert receipt["removed"]["segments"] == 1
     assert receipt["removed"]["originals"] == 1
-    assert receipt["removed"]["in_segment_derived"] == 0
-    assert not seg_dir.exists()
+    # ⛔ The segment is emptied and keeps its tombstone -- the owner's evidence that a
+    # deletion happened. It no longer vanishes outright, per the founder ruling of
+    # 2026-08-05 routing every removal through the retention executor.
+    assert sorted(entry.name for entry in seg_dir.iterdir()) == ["tombstone.json"]
 
 
 def test_ingest_missing_segment(observer_env):
