@@ -59,6 +59,16 @@ const ALLOWED: &[(&str, &str)] = &[
          parity and owed a decision: unify it and measure what changes, or declare the \
          divergence. It is listed here so it stays visible, not because it is settled",
     ),
+    (
+        "solstone-core-entities/src/router.rs",
+        "classifies free-text store-error messages and boolean-ish request values; it never \
+         compares entity names",
+    ),
+    (
+        "solstone-core-facets/src/store/review_candidates.rs",
+        "the facet-slug pipeline lowercases while building a filesystem label; it compares \
+         nothing",
+    ),
 ];
 
 fn crates_root() -> PathBuf {
@@ -82,12 +92,12 @@ fn collect(directory: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
-/// The store crates that own name comparison. Other crates are out of scope --
-/// this guards the plate's own surfaces, not the whole workspace.
+/// Store and route crates that may compare entity names.
 const GUARDED_CRATES: &[&str] = &[
     "solstone-core-entity",
     "solstone-core-entity-matching",
     "solstone-core-facets",
+    "solstone-core-entities",
 ];
 
 fn shipping_sources() -> Vec<PathBuf> {

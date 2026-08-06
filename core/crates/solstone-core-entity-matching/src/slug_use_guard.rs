@@ -53,6 +53,11 @@ const ALLOWED: &[(&str, &str)] = &[
         "names a NEW entity id on the create path and a NEW facet-relationship directory when \
          attaching a resolved entity for the first time -- never used to look one up",
     ),
+    (
+        "solstone-core-entities/src/router.rs",
+        "names merge-candidate key components and is a compatibility fallback only after a \
+         stored attached-facet identity lookup fails -- never used to locate an existing entity",
+    ),
 ];
 
 fn crates_root() -> PathBuf {

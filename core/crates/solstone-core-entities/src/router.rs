@@ -2333,15 +2333,35 @@ async fn observations_route(
     let Some(name) = q.get("name").filter(|name| !name.is_empty()) else {
         return refusal(ReasonCode::MissingRequiredField, "name is required");
     };
-    let entity_dir = solstone_core_entity_matching::entity_slug(name);
+    let name = name.to_owned();
     match solstone_core_serving::seam::run_blocking(move || {
+        let entity_dir = facet_observation_entity_dir(&root, &facet, &name)
+            .map_err(|error| error.to_string())?;
         solstone_core_facets::load_observations(&root, &facet, &entity_dir)
+            .map_err(|error| error.to_string())
     })
     .await
     {
         Ok(Ok(v)) => Json(json!({"total":v.len(),"items":v})).into_response(),
         _ => refusal(ReasonCode::EntityOperationFailed, "observation read failed"),
     }
+}
+
+/// Resolve a stored facet relationship before using the legacy slug fallback.
+fn facet_observation_entity_dir(
+    journal_root: &Path,
+    facet: &str,
+    name: &str,
+) -> Result<String, solstone_core_facets::FacetEntityWriteError> {
+    let entities =
+        solstone_core_facets::list_scoped_facet_entities(journal_root, facet, false, false)?;
+    if let Some(entity) = entities
+        .iter()
+        .find(|entity| entity.identity.get("name").and_then(Value::as_str) == Some(name))
+    {
+        return Ok(entity.relationship_dir.clone());
+    }
+    Ok(solstone_core_entity_matching::entity_slug(name))
 }
 
 fn facet_entity_write_error_is_busy(error: &solstone_core_facets::FacetEntityWriteError) -> bool {
@@ -2804,7 +2824,23 @@ async fn observe_route(
     let Some(content) = body.get("content").and_then(serde_json::Value::as_str) else {
         return refusal(ReasonCode::MissingRequiredField, "content is required");
     };
-    let entity_dir = solstone_core_entity_matching::entity_slug(name);
+    let name = name.to_owned();
+    let entity_dir = match solstone_core_serving::seam::run_blocking({
+        let root = Arc::clone(&root);
+        let facet = facet.clone();
+        let name = name.clone();
+        move || facet_observation_entity_dir(&root, &facet, &name)
+    })
+    .await
+    {
+        Ok(Ok(entity_dir)) => entity_dir,
+        _ => {
+            return refusal(
+                ReasonCode::EntityOperationFailed,
+                "observation entity lookup failed",
+            );
+        }
+    };
     if entity_dir.is_empty() {
         return refusal(ReasonCode::InvalidRequestValue, "entity name is invalid");
     }

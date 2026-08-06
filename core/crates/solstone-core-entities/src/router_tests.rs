@@ -1219,6 +1219,49 @@ async fn observe_adds_facet_observation() {
 }
 
 #[tokio::test]
+async fn observations_query_uses_the_stored_facet_directory_after_a_rename() {
+    let j = Journal::new();
+    seed_entity(j.path(), "alice", "Alicia");
+    seed_facet_entity(j.path(), "work", "alice");
+    fs::write(
+        j.path()
+            .join("facets/work/entities/alice/observations.jsonl"),
+        "{\"content\":\"existing\"}\n",
+    )
+    .unwrap();
+
+    let (status, observations) =
+        call(j.path(), "/app/entities/api/work/observations?name=Alicia").await;
+
+    assert_eq!(status, 200);
+    assert_eq!(observations["total"], 1);
+    assert_eq!(observations["items"][0]["content"], "existing");
+}
+
+#[tokio::test]
+async fn observe_uses_the_stored_facet_directory_after_a_rename() {
+    let j = Journal::new();
+    seed_entity(j.path(), "alice", "Alicia");
+    seed_facet_entity(j.path(), "work", "alice");
+
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/work/observe",
+        json!({"name":"Alicia","content":"new observation"}),
+    )
+    .await;
+
+    assert_eq!(status, 200);
+    assert_eq!(response["result"]["count"], 1);
+    assert!(
+        j.path()
+            .join("facets/work/entities/alice/observations.jsonl")
+            .is_file()
+    );
+    assert!(!j.path().join("facets/work/entities/alicia").exists());
+}
+
+#[tokio::test]
 async fn observe_requires_content() {
     let j = Journal::new();
     let (_, response) = post(
