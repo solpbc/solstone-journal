@@ -126,7 +126,7 @@ def test_a_per_stream_rule_reaches_the_payload():
     payload = rx.policy_payload(
         {
             "raw_media": "keep",
-            "per_stream": {"field.audio": {"mode": "days", "days": 14}},
+            "per_stream": {"field.audio": {"raw_media": "days", "raw_media_days": 14}},
         }
     )
     assert payload["per_stream"] == [

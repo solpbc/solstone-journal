@@ -519,7 +519,7 @@ def policy_payload(retention: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(stream, dict):
             continue
         per_stream.append(
-            [name, rule(stream.get("mode", "keep"), stream.get("days"))]
+            [name, rule(stream.get("raw_media", "keep"), stream.get("raw_media_days"))]
         )
 
     minimum = retention.get("raw_media_minimum_days") or 0
