@@ -8,7 +8,7 @@ use super::{
     stripped_truthy_display, titleize,
 };
 
-pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
+pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunks {
     let mut chunks = Vec::new();
     for record in records {
         let normalized = normalize_record(record);
@@ -126,7 +126,10 @@ fn source_title(record: &JsonObject) -> String {
     "untitled activity".to_string()
 }
 
-fn activity_header(rel: &str) -> String {
+fn activity_header(rel: Option<&str>) -> String {
+    let Some(rel) = rel else {
+        return "# Activities".to_string();
+    };
     let parts: Vec<&str> = rel.split('/').collect();
     let facet = parts
         .windows(3)

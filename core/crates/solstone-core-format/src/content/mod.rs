@@ -14,9 +14,11 @@ mod facet_entities;
 mod imports;
 mod morning_briefing;
 mod observations;
+mod projections;
 mod raw_screen;
 mod screen;
 mod sense;
+mod talent_projections;
 
 use serde_json::{Map, Value};
 
@@ -24,6 +26,10 @@ use crate::chunker::format_markdown;
 use crate::matcher::{PatternSpec, Resolver, patterns_for_root as filter_patterns_for_root};
 
 pub use crate::matcher::PatternRoot;
+pub use projections::{render_browser_text, render_raw_screen_text};
+pub use talent_projections::{
+    TalentTextProjection, iter_talent_text_projections, talent_projection_map,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Family {
@@ -378,45 +384,80 @@ pub fn patterns_for_root(root: PatternRoot) -> impl Iterator<Item = &'static Fam
     filter_patterns_for_root(INDEX_FAMILY_PATTERNS, root)
 }
 
+/// Render an indexed non-Markdown content family from already-parsed records.
+///
+/// `Family::Markdown` has no record-shaped representation. Use
+/// [`produce_chunks`] for Markdown text instead.
+pub fn produce_chunks_by_shape(
+    family: Family,
+    rel: Option<&str>,
+    records: &[JsonObject],
+    chat_labels: &ChatLabels,
+) -> ProducedChunks {
+    let rel_text = rel.unwrap_or("");
+    match family {
+        Family::Markdown => {
+            panic!(
+                "Family::Markdown has no by-shape rendering — produce_chunks handles markdown text"
+            )
+        }
+        Family::Event => events::render(rel_text, records),
+        Family::Activity => activities::render(rel, records),
+        Family::ActionLog => action_logs::render(rel_text, records),
+        Family::StructuredImport => imports::render(records),
+        Family::AiChat => ai_chat::render(rel_text, records),
+        Family::Chat => chat::render(records, chat_labels),
+        Family::Browser => browser::render(records),
+        Family::DayAccumulator => day_accumulator::render(rel_text, records),
+        Family::FacetEntity => facet_entities::render(rel_text, records),
+        Family::Observation => observations::render(rel_text, records),
+        Family::Documents => documents::render(records),
+        Family::Screen => screen::render(records),
+        Family::Sense => sense::render(records),
+        Family::MorningBriefing => morning_briefing::render(records),
+    }
+}
+
 pub fn produce_chunks(
     family: Family,
     rel: &str,
     text: &str,
     chat_labels: &ChatLabels,
 ) -> ProducedChunks {
+    if family == Family::Markdown {
+        let formatted = format_markdown(text);
+        return ProducedChunks {
+            chunks: formatted
+                .chunks
+                .into_iter()
+                .map(|chunk| IndexChunk {
+                    content: chunk.markdown,
+                    occurrence_time_ms: None,
+                    source: None,
+                })
+                .collect(),
+            agent_override: None,
+            header: None,
+            error: None,
+            warnings: formatted.warnings,
+        };
+    }
+
+    let records = parse_records_for_family(family, text);
+    produce_chunks_by_shape(family, Some(rel), &records, chat_labels)
+}
+
+/// Render a raw percept from already-parsed records outside the indexed
+/// content-family pipeline.
+pub fn produce_raw_percept_chunks_by_shape(
+    family: RawPerceptFamily,
+    rel: Option<&str>,
+    records: &[JsonObject],
+) -> ProducedChunks {
+    let rel = rel.unwrap_or("");
     match family {
-        Family::Markdown => {
-            let formatted = format_markdown(text);
-            ProducedChunks {
-                chunks: formatted
-                    .chunks
-                    .into_iter()
-                    .map(|chunk| IndexChunk {
-                        content: chunk.markdown,
-                        occurrence_time_ms: None,
-                        source: None,
-                    })
-                    .collect(),
-                agent_override: None,
-                header: None,
-                error: None,
-                warnings: formatted.warnings,
-            }
-        }
-        Family::Event => events::render(rel, &parse_jsonl_objects(text)),
-        Family::Activity => activities::render(rel, &parse_jsonl_objects(text)),
-        Family::ActionLog => action_logs::render(rel, &parse_jsonl_objects(text)),
-        Family::StructuredImport => imports::render(&parse_jsonl_objects(text)),
-        Family::AiChat => ai_chat::render(rel, &parse_jsonl_objects(text)),
-        Family::Chat => chat::render(&parse_jsonl_objects(text), chat_labels),
-        Family::Browser => browser::render(&parse_jsonl_objects(text)),
-        Family::DayAccumulator => day_accumulator::render(rel, &parse_jsonl_objects(text)),
-        Family::FacetEntity => facet_entities::render(rel, &parse_jsonl_objects(text)),
-        Family::Observation => observations::render(rel, &parse_jsonl_objects(text)),
-        Family::Documents => documents::render(&parse_json_object(text)),
-        Family::Screen => screen::render(&parse_json_object(text)),
-        Family::Sense => sense::render(&parse_json_object(text)),
-        Family::MorningBriefing => morning_briefing::render(&parse_json_object(text)),
+        RawPerceptFamily::Audio => audio::render(rel, records),
+        RawPerceptFamily::RawScreen => raw_screen::render(rel, records),
     }
 }
 
@@ -426,13 +467,11 @@ pub fn produce_raw_percept_chunks(
     rel: &str,
     text: &str,
 ) -> ProducedChunks {
-    match family {
-        RawPerceptFamily::Audio => audio::render(rel, &parse_jsonl_objects(text)),
-        RawPerceptFamily::RawScreen => raw_screen::render(rel, &parse_jsonl_objects(text)),
-    }
+    let records = parse_jsonl_objects(text);
+    produce_raw_percept_chunks_by_shape(family, Some(rel), &records)
 }
 
-type JsonObject = Map<String, Value>;
+pub type JsonObject = Map<String, Value>;
 
 pub(super) fn recorded_chunk(
     content: String,
@@ -470,6 +509,15 @@ fn parse_json_object(text: &str) -> Vec<JsonObject> {
     match serde_json::from_str::<Value>(text) {
         Ok(Value::Object(record)) => vec![record],
         Ok(_) | Err(_) => Vec::new(),
+    }
+}
+
+fn parse_records_for_family(family: Family, text: &str) -> Vec<JsonObject> {
+    match family {
+        Family::Documents | Family::Screen | Family::Sense | Family::MorningBriefing => {
+            parse_json_object(text)
+        }
+        _ => parse_jsonl_objects(text),
     }
 }
 
@@ -1411,6 +1459,61 @@ not json
         for text in ["", "   ", "not json", "null", "42", r#""string""#, "[]"] {
             assert!(parse_json_object(text).is_empty(), "{text:?}");
         }
+    }
+
+    #[test]
+    fn text_wrappers_delegate_to_by_shape_renderers() {
+        let event_text = r#"{"title":"Planning","type":"meeting"}"#;
+        let event_records = parse_jsonl_objects(event_text);
+        assert_eq!(
+            super::produce_chunks(
+                Family::Event,
+                "facets/work/events/20260101.jsonl",
+                event_text,
+                &ChatLabels::default(),
+            ),
+            produce_chunks_by_shape(
+                Family::Event,
+                Some("facets/work/events/20260101.jsonl"),
+                &event_records,
+                &ChatLabels::default(),
+            )
+        );
+
+        let screen_text = r#"{"timestamp":3,"content":{}}"#;
+        let screen_records = parse_jsonl_objects(screen_text);
+        assert_eq!(
+            super::produce_raw_percept_chunks(
+                RawPerceptFamily::RawScreen,
+                "20260304/workstation/090000_300/screen.jsonl",
+                screen_text,
+            ),
+            produce_raw_percept_chunks_by_shape(
+                RawPerceptFamily::RawScreen,
+                Some("20260304/workstation/090000_300/screen.jsonl"),
+                &screen_records,
+            )
+        );
+    }
+
+    #[test]
+    fn by_shape_activity_without_path_uses_the_pathless_header() {
+        let records = parse_jsonl_objects(r#"{"title":"Planning"}"#);
+        let produced =
+            produce_chunks_by_shape(Family::Activity, None, &records, &ChatLabels::default());
+        assert_eq!(produced.header.as_deref(), Some("# Activities"));
+    }
+
+    #[test]
+    fn by_shape_raw_screen_uses_synthetic_records_with_a_real_path() {
+        let records = parse_jsonl_objects(r#"{"timestamp":3,"content":{}}"#);
+        let produced = produce_raw_percept_chunks_by_shape(
+            RawPerceptFamily::RawScreen,
+            Some("20260304/workstation/090000_300/screen.jsonl"),
+            &records,
+        );
+        assert_eq!(produced.header.as_deref(), Some("# Frame Analyses"));
+        assert_eq!(produced.chunks.len(), 1);
     }
 
     #[test]
