@@ -202,7 +202,7 @@ The local model lane. ⚠ Not a types boundary — it is loopback HTTP **plus a 
 
 The indexer's and the convey apps' consumption of consistently formatted structured journal data. ⚠ `P-format` owns both because it is the one-to-many end — it serves all consumers and cannot negotiate per-consumer. ⛔ The name encodes contract ownership, not data flow.
 
-🔴 **`S:index:format` is built; `S:web:format` has no implementation.** The rendered value is index-shaped (`chunks: [{content}]`), and the contract also carries a document **header**, a per-chunk **occurrence time**, and the **originating record**. The index stores none of those three, which is why their absence went unnoticed — and they are precisely what the owner-facing surface reads.
+🔴 **`S:index:format` is built; `S:web:format` now has its formatting boundary, while its HTTP-route/convey-app serving surface remains unbuilt.** The rendered value is index-shaped (`chunks: [{content}]`), and the contract also carries a document **header**, a per-chunk **occurrence time**, and the **originating record**. The index stores none of those three, which is why their absence went unnoticed — and they are precisely what the owner-facing surface reads.
 
 **Carry forward — what the web half needs, and why each exists:**
 

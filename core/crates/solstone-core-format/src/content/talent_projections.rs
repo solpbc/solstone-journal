@@ -308,4 +308,30 @@ mod tests {
             ["screen"]
         );
     }
+
+    #[test]
+    fn dispatched_empty_json_drops_the_key_without_markdown_fallback() {
+        let temporary = TempDir::new("talent-empty-json");
+        let talents_dir = temporary
+            .path
+            .join("chronicle/20260304/workstation/090000_300/talents");
+        write(&talents_dir.join("screen.json"), "[]");
+        write(
+            &talents_dir.join("screen.md"),
+            "# Screen\n\nfallback text\n",
+        );
+
+        let projections = iter_talent_text_projections(
+            &talents_dir,
+            "chronicle/20260304/workstation/090000_300/talents",
+            None,
+        )
+        .expect("walk talent projections");
+        assert!(
+            projections
+                .iter()
+                .all(|projection| projection.key != "screen"),
+            "an empty dispatched JSON projection must suppress its Markdown sibling"
+        );
+    }
 }
