@@ -6,6 +6,7 @@
 pub mod append;
 pub mod atomic;
 pub mod config;
+pub mod entry;
 pub mod errors;
 pub mod locking;
 pub mod paths;
@@ -26,6 +27,7 @@ pub use config::{
     ConfigLoadError, ConfigMutationError, JournalConfigMutation, JournalConfigTransaction,
     get_journal_config_path, mutate_journal_config,
 };
+pub use entry::{Removed, remove_file, rename_within, sync_dir};
 pub use errors::{
     AppendError, AtomicWriteError, LockError, LockTimeout, MalformedDataError, PathError,
     PathEscapeError, ReadError, SnapshotError,
