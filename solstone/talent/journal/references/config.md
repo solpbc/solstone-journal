@@ -55,11 +55,11 @@ The separate `config/convey.json` file stores UI/UX personalization (facet/app o
 
 ## Retention configuration
 
-The `retention` block controls automatic cleanup of layer 1 raw media (audio recordings, video captures, screen diffs) while preserving all layer 2 extracts and layer 3 agent outputs. Three modes control when raw media is deleted:
+The `retention` block controls when layer 1 raw media (audio recordings, video captures, screen diffs) becomes eligible for an owner-approved removal proposal, while preserving all layer 2 extracts and layer 3 agent outputs. A mark is a durable, non-destructive proposal; actual removal still requires the owner's approval. Three modes control eligibility for marking:
 
-- `"keep"` – retain raw media indefinitely
-- `"days"` – delete raw media after `raw_media_days` days, once the segment has finished processing (default: 7 days)
-- `"processed"` – delete raw media as soon as the segment has finished processing
+- `"keep"` – retain raw media indefinitely (the default)
+- `"days"` – make raw media eligible for marking after `raw_media_days` days, once the segment has finished processing
+- `"processed"` – make raw media eligible for marking as soon as the segment has finished processing
 
 ```json
 {
@@ -80,22 +80,22 @@ The `retention` block controls automatic cleanup of layer 1 raw media (audio rec
 ```
 
 Fields:
-- `raw_media` (string) – Retention mode: `"keep"`, `"days"`, or `"processed"`. Default: `"days"`.
-- `raw_media_days` (integer or null) – Number of days to retain raw media when mode is `"days"`. Default: `7`. Required when `raw_media` is `"days"`, ignored otherwise.
+- `raw_media` (string) – Retention mode: `"keep"`, `"days"`, or `"processed"`. Default: `"keep"`.
+- `raw_media_days` (integer or null) – Number of days before raw media is eligible for marking when mode is `"days"`. Default: `null`; a `days` rule needs a positive value to make media eligible, ignored otherwise.
 - `per_stream` (object) – Per-stream overrides keyed by stream name. Each entry supports `raw_media` and `raw_media_days`. Omitted fields inherit from the global retention settings.
 
 "Raw media" means layer 1 capture files only: audio files (`.flac`, `.opus`, `.ogg`, `.m4a`, `.wav`), video files (`.webm`, `.mov`, `.mp4`), and screen diffs (`monitor_*_diff.png`).
 
 All layer 2 and layer 3 content is always preserved regardless of retention policy: transcripts (`audio.jsonl`, `screen.jsonl`), talent outputs (`talents/<name>.md` or `talents/<name>.json`, depending on the declared `output` format; JSON outputs are rendered to text through the formatter registry), speaker labels (`talents/speaker_labels.json`), historical facet events (`events/*.jsonl`), entity data, segment metadata (`stream.json`), and search index entries.
 
-Raw media is never deleted from segments that haven't finished processing. A segment is considered complete only when all four checks pass:
+Raw media is not eligible for policy marking until its segment has finished processing. A segment is considered complete only when all four checks pass:
 
 - No `_active.jsonl` files in `talents/` (no running talents)
 - `audio.jsonl` (or `*_audio.jsonl`) exists if audio raw media was captured
 - `screen.jsonl` (or `*_screen.jsonl`) exists if video raw media was captured
 - `talents/speaker_labels.json` exists if voice embeddings (`.npz`) are present
 
-Purged segments remain fully navigable in convey. Transcripts, entities, speaker labels, and summaries are all intact. The only difference is that audio/video playback is unavailable.
+Marking does not change segment navigability or audio/video playback. Transcripts, entities, speaker labels, and summaries remain intact.
 
 ## Environment variables
 
