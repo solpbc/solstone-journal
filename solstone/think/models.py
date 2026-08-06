@@ -1470,6 +1470,10 @@ async def agenerate_with_result(
     json_schema: dict | None = None,
     thinking_budget: Optional[int] = None,
     timeout_s: Optional[float] = None,
+    num_retries: int | None = None,
+    inference_retry_index: int = 0,
+    local_exclusive_admission: bool = False,
+    enforce_responsiveness: bool = True,
 ) -> dict:
     """Async generate text and return the full GenerateResult dict."""
     from solstone.think.providers import get_provider_module
@@ -1487,7 +1491,15 @@ async def agenerate_with_result(
 
     timeout_s = DEFAULT_PROVIDER_TIMEOUT_S if timeout_s is None else timeout_s
 
-    provider_options = {} if provider == "local" else {"provider": provider}
+    provider_options: dict[str, Any]
+    if provider == "local":
+        provider_options = {}
+        if inference_retry_index:
+            provider_options["inference_retry_index"] = inference_retry_index
+        if local_exclusive_admission:
+            provider_options["local_exclusive_admission"] = True
+    else:
+        provider_options = {"provider": provider}
     result = await provider_mod.run_agenerate(
         contents=contents,
         model=model,
@@ -1505,6 +1517,7 @@ async def agenerate_with_result(
         result,
         model=(result.get("model") or model) if isinstance(result, Mapping) else model,
         context=context,
+        enforce_responsiveness=enforce_responsiveness,
     )
 
     validate_generate_result_strict(
