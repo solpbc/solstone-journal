@@ -184,8 +184,7 @@ fn run_indexer(options: IndexerOptions) -> ExitCode {
     }
 
     if options.rescan || options.rescan_full {
-        let today = chrono::Local::now().format("%Y%m%d").to_string();
-        match scan_journal(&line.path, options.rescan_full, &today) {
+        match scan_journal(&line.path, options.rescan_full) {
             Ok(report) => {
                 for warning in report.warnings {
                     eprintln!("warning: {warning}");

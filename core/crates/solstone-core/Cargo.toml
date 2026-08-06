@@ -10,7 +10,6 @@ publish = false
 workspace = true
 
 [dependencies]
-chrono.workspace = true
 solstone-core-cli.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-journal.workspace = true

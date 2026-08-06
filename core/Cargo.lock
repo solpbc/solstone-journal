@@ -1719,7 +1719,6 @@ dependencies = [
 name = "solstone-core"
 version = "1.0.22"
 dependencies = [
- "chrono",
  "futures-util",
  "serde_json",
  "solstone-core-cli",

@@ -12,7 +12,7 @@ use solstone_core_format::content::{
     ChatLabels, ContentResolution, Family, classify, produce_chunks,
 };
 use solstone_core_format::paths::{relative_to_journal, resolve_journal_path};
-use solstone_core_format::segment::{is_historical_day, segment_key, time_bucket};
+use solstone_core_format::segment::{day_of, segment_key, time_bucket};
 use solstone_core_indexer::discovery::discover_indexable_files;
 use solstone_core_indexer::edges::candidates::EdgeResolver;
 use solstone_core_indexer::edges::discovery::discover_edge_files;
@@ -60,20 +60,49 @@ struct EdgeScanReport {
     warnings: Vec<String>,
 }
 
+fn discovered_days(files: &BTreeMap<String, PathBuf>) -> HashSet<&str> {
+    files.keys().filter_map(|rel| day_of(rel)).collect()
+}
+
+fn removal_candidates(
+    stored: &BTreeMap<String, i64>,
+    files: &BTreeMap<String, PathBuf>,
+    full: bool,
+) -> (Vec<String>, BTreeMap<String, usize>) {
+    let discovered = files.keys().collect::<BTreeSet<_>>();
+    let days = discovered_days(files);
+    let mut removed = Vec::new();
+    let mut retained_days = BTreeMap::new();
+    for rel in stored.keys() {
+        if discovered.contains(rel) {
+            continue;
+        }
+        if full || day_of(rel).is_none_or(|day| days.contains(day)) {
+            removed.push(rel.clone());
+        } else if let Some(day) = day_of(rel) {
+            *retained_days.entry(day.to_string()).or_default() += 1;
+        }
+    }
+    (removed, retained_days)
+}
+
+fn retained_day_warning(day: &str, count: usize) -> String {
+    format!(
+        "light scan retained {count} stale row(s) for day {day}: discovery produced no files for that day; rerun with --rescan-full to remove them"
+    )
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RescanFileStatus {
     Indexed { warnings: Vec<String> },
     Declined,
 }
 
-pub fn scan_journal(journal: &Path, full: bool, today: &str) -> Result<ScanReport, StoreError> {
+pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError> {
     let mut conn = open_index(journal)?;
     let mut report = ScanReport::default();
     let (chat_labels, chat_config_warning) = resolve_chat_labels(journal);
-    let mut files = discover_indexable_files(journal)?;
-    if !full {
-        files.retain(|rel, _path| !is_historical_day(rel, today));
-    }
+    let files = discover_indexable_files(journal)?;
 
     let db_mtimes = load_file_mtimes(&conn)?;
     let mut to_index = Vec::new();
@@ -152,14 +181,12 @@ pub fn scan_journal(journal: &Path, full: bool, today: &str) -> Result<ScanRepor
         report.indexed += 1;
     }
 
-    let discovered: BTreeSet<String> = files.keys().cloned().collect();
-    let mut removed = Vec::new();
-    for rel in db_mtimes.keys() {
-        let in_scope = full || !is_historical_day(rel, today);
-        if in_scope && !discovered.contains(rel) {
-            removed.push(rel.clone());
-        }
-    }
+    let (removed, retained_days) = removal_candidates(&db_mtimes, &files, full);
+    report.warnings.extend(
+        retained_days
+            .into_iter()
+            .map(|(day, count)| retained_day_warning(&day, count)),
+    );
     let mut removed_count = 0;
     for rel in &removed {
         let tx = conn.transaction()?;
@@ -194,7 +221,7 @@ pub fn scan_journal(journal: &Path, full: bool, today: &str) -> Result<ScanRepor
     tx.commit()?;
 
     let tx = conn.transaction()?;
-    let edge_report = reconcile_edges(&tx, journal, full, today)?;
+    let edge_report = reconcile_edges(&tx, journal, full)?;
     tx.commit()?;
     report.edges_indexed = edge_report.indexed;
     report.edges_removed = edge_report.removed;
@@ -326,12 +353,8 @@ fn reconcile_edges(
     conn: &Connection,
     journal: &Path,
     full: bool,
-    today: &str,
 ) -> Result<EdgeScanReport, StoreError> {
-    let mut files = discover_edge_files(journal)?;
-    if !full {
-        files.retain(|rel, _path| !is_historical_day(rel, today));
-    }
+    let files = discover_edge_files(journal)?;
 
     let db_mtimes = edge_file_mtimes(conn)?;
     let mut to_index = Vec::new();
@@ -344,17 +367,14 @@ fn reconcile_edges(
         }
     }
 
-    let discovered: BTreeSet<String> = files.keys().cloned().collect();
-    let mut removed = Vec::new();
-    for rel in db_mtimes.keys() {
-        let in_scope = full || !is_historical_day(rel, today);
-        if in_scope && !discovered.contains(rel) {
-            removed.push(rel.clone());
-        }
-    }
-
     let mut resolver = EdgeResolver::new(journal);
     let mut report = EdgeScanReport::default();
+    let (removed, retained_days) = removal_candidates(&db_mtimes, &files, full);
+    report.warnings.extend(
+        retained_days
+            .into_iter()
+            .map(|(day, count)| retained_day_warning(&day, count)),
+    );
     for (rel, path, mtime) in &to_index {
         begin_edge_file_savepoint(conn)?;
         let result = match replace_edge_file_edges(conn, journal, rel, path, *mtime, &mut resolver)
@@ -1183,7 +1203,7 @@ mod tests {
 "#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan observation failure");
+        let report = scan_journal(&root, true).expect("scan observation failure");
         assert_eq!(report.edges_indexed, 1);
         assert_eq!(report.edge_rows_inserted, 0);
         assert_eq!(report.failed, 1);
@@ -1205,7 +1225,7 @@ mod tests {
         assert_sqlite_and_fts_integrity(&conn);
         drop(conn);
 
-        let retry = scan_journal(&root, true, "20260717").expect("retry observation failure");
+        let retry = scan_journal(&root, true).expect("retry observation failure");
         assert_eq!(retry.edges_indexed, 1);
         assert_eq!(retry.edge_rows_inserted, 0);
         assert_eq!(retry.failed, 1);
@@ -1243,7 +1263,7 @@ mod tests {
 "#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan edge copresence");
+        let report = scan_journal(&root, true).expect("scan edge copresence");
         assert_eq!(report.edges_indexed, 1);
         assert_eq!(report.edge_rows_inserted, 3);
         let conn = Connection::open(db_path(&root)).expect("open db");
@@ -1275,7 +1295,7 @@ mod tests {
         );
         drop(conn);
 
-        let second = scan_journal(&root, true, "20260717").expect("second edge scan");
+        let second = scan_journal(&root, true).expect("second edge scan");
         assert_eq!(second.edges_indexed, 0);
         assert_eq!(second.edge_rows_inserted, 0);
         let conn = Connection::open(db_path(&root)).expect("open db after second scan");
@@ -1323,7 +1343,7 @@ mod tests {
         .expect("seed stale edge mtime");
         drop(conn);
 
-        let report = scan_journal(&root, true, "20260717").expect("scan edge failure");
+        let report = scan_journal(&root, true).expect("scan edge failure");
         assert_eq!(report.edges_indexed, 2);
         assert_eq!(report.edge_rows_inserted, 1);
         assert_eq!(report.failed, 1);
@@ -1393,7 +1413,7 @@ mod tests {
         .expect("seed stale edge mtime");
         drop(conn);
 
-        let report = scan_journal(&root, true, "20260717").expect("scan candidate load failure");
+        let report = scan_journal(&root, true).expect("scan candidate load failure");
         assert_eq!(report.edges_indexed, 1);
         assert_eq!(report.edge_rows_inserted, 0);
         assert_eq!(report.failed, 1);
@@ -1426,7 +1446,7 @@ mod tests {
         fs::remove_file(root.join("entities")).expect("remove blocking entities file");
         seed_edge_entity(&root, "alice", "Alice Edge");
         seed_edge_entity(&root, "bob", "Bob Edge");
-        let retry = scan_journal(&root, true, "20260717").expect("retry candidate load");
+        let retry = scan_journal(&root, true).expect("retry candidate load");
         assert_eq!(retry.edges_indexed, 1);
         assert_eq!(retry.edge_rows_inserted, 1);
         assert_eq!(retry.failed, 0);
@@ -1450,7 +1470,7 @@ mod tests {
             "facets/999999_300/entities/20260304.jsonl",
             r#"{"name":"Nobody","segments":["s1"]}"#,
         );
-        let report = scan_journal(&root, true, "20260717").expect("scan invalid segment");
+        let report = scan_journal(&root, true).expect("scan invalid segment");
         assert_eq!(report.edges_indexed, 1);
         assert_eq!(report.edge_rows_inserted, 0);
         assert!(report.warnings.iter().any(|warning| warning.starts_with(
@@ -1513,7 +1533,7 @@ mod tests {
 {"name":"Bob Edge","segments":["s1"]}
 "#,
         );
-        let report = scan_journal(&root, true, "20260717").expect("initial edge scan");
+        let report = scan_journal(&root, true).expect("initial edge scan");
         assert_eq!(report.edges_indexed, 1);
         assert_eq!(report.edge_rows_inserted, 1);
         let conn = Connection::open(db_path(&root)).expect("open db");
@@ -1534,7 +1554,7 @@ mod tests {
         drop(conn);
 
         fs::remove_file(root.join(rel)).expect("remove edge source");
-        let report = scan_journal(&root, true, "20260717").expect("scan removed edge source");
+        let report = scan_journal(&root, true).expect("scan removed edge source");
         assert_eq!(report.edges_removed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db after remove");
         assert_eq!(
@@ -1567,7 +1587,7 @@ mod tests {
 {"name":"Bob Edge","segments":["s1"]}
 "#,
         );
-        scan_journal(&root, true, "20260717").expect("initial edge scan");
+        scan_journal(&root, true).expect("initial edge scan");
         let conn = open_index(&root).expect("open index");
         let prior_mtime = edge_file_mtime(&conn, rel).expect("prior edge mtime");
         create_abort_trigger(
@@ -1581,7 +1601,7 @@ mod tests {
         drop(conn);
         fs::remove_file(root.join(rel)).expect("remove edge source");
 
-        let error = scan_journal(&root, true, "20260717").expect_err("trigger aborts edge removal");
+        let error = scan_journal(&root, true).expect_err("trigger aborts edge removal");
         assert!(error.to_string().contains("abort_edge_file_delete"));
         let conn = Connection::open(db_path(&root)).expect("open db after failed edge removal");
         assert_eq!(
@@ -1610,7 +1630,7 @@ mod tests {
 {"name":"Bob Edge","segments":["s1"]}
 "#,
         );
-        scan_journal(&root, true, "20260717").expect("initial edge scan");
+        scan_journal(&root, true).expect("initial edge scan");
         let conn = open_index(&root).expect("open index");
         assert_eq!(
             edge_rows(&conn),
@@ -1633,7 +1653,7 @@ mod tests {
 "#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("changed edge scan");
+        let report = scan_journal(&root, true).expect("changed edge scan");
         assert_eq!(report.edges_indexed, 1);
         assert_eq!(report.edge_rows_inserted, 1);
         let conn = Connection::open(db_path(&root)).expect("open db after changed scan");
@@ -1672,7 +1692,7 @@ mod tests {
 {"name":"Cora Edge","segments":["old-sibling"]}
 "#,
         );
-        scan_journal(&root, true, "20260717").expect("initial edge scan");
+        scan_journal(&root, true).expect("initial edge scan");
         let conn = open_index(&root).expect("open index");
         conn.execute(
             "UPDATE edge_files SET mtime=0 WHERE path IN (?, ?)",
@@ -1703,7 +1723,7 @@ mod tests {
 "#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("edge trigger scan");
+        let report = scan_journal(&root, true).expect("edge trigger scan");
         assert_eq!(report.edges_indexed, 2);
         assert_eq!(report.edge_rows_inserted, 1);
         assert_eq!(report.failed, 1);
@@ -1725,7 +1745,7 @@ mod tests {
         drop_trigger(&conn, "abort_failed_edge_mtime");
         drop(conn);
 
-        let retry = scan_journal(&root, true, "20260717").expect("edge trigger retry");
+        let retry = scan_journal(&root, true).expect("edge trigger retry");
         assert_eq!(retry.edges_indexed, 1);
         assert_eq!(retry.edge_rows_inserted, 1);
         assert_eq!(retry.failed, 0);
@@ -1738,6 +1758,73 @@ mod tests {
             row.0 == "bob" && row.1 == "cora" && row.3 == "new-sibling" && row.4 == sibling_rel
         }));
         fs::remove_dir_all(root).expect("cleanup edge trigger root");
+    }
+
+    #[test]
+    fn scan_edge_interruption_rolls_back_target_savepoint_and_retries() {
+        let root = temp_root("edge-interruption");
+        seed_edge_entity(&root, "alice", "Alice Edge");
+        seed_edge_entity(&root, "bob", "Bob Edge");
+        seed_edge_entity(&root, "cora", "Cora Edge");
+        let first = "facets/work/entities/20260304.jsonl";
+        let target = "facets/work/entities/20260305.jsonl";
+        let last = "facets/work/entities/20260306.jsonl";
+        write(
+            &root,
+            first,
+            r#"{"name":"Alice Edge","segments":["first"]}
+{"name":"Bob Edge","segments":["first"]}
+"#,
+        );
+        write(
+            &root,
+            target,
+            r#"{"name":"Alice Edge","segments":["target"]}
+{"name":"Cora Edge","segments":["target"]}
+"#,
+        );
+        write(
+            &root,
+            last,
+            r#"{"name":"Bob Edge","segments":["last"]}
+{"name":"Cora Edge","segments":["last"]}
+"#,
+        );
+        let conn = open_index(&root).expect("open index");
+        create_abort_trigger(
+            &conn,
+            "abort_middle_edge_file",
+            "BEFORE",
+            "INSERT",
+            "edge_files",
+            Some("NEW.path='facets/work/entities/20260305.jsonl'"),
+        );
+        drop(conn);
+
+        let report = scan_journal(&root, true).expect("edge scan survives savepoint rollback");
+        assert_eq!(report.edges_indexed, 3);
+        assert_eq!(report.edge_rows_inserted, 2);
+        assert_eq!(report.failed, 1);
+        let conn = Connection::open(db_path(&root)).expect("open db after interruption");
+        assert!(edge_file_mtime(&conn, first).is_some());
+        assert_eq!(edge_file_mtime(&conn, target), None);
+        assert!(edge_file_mtime(&conn, last).is_some());
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM edges WHERE path='facets/work/entities/20260305.jsonl'"
+            ),
+            0
+        );
+        drop_trigger(&conn, "abort_middle_edge_file");
+        drop(conn);
+
+        let retry = scan_journal(&root, true).expect("retry target edge file");
+        assert_eq!(retry.edges_indexed, 1);
+        assert_eq!(retry.edge_rows_inserted, 1);
+        let conn = Connection::open(db_path(&root)).expect("open db after retry");
+        assert!(edge_file_mtime(&conn, target).is_some());
+        fs::remove_dir_all(root).expect("cleanup edge interruption root");
     }
 
     #[test]
@@ -1757,7 +1844,7 @@ mod tests {
 {"name":"Bob Edge","segments":["s1"]}
 "#,
         );
-        scan_journal(&root, true, "20260717").expect("scan before rebuild");
+        scan_journal(&root, true).expect("scan before rebuild");
         let conn = Connection::open(db_path(&root)).expect("open db before rebuild");
         let chunk_count = count(&conn, "SELECT count(*) FROM chunks");
         let files_count = count(&conn, "SELECT count(*) FROM files");
@@ -1949,7 +2036,7 @@ mod tests {
     fn scan_skips_reindexes_and_deletes_missing() {
         let root = temp_root("mtime");
         write(&root, "chronicle/20260717/talents/flow.md", "# Flow\n\none");
-        let report = scan_journal(&root, true, "20260717").expect("first scan");
+        let report = scan_journal(&root, true).expect("first scan");
         assert_eq!(report.indexed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db after first scan");
         let stream: Option<String> = conn
@@ -1961,7 +2048,7 @@ mod tests {
             .expect("stream value");
         assert_eq!(stream, None);
         drop(conn);
-        let report = scan_journal(&root, true, "20260717").expect("second scan");
+        let report = scan_journal(&root, true).expect("second scan");
         assert_eq!(report.indexed, 0);
 
         let conn = open_index(&root).expect("open index");
@@ -1972,11 +2059,11 @@ mod tests {
         .expect("force reindex");
         drop(conn);
         write(&root, "chronicle/20260717/talents/flow.md", "# Flow\n\ntwo");
-        let report = scan_journal(&root, true, "20260717").expect("third scan");
+        let report = scan_journal(&root, true).expect("third scan");
         assert_eq!(report.indexed, 1);
 
         fs::remove_file(root.join("chronicle/20260717/talents/flow.md")).expect("remove file");
-        let report = scan_journal(&root, true, "20260717").expect("remove scan");
+        let report = scan_journal(&root, true).expect("remove scan");
         assert_eq!(report.removed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(
@@ -1999,7 +2086,7 @@ mod tests {
             &format!("# Flow\n\n{}\n\nkept alpha", "z".repeat(2049)),
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan markdown warning");
+        let report = scan_journal(&root, true).expect("scan markdown warning");
         assert_eq!(report.indexed, 1);
         assert_eq!(
             report.warnings,
@@ -2015,7 +2102,7 @@ mod tests {
         let root = temp_root("content-trigger-rollback");
         let rel = "20260717/talents/flow.md";
         write(&root, &format!("chronicle/{rel}"), "# Flow\n\nold content");
-        scan_journal(&root, true, "20260717").expect("initial scan");
+        scan_journal(&root, true).expect("initial scan");
         let conn = open_index(&root).expect("open index");
         conn.execute("UPDATE files SET mtime=0 WHERE path=?", [rel])
             .expect("force reindex");
@@ -2030,7 +2117,7 @@ mod tests {
         drop(conn);
         write(&root, &format!("chronicle/{rel}"), "# Flow\n\nnew content");
 
-        let error = scan_journal(&root, true, "20260717").expect_err("trigger aborts scan");
+        let error = scan_journal(&root, true).expect_err("trigger aborts scan");
         assert!(error.to_string().contains("abort_content_file_mtime"));
         let conn = Connection::open(db_path(&root)).expect("open db after failed scan");
         assert_eq!(chunk_content(&conn, rel), "# Flow\n\nold content");
@@ -2039,7 +2126,7 @@ mod tests {
         drop_trigger(&conn, "abort_content_file_mtime");
         drop(conn);
 
-        let retry = scan_journal(&root, true, "20260717").expect("retry content scan");
+        let retry = scan_journal(&root, true).expect("retry content scan");
         assert_eq!(retry.indexed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db after retry");
         assert_eq!(chunk_content(&conn, rel), "# Flow\n\nnew content");
@@ -2048,11 +2135,50 @@ mod tests {
     }
 
     #[test]
+    fn scan_content_interruption_keeps_prior_file_and_retries_target() {
+        let root = temp_root("content-interruption");
+        let first = "20260717/talents/a.md";
+        let target = "20260717/talents/b.md";
+        write(&root, &format!("chronicle/{first}"), "# A\n\nfirst");
+        write(&root, &format!("chronicle/{target}"), "# B\n\ntarget");
+        let conn = open_index(&root).expect("open index");
+        create_abort_trigger(
+            &conn,
+            "abort_second_content_file",
+            "BEFORE",
+            "INSERT",
+            "files",
+            Some("NEW.path='20260717/talents/b.md'"),
+        );
+        drop(conn);
+
+        let error = scan_journal(&root, false).expect_err("trigger aborts target file");
+        assert!(error.to_string().contains("abort_second_content_file"));
+        let conn = Connection::open(db_path(&root)).expect("open db after interruption");
+        assert!(file_mtime(&conn, first) > 0);
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM files WHERE path='20260717/talents/b.md'"
+            ),
+            0
+        );
+        drop_trigger(&conn, "abort_second_content_file");
+        drop(conn);
+
+        let retry = scan_journal(&root, false).expect("retry target file");
+        assert_eq!(retry.indexed, 1);
+        let conn = Connection::open(db_path(&root)).expect("open db after retry");
+        assert!(file_mtime(&conn, target) > 0);
+        fs::remove_dir_all(root).expect("cleanup content interruption root");
+    }
+
+    #[test]
     fn rescan_file_trigger_failure_rolls_back_chunks_and_mtime() {
         let root = temp_root("rescan-trigger-rollback");
         let rel = "20260717/talents/flow.md";
         write(&root, &format!("chronicle/{rel}"), "# Flow\n\nold content");
-        scan_journal(&root, true, "20260717").expect("initial scan");
+        scan_journal(&root, true).expect("initial scan");
         let conn = open_index(&root).expect("open index");
         conn.execute("UPDATE files SET mtime=0 WHERE path=?", [rel])
             .expect("force reindex");
@@ -2081,7 +2207,7 @@ mod tests {
         let root = temp_root("content-removal-trigger-rollback");
         let rel = "20260717/talents/flow.md";
         write(&root, &format!("chronicle/{rel}"), "# Flow\n\nremove me");
-        scan_journal(&root, true, "20260717").expect("initial scan");
+        scan_journal(&root, true).expect("initial scan");
         let conn = open_index(&root).expect("open index");
         create_abort_trigger(
             &conn,
@@ -2094,7 +2220,7 @@ mod tests {
         drop(conn);
         fs::remove_file(root.join(format!("chronicle/{rel}"))).expect("remove source");
 
-        let error = scan_journal(&root, true, "20260717").expect_err("trigger aborts removal");
+        let error = scan_journal(&root, true).expect_err("trigger aborts removal");
         assert!(error.to_string().contains("abort_content_file_delete"));
         let conn = Connection::open(db_path(&root)).expect("open db after failed removal");
         assert_eq!(chunk_content(&conn, rel), "# Flow\n\nremove me");
@@ -2104,38 +2230,26 @@ mod tests {
     }
 
     #[test]
-    fn light_mode_excludes_historical_indexing_and_removal() {
-        let root = temp_root("light");
-        write(&root, "chronicle/20240101/talents/old.md", "# Old\n\nold");
+    fn light_mode_indexes_historical_talent_and_rebuilds_segment_aggregate() {
+        let root = temp_root("light-historical-talent");
+        let segment = "20240101/default/090000_300";
+        let rel = "20240101/default/090000_300/talents/flow.md";
+        write_stream(&root, "20240101", "default", "090000_300");
         write(
             &root,
-            "chronicle/20260717/talents/today.md",
-            "# Today\n\ntoday",
+            &format!("chronicle/{rel}"),
+            "# Flow\n\nhistorical text",
         );
-        let report = scan_journal(&root, false, "20260717").expect("light scan");
+        let report = scan_journal(&root, false).expect("light scan");
         assert_eq!(report.indexed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db");
-        assert_eq!(
-            count(
-                &conn,
-                "SELECT count(*) FROM files WHERE path='20240101/talents/old.md'"
-            ),
-            0
-        );
-        drop(conn);
-
-        let report = scan_journal(&root, true, "20260717").expect("full scan");
-        assert_eq!(report.indexed, 1);
-        fs::remove_file(root.join("chronicle/20240101/talents/old.md")).expect("remove old");
-        let report = scan_journal(&root, false, "20260717").expect("light removal scan");
-        assert_eq!(report.removed, 0);
-        let report = scan_journal(&root, true, "20260717").expect("full removal scan");
-        assert_eq!(report.removed, 1);
-        fs::remove_dir_all(root).expect("cleanup light root");
+        assert!(file_mtime(&conn, rel) > 0);
+        assert!(segment_aggregate_content(&conn, segment).contains("historical text"));
+        fs::remove_dir_all(root).expect("cleanup historical talent root");
     }
 
     #[test]
-    fn light_mode_excludes_historical_edge_removed_set() {
+    fn light_mode_retains_edge_rows_when_day_has_no_discovered_files() {
         let root = temp_root("edge-light-removed");
         let rel = "20240101/default/090000_300/talents/speaker_labels.json";
         let conn = open_index(&root).expect("open index");
@@ -2159,8 +2273,14 @@ mod tests {
         .expect("seed historical edge mtime");
         drop(conn);
 
-        let light = scan_journal(&root, false, "20260717").expect("light scan");
+        let light = scan_journal(&root, false).expect("light scan");
         assert_eq!(light.edges_removed, 0);
+        assert_eq!(
+            light.warnings,
+            vec![
+                "light scan retained 1 stale row(s) for day 20240101: discovery produced no files for that day; rerun with --rescan-full to remove them"
+            ]
+        );
         let conn = Connection::open(db_path(&root)).expect("open db after light scan");
         assert_eq!(count(&conn, "SELECT count(*) FROM edges"), 1);
         assert_eq!(
@@ -2172,7 +2292,7 @@ mod tests {
         );
         drop(conn);
 
-        let full = scan_journal(&root, true, "20260717").expect("full scan");
+        let full = scan_journal(&root, true).expect("full scan");
         assert_eq!(full.edges_removed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db after full scan");
         assert_eq!(count(&conn, "SELECT count(*) FROM edges"), 0);
@@ -2187,13 +2307,84 @@ mod tests {
     }
 
     #[test]
+    fn light_mode_indexes_and_removes_historical_edge_sources_with_a_sibling() {
+        let root = temp_root("light-historical-edges");
+        let removed = "20240101/default/090000_300/screen.jsonl";
+        let sibling = "20240101/default/090000_300/left_screen.jsonl";
+        write(&root, &format!("chronicle/{removed}"), r#"{"content":{}}"#);
+        write(&root, &format!("chronicle/{sibling}"), r#"{"content":{}}"#);
+
+        let first = scan_journal(&root, false).expect("light scan");
+        assert_eq!(first.edges_indexed, 2);
+        fs::remove_file(root.join(format!("chronicle/{removed}"))).expect("remove edge source");
+
+        let report = scan_journal(&root, false).expect("light removal scan");
+        assert_eq!(report.edges_removed, 1);
+        let conn = Connection::open(db_path(&root)).expect("open db");
+        assert_eq!(edge_file_mtime(&conn, removed), None);
+        assert!(edge_file_mtime(&conn, sibling).is_some());
+        fs::remove_dir_all(root).expect("cleanup historical edges root");
+    }
+
+    #[test]
+    fn light_mode_removes_missing_historical_content_with_a_sibling() {
+        let root = temp_root("light-historical-content");
+        let removed = "20240101/talents/old.md";
+        let sibling = "20240101/talents/keep.md";
+        write(&root, &format!("chronicle/{removed}"), "# Old\n\nold");
+        write(&root, &format!("chronicle/{sibling}"), "# Keep\n\nkeep");
+        scan_journal(&root, true).expect("full populate");
+        fs::remove_file(root.join(format!("chronicle/{removed}"))).expect("remove content source");
+
+        let report = scan_journal(&root, false).expect("light removal scan");
+        assert_eq!(report.removed, 1);
+        let conn = Connection::open(db_path(&root)).expect("open db");
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM files WHERE path='20240101/talents/old.md'"
+            ),
+            0
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM files WHERE path='20240101/talents/keep.md'"
+            ),
+            1
+        );
+        fs::remove_dir_all(root).expect("cleanup historical content root");
+    }
+
+    #[test]
+    fn light_mode_retains_undiscoverable_day_and_full_scan_removes_it() {
+        let root = temp_root("light-undiscoverable-day");
+        let rel = "20260717/talents/today.md";
+        write(&root, &format!("chronicle/{rel}"), "# Today\n\ntoday");
+        scan_journal(&root, true).expect("full populate");
+        fs::remove_dir_all(root.join("chronicle/20260717")).expect("remove day");
+
+        let light = scan_journal(&root, false).expect("light scan");
+        assert_eq!(light.removed, 0);
+        assert_eq!(
+            light.warnings,
+            vec![
+                "light scan retained 1 stale row(s) for day 20260717: discovery produced no files for that day; rerun with --rescan-full to remove them"
+            ]
+        );
+        let full = scan_journal(&root, true).expect("full removal scan");
+        assert_eq!(full.removed, 1);
+        fs::remove_dir_all(root).expect("cleanup undiscoverable day root");
+    }
+
+    #[test]
     fn invalid_markdown_isolated_during_scan() {
         let root = temp_root("invalid");
         write(&root, "chronicle/20260717/talents/flow.md", "# Flow\n\nok");
         let invalid = root.join("chronicle/20260717/talents/bad.md");
         fs::create_dir_all(invalid.parent().expect("invalid parent")).expect("create parent");
         fs::write(invalid, [0xff]).expect("write invalid utf8");
-        let report = scan_journal(&root, true, "20260717").expect("scan with invalid");
+        let report = scan_journal(&root, true).expect("scan with invalid");
         assert_eq!(report.indexed, 1);
         assert_eq!(report.skipped, 1);
         assert_eq!(report.warnings.len(), 1);
@@ -2300,7 +2491,7 @@ mod tests {
             write(&root, &format!("chronicle/{rel}"), "{}\n");
             assert_eq!(classify(rel), ContentResolution::Unindexed(family), "{rel}");
 
-            let report = scan_journal(&root, true, "20260717").expect("scan raw percept");
+            let report = scan_journal(&root, true).expect("scan raw percept");
             assert_eq!(report.indexed, 0, "{rel}");
             assert_eq!(report.skipped, 0, "{rel}");
             assert!(report.warnings.is_empty(), "{rel}");
@@ -2355,7 +2546,7 @@ mod tests {
             "# Audio\n\nMarker-derived stream text",
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan segment aggregate");
+        let report = scan_journal(&root, true).expect("scan segment aggregate");
         assert_eq!(report.indexed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db");
         let row = chunk_row(&conn, segment);
@@ -2387,7 +2578,7 @@ mod tests {
 "#,
         );
 
-        scan_journal(&root, true, "20260717").expect("scan browser-only segment");
+        scan_journal(&root, true).expect("scan browser-only segment");
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(
             conn.query_row(
@@ -2408,13 +2599,13 @@ mod tests {
         let talent = "chronicle/20260717/default/102000_300/talents/audio.md";
         write_stream(&root, "20260717", "default", "102000_300");
         write(&root, talent, "# Audio\n\nInitial aggregate");
-        scan_journal(&root, true, "20260717").expect("initial scan");
+        scan_journal(&root, true).expect("initial scan");
         let conn = Connection::open(db_path(&root)).expect("open db after initial scan");
         assert!(!segment_aggregate_content(&conn, segment).is_empty());
         drop(conn);
 
         fs::remove_file(root.join(talent)).expect("remove segment talent");
-        scan_journal(&root, true, "20260717").expect("rescan after talent removal");
+        scan_journal(&root, true).expect("rescan after talent removal");
         let conn = Connection::open(db_path(&root)).expect("open db after removal scan");
         assert_eq!(
             conn.query_row(
@@ -2466,7 +2657,7 @@ mod tests {
             &format!("chronicle/{talent_rel}"),
             "# Audio\n\nInitial aggregate phrase",
         );
-        scan_journal(&root, true, "20260717").expect("initial segment scan");
+        scan_journal(&root, true).expect("initial segment scan");
         let conn = open_index(&root).expect("open index");
         assert!(segment_aggregate_content(&conn, segment).contains("Initial aggregate phrase"));
         conn.execute("UPDATE files SET mtime=0 WHERE path=?", [talent_rel])
@@ -2482,7 +2673,7 @@ mod tests {
         let invalid = root.join(format!("chronicle/{bad_rel}"));
         fs::write(&invalid, [0xff]).expect("write invalid segment markdown");
 
-        let report = scan_journal(&root, true, "20260717").expect("scan unreadable segment talent");
+        let report = scan_journal(&root, true).expect("scan unreadable segment talent");
         assert_eq!(report.indexed, 0);
         assert_eq!(report.skipped, 2);
         assert!(
@@ -2507,7 +2698,7 @@ mod tests {
         drop(conn);
 
         fs::write(&invalid, "# Bad\n\nRepaired aggregate phrase").expect("repair segment markdown");
-        let retry = scan_journal(&root, true, "20260717").expect("retry segment aggregate");
+        let retry = scan_journal(&root, true).expect("retry segment aggregate");
         assert_eq!(retry.indexed, 2);
         assert_eq!(retry.skipped, 0);
         let conn = Connection::open(db_path(&root)).expect("open db after aggregate retry");
@@ -2535,7 +2726,7 @@ mod tests {
             "# Brief\n\nSecond distinctive phrase",
         );
 
-        scan_journal(&root, true, "20260717").expect("scan multiple talent segment");
+        scan_journal(&root, true).expect("scan multiple talent segment");
         let conn = Connection::open(db_path(&root)).expect("open db");
         let content = segment_aggregate_content(&conn, segment);
         assert!(content.contains("First distinctive phrase"));
@@ -2554,7 +2745,7 @@ mod tests {
             "chronicle/20260717/default/110000_300/talents/audio.md",
             "# Audio\n\nOriginal aggregate phrase",
         );
-        scan_journal(&root, true, "20260717").expect("initial scan");
+        scan_journal(&root, true).expect("initial scan");
         let conn = open_index(&root).expect("open index");
         conn.execute(
             "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -2579,7 +2770,7 @@ mod tests {
             "# Audio\n\nFresh aggregate phrase",
         );
 
-        scan_journal(&root, true, "20260717").expect("rebuild aggregate scan");
+        scan_journal(&root, true).expect("rebuild aggregate scan");
         let conn = Connection::open(db_path(&root)).expect("open db after rebuild");
         let content = segment_aggregate_content(&conn, segment);
         assert!(content.contains("Fresh aggregate phrase"));
@@ -2625,7 +2816,7 @@ mod tests {
 "#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan jsonl families");
+        let report = scan_journal(&root, true).expect("scan jsonl families");
         assert_eq!(report.indexed, 4);
         let conn = Connection::open(db_path(&root)).expect("open db");
         let config_row: (String, String, String, Option<String>, String, String) = conn
@@ -2737,7 +2928,7 @@ mod tests {
             "",
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan facet entities");
+        let report = scan_journal(&root, true).expect("scan facet entities");
         assert_eq!(report.indexed, 7);
         let conn = Connection::open(db_path(&root)).expect("open db");
 
@@ -2851,7 +3042,7 @@ mod tests {
             r#"{"description":"Works on native search","tags":["rust"],"last_seen":"20260102"}"#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan entity search");
+        let report = scan_journal(&root, true).expect("scan entity search");
         assert_eq!(report.indexed, 0);
         assert_eq!(report.removed, 0);
 
@@ -2909,7 +3100,7 @@ mod tests {
     #[test]
     fn entity_search_incremental_with_zero_sources_writes_no_watermarks() {
         let root = temp_root("entity-search-empty");
-        let report = scan_journal(&root, false, "20260717").expect("scan empty journal");
+        let report = scan_journal(&root, false).expect("scan empty journal");
         assert_eq!(report.indexed, 0);
         assert_eq!(report.removed, 0);
 
@@ -2936,7 +3127,7 @@ mod tests {
             "entities/alice/entity.json",
             r#"{"name":"Alice Old","type":"Person"}"#,
         );
-        scan_journal(&root, true, "20260717").expect("initial entity search scan");
+        scan_journal(&root, true).expect("initial entity search scan");
         let conn = open_index(&root).expect("open index");
         assert_eq!(
             chunk_content(&conn, "entity_search:alice"),
@@ -2962,7 +3153,7 @@ mod tests {
             r#"{"name":"Alice New","type":"Person"}"#,
         );
 
-        let error = scan_journal(&root, true, "20260717").expect_err("entity trigger aborts");
+        let error = scan_journal(&root, true).expect_err("entity trigger aborts");
         assert!(error.to_string().contains("abort_entity_search_count"));
         let conn = Connection::open(db_path(&root)).expect("open db after failed entity search");
         assert_eq!(
@@ -2975,7 +3166,7 @@ mod tests {
         drop_trigger(&conn, "abort_entity_search_count");
         drop(conn);
 
-        let retry = scan_journal(&root, true, "20260717").expect("retry entity search");
+        let retry = scan_journal(&root, true).expect("retry entity search");
         assert_eq!(retry.failed, 0);
         let conn = Connection::open(db_path(&root)).expect("open db after entity retry");
         assert_eq!(
@@ -3003,7 +3194,7 @@ mod tests {
         .expect("seed python count watermark");
         drop(conn);
 
-        let report = scan_journal(&root, false, "20260717").expect("scan with real watermark");
+        let report = scan_journal(&root, false).expect("scan with real watermark");
         assert_eq!(report.indexed, 0);
         assert_eq!(report.removed, 0);
 
@@ -3039,7 +3230,7 @@ mod tests {
             r#"{"description":"Fresh content"}"#,
         );
 
-        scan_journal(&root, true, "20260717").expect("initial full scan");
+        scan_journal(&root, true).expect("initial full scan");
         let conn = Connection::open(db_path(&root)).expect("open db");
         conn.execute(
             "UPDATE chunks SET content='stale content' WHERE agent='entity'",
@@ -3048,7 +3239,7 @@ mod tests {
         .expect("make entity chunk stale");
         drop(conn);
 
-        scan_journal(&root, false, "20260717").expect("incremental scan");
+        scan_journal(&root, false).expect("incremental scan");
         let conn = Connection::open(db_path(&root)).expect("open db after incremental");
         let content: String = conn
             .query_row(
@@ -3060,7 +3251,7 @@ mod tests {
         assert_eq!(content, "stale content");
         drop(conn);
 
-        scan_journal(&root, true, "20260717").expect("forced full scan");
+        scan_journal(&root, true).expect("forced full scan");
         let conn = Connection::open(db_path(&root)).expect("open db after full");
         let content: String = conn
             .query_row(
@@ -3087,7 +3278,7 @@ mod tests {
             r#"{"description":"Original description"}"#,
         );
 
-        scan_journal(&root, true, "20260717").expect("initial full scan");
+        scan_journal(&root, true).expect("initial full scan");
         let conn = Connection::open(db_path(&root)).expect("open db");
         let initial_mtime = file_mtime(&conn, "entity_search:__mtime__");
         let initial_count = file_mtime(&conn, "entity_search:__count__");
@@ -3104,7 +3295,7 @@ mod tests {
             "entities/alice/entity.json",
             r#"{"name":"Alice Updated","type":"Person"}"#,
         );
-        let report = scan_journal(&root, false, "20260717").expect("incremental rebuild");
+        let report = scan_journal(&root, false).expect("incremental rebuild");
         assert_eq!(report.indexed, 0);
         assert_eq!(report.removed, 0);
 
@@ -3131,12 +3322,12 @@ mod tests {
             r#"{"description":"Will be removed"}"#,
         );
 
-        scan_journal(&root, true, "20260717").expect("initial full scan");
+        scan_journal(&root, true).expect("initial full scan");
         fs::remove_file(root.join("entities/alice/entity.json")).expect("remove identity");
         fs::remove_file(root.join("facets/work/entities/alice/entity.json"))
             .expect("remove relationship");
 
-        scan_journal(&root, false, "20260717").expect("incremental remove all");
+        scan_journal(&root, false).expect("incremental remove all");
         let conn = Connection::open(db_path(&root)).expect("open db after remove all");
         assert_eq!(
             count(
@@ -3159,7 +3350,7 @@ mod tests {
             r#"{"name":"Blocked Person","type":"Person","blocked":true}"#,
         );
 
-        scan_journal(&root, false, "20260717").expect("first blocked-only scan");
+        scan_journal(&root, false).expect("first blocked-only scan");
         let conn = Connection::open(db_path(&root)).expect("open db after first blocked scan");
         assert_eq!(file_mtime(&conn, "entity_search:__count__"), 1);
         assert!(file_mtime(&conn, "entity_search:__mtime__") > 0);
@@ -3174,7 +3365,7 @@ mod tests {
         .expect("seed stale non-entity chunk");
         drop(conn);
 
-        scan_journal(&root, false, "20260717").expect("second blocked-only scan");
+        scan_journal(&root, false).expect("second blocked-only scan");
         let conn = Connection::open(db_path(&root)).expect("open db after second blocked scan");
         assert_eq!(file_mtime(&conn, "entity_search:__count__"), 1);
         assert!(file_mtime(&conn, "entity_search:__mtime__") > 0);
@@ -3218,7 +3409,7 @@ mod tests {
         .expect("seed stale legacy entity row");
         drop(conn);
 
-        scan_journal(&root, false, "20260717").expect("clean rebuild scan");
+        scan_journal(&root, false).expect("clean rebuild scan");
         let conn = Connection::open(db_path(&root)).expect("open db after clean rebuild");
         assert_eq!(
             count(
@@ -3246,7 +3437,7 @@ mod tests {
 "#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan structured import");
+        let report = scan_journal(&root, true).expect("scan structured import");
         assert_eq!(report.indexed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(
@@ -3301,7 +3492,7 @@ mod tests {
 "#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan ai chat import");
+        let report = scan_journal(&root, true).expect("scan ai chat import");
         assert_eq!(report.indexed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(
@@ -3355,7 +3546,7 @@ mod tests {
 "#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan zero ai chat import");
+        let report = scan_journal(&root, true).expect("scan zero ai chat import");
         assert_eq!(report.indexed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(
@@ -3389,7 +3580,7 @@ mod tests {
 "#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan chat stream");
+        let report = scan_journal(&root, true).expect("scan chat stream");
         assert_eq!(report.indexed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(
@@ -3498,7 +3689,7 @@ mod tests {
             let rel = seed_owner_chat(&root);
             write(&root, "config/journal.json", config);
 
-            let report = scan_journal(&root, true, "20260717").expect("scan chat labels");
+            let report = scan_journal(&root, true).expect("scan chat labels");
             assert!(
                 !report
                     .warnings
@@ -3524,7 +3715,7 @@ mod tests {
                 write(&root, "config/journal.json", config);
             }
 
-            let report = scan_journal(&root, true, "20260717").expect("scan fallback chat labels");
+            let report = scan_journal(&root, true).expect("scan fallback chat labels");
             assert!(
                 report
                     .warnings
@@ -3618,7 +3809,7 @@ mod tests {
             write(&root, rel, text);
         }
 
-        let report = scan_journal(&root, true, "20260717").expect("scan every content family");
+        let report = scan_journal(&root, true).expect("scan every content family");
         assert_eq!(report.indexed, 15);
         let conn = Connection::open(db_path(&root)).expect("open db");
         for rel in [
@@ -3663,7 +3854,7 @@ mod tests {
 "#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan browser stream");
+        let report = scan_journal(&root, true).expect("scan browser stream");
         assert_eq!(report.indexed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(
@@ -3732,7 +3923,7 @@ mod tests {
 "#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan day accumulator");
+        let report = scan_journal(&root, true).expect("scan day accumulator");
         assert_eq!(report.indexed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(
@@ -3810,7 +4001,7 @@ mod tests {
             r#"{"metadata":{"coverage_preamble":"Daily briefing."},"your_day":[{"time":"09:00","text":"Meet Alice."}],"yesterday":["Shipped."],"needs_attention":[{"text":"Review."}],"forward_look":["Prepare."],"reading":[{"facet":"work","summary":"News."}]}"#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan talent json");
+        let report = scan_journal(&root, true).expect("scan talent json");
         assert_eq!(report.indexed, 4);
         let conn = Connection::open(db_path(&root)).expect("open db");
 
@@ -3912,7 +4103,7 @@ mod tests {
             write(&root, path, text);
         }
 
-        let report = scan_journal(&root, true, "20260717").expect("scan invalid talent json");
+        let report = scan_journal(&root, true).expect("scan invalid talent json");
         assert_eq!(report.indexed, 5);
         assert_eq!(report.skipped, 0);
         let conn = Connection::open(db_path(&root)).expect("open db");
@@ -3968,7 +4159,7 @@ mod tests {
             "{}",
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan empty talent json");
+        let report = scan_journal(&root, true).expect("scan empty talent json");
         assert_eq!(report.indexed, 4);
         let conn = Connection::open(db_path(&root)).expect("open db");
         for (path, chunks) in [
@@ -4008,7 +4199,7 @@ mod tests {
 "#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan zero chat stream");
+        let report = scan_journal(&root, true).expect("scan zero chat stream");
         assert_eq!(report.indexed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(
@@ -4046,7 +4237,7 @@ mod tests {
 "#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan zero jsonl");
+        let report = scan_journal(&root, true).expect("scan zero jsonl");
         assert_eq!(report.indexed, 2);
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(
@@ -4093,7 +4284,7 @@ not json
 "#,
         );
 
-        let report = scan_journal(&root, true, "20260717").expect("scan non-object jsonl");
+        let report = scan_journal(&root, true).expect("scan non-object jsonl");
         assert_eq!(report.indexed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(
@@ -4130,7 +4321,7 @@ not json
             "# Audio\n\nshort segment",
         );
         write_stream(&root, "20260717", "default", "143022_60");
-        let report = scan_journal(&root, true, "20260717").expect("scan short segment");
+        let report = scan_journal(&root, true).expect("scan short segment");
         assert_eq!(report.indexed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db");
         let row: (String, String) = conn
@@ -4157,7 +4348,7 @@ not json
             "facets/Work/news/20260101.md",
             "# News\n\nfacet content",
         );
-        let report = scan_journal(&root, true, "20260717").expect("scan mixed case");
+        let report = scan_journal(&root, true).expect("scan mixed case");
         assert_eq!(report.indexed, 2);
         let conn = Connection::open(db_path(&root)).expect("open db");
         let app_agent: String = conn
@@ -4196,7 +4387,7 @@ not json
 {"name":"Bob Edge","segments":["s1"]}
 "#,
         );
-        scan_journal(&root, true, "20260717").expect("initial scan before reset");
+        scan_journal(&root, true).expect("initial scan before reset");
         let conn = Connection::open(db_path(&root)).expect("open db before reset");
         assert!(count(&conn, "SELECT count(*) FROM chunks") > 0);
         assert!(count(&conn, "SELECT count(*) FROM edges") > 0);
@@ -4208,7 +4399,7 @@ not json
         assert_eq!(count(&conn, "SELECT count(*) FROM edges"), 0);
         drop(conn);
 
-        let report = scan_journal(&root, true, "20260717").expect("full scan after reset");
+        let report = scan_journal(&root, true).expect("full scan after reset");
         assert_eq!(report.indexed, 2);
         assert_eq!(report.edges_indexed, 1);
         assert_eq!(report.edge_rows_inserted, 1);

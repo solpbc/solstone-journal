@@ -98,12 +98,9 @@ pub fn time_bucket(rel: &str) -> String {
     }
 }
 
-pub fn is_historical_day(rel: &str, today: &str) -> bool {
-    if !rel.contains('/') {
-        return false;
-    }
-    let first = rel.split('/').next().unwrap_or("");
-    is_date_key(first) && first < today
+pub fn day_of(rel: &str) -> Option<&str> {
+    let (day, _) = rel.split_once('/')?;
+    is_date_key(day).then_some(day)
 }
 
 fn has_word_boundary_before(bytes: &[u8], index: usize) -> bool {
@@ -206,13 +203,9 @@ mod tests {
     }
 
     #[test]
-    fn historical_day_uses_injected_today() {
-        assert!(is_historical_day("20240101/talents/flow.md", "20240102"));
-        assert!(!is_historical_day("20240102/talents/flow.md", "20240102"));
-        assert!(!is_historical_day(
-            "facets/work/news/20240101.md",
-            "20240102"
-        ));
-        assert!(!is_historical_day("20240101", "20240102"));
+    fn day_of_accepts_only_day_rooted_rels() {
+        assert_eq!(day_of("20240101/talents/flow.md"), Some("20240101"));
+        assert_eq!(day_of("facets/work/news/20240101.md"), None);
+        assert_eq!(day_of("20240101"), None);
     }
 }
