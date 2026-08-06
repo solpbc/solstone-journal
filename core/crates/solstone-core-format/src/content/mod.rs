@@ -803,10 +803,12 @@ mod tests {
     /// being runnable, so a failure here is a question about this crate, never a
     /// prompt to re-derive the expectation.
     ///
-    /// Cases carrying `raises` record a reference behaviour deliberately not
-    /// reproduced here, and cases with a null `family` record a dispatch fact for
-    /// a shape this crate has no family for; both are skipped by this assertion
-    /// and are covered by `content_family_corpus_records_known_divergences`.
+    /// Cases with `raises` or a null `family` that do not carry `pending_family`
+    /// are skipped by this assertion and covered by
+    /// `content_family_corpus_records_known_divergences`. Cases carrying
+    /// `pending_family` are rendered through `produce_raw_percept_chunks`: fifteen
+    /// are compared in full, while the one reference-raising case is asserted
+    /// against its documented as-if-content-absent behaviour.
     #[test]
     fn every_family_matches_the_reference_corpus() {
         let fixture: serde_json::Value =
@@ -941,10 +943,10 @@ mod tests {
         assert!(defects.is_empty(), "outstanding defects: {defects:?}");
     }
 
-    /// The corpus carries cases this crate deliberately does not reproduce.
-    /// They are load-bearing: each one is a difference that would otherwise be
-    /// rediscovered from scratch. This asserts they stay present and stay
-    /// described, so removing one is a decision rather than an accident.
+    /// The corpus carries exceptional cases whose notes are load-bearing, whether
+    /// they remain skipped or are now rendered through `pending_family`. This
+    /// asserts they stay present and stay described, so removing one is a decision
+    /// rather than an accident.
     #[test]
     fn content_family_corpus_records_known_divergences() {
         let fixture: serde_json::Value =
