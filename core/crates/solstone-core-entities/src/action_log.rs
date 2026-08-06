@@ -8,10 +8,15 @@ use std::path::Path;
 use chrono::Utc;
 use serde_json::json;
 
-fn append(journal_root: &Path, params: serde_json::Value) -> Result<(), solstone_core_journal_io::AppendError> {
+fn append(
+    journal_root: &Path,
+    params: serde_json::Value,
+) -> Result<(), solstone_core_journal_io::AppendError> {
     let day = Utc::now().format("%Y%m%d").to_string();
     solstone_core_journal_io::append_jsonl(
-        journal_root.join("config/actions").join(format!("{day}.jsonl")),
+        journal_root
+            .join("config/actions")
+            .join(format!("{day}.jsonl")),
         &json!({
             "timestamp": Utc::now().to_rfc3339(),
             "source": "app",
@@ -54,5 +59,8 @@ pub(crate) fn cancelled(
     journal_root: &Path,
     pending_id: &str,
 ) -> Result<(), solstone_core_journal_io::AppendError> {
-    append(journal_root, json!({"pending_id":pending_id,"phase":"cancelled"}))
+    append(
+        journal_root,
+        json!({"pending_id":pending_id,"phase":"cancelled"}),
+    )
 }

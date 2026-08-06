@@ -55,12 +55,8 @@ impl DeferredDeleteRegistry {
             .ok()
             .and_then(Result::ok)
             .unwrap_or_default();
-            let _ = action_log::committed(
-                &journal_root,
-                &entity_id,
-                &task_pending_id,
-                &facets_deleted,
-            );
+            let _ =
+                action_log::committed(&journal_root, &entity_id, &task_pending_id, &facets_deleted);
         });
         self.handles
             .lock()

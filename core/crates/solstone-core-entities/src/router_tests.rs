@@ -150,8 +150,13 @@ async fn request_without_access_basis(
         .unwrap();
     let response = router.clone().oneshot(request).await.unwrap();
     let status = response.status().as_u16();
-    let body = String::from_utf8(to_bytes(response.into_body(), usize::MAX).await.unwrap().to_vec())
-        .unwrap();
+    let body = String::from_utf8(
+        to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
     (status, body)
 }
 
@@ -240,7 +245,12 @@ fn registered_route_pairs() -> std::collections::BTreeSet<(String, String)> {
             break;
         };
         let registration = &call[..call_end];
-        for (method, marker) in [("GET", "get("), ("POST", "post("), ("PUT", "put("), ("DELETE", "delete(")] {
+        for (method, marker) in [
+            ("GET", "get("),
+            ("POST", "post("),
+            ("PUT", "put("),
+            ("DELETE", "delete("),
+        ] {
             if registration.contains(marker) {
                 routes.insert((path.to_owned(), method.to_owned()));
             }
@@ -251,13 +261,14 @@ fn registered_route_pairs() -> std::collections::BTreeSet<(String, String)> {
 }
 
 fn quoted_entry_value<'a>(entry: &'a str, key: &str) -> Option<&'a str> {
-    entry
-        .lines()
-        .map(str::trim)
-        .find_map(|line| {
-            let value = line.strip_prefix(key)?.trim_start().strip_prefix('=')?.trim();
-            value.strip_prefix('"')?.strip_suffix('"')
-        })
+    entry.lines().map(str::trim).find_map(|line| {
+        let value = line
+            .strip_prefix(key)?
+            .trim_start()
+            .strip_prefix('=')?
+            .trim();
+        value.strip_prefix('"')?.strip_suffix('"')
+    })
 }
 
 fn authority_route_pairs(source: &str) -> Vec<(String, String)> {
@@ -334,14 +345,17 @@ async fn representative_routes_require_an_access_basis_extension() {
     let router = crate::router(journal.path());
     for (method, uri, body) in [
         ("GET", "/app/entities/api/state", ""),
-        ("POST", "/app/entities/api/work/assist", r#"{"name":"Alice"}"#),
+        (
+            "POST",
+            "/app/entities/api/work/assist",
+            r#"{"name":"Alice"}"#,
+        ),
         ("GET", "/app/curation/api/facet/candidates", ""),
         ("DELETE", "/app/entities/api/journal/entity/a", ""),
     ] {
         let (status, _) = request_without_access_basis(&router, method, uri, body).await;
         assert_eq!(
-            status,
-            500,
+            status, 500,
             "{method} {uri} must reject a request with no AccessBasis extension"
         );
     }
@@ -357,7 +371,11 @@ async fn access_gate_missing_basis_uses_axums_extension_rejection_across_route_f
 See `axum::Extension`.";
     for (method, uri, body) in [
         ("GET", "/app/entities/api/state", ""),
-        ("POST", "/app/entities/api/work/observe", r#"{"name":"Alice","content":"seen"}"#),
+        (
+            "POST",
+            "/app/entities/api/work/observe",
+            r#"{"name":"Alice","content":"seen"}"#,
+        ),
         ("GET", "/app/curation/api/facet/candidates", ""),
         ("DELETE", "/app/entities/api/journal/entity/a", ""),
     ] {
@@ -1872,9 +1890,8 @@ async fn merge_classifier_precedence_handles_not_found_and_busy() {
 
 #[tokio::test]
 async fn classifier_refusal_sites_cover_remaining_message_branches() {
-    let already_undone = solstone_core_entity::EntityUndoError::Refused(
-        "merge m1 was already undone".to_owned(),
-    );
+    let already_undone =
+        solstone_core_entity::EntityUndoError::Refused("merge m1 was already undone".to_owned());
     assert_oracle_refusal(
         "_entity_operation_error:280",
         response_value(crate::router::classify_undo_error(&already_undone, "m1")).await,
@@ -1882,9 +1899,8 @@ async fn classifier_refusal_sites_cover_remaining_message_branches() {
         410,
     );
 
-    let blocked = solstone_core_entity::EntityMergeError::Refused(
-        "target entity is blocked".to_owned(),
-    );
+    let blocked =
+        solstone_core_entity::EntityMergeError::Refused("target entity is blocked".to_owned());
     assert_oracle_refusal(
         "_entity_operation_error:284",
         response_value(crate::router::classify_merge_error(&blocked)).await,
@@ -2104,11 +2120,13 @@ async fn resolve_ambiguous_candidates_have_type_without_writing() {
     assert_eq!(status, 200);
     assert_eq!(response["resolved"], Value::Null);
     assert_eq!(response["candidates"].as_array().unwrap().len(), 2);
-    assert!(response["candidates"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|candidate| candidate["type"] == "Person"));
+    assert!(
+        response["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|candidate| candidate["type"] == "Person")
+    );
     assert_eq!(fs::read(&ambiguities).ok(), before);
 }
 
@@ -2125,11 +2143,13 @@ async fn resolve_no_match_supplies_closest_candidates() {
     assert_eq!(status, 200);
     assert_eq!(response["resolved"], Value::Null);
     assert_eq!(response["candidates"].as_array().unwrap().len(), 2);
-    assert!(response["candidates"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|candidate| candidate.get("type").is_some()));
+    assert!(
+        response["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|candidate| candidate.get("type").is_some())
+    );
 }
 
 #[tokio::test]
@@ -2228,12 +2248,8 @@ async fn detect_blocked_probe_does_not_overwrite_recorded_ambiguity() {
         "entity":"Sarah",
         "description":"ambiguous mention",
     });
-    let (first_status, _) = post(
-        j.path(),
-        "/app/entities/api/work/detected",
-        request.clone(),
-    )
-    .await;
+    let (first_status, _) =
+        post(j.path(), "/app/entities/api/work/detected", request.clone()).await;
     assert_eq!(first_status, 200);
     let (_, before) = call(j.path(), "/app/entities/api/ambiguities").await;
     assert_eq!(before["total"], 1);
@@ -2315,11 +2331,8 @@ async fn deferred_delete_lapse_commits_and_logs_both_phases() {
     seed_facet_entity(j.path(), "work", "target");
     let router = crate::router_with_delete_window(j.path(), Duration::from_millis(20));
 
-    let (status, response) = delete_with_router(
-        &router,
-        "/app/entities/api/journal/entity/target",
-    )
-    .await;
+    let (status, response) =
+        delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
 
     assert_eq!(status, 200);
     let pending_id = response["pending"].as_str().unwrap().to_owned();
@@ -2338,8 +2351,7 @@ async fn deferred_delete_lapse_commits_and_logs_both_phases() {
         record["params"]["pending_id"] == pending_id && record["params"]["phase"] == "pending"
     }));
     assert!(records.iter().any(|record| {
-        record["params"]["pending_id"] == pending_id
-            && record["params"]["phase"] == "committed"
+        record["params"]["pending_id"] == pending_id && record["params"]["phase"] == "committed"
     }));
 }
 
@@ -2349,7 +2361,8 @@ async fn deferred_delete_cancel_preserves_entity_and_logs_cancellation() {
     seed_entity(j.path(), "target", "Target");
     seed_facet_entity(j.path(), "work", "target");
     let router = crate::router_with_delete_window(j.path(), Duration::from_millis(80));
-    let (_, scheduled) = delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
+    let (_, scheduled) =
+        delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
     let pending_id = scheduled["pending"].as_str().unwrap();
 
     let (cancel_status, cancelled) = post_with_router(
@@ -2366,12 +2379,10 @@ async fn deferred_delete_cancel_preserves_entity_and_logs_cancellation() {
     assert_eq!(entity["id"], "target");
     let records = deferred_delete_action_records(j.path());
     assert!(records.iter().any(|record| {
-        record["params"]["pending_id"] == pending_id
-            && record["params"]["phase"] == "cancelled"
+        record["params"]["pending_id"] == pending_id && record["params"]["phase"] == "cancelled"
     }));
     assert!(!records.iter().any(|record| {
-        record["params"]["pending_id"] == pending_id
-            && record["params"]["phase"] == "committed"
+        record["params"]["pending_id"] == pending_id && record["params"]["phase"] == "committed"
     }));
 }
 
@@ -2399,7 +2410,12 @@ async fn deferred_delete_refuses_the_principal_entity() {
 #[tokio::test]
 async fn deferred_delete_refuses_malformed_pending_id() {
     let j = Journal::new();
-    let (status, response) = post(j.path(), "/app/entities/api/cancel-delete/not-a-pending-id", json!({})).await;
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/cancel-delete/not-a-pending-id",
+        json!({}),
+    )
+    .await;
     assert_eq!(status, 410);
     assert_eq!(response["reason_code"], "operation_no_longer_available");
 }
@@ -2544,23 +2560,15 @@ async fn dismiss_facet_candidate_marks_candidate_dismissed() {
 #[tokio::test]
 async fn facet_candidate_routes_require_name_key() {
     let j = Journal::new();
-    let (_, response) = post(
-        j.path(),
-        "/app/curation/api/facet/accept",
-        json!({}),
-    )
-    .await;
+    let (_, response) = post(j.path(), "/app/curation/api/facet/accept", json!({})).await;
     assert_eq!(response["reason_code"], "missing_required_field");
 }
 
 #[tokio::test]
 async fn generate_description_requires_a_request_body() {
     let j = Journal::new();
-    let (status, response) = post_without_body(
-        j.path(),
-        "/app/entities/api/work/generate-description",
-    )
-    .await;
+    let (status, response) =
+        post_without_body(j.path(), "/app/entities/api/work/generate-description").await;
     assert_eq!(status, 400);
     assert_eq!(response["reason_code"], "missing_request_body");
 }
@@ -2692,7 +2700,12 @@ async fn refusal_sites_batch_1_validation_are_exact() {
     );
     assert_oracle_refusal(
         "add_entity:1327",
-        post(journal.path(), "/app/entities/api/work", json!({"type":"Person"})).await,
+        post(
+            journal.path(),
+            "/app/entities/api/work",
+            json!({"type":"Person"}),
+        )
+        .await,
         "missing_required_field",
         400,
     );
@@ -2715,7 +2728,12 @@ async fn refusal_sites_batch_1_validation_are_exact() {
     );
     assert_oracle_refusal(
         "assist_add:1590",
-        post(journal.path(), "/app/entities/api/work/assist", json!({"other":"value"})).await,
+        post(
+            journal.path(),
+            "/app/entities/api/work/assist",
+            json!({"other":"value"}),
+        )
+        .await,
         "missing_required_field",
         400,
     );
@@ -2867,7 +2885,11 @@ async fn refusal_sites_batch_1_store_conditions_are_exact() {
     );
     assert_oracle_refusal(
         "cancel_delete_journal_entity:2046",
-        post_without_body(missing.path(), "/app/entities/api/cancel-delete/not-a-pending-id").await,
+        post_without_body(
+            missing.path(),
+            "/app/entities/api/cancel-delete/not-a-pending-id",
+        )
+        .await,
         "operation_no_longer_available",
         410,
     );
@@ -2883,7 +2905,12 @@ async fn refusal_sites_batch_1_store_conditions_are_exact() {
     );
     assert_oracle_refusal(
         "block_journal_entity_route:2086",
-        post(missing.path(), "/app/entities/api/journal/entity/missing/block", json!({})).await,
+        post(
+            missing.path(),
+            "/app/entities/api/journal/entity/missing/block",
+            json!({}),
+        )
+        .await,
         "entity_operation_failed",
         400,
     );
@@ -2942,7 +2969,11 @@ async fn refusal_sites_batch_1_unexpected_store_failures_are_exact() {
 
     let bad_scan = Journal::new();
     fs::create_dir_all(bad_scan.path().join("facets/work")).unwrap();
-    fs::write(bad_scan.path().join("facets/work/entities"), "not a directory").unwrap();
+    fs::write(
+        bad_scan.path().join("facets/work/entities"),
+        "not a directory",
+    )
+    .unwrap();
     assert_oracle_refusal(
         "delete_detected:1705",
         delete_json(
@@ -2957,7 +2988,11 @@ async fn refusal_sites_batch_1_unexpected_store_failures_are_exact() {
 
     let bad_identity = Journal::new();
     fs::create_dir_all(bad_identity.path().join("entities/a")).unwrap();
-    fs::write(bad_identity.path().join("entities/a/entity.json"), "not json").unwrap();
+    fs::write(
+        bad_identity.path().join("entities/a/entity.json"),
+        "not json",
+    )
+    .unwrap();
     assert_oracle_refusal(
         "delete_journal_entity_route:2039",
         delete(bad_identity.path(), "/app/entities/api/journal/entity/a").await,
@@ -3066,7 +3101,11 @@ async fn refusal_sites_batch_2_read_routes_are_exact() {
     );
     assert_oracle_refusal(
         "get_journal_entity_version_history:1050",
-        call(journal.path(), "/app/entities/api/journal/entity/missing/history").await,
+        call(
+            journal.path(),
+            "/app/entities/api/journal/entity/missing/history",
+        )
+        .await,
         "entity_not_found",
         404,
     );
@@ -3102,7 +3141,9 @@ async fn refusal_sites_batch_2_read_routes_are_exact() {
     let malformed_ambiguity = Journal::new();
     fs::create_dir_all(malformed_ambiguity.path().join("entities")).unwrap();
     fs::write(
-        malformed_ambiguity.path().join("entities/ambiguities.jsonl"),
+        malformed_ambiguity
+            .path()
+            .join("entities/ambiguities.jsonl"),
         "{\"ambiguity_id\":\"bad\"}\n",
     )
     .unwrap();
@@ -3150,7 +3191,11 @@ async fn refusal_sites_batch_2_detection_and_generation_are_exact() {
     let journal = Journal::new();
     assert_oracle_refusal(
         "generate_description:1546",
-        post_without_body(journal.path(), "/app/entities/api/work/generate-description").await,
+        post_without_body(
+            journal.path(),
+            "/app/entities/api/work/generate-description",
+        )
+        .await,
         "missing_request_body",
         400,
     );
@@ -3274,11 +3319,7 @@ async fn refusal_sites_batch_3_mutation_conditions_are_exact() {
     .unwrap();
     assert_oracle_refusal(
         "detach_entity:1425",
-        delete(
-            detached_failure.path(),
-            "/app/entities/api/work/entity/a",
-        )
-        .await,
+        delete(detached_failure.path(), "/app/entities/api/work/entity/a").await,
         "entity_operation_failed",
         500,
     );
@@ -3380,16 +3421,23 @@ async fn refusal_sites_batch_3_resolution_and_merge_conditions_are_exact() {
     );
 
     for (site, detail) in [
-        ("accept_merge_candidate_for_call:924", "merge candidate accept failed"),
-        ("dismiss_merge_candidate_for_call:958", "merge candidate dismiss failed"),
-        ("record_merge_candidate_for_call:882", "merge candidate record failed"),
+        (
+            "accept_merge_candidate_for_call:924",
+            "merge candidate accept failed",
+        ),
+        (
+            "dismiss_merge_candidate_for_call:958",
+            "merge candidate dismiss failed",
+        ),
+        (
+            "record_merge_candidate_for_call:882",
+            "merge candidate record failed",
+        ),
     ] {
         assert_oracle_refusal(
             site,
             response_value(crate::router::entity_review_candidate_error_response(
-                solstone_core_entity::EntityReviewCandidateError::Lock(
-                    synthetic_lock_timeout(),
-                ),
+                solstone_core_entity::EntityReviewCandidateError::Lock(synthetic_lock_timeout()),
                 detail,
             ))
             .await,
@@ -3572,58 +3620,249 @@ async fn refusal_sites_batch_4_update_identity_conflicts_are_exact() {
 
 #[tokio::test]
 async fn refusal_sites_batch_6_busy_routes_contend_on_their_real_trust_locks() {
-    fn attached(root: &Path) { seed_entity(root, "a", "Alice"); seed_facet_entity(root, "work", "a"); }
+    fn attached(root: &Path) {
+        seed_entity(root, "a", "Alice");
+        seed_facet_entity(root, "work", "a");
+    }
     fn detected(root: &Path) {
         fs::create_dir_all(root.join("facets/work/entities")).unwrap();
-        fs::write(root.join("facets/work/entities/20260101.jsonl"), "{\"name\":\"Alice\",\"type\":\"Person\"}\n").unwrap();
+        fs::write(
+            root.join("facets/work/entities/20260101.jsonl"),
+            "{\"name\":\"Alice\",\"type\":\"Person\"}\n",
+        )
+        .unwrap();
     }
 
-    let journal = Journal::new(); detected(journal.path()); let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal("delete_detected:1703", delete_json(journal.path(), "/app/entities/api/work/detected", json!({"name":"Alice"})).await, "entity_busy", 503); drop(held);
-    let journal = Journal::new(); attached(journal.path());
+    let journal = Journal::new();
+    detected(journal.path());
     let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal("detach_entity:1423", delete(journal.path(), "/app/entities/api/work/entity/a").await, "entity_busy", 503); drop(held);
-
-    let journal = Journal::new(); attached(journal.path());
+    assert_oracle_refusal(
+        "delete_detected:1703",
+        delete_json(
+            journal.path(),
+            "/app/entities/api/work/detected",
+            json!({"name":"Alice"}),
+        )
+        .await,
+        "entity_busy",
+        503,
+    );
+    drop(held);
+    let journal = Journal::new();
+    attached(journal.path());
     let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal("detect_entity_route:586", post(journal.path(), "/app/entities/api/work/detected", json!({"day":"20260101","type":"Person","entity":"Alice","description":"seen"})).await, "entity_busy", 503); drop(held);
-    let journal = Journal::new(); attached(journal.path()); let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal("observe_entity_for_call:1197", post(journal.path(), "/app/entities/api/work/observe", json!({"name":"Alice","content":"seen"})).await, "entity_busy", 503); drop(held);
-
-    let journal = Journal::new(); attached(journal.path());
-    let row = seed_facet_ambiguity(journal.path(), "Alice");
-    let held = hold_trust_lock(journal.path(), "entity");
-    assert_oracle_refusal("resolve_entity_ambiguity:1152", post(journal.path(), &format!("/app/entities/api/ambiguities/{}/resolve", row["ambiguity_id"].as_str().unwrap()), json!({"entity_id":"a"})).await, "entity_busy", 503); drop(held);
+    assert_oracle_refusal(
+        "detach_entity:1423",
+        delete(journal.path(), "/app/entities/api/work/entity/a").await,
+        "entity_busy",
+        503,
+    );
+    drop(held);
 
     let journal = Journal::new();
-    let version = solstone_core_entity::save_entity_identity(journal.path(), "a", &json!({"id":"a","name":"Alice","type":"Person"}), None).unwrap().event.unwrap()["version_id"].as_str().unwrap().to_owned();
-    let held = hold_trust_lock(journal.path(), "entity");
-    assert_oracle_refusal("restore_journal_entity_version_for_call:1077", post(journal.path(), "/app/entities/api/journal/entity/a/restore", json!({"version_id":version})).await, "entity_busy", 503); drop(held);
+    attached(journal.path());
+    let held = hold_trust_lock(journal.path(), "facet");
+    assert_oracle_refusal(
+        "detect_entity_route:586",
+        post(
+            journal.path(),
+            "/app/entities/api/work/detected",
+            json!({"day":"20260101","type":"Person","entity":"Alice","description":"seen"}),
+        )
+        .await,
+        "entity_busy",
+        503,
+    );
+    drop(held);
+    let journal = Journal::new();
+    attached(journal.path());
+    let held = hold_trust_lock(journal.path(), "facet");
+    assert_oracle_refusal(
+        "observe_entity_for_call:1197",
+        post(
+            journal.path(),
+            "/app/entities/api/work/observe",
+            json!({"name":"Alice","content":"seen"}),
+        )
+        .await,
+        "entity_busy",
+        503,
+    );
+    drop(held);
 
-    let journal = Journal::new(); attached(journal.path()); let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal("update_description:1536", put(journal.path(), "/app/entities/api/work/entity/a/description", json!({"description":"new"})).await, "entity_busy", 503); drop(held);
-    let journal = Journal::new(); attached(journal.path()); let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal("update_description_for_call:689", post(journal.path(), "/app/entities/api/work/update-description", json!({"entity_id":"a","description":"new"})).await, "entity_busy", 503); drop(held);
-    let journal = Journal::new(); detected(journal.path()); let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal("update_detected_for_call:725", post(journal.path(), "/app/entities/api/work/update-detected", json!({"day":"20260101","entity":"Alice","description":"new"})).await, "entity_busy", 503); drop(held);
-    let journal = Journal::new(); attached(journal.path()); let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal("update_entity:1494", put(journal.path(), "/app/entities/api/work/update", json!({"old_name":"Alice","new_name":"Alicia"})).await, "entity_busy", 503); drop(held);
+    let journal = Journal::new();
+    attached(journal.path());
+    let row = seed_facet_ambiguity(journal.path(), "Alice");
+    let held = hold_trust_lock(journal.path(), "entity");
+    assert_oracle_refusal(
+        "resolve_entity_ambiguity:1152",
+        post(
+            journal.path(),
+            &format!(
+                "/app/entities/api/ambiguities/{}/resolve",
+                row["ambiguity_id"].as_str().unwrap()
+            ),
+            json!({"entity_id":"a"}),
+        )
+        .await,
+        "entity_busy",
+        503,
+    );
+    drop(held);
+
+    let journal = Journal::new();
+    let version = solstone_core_entity::save_entity_identity(
+        journal.path(),
+        "a",
+        &json!({"id":"a","name":"Alice","type":"Person"}),
+        None,
+    )
+    .unwrap()
+    .event
+    .unwrap()["version_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let held = hold_trust_lock(journal.path(), "entity");
+    assert_oracle_refusal(
+        "restore_journal_entity_version_for_call:1077",
+        post(
+            journal.path(),
+            "/app/entities/api/journal/entity/a/restore",
+            json!({"version_id":version}),
+        )
+        .await,
+        "entity_busy",
+        503,
+    );
+    drop(held);
+
+    let journal = Journal::new();
+    attached(journal.path());
+    let held = hold_trust_lock(journal.path(), "facet");
+    assert_oracle_refusal(
+        "update_description:1536",
+        put(
+            journal.path(),
+            "/app/entities/api/work/entity/a/description",
+            json!({"description":"new"}),
+        )
+        .await,
+        "entity_busy",
+        503,
+    );
+    drop(held);
+    let journal = Journal::new();
+    attached(journal.path());
+    let held = hold_trust_lock(journal.path(), "facet");
+    assert_oracle_refusal(
+        "update_description_for_call:689",
+        post(
+            journal.path(),
+            "/app/entities/api/work/update-description",
+            json!({"entity_id":"a","description":"new"}),
+        )
+        .await,
+        "entity_busy",
+        503,
+    );
+    drop(held);
+    let journal = Journal::new();
+    detected(journal.path());
+    let held = hold_trust_lock(journal.path(), "facet");
+    assert_oracle_refusal(
+        "update_detected_for_call:725",
+        post(
+            journal.path(),
+            "/app/entities/api/work/update-detected",
+            json!({"day":"20260101","entity":"Alice","description":"new"}),
+        )
+        .await,
+        "entity_busy",
+        503,
+    );
+    drop(held);
+    let journal = Journal::new();
+    attached(journal.path());
+    let held = hold_trust_lock(journal.path(), "facet");
+    assert_oracle_refusal(
+        "update_entity:1494",
+        put(
+            journal.path(),
+            "/app/entities/api/work/update",
+            json!({"old_name":"Alice","new_name":"Alicia"}),
+        )
+        .await,
+        "entity_busy",
+        503,
+    );
+    drop(held);
 }
 
 #[tokio::test]
 async fn refusal_sites_batch_7_real_catch_all_conditions_are_exact() {
     let malformed_identity = Journal::new();
     fs::create_dir_all(malformed_identity.path().join("entities/a")).unwrap();
-    fs::write(malformed_identity.path().join("entities/a/entity.json"), "not json").unwrap();
-    assert_oracle_refusal("restore_journal_entity_version_for_call:1084", post(malformed_identity.path(), "/app/entities/api/journal/entity/a/restore", json!({"version_id":"v1"})).await, "entity_operation_failed", 500);
-    assert_oracle_refusal("update_journal_entity:1970", put(malformed_identity.path(), "/app/entities/api/journal/entity/a", json!({"name":"Alicia"})).await, "entity_operation_failed", 500);
+    fs::write(
+        malformed_identity.path().join("entities/a/entity.json"),
+        "not json",
+    )
+    .unwrap();
+    assert_oracle_refusal(
+        "restore_journal_entity_version_for_call:1084",
+        post(
+            malformed_identity.path(),
+            "/app/entities/api/journal/entity/a/restore",
+            json!({"version_id":"v1"}),
+        )
+        .await,
+        "entity_operation_failed",
+        500,
+    );
+    assert_oracle_refusal(
+        "update_journal_entity:1970",
+        put(
+            malformed_identity.path(),
+            "/app/entities/api/journal/entity/a",
+            json!({"name":"Alicia"}),
+        )
+        .await,
+        "entity_operation_failed",
+        500,
+    );
 
     let malformed_link = Journal::new();
     seed_entity(malformed_link.path(), "a", "Alice");
     fs::create_dir_all(malformed_link.path().join("facets/work/entities/a")).unwrap();
-    fs::write(malformed_link.path().join("facets/work/entities/a/entity.json"), "not json").unwrap();
-    assert_oracle_refusal("update_description:1538", put(malformed_link.path(), "/app/entities/api/work/entity/a/description", json!({"description":"new"})).await, "entity_operation_failed", 500);
-    assert_oracle_refusal("update_entity:1496", put(malformed_link.path(), "/app/entities/api/work/update", json!({"old_name":"Alice","new_name":"Alicia"})).await, "entity_operation_failed", 500);
+    fs::write(
+        malformed_link
+            .path()
+            .join("facets/work/entities/a/entity.json"),
+        "not json",
+    )
+    .unwrap();
+    assert_oracle_refusal(
+        "update_description:1538",
+        put(
+            malformed_link.path(),
+            "/app/entities/api/work/entity/a/description",
+            json!({"description":"new"}),
+        )
+        .await,
+        "entity_operation_failed",
+        500,
+    );
+    assert_oracle_refusal(
+        "update_entity:1496",
+        put(
+            malformed_link.path(),
+            "/app/entities/api/work/update",
+            json!({"old_name":"Alice","new_name":"Alicia"}),
+        )
+        .await,
+        "entity_operation_failed",
+        500,
+    );
 
     // Malformed identities are normalized to EntityNotFound by the lifecycle
     // reader, which deliberately takes this route's documented 400 override.

@@ -12,18 +12,18 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router, body::Body};
+use ring::rand::{SecureRandom, SystemRandom};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use ring::rand::{SecureRandom, SystemRandom};
 use solstone_core_convey_http::envelope::{ErrorEnvelope, not_found_fallback};
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::refusal::{MergeRepairRequired, UndoRepairRequired};
 
+use crate::deferred_delete::DeferredDeleteRegistry;
 use crate::model::{
     ATTENDANCE_KINDS, ENTITIES_COPY, ENTITY_TYPES, ReasonCode, refusal, refusal_with_status,
 };
-use crate::deferred_delete::DeferredDeleteRegistry;
 
 #[derive(Clone)]
 struct RouterState {
@@ -288,9 +288,9 @@ fn resolution_candidate_payloads(
     candidates
         .iter()
         .map(|candidate| {
-            let entity = entities.iter().find(|entity| {
-                entity.resolution.id.as_deref() == Some(candidate.id.as_str())
-            });
+            let entity = entities
+                .iter()
+                .find(|entity| entity.resolution.id.as_deref() == Some(candidate.id.as_str()));
             json!({
                 "name": candidate.name,
                 "id": candidate.id,
@@ -323,7 +323,12 @@ fn closest_resolution_candidate_payloads(
                 })
                 .max_by(f64::total_cmp)
                 .unwrap_or(0.0);
-            Some((score, entity.resolution.name.clone(), id, entity.identity.clone()))
+            Some((
+                score,
+                entity.resolution.name.clone(),
+                id,
+                entity.identity.clone(),
+            ))
         })
         .collect();
     scored.sort_by(|left, right| {
@@ -381,7 +386,10 @@ async fn resolve_facet_entity_route(
     if let Some(response) = admitted(&b) {
         return response;
     }
-    let Some(name) = query.get("name").map(|name| name.trim()).filter(|name| !name.is_empty())
+    let Some(name) = query
+        .get("name")
+        .map(|name| name.trim())
+        .filter(|name| !name.is_empty())
     else {
         return refusal(ReasonCode::MissingRequiredField, "name is required");
     };
@@ -449,7 +457,8 @@ async fn resolve_facet_entity_route(
         .await
         {
             Ok(Ok((entities, resolution)))
-                if resolution.outcome == solstone_core_entity::EntityResolutionOutcome::Resolved =>
+                if resolution.outcome
+                    == solstone_core_entity::EntityResolutionOutcome::Resolved =>
             {
                 let name = resolution
                     .entity_index
@@ -471,12 +480,14 @@ async fn resolve_facet_entity_route(
                 .map(|entity| entity.identity.clone()),
             Vec::new(),
         ),
-        solstone_core_entity::EntityResolutionOutcome::Ambiguous => {
-            (None, resolution_candidate_payloads(&resolution.candidates, &entities))
-        }
-        solstone_core_entity::EntityResolutionOutcome::NoMatch => {
-            (None, closest_resolution_candidate_payloads(&name, &entities))
-        }
+        solstone_core_entity::EntityResolutionOutcome::Ambiguous => (
+            None,
+            resolution_candidate_payloads(&resolution.candidates, &entities),
+        ),
+        solstone_core_entity::EntityResolutionOutcome::NoMatch => (
+            None,
+            closest_resolution_candidate_payloads(&name, &entities),
+        ),
     };
     Json(json!({
         "facet_exists": facet_exists,
@@ -644,7 +655,10 @@ async fn detect_entity_route(
                 solstone_core_journal_io::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
-        _ => refusal(ReasonCode::EntityOperationFailed, "detected entity save failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            "detected entity save failed",
+        ),
     }
 }
 
@@ -828,7 +842,10 @@ async fn record_merge_candidate_route(
         Ok(Err(error)) => {
             entity_review_candidate_error_response(error, "merge candidate record failed")
         }
-        _ => refusal(ReasonCode::EntityOperationFailed, "merge candidate record failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            "merge candidate record failed",
+        ),
     }
 }
 
@@ -1286,7 +1303,10 @@ async fn accept_merge_candidate_route(
         Ok(Err(error)) => {
             entity_review_candidate_error_response(error, "merge candidate accept failed")
         }
-        _ => refusal(ReasonCode::EntityOperationFailed, "merge candidate accept failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            "merge candidate accept failed",
+        ),
     }
 }
 
@@ -1372,7 +1392,10 @@ async fn dismiss_merge_candidate_route(
         Ok(Err(error)) => {
             entity_review_candidate_error_response(error, "merge candidate dismiss failed")
         }
-        _ => refusal(ReasonCode::EntityOperationFailed, "merge candidate dismiss failed"),
+        _ => refusal(
+            ReasonCode::EntityOperationFailed,
+            "merge candidate dismiss failed",
+        ),
     }
 }
 
@@ -1750,9 +1773,9 @@ async fn cancel_deferred_delete_route(
         return response;
     }
     if pending_id.len() != 32
-        || !pending_id
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (byte.is_ascii_lowercase() && byte.is_ascii_hexdigit()))
+        || !pending_id.bytes().all(|byte| {
+            byte.is_ascii_digit() || (byte.is_ascii_lowercase() && byte.is_ascii_hexdigit())
+        })
     {
         return refusal(
             ReasonCode::OperationNoLongerAvailable,
@@ -1785,8 +1808,16 @@ async fn generate_description_route(
         Ok(body) if body.as_object().is_some_and(|body| !body.is_empty()) => body,
         _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
     };
-    let entity_type = body.get("type").and_then(Value::as_str).unwrap_or_default().trim();
-    let entity_name = body.get("name").and_then(Value::as_str).unwrap_or_default().trim();
+    let entity_type = body
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let entity_name = body
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
     if entity_type.is_empty() || entity_name.is_empty() {
         return refusal(
             ReasonCode::MissingRequiredField,
@@ -2307,9 +2338,7 @@ async fn observations_route(
     }
 }
 
-fn facet_entity_write_error_is_busy(
-    error: &solstone_core_facets::FacetEntityWriteError,
-) -> bool {
+fn facet_entity_write_error_is_busy(error: &solstone_core_facets::FacetEntityWriteError) -> bool {
     matches!(
         error,
         solstone_core_facets::FacetEntityWriteError::TrustLock(
@@ -3244,11 +3273,7 @@ async fn index(Extension(basis): Extension<AccessBasis>) -> Response {
         .into_response()
 }
 
-fn index_plate_integer(
-    value: Option<&str>,
-    name: &str,
-    default: i64,
-) -> Result<i64, Response> {
+fn index_plate_integer(value: Option<&str>, name: &str, default: i64) -> Result<i64, Response> {
     match value.map(str::trim).filter(|value| !value.is_empty()) {
         Some(value) => value.parse::<i64>().map_err(|_| {
             refusal(
