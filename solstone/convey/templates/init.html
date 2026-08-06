@@ -269,7 +269,7 @@
 
     <section class="init-section" id="section-observed-media">
       <h3>your original media (audio, video, screen frames)</h3>
-      <p class="section-hint">by default, your journal keeps your original media so you can access it again later. you can also keep it for a set number of days, or list originals for removal after processing. <a href="https://solpbc.org/privacy#recording-laws" target="_blank" rel="noopener">recording-consent laws</a> may apply in your jurisdiction.</p>
+      <p class="section-hint">by default, your journal keeps your original media so you can access it again later. you can also list it for removal after a set number of days, or list originals for removal after processing. <a href="https://solpbc.org/privacy#recording-laws" target="_blank" rel="noopener">recording-consent laws</a> may apply in your jurisdiction.</p>
       <div class="field-group">
         <div class="retention-options">
           <label class="retention-option">
@@ -278,7 +278,7 @@
           </label>
           <label class="retention-option">
             <input type="radio" name="retention_mode" value="days">
-            <span class="retention-option-label">keep for a set number of days</span>
+            <span class="retention-option-label">list originals for removal after a set number of days</span>
             <div class="retention-days-row">
               <input type="number" id="retention-days-input" min="1" value="30">
               <span class="retention-days-suffix">days</span>
@@ -560,7 +560,7 @@
       if (mode === 'processed') return { mode, days: null, statusText: 'currently: list originals for removal after processing.' };
       if (mode === 'days') {
         const n = parseInt(daysValue, 10);
-        if (Number.isFinite(n) && n >= 1) return { mode, days: n, statusText: `currently: keep ${n} days.` };
+        if (Number.isFinite(n) && n >= 1) return { mode, days: n, statusText: `currently: list originals for removal after ${n} days.` };
         return { mode, days: null, statusText: 'currently: keep — set a positive number of days.' };
       }
       return { mode: 'keep', days: null, statusText: 'currently: keep everything.' };
