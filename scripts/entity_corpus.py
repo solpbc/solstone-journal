@@ -482,6 +482,194 @@ def build_entity_matching_fixture() -> dict[str, Any]:
     }
 
 
+def _resolution_map_divergence_cases() -> list[dict[str, Any]]:
+    """Named population measuring the legacy batch-map resolution door."""
+    return [
+        {
+            "vector_name": "missing_single_token_guard",
+            "query": "Person B",
+            "candidates": [{"id": "person_a", "name": "Person A", "type": "Person"}],
+            "change_class": "guard_fixed",
+        },
+        {
+            "vector_name": "single_token_guard_twin",
+            "query": "Person",
+            "candidates": [{"id": "person_a", "name": "Person", "type": "Person"}],
+            "change_class": "agree",
+        },
+        {
+            "vector_name": "exact_id_vs_lowered_name_collision",
+            "query": "alice",
+            "candidates": [
+                {"id": "alice", "name": "Alpha", "type": "Person"},
+                {"id": "bee", "name": "ALICE", "type": "Person"},
+            ],
+            "change_class": "collision_fixed",
+        },
+        {
+            "vector_name": "idless_entity",
+            "query": "alice_chen",
+            "candidates": [{"name": "Alice Chen", "type": "Person"}],
+            "change_class": "idless_fixed",
+        },
+        {
+            "vector_name": "tier_metadata_presence",
+            "query": "Robert",
+            "candidates": [{"id": "robert", "name": "Robert", "type": "Person"}],
+            "change_class": "tier_added",
+        },
+        {
+            "vector_name": "email_tier",
+            "query": "BOB@EXAMPLE.COM",
+            "candidates": [
+                {
+                    "id": "bob",
+                    "name": "Robert",
+                    "type": "Person",
+                    "emails": ["bob@example.com"],
+                }
+            ],
+            "change_class": "email_tier_added",
+        },
+        {
+            "vector_name": "exact_name_agrees",
+            "query": "Alice",
+            "candidates": [{"id": "alice", "name": "Alice", "type": "Person"}],
+            "change_class": "agree",
+        },
+        {
+            "vector_name": "case_insensitive_name_agrees",
+            "query": "alice",
+            "candidates": [
+                {"id": "alice_person", "name": "Alice", "type": "Person"}
+            ],
+            "change_class": "agree",
+        },
+        {
+            "vector_name": "exact_aka_agrees",
+            "query": "Bob",
+            "candidates": [
+                {
+                    "id": "robert",
+                    "name": "Robert",
+                    "type": "Person",
+                    "aka": ["Bob"],
+                }
+            ],
+            "change_class": "agree",
+        },
+        {
+            "vector_name": "first_word_agrees",
+            "query": "Javier",
+            "candidates": [
+                {"id": "javier_garcia", "name": "Javier Garcia", "type": "Person"}
+            ],
+            "change_class": "agree",
+        },
+        {
+            "vector_name": "token_subset_agrees",
+            "query": "Jose Garcia",
+            "candidates": [
+                {
+                    "id": "jose_garcia_marquez",
+                    "name": "Jose Garcia Marquez",
+                    "type": "Person",
+                }
+            ],
+            "change_class": "agree",
+        },
+        {
+            "vector_name": "prefix_token_agrees",
+            "query": "Chris DeWolfe",
+            "candidates": [
+                {
+                    "id": "christopher_dewolfe",
+                    "name": "Christopher DeWolfe",
+                    "type": "Person",
+                }
+            ],
+            "change_class": "agree",
+        },
+    ]
+
+
+def _batch_door_outcome(entity_id: str | None) -> dict[str, Any]:
+    return {
+        "outcome": "resolved" if entity_id is not None else "no_match",
+        "tier": None,
+        "entity_id": entity_id,
+    }
+
+
+def _single_name_door_outcome(match: dict[str, Any] | None) -> dict[str, Any]:
+    if match is None:
+        return {"outcome": "no_match", "tier": None, "entity_id": None}
+    return {
+        "outcome": "resolved",
+        "tier": int(match.tier),
+        "entity_id": match.get("id"),
+    }
+
+
+def build_entity_resolution_map_divergences_fixture() -> dict[str, Any]:
+    """Measure the legacy batch map against one-query canonical matching."""
+    from solstone.think.entities.matching import (
+        build_name_resolution_map,
+        find_matching_entity,
+    )
+
+    fuzzy_threshold = 90
+    entries: list[dict[str, Any]] = []
+    for fixture_index, case in enumerate(_resolution_map_divergence_cases()):
+        query = case["query"]
+        candidates = case["candidates"]
+        old_entity_id = build_name_resolution_map(
+            [query], candidates, fuzzy_threshold
+        ).get(query)
+        new_match = find_matching_entity(query, candidates, fuzzy_threshold)
+        entries.append(
+            {
+                "fixture_index": fixture_index,
+                "vector_name": case["vector_name"],
+                "query": query,
+                "candidates": candidates,
+                "change_class": case["change_class"],
+                "old_door": _batch_door_outcome(old_entity_id),
+                "new_door": _single_name_door_outcome(new_match),
+            }
+        )
+
+    counts: dict[str, int] = {"total": len(entries)}
+    for entry in entries:
+        change_class = entry["change_class"]
+        counts[change_class] = counts.get(change_class, 0) + 1
+
+    return {
+        "generated_by": "make core-fixtures",
+        "note": (
+            "The old door is Python build_name_resolution_map, whose bare mapping "
+            "cannot preserve tiers. The new door calls Python find_matching_entity "
+            "once per query, matching the native batch resolver's delegation path."
+        ),
+        "why_this_file_exists": (
+            "The batch resolver promises consistent resolution while its legacy "
+            "implementation differs from the single-name door. This named population "
+            "makes every known difference reviewable and pins agreeing controls."
+        ),
+        "vector_source": "named batch-resolution population in scripts/entity_corpus.py",
+        "fuzzy_threshold": fuzzy_threshold,
+        "vector_count": len(entries),
+        "counts": counts,
+        "when_this_file_reddens": (
+            "A later failure means one of the two doors changed behavior. Re-measure "
+            "both columns and decide deliberately; do not regenerate this file to "
+            "absorb the change. Every entry is a named decision the native batch "
+            "resolver must preserve."
+        ),
+        "entries": entries,
+    }
+
+
 # --------------------------------------------------------------------------
 # durable formats
 # --------------------------------------------------------------------------

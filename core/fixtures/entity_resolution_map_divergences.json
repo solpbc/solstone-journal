@@ -1,0 +1,306 @@
+{
+  "counts": {
+    "agree": 7,
+    "collision_fixed": 1,
+    "email_tier_added": 1,
+    "guard_fixed": 1,
+    "idless_fixed": 1,
+    "tier_added": 1,
+    "total": 12
+  },
+  "entries": [
+    {
+      "candidates": [
+        {
+          "id": "person_a",
+          "name": "Person A",
+          "type": "Person"
+        }
+      ],
+      "change_class": "guard_fixed",
+      "fixture_index": 0,
+      "new_door": {
+        "entity_id": null,
+        "outcome": "no_match",
+        "tier": null
+      },
+      "old_door": {
+        "entity_id": "person_a",
+        "outcome": "resolved",
+        "tier": null
+      },
+      "query": "Person B",
+      "vector_name": "missing_single_token_guard"
+    },
+    {
+      "candidates": [
+        {
+          "id": "person_a",
+          "name": "Person",
+          "type": "Person"
+        }
+      ],
+      "change_class": "agree",
+      "fixture_index": 1,
+      "new_door": {
+        "entity_id": "person_a",
+        "outcome": "resolved",
+        "tier": 1
+      },
+      "old_door": {
+        "entity_id": "person_a",
+        "outcome": "resolved",
+        "tier": null
+      },
+      "query": "Person",
+      "vector_name": "single_token_guard_twin"
+    },
+    {
+      "candidates": [
+        {
+          "id": "alice",
+          "name": "Alpha",
+          "type": "Person"
+        },
+        {
+          "id": "bee",
+          "name": "ALICE",
+          "type": "Person"
+        }
+      ],
+      "change_class": "collision_fixed",
+      "fixture_index": 2,
+      "new_door": {
+        "entity_id": "alice",
+        "outcome": "resolved",
+        "tier": 1
+      },
+      "old_door": {
+        "entity_id": "bee",
+        "outcome": "resolved",
+        "tier": null
+      },
+      "query": "alice",
+      "vector_name": "exact_id_vs_lowered_name_collision"
+    },
+    {
+      "candidates": [
+        {
+          "name": "Alice Chen",
+          "type": "Person"
+        }
+      ],
+      "change_class": "idless_fixed",
+      "fixture_index": 3,
+      "new_door": {
+        "entity_id": null,
+        "outcome": "resolved",
+        "tier": 4
+      },
+      "old_door": {
+        "entity_id": null,
+        "outcome": "no_match",
+        "tier": null
+      },
+      "query": "alice_chen",
+      "vector_name": "idless_entity"
+    },
+    {
+      "candidates": [
+        {
+          "id": "robert",
+          "name": "Robert",
+          "type": "Person"
+        }
+      ],
+      "change_class": "tier_added",
+      "fixture_index": 4,
+      "new_door": {
+        "entity_id": "robert",
+        "outcome": "resolved",
+        "tier": 1
+      },
+      "old_door": {
+        "entity_id": "robert",
+        "outcome": "resolved",
+        "tier": null
+      },
+      "query": "Robert",
+      "vector_name": "tier_metadata_presence"
+    },
+    {
+      "candidates": [
+        {
+          "emails": [
+            "bob@example.com"
+          ],
+          "id": "bob",
+          "name": "Robert",
+          "type": "Person"
+        }
+      ],
+      "change_class": "email_tier_added",
+      "fixture_index": 5,
+      "new_door": {
+        "entity_id": "bob",
+        "outcome": "resolved",
+        "tier": 3
+      },
+      "old_door": {
+        "entity_id": null,
+        "outcome": "no_match",
+        "tier": null
+      },
+      "query": "BOB@EXAMPLE.COM",
+      "vector_name": "email_tier"
+    },
+    {
+      "candidates": [
+        {
+          "id": "alice",
+          "name": "Alice",
+          "type": "Person"
+        }
+      ],
+      "change_class": "agree",
+      "fixture_index": 6,
+      "new_door": {
+        "entity_id": "alice",
+        "outcome": "resolved",
+        "tier": 1
+      },
+      "old_door": {
+        "entity_id": "alice",
+        "outcome": "resolved",
+        "tier": null
+      },
+      "query": "Alice",
+      "vector_name": "exact_name_agrees"
+    },
+    {
+      "candidates": [
+        {
+          "id": "alice_person",
+          "name": "Alice",
+          "type": "Person"
+        }
+      ],
+      "change_class": "agree",
+      "fixture_index": 7,
+      "new_door": {
+        "entity_id": "alice_person",
+        "outcome": "resolved",
+        "tier": 2
+      },
+      "old_door": {
+        "entity_id": "alice_person",
+        "outcome": "resolved",
+        "tier": null
+      },
+      "query": "alice",
+      "vector_name": "case_insensitive_name_agrees"
+    },
+    {
+      "candidates": [
+        {
+          "aka": [
+            "Bob"
+          ],
+          "id": "robert",
+          "name": "Robert",
+          "type": "Person"
+        }
+      ],
+      "change_class": "agree",
+      "fixture_index": 8,
+      "new_door": {
+        "entity_id": "robert",
+        "outcome": "resolved",
+        "tier": 1
+      },
+      "old_door": {
+        "entity_id": "robert",
+        "outcome": "resolved",
+        "tier": null
+      },
+      "query": "Bob",
+      "vector_name": "exact_aka_agrees"
+    },
+    {
+      "candidates": [
+        {
+          "id": "javier_garcia",
+          "name": "Javier Garcia",
+          "type": "Person"
+        }
+      ],
+      "change_class": "agree",
+      "fixture_index": 9,
+      "new_door": {
+        "entity_id": "javier_garcia",
+        "outcome": "resolved",
+        "tier": 5
+      },
+      "old_door": {
+        "entity_id": "javier_garcia",
+        "outcome": "resolved",
+        "tier": null
+      },
+      "query": "Javier",
+      "vector_name": "first_word_agrees"
+    },
+    {
+      "candidates": [
+        {
+          "id": "jose_garcia_marquez",
+          "name": "Jose Garcia Marquez",
+          "type": "Person"
+        }
+      ],
+      "change_class": "agree",
+      "fixture_index": 10,
+      "new_door": {
+        "entity_id": "jose_garcia_marquez",
+        "outcome": "resolved",
+        "tier": 6
+      },
+      "old_door": {
+        "entity_id": "jose_garcia_marquez",
+        "outcome": "resolved",
+        "tier": null
+      },
+      "query": "Jose Garcia",
+      "vector_name": "token_subset_agrees"
+    },
+    {
+      "candidates": [
+        {
+          "id": "christopher_dewolfe",
+          "name": "Christopher DeWolfe",
+          "type": "Person"
+        }
+      ],
+      "change_class": "agree",
+      "fixture_index": 11,
+      "new_door": {
+        "entity_id": "christopher_dewolfe",
+        "outcome": "resolved",
+        "tier": 7
+      },
+      "old_door": {
+        "entity_id": "christopher_dewolfe",
+        "outcome": "resolved",
+        "tier": null
+      },
+      "query": "Chris DeWolfe",
+      "vector_name": "prefix_token_agrees"
+    }
+  ],
+  "fuzzy_threshold": 90,
+  "generated_by": "make core-fixtures",
+  "note": "The old door is Python build_name_resolution_map, whose bare mapping cannot preserve tiers. The new door calls Python find_matching_entity once per query, matching the native batch resolver's delegation path.",
+  "vector_count": 12,
+  "vector_source": "named batch-resolution population in scripts/entity_corpus.py",
+  "when_this_file_reddens": "A later failure means one of the two doors changed behavior. Re-measure both columns and decide deliberately; do not regenerate this file to absorb the change. Every entry is a named decision the native batch resolver must preserve.",
+  "why_this_file_exists": "The batch resolver promises consistent resolution while its legacy implementation differs from the single-name door. This named population makes every known difference reviewable and pins agreeing controls."
+}

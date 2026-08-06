@@ -16,5 +16,9 @@ rapidfuzz.workspace = true
 unicode-normalization.workspace = true
 unidecode.workspace = true
 
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
 [lints]
 workspace = true

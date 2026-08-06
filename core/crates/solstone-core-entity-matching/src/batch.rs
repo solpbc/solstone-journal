@@ -71,8 +71,49 @@ pub fn is_name_variant_match(name_a: &str, name_b: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
+    use serde::Deserialize;
+
     use super::{build_name_resolution_map, find_entity_by_email, is_name_variant_match};
     use crate::{EntityNameCandidate, MatchTier};
+
+    const ENTITY_RESOLUTION_MAP_DIVERGENCES_FIXTURE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/entity_resolution_map_divergences.json"
+    ));
+
+    #[derive(Debug, Deserialize)]
+    struct ResolutionMapFixture {
+        fuzzy_threshold: f64,
+        vector_count: usize,
+        counts: BTreeMap<String, usize>,
+        entries: Vec<ResolutionMapFixtureEntry>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct ResolutionMapFixtureEntry {
+        query: String,
+        candidates: Vec<ResolutionMapFixtureCandidate>,
+        new_door: ResolutionMapFixtureDoor,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct ResolutionMapFixtureCandidate {
+        id: Option<String>,
+        name: String,
+        #[serde(default)]
+        aka: Vec<String>,
+        #[serde(default)]
+        emails: Vec<String>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct ResolutionMapFixtureDoor {
+        outcome: String,
+        tier: Option<u8>,
+        entity_id: Option<String>,
+    }
 
     fn candidate(
         id: Option<&str>,
@@ -219,5 +260,53 @@ mod tests {
     #[test]
     fn name_variant_matching_rejects_unrelated_names() {
         assert!(!is_name_variant_match("Alice Smith", "Bob Jones"));
+    }
+
+    #[test]
+    fn batch_resolution_map_matches_unified_door_fixture() {
+        let fixture: ResolutionMapFixture =
+            serde_json::from_str(ENTITY_RESOLUTION_MAP_DIVERGENCES_FIXTURE)
+                .expect("parse resolution-map divergence fixture");
+        assert_eq!(fixture.entries.len(), fixture.vector_count);
+        assert_eq!(fixture.counts.get("total"), Some(&fixture.vector_count));
+
+        for entry in fixture.entries {
+            let candidates: Vec<EntityNameCandidate> = entry
+                .candidates
+                .into_iter()
+                .map(|candidate| EntityNameCandidate {
+                    id: candidate.id,
+                    name: candidate.name,
+                    aka: candidate.aka,
+                    emails: candidate.emails,
+                })
+                .collect();
+            let queries = [entry.query.clone()];
+            let actual = build_name_resolution_map(&queries, &candidates, fixture.fuzzy_threshold)
+                .get(&entry.query)
+                .copied();
+
+            match entry.new_door.outcome.as_str() {
+                "no_match" => assert_eq!(actual, None, "{:?}", entry.query),
+                "resolved" => {
+                    let actual = actual.expect("resolved fixture entry matches a candidate");
+                    assert_eq!(
+                        actual.tier as u8,
+                        entry
+                            .new_door
+                            .tier
+                            .expect("resolved fixture entry carries a tier"),
+                        "{:?}",
+                        entry.query
+                    );
+                    assert_eq!(
+                        candidates[actual.candidate_index].id, entry.new_door.entity_id,
+                        "{:?}",
+                        entry.query
+                    );
+                }
+                outcome => panic!("unknown fixture outcome: {outcome:?}"),
+            }
+        }
     }
 }

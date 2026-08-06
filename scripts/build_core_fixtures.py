@@ -147,6 +147,9 @@ SPEAKER_FILTERBANK_ARTIFACT_PATH = FIXTURE_DIR / "speaker_filterbank.json"
 SPEAKER_STAGE_BOUNDARIES_ARTIFACT_PATH = FIXTURE_DIR / "speaker_stage_boundaries.json"
 ENTITY_IDENTITY_ARTIFACT_PATH = FIXTURE_DIR / "entity_identity.json"
 ENTITY_MATCHING_ARTIFACT_PATH = FIXTURE_DIR / "entity_matching.json"
+ENTITY_RESOLUTION_MAP_DIVERGENCES_ARTIFACT_PATH = (
+    FIXTURE_DIR / "entity_resolution_map_divergences.json"
+)
 ENTITY_STORE_ARTIFACT_PATH = FIXTURE_DIR / "entity_store.json"
 ENTITY_LIFECYCLE_ARTIFACT_PATH = FIXTURE_DIR / "entity_lifecycle.json"
 VOICEPRINT_OPERATIONS_ARTIFACT_PATH = FIXTURE_DIR / "voiceprint_operations.json"
@@ -1558,6 +1561,9 @@ def expected_outputs() -> dict[Path, ArtifactDescriptor]:
         ),
         ENTITY_MATCHING_ARTIFACT_PATH: ArtifactDescriptor(
             entity_corpus.build_entity_matching_fixture,
+        ),
+        ENTITY_RESOLUTION_MAP_DIVERGENCES_ARTIFACT_PATH: ArtifactDescriptor(
+            entity_corpus.build_entity_resolution_map_divergences_fixture,
         ),
         ENTITY_STORE_ARTIFACT_PATH: ArtifactDescriptor(
             entity_corpus.build_entity_store_fixture,

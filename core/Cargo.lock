@@ -1641,6 +1641,8 @@ dependencies = [
  "caseless",
  "md5",
  "rapidfuzz",
+ "serde",
+ "serde_json",
  "unicode-normalization",
  "unidecode",
 ]
