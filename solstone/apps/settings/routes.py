@@ -69,13 +69,19 @@ from solstone.think.retention import (
     check_storage_health,
     compute_storage_summary,
     load_retention_config,
-    purge,
 )
 from solstone.think.retention_executor import (
+    ExecutorUnavailable,
     RemovalRefused,
+    describe_mark_receipt,
     load_log_retention_config,
+    mark,
+    marks,
+    policy_payload,
+    policy_would_release,
     prune_logs,
     prune_result_from_receipt,
+    read_policy_marks,
 )
 from solstone.think.schedule_config import read_schedules, set_schedule_entries
 from solstone.think.streams import list_streams
@@ -2118,75 +2124,63 @@ def update_storage() -> Any:
 
 @settings_bp.route("/api/storage/purge", methods=["POST"])
 def run_purge() -> Any:
-    """Run retention purge (dry-run or execute)."""
+    """Mark policy-eligible raw media for owner approval."""
     try:
-        request_data = request.get_json()
-        if not request_data:
-            return error_response(MISSING_REQUEST_BODY, detail="No data provided")
-
-        older_than_days = request_data.get("older_than_days")
-        if older_than_days is None:
+        request_data = request.get_json(silent=True) or {}
+        if not isinstance(request_data, dict):
             return error_response(
-                MISSING_REQUIRED_FIELD,
-                detail="older_than_days is required",
-            )
-        if not isinstance(older_than_days, int) or older_than_days < 1:
-            return error_response(
-                INVALID_CONFIG_VALUE,
-                detail="older_than_days must be a positive integer",
+                INVALID_REQUEST_VALUE,
+                detail="request body must be an object",
             )
 
         stream_filter = request_data.get("stream_filter") or None
-        dry_run = request_data.get("dry_run", True)
-
-        result = purge(
-            older_than_days=older_than_days,
-            stream_filter=stream_filter,
-            dry_run=dry_run,
-        )
-
-        response = {
-            "files_deleted": result.files_deleted,
-            "bytes_freed": result.bytes_freed,
-            "bytes_freed_human": _human_bytes(result.bytes_freed),
-            "segments_processed": result.segments_processed,
-            "segments_skipped_incomplete": result.segments_skipped_incomplete,
-            "segments_skipped_policy": result.segments_skipped_policy,
-            "segments_blocked_failed": result.segments_blocked_failed,
-            "partial_error": result.partial_error,
-            "dry_run": dry_run,
-        }
-
-        # On actual purge, also refresh the storage summary
-        if not dry_run:
-            summary = compute_storage_summary()
-            response["summary"] = {
-                "raw_media_bytes": summary.raw_media_bytes,
-                "raw_media_human": summary.raw_media_human,
-                "derived_bytes": summary.derived_bytes,
-                "derived_human": summary.derived_human,
-                "total_segments": summary.total_segments,
-                "segments_with_raw": summary.segments_with_raw,
-                "segments_purged": summary.segments_purged,
+        retention = get_journal_config().get("retention", {}) or {}
+        payload = policy_payload(retention)
+        journal = get_journal()
+        before = marks(journal)
+        if not policy_would_release(payload):
+            response = {
+                "marked": [],
+                "standing_total": len(read_policy_marks(before, stream=stream_filter)),
+                "held": [],
+                "no_media": [],
+                "not_eligible": [],
+                "unreadable_days": [],
             }
-
+        else:
+            now = datetime.now(timezone.utc)
+            after = mark(
+                journal,
+                payload,
+                today=now.astimezone().strftime("%Y-%m-%d"),
+                now=now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            )
+            response = describe_mark_receipt(before, after, stream=stream_filter)
             log_app_action(
                 app="settings",
                 facet=None,
-                action="retention_purge",
+                action="retention_mark",
                 params={
-                    "older_than_days": older_than_days,
                     "stream_filter": stream_filter,
-                    "files_deleted": result.files_deleted,
-                    "bytes_freed": result.bytes_freed,
+                    "new_marks": len(response["marked"]),
                 },
             )
 
         return jsonify(response)
     except CorruptConfigError:
         raise
+    except RemovalRefused as refused:
+        logger.warning("retention mark refused: %s", refused)
+        return _settings_operation_failed(
+            f"could not list raw-media removal proposals: {refused}"
+        )
+    except ExecutorUnavailable as unavailable:
+        logger.warning("retention mark executor unavailable: %s", unavailable)
+        return _settings_operation_failed(
+            f"could not list raw-media removal proposals: {unavailable}"
+        )
     except Exception:
-        logger.exception("error running purge")
+        logger.exception("error marking retention proposals")
         return _settings_operation_failed()
 
 

@@ -174,7 +174,9 @@ def _prune_plan(receipt: dict[str, Any]) -> dict[str, Any]:
     detail = receipt.get("detail")
     plan = detail.get("plan") if isinstance(detail, dict) else receipt.get("plan")
     if not isinstance(plan, dict):
-        raise ExecutorUnavailable("the retention executor receipt had no prune-logs plan")
+        raise ExecutorUnavailable(
+            "the retention executor receipt had no prune-logs plan"
+        )
     return plan
 
 
@@ -329,9 +331,7 @@ def prune_logs(
         argv.extend(["--execute", "true"])
     code, receipt = _run(argv)
     if code == EXIT_OK:
-        return prune_result_from_receipt(
-            receipt, dry_run=dry_run, days=effective_days
-        )
+        return prune_result_from_receipt(receipt, dry_run=dry_run, days=effective_days)
     if code in (EXIT_REFUSED, EXIT_HALTED):
         raise RemovalRefused(Refused(receipt))
     raise ExecutorUnavailable(
@@ -370,8 +370,8 @@ def now_stamp() -> str:
     itself, so that a verdict is reproducible from its receipt. This is the caller
     honouring that: one instant, chosen once, recorded in the tombstone.
     """
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
-        "+00:00", "Z"
+    return (
+        datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     )
 
 
@@ -390,7 +390,9 @@ def _run(argv: list[str]) -> tuple[int, dict[str, Any]]:
             f"the retention executor did not finish within {TIMEOUT_SECONDS}s"
         ) from exc
     except OSError as exc:
-        raise ExecutorUnavailable(f"the retention executor could not run: {exc}") from exc
+        raise ExecutorUnavailable(
+            f"the retention executor could not run: {exc}"
+        ) from exc
 
     try:
         receipt = json.loads(completed.stdout)
@@ -577,17 +579,31 @@ def sweep(
     )
 
 
-def mark(journal: str, policy: dict[str, Any], *, today: str, now: str) -> dict[str, Any]:
+def mark(
+    journal: str, policy: dict[str, Any], *, today: str, now: str
+) -> dict[str, Any]:
     """Refresh policy raw-release proposals without removing media."""
-    code, receipt = _run([
-        executor_path(), "mark", "--journal", journal, "--today", today,
-        "--now", now, "--policy", json.dumps(policy),
-    ])
+    code, receipt = _run(
+        [
+            executor_path(),
+            "mark",
+            "--journal",
+            journal,
+            "--today",
+            today,
+            "--now",
+            now,
+            "--policy",
+            json.dumps(policy),
+        ]
+    )
     if code == EXIT_OK:
         return receipt
     if code in (EXIT_REFUSED, EXIT_HALTED):
         raise RemovalRefused(Refused(receipt))
-    raise ExecutorUnavailable(f"the retention mark was rejected (exit {code}): {receipt.get('error', receipt)}")
+    raise ExecutorUnavailable(
+        f"the retention mark was rejected (exit {code}): {receipt.get('error', receipt)}"
+    )
 
 
 def marks(journal: str) -> dict[str, Any]:
@@ -597,15 +613,79 @@ def marks(journal: str) -> dict[str, Any]:
         return receipt
     if code in (EXIT_REFUSED, EXIT_HALTED):
         raise RemovalRefused(Refused(receipt))
-    raise ExecutorUnavailable(f"the retention marks read was rejected (exit {code}): {receipt.get('error', receipt)}")
+    raise ExecutorUnavailable(
+        f"the retention marks read was rejected (exit {code}): {receipt.get('error', receipt)}"
+    )
+
+
+def read_policy_marks(
+    receipt: dict[str, Any], *, stream: str | None = None
+) -> dict[str, dict[str, Any]]:
+    """Read policy raw-release marks from an executor receipt."""
+    return {
+        mark_id: mark
+        for mark_id, mark in receipt["marks"]["marks"].items()
+        if mark["class"] == "policy_raw_release"
+        and (stream is None or mark["target"]["stream"] == stream)
+    }
+
+
+def describe_mark_receipt(
+    before: dict[str, Any], after: dict[str, Any], *, stream: str | None = None
+) -> dict[str, Any]:
+    """Describe newly marked policy proposals and skipped segments."""
+    before_marks = read_policy_marks(before, stream=stream)
+    after_marks = read_policy_marks(after, stream=stream)
+    skipped = {"held": [], "no_media": [], "not_eligible": []}
+    reason_names = {"held": "held", "no_media": "no_media", "policy": "not_eligible"}
+
+    for entry in after["plan"]["skipped_segments"]:
+        if stream is not None and entry["stream"] != stream:
+            continue
+        reason = reason_names.get(entry["reason"])
+        if reason is not None:
+            skipped[reason].append(entry)
+
+    return {
+        "marked": [
+            {"id": mark_id, **after_marks[mark_id]}
+            for mark_id in sorted(after_marks.keys() - before_marks.keys())
+        ],
+        "standing_total": len(after_marks),
+        "held": skipped["held"],
+        "no_media": skipped["no_media"],
+        "not_eligible": skipped["not_eligible"],
+        "unreadable_days": after["plan"]["unreadable_days"],
+    }
 
 
 def mark_offload(
-    journal: str, day: str, segment_dir: str, files: list[str], reason: str, *, now: str, stream: str = "_default"
+    journal: str,
+    day: str,
+    segment_dir: str,
+    files: list[str],
+    reason: str,
+    *,
+    now: str,
+    stream: str = "_default",
 ) -> dict[str, Any]:
     """Record an archive-backed raw-release proposal."""
-    argv = [executor_path(), "mark-offload", "--journal", journal, "--day", day,
-            "--stream", stream, "--dir", segment_dir, "--reason", reason, "--now", now]
+    argv = [
+        executor_path(),
+        "mark-offload",
+        "--journal",
+        journal,
+        "--day",
+        day,
+        "--stream",
+        stream,
+        "--dir",
+        segment_dir,
+        "--reason",
+        reason,
+        "--now",
+        now,
+    ]
     for name in files:
         argv.extend(["--file", name])
     code, receipt = _run(argv)
@@ -613,7 +693,9 @@ def mark_offload(
         return receipt
     if code in (EXIT_REFUSED, EXIT_HALTED):
         raise RemovalRefused(Refused(receipt))
-    raise ExecutorUnavailable(f"the offload mark was rejected (exit {code}): {receipt.get('error', receipt)}")
+    raise ExecutorUnavailable(
+        f"the offload mark was rejected (exit {code}): {receipt.get('error', receipt)}"
+    )
 
 
 def resolve_offload_mark(
@@ -651,8 +733,18 @@ def remove_marked(
     journal: str, mark_ids: list[str], policy: dict[str, Any], *, today: str, now: str
 ) -> dict[str, Any]:
     """Execute only explicit, approval-required retention marks."""
-    argv = [executor_path(), "remove-marked", "--journal", journal, "--today", today,
-            "--now", now, "--policy", json.dumps(policy)]
+    argv = [
+        executor_path(),
+        "remove-marked",
+        "--journal",
+        journal,
+        "--today",
+        today,
+        "--now",
+        now,
+        "--policy",
+        json.dumps(policy),
+    ]
     for mark_id in mark_ids:
         argv.extend(["--mark", mark_id])
     code, receipt = _run(argv)
@@ -660,4 +752,6 @@ def remove_marked(
         return receipt
     if code in (EXIT_REFUSED, EXIT_HALTED):
         raise RemovalRefused(Refused(receipt))
-    raise ExecutorUnavailable(f"the marked removal was rejected (exit {code}): {receipt.get('error', receipt)}")
+    raise ExecutorUnavailable(
+        f"the marked removal was rejected (exit {code}): {receipt.get('error', receipt)}"
+    )

@@ -941,80 +941,97 @@ def import_detail(
 # ============================================================================
 
 
-def _parse_age(value: str) -> int:
-    """Parse age string like '30d' or '30' to number of days."""
-    value = value.strip().lower()
-    if value.endswith("d"):
-        return int(value[:-1])
-    return int(value)
-
-
 @retention_app.command()
 def purge(
-    older_than: str | None = typer.Option(
-        None, "--older-than", help="Age threshold (e.g. 30d, 7d)."
-    ),
     stream: str | None = typer.Option(
-        None, "--stream", help="Only purge from this stream."
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Show what would be deleted."
+        None, "--stream", help="Only report proposals for this stream."
     ),
 ) -> None:
-    """Purge raw media from completed segments."""
-    from solstone.think.retention import _human_bytes, load_retention_config
-    from solstone.think.retention import purge as run_purge
+    """Mark policy-eligible raw media for owner approval."""
+    from solstone.think import retention_executor
+    from solstone.think.utils import get_config
 
-    older_than_days = _parse_age(older_than) if older_than else None
-    config = load_retention_config()
-
-    if dry_run:
-        typer.echo("DRY RUN — no files will be deleted.\n")
-
-    result = run_purge(
-        older_than_days=older_than_days,
-        stream_filter=stream,
-        dry_run=dry_run,
-        config=config,
-    )
-
-    if result.details:
-        for detail in result.details:
-            typer.echo(
-                f"  {detail['day']}/{detail['stream']}/{detail['segment']}: "
-                f"{len(detail['files'])} files, {_human_bytes(detail['bytes_freed'])}"
+    retention = get_config().get("retention", {}) or {}
+    payload = retention_executor.policy_payload(retention)
+    journal = get_journal()
+    try:
+        before = retention_executor.marks(journal)
+        if not retention_executor.policy_would_release(payload):
+            standing_total = len(
+                retention_executor.read_policy_marks(before, stream=stream)
             )
-        typer.echo("")
+            typer.echo(
+                "retention purge: your journal's retention policy keeps all original "
+                "files (no-op)"
+            )
+            typer.echo(
+                "  standing total: "
+                f"{standing_total} policy raw-media removal proposal(s) marked, "
+                "not yet removed."
+            )
+            return
 
-    action = "Would delete" if dry_run else "Deleted"
+        now = datetime.now(timezone.utc)
+        after = retention_executor.mark(
+            journal,
+            payload,
+            today=now.astimezone().strftime("%Y-%m-%d"),
+            now=now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        )
+    except retention_executor.RemovalRefused as refused:
+        typer.echo(
+            "retention purge: some raw-media proposals could not be listed:",
+            err=True,
+        )
+        for entry in refused.refused.entries():
+            typer.echo(
+                f"  {entry.get('entry')}: {entry.get('reason')}",
+                err=True,
+            )
+        raise typer.Exit(1) from None
+    except retention_executor.ExecutorUnavailable as unavailable:
+        typer.echo(
+            "retention purge: the journal could not list policy raw-media removal "
+            f"proposals: {unavailable}",
+            err=True,
+        )
+        raise typer.Exit(1) from None
+
+    report = retention_executor.describe_mark_receipt(before, after, stream=stream)
+    if report["marked"]:
+        typer.echo(
+            "retention purge: this pass marked "
+            f"{len(report['marked'])} new policy raw-media removal proposal(s); "
+            "not yet removed."
+        )
+    else:
+        typer.echo(
+            "retention purge: this pass marked no new policy raw-media removal "
+            "proposals; not yet removed."
+        )
     typer.echo(
-        f"{action} {result.files_deleted} files, "
-        f"freeing {_human_bytes(result.bytes_freed)}"
+        "  standing total: "
+        f"{report['standing_total']} policy raw-media removal proposal(s) marked, "
+        "not yet removed."
     )
-
-    if result.segments_skipped_incomplete:
+    for mark in report["marked"]:
+        typer.echo(f"  {mark['id']}: {mark['proposal']['reason']}")
+    if report["held"]:
+        example = report["held"][0]
+        blocker = example["blockers"][0].get("blocker", "blocked")
         typer.echo(
-            f"Skipped {result.segments_skipped_incomplete} incomplete segments "
-            "(processing not finished)."
+            f"  {len(report['held'])} segment(s) held: {blocker} "
+            f"in {example['day']}/{example['stream']}/{example['dir']}"
         )
-
-    if result.segments_skipped_policy:
+    if report["not_eligible"]:
+        typer.echo(f"  {len(report['not_eligible'])} segment(s) not yet eligible.")
+    if report["no_media"]:
+        typer.echo(f"  {len(report['no_media'])} segment(s) with no raw media.")
+    if report["unreadable_days"]:
         typer.echo(
-            f"Skipped {result.segments_skipped_policy} segments "
-            "(not yet eligible under retention policy)."
+            "  warning: unreadable chronicle day(s): "
+            f"{', '.join(report['unreadable_days'])}"
         )
-
-    if result.segments_blocked_failed:
-        typer.echo(
-            f"Blocked {result.segments_blocked_failed} segments "
-            "(extraction failed - raw media preserved)."
-        )
-        for detail in result.blocked_failed_details:
-            failed_names = ", ".join(sorted(detail["files"]))
-            typer.echo(
-                f"  {detail['day']}/{detail['stream']}/{detail['segment']}: "
-                f"{failed_names}"
-            )
 
 
 @retention_app.command()
