@@ -26,8 +26,17 @@
 /// ⛔ Adding a `mod` to `lib.rs` without adding it here is a test failure. The
 /// sibling `segment` crate tolerates a hand-maintained list because its surface
 /// is frozen; this crate gains a module in each of the next several waves.
+/// The one module permitted to reach a removal primitive.
+///
+/// ⛔ Per FILE and covering both removal and rename, not per primitive: a later
+/// wave adds the staging rename to this same file, and a carve-out written as
+/// removal-only would force that wave to edit this test — the crate's structural
+/// guarantee — to land.
+const DOOR: &str = "door";
+
 const SOURCES: &[(&str, &str)] = &[
     ("content", include_str!("../src/content.rs")),
+    ("door", include_str!("../src/door.rs")),
     ("eligibility", include_str!("../src/eligibility.rs")),
     ("receipt", include_str!("../src/receipt.rs")),
 ];
@@ -57,7 +66,19 @@ const REMOVAL_PRIMITIVES: &[&str] = &[
 /// unused-variables` requires `let _guard = ..` for an RAII lock guard, which a
 /// later wave holds across a removal. Banning it would tell the implementer to
 /// break one requirement or the other.
-const MUST_USE_BYPASSES: &[&str] = &["let _ = ", "let _=", "_ = ", "drop("];
+const MUST_USE_BYPASSES: &[&str] = &["let _ = ", "let _=", "_ = "];
+
+/// `drop(x)` also silences `#[must_use]`, but it must be matched as a STATEMENT.
+///
+/// ⚠ A bare `"drop("` substring also matches `fn drop(&mut self)` in a `Drop`
+/// impl, which is ordinary code — the same substring-scan hazard a bare `"rename"`
+/// has against `#[serde(rename_all = ..)]`. Both were found by this test failing
+/// on its own crate.
+fn discards_by_dropping(source: &str) -> Option<usize> {
+    source
+        .lines()
+        .position(|line| line.trim_start().starts_with("drop("))
+}
 
 /// The modules `lib.rs` declares, as `mod name;` outside any `cfg(test)` block.
 fn declared_modules() -> Vec<String> {
@@ -108,11 +129,14 @@ fn the_scan_covers_every_declared_module() {
 #[test]
 fn no_module_names_a_removal_primitive() {
     for (name, source) in SOURCES {
+        if *name == DOOR {
+            continue;
+        }
         for primitive in REMOVAL_PRIMITIVES {
             assert!(
                 !source.contains(primitive),
                 "module `{name}` names the removal primitive `{primitive}`. \
-                 Removal belongs in one door module and this crate has none yet."
+                 Removal belongs in `{DOOR}` and nowhere else."
             );
         }
     }
@@ -135,5 +159,10 @@ fn no_module_silences_must_use() {
                  on an Outcome -- a failed removal would become a claimed one"
             );
         }
+        assert!(
+            discards_by_dropping(source).is_none(),
+            "module `{name}` discards a value with a bare `drop(..)` statement, \
+             which silences #[must_use] on an Outcome"
+        );
     }
 }

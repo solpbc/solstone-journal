@@ -42,9 +42,11 @@
 )]
 
 pub mod content;
+pub mod door;
 pub mod eligibility;
 pub mod receipt;
 
 pub use content::{ContentName, HandlerRegistry, MediaClassifier};
+pub use door::{EvidenceTally, release_raw};
 pub use eligibility::{Blocker, Evidence, FoundContent, ProvenRaw, RawRelease, SidecarFacts};
 pub use receipt::{NotRemoved, Outcome, RemovedPath, RunHalt, Target, TargetOutcome};
