@@ -20,7 +20,7 @@ use solstone_core_journal_io::{LockOptions, hold_lock};
 use solstone_core_retention::Target;
 use solstone_core_retention::marks::{
     Failure, MarkId, MarkState, Proposal, Register, RemovalClass, StoreError, load, reconcile,
-    reconcile_recovered, record_failure, resolve,
+    reconcile_recovered, record_failure, resolve, upsert,
 };
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -185,6 +185,36 @@ fn reconcile_removes_a_stale_marked_entry() {
     .unwrap();
     let after = reconcile(bed.path(), RemovalClass::PolicyRawRelease, &[], "second").unwrap();
     assert!(after.marks.is_empty());
+}
+
+#[test]
+fn upsert_preserves_other_offload_marks() {
+    let bed = Bed::new();
+    let first = target("20260805", "field.audio", "070000_17");
+    let second = target("20260806", "field.audio", "070100_17");
+    let first_id = mark_id(RemovalClass::OffloadRawRelease, &first);
+    let second_id = mark_id(RemovalClass::OffloadRawRelease, &second);
+
+    upsert(
+        bed.path(),
+        RemovalClass::OffloadRawRelease,
+        &first,
+        proposal("first"),
+        "first",
+    )
+    .unwrap();
+    let after = upsert(
+        bed.path(),
+        RemovalClass::OffloadRawRelease,
+        &second,
+        proposal("second"),
+        "second",
+    )
+    .unwrap();
+
+    assert_eq!(after.marks.len(), 2);
+    assert!(after.marks.contains_key(&first_id));
+    assert!(after.marks.contains_key(&second_id));
 }
 
 #[test]

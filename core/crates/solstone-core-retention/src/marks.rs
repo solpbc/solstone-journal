@@ -326,6 +326,49 @@ pub fn reconcile(
     })
 }
 
+/// Insert or update a single mark's proposal without touching any other mark.
+///
+/// Unlike [`reconcile`], this does not treat its input as the authoritative full
+/// state for the class. `mark-offload` mints one mark per segment, so its updates
+/// must leave marks from earlier segments and prior runs in place.
+pub fn upsert(
+    journal: &Path,
+    class: RemovalClass,
+    target: &Target,
+    proposal: Proposal,
+    at: &str,
+) -> Result<Register, StoreError> {
+    validate_proposal(&proposal)?;
+    let id = MarkId::derive(class, target, &proposal.names);
+    mutate(journal, |register| {
+        let changed = match register.marks.get_mut(&id) {
+            Some(mark) => {
+                if mark.proposal != proposal {
+                    mark.proposal = proposal;
+                    true
+                } else {
+                    false
+                }
+            }
+            None => {
+                register.marks.insert(
+                    id.clone(),
+                    Mark {
+                        id,
+                        class,
+                        target: target.clone(),
+                        marked_at: at.to_owned(),
+                        proposal,
+                        state: MarkState::Marked,
+                    },
+                );
+                true
+            }
+        };
+        Ok(changed)
+    })
+}
+
 /// Record the latest failure for one mark without reconciling other marks.
 pub fn record_failure(
     journal: &Path,

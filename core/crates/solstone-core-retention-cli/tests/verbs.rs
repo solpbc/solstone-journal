@@ -334,6 +334,130 @@ fn mark_offload_is_idempotent_and_refuses_a_missing_file() {
 }
 
 #[test]
+fn mark_offload_preserves_marks_for_other_segments() {
+    let bed = Bed::new("mark-offload-preserves");
+    bed.proven_segment(
+        "20260701",
+        "field.audio",
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    bed.proven_segment(
+        "20260702",
+        "field.audio",
+        "070100_17",
+        "2026-07-02T00:00:00Z",
+    );
+    let journal = bed.journal().to_str().unwrap();
+
+    let first = bed.run(
+        "mark-offload",
+        &[
+            "--journal",
+            journal,
+            "--day",
+            "20260701",
+            "--stream",
+            "field.audio",
+            "--dir",
+            "070000_17",
+            "--file",
+            "audio.flac",
+            "--reason",
+            "archive://first",
+            "--now",
+            "2026-08-06T00:00:00Z",
+        ],
+    );
+    assert_eq!(first.status.code(), Some(0));
+    let second = bed.run(
+        "mark-offload",
+        &[
+            "--journal",
+            journal,
+            "--day",
+            "20260702",
+            "--stream",
+            "field.audio",
+            "--dir",
+            "070100_17",
+            "--file",
+            "audio.flac",
+            "--reason",
+            "archive://second",
+            "--now",
+            "2026-08-06T00:01:00Z",
+        ],
+    );
+    let second_receipt = receipt(&second);
+    let marks = second_receipt["marks"]["marks"].as_object().unwrap();
+
+    assert_eq!(second.status.code(), Some(0));
+    assert_eq!(marks.len(), 2);
+    assert!(marks.values().any(|mark| {
+        mark["target"]["day"] == "20260701" && mark["target"]["dir"] == "070000_17"
+    }));
+    assert!(marks.values().any(|mark| {
+        mark["target"]["day"] == "20260702" && mark["target"]["dir"] == "070100_17"
+    }));
+}
+
+#[test]
+fn resolve_offload_removes_a_mark_and_is_idempotent() {
+    let bed = Bed::new("resolve-offload");
+    bed.proven_segment(
+        "20260701",
+        "field.audio",
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let journal = bed.journal().to_str().unwrap();
+    let marked = bed.run(
+        "mark-offload",
+        &[
+            "--journal",
+            journal,
+            "--day",
+            "20260701",
+            "--stream",
+            "field.audio",
+            "--dir",
+            "070000_17",
+            "--file",
+            "audio.flac",
+            "--reason",
+            "archive://audio",
+            "--now",
+            "2026-08-06T00:00:00Z",
+        ],
+    );
+    assert_eq!(marked.status.code(), Some(0));
+
+    let args = [
+        "--journal",
+        journal,
+        "--day",
+        "20260701",
+        "--stream",
+        "field.audio",
+        "--dir",
+        "070000_17",
+        "--file",
+        "audio.flac",
+    ];
+    let resolved = bed.run("resolve-offload", &args);
+    let resolved_body = receipt(&resolved);
+    assert_eq!(resolved.status.code(), Some(0));
+    assert_eq!(resolved_body["verb"], "resolve-offload");
+    assert_eq!(resolved_body["marks"]["marks"], json!({}));
+
+    let repeated = bed.run("resolve-offload", &args);
+    let repeated_body = receipt(&repeated);
+    assert_eq!(repeated.status.code(), Some(0));
+    assert_eq!(repeated_body["marks"]["marks"], json!({}));
+}
+
+#[test]
 fn remove_marked_reproves_then_releases_the_named_policy_mark() {
     let bed = Bed::new("remove-marked");
     let segment = bed.proven_segment(

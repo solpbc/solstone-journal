@@ -57,6 +57,7 @@ use solstone_core_retention::logs::{
 };
 use solstone_core_retention::marks::{
     Failure, MarkId, Proposal, RemovalClass, load, reconcile, reconcile_recovered, record_failure,
+    resolve as resolve_mark, upsert,
 };
 use solstone_core_retention::notify::{IndexNotify, NotifyError, PruneCounts};
 use solstone_core_retention::policy::Policy;
@@ -955,10 +956,11 @@ fn run_mark_offload(args: &Args) -> ExitCode {
         reason: reason.to_owned(),
         names,
     };
-    match reconcile(
+    match upsert(
         &journal,
         RemovalClass::OffloadRawRelease,
-        &[(target, proposal)],
+        &target,
+        proposal,
         now,
     ) {
         Ok(register) => emit(
@@ -967,6 +969,50 @@ fn run_mark_offload(args: &Args) -> ExitCode {
         ),
         Err(error) => emit(
             serde_json::json!({ "ok": false, "verb": "mark-offload", "error": error.to_string() }),
+            EXIT_REFUSED,
+        ),
+    }
+}
+
+fn run_resolve_offload(args: &Args) -> ExitCode {
+    let journal = match args.required("--journal") {
+        Ok(value) => PathBuf::from(value),
+        Err(error) => return verb_fail("resolve-offload", &error),
+    };
+    let day = match args.required("--day") {
+        Ok(value) => value,
+        Err(error) => return verb_fail("resolve-offload", &error),
+    };
+    let dir = match args.required("--dir") {
+        Ok(value) => value,
+        Err(error) => return verb_fail("resolve-offload", &error),
+    };
+    let stream = args.one("--stream").unwrap_or("_default");
+    let mut names = args
+        .all("--file")
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if names.is_empty() {
+        return verb_fail("resolve-offload", "at least one --file is required");
+    }
+    names.sort();
+    if names.windows(2).any(|names| names[0] == names[1]) {
+        return verb_fail("resolve-offload", "--file names must be unique");
+    }
+    let target = Target {
+        day: day.to_owned(),
+        stream: stream.to_owned(),
+        dir: dir.to_owned(),
+    };
+    let id = MarkId::derive(RemovalClass::OffloadRawRelease, &target, &names);
+    match resolve_mark(&journal, &id) {
+        Ok(register) => emit(
+            serde_json::json!({ "ok": true, "verb": "resolve-offload", "marks": register }),
+            EXIT_OK,
+        ),
+        Err(error) => emit(
+            serde_json::json!({ "ok": false, "verb": "resolve-offload", "error": error.to_string() }),
             EXIT_REFUSED,
         ),
     }
@@ -1076,6 +1122,7 @@ solstone-retention — the retention executor
   mark            --journal P --today YYYY-MM-DD --now ISO [--policy JSON]
   marks           --journal P
   mark-offload    --journal P --day DAY [--stream STREAM] --dir DIR --file NAME [--file ...] --reason REF --now ISO
+  resolve-offload --journal P --day DAY [--stream STREAM] --dir DIR --file NAME [--file ...]
   remove-marked   --journal P --today YYYY-MM-DD --now ISO [--policy JSON] --mark ID [--mark ...]
 
 Always prints one JSON object. Exit 0 all removed, 2 usage, 3 something refused, \
@@ -1106,6 +1153,7 @@ fn main() -> ExitCode {
         "mark" => run_mark(&args),
         "marks" => run_marks(&args),
         "mark-offload" => run_mark_offload(&args),
+        "resolve-offload" => run_resolve_offload(&args),
         "remove-marked" => run_remove_marked(&args),
         other => fail(&format!("unknown verb `{other}`")),
     }
