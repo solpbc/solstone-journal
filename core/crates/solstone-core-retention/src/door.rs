@@ -109,6 +109,7 @@ pub fn release_raw(journal: &Path, proven: &[ProvenRaw]) -> (Outcome, EvidenceTa
                         reason: format!(
                             "removed, but the change could not be flushed to disk: {error}"
                         ),
+                        staged: None,
                     });
                     continue;
                 }
@@ -126,10 +127,12 @@ pub fn release_raw(journal: &Path, proven: &[ProvenRaw]) -> (Outcome, EvidenceTa
             Ok(Removed::AlreadyAbsent) => row.not_removed.push(NotRemoved {
                 entry: rel,
                 reason: "this was already gone before the run started".to_owned(),
+                staged: None,
             }),
             Err(error) => row.not_removed.push(NotRemoved {
                 entry: rel,
                 reason: owner_reason(&error),
+                staged: None,
             }),
         }
     }
@@ -270,6 +273,7 @@ pub fn remove_logs(journal: &Path, targets: &[crate::logs::LogTarget]) -> Outcom
             Err(error) => slot.not_removed.push(NotRemoved {
                 entry: target.rel().to_owned(),
                 reason: format!("the log entry could not be removed: {error}"),
+                staged: None,
             }),
         }
     }
@@ -342,7 +346,23 @@ fn refused(target: &Target, entry: String, reason: String) -> TargetOutcome {
     TargetOutcome {
         target: target.clone(),
         removed: Vec::new(),
-        not_removed: vec![NotRemoved { entry, reason }],
+        not_removed: vec![NotRemoved {
+            entry,
+            reason,
+            staged: None,
+        }],
+    }
+}
+
+fn refused_staged(target: &Target, staged: String, reason: String) -> TargetOutcome {
+    TargetOutcome {
+        target: target.clone(),
+        removed: Vec::new(),
+        not_removed: vec![NotRemoved {
+            entry: staged.clone(),
+            reason,
+            staged: Some(staged),
+        }],
     }
 }
 
@@ -418,7 +438,7 @@ fn remove_one(
     // ⛔ Refuse rather than clobber: a rename onto an existing empty directory
     // succeeds and destroys it.
     if !matches!(path_lexists(&journal.join(&staged)), Ok(false)) {
-        return refused(
+        return refused_staged(
             target,
             staged,
             "a previous removal of this segment did not finish; \
@@ -432,7 +452,7 @@ fn remove_one(
         return refused(target, live, owner_reason(&error));
     }
     if let Err(error) = sync_dir(journal, &parent_rel(target)) {
-        return refused(target, staged, owner_reason(&error));
+        return refused_staged(target, staged, owner_reason(&error));
     }
 
     finish_staged(journal, target, &staged, deleted_at, reason, did)
@@ -456,7 +476,7 @@ fn finish_staged(
     // pass can learn what went.
     let entries = match list_dir_entries(&journal.join(staged)) {
         Ok(entries) => entries,
-        Err(error) => return refused(target, staged.to_owned(), owner_reason(&error)),
+        Err(error) => return refused_staged(target, staged.to_owned(), owner_reason(&error)),
     };
     let mut manifest = Vec::new();
     let mut to_remove = Vec::new();
@@ -481,7 +501,7 @@ fn finish_staged(
         let bytes = match tombstone_bytes(&body) {
             Ok(bytes) => bytes,
             Err(_) => {
-                return refused(
+                return refused_staged(
                     target,
                     staged.to_owned(),
                     "the record of this removal could not be prepared".to_owned(),
@@ -489,7 +509,7 @@ fn finish_staged(
             }
         };
         if write_bytes_exclusive(&tombstone_path, &bytes, AtomicWriteOptions::default()).is_err() {
-            return refused(
+            return refused_staged(
                 target,
                 staged.to_owned(),
                 "the record of this removal could not be written".to_owned(),
@@ -512,6 +532,7 @@ fn finish_staged(
             failures.push(NotRemoved {
                 entry: format!("{live}/{name}"),
                 reason: owner_reason(&error),
+                staged: None,
             });
         }
     }
@@ -524,6 +545,7 @@ fn finish_staged(
             reason: "this segment is part-way through removal and is set aside; \
                      it is not listed with your other segments until it finishes"
                 .to_owned(),
+            staged: Some(staged.to_owned()),
         });
         return TargetOutcome {
             target: target.clone(),
@@ -532,12 +554,12 @@ fn finish_staged(
         };
     }
     if let Err(error) = sync_dir(journal, staged) {
-        return refused(target, staged.to_owned(), owner_reason(&error));
+        return refused_staged(target, staged.to_owned(), owner_reason(&error));
     }
 
     // Step 5: restore, refusing a name something else has taken.
     if !matches!(path_lexists(&journal.join(&live)), Ok(false)) {
-        return refused(
+        return refused_staged(
             target,
             staged.to_owned(),
             "something new was written where this segment was, so it has been \
@@ -546,7 +568,7 @@ fn finish_staged(
         );
     }
     if let Err(error) = rename_within(journal, staged, &live) {
-        return refused(target, staged.to_owned(), owner_reason(&error));
+        return refused_staged(target, staged.to_owned(), owner_reason(&error));
     }
     if let Err(error) = sync_dir(journal, &parent_rel(target)) {
         return refused(target, live, owner_reason(&error));
@@ -567,6 +589,7 @@ fn finish_staged(
                 reason: "this could not be confirmed gone, so it is not being \
                          reported as removed"
                     .to_owned(),
+                staged: None,
             }),
         }
     }

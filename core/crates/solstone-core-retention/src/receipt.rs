@@ -72,6 +72,8 @@ pub struct NotRemoved {
     /// The journal-relative entry this concerns.
     pub entry: String,
     pub reason: String,
+    /// Where a half-finished segment was staged, when recovery is needed.
+    pub staged: Option<String>,
 }
 
 /// The run itself stopped before reaching every target -- a lock timeout, an
@@ -170,6 +172,7 @@ mod tests {
         NotRemoved {
             entry: entry.to_owned(),
             reason: reason.to_owned(),
+            staged: None,
         }
     }
 

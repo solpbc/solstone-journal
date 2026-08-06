@@ -109,10 +109,10 @@ pub struct MarkId(String);
 
 impl MarkId {
     /// Derive a stable ID from the class and the target's named path components.
-    pub fn derive(class: RemovalClass, target: &Target) -> Self {
+    pub fn derive(class: RemovalClass, target: &Target, names: &[String]) -> Self {
         let class_tag = class.tag();
         let preimage = format!(
-            "solstone-retention-mark-v1|{}:{}|{}:{}|{}:{}|{}:{}",
+            "solstone-retention-mark-v1|{}:{}|{}:{}|{}:{}|{}:{}|names:{}{}",
             class_tag.len(),
             class_tag,
             target.day.len(),
@@ -121,12 +121,23 @@ impl MarkId {
             target.stream,
             target.dir.len(),
             target.dir,
+            names.len(),
+            names
+                .iter()
+                .map(|name| format!("|{}:{name}", name.len()))
+                .collect::<String>(),
         );
         Self(format!("{:x}", Sha256::digest(preimage.as_bytes())))
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Parse the canonical hexadecimal digest form emitted by the register.
+    pub fn parse(value: &str) -> Option<Self> {
+        (value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            .then(|| Self(value.to_owned()))
     }
 }
 
@@ -146,9 +157,10 @@ pub struct Mark {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Proposal {
-    pub files: u64,
     pub bytes: u64,
     pub reason: String,
+    /// Sorted, unique basenames of the raw files covered by this proposal.
+    pub names: Vec<String>,
 }
 
 /// Whether a mark is pending owner action or records an execution failure.
@@ -214,7 +226,7 @@ impl fmt::Display for StoreError {
             ),
             Self::UnsupportedVersion { .. } => write!(
                 formatter,
-                "the removal register uses an unsupported format; no marks were changed"
+                "the removal register uses an unsupported version; no marks were changed"
             ),
             Self::Integrity { .. } => write!(
                 formatter,
@@ -319,11 +331,12 @@ pub fn record_failure(
     journal: &Path,
     class: RemovalClass,
     target: &Target,
+    names: &[String],
     failure: Failure,
     at: &str,
 ) -> Result<Register, StoreError> {
-    let id = MarkId::derive(class, target);
     mutate(journal, |register| {
+        let id = MarkId::derive(class, target, names);
         match register.marks.get_mut(&id) {
             Some(mark) => {
                 let state = MarkState::Failed(failure);
@@ -341,9 +354,9 @@ pub fn record_failure(
                         target: target.clone(),
                         marked_at: at.to_owned(),
                         proposal: Proposal {
-                            files: 0,
                             bytes: 0,
                             reason: UNRECORDED_PROPOSAL_REASON.to_owned(),
+                            names: names.to_vec(),
                         },
                         state: MarkState::Failed(failure),
                     },
@@ -359,13 +372,40 @@ pub fn resolve(journal: &Path, id: &MarkId) -> Result<Register, StoreError> {
     mutate(journal, |register| Ok(register.marks.remove(id).is_some()))
 }
 
+/// Clear failed marks whose staged directory has been recovered or removed.
+pub fn reconcile_recovered(journal: &Path) -> Result<Register, StoreError> {
+    mutate(journal, |register| {
+        let resolved = register
+            .marks
+            .iter()
+            .filter_map(|(id, mark)| match &mark.state {
+                MarkState::Failed(failure)
+                    if failure
+                        .staged
+                        .as_ref()
+                        .is_some_and(|staged| !journal.join(staged).exists()) =>
+                {
+                    Some(id.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let changed = !resolved.is_empty();
+        for id in resolved {
+            register.marks.remove(&id);
+        }
+        Ok(changed)
+    })
+}
+
 fn index_proposals(
     class: RemovalClass,
     proposals: &[(Target, Proposal)],
 ) -> Result<BTreeMap<MarkId, (Target, Proposal)>, StoreError> {
     let mut indexed = BTreeMap::new();
     for (target, proposal) in proposals {
-        let id = MarkId::derive(class, target);
+        validate_proposal(proposal)?;
+        let id = MarkId::derive(class, target, &proposal.names);
         if indexed
             .insert(id.clone(), (target.clone(), proposal.clone()))
             .is_some()
@@ -443,11 +483,35 @@ fn validate(register: &Register) -> Result<(), StoreError> {
                 reason: "a stored key does not match its mark",
             });
         }
-        if *id != MarkId::derive(mark.class, &mark.target) {
+        validate_proposal(&mark.proposal)?;
+        if *id != MarkId::derive(mark.class, &mark.target, &mark.proposal.names) {
             return Err(StoreError::Integrity {
                 reason: "a stored mark does not match its class and target",
             });
         }
+    }
+    Ok(())
+}
+
+fn validate_proposal(proposal: &Proposal) -> Result<(), StoreError> {
+    if proposal.names.windows(2).any(|names| {
+        names
+            .first()
+            .zip(names.get(1))
+            .is_some_and(|(left, right)| left >= right)
+    }) {
+        return Err(StoreError::Integrity {
+            reason: "proposal file names are not sorted and unique",
+        });
+    }
+    if proposal
+        .names
+        .iter()
+        .any(|name| name.is_empty() || name.contains('/'))
+    {
+        return Err(StoreError::Integrity {
+            reason: "proposal contains an invalid file name",
+        });
     }
     Ok(())
 }
@@ -477,9 +541,9 @@ mod tests {
 
     fn proposal(reason: &str) -> Proposal {
         Proposal {
-            files: 2,
             bytes: 42,
             reason: reason.to_owned(),
+            names: vec!["a.flac".to_owned(), "b.wav".to_owned()],
         }
     }
 
@@ -526,22 +590,28 @@ mod tests {
         let actual = MarkId::derive(
             RemovalClass::PolicyRawRelease,
             &target("20260805", "field.audio", "070000_17"),
+            &["audio.flac".to_owned()],
         );
         let expected =
-            MarkId("31b614440087de3ae5ddb589b33d5c08f417c91e2687f8499e8adab611dd6f84".to_owned());
+            MarkId("c065c991b6204fa12bdbdde52d8bf0fdd3be3216bb1e3d57a7e4a9f778ef784c".to_owned());
         assert_eq!(actual, expected);
     }
 
     #[test]
     fn mark_ids_distinguish_every_field_and_boundaries() {
         let original = target("20260805", "field.audio", "070000_17");
-        let id = MarkId::derive(RemovalClass::PolicyRawRelease, &original);
-        assert_ne!(id, MarkId::derive(RemovalClass::OwnerRawRelease, &original));
+        let names = vec!["a.flac".to_owned()];
+        let id = MarkId::derive(RemovalClass::PolicyRawRelease, &original, &names);
+        assert_ne!(
+            id,
+            MarkId::derive(RemovalClass::OwnerRawRelease, &original, &names)
+        );
         assert_ne!(
             id,
             MarkId::derive(
                 RemovalClass::PolicyRawRelease,
                 &target("20260806", "field.audio", "070000_17"),
+                &names,
             )
         );
         assert_ne!(
@@ -549,6 +619,7 @@ mod tests {
             MarkId::derive(
                 RemovalClass::PolicyRawRelease,
                 &target("20260805", "other.audio", "070000_17"),
+                &names,
             )
         );
         assert_ne!(
@@ -556,16 +627,19 @@ mod tests {
             MarkId::derive(
                 RemovalClass::PolicyRawRelease,
                 &target("20260805", "field.audio", "070000_18"),
+                &names,
             )
         );
         assert_ne!(
             MarkId::derive(
                 RemovalClass::PolicyRawRelease,
-                &target("20260805", "a", "b")
+                &target("20260805", "a", "b"),
+                &names,
             ),
             MarkId::derive(
                 RemovalClass::PolicyRawRelease,
-                &target("20260805", "ab", "")
+                &target("20260805", "ab", ""),
+                &names,
             ),
         );
     }
@@ -576,6 +650,7 @@ mod tests {
             id: MarkId::derive(
                 RemovalClass::OwnerRawRelease,
                 &target("20260805", "field.audio", "070000_17"),
+                &proposal("owner requested it").names,
             ),
             class: RemovalClass::OwnerRawRelease,
             target: target("20260805", "field.audio", "070000_17"),
@@ -594,11 +669,12 @@ mod tests {
             "id": MarkId::derive(
                 RemovalClass::PolicyRawRelease,
                 &target("20260805", "field.audio", "070000_17"),
+                &proposal("owner requested it").names,
             ),
             "class": "policy_raw_release",
             "target": {"day": "20260805", "stream": "field.audio", "dir": "070000_17"},
             "marked_at": "first",
-            "proposal": {"files": 1, "bytes": 1, "reason": "current", "extra": true},
+            "proposal": {"bytes": 1, "reason": "current", "names": ["a.flac"], "extra": true},
             "state": "marked"
         });
         assert!(serde_json::from_value::<Mark>(item).is_err());
