@@ -1877,6 +1877,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-indexer-query"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "rusqlite",
+ "serde_json",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "solstone-core-indexer-store"
 version = "1.0.22"
 dependencies = [
