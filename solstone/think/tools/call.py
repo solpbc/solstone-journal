@@ -999,7 +999,7 @@ def purge(
         blocker = example["blockers"][0].get("blocker", "blocked")
         typer.echo(
             f"  {len(report['held'])} segment(s) blocked: {blocker} "
-            f"in {example['day']}/{example['stream']}/{example['dir']}"
+            f"in {example['day']}/{example['stream']}/{example['dir']}."
         )
     if report["not_eligible"]:
         typer.echo(f"  {len(report['not_eligible'])} segment(s) not ready yet.")

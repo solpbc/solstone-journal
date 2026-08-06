@@ -87,7 +87,7 @@ class Refused:
             f"{entry.get('entry', '?')}: {entry.get('reason', '?')}"
             for entry in self.entries()
         ]
-        return "; ".join(parts) or "the retention tool refused without naming an entry"
+        return "; ".join(parts) or "the retention tool refused without naming an entry."
 
 
 class RemovalRefused(RuntimeError):
@@ -175,7 +175,7 @@ def _prune_plan(receipt: dict[str, Any]) -> dict[str, Any]:
     plan = detail.get("plan") if isinstance(detail, dict) else receipt.get("plan")
     if not isinstance(plan, dict):
         raise ExecutorUnavailable(
-            "the retention tool's receipt had no prune-logs plan"
+            "the retention tool's receipt had no prune-logs plan."
         )
     return plan
 
@@ -387,11 +387,11 @@ def _run(argv: list[str]) -> tuple[int, dict[str, Any]]:
         )
     except subprocess.TimeoutExpired as exc:
         raise ExecutorUnavailable(
-            f"the retention tool did not finish within {TIMEOUT_SECONDS}s"
+            f"the retention tool did not finish within {TIMEOUT_SECONDS}s."
         ) from exc
     except OSError as exc:
         raise ExecutorUnavailable(
-            f"the retention tool could not run: {exc}"
+            f"the retention tool could not run: {exc}."
         ) from exc
 
     try:
@@ -400,10 +400,10 @@ def _run(argv: list[str]) -> tuple[int, dict[str, Any]]:
         # ⛔ Never treat unparseable output as success, whatever the exit code.
         raise ExecutorUnavailable(
             "the retention tool produced no readable receipt "
-            f"(exit {completed.returncode}): {completed.stderr.strip() or '<no stderr>'}"
+            f"(exit {completed.returncode}): {completed.stderr.strip() or '<no stderr>'}."
         ) from exc
     if not isinstance(receipt, dict):
-        raise ExecutorUnavailable("the retention tool's receipt was not an object")
+        raise ExecutorUnavailable("the retention tool's receipt was not an object.")
     return completed.returncode, receipt
 
 
