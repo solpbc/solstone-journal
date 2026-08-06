@@ -15,6 +15,7 @@ mod map;
 mod news;
 mod observations;
 mod paths;
+mod recent_names;
 pub(crate) mod reference_scan;
 mod relationship_scans;
 mod repair;
@@ -62,6 +63,9 @@ pub use observations::{
 };
 #[cfg(test)]
 pub(crate) use observations::{retry_add_for_test, retry_record_for_test};
+pub use recent_names::{
+    extract_spoken_names, is_speakable, load_all_attached_entities, load_recent_entity_names,
+};
 pub use reference_scan::EntityReferenceBreakdown;
 pub use relationship_scans::{
     FacetRelationshipRecord, enrich_relationship_with_journal, load_all_facet_relationships,
