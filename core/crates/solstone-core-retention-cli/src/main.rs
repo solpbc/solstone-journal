@@ -43,11 +43,15 @@ use std::process::ExitCode;
 use chrono::{DateTime, NaiveDate, Utc};
 use solstone_core_indexer_store::db::prune_by_paths;
 use solstone_core_retention::content::{ClosedHandlerSet, JournalMedia};
-use solstone_core_retention::door::{notify_index, recover, remove_logs, remove_segments};
+use solstone_core_retention::door::{
+    notify_index, recover, release_raw, remove_logs, remove_segments,
+};
+use solstone_core_retention::eligibility::{RawRelease, resolve};
 use solstone_core_retention::logs::{LogPolicy, plan as plan_logs};
 use solstone_core_retention::notify::{IndexNotify, NotifyError, PruneCounts};
 use solstone_core_retention::policy::Policy;
 use solstone_core_retention::receipt::{Outcome, RemovedPath, Target};
+use solstone_core_retention::scan::scan_segment;
 use solstone_core_retention::sweep::{Plan, execute as execute_sweep, plan as plan_sweep};
 use solstone_core_retention::tombstone::RemovalReason;
 
@@ -282,6 +286,78 @@ fn run_recover(args: &Args) -> ExitCode {
     finish(&journal, outcome, serde_json::json!({ "verb": "recover" }))
 }
 
+/// Release proven raw originals from named segments, keeping every derived output.
+///
+/// ⛔ Takes segments, not files. The unit of the decision is the segment even though the
+/// unit of the removal is the file: one unprovable file holds the whole segment, because
+/// a partially-released segment is a shape no reader expects and derived frames with no
+/// record of their own depend on riding the segment's verdict.
+///
+/// ⚠ Proof is re-derived from disk here. A caller cannot assert that a file is
+/// releasable -- it can only name where to look.
+fn run_release_raw(args: &Args) -> ExitCode {
+    let journal = match args.required("--journal") {
+        Ok(value) => PathBuf::from(value),
+        Err(error) => return fail(&error),
+    };
+    let specs = args.all("--segment");
+    if specs.is_empty() {
+        return fail("at least one --segment DAY/STREAM/DIR is required");
+    }
+    let mut targets = Vec::new();
+    for spec in specs {
+        match parse_segment(spec) {
+            Ok(target) => targets.push(target),
+            Err(error) => return fail(&error),
+        }
+    }
+
+    let mut proven = Vec::new();
+    let mut held = Vec::new();
+    for target in &targets {
+        let segment = journal.join(crate_layout_segment_rel(target)).to_path_buf();
+        let found = scan_segment(&segment, &ClosedHandlerSet, &JournalMedia);
+        if found.is_empty() {
+            continue;
+        }
+        match resolve(
+            &ClosedHandlerSet,
+            &JournalMedia,
+            &target.day,
+            &target.stream,
+            &target.dir,
+            &found,
+        ) {
+            RawRelease::Releasable(mut ready) => proven.append(&mut ready),
+            RawRelease::Held(blockers) => held.push(serde_json::json!({
+                "day": target.day,
+                "stream": target.stream,
+                "dir": target.dir,
+                "blockers": blockers
+                    .iter()
+                    .map(|blocker| blocker.name().to_owned())
+                    .collect::<Vec<String>>(),
+            })),
+        }
+    }
+
+    let (outcome, tally) = release_raw(&journal, &proven);
+    finish(
+        &journal,
+        outcome,
+        serde_json::json!({
+            "verb": "release-raw",
+            "held": held,
+            "evidence": { "on_record": tally.on_record, "on_legacy_rows": tally.on_legacy_rows },
+        }),
+    )
+}
+
+/// A segment's journal-relative path, through the crate's one path builder.
+fn crate_layout_segment_rel(target: &Target) -> String {
+    solstone_core_retention::layout::segment_rel(&target.day, &target.stream, &target.dir)
+}
+
 /// A plan's shape as a caller needs to read it.
 fn plan_json(plan: &Plan) -> serde_json::Value {
     serde_json::json!({
@@ -416,6 +492,7 @@ solstone-retention — the retention executor
 
   remove-segments --journal P --at ISO --did ID --segment DAY/STREAM/DIR [--segment ...] \
 [--reason owner|policy]
+  release-raw     --journal P --segment DAY/STREAM/DIR [--segment ...]
   recover         --journal P --at ISO --did ID [--reason owner|policy]
   sweep           --journal P --today YYYY-MM-DD --now ISO [--policy JSON] [--execute true]
   prune-logs      --journal P --today YYYY-MM-DD --days N [--execute true]
@@ -441,6 +518,7 @@ fn main() -> ExitCode {
     };
     match verb.as_str() {
         "remove-segments" => run_remove_segments(&args),
+        "release-raw" => run_release_raw(&args),
         "recover" => run_recover(&args),
         "sweep" => run_sweep(&args),
         "prune-logs" => run_prune_logs(&args),
