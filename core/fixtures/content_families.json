@@ -1,0 +1,1004 @@
+{
+  "cases": [
+    {
+      "agent": "event",
+      "chunks": [
+        {
+          "markdown": "### Meeting: Standup\n\n\n**Participants:** Alice, Bob\n\nDaily sync\n",
+          "timestamp_utc_ms": 1704067200000
+        }
+      ],
+      "family": "Event",
+      "formatter": "format_events",
+      "header": "# Events for 'work' facet on 2024-01-01",
+      "id": "event_nominal",
+      "input": [
+        {
+          "participants": [
+            "Alice",
+            "Bob"
+          ],
+          "summary": "Daily sync",
+          "title": "Standup",
+          "type": "meeting"
+        }
+      ],
+      "input_text": "{\"title\": \"Standup\", \"type\": \"meeting\", \"participants\": [\"Alice\", \"Bob\"], \"summary\": \"Daily sync\"}\n",
+      "rel": "facets/work/events/20240101.jsonl"
+    },
+    {
+      "agent": "event",
+      "chunks": [
+        {
+          "markdown": "### Task: Kept\n\n\n",
+          "timestamp_utc_ms": 1704067200000
+        }
+      ],
+      "error": "Skipped 2 entries missing 'title' field in facets/work/events/20240101.jsonl",
+      "family": "Event",
+      "formatter": "format_events",
+      "header": "# Events for 'work' facet on 2024-01-01",
+      "id": "event_skip_is_title_only",
+      "input": [
+        {
+          "type": "meeting"
+        },
+        {
+          "title": "",
+          "type": "meeting"
+        },
+        {
+          "title": "Kept",
+          "type": "task"
+        }
+      ],
+      "input_text": "{\"type\": \"meeting\"}\n{\"title\": \"\", \"type\": \"meeting\"}\n{\"title\": \"Kept\", \"type\": \"task\"}\n",
+      "note": "a row without a truthy title emits nothing; type is not part of the skip test",
+      "rel": "facets/work/events/20240101.jsonl"
+    },
+    {
+      "agent": "event",
+      "chunks": [],
+      "family": "Event",
+      "formatter": "format_events",
+      "header": "# Events for 'work' facet on 2024-01-01",
+      "id": "event_empty",
+      "input": [],
+      "input_text": "",
+      "rel": "facets/work/events/20240101.jsonl"
+    },
+    {
+      "agent": "activity",
+      "chunks": [
+        {
+          "markdown": "### Launch sync\n- Activity: meeting\n- Facet: work\n- Day: 20260418\n- Time: 09:00-09:05\n- Level: 0.5\n- Description: Team sync\n- Details: Assigned owners\n- Participation: Mina\n\nAligned on launch.\nTopics: launch, owners\n- Hidden: yes",
+          "timestamp_utc_ms": 0
+        }
+      ],
+      "family": "Activity",
+      "formatter": "format_activities",
+      "header": "# Activities: work (2024-01-01)",
+      "id": "activity_nominal",
+      "input": [
+        {
+          "activity": "meeting",
+          "day": "20260418",
+          "description": "Team sync",
+          "details": "Assigned owners",
+          "facet": "work",
+          "hidden": true,
+          "level_avg": 0.5,
+          "participation": [
+            {
+              "name": "Mina"
+            }
+          ],
+          "segments": [
+            "090000_300"
+          ],
+          "story": {
+            "body": "Aligned on launch.",
+            "topics": [
+              "launch",
+              "owners"
+            ]
+          },
+          "title": "Launch sync"
+        }
+      ],
+      "input_text": "{\"title\": \"Launch sync\", \"activity\": \"meeting\", \"facet\": \"work\", \"day\": \"20260418\", \"segments\": [\"090000_300\"], \"level_avg\": 0.5, \"description\": \"Team sync\", \"details\": \"Assigned owners\", \"participation\": [{\"name\": \"Mina\"}], \"story\": {\"body\": \"Aligned on launch.\", \"topics\": [\"launch\", \"owners\"]}, \"hidden\": true}\n",
+      "rel": "facets/work/activities/20240101.jsonl"
+    },
+    {
+      "agent": "activity",
+      "chunks": [
+        {
+          "markdown": "### untitled activity",
+          "timestamp_utc_ms": 0
+        },
+        {
+          "markdown": "### X\n- Activity: x",
+          "timestamp_utc_ms": 0
+        }
+      ],
+      "family": "Activity",
+      "formatter": "format_activities",
+      "header": "# Activities: work (2024-01-01)",
+      "id": "activity_degenerate_rows_still_emit",
+      "input": [
+        {},
+        {
+          "id": "x"
+        }
+      ],
+      "input_text": "{}\n{\"id\": \"x\"}\n",
+      "note": "unlike events, an activity object always produces a record",
+      "rel": "facets/work/activities/20240101.jsonl"
+    },
+    {
+      "agent": "action",
+      "chunks": [
+        {
+          "markdown": "### Identity Update by settings\n\n**Source:** app | **Time:** 07:33:05\n**Talent:** [123](/app/sol/123)\n\n**Parameters:**\n- name: Alice\n",
+          "timestamp_utc_ms": 1765870385135
+        }
+      ],
+      "family": "ActionLog",
+      "formatter": "format_logs",
+      "header": "# Journal Action Log (2024-01-01)",
+      "id": "action_log_nominal",
+      "input": [
+        {
+          "action": "identity_update",
+          "actor": "settings",
+          "params": {
+            "name": "Alice"
+          },
+          "source": "app",
+          "timestamp": "2025-12-16T07:33:05.135587+00:00",
+          "use_id": "123"
+        }
+      ],
+      "input_text": "{\"action\": \"identity_update\", \"actor\": \"settings\", \"source\": \"app\", \"timestamp\": \"2025-12-16T07:33:05.135587+00:00\", \"use_id\": \"123\", \"params\": {\"name\": \"Alice\"}}\n",
+      "rel": "config/actions/20240101.jsonl"
+    },
+    {
+      "agent": "action",
+      "chunks": [],
+      "error": "Skipped 2 entries missing 'action' field",
+      "family": "ActionLog",
+      "formatter": "format_logs",
+      "header": "# Journal Action Log (2024-01-01)",
+      "id": "action_log_skip_is_action_only",
+      "input": [
+        {
+          "actor": "settings"
+        },
+        {
+          "action": "",
+          "actor": "settings"
+        }
+      ],
+      "input_text": "{\"actor\": \"settings\"}\n{\"action\": \"\", \"actor\": \"settings\"}\n",
+      "rel": "config/actions/20240101.jsonl"
+    },
+    {
+      "agent": "action",
+      "chunks": [
+        {
+          "markdown": "### Facet Note by sol\n\n**Source:** unknown\n",
+          "timestamp_utc_ms": 0
+        }
+      ],
+      "family": "ActionLog",
+      "formatter": "format_logs",
+      "header": "# Action Log: work (2024-01-01)",
+      "id": "action_log_facet_scoped_path",
+      "input": [
+        {
+          "action": "facet_note",
+          "actor": "sol"
+        }
+      ],
+      "input_text": "{\"action\": \"facet_note\", \"actor\": \"sol\"}\n",
+      "note": "facets/*/logs/*.jsonl shares the formatter with config/actions",
+      "rel": "facets/work/logs/20240101.jsonl"
+    },
+    {
+      "agent": "entity:detected",
+      "chunks": [
+        {
+          "markdown": "### Person: Alice\n\n\nFriend from work\n\n**Tags:** tech, mentor\n**Also known as:** A, Al\n**Contact:** alice@example.com\n**Roles:** lead, reviewer\n**Empty Note:** \n",
+          "timestamp_utc_ms": 1772582400000
+        }
+      ],
+      "family": "FacetEntity",
+      "formatter": "format_entities",
+      "header": "# Detected Entities: work (2026-03-04)\n\n1 entities",
+      "id": "facet_entity_nominal",
+      "input": [
+        {
+          "aka": [
+            "A",
+            "Al"
+          ],
+          "contact": "alice@example.com",
+          "description": "Friend from work",
+          "detached": true,
+          "empty_note": "",
+          "id": "alice",
+          "last_seen": "20260304",
+          "name": "Alice",
+          "roles": [
+            "lead",
+            "reviewer"
+          ],
+          "tags": [
+            "tech",
+            "mentor"
+          ],
+          "type": "Person"
+        }
+      ],
+      "input_text": "{\"id\": \"alice\", \"type\": \"Person\", \"name\": \"Alice\", \"description\": \"Friend from work\", \"tags\": [\"tech\", \"mentor\"], \"aka\": [\"A\", \"Al\"], \"contact\": \"alice@example.com\", \"roles\": [\"lead\", \"reviewer\"], \"empty_note\": \"\", \"last_seen\": \"20260304\", \"detached\": true}\n",
+      "rel": "facets/work/entities/20260304.jsonl"
+    },
+    {
+      "agent": "entity:detected",
+      "chunks": [
+        {
+          "markdown": "### Project: No Description\n\n\n*(No description available)*\n\n",
+          "timestamp_utc_ms": 1772582400000
+        },
+        {
+          "markdown": "### Unknown: Unnamed\n\n\nOnly description\n\n",
+          "timestamp_utc_ms": 1772582400000
+        }
+      ],
+      "family": "FacetEntity",
+      "formatter": "format_entities",
+      "header": "# Detected Entities: work (2026-03-04)\n\n2 entities",
+      "id": "facet_entity_missing_fields",
+      "input": [
+        {
+          "description": "",
+          "name": "No Description",
+          "type": "Project"
+        },
+        {
+          "description": "Only description"
+        }
+      ],
+      "input_text": "{\"type\": \"Project\", \"name\": \"No Description\", \"description\": \"\"}\n{\"description\": \"Only description\"}\n",
+      "rel": "facets/work/entities/20260304.jsonl"
+    },
+    {
+      "agent": "entity:attached",
+      "chunks": [
+        {
+          "markdown": "### Person: Slugged\n\n\n*(No description available)*\n\n",
+          "timestamp_utc_ms": 1767225600000
+        }
+      ],
+      "family": "FacetEntity",
+      "formatter": "format_entities",
+      "header": "# Attached Entities: work\n\n1 entities",
+      "id": "facet_entity_agent_from_slug_stem",
+      "input": [
+        {
+          "name": "Slugged",
+          "type": "Person"
+        }
+      ],
+      "input_text": "{\"name\": \"Slugged\", \"type\": \"Person\"}\n",
+      "note": "a non-digit stem selects the attached agent rather than detected",
+      "rel": "facets/work/entities/some-slug.jsonl"
+    },
+    {
+      "agent": "observation",
+      "chunks": [
+        {
+          "markdown": "- Prefers morning meetings (observed: 20250113)",
+          "timestamp_utc_ms": 0
+        },
+        {
+          "markdown": "- Expert in distributed systems",
+          "timestamp_utc_ms": 0
+        },
+        {
+          "markdown": "-  (observed: 20250114)",
+          "timestamp_utc_ms": 0
+        },
+        {
+          "markdown": "- ",
+          "timestamp_utc_ms": 0
+        }
+      ],
+      "family": "Observation",
+      "formatter": "format_observations",
+      "header": "# Observations: Alice\n\n4 observations",
+      "id": "observation_nominal",
+      "input": [
+        {
+          "content": "Prefers morning meetings",
+          "source_day": "20250113"
+        },
+        {
+          "content": "Expert in distributed systems"
+        },
+        {
+          "source_day": "20250114"
+        },
+        {
+          "content": "",
+          "source_day": ""
+        }
+      ],
+      "input_text": "{\"content\": \"Prefers morning meetings\", \"source_day\": \"20250113\"}\n{\"content\": \"Expert in distributed systems\"}\n{\"source_day\": \"20250114\"}\n{\"content\": \"\", \"source_day\": \"\"}\n",
+      "note": "every row emits, including the empty one",
+      "rel": "facets/work/entities/alice/observations.jsonl"
+    },
+    {
+      "agent": "import.ics",
+      "chunks": [
+        {
+          "markdown": "## Quarterly Planning\n09:30 AM",
+          "timestamp_utc_ms": 1767285000000
+        }
+      ],
+      "family": "StructuredImport",
+      "formatter": "format_imported",
+      "header": "# Imported from ics (0 entries)",
+      "id": "structured_import_nominal",
+      "input": [
+        {
+          "import": {
+            "source": "ics"
+          }
+        },
+        {
+          "title": "Quarterly Planning",
+          "ts": "2026-01-01T09:30:00-07:00",
+          "type": "calendar_event"
+        }
+      ],
+      "input_text": "{\"import\": {\"source\": \"ics\"}}\n{\"type\": \"calendar_event\", \"title\": \"Quarterly Planning\", \"ts\": \"2026-01-01T09:30:00-07:00\"}\n",
+      "rel": "20260101/import.ics/imported.jsonl"
+    },
+    {
+      "agent": "import.ics",
+      "chunks": [],
+      "family": "StructuredImport",
+      "formatter": "format_imported",
+      "header": "# Imported from ics (0 entries)",
+      "id": "structured_import_header_and_generic_are_skipped",
+      "input": [
+        {
+          "import": {
+            "source": "ics"
+          },
+          "title": "Header"
+        },
+        {
+          "type": "generic"
+        }
+      ],
+      "input_text": "{\"import\": {\"source\": \"ics\"}, \"title\": \"Header\"}\n{\"type\": \"generic\"}\n",
+      "rel": "20260101/import.ics/imported.jsonl"
+    },
+    {
+      "agent": "import.ICS",
+      "chunks": [],
+      "family": "StructuredImport",
+      "formatter": "format_imported",
+      "header": "# Imported from ICS (0 entries)",
+      "id": "structured_import_source_case_preserved",
+      "input": [
+        {
+          "import": {
+            "source": "ICS"
+          }
+        }
+      ],
+      "input_text": "{\"import\": {\"source\": \"ICS\"}}\n",
+      "note": "the agent carries the source verbatim; lowercasing happens at merge",
+      "rel": "20260101/import.ics/imported.jsonl"
+    },
+    {
+      "agent": "import.unknown",
+      "chunks": [],
+      "family": "StructuredImport",
+      "formatter": "format_imported",
+      "header": "# Imported from unknown (1 entries)",
+      "id": "structured_import_missing_source",
+      "input": [
+        {
+          "entry_count": 1
+        }
+      ],
+      "input_text": "{\"entry_count\": 1}\n",
+      "rel": "20260101/import.ics/imported.jsonl"
+    },
+    {
+      "agent": null,
+      "chunks": [],
+      "family": "StructuredImport",
+      "formatter": "format_imported",
+      "id": "structured_import_empty",
+      "input": [],
+      "input_text": "",
+      "rel": "20260101/import.ics/imported.jsonl"
+    },
+    {
+      "agent": "import.claude",
+      "chunks": [
+        {
+          "markdown": "**User:** Hello",
+          "timestamp_utc_ms": 1000
+        },
+        {
+          "markdown": "**Assistant:** Hi there",
+          "timestamp_utc_ms": 3000
+        }
+      ],
+      "family": "AiChat",
+      "formatter": "format_ai_chat",
+      "header": "# Claude conversation\nModel: claude-3\nFacet: work",
+      "id": "ai_chat_nominal",
+      "input": [
+        {
+          "imported": {
+            "facet": "work"
+          },
+          "model": "claude-3"
+        },
+        {
+          "speaker": "User",
+          "start": "00:00:01",
+          "text": "Hello"
+        },
+        {
+          "speaker": "Assistant",
+          "start": "00:00:02",
+          "text": ""
+        },
+        {
+          "speaker": "Assistant",
+          "start": "00:00:03",
+          "text": "Hi there"
+        },
+        {
+          "speaker": "System",
+          "text": "metadata-like"
+        }
+      ],
+      "input_text": "{\"model\": \"claude-3\", \"imported\": {\"facet\": \"work\"}}\n{\"start\": \"00:00:01\", \"speaker\": \"User\", \"text\": \"Hello\"}\n{\"start\": \"00:00:02\", \"speaker\": \"Assistant\", \"text\": \"\"}\n{\"start\": \"00:00:03\", \"speaker\": \"Assistant\", \"text\": \"Hi there\"}\n{\"speaker\": \"System\", \"text\": \"metadata-like\"}\n",
+      "note": "a turn needs both a start and non-empty text",
+      "rel": "20260101/import.claude/thread_a/conversation_transcript.jsonl"
+    },
+    {
+      "agent": "import.chatgpt",
+      "chunks": [
+        {
+          "markdown": "**User:** Legacy path",
+          "timestamp_utc_ms": 1000
+        }
+      ],
+      "family": "AiChat",
+      "formatter": "format_ai_chat",
+      "header": "# ChatGPT conversation\nModel: gpt-4",
+      "id": "ai_chat_legacy_filename",
+      "input": [
+        {
+          "model": "gpt-4"
+        },
+        {
+          "speaker": "User",
+          "start": "00:00:01",
+          "text": "Legacy path"
+        }
+      ],
+      "input_text": "{\"model\": \"gpt-4\"}\n{\"start\": \"00:00:01\", \"speaker\": \"User\", \"text\": \"Legacy path\"}\n",
+      "rel": "20260101/import.chatgpt/conv_b/imported_audio.jsonl"
+    },
+    {
+      "agent": "audio",
+      "chunks": [],
+      "family": null,
+      "formatter": "format_audio",
+      "header": "Model: claude-3",
+      "id": "conversation_transcript_off_an_unpinned_stream_is_not_ai_chat",
+      "input": [
+        {
+          "model": "claude-3"
+        }
+      ],
+      "input_text": "{\"model\": \"claude-3\"}\n",
+      "note": "\ud83d\udd34 dispatch fact, not an AiChat case. A conversation_transcript.jsonl outside import.{chatgpt,claude,gemini} resolves to format_audio in the reference, and to nothing natively \u2014 */*/*/*_transcript.jsonl is one of the six unported families. Consequence: ai_chat.rs's 'ai_chat' agent fallback is unreachable through classify(), because AiChat is only ever produced for a path that already contains 'import.'. The native test that covers that fallback calls produce_chunks directly and bypasses dispatch.",
+      "rel": "20260101/misc/thread_a/conversation_transcript.jsonl"
+    },
+    {
+      "agent": "chat",
+      "chunks": [
+        {
+          "markdown": "**Jamie** What did I do today?",
+          "timestamp_utc_ms": 1772000000000
+        },
+        {
+          "markdown": "**Sol** You shipped the cable.",
+          "timestamp_utc_ms": 1772000001000
+        }
+      ],
+      "context": {
+        "agent_name": "Sol",
+        "owner_name": "Jamie"
+      },
+      "family": "Chat",
+      "formatter": "format_chat",
+      "id": "chat_turns_with_configured_labels",
+      "input": [
+        {
+          "kind": "owner_message",
+          "text": "What did I do today?",
+          "ts": 1772000000000
+        },
+        {
+          "kind": "sol_message",
+          "text": "You shipped the cable.",
+          "ts": 1772000001000
+        }
+      ],
+      "input_text": "{\"kind\": \"owner_message\", \"ts\": 1772000000000, \"text\": \"What did I do today?\"}\n{\"kind\": \"sol_message\", \"ts\": 1772000001000, \"text\": \"You shipped the cable.\"}\n",
+      "note": "the owner label is journal identity, never the literal 'Owner'",
+      "rel": "20260508/chat/120000_300/chat.jsonl"
+    },
+    {
+      "agent": "chat",
+      "chunks": [
+        {
+          "markdown": "**Jamie**",
+          "timestamp_utc_ms": 1772000002000
+        }
+      ],
+      "context": {
+        "agent_name": "Sol",
+        "owner_name": "Jamie"
+      },
+      "family": "Chat",
+      "formatter": "format_chat",
+      "id": "chat_turn_without_text_keeps_the_label",
+      "input": [
+        {
+          "kind": "owner_message",
+          "text": "",
+          "ts": 1772000002000
+        }
+      ],
+      "input_text": "{\"kind\": \"owner_message\", \"ts\": 1772000002000, \"text\": \"\"}\n",
+      "rel": "20260508/chat/120000_300/chat.jsonl"
+    },
+    {
+      "agent": "chat",
+      "chunks": [
+        {
+          "markdown": "*[recall spawned: find it]*",
+          "timestamp_utc_ms": 1
+        },
+        {
+          "markdown": "*[recall finished: found]*",
+          "timestamp_utc_ms": 2
+        },
+        {
+          "markdown": "*[recall errored: timeout]*",
+          "timestamp_utc_ms": 3
+        },
+        {
+          "markdown": "*[chat trouble: non_responsive]*",
+          "timestamp_utc_ms": 4
+        }
+      ],
+      "context": {
+        "agent_name": "Sol",
+        "owner_name": "Jamie"
+      },
+      "family": "Chat",
+      "formatter": "format_chat",
+      "id": "chat_talent_and_error_events",
+      "input": [
+        {
+          "kind": "talent_spawned",
+          "name": "recall",
+          "task": "find it",
+          "ts": 1
+        },
+        {
+          "kind": "talent_finished",
+          "name": "recall",
+          "summary": "found",
+          "ts": 2
+        },
+        {
+          "kind": "talent_errored",
+          "name": "recall",
+          "reason": "timeout",
+          "ts": 3
+        },
+        {
+          "kind": "chat_error",
+          "reason": "non_responsive",
+          "ts": 4
+        }
+      ],
+      "input_text": "{\"kind\": \"talent_spawned\", \"ts\": 1, \"name\": \"recall\", \"task\": \"find it\"}\n{\"kind\": \"talent_finished\", \"ts\": 2, \"name\": \"recall\", \"summary\": \"found\"}\n{\"kind\": \"talent_errored\", \"ts\": 3, \"name\": \"recall\", \"reason\": \"timeout\"}\n{\"kind\": \"chat_error\", \"ts\": 4, \"reason\": \"non_responsive\"}\n",
+      "rel": "20260508/chat/120000_300/chat.jsonl"
+    },
+    {
+      "agent": "chat",
+      "chunks": [],
+      "context": {
+        "agent_name": "Sol",
+        "owner_name": "Jamie"
+      },
+      "family": "Chat",
+      "formatter": "format_chat",
+      "id": "chat_backend_only_kinds_are_skipped",
+      "input": [
+        {
+          "depth": 2,
+          "kind": "chat_queue_depth",
+          "ts": 1
+        },
+        {
+          "kind": "support_draft",
+          "ts": 2
+        },
+        {
+          "kind": "result",
+          "ts": 3
+        },
+        {
+          "kind": "owner_chat_open",
+          "ts": 4
+        }
+      ],
+      "input_text": "{\"kind\": \"chat_queue_depth\", \"ts\": 1, \"depth\": 2}\n{\"kind\": \"support_draft\", \"ts\": 2}\n{\"kind\": \"result\", \"ts\": 3}\n{\"kind\": \"owner_chat_open\", \"ts\": 4}\n",
+      "rel": "20260508/chat/120000_300/chat.jsonl"
+    },
+    {
+      "context": {
+        "agent_name": "Sol",
+        "owner_name": "Jamie"
+      },
+      "family": "Chat",
+      "formatter": "format_chat",
+      "id": "chat_unknown_kind_raises_in_the_reference",
+      "input": [
+        {
+          "kind": "not_a_real_kind",
+          "ts": 1
+        }
+      ],
+      "input_text": "{\"kind\": \"not_a_real_kind\", \"ts\": 1}\n",
+      "note": "recorded as a deliberate divergence: the reference raises and its caller swallows it, dropping the whole file; the native renderer skips the row and keeps the rest. The native behaviour is the one to keep \u2014 this case exists so the difference stays visible rather than being rediscovered.",
+      "raise_message": "Unknown chat event kind for formatter: not_a_real_kind",
+      "raises": "ValueError",
+      "rel": "20260508/chat/120000_300/chat.jsonl"
+    },
+    {
+      "agent": "browser",
+      "chunks": [
+        {
+          "markdown": "## Inbox\n\nmail.google.com\n\nalpha block",
+          "timestamp_utc_ms": 1772000000000
+        }
+      ],
+      "family": "Browser",
+      "formatter": "format_browser",
+      "id": "browser_snapshot_then_delta",
+      "input": [
+        {
+          "blocks": [
+            {
+              "text": "alpha block"
+            }
+          ],
+          "site": "mail.google.com",
+          "t": "segment_start",
+          "title": "Inbox",
+          "ts": 1772000000000,
+          "url": "https://mail.google.com/"
+        },
+        {
+          "blocks": [
+            {
+              "text": "beta block"
+            }
+          ],
+          "op": "add",
+          "t": "delta",
+          "ts": 1772000005000
+        }
+      ],
+      "input_text": "{\"t\": \"segment_start\", \"ts\": 1772000000000, \"url\": \"https://mail.google.com/\", \"site\": \"mail.google.com\", \"title\": \"Inbox\", \"blocks\": [{\"text\": \"alpha block\"}]}\n{\"t\": \"delta\", \"ts\": 1772000005000, \"op\": \"add\", \"blocks\": [{\"text\": \"beta block\"}]}\n",
+      "rel": "20260703/suze.browser/000141_317/browser_mail-google-com.jsonl"
+    },
+    {
+      "agent": "browser",
+      "chunks": [],
+      "error": "browser stream has no segment_start rows",
+      "family": "Browser",
+      "formatter": "format_browser",
+      "id": "browser_without_a_segment_start",
+      "input": [
+        {
+          "blocks": [
+            {
+              "text": "orphan"
+            }
+          ],
+          "op": "add",
+          "t": "delta",
+          "ts": 1772000005000
+        }
+      ],
+      "input_text": "{\"t\": \"delta\", \"ts\": 1772000005000, \"op\": \"add\", \"blocks\": [{\"text\": \"orphan\"}]}\n",
+      "note": "the reference reports this through meta error and both web consumers act on it; the native renderer hardcodes an empty warning list, so the condition is currently undetectable natively",
+      "rel": "20260703/suze.browser/000141_317/browser_mail-google-com.jsonl"
+    },
+    {
+      "agent": "browser",
+      "chunks": [],
+      "error": "browser stream has no rows",
+      "family": "Browser",
+      "formatter": "format_browser",
+      "id": "browser_empty_stream",
+      "input": [],
+      "input_text": "",
+      "rel": "20260703/suze.browser/000141_317/browser_mail-google-com.jsonl"
+    },
+    {
+      "agent": "browser",
+      "chunks": [
+        {
+          "markdown": "## Example\n\nexample.com\n\nkept",
+          "timestamp_utc_ms": 1772000001000
+        }
+      ],
+      "family": "Browser",
+      "formatter": "format_browser",
+      "id": "browser_unknown_row_kind_is_skipped",
+      "input": [
+        {
+          "t": "heartbeat",
+          "ts": 1772000000000
+        },
+        {
+          "blocks": [
+            {
+              "text": "kept"
+            }
+          ],
+          "site": "example.com",
+          "t": "segment_start",
+          "title": "Example",
+          "ts": 1772000001000
+        }
+      ],
+      "input_text": "{\"t\": \"heartbeat\", \"ts\": 1772000000000}\n{\"t\": \"segment_start\", \"ts\": 1772000001000, \"site\": \"example.com\", \"title\": \"Example\", \"blocks\": [{\"text\": \"kept\"}]}\n",
+      "rel": "20260703/suze.browser/000141_317/browser_mail-google-com.jsonl"
+    },
+    {
+      "family": "Browser",
+      "formatter": "format_browser",
+      "id": "browser_row_without_ts_raises_in_the_reference",
+      "input": [
+        {
+          "blocks": [
+            {
+              "text": "x"
+            }
+          ],
+          "site": "example.com",
+          "t": "segment_start",
+          "title": "No ts"
+        }
+      ],
+      "input_text": "{\"t\": \"segment_start\", \"site\": \"example.com\", \"title\": \"No ts\", \"blocks\": [{\"text\": \"x\"}]}\n",
+      "note": "an unguarded subscript on a row that rendered fine otherwise. The caller catches only ValueError/FileNotFoundError, so this escapes the indexer rather than skipping the file. The native side must not reproduce it.",
+      "raise_message": "'ts'",
+      "raises": "KeyError",
+      "rel": "20260703/suze.browser/000141_317/browser_mail-google-com.jsonl"
+    },
+    {
+      "agent": "pulse",
+      "chunks": [
+        {
+          "markdown": "{\"ts\": 1772000000000, \"summary\": \"steady morning\"}",
+          "timestamp_utc_ms": 1772000000000
+        }
+      ],
+      "family": "DayAccumulator",
+      "formatter": "format_day_accumulator",
+      "id": "day_accumulator_nominal",
+      "input": [
+        {
+          "summary": "steady morning",
+          "ts": 1772000000000
+        }
+      ],
+      "input_text": "{\"ts\": 1772000000000, \"summary\": \"steady morning\"}\n",
+      "note": "the agent comes from the file stem, which requires context file_path",
+      "rel": "20260304/talents/pulse.jsonl"
+    },
+    {
+      "agent": "pulse",
+      "chunks": [],
+      "family": "DayAccumulator",
+      "formatter": "format_day_accumulator",
+      "id": "day_accumulator_empty",
+      "input": [],
+      "input_text": "",
+      "rel": "20260304/talents/pulse.jsonl"
+    },
+    {
+      "agent": "sense",
+      "chunks": [
+        {
+          "markdown": "### Entities\n- Person: Alice",
+          "timestamp_utc_ms": 0
+        }
+      ],
+      "family": "Sense",
+      "formatter": "format_sense",
+      "id": "sense_nominal",
+      "input": [
+        {
+          "entities": [
+            {
+              "name": "Alice",
+              "type": "Person"
+            }
+          ]
+        }
+      ],
+      "input_text": "{\"entities\": [{\"name\": \"Alice\", \"type\": \"Person\"}]}",
+      "rel": "20260304/default/090000_300/talents/sense.json"
+    },
+    {
+      "agent": "sense",
+      "chunks": [],
+      "family": "Sense",
+      "formatter": "format_sense",
+      "id": "sense_non_object_first_entry",
+      "input": [],
+      "input_text": "",
+      "note": "an empty or malformed talent JSON renders nothing and reports nothing",
+      "rel": "20260304/default/090000_300/talents/sense.json"
+    },
+    {
+      "agent": "documents",
+      "chunks": [
+        {
+          "markdown": "## Overview\n\nNot specified in this document\n\n## Parties and Roles\n\nNot specified in this document\n\n## Key Provisions\n\nNot specified in this document\n\n## Assets and Property\n\nNot specified in this document\n\n## Conditions and Triggers\n\nNot specified in this document\n\n## Important Dates\n\nNot specified in this document\n\n## Summary\n\nNot specified in this document",
+          "timestamp_utc_ms": 0
+        }
+      ],
+      "family": "Documents",
+      "formatter": "format_document_analysis",
+      "id": "documents_nominal",
+      "input": [
+        {
+          "documents": [
+            {
+              "kind": "pdf",
+              "summary": "Signed",
+              "title": "Contract"
+            }
+          ]
+        }
+      ],
+      "input_text": "{\"documents\": [{\"title\": \"Contract\", \"summary\": \"Signed\", \"kind\": \"pdf\"}]}",
+      "rel": "20260304/default/090000_300/talents/documents.json"
+    },
+    {
+      "agent": "documents",
+      "chunks": [],
+      "family": "Documents",
+      "formatter": "format_document_analysis",
+      "id": "documents_empty",
+      "input": [],
+      "input_text": "",
+      "rel": "20260304/default/090000_300/talents/documents.json"
+    },
+    {
+      "agent": "screen",
+      "chunks": [
+        {
+          "markdown": "## Entities\n\nNot specified",
+          "timestamp_utc_ms": 0
+        }
+      ],
+      "family": "Screen",
+      "formatter": "format_screen_record",
+      "id": "screen_record_nominal",
+      "input": [
+        {
+          "applications": [
+            "nvim"
+          ],
+          "summary": "Editor open"
+        }
+      ],
+      "input_text": "{\"summary\": \"Editor open\", \"applications\": [\"nvim\"]}",
+      "note": "this is the talents/screen.json record, not the raw screen stream",
+      "rel": "20260304/default/090000_300/talents/screen.json"
+    },
+    {
+      "agent": "screen",
+      "chunks": [],
+      "family": "Screen",
+      "formatter": "format_screen_record",
+      "id": "screen_record_empty",
+      "input": [],
+      "input_text": "",
+      "rel": "20260304/default/090000_300/talents/screen.json"
+    },
+    {
+      "agent": "morning_briefing",
+      "chunks": [
+        {
+          "markdown": "## Your Day\n\nNothing to report.\n\n## Yesterday\n\nNothing to report.\n\n## Needs Attention\n\nNothing to report.\n\n## Forward Look\n\nNothing to report.\n\n## Reading\n\nNothing to report.",
+          "timestamp_utc_ms": 0
+        }
+      ],
+      "family": "MorningBriefing",
+      "formatter": "format_morning_briefing",
+      "id": "morning_briefing_nominal",
+      "input": [
+        {
+          "greeting": "Morning",
+          "sections": [
+            {
+              "items": [
+                "Ship"
+              ],
+              "title": "Today"
+            }
+          ]
+        }
+      ],
+      "input_text": "{\"greeting\": \"Morning\", \"sections\": [{\"title\": \"Today\", \"items\": [\"Ship\"]}]}",
+      "rel": "20260304/talents/morning_briefing.json"
+    },
+    {
+      "agent": "morning_briefing",
+      "chunks": [],
+      "family": "MorningBriefing",
+      "formatter": "format_morning_briefing",
+      "id": "morning_briefing_empty",
+      "input": [],
+      "input_text": "",
+      "rel": "20260304/talents/morning_briefing.json"
+    }
+  ],
+  "families": [
+    "ActionLog",
+    "Activity",
+    "AiChat",
+    "Browser",
+    "Chat",
+    "DayAccumulator",
+    "Documents",
+    "Event",
+    "FacetEntity",
+    "MorningBriefing",
+    "Observation",
+    "Screen",
+    "Sense",
+    "StructuredImport"
+  ],
+  "fixture": "solstone-content-families",
+  "fixture_version": 1,
+  "generated_by": "make core-fixtures",
+  "generator_timezone": "UTC"
+}

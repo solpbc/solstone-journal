@@ -421,6 +421,281 @@ mod tests {
 
     use super::*;
 
+    fn family_by_name(name: &str) -> Option<Family> {
+        Some(match name {
+            "Markdown" => Family::Markdown,
+            "Event" => Family::Event,
+            "Activity" => Family::Activity,
+            "ActionLog" => Family::ActionLog,
+            "StructuredImport" => Family::StructuredImport,
+            "AiChat" => Family::AiChat,
+            "Chat" => Family::Chat,
+            "Browser" => Family::Browser,
+            "DayAccumulator" => Family::DayAccumulator,
+            "FacetEntity" => Family::FacetEntity,
+            "Observation" => Family::Observation,
+            "Documents" => Family::Documents,
+            "Screen" => Family::Screen,
+            "Sense" => Family::Sense,
+            "MorningBriefing" => Family::MorningBriefing,
+            _ => return None,
+        })
+    }
+
+    /// Why a case is allowed to differ from the reference corpus.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Divergence {
+        /// This crate is right and the reference was not. The recorded native
+        /// value is the contract from here on.
+        Accepted,
+        /// This crate is wrong. The entry pins today's behaviour so it cannot
+        /// drift further while the fix is outstanding, and keeps the difference
+        /// visible instead of letting a green gate imply agreement.
+        Defect,
+    }
+
+    struct DivergenceEntry {
+        case: &'static str,
+        kind: Divergence,
+        native_chunks: &'static [&'static str],
+        reason: &'static str,
+    }
+
+    /// Differences between this crate and the reference corpus, each one a
+    /// decision rather than an accident. A mismatch that is not listed here
+    /// fails the conformance test.
+    const DIVERGENCES: &[DivergenceEntry] = &[
+        DivergenceEntry {
+            case: "event_nominal",
+            kind: Divergence::Accepted,
+            native_chunks: &[
+                "### Meeting: Standup\n\n**Participants:** Alice, Bob\n\nDaily sync\n",
+            ],
+            reason: "reference emits a blank line for an absent header slot; whitespace only, \
+                     tokenizes identically, and the native form is the cleaner record",
+        },
+        DivergenceEntry {
+            case: "event_skip_is_title_only",
+            kind: Divergence::Accepted,
+            native_chunks: &["### Task: Kept\n\n"],
+            reason: "same absent-header blank line as event_nominal",
+        },
+        DivergenceEntry {
+            case: "facet_entity_nominal",
+            kind: Divergence::Accepted,
+            native_chunks: &[
+                "### Person: Alice\n\nFriend from work\n\n**Tags:** tech, mentor\n**Also known as:** A, Al\n**Contact:** alice@example.com\n**Roles:** lead, reviewer\n**Empty Note:** \n",
+            ],
+            reason: "same absent-header blank line as event_nominal",
+        },
+        DivergenceEntry {
+            case: "facet_entity_missing_fields",
+            kind: Divergence::Accepted,
+            native_chunks: &[
+                "### Project: No Description\n\n*(No description available)*\n\n",
+                "### Unknown: Unnamed\n\nOnly description\n\n",
+            ],
+            reason: "same absent-header blank line as event_nominal",
+        },
+        DivergenceEntry {
+            case: "facet_entity_agent_from_slug_stem",
+            kind: Divergence::Accepted,
+            native_chunks: &["### Person: Slugged\n\n*(No description available)*\n\n"],
+            reason: "same absent-header blank line as event_nominal",
+        },
+        DivergenceEntry {
+            case: "activity_degenerate_rows_still_emit",
+            kind: Divergence::Accepted,
+            native_chunks: &["### Untitled activity", "### X\n- Activity: x"],
+            reason: "the placeholder title for an activity with no title is sentence-cased here \
+                     and lowercase in the reference; a heading an owner can see, so cased",
+        },
+        DivergenceEntry {
+            case: "day_accumulator_nominal",
+            kind: Divergence::Accepted,
+            native_chunks: &["{\"ts\":1772000000000,\"summary\":\"steady morning\"}"],
+            reason: "the accumulator chunk is the record re-serialized; the reference used \
+                     json.dumps default separators and this crate emits compact JSON. \
+                     Tokenizes identically",
+        },
+        DivergenceEntry {
+            case: "chat_turns_with_configured_labels",
+            kind: Divergence::Defect,
+            native_chunks: &[
+                "**Owner** What did I do today?",
+                "**Sol** You shipped the cable.",
+            ],
+            reason: "🔴 speaker labels are hardcoded here and resolved from journal config by \
+                     the reference (identity.preferred / identity.name, agent.name). On a journal \
+                     whose owner has set a name the two disagree on every owner turn, so a rescan \
+                     through this crate rewrites the owner's name out of indexed chat. Labels must \
+                     become an input; needs journal-config plumbing this crate does not have yet",
+        },
+        DivergenceEntry {
+            case: "chat_turn_without_text_keeps_the_label",
+            kind: Divergence::Defect,
+            native_chunks: &["**Owner**"],
+            reason: "same hardcoded-label defect as chat_turns_with_configured_labels",
+        },
+    ];
+
+    fn divergence_for(case: &str) -> Option<&'static DivergenceEntry> {
+        DIVERGENCES.iter().find(|entry| entry.case == case)
+    }
+
+    /// Every family renders what the reference implementation recorded.
+    ///
+    /// The corpus is generated by `scripts/content_family_corpus.py` and is a
+    /// frozen record: it cannot be regenerated once the reference tree stops
+    /// being runnable, so a failure here is a question about this crate, never a
+    /// prompt to re-derive the expectation.
+    ///
+    /// Cases carrying `raises` record a reference behaviour deliberately not
+    /// reproduced here, and cases with a null `family` record a dispatch fact for
+    /// a shape this crate has no family for; both are skipped by this assertion
+    /// and are covered by `content_family_corpus_records_known_divergences`.
+    #[test]
+    fn every_family_matches_the_reference_corpus() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/content_families.json"))
+                .expect("content family fixture parses");
+
+        let cases = fixture["cases"].as_array().expect("fixture cases");
+        assert!(!cases.is_empty(), "corpus is empty — nothing was compared");
+
+        let mut compared = 0usize;
+        let mut mismatches: Vec<String> = Vec::new();
+
+        for case in cases {
+            let id = case["id"].as_str().expect("case id");
+            if case.get("raises").is_some() {
+                continue;
+            }
+            let Some(name) = case["family"].as_str() else {
+                continue;
+            };
+            let family =
+                family_by_name(name).unwrap_or_else(|| panic!("{id}: unknown family {name}"));
+            let rel = case["rel"].as_str().expect("case rel");
+            let text = case["input_text"].as_str().expect("case input_text");
+
+            let produced = produce_chunks(family, rel, text);
+            compared += 1;
+
+            let expected: Vec<&str> = case["chunks"]
+                .as_array()
+                .expect("case chunks")
+                .iter()
+                .map(|chunk| chunk["markdown"].as_str().expect("chunk markdown"))
+                .collect();
+            let actual: Vec<&str> = produced
+                .chunks
+                .iter()
+                .map(|chunk| chunk.content.as_str())
+                .collect();
+            if actual != expected {
+                match divergence_for(id) {
+                    // A recorded difference still has to hold exactly, so it can
+                    // be revisited as a decision rather than drifting quietly.
+                    Some(entry) if actual == entry.native_chunks => {}
+                    Some(entry) => mismatches.push(format!(
+                        "{id}: recorded as a {:?} divergence, but the native output has since \
+                         moved\n     recorded {:?}\n     actual   {actual:?}",
+                        entry.kind, entry.native_chunks
+                    )),
+                    None => mismatches.push(format!(
+                        "{id}: chunks differ and the difference is not recorded in DIVERGENCES\n\
+                         \x20    reference {expected:?}\n     actual    {actual:?}"
+                    )),
+                }
+            }
+
+            let expected_agent = case["agent"].as_str();
+            if produced.agent_override.as_deref() != expected_agent {
+                mismatches.push(format!(
+                    "{id}: agent differs — expected {:?}, actual {:?}",
+                    expected_agent, produced.agent_override
+                ));
+            }
+        }
+
+        assert!(compared > 0, "no cases were compared");
+        assert!(
+            mismatches.is_empty(),
+            "{} of {compared} compared cases diverge from the reference:\n  - {}",
+            mismatches.len(),
+            mismatches.join("\n  - ")
+        );
+    }
+
+    /// Outstanding defects, stated rather than implied.
+    ///
+    /// The conformance test is green while a `Defect` divergence stands, because
+    /// its job is to catch *drift*. This one exists so the green does not read as
+    /// "this crate matches the reference" when part of it knowingly does not.
+    /// Closing a defect means deleting its entry, not editing this count.
+    #[test]
+    fn outstanding_content_divergences_are_declared() {
+        let defects: Vec<&DivergenceEntry> = DIVERGENCES
+            .iter()
+            .filter(|entry| entry.kind == Divergence::Defect)
+            .collect();
+
+        for entry in &defects {
+            assert!(
+                entry.reason.len() > 40,
+                "{}: a defect divergence needs a reason that explains the owner-visible \
+                 consequence, not a label",
+                entry.case
+            );
+        }
+
+        assert_eq!(
+            defects.len(),
+            2,
+            "the declared defect count moved. Closing one is the goal — delete its entry. \
+             Adding one is a decision that belongs in the build record, not a bumped number. \
+             Currently declared: {:?}",
+            defects.iter().map(|entry| entry.case).collect::<Vec<_>>()
+        );
+    }
+
+    /// The corpus carries cases this crate deliberately does not reproduce.
+    /// They are load-bearing: each one is a difference that would otherwise be
+    /// rediscovered from scratch. This asserts they stay present and stay
+    /// described, so removing one is a decision rather than an accident.
+    #[test]
+    fn content_family_corpus_records_known_divergences() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/content_families.json"))
+                .expect("content family fixture parses");
+        let cases = fixture["cases"].as_array().expect("fixture cases");
+
+        let divergences: Vec<&str> = cases
+            .iter()
+            .filter(|case| case.get("raises").is_some() || case["family"].is_null())
+            .map(|case| case["id"].as_str().expect("case id"))
+            .collect();
+
+        assert!(
+            !divergences.is_empty(),
+            "the corpus records no divergences — either the generator regressed or \
+             every difference was closed, and the second one needs saying out loud"
+        );
+        for case in cases
+            .iter()
+            .filter(|case| case.get("raises").is_some() || case["family"].is_null())
+        {
+            let id = case["id"].as_str().expect("case id");
+            assert!(
+                case.get("note")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some(),
+                "{id}: a recorded divergence must carry a note saying why"
+            );
+        }
+    }
+
     #[test]
     fn classifies_indexable_families() {
         assert_eq!(classify("20240101/talents/flow.md"), Some(Family::Markdown));
