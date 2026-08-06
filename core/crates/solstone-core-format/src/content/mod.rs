@@ -4,6 +4,7 @@
 mod action_logs;
 mod activities;
 mod ai_chat;
+mod audio;
 mod browser;
 mod chat;
 mod day_accumulator;
@@ -13,6 +14,7 @@ mod facet_entities;
 mod imports;
 mod morning_briefing;
 mod observations;
+mod raw_screen;
 mod screen;
 mod sense;
 
@@ -415,6 +417,18 @@ pub fn produce_chunks(
         Family::Screen => screen::render(&parse_json_object(text)),
         Family::Sense => sense::render(&parse_json_object(text)),
         Family::MorningBriefing => morning_briefing::render(&parse_json_object(text)),
+    }
+}
+
+/// Render a raw percept outside the indexed content-family pipeline.
+pub fn produce_raw_percept_chunks(
+    family: RawPerceptFamily,
+    rel: &str,
+    text: &str,
+) -> ProducedChunks {
+    match family {
+        RawPerceptFamily::Audio => audio::render(rel, &parse_jsonl_objects(text)),
+        RawPerceptFamily::RawScreen => raw_screen::render(rel, &parse_jsonl_objects(text)),
     }
 }
 
