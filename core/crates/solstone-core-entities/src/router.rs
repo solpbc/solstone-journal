@@ -1186,6 +1186,9 @@ async fn accept_merge_candidate_route(
         })
         .await;
         return match preview {
+            // `EntityMergePreview` does not expose Python's facet, segment, or
+            // voiceprint statistics, so those response fields are zero-filled
+            // rather than fabricated.
             Ok(Ok(preview)) => Json(json!({
                 "status": "preview",
                 "kind": "entity_merge",
@@ -1427,6 +1430,16 @@ fn facet_write_error_is_busy(error: &solstone_core_facets::FacetWriteError) -> b
     )
 }
 
+fn is_valid_facet_slug(slug: &str) -> bool {
+    let mut characters = slug.chars();
+    matches!(characters.next(), Some(character) if character.is_ascii_lowercase())
+        && characters.all(|character| {
+            character.is_ascii_lowercase()
+                || character.is_ascii_digit()
+                || matches!(character, '-' | '_')
+        })
+}
+
 async fn accept_facet_candidate_route(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
@@ -1493,6 +1506,30 @@ async fn accept_facet_candidate_route(
         .unwrap_or_default()
         .to_owned();
     let facet_slug = solstone_core_facets::facet_slug(&title);
+    if !is_valid_facet_slug(&facet_slug) {
+        return facet_candidate_error(
+            &name_key,
+            format!(
+                "Invalid facet name '{facet_slug}': must be lowercase, start with a letter, and contain only letters, digits, hyphens, or underscores"
+            ),
+        );
+    }
+    match solstone_core_serving::seam::run_blocking({
+        let root = Arc::clone(&root);
+        let facet_slug = facet_slug.clone();
+        move || solstone_core_facets::read_facet_declaration(&root, &facet_slug)
+    })
+    .await
+    {
+        Ok(Ok(Some(_))) => {
+            return facet_candidate_error(
+                &name_key,
+                format!("Facet '{facet_slug}' already exists"),
+            );
+        }
+        Ok(Ok(None)) => {}
+        _ => return facet_candidate_error(&name_key, "facet lookup failed"),
+    }
     match solstone_core_serving::seam::run_blocking({
         let root = Arc::clone(&root);
         let facet_slug = facet_slug.clone();
@@ -2856,6 +2893,8 @@ async fn delete_detected_route(
     }
 }
 
+// Alias uniqueness is enforced by the pre-existing facet store guard; these
+// handlers only translate its error variants into route-level refusal codes.
 async fn aka_route(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,

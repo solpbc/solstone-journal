@@ -2438,6 +2438,58 @@ async fn accept_facet_candidate_creates_facet_and_marks_candidate_accepted() {
 }
 
 #[tokio::test]
+async fn accept_facet_candidate_refuses_existing_facet_without_overwriting_it() {
+    let j = Journal::new();
+    write(
+        j.path(),
+        "facets/work/facet.json",
+        json!({
+            "id":"work",
+            "title":"Existing Work",
+            "description":"keep this",
+            "color":"#123456",
+            "emoji":"🛠️",
+        }),
+    );
+    let declaration = j.path().join("facets/work/facet.json");
+    let before = fs::read(&declaration).unwrap();
+    seed_facet_candidate(j.path(), "work", "Work", "open");
+
+    let (status, response) = post(
+        j.path(),
+        "/app/curation/api/facet/accept",
+        json!({"name_key":"work"}),
+    )
+    .await;
+
+    assert_eq!(status, 400);
+    assert_eq!(response["status"], "error");
+    assert_eq!(response["error"], "Facet 'work' already exists");
+    assert_eq!(fs::read(declaration).unwrap(), before);
+}
+
+#[tokio::test]
+async fn accept_facet_candidate_refuses_an_invalid_derived_slug() {
+    let j = Journal::new();
+    seed_facet_candidate(j.path(), "123-start", "123 Start", "open");
+
+    let (status, response) = post(
+        j.path(),
+        "/app/curation/api/facet/accept",
+        json!({"name_key":"123-start"}),
+    )
+    .await;
+
+    assert_eq!(status, 400);
+    assert_eq!(response["status"], "error");
+    assert_eq!(
+        response["error"],
+        "Invalid facet name '123-start': must be lowercase, start with a letter, and contain only letters, digits, hyphens, or underscores"
+    );
+    assert!(!j.path().join("facets/123-start").exists());
+}
+
+#[tokio::test]
 async fn accept_facet_candidate_reports_already_accepted() {
     let j = Journal::new();
     seed_facet_candidate(j.path(), "project-alpha", "Project Alpha", "accepted");
