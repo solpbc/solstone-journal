@@ -123,7 +123,6 @@ pub struct EdgeFileRows {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EdgeError {
-    InvalidPattern(String),
     Io(String),
     UnknownKind(String),
     MissingSrc,
@@ -164,7 +163,6 @@ pub enum EdgeError {
 impl fmt::Display for EdgeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            EdgeError::InvalidPattern(error) => write!(formatter, "invalid edge pattern: {error}"),
             EdgeError::Io(error) => write!(formatter, "{error}"),
             EdgeError::UnknownKind(kind) => write!(formatter, "Unknown edge kind: {kind:?}"),
             EdgeError::MissingSrc => formatter.write_str("edge row requires non-empty string src"),
