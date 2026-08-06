@@ -162,6 +162,28 @@ lifts only when the Makefile and release script are changed again.
 runnable directly, but `ci` and `verify` no longer reach them. The Python product
 and pytest suite are unchanged; they are simply no longer gated by `ci`.
 
+**Do not add new Python tests.** Anything that needs a unit test is written in
+Rust. The Python tree is reference material for the duration of the conversion
+and is removed before the next release, so a new Python test is investment in
+something being deleted — and because no `make` target runs pytest, it is also
+investment nothing executes. A green `ci` says nothing about any Python
+assertion, so a wave whose criteria include one can report full green having run
+none of them.
+
+For a component that lives behind a process boundary, the honest test is a Rust
+test that **spawns the real executable** and observes its stdout, stderr and exit
+code. That tests the boundary as a boundary, it lands in the language that
+survives the conversion, and it puts the assertion inside the gate a wave
+actually names. If such a test cannot locate the executable it must fail loudly
+rather than skip — a skipped test is a criterion that did not run wearing a green
+tick.
+
+The one Python test that still earns its place is a **cross-language
+differential** comparing a rewritten component against the reference
+implementation it replaces. That cannot be written in one language, and deleting
+the reference makes "does the rewrite behave like the original?" permanently
+unanswerable.
+
 Transparency is intentionally different: `TRANSPARENCY_ACTIVATED ?= 0` is
 exported by the Makefile and is checked inactive by default. It soft-gates
 `check-transparency-minisign`, `publish-transparency`, and
