@@ -345,6 +345,18 @@ Measured against hand-built segments, `eligible` meaning the owner's raw audio i
 
 **The raw-media policy has no runner.** `purge()` has no schedule entry, no maintenance routine and no timer; its only two callers are a CLI command and one HTTP route. So `retention.raw_media: "days"` and `"processed"` are owner-settable, rendered in the owner UI, and **never executed**. ⚠ The two doors also carry **opposite destructive defaults** — `--dry-run` defaults *false* on the CLI, *true* on the route — and the route requires `older_than_days >= 1`, so it cannot express the configured policy at all. A rebuild that ports the executor without a runner ports a feature that does not run.
 
+### Retention marks; the owner approves
+
+🔴 A retention proposal is not a removal. Policy and offload passes record exact raw
+basenames, byte total, reason, and stable target identity in a durable register;
+the owner approves only explicit marked identities. Before a marked release acts,
+retention re-reads the segment, re-evaluates current policy and terminal proof,
+and releases only files still named by that proposal. A changed, missing, or
+no-longer-proven file remains in place and is reported. A staged whole-segment
+failure is structured recovery state, not a string convention: the mark records
+the staged path only when the receipt carries one, and recovery resolves it after
+the set-aside directory is finished.
+
 ### Carry forward
 
 🔴 *Read one extraction file strictly enough for irreversible deletion* (`retention.py:110`) — reads at most two lines and treats any `OSError` / `JSONDecodeError` / non-dict as **`"malformed"`, never as "empty, safe to purge"**, with an explicit guard at `:136-139` against a stray marker key making a header-only file look chunk-bearing. Plus `resolve_segment_gate`: `.npz` without `talents/speaker_labels.json` ⇒ incomplete.
