@@ -8,7 +8,9 @@ use std::time::UNIX_EPOCH;
 
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension, params};
-use solstone_core_indexer::content::{Family, classify, produce_chunks};
+use solstone_core_indexer::content::{
+    ChatLabels, ContentResolution, Family, classify, produce_chunks,
+};
 use solstone_core_indexer::discovery::discover_indexable_files;
 use solstone_core_indexer::edges::candidates::EdgeResolver;
 use solstone_core_indexer::edges::discovery::discover_edge_files;
@@ -23,6 +25,7 @@ use solstone_core_indexer::paths::{relative_to_journal, resolve_journal_path};
 use solstone_core_indexer::segment::{is_historical_day, segment_key, time_bucket};
 use solstone_core_indexer::segment_aggregate::build_segment_aggregate;
 use solstone_core_indexer::stream::extract_stream;
+use solstone_core_journal_io::read_journal_config;
 
 use crate::StoreError;
 use crate::db::{EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, open_index};
@@ -67,6 +70,7 @@ pub enum RescanFileStatus {
 pub fn scan_journal(journal: &Path, full: bool, today: &str) -> Result<ScanReport, StoreError> {
     let mut conn = open_index(journal)?;
     let mut report = ScanReport::default();
+    let (chat_labels, chat_config_warning) = resolve_chat_labels(journal);
     let mut files = discover_indexable_files(journal)?;
     if !full {
         files.retain(|rel, _path| !is_historical_day(rel, today));
@@ -92,16 +96,28 @@ pub fn scan_journal(journal: &Path, full: bool, today: &str) -> Result<ScanRepor
 
     let mut rebuilt_segments = HashSet::new();
     for (rel, path, mtime) in &to_index {
-        let Some(family) = classify(rel) else {
-            report.skipped += 1;
-            report
-                .warnings
-                .push(format!("unclassified discovered file skipped: {rel}"));
-            continue;
+        let family = match classify(rel) {
+            ContentResolution::Indexed(family) => family,
+            ContentResolution::Unrecognized => {
+                report.skipped += 1;
+                report
+                    .warnings
+                    .push(format!("unclassified discovered file skipped: {rel}"));
+                continue;
+            }
+            ContentResolution::Unindexed | ContentResolution::IndexedElsewhere => continue,
         };
         let tx = conn.transaction()?;
         tx.execute("DELETE FROM chunks WHERE path=?", [rel])?;
-        let mut warnings = match index_file(&tx, journal, rel, path, family) {
+        let mut warnings = match index_file(
+            &tx,
+            journal,
+            rel,
+            path,
+            family,
+            &chat_labels,
+            chat_config_warning.as_deref(),
+        ) {
             Ok(warnings) => warnings,
             Err(warning) => {
                 report.skipped += 1;
@@ -191,8 +207,14 @@ pub fn scan_journal(journal: &Path, full: bool, today: &str) -> Result<ScanRepor
 
 pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, StoreError> {
     let (rel, path) = resolve_rescan_target(journal, input)?;
-    let family = classify(&rel);
+    let resolution = classify(&rel);
     let edge_source = edge_source_for_rel(&rel)?;
+    let family = match resolution {
+        ContentResolution::Indexed(family) => Some(family),
+        ContentResolution::Unindexed
+        | ContentResolution::IndexedElsewhere
+        | ContentResolution::Unrecognized => None,
+    };
     if family.is_none() && edge_source.is_none() {
         return Ok(RescanFileStatus::Declined);
     }
@@ -203,9 +225,18 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     let mut conn = open_index(journal)?;
     let tx = conn.transaction()?;
     let mut warnings = Vec::new();
+    let (chat_labels, chat_config_warning) = resolve_chat_labels(journal);
     if let Some(family) = family {
         tx.execute("DELETE FROM chunks WHERE path=?", [&rel])?;
-        match index_file(&tx, journal, &rel, &path, family) {
+        match index_file(
+            &tx,
+            journal,
+            &rel,
+            &path,
+            family,
+            &chat_labels,
+            chat_config_warning.as_deref(),
+        ) {
             Ok(content_warnings) => {
                 warnings.extend(content_warnings);
                 if let Some(rel_segment) = segment_rel_for_file(&rel) {
@@ -694,10 +725,17 @@ fn index_file(
     rel: &str,
     path: &Path,
     family: Family,
+    chat_labels: &ChatLabels,
+    chat_config_warning: Option<&str>,
 ) -> Result<Vec<String>, String> {
     let text = fs::read_to_string(path)
         .map_err(|error| format!("content read failed for {rel}: {error}"))?;
-    let produced = produce_chunks(family, rel, &text);
+    let mut produced = produce_chunks(family, rel, &text, chat_labels);
+    if family == Family::Chat
+        && let Some(warning) = chat_config_warning
+    {
+        produced.warnings.push(warning.to_string());
+    }
     let metadata = extract_path_metadata(rel);
     let facet = metadata.facet.to_lowercase();
     let agent = produced
@@ -732,6 +770,44 @@ fn index_file(
         .map_err(|error| format!("chunk insert failed for {rel}: {error}"))?;
     }
     Ok(warnings)
+}
+
+fn resolve_chat_labels(journal: &Path) -> (ChatLabels, Option<String>) {
+    match read_journal_config(journal) {
+        Ok(Some(config)) => {
+            let identity = config
+                .get("identity")
+                .and_then(serde_json::Value::as_object);
+            let owner = identity
+                .and_then(|identity| identity.get("preferred"))
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| {
+                    identity
+                        .and_then(|identity| identity.get("name"))
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|value| !value.trim().is_empty())
+                })
+                .unwrap_or("Owner")
+                .trim();
+            let agent = config
+                .get("agent")
+                .and_then(serde_json::Value::as_object)
+                .and_then(|agent| agent.get("name"))
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or("Sol")
+                .trim();
+            (ChatLabels::new(owner, agent), None)
+        }
+        Ok(None) | Err(_) => (
+            ChatLabels::default(),
+            Some(
+                "chat labels unavailable from journal config; using fallback labels Owner/Sol"
+                    .to_string(),
+            ),
+        ),
+    }
 }
 
 fn resolve_rescan_target(journal: &Path, input: &Path) -> Result<(String, PathBuf), StoreError> {
@@ -3270,6 +3346,208 @@ mod tests {
             ]
         );
         fs::remove_dir_all(root).expect("cleanup chat stream root");
+    }
+
+    fn seed_owner_chat(root: &Path) -> &'static str {
+        let rel = "20260508/chat/120000_300/chat.jsonl";
+        write(
+            root,
+            &format!("chronicle/{rel}"),
+            r#"{"kind":"owner_message","ts":1,"text":"Need a diff"}
+{"kind":"sol_message","ts":2,"text":"I can do that"}
+"#,
+        );
+        rel
+    }
+
+    fn assert_chat_labels(root: &Path, rel: &str, owner: &str, agent: &str) {
+        let conn = Connection::open(db_path(root)).expect("open db");
+        let contents: Vec<String> = conn
+            .prepare("SELECT content FROM chunks WHERE path=? ORDER BY idx")
+            .expect("prepare chat contents")
+            .query_map([rel], |row| row.get(0))
+            .expect("query chat contents")
+            .map(|row| row.expect("chat content row"))
+            .collect();
+        assert_eq!(
+            contents,
+            vec![
+                format!("**{owner}** Need a diff"),
+                format!("**{agent}** I can do that"),
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_uses_journal_config_chat_labels_with_reference_precedence() {
+        for (name, config, owner, agent) in [
+            (
+                "preferred",
+                r#"{"identity":{"preferred":"Preferred","name":"Name"},"agent":{"name":"Helper"}}"#,
+                "Preferred",
+                "Helper",
+            ),
+            (
+                "name",
+                r#"{"identity":{"name":"Name"},"agent":{"name":"Helper"}}"#,
+                "Name",
+                "Helper",
+            ),
+            ("absent", r#"{}"#, "Owner", "Sol"),
+        ] {
+            let root = temp_root(&format!("chat-label-{name}"));
+            let rel = seed_owner_chat(&root);
+            write(&root, "config/journal.json", config);
+
+            let report = scan_journal(&root, true, "20260717").expect("scan chat labels");
+            assert!(
+                !report
+                    .warnings
+                    .iter()
+                    .any(|warning| warning.contains("chat labels unavailable")),
+                "valid config with absent fields is not a fallback error"
+            );
+            assert_chat_labels(&root, rel, owner, agent);
+            fs::remove_dir_all(root).expect("cleanup chat label root");
+        }
+    }
+
+    #[test]
+    fn scan_chat_config_failures_use_default_labels_and_warn_per_chat_file() {
+        for (name, config) in [
+            ("missing", None),
+            ("empty", Some("")),
+            ("malformed", Some("{")),
+        ] {
+            let root = temp_root(&format!("chat-label-fallback-{name}"));
+            let rel = seed_owner_chat(&root);
+            if let Some(config) = config {
+                write(&root, "config/journal.json", config);
+            }
+
+            let report = scan_journal(&root, true, "20260717").expect("scan fallback chat labels");
+            assert!(
+                report
+                    .warnings
+                    .iter()
+                    .any(|warning| warning.contains("chat labels unavailable")),
+                "{name} config must diagnose the fallback"
+            );
+            assert_chat_labels(&root, rel, "Owner", "Sol");
+            fs::remove_dir_all(root).expect("cleanup chat fallback root");
+        }
+    }
+
+    #[test]
+    fn scan_indexes_at_least_one_chunk_for_every_content_family() {
+        let root = temp_root("all-content-families");
+        for (rel, text) in [
+            ("chronicle/20260101/talents/flow.md", "# Flow\n\nBody\n"),
+            (
+                "facets/work/events/20260101.jsonl",
+                r#"{"type":"meeting","title":"Standup","start":"09:00:00"}
+"#,
+            ),
+            (
+                "facets/work/activities/20260101.jsonl",
+                r#"{"id":"coding","created_at":1}
+"#,
+            ),
+            (
+                "config/actions/20260101.jsonl",
+                r#"{"action":"identity_update","timestamp":"2026-01-01T00:00:00+00:00"}
+"#,
+            ),
+            (
+                "chronicle/20260101/import.ics/imported.jsonl",
+                r#"{"import":{"source":"ics"}}
+{"type":"calendar_event","title":"Planning","ts":"2026-01-01T09:30:00-07:00"}
+"#,
+            ),
+            (
+                "chronicle/20260101/import.claude/thread/conversation_transcript.jsonl",
+                r#"{"model":"claude"}
+{"start":"00:00:01","speaker":"User","text":"Hello"}
+"#,
+            ),
+            (
+                "chronicle/20260101/chat/090000_300/chat.jsonl",
+                r#"{"kind":"owner_message","ts":1,"text":"Hello"}
+"#,
+            ),
+            (
+                "chronicle/20260101/default/090000_300/browser_example.jsonl",
+                r#"{"t":"segment_start","ts":1,"url":"https://example.com","blocks":[{"type":"text","text":"Page"}]}
+"#,
+            ),
+            (
+                "chronicle/20260101/talents/pulse.jsonl",
+                r#"{"ts":1,"summary":"steady"}
+"#,
+            ),
+            (
+                "facets/work/entities/20260101.jsonl",
+                r#"{"type":"Person","name":"Alice"}
+"#,
+            ),
+            (
+                "facets/work/entities/alice/observations.jsonl",
+                r#"{"content":"Observation","observed_at":1}
+"#,
+            ),
+            (
+                "chronicle/20260101/default/090000_300/talents/documents.json",
+                r#"{"documents":[{"title":"Contract","summary":"Signed","kind":"pdf"}]}
+"#,
+            ),
+            (
+                "chronicle/20260101/default/090000_300/talents/screen.json",
+                r#"{"summary":"Editor open","applications":["nvim"]}
+"#,
+            ),
+            (
+                "chronicle/20260101/default/090000_300/talents/sense.json",
+                r#"{"entities":[{"name":"Alice","type":"Person"}]}
+"#,
+            ),
+            (
+                "chronicle/20260101/talents/morning_briefing.json",
+                r#"{"greeting":"Morning","sections":[{"title":"Today","items":["Ship"]}]}
+"#,
+            ),
+        ] {
+            write(&root, rel, text);
+        }
+
+        let report = scan_journal(&root, true, "20260717").expect("scan every content family");
+        assert_eq!(report.indexed, 15);
+        let conn = Connection::open(db_path(&root)).expect("open db");
+        for rel in [
+            "20260101/talents/flow.md",
+            "facets/work/events/20260101.jsonl",
+            "facets/work/activities/20260101.jsonl",
+            "config/actions/20260101.jsonl",
+            "20260101/import.ics/imported.jsonl",
+            "20260101/import.claude/thread/conversation_transcript.jsonl",
+            "20260101/chat/090000_300/chat.jsonl",
+            "20260101/default/090000_300/browser_example.jsonl",
+            "20260101/talents/pulse.jsonl",
+            "facets/work/entities/20260101.jsonl",
+            "facets/work/entities/alice/observations.jsonl",
+            "20260101/default/090000_300/talents/documents.json",
+            "20260101/default/090000_300/talents/screen.json",
+            "20260101/default/090000_300/talents/sense.json",
+            "20260101/talents/morning_briefing.json",
+        ] {
+            assert!(
+                count(
+                    &conn,
+                    &format!("SELECT count(*) FROM chunks WHERE path='{rel}'")
+                ) > 0,
+                "{rel} did not produce a chunk"
+            );
+        }
+        fs::remove_dir_all(root).expect("cleanup all families root");
     }
 
     #[test]

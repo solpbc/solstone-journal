@@ -3,9 +3,9 @@
 
 use serde_json::Value;
 
-use super::{IndexChunk, JsonObject, ProducedChunks, display_value, json_falsy};
+use super::{ChatLabels, JsonObject, ProducedChunks, display_value, json_falsy, recorded_chunk};
 
-pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
+pub(super) fn render(records: &[JsonObject], labels: &ChatLabels) -> ProducedChunks {
     let mut chunks = Vec::new();
 
     for record in records {
@@ -15,8 +15,8 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
             .unwrap_or("")
             .trim();
         let markdown = match kind {
-            "owner_message" => Some(speaker_line("Owner", record.get("text"))),
-            "sol_message" => Some(speaker_line("Sol", record.get("text"))),
+            "owner_message" => Some(speaker_line(&labels.owner, record.get("text"))),
+            "sol_message" => Some(speaker_line(&labels.agent, record.get("text"))),
             "talent_spawned" => Some(format!(
                 "*[{} spawned: {}]*",
                 field(record, "name"),
@@ -48,13 +48,15 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
         if let Some(content) = markdown
             && !content.is_empty()
         {
-            chunks.push(IndexChunk { content });
+            let occurrence = record.get("ts").and_then(Value::as_i64).unwrap_or(0);
+            chunks.push(recorded_chunk(content, occurrence, record));
         }
     }
 
     ProducedChunks {
         chunks,
         agent_override: Some("chat".to_string()),
+        header: None,
         warnings: Vec::new(),
     }
 }
@@ -116,7 +118,7 @@ mod tests {
 {"kind":"mystery","ts":10,"text":"skip me"}
 "#,
         );
-        let produced = render(&records);
+        let produced = render(&records, &ChatLabels::default());
         let contents: Vec<&str> = produced
             .chunks
             .iter()
@@ -148,7 +150,7 @@ mod tests {
 {"kind":"talent_spawned","name":0,"task":"x"}
 "#,
         );
-        let produced = render(&records);
+        let produced = render(&records, &ChatLabels::default());
         let contents: Vec<&str> = produced
             .chunks
             .iter()
@@ -174,7 +176,7 @@ mod tests {
 {"kind":"sol_chat_request","message":"  detail only  "}
 "#,
         );
-        let produced = render(&records);
+        let produced = render(&records, &ChatLabels::default());
         let contents: Vec<&str> = produced
             .chunks
             .iter()

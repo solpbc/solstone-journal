@@ -3,20 +3,22 @@
 
 use serde_json::Value;
 
-use super::{IndexChunk, JsonObject, ProducedChunks, clean_value};
+use super::{JsonObject, ProducedChunks, clean_value, recorded_chunk};
 
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
     let chunks = records
         .first()
-        .map(render_record)
-        .filter(|markdown| !markdown.is_empty())
-        .map(|content| IndexChunk { content })
+        .and_then(|record| {
+            let content = render_record(record);
+            (!content.is_empty()).then(|| recorded_chunk(content, 0, record))
+        })
         .into_iter()
         .collect();
 
     ProducedChunks {
         chunks,
         agent_override: Some("screen".to_string()),
+        header: None,
         warnings: Vec::new(),
     }
 }

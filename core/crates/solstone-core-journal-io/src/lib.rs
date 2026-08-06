@@ -25,7 +25,7 @@ pub use atomic::{
 };
 pub use config::{
     ConfigLoadError, ConfigMutationError, JournalConfigMutation, JournalConfigTransaction,
-    get_journal_config_path, mutate_journal_config,
+    get_journal_config_path, mutate_journal_config, read_journal_config,
 };
 pub use entry::{Removed, remove_file, rename_within, sync_dir};
 pub use errors::{

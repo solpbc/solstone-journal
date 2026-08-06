@@ -4,12 +4,14 @@
 use serde_json::Value;
 
 use super::{
-    IndexChunk, JsonObject, display_value, json_truthy, stripped_truthy_display, titleize,
+    JsonObject, ProducedChunks, display_value, json_truthy, recorded_chunk,
+    stripped_truthy_display, titleize,
 };
 
-pub(super) fn render(records: &[JsonObject]) -> Vec<IndexChunk> {
+pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let mut chunks = Vec::new();
     for record in records {
+        let normalized = normalize_record(record);
         let mut lines = vec![format!("### {}", fallback_title(record))];
 
         if let Some(activity) = activity_type(record) {
@@ -63,11 +65,85 @@ pub(super) fn render(records: &[JsonObject]) -> Vec<IndexChunk> {
             lines.push("- Hidden: yes".to_string());
         }
 
-        chunks.push(IndexChunk {
-            content: lines.join("\n"),
-        });
+        let occurrence = record
+            .get("created_at")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+        chunks.push(recorded_chunk(lines.join("\n"), occurrence, &normalized));
     }
-    chunks
+    ProducedChunks {
+        chunks,
+        agent_override: Some("activity".to_string()),
+        header: Some(activity_header(rel)),
+        warnings: Vec::new(),
+    }
+}
+
+fn normalize_record(record: &JsonObject) -> JsonObject {
+    let mut normalized = record.clone();
+    normalized.insert("title".to_string(), Value::String(source_title(record)));
+    normalized.insert(
+        "details".to_string(),
+        Value::String(
+            record
+                .get("details")
+                .map(display_value)
+                .filter(|value| !value.is_empty())
+                .unwrap_or_default(),
+        ),
+    );
+    normalized.insert(
+        "hidden".to_string(),
+        Value::Bool(json_truthy(record.get("hidden"))),
+    );
+    normalized.insert(
+        "edits".to_string(),
+        Value::Array(
+            record
+                .get("edits")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter(|edit| edit.is_object())
+                .cloned()
+                .collect(),
+        ),
+    );
+    normalized
+}
+
+fn source_title(record: &JsonObject) -> String {
+    if let Some(title) = stripped_truthy_display(record, "title") {
+        return title;
+    }
+    if let Some(description) = stripped_truthy_display(record, "description") {
+        return description;
+    }
+    if let Some(activity) = activity_type(record) {
+        return titleize(&activity);
+    }
+    "untitled activity".to_string()
+}
+
+fn activity_header(rel: &str) -> String {
+    let parts: Vec<&str> = rel.split('/').collect();
+    let facet = parts
+        .windows(3)
+        .find_map(|parts| (parts[0] == "facets" && parts[2] == "activities").then_some(parts[1]))
+        .unwrap_or("unknown");
+    let day = rel
+        .rsplit('/')
+        .next()
+        .and_then(|name| name.strip_suffix(".jsonl"));
+    match day.filter(|value| value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())) {
+        Some(day) => format!(
+            "# Activities: {facet} ({}-{}-{})",
+            &day[..4],
+            &day[4..6],
+            &day[6..]
+        ),
+        None => format!("# Activities: {facet}"),
+    }
 }
 
 fn fallback_title(record: &JsonObject) -> String {

@@ -3,22 +3,24 @@
 
 use serde_json::Value;
 
-use super::{IndexChunk, JsonObject, ProducedChunks, clean_value};
+use super::{JsonObject, ProducedChunks, clean_value, recorded_chunk};
 
 const ABSENT_TEXT: &str = "Not specified in this document";
 
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
     let chunks = records
         .first()
-        .map(render_document)
-        .filter(|markdown| !markdown.is_empty())
-        .map(|content| IndexChunk { content })
+        .and_then(|document| {
+            let content = render_document(document);
+            (!content.is_empty()).then(|| recorded_chunk(content, 0, document))
+        })
         .into_iter()
         .collect();
 
     ProducedChunks {
         chunks,
         agent_override: Some("documents".to_string()),
+        header: None,
         warnings: Vec::new(),
     }
 }

@@ -115,6 +115,21 @@ pub fn get_journal_config_path(journal_path: &Path) -> PathBuf {
     journal_path.join("config").join("journal.json")
 }
 
+/// Read an existing journal configuration without acquiring its write lock.
+///
+/// A missing configuration is distinct from a malformed configuration: callers
+/// receive `Ok(None)` only when the file does not exist. This helper never
+/// materializes defaults or writes journal state.
+pub fn read_journal_config(
+    journal_path: &Path,
+) -> Result<Option<Map<String, Value>>, ConfigLoadError> {
+    let config_path = get_journal_config_path(journal_path);
+    if !config_path.exists() {
+        return Ok(None);
+    }
+    load_existing_config(&config_path).map(Some)
+}
+
 /// Strictly load, mutate, and conditionally atomically write journal config.
 ///
 /// Missing config materializes an exact clone of `defaults`. Existing config is
@@ -310,5 +325,35 @@ mod tests {
         .unwrap();
         assert!(!result.written);
         assert_eq!(fs::metadata(path).unwrap().ino(), inode);
+    }
+
+    #[test]
+    fn read_missing_config_returns_none_without_materializing() {
+        let temporary = TempDir::new();
+        assert_eq!(read_journal_config(temporary.path()).unwrap(), None);
+        assert!(!get_journal_config_path(temporary.path()).exists());
+    }
+
+    #[test]
+    fn read_valid_config_returns_its_object() {
+        let temporary = TempDir::new();
+        let path = get_journal_config_path(temporary.path());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"{\"identity\":{\"preferred\":\"Ari\"}}\n").unwrap();
+
+        let config = read_journal_config(temporary.path()).unwrap().unwrap();
+        assert_eq!(config["identity"]["preferred"], json!("Ari"));
+    }
+
+    #[test]
+    fn read_rejects_empty_malformed_and_non_object_config() {
+        let temporary = TempDir::new();
+        let path = get_journal_config_path(temporary.path());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        for contents in [b"".as_slice(), b"{bad".as_slice(), b"[]".as_slice()] {
+            fs::write(&path, contents).unwrap();
+            assert!(read_journal_config(temporary.path()).is_err());
+            assert_eq!(fs::read(&path).unwrap(), contents);
+        }
     }
 }

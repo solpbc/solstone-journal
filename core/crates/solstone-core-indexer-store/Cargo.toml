@@ -11,8 +11,7 @@ workspace = true
 
 [dependencies]
 rusqlite.workspace = true
+serde_json.workspace = true
 sha2.workspace = true
 solstone-core-indexer.workspace = true
-
-[dev-dependencies]
-serde_json.workspace = true
+solstone-core-journal-io.workspace = true

@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use chrono::DateTime;
 use serde_json::Value;
 
 use super::{
-    IndexChunk, JsonObject, display_or_default, display_value, titleize, truncate_string,
-    truthy_display,
+    JsonObject, ProducedChunks, display_or_default, display_value, recorded_chunk, titleize,
+    truncate_string, truthy_display,
 };
 
-pub(super) fn render(records: &[JsonObject]) -> Vec<IndexChunk> {
+pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let mut chunks = Vec::new();
     for entry in records {
         let Some(action) = truthy_display(entry, "action") else {
@@ -47,11 +48,43 @@ pub(super) fn render(records: &[JsonObject]) -> Vec<IndexChunk> {
             lines.push(String::new());
         }
 
-        chunks.push(IndexChunk {
-            content: lines.join("\n"),
-        });
+        let occurrence = entry
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+            .map(|value| value.timestamp_millis())
+            .unwrap_or(0);
+        chunks.push(recorded_chunk(lines.join("\n"), occurrence, entry));
     }
-    chunks
+    ProducedChunks {
+        chunks,
+        agent_override: Some("action".to_string()),
+        header: Some(action_log_header(rel)),
+        warnings: Vec::new(),
+    }
+}
+
+fn action_log_header(rel: &str) -> String {
+    let parts: Vec<&str> = rel.split('/').collect();
+    let journal_level = matches!(parts.as_slice(), ["config", "actions", _]);
+    let facet = parts
+        .windows(3)
+        .find_map(|parts| (parts[0] == "facets" && parts[2] == "logs").then_some(parts[1]));
+    let day = rel
+        .rsplit('/')
+        .next()
+        .and_then(|name| name.strip_suffix(".jsonl"));
+    let suffix = day
+        .filter(|value| value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit()))
+        .map(|day| format!(" ({}-{}-{})", &day[..4], &day[4..6], &day[6..]))
+        .unwrap_or_default();
+    if journal_level {
+        format!("# Journal Action Log{suffix}")
+    } else if let Some(facet) = facet {
+        format!("# Action Log: {facet}{suffix}")
+    } else {
+        format!("# Action Log{suffix}")
+    }
 }
 
 fn iso_time(timestamp: &str) -> Option<&str> {

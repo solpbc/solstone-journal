@@ -3,20 +3,21 @@
 
 use serde_json::Value;
 
-use super::{IndexChunk, JsonObject, ProducedChunks, clean_value, display_value, json_truthy};
+use super::{JsonObject, ProducedChunks, clean_value, display_value, json_truthy, recorded_chunk};
 
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
     let mut chunks = Vec::new();
     if let Some(sense_obj) = records.first() {
         let markdown = render_sense(sense_obj);
         if !markdown.is_empty() {
-            chunks.push(IndexChunk { content: markdown });
+            chunks.push(recorded_chunk(markdown, 0, sense_obj));
         }
     }
 
     ProducedChunks {
         chunks,
         agent_override: Some("sense".to_string()),
+        header: None,
         warnings: Vec::new(),
     }
 }

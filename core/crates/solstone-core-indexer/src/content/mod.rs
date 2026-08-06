@@ -17,6 +17,7 @@ mod screen;
 mod sense;
 
 use std::path::Path;
+use std::sync::OnceLock;
 
 use glob::{MatchOptions, Pattern};
 use serde_json::{Map, Value};
@@ -42,15 +43,81 @@ pub enum Family {
     MorningBriefing,
 }
 
+#[cfg(test)]
+const ALL_FAMILIES: [Family; 15] = [
+    Family::Markdown,
+    Family::Event,
+    Family::Activity,
+    Family::ActionLog,
+    Family::StructuredImport,
+    Family::AiChat,
+    Family::Chat,
+    Family::Browser,
+    Family::DayAccumulator,
+    Family::FacetEntity,
+    Family::Observation,
+    Family::Documents,
+    Family::Screen,
+    Family::Sense,
+    Family::MorningBriefing,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentResolution {
+    Indexed(Family),
+    Unindexed,
+    IndexedElsewhere,
+    Unrecognized,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnindexedReason {
+    Unindexed,
+    IndexedElsewhere,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OccurrenceTimeMs(pub i64);
+
+impl From<i64> for OccurrenceTimeMs {
+    fn from(value: i64) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatLabels {
+    owner: String,
+    agent: String,
+}
+
+impl ChatLabels {
+    pub fn new(owner: impl Into<String>, agent: impl Into<String>) -> Self {
+        Self {
+            owner: owner.into(),
+            agent: agent.into(),
+        }
+    }
+}
+
+impl Default for ChatLabels {
+    fn default() -> Self {
+        Self::new("Owner", "Sol")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexChunk {
     pub content: String,
+    pub occurrence_time_ms: Option<OccurrenceTimeMs>,
+    pub source: Option<Map<String, Value>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProducedChunks {
     pub chunks: Vec<IndexChunk>,
     pub agent_override: Option<String>,
+    pub header: Option<String>,
     pub warnings: Vec<String>,
 }
 
@@ -65,6 +132,13 @@ pub(crate) struct FamilyPattern {
     pub pattern: &'static str,
     pub family: Family,
     pub root: PatternRoot,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct KnownUnindexedPattern {
+    pub pattern: &'static str,
+    pub root: PatternRoot,
+    pub reason: UnindexedReason,
 }
 
 pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
@@ -220,20 +294,120 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
     },
 ];
 
-pub fn classify(rel: &str) -> Option<Family> {
+pub(crate) const KNOWN_UNINDEXED_PATTERNS: &[KnownUnindexedPattern] = &[
+    KnownUnindexedPattern {
+        pattern: "entities/*/entity.json",
+        root: PatternRoot::Structural,
+        reason: UnindexedReason::IndexedElsewhere,
+    },
+    KnownUnindexedPattern {
+        pattern: "*/*/*/audio.jsonl",
+        root: PatternRoot::DayRooted,
+        reason: UnindexedReason::Unindexed,
+    },
+    KnownUnindexedPattern {
+        pattern: "*/*/*/*_audio.jsonl",
+        root: PatternRoot::DayRooted,
+        reason: UnindexedReason::Unindexed,
+    },
+    KnownUnindexedPattern {
+        pattern: "*/*/*/*_transcript.jsonl",
+        root: PatternRoot::DayRooted,
+        reason: UnindexedReason::Unindexed,
+    },
+    KnownUnindexedPattern {
+        pattern: "*/*/*/screen.jsonl",
+        root: PatternRoot::DayRooted,
+        reason: UnindexedReason::Unindexed,
+    },
+    KnownUnindexedPattern {
+        pattern: "*/*/*/*_screen.jsonl",
+        root: PatternRoot::DayRooted,
+        reason: UnindexedReason::Unindexed,
+    },
+];
+
+struct CompiledFamilyPattern {
+    pattern: Pattern,
+    family: Family,
+}
+
+struct CompiledUnindexedPattern {
+    pattern: Pattern,
+    reason: UnindexedReason,
+}
+
+static STRUCTURAL_CONTENT_PATTERNS: OnceLock<Vec<CompiledFamilyPattern>> = OnceLock::new();
+static DAY_ROOTED_CONTENT_PATTERNS: OnceLock<Vec<CompiledFamilyPattern>> = OnceLock::new();
+static STRUCTURAL_UNINDEXED_PATTERNS: OnceLock<Vec<CompiledUnindexedPattern>> = OnceLock::new();
+static DAY_ROOTED_UNINDEXED_PATTERNS: OnceLock<Vec<CompiledUnindexedPattern>> = OnceLock::new();
+
+fn compile_family_patterns(root: PatternRoot) -> Vec<CompiledFamilyPattern> {
+    INDEX_FAMILY_PATTERNS
+        .iter()
+        .filter(|spec| spec.root == root)
+        .map(|spec| CompiledFamilyPattern {
+            pattern: Pattern::new(spec.pattern).expect("index family pattern should be valid"),
+            family: spec.family,
+        })
+        .collect()
+}
+
+fn compile_unindexed_patterns(root: PatternRoot) -> Vec<CompiledUnindexedPattern> {
+    KNOWN_UNINDEXED_PATTERNS
+        .iter()
+        .filter(|spec| spec.root == root)
+        .map(|spec| CompiledUnindexedPattern {
+            pattern: Pattern::new(spec.pattern).expect("known unindexed pattern should be valid"),
+            reason: spec.reason,
+        })
+        .collect()
+}
+
+fn structural_content_patterns() -> &'static [CompiledFamilyPattern] {
+    STRUCTURAL_CONTENT_PATTERNS.get_or_init(|| compile_family_patterns(PatternRoot::Structural))
+}
+
+fn day_rooted_content_patterns() -> &'static [CompiledFamilyPattern] {
+    DAY_ROOTED_CONTENT_PATTERNS.get_or_init(|| compile_family_patterns(PatternRoot::DayRooted))
+}
+
+fn structural_unindexed_patterns() -> &'static [CompiledUnindexedPattern] {
+    STRUCTURAL_UNINDEXED_PATTERNS
+        .get_or_init(|| compile_unindexed_patterns(PatternRoot::Structural))
+}
+
+fn day_rooted_unindexed_patterns() -> &'static [CompiledUnindexedPattern] {
+    DAY_ROOTED_UNINDEXED_PATTERNS.get_or_init(|| compile_unindexed_patterns(PatternRoot::DayRooted))
+}
+
+pub fn classify(rel: &str) -> ContentResolution {
     let options = MatchOptions {
         case_sensitive: true,
         require_literal_separator: true,
         require_literal_leading_dot: false,
     };
     let rel_path = Path::new(rel);
-    for spec in INDEX_FAMILY_PATTERNS {
-        let pattern = Pattern::new(spec.pattern).expect("index family pattern should be valid");
-        if pattern.matches_path_with(rel_path, options) {
-            return Some(spec.family);
+    for spec in structural_content_patterns()
+        .iter()
+        .chain(day_rooted_content_patterns())
+    {
+        if spec.pattern.matches_path_with(rel_path, options) {
+            return ContentResolution::Indexed(spec.family);
         }
     }
-    None
+    for spec in structural_unindexed_patterns()
+        .iter()
+        .chain(day_rooted_unindexed_patterns())
+    {
+        if spec.pattern.matches_path_with(rel_path, options) {
+            return match spec.reason {
+                UnindexedReason::Unindexed => ContentResolution::Unindexed,
+                UnindexedReason::IndexedElsewhere => ContentResolution::IndexedElsewhere,
+            };
+        }
+    }
+    ContentResolution::Unrecognized
 }
 
 pub(crate) fn patterns_for_root(root: PatternRoot) -> impl Iterator<Item = &'static FamilyPattern> {
@@ -242,7 +416,12 @@ pub(crate) fn patterns_for_root(root: PatternRoot) -> impl Iterator<Item = &'sta
         .filter(move |spec| spec.root == root)
 }
 
-pub fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
+pub fn produce_chunks(
+    family: Family,
+    rel: &str,
+    text: &str,
+    chat_labels: &ChatLabels,
+) -> ProducedChunks {
     match family {
         Family::Markdown => {
             let formatted = format_markdown(text);
@@ -252,38 +431,25 @@ pub fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
                     .into_iter()
                     .map(|chunk| IndexChunk {
                         content: chunk.markdown,
+                        occurrence_time_ms: None,
+                        source: None,
                     })
                     .collect(),
                 agent_override: None,
+                header: None,
                 warnings: formatted.warnings,
             }
         }
-        Family::Event => ProducedChunks {
-            chunks: events::render(&parse_jsonl_objects(text)),
-            agent_override: Some("event".to_string()),
-            warnings: Vec::new(),
-        },
-        Family::Activity => ProducedChunks {
-            chunks: activities::render(&parse_jsonl_objects(text)),
-            agent_override: Some("activity".to_string()),
-            warnings: Vec::new(),
-        },
-        Family::ActionLog => ProducedChunks {
-            chunks: action_logs::render(&parse_jsonl_objects(text)),
-            agent_override: Some("action".to_string()),
-            warnings: Vec::new(),
-        },
+        Family::Event => events::render(rel, &parse_jsonl_objects(text)),
+        Family::Activity => activities::render(rel, &parse_jsonl_objects(text)),
+        Family::ActionLog => action_logs::render(rel, &parse_jsonl_objects(text)),
         Family::StructuredImport => imports::render(&parse_jsonl_objects(text)),
         Family::AiChat => ai_chat::render(rel, &parse_jsonl_objects(text)),
-        Family::Chat => chat::render(&parse_jsonl_objects(text)),
+        Family::Chat => chat::render(&parse_jsonl_objects(text), chat_labels),
         Family::Browser => browser::render(&parse_jsonl_objects(text)),
         Family::DayAccumulator => day_accumulator::render(rel, &parse_jsonl_objects(text)),
         Family::FacetEntity => facet_entities::render(rel, &parse_jsonl_objects(text)),
-        Family::Observation => ProducedChunks {
-            chunks: observations::render(&parse_jsonl_objects(text)),
-            agent_override: Some("observation".to_string()),
-            warnings: Vec::new(),
-        },
+        Family::Observation => observations::render(rel, &parse_jsonl_objects(text)),
         Family::Documents => documents::render(&parse_json_object(text)),
         Family::Screen => screen::render(&parse_json_object(text)),
         Family::Sense => sense::render(&parse_json_object(text)),
@@ -292,6 +458,18 @@ pub fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
 }
 
 type JsonObject = Map<String, Value>;
+
+pub(super) fn recorded_chunk(
+    content: String,
+    occurrence_time_ms: i64,
+    source: &JsonObject,
+) -> IndexChunk {
+    IndexChunk {
+        content,
+        occurrence_time_ms: Some(OccurrenceTimeMs(occurrence_time_ms)),
+        source: Some(source.clone()),
+    }
+}
 
 fn parse_jsonl_objects(text: &str) -> Vec<JsonObject> {
     text.lines()
@@ -421,6 +599,10 @@ mod tests {
 
     use super::*;
 
+    fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
+        super::produce_chunks(family, rel, text, &ChatLabels::default())
+    }
+
     fn family_by_name(name: &str) -> Option<Family> {
         Some(match name {
             "Markdown" => Family::Markdown,
@@ -454,6 +636,7 @@ mod tests {
         Defect,
     }
 
+    #[derive(Debug)]
     struct DivergenceEntry {
         case: &'static str,
         kind: Divergence,
@@ -579,7 +762,23 @@ mod tests {
             let rel = case["rel"].as_str().expect("case rel");
             let text = case["input_text"].as_str().expect("case input_text");
 
-            let produced = produce_chunks(family, rel, text);
+            let labels = case
+                .get("context")
+                .and_then(serde_json::Value::as_object)
+                .map(|context| {
+                    ChatLabels::new(
+                        context
+                            .get("owner_name")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("Owner"),
+                        context
+                            .get("agent_name")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("Sol"),
+                    )
+                })
+                .unwrap_or_default();
+            let produced = super::produce_chunks(family, rel, text, &labels);
             compared += 1;
 
             let expected: Vec<&str> = case["chunks"]
@@ -616,6 +815,42 @@ mod tests {
                     "{id}: agent differs — expected {:?}, actual {:?}",
                     expected_agent, produced.agent_override
                 ));
+            }
+
+            let expected_header = case.get("header").and_then(serde_json::Value::as_str);
+            if produced.header.as_deref() != expected_header {
+                mismatches.push(format!(
+                    "{id}: header differs — expected {:?}, actual {:?}",
+                    expected_header, produced.header
+                ));
+            }
+
+            for (index, (expected, actual)) in case["chunks"]
+                .as_array()
+                .expect("case chunks")
+                .iter()
+                .zip(&produced.chunks)
+                .enumerate()
+            {
+                let expected_time = expected
+                    .get("timestamp_utc_ms")
+                    .and_then(serde_json::Value::as_i64)
+                    .map(OccurrenceTimeMs);
+                if actual.occurrence_time_ms != expected_time {
+                    mismatches.push(format!(
+                        "{id}:{index}: occurrence time differs — expected {expected_time:?}, actual {:?}",
+                        actual.occurrence_time_ms
+                    ));
+                }
+                let expected_source = expected
+                    .get("source")
+                    .and_then(serde_json::Value::as_object);
+                if actual.source.as_ref() != expected_source {
+                    mismatches.push(format!(
+                        "{id}:{index}: source differs — expected {expected_source:?}, actual {:?}",
+                        actual.source
+                    ));
+                }
             }
         }
 
@@ -698,139 +933,149 @@ mod tests {
 
     #[test]
     fn classifies_indexable_families() {
-        assert_eq!(classify("20240101/talents/flow.md"), Some(Family::Markdown));
+        for (path, family) in [
+            ("20240101/talents/flow.md", Family::Markdown),
+            ("20260304/talents/pulse.jsonl", Family::DayAccumulator),
+            (
+                "20260304/default/090000_300/talents/sense.json",
+                Family::Sense,
+            ),
+            (
+                "20260304/default/090000_300/talents/documents.json",
+                Family::Documents,
+            ),
+            (
+                "20260304/default/090000_300/talents/screen.json",
+                Family::Screen,
+            ),
+            (
+                "20260304/talents/morning_briefing.json",
+                Family::MorningBriefing,
+            ),
+            (
+                "20260101/import.ics/imported.jsonl",
+                Family::StructuredImport,
+            ),
+            (
+                "20260101/import.claude/thread_a/conversation_transcript.jsonl",
+                Family::AiChat,
+            ),
+            ("20260508/chat/120000_300/chat.jsonl", Family::Chat),
+            (
+                "20260703/suze.browser/000141_317/browser_mail-google-com.jsonl",
+                Family::Browser,
+            ),
+            ("facets/work/events/20240101.jsonl", Family::Event),
+            ("facets/work/activities/20240101.jsonl", Family::Activity),
+            ("facets/work/logs/20240101.jsonl", Family::ActionLog),
+            ("facets/work/entities/foo.jsonl", Family::FacetEntity),
+            (
+                "facets/work/entities/alice/observations.jsonl",
+                Family::Observation,
+            ),
+        ] {
+            assert_eq!(classify(path), ContentResolution::Indexed(family), "{path}");
+        }
+    }
+
+    #[test]
+    fn classifies_non_indexed_and_unrecognized_paths() {
         assert_eq!(
-            classify("20260304/talents/pulse.jsonl"),
-            Some(Family::DayAccumulator)
-        );
-        assert_eq!(
-            classify("20260304/talents/pulse.md"),
-            Some(Family::Markdown)
-        );
-        assert_eq!(
-            classify("20260304/default/090000_300/talents/sense.json"),
-            Some(Family::Sense)
-        );
-        assert_eq!(
-            classify("20260304/default/090000_300/talents/documents.json"),
-            Some(Family::Documents)
-        );
-        assert_eq!(
-            classify("20260304/default/090000_300/talents/screen.json"),
-            Some(Family::Screen)
-        );
-        assert_eq!(
-            classify("20260304/default/090000_300/talents/sense.jsonl"),
-            None
-        );
-        assert_eq!(
-            classify("20260304/default/090000_300/talents/documents.jsonl"),
-            None
-        );
-        assert_eq!(
-            classify("20260304/default/090000_300/talents/screen.jsonl"),
-            None
-        );
-        assert_eq!(
-            classify("20260304/talents/morning_briefing.json"),
-            Some(Family::MorningBriefing)
-        );
-        assert_eq!(
-            classify("20240101/default/123456_300/talents/audio.md"),
-            Some(Family::Markdown)
-        );
-        assert_eq!(
-            classify("20240101/default/123456_300/talents/work/audio.md"),
-            Some(Family::Markdown)
-        );
-        assert_eq!(
-            classify("20260101/import.ics/090000_300/event_transcript.md"),
-            Some(Family::Markdown)
-        );
-        assert_eq!(
-            classify("20260101/import.ics/090000_300/imported.md"),
-            Some(Family::Markdown)
+            classify("20240101/default/123456_300/audio.jsonl"),
+            ContentResolution::Unindexed
         );
         assert_eq!(
-            classify("20260101/import.ics/imported.jsonl"),
-            Some(Family::StructuredImport)
+            classify("entities/alice/entity.json"),
+            ContentResolution::IndexedElsewhere
         );
-        assert_ne!(
-            classify("20260101/import.ics/imported.jsonl"),
-            Some(Family::AiChat)
-        );
-        assert_eq!(
-            classify("20260101/import.claude/thread_a/conversation_transcript.jsonl"),
-            Some(Family::AiChat)
-        );
-        assert_ne!(
-            classify("20260101/import.claude/thread_a/conversation_transcript.jsonl"),
-            Some(Family::StructuredImport)
-        );
-        assert_eq!(
-            classify("20260101/import.chatgpt/conv_b/imported_audio.jsonl"),
-            Some(Family::AiChat)
-        );
-        assert_eq!(
-            classify("20260508/chat/120000_300/chat.jsonl"),
-            Some(Family::Chat)
-        );
-        assert_ne!(
-            classify("20260508/chat/120000_300/chat.jsonl"),
-            Some(Family::Browser)
-        );
-        assert_eq!(
-            classify("20260703/suze.browser/000141_317/browser_mail-google-com.jsonl"),
-            Some(Family::Browser)
-        );
-        assert_ne!(
-            classify("20260703/suze.browser/000141_317/browser_mail-google-com.jsonl"),
-            Some(Family::AiChat)
-        );
-        assert_ne!(
-            classify("20260703/suze.browser/000141_317/browser_mail-google-com.jsonl"),
-            Some(Family::Chat)
-        );
-        assert_eq!(
-            classify("facets/work/news/20240101.md"),
-            Some(Family::Markdown)
-        );
-        assert_eq!(
-            classify("imports/20260101_120000/summary.md"),
-            Some(Family::Markdown)
-        );
-        assert_eq!(
-            classify("apps/todos/talents/digest.md"),
-            Some(Family::Markdown)
-        );
-        assert_eq!(
-            classify("config/actions/20240101.jsonl"),
-            Some(Family::ActionLog)
-        );
-        assert_eq!(
-            classify("facets/work/events/20240101.jsonl"),
-            Some(Family::Event)
-        );
-        assert_eq!(
-            classify("facets/work/activities/20240101.jsonl"),
-            Some(Family::Activity)
-        );
-        assert_eq!(
-            classify("facets/work/logs/20240101.jsonl"),
-            Some(Family::ActionLog)
-        );
-        assert_eq!(classify("notes/foo.txt"), None);
-        assert_eq!(
-            classify("facets/work/entities/foo.jsonl"),
-            Some(Family::FacetEntity)
-        );
-        assert_eq!(
-            classify("facets/work/entities/alice/observations.jsonl"),
-            Some(Family::Observation)
-        );
-        assert_eq!(classify("entities/alice/entity.json"), None);
-        assert_eq!(classify("facets/work/entities/alice/entity.json"), None);
-        assert_eq!(classify("20240101/default/123456_300/audio.jsonl"), None);
+        assert_eq!(classify("notes/foo.txt"), ContentResolution::Unrecognized);
+    }
+
+    #[test]
+    fn structural_content_patterns_take_priority_over_day_rooted_patterns() {
+        for (path, family) in [
+            ("facets/work/logs/browser_mail.jsonl", Family::ActionLog),
+            ("facets/work/events/browser_x.jsonl", Family::Event),
+            ("facets/work/activities/browser_a.jsonl", Family::Activity),
+            ("facets/chat/logs/chat.jsonl", Family::ActionLog),
+            (
+                "facets/import.claude/logs/conversation_transcript.jsonl",
+                Family::ActionLog,
+            ),
+        ] {
+            assert_eq!(classify(path), ContentResolution::Indexed(family), "{path}");
+        }
+    }
+
+    #[test]
+    fn every_cross_namespace_intersection_has_the_expected_resolution() {
+        let structural_json = [
+            ("events", Family::Event),
+            ("entities", Family::FacetEntity),
+            ("activities", Family::Activity),
+            ("logs", Family::ActionLog),
+        ];
+        let day_json = [
+            "facets/chat/{structural}/chat.jsonl",
+            "facets/x/{structural}/browser_x.jsonl",
+            "facets/import.chatgpt/{structural}/conversation_transcript.jsonl",
+            "facets/import.claude/{structural}/conversation_transcript.jsonl",
+            "facets/import.gemini/{structural}/conversation_transcript.jsonl",
+            "facets/import.chatgpt/{structural}/imported_audio.jsonl",
+            "facets/import.claude/{structural}/imported_audio.jsonl",
+            "facets/import.gemini/{structural}/imported_audio.jsonl",
+        ];
+
+        let mut json_intersections = 0;
+        for (structural, family) in structural_json {
+            for day_pattern in day_json {
+                let path = day_pattern.replace("{structural}", structural);
+                assert_eq!(
+                    classify(&path),
+                    ContentResolution::Indexed(family),
+                    "structural JSON pattern must win for {path}"
+                );
+                json_intersections += 1;
+            }
+        }
+        assert_eq!(json_intersections, 32);
+
+        // Pre-existing overlaps. Both roots already classify these as Markdown,
+        // so root-first matching must preserve their shared outcome.
+        let markdown_intersections = [
+            "facets/x/activities/talents/x/x.md",
+            "facets/import.x/news/x_transcript.md",
+            "facets/import.x/news/imported.md",
+            "imports/talents/summary.md",
+            "apps/import.x/talents/x_transcript.md",
+            "apps/import.x/talents/imported.md",
+        ];
+        for path in markdown_intersections {
+            assert_eq!(
+                classify(path),
+                ContentResolution::Indexed(Family::Markdown),
+                "pre-existing Markdown overlap changed for {path}"
+            );
+        }
+        assert_eq!(markdown_intersections.len(), 6);
+    }
+
+    #[test]
+    fn registered_patterns_compile_and_cover_every_family() {
+        for family in ALL_FAMILIES {
+            assert!(
+                INDEX_FAMILY_PATTERNS
+                    .iter()
+                    .any(|pattern| pattern.family == family),
+                "{family:?} has no registered content pattern"
+            );
+        }
+        for pattern in INDEX_FAMILY_PATTERNS {
+            Pattern::new(pattern.pattern).expect("index family pattern compiles");
+        }
+        for pattern in KNOWN_UNINDEXED_PATTERNS {
+            Pattern::new(pattern.pattern).expect("known-unindexed pattern compiles");
+        }
     }
 
     #[test]

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use chrono::DateTime;
 use serde_json::Value;
 
 use super::{
-    IndexChunk, JsonObject, ProducedChunks, display_or_default, display_value, json_falsy,
+    JsonObject, ProducedChunks, display_or_default, display_value, json_falsy, recorded_chunk,
     truthy_display,
 };
 
@@ -13,6 +14,7 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
         return ProducedChunks {
             chunks: Vec::new(),
             agent_override: None,
+            header: None,
             warnings: Vec::new(),
         };
     };
@@ -28,13 +30,26 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
         let entry_type = entry.get("type").and_then(Value::as_str).unwrap_or("");
         let markdown = format_entry(entry_type, entry);
         if !markdown.is_empty() {
-            chunks.push(IndexChunk { content: markdown });
+            let occurrence = entry
+                .get("ts")
+                .and_then(Value::as_str)
+                .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+                .map(|value| value.timestamp_millis())
+                .unwrap_or(0);
+            chunks.push(recorded_chunk(markdown, occurrence, entry));
         }
     }
 
     ProducedChunks {
         chunks,
         agent_override: Some(format!("import.{source}")),
+        header: Some(format!(
+            "# Imported from {source} ({} entries)",
+            header
+                .get("entry_count")
+                .and_then(Value::as_i64)
+                .unwrap_or(0)
+        )),
         warnings: Vec::new(),
     }
 }

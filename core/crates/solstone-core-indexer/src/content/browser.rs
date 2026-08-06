@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-use super::{IndexChunk, JsonObject, ProducedChunks, display_value, json_falsy};
+use super::{JsonObject, ProducedChunks, display_value, json_falsy, recorded_chunk};
 
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
     let mut chunks = Vec::new();
@@ -16,13 +16,15 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
             _ => String::new(),
         };
         if !markdown.is_empty() {
-            chunks.push(IndexChunk { content: markdown });
+            let occurrence = record.get("ts").and_then(Value::as_i64).unwrap_or(0);
+            chunks.push(recorded_chunk(markdown, occurrence, record));
         }
     }
 
     ProducedChunks {
         chunks,
         agent_override: Some("browser".to_string()),
+        header: None,
         warnings: Vec::new(),
     }
 }

@@ -1690,6 +1690,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "solstone-core-indexer",
+ "solstone-core-journal-io",
 ]
 
 [[package]]

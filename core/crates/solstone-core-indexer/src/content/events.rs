@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use chrono::{NaiveDate, NaiveTime};
 use serde_json::Value;
 
-use super::{IndexChunk, JsonObject, capitalize, display_value, json_truthy, truthy_display};
+use super::{
+    JsonObject, ProducedChunks, capitalize, display_value, json_truthy, recorded_chunk,
+    truthy_display,
+};
 
-pub(super) fn render(records: &[JsonObject]) -> Vec<IndexChunk> {
+pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let mut chunks = Vec::new();
     for event in records {
         let Some(title) = truthy_display(event, "title") else {
@@ -77,11 +81,56 @@ pub(super) fn render(records: &[JsonObject]) -> Vec<IndexChunk> {
             lines.push(String::new());
         }
 
-        chunks.push(IndexChunk {
-            content: lines.join("\n"),
-        });
+        chunks.push(recorded_chunk(
+            lines.join("\n"),
+            event_timestamp(rel, start_time),
+            event,
+        ));
     }
-    chunks
+    ProducedChunks {
+        chunks,
+        agent_override: Some("event".to_string()),
+        header: Some(event_header(rel)),
+        warnings: Vec::new(),
+    }
+}
+
+fn event_header(rel: &str) -> String {
+    let parts: Vec<&str> = rel.split('/').collect();
+    let facet = parts
+        .windows(3)
+        .find_map(|parts| (parts[0] == "facets" && parts[2] == "events").then_some(parts[1]))
+        .unwrap_or("unknown");
+    let day = rel
+        .rsplit('/')
+        .next()
+        .and_then(|name| name.strip_suffix(".jsonl"));
+    match day.filter(|value| value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())) {
+        Some(day) => format!(
+            "# Events for '{facet}' facet on {}-{}-{}",
+            &day[..4],
+            &day[4..6],
+            &day[6..]
+        ),
+        None => format!("# Events for '{facet}' facet"),
+    }
+}
+
+fn event_timestamp(rel: &str, start: &str) -> i64 {
+    let Some(day) = rel
+        .rsplit('/')
+        .next()
+        .and_then(|name| name.strip_suffix(".jsonl"))
+    else {
+        return 0;
+    };
+    let Ok(day) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
+        return 0;
+    };
+    let time = NaiveTime::parse_from_str(start, "%H:%M:%S")
+        .or_else(|_| NaiveTime::parse_from_str(start, "%H:%M"))
+        .unwrap_or(NaiveTime::MIN);
+    day.and_time(time).and_utc().timestamp_millis()
 }
 
 fn first_five(value: &str) -> String {

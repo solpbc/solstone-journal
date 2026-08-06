@@ -1,21 +1,28 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use super::{IndexChunk, JsonObject, ProducedChunks};
+use serde_json::Value;
+
+use super::{JsonObject, ProducedChunks, recorded_chunk};
 
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
     let chunks = records
         .iter()
         .filter_map(|record| {
-            serde_json::to_string(record)
-                .ok()
-                .map(|content| IndexChunk { content })
+            serde_json::to_string(record).ok().map(|content| {
+                recorded_chunk(
+                    content,
+                    record.get("ts").and_then(Value::as_i64).unwrap_or(0),
+                    record,
+                )
+            })
         })
         .collect();
 
     ProducedChunks {
         chunks,
         agent_override: Some(file_stem(rel).to_lowercase()),
+        header: None,
         warnings: Vec::new(),
     }
 }

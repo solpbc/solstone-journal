@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::path::Path;
+use std::sync::OnceLock;
 
 use glob::{MatchOptions, Pattern};
 
@@ -74,6 +75,33 @@ pub(crate) const EDGE_SOURCE_PATTERNS: &[EdgeSourcePattern] = &[
     },
 ];
 
+struct CompiledEdgeSourcePattern {
+    pattern: Pattern,
+    kind: EdgeSourceKind,
+}
+
+static STRUCTURAL_EDGE_SOURCE_PATTERNS: OnceLock<Vec<CompiledEdgeSourcePattern>> = OnceLock::new();
+static DAY_ROOTED_EDGE_SOURCE_PATTERNS: OnceLock<Vec<CompiledEdgeSourcePattern>> = OnceLock::new();
+
+fn compile_patterns(root: EdgePatternRoot) -> Vec<CompiledEdgeSourcePattern> {
+    EDGE_SOURCE_PATTERNS
+        .iter()
+        .filter(|spec| spec.root == root)
+        .map(|spec| CompiledEdgeSourcePattern {
+            pattern: Pattern::new(spec.pattern).expect("edge source pattern should be valid"),
+            kind: spec.kind,
+        })
+        .collect()
+}
+
+fn structural_patterns() -> &'static [CompiledEdgeSourcePattern] {
+    STRUCTURAL_EDGE_SOURCE_PATTERNS.get_or_init(|| compile_patterns(EdgePatternRoot::Structural))
+}
+
+fn day_rooted_patterns() -> &'static [CompiledEdgeSourcePattern] {
+    DAY_ROOTED_EDGE_SOURCE_PATTERNS.get_or_init(|| compile_patterns(EdgePatternRoot::DayRooted))
+}
+
 pub(crate) fn patterns_for_root(
     root: EdgePatternRoot,
 ) -> impl Iterator<Item = &'static EdgeSourcePattern> {
@@ -89,10 +117,8 @@ pub fn edge_source_for_rel(rel: &str) -> Result<Option<EdgeSourceKind>, EdgeErro
         require_literal_leading_dot: false,
     };
     let rel_path = Path::new(rel);
-    for spec in EDGE_SOURCE_PATTERNS {
-        let pattern = Pattern::new(spec.pattern)
-            .map_err(|error| EdgeError::InvalidPattern(error.to_string()))?;
-        if pattern.matches_path_with(rel_path, options) {
+    for spec in structural_patterns().iter().chain(day_rooted_patterns()) {
+        if spec.pattern.matches_path_with(rel_path, options) {
             return Ok(Some(spec.kind));
         }
     }
@@ -122,6 +148,11 @@ mod tests {
             Ok(Some(EdgeSourceKind::EventLegacy))
         );
         assert_eq!(
+            edge_source_for_rel("facets/work/events/screen.jsonl"),
+            Ok(Some(EdgeSourceKind::EventLegacy)),
+            "structural edge source must win over the day-rooted screen pattern"
+        );
+        assert_eq!(
             edge_source_for_rel("20260430/default/090000_300/screen.jsonl"),
             Ok(Some(EdgeSourceKind::Screen))
         );
@@ -141,5 +172,12 @@ mod tests {
             edge_source_for_rel("facets/work/entities/alice/extra/observations.jsonl"),
             Ok(None)
         );
+    }
+
+    #[test]
+    fn edge_source_patterns_compile() {
+        for pattern in EDGE_SOURCE_PATTERNS {
+            Pattern::new(pattern.pattern).expect("edge source pattern compiles");
+        }
     }
 }

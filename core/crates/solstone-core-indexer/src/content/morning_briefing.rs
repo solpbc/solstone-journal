@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-use super::{IndexChunk, JsonObject, ProducedChunks, clean_value};
+use super::{JsonObject, ProducedChunks, clean_value, recorded_chunk};
 
 const BRIEFING_ABSENT_TEXT: &str = "Nothing to report.";
 const SECTION_KEYS: [(&str, &str); 5] = [
@@ -17,15 +17,17 @@ const SECTION_KEYS: [(&str, &str); 5] = [
 pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
     let chunks = records
         .first()
-        .map(render_briefing)
-        .filter(|markdown| !markdown.is_empty())
-        .map(|content| IndexChunk { content })
+        .and_then(|briefing| {
+            let content = render_briefing(briefing);
+            (!content.is_empty()).then(|| recorded_chunk(content, 0, briefing))
+        })
         .into_iter()
         .collect();
 
     ProducedChunks {
         chunks,
         agent_override: Some("morning_briefing".to_string()),
+        header: None,
         warnings: Vec::new(),
     }
 }

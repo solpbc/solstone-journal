@@ -188,6 +188,20 @@ mod tests {
         write(&root, "facets/work/activities/20240101.jsonl");
         write(&root, "facets/work/logs/20240101.jsonl");
         write(&root, "chronicle/20240101/default/123456_300/audio.jsonl");
+        write(
+            &root,
+            "chronicle/20240101/default/123456_300/left_audio.jsonl",
+        );
+        write(
+            &root,
+            "chronicle/20240101/default/123456_300/left_transcript.jsonl",
+        );
+        write(&root, "chronicle/20240101/default/123456_300/screen.jsonl");
+        write(
+            &root,
+            "chronicle/20240101/default/123456_300/left_screen.jsonl",
+        );
+        write(&root, "entities/alice/entity.json");
 
         let files = discover_indexable_files(&root).expect("discover files");
         let rels: Vec<_> = files.keys().cloned().collect();
@@ -214,6 +228,19 @@ mod tests {
             ]
         );
         assert!(!files.contains_key("20240101/default/123456_300/talents/morning_briefing.json"));
+        for unindexed in [
+            "20240101/default/123456_300/audio.jsonl",
+            "20240101/default/123456_300/left_audio.jsonl",
+            "20240101/default/123456_300/left_transcript.jsonl",
+            "20240101/default/123456_300/screen.jsonl",
+            "20240101/default/123456_300/left_screen.jsonl",
+            "entities/alice/entity.json",
+        ] {
+            assert!(
+                !files.contains_key(unindexed),
+                "known-unindexed pattern leaked into discovery: {unindexed}"
+            );
+        }
         fs::remove_dir_all(root).expect("cleanup discover root");
     }
 
