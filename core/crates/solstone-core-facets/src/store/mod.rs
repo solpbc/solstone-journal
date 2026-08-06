@@ -4,6 +4,7 @@
 mod activities;
 mod declaration;
 mod detected_entities;
+mod detected_entity_activity;
 mod error;
 mod facet_entities;
 mod facet_entity_move;
@@ -23,7 +24,13 @@ mod write;
 pub use activities::{read_activity_file, write_activity_file};
 pub use declaration::{FacetDeclarationSnapshot, read_facet_declaration};
 pub use detected_entities::{
-    delete_detected_entity, read_detected_entities, save_detected_entity, update_detected_entity,
+    DetectedEntityInput, DetectionUpsertReport, delete_detected_entity, read_detected_entities,
+    save_detected_entity, update_detected_entity, upsert_detection_segment,
+};
+#[cfg(test)]
+pub(crate) use detected_entity_activity::{cutoff_day, exclusion_tier};
+pub use detected_entity_activity::{
+    iter_detected_entity_names_since, load_detected_entities_recent,
 };
 pub use error::{
     FacetEntityWriteError, FacetRenameError, FacetStoreError, FacetWriteError,

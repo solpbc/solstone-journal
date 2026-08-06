@@ -22,9 +22,9 @@ pub use store::{
     EntityIdentityRepairError, EntityIdentityRepairGuard, EntityIdentityRepairRefusal,
     EntityIdentityRepairReport, EntityIdentityRepairSkip, EntityIdentityRepairSkipReason,
     EntityLifecycleError, EntityMergeError, EntityMergeOptions, EntityMergePreview,
-    EntityMergeReport, EntityOperationContext, EntityOperationKind, EntitySaveResult,
-    EntityStoreError, EntityUndoError, EntityUndoReport, EntityWriteError, HistoryEvent,
-    IdentityMapCacheLoad, IdentityMapLoser, IdentityMapLoserReason, IdentitySnapshot,
+    EntityMergeReport, EntityOperationContext, EntityOperationKind, EntityReviewCandidateError,
+    EntitySaveResult, EntityStoreError, EntityUndoError, EntityUndoReport, EntityWriteError,
+    HistoryEvent, IdentityMapCacheLoad, IdentityMapLoser, IdentityMapLoserReason, IdentitySnapshot,
     PreparedHistoryEvent, PreparedHistoryOutcome, VoiceprintArchive, VoiceprintItem, VoiceprintKey,
     VoiceprintNpzError, VoiceprintOperationError, VoiceprintRemoval, VoiceprintRemovalReport,
     VoiceprintSkipReasons, classify_prepared_history, commit_entity_merge, create_journal_entity,
@@ -35,10 +35,11 @@ pub use store::{
     load_existing_voiceprint_keys, load_resolved_ambiguity_choice, normalize_embedding,
     preview_entity_merge, read_ambiguities, read_entity_identity, read_identity_group_map,
     read_identity_map, read_journal_principal, read_prepared_history, read_visible_history,
-    record_ambiguity_choice, record_ambiguity_observation, refresh_identity_map_cache,
-    remove_entity_ambiguity_references, remove_voiceprints_by_key, repair_entity_identities,
-    rescope_facet_ambiguities, restore_journal_entity_version, rewrite_voiceprint_metadata,
-    save_entity_identity, save_voiceprints_batch, unblock_journal_entity, undo_entity_merge,
+    record_ambiguity_choice, record_ambiguity_observation, record_merge_candidate,
+    refresh_identity_map_cache, remove_entity_ambiguity_references, remove_voiceprints_by_key,
+    repair_entity_identities, rescope_facet_ambiguities, restore_journal_entity_version,
+    rewrite_voiceprint_metadata, save_entity_identity, save_voiceprints_batch,
+    unblock_journal_entity, undo_entity_merge,
 };
 pub use trust_lock::{EntityTrustLock, EntityTrustLockError, hold_entity_trust_lock};
 

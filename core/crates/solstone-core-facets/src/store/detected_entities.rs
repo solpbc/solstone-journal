@@ -6,6 +6,7 @@
 use std::path::Path;
 
 use serde_json::{Value, json};
+use solstone_core_entity::is_valid_entity_type;
 use solstone_core_entity_matching::{entity_slug, normalize_resolution_query};
 use solstone_core_journal_io::{
     AtomicWriteOptions, contained_path, path_lexists, read_text, write_text,
@@ -15,7 +16,24 @@ use crate::hold_facet_trust_lock;
 
 use super::error::FacetEntityWriteError;
 
-/// Read detected records for one facet and day. Missing files are empty.
+/// One kept detection supplied by segment processing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DetectedEntityInput {
+    pub entity_type: String,
+    pub name: String,
+    pub description: String,
+}
+
+/// Durable rows changed by one segment reconciliation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DetectionUpsertReport {
+    pub wrote: usize,
+}
+
+/// Read detected records for one facet and day.
+///
+/// Missing files and directories at the day-file path are empty. Rows with an invalid type are
+/// ignored, and missing or non-string IDs are filled from the row name.
 pub fn read_detected_entities(
     journal_root: &Path,
     facet_dir: &str,
@@ -25,13 +43,116 @@ pub fn read_detected_entities(
     if !path_lexists(&path).map_err(|error| FacetEntityWriteError::FacetStore(error.into()))? {
         return Ok(Vec::new());
     }
+    if path.is_dir() {
+        return Ok(Vec::new());
+    }
     let contents = read_text(&path, String::new())
         .map_err(|error| FacetEntityWriteError::FacetStore(error.into()))?;
-    Ok(contents
+    let mut rows = Vec::new();
+    for parsed in contents
         .lines()
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .filter(Value::is_object)
-        .collect())
+    {
+        let mut row = parsed.clone();
+        let object = row.as_object_mut().expect("object filter retained objects");
+        let entity_type = object
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if !is_valid_entity_type(entity_type) {
+            continue;
+        }
+        if !object.get("id").is_some_and(Value::is_string) {
+            let name = object
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            object.insert("id".to_owned(), Value::String(entity_slug(name)));
+        }
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
+/// Reconcile one segment's kept detections into the facet/day detected store.
+///
+/// Existing rows match their stored ID first, falling back to a slug from their current name only
+/// when the ID is absent.
+pub fn upsert_detection_segment(
+    journal_root: &Path,
+    facet_dir: &str,
+    day: &str,
+    segment: &str,
+    detections: &[DetectedEntityInput],
+) -> Result<DetectionUpsertReport, FacetEntityWriteError> {
+    let mut kept = Vec::new();
+    for detection in detections {
+        let slug = entity_slug(&detection.name);
+        if let Some(index) = kept.iter().position(|(key, _)| key == &slug) {
+            kept[index] = (slug, detection);
+        } else {
+            kept.push((slug, detection));
+        }
+    }
+    let mut wrote = 0;
+
+    modify_detected_entities(journal_root, facet_dir, day, |rows| {
+        for row in rows.iter_mut() {
+            let slug = row
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .unwrap_or_else(|| {
+                    entity_slug(row.get("name").and_then(Value::as_str).unwrap_or_default())
+                });
+            let Some(index) = kept.iter().position(|(key, _)| key == &slug) else {
+                continue;
+            };
+            let (_, detection) = kept.remove(index);
+            let object = row
+                .as_object_mut()
+                .expect("detected reader returns objects");
+            object.insert(
+                "type".to_owned(),
+                Value::String(detection.entity_type.clone()),
+            );
+            object.insert("name".to_owned(), Value::String(detection.name.clone()));
+            object.insert(
+                "description".to_owned(),
+                Value::String(detection.description.clone()),
+            );
+            object.insert(
+                "segments".to_owned(),
+                Value::Array(
+                    normalized_detection_segments(object.get("segments"), segment)
+                        .into_iter()
+                        .map(Value::String)
+                        .collect(),
+                ),
+            );
+            object.insert(
+                "updated_at".to_owned(),
+                Value::Number(chrono::Utc::now().timestamp_millis().into()),
+            );
+            wrote += 1;
+        }
+
+        for (slug, detection) in kept.drain(..) {
+            rows.push(json!({
+                "id": slug,
+                "type": detection.entity_type,
+                "name": detection.name,
+                "description": detection.description,
+                "segments": [segment],
+                "updated_at": chrono::Utc::now().timestamp_millis(),
+            }));
+            wrote += 1;
+        }
+        Ok(())
+    })?;
+
+    Ok(DetectionUpsertReport { wrote })
 }
 
 /// Save one detection, refusing a unified-normalized name duplicate.
@@ -173,4 +294,21 @@ fn detected_path(
         &format!("facets/{facet_dir}/entities/{day}.jsonl"),
     )
     .map_err(|error| FacetEntityWriteError::FacetStore(error.into()))
+}
+
+fn normalized_detection_segments(existing: Option<&Value>, segment: &str) -> Vec<String> {
+    let mut segments = std::collections::BTreeSet::from([segment.to_owned()]);
+    if let Some(items) = existing.and_then(Value::as_array) {
+        for item in items {
+            let value = item.as_str().or_else(|| {
+                item.as_object()
+                    .and_then(|object| object.get("segment"))
+                    .and_then(Value::as_str)
+            });
+            if let Some(value) = value.filter(|value| !value.is_empty()) {
+                segments.insert(value.to_owned());
+            }
+        }
+    }
+    segments.into_iter().collect()
 }

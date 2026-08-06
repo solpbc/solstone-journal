@@ -18,6 +18,7 @@ mod merge_rollback;
 mod paths;
 mod reconcile;
 mod repair;
+mod review_candidates;
 mod undo;
 pub(crate) mod voiceprints;
 mod write;
@@ -57,6 +58,7 @@ pub use repair::{
     EntityIdentityRepairReport, EntityIdentityRepairSkip, EntityIdentityRepairSkipReason,
     repair_entity_identities,
 };
+pub use review_candidates::{EntityReviewCandidateError, record_merge_candidate};
 pub use undo::{EntityUndoError, EntityUndoReport, undo_entity_merge};
 pub use voiceprints::{
     CanonicalKeyField, VoiceprintArchive, VoiceprintItem, VoiceprintKey, VoiceprintNpzError,

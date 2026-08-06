@@ -15,7 +15,7 @@ use solstone_core_entity::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,
     EntityOperationKind, EntityResolutionEntity, EntityResolutionOutcome, read_identity_map,
     record_ambiguity_choice, record_ambiguity_observation, record_entity_resolution,
-    remove_entity_ambiguity_references, save_entity_identity,
+    record_merge_candidate, remove_entity_ambiguity_references, save_entity_identity,
 };
 use solstone_core_indexer_store::db::open_index;
 
@@ -405,6 +405,52 @@ fn guarded_delete_excludes_its_own_correction_and_identify_operation_rows() {
     .unwrap();
 
     assert_eq!(outcome, deleted_outcome());
+}
+
+#[test]
+fn guarded_delete_refuses_an_entity_review_candidate_reference() {
+    let temporary = TempDir::new();
+    let (identity, history) = create_identify_entity(temporary.path(), "target", "op-1");
+    create_test_facet(temporary.path(), "scope");
+    write_facet_relationship(
+        temporary.path(),
+        "scope",
+        "target-link",
+        json!({"entity_id":"target"}),
+    );
+    let entity_id = crate::list_scoped_facet_entities(temporary.path(), "scope", false, false)
+        .unwrap()
+        .pop()
+        .unwrap()
+        .entity_id;
+    open_index(temporary.path()).unwrap();
+    record_merge_candidate(
+        temporary.path(),
+        "scope",
+        "20260101",
+        "Target",
+        &entity_id,
+        "Other",
+        "other",
+        "review this",
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let outcome = delete_created_entity_if_unreferenced(
+        temporary.path(),
+        &entity_id,
+        "op-1",
+        &identity,
+        &[history],
+    )
+    .unwrap();
+    assert!(!outcome.deleted);
+    assert!(!outcome.identity_changed);
+    assert!(!outcome.history_changed);
+    assert_eq!(outcome.references.entity_review_candidate, 1);
 }
 
 #[test]
