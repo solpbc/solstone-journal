@@ -42,6 +42,8 @@ The `indexer/` directory contains the full-text search index built from journal 
 
 The indexer converts content to markdown chunks via the formatters framework, then indexes with metadata fields (day, facet, agent) for filtering. Raw audio/screen transcripts are formattable but not indexed — agent outputs provide more useful search results. Use `get_journal_index()` from `solstone/think/indexer/journal.py` to access the database programmatically.
 
-Which content gets indexed is controlled by the `FORMATTERS` registry in `solstone/think/formatters.py`. Each entry maps a glob pattern to a formatter function and an `indexed` flag. The registry patterns must be specific enough to use as `Path.glob()` arguments from the journal root — adding a new content location requires a new entry.
+Which content gets indexed is controlled by the pattern registry in `core/crates/solstone-core-indexer/src/content/`. Each entry maps a glob pattern to a content family with a renderer, and both discovery and classification read that one table — adding a new content location requires a new entry there. Patterns match one path segment at a time; `*` does not cross a `/`.
+
+`journal indexer` sends every index write to the native binary, so that registry is what decides the outcome. The older `FORMATTERS` table in `solstone/think/formatters.py` still serves in-process callers and is the reference the native families are pinned against, but it no longer governs what a rebuild indexes.
 
 Run `journal indexer` to rebuild the index from current journal content.
