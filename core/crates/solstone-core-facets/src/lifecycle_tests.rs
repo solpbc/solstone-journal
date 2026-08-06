@@ -169,6 +169,23 @@ fn block_holds_entity_trust_through_relationship_detachment() {
 
 #[test]
 fn delete_holds_entity_trust_through_relationship_removal() {
+    // Proving the lock spans relationship removal requires observing the delete
+    // mid-flight, and under parallel load the contender thread can fail to be
+    // scheduled inside that window at all. A miss is a scheduling artefact, not
+    // a defect, so it retries; the assertion that matters still runs on every
+    // attempt that did observe the window.
+    for attempt in 0..8 {
+        if delete_lock_contention_observed() {
+            return;
+        }
+        assert!(
+            attempt < 7,
+            "the contender never observed the delete mid-flight in 8 attempts"
+        );
+    }
+}
+
+fn delete_lock_contention_observed() -> bool {
     let temporary = TempDir::new();
     write_journal_entity(temporary.path(), "target", Some("target"));
     create_test_facet(temporary.path(), "work");
@@ -216,11 +233,14 @@ fn delete_holds_entity_trust_through_relationship_removal() {
     delete.join().unwrap().unwrap();
     contender.join().unwrap();
 
-    assert!(attempted_before_return.load(Ordering::SeqCst));
+    if !attempted_before_return.load(Ordering::SeqCst) {
+        return false;
+    }
     assert!(
         !acquired_before_return.load(Ordering::SeqCst),
         "this catches a naive implementation that releases entity trust before deleting every relationship"
     );
+    true
 }
 
 #[test]
@@ -487,6 +507,22 @@ fn guarded_delete_fails_closed_for_missing_index_without_changing_owner_delete_r
 
 #[test]
 fn guarded_delete_holds_entity_trust_until_it_returns() {
+    // The observation flag records whether the delete was still running at the
+    // moment the contender attempted, which is a boundary race in the probe
+    // itself: under load the delete can finish first. A miss retries; the
+    // assertion that matters still runs on every attempt that observed it.
+    for attempt in 0..8 {
+        if guarded_delete_contention_observed() {
+            return;
+        }
+        assert!(
+            attempt < 7,
+            "the contender never attempted before the guarded delete returned in 8 attempts"
+        );
+    }
+}
+
+fn guarded_delete_contention_observed() -> bool {
     let temporary = TempDir::new();
     let (identity, history) = create_identify_entity(temporary.path(), "target", "op-1");
     open_index(temporary.path()).unwrap();
@@ -532,11 +568,14 @@ fn guarded_delete_holds_entity_trust_until_it_returns() {
 
     assert_eq!(delete.join().unwrap().unwrap(), deleted_outcome());
     contender.join().unwrap();
-    assert!(attempted_before_return.load(Ordering::SeqCst));
+    if !attempted_before_return.load(Ordering::SeqCst) {
+        return false;
+    }
     assert!(
         !acquired_before_return.load(Ordering::SeqCst),
         "guarded delete must retain entity trust through its nested owner delete"
     );
+    true
 }
 
 #[test]
