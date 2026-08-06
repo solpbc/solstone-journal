@@ -499,3 +499,241 @@ fn removing_twice_is_not_a_failure() {
     );
     teardown(&bed);
 }
+
+// ---------------------------------------------------------------------------
+// Append-only logs: compaction, not deletion
+// ---------------------------------------------------------------------------
+
+use solstone_core_retention::door::compact_log;
+use solstone_core_retention::logs::{COMPACTABLE, plan_compactions};
+
+fn compactions(
+    bed: &Bed,
+    days: u32,
+    today: &str,
+) -> Vec<solstone_core_retention::logs::Compaction> {
+    plan_compactions(
+        &bed.root,
+        &LogPolicy {
+            days,
+            enabled: true,
+        },
+        date(today),
+    )
+}
+
+/// 🔴 The second never-pruned log: JSONL despite its `.log` extension.
+#[test]
+fn the_retention_log_is_compacted_by_its_json_timestamp() {
+    let bed = Bed::new("retention-log");
+    bed.file(
+        "health/retention.log",
+        b"{\"timestamp\": \"2026-01-01T00:00:00\", \"files_deleted\": 1}\n\
+          {\"timestamp\": \"2026-08-04T00:00:00\", \"files_deleted\": 2}\n",
+    );
+
+    let planned = compactions(&bed, 7, "2026-08-05");
+    assert_eq!(planned.len(), 1, "{planned:?}");
+    assert_eq!(planned[0].name(), "retention_log");
+    assert_eq!(planned[0].lines_total, 2);
+    assert_eq!(planned[0].lines_dropped, 1);
+    assert_eq!(planned[0].undateable_kept, 0);
+    assert!(planned[0].bytes_after < planned[0].bytes_before);
+
+    let outcome = compact_log(&bed.root, &planned[0]);
+    assert!(outcome.targets[0].not_removed.is_empty(), "{outcome:?}");
+    let after = fs::read_to_string(bed.root.join("health/retention.log")).expect("read");
+    assert!(!after.contains("2026-01-01"), "the old end is gone");
+    assert!(after.contains("2026-08-04"), "the recent end survives");
+    assert!(after.ends_with('\n'), "the file stays line-terminated");
+    teardown(&bed);
+}
+
+/// The root task log's format is different: TSV with a leading epoch.
+#[test]
+fn the_root_task_log_is_compacted_by_its_leading_epoch() {
+    let bed = Bed::new("task-log");
+    // 2026-01-01 and 2026-08-04 in epoch seconds.
+    bed.file(
+        "task_log.txt",
+        b"1767225600\tan old task\n1786492800\ta recent task\n",
+    );
+
+    let planned = compactions(&bed, 7, "2026-08-05");
+    assert_eq!(planned.len(), 1, "{planned:?}");
+    assert_eq!(planned[0].name(), "root_task_log");
+    assert_eq!(planned[0].lines_dropped, 1);
+
+    let outcome = compact_log(&bed.root, &planned[0]);
+    assert!(outcome.targets[0].not_removed.is_empty(), "{outcome:?}");
+    let after = fs::read_to_string(bed.root.join("task_log.txt")).expect("read");
+    assert_eq!(after, "1786492800\ta recent task\n");
+    teardown(&bed);
+}
+
+/// ⛔ An undateable line is KEPT and counted, never dropped.
+#[test]
+fn an_undateable_line_survives_compaction_and_is_counted() {
+    let bed = Bed::new("undateable-lines");
+    bed.file(
+        "task_log.txt",
+        b"not a dated line at all\n\
+          1767225600\tan old task\n\
+          \tno epoch but a tab\n\
+          also-not-dated\n\
+          1767225600\n",
+    );
+
+    let planned = compactions(&bed, 7, "2026-08-05");
+    assert_eq!(planned.len(), 1);
+    assert_eq!(planned[0].lines_dropped, 1, "only the dated old line goes");
+    // ⛔ The last line is a VALID epoch with no tab. A reader that did not require
+    // the separator would date it and drop it, silently truncating an undated log.
+    assert_eq!(planned[0].undateable_kept, 4);
+
+    let performed = compact_log(&bed.root, &planned[0]);
+    assert!(
+        performed.targets[0].not_removed.is_empty(),
+        "the compaction must succeed for this assertion to mean anything: {performed:?}"
+    );
+    let after = fs::read_to_string(bed.root.join("task_log.txt")).expect("read");
+    assert!(after.contains("not a dated line at all"));
+    assert!(after.contains("no epoch but a tab"));
+    assert!(after.contains("also-not-dated"));
+    assert!(
+        after.contains("1767225600\n"),
+        "a tab-less line must survive even when it parses as an epoch"
+    );
+    assert!(!after.contains("an old task"));
+    teardown(&bed);
+}
+
+/// ⛔ A malformed JSON line in the retention log is kept, not dropped.
+#[test]
+fn a_malformed_json_line_is_kept() {
+    let bed = Bed::new("malformed-json");
+    bed.file(
+        "health/retention.log",
+        b"{not json at all\n\
+          {\"no_timestamp\": true}\n\
+          {\"timestamp\": \"2026-01-01T00:00:00\"}\n",
+    );
+
+    let planned = compactions(&bed, 7, "2026-08-05");
+    assert_eq!(planned[0].lines_dropped, 1);
+    assert_eq!(planned[0].undateable_kept, 2);
+    teardown(&bed);
+}
+
+/// A log with nothing to drop is not rewritten at all.
+#[test]
+fn a_log_with_nothing_old_is_left_untouched() {
+    let bed = Bed::new("no-op");
+    let path = bed.file("task_log.txt", b"1786492800\ta recent task\n");
+    let before = fs::metadata(&path).expect("metadata").modified().ok();
+
+    assert!(
+        compactions(&bed, 7, "2026-08-05").is_empty(),
+        "a no-op compaction must not be proposed, or it resets the mtime for nothing"
+    );
+    assert_eq!(
+        fs::metadata(&path).expect("metadata").modified().ok(),
+        before
+    );
+    teardown(&bed);
+}
+
+/// Planning a compaction touches nothing.
+#[test]
+fn planning_a_compaction_does_not_rewrite() {
+    let bed = Bed::new("plan-only");
+    let path = bed.file(
+        "task_log.txt",
+        b"1767225600\tan old task\n1786492800\ta recent task\n",
+    );
+    let planned = compactions(&bed, 7, "2026-08-05");
+    assert_eq!(planned.len(), 1);
+    assert_eq!(
+        fs::read_to_string(&path).expect("read"),
+        "1767225600\tan old task\n1786492800\ta recent task\n",
+        "the plan is a value; nothing is written until it is performed"
+    );
+    teardown(&bed);
+}
+
+/// ⛔ The file's existing mode survives compaction.
+#[test]
+fn compaction_preserves_a_tightened_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let bed = Bed::new("mode");
+    let path = bed.file(
+        "task_log.txt",
+        b"1767225600\tan old task\n1786492800\ta recent task\n",
+    );
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("chmod");
+
+    let planned = compactions(&bed, 7, "2026-08-05");
+    let performed = compact_log(&bed.root, &planned[0]);
+    assert!(
+        performed.targets[0].not_removed.is_empty(),
+        "the compaction must succeed for this assertion to mean anything: {performed:?}"
+    );
+    assert_eq!(
+        fs::metadata(&path).expect("metadata").permissions().mode() & 0o777,
+        0o600,
+        "a log the operator tightened must not be widened by being pruned"
+    );
+    teardown(&bed);
+}
+
+/// A disabled or unset window compacts nothing.
+#[test]
+fn a_disabled_window_compacts_nothing() {
+    let bed = Bed::new("disabled-compact");
+    bed.file("task_log.txt", b"1767225600\tan old task\n");
+    assert!(plan_compactions(&bed.root, &LogPolicy::default(), date("2026-08-05")).is_empty());
+    assert!(
+        plan_compactions(
+            &bed.root,
+            &LogPolicy {
+                days: 0,
+                enabled: true
+            },
+            date("2026-08-05")
+        )
+        .is_empty(),
+        "days: 0 must not empty the journal's task log"
+    );
+    teardown(&bed);
+}
+
+/// An absent log is not a failure.
+#[test]
+fn an_absent_append_only_log_is_skipped() {
+    let bed = Bed::new("absent-compact");
+    assert!(compactions(&bed, 7, "2026-08-05").is_empty());
+    teardown(&bed);
+}
+
+/// Both append-only logs are reachable, so neither row is dead.
+#[test]
+fn every_compactable_log_can_produce_a_plan() {
+    let bed = Bed::new("both-compact");
+    bed.file("task_log.txt", b"1767225600\tan old task\n");
+    bed.file(
+        "health/retention.log",
+        b"{\"timestamp\": \"2026-01-01T00:00:00\"}\n",
+    );
+
+    let planned = compactions(&bed, 7, "2026-08-05");
+    assert_eq!(planned.len(), COMPACTABLE.len(), "{planned:?}");
+    for log in COMPACTABLE {
+        assert!(
+            planned.iter().any(|done| done.name() == log.name),
+            "`{}` produced no plan, so its row is unreachable",
+            log.name
+        );
+    }
+    teardown(&bed);
+}

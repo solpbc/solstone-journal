@@ -484,3 +484,157 @@ pub fn cutoff(policy: &LogPolicy, today: NaiveDate) -> Option<NaiveDate> {
 pub fn day_key(day: NaiveDate) -> String {
     format!("{:04}{:02}{:02}", day.year(), day.month(), day.day())
 }
+
+// ---------------------------------------------------------------------------
+// Append-only logs, which are compacted rather than deleted
+// ---------------------------------------------------------------------------
+
+/// How a line in an append-only log carries its date.
+///
+/// ⚠ Two formats, and neither is guessable from the filename: `task_log.txt` is
+/// tab-separated with a leading epoch-second field, and `health/retention.log` is
+/// **JSONL despite its extension**, carrying an ISO-8601 `timestamp`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LineDate {
+    /// A leading epoch-second field, tab-separated.
+    LeadingEpochTsv,
+    /// A JSON object with an ISO-8601 `timestamp` field.
+    JsonTimestampField,
+}
+
+/// An append-only log that is compacted by line date rather than deleted.
+#[derive(Clone, Copy, Debug)]
+pub struct Compactable {
+    pub name: &'static str,
+    pub rel: &'static str,
+    pub line_date: LineDate,
+}
+
+/// Every append-only log this pass compacts.
+///
+/// 🔴 `health/retention.log` is the second log the plate wrote and never pruned. Unlike
+/// `health/pruning-runs/`, it is one file rather than a set of dated ones, so deleting
+/// it would discard the whole history instead of its old end.
+pub const COMPACTABLE: &[Compactable] = &[
+    Compactable {
+        name: "root_task_log",
+        rel: "task_log.txt",
+        line_date: LineDate::LeadingEpochTsv,
+    },
+    Compactable {
+        name: "retention_log",
+        rel: "health/retention.log",
+        line_date: LineDate::JsonTimestampField,
+    },
+];
+
+/// A proposed rewrite of one append-only log.
+///
+/// ⛔ Carries the bytes it would write. The caller performing it does not re-read or
+/// re-decide, so what is written is what was shown — the same contract the media plan
+/// has, and it matters more here because a rewrite is not reversible by re-running.
+#[derive(Clone, Debug)]
+pub struct Compaction {
+    name: &'static str,
+    rel: String,
+    contents: Vec<u8>,
+    pub lines_total: usize,
+    pub lines_dropped: usize,
+    /// ⚠ Lines kept because they could not be dated. Never dropped.
+    pub undateable_kept: usize,
+    pub bytes_before: u64,
+    pub bytes_after: u64,
+}
+
+impl Compaction {
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
+    pub fn rel(&self) -> &str {
+        &self.rel
+    }
+    pub fn contents(&self) -> &[u8] {
+        &self.contents
+    }
+    pub fn lines_kept(&self) -> usize {
+        self.lines_total.saturating_sub(self.lines_dropped)
+    }
+}
+
+/// The date a line carries, or `None` if it carries none this reader understands.
+fn line_day(line: &[u8], format: LineDate) -> Option<NaiveDate> {
+    match format {
+        LineDate::LeadingEpochTsv => {
+            let text = std::str::from_utf8(line).ok()?;
+            let (epoch, rest) = text.split_once('\t')?;
+            // ⛔ A separator is required: a line with no tab is not a dated record,
+            // and reading its whole content as an epoch would date arbitrary prose.
+            if rest.is_empty() && epoch.is_empty() {
+                return None;
+            }
+            let seconds: i64 = epoch.trim().parse().ok()?;
+            DateTime::from_timestamp(seconds, 0).map(|when| when.date_naive())
+        }
+        LineDate::JsonTimestampField => {
+            let row: serde_json::Value = serde_json::from_slice(line).ok()?;
+            let stamped = row.get("timestamp")?.as_str()?;
+            // The reference writes a naive local ISO instant; accept an offset too.
+            DateTime::parse_from_rfc3339(stamped)
+                .map(|when| when.date_naive())
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(stamped, "%Y-%m-%dT%H:%M:%S%.f")
+                        .map(|when| when.date())
+                })
+                .ok()
+        }
+    }
+}
+
+/// Decide how each append-only log would be compacted. **Reads only.**
+///
+/// Returns an entry only where something would actually change, so a caller cannot
+/// rewrite a file to identical bytes and reset its mtime for nothing.
+pub fn plan_compactions(journal: &Path, policy: &LogPolicy, today: NaiveDate) -> Vec<Compaction> {
+    let Some(cutoff) = cutoff(policy, today) else {
+        return Vec::new();
+    };
+    let mut planned = Vec::new();
+    for log in COMPACTABLE {
+        let path = journal.join(log.rel);
+        let Ok(original) = std::fs::read(&path) else {
+            continue;
+        };
+        let mut kept: Vec<u8> = Vec::with_capacity(original.len());
+        let mut total = 0usize;
+        let mut dropped = 0usize;
+        let mut undateable = 0usize;
+        for line in original.split_inclusive(|byte| *byte == b'\n') {
+            total = total.saturating_add(1);
+            let bare = line.strip_suffix(b"\n").unwrap_or(line);
+            match line_day(bare, log.line_date) {
+                Some(day) if day < cutoff => dropped = dropped.saturating_add(1),
+                Some(_) => kept.extend_from_slice(line),
+                // ⛔ Fail closed. An undateable line is kept, and counted so a
+                // receipt can say the compaction did not understand it.
+                None => {
+                    undateable = undateable.saturating_add(1);
+                    kept.extend_from_slice(line);
+                }
+            }
+        }
+        if dropped == 0 {
+            continue;
+        }
+        planned.push(Compaction {
+            name: log.name,
+            rel: log.rel.to_owned(),
+            bytes_before: original.len() as u64,
+            bytes_after: kept.len() as u64,
+            contents: kept,
+            lines_total: total,
+            lines_dropped: dropped,
+            undateable_kept: undateable,
+        });
+    }
+    planned
+}

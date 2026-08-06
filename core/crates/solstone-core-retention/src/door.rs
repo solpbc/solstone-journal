@@ -22,8 +22,11 @@
 
 use std::path::Path;
 
+use solstone_core_journal_io::atomic::atomic_replace;
 use solstone_core_journal_io::entry::{Removed, remove_file, rename_within, sync_dir};
-use solstone_core_journal_io::paths::{DirEntryKind, list_dir_entries, path_lexists};
+use solstone_core_journal_io::paths::{
+    DirEntryKind, contained_path, list_dir_entries, path_lexists,
+};
 use solstone_core_journal_io::removal::remove_dir_all;
 use solstone_core_journal_io::{AtomicWriteOptions, LockOptions, hold_lock, write_bytes_exclusive};
 
@@ -273,6 +276,56 @@ pub fn remove_logs(journal: &Path, targets: &[crate::logs::LogTarget]) -> Outcom
     Outcome {
         targets: by_class,
         halted: None,
+    }
+}
+
+/// Perform a planned log compaction.
+///
+/// ⛔ Writes the bytes the plan carries, published atomically with the file's existing
+/// mode, so a reader never sees a half-rewritten log and a crash leaves the original.
+/// The mode is read from the file being replaced rather than defaulted: a log the
+/// operator tightened must not be widened by being pruned.
+pub fn compact_log(journal: &Path, planned: &crate::logs::Compaction) -> Outcome {
+    let target = Target {
+        day: String::new(),
+        stream: String::new(),
+        dir: planned.name().to_owned(),
+    };
+    let path = match contained_path(journal, planned.rel()) {
+        Ok(path) => path,
+        Err(error) => {
+            return Outcome {
+                targets: vec![refused(
+                    &target,
+                    planned.rel().to_owned(),
+                    format!("the log is not inside the journal: {error}"),
+                )],
+                halted: None,
+            };
+        }
+    };
+    let mode = std::fs::metadata(&path)
+        .ok()
+        .map(|meta| std::os::unix::fs::PermissionsExt::mode(&meta.permissions()) & 0o777);
+    match atomic_replace(&path, planned.contents(), AtomicWriteOptions { mode }) {
+        Ok(()) => Outcome {
+            targets: vec![TargetOutcome {
+                target,
+                // ⚠ A compaction removed lines, not a path. The receipt names the
+                // file whose old end is gone.
+                removed: vec![RemovedPath::confirmed(planned.rel().to_owned())],
+                not_removed: Vec::new(),
+            }],
+            halted: None,
+        },
+        Err(error) => Outcome {
+            targets: vec![refused(
+                &target,
+                planned.rel().to_owned(),
+                format!("the log could not be rewritten: {error}"),
+            )],
+            halted: None,
+        },
     }
 }
 
