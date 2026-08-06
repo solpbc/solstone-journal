@@ -396,11 +396,23 @@ pub fn produce_chunks_by_shape(
 ) -> ProducedChunks {
     let rel_text = rel.unwrap_or("");
     match family {
-        Family::Markdown => {
-            panic!(
-                "Family::Markdown has no by-shape rendering — produce_chunks handles markdown text"
-            )
-        }
+        // Markdown renders from text, not records, so there is nothing to
+        // produce here. `produce_chunks` guards it before delegating — but this
+        // is a public entry point, and an outside caller that resolved a
+        // markdown shape reaches it directly. That caller is precisely the one
+        // this function exists to serve, so report the misuse rather than
+        // aborting their process: an empty render carrying an error is
+        // recoverable, a panic in a library is not.
+        Family::Markdown => ProducedChunks {
+            chunks: Vec::new(),
+            agent_override: None,
+            header: None,
+            error: Some(
+                "markdown renders from text, not records; call produce_chunks with the file text"
+                    .to_string(),
+            ),
+            warnings: Vec::new(),
+        },
         Family::Event => events::render(rel_text, records),
         Family::Activity => activities::render(rel, records),
         Family::ActionLog => action_logs::render(rel_text, records),
