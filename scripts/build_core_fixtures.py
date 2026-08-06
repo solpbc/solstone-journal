@@ -136,6 +136,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import content_family_corpus  # noqa: E402  — sibling module, not a package
 import talent_projection_corpus  # noqa: E402  — sibling module, not a package
 import entity_corpus  # noqa: E402  — sibling module, not a package
+import local_contract_corpus  # noqa: E402  — sibling module, not a package
 
 FIXTURE_DIR = ROOT / "core" / "fixtures"
 CONTENT_FAMILIES_ARTIFACT_PATH = FIXTURE_DIR / "content_families.json"
@@ -143,6 +144,7 @@ TALENT_PROJECTIONS_ARTIFACT_PATH = FIXTURE_DIR / "talent_projections.json"
 CALLOSUM_ARTIFACT_PATH = FIXTURE_DIR / "callosum_registry.json"
 COGITATE_ARTIFACT_PATH = FIXTURE_DIR / "cogitate_contract.json"
 GENERATE_ARTIFACT_PATH = FIXTURE_DIR / "generate_contract.json"
+LOCAL_CONTRACT_ARTIFACT_PATH = FIXTURE_DIR / "local_contract.json"
 EDGE_SCHEMA_ARTIFACT_PATH = FIXTURE_DIR / "edge_schema.json"
 MARKDOWN_CHUNKS_ARTIFACT_PATH = FIXTURE_DIR / "markdown_chunks.json"
 SPEAKER_FILTERBANK_ARTIFACT_PATH = FIXTURE_DIR / "speaker_filterbank.json"
@@ -1548,6 +1550,9 @@ def expected_outputs() -> dict[Path, ArtifactDescriptor]:
         ),
         GENERATE_ARTIFACT_PATH: ArtifactDescriptor(
             build_generate_contract_fixture,
+        ),
+        LOCAL_CONTRACT_ARTIFACT_PATH: ArtifactDescriptor(
+            local_contract_corpus.build_local_contract_fixture,
         ),
         EDGE_SCHEMA_ARTIFACT_PATH: ArtifactDescriptor(
             build_edge_schema_fixture,
