@@ -235,3 +235,195 @@ def index_pruned(receipt: dict[str, Any]) -> dict[str, Any]:
     next time something opens it.
     """
     return receipt.get("index", {})
+
+
+# ---------------------------------------------------------------------------
+# The scheduled sweep, and the one-time confirmation that arms it
+# ---------------------------------------------------------------------------
+
+#: Where the confirmation lives: beside the setting it confirms.
+CONFIRM_KEY = "raw_media_release_confirmed"
+
+#: Config keys that describe what the policy will do.
+_POLICY_KEYS = ("raw_media", "raw_media_days", "per_stream", "raw_media_minimum_days")
+
+
+class SweepNotConfirmed(RuntimeError):
+    """The policy would delete, and the owner has not confirmed this policy.
+
+    ⛔ Not an error condition -- the expected state on a journal whose retention
+    setting has never once acted. Carries the plan so a caller can show the owner real
+    numbers from their own journal instead of asking them to approve an abstraction.
+    """
+
+    def __init__(self, plan: dict[str, Any], fingerprint: str) -> None:
+        super().__init__(
+            "the retention policy has not been confirmed for its current settings"
+        )
+        self.plan = plan
+        self.fingerprint = fingerprint
+
+
+def policy_fingerprint(retention: dict[str, Any]) -> str:
+    """A stable identity for *what the policy will do*.
+
+    ⛔ The confirmation is bound to this, not to "confirmed once ever". An owner who
+    confirmed a 30-day release has not confirmed a 7-day one, and a policy change must
+    not inherit consent given for different behaviour. Any change re-asks.
+    """
+    shape = {key: retention.get(key) for key in _POLICY_KEYS}
+    return json.dumps(shape, sort_keys=True, separators=(",", ":"))
+
+
+def policy_payload(retention: dict[str, Any]) -> dict[str, Any]:
+    """Translate the journal's retention config into the executor's policy.
+
+    ⚠ `keep` is an **absent** period rather than zero days. Zero days means "as soon as
+    the anchor has a value", which for `processed` is the reference's *once processing
+    completes* mode; conflating the two is how that mode silently never fires.
+    """
+
+    def rule(mode: str, days: Any) -> dict[str, Any]:
+        if mode == "days":
+            try:
+                period = int(days)
+            except (TypeError, ValueError):
+                period = 0
+            # ⛔ A `days` policy with no positive day count keeps. It does not release
+            # immediately.
+            if period <= 0:
+                return {"anchor": "captured", "period": None, "priority": 0}
+            return {"anchor": "captured", "period": period, "priority": 0}
+        if mode == "processed":
+            return {"anchor": "processed", "period": 0, "priority": 0}
+        # `keep`, and anything unrecognised. ⛔ Falling off the end must keep.
+        return {"anchor": "captured", "period": None, "priority": 0}
+
+    per_stream = []
+    for name, stream in (retention.get("per_stream") or {}).items():
+        if not isinstance(stream, dict):
+            continue
+        per_stream.append(
+            [name, rule(stream.get("mode", "keep"), stream.get("days"))]
+        )
+
+    minimum = retention.get("raw_media_minimum_days") or 0
+    try:
+        minimum_age = max(int(minimum), 0)
+    except (TypeError, ValueError):
+        minimum_age = 0
+
+    return {
+        "default_rule": rule(
+            retention.get("raw_media", "keep"), retention.get("raw_media_days")
+        ),
+        "per_stream": per_stream,
+        "minimum_age": minimum_age,
+        "enabled": True,
+    }
+
+
+def policy_would_release(payload: dict[str, Any]) -> bool:
+    """Whether a policy can release anything at all.
+
+    A policy where every rule keeps forever needs no confirmation, because confirming
+    it would authorise nothing.
+    """
+    rules = [payload["default_rule"]] + [rule for _, rule in payload["per_stream"]]
+    return any(rule.get("period") is not None for rule in rules)
+
+
+def sweep(
+    journal: str,
+    policy: dict[str, Any],
+    *,
+    today: str,
+    now: str,
+    execute: bool = False,
+) -> dict[str, Any]:
+    """Plan, or perform, one scheduled retention pass.
+
+    ⛔ `execute` defaults to False. A destructive scheduled pass is asked for.
+    """
+    argv = [
+        executor_path(),
+        "sweep",
+        "--journal",
+        journal,
+        "--today",
+        today,
+        "--now",
+        now,
+        "--policy",
+        json.dumps(policy),
+    ]
+    if execute:
+        argv.extend(["--execute", "true"])
+    code, receipt = _run(argv)
+    if code == EXIT_OK:
+        return receipt
+    if code in (EXIT_REFUSED, EXIT_HALTED):
+        raise RemovalRefused(Refused(receipt))
+    raise ExecutorUnavailable(
+        f"the retention sweep was rejected (exit {code}): {receipt.get('error', receipt)}"
+    )
+
+
+def confirmation(retention: dict[str, Any]) -> str | None:
+    """The fingerprint the owner has confirmed, if any."""
+    recorded = retention.get(CONFIRM_KEY)
+    if isinstance(recorded, dict):
+        value = recorded.get("policy")
+        return value if isinstance(value, str) else None
+    return None
+
+
+def record_confirmation(
+    fingerprint: str, *, at: str, journal_path: str | None = None
+) -> bool:
+    """Record that the owner confirmed this exact policy.
+
+    Written through the journal-config owner, which is the single writer for
+    `config/journal.json`. Returns whether anything changed.
+    """
+    from solstone.think.journal_config import (
+        JournalConfigMutation,
+        mutate_journal_config,
+    )
+
+    def mutator(config: dict[str, Any]) -> JournalConfigMutation[bool]:
+        retention = config.setdefault("retention", {})
+        existing = retention.get(CONFIRM_KEY)
+        wanted = {"policy": fingerprint, "at": at}
+        if existing == wanted:
+            return JournalConfigMutation(changed=False, value=False)
+        retention[CONFIRM_KEY] = wanted
+        return JournalConfigMutation(changed=True, value=True)
+
+    return mutate_journal_config(mutator, journal_path=journal_path).value
+
+
+def scheduled_sweep(
+    journal: str,
+    retention: dict[str, Any],
+    *,
+    today: str,
+    now: str,
+) -> dict[str, Any]:
+    """The scheduled pass, gated on the owner having confirmed this policy.
+
+    Raises:
+        SweepNotConfirmed: the policy would release and this policy is unconfirmed.
+            ⛔ Carries the plan; deletes nothing.
+    """
+    payload = policy_payload(retention)
+    if not policy_would_release(payload):
+        # Every rule keeps. Plan anyway so a caller can report honestly, but there is
+        # nothing to confirm.
+        return sweep(journal, payload, today=today, now=now, execute=False)
+
+    fingerprint = policy_fingerprint(retention)
+    if confirmation(retention) != fingerprint:
+        plan = sweep(journal, payload, today=today, now=now, execute=False)
+        raise SweepNotConfirmed(plan, fingerprint)
+    return sweep(journal, payload, today=today, now=now, execute=True)
