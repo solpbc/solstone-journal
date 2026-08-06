@@ -1,0 +1,328 @@
+{
+  "cases": [
+    {
+      "decode_failed": true,
+      "file": "audio_only_screen.mov",
+      "first_hash": null,
+      "frames": [],
+      "height": null,
+      "last_hash": null,
+      "qualified_count": 0,
+      "width": null,
+      "winnow": {}
+    },
+    {
+      "decode_failed": false,
+      "file": "mixed_h264_screen.mov",
+      "first_hash": "7070707070707020",
+      "frames": [
+        {
+          "frame_id": 1,
+          "timestamp": 0.0
+        },
+        {
+          "frame_id": 7,
+          "timestamp": 6.0
+        },
+        {
+          "frame_id": 13,
+          "timestamp": 12.0
+        }
+      ],
+      "height": 360,
+      "last_hash": "7070707070707070",
+      "qualified_count": 3,
+      "width": 640,
+      "winnow": {
+        "dhash_qualified": 3,
+        "kept": 3,
+        "raw": 18,
+        "scene_cut": 0,
+        "stride_dropped": 0
+      }
+    },
+    {
+      "decode_failed": false,
+      "file": "mixed_vp8_screen.webm",
+      "first_hash": "7070707070707020",
+      "frames": [
+        {
+          "frame_id": 1,
+          "timestamp": 0.0
+        },
+        {
+          "frame_id": 7,
+          "timestamp": 6.0
+        },
+        {
+          "frame_id": 13,
+          "timestamp": 12.0
+        }
+      ],
+      "height": 360,
+      "last_hash": "7070707070707070",
+      "qualified_count": 3,
+      "width": 640,
+      "winnow": {
+        "dhash_qualified": 3,
+        "kept": 3,
+        "raw": 18,
+        "scene_cut": 0,
+        "stride_dropped": 0
+      }
+    },
+    {
+      "decode_failed": true,
+      "file": "not_a_video_screen.webm",
+      "first_hash": null,
+      "frames": [],
+      "height": null,
+      "last_hash": null,
+      "qualified_count": 0,
+      "width": null,
+      "winnow": {}
+    },
+    {
+      "decode_failed": false,
+      "file": "scene_cuts_h264_screen.mov",
+      "first_hash": "7070707070707020",
+      "frames": [
+        {
+          "frame_id": 1,
+          "timestamp": 0.0
+        },
+        {
+          "frame_id": 2,
+          "timestamp": 1.0
+        },
+        {
+          "frame_id": 3,
+          "timestamp": 2.0
+        },
+        {
+          "frame_id": 6,
+          "timestamp": 5.0
+        },
+        {
+          "frame_id": 7,
+          "timestamp": 6.0
+        },
+        {
+          "frame_id": 8,
+          "timestamp": 7.0
+        },
+        {
+          "frame_id": 9,
+          "timestamp": 8.0
+        },
+        {
+          "frame_id": 12,
+          "timestamp": 11.0
+        }
+      ],
+      "height": 360,
+      "last_hash": "e7e7e7e7e7e7e766",
+      "qualified_count": 8,
+      "width": 640,
+      "winnow": {
+        "dhash_qualified": 12,
+        "kept": 8,
+        "raw": 12,
+        "scene_cut": 7,
+        "stride_dropped": 4
+      }
+    },
+    {
+      "decode_failed": false,
+      "file": "scene_cuts_vp8_screen.webm",
+      "first_hash": "7070707070707020",
+      "frames": [
+        {
+          "frame_id": 1,
+          "timestamp": 0.0
+        },
+        {
+          "frame_id": 2,
+          "timestamp": 1.0
+        },
+        {
+          "frame_id": 3,
+          "timestamp": 2.0
+        },
+        {
+          "frame_id": 6,
+          "timestamp": 5.0
+        },
+        {
+          "frame_id": 7,
+          "timestamp": 6.0
+        },
+        {
+          "frame_id": 8,
+          "timestamp": 7.0
+        },
+        {
+          "frame_id": 9,
+          "timestamp": 8.0
+        },
+        {
+          "frame_id": 12,
+          "timestamp": 11.0
+        }
+      ],
+      "height": 360,
+      "last_hash": "e7e7e7e7e7e7e766",
+      "qualified_count": 8,
+      "width": 640,
+      "winnow": {
+        "dhash_qualified": 12,
+        "kept": 8,
+        "raw": 12,
+        "scene_cut": 7,
+        "stride_dropped": 4
+      }
+    },
+    {
+      "decode_failed": false,
+      "file": "single_frame_h264_screen.mov",
+      "first_hash": "d8d8d8d8d8d8d8d8",
+      "frames": [
+        {
+          "frame_id": 1,
+          "timestamp": 0.0
+        }
+      ],
+      "height": 360,
+      "last_hash": "d8d8d8d8d8d8d8d8",
+      "qualified_count": 1,
+      "width": 640,
+      "winnow": {
+        "dhash_qualified": 1,
+        "kept": 1,
+        "raw": 1,
+        "scene_cut": 0,
+        "stride_dropped": 0
+      }
+    },
+    {
+      "decode_failed": false,
+      "file": "single_frame_vp8_screen.webm",
+      "first_hash": "d8d8d8d8d8d8d8d8",
+      "frames": [
+        {
+          "frame_id": 1,
+          "timestamp": 0.0
+        }
+      ],
+      "height": 360,
+      "last_hash": "d8d8d8d8d8d8d8d8",
+      "qualified_count": 1,
+      "width": 640,
+      "winnow": {
+        "dhash_qualified": 1,
+        "kept": 1,
+        "raw": 1,
+        "scene_cut": 0,
+        "stride_dropped": 0
+      }
+    },
+    {
+      "decode_failed": false,
+      "file": "static_h264_screen.mov",
+      "first_hash": "7070707070707020",
+      "frames": [
+        {
+          "frame_id": 1,
+          "timestamp": 0.0
+        }
+      ],
+      "height": 360,
+      "last_hash": "7070707070707020",
+      "qualified_count": 1,
+      "width": 640,
+      "winnow": {
+        "dhash_qualified": 1,
+        "kept": 1,
+        "raw": 12,
+        "scene_cut": 0,
+        "stride_dropped": 0
+      }
+    },
+    {
+      "decode_failed": false,
+      "file": "static_vp8_screen.webm",
+      "first_hash": "7070707070707020",
+      "frames": [
+        {
+          "frame_id": 1,
+          "timestamp": 0.0
+        }
+      ],
+      "height": 360,
+      "last_hash": "7070707070707020",
+      "qualified_count": 1,
+      "width": 640,
+      "winnow": {
+        "dhash_qualified": 1,
+        "kept": 1,
+        "raw": 12,
+        "scene_cut": 0,
+        "stride_dropped": 0
+      }
+    },
+    {
+      "decode_failed": false,
+      "file": "stride_floor_h264_screen.mov",
+      "first_hash": "7070707070707020",
+      "frames": [
+        {
+          "frame_id": 1,
+          "timestamp": 0.0
+        },
+        {
+          "frame_id": 2,
+          "timestamp": 1.0
+        }
+      ],
+      "height": 360,
+      "last_hash": "0707070707070706",
+      "qualified_count": 2,
+      "width": 640,
+      "winnow": {
+        "dhash_qualified": 2,
+        "kept": 2,
+        "raw": 12,
+        "scene_cut": 1,
+        "stride_dropped": 0
+      }
+    },
+    {
+      "decode_failed": false,
+      "file": "stride_floor_vp8_screen.webm",
+      "first_hash": "7070707070707020",
+      "frames": [
+        {
+          "frame_id": 1,
+          "timestamp": 0.0
+        },
+        {
+          "frame_id": 2,
+          "timestamp": 1.0
+        }
+      ],
+      "height": 360,
+      "last_hash": "0707070707070706",
+      "qualified_count": 2,
+      "width": 640,
+      "winnow": {
+        "dhash_qualified": 2,
+        "kept": 2,
+        "raw": 12,
+        "scene_cut": 1,
+        "stride_dropped": 0
+      }
+    }
+  ],
+  "fixture": "solstone-describe-frames",
+  "fixture_version": 1
+}
