@@ -37,7 +37,7 @@ pub use locking::{
 };
 pub use paths::{
     DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, Segment, contained_path, day_dirs, day_path,
-    iter_segments, list_dir_entries, path_lexists, resolve_configured_journal,
+    ensure_directory, iter_segments, list_dir_entries, path_lexists, resolve_configured_journal,
     resolve_journal_path, segment_path,
 };
 pub use readers::{MalformedPolicy, read_bytes, read_json, read_jsonl, read_text};

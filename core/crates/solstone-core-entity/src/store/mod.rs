@@ -4,6 +4,9 @@
 //! Durable read and write access to journal entity state.
 
 mod ambiguity;
+mod create;
+mod derived;
+mod entity_paths;
 mod error;
 mod history;
 mod identity;
@@ -24,6 +27,12 @@ pub use ambiguity::{
     load_resolved_ambiguity_choice, read_ambiguities, remove_entity_ambiguity_references,
     rescope_facet_ambiguities,
 };
+pub use create::create_journal_entity;
+pub use derived::{
+    DEFAULT_ACTIVITY_TS, entity_last_active_day, entity_last_active_ts,
+    entity_matches_identity_name, is_valid_entity_type, last_active_day_for_ts,
+};
+pub use entity_paths::{entity_memory_path, entity_path};
 pub use error::EntityStoreError;
 pub use history::{
     HistoryEvent, PreparedHistoryEvent, guard_restore_does_not_cross_merge,

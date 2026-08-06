@@ -99,6 +99,11 @@ pub fn path_lexists(path: &Path) -> Result<bool, PathError> {
     }
 }
 
+/// Create a directory and any missing parents without changing existing contents.
+pub fn ensure_directory(path: &Path) -> Result<(), PathError> {
+    fs::create_dir_all(path).map_err(|source| path_io(path, source))
+}
+
 /// List direct directory entries by name without creating anything.
 ///
 /// A missing path or a path that is not a directory produces no entries. This

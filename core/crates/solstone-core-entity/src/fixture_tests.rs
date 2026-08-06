@@ -29,6 +29,7 @@ const JOURNAL_IO_ALLOWED: &[&str] = &[
     "contained_path",
     "resolve_journal_path",
     "path_lexists",
+    "ensure_directory",
     "list_dir_entries",
     "DirEntry",
     "DirEntryKind",

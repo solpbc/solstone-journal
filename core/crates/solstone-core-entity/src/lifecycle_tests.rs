@@ -7,12 +7,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use chrono::{Local, NaiveDate, TimeZone};
 use serde_json::{Value, json};
 
 use crate::{
-    AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityLifecycleError,
-    delete_entity_directory, has_journal_principal, read_entity_identity, read_identity_map,
-    read_journal_principal, read_visible_history, record_ambiguity_choice,
+    AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, DEFAULT_ACTIVITY_TS,
+    EntityLifecycleError, create_journal_entity, delete_entity_directory, entity_last_active_day,
+    entity_last_active_ts, entity_matches_identity_name, entity_memory_path, entity_path,
+    has_journal_principal, is_valid_entity_type, last_active_day_for_ts, read_entity_identity,
+    read_identity_map, read_journal_principal, read_visible_history, record_ambiguity_choice,
     record_ambiguity_observation, remove_entity_ambiguity_references,
     restore_journal_entity_version, save_entity_identity, unblock_journal_entity,
 };
@@ -303,6 +306,132 @@ fn principal_reads_are_empty_or_return_the_principal() {
         "owner"
     );
     assert!(has_journal_principal(temporary.path()).unwrap());
+}
+
+#[test]
+fn guarded_create_refuses_existing_resolved_id_without_changing_identity_bytes() {
+    let temporary = TempDir::new();
+    save_entity_identity(
+        temporary.path(),
+        "target",
+        &json!({
+            "id": "target",
+            "name": "Before",
+            "aka": ["Alias"],
+            "emails": ["before@example.com"],
+            "is_principal": true,
+            "blocked": true,
+        }),
+        None,
+    )
+    .unwrap();
+    let identity_path = temporary.path().join("entities/target/entity.json");
+    let before = fs::read(&identity_path).unwrap();
+
+    assert!(matches!(
+        create_journal_entity(
+            temporary.path(),
+            "target",
+            "After",
+            "Person",
+            None,
+            None,
+            &[],
+            false,
+            None,
+        ),
+        Err(EntityLifecycleError::EntityAlreadyExists { .. })
+    ));
+    assert_eq!(fs::read(identity_path).unwrap(), before);
+}
+
+#[test]
+fn entity_paths_resolve_divergent_directory_and_never_create_unresolved_memory() {
+    let temporary = TempDir::new();
+    let directory = temporary.path().join("entities/durable-directory");
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(directory.join("entity.json"), b"{\"id\":\"effective-id\"}").unwrap();
+
+    assert_eq!(
+        entity_path(temporary.path(), "effective-id").unwrap(),
+        directory.join("entity.json")
+    );
+    assert_eq!(
+        entity_memory_path(temporary.path(), "effective-id", true).unwrap(),
+        directory
+    );
+    assert!(matches!(
+        entity_memory_path(temporary.path(), "missing", true),
+        Err(EntityLifecycleError::EntityNotFound { .. })
+    ));
+    assert!(!temporary.path().join("entities/missing").exists());
+}
+
+#[test]
+fn type_validation_rejects_trailing_newline_unlike_python_regex_dollar() {
+    assert!(is_valid_entity_type("Vehicle"));
+    assert!(is_valid_entity_type("123"));
+    assert!(!is_valid_entity_type("AI"));
+    assert!(!is_valid_entity_type("Person\n"));
+}
+
+#[test]
+fn last_active_ts_converts_last_seen_at_local_midnight_not_utc() {
+    let expected = Local
+        .from_local_datetime(
+            &NaiveDate::from_ymd_opt(2026, 1, 15)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+        )
+        .single()
+        .unwrap()
+        .timestamp_millis();
+    assert_eq!(
+        entity_last_active_ts(&json!({"last_seen": "20260115"})),
+        expected
+    );
+}
+
+#[test]
+fn last_active_day_for_ts_matches_independently_computed_local_day() {
+    let expected = Local
+        .timestamp_millis_opt(DEFAULT_ACTIVITY_TS)
+        .single()
+        .unwrap()
+        .format("%Y%m%d")
+        .to_string();
+    assert_eq!(last_active_day_for_ts(DEFAULT_ACTIVITY_TS), expected);
+}
+
+#[test]
+fn last_active_day_preserves_valid_last_seen_verbatim() {
+    assert_eq!(
+        entity_last_active_day(&json!({
+            "last_seen": "20260115",
+            "updated_at": DEFAULT_ACTIVITY_TS,
+        })),
+        "20260115"
+    );
+}
+
+#[test]
+fn identity_name_matching_checks_entity_name_and_aliases_case_insensitively() {
+    assert!(entity_matches_identity_name(
+        "Unrelated",
+        Some(&["Owner Name".to_owned()]),
+        &["owner name".to_owned()],
+    ));
+    assert!(entity_matches_identity_name(
+        "OWNER",
+        None,
+        &["owner".to_owned()]
+    ));
+    assert!(!entity_matches_identity_name(
+        "Owner",
+        None,
+        &["different".to_owned()],
+    ));
 }
 
 #[test]

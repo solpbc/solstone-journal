@@ -31,6 +31,9 @@ pub enum EntityLifecycleError {
     EntityNotFound {
         entity_id: String,
     },
+    EntityAlreadyExists {
+        entity_id: String,
+    },
     EntityNotBlocked {
         entity_id: String,
     },
@@ -62,6 +65,9 @@ impl fmt::Display for EntityLifecycleError {
             Self::Store(error) => error.fmt(formatter),
             Self::Write(error) => error.fmt(formatter),
             Self::EntityNotFound { entity_id } => write!(formatter, "entity not found: {entity_id}"),
+            Self::EntityAlreadyExists { entity_id } => {
+                write!(formatter, "entity already exists: {entity_id}")
+            }
             Self::EntityNotBlocked { entity_id } => write!(formatter, "entity is not blocked: {entity_id}"),
             Self::HistoryVersionNotFound {
                 entity_id,
@@ -104,6 +110,7 @@ impl Error for EntityLifecycleError {
             Self::Store(error) => Some(error),
             Self::Write(error) => Some(error),
             Self::EntityNotFound { .. }
+            | Self::EntityAlreadyExists { .. }
             | Self::EntityNotBlocked { .. }
             | Self::HistoryVersionNotFound { .. }
             | Self::RestoreTargetsRecordedMerge
@@ -255,7 +262,7 @@ pub fn restore_journal_entity_version(
         .expect("an explicit restore operation always produces a history event"))
 }
 
-fn resolve_entity_dir(
+pub(crate) fn resolve_entity_dir(
     journal_root: &Path,
     entity_id: &str,
 ) -> Result<String, EntityLifecycleError> {

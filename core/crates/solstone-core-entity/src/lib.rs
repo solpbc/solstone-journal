@@ -16,7 +16,7 @@ pub use resolution::{
     ResolutionCandidate, record_entity_resolution,
 };
 pub use store::{
-    AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation,
+    AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, DEFAULT_ACTIVITY_TS,
     EntityAmbiguityRemovalReport, EntityAmbiguityRescopeError, EntityAmbiguityRescopeReport,
     EntityIdentityGroupMap, EntityIdentityMap, EntityIdentityRepairError,
     EntityIdentityRepairGuard, EntityIdentityRepairRefusal, EntityIdentityRepairReport,
@@ -25,14 +25,17 @@ pub use store::{
     EntityOperationContext, EntityOperationKind, EntitySaveResult, EntityStoreError,
     EntityUndoError, EntityUndoReport, EntityWriteError, HistoryEvent, IdentityMapCacheLoad,
     IdentityMapLoser, IdentityMapLoserReason, IdentitySnapshot, PreparedHistoryEvent,
-    PreparedHistoryOutcome, classify_prepared_history, commit_entity_merge,
-    delete_entity_directory, guard_restore_does_not_cross_merge, guard_visible_event_collision,
-    has_journal_principal, load_resolved_ambiguity_choice, preview_entity_merge, read_ambiguities,
-    read_entity_identity, read_identity_group_map, read_identity_map, read_journal_principal,
-    read_prepared_history, read_visible_history, record_ambiguity_choice,
-    record_ambiguity_observation, refresh_identity_map_cache, remove_entity_ambiguity_references,
-    repair_entity_identities, rescope_facet_ambiguities, restore_journal_entity_version,
-    save_entity_identity, unblock_journal_entity, undo_entity_merge,
+    PreparedHistoryOutcome, classify_prepared_history, commit_entity_merge, create_journal_entity,
+    delete_entity_directory, entity_last_active_day, entity_last_active_ts,
+    entity_matches_identity_name, entity_memory_path, entity_path,
+    guard_restore_does_not_cross_merge, guard_visible_event_collision, has_journal_principal,
+    is_valid_entity_type, last_active_day_for_ts, load_resolved_ambiguity_choice,
+    preview_entity_merge, read_ambiguities, read_entity_identity, read_identity_group_map,
+    read_identity_map, read_journal_principal, read_prepared_history, read_visible_history,
+    record_ambiguity_choice, record_ambiguity_observation, refresh_identity_map_cache,
+    remove_entity_ambiguity_references, repair_entity_identities, rescope_facet_ambiguities,
+    restore_journal_entity_version, save_entity_identity, unblock_journal_entity,
+    undo_entity_merge,
 };
 pub use trust_lock::{EntityTrustLock, EntityTrustLockError, hold_entity_trust_lock};
 
