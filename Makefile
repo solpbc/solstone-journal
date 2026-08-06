@@ -34,7 +34,7 @@ REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is require
 # are therefore the checked-in developer path for the helper's GLIBC_2.27 floor.
 SPEAKERS_ANALYZE_LINUX_X86_64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target x86_64-unknown-linux-gnu
 SPEAKERS_ANALYZE_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target aarch64-unknown-linux-gnu
-DESCRIBE_LINUX_X86_64_MATURIN_ARGS := --locked --compatibility manylinux_2_27 --auditwheel skip --target x86_64-unknown-linux-gnu
+DESCRIBE_LINUX_X86_64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target x86_64-unknown-linux-gnu
 DESCRIBE_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target aarch64-unknown-linux-gnu
 # Derived, never written out: the helper's declared coverage lives in
 # solstone/think/probe.py, which is stdlib-only precisely so it imports here
@@ -209,7 +209,12 @@ wheel-describe-linux: wheel-describe-linux-x86_64
 
 wheel-describe-linux-x86_64:
 	rm -f dist/solstone_core_describe-*.whl
-	MATURIN_PEP517_ARGS="$(DESCRIBE_LINUX_X86_64_MATURIN_ARGS)" $(UV) build --package solstone-core-describe --wheel
+	# ffmpeg-sys-next's bindgen invocation needs Zig's target headers separately.
+	ZIG_LIB_DIR="$$(zig env | sed -n 's/.*\.lib_dir = "\([^"]*\)".*/\1/p')"; \
+	BINDGEN_EXTRA_CLANG_ARGS="-nostdinc --target=x86_64-unknown-linux-gnu -isystem $$ZIG_LIB_DIR/include -isystem $$ZIG_LIB_DIR/libc/include/x86-linux-gnu -isystem $$ZIG_LIB_DIR/libc/include/generic-glibc -isystem $$ZIG_LIB_DIR/libc/include/x86-linux-any -isystem $$ZIG_LIB_DIR/libc/include/any-linux-any"; \
+	export BINDGEN_EXTRA_CLANG_ARGS; \
+	# FFmpeg's configure sees this native Rust target as host; force its C probe to the wheel baseline.
+	cc="zig cc -target x86_64-linux-gnu.2.27 -I$(CURDIR)/core/crates/solstone-core-describe/build-support/zig-glibc" MATURIN_PEP517_ARGS="$(DESCRIBE_LINUX_X86_64_MATURIN_ARGS)" $(UV) build --package solstone-core-describe --wheel
 
 wheel-describe-linux-aarch64:
 	rm -f dist/solstone_core_describe-*.whl

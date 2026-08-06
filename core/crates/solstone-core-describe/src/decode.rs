@@ -389,6 +389,10 @@ mod tests {
                 "{} preserves its accumulated frame count",
                 case.file
             );
+            // FFmpeg 9 qualifies three frames before noticing this terminal
+            // corruption, while the oracle's FFmpeg version qualified none.
+            // Python preserves already-qualified frames on error, so this is
+            // decoder-version drift to report rather than tune away.
             if case.file != "corrupted_mid_screen.webm" {
                 assert_eq!(
                     result.qualified_count, case.qualified_count,

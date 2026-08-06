@@ -1724,6 +1724,7 @@ def check_describe_wheel(path: Path) -> list[str]:
     """Validate the statically linked describe helper wheel."""
     errors: list[str] = []
     repair = "make wheel-describe-linux-x86_64"
+    tag = _core_wheel_tag(path)
     size = path.stat().st_size
     if size > MAX_DESCRIBE_WHEEL_BYTES:
         errors.append(
@@ -1792,6 +1793,31 @@ def check_describe_wheel(path: Path) -> list[str]:
                             "describe binary dynamically links FFmpeg",
                             expected="no libav* or libsw* DT_NEEDED entries",
                             actual=", ".join(dynamic_ffmpeg),
+                            repair=repair,
+                        )
+                    )
+                declared = _declared_manylinux_floor(tag)
+                measured = _max_glibc_version(binary_content)
+                if declared is None:
+                    errors.append(
+                        _failure(
+                            path.name,
+                            "describe wheel tag does not declare a manylinux floor",
+                            expected="manylinux_N_M platform tag",
+                            actual=tag,
+                            repair=repair,
+                        )
+                    )
+                elif measured is not None and declared < (measured[0], measured[1]):
+                    errors.append(
+                        _failure(
+                            path.name,
+                            "describe wheel tag understates GLIBC floor",
+                            expected=(
+                                "declared floor >= measured "
+                                f"GLIBC_{_format_version(measured)}"
+                            ),
+                            actual=f"{tag} declares glibc {declared[0]}.{declared[1]}",
                             repair=repair,
                         )
                     )
