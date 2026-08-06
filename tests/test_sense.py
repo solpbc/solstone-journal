@@ -46,7 +46,7 @@ from solstone.think.processing import (
     TimeWindowSettings,
 )
 from solstone.think.providers import fanout_policy
-from solstone.think.retention import RetentionConfig, RetentionPolicy, purge
+from solstone.think.retention import resolve_segment_gate
 from solstone.think.runner import DailyLogWriter as ProcessLogWriter
 from solstone.think.runner import _format_log_line
 
@@ -1159,15 +1159,8 @@ def test_failed_describe_heals_on_daily_pass_and_processed_prune_releases_raw(
     assert record["reason_code"] == REASON_OK
     assert "attempts" not in record
 
-    result = purge(
-        config=RetentionConfig(default=RetentionPolicy(mode="processed")),
-        dry_run=False,
-    )
-
-    assert result.files_deleted == 1
-    assert result.segments_blocked_failed == 0
-    assert result.segments_skipped_incomplete == 0
-    assert not media_path.exists()
+    gate = resolve_segment_gate(media_path.parent)
+    assert gate.verdict == "eligible"
 
 
 def test_process_day_elevates_describe_only_in_batch_mode(tmp_path, monkeypatch):

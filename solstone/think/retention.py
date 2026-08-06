@@ -1,33 +1,23 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Media retention service for solstone journals.
+"""Raw-media retention policy and safety predicates for solstone journals.
 
-Manages the lifecycle of raw media files (layer 1 captures) in journal segments.
-Three retention modes:
-- keep: retain raw media indefinitely and purge nothing (default)
-- days: delete raw media after explicit N days, once processing is complete
-- processed: delete raw media as soon as processing completes
+Retention policy controls whether raw media in a processed segment is eligible for
+an owner-approved removal proposal. This module does not remove media.
 
 Scope: raw media ONLY. Chronicle JSONL, derived outputs, talents/ directories,
 and all other journal content persist indefinitely and are never touched by
-retention. Days mode requires an explicit days value from config or CLI override;
-without one, it purges nothing.
-
-Safety invariant: never delete raw media from segments that haven't finished
-processing. All completion checks must pass before any deletion.
+retention. Days mode requires an explicit days value; without one, raw media is
+not eligible.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
-import logging
 import shutil
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from solstone.apps.backup.copy import OFFLOAD_STALL_REASON_LABELS, OFFLOAD_STALLED_LEAD
 from solstone.think.backup.state import merge_backup_config
@@ -35,10 +25,7 @@ from solstone.think.data_state import DataState, derive_modality_state
 from solstone.think.media import AUDIO_EXTENSIONS as RAW_AUDIO_EXTENSIONS
 from solstone.think.media import MEDIA_EXTENSIONS as RAW_MEDIA_EXTENSIONS
 from solstone.think.media import VIDEO_EXTENSIONS as RAW_VIDEO_EXTENSIONS
-from solstone.think.pruning_audit import AuditOutcome, write_prune_audit
-from solstone.think.utils import day_dirs, get_journal, iter_segments
-
-logger = logging.getLogger(__name__)
+from solstone.think.utils import day_dirs, iter_segments
 
 # ---------------------------------------------------------------------------
 # Raw media file identification
@@ -404,7 +391,8 @@ def check_storage_health(
     retention = config.get("retention", {})
     keep_mode_nudge = (
         " you're currently set to always retain original media — consider "
-        "choosing a retention value in settings to free up disk space."
+        "choosing a retention value in settings to make media eligible for "
+        "owner-approved cleanup."
     )
     always_retain_enabled = retention.get("raw_media", "keep") == "keep"
     warnings = []
@@ -419,7 +407,7 @@ def check_storage_health(
                 message = (
                     f"Disk is {disk_percent}% full (threshold: {disk_threshold}%). "
                     "Consider adjusting retention settings or running Clean Up Now "
-                    "to free space."
+                    "to propose cleanup for owner approval."
                 )
                 if always_retain_enabled:
                     message += keep_mode_nudge
@@ -443,7 +431,7 @@ def check_storage_health(
             message = (
                 f"Raw media is {raw_media_gb} GB (threshold: {raw_media_gb_threshold} GB). "
                 "Consider adjusting retention settings or running Clean Up Now "
-                "to free space."
+                "to propose cleanup for owner approval."
             )
             if always_retain_enabled:
                 message += keep_mode_nudge
@@ -478,231 +466,3 @@ def check_storage_health(
         )
 
     return warnings
-
-
-# ---------------------------------------------------------------------------
-# Retention purge
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class PurgeResult:
-    """Result of a purge operation."""
-
-    files_deleted: int = 0
-    bytes_freed: int = 0
-    segments_processed: int = 0
-    segments_skipped_incomplete: int = 0
-    segments_skipped_policy: int = 0
-    segments_blocked_failed: int = 0
-    blocked_failed_details: list[dict[str, Any]] = field(default_factory=list)
-    partial_error: bool = False
-    details: list[dict[str, Any]] = field(default_factory=list)
-
-
-def purge(
-    *,
-    older_than_days: int | None = None,
-    stream_filter: str | None = None,
-    dry_run: bool = False,
-    config: RetentionConfig | None = None,
-) -> PurgeResult:
-    """Run retention purge across the journal.
-
-    Parameters
-    ----------
-    older_than_days
-        Override: purge raw media older than this many days.
-        If None, uses the configured retention policy.
-    stream_filter
-        Only process segments from this stream.
-    dry_run
-        If True, report what would be deleted without deleting.
-    config
-        Retention config. If None, loads from journal.json.
-    """
-    if config is None:
-        config = load_retention_config()
-
-    result = PurgeResult()
-    today = datetime.now().date()
-    journal_path = Path(get_journal())
-
-    for day_name in sorted(day_dirs().keys()):
-        try:
-            day_date = datetime.strptime(day_name, "%Y%m%d").date()
-        except ValueError:
-            continue
-        age_days = (today - day_date).days
-
-        for stream_name, seg_key, seg_path in iter_segments(day_name):
-            if stream_filter and stream_name != stream_filter:
-                continue
-
-            raw_files = get_raw_media_files(seg_path)
-            if not raw_files:
-                continue
-
-            result.segments_processed += 1
-
-            gate = resolve_segment_gate(seg_path)
-            if gate.verdict == "failed":
-                result.segments_blocked_failed += 1
-                blocked_detail = {
-                    "day": day_name,
-                    "stream": stream_name,
-                    "segment": seg_key,
-                    "files": gate.failed_files,
-                }
-                result.blocked_failed_details.append(blocked_detail)
-                logger.warning(
-                    "retention: blocked purge - extraction failed: %s/%s/%s files=%s",
-                    day_name,
-                    stream_name,
-                    seg_key,
-                    gate.failed_files,
-                )
-                continue
-
-            # Safety invariant: never delete from incomplete segments
-            if gate.verdict == "incomplete":
-                result.segments_skipped_incomplete += 1
-                logger.debug(
-                    "Skipping incomplete: %s/%s/%s", day_name, stream_name, seg_key
-                )
-                continue
-            if gate.verdict != "eligible":
-                raise RuntimeError(f"unexpected retention gate verdict: {gate.verdict}")
-
-            # Check eligibility
-            if older_than_days is not None:
-                eligible = age_days >= older_than_days
-            else:
-                policy = config.policy_for_stream(stream_name)
-                eligible = policy.is_eligible(age_days)
-
-            if not eligible:
-                result.segments_skipped_policy += 1
-                continue
-
-            # Delete raw media
-            segment_bytes = 0
-            segment_files = []
-            for f in raw_files:
-                size = f.stat().st_size
-                digest = hashlib.sha256()
-                with open(f, "rb") as handle:
-                    while chunk := handle.read(64 * 1024):
-                        digest.update(chunk)
-                hex_digest = digest.hexdigest()
-                segment_bytes += size
-                segment_files.append(
-                    {"name": f.name, "bytes": size, "hash": hex_digest}
-                )
-                if not dry_run:
-                    f.unlink()
-                    logger.info("Deleted: %s (%s)", f, _human_bytes(size))
-
-            processed_at = None
-            if gate.completion_files:
-                latest_mtime = max(f.stat().st_mtime for f in gate.completion_files)
-                processed_at = datetime.fromtimestamp(latest_mtime).isoformat()
-
-            result.files_deleted += len(raw_files)
-            result.bytes_freed += segment_bytes
-            result.details.append(
-                {
-                    "day": day_name,
-                    "stream": stream_name,
-                    "segment": seg_key,
-                    "files": segment_files,
-                    "bytes_freed": segment_bytes,
-                    "processed_at": processed_at,
-                }
-            )
-
-            if not dry_run and segment_files:
-                outcome = _write_segment_prune_audit(
-                    journal_path,
-                    day_name,
-                    stream_name,
-                    seg_key,
-                    segment_files,
-                    segment_bytes,
-                    processed_at,
-                    older_than_days,
-                )
-                for audit_day, error in outcome.per_day_failures.items():
-                    result.partial_error = True
-                    logger.warning(
-                        "retention: failed to append pruning task log for %s: %s",
-                        audit_day,
-                        error,
-                    )
-                if outcome.global_record_error is not None:
-                    result.partial_error = True
-                    logger.warning(
-                        "retention: failed to append pruning run record: %s",
-                        outcome.global_record_error,
-                    )
-
-    if not dry_run and (result.files_deleted > 0 or result.segments_blocked_failed > 0):
-        _write_retention_log(journal_path, result)
-
-    return result
-
-
-def _write_segment_prune_audit(
-    journal_path: Path,
-    day: str,
-    stream: str,
-    segment: str,
-    files: list[dict[str, Any]],
-    bytes_freed: int,
-    processed_at: str | None,
-    older_than_days: int | None,
-) -> AuditOutcome:
-    run_record = {
-        "timestamp": datetime.now().isoformat(),
-        "kind": "raw_media",
-        "dry_run": False,
-        "days": older_than_days,
-        "day": day,
-        "stream": stream,
-        "segment": segment,
-        "files": files,
-        "bytes_freed": bytes_freed,
-        "processed_at": processed_at,
-    }
-    message = (
-        f"raw-media retention: pruned {len(files)} raw media file(s) "
-        f"({_human_bytes(bytes_freed)}) from segment {stream}/{segment}"
-    )
-    return write_prune_audit(
-        journal_path,
-        kind="raw_media",
-        run_record=run_record,
-        per_day_messages={day: message},
-    )
-
-
-def _write_retention_log(journal_path: Path, result: PurgeResult) -> None:
-    """Append retention activity to health/retention.log."""
-    health_dir = journal_path / "health"
-    health_dir.mkdir(parents=True, exist_ok=True)
-    log_path = health_dir / "retention.log"
-
-    entry = {
-        "timestamp": datetime.now().isoformat(),
-        "files_deleted": result.files_deleted,
-        "bytes_freed": result.bytes_freed,
-        "segments_processed": result.segments_processed,
-        "segments_skipped_incomplete": result.segments_skipped_incomplete,
-        "segments_blocked_failed": result.segments_blocked_failed,
-        "blocked_failed_details": result.blocked_failed_details,
-        "partial_error": result.partial_error,
-        "details": result.details,
-    }
-
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
