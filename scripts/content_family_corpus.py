@@ -116,6 +116,12 @@ def _case(
         row: dict[str, Any] = {"markdown": chunk.get("markdown", "")}
         if "timestamp" in chunk and chunk["timestamp"] is not None:
             row["timestamp_utc_ms"] = chunk["timestamp"]
+        # The originating record. Only some formatters attach one, and it is the
+        # field the owner-facing surface depends on — speaker attribution, screen
+        # frame geometry, browser snapshot-vs-delta. Recorded so a consumer of
+        # this corpus can check it rather than taking it on trust.
+        if "source" in chunk:
+            row["source"] = chunk["source"]
         recorded.append(row)
 
     indexer = meta.get("indexer", {}) or {}

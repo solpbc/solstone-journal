@@ -5,6 +5,15 @@
       "chunks": [
         {
           "markdown": "### Meeting: Standup\n\n\n**Participants:** Alice, Bob\n\nDaily sync\n",
+          "source": {
+            "participants": [
+              "Alice",
+              "Bob"
+            ],
+            "summary": "Daily sync",
+            "title": "Standup",
+            "type": "meeting"
+          },
           "timestamp_utc_ms": 1704067200000
         }
       ],
@@ -31,6 +40,10 @@
       "chunks": [
         {
           "markdown": "### Task: Kept\n\n\n",
+          "source": {
+            "title": "Kept",
+            "type": "task"
+          },
           "timestamp_utc_ms": 1704067200000
         }
       ],
@@ -72,6 +85,32 @@
       "chunks": [
         {
           "markdown": "### Launch sync\n- Activity: meeting\n- Facet: work\n- Day: 20260418\n- Time: 09:00-09:05\n- Level: 0.5\n- Description: Team sync\n- Details: Assigned owners\n- Participation: Mina\n\nAligned on launch.\nTopics: launch, owners\n- Hidden: yes",
+          "source": {
+            "activity": "meeting",
+            "day": "20260418",
+            "description": "Team sync",
+            "details": "Assigned owners",
+            "edits": [],
+            "facet": "work",
+            "hidden": true,
+            "level_avg": 0.5,
+            "participation": [
+              {
+                "name": "Mina"
+              }
+            ],
+            "segments": [
+              "090000_300"
+            ],
+            "story": {
+              "body": "Aligned on launch.",
+              "topics": [
+                "launch",
+                "owners"
+              ]
+            },
+            "title": "Launch sync"
+          },
           "timestamp_utc_ms": 0
         }
       ],
@@ -114,10 +153,23 @@
       "chunks": [
         {
           "markdown": "### untitled activity",
+          "source": {
+            "details": "",
+            "edits": [],
+            "hidden": false,
+            "title": "untitled activity"
+          },
           "timestamp_utc_ms": 0
         },
         {
           "markdown": "### X\n- Activity: x",
+          "source": {
+            "details": "",
+            "edits": [],
+            "hidden": false,
+            "id": "x",
+            "title": "X"
+          },
           "timestamp_utc_ms": 0
         }
       ],
@@ -140,6 +192,16 @@
       "chunks": [
         {
           "markdown": "### Identity Update by settings\n\n**Source:** app | **Time:** 07:33:05\n**Talent:** [123](/app/sol/123)\n\n**Parameters:**\n- name: Alice\n",
+          "source": {
+            "action": "identity_update",
+            "actor": "settings",
+            "params": {
+              "name": "Alice"
+            },
+            "source": "app",
+            "timestamp": "2025-12-16T07:33:05.135587+00:00",
+            "use_id": "123"
+          },
           "timestamp_utc_ms": 1765870385135
         }
       ],
@@ -187,6 +249,10 @@
       "chunks": [
         {
           "markdown": "### Facet Note by sol\n\n**Source:** unknown\n",
+          "source": {
+            "action": "facet_note",
+            "actor": "sol"
+          },
           "timestamp_utc_ms": 0
         }
       ],
@@ -209,6 +275,28 @@
       "chunks": [
         {
           "markdown": "### Person: Alice\n\n\nFriend from work\n\n**Tags:** tech, mentor\n**Also known as:** A, Al\n**Contact:** alice@example.com\n**Roles:** lead, reviewer\n**Empty Note:** \n",
+          "source": {
+            "aka": [
+              "A",
+              "Al"
+            ],
+            "contact": "alice@example.com",
+            "description": "Friend from work",
+            "detached": true,
+            "empty_note": "",
+            "id": "alice",
+            "last_seen": "20260304",
+            "name": "Alice",
+            "roles": [
+              "lead",
+              "reviewer"
+            ],
+            "tags": [
+              "tech",
+              "mentor"
+            ],
+            "type": "Person"
+          },
           "timestamp_utc_ms": 1772582400000
         }
       ],
@@ -248,10 +336,18 @@
       "chunks": [
         {
           "markdown": "### Project: No Description\n\n\n*(No description available)*\n\n",
+          "source": {
+            "description": "",
+            "name": "No Description",
+            "type": "Project"
+          },
           "timestamp_utc_ms": 1772582400000
         },
         {
           "markdown": "### Unknown: Unnamed\n\n\nOnly description\n\n",
+          "source": {
+            "description": "Only description"
+          },
           "timestamp_utc_ms": 1772582400000
         }
       ],
@@ -277,6 +373,10 @@
       "chunks": [
         {
           "markdown": "### Person: Slugged\n\n\n*(No description available)*\n\n",
+          "source": {
+            "name": "Slugged",
+            "type": "Person"
+          },
           "timestamp_utc_ms": 1767225600000
         }
       ],
@@ -299,18 +399,32 @@
       "chunks": [
         {
           "markdown": "- Prefers morning meetings (observed: 20250113)",
+          "source": {
+            "content": "Prefers morning meetings",
+            "source_day": "20250113"
+          },
           "timestamp_utc_ms": 0
         },
         {
           "markdown": "- Expert in distributed systems",
+          "source": {
+            "content": "Expert in distributed systems"
+          },
           "timestamp_utc_ms": 0
         },
         {
           "markdown": "-  (observed: 20250114)",
+          "source": {
+            "source_day": "20250114"
+          },
           "timestamp_utc_ms": 0
         },
         {
           "markdown": "- ",
+          "source": {
+            "content": "",
+            "source_day": ""
+          },
           "timestamp_utc_ms": 0
         }
       ],
@@ -343,6 +457,11 @@
       "chunks": [
         {
           "markdown": "## Quarterly Planning\n09:30 AM",
+          "source": {
+            "title": "Quarterly Planning",
+            "ts": "2026-01-01T09:30:00-07:00",
+            "type": "calendar_event"
+          },
           "timestamp_utc_ms": 1767285000000
         }
       ],
@@ -434,10 +553,20 @@
       "chunks": [
         {
           "markdown": "**User:** Hello",
+          "source": {
+            "speaker": "User",
+            "start": "00:00:01",
+            "text": "Hello"
+          },
           "timestamp_utc_ms": 1000
         },
         {
           "markdown": "**Assistant:** Hi there",
+          "source": {
+            "speaker": "Assistant",
+            "start": "00:00:03",
+            "text": "Hi there"
+          },
           "timestamp_utc_ms": 3000
         }
       ],
@@ -481,6 +610,11 @@
       "chunks": [
         {
           "markdown": "**User:** Legacy path",
+          "source": {
+            "speaker": "User",
+            "start": "00:00:01",
+            "text": "Legacy path"
+          },
           "timestamp_utc_ms": 1000
         }
       ],
@@ -522,10 +656,20 @@
       "chunks": [
         {
           "markdown": "**Jamie** What did I do today?",
+          "source": {
+            "kind": "owner_message",
+            "text": "What did I do today?",
+            "ts": 1772000000000
+          },
           "timestamp_utc_ms": 1772000000000
         },
         {
           "markdown": "**Sol** You shipped the cable.",
+          "source": {
+            "kind": "sol_message",
+            "text": "You shipped the cable.",
+            "ts": 1772000001000
+          },
           "timestamp_utc_ms": 1772000001000
         }
       ],
@@ -557,6 +701,11 @@
       "chunks": [
         {
           "markdown": "**Jamie**",
+          "source": {
+            "kind": "owner_message",
+            "text": "",
+            "ts": 1772000002000
+          },
           "timestamp_utc_ms": 1772000002000
         }
       ],
@@ -582,18 +731,41 @@
       "chunks": [
         {
           "markdown": "*[recall spawned: find it]*",
+          "source": {
+            "kind": "talent_spawned",
+            "name": "recall",
+            "task": "find it",
+            "ts": 1
+          },
           "timestamp_utc_ms": 1
         },
         {
           "markdown": "*[recall finished: found]*",
+          "source": {
+            "kind": "talent_finished",
+            "name": "recall",
+            "summary": "found",
+            "ts": 2
+          },
           "timestamp_utc_ms": 2
         },
         {
           "markdown": "*[recall errored: timeout]*",
+          "source": {
+            "kind": "talent_errored",
+            "name": "recall",
+            "reason": "timeout",
+            "ts": 3
+          },
           "timestamp_utc_ms": 3
         },
         {
           "markdown": "*[chat trouble: non_responsive]*",
+          "source": {
+            "kind": "chat_error",
+            "reason": "non_responsive",
+            "ts": 4
+          },
           "timestamp_utc_ms": 4
         }
       ],
@@ -689,6 +861,18 @@
       "chunks": [
         {
           "markdown": "## Inbox\n\nmail.google.com\n\nalpha block",
+          "source": {
+            "blocks": [
+              {
+                "text": "alpha block"
+              }
+            ],
+            "site": "mail.google.com",
+            "t": "segment_start",
+            "title": "Inbox",
+            "ts": 1772000000000,
+            "url": "https://mail.google.com/"
+          },
           "timestamp_utc_ms": 1772000000000
         }
       ],
@@ -761,6 +945,17 @@
       "chunks": [
         {
           "markdown": "## Example\n\nexample.com\n\nkept",
+          "source": {
+            "blocks": [
+              {
+                "text": "kept"
+              }
+            ],
+            "site": "example.com",
+            "t": "segment_start",
+            "title": "Example",
+            "ts": 1772000001000
+          },
           "timestamp_utc_ms": 1772000001000
         }
       ],
@@ -814,6 +1009,10 @@
       "chunks": [
         {
           "markdown": "{\"ts\": 1772000000000, \"summary\": \"steady morning\"}",
+          "source": {
+            "summary": "steady morning",
+            "ts": 1772000000000
+          },
           "timestamp_utc_ms": 1772000000000
         }
       ],
@@ -845,6 +1044,14 @@
       "chunks": [
         {
           "markdown": "### Entities\n- Person: Alice",
+          "source": {
+            "entities": [
+              {
+                "name": "Alice",
+                "type": "Person"
+              }
+            ]
+          },
           "timestamp_utc_ms": 0
         }
       ],
@@ -880,6 +1087,15 @@
       "chunks": [
         {
           "markdown": "## Overview\n\nNot specified in this document\n\n## Parties and Roles\n\nNot specified in this document\n\n## Key Provisions\n\nNot specified in this document\n\n## Assets and Property\n\nNot specified in this document\n\n## Conditions and Triggers\n\nNot specified in this document\n\n## Important Dates\n\nNot specified in this document\n\n## Summary\n\nNot specified in this document",
+          "source": {
+            "documents": [
+              {
+                "kind": "pdf",
+                "summary": "Signed",
+                "title": "Contract"
+              }
+            ]
+          },
           "timestamp_utc_ms": 0
         }
       ],
@@ -915,6 +1131,12 @@
       "chunks": [
         {
           "markdown": "## Entities\n\nNot specified",
+          "source": {
+            "applications": [
+              "nvim"
+            ],
+            "summary": "Editor open"
+          },
           "timestamp_utc_ms": 0
         }
       ],
@@ -948,6 +1170,17 @@
       "chunks": [
         {
           "markdown": "## Your Day\n\nNothing to report.\n\n## Yesterday\n\nNothing to report.\n\n## Needs Attention\n\nNothing to report.\n\n## Forward Look\n\nNothing to report.\n\n## Reading\n\nNothing to report.",
+          "source": {
+            "greeting": "Morning",
+            "sections": [
+              {
+                "items": [
+                  "Ship"
+                ],
+                "title": "Today"
+              }
+            ]
+          },
           "timestamp_utc_ms": 0
         }
       ],
