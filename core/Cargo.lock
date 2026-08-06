@@ -1773,6 +1773,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-retention-cli"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "serde_json",
+ "solstone-core-indexer-store",
+ "solstone-core-retention",
+]
+
+[[package]]
 name = "solstone-core-segment"
 version = "1.0.22"
 dependencies = [

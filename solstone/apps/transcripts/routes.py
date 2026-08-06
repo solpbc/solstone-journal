@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import subprocess
 import sys
 import threading
@@ -37,7 +36,6 @@ from solstone.apps.transcripts.copy import (
     transcripts_copy_payload,
 )
 from solstone.apps.utils import log_app_action
-from solstone.convey import emit
 from solstone.convey.date_nav import build_date_nav_index
 from solstone.convey.reasons import (
     FILE_NOT_FOUND,
@@ -89,10 +87,12 @@ from solstone.think.pipeline_health import (
 )
 from solstone.think.supervisor import is_supervisor_up
 from solstone.think.talent_outputs import talent_projection_map
+from solstone.think import retention_executor
 from solstone.think.utils import (
     STREAM_RE,
     day_dirs,
     day_path,
+    get_journal,
     segment_parse,
     segment_path,
 )
@@ -1717,8 +1717,12 @@ def reprocess_segment(day: str, stream: str, segment_key: str) -> Any:
 def delete_segment(day: str, stream: str, segment_key: str) -> Any:
     """Delete a segment directory and all its contents.
 
-    This permanently removes all audio files, screen recordings, transcripts,
-    and insights for the specified segment. This action cannot be undone.
+    Removes the audio, screen recordings, transcripts and insights for one segment
+    through the retention executor, which leaves a tombstone in the emptied segment
+    as the owner's evidence that a deletion happened.
+
+    Deletion is deferred: it can be cancelled until the TTL expires. Once committed
+    the content is gone -- the tombstone records that it was, not what it held.
 
     Args:
         day: Day in YYYYMMDD format
@@ -1765,12 +1769,33 @@ def delete_segment(day: str, stream: str, segment_key: str) -> Any:
         search_index_warning = not is_supervisor_up()
 
         def _commit() -> None:
-            shutil.rmtree(segment_dir)
-            emit(
-                "supervisor",
-                "request",
-                cmd=["journal", "indexer", "--rescan-full"],
-            )
+            # 🔴 Every removal of the owner's media goes through the retention
+            # executor. It stages the segment aside under a name no iterator
+            # returns, empties it there, leaves a tombstone as the owner's evidence
+            # that a deletion happened, and prunes the index BY PATH rather than
+            # re-scanning the whole journal.
+            #
+            # ⛔ A refusal must be recorded, not swallowed. This runs on a deferred
+            # thread with no caller left to raise to, so an unlogged failure is a
+            # deletion the owner believes happened and did not.
+            phase = "committed"
+            detail: dict[str, Any] = {}
+            try:
+                receipt = retention_executor.remove_segments(
+                    get_journal(),
+                    [(day, stream, segment_key)],
+                )
+                detail = {
+                    "removed": retention_executor.removed_paths(receipt),
+                    "index": retention_executor.index_pruned(receipt),
+                }
+            except retention_executor.RemovalRefused as refused:
+                phase = "refused"
+                detail = {"refused": refused.refused.entries()}
+            except retention_executor.ExecutorUnavailable as unavailable:
+                phase = "failed"
+                detail = {"error": str(unavailable)}
+
             log_app_action(
                 app="transcripts",
                 facet=None,
@@ -1780,7 +1805,8 @@ def delete_segment(day: str, stream: str, segment_key: str) -> Any:
                     "segment_key": segment_key,
                     "stream": stream,
                     "pending_id": pending_id,
-                    "phase": "committed",
+                    "phase": phase,
+                    **detail,
                 },
                 day=day,
             )

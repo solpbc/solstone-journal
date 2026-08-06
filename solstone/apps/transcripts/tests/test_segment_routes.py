@@ -49,6 +49,48 @@ from tests.helpers.module_mocks import module_mock
 # 20260304 is the canonical fully-analyzed reference day; see
 # tests/fixtures/journal/chronicle/20260304/README.md and
 # tests/test_reference_day_fixture.py.
+def _retention_executor_or_skip() -> str:
+    """The real retention executor, or skip.
+
+    ⚠ Deliberately the REAL binary rather than a fake. A fake that mimicked the
+    executor would be an oracle this repository controls, and what these tests need to
+    know is what the actual removal does to the actual journal -- that the raw is
+    gone, that a tombstone remains as the owner's evidence, and that the segment stops
+    appearing in the listing. When the binary is not built, that is worth SAYING rather
+    than silently asserting against a stand-in.
+    """
+    import os
+    import shutil as _shutil
+
+    override = os.environ.get("SOLSTONE_RETENTION_BIN")
+    if override and os.access(override, os.X_OK):
+        return override
+    found = _shutil.which("solstone-retention")
+    if found:
+        return found
+    for profile in ("debug", "release"):
+        candidate = (
+            Path(__file__).resolve().parents[4]
+            / "core"
+            / "target"
+            / profile
+            / "solstone-retention"
+        )
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    pytest.skip(
+        "solstone-retention is not built; every removal of the owner's media goes "
+        "through it, so this test has nothing real to assert against "
+        "(build it with: cargo build -p solstone-core-retention-cli)"
+    )
+
+
+@pytest.fixture
+def retention_executor_available(monkeypatch):
+    """Make the real executor reachable from the route under test."""
+    monkeypatch.setenv("SOLSTONE_RETENTION_BIN", _retention_executor_or_skip())
+
+
 FIXTURE_DAY = "20260304"
 FIXTURE_STREAM = "default"
 FIXTURE_SEGMENT = "090000_300"
@@ -2733,18 +2775,23 @@ def test_reprocess_segment_isolates_streams(client, journal_copy, monkeypatch):
     assert popen_calls[0][0][popen_calls[0][0].index("--stream") + 1] == "alpha"
 
 
-def test_delete_segment_happy_path_removes_segment_directory(
-    client, journal_copy, monkeypatch, fake_deferred_deletes
+def test_delete_segment_happy_path_empties_the_segment_and_leaves_a_tombstone(
+    client, journal_copy, monkeypatch, fake_deferred_deletes, retention_executor_available
 ):
+    """The owner's content is gone; the evidence that it was deleted is not.
+
+    ⚠ This replaced an assertion that the segment DIRECTORY vanished. The retention
+    executor empties the segment and leaves a tombstone, which is what lets a later
+    pass recognise the same segment restored from a backup and remove it again. The
+    owner-visible behaviour is unchanged, and the assertion below on the listing is
+    what proves it: a tombstoned segment carries no content, so it stops appearing.
+    """
     monkeypatch.setattr(routes, "is_supervisor_up", lambda: True)
-    emit_calls = []
-    monkeypatch.setattr(
-        routes,
-        "emit",
-        lambda tract, event, **payload: emit_calls.append((tract, event, payload)),
-    )
     segment_dir = (
         journal_copy / "chronicle" / FIXTURE_DAY / FIXTURE_STREAM / FIXTURE_SEGMENT
+    )
+    assert any(entry.suffix != ".json" for entry in segment_dir.iterdir()), (
+        "the fixture must start with real content, or this asserts nothing"
     )
 
     response = client.delete(
@@ -2755,10 +2802,23 @@ def test_delete_segment_happy_path_removes_segment_directory(
     pending_id = response.get_json()["pending"]
     assert response.get_json()["deleted"] == FIXTURE_SEGMENT
     fake_deferred_deletes.fire(pending_id)
-    assert not segment_dir.exists()
-    assert emit_calls == [
-        ("supervisor", "request", {"cmd": ["journal", "indexer", "--rescan-full"]})
-    ]
+
+    remaining = sorted(entry.name for entry in segment_dir.iterdir())
+    assert remaining == ["tombstone.json"], remaining
+    tombstone = json.loads((segment_dir / "tombstone.json").read_text())
+    assert tombstone["manifest"], "the tombstone names what it removed"
+    assert tombstone["sanitization_level"] is None, (
+        "the executor declines to claim a sanitization level, which is what makes "
+        "the rest of the record credible"
+    )
+
+    # ⛔ The owner must not see a segment they deleted.
+    listing = client.get(f"/app/transcripts/api/segments/{FIXTURE_DAY}")
+    assert listing.status_code == 200
+    assert all(
+        entry.get("segment") != FIXTURE_SEGMENT
+        for entry in listing.get_json()["segments"]
+    ), listing.get_json()["segments"]
 
 
 def test_delete_segment_includes_search_index_warning_when_supervisor_is_down(
@@ -2836,7 +2896,7 @@ def test_cancel_delete_segment_within_window_keeps_directory(
 
 
 def test_cancel_delete_segment_too_late_after_commit(
-    client, journal_copy, fake_deferred_deletes
+    client, journal_copy, fake_deferred_deletes, retention_executor_available
 ):
     segment_dir = (
         journal_copy / "chronicle" / FIXTURE_DAY / FIXTURE_STREAM / FIXTURE_SEGMENT
@@ -2857,7 +2917,7 @@ def test_cancel_delete_segment_too_late_after_commit(
         reason_code="operation_no_longer_available",
         detail="already committed or unknown",
     )
-    assert not segment_dir.exists()
+    assert sorted(entry.name for entry in segment_dir.iterdir()) == ["tombstone.json"]
 
 
 def test_cancel_delete_segment_unknown_pending_id_returns_410(client):
@@ -2885,7 +2945,7 @@ def test_cancel_delete_segment_malformed_pending_id_returns_410(client):
 
 
 def test_delete_segment_writes_pending_and_committed_audit_rows(
-    client, journal_copy, monkeypatch, fake_deferred_deletes
+    client, journal_copy, monkeypatch, fake_deferred_deletes, retention_executor_available
 ):
     monkeypatch.setattr(routes, "is_supervisor_up", lambda: True)
 
@@ -2904,11 +2964,54 @@ def test_delete_segment_writes_pending_and_committed_audit_rows(
 
     fake_deferred_deletes.fire(pending_id)
     day_rows = _action_log_rows(journal_copy, FIXTURE_DAY)
-    assert any(
-        row["action"] == "segment_delete"
+    committed = [
+        row
+        for row in day_rows
+        if row["action"] == "segment_delete"
         and row["params"].get("pending_id") == pending_id
         and row["params"].get("phase") == "committed"
-        for row in day_rows
+    ]
+    assert committed, day_rows
+    # ⛔ The audit row carries what the executor actually removed, not just that it
+    # was asked to. A row saying "committed" with nothing removed is the shape a
+    # silent failure would wear.
+    assert committed[0]["params"]["removed"], committed[0]
+
+
+def test_delete_segment_records_a_failure_when_the_executor_is_unavailable(
+    client, journal_copy, monkeypatch, fake_deferred_deletes
+):
+    """🔴 No executor means no deletion, and the audit row must say so.
+
+    Every removal of the owner's media goes through the retention executor, so if it
+    cannot be run nothing is deleted. ⛔ The one outcome that must be impossible is a
+    row reading `committed` over content that is still on disk -- an owner believing a
+    deletion happened when it did not.
+    """
+    monkeypatch.setenv("SOLSTONE_RETENTION_BIN", str(journal_copy / "no-such-binary"))
+    segment_dir = (
+        journal_copy / "chronicle" / FIXTURE_DAY / FIXTURE_STREAM / FIXTURE_SEGMENT
+    )
+
+    response = client.delete(
+        f"/app/transcripts/api/segment/{FIXTURE_DAY}/{FIXTURE_STREAM}/{FIXTURE_SEGMENT}"
+    )
+    pending_id = response.get_json()["pending"]
+    fake_deferred_deletes.fire(pending_id)
+
+    assert (segment_dir / "audio.jsonl").exists() or any(
+        segment_dir.iterdir()
+    ), "nothing was deleted, which is correct"
+    rows = [
+        row
+        for row in _action_log_rows(journal_copy, FIXTURE_DAY)
+        if row["action"] == "segment_delete"
+        and row["params"].get("pending_id") == pending_id
+    ]
+    phases = {row["params"].get("phase") for row in rows}
+    assert "failed" in phases, rows
+    assert "committed" not in phases, (
+        "a deletion that did not happen must never be logged as committed"
     )
 
 
