@@ -26,17 +26,29 @@
 /// ⛔ Adding a `mod` to `lib.rs` without adding it here is a test failure. The
 /// sibling `segment` crate tolerates a hand-maintained list because its surface
 /// is frozen; this crate gains a module in each of the next several waves.
-const SOURCES: &[(&str, &str)] = &[("receipt", include_str!("../src/receipt.rs"))];
+const SOURCES: &[(&str, &str)] = &[
+    ("content", include_str!("../src/content.rs")),
+    ("eligibility", include_str!("../src/eligibility.rs")),
+    ("receipt", include_str!("../src/receipt.rs")),
+];
 
 const LIB: &str = include_str!("../src/lib.rs");
 
-/// Primitives that remove or rename. Split so a diagnostic can say which.
+/// Primitives that remove or rename a directory entry.
+///
+/// ⚠ Matched in **call-shaped** form, not as bare words. A bare `"rename"` also
+/// matches `#[serde(rename_all = ..)]`, which is an ordinary attribute and not a
+/// filesystem operation — the substring-scan hazard this crate's sibling has, found
+/// here by the test failing on its own crate. The forms below are how a primitive
+/// is actually reached: qualified through `fs::`, or called as a journal-io wrapper.
 const REMOVAL_PRIMITIVES: &[&str] = &[
-    "remove_file",
-    "remove_dir",
-    "remove_dir_all",
-    "rename",
-    "rename_within",
+    "fs::remove_file",
+    "fs::remove_dir",
+    "fs::remove_dir_all",
+    "fs::rename",
+    "remove_file(",
+    "remove_dir_all(",
+    "rename_within(",
 ];
 
 /// Forms that silence `#[must_use]`.

@@ -152,6 +152,7 @@ impl Outcome {
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
+    clippy::panic,
     reason = "test code; the crate-level denials exist to constrain the verbs"
 )]
 mod tests {

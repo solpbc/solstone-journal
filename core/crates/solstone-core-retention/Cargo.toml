@@ -22,6 +22,8 @@ serde = { workspace = true, features = ["derive"] }
 # dependency requires is a file all three conversion lanes edit, so it is added
 # once here rather than again in each wave that adds a verb.
 solstone-core-journal-io = { workspace = true }
+solstone-core-processing-record = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 # The outcome model's emitted shape is part of its contract -- a later wave's

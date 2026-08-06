@@ -41,6 +41,10 @@
     clippy::unreachable
 )]
 
+pub mod content;
+pub mod eligibility;
 pub mod receipt;
 
+pub use content::{ContentName, HandlerRegistry, MediaClassifier};
+pub use eligibility::{Blocker, Evidence, FoundContent, ProvenRaw, RawRelease, SidecarFacts};
 pub use receipt::{NotRemoved, Outcome, RemovedPath, RunHalt, Target, TargetOutcome};
