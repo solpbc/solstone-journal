@@ -60,8 +60,8 @@ def run_mark_raw_routine(args: list[str]) -> int:
     after_ids = policy_mark_ids(after)
     new_ids = sorted(after_ids - before_ids)
 
-    print(f"mark-raw: New items: {len(new_ids)}.")
-    print(f"  Standing total: {len(after_ids)}.")
+    print(f"mark-raw: new items: {len(new_ids)}.")
+    print(f"  standing total: {len(after_ids)}.")
     for mark_id in new_ids:
         print(f"  {mark_id}: {after_marks[mark_id]['proposal']['reason']}")
     return 0
