@@ -314,7 +314,7 @@ The logic that decides what raw media is retained, and what logs are retained fo
 
 ⛔ **The request names its unit**: whole segments (one, or a set) leaving a `tombstone.json`, or the proven raw originals leaving every derived output. ⛔ There is no third unit, and ⛔ no partial owner-directed delete.
 
-🔴 **A removal request must carry its own precondition, because consolidating the removers must not weaken the strongest one.** `think/offload.py:257-312` archives to backup, **confirms the snapshot holds every byte at the recorded size**, appends its ledger, and only then unlinks — where retention's own path hashes the bytes and unlinks with no archive. When that removal becomes a request, the confirmed-snapshot precondition travels **with the request**; a request type that can be constructed without it has moved the guard out of the executor and into the caller.
+🔴 **A removal request must carry its own precondition, because consolidating the removers must not weaken the strongest one.** `think/offload.py:308-402` archives to backup, **confirms the snapshot holds every byte at the recorded size**, appends its ledger, and only then mints an approval-required removal mark — where retention's own path hashes the bytes and unlinks with no archive. When that removal becomes a request, the confirmed-snapshot precondition travels **with the request**; a request type that can be constructed without it has moved the guard out of the executor and into the caller.
 
 ### 🔴 The predicate — measured, because the two irreversible readers disagree
 

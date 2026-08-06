@@ -7,8 +7,8 @@ This ledger is JSONL, not sqlite, because backup excludes ``*.sqlite*`` while
 ``health/`` is included. Losing the journal must not lose the map to the
 owner's only backed-up copy of their media. It is fsync'd even though the
 nearby pruning audit writer is not: pruning audits are post-hoc records, while
-this ledger is a pre-delete witness for a later path that deletes local media
-immediately after append returns.
+this ledger is a pre-mark witness for a later path that mints a pending-approval
+removal mark immediately after append returns.
 
 Per-file records intentionally use ``name`` and ``bytes`` to match the existing
 raw-media audit shape, but use ``sha256`` instead of ``hash`` because this

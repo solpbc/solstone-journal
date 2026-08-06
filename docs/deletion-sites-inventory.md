@@ -41,8 +41,7 @@ Inventory of every non-test, non-scratch, non-atomic-tmp destructive removal (`s
 
 | file:line | target | trigger | path validation | audit log | dry-run | class | why |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `solstone/think/offload.py:314` | raw media files archived and verified in gate-eligible segments | `backup:offload` media offload pass under configured budget/floor pressure | `get_raw_media_files()` segment-local selection plus unchanged `resolve_segment_gate()` eligibility | durable offload ledger append before unlink plus per-segment `write_prune_audit(kind="raw_media_offload")` record | yes | `✅` | retention-style raw-media delete with stricter archive-confirm-before-delete ordering |
-| `solstone/think/offload_restore.py:432` | recorded media files in a segment restore attempt | restore-on-demand verification failure after restic exits successfully | `resolve_segment_dir()` without mkdir plus validated offload-ledger basenames; rollback only visits `segment_dir / file.name` entries that are still files | `record_restore_result(status="error", reason=...)` records the failed attempt; verified successes append a durable restore event instead | no | `⚠️` | rollback-only delete returns a backup-only segment to ledger state; bounded to attempted files, never a blanket segment wipe |
+| `solstone/think/offload_restore.py:535` | recorded media files in a segment restore attempt | restore-on-demand verification failure after restic exits successfully | `resolve_segment_dir()` without mkdir plus validated offload-ledger basenames; rollback only visits `segment_dir / file.name` entries that are still files | `record_restore_result(status="error", reason=...)` records the failed attempt; verified successes append a durable restore event instead | no | `⚠️` | rollback-only delete returns a backup-only segment to ledger state; bounded to attempted files, never a blanket segment wipe |
 
 ## think/log_retention
 

@@ -949,6 +949,37 @@ def test_unexpected_exception_records_unexpected_error(
     now = 1_800_000_000
     _write_config(journal, _ready_config(now=now, budget_bytes=1))
     raw_path = _make_segment(journal, content=b"abcdef").joinpath("audio.wav")
+    monkeypatch.setattr(
+        offload.retention_executor,
+        "marks",
+        Mock(
+            return_value={
+                "ok": True,
+                "verb": "marks",
+                "marks": {
+                    "version": 1,
+                    "marks": {
+                        "prior": {
+                            "id": "prior",
+                            "class": "offload_raw_release",
+                            "target": {
+                                "day": "20251231",
+                                "stream": "default",
+                                "dir": "090000_300",
+                            },
+                            "marked_at": "2025-12-31T00:00:00Z",
+                            "proposal": {
+                                "bytes": 2,
+                                "reason": "restic-snapshot:prior",
+                                "names": ["audio.wav"],
+                            },
+                            "state": "marked",
+                        }
+                    },
+                },
+            }
+        ),
+    )
 
     def fail_archive(paths: list[Path]) -> engine.BackupResult:
         raise RuntimeError("boom")
@@ -959,6 +990,8 @@ def test_unexpected_exception_records_unexpected_error(
 
     assert result.status == "stalled"
     assert result.reason == "unexpected_error"
+    assert result.files_already_marked == 1
+    assert result.bytes_already_marked == 2
     assert _read_config(journal)["backup"]["last_offload"]["reason"] == (
         "unexpected_error"
     )

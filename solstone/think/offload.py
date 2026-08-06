@@ -124,6 +124,8 @@ def format_offload_result(result: OffloadResult) -> str:
 class _Counters:
     files_marked: int = 0
     bytes_marked: int = 0
+    files_already_marked: int = 0
+    bytes_already_marked: int = 0
     details: list[OffloadSegmentDetail] = field(default_factory=list)
 
 
@@ -146,8 +148,6 @@ def run_offload(dry_run: bool = False) -> OffloadResult:
             "unexpected_error",
             dry_run=dry_run,
             counters=counters,
-            files_already_marked=0,
-            bytes_already_marked=0,
             ran_out_of_markable_media=False,
         )
 
@@ -178,29 +178,25 @@ def _run_offload(*, dry_run: bool, counters: _Counters) -> OffloadResult:
             precondition_reason,
             dry_run=dry_run,
             counters=counters,
-            files_already_marked=0,
-            bytes_already_marked=0,
             ran_out_of_markable_media=False,
         )
 
     journal_path = Path(get_journal())
     mark_index = load_offload_mark_index(str(journal_path))
-    bytes_already_marked = mark_index.total_bytes
-    files_already_marked = mark_index.total_files
+    counters.bytes_already_marked = mark_index.total_bytes
+    counters.files_already_marked = mark_index.total_files
     usage = measure_raw_media_usage()
     start_raw_bytes = usage.total_bytes
     budget_bytes = offload_config.get("budget_bytes")
 
     if _budget_satisfied(
         start_raw_bytes=start_raw_bytes,
-        freed_bytes=bytes_already_marked,
+        freed_bytes=counters.bytes_already_marked,
         budget_bytes=budget_bytes,
     ):
         return _ok_result(
             dry_run=dry_run,
             counters=counters,
-            files_already_marked=files_already_marked,
-            bytes_already_marked=bytes_already_marked,
             ran_out_of_markable_media=False,
         )
 
@@ -244,31 +240,25 @@ def _run_offload(*, dry_run: bool, counters: _Counters) -> OffloadResult:
                     completion_files=gate.completion_files,
                     counters=counters,
                     mark_index=mark_index,
-                    files_already_marked=files_already_marked,
-                    bytes_already_marked=bytes_already_marked,
                 )
                 if stall is not None:
                     return stall
 
             if _budget_satisfied(
                 start_raw_bytes=start_raw_bytes,
-                freed_bytes=bytes_already_marked
+                freed_bytes=counters.bytes_already_marked
                 + _effective_marked_bytes(counters, dry_run=dry_run),
                 budget_bytes=budget_bytes,
             ):
                 return _ok_result(
                     dry_run=dry_run,
                     counters=counters,
-                    files_already_marked=files_already_marked,
-                    bytes_already_marked=bytes_already_marked,
                     ran_out_of_markable_media=False,
                 )
 
     return _ok_result(
         dry_run=dry_run,
         counters=counters,
-        files_already_marked=files_already_marked,
-        bytes_already_marked=bytes_already_marked,
         ran_out_of_markable_media=True,
     )
 
@@ -323,8 +313,6 @@ def _offload_segment(
     completion_files: list[Path],
     counters: _Counters,
     mark_index: OffloadMarkIndex,
-    files_already_marked: int,
-    bytes_already_marked: int,
 ) -> tuple[OffloadResult | None, OffloadMarkIndex]:
     prepared = _prepare_raw_files(raw_files)
 
@@ -335,8 +323,6 @@ def _offload_segment(
             stall_reason,
             dry_run=False,
             counters=counters,
-            files_already_marked=files_already_marked,
-            bytes_already_marked=bytes_already_marked,
             ran_out_of_markable_media=False,
         ), mark_index
 
@@ -346,8 +332,6 @@ def _offload_segment(
             "archive_failed",
             dry_run=False,
             counters=counters,
-            files_already_marked=files_already_marked,
-            bytes_already_marked=bytes_already_marked,
             ran_out_of_markable_media=False,
         ), mark_index
 
@@ -361,8 +345,6 @@ def _offload_segment(
             stall_reason,
             dry_run=False,
             counters=counters,
-            files_already_marked=files_already_marked,
-            bytes_already_marked=bytes_already_marked,
             ran_out_of_markable_media=False,
         ), mark_index
 
@@ -497,8 +479,6 @@ def _stalled_result(
     *,
     dry_run: bool,
     counters: _Counters,
-    files_already_marked: int,
-    bytes_already_marked: int,
     ran_out_of_markable_media: bool,
 ) -> OffloadResult:
     if reason not in OFFLOAD_STALL_REASONS:
@@ -508,8 +488,8 @@ def _stalled_result(
         reason=reason,
         files_marked=counters.files_marked,
         bytes_marked=counters.bytes_marked,
-        files_already_marked=files_already_marked,
-        bytes_already_marked=bytes_already_marked,
+        files_already_marked=counters.files_already_marked,
+        bytes_already_marked=counters.bytes_already_marked,
         ran_out_of_markable_media=ran_out_of_markable_media,
         dry_run=dry_run,
         details=tuple(counters.details),
@@ -530,8 +510,6 @@ def _ok_result(
     *,
     dry_run: bool,
     counters: _Counters,
-    files_already_marked: int,
-    bytes_already_marked: int,
     ran_out_of_markable_media: bool,
 ) -> OffloadResult:
     result = OffloadResult(
@@ -539,8 +517,8 @@ def _ok_result(
         reason=None,
         files_marked=counters.files_marked,
         bytes_marked=counters.bytes_marked,
-        files_already_marked=files_already_marked,
-        bytes_already_marked=bytes_already_marked,
+        files_already_marked=counters.files_already_marked,
+        bytes_already_marked=counters.bytes_already_marked,
         ran_out_of_markable_media=ran_out_of_markable_media,
         dry_run=dry_run,
         details=tuple(counters.details),
