@@ -202,6 +202,18 @@ The local model lane. ⚠ Not a types boundary — it is loopback HTTP **plus a 
 
 The indexer's and the convey apps' consumption of consistently formatted structured journal data. ⚠ `P-format` owns both because it is the one-to-many end — it serves all consumers and cannot negotiate per-consumer. ⛔ The name encodes contract ownership, not data flow.
 
+🔴 **`S:index:format` is built; `S:web:format` has no implementation.** The rendered value is index-shaped (`chunks: [{content}]`), and the contract also carries a document **header**, a per-chunk **occurrence time**, and the **originating record**. The index stores none of those three, which is why their absence went unnoticed — and they are precisely what the owner-facing surface reads.
+
+**Carry forward — what the web half needs, and why each exists:**
+
+- 🔴 **The originating record is load-bearing, not decoration.** Speaker attribution reads it and the speaker is *stripped* from the rendered text so the surface can draw a structured speaker element instead; a 1-based sentence ordinal is assigned by matching chunks back to their source rows, and that ordinal is the key a speaker correction writes against. Screen frames read frame identity and bounding boxes from it, including per-participant boxes. Browser rows read it to tell a snapshot from a delta.
+- 🔴 **The occurrence time drives audio seek**, not just ordering: clicking a transcript line converts it to an offset into the segment's audio, and playback re-derives the active line from it. Losing it does not degrade the timeline, it removes the interaction.
+- ⚠ **The header is consumed by the text projections, never by the web route.** Do not infer it is unused from the route alone.
+- ⚠ **Speaker labels resolve from journal config** — an owner display name, then an agent name, each with a fallback. ⛔ A renderer that hardcodes them disagrees with the owner's own journal on every turn; the formatting layer should take them as an **input** so it stays pure and the caller supplies them.
+- ⚠ **Several consumers reach the formatters by direct import, bypassing the registry entirely** — the transcripts route, the timeline route, the activities route, and the text-projection wrappers. Two of those cannot go through the registry by construction: one formats an in-memory record that has no file at all, and one feeds entries synthesized from sidecars that were never on disk. ⛔ **A path-keyed registry cannot express either**, so the boundary needs a by-shape entry point that does not require a path.
+- ⚠ **The projection walker is an iterator with a pre-render filter, not a map.** The filter runs *before* rendering; collapsing it to a name→text map moves that cost onto every caller.
+- ⚠ **Talent-projection keys are owner-visible** — each becomes a tab label. Renaming a key renames a tab.
+
 ### `S:index:*` — the read / query path
 **Owner** ⚠ unassigned · **Tier** schema
 
