@@ -6,21 +6,26 @@
 use std::fs;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::thread;
 
 use serde_json::{Value, json};
 use solstone_core_entity::hold_entity_trust_lock;
 use solstone_core_entity::{
-    AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityResolutionEntity,
-    EntityResolutionOutcome, read_identity_map, record_ambiguity_choice,
-    record_ambiguity_observation, record_entity_resolution, remove_entity_ambiguity_references,
+    AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,
+    EntityOperationKind, EntityResolutionEntity, EntityResolutionOutcome, read_identity_map,
+    record_ambiguity_choice, record_ambiguity_observation, record_entity_resolution,
+    remove_entity_ambiguity_references, save_entity_identity,
 };
+use solstone_core_indexer_store::db::open_index;
 
+use crate::store::delete_created_entity_if_unreferenced_with_hook;
 use crate::store_tests::{
     TempDir, create_test_facet, relationship_value, write_facet_relationship, write_journal_entity,
 };
 use crate::{
-    FacetEntityLifecycleError, block_journal_entity, delete_facet_entity_link,
+    EntityDeleteGuardOutcome, EntityHistoryReference, FacetEntityLifecycleError,
+    block_journal_entity, delete_created_entity_if_unreferenced, delete_facet_entity_link,
     delete_journal_entity, read_facet_entity_link, set_facet_entity_link_detached,
 };
 
@@ -304,6 +309,273 @@ fn delete_removes_divergent_links_entity_and_identity_cache_entry() {
             .resolved
             .contains_key("target")
     );
+}
+
+#[test]
+fn guarded_delete_removes_matching_unreferenced_entity() {
+    let temporary = TempDir::new();
+    let (identity, history) = create_identify_entity(temporary.path(), "target", "op-1");
+    open_index(temporary.path()).unwrap();
+
+    let outcome = delete_created_entity_if_unreferenced(
+        temporary.path(),
+        "target",
+        "op-1",
+        &identity,
+        &[history],
+    )
+    .unwrap();
+
+    assert_eq!(outcome, deleted_outcome());
+    assert!(!temporary.path().join("entities/target").exists());
+    assert!(
+        !read_identity_map(temporary.path())
+            .unwrap()
+            .resolved
+            .contains_key("target")
+    );
+}
+
+#[test]
+fn guarded_delete_reports_identity_change_without_skipping_other_checks() {
+    let temporary = TempDir::new();
+    let (mut identity, history) = create_identify_entity(temporary.path(), "target", "op-1");
+    open_index(temporary.path()).unwrap();
+    identity["name"] = json!("previous name");
+
+    let outcome = delete_created_entity_if_unreferenced(
+        temporary.path(),
+        "target",
+        "op-1",
+        &identity,
+        &[history],
+    )
+    .unwrap();
+
+    assert!(!outcome.deleted);
+    assert!(outcome.identity_changed);
+    assert!(!outcome.history_changed);
+    assert_eq!(outcome.references, Default::default());
+    assert!(temporary.path().join("entities/target").exists());
+}
+
+#[test]
+fn guarded_delete_excludes_its_own_correction_and_identify_operation_rows() {
+    let temporary = TempDir::new();
+    let (identity, history) = create_identify_entity(temporary.path(), "target", "op-1");
+    open_index(temporary.path()).unwrap();
+    write_text(
+        temporary.path(),
+        "chronicle/20260805/stream/seg/talents/speaker_corrections.json",
+        "{\"corrections\":[{\"original_speaker\":\"target\",\"operation_id\":\"op-1\"}]}",
+    );
+    write_text(
+        temporary.path(),
+        "speakers/identify-operations.jsonl",
+        "{\"target_entity_id\":\"target\",\"operation_id\":\"op-1\"}\n",
+    );
+
+    let outcome = delete_created_entity_if_unreferenced(
+        temporary.path(),
+        "target",
+        "op-1",
+        &identity,
+        &[history],
+    )
+    .unwrap();
+
+    assert_eq!(outcome, deleted_outcome());
+}
+
+#[test]
+fn guarded_delete_counts_divergent_reference_surfaces_like_aligned_entities() {
+    let divergent = TempDir::new();
+    let aligned = TempDir::new();
+    write_reference_shape(divergent.path(), "target-directory", "target");
+    write_reference_shape(aligned.path(), "target", "target");
+    open_index(divergent.path()).unwrap();
+    open_index(aligned.path()).unwrap();
+
+    let divergent_counts = crate::store::reference_scan::scan_entity_references(
+        divergent.path(),
+        "target",
+        "target-directory",
+        Some("op-1"),
+    )
+    .unwrap();
+    let aligned_counts = crate::store::reference_scan::scan_entity_references(
+        aligned.path(),
+        "target",
+        "target",
+        Some("op-1"),
+    )
+    .unwrap();
+
+    assert_eq!(divergent_counts, aligned_counts);
+    assert_eq!(divergent_counts.facet_relationship, 1);
+    assert_eq!(divergent_counts.observation, 1);
+    assert_eq!(divergent_counts.unrecognized_file, 1);
+}
+
+#[test]
+fn guarded_delete_missing_is_an_already_gone_success() {
+    let temporary = TempDir::new();
+    let outcome =
+        delete_created_entity_if_unreferenced(temporary.path(), "missing", "op-1", &json!({}), &[])
+            .unwrap();
+
+    assert!(outcome.deleted);
+    assert!(outcome.already_gone);
+    assert!(!outcome.identity_changed);
+    assert!(!outcome.history_changed);
+    assert_eq!(outcome.references, Default::default());
+}
+
+#[test]
+fn guarded_delete_refuses_history_mismatch_and_unrecognized_contents() {
+    let history_mismatch = TempDir::new();
+    let (identity, history) = create_identify_entity(history_mismatch.path(), "target", "op-1");
+    open_index(history_mismatch.path()).unwrap();
+    let outcome = delete_created_entity_if_unreferenced(
+        history_mismatch.path(),
+        "target",
+        "different-operation",
+        &identity,
+        &[history],
+    )
+    .unwrap();
+    assert!(outcome.history_changed);
+    assert_eq!(outcome.references, Default::default());
+
+    let unrecognized = TempDir::new();
+    let (identity, history) = create_identify_entity(unrecognized.path(), "target", "op-1");
+    open_index(unrecognized.path()).unwrap();
+    write_text(unrecognized.path(), "entities/target/extra.bin", "x");
+    let outcome = delete_created_entity_if_unreferenced(
+        unrecognized.path(),
+        "target",
+        "op-1",
+        &identity,
+        &[history],
+    )
+    .unwrap();
+    assert!(!outcome.deleted);
+    assert_eq!(outcome.references.unrecognized_file, 1);
+}
+
+#[test]
+fn guarded_delete_fails_closed_for_missing_index_without_changing_owner_delete_report() {
+    let guarded = TempDir::new();
+    let (identity, history) = create_identify_entity(guarded.path(), "target", "op-1");
+    let outcome = delete_created_entity_if_unreferenced(
+        guarded.path(),
+        "target",
+        "op-1",
+        &identity,
+        &[history],
+    )
+    .unwrap();
+    assert!(!outcome.deleted);
+    assert!(outcome.references.unreadable >= 1);
+    assert!(guarded.path().join("entities/target").exists());
+
+    let owner_delete = TempDir::new();
+    write_journal_entity(owner_delete.path(), "target", Some("target"));
+    let report = delete_journal_entity(owner_delete.path(), "target").unwrap();
+    assert_eq!(report.references, Default::default());
+}
+
+#[test]
+fn guarded_delete_holds_entity_trust_until_it_returns() {
+    let temporary = TempDir::new();
+    let (identity, history) = create_identify_entity(temporary.path(), "target", "op-1");
+    open_index(temporary.path()).unwrap();
+
+    let returned = Arc::new(AtomicBool::new(false));
+    let attempted_before_return = Arc::new(AtomicBool::new(false));
+    let acquired_before_return = Arc::new(AtomicBool::new(false));
+    let (hook_reached_sender, hook_reached) = mpsc::channel();
+    let (hook_continue, hook_continue_receiver) = mpsc::channel();
+    let (contender_waiting_sender, contender_waiting) = mpsc::channel();
+    let delete_root = temporary.path().to_path_buf();
+    let delete_returned = Arc::clone(&returned);
+    let delete = thread::spawn(move || {
+        let result = delete_created_entity_if_unreferenced_with_hook(
+            &delete_root,
+            "target",
+            "op-1",
+            &identity,
+            &[history],
+            move || {
+                hook_reached_sender.send(()).unwrap();
+                hook_continue_receiver.recv().unwrap();
+            },
+        );
+        delete_returned.store(true, Ordering::SeqCst);
+        result
+    });
+
+    let contender_root = temporary.path().to_path_buf();
+    let contender_returned = Arc::clone(&returned);
+    let contender_attempted = Arc::clone(&attempted_before_return);
+    let contender_acquired = Arc::clone(&acquired_before_return);
+    let contender = thread::spawn(move || {
+        hook_reached.recv().unwrap();
+        contender_attempted.store(!contender_returned.load(Ordering::SeqCst), Ordering::SeqCst);
+        contender_waiting_sender.send(()).unwrap();
+        let _trust = hold_entity_trust_lock(&contender_root).unwrap();
+        contender_acquired.store(!contender_returned.load(Ordering::SeqCst), Ordering::SeqCst);
+    });
+
+    contender_waiting.recv().unwrap();
+    hook_continue.send(()).unwrap();
+
+    assert_eq!(delete.join().unwrap().unwrap(), deleted_outcome());
+    contender.join().unwrap();
+    assert!(attempted_before_return.load(Ordering::SeqCst));
+    assert!(
+        !acquired_before_return.load(Ordering::SeqCst),
+        "guarded delete must retain entity trust through its nested owner delete"
+    );
+}
+
+#[test]
+fn guarded_delete_blocks_target_ambiguity_but_not_other_entity_ambiguity() {
+    let blocked = TempDir::new();
+    let (identity, history) = create_identify_entity(blocked.path(), "target", "op-1");
+    open_index(blocked.path()).unwrap();
+    write_text(
+        blocked.path(),
+        "entities/ambiguities.jsonl",
+        "{\"resolved_entity_id\":\"target\"}\n",
+    );
+    let blocked_outcome = delete_created_entity_if_unreferenced(
+        blocked.path(),
+        "target",
+        "op-1",
+        &identity,
+        &[history],
+    )
+    .unwrap();
+    assert_eq!(blocked_outcome.references.ambiguity, 1);
+    assert!(!blocked_outcome.deleted);
+
+    let clear = TempDir::new();
+    let (_identity, _history) = create_identify_entity(clear.path(), "target", "op-1");
+    open_index(clear.path()).unwrap();
+    write_text(
+        clear.path(),
+        "entities/ambiguities.jsonl",
+        "{\"resolved_entity_id\":\"other\"}\n",
+    );
+    let clear_counts = crate::store::reference_scan::scan_entity_references(
+        clear.path(),
+        "target",
+        "target",
+        Some("op-1"),
+    )
+    .unwrap();
+    assert_eq!(clear_counts.ambiguity, 0);
 }
 
 #[test]
@@ -602,6 +874,56 @@ fn write_text(root: &std::path::Path, relative: &str, contents: &str) {
     let path = root.join(relative);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, contents).unwrap();
+}
+
+fn create_identify_entity(
+    root: &std::path::Path,
+    entity_id: &str,
+    operation_id: &str,
+) -> (Value, EntityHistoryReference) {
+    let identity = json!({"id": entity_id, "name": "Target", "type": "Person"});
+    let operation = EntityOperationContext {
+        kind: EntityOperationKind::Create,
+        caller: Value::Null,
+        actor: Value::Null,
+        metadata: json!({
+            "operation_kind": "speaker_identify",
+            "operation_id": operation_id,
+        }),
+    };
+    let event = save_entity_identity(root, entity_id, &identity, Some(&operation))
+        .unwrap()
+        .event
+        .unwrap();
+    (
+        identity,
+        EntityHistoryReference {
+            version_id: event["version_id"].as_str().unwrap().to_owned(),
+            sequence: event["seq"].as_i64().unwrap().into(),
+        },
+    )
+}
+
+fn deleted_outcome() -> EntityDeleteGuardOutcome {
+    EntityDeleteGuardOutcome {
+        deleted: true,
+        already_gone: false,
+        identity_changed: false,
+        history_changed: false,
+        references: Default::default(),
+    }
+}
+
+fn write_reference_shape(root: &std::path::Path, entity_dir: &str, entity_id: &str) {
+    write_journal_entity(root, entity_dir, Some(entity_id));
+    write_text(root, &format!("entities/{entity_dir}/unexpected.bin"), "x");
+    create_test_facet(root, "work");
+    write_facet_relationship(root, "work", "legacy", json!({"entity_id": entity_id}));
+    write_text(
+        root,
+        "facets/work/entities/legacy/observations.jsonl",
+        &format!("{{\"target_entity_id\":\"{entity_id}\"}}\n"),
+    );
 }
 
 fn scan_synthetic_entity_reference(

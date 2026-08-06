@@ -24,6 +24,7 @@
 //! preventing inversion. Delete leaves no durable trace beyond removed entity history
 //! and the deliberately dangling references.
 
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
@@ -33,7 +34,8 @@ use serde_json::{Value, json};
 use solstone_core_entity::{
     EntityLifecycleError, EntityOperationContext, EntityOperationKind, EntityStoreError,
     EntityTrustLockError, EntityWriteError, delete_entity_directory, read_entity_identity,
-    read_identity_map, remove_entity_ambiguity_references, save_entity_identity,
+    read_identity_map, read_visible_history, remove_entity_ambiguity_references,
+    save_entity_identity,
 };
 use solstone_core_journal_io::{DirEntryKind, list_dir_entries};
 
@@ -56,6 +58,23 @@ pub struct EntityBlockReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntityDeleteReport {
     pub facets_deleted: Vec<String>,
+    pub references: EntityReferenceBreakdown,
+}
+
+/// One expected visible identity-history reference for guarded created-entity undo.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EntityHistoryReference {
+    pub version_id: String,
+    pub sequence: i128,
+}
+
+/// Result of the idempotent compare-and-swap deletion for an identify-created entity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityDeleteGuardOutcome {
+    pub deleted: bool,
+    pub already_gone: bool,
+    pub identity_changed: bool,
+    pub history_changed: bool,
     pub references: EntityReferenceBreakdown,
 }
 
@@ -257,6 +276,166 @@ pub fn delete_journal_entity(
         facets_deleted,
         references,
     })
+}
+
+/// Delete an identify-created entity only when its original identity and history remain intact.
+///
+/// This lives beside [`delete_journal_entity`] because the guarded operation needs facet-store
+/// reference access. Unlike the owner-facing delete, a missing entity is a successful,
+/// idempotent-undo outcome; the owner-facing operation still errors for a missing entity. The
+/// operation holds facet trust before entity trust for its full duration, matching the established
+/// cross-store order and preventing inversion. Once it elects to delete, it delegates to
+/// [`delete_journal_entity`], inheriting that operation's existing proceed-and-report
+/// partial-completion behavior rather than adding new interruption or resume semantics.
+pub fn delete_created_entity_if_unreferenced(
+    journal_root: &Path,
+    entity_id: &str,
+    operation_id: &str,
+    expected_identity: &Value,
+    expected_history_refs: &[EntityHistoryReference],
+) -> Result<EntityDeleteGuardOutcome, FacetEntityLifecycleError> {
+    delete_created_entity_if_unreferenced_inner(
+        journal_root,
+        entity_id,
+        operation_id,
+        expected_identity,
+        expected_history_refs,
+        || {},
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn delete_created_entity_if_unreferenced_with_hook(
+    journal_root: &Path,
+    entity_id: &str,
+    operation_id: &str,
+    expected_identity: &Value,
+    expected_history_refs: &[EntityHistoryReference],
+    hook: impl FnOnce(),
+) -> Result<EntityDeleteGuardOutcome, FacetEntityLifecycleError> {
+    delete_created_entity_if_unreferenced_inner(
+        journal_root,
+        entity_id,
+        operation_id,
+        expected_identity,
+        expected_history_refs,
+        hook,
+    )
+}
+
+fn delete_created_entity_if_unreferenced_inner(
+    journal_root: &Path,
+    entity_id: &str,
+    operation_id: &str,
+    expected_identity: &Value,
+    expected_history_refs: &[EntityHistoryReference],
+    hook: impl FnOnce(),
+) -> Result<EntityDeleteGuardOutcome, FacetEntityLifecycleError> {
+    let _facet_trust =
+        hold_facet_trust_lock(journal_root).map_err(FacetEntityLifecycleError::FacetTrustLock)?;
+    let _entity_trust = solstone_core_entity::hold_entity_trust_lock(journal_root)
+        .map_err(FacetEntityLifecycleError::EntityTrustLock)?;
+    let Some(entity_dir) = read_identity_map(journal_root)
+        .map_err(entity_store_error)?
+        .resolved
+        .get(entity_id)
+        .cloned()
+    else {
+        return Ok(EntityDeleteGuardOutcome {
+            deleted: true,
+            already_gone: true,
+            identity_changed: false,
+            history_changed: false,
+            references: EntityReferenceBreakdown::default(),
+        });
+    };
+
+    let current = read_entity_identity(journal_root, &entity_dir)
+        .map_err(entity_store_error)?
+        .expect("resolved identity-map directory contains an identity");
+    let identity_changed = !meaningful_identity_matches(current.value(), expected_identity);
+
+    let mut history_unreadable = false;
+    let history_changed = match read_visible_history(journal_root, &entity_dir) {
+        Ok(events) => history_changed(&events, expected_history_refs, operation_id)
+            .map_err(entity_store_error)?,
+        Err(_) => {
+            history_unreadable = true;
+            false
+        }
+    };
+    let mut references =
+        scan_entity_references(journal_root, entity_id, &entity_dir, Some(operation_id))?;
+    if history_unreadable {
+        references.unreadable += 1;
+    }
+
+    if !identity_changed && !history_changed && references == EntityReferenceBreakdown::default() {
+        hook();
+        delete_journal_entity(journal_root, entity_id)?;
+        return Ok(EntityDeleteGuardOutcome {
+            deleted: true,
+            already_gone: false,
+            identity_changed: false,
+            history_changed: false,
+            references: EntityReferenceBreakdown::default(),
+        });
+    }
+
+    Ok(EntityDeleteGuardOutcome {
+        deleted: false,
+        already_gone: false,
+        identity_changed,
+        history_changed,
+        references,
+    })
+}
+
+fn meaningful_identity_matches(current: &Value, expected: &Value) -> bool {
+    [
+        "id",
+        "name",
+        "type",
+        "aka",
+        "emails",
+        "is_principal",
+        "blocked",
+    ]
+    .iter()
+    .all(|field| current.get(*field) == expected.get(*field))
+}
+
+fn history_changed(
+    events: &[solstone_core_entity::HistoryEvent],
+    expected_history_refs: &[EntityHistoryReference],
+    operation_id: &str,
+) -> Result<bool, EntityStoreError> {
+    let current_refs = events
+        .iter()
+        .map(|event| Ok((event.version_id()?.to_owned(), event.sequence()?)))
+        .collect::<Result<HashSet<_>, EntityStoreError>>()?;
+    let expected_refs = expected_history_refs
+        .iter()
+        .map(|reference| (reference.version_id.clone(), reference.sequence))
+        .collect::<HashSet<_>>();
+    let Some(event) = events.first() else {
+        return Ok(true);
+    };
+    Ok(events.len() != 1
+        || current_refs != expected_refs
+        || !event.value().get("operation").is_some_and(Value::is_object)
+        || event
+            .value()
+            .get("operation")
+            .and_then(|operation| operation.get("operation_kind"))
+            .and_then(Value::as_str)
+            != Some("speaker_identify")
+        || event
+            .value()
+            .get("operation")
+            .and_then(|operation| operation.get("operation_id"))
+            .and_then(Value::as_str)
+            != Some(operation_id))
 }
 
 fn entity_store_error(error: EntityStoreError) -> FacetEntityLifecycleError {

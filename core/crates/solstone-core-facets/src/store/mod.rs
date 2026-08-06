@@ -32,8 +32,11 @@ pub use facet_entities::{
 };
 pub use facet_entity_move::{FacetEntityMoveResult, move_facet_entity};
 pub use identity::{FacetEntityLinkSnapshot, read_facet_entity_link};
+#[cfg(test)]
+pub(crate) use lifecycle::delete_created_entity_if_unreferenced_with_hook;
 pub use lifecycle::{
-    EntityBlockReport, EntityDeleteReport, FacetEntityLifecycleError, block_journal_entity,
+    EntityBlockReport, EntityDeleteGuardOutcome, EntityDeleteReport, EntityHistoryReference,
+    FacetEntityLifecycleError, block_journal_entity, delete_created_entity_if_unreferenced,
     delete_journal_entity,
 };
 pub use logs::{read_log_file, write_log_file};
