@@ -4,7 +4,6 @@ members = [
     "crates/solstone-core-cli",
     "crates/solstone-core-indexer",
     "crates/solstone-core-indexer-store",
-    "crates/solstone-core-observer-delete",
     "crates/solstone-core-entity",
     "crates/solstone-core-entity-matching",
     "crates/solstone-core-facets",

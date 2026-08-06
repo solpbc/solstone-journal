@@ -12,10 +12,13 @@
 //! owner media lives in Python routes; and Python's only path to Rust in this repo is
 //! executing a Rust binary. So a binary is the seam.
 //!
-//! ⚠ A sibling crate has the same gap: `solstone-core-observer-delete` —
-//! "owner-authorized deletion of location-data source files" — is also called by
-//! nothing. The pattern is worth naming: a converted crate is not converted until
-//! something reaches it.
+//! ⚠ The pattern is worth naming: **a converted crate is not converted until something
+//! reaches it.** A sibling crate had the identical gap —
+//! `solstone-core-observer-delete`, "owner-authorized deletion of location-data source
+//! files", called by nothing. It was deleted rather than wired, because the
+//! segment-scoped ruling of 2026-08-05 forbids the partial delete it implemented. ⛔
+//! Nothing in the gate set detects a crate that compiles, passes its tests, and is
+//! reachable from nowhere.
 //!
 //! # The contract this offers its caller
 //!
