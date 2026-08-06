@@ -356,6 +356,13 @@ impl SessionCorrelation {
         self.retired.insert(id.to_owned());
         Ok(())
     }
+
+    pub(crate) fn fail_outstanding(&mut self) -> Vec<String> {
+        self.terminal = true;
+        let ids = self.outstanding.drain().collect::<Vec<_>>();
+        self.retired.extend(ids.iter().cloned());
+        ids
+    }
 }
 
 #[cfg(test)]

@@ -12,5 +12,10 @@ license.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+[[bin]]
+name = "solstone-generate-session-stub"
+path = "tests/bin/session_stub.rs"
+test = false
+
 [lints]
 workspace = true
