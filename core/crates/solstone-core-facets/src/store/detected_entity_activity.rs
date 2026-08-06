@@ -157,7 +157,7 @@ fn exclusion_candidates(
                 .get("id")
                 .and_then(Value::as_str)
                 .map(str::to_owned)
-                .or_else(|| Some(entity.entity_id)),
+                .or(Some(entity.entity_id)),
             name: name.to_owned(),
             aka: string_values(enriched.get("aka")),
             emails: string_values(enriched.get("emails")),
