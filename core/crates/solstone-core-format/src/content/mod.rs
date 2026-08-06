@@ -16,13 +16,12 @@ mod observations;
 mod screen;
 mod sense;
 
-use std::path::Path;
-use std::sync::OnceLock;
-
-use glob::{MatchOptions, Pattern};
 use serde_json::{Map, Value};
 
 use crate::chunker::format_markdown;
+use crate::matcher::{PatternSpec, Resolver, patterns_for_root as filter_patterns_for_root};
+
+pub use crate::matcher::PatternRoot;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Family {
@@ -122,13 +121,7 @@ pub struct ProducedChunks {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PatternRoot {
-    Structural,
-    DayRooted,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct FamilyPattern {
+pub struct FamilyPattern {
     pub pattern: &'static str,
     pub family: Family,
     pub root: PatternRoot,
@@ -327,93 +320,50 @@ pub(crate) const KNOWN_UNINDEXED_PATTERNS: &[KnownUnindexedPattern] = &[
     },
 ];
 
-struct CompiledFamilyPattern {
-    pattern: Pattern,
-    family: Family,
+impl PatternSpec<Family> for FamilyPattern {
+    fn pattern(&self) -> &'static str {
+        self.pattern
+    }
+
+    fn root(&self) -> PatternRoot {
+        self.root
+    }
+
+    fn value(&self) -> Family {
+        self.family
+    }
 }
 
-struct CompiledUnindexedPattern {
-    pattern: Pattern,
-    reason: UnindexedReason,
+impl PatternSpec<UnindexedReason> for KnownUnindexedPattern {
+    fn pattern(&self) -> &'static str {
+        self.pattern
+    }
+
+    fn root(&self) -> PatternRoot {
+        self.root
+    }
+
+    fn value(&self) -> UnindexedReason {
+        self.reason
+    }
 }
 
-static STRUCTURAL_CONTENT_PATTERNS: OnceLock<Vec<CompiledFamilyPattern>> = OnceLock::new();
-static DAY_ROOTED_CONTENT_PATTERNS: OnceLock<Vec<CompiledFamilyPattern>> = OnceLock::new();
-static STRUCTURAL_UNINDEXED_PATTERNS: OnceLock<Vec<CompiledUnindexedPattern>> = OnceLock::new();
-static DAY_ROOTED_UNINDEXED_PATTERNS: OnceLock<Vec<CompiledUnindexedPattern>> = OnceLock::new();
-
-fn compile_family_patterns(root: PatternRoot) -> Vec<CompiledFamilyPattern> {
-    INDEX_FAMILY_PATTERNS
-        .iter()
-        .filter(|spec| spec.root == root)
-        .map(|spec| CompiledFamilyPattern {
-            pattern: Pattern::new(spec.pattern).expect("index family pattern should be valid"),
-            family: spec.family,
-        })
-        .collect()
-}
-
-fn compile_unindexed_patterns(root: PatternRoot) -> Vec<CompiledUnindexedPattern> {
-    KNOWN_UNINDEXED_PATTERNS
-        .iter()
-        .filter(|spec| spec.root == root)
-        .map(|spec| CompiledUnindexedPattern {
-            pattern: Pattern::new(spec.pattern).expect("known unindexed pattern should be valid"),
-            reason: spec.reason,
-        })
-        .collect()
-}
-
-fn structural_content_patterns() -> &'static [CompiledFamilyPattern] {
-    STRUCTURAL_CONTENT_PATTERNS.get_or_init(|| compile_family_patterns(PatternRoot::Structural))
-}
-
-fn day_rooted_content_patterns() -> &'static [CompiledFamilyPattern] {
-    DAY_ROOTED_CONTENT_PATTERNS.get_or_init(|| compile_family_patterns(PatternRoot::DayRooted))
-}
-
-fn structural_unindexed_patterns() -> &'static [CompiledUnindexedPattern] {
-    STRUCTURAL_UNINDEXED_PATTERNS
-        .get_or_init(|| compile_unindexed_patterns(PatternRoot::Structural))
-}
-
-fn day_rooted_unindexed_patterns() -> &'static [CompiledUnindexedPattern] {
-    DAY_ROOTED_UNINDEXED_PATTERNS.get_or_init(|| compile_unindexed_patterns(PatternRoot::DayRooted))
-}
+static CONTENT_RESOLVER: Resolver<Family> = Resolver::new();
+static UNINDEXED_RESOLVER: Resolver<UnindexedReason> = Resolver::new();
 
 pub fn classify(rel: &str) -> ContentResolution {
-    let options = MatchOptions {
-        case_sensitive: true,
-        require_literal_separator: true,
-        require_literal_leading_dot: false,
-    };
-    let rel_path = Path::new(rel);
-    for spec in structural_content_patterns()
-        .iter()
-        .chain(day_rooted_content_patterns())
-    {
-        if spec.pattern.matches_path_with(rel_path, options) {
-            return ContentResolution::Indexed(spec.family);
-        }
+    if let Some(family) = CONTENT_RESOLVER.resolve(INDEX_FAMILY_PATTERNS, rel) {
+        return ContentResolution::Indexed(family);
     }
-    for spec in structural_unindexed_patterns()
-        .iter()
-        .chain(day_rooted_unindexed_patterns())
-    {
-        if spec.pattern.matches_path_with(rel_path, options) {
-            return match spec.reason {
-                UnindexedReason::Unindexed => ContentResolution::Unindexed,
-                UnindexedReason::IndexedElsewhere => ContentResolution::IndexedElsewhere,
-            };
-        }
+    match UNINDEXED_RESOLVER.resolve(KNOWN_UNINDEXED_PATTERNS, rel) {
+        Some(UnindexedReason::Unindexed) => ContentResolution::Unindexed,
+        Some(UnindexedReason::IndexedElsewhere) => ContentResolution::IndexedElsewhere,
+        None => ContentResolution::Unrecognized,
     }
-    ContentResolution::Unrecognized
 }
 
-pub(crate) fn patterns_for_root(root: PatternRoot) -> impl Iterator<Item = &'static FamilyPattern> {
-    INDEX_FAMILY_PATTERNS
-        .iter()
-        .filter(move |spec| spec.root == root)
+pub fn patterns_for_root(root: PatternRoot) -> impl Iterator<Item = &'static FamilyPattern> {
+    filter_patterns_for_root(INDEX_FAMILY_PATTERNS, root)
 }
 
 pub fn produce_chunks(
@@ -592,6 +542,10 @@ fn truncate_string(value: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
+    use glob::{MatchOptions, Pattern};
+
     use crate::chunker::test_support::{
         OVERSIZED_SIZE_NORMALIZATION, markdown_fixture, normalize_tokens, rust_tokenize, strings,
         token_comparison_enabled,

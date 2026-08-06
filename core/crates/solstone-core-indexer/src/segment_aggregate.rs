@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 
 use glob::{Pattern, glob};
 
-use crate::chunker::format_markdown;
-use crate::paths::resolve_journal_path;
-use crate::segment::time_bucket;
 use crate::stream::extract_stream;
+use solstone_core_format::chunker::format_markdown;
+use solstone_core_format::paths::resolve_journal_path;
+use solstone_core_format::segment::time_bucket;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SegmentAggregateRow {

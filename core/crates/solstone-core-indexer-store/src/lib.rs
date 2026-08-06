@@ -19,7 +19,7 @@ pub enum StoreError {
     Edge(solstone_core_indexer::edges::EdgeError),
     EdgeFileFailed(String),
     Io(io::Error),
-    Path(solstone_core_indexer::paths::JournalPathError),
+    Path(solstone_core_format::paths::JournalPathError),
     Sql(rusqlite::Error),
     OutsideJournal(PathBuf),
     NonUtf8Path(PathBuf),
@@ -87,8 +87,8 @@ impl From<io::Error> for StoreError {
     }
 }
 
-impl From<solstone_core_indexer::paths::JournalPathError> for StoreError {
-    fn from(error: solstone_core_indexer::paths::JournalPathError) -> Self {
+impl From<solstone_core_format::paths::JournalPathError> for StoreError {
+    fn from(error: solstone_core_format::paths::JournalPathError) -> Self {
         StoreError::Path(error)
     }
 }

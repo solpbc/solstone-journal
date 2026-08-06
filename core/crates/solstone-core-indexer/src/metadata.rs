@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use crate::segment::is_date_key;
+use solstone_core_format::segment::is_date_key;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PathMetadata {

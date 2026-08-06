@@ -5,13 +5,14 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::discovery::{DiscoveryError, discover_from_root};
-use crate::paths::CHRONICLE_DIR;
+use solstone_core_format::matcher::PatternRoot;
+use solstone_core_format::paths::CHRONICLE_DIR;
 
-use super::registry::{EdgePatternRoot, patterns_for_root};
+use super::registry::patterns_for_root;
 
 pub fn discover_edge_files(journal: &Path) -> Result<BTreeMap<String, PathBuf>, DiscoveryError> {
     let mut files = BTreeMap::new();
-    for spec in patterns_for_root(EdgePatternRoot::Structural) {
+    for spec in patterns_for_root(PatternRoot::Structural) {
         discover_from_root(journal, journal, spec.pattern, &mut files)?;
     }
 
@@ -21,7 +22,7 @@ pub fn discover_edge_files(journal: &Path) -> Result<BTreeMap<String, PathBuf>, 
     } else {
         journal
     };
-    for spec in patterns_for_root(EdgePatternRoot::DayRooted) {
+    for spec in patterns_for_root(PatternRoot::DayRooted) {
         discover_from_root(day_root, day_root, spec.pattern, &mut files)?;
     }
     Ok(files)

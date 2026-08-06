@@ -3,6 +3,7 @@ members = [
     "crates/solstone-core",
     "crates/solstone-core-cli",
     "crates/solstone-core-indexer",
+    "crates/solstone-core-format",
     "crates/solstone-core-indexer-store",
     "crates/solstone-core-entity",
     "crates/solstone-core-entity-matching",
@@ -46,6 +47,7 @@ solstone-core-entity = { path = "crates/solstone-core-entity" }
 solstone-core-entity-matching = { path = "crates/solstone-core-entity-matching" }
 solstone-core-facets = { path = "crates/solstone-core-facets" }
 solstone-core-indexer = { path = "crates/solstone-core-indexer" }
+solstone-core-format = { path = "crates/solstone-core-format" }
 solstone-core-indexer-store = { path = "crates/solstone-core-indexer-store" }
 solstone-core-ingest-resolve = { path = "crates/solstone-core-ingest-resolve" }
 solstone-core-journal = { path = "crates/solstone-core-journal" }

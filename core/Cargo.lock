@@ -1663,6 +1663,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-format"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "glob",
+ "pulldown-cmark",
+ "serde_json",
+]
+
+[[package]]
 name = "solstone-core-generate"
 version = "1.0.22"
 dependencies = [
@@ -1677,9 +1687,9 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "glob",
- "pulldown-cmark",
  "serde_json",
  "solstone-core-entity-matching",
+ "solstone-core-format",
 ]
 
 [[package]]
@@ -1689,6 +1699,7 @@ dependencies = [
  "rusqlite",
  "serde_json",
  "sha2",
+ "solstone-core-format",
  "solstone-core-indexer",
 ]
 

@@ -1,5 +1,5 @@
 [package]
-name = "solstone-core-indexer-store"
+name = "solstone-core-format"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,8 +10,7 @@ publish = false
 workspace = true
 
 [dependencies]
-rusqlite.workspace = true
+chrono.workspace = true
+glob.workspace = true
+pulldown-cmark.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
-solstone-core-format.workspace = true
-solstone-core-indexer.workspace = true

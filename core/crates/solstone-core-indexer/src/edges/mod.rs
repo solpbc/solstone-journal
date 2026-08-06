@@ -23,7 +23,7 @@ use serde_json::{Map, Value};
 use crate::edges::candidates::EdgeResolver;
 use crate::edges::registry::{EdgeSourceKind, edge_source_for_rel};
 use crate::metadata::extract_path_metadata;
-use crate::segment::{segment_key, segment_parse};
+use solstone_core_format::segment::{segment_key, segment_parse};
 
 type JsonObject = Map<String, Value>;
 

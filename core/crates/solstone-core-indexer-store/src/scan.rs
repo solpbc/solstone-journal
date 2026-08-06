@@ -8,9 +8,11 @@ use std::time::UNIX_EPOCH;
 
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension, params};
-use solstone_core_indexer::content::{
+use solstone_core_format::content::{
     ChatLabels, ContentResolution, Family, classify, produce_chunks,
 };
+use solstone_core_format::paths::{relative_to_journal, resolve_journal_path};
+use solstone_core_format::segment::{is_historical_day, segment_key, time_bucket};
 use solstone_core_indexer::discovery::discover_indexable_files;
 use solstone_core_indexer::edges::candidates::EdgeResolver;
 use solstone_core_indexer::edges::discovery::discover_edge_files;
@@ -21,8 +23,6 @@ use solstone_core_indexer::entity_search::{
     build_entity_search,
 };
 use solstone_core_indexer::metadata::extract_path_metadata;
-use solstone_core_indexer::paths::{relative_to_journal, resolve_journal_path};
-use solstone_core_indexer::segment::{is_historical_day, segment_key, time_bucket};
 use solstone_core_indexer::segment_aggregate::build_segment_aggregate;
 use solstone_core_indexer::stream::extract_stream;
 

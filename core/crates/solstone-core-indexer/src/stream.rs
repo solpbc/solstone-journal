@@ -7,8 +7,8 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::paths::resolve_journal_path;
-use crate::segment::segment_key;
+use solstone_core_format::paths::resolve_journal_path;
+use solstone_core_format::segment::segment_key;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamLookup {

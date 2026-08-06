@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 use glob::{GlobError, Pattern, PatternError, glob};
 
-use crate::content::{PatternRoot, patterns_for_root};
-use crate::paths::CHRONICLE_DIR;
+use solstone_core_format::content::{PatternRoot, patterns_for_root};
+use solstone_core_format::paths::CHRONICLE_DIR;
 
 #[derive(Debug)]
 pub enum DiscoveryError {
