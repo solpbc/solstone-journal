@@ -26,6 +26,10 @@ solstone-core-processing-record = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
+# The index-ordering test drives a real SQLite index through the notification
+# boundary. ⛔ Dev-only: the executor depends on the trait, never on a database,
+# so the contract can move without touching it.
+solstone-core-indexer-store = { workspace = true }
 # The outcome model's emitted shape is part of its contract -- a later wave's
 # tombstone and activity log both carry it -- so one test asserts on real JSON
 # rather than on a mock of both sides.

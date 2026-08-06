@@ -11,8 +11,8 @@ use crate::StoreError;
 pub const INDEX_DIR: &str = "indexer";
 pub const DB_NAME: &str = "journal.sqlite";
 
-/// Counts removed by a stream-scoped index cleanup.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Counts removed by an index cleanup.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct StreamPruneCounts {
     pub chunks: u64,
     pub files: u64,
@@ -126,6 +126,53 @@ pub fn prune_chunks_by_stream(
     }
     tx.commit()?;
     Ok(StreamPruneCounts { chunks, files })
+}
+
+/// Drop index rows for paths that have already been removed from the chronicle.
+///
+/// Each `rel` is matched exactly **and** as a directory prefix, so passing a
+/// segment's path clears the segment and everything that was inside it. Missing
+/// rows are not an error: the caller's authority is the filesystem, and being
+/// told about a path this index never held is ordinary.
+///
+/// ⛔ **Never call this before the paths are actually gone.** The index is a
+/// derived cache that re-converges on the chronicle every scan, so the two
+/// orderings fail differently and only one of them fails safely: remove-then-tell
+/// leaves rows the next scan deletes, because the file is gone — a loud, local
+/// failure on a code path that runs. Tell-then-remove leaves files on disk the
+/// index does not list, which is silently invisible owner data, indistinguishable
+/// from misremembering, surviving until someone runs a full rebuild.
+///
+/// ⚠ This is the inverse of the ordering a content-addressed store uses, and the
+/// difference is which side is authoritative: there the index is, and the blobs are
+/// derived. Here the chronicle is authoritative and the index is the cache.
+///
+/// Returns `None` when the journal has no index. ⛔ Deliberately not
+/// [`open_index`], which creates the database: a prune must never be the thing
+/// that brings an index into existence.
+pub fn prune_by_paths(
+    journal: &Path,
+    rels: &[&str],
+) -> Result<Option<StreamPruneCounts>, StoreError> {
+    if !db_path(journal).exists() {
+        return Ok(None);
+    }
+    let mut conn = open_index(journal)?;
+    let tx = conn.transaction()?;
+    let mut counts = StreamPruneCounts::default();
+    for rel in rels {
+        let prefix = format!("{rel}/%");
+        counts.chunks += tx.execute(
+            "DELETE FROM chunks WHERE path=?1 OR path LIKE ?2",
+            rusqlite::params![rel, &prefix],
+        )? as u64;
+        counts.files += tx.execute(
+            "DELETE FROM files WHERE path=?1 OR path LIKE ?2",
+            rusqlite::params![rel, &prefix],
+        )? as u64;
+    }
+    tx.commit()?;
+    Ok(Some(counts))
 }
 
 fn ensure_schema(conn: &mut Connection) -> Result<(), StoreError> {
@@ -524,5 +571,83 @@ CREATE TABLE edge_files(path TEXT PRIMARY KEY, mtime INTEGER);
         assert_eq!(integrity, "ok");
         conn.execute("INSERT INTO chunks(chunks) VALUES('integrity-check')", [])
             .expect("fts integrity check");
+    }
+
+    #[test]
+    fn prune_by_paths_clears_a_segment_and_everything_inside_it() {
+        let journal = temp_root("prune-by-paths");
+        {
+            let conn = open_index(&journal).unwrap();
+            conn.execute(
+                "INSERT INTO files(path, mtime) VALUES (?1, 1)",
+                ["chronicle/20260805/field.audio/070000_17/audio.jsonl"],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO files(path, mtime) VALUES (?1, 1)",
+                ["chronicle/20260805/field.audio/070100_17/audio.jsonl"],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
+                 VALUES ('a', ?1, '20260805', '', '', 'field.audio', 0, '')",
+                ["chronicle/20260805/field.audio/070000_17/audio.jsonl"],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
+                 VALUES ('b', ?1, '20260805', '', '', 'field.audio', 0, '')",
+                ["chronicle/20260805/field.audio/070100_17/audio.jsonl"],
+            )
+            .unwrap();
+        }
+
+        let counts = prune_by_paths(&journal, &["chronicle/20260805/field.audio/070000_17"])
+            .unwrap()
+            .expect("the journal has an index");
+        assert_eq!(counts.chunks, 1);
+        assert_eq!(counts.files, 1);
+
+        let conn = open_index(&journal).unwrap();
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(remaining, 1, "the sibling segment survives");
+        let surviving: String = conn
+            .query_row("SELECT path FROM files", [], |row| row.get(0))
+            .unwrap();
+        assert!(surviving.contains("070100_17"));
+        fs::remove_dir_all(&journal).unwrap();
+    }
+
+    /// A path the index never held is ordinary, not an error.
+    #[test]
+    fn prune_by_paths_tolerates_paths_it_never_held() {
+        let journal = temp_root("prune-unknown");
+        open_index(&journal).unwrap();
+        let counts = prune_by_paths(&journal, &["chronicle/20260805/field.audio/nosuch"])
+            .unwrap()
+            .expect("the journal has an index");
+        assert_eq!(counts, StreamPruneCounts::default());
+        fs::remove_dir_all(&journal).unwrap();
+    }
+
+    /// ⛔ A prune must never be the thing that creates an index.
+    #[test]
+    fn prune_by_paths_does_not_create_an_index() {
+        let journal = temp_root("prune-no-index");
+        // A journal that exists but has never been indexed -- the realistic case.
+        fs::create_dir_all(&journal).unwrap();
+        assert!(
+            prune_by_paths(&journal, &["chronicle/20260805/field.audio/070000_17"])
+                .unwrap()
+                .is_none(),
+            "a journal with no index reports no counts"
+        );
+        assert!(
+            !db_path(&journal).exists(),
+            "the prune must not have materialised a database"
+        );
+        fs::remove_dir_all(&journal).unwrap();
     }
 }

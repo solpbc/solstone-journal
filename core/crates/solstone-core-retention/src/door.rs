@@ -28,6 +28,7 @@ use solstone_core_journal_io::removal::remove_dir_all;
 use solstone_core_journal_io::{AtomicWriteOptions, LockOptions, hold_lock, write_bytes_exclusive};
 
 use crate::eligibility::{Evidence, ProvenRaw};
+use crate::notify::{IndexNotify, NotifyError, PruneCounts};
 use crate::receipt::{NotRemoved, Outcome, RemovedPath, RunHalt, Target, TargetOutcome};
 use crate::staging::staged_name;
 use crate::tombstone::{RemovalReason, TOMBSTONE_NAME, TombstoneBody, tombstone_bytes};
@@ -193,6 +194,28 @@ pub fn remove_segments(
             .push(remove_one(journal, target, deleted_at, reason, did));
     }
     outcome
+}
+
+/// Tell the index about everything a run removed — **after** the run.
+///
+/// Separate from the verbs on purpose. A verb's job is to remove and report; this
+/// is the step that can only be correct if it happens second, and keeping it a
+/// distinct call makes the ordering visible at every call site rather than buried
+/// in a verb.
+///
+/// ⛔ Takes the outcome, so the paths it names are exactly the ones a verb
+/// confirmed gone. A failure here is reported and does not undo anything: the
+/// removal already happened, the index is a rebuildable cache, and the next scan
+/// corrects it.
+pub fn notify_index(
+    index: &dyn IndexNotify,
+    outcome: &Outcome,
+) -> Result<PruneCounts, NotifyError> {
+    let removed: Vec<RemovedPath> = outcome.removed_paths().cloned().collect();
+    if removed.is_empty() {
+        return Ok(PruneCounts::default());
+    }
+    index.paths_removed(&removed)
 }
 
 /// The parent directory of a segment, journal-relative.
