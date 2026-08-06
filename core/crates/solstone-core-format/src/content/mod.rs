@@ -348,14 +348,15 @@ impl PatternSpec<UnindexedReason> for KnownUnindexedPattern {
     }
 }
 
-static CONTENT_RESOLVER: Resolver<Family> = Resolver::new();
-static UNINDEXED_RESOLVER: Resolver<UnindexedReason> = Resolver::new();
+static CONTENT_RESOLVER: Resolver<Family, FamilyPattern> = Resolver::new(INDEX_FAMILY_PATTERNS);
+static UNINDEXED_RESOLVER: Resolver<UnindexedReason, KnownUnindexedPattern> =
+    Resolver::new(KNOWN_UNINDEXED_PATTERNS);
 
 pub fn classify(rel: &str) -> ContentResolution {
-    if let Some(family) = CONTENT_RESOLVER.resolve(INDEX_FAMILY_PATTERNS, rel) {
+    if let Some(family) = CONTENT_RESOLVER.resolve(rel) {
         return ContentResolution::Indexed(family);
     }
-    match UNINDEXED_RESOLVER.resolve(KNOWN_UNINDEXED_PATTERNS, rel) {
+    match UNINDEXED_RESOLVER.resolve(rel) {
         Some(UnindexedReason::Unindexed) => ContentResolution::Unindexed,
         Some(UnindexedReason::IndexedElsewhere) => ContentResolution::IndexedElsewhere,
         None => ContentResolution::Unrecognized,

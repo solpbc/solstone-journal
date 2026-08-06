@@ -23,29 +23,31 @@ struct CompiledPattern<T> {
     value: T,
 }
 
-pub struct Resolver<T: Copy> {
+pub struct Resolver<T: Copy, P: PatternSpec<T> + 'static> {
+    patterns: &'static [P],
     structural: OnceLock<Vec<CompiledPattern<T>>>,
     day_rooted: OnceLock<Vec<CompiledPattern<T>>>,
 }
 
-impl<T: Copy> Resolver<T> {
-    pub const fn new() -> Self {
+impl<T: Copy, P: PatternSpec<T> + 'static> Resolver<T, P> {
+    pub const fn new(patterns: &'static [P]) -> Self {
         Self {
+            patterns,
             structural: OnceLock::new(),
             day_rooted: OnceLock::new(),
         }
     }
 
-    pub fn resolve<P: PatternSpec<T>>(&self, patterns: &[P], rel: &str) -> Option<T> {
+    pub fn resolve(&self, rel: &str) -> Option<T> {
         let options = MatchOptions {
             case_sensitive: true,
             require_literal_separator: true,
             require_literal_leading_dot: false,
         };
         let rel_path = Path::new(rel);
-        self.patterns_for_root(patterns, PatternRoot::Structural)
+        self.patterns_for_root(PatternRoot::Structural)
             .iter()
-            .chain(self.patterns_for_root(patterns, PatternRoot::DayRooted))
+            .chain(self.patterns_for_root(PatternRoot::DayRooted))
             .find_map(|spec| {
                 spec.pattern
                     .matches_path_with(rel_path, options)
@@ -53,22 +55,12 @@ impl<T: Copy> Resolver<T> {
             })
     }
 
-    fn patterns_for_root<P: PatternSpec<T>>(
-        &self,
-        patterns: &[P],
-        root: PatternRoot,
-    ) -> &[CompiledPattern<T>] {
+    fn patterns_for_root(&self, root: PatternRoot) -> &[CompiledPattern<T>] {
         let cache = match root {
             PatternRoot::Structural => &self.structural,
             PatternRoot::DayRooted => &self.day_rooted,
         };
-        cache.get_or_init(|| compile(patterns, root))
-    }
-}
-
-impl<T: Copy> Default for Resolver<T> {
-    fn default() -> Self {
-        Self::new()
+        cache.get_or_init(|| compile(self.patterns, root))
     }
 }
 

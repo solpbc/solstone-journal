@@ -82,7 +82,8 @@ impl PatternSpec<EdgeSourceKind> for EdgeSourcePattern {
     }
 }
 
-static EDGE_SOURCE_RESOLVER: Resolver<EdgeSourceKind> = Resolver::new();
+static EDGE_SOURCE_RESOLVER: Resolver<EdgeSourceKind, EdgeSourcePattern> =
+    Resolver::new(EDGE_SOURCE_PATTERNS);
 
 pub(crate) fn patterns_for_root(
     root: PatternRoot,
@@ -91,7 +92,7 @@ pub(crate) fn patterns_for_root(
 }
 
 pub fn edge_source_for_rel(rel: &str) -> Result<Option<EdgeSourceKind>, EdgeError> {
-    Ok(EDGE_SOURCE_RESOLVER.resolve(EDGE_SOURCE_PATTERNS, rel))
+    Ok(EDGE_SOURCE_RESOLVER.resolve(rel))
 }
 
 #[cfg(test)]
