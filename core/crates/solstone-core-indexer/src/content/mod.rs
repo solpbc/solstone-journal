@@ -701,25 +701,6 @@ mod tests {
                      json.dumps default separators and this crate emits compact JSON. \
                      Tokenizes identically",
         },
-        DivergenceEntry {
-            case: "chat_turns_with_configured_labels",
-            kind: Divergence::Defect,
-            native_chunks: &[
-                "**Owner** What did I do today?",
-                "**Sol** You shipped the cable.",
-            ],
-            reason: "🔴 speaker labels are hardcoded here and resolved from journal config by \
-                     the reference (identity.preferred / identity.name, agent.name). On a journal \
-                     whose owner has set a name the two disagree on every owner turn, so a rescan \
-                     through this crate rewrites the owner's name out of indexed chat. Labels must \
-                     become an input; needs journal-config plumbing this crate does not have yet",
-        },
-        DivergenceEntry {
-            case: "chat_turn_without_text_keeps_the_label",
-            kind: Divergence::Defect,
-            native_chunks: &["**Owner**"],
-            reason: "same hardcoded-label defect as chat_turns_with_configured_labels",
-        },
     ];
 
     fn divergence_for(case: &str) -> Option<&'static DivergenceEntry> {
@@ -885,14 +866,7 @@ mod tests {
             );
         }
 
-        assert_eq!(
-            defects.len(),
-            2,
-            "the declared defect count moved. Closing one is the goal — delete its entry. \
-             Adding one is a decision that belongs in the build record, not a bumped number. \
-             Currently declared: {:?}",
-            defects.iter().map(|entry| entry.case).collect::<Vec<_>>()
-        );
+        assert!(defects.is_empty(), "outstanding defects: {defects:?}");
     }
 
     /// The corpus carries cases this crate deliberately does not reproduce.
