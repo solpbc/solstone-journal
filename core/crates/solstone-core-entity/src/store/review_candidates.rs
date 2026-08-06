@@ -126,6 +126,92 @@ pub fn record_merge_candidate(
     })
 }
 
+/// Mark one entity merge-review candidate accepted, when it exists.
+pub fn accept_merge_candidate(
+    journal_root: &Path,
+    facet: &str,
+    source_slug: &str,
+    target_slug: &str,
+    merge_id: Option<&str>,
+) -> Result<Option<Value>, EntityReviewCandidateError> {
+    let _trust =
+        hold_entity_trust_lock(journal_root).map_err(EntityReviewCandidateError::TrustLock)?;
+    let key = candidate_key(facet, source_slug, target_slug);
+    mutate_candidates(journal_root, |rows| {
+        let Some(existing) = rows
+            .iter_mut()
+            .find(|row| candidate_key_for_row(row) == key)
+        else {
+            return Ok(None);
+        };
+        let object = existing
+            .as_object_mut()
+            .expect("candidate reader returns objects");
+        object.insert("status".to_owned(), Value::String("accepted".to_owned()));
+        if let Some(merge_id) = merge_id.filter(|merge_id| !merge_id.is_empty()) {
+            object.insert("merge_id".to_owned(), Value::String(merge_id.to_owned()));
+        }
+        object.insert("updated_at".to_owned(), Value::String(candidate_now_iso()));
+        Ok(Some(existing.clone()))
+    })
+}
+
+/// Mark one entity merge-review candidate dismissed, when it exists.
+pub fn dismiss_merge_candidate(
+    journal_root: &Path,
+    facet: &str,
+    source_slug: &str,
+    target_slug: &str,
+) -> Result<Option<Value>, EntityReviewCandidateError> {
+    let _trust =
+        hold_entity_trust_lock(journal_root).map_err(EntityReviewCandidateError::TrustLock)?;
+    let key = candidate_key(facet, source_slug, target_slug);
+    mutate_candidates(journal_root, |rows| {
+        let Some(existing) = rows
+            .iter_mut()
+            .find(|row| candidate_key_for_row(row) == key)
+        else {
+            return Ok(None);
+        };
+        let dismissed_detection_count = existing
+            .get("evidence")
+            .and_then(Value::as_object)
+            .and_then(|evidence| evidence.get("detection_count"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        let object = existing
+            .as_object_mut()
+            .expect("candidate reader returns objects");
+        object.insert("status".to_owned(), Value::String("dismissed".to_owned()));
+        object.insert(
+            "dismissed_detection_count".to_owned(),
+            dismissed_detection_count,
+        );
+        object.insert("updated_at".to_owned(), Value::String(candidate_now_iso()));
+        Ok(Some(existing.clone()))
+    })
+}
+
+/// Load durable entity merge-review candidates, optionally filtered by facet and status.
+pub fn load_merge_candidates(
+    journal_root: &Path,
+    facet: Option<&str>,
+    status: Option<&str>,
+) -> Result<Vec<Value>, EntityStoreError> {
+    let path = review_candidates_path(journal_root)?;
+    let rows = read_jsonl(&path, Vec::<Value>::new(), MalformedPolicy::WarnAndSkip)?;
+    Ok(rows
+        .into_iter()
+        .filter(Value::is_object)
+        .filter(|row| {
+            facet.is_none_or(|facet| row.get("facet").and_then(Value::as_str) == Some(facet))
+        })
+        .filter(|row| {
+            status.is_none_or(|status| row.get("status").and_then(Value::as_str) == Some(status))
+        })
+        .collect())
+}
+
 fn mutate_candidates<T>(
     journal_root: &Path,
     mutate: impl FnOnce(&mut Vec<Value>) -> Result<T, EntityReviewCandidateError>,

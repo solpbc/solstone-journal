@@ -27,12 +27,13 @@ pub use store::{
     HistoryEvent, IdentityMapCacheLoad, IdentityMapLoser, IdentityMapLoserReason, IdentitySnapshot,
     PreparedHistoryEvent, PreparedHistoryOutcome, VoiceprintArchive, VoiceprintItem, VoiceprintKey,
     VoiceprintNpzError, VoiceprintOperationError, VoiceprintRemoval, VoiceprintRemovalReport,
-    VoiceprintSkipReasons, classify_prepared_history, commit_entity_merge, create_journal_entity,
-    delete_entity_directory, entity_last_active_day, entity_last_active_ts,
-    entity_matches_identity_name, entity_memory_path, entity_path,
-    guard_restore_does_not_cross_merge, guard_visible_event_collision, has_journal_principal,
-    is_valid_entity_type, last_active_day_for_ts, load_entity_voiceprints_file,
-    load_existing_voiceprint_keys, load_resolved_ambiguity_choice, normalize_embedding,
+    VoiceprintSkipReasons, accept_merge_candidate, classify_prepared_history, commit_entity_merge,
+    create_journal_entity, delete_entity_directory, dismiss_merge_candidate,
+    entity_last_active_day, entity_last_active_ts, entity_matches_identity_name,
+    entity_memory_path, entity_path, guard_restore_does_not_cross_merge,
+    guard_visible_event_collision, has_journal_principal, is_valid_entity_type,
+    last_active_day_for_ts, load_entity_voiceprints_file, load_existing_voiceprint_keys,
+    load_merge_candidates, load_resolved_ambiguity_choice, normalize_embedding,
     preview_entity_merge, read_ambiguities, read_entity_identity, read_identity_group_map,
     read_identity_map, read_journal_principal, read_prepared_history, read_visible_history,
     record_ambiguity_choice, record_ambiguity_observation, record_merge_candidate,
@@ -59,6 +60,8 @@ mod merge_payload_tests;
 mod merge_tests;
 #[cfg(test)]
 mod resolution_tests;
+#[cfg(test)]
+mod review_candidate_tests;
 #[cfg(test)]
 mod store_tests;
 #[cfg(test)]

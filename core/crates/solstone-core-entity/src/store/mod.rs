@@ -58,7 +58,10 @@ pub use repair::{
     EntityIdentityRepairReport, EntityIdentityRepairSkip, EntityIdentityRepairSkipReason,
     repair_entity_identities,
 };
-pub use review_candidates::{EntityReviewCandidateError, record_merge_candidate};
+pub use review_candidates::{
+    EntityReviewCandidateError, accept_merge_candidate, dismiss_merge_candidate,
+    load_merge_candidates, record_merge_candidate,
+};
 pub use undo::{EntityUndoError, EntityUndoReport, undo_entity_merge};
 pub use voiceprints::{
     CanonicalKeyField, VoiceprintArchive, VoiceprintItem, VoiceprintKey, VoiceprintNpzError,

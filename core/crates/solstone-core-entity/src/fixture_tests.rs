@@ -154,6 +154,7 @@ fn collect_production_sources(directory: &Path, sources: &mut Vec<PathBuf>) {
                         | "resolution_tests.rs"
                         | "merge_payload_tests.rs"
                         | "merge_tests.rs"
+                        | "review_candidate_tests.rs"
                         | "store_tests.rs"
                         | "test_support.rs"
                         | "trust_lock_tests.rs"
