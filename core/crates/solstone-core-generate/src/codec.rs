@@ -8,7 +8,7 @@ use serde_json::{Map, Value, json};
 use crate::fixture::{request_allows_field, request_default, schema};
 use crate::types::{
     ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse, ProtocolError,
-    ReasonCodeValue, RefusalReason, RefusedResponse,
+    ReasonCodeValue, RefusalReason, RefusedResponse, SessionTerminal,
 };
 
 fn object(value: Value) -> Result<Map<String, Value>, String> {
@@ -36,6 +36,22 @@ fn optional_string(object: &Map<String, Value>, name: &str) -> Result<Option<Str
 
 fn optional_value(object: &Map<String, Value>, name: &str) -> Option<Value> {
     object.get(name).filter(|value| !value.is_null()).cloned()
+}
+
+fn optional_string_array(object: &Map<String, Value>, name: &str) -> Result<Vec<String>, String> {
+    match object.get(name) {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(Value::Array(values)) => values
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(ToOwned::to_owned)
+                    .ok_or_else(|| format!("{name} must contain only strings"))
+            })
+            .collect(),
+        _ => Err(format!("{name} must be an array or null")),
+    }
 }
 
 fn value_or_default<'a>(object: &'a Map<String, Value>, name: &str) -> &'a Value {
@@ -206,6 +222,7 @@ pub fn decode_one_shot_response(input: &str) -> Result<GenerateResponse, String>
             input_budget: optional_value(&object, "input_budget"),
             request_budget: optional_value(&object, "request_budget"),
             inference: optional_value(&object, "inference"),
+            hints_applied: optional_string_array(&object, "hints_applied")?,
         }))),
         "refused" => {
             let reason_code =
@@ -274,9 +291,26 @@ pub fn decode_session_response_line(line: &str) -> Result<GenerateResponse, Stri
     Ok(response)
 }
 
+pub fn encode_session_terminal_line(_: SessionTerminal) -> Result<String, String> {
+    serde_json::to_string(&json!({"schema": schema("session_terminal")}))
+        .map(|line| format!("{line}\n"))
+        .map_err(|error| error.to_string())
+}
+
+pub fn decode_session_terminal_line(line: &str) -> Result<SessionTerminal, String> {
+    let terminal =
+        object(serde_json::from_str(line.trim_end()).map_err(|error| error.to_string())?)?;
+    if terminal.len() != 1 || !terminal.contains_key("schema") {
+        return Err("terminal record has unknown fields".to_owned());
+    }
+    require_schema(&terminal, schema("session_terminal"))?;
+    Ok(SessionTerminal)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionError {
     MissingId,
+    DuplicateId(String),
     UnknownOrRetiredId(String),
     Terminal,
 }
@@ -297,7 +331,12 @@ impl SessionCorrelation {
         if id.is_empty() {
             return Err(SessionError::MissingId);
         }
-        self.outstanding.insert(id);
+        if self.retired.contains(&id) {
+            return Err(SessionError::UnknownOrRetiredId(id));
+        }
+        if !self.outstanding.insert(id.clone()) {
+            return Err(SessionError::DuplicateId(id));
+        }
         Ok(())
     }
 
@@ -499,6 +538,21 @@ mod tests {
         assert_eq!(value.input_budget, None);
         assert_eq!(value.request_budget, None);
         assert_eq!(value.inference, None);
+        assert!(value.hints_applied.is_empty());
+    }
+
+    #[test]
+    fn generated_response_decodes_hints_applied() {
+        let mut value = contract()["conformance_vectors"][0]["response"].clone();
+        value["hints_applied"] = json!(["attempt_index", "exclusive_admission"]);
+        let response = decode_one_shot_response(&value.to_string()).unwrap();
+        let GenerateResponse::Generated(value) = response else {
+            panic!("expected generated")
+        };
+        assert_eq!(
+            value.hints_applied,
+            ["attempt_index", "exclusive_admission"]
+        );
     }
 
     #[test]
@@ -546,6 +600,7 @@ mod tests {
             input_budget: None,
             request_budget: None,
             inference: None,
+            hints_applied: Vec::new(),
         }));
         let second_response = GenerateResponse::Refused(RefusedResponse {
             id: Some("second".to_owned()),
@@ -561,6 +616,42 @@ mod tests {
         tracker.accept(&first_response).unwrap();
         assert_eq!(
             tracker.accept(&first_response),
+            Err(SessionError::UnknownOrRetiredId("first".to_owned()))
+        );
+    }
+
+    #[test]
+    fn session_terminal_codec_rejects_request_decoding() {
+        let line = encode_session_terminal_line(SessionTerminal).unwrap();
+        assert!(line.ends_with('\n'));
+        assert_eq!(decode_session_terminal_line(&line), Ok(SessionTerminal));
+        assert!(decode_session_request_line(&line).is_err());
+    }
+
+    #[test]
+    fn session_correlation_rejects_duplicate_and_retired_submissions() {
+        let mut tracker = SessionCorrelation::default();
+        tracker.submit("first").unwrap();
+        assert_eq!(
+            tracker.submit("first"),
+            Err(SessionError::DuplicateId("first".to_owned()))
+        );
+        let response = GenerateResponse::Generated(Box::new(GeneratedResponse {
+            id: Some("first".to_owned()),
+            text: "one".to_owned(),
+            model: "m".to_owned(),
+            usage: json!({}),
+            finish_reason: "stop".to_owned(),
+            thinking: None,
+            schema_validation: None,
+            input_budget: None,
+            request_budget: None,
+            inference: None,
+            hints_applied: Vec::new(),
+        }));
+        tracker.accept(&response).unwrap();
+        assert_eq!(
+            tracker.submit("first"),
             Err(SessionError::UnknownOrRetiredId("first".to_owned()))
         );
     }

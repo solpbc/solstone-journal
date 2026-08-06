@@ -151,7 +151,11 @@ pub struct GeneratedResponse {
     pub input_budget: Option<Value>,
     pub request_budget: Option<Value>,
     pub inference: Option<Value>,
+    pub hints_applied: Vec<String>,
 }
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SessionTerminal;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RefusedResponse {

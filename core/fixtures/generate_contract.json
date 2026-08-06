@@ -506,7 +506,7 @@
     "response": 0
   },
   "fixture": "solstone-generate-contract",
-  "fixture_version": 1,
+  "fixture_version": 2,
   "framing": {
     "one_shot": {
       "id": "optional",
@@ -520,7 +520,13 @@
       },
       "id": "required",
       "selector": "--session",
-      "stdin": "ndjson"
+      "stdin": "ndjson",
+      "terminal": {
+        "fields": [
+          "schema"
+        ],
+        "schema": "solstone-generate-session-terminal-v2"
+      }
     }
   },
   "generated_by": "make core-fixtures",
@@ -904,7 +910,8 @@
           "schema_validation",
           "input_budget",
           "request_budget",
-          "inference"
+          "inference",
+          "hints_applied"
         ]
       },
       "refused": {
@@ -926,7 +933,8 @@
   "schema_identifiers": {
     "error": "solstone-generate-error-v2",
     "request": "solstone-generate-request-v2",
-    "response": "solstone-generate-response-v2"
+    "response": "solstone-generate-response-v2",
+    "session_terminal": "solstone-generate-session-terminal-v2"
   },
   "unknown_member": {
     "blocking": true,

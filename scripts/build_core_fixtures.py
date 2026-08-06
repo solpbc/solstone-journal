@@ -245,6 +245,7 @@ def build_generate_contract_fixture() -> dict[str, Any]:
         "request": "solstone-generate-request-v2",
         "response": "solstone-generate-response-v2",
         "error": "solstone-generate-error-v2",
+        "session_terminal": "solstone-generate-session-terminal-v2",
     }
     attestation_codes = {
         "attestation_not_yet_verified",
@@ -396,7 +397,7 @@ def build_generate_contract_fixture() -> dict[str, Any]:
     )
     return {
         "fixture": "solstone-generate-contract",
-        "fixture_version": 1,
+        "fixture_version": 2,
         "generated_by": "make core-fixtures",
         "schema_identifiers": schemas,
         "request": {
@@ -414,7 +415,7 @@ def build_generate_contract_fixture() -> dict[str, Any]:
         "response": {
             "outcome_field": "outcome",
             "outcomes": {
-                "generated": {"fields": list(generated)},
+                "generated": {"fields": [*generated, "hints_applied"]},
                 "refused": {"fields": ["schema", "id", "outcome", "reason", "reason_code", "retryable", "blocking", "reset_at_ms", "provider", "detail"]},
             },
         },
@@ -426,7 +427,16 @@ def build_generate_contract_fixture() -> dict[str, Any]:
         "exit_codes": {"response": 0, "malformed_request": 64, "internal_failure": 70},
         "framing": {
             "one_shot": {"selector": "--one-shot", "stdin": "json-eof", "id": "optional"},
-            "session": {"selector": "--session", "stdin": "ndjson", "id": "required", "concurrency": {"flag": "--max-in-flight", "minimum": 1}},
+            "session": {
+                "selector": "--session",
+                "stdin": "ndjson",
+                "id": "required",
+                "concurrency": {"flag": "--max-in-flight", "minimum": 1},
+                "terminal": {
+                    "schema": schemas["session_terminal"],
+                    "fields": ["schema"],
+                },
+            },
         },
         "conformance_vectors": vectors,
     }

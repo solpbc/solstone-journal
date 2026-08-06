@@ -530,6 +530,7 @@ mod tests {
             input_budget: None,
             request_budget: None,
             inference: None,
+            hints_applied: Vec::new(),
         }))
     }
 
