@@ -2782,7 +2782,7 @@ button:focus:not(:focus-visible) {
 
       <div class="settings-danger-section">
         <button type="button" id="cleanupNowBtn" class="action-button-danger">clean up now</button>
-        <small style="display: block; margin-top: 0.5em; color: #666;">manually purge raw media older than a specified number of days.</small>
+        <small style="display: block; margin-top: 0.5em; color: #666;">review raw media eligible for removal and mark it for approval.</small>
       </div>
       </form>
     </section>
@@ -3079,16 +3079,8 @@ button:focus:not(:focus-visible) {
 <div id="cleanupModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="cleanupHeading">
   <div class="color-modal-content" style="max-width: 480px;">
     <span class="color-close" id="cleanupModalClose">&times;</span>
-    <h3 id="cleanupHeading">clean up raw media</h3>
-    <p style="color: #666; font-size: 0.9em; margin-bottom: 1em;">delete raw media files (audio, video, screen-frame originals) from segments older than the specified number of days.</p>
-
-    <div class="settings-field" style="margin-bottom: 1em;">
-      <label for="cleanupDaysInput">older than</label>
-      <div style="display: flex; gap: 0.5em; align-items: center;">
-        <input type="number" id="cleanupDaysInput" min="1" value="30" style="width: 5em; padding: 0.4em 0.6em; border: 1px solid #ccc; border-radius: 4px;">
-        <span style="color: #666;">days</span>
-      </div>
-    </div>
+    <h3 id="cleanupHeading">mark raw media for removal</h3>
+    <p style="color: #666; font-size: 0.9em; margin-bottom: 1em;">review raw media eligible under your retention policy and mark it for owner approval. nothing is removed here.</p>
 
     <div class="settings-field" style="margin-bottom: 1em;">
       <label for="cleanupStreamFilter">stream filter (optional)</label>
@@ -3098,13 +3090,13 @@ button:focus:not(:focus-visible) {
     </div>
 
     <div id="cleanupPreview" style="background: #f8f8f8; border-radius: 6px; padding: 1em; margin-bottom: 1em; display: none;">
-      <div style="font-weight: 600; margin-bottom: 0.5em;">preview</div>
+      <div style="font-weight: 600; margin-bottom: 0.5em;">results</div>
       <div id="cleanupPreviewText" style="font-size: 0.9em; color: #666;"></div>
     </div>
 
     <div style="display: flex; gap: 0.75em; justify-content: flex-end;">
-      <button type="button" id="cleanupPreviewBtn" class="cleanup-preview-btn">preview</button>
-      <button type="button" id="cleanupConfirmBtn" class="cleanup-confirm-btn" disabled>delete files</button>
+      <button type="button" id="cleanupPreviewBtn" class="cleanup-preview-btn">mark for review</button>
+      <button type="button" id="cleanupConfirmBtn" class="cleanup-confirm-btn" disabled>done</button>
     </div>
   </div>
 </div>
@@ -6462,7 +6454,7 @@ function openCleanupModal() {
   const modal = document.getElementById('cleanupModal');
   modal.style.display = 'flex';
   modal._openAccessible(document.getElementById('cleanupNowBtn'));
-  resetCleanupPreview();
+  resetCleanupResults();
 
   // Populate stream filter
   const select = document.getElementById('cleanupStreamFilter');
@@ -6481,25 +6473,18 @@ function closeCleanupModal() {
   document.getElementById('cleanupModal')._closeAccessible();
 }
 
-function resetCleanupPreview() {
+function resetCleanupResults() {
   document.getElementById('cleanupPreview').style.display = 'none';
   document.getElementById('cleanupPreviewText').textContent = '';
   document.getElementById('cleanupConfirmBtn').disabled = true;
 }
 
-async function runCleanupPreview() {
-  const days = parseInt(document.getElementById('cleanupDaysInput').value);
-  if (!days || days < 1) {
-    notifyError('invalid input', 'enter a positive number of days.');
-    resetCleanupPreview();
-    return;
-  }
-
+async function runCleanupMark() {
   const streamFilter = document.getElementById('cleanupStreamFilter').value;
   const previewDiv = document.getElementById('cleanupPreview');
   const previewText = document.getElementById('cleanupPreviewText');
 
-  previewText.textContent = 'scanning...';
+  previewText.textContent = 'checking retention policy and marking proposals...';
   previewDiv.style.display = '';
 
   try {
@@ -6507,62 +6492,44 @@ async function runCleanupPreview() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        older_than_days: days,
         stream_filter: streamFilter || null,
-        dry_run: true,
       }),
     });
     const result = await response.json();
     if (result.error) throw new Error(result.error);
 
-    if (result.files_deleted === 0) {
-      previewText.textContent = 'no files to clean up.';
-      document.getElementById('cleanupConfirmBtn').disabled = true;
+    const marked = result.marked || [];
+    const held = result.held || [];
+    const noMedia = result.no_media || [];
+    const notEligible = result.not_eligible || [];
+    const unreadableDays = result.unreadable_days || [];
+    if (!marked.length && !held.length && !noMedia.length && !notEligible.length && !unreadableDays.length) {
+      const standingTotal = result.standing_total || 0;
+      previewText.textContent = standingTotal
+        ? `nothing new to mark under the current retention policy. ${standingTotal} proposal${standingTotal === 1 ? '' : 's'} still standing for owner approval.`
+        : 'nothing to mark under the current retention policy.';
     } else {
-      previewText.textContent = result.files_deleted + ' files (' + result.bytes_freed_human
-        + ') across ' + result.segments_processed + ' segments would be deleted.';
-      document.getElementById('cleanupConfirmBtn').disabled = false;
+      const details = [
+        `${marked.length} new removal proposal${marked.length === 1 ? '' : 's'} marked.`,
+        `${result.standing_total || 0} proposal${result.standing_total === 1 ? '' : 's'} standing for owner approval.`,
+      ];
+      if (held.length) details.push(`${held.length} segment${held.length === 1 ? '' : 's'} held.`);
+      if (noMedia.length) details.push(`${noMedia.length} segment${noMedia.length === 1 ? '' : 's'} with no raw media.`);
+      if (notEligible.length) details.push(`${notEligible.length} segment${notEligible.length === 1 ? '' : 's'} not yet eligible.`);
+      if (unreadableDays.length) details.push(`unreadable chronicle days: ${unreadableDays.join(', ')}.`);
+      previewText.textContent = details.join(' ');
     }
+    document.getElementById('cleanupConfirmBtn').disabled = false;
   } catch (err) {
     previewText.textContent = 'error: ' + err.message;
     document.getElementById('cleanupConfirmBtn').disabled = true;
   }
 }
 
-async function runCleanupExecute() {
-  const days = parseInt(document.getElementById('cleanupDaysInput').value);
-  if (!days || days < 1) {
-    notifyError('invalid input', 'enter a positive number of days.');
-    resetCleanupPreview();
-    return;
-  }
-  const streamFilter = document.getElementById('cleanupStreamFilter').value;
-  const btn = document.getElementById('cleanupConfirmBtn');
-  btn.disabled = true;
-  btn.textContent = 'deleting...';
-
-  try {
-    const response = await fetch('api/storage/purge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        older_than_days: days,
-        stream_filter: streamFilter || null,
-        dry_run: false,
-      }),
-    });
-    const result = await response.json();
-    if (result.error) throw new Error(result.error);
-
-    closeCleanupModal();
-
-    loadStorage();
-  } catch (err) {
-    notifyError('cleanup failed', err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'delete files';
-  }
+function closeCleanupAfterMark() {
+  closeCleanupModal();
+  resetCleanupResults();
+  loadStorage();
 }
 
 function openLogCleanupModal() {
@@ -6738,10 +6705,9 @@ document.getElementById('cleanupModalClose').addEventListener('click', closeClea
 document.getElementById('cleanupModal').addEventListener('click', (e) => {
   if (e.target === document.getElementById('cleanupModal')) closeCleanupModal();
 });
-document.getElementById('cleanupDaysInput').addEventListener('input', resetCleanupPreview);
-document.getElementById('cleanupStreamFilter').addEventListener('change', resetCleanupPreview);
-document.getElementById('cleanupPreviewBtn').addEventListener('click', runCleanupPreview);
-document.getElementById('cleanupConfirmBtn').addEventListener('click', runCleanupExecute);
+document.getElementById('cleanupStreamFilter').addEventListener('change', resetCleanupResults);
+document.getElementById('cleanupPreviewBtn').addEventListener('click', runCleanupMark);
+document.getElementById('cleanupConfirmBtn').addEventListener('click', closeCleanupAfterMark);
 document.getElementById('cleanupLogsModalClose').addEventListener('click', closeLogCleanupModal);
 document.getElementById('cleanupLogsModal').addEventListener('click', (e) => {
   if (e.target === document.getElementById('cleanupLogsModal')) closeLogCleanupModal();
