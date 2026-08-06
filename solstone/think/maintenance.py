@@ -14,7 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from solstone.think.schedule_config import read_schedules, set_schedule_entries
+from solstone.think.schedule_config import (
+    read_schedules,
+    remove_schedule_entry,
+    set_schedule_entries,
+)
 from solstone.think.scheduler import INTERVALS
 from solstone.think.utils import parse_duration_seconds
 
@@ -138,11 +142,14 @@ def register_maintenance_schedules() -> dict[str, list[str]]:
 
     ``sync`` is safe by construction: it is additive only. It writes missing
     generated entries, but never overwrites, deletes, or re-enables existing
-    owned entries. Divergent and disabled entries are reported so the operator
-    can make an intentional follow-up change. This mirrors
-    ``scheduler.register_defaults()`` and does not need a dry-run/commit gate.
+    owned entries, except that it idempotently removes the retired
+    ``maintenance:health:release-raw`` entry and touches no other entry.
+    Divergent and disabled entries are reported so the operator can make an
+    intentional follow-up change. This mirrors ``scheduler.register_defaults()``
+    and does not need a dry-run/commit gate.
     """
     routines = discover_routines()
+    remove_schedule_entry("maintenance:health:release-raw")
     raw = read_schedules()
     statuses = get_routine_statuses(routines, raw)
 
