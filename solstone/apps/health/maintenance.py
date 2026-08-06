@@ -7,11 +7,9 @@ from __future__ import annotations
 
 import argparse
 import sys
-
 from datetime import datetime, timezone
 
 from solstone.think import retention_executor
-from solstone.think.log_retention import PRUNE_LOGS_MAX_RUNTIME, prune
 from solstone.think.maintenance import MaintenanceRoutine
 from solstone.think.retention import _human_bytes
 from solstone.think.utils import get_config, get_journal, require_solstone
@@ -112,7 +110,19 @@ def run_prune_logs_routine(args: list[str]) -> int:
         print("prune-logs: --days must be a positive integer", file=sys.stderr)
         return 1
 
-    result = prune(days=ns.days, dry_run=ns.dry_run)
+    journal = get_journal()
+    try:
+        result = retention_executor.prune_logs(
+            journal, days=ns.days, dry_run=ns.dry_run
+        )
+    # ⛔ This unattended Approval::NotRequired routine reports individual retention
+    # failures but stays green, matching the legacy pruner's partial-error behavior.
+    except retention_executor.RemovalRefused as refused:
+        print(f"prune-logs: partial refusal: {refused.refused.summary()}", file=sys.stderr)
+        return 0
+    except retention_executor.ExecutorUnavailable as unavailable:
+        print(f"prune-logs: executor unavailable: {unavailable}", file=sys.stderr)
+        return 0
     if not result.enabled:
         print("prune-logs: disabled (no-op)")
         return 0
@@ -164,6 +174,6 @@ ROUTINES = [
         description="prune old operational logs and execution traces.",
         every="daily",
         run=run_prune_logs_routine,
-        max_runtime=PRUNE_LOGS_MAX_RUNTIME,
+        max_runtime=retention_executor.PRUNE_LOGS_MAX_RUNTIME,
     )
 ]

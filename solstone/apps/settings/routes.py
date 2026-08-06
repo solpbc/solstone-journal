@@ -60,7 +60,6 @@ from solstone.think.journal_config import (
     mutate_journal_config,
 )
 from solstone.think.journal_io import LockTimeout
-from solstone.think.log_retention import load_log_retention_config, prune
 from solstone.think.processing import (
     load_processing_settings,
     validate_processing_update,
@@ -71,6 +70,12 @@ from solstone.think.retention import (
     compute_storage_summary,
     load_retention_config,
     purge,
+)
+from solstone.think.retention_executor import (
+    RemovalRefused,
+    load_log_retention_config,
+    prune_logs,
+    prune_result_from_receipt,
 )
 from solstone.think.schedule_config import read_schedules, set_schedule_entries
 from solstone.think.streams import list_streams
@@ -2204,7 +2209,18 @@ def run_prune_logs() -> Any:
                     detail="days must be a positive integer",
                 )
 
-        result = prune(days=days, dry_run=dry_run)
+        effective_days = days
+        if effective_days is None:
+            effective_days = load_log_retention_config().days
+        journal = get_journal()
+        try:
+            result = prune_logs(journal, days=days, dry_run=dry_run)
+        except RemovalRefused as refused:
+            result = prune_result_from_receipt(
+                refused.refused.receipt,
+                dry_run=dry_run,
+                days=effective_days,
+            )
 
         if not dry_run and result.enabled:
             log_app_action(

@@ -32,9 +32,11 @@ import json
 import os
 import shutil
 import subprocess
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
+
+from solstone.think.utils import get_config
 
 BINARY = "solstone-retention"
 
@@ -59,6 +61,8 @@ UNKNOWN_DID = "unknown"
 #: How long the executor may run before a caller gives up on it. Removal is local
 #: filesystem work; a minute is already pathological.
 TIMEOUT_SECONDS = 60
+
+PRUNE_LOGS_MAX_RUNTIME = "30m"
 
 
 class ExecutorUnavailable(RuntimeError):
@@ -97,6 +101,236 @@ class RemovalRefused(RuntimeError):
     def __init__(self, refused: Refused) -> None:
         super().__init__(refused.summary())
         self.refused = refused
+
+
+@dataclass
+class LogRetentionConfig:
+    """Operational log/cache retention config."""
+
+    enabled: bool = True
+    days: int = 30
+
+
+@dataclass
+class PruneResult:
+    """Result of a journal log/cache prune run."""
+
+    enabled: bool
+    dry_run: bool
+    days: int
+    cutoff_day: str
+    by_class: dict[str, dict]
+    by_day: dict[str, dict]
+    files_deleted: int
+    dirs_deleted: int
+    bytes_freed: int
+    errors: list[dict]
+    audit_written: bool
+    partial_error: bool
+    root_task_log: dict = field(default_factory=dict)
+
+
+def load_log_retention_config() -> LogRetentionConfig:
+    """Load journal log/cache retention config with per-field defaults."""
+    config = get_config()
+    retention = config.get("retention") or {}
+    journal_logs = retention.get("journal_logs") or {}
+
+    enabled = journal_logs.get("enabled", True)
+    days = journal_logs.get("days", 30)
+    if not isinstance(enabled, bool):
+        raise ValueError("retention.journal_logs.enabled must be a boolean")
+    if isinstance(days, bool):
+        raise ValueError("retention.journal_logs.days must be a positive integer")
+    try:
+        parsed_days = int(days)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "retention.journal_logs.days must be a positive integer"
+        ) from exc
+    if parsed_days < 1:
+        raise ValueError("retention.journal_logs.days must be a positive integer")
+    return LogRetentionConfig(enabled=enabled, days=parsed_days)
+
+
+def _effective_log_days(days: int) -> int:
+    if isinstance(days, bool):
+        raise ValueError("days must be a positive integer")
+    try:
+        parsed_days = int(days)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("days must be a positive integer") from exc
+    if parsed_days < 1:
+        raise ValueError("days must be a positive integer")
+    return parsed_days
+
+
+def _cutoff_day(days: int) -> str:
+    return (date.today() - timedelta(days=days)).strftime("%Y%m%d")
+
+
+def _prune_plan(receipt: dict[str, Any]) -> dict[str, Any]:
+    detail = receipt.get("detail")
+    plan = detail.get("plan") if isinstance(detail, dict) else receipt.get("plan")
+    if not isinstance(plan, dict):
+        raise ExecutorUnavailable("the retention executor receipt had no prune-logs plan")
+    return plan
+
+
+def _count(value: Any) -> int:
+    return int(value) if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _compaction_bytes(stats: dict, *, dry_run: bool) -> int:
+    if not dry_run and not bool(stats.get("rewritten", False)):
+        return 0
+    return _count(stats.get("bytes_before")) - _count(stats.get("bytes_after"))
+
+
+def prune_result_from_receipt(
+    receipt: dict[str, Any], *, dry_run: bool, days: int
+) -> PruneResult:
+    """Adapt either prune-logs receipt shape to the settings result contract."""
+    plan = _prune_plan(receipt)
+    prefix = "planned" if dry_run else "removed"
+    by_class: dict[str, dict] = {}
+    for name, raw_stats in (plan.get("by_class") or {}).items():
+        if not isinstance(name, str) or not isinstance(raw_stats, dict):
+            continue
+        errors = raw_stats.get("errors") or []
+        by_class[name] = {
+            "files_deleted": _count(raw_stats.get(f"{prefix}_files")),
+            "bytes_freed": _count(raw_stats.get(f"{prefix}_bytes")),
+            "dirs_deleted": _count(raw_stats.get(f"{prefix}_dirs")),
+            "skipped": _count(raw_stats.get("skipped")),
+            "errors": [
+                str(error.get("reason", "unknown error"))
+                for error in errors
+                if isinstance(error, dict)
+            ],
+        }
+
+    by_day: dict[str, dict] = {}
+    for day, raw_stats in (plan.get("by_day") or {}).items():
+        if not isinstance(day, str) or not isinstance(raw_stats, dict):
+            continue
+        by_day[day] = {
+            "files_deleted": _count(raw_stats.get(f"{prefix}_files")),
+            "bytes_freed": _count(raw_stats.get(f"{prefix}_bytes")),
+            "dirs_deleted": _count(raw_stats.get(f"{prefix}_dirs")),
+        }
+
+    errors = [
+        {
+            "class": error.get("class"),
+            "path": error.get("path"),
+            "day": error.get("day"),
+            "reason": str(error.get("reason", "unknown error")),
+            "message": str(error.get("reason", "unknown error")),
+            "hint": error.get("hint"),
+        }
+        for error in (plan.get("errors") or [])
+        if isinstance(error, dict)
+    ]
+    compactions = plan.get("compactions") or {}
+    root = compactions.get("root_task_log") if isinstance(compactions, dict) else {}
+    root = root if isinstance(root, dict) else {}
+    root_task_log = {
+        "exists": bool(root.get("exists", False)),
+        "lines_total": _count(root.get("lines_total")),
+        "lines_kept": _count(root.get("lines_kept")),
+        "lines_removed": _count(root.get("lines_dropped")),
+        "unparseable_lines_kept": _count(root.get("undateable_kept")),
+        "bytes_freed": _compaction_bytes(root, dry_run=dry_run),
+        "rewritten": bool(root.get("rewritten", False)),
+        "errors": [
+            str(error.get("reason", "unknown error"))
+            for error in (root.get("errors") or [])
+            if isinstance(error, dict)
+        ],
+    }
+    retention_log = (
+        compactions.get("retention_log") if isinstance(compactions, dict) else {}
+    )
+    retention_log = retention_log if isinstance(retention_log, dict) else {}
+    # 🔴 Unlike the Python writer, Rust also compacts health/retention.log. Its
+    # reclaimed bytes now contribute to journal_logs retention accounting.
+    compaction_bytes = sum(
+        _compaction_bytes(compaction, dry_run=dry_run)
+        for compaction in (root, retention_log)
+    )
+
+    return PruneResult(
+        enabled=True,
+        dry_run=dry_run,
+        days=days,
+        cutoff_day=_cutoff_day(days),
+        by_class=by_class,
+        by_day=by_day,
+        files_deleted=sum(stats["files_deleted"] for stats in by_class.values()),
+        dirs_deleted=sum(stats["dirs_deleted"] for stats in by_class.values()),
+        bytes_freed=sum(stats["bytes_freed"] for stats in by_class.values())
+        + compaction_bytes,
+        errors=errors,
+        audit_written=False,
+        partial_error=bool(errors),
+        root_task_log=root_task_log,
+    )
+
+
+def prune_logs(
+    journal: str, *, days: int | None = None, dry_run: bool = False
+) -> PruneResult:
+    """Plan or prune operational logs through Rust without writing a Python audit.
+
+    The ``journal_logs`` audit trail ends here: this operation no longer writes
+    ``health/pruning-runs`` or per-day task-log entries. Raw-media pruning still uses
+    ``pruning_audit.py``; existing run records age out through the Rust log class.
+    """
+    config = load_log_retention_config()
+    effective_days = _effective_log_days(days if days is not None else config.days)
+    cutoff_day = _cutoff_day(effective_days)
+    if not config.enabled:
+        return PruneResult(
+            enabled=False,
+            dry_run=dry_run,
+            days=effective_days,
+            cutoff_day=cutoff_day,
+            by_class={},
+            by_day={},
+            files_deleted=0,
+            dirs_deleted=0,
+            bytes_freed=0,
+            errors=[],
+            audit_written=False,
+            partial_error=False,
+            root_task_log={},
+        )
+
+    today = date.today()
+    argv = [
+        executor_path(),
+        "prune-logs",
+        "--journal",
+        journal,
+        "--today",
+        today.isoformat(),
+        "--days",
+        str(effective_days),
+    ]
+    if not dry_run:
+        argv.extend(["--execute", "true"])
+    code, receipt = _run(argv)
+    if code == EXIT_OK:
+        return prune_result_from_receipt(
+            receipt, dry_run=dry_run, days=effective_days
+        )
+    if code in (EXIT_REFUSED, EXIT_HALTED):
+        raise RemovalRefused(Refused(receipt))
+    raise ExecutorUnavailable(
+        f"the retention log prune was rejected (exit {code}): "
+        f"{receipt.get('error', receipt)}"
+    )
 
 
 def executor_path() -> str:
