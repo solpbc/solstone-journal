@@ -388,19 +388,19 @@ See `axum::Extension`.";
     }
 }
 
-fn synthetic_lock_timeout() -> solstone_core_journal_io::LockError {
-    solstone_core_journal_io::LockError::Timeout(solstone_core_journal_io::LockTimeout {
+fn synthetic_lock_timeout() -> solstone_core_entity::LockError {
+    solstone_core_entity::LockError::Timeout(solstone_core_entity::LockTimeout {
         path: PathBuf::from("health/locks/test"),
         timeout: Duration::from_millis(1),
     })
 }
 
-fn hold_trust_lock(root: &Path, domain: &str) -> solstone_core_journal_io::FileLock {
-    solstone_core_journal_io::hold_lock(
-        root.join("health/locks").join(format!("{domain}-trust")),
-        solstone_core_journal_io::LockOptions::default(),
-    )
-    .unwrap()
+fn hold_trust_lock(root: &Path, domain: &str) -> solstone_core_entity::FileLock {
+    match domain {
+        "facet" => solstone_core_facets::hold_facet_trust_lock_raw_for_test(root).unwrap(),
+        "entity" => solstone_core_entity::hold_entity_trust_lock_raw_for_test(root).unwrap(),
+        other => panic!("unknown trust-lock domain: {other}"),
+    }
 }
 
 #[tokio::test]
@@ -3049,12 +3049,7 @@ async fn refusal_sites_batch_1_alias_lock_timeout_is_end_to_end_busy() {
     let journal = Journal::new();
     seed_entity(journal.path(), "a", "Alice");
     seed_facet_entity(journal.path(), "work", "a");
-    let lock_path = journal.path().join("health/locks/facet-trust");
-    let held = solstone_core_journal_io::hold_lock(
-        &lock_path,
-        solstone_core_journal_io::LockOptions::default(),
-    )
-    .unwrap();
+    let held = hold_trust_lock(journal.path(), "facet");
     assert_oracle_refusal(
         "add_aka_for_call:825",
         post(

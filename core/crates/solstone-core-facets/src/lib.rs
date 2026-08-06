@@ -5,9 +5,12 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
+mod action_log;
 mod store;
 mod trust_lock;
 
+pub use action_log::append_journal_action_log;
+pub use solstone_core_journal_io::AppendError;
 pub use store::{
     DetectedEntityInput, DetectionUpsertReport, EntityBlockReport, EntityDeleteGuardOutcome,
     EntityDeleteReport, EntityHistoryReference, EntityReferenceBreakdown, FacetDeclarationSnapshot,
@@ -39,7 +42,9 @@ pub use store::{
     iter_detected_entity_names_since, list_scoped_facet_entities, move_facet_entity,
     update_facet_entity_description, update_facet_entity_identity,
 };
-pub use trust_lock::{FacetTrustLock, FacetTrustLockError, hold_facet_trust_lock};
+pub use trust_lock::{
+    FacetTrustLock, FacetTrustLockError, hold_facet_trust_lock, hold_facet_trust_lock_raw_for_test,
+};
 
 #[cfg(test)]
 mod detected_entity_exclusion_fixture_tests;

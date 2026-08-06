@@ -1795,7 +1795,6 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",
- "solstone-core-journal-io",
  "solstone-core-serving",
  "tokio",
  "tower",

@@ -15,6 +15,10 @@ pub use resolution::{
     EntityResolution, EntityResolutionEntity, EntityResolutionError, EntityResolutionOutcome,
     ResolutionCandidate, record_entity_resolution,
 };
+pub use solstone_core_journal_io::FileLock;
+pub use solstone_core_journal_io::LockError;
+pub use solstone_core_journal_io::LockTimeout;
+pub use solstone_core_journal_io::MalformedPolicy;
 pub use store::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, CanonicalKeyField,
     DEFAULT_ACTIVITY_TS, EntityAmbiguityRemovalReport, EntityAmbiguityRescopeError,
@@ -42,7 +46,10 @@ pub use store::{
     rewrite_voiceprint_metadata, save_entity_identity, save_voiceprints_batch,
     unblock_journal_entity, undo_entity_merge,
 };
-pub use trust_lock::{EntityTrustLock, EntityTrustLockError, hold_entity_trust_lock};
+pub use trust_lock::{
+    EntityTrustLock, EntityTrustLockError, hold_entity_trust_lock,
+    hold_entity_trust_lock_raw_for_test,
+};
 
 #[cfg(test)]
 pub(crate) use store::{

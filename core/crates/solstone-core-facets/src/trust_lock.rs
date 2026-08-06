@@ -151,6 +151,17 @@ pub(crate) fn hold_facet_trust_lock_with_options(
     }
 }
 
+/// Acquire the raw facet trust-lock file directly, bypassing the in-process
+/// reentrant coordinator `hold_facet_trust_lock` uses. Exists so integration
+/// tests in other crates can simulate the trust lock already held by another
+/// process; production code must go through `hold_facet_trust_lock`.
+pub fn hold_facet_trust_lock_raw_for_test(
+    journal_root: &Path,
+) -> Result<FileLock, FacetTrustLockError> {
+    let lock_path = contained_path(journal_root, TRUST_LOCK_RELATIVE_PATH)?;
+    Ok(hold_lock(&lock_path, LockOptions::default())?)
+}
+
 impl FacetTrustLock {
     fn new(lock_path: PathBuf) -> Self {
         Self {

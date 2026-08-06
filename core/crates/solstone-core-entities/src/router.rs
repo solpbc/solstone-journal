@@ -653,12 +653,12 @@ async fn detect_entity_route(
         }
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         )))
         | Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityTrustLock(
             solstone_core_entity::EntityTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
         _ => refusal(
@@ -872,11 +872,11 @@ pub(crate) fn entity_review_candidate_error_response(
     match error {
         solstone_core_entity::EntityReviewCandidateError::TrustLock(
             solstone_core_entity::EntityTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         )
         | solstone_core_entity::EntityReviewCandidateError::Lock(
-            solstone_core_journal_io::LockError::Timeout(_),
+            solstone_core_entity::LockError::Timeout(_),
         ) => refusal(ReasonCode::EntityBusy, "entity busy"),
         _ => refusal(ReasonCode::EntityOperationFailed, detail),
     }
@@ -908,12 +908,12 @@ fn merge_error_is_busy(error: &solstone_core_entity::EntityMergeError) -> bool {
         solstone_core_entity::EntityMergeError::Write(
             solstone_core_entity::EntityWriteError::TrustLock(
                 solstone_core_entity::EntityTrustLockError::Lock(
-                    solstone_core_journal_io::LockError::Timeout(_)
+                    solstone_core_entity::LockError::Timeout(_)
                 )
             )
         ) | solstone_core_entity::EntityMergeError::Write(
             solstone_core_entity::EntityWriteError::AmbiguityLock(
-                solstone_core_journal_io::LockError::Timeout(_)
+                solstone_core_entity::LockError::Timeout(_)
             )
         )
     )
@@ -975,11 +975,11 @@ fn undo_error_is_busy(error: &solstone_core_entity::EntityUndoError) -> bool {
         solstone_core_entity::EntityUndoError::Write(
             solstone_core_entity::EntityWriteError::TrustLock(
                 solstone_core_entity::EntityTrustLockError::Lock(
-                    solstone_core_journal_io::LockError::Timeout(_),
+                    solstone_core_entity::LockError::Timeout(_),
                 ),
             )
             | solstone_core_entity::EntityWriteError::AmbiguityLock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         ) => true,
         solstone_core_entity::EntityUndoError::Failed {
@@ -1440,10 +1440,10 @@ fn facet_candidate_error_is_busy(error: &solstone_core_facets::FacetReviewCandid
         error,
         solstone_core_facets::FacetReviewCandidateError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_)
+                solstone_core_entity::LockError::Timeout(_)
             )
         ) | solstone_core_facets::FacetReviewCandidateError::Lock(
-            solstone_core_journal_io::LockError::Timeout(_)
+            solstone_core_entity::LockError::Timeout(_)
         )
     )
 }
@@ -1453,7 +1453,7 @@ fn facet_write_error_is_busy(error: &solstone_core_facets::FacetWriteError) -> b
         error,
         solstone_core_facets::FacetWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_)
+                solstone_core_entity::LockError::Timeout(_)
             )
         )
     )
@@ -1989,7 +1989,7 @@ async fn update_journal_entity_route(
         Ok(Ok(entity)) => Json(json!({"success":true,"entity":entity})).into_response(),
         Ok(Err(solstone_core_entity::EntityWriteError::TrustLock(
             solstone_core_entity::EntityTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
         _ => refusal(ReasonCode::EntityOperationFailed, "entity update failed"),
@@ -2050,13 +2050,13 @@ async fn restore_journal_entity_version_route(
         }
         Ok(Err(solstone_core_entity::EntityLifecycleError::TrustLock(
             solstone_core_entity::EntityTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         )))
         | Ok(Err(solstone_core_entity::EntityLifecycleError::Write(
             solstone_core_entity::EntityWriteError::TrustLock(
                 solstone_core_entity::EntityTrustLockError::Lock(
-                    solstone_core_journal_io::LockError::Timeout(_),
+                    solstone_core_entity::LockError::Timeout(_),
                 ),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
@@ -2175,10 +2175,7 @@ async fn ambiguities_route(
         );
     }
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_entity::read_ambiguities(
-            &root,
-            solstone_core_journal_io::MalformedPolicy::Raise,
-        )
+        solstone_core_entity::read_ambiguities(&root, solstone_core_entity::MalformedPolicy::Raise)
     })
     .await
     {
@@ -2223,7 +2220,7 @@ async fn resolve_ambiguity_route(
         move || {
             let rows = solstone_core_entity::read_ambiguities(
                 &root,
-                solstone_core_journal_io::MalformedPolicy::Raise,
+                solstone_core_entity::MalformedPolicy::Raise,
             )
             .map_err(|error| error.to_string())?;
             let Some(row) = rows.into_iter().find(|row| {
@@ -2311,11 +2308,11 @@ async fn resolve_ambiguity_route(
         Ok(Ok(ambiguity)) => Json(json!({"ambiguity":ambiguity,"entity":chosen})).into_response(),
         Ok(Err(solstone_core_entity::EntityWriteError::TrustLock(
             solstone_core_entity::EntityTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         )))
         | Ok(Err(solstone_core_entity::EntityWriteError::AmbiguityLock(
-            solstone_core_journal_io::LockError::Timeout(_),
+            solstone_core_entity::LockError::Timeout(_),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
         _ => refusal(ReasonCode::InvalidRequestValue, "ambiguity resolve failed"),
     }
@@ -2369,11 +2366,11 @@ fn facet_entity_write_error_is_busy(error: &solstone_core_facets::FacetEntityWri
         error,
         solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         ) | solstone_core_facets::FacetEntityWriteError::EntityTrustLock(
             solstone_core_entity::EntityTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         )
     )
@@ -2598,12 +2595,12 @@ async fn update_description_route(
         }
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         )))
         | Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityTrustLock(
             solstone_core_entity::EntityTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
         _ => refusal(
@@ -2653,7 +2650,7 @@ async fn update_detected_route(
         }
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
         _ => refusal(
@@ -2745,7 +2742,7 @@ async fn detach_route(
         }
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
         _ => refusal(ReasonCode::EntityOperationFailed, "entity detach failed"),
@@ -2791,7 +2788,7 @@ async fn update_path_description_route(
         }
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
         _ => refusal(
@@ -2871,13 +2868,13 @@ async fn observe_route(
         ),
         Ok(Err(solstone_core_facets::ObservationWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         )))
         | Ok(Err(solstone_core_facets::ObservationWriteError::Write(
             solstone_core_facets::FacetWriteError::TrustLock(
                 solstone_core_facets::FacetTrustLockError::Lock(
-                    solstone_core_journal_io::LockError::Timeout(_),
+                    solstone_core_entity::LockError::Timeout(_),
                 ),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
@@ -2954,7 +2951,7 @@ async fn delete_detected_route(
         Ok(Ok(days_modified)) => Json(json!({"days_modified":days_modified})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
         _ => refusal(
@@ -3010,12 +3007,12 @@ async fn aka_route(
         }
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         )))
         | Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityTrustLock(
             solstone_core_entity::EntityTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
         _ => refusal(
@@ -3105,12 +3102,12 @@ async fn update_entity_route(
         ),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         )))
         | Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityTrustLock(
             solstone_core_entity::EntityTrustLockError::Lock(
-                solstone_core_journal_io::LockError::Timeout(_),
+                solstone_core_entity::LockError::Timeout(_),
             ),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
         _ => refusal(ReasonCode::EntityOperationFailed, "entity update failed"),

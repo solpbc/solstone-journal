@@ -39,6 +39,7 @@ const JOURNAL_IO_ALLOWED: &[&str] = &[
     "FileLock",
     "LockOptions",
     "LockError",
+    "LockTimeout",
     "write_json",
     "write_text",
     "AtomicWriteOptions",
