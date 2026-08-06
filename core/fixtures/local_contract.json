@@ -957,6 +957,7 @@
         "canonical_json": "{\"active\":{\"model\":\"q\",\"provider\":\"local\"},\"lane\":\"bundled\"}",
         "hmac_sha256": "5e8a46cc923dddeb92f947faa8887fc0db43c2eda51b30f6ef9640cc319c21ec",
         "input_json": "{\"lane\": \"bundled\", \"active\": {\"provider\": \"local\", \"model\": \"q\"}}",
+        "input_repr": "{'lane': 'bundled', 'active': {'provider': 'local', 'model': 'q'}}",
         "name": "ascii_flat",
         "note": "the nominal shape; proves compact separators and key sorting.",
         "sha256": "ac53834ac37633aa28b206586ab547f2c972a4f6dde313f0c53c7c1c8bbfc8c4"
@@ -965,6 +966,7 @@
         "canonical_json": "{\"model\":\"caf\\u00e9-4b\"}",
         "hmac_sha256": "9764e6f63c45ab965155bb54ed4b122e042fe4a8618ae92ccecdf04b5ea67390",
         "input_json": "{\"model\": \"caf\u00e9-4b\"}",
+        "input_repr": "{'model': 'caf\u00e9-4b'}",
         "name": "non_ascii_value",
         "note": "\u26d4 THE FIRST DIVERGENCE. Python emits \\u00e9; serde_json emits the character. Every other case in this corpus can pass while this one fails, and a journal with a plain-ASCII config never reaches it.",
         "sha256": "c81c4808419efe0d5b3d4e0a676935d42409ada771b7d58791787df066b2f6a0"
@@ -973,6 +975,7 @@
         "canonical_json": "{\"mod\\u00e8le\":\"local\"}",
         "hmac_sha256": "38999ce61980bfa4d9bf5d2943c96a2b53cd12e0b037419652e6229f9a8524d0",
         "input_json": "{\"mod\u00e8le\": \"local\"}",
+        "input_repr": "{'mod\u00e8le': 'local'}",
         "name": "non_ascii_key",
         "note": "the same escape on the key side, which a serializer can treat differently from values.",
         "sha256": "8da4e96116067713ebb18183118d1cdc0dc795505f04244bae5128604e766e71"
@@ -981,6 +984,7 @@
         "canonical_json": "{\"note\":\"\\ud834\\udd1e clef\"}",
         "hmac_sha256": "df3eb9e544c0e666ab8fc75669e6896acd3bd751fca331d5112afc055cfbac4a",
         "input_json": "{\"note\": \"\ud834\udd1e clef\"}",
+        "input_repr": "{'note': '\ud834\udd1e clef'}",
         "name": "astral_plane",
         "note": "\u26d4 THE SECOND DIVERGENCE. A non-BMP codepoint escapes as a UTF-16 SURROGATE PAIR under ensure_ascii. A native implementation that escapes non-ASCII but emits one six-digit escape, or the raw character, still diverges here \u2014 so passing `non_ascii_value` is not evidence of passing this one.",
         "sha256": "987cc2db82ce3903061c39331a579cfca2fa41b8c322fc40b33b9a0f83719015"
@@ -989,6 +993,7 @@
         "canonical_json": "{\"text\":\"a\\nb\\tc\\\"d\\\\e\\u0000f\\u001bg\"}",
         "hmac_sha256": "a670c62a9e23fa4c34b3506abdc8c8cd8de70f5d7dad095ffe51b9e166438b93",
         "input_json": "{\"text\": \"a\\nb\\tc\\\"d\\\\e\\u0000f\\u001bg\"}",
+        "input_repr": "{'text': 'a\\nb\\tc\"d\\\\e\\x00f\\x1bg'}",
         "name": "control_characters",
         "note": "the escapes both serializers agree on, recorded so a native implementation cannot pass by escaping everything.",
         "sha256": "23b0e39c02bfa9420d561280efe47e26473dd2bb11b30aae86624985b240824f"
@@ -997,6 +1002,7 @@
         "canonical_json": "{\"0\":5,\"A\":4,\"Z\":1,\"_\":3,\"a\":2,\"\\u00e9\":6,\"\\ud834\\udd1e\":7}",
         "hmac_sha256": "500e3a76ef9f9dec78a2e4d4ce318c0d353dd33cb2b0010b550135580884e197",
         "input_json": "{\"Z\": 1, \"a\": 2, \"_\": 3, \"A\": 4, \"0\": 5, \"\u00e9\": 6, \"\ud834\udd1e\": 7}",
+        "input_repr": "{'Z': 1, 'a': 2, '_': 3, 'A': 4, '0': 5, '\u00e9': 6, '\ud834\udd1e': 7}",
         "name": "key_sort_order",
         "note": "codepoint order, not any locale collation: uppercase before lowercase, '_' after uppercase, non-ASCII last.",
         "sha256": "9cec9a4066c35d400c87f7388a124c2934c3784427dd9852fcb63a6175732595"
@@ -1005,6 +1011,7 @@
         "canonical_json": "{\"items\":[\"a\",\"z\",10,9,[1,3],null,true,{\"a\":1},{\"b\":2}]}",
         "hmac_sha256": "06fd292cc738d506abeffa3db4791ec4d856c0c159fbc9263a88d2b4b64d6170",
         "input_json": "{\"items\": [{\"b\": 2}, {\"a\": 1}, [3, 1], \"z\", \"a\", 10, 9, true, null]}",
+        "input_repr": "{'items': [{'b': 2}, {'a': 1}, [3, 1], 'z', 'a', 10, 9, True, None]}",
         "name": "list_sorted_by_canonical_text",
         "note": "a list is sorted by each item's own canonical JSON text, so 10 precedes 9 and `true` precedes `null` \u2014 a LEXICAL order over serialized items, never a value order.",
         "sha256": "d9e6b9f03669751b81475be874a7238d34c2fb071a342da5151e5f482d71842a"
@@ -1013,6 +1020,7 @@
         "canonical_json": "{\"items\":[[{\"a\":2,\"b\":1}],[{\"z\":0}]]}",
         "hmac_sha256": "14babb60abf0ef7a85bab90a3372990d8e7eb274b20ebc20327ff1054115d013",
         "input_json": "{\"items\": [[{\"b\": 1, \"a\": 2}], [{\"z\": 0}]]}",
+        "input_repr": "{'items': [[{'b': 1, 'a': 2}], [{'z': 0}]]}",
         "name": "nested_list_normalized_before_sorting",
         "note": "inner values are normalized first, then the outer list is sorted on the normalized text. Sorting before normalizing gives a different order for the same input.",
         "sha256": "d218915d7127e0579452a9efef865281c595791d10d66ebeef34b71188999b4f"
@@ -1021,6 +1029,7 @@
         "canonical_json": "{\"pins\":[\"a\",\"b\"]}",
         "hmac_sha256": "b2c3072f1eb24c5a7f045e11d3a77047ffa843e2f9708016de445d3096116d4f",
         "input_json": "{\"pins\": [\"b\", \"a\"]}",
+        "input_repr": "{'pins': ('b', 'a')}",
         "name": "tuple_becomes_list",
         "note": "tuples are normalized as lists and therefore also sorted; a positional tuple does NOT keep its order through this function.",
         "sha256": "3c04e969672615bb33cbd4192b9e25bf0c1d9dea8263d418cfdd38132cc06595"
@@ -1029,6 +1038,7 @@
         "canonical_json": "{\"binary\":\"/opt/llama/llama-server\",\"model\":\"m.gguf\"}",
         "hmac_sha256": "076eecbf3f452b39935c973db4d11dbb910d6bdfdb1ffeb7e6a002f04e5789a0",
         "input_json": "{\"binary\": \"/opt/llama/llama-server\", \"model\": \"m.gguf\"}",
+        "input_repr": "{'binary': PosixPath('/opt/llama/llama-server'), 'model': PosixPath('m.gguf')}",
         "name": "path_becomes_string",
         "note": "Path is stringified. \u26a0 A native implementation taking a typed path must render the same platform-native separator form.",
         "sha256": "236674da55d6019b801351fc9caa55c4ef51e6af17a3e6bee070b32780ebb684"
@@ -1037,6 +1047,7 @@
         "canonical_json": "{\"big\":9007199254740993,\"bool_false\":false,\"bool_true\":true,\"huge\":1e+22,\"int\":42,\"neg_zero_float\":-0.0,\"nil\":null,\"one_float\":1.0,\"tenth\":0.1,\"tiny\":1e-07,\"zero\":0}",
         "hmac_sha256": "bf48ab3d52be616880c2a7ee1f46492ce73575ba4f6dec918485912ba0a85ae2",
         "input_json": "{\"int\": 42, \"big\": 9007199254740993, \"zero\": 0, \"neg_zero_float\": -0.0, \"one_float\": 1.0, \"tenth\": 0.1, \"tiny\": 1e-07, \"huge\": 1e+22, \"bool_true\": true, \"bool_false\": false, \"nil\": null}",
+        "input_repr": "{'int': 42, 'big': 9007199254740993, 'zero': 0, 'neg_zero_float': -0.0, 'one_float': 1.0, 'tenth': 0.1, 'tiny': 1e-07, 'huge': 1e+22, 'bool_true': True, 'bool_false': False, 'nil': None}",
         "name": "numbers",
         "note": "\u26d4 THE THIRD DIVERGENCE, in the exponents: Python writes 1e+22 and 1e-07, serde_json writes 1e22 and 1e-7. Also pins that 1.0 must not collapse to 1 and -0.0 must not collapse to 0. \u26a0 No live fingerprint component carries a float today \u2014 this is here because an install pin is an arbitrary dict and the next one may.",
         "sha256": "0f54309b35969c92b1161e34197be7787b2fe60d20ca95d32a35798761f486e5"
@@ -1045,6 +1056,7 @@
         "canonical_json": "{\"dict\":{},\"list\":[],\"nested\":{\"a\":[]},\"string\":\"\"}",
         "hmac_sha256": "f2acd1daad844760480740857b8facd760aa355a450da0f247bdc6f50c1f6f61",
         "input_json": "{\"dict\": {}, \"list\": [], \"string\": \"\", \"nested\": {\"a\": []}}",
+        "input_repr": "{'dict': {}, 'list': [], 'string': '', 'nested': {'a': []}}",
         "name": "empty_containers",
         "note": "empty is a value, not an absence.",
         "sha256": "4ca121f0dbe8662b17dd710ee11ec35a0829a2ae793e7f28672d313e656567f9"
@@ -1053,6 +1065,7 @@
         "canonical_json": "{\"1\":\"str-key\"}",
         "hmac_sha256": "c1e8f91a537d32b45d89d2284e8a0b1308ea65ec346b862bcd38a53df7ebdc77",
         "input_json": "{\"1\": \"str-key\"}",
+        "input_repr": "{1: 'bool-key', '1': 'str-key'}",
         "name": "stringified_keys_collide",
         "note": "\ud83d\udd34 a lossy, order-dependent step: 1 and True are the same Python dict key, and str() then collapses that onto '1', so one entry survives out of three. \u26a0 UNREACHABLE from the live component builder, which uses string keys throughout \u2014 recorded so a native implementation REFUSES a non-string key rather than inventing a collapse rule, which is the only way it could differ silently.",
         "sha256": "4c6dc78f21c33b8241a48900ae442bb7adc381832ce17398c674586bff3766a9"
@@ -1061,6 +1074,7 @@
         "canonical_json": "{\"active\":{\"model\":\"local/qwen3.5-4b\",\"provider\":\"local\"},\"bundled_runtime\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"lane\":\"bundled\",\"schema_version\":1}",
         "hmac_sha256": "a661c409a5b677488a14f204f4bc1d5c4cf68f8a319dc6d1ceea7a470ae1a016",
         "input_json": "{\"schema_version\": 1, \"lane\": \"bundled\", \"active\": {\"provider\": \"local\", \"model\": \"local/qwen3.5-4b\"}, \"bundled_runtime\": \"0000000000000000000000000000000000000000000000000000000000000000\"}",
+        "input_repr": "{'schema_version': 1, 'lane': 'bundled', 'active': {'provider': 'local', 'model': 'local/qwen3.5-4b'}, 'bundled_runtime': '0000000000000000000000000000000000000000000000000000000000000000'}",
         "name": "lane_bundled_shape",
         "note": "the real component shape for the local lane.",
         "sha256": "682f4ee4aa0dce8f2a9a800b553cfadb7d8830ced5737380702d1172a0a777aa"
@@ -1069,6 +1083,7 @@
         "canonical_json": "{\"active\":{\"model\":\"claude\",\"provider\":\"anthropic\"},\"cloud_credential\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"lane\":\"byo-cloud\",\"schema_version\":1}",
         "hmac_sha256": "77355adbb00a96247e651674ad97ee4864d602d636954d0e1ec878fbe9b90902",
         "input_json": "{\"schema_version\": 1, \"lane\": \"byo-cloud\", \"active\": {\"provider\": \"anthropic\", \"model\": \"claude\"}, \"cloud_credential\": \"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\"}",
+        "input_repr": "{'schema_version': 1, 'lane': 'byo-cloud', 'active': {'provider': 'anthropic', 'model': 'claude'}, 'cloud_credential': 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'}",
         "name": "lane_byo_cloud_shape",
         "note": "\u26a0 an EGRESS sibling's shape. Recorded because one record serves five lanes, not because this lane may change that sibling.",
         "sha256": "cd61502546b03d4c580f1d730cb52916ed0881b0407fc1342e3d0668f777d0e7"
@@ -1077,6 +1092,7 @@
         "canonical_json": "{\"active\":{\"model\":\"\",\"provider\":\"local\"},\"lane\":\"byo-endpoint\",\"local_endpoint\":{\"base_url\":\"http://127.0.0.1:8080\",\"credential\":null,\"served_model_id\":\"m\"},\"schema_version\":1}",
         "hmac_sha256": "6292663ed640ecb0fa3b90b69fd0f65ec097632b658c677d625795760961d814",
         "input_json": "{\"schema_version\": 1, \"lane\": \"byo-endpoint\", \"active\": {\"provider\": \"local\", \"model\": \"\"}, \"local_endpoint\": {\"base_url\": \"http://127.0.0.1:8080\", \"served_model_id\": \"m\", \"credential\": null}}",
+        "input_repr": "{'schema_version': 1, 'lane': 'byo-endpoint', 'active': {'provider': 'local', 'model': ''}, 'local_endpoint': {'base_url': 'http://127.0.0.1:8080', 'served_model_id': 'm', 'credential': None}}",
         "name": "lane_byo_endpoint_shape",
         "note": "\u26a0 an EGRESS sibling's shape; a null credential is distinct from an absent one.",
         "sha256": "dd3109572c7e680ee6716258fc9dd21ceceee8f7887cf08e9291cedaa289a22e"
@@ -1085,6 +1101,7 @@
         "canonical_json": "{\"active\":{\"model\":\"\",\"provider\":\"local\"},\"confidential\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"lane\":\"spp\",\"local_endpoint\":{\"base_url\":\"https://spp.example\",\"credential\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"served_model_id\":\"m\"},\"schema_version\":1}",
         "hmac_sha256": "ed91c1ce71b5aa5a3cf472c8a049e9300827a426c8fd4e5db5ece1ec68d36f36",
         "input_json": "{\"schema_version\": 1, \"lane\": \"spp\", \"active\": {\"provider\": \"local\", \"model\": \"\"}, \"local_endpoint\": {\"base_url\": \"https://spp.example\", \"served_model_id\": \"m\", \"credential\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}, \"confidential\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+        "input_repr": "{'schema_version': 1, 'lane': 'spp', 'active': {'provider': 'local', 'model': ''}, 'local_endpoint': {'base_url': 'https://spp.example', 'served_model_id': 'm', 'credential': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}, 'confidential': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'}",
         "name": "lane_spp_shape",
         "note": "\u26a0 an EGRESS sibling's shape; the confidential provenance digest is an HMAC of a canonicalized block, i.e. this function applied twice.",
         "sha256": "2631207b75962061cc196d8f8a9efec654a4d02b8d170b24b4e8ebb39aeb2a0a"
@@ -1093,6 +1110,7 @@
         "canonical_json": "{\"active\":{\"model\":\"\",\"provider\":\"none\"},\"lane\":\"none\",\"schema_version\":1}",
         "hmac_sha256": "098c56ba2a924d3522c612a198331e5d77dbc2eb84dcc483838cd587c3ba1668",
         "input_json": "{\"schema_version\": 1, \"lane\": \"none\", \"active\": {\"provider\": \"none\", \"model\": \"\"}}",
+        "input_repr": "{'schema_version': 1, 'lane': 'none', 'active': {'provider': 'none', 'model': ''}}",
         "name": "lane_none_shape",
         "note": "no engine chosen still has a fingerprint.",
         "sha256": "2a9ad8cefaa35c57ccb048bfa9b1460571dfcfddbf8c3f4adf70c8c573ca5864"
@@ -1101,5 +1119,11 @@
   },
   "fixture": "solstone-local-contract",
   "fixture_version": 1,
-  "generated_by": "make core-fixtures"
+  "generated_by": "make core-fixtures",
+  "generator": "scripts/local_contract_corpus.py",
+  "reference_commit": "3373ff91a4d9e9562ed2c80030d1549f4dbb595d",
+  "reference_sources": [
+    "solstone/think/providers/brain_state.py",
+    "solstone/think/providers/install_state.py"
+  ]
 }

@@ -44,10 +44,12 @@ for the same reason; the real key is 32 random bytes per journal.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from local_contract_corpus import REFERENCE_SOURCES, reference_commit
 from solstone.think.providers import brain_state as bs
 
 FIXTURE_VERSION = 1
@@ -177,6 +179,25 @@ def _ready_evidence(lane: str) -> dict[str, Any]:
 # configurations — one per lane, plus the two ways a config fails to name one
 # --------------------------------------------------------------------------
 
+ENDPOINT_URL = "http://127.0.0.1:9099"
+ENDPOINT_MODEL = "served-model"
+ENDPOINT_CREDENTIAL = "endpoint-credential"
+ENDPOINT_CREDENTIAL_SHA = hashlib.sha256(
+    ENDPOINT_CREDENTIAL.encode("utf-8")
+).hexdigest()
+
+# 🔴 The lane is derived from the config, and the derivation is not obvious.
+# `local` is FOUR lanes depending on what sits beside it: no endpoint at all is
+# `bundled`; a complete endpoint is `byo-endpoint`; a complete endpoint whose
+# confidential provenance block matches it exactly is `spp`; and a half-written
+# endpoint — one of the two required keys — resolves to NO lane and projects
+# `configuration_invalid` rather than falling back to bundled.
+#
+# ⚠ A first draft of this corpus used plausible-looking key names (`base_url`,
+# `api_key`) instead of the real ones. Every config still produced a valid
+# fingerprint, so nothing failed — but `lane_byo_endpoint` silently resolved to
+# `bundled`, and `spp` and `byo-endpoint` were reached by ZERO cases while the
+# corpus claimed five-lane coverage.
 CONFIGS: dict[str, dict[str, Any]] = {
     "lane_bundled": {"providers": {"active": {"provider": "local"}}},
     "lane_none": {"providers": {"active": {"provider": "none"}}},
@@ -186,8 +207,59 @@ CONFIGS: dict[str, dict[str, Any]] = {
     },
     "lane_byo_endpoint": {
         "providers": {
-            "active": {"provider": "local", "model": "served"},
-            "local": {"base_url": "http://127.0.0.1:9099", "api_key": "k"},
+            "active": {"provider": "local", "model": ENDPOINT_MODEL},
+            "local": {
+                "endpoint_url": ENDPOINT_URL,
+                "served_model_id": ENDPOINT_MODEL,
+                "credential": ENDPOINT_CREDENTIAL,
+            },
+        }
+    },
+    "lane_spp": {
+        "providers": {
+            "active": {"provider": "local", "model": ENDPOINT_MODEL},
+            "local": {
+                "endpoint_url": ENDPOINT_URL,
+                "served_model_id": ENDPOINT_MODEL,
+                "credential": ENDPOINT_CREDENTIAL,
+            },
+        },
+        "services": {
+            "confidential": {
+                "endpoint_url": ENDPOINT_URL,
+                "served_model_id": ENDPOINT_MODEL,
+                "credential_fingerprint_sha256": ENDPOINT_CREDENTIAL_SHA,
+                # A restore-only field: present in the provenance block and
+                # deliberately excluded from the fingerprint, so a corpus that
+                # included it would pin the wrong digest.
+                "prior_active": {"provider": "local"},
+            }
+        },
+    },
+    # A confidential block that does not match the live endpoint resolves to no
+    # lane at all rather than degrading to `byo-endpoint` — the journal refuses
+    # to guess whether the owner meant confidential processing.
+    "config_confidential_unmatched": {
+        "providers": {
+            "active": {"provider": "local", "model": ENDPOINT_MODEL},
+            "local": {
+                "endpoint_url": ENDPOINT_URL,
+                "served_model_id": ENDPOINT_MODEL,
+                "credential": ENDPOINT_CREDENTIAL,
+            },
+        },
+        "services": {
+            "confidential": {
+                "endpoint_url": "https://somewhere-else.example",
+                "served_model_id": ENDPOINT_MODEL,
+                "credential_fingerprint_sha256": ENDPOINT_CREDENTIAL_SHA,
+            }
+        },
+    },
+    "config_endpoint_partial": {
+        "providers": {
+            "active": {"provider": "local"},
+            "local": {"endpoint_url": ENDPOINT_URL},
         }
     },
     "config_missing_provider": {"providers": {"active": {}}},
@@ -533,7 +605,12 @@ def _malformed() -> list[tuple[str, Any, str]]:
 
 
 def _project(
-    record: Any, config: dict[str, Any], runtime: Any, permit: bool
+    record: Any,
+    config: dict[str, Any],
+    runtime: Any,
+    permit: bool,
+    *,
+    hmac_key: bytes | None = CORPUS_HMAC_KEY,
 ) -> tuple[Any, str | None]:
     try:
         return (
@@ -541,7 +618,7 @@ def _project(
                 record,
                 NOW,
                 config=config,
-                hmac_key=CORPUS_HMAC_KEY,
+                hmac_key=hmac_key,
                 refresh_permit_active=permit,
                 runtime_health=runtime,
             ),
@@ -574,6 +651,7 @@ def _projection_cases() -> list[dict[str, Any]]:
                             "config": config_name,
                             "runtime_health": runtime_name,
                             "refresh_permit_active": permit,
+                            "hmac_key_present": True,
                             "projection": projection,
                             "raised": raised,
                         }
@@ -588,6 +666,7 @@ def _projection_cases() -> list[dict[str, Any]]:
                 "config": config_name,
                 "runtime_health": "absent",
                 "refresh_permit_active": False,
+                "hmac_key_present": True,
                 "projection": projection,
                 "raised": raised,
             }
@@ -608,6 +687,33 @@ def _projection_cases() -> list[dict[str, Any]]:
                     "config": config_name,
                     "runtime_health": "absent",
                     "refresh_permit_active": False,
+                    "hmac_key_present": True,
+                    "projection": projection,
+                    "raised": raised,
+                }
+            )
+
+    # 4. No fingerprint key. `health/brain-fingerprint.key` is 32 random bytes
+    #    written once per journal, and the read path loads it WITHOUT creating
+    #    it — so an absent or wrong-length key is a state a reader meets, not an
+    #    error it causes. The answer is `fingerprint_key_unavailable`, and it is
+    #    reachable by no other case here because every case above supplies a key.
+    for config_name, records in sorted(by_config.items()):
+        for record_name in ("ready", "checking_fresh"):
+            projection, raised = _project(
+                records[record_name],
+                CONFIGS[config_name],
+                None,
+                False,
+                hmac_key=None,
+            )
+            cases.append(
+                {
+                    "record": f"{config_name}/{record_name}",
+                    "config": config_name,
+                    "runtime_health": "absent",
+                    "refresh_permit_active": False,
+                    "hmac_key_present": False,
                     "projection": projection,
                     "raised": raised,
                 }
@@ -667,6 +773,9 @@ def build_brain_projection_fixture() -> dict[str, Any]:
         "fixture": "solstone-brain-projection",
         "fixture_version": FIXTURE_VERSION,
         "generated_by": "make core-fixtures",
+        "generator": "scripts/brain_projection_corpus.py",
+        "reference_sources": list(REFERENCE_SOURCES),
+        "reference_commit": reference_commit(),
         "now": _iso(0.0),
         "hmac_key_hex": CORPUS_HMAC_KEY.hex(),
         "bundled_runtime_fingerprint_sha256": BUNDLED_RUNTIME_SHA,
