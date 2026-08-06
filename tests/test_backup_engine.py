@@ -252,6 +252,8 @@ def test_run_backup_unlocks_then_calls_restic_with_expected_argv(
             "--exclude",
             ".cache",
             "--exclude",
+            ".removing_*",
+            "--exclude",
             "*.sock",
             "--exclude",
             "*.pid",

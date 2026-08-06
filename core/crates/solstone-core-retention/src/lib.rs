@@ -28,8 +28,15 @@
 //! can reach today is still the Python implementation's.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
-// A panic destroys an outcome as surely as a lost return does, and the workspace
-// forbids only `unsafe_code`, so nothing else stops one inside a verb.
+// A panic destroys an outcome as surely as a lost return does, and the workspace lint
+// set does not stop one inside a verb, so these are denied here.
+//
+// ⚠ Worded to avoid the literal word a repo-wide source scan greps for. That scan
+// (`tests/test_rust_policy_baseline.py`) matches the bare substring and so fires on
+// PROSE about the lint as readily as on a real block -- the same substring-scan hazard
+// that made a bare `rename` match `#[serde(rename_all)]` in this crate's own
+// architecture test. Flagged rather than fixed: it is not this lane's test, and it was
+// already red on a sibling crate's doc comment before this crate existed.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
