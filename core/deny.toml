@@ -10,6 +10,8 @@ allow = [
     "Unicode-DFS-2016",
     "Unicode-3.0",
     "AGPL-3.0-only",
+    # via ffmpeg-next / ffmpeg-sys-next (the safe FFmpeg decode wrapper and bindings).
+    "WTFPL",
     # via webpki-roots (the Mozilla CA bundle; permissive data license). Mirrors
     # spl-rust's dependency-policy rationale for the same crate.
     "CDLA-Permissive-2.0",
@@ -25,7 +27,7 @@ deny = [
     { name = "cpython" },
     { name = "aws-lc-rs" },
     { name = "aws-lc-sys" },
-    { name = "solstone-core-journal-io", wrappers = ["solstone-core-segment", "solstone-core-sol-client", "solstone-core-sol-link", "solstone-core-entity", "solstone-core-ingest-resolve", "solstone-core-depict", "solstone-core-callosum", "solstone-core-facets", "solstone-core-retention"], reason = "durable journal I/O primitives are owned by the native segment write door, sol-client and local-link security authorities, the entity-store and facet-store authorities, the ingest-manifest and quarantine writer authority, the still-image depiction writer, the durable event-append authority, and the retention executor -- the sole remover of owner media -- in this wave" },
+    { name = "solstone-core-journal-io", wrappers = ["solstone-core-segment", "solstone-core-sol-client", "solstone-core-sol-link", "solstone-core-entity", "solstone-core-ingest-resolve", "solstone-core-depict", "solstone-core-callosum", "solstone-core-facets", "solstone-core-retention", "solstone-core-describe"], reason = "durable journal I/O primitives are owned by the native segment write door, sol-client and local-link security authorities, the entity-store and facet-store authorities, the ingest-manifest and quarantine writer authority, the still-image depiction writer, the durable event-append authority, the describe reader of journal-configured winnow thresholds, and the retention executor -- the sole remover of owner media -- in this wave" },
 ]
 
 [graph]

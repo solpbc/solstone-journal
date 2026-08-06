@@ -1,0 +1,19 @@
+[package]
+name = "solstone-core-describe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+ffmpeg-next = { version = "9.0.0", default-features = false, features = ["format", "software-scaling", "build"] }
+# This direct dependency only enables the shared FFmpeg source build's portable
+# baseline; decode calls stay within ffmpeg-next's safe API.
+ffmpeg-sys-next = { version = "9.0.0", default-features = false, features = ["build-portable"] }
+serde.workspace = true
+serde_json.workspace = true
+solstone-core-journal-io.workspace = true
+
+[lints]
+workspace = true
