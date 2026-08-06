@@ -57,6 +57,7 @@ MAX_BASE_WHEEL_BYTES = 4 * 1024 * 1024
 MAX_BASE_PLATFORM_WHEEL_BYTES = 6 * 1024 * 1024
 MAX_CORE_WHEEL_BYTES = 30 * 1024 * 1024
 MAX_SPEAKERS_ANALYZE_WHEEL_BYTES = 30 * 1024 * 1024
+MAX_DESCRIBE_WHEEL_BYTES = 30 * 1024 * 1024
 PARAKEET_HELPER_MEMBER = (
     "solstone/observe/transcribe/parakeet_helper/_bin/parakeet-helper"
 )
@@ -64,6 +65,7 @@ NVATTEST_AUTHORITY_MEMBER = "solstone/think/providers/nvattest_authority_v1.json
 ROOT_LAUNCHER_NAMES = ("sol", "solstone")
 CORE_SCRIPT_NAMES = ("solstone-core",)
 SPEAKERS_ANALYZE_SCRIPT_NAMES = ("solstone-core-speakers-analyze",)
+DESCRIBE_SCRIPT_NAME = "solstone-core-describe"
 ELF_MAGIC = b"\x7fELF"
 ELF_CLASS_64 = 2
 ELF_DATA_LITTLE_ENDIAN = 1
@@ -263,6 +265,12 @@ def _is_speakers_analyze_wheel(path: Path) -> bool:
     return path.name.startswith(
         "solstone_core_speakers_analyze-"
     ) and path.name.endswith(".whl")
+
+
+def _is_describe_wheel(path: Path) -> bool:
+    return path.name.startswith("solstone_core_describe-") and path.name.endswith(
+        ".whl"
+    )
 
 
 def _is_core_sdist(path: Path) -> bool:
@@ -1712,6 +1720,85 @@ def check_speakers_analyze_wheel(path: Path) -> list[str]:
     return errors
 
 
+def check_describe_wheel(path: Path) -> list[str]:
+    """Validate the statically linked describe helper wheel."""
+    errors: list[str] = []
+    repair = "make wheel-describe-linux-x86_64"
+    size = path.stat().st_size
+    if size > MAX_DESCRIBE_WHEEL_BYTES:
+        errors.append(
+            _failure(
+                path.name,
+                "describe wheel is too large",
+                expected=f"<= {MAX_DESCRIBE_WHEEL_BYTES} bytes",
+                actual=str(size),
+                repair=repair,
+            )
+        )
+
+    with zipfile.ZipFile(path) as wheel:
+        binary_infos = [
+            info
+            for info in wheel.infolist()
+            if info.filename.endswith(f".data/scripts/{DESCRIBE_SCRIPT_NAME}")
+        ]
+        if len(binary_infos) != 1:
+            errors.append(
+                _failure(
+                    path.name,
+                    "describe binary member count is wrong",
+                    expected=(
+                        f"exactly one .data/scripts/{DESCRIBE_SCRIPT_NAME} member"
+                    ),
+                    actual=str(len(binary_infos)),
+                    repair=repair,
+                )
+            )
+        else:
+            binary_info = binary_infos[0]
+            mode = (binary_info.external_attr >> 16) & 0o777
+            if mode & 0o111 == 0:
+                errors.append(
+                    _failure(
+                        path.name,
+                        "describe binary is not executable",
+                        expected="executable mode bit set",
+                        actual=oct(mode),
+                        repair=repair,
+                    )
+                )
+            binary_content = wheel.read(binary_info)
+            if not binary_content.startswith(ELF_MAGIC):
+                errors.append(
+                    _failure(
+                        path.name,
+                        "describe binary is not an ELF executable",
+                        expected="ELF binary",
+                        actual="non-ELF member",
+                        repair=repair,
+                    )
+                )
+            else:
+                needed, _runpath, _rpath = _elf_dynamic_strings(binary_content)
+                dynamic_ffmpeg = sorted(
+                    library
+                    for library in needed
+                    if library.startswith(("libav", "libsw"))
+                )
+                if dynamic_ffmpeg:
+                    errors.append(
+                        _failure(
+                            path.name,
+                            "describe binary dynamically links FFmpeg",
+                            expected="no libav* or libsw* DT_NEEDED entries",
+                            actual=", ".join(dynamic_ffmpeg),
+                            repair=repair,
+                        )
+                    )
+        errors.extend(_check_record(path, wheel))
+    return errors
+
+
 def check_core_sdist(path: Path) -> list[str]:
     errors: list[str] = []
     with tarfile.open(path, "r:gz") as archive:
@@ -1892,11 +1979,12 @@ def check_dist(
     speakers_analyze_wheels = [
         path for path in wheels if _is_speakers_analyze_wheel(path)
     ]
+    describe_wheels = [path for path in wheels if _is_describe_wheel(path)]
     core_sdists = sorted(
         path for path in dist_dir.glob("*.tar.gz") if _is_core_sdist(path)
     )
     helper_only_dist = (
-        speakers_analyze_wheels
+        (speakers_analyze_wheels or describe_wheels)
         and not base_wheels
         and not models_wheels
         and not core_wheels
@@ -1939,6 +2027,8 @@ def check_dist(
         errors.extend(check_core_wheel(path, MAX_CORE_WHEEL_BYTES))
     for path in speakers_analyze_wheels:
         errors.extend(check_speakers_analyze_wheel(path))
+    for path in describe_wheels:
+        errors.extend(check_describe_wheel(path))
     for path in core_sdists:
         errors.extend(check_core_sdist(path))
     if release_scope is not None:

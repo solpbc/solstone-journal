@@ -26,6 +26,7 @@ resolution-markers = [
 members = [
     "solstone",
     "solstone-core",
+    "solstone-core-describe",
     "solstone-core-speakers-analyze",
     "solstone-journal",
     "solstone-journal-cuda",
@@ -4410,6 +4411,11 @@ journal-cuda = [{ name = "solstone-journal-cuda", editable = "packages/solstone-
 name = "solstone-core"
 version = "1.0.22"
 source = { editable = "packages/solstone-core" }
+
+[[package]]
+name = "solstone-core-describe"
+version = "1.0.22"
+source = { editable = "packages/solstone-core-describe" }
 
 [[package]]
 name = "solstone-journal"

@@ -103,6 +103,7 @@ WORKSPACE_MEMBERS = [
     "packages/solstone-journal-models",
     "packages/solstone-core",
     "packages/solstone-core-speakers-analyze",
+    "packages/solstone-core-describe",
 ]
 WORKSPACE_SOURCES = {
     "solstone-journal",
@@ -110,6 +111,7 @@ WORKSPACE_SOURCES = {
     "solstone-journal-models",
     "solstone-core",
     "solstone-core-speakers-analyze",
+    "solstone-core-describe",
 }
 SPEAKERS_ANALYZE_CACHE_KEYS = [
     {"file": "pyproject.toml"},
@@ -124,6 +126,14 @@ SPEAKERS_ANALYZE_CACHE_KEYS = [
     {"file": "../../core/crates/solstone-core-speakers-analyze/Cargo.toml"},
     {"file": "../../core/crates/solstone-core-speakers-analyze/build.rs"},
     {"file": "../../core/crates/solstone-core-speakers-analyze/**/*.rs"},
+]
+DESCRIBE_CACHE_KEYS = [
+    {"file": "pyproject.toml"},
+    {"file": "../../core/Cargo.toml"},
+    {"file": "../../core/Cargo.lock"},
+    {"file": "../../core/crates/**/Cargo.toml"},
+    {"file": "../../core/crates/**/*.rs"},
+    {"file": "../../core/fixtures/**"},
 ]
 
 
@@ -383,6 +393,66 @@ def _check_speakers_analyze_leaf(
         )
 
 
+def _check_describe_leaf(
+    *,
+    data: dict,
+    root_version: str | None,
+    errors: list[str],
+) -> None:
+    project = data.get("project", {})
+    build_system = data.get("build-system", {})
+    tool = data.get("tool", {})
+    maturin = tool.get("maturin", {})
+    uv = tool.get("uv", {})
+
+    if project.get("name") != "solstone-core-describe":
+        errors.append(
+            "describe leaf [project].name must be 'solstone-core-describe'"
+        )
+    if project.get("version") != root_version:
+        errors.append(
+            "describe leaf [project].version must match root version "
+            f"{root_version}; found {project.get('version')!r}"
+        )
+    if project.get("dependencies", []) != []:
+        errors.append("describe leaf must not define [project].dependencies")
+    if project.get("scripts", {}) != {}:
+        errors.append("describe leaf must not define [project.scripts]")
+    if build_system.get("build-backend") != "maturin":
+        errors.append("describe leaf [build-system].build-backend must be 'maturin'")
+    expected_requires = ["maturin==1.14.1"]
+    requires = build_system.get("requires", [])
+    if requires != expected_requires:
+        errors.append(
+            "describe leaf [build-system].requires mismatch\n"
+            f"  expected: {expected_requires!r}\n"
+            f"  actual: {requires!r}\n"
+            "  repair command: edit packages/solstone-core-describe/pyproject.toml "
+            'to requires = ["maturin==1.14.1"]'
+        )
+    if maturin.get("bindings") != "bin":
+        errors.append("describe leaf [tool.maturin].bindings must be 'bin'")
+    if (
+        maturin.get("manifest-path")
+        != "../../core/crates/solstone-core-describe/Cargo.toml"
+    ):
+        errors.append(
+            "describe leaf [tool.maturin].manifest-path must be "
+            "'../../core/crates/solstone-core-describe/Cargo.toml'"
+        )
+    if maturin.get("profile") != "release":
+        errors.append("describe leaf [tool.maturin].profile must be 'release'")
+    if maturin.get("strip") is not True:
+        errors.append("describe leaf [tool.maturin].strip must be true")
+    if "data" in maturin:
+        errors.append("describe leaf [tool.maturin] must not define data")
+    if uv.get("cache-keys") != DESCRIBE_CACHE_KEYS:
+        errors.append(
+            "describe leaf [tool.uv].cache-keys must match the declared native "
+            "build inputs"
+        )
+
+
 def main(root: Path | None = None) -> int:
     root = Path(root) if root is not None else Path(__file__).resolve().parent.parent
     pyproject = root / "pyproject.toml"
@@ -393,6 +463,7 @@ def main(root: Path | None = None) -> int:
     speakers_analyze_pyproject = (
         root / "packages" / "solstone-core-speakers-analyze" / "pyproject.toml"
     )
+    describe_pyproject = root / "packages" / "solstone-core-describe" / "pyproject.toml"
     makefile = root / "Makefile"
     errors: list[str] = []
 
@@ -402,6 +473,7 @@ def main(root: Path | None = None) -> int:
     models_data = _read_toml(models_pyproject, root, errors)
     core_data = _read_toml(core_pyproject, root, errors)
     speakers_analyze_data = _read_toml(speakers_analyze_pyproject, root, errors)
+    describe_data = _read_toml(describe_pyproject, root, errors)
 
     project = data.get("project", {})
     root_version = project.get("version")
@@ -536,6 +608,11 @@ def main(root: Path | None = None) -> int:
     _check_core_leaf(data=core_data, root_version=root_version, errors=errors)
     _check_speakers_analyze_leaf(
         data=speakers_analyze_data,
+        root_version=root_version,
+        errors=errors,
+    )
+    _check_describe_leaf(
+        data=describe_data,
         root_version=root_version,
         errors=errors,
     )
