@@ -1649,6 +1649,7 @@ dependencies = [
 name = "solstone-core-facets"
 version = "1.0.22"
 dependencies = [
+ "caseless",
  "chrono",
  "log",
  "serde",

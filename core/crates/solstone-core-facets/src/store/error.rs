@@ -85,6 +85,133 @@ pub enum FacetWriteError {
     ContentWrite(AtomicWriteError),
 }
 
+/// Failure while applying a facet-scoped observation mutation.
+#[derive(Debug)]
+pub enum ObservationWriteError {
+    EmptyContent,
+    TrustLock(FacetTrustLockError),
+    Read(FacetStoreError),
+    Write(FacetWriteError),
+}
+
+impl fmt::Display for ObservationWriteError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyContent => formatter.write_str("observation content cannot be empty"),
+            Self::TrustLock(error) => error.fmt(formatter),
+            Self::Read(error) => error.fmt(formatter),
+            Self::Write(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl Error for ObservationWriteError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::TrustLock(error) => Some(error),
+            Self::Read(error) => Some(error),
+            Self::Write(error) => Some(error),
+            Self::EmptyContent => None,
+        }
+    }
+}
+
+impl From<FacetTrustLockError> for ObservationWriteError {
+    fn from(error: FacetTrustLockError) -> Self {
+        Self::TrustLock(error)
+    }
+}
+
+impl From<FacetStoreError> for ObservationWriteError {
+    fn from(error: FacetStoreError) -> Self {
+        Self::Read(error)
+    }
+}
+
+impl From<FacetWriteError> for ObservationWriteError {
+    fn from(error: FacetWriteError) -> Self {
+        Self::Write(error)
+    }
+}
+
+impl ObservationWriteError {
+    pub(crate) fn is_lock_timeout(&self) -> bool {
+        match self {
+            Self::TrustLock(error) => trust_lock_is_timeout(error),
+            Self::Write(FacetWriteError::TrustLock(error)) => trust_lock_is_timeout(error),
+            _ => false,
+        }
+    }
+
+    pub(crate) fn is_retryable_io(&self) -> bool {
+        match self {
+            Self::TrustLock(error) => trust_lock_is_io(error),
+            Self::Read(error) => store_error_is_io(error),
+            Self::Write(error) => write_error_is_io(error),
+            Self::EmptyContent => false,
+        }
+    }
+}
+
+fn trust_lock_is_timeout(error: &FacetTrustLockError) -> bool {
+    matches!(error, FacetTrustLockError::Lock(LockError::Timeout(_)))
+}
+
+fn trust_lock_is_io(error: &FacetTrustLockError) -> bool {
+    matches!(
+        error,
+        FacetTrustLockError::Lock(LockError::Io { .. })
+            | FacetTrustLockError::Path(PathError::Io { .. })
+    )
+}
+
+fn store_error_is_io(error: &FacetStoreError) -> bool {
+    matches!(
+        error,
+        FacetStoreError::Read(ReadError::Io { .. }) | FacetStoreError::Path(PathError::Io { .. })
+    )
+}
+
+fn write_error_is_io(error: &FacetWriteError) -> bool {
+    match error {
+        FacetWriteError::TrustLock(error) => trust_lock_is_io(error),
+        FacetWriteError::Read(error) => store_error_is_io(error),
+        FacetWriteError::DeclarationWrite(AtomicWriteError::Io { .. })
+        | FacetWriteError::EntityLinkWrite(AtomicWriteError::Io { .. })
+        | FacetWriteError::ContentWrite(AtomicWriteError::Io { .. })
+        | FacetWriteError::EntityLinkRemoval(PathError::Io { .. }) => true,
+        FacetWriteError::DeclarationMissing { .. } | FacetWriteError::EntityLinkRemoval(_) => false,
+    }
+}
+
+/// Failure while resolving a query or reading its facet-scoped observations.
+#[derive(Debug)]
+pub enum ObservationLookupError {
+    Resolve(FacetEntityWriteError),
+    Read {
+        entity_dir: String,
+        source: FacetStoreError,
+    },
+}
+
+impl fmt::Display for ObservationLookupError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Resolve(error) => error.fmt(formatter),
+            Self::Read { source, .. } => source.fmt(formatter),
+        }
+    }
+}
+
+impl Error for ObservationLookupError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Resolve(error) => Some(error),
+            Self::Read { source, .. } => Some(source),
+        }
+    }
+}
+
 impl fmt::Display for FacetWriteError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

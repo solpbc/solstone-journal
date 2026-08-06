@@ -1,0 +1,331 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use std::fs;
+use std::time::Duration;
+
+use serde_json::json;
+use solstone_core_journal_io::{AtomicWriteError, LockError, LockTimeout};
+
+use crate::store::{retry_add_for_test, retry_record_for_test};
+use crate::store_tests::{TempDir, create_test_facet, write_facet_relationship};
+use crate::{
+    FacetTrustLockError, FacetWriteError, ObservationLookup, ObservationLookupError,
+    ObservationWriteError, add_observation, count_observations, load_observations,
+    load_observations_for_query, observation_day_counts, read_facet_entity_observations,
+    record_observation_ops, resolve_observation_entity_dir, save_observations,
+};
+
+#[test]
+fn query_lookup_resolves_a_journal_id_to_a_divergent_relationship_directory() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "work");
+    solstone_core_entity::save_entity_identity(
+        temporary.path(),
+        "current_journal_id",
+        &json!({"id":"current_journal_id","name":"Renamed Person"}),
+        None,
+    )
+    .unwrap();
+    write_facet_relationship(
+        temporary.path(),
+        "work",
+        "legacy_label",
+        json!({"entity_id":"current_journal_id"}),
+    );
+    save_observations(
+        temporary.path(),
+        "work",
+        "legacy_label",
+        &[json!({"content":"durable"})],
+    )
+    .unwrap();
+
+    let resolved =
+        resolve_observation_entity_dir(temporary.path(), "work", "current_journal_id").unwrap();
+    assert_eq!(
+        resolved,
+        crate::ObservationEntityResolution::Resolved {
+            entity_dir: "legacy_label".to_owned()
+        }
+    );
+    assert_eq!(
+        load_observations_for_query(temporary.path(), "work", "current_journal_id").unwrap(),
+        ObservationLookup::Resolved {
+            entity_dir: "legacy_label".to_owned(),
+            observations: vec![json!({"content":"durable"})],
+        }
+    );
+}
+
+#[test]
+fn query_lookup_distinguishes_an_empty_file_from_a_read_failure() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "work");
+    solstone_core_entity::save_entity_identity(
+        temporary.path(),
+        "empty_current",
+        &json!({"id":"empty_current","name":"Empty"}),
+        None,
+    )
+    .unwrap();
+    write_facet_relationship(
+        temporary.path(),
+        "work",
+        "empty_label",
+        json!({"entity_id":"empty_current"}),
+    );
+    solstone_core_entity::save_entity_identity(
+        temporary.path(),
+        "broken_current",
+        &json!({"id":"broken_current","name":"Broken"}),
+        None,
+    )
+    .unwrap();
+    write_facet_relationship(
+        temporary.path(),
+        "work",
+        "broken_label",
+        json!({"entity_id":"broken_current"}),
+    );
+    fs::create_dir_all(
+        temporary
+            .path()
+            .join("facets/work/entities/broken_label/observations.jsonl"),
+    )
+    .unwrap();
+
+    assert_eq!(
+        load_observations_for_query(temporary.path(), "work", "empty_current").unwrap(),
+        ObservationLookup::Resolved {
+            entity_dir: "empty_label".to_owned(),
+            observations: Vec::new(),
+        }
+    );
+    assert!(matches!(
+        load_observations_for_query(temporary.path(), "work", "broken_current"),
+        Err(ObservationLookupError::Read { entity_dir, .. }) if entity_dir == "broken_label"
+    ));
+}
+
+#[test]
+fn parsed_counts_and_day_counts_share_the_tolerant_reader() {
+    let temporary = TempDir::new();
+    let path = temporary
+        .path()
+        .join("facets/work/entities/person/observations.jsonl");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        "{\"content\":\"first\",\"source_day\":\"20260401\"}\n{bad\n\"scalar\"\n{\"content\":\"second\",\"source_day\":\"20260401\"}\n{\"source_day\":\"2026-04-02\"}\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        load_observations(temporary.path(), "work", "person")
+            .unwrap()
+            .len(),
+        4
+    );
+    assert_eq!(
+        count_observations(temporary.path(), "work", "person").unwrap(),
+        4
+    );
+    assert_eq!(
+        observation_day_counts(temporary.path(), "work", "person").unwrap(),
+        [("20260401".to_owned(), 2)].into()
+    );
+}
+
+#[test]
+fn tolerant_read_preserves_valid_non_objects_and_save_rewrites_only_valid_rows() {
+    let temporary = TempDir::new();
+    let path = temporary
+        .path()
+        .join("facets/work/entities/person/observations.jsonl");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, "{\"content\":\"kept\"}\n{bad\n[\"also kept\"]\n").unwrap();
+
+    let observations = load_observations(temporary.path(), "work", "person").unwrap();
+    assert_eq!(
+        observations,
+        vec![json!({"content":"kept"}), json!(["also kept"])]
+    );
+    save_observations(temporary.path(), "work", "person", &observations).unwrap();
+    assert_eq!(
+        read_facet_entity_observations(temporary.path(), "work", "person").unwrap(),
+        Some("{\"content\":\"kept\"}\n[\"also kept\"]\n".to_owned())
+    );
+}
+
+#[test]
+fn add_and_operation_forms_intentionally_differ_for_empty_source_day() {
+    let temporary = TempDir::new();
+    let (observations, count) = add_observation(
+        temporary.path(),
+        "work",
+        "person",
+        "  Added fact  ",
+        Some(""),
+        Some(&json!({"target_entity_id":"other"})),
+    )
+    .unwrap();
+    assert_eq!(count, 1);
+    assert_eq!(observations[0]["content"], "Added fact");
+    assert!(observations[0].get("source_day").is_none());
+    assert_eq!(
+        observations[0]["relation"],
+        json!({"target_entity_id":"other"})
+    );
+
+    let counts = record_observation_ops(
+        temporary.path(),
+        "work",
+        "other",
+        &[json!({"op":"add","content":"Operation fact"})],
+        Some(""),
+    )
+    .unwrap();
+    assert_eq!(counts.add, 1);
+    assert_eq!(
+        load_observations(temporary.path(), "work", "other").unwrap()[0]["source_day"],
+        ""
+    );
+}
+
+#[test]
+fn quote_less_indexed_operations_are_skipped_and_quoted_operations_use_snapshot_indices() {
+    let temporary = TempDir::new();
+    save_observations(
+        temporary.path(),
+        "work",
+        "person",
+        &[
+            json!({"content":"first row","observed_at":1}),
+            json!({"content":"second row","observed_at":2}),
+            json!({"content":"third row","observed_at":3}),
+        ],
+    )
+    .unwrap();
+
+    let skipped = record_observation_ops(
+        temporary.path(),
+        "work",
+        "person",
+        &[json!({"op":"drop","target_index":0})],
+        None,
+    )
+    .unwrap();
+    assert_eq!(skipped.skipped, 1);
+    assert_eq!(skipped.drop, 0);
+    assert_eq!(
+        load_observations(temporary.path(), "work", "person")
+            .unwrap()
+            .len(),
+        3
+    );
+
+    let counts = record_observation_ops(
+        temporary.path(),
+        "work",
+        "person",
+        &[
+            json!({"op":"drop","target_index":0,"target_quote":"FIRST"}),
+            json!({"op":"update","target_index":2,"target_quote":"third","content":"updated third"}),
+            json!({"op":"add","content":"appended"}),
+        ],
+        Some("20260403"),
+    )
+    .unwrap();
+    assert_eq!(counts.drop, 1);
+    assert_eq!(counts.update, 1);
+    assert_eq!(counts.add, 1);
+    let observations = load_observations(temporary.path(), "work", "person").unwrap();
+    assert_eq!(observations[0]["content"], "second row");
+    assert_eq!(observations[1]["content"], "updated third");
+    assert_eq!(observations[2]["content"], "appended");
+}
+
+#[test]
+fn dropping_the_last_row_truncates_the_file_without_removing_its_directory() {
+    let temporary = TempDir::new();
+    save_observations(
+        temporary.path(),
+        "work",
+        "person",
+        &[json!({"content":"only row"})],
+    )
+    .unwrap();
+
+    let counts = record_observation_ops(
+        temporary.path(),
+        "work",
+        "person",
+        &[json!({"op":"drop","target_index":0,"target_quote":"only row"})],
+        None,
+    )
+    .unwrap();
+    assert_eq!(counts.drop, 1);
+    assert_eq!(
+        read_facet_entity_observations(temporary.path(), "work", "person").unwrap(),
+        Some(String::new())
+    );
+    assert!(
+        temporary
+            .path()
+            .join("facets/work/entities/person")
+            .is_dir()
+    );
+}
+
+#[test]
+fn add_retries_io_but_not_lock_timeout_while_record_retries_both() {
+    let mut add_timeout_attempts = 0;
+    let add_timeout = retry_add_for_test(|| {
+        add_timeout_attempts += 1;
+        Err::<(), _>(timeout_error())
+    });
+    assert!(matches!(
+        add_timeout,
+        Err(ObservationWriteError::TrustLock(_))
+    ));
+    assert_eq!(add_timeout_attempts, 1);
+
+    let mut add_io_attempts = 0;
+    retry_add_for_test(|| {
+        add_io_attempts += 1;
+        if add_io_attempts == 1 {
+            Err(io_error())
+        } else {
+            Ok(())
+        }
+    })
+    .unwrap();
+    assert_eq!(add_io_attempts, 2);
+
+    let mut record_timeout_attempts = 0;
+    retry_record_for_test(|| {
+        record_timeout_attempts += 1;
+        if record_timeout_attempts < 3 {
+            Err(timeout_error())
+        } else {
+            Ok(())
+        }
+    })
+    .unwrap();
+    assert_eq!(record_timeout_attempts, 3);
+}
+
+fn timeout_error() -> ObservationWriteError {
+    ObservationWriteError::TrustLock(FacetTrustLockError::Lock(LockError::Timeout(LockTimeout {
+        path: "observation".into(),
+        timeout: Duration::from_millis(1),
+    })))
+}
+
+fn io_error() -> ObservationWriteError {
+    ObservationWriteError::Write(FacetWriteError::ContentWrite(AtomicWriteError::Io {
+        path: "observation".into(),
+        source: std::io::Error::other("injected"),
+    }))
+}

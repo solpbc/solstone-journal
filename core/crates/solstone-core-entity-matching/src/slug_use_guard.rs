@@ -43,6 +43,11 @@ const ALLOWED: &[(&str, &str)] = &[
         "read-compat fallback only, after resolution through the stored link identity fails \
          -- a facet directory can legitimately have no resolvable identity yet",
     ),
+    (
+        "solstone-core-facets/src/store/observations.rs",
+        "read-compat fallback only, after stored facet identity resolution finds no match \
+         -- legacy directory labels remain readable",
+    ),
 ];
 
 fn crates_root() -> PathBuf {

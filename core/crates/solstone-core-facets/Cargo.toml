@@ -10,6 +10,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+caseless = "0.2.2"
 chrono.workspace = true
 log.workspace = true
 serde.workspace = true

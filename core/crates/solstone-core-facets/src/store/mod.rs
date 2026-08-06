@@ -24,7 +24,10 @@ pub use declaration::{FacetDeclarationSnapshot, read_facet_declaration};
 pub use detected_entities::{
     delete_detected_entity, read_detected_entities, save_detected_entity, update_detected_entity,
 };
-pub use error::{FacetEntityWriteError, FacetRenameError, FacetStoreError, FacetWriteError};
+pub use error::{
+    FacetEntityWriteError, FacetRenameError, FacetStoreError, FacetWriteError,
+    ObservationLookupError, ObservationWriteError,
+};
 pub use facet_entities::{
     FacetEntityAttachResult, ScopedFacetEntity, add_entity_aka, attach_or_reactivate_entity,
     detach_facet_entity, list_scoped_facet_entities, update_facet_entity_description,
@@ -42,7 +45,14 @@ pub use lifecycle::{
 pub use logs::{read_log_file, write_log_file};
 pub use map::list_facet_entity_directories;
 pub use news::{read_news_file, write_news_file};
-pub use observations::{read_facet_entity_observations, write_facet_entity_observations};
+pub use observations::{
+    ObservationEntityResolution, ObservationLookup, ObservationOperationCounts, add_observation,
+    count_observations, load_observations, load_observations_for_query, observation_day_counts,
+    read_facet_entity_observations, record_observation_ops, resolve_observation_entity_dir,
+    save_observations, write_facet_entity_observations,
+};
+#[cfg(test)]
+pub(crate) use observations::{retry_add_for_test, retry_record_for_test};
 pub use reference_scan::EntityReferenceBreakdown;
 pub use repair::{
     FacetEntityLinkRepairBranch, FacetEntityLinkRepairError, FacetEntityLinkRepairReport,
