@@ -59,6 +59,7 @@ pub mod marks;
 pub mod notify;
 pub mod policy;
 pub mod receipt;
+pub mod remove_marked;
 pub mod scan;
 pub mod staging;
 pub mod sweep;
