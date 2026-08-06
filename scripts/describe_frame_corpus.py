@@ -92,18 +92,28 @@ def _panel(index: int, jitter: int) -> Image.Image:
 # Each case is a list of (layout_index, jitter) -- one entry per emitted frame,
 # in order. At 1 fps the frame index is also the timestamp in seconds, which is
 # what makes the 5.0s stride floor observable.
+#
+# 🔴 THE CASE NAMES DESCRIBE INTENT, NOT MEASURED BEHAVIOUR. Read the oracle,
+# never a name here. Checked against the oracle 2026-08-06, three of the five
+# intents were wrong:
+#
+#   * "stride_floor" records stride_dropped=0 and scene_cut=1. Its second frame
+#     was a large enough move to be a scene cut, which bypasses the floor and
+#     reseeds the reference; every later frame then fell below threshold. The
+#     file named for the stride floor does not exercise the stride floor.
+#   * "mixed" also records stride_dropped=0.
+#   * "scene_cuts" records stride_dropped=4 -- four of its frames were NOT large
+#     moves.
+#
+# ⚠ So stride-floor coverage lives in exactly ONE file, "scene_cuts", which is
+# the one whose intent says the floor is bypassed. The coverage is real; the
+# names are inverted. They are deliberately NOT renamed: the oracle rows are
+# keyed on these filenames and the corpus is frozen, so a rename would cost more
+# than it buys. This comment is the correction.
 CASES: dict[str, list[tuple[int, int]]] = {
-    # Twelve frames of the same layout with only sub-threshold jitter: after the
-    # always-kept first frame, every later frame should fall to below_threshold.
     "static": [(0, i % 3) for i in range(12)],
-    # Alternating far-apart layouts once per second: every frame is a large
-    # move, so scene cuts should bypass the stride floor.
     "scene_cuts": [(i % 6, 0) for i in range(12)],
-    # A moderate move every second. The first is kept; the next four arrive
-    # inside the 5s floor and should be stride-dropped; the sixth clears it.
     "stride_floor": [(0, 0)] + [(1, i % 3) for i in range(1, 12)],
-    # Long static runs punctuated by a change, so both the stride floor and the
-    # below-threshold gate are exercised in one file.
     "mixed": (
         [(0, i % 3) for i in range(6)]
         + [(2, i % 3) for i in range(6)]
@@ -171,6 +181,43 @@ def _encode(frames_dir: Path, output: Path, codec: str) -> None:
     )
 
 
+def _write_damaged(directory: Path, source: Path) -> list[Path]:
+    """Damaged screencasts, derived deterministically from a healthy one.
+
+    A screencast cut short by a crashed recorder, and one whose bytes were
+    corrupted in place, are the two shapes an owner host actually produces --
+    and the reference classifies them very differently:
+
+    * 🔴 **Truncation is INVISIBLE.** A WebM cut at 55% or 90% decodes cleanly
+      to a shorter frame set with ``decode_failed`` FALSE, so the handler
+      records ``analyzed`` / ``ok`` over a partial description with no signal
+      that anything was lost. Measured, not assumed. This is a property of the
+      reference the rebuild inherits; it is pinned here so a rebuild that
+      changed it would be caught, not so it is endorsed.
+    * Corruption early in the stream sets ``decode_failed`` and yields nothing.
+
+    ⚠ A measured coverage gap, recorded rather than papered over: the reference
+    returns frames already collected *alongside* ``decode_failed`` when a decode
+    error arrives mid-stream. A sweep of 46 corruption offsets at two widths
+    over a VP8/WebM produced **no** input reaching that branch -- the decoder
+    either failed before any frame qualified or recovered and produced a clean
+    partial set. The branch is therefore unpinned by this corpus.
+    """
+    data = source.read_bytes()
+    produced = []
+    for label, fraction in (("truncated_55", 0.55), ("truncated_90", 0.90)):
+        path = directory / f"{label}_screen.webm"
+        path.write_bytes(data[: int(len(data) * fraction)])
+        produced.append(path)
+    corrupted = bytearray(data)
+    for index in range(4000, min(len(corrupted), 4400)):
+        corrupted[index] ^= 0xFF
+    path = directory / "corrupted_mid_screen.webm"
+    path.write_bytes(bytes(corrupted))
+    produced.append(path)
+    return produced
+
+
 def _write_degenerate(directory: Path) -> None:
     """The two decode-failure shapes the handler must classify, not crash on."""
     # A container with no video stream at all.
@@ -214,6 +261,7 @@ def build(root: Path) -> list[Path]:
     _write_degenerate(segment)
     produced.append(segment / "audio_only_screen.mov")
     produced.append(segment / "not_a_video_screen.webm")
+    produced.extend(_write_damaged(segment, segment / "scene_cuts_vp8_screen.webm"))
     shutil.rmtree(staging, ignore_errors=True)
     return produced
 

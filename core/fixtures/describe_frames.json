@@ -12,6 +12,17 @@
       "winnow": {}
     },
     {
+      "decode_failed": true,
+      "file": "corrupted_mid_screen.webm",
+      "first_hash": null,
+      "frames": [],
+      "height": 360,
+      "last_hash": null,
+      "qualified_count": 0,
+      "width": 640,
+      "winnow": {}
+    },
+    {
       "decode_failed": false,
       "file": "mixed_h264_screen.mov",
       "first_hash": "7070707070707020",
@@ -321,8 +332,84 @@
         "scene_cut": 1,
         "stride_dropped": 0
       }
+    },
+    {
+      "decode_failed": false,
+      "file": "truncated_55_screen.webm",
+      "first_hash": "7070707070707020",
+      "frames": [
+        {
+          "frame_id": 1,
+          "timestamp": 0.0
+        },
+        {
+          "frame_id": 2,
+          "timestamp": 1.0
+        },
+        {
+          "frame_id": 3,
+          "timestamp": 2.0
+        }
+      ],
+      "height": 360,
+      "last_hash": "c0c0c0c0c0c0c0c0",
+      "qualified_count": 3,
+      "width": 640,
+      "winnow": {
+        "dhash_qualified": 5,
+        "kept": 3,
+        "raw": 5,
+        "scene_cut": 2,
+        "stride_dropped": 2
+      }
+    },
+    {
+      "decode_failed": false,
+      "file": "truncated_90_screen.webm",
+      "first_hash": "7070707070707020",
+      "frames": [
+        {
+          "frame_id": 1,
+          "timestamp": 0.0
+        },
+        {
+          "frame_id": 2,
+          "timestamp": 1.0
+        },
+        {
+          "frame_id": 3,
+          "timestamp": 2.0
+        },
+        {
+          "frame_id": 6,
+          "timestamp": 5.0
+        },
+        {
+          "frame_id": 7,
+          "timestamp": 6.0
+        },
+        {
+          "frame_id": 8,
+          "timestamp": 7.0
+        },
+        {
+          "frame_id": 9,
+          "timestamp": 8.0
+        }
+      ],
+      "height": 360,
+      "last_hash": "c0c0c0c0c0c0c0c0",
+      "qualified_count": 7,
+      "width": 640,
+      "winnow": {
+        "dhash_qualified": 10,
+        "kept": 7,
+        "raw": 10,
+        "scene_cut": 6,
+        "stride_dropped": 3
+      }
     }
   ],
   "fixture": "solstone-describe-frames",
-  "fixture_version": 1
+  "fixture_version": 2
 }
