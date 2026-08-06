@@ -944,10 +944,10 @@ def import_detail(
 @retention_app.command()
 def purge(
     stream: str | None = typer.Option(
-        None, "--stream", help="Only report removal marks for this stream."
+        None, "--stream", help="Only report list items for this stream."
     ),
 ) -> None:
-    """Mark eligible originals."""
+    """build the list of original media ready for removal."""
     from solstone.think import retention_executor
     from solstone.think.utils import get_config
 
@@ -960,14 +960,8 @@ def purge(
             standing_total = len(
                 retention_executor.read_policy_marks(before, stream=stream)
             )
-            typer.echo(
-                "retention purge: your journal's retention policy keeps all originals"
-            )
-            typer.echo(
-                "  standing total: "
-                f"{standing_total} removal mark(s) held; "
-                "originals stay on disk until you act."
-            )
+            typer.echo("retention purge: your retention settings keep all original media.")
+            typer.echo(f"  Standing total: {standing_total}.")
             return
 
         now = datetime.now(timezone.utc)
@@ -979,7 +973,7 @@ def purge(
         )
     except retention_executor.RemovalRefused as refused:
         typer.echo(
-            "retention purge: some removal marks could not be listed:",
+            "retention purge: some items could not be listed:",
             err=True,
         )
         for entry in refused.refused.entries():
@@ -990,42 +984,27 @@ def purge(
         raise typer.Exit(1) from None
     except retention_executor.ExecutorUnavailable as unavailable:
         typer.echo(
-            "retention purge: the journal could not list removal marks: "
-            f"{unavailable}",
+            f"retention purge: could not build the list: {unavailable}",
             err=True,
         )
         raise typer.Exit(1) from None
 
     report = retention_executor.describe_mark_receipt(before, after, stream=stream)
-    if report["marked"]:
-        typer.echo(
-            "retention purge: today's run marked "
-            f"{len(report['marked'])} new removal mark(s); "
-            "originals stay on disk until you act."
-        )
-    else:
-        typer.echo(
-            "retention purge: today's run marked no new removal marks; "
-            "originals stay on disk until you act."
-        )
-    typer.echo(
-        "  standing total: "
-        f"{report['standing_total']} removal mark(s) held; "
-        "originals stay on disk until you act."
-    )
+    typer.echo(f"retention purge: New items: {len(report['marked'])}.")
+    typer.echo(f"  Standing total: {report['standing_total']}.")
     for mark in report["marked"]:
         typer.echo(f"  {mark['id']}: {mark['proposal']['reason']}")
     if report["held"]:
         example = report["held"][0]
         blocker = example["blockers"][0].get("blocker", "blocked")
         typer.echo(
-            f"  {len(report['held'])} segment(s) held: {blocker} "
+            f"  {len(report['held'])} segment(s) blocked: {blocker} "
             f"in {example['day']}/{example['stream']}/{example['dir']}"
         )
     if report["not_eligible"]:
-        typer.echo(f"  {len(report['not_eligible'])} segment(s) not yet eligible.")
+        typer.echo(f"  {len(report['not_eligible'])} segment(s) not ready yet.")
     if report["no_media"]:
-        typer.echo(f"  {len(report['no_media'])} segment(s) with no raw media.")
+        typer.echo(f"  {len(report['no_media'])} segment(s) with no original media.")
     if report["unreadable_days"]:
         typer.echo(
             "  warning: unreadable chronicle day(s): "

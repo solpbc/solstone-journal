@@ -390,8 +390,8 @@ def check_storage_health(
 
     retention = config.get("retention", {})
     keep_mode_nudge = (
-        " you're currently set to always retain original media, so no eligible "
-        "originals are marked. originals stay on disk until you act."
+        " your journal is set to always retain original media, so nothing is "
+        "added to the list automatically."
     )
     always_retain_enabled = retention.get("raw_media", "keep") == "keep"
     warnings = []
@@ -404,10 +404,9 @@ def check_storage_health(
             disk_percent = round(usage.used / usage.total * 100, 1)
             if disk_percent >= disk_threshold:
                 message = (
-                    f"Disk is {disk_percent}% full (threshold: {disk_threshold}%). "
-                    "You can adjust retention settings or select \"mark eligible "
-                    "originals\" to add eligible originals to the held list; "
-                    "originals stay on disk until you act."
+                    f"disk is {disk_percent}% full (threshold: {disk_threshold}%). "
+                    "you can adjust your retention settings, or build the list to see "
+                    "what original media is ready for removal."
                 )
                 if always_retain_enabled:
                     message += keep_mode_nudge
@@ -429,10 +428,9 @@ def check_storage_health(
         raw_media_gb = round(summary.raw_media_bytes / (1024**3), 2)
         if raw_media_gb >= raw_media_gb_threshold:
             message = (
-                f"Raw media is {raw_media_gb} GB (threshold: {raw_media_gb_threshold} GB). "
-                "You can adjust retention settings or select \"mark eligible "
-                "originals\" to add eligible originals to the held list; "
-                "originals stay on disk until you act."
+                f"raw media is {raw_media_gb} GB (threshold: {raw_media_gb_threshold} GB). "
+                "you can adjust your retention settings, or build the list to see "
+                "what original media is ready for removal."
             )
             if always_retain_enabled:
                 message += keep_mode_nudge

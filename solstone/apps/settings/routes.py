@@ -2172,12 +2172,12 @@ def run_purge() -> Any:
     except RemovalRefused as refused:
         logger.warning("retention mark refused: %s", refused)
         return _settings_operation_failed(
-            f"could not list removal marks: {refused}"
+            f"could not build the list: {refused}"
         )
     except ExecutorUnavailable as unavailable:
         logger.warning("retention mark executor unavailable: %s", unavailable)
         return _settings_operation_failed(
-            f"could not list removal marks: {unavailable}"
+            f"could not build the list: {unavailable}"
         )
     except Exception:
         logger.exception("error marking retention proposals")

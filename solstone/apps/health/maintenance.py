@@ -33,7 +33,7 @@ def run_mark_raw_routine(args: list[str]) -> int:
 
     payload = retention_executor.policy_payload(retention)
     if not retention_executor.policy_would_release(payload):
-        print("mark-raw: your journal's retention policy keeps all originals")
+        print("mark-raw: your retention settings keep all original media.")
         return 0
 
     def policy_mark_ids(receipt):
@@ -48,38 +48,20 @@ def run_mark_raw_routine(args: list[str]) -> int:
         before_ids = policy_mark_ids(before)
         after = retention_executor.mark(journal, payload, today=today, now=stamp)
     except retention_executor.RemovalRefused as refused:
-        print("mark-raw: some removal marks could not be listed:", file=sys.stderr)
+        print("mark-raw: some items could not be listed:", file=sys.stderr)
         for entry in refused.refused.entries():
             print(f"  {entry.get('entry')}: {entry.get('reason')}", file=sys.stderr)
         return 1
     except retention_executor.ExecutorUnavailable as unavailable:
-        print(
-            "mark-raw: the journal could not list removal marks: "
-            f"{unavailable}",
-            file=sys.stderr,
-        )
+        print(f"mark-raw: could not build the list: {unavailable}", file=sys.stderr)
         return 1
 
     after_marks = after["marks"]["marks"]
     after_ids = policy_mark_ids(after)
     new_ids = sorted(after_ids - before_ids)
 
-    if new_ids:
-        print(
-            "mark-raw: today's run listed "
-            f"{len(new_ids)} new removal mark(s); "
-            "originals stay on disk until you act."
-        )
-    else:
-        print(
-            "mark-raw: today's run listed no new removal marks; "
-            "originals stay on disk until you act."
-        )
-    print(
-        "  standing total: "
-        f"{len(after_ids)} removal mark(s) held; "
-        "originals stay on disk until you act."
-    )
+    print(f"mark-raw: New items: {len(new_ids)}.")
+    print(f"  Standing total: {len(after_ids)}.")
     for mark_id in new_ids:
         print(f"  {mark_id}: {after_marks[mark_id]['proposal']['reason']}")
     return 0
@@ -103,10 +85,13 @@ def run_prune_logs_routine(args: list[str]) -> int:
     # ⛔ This unattended Approval::NotRequired routine reports individual retention
     # failures but stays green, matching the legacy pruner's partial-error behavior.
     except retention_executor.RemovalRefused as refused:
-        print(f"prune-logs: partial refusal: {refused.refused.summary()}", file=sys.stderr)
+        print(
+            f"prune-logs: some logs could not be pruned: {refused.refused.summary()}",
+            file=sys.stderr,
+        )
         return 0
     except retention_executor.ExecutorUnavailable as unavailable:
-        print(f"prune-logs: executor unavailable: {unavailable}", file=sys.stderr)
+        print(f"prune-logs: could not prune logs: {unavailable}", file=sys.stderr)
         return 0
     if not result.enabled:
         print("prune-logs: disabled")
@@ -146,7 +131,7 @@ def run_prune_logs_routine(args: list[str]) -> int:
 ROUTINES = [
     MaintenanceRoutine(
         name="mark-raw",
-        description="list eligible originals as removal marks without removing them.",
+        description="list original media ready for removal.",
         every="daily",
         run=run_mark_raw_routine,
         max_runtime=MARK_RAW_MAX_RUNTIME,
