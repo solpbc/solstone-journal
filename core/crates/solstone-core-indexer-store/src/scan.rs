@@ -104,7 +104,7 @@ pub fn scan_journal(journal: &Path, full: bool, today: &str) -> Result<ScanRepor
                     .push(format!("unclassified discovered file skipped: {rel}"));
                 continue;
             }
-            ContentResolution::Unindexed | ContentResolution::IndexedElsewhere => continue,
+            ContentResolution::Unindexed(_) | ContentResolution::IndexedElsewhere => continue,
         };
         let tx = conn.transaction()?;
         tx.execute("DELETE FROM chunks WHERE path=?", [rel])?;
@@ -210,7 +210,7 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     let edge_source = edge_source_for_rel(&rel)?;
     let family = match resolution {
         ContentResolution::Indexed(family) => Some(family),
-        ContentResolution::Unindexed
+        ContentResolution::Unindexed(_)
         | ContentResolution::IndexedElsewhere
         | ContentResolution::Unrecognized => None,
     };
@@ -862,6 +862,7 @@ mod tests {
     use super::*;
     use crate::db::{db_path, reset_index};
     use rusqlite::{Connection, params};
+    use solstone_core_format::content::RawPerceptFamily;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_root(name: &str) -> PathBuf {
@@ -2259,6 +2260,82 @@ mod tests {
             RescanFileStatus::Declined
         );
         fs::remove_dir_all(root).expect("cleanup rescan root");
+    }
+
+    #[test]
+    fn raw_percept_patterns_remain_unindexed_without_content_chunks() {
+        for (suffix, rel, family, edge_source) in [
+            (
+                "audio",
+                "20260717/default/090000_300/audio.jsonl",
+                RawPerceptFamily::Audio,
+                false,
+            ),
+            (
+                "split-audio",
+                "20260717/default/090000_300/left_audio.jsonl",
+                RawPerceptFamily::Audio,
+                false,
+            ),
+            (
+                "transcript",
+                "20260717/default/090000_300/session_transcript.jsonl",
+                RawPerceptFamily::Audio,
+                false,
+            ),
+            (
+                "screen",
+                "20260717/default/090000_300/screen.jsonl",
+                RawPerceptFamily::RawScreen,
+                true,
+            ),
+            (
+                "split-screen",
+                "20260717/default/090000_300/monitor_1_screen.jsonl",
+                RawPerceptFamily::RawScreen,
+                true,
+            ),
+        ] {
+            let root = temp_root(&format!("raw-percept-{suffix}"));
+            write(&root, &format!("chronicle/{rel}"), "{}\n");
+            assert_eq!(classify(rel), ContentResolution::Unindexed(family), "{rel}");
+
+            let report = scan_journal(&root, true, "20260717").expect("scan raw percept");
+            assert_eq!(report.indexed, 0, "{rel}");
+            assert_eq!(report.skipped, 0, "{rel}");
+            assert!(report.warnings.is_empty(), "{rel}");
+            let conn = Connection::open(db_path(&root)).expect("open db after raw scan");
+            assert_eq!(
+                count(
+                    &conn,
+                    &format!("SELECT COUNT(*) FROM chunks WHERE path='{rel}'")
+                ),
+                0,
+                "{rel}: scan inserted content chunks"
+            );
+            drop(conn);
+
+            let status = rescan_file(&root, Path::new(rel)).expect("rescan raw percept");
+            if edge_source {
+                assert!(
+                    matches!(status, RescanFileStatus::Indexed { warnings } if warnings.is_empty()),
+                    "{rel}: screen edge source should rescan without content indexing"
+                );
+            } else {
+                assert_eq!(status, RescanFileStatus::Declined, "{rel}");
+            }
+            let conn = Connection::open(db_path(&root)).expect("open db after raw rescan");
+            assert_eq!(
+                count(
+                    &conn,
+                    &format!("SELECT COUNT(*) FROM chunks WHERE path='{rel}'")
+                ),
+                0,
+                "{rel}: rescan inserted content chunks"
+            );
+            drop(conn);
+            fs::remove_dir_all(root).expect("cleanup raw percept root");
+        }
     }
 
     #[test]

@@ -10,6 +10,7 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         chunks: records.iter().map(render_record).collect(),
         agent_override: Some("observation".to_string()),
         header: Some(observation_header(rel, records.len())),
+        error: None,
         warnings: Vec::new(),
     }
 }

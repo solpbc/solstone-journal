@@ -15,6 +15,7 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
             chunks: Vec::new(),
             agent_override: None,
             header: None,
+            error: None,
             warnings: Vec::new(),
         };
     };
@@ -50,6 +51,7 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
                 .and_then(Value::as_i64)
                 .unwrap_or(0)
         )),
+        error: None,
         warnings: Vec::new(),
     }
 }

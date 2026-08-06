@@ -42,6 +42,14 @@ pub enum Family {
     MorningBriefing,
 }
 
+/// Content that can be rendered for direct consumption but is deliberately
+/// excluded from the search index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RawPerceptFamily {
+    Audio,
+    RawScreen,
+}
+
 #[cfg(test)]
 const ALL_FAMILIES: [Family; 15] = [
     Family::Markdown,
@@ -64,14 +72,14 @@ const ALL_FAMILIES: [Family; 15] = [
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentResolution {
     Indexed(Family),
-    Unindexed,
+    Unindexed(RawPerceptFamily),
     IndexedElsewhere,
     Unrecognized,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnindexedReason {
-    Unindexed,
+    RawPercept(RawPerceptFamily),
     IndexedElsewhere,
 }
 
@@ -117,6 +125,7 @@ pub struct ProducedChunks {
     pub chunks: Vec<IndexChunk>,
     pub agent_override: Option<String>,
     pub header: Option<String>,
+    pub error: Option<String>,
     pub warnings: Vec<String>,
 }
 
@@ -296,27 +305,27 @@ pub(crate) const KNOWN_UNINDEXED_PATTERNS: &[KnownUnindexedPattern] = &[
     KnownUnindexedPattern {
         pattern: "*/*/*/audio.jsonl",
         root: PatternRoot::DayRooted,
-        reason: UnindexedReason::Unindexed,
+        reason: UnindexedReason::RawPercept(RawPerceptFamily::Audio),
     },
     KnownUnindexedPattern {
         pattern: "*/*/*/*_audio.jsonl",
         root: PatternRoot::DayRooted,
-        reason: UnindexedReason::Unindexed,
+        reason: UnindexedReason::RawPercept(RawPerceptFamily::Audio),
     },
     KnownUnindexedPattern {
         pattern: "*/*/*/*_transcript.jsonl",
         root: PatternRoot::DayRooted,
-        reason: UnindexedReason::Unindexed,
+        reason: UnindexedReason::RawPercept(RawPerceptFamily::Audio),
     },
     KnownUnindexedPattern {
         pattern: "*/*/*/screen.jsonl",
         root: PatternRoot::DayRooted,
-        reason: UnindexedReason::Unindexed,
+        reason: UnindexedReason::RawPercept(RawPerceptFamily::RawScreen),
     },
     KnownUnindexedPattern {
         pattern: "*/*/*/*_screen.jsonl",
         root: PatternRoot::DayRooted,
-        reason: UnindexedReason::Unindexed,
+        reason: UnindexedReason::RawPercept(RawPerceptFamily::RawScreen),
     },
 ];
 
@@ -357,7 +366,7 @@ pub fn classify(rel: &str) -> ContentResolution {
         return ContentResolution::Indexed(family);
     }
     match UNINDEXED_RESOLVER.resolve(rel) {
-        Some(UnindexedReason::Unindexed) => ContentResolution::Unindexed,
+        Some(UnindexedReason::RawPercept(family)) => ContentResolution::Unindexed(family),
         Some(UnindexedReason::IndexedElsewhere) => ContentResolution::IndexedElsewhere,
         None => ContentResolution::Unrecognized,
     }
@@ -388,6 +397,7 @@ pub fn produce_chunks(
                     .collect(),
                 agent_override: None,
                 header: None,
+                error: None,
                 warnings: formatted.warnings,
             }
         }
@@ -911,7 +921,7 @@ mod tests {
     fn classifies_non_indexed_and_unrecognized_paths() {
         assert_eq!(
             classify("20240101/default/123456_300/audio.jsonl"),
-            ContentResolution::Unindexed
+            ContentResolution::Unindexed(RawPerceptFamily::Audio)
         );
         assert_eq!(
             classify("entities/alice/entity.json"),
@@ -984,7 +994,7 @@ mod tests {
 
         assert_eq!(
             classify("20260101/default/123456_300/left_audio.jsonl"),
-            ContentResolution::Unindexed,
+            ContentResolution::Unindexed(RawPerceptFamily::Audio),
         );
     }
 

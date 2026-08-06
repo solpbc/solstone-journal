@@ -13,6 +13,7 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
             chunks: Vec::new(),
             agent_override: None,
             header: None,
+            error: None,
             warnings: Vec::new(),
         };
     }
@@ -47,6 +48,7 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         chunks,
         agent_override: Some(format!("import.{source_key}")),
         header: Some(ai_chat_header(&source_key, metadata)),
+        error: None,
         warnings: Vec::new(),
     }
 }

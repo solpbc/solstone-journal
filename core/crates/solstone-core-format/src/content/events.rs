@@ -91,6 +91,7 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         chunks,
         agent_override: Some("event".to_string()),
         header: Some(event_header(rel)),
+        error: None,
         warnings: Vec::new(),
     }
 }

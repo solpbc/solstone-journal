@@ -57,6 +57,7 @@ pub(super) fn render(records: &[JsonObject], labels: &ChatLabels) -> ProducedChu
         chunks,
         agent_override: Some("chat".to_string()),
         header: None,
+        error: None,
         warnings: Vec::new(),
     }
 }

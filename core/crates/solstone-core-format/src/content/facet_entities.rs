@@ -31,6 +31,7 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         chunks,
         agent_override: Some(agent_for_rel(rel).to_string()),
         header: Some(entity_header(rel, records.len())),
+        error: None,
         warnings: Vec::new(),
     }
 }
