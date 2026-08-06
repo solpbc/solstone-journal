@@ -944,7 +944,7 @@ def import_detail(
 @retention_app.command()
 def purge(
     stream: str | None = typer.Option(
-        None, "--stream", help="Only report proposals for this stream."
+        None, "--stream", help="Only report removal marks for this stream."
     ),
 ) -> None:
     """Mark eligible originals."""

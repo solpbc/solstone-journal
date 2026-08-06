@@ -3,8 +3,8 @@
 
 """Raw-media retention policy and safety predicates for solstone journals.
 
-Retention policy controls whether raw media in a processed segment is eligible for
-an owner-approved removal proposal. This module does not remove media.
+Retention policy controls whether raw media in a processed segment is eligible to
+be marked for removal. This module does not remove media.
 
 Scope: raw media ONLY. Chronicle JSONL, derived outputs, talents/ directories,
 and all other journal content persist indefinitely and are never touched by
