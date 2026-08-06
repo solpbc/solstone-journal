@@ -6,6 +6,7 @@
 use std::path::Path;
 
 use serde_json::{Value, json};
+use solstone_core_entity::is_valid_entity_type;
 use solstone_core_entity_matching::{entity_slug, normalize_resolution_query};
 use solstone_core_journal_io::{
     AtomicWriteOptions, contained_path, path_lexists, read_text, write_text,
@@ -25,13 +26,36 @@ pub fn read_detected_entities(
     if !path_lexists(&path).map_err(|error| FacetEntityWriteError::FacetStore(error.into()))? {
         return Ok(Vec::new());
     }
+    if path.is_dir() {
+        return Ok(Vec::new());
+    }
     let contents = read_text(&path, String::new())
         .map_err(|error| FacetEntityWriteError::FacetStore(error.into()))?;
-    Ok(contents
+    let mut rows = Vec::new();
+    for parsed in contents
         .lines()
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .filter(Value::is_object)
-        .collect())
+    {
+        let mut row = parsed.clone();
+        let object = row.as_object_mut().expect("object filter retained objects");
+        let entity_type = object
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if !is_valid_entity_type(entity_type) {
+            continue;
+        }
+        if !object.get("id").is_some_and(Value::is_string) {
+            let name = object
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            object.insert("id".to_owned(), Value::String(entity_slug(name)));
+        }
+        rows.push(row);
+    }
+    Ok(rows)
 }
 
 /// Save one detection, refusing a unified-normalized name duplicate.
