@@ -498,6 +498,7 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | `docs/THINK.md` | Understanding the think-layer pipeline (importers, indexer, segment/stream processing) |
 | `docs/CORTEX.md` | Modifying talent execution, cortex lifecycle, talent process management |
 | `docs/COGITATE.md` | The cogitate talent runtime contract — cwd/workspace, the `sol`-CLI-authoritative journal access, raw-read bound, access tiers, finalization, disallowed assumptions, and the in-context preamble constant. Read before authoring/editing a talent prompt. |
+| `docs/GENERATE.md` | The `generate` contract — the record vocabulary for asking the model boundary for one completion, its two framings, and the invariants it guarantees. Read before writing anything that calls a model, or that consumes a completion's outcome. |
 | `docs/CALLOSUM.md` | Adding a new tract/event, debugging message flow |
 | `docs/CONVEY.md` | Framework-level web changes (as opposed to an individual app) |
 | `docs/OBSERVE.md` | Capture-side work: new modalities, transcription, sensing |
