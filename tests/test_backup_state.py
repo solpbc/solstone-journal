@@ -95,9 +95,9 @@ def test_merge_backup_config_applies_defaults_to_raw_config() -> None:
         "status": "stalled",
         "reason": "backup_failing",
         "last_ok_time": None,
-        "files_offloaded": 0,
-        "bytes_offloaded": 0,
-        "ran_out_of_media": False,
+        "files_marked": 0,
+        "bytes_marked": 0,
+        "ran_out_of_markable_media": False,
     }
 
 

@@ -39,7 +39,7 @@ from solstone.think.backup.state import (
     status_view,
 )
 from solstone.think.backup.teardown import teardown_backup
-from solstone.think.offload import OffloadResult, run_offload
+from solstone.think.offload import OffloadResult, format_offload_result, run_offload
 from solstone.think.offload_restore import (
     build_offload_status,
     restore_all,
@@ -325,38 +325,7 @@ def prune() -> None:
 
 
 def _print_offload_result(result: OffloadResult) -> None:
-    if result.dry_run:
-        selected_files = sum(detail.files for detail in result.details)
-        selected_bytes = sum(detail.bytes for detail in result.details)
-        segments = ",".join(
-            f"{detail.day}/{detail.stream}/{detail.segment}:{detail.bytes}"
-            for detail in result.details
-        )
-        if result.status == "stalled":
-            typer.echo(f"backup offload: stalled reason={result.reason} dry_run=true")
-        elif result.status == "skipped":
-            typer.echo("backup offload: skipped dry_run=true")
-        else:
-            typer.echo(
-                "backup offload: ok dry_run=true "
-                f"selected_files={selected_files} selected_bytes={selected_bytes} "
-                f"ran_out_of_media={result.ran_out_of_media} segments={segments}"
-            )
-    elif result.status == "ok":
-        typer.echo(
-            "backup offload: ok "
-            f"files_offloaded={result.files_offloaded} "
-            f"bytes_offloaded={result.bytes_offloaded} "
-            f"ran_out_of_media={result.ran_out_of_media}"
-        )
-    elif result.status == "skipped":
-        typer.echo("backup offload: skipped")
-    else:
-        typer.echo(
-            f"backup offload: stalled reason={result.reason} "
-            f"files_offloaded={result.files_offloaded} "
-            f"bytes_offloaded={result.bytes_offloaded}"
-        )
+    typer.echo(format_offload_result(result))
 
 
 @offload_app.command("status")
@@ -375,10 +344,12 @@ def offload_status(
     offload = payload["offload"]
     raw = payload["raw_media"]
     backup_only = payload["backup_only"]
+    pending_release = payload["pending_release"]
     typer.echo(
         "backup offload: "
         f"enabled={offload['enabled']} "
         f"raw_media_bytes={raw['total_bytes']} "
+        f"pending_release_bytes={pending_release['total_bytes']} "
         f"backup_only_bytes={backup_only['total_bytes']} "
         f"degraded={backup_only['degraded']}"
     )

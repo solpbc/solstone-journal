@@ -153,17 +153,68 @@ def build_offload_status(
         day.day: {"raw_media_bytes": day.bytes, "raw_media_files": day.files}
         for day in measurement.usage.per_day
     }
-    offloaded_by_day = {
-        day.day: {
-            "backup_only_bytes": day.offloaded_bytes,
-            "backup_only_files": day.offloaded_file_count,
-            "backup_only_segments": day.offloaded_segments,
-            "degraded": day.degraded,
-            "skipped_records": day.skipped_records,
-            "unreadable_ledgers": list(day.unreadable_ledgers),
+    offloaded_by_day: dict[str, dict[str, Any]] = {}
+    pending_by_day: dict[str, dict[str, int]] = {}
+    for ledger_day in ledger.days:
+        backup_only_bytes = 0
+        backup_only_files = 0
+        backup_only_segments = 0
+        pending_release_bytes = 0
+        pending_release_files = 0
+        pending_release_segments = 0
+        for segment in ledger_day.segments:
+            if not segment.currently_offloaded:
+                continue
+            segment_dir = resolve_segment_dir(
+                segment.day,
+                stream=segment.stream,
+                segment=segment.segment,
+            )
+            has_backup_only = False
+            has_pending_release = False
+            for file in segment.files:
+                if (segment_dir / file.name).is_file():
+                    pending_release_bytes += file.bytes
+                    pending_release_files += 1
+                    has_pending_release = True
+                else:
+                    backup_only_bytes += file.bytes
+                    backup_only_files += 1
+                    has_backup_only = True
+            backup_only_segments += int(has_backup_only)
+            pending_release_segments += int(has_pending_release)
+        offloaded_by_day[ledger_day.day] = {
+            "backup_only_bytes": backup_only_bytes,
+            "backup_only_files": backup_only_files,
+            "backup_only_segments": backup_only_segments,
+            "degraded": ledger_day.degraded,
+            "skipped_records": ledger_day.skipped_records,
+            "unreadable_ledgers": list(ledger_day.unreadable_ledgers),
         }
-        for day in ledger.days
-    }
+        pending_by_day[ledger_day.day] = {
+            "pending_release_bytes": pending_release_bytes,
+            "pending_release_files": pending_release_files,
+            "pending_release_segments": pending_release_segments,
+        }
+
+    pending_release_bytes = sum(
+        day["pending_release_bytes"] for day in pending_by_day.values()
+    )
+    pending_release_files = sum(
+        day["pending_release_files"] for day in pending_by_day.values()
+    )
+    pending_release_segments = sum(
+        day["pending_release_segments"] for day in pending_by_day.values()
+    )
+    backup_only_bytes = sum(
+        day["backup_only_bytes"] for day in offloaded_by_day.values()
+    )
+    backup_only_files = sum(
+        day["backup_only_files"] for day in offloaded_by_day.values()
+    )
+    backup_only_segments = sum(
+        day["backup_only_segments"] for day in offloaded_by_day.values()
+    )
     days = sorted({*raw_by_day, *offloaded_by_day})
 
     return {
@@ -180,25 +231,39 @@ def build_offload_status(
             "floor_bytes": measurement.suggested_defaults.floor_bytes,
         },
         "raw_media": {
-            "total_bytes": measurement.usage.total_bytes,
-            "total_files": measurement.usage.total_files,
+            "total_bytes": measurement.usage.total_bytes - pending_release_bytes,
+            "total_files": measurement.usage.total_files - pending_release_files,
         },
         "backup_only": {
-            "total_bytes": ledger.offloaded_bytes,
-            "total_files": ledger.offloaded_file_count,
-            "total_segments": ledger.offloaded_segments,
-            "total_days": ledger.offloaded_days,
+            "total_bytes": backup_only_bytes,
+            "total_files": backup_only_files,
+            "total_segments": backup_only_segments,
+            "total_days": sum(
+                1
+                for day in offloaded_by_day.values()
+                if day["backup_only_segments"] > 0
+            ),
             "degraded": ledger.degraded,
             "skipped_records": ledger.skipped_records,
             "unreadable_ledgers": list(ledger.unreadable_ledgers),
         },
+        "pending_release": {
+            "total_bytes": pending_release_bytes,
+            "total_files": pending_release_files,
+            "total_segments": pending_release_segments,
+            "total_days": sum(
+                1
+                for day in pending_by_day.values()
+                if day["pending_release_segments"] > 0
+            ),
+        },
         "days": [
             {
                 "day": day,
-                **raw_by_day.get(
-                    day,
-                    {"raw_media_bytes": 0, "raw_media_files": 0},
-                ),
+                "raw_media_bytes": raw_by_day.get(day, {}).get("raw_media_bytes", 0)
+                - pending_by_day.get(day, {}).get("pending_release_bytes", 0),
+                "raw_media_files": raw_by_day.get(day, {}).get("raw_media_files", 0)
+                - pending_by_day.get(day, {}).get("pending_release_files", 0),
                 **offloaded_by_day.get(
                     day,
                     {
@@ -208,6 +273,14 @@ def build_offload_status(
                         "degraded": False,
                         "skipped_records": 0,
                         "unreadable_ledgers": [],
+                    },
+                ),
+                **pending_by_day.get(
+                    day,
+                    {
+                        "pending_release_bytes": 0,
+                        "pending_release_files": 0,
+                        "pending_release_segments": 0,
                     },
                 ),
             }

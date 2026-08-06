@@ -503,6 +503,34 @@ def test_restore_only_requests_missing_files_and_preserves_preexisting_failure(
         time=100,
     )
     original = segment_dir / "audio.wav"
+    original.write_bytes(b"original")
+    status = offload_restore.build_offload_status()
+    assert status["raw_media"] == {"total_bytes": 0, "total_files": 0}
+    assert status["pending_release"] == {
+        "total_bytes": len(b"original"),
+        "total_files": 1,
+        "total_segments": 1,
+        "total_days": 1,
+    }
+    assert status["backup_only"]["total_bytes"] == len(b"missing")
+    assert status["backup_only"]["total_files"] == 1
+    assert status["backup_only"]["total_segments"] == 1
+    assert status["days"] == [
+        {
+            "day": DAY,
+            "raw_media_bytes": 0,
+            "raw_media_files": 0,
+            "backup_only_bytes": len(b"missing"),
+            "backup_only_files": 1,
+            "backup_only_segments": 1,
+            "degraded": False,
+            "skipped_records": 0,
+            "unreadable_ledgers": [],
+            "pending_release_bytes": len(b"original"),
+            "pending_release_files": 1,
+            "pending_release_segments": 1,
+        }
+    ]
     original.write_bytes(b"corrupted")
     restored = segment_dir / "call.wav"
     calls: list[list[str]] = []

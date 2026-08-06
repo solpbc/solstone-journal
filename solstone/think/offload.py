@@ -82,6 +82,44 @@ class OffloadResult:
     details: tuple[OffloadSegmentDetail, ...] = ()
 
 
+def format_offload_result(result: OffloadResult) -> str:
+    """Render an owner-readable summary without implying marked media was removed."""
+    if result.dry_run:
+        selected_files = sum(detail.files for detail in result.details)
+        selected_bytes = sum(detail.bytes for detail in result.details)
+        segments = ",".join(
+            f"{detail.day}/{detail.stream}/{detail.segment}:{detail.bytes}"
+            for detail in result.details
+        )
+        if result.status == "stalled":
+            return f"backup offload: stalled reason={result.reason} dry_run=true"
+        if result.status == "skipped":
+            return "backup offload: skipped dry_run=true"
+        return (
+            "backup offload: ok dry_run=true "
+            f"selected_files={selected_files} selected_bytes={selected_bytes} "
+            f"ran_out_of_markable_media={result.ran_out_of_markable_media} "
+            f"segments={segments}"
+        )
+    if result.status == "ok":
+        return (
+            "backup offload: ok "
+            f"files_marked={result.files_marked} bytes_marked={result.bytes_marked} "
+            f"files_already_marked={result.files_already_marked} "
+            f"bytes_already_marked={result.bytes_already_marked} "
+            "bytes_released=0 "
+            f"ran_out_of_markable_media={result.ran_out_of_markable_media}"
+        )
+    if result.status == "skipped":
+        return "backup offload: skipped"
+    return (
+        f"backup offload: stalled reason={result.reason} "
+        f"files_marked={result.files_marked} bytes_marked={result.bytes_marked} "
+        "bytes_released=0 "
+        f"ran_out_of_markable_media={result.ran_out_of_markable_media}"
+    )
+
+
 @dataclass
 class _Counters:
     files_marked: int = 0
@@ -572,5 +610,6 @@ __all__ = [
     "OffloadSegmentDetail",
     "VERIFICATION_INTEGRITY_REASONS",
     "VERIFICATION_MAX_AGE_SECONDS",
+    "format_offload_result",
     "run_offload",
 ]

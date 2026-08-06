@@ -473,6 +473,7 @@ def test_offload_status_json_delegates_to_status_builder(
         "offload": {"enabled": True, "budget_bytes": 100, "floor_bytes": 50},
         "raw_media": {"total_bytes": 30, "total_files": 3},
         "backup_only": {"total_bytes": 20, "degraded": False},
+        "pending_release": {"total_bytes": 10, "total_files": 1},
     }
     build_offload_status = Mock(return_value=payload)
     monkeypatch.setattr(backup_cli, "build_offload_status", build_offload_status)
@@ -494,9 +495,11 @@ def test_offload_run_delegates_to_existing_pass_and_formats_like_maintenance(
         return OffloadResult(
             status="ok",
             reason=None,
-            files_offloaded=0,
-            bytes_offloaded=0,
-            ran_out_of_media=False,
+            files_marked=0,
+            bytes_marked=0,
+            files_already_marked=0,
+            bytes_already_marked=0,
+            ran_out_of_markable_media=False,
             dry_run=True,
             details=(
                 OffloadSegmentDetail(
@@ -517,7 +520,7 @@ def test_offload_run_delegates_to_existing_pass_and_formats_like_maintenance(
     assert captured == {"dry_run": True}
     assert (
         "backup offload: ok dry_run=true selected_files=2 selected_bytes=50 "
-        "ran_out_of_media=False segments=20260101/_default/090000_300:50"
+        "ran_out_of_markable_media=False segments=20260101/_default/090000_300:50"
         in result.output
     )
 

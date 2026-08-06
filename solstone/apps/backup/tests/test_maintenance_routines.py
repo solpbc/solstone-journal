@@ -84,9 +84,11 @@ def test_backup_routine_wrappers_require_solstone_parse_empty_args_and_return_ze
         return_value=OffloadResult(
             status="ok",
             reason=None,
-            files_offloaded=2,
-            bytes_offloaded=50,
-            ran_out_of_media=False,
+            files_marked=2,
+            bytes_marked=50,
+            files_already_marked=0,
+            bytes_already_marked=0,
+            ran_out_of_markable_media=False,
         )
     )
     monkeypatch.setattr(maintenance, "require_solstone", require_solstone)
@@ -114,7 +116,8 @@ def test_backup_routine_wrappers_require_solstone_parse_empty_args_and_return_ze
     assert "backup prune: error reason=locked" in output
     assert "backup verify: ok subset=7/52" in output
     assert (
-        "backup offload: ok files_offloaded=2 bytes_offloaded=50 ran_out_of_media=False"
+        "backup offload: ok files_marked=2 bytes_marked=50 files_already_marked=0 "
+        "bytes_already_marked=0 bytes_released=0 ran_out_of_markable_media=False"
     ) in output
 
 
@@ -127,9 +130,11 @@ def test_offload_routine_wrapper_parses_dry_run_and_prints_stalls(
         return_value=OffloadResult(
             status="stalled",
             reason="locked",
-            files_offloaded=0,
-            bytes_offloaded=0,
-            ran_out_of_media=False,
+            files_marked=0,
+            bytes_marked=0,
+            files_already_marked=0,
+            bytes_already_marked=0,
+            ran_out_of_markable_media=False,
             dry_run=True,
         )
     )

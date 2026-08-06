@@ -832,9 +832,9 @@ def test_run_verification_does_not_modify_backup_prune_or_offload_state(
         "status": "stalled",
         "reason": "backup_not_ready",
         "last_ok_time": 2,
-        "files_offloaded": 0,
-        "bytes_offloaded": 0,
-        "ran_out_of_media": False,
+        "files_marked": 0,
+        "bytes_marked": 0,
+        "ran_out_of_markable_media": False,
     }
     _write_config(tmp_path, config)
     ledger_path = tmp_path / "health" / "offload" / "20260101.jsonl"
