@@ -74,6 +74,7 @@ def _case(
     note: str | None = None,
     context_extra: dict[str, Any] | None = None,
     expect_raises: str | None = None,
+    pending_family: str | None = None,
 ) -> dict[str, Any]:
     """Render one case through the registry and record what came back."""
     formatter = get_formatter(rel)
@@ -137,6 +138,8 @@ def _case(
     }
     if context_extra:
         out["context"] = context_extra
+    if pending_family:
+        out["pending_family"] = pending_family
     if indexer.get("day") is not None:
         out["indexer_day"] = indexer["day"]
     if indexer.get("facet") is not None:
@@ -620,6 +623,125 @@ def _talent_json_cases() -> list[dict[str, Any]]:
     ]
 
 
+AUDIO = "20260304/workstation/090000_300/audio.jsonl"
+AUDIO_SPLIT = "20260304/workstation/090000_300/left_audio.jsonl"
+SCREEN_RAW = "20260304/workstation/090000_300/screen.jsonl"
+SCREEN_SPLIT = "20260304/workstation/090000_300/monitor_1_screen.jsonl"
+
+
+def _raw_percept_cases() -> list[dict[str, Any]]:
+    """The shapes that are formattable but never indexed.
+
+    ⚠ These have no native family yet — they are the next wave's work. They are
+    captured now for one reason: the corpus can only be generated while the
+    reference tree runs, so a renderer built after that point would land with no
+    oracle at all, permanently. `pending_family` names what will consume each
+    case; until then the conformance check skips them and a separate assertion
+    keeps them visible instead of silently unused.
+    """
+    audio_rows = [
+        {"model": "parakeet", "language": "en"},
+        {"start": "00:00:01", "end": "00:00:04", "speaker": "Ada", "text": "Morning."},
+        {"start": "00:00:05", "end": "00:00:09", "speaker": "Bo", "text": "Shipping today."},
+    ]
+    screen_rows = [
+        {"raw": True, "monitor": "primary"},
+        {
+            "timestamp": 3,
+            "frame_id": "f1",
+            "content": {"applications": ["nvim"], "visual_description": "an editor"},
+        },
+        {"timestamp": 9, "frame_id": "f2"},
+    ]
+    return [
+        _case(
+            "audio_transcript_nominal",
+            AUDIO,
+            None,
+            audio_rows,
+            pending_family="Audio",
+            note="the nominal raw transcript: a metadata row then timed speaker turns",
+        ),
+        _case(
+            "audio_metadata_only",
+            AUDIO,
+            None,
+            [{"model": "parakeet"}],
+            pending_family="Audio",
+            note="a metadata row with no turns still produces a header and no chunks",
+        ),
+        _case(
+            "audio_row_missing_start_is_reported",
+            AUDIO,
+            None,
+            [
+                {"model": "parakeet"},
+                {"speaker": "Ada", "text": "no start field"},
+                {"start": "00:00:02", "speaker": "Bo", "text": "kept"},
+            ],
+            pending_family="Audio",
+            note="a row without a start is skipped and the count reaches meta.error",
+        ),
+        _case(
+            "audio_split_filename",
+            AUDIO_SPLIT,
+            None,
+            audio_rows,
+            pending_family="Audio",
+            note="per-device split transcripts share the formatter with audio.jsonl",
+        ),
+        _case(
+            "screen_frames_nominal",
+            SCREEN_RAW,
+            None,
+            screen_rows,
+            pending_family="RawScreen",
+            note="a metadata row then frames; the second carries no content at all",
+        ),
+        _case(
+            "screen_frame_missing_timestamp_is_reported",
+            SCREEN_RAW,
+            None,
+            [
+                {"raw": True},
+                {"frame_id": "f0"},
+                {"timestamp": 4, "frame_id": "f1", "content": {"applications": ["vim"]}},
+            ],
+            pending_family="RawScreen",
+            note="a frame without a timestamp is skipped and the count reaches meta.error",
+        ),
+        _case(
+            "screen_split_filename",
+            SCREEN_SPLIT,
+            None,
+            screen_rows,
+            pending_family="RawScreen",
+            note="per-monitor split frames share the formatter with screen.jsonl",
+        ),
+        _case(
+            "screen_empty",
+            SCREEN_RAW,
+            None,
+            [],
+            pending_family="RawScreen",
+            note="an empty file still produces a header and no chunks",
+        ),
+        _case(
+            "screen_null_content_raises_in_the_reference",
+            SCREEN_RAW,
+            None,
+            [{"raw": True}, {"timestamp": 3, "frame_id": "f1", "content": None}],
+            expect_raises="AttributeError",
+            note=(
+                "an explicit null content is dereferenced without a guard. The frame "
+                "carries a timestamp so it is not skipped, and the caller catches only "
+                "ValueError and FileNotFoundError, so this escapes rather than skipping "
+                "the file. ⛔ The native renderer must treat a null content as absent."
+            ),
+        ),
+    ]
+
+
 def build_content_families_fixture() -> dict[str, Any]:
     cases: list[dict[str, Any]] = []
     cases.extend(_event_cases())
@@ -633,6 +755,7 @@ def build_content_families_fixture() -> dict[str, Any]:
     cases.extend(_browser_cases())
     cases.extend(_day_accumulator_cases())
     cases.extend(_talent_json_cases())
+    cases.extend(_raw_percept_cases())
 
     # A case whose family is null is a dispatch fact the native side has no family
     # for — it belongs in the corpus precisely because nothing else records it.

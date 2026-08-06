@@ -1212,6 +1212,349 @@
       "input": [],
       "input_text": "",
       "rel": "20260304/talents/morning_briefing.json"
+    },
+    {
+      "agent": "audio",
+      "chunks": [
+        {
+          "markdown": "[00:00:01] Ada: Morning.",
+          "source": {
+            "end": "00:00:04",
+            "speaker": "Ada",
+            "start": "00:00:01",
+            "text": "Morning."
+          },
+          "timestamp_utc_ms": 1772614801000
+        },
+        {
+          "markdown": "[00:00:05] Bo: Shipping today.",
+          "source": {
+            "end": "00:00:09",
+            "speaker": "Bo",
+            "start": "00:00:05",
+            "text": "Shipping today."
+          },
+          "timestamp_utc_ms": 1772614805000
+        }
+      ],
+      "family": null,
+      "formatter": "format_audio",
+      "header": "Start: 2026-03-04 09:00am Model: parakeet Language: en",
+      "id": "audio_transcript_nominal",
+      "input": [
+        {
+          "language": "en",
+          "model": "parakeet"
+        },
+        {
+          "end": "00:00:04",
+          "speaker": "Ada",
+          "start": "00:00:01",
+          "text": "Morning."
+        },
+        {
+          "end": "00:00:09",
+          "speaker": "Bo",
+          "start": "00:00:05",
+          "text": "Shipping today."
+        }
+      ],
+      "input_text": "{\"model\": \"parakeet\", \"language\": \"en\"}\n{\"start\": \"00:00:01\", \"end\": \"00:00:04\", \"speaker\": \"Ada\", \"text\": \"Morning.\"}\n{\"start\": \"00:00:05\", \"end\": \"00:00:09\", \"speaker\": \"Bo\", \"text\": \"Shipping today.\"}\n",
+      "note": "the nominal raw transcript: a metadata row then timed speaker turns",
+      "pending_family": "Audio",
+      "rel": "20260304/workstation/090000_300/audio.jsonl"
+    },
+    {
+      "agent": "audio",
+      "chunks": [],
+      "family": null,
+      "formatter": "format_audio",
+      "header": "Start: 2026-03-04 09:00am Model: parakeet",
+      "id": "audio_metadata_only",
+      "input": [
+        {
+          "model": "parakeet"
+        }
+      ],
+      "input_text": "{\"model\": \"parakeet\"}\n",
+      "note": "a metadata row with no turns still produces a header and no chunks",
+      "pending_family": "Audio",
+      "rel": "20260304/workstation/090000_300/audio.jsonl"
+    },
+    {
+      "agent": "audio",
+      "chunks": [
+        {
+          "markdown": "[00:00:02] Bo: kept",
+          "source": {
+            "speaker": "Bo",
+            "start": "00:00:02",
+            "text": "kept"
+          },
+          "timestamp_utc_ms": 1772614802000
+        }
+      ],
+      "error": "Skipped 1 entries missing 'start' field in 20260304/workstation/090000_300/audio.jsonl",
+      "family": null,
+      "formatter": "format_audio",
+      "header": "Start: 2026-03-04 09:00am Model: parakeet",
+      "id": "audio_row_missing_start_is_reported",
+      "input": [
+        {
+          "model": "parakeet"
+        },
+        {
+          "speaker": "Ada",
+          "text": "no start field"
+        },
+        {
+          "speaker": "Bo",
+          "start": "00:00:02",
+          "text": "kept"
+        }
+      ],
+      "input_text": "{\"model\": \"parakeet\"}\n{\"speaker\": \"Ada\", \"text\": \"no start field\"}\n{\"start\": \"00:00:02\", \"speaker\": \"Bo\", \"text\": \"kept\"}\n",
+      "note": "a row without a start is skipped and the count reaches meta.error",
+      "pending_family": "Audio",
+      "rel": "20260304/workstation/090000_300/audio.jsonl"
+    },
+    {
+      "agent": "audio",
+      "chunks": [
+        {
+          "markdown": "[00:00:01] Ada: Morning.",
+          "source": {
+            "end": "00:00:04",
+            "speaker": "Ada",
+            "start": "00:00:01",
+            "text": "Morning."
+          },
+          "timestamp_utc_ms": 1772614801000
+        },
+        {
+          "markdown": "[00:00:05] Bo: Shipping today.",
+          "source": {
+            "end": "00:00:09",
+            "speaker": "Bo",
+            "start": "00:00:05",
+            "text": "Shipping today."
+          },
+          "timestamp_utc_ms": 1772614805000
+        }
+      ],
+      "family": null,
+      "formatter": "format_audio",
+      "header": "Start: 2026-03-04 09:00am Model: parakeet Language: en",
+      "id": "audio_split_filename",
+      "input": [
+        {
+          "language": "en",
+          "model": "parakeet"
+        },
+        {
+          "end": "00:00:04",
+          "speaker": "Ada",
+          "start": "00:00:01",
+          "text": "Morning."
+        },
+        {
+          "end": "00:00:09",
+          "speaker": "Bo",
+          "start": "00:00:05",
+          "text": "Shipping today."
+        }
+      ],
+      "input_text": "{\"model\": \"parakeet\", \"language\": \"en\"}\n{\"start\": \"00:00:01\", \"end\": \"00:00:04\", \"speaker\": \"Ada\", \"text\": \"Morning.\"}\n{\"start\": \"00:00:05\", \"end\": \"00:00:09\", \"speaker\": \"Bo\", \"text\": \"Shipping today.\"}\n",
+      "note": "per-device split transcripts share the formatter with audio.jsonl",
+      "pending_family": "Audio",
+      "rel": "20260304/workstation/090000_300/left_audio.jsonl"
+    },
+    {
+      "agent": "screen",
+      "chunks": [
+        {
+          "markdown": "### 09:00:03\n\n**Visual_Description:**\n\nan editor\n",
+          "source": {
+            "content": {
+              "applications": [
+                "nvim"
+              ],
+              "visual_description": "an editor"
+            },
+            "frame_id": "f1",
+            "timestamp": 3
+          },
+          "timestamp_utc_ms": 1772614803000
+        },
+        {
+          "markdown": "### 09:00:09\n",
+          "source": {
+            "frame_id": "f2",
+            "timestamp": 9
+          },
+          "timestamp_utc_ms": 1772614809000
+        }
+      ],
+      "family": null,
+      "formatter": "format_screen",
+      "header": "# Frame Analyses",
+      "id": "screen_frames_nominal",
+      "input": [
+        {
+          "monitor": "primary",
+          "raw": true
+        },
+        {
+          "content": {
+            "applications": [
+              "nvim"
+            ],
+            "visual_description": "an editor"
+          },
+          "frame_id": "f1",
+          "timestamp": 3
+        },
+        {
+          "frame_id": "f2",
+          "timestamp": 9
+        }
+      ],
+      "input_text": "{\"raw\": true, \"monitor\": \"primary\"}\n{\"timestamp\": 3, \"frame_id\": \"f1\", \"content\": {\"applications\": [\"nvim\"], \"visual_description\": \"an editor\"}}\n{\"timestamp\": 9, \"frame_id\": \"f2\"}\n",
+      "note": "a metadata row then frames; the second carries no content at all",
+      "pending_family": "RawScreen",
+      "rel": "20260304/workstation/090000_300/screen.jsonl"
+    },
+    {
+      "agent": "screen",
+      "chunks": [
+        {
+          "markdown": "### 09:00:04\n",
+          "source": {
+            "content": {
+              "applications": [
+                "vim"
+              ]
+            },
+            "frame_id": "f1",
+            "timestamp": 4
+          },
+          "timestamp_utc_ms": 1772614804000
+        }
+      ],
+      "error": "Skipped 1 entries missing 'timestamp' field in 20260304/workstation/090000_300/screen.jsonl",
+      "family": null,
+      "formatter": "format_screen",
+      "header": "# Frame Analyses",
+      "id": "screen_frame_missing_timestamp_is_reported",
+      "input": [
+        {
+          "raw": true
+        },
+        {
+          "frame_id": "f0"
+        },
+        {
+          "content": {
+            "applications": [
+              "vim"
+            ]
+          },
+          "frame_id": "f1",
+          "timestamp": 4
+        }
+      ],
+      "input_text": "{\"raw\": true}\n{\"frame_id\": \"f0\"}\n{\"timestamp\": 4, \"frame_id\": \"f1\", \"content\": {\"applications\": [\"vim\"]}}\n",
+      "note": "a frame without a timestamp is skipped and the count reaches meta.error",
+      "pending_family": "RawScreen",
+      "rel": "20260304/workstation/090000_300/screen.jsonl"
+    },
+    {
+      "agent": "screen",
+      "chunks": [
+        {
+          "markdown": "### 09:00:03\n\n**Visual_Description:**\n\nan editor\n",
+          "source": {
+            "content": {
+              "applications": [
+                "nvim"
+              ],
+              "visual_description": "an editor"
+            },
+            "frame_id": "f1",
+            "timestamp": 3
+          },
+          "timestamp_utc_ms": 1772614803000
+        },
+        {
+          "markdown": "### 09:00:09\n",
+          "source": {
+            "frame_id": "f2",
+            "timestamp": 9
+          },
+          "timestamp_utc_ms": 1772614809000
+        }
+      ],
+      "family": null,
+      "formatter": "format_screen",
+      "header": "# Frame Analyses (monitor - 1)",
+      "id": "screen_split_filename",
+      "input": [
+        {
+          "monitor": "primary",
+          "raw": true
+        },
+        {
+          "content": {
+            "applications": [
+              "nvim"
+            ],
+            "visual_description": "an editor"
+          },
+          "frame_id": "f1",
+          "timestamp": 3
+        },
+        {
+          "frame_id": "f2",
+          "timestamp": 9
+        }
+      ],
+      "input_text": "{\"raw\": true, \"monitor\": \"primary\"}\n{\"timestamp\": 3, \"frame_id\": \"f1\", \"content\": {\"applications\": [\"nvim\"], \"visual_description\": \"an editor\"}}\n{\"timestamp\": 9, \"frame_id\": \"f2\"}\n",
+      "note": "per-monitor split frames share the formatter with screen.jsonl",
+      "pending_family": "RawScreen",
+      "rel": "20260304/workstation/090000_300/monitor_1_screen.jsonl"
+    },
+    {
+      "agent": "screen",
+      "chunks": [],
+      "family": null,
+      "formatter": "format_screen",
+      "header": "# Frame Analyses",
+      "id": "screen_empty",
+      "input": [],
+      "input_text": "",
+      "note": "an empty file still produces a header and no chunks",
+      "pending_family": "RawScreen",
+      "rel": "20260304/workstation/090000_300/screen.jsonl"
+    },
+    {
+      "family": null,
+      "formatter": "format_screen",
+      "id": "screen_null_content_raises_in_the_reference",
+      "input": [
+        {
+          "raw": true
+        },
+        {
+          "content": null,
+          "frame_id": "f1",
+          "timestamp": 3
+        }
+      ],
+      "input_text": "{\"raw\": true}\n{\"timestamp\": 3, \"frame_id\": \"f1\", \"content\": null}\n",
+      "note": "an explicit null content is dereferenced without a guard. The frame carries a timestamp so it is not skipped, and the caller catches only ValueError and FileNotFoundError, so this escapes rather than skipping the file. \u26d4 The native renderer must treat a null content as absent.",
+      "raise_message": "'NoneType' object has no attribute 'items'",
+      "raises": "AttributeError",
+      "rel": "20260304/workstation/090000_300/screen.jsonl"
     }
   ],
   "families": [
