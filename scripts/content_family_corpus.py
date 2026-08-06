@@ -105,6 +105,8 @@ def _case(
             }
             if context_extra:
                 out["context"] = context_extra
+            if pending_family:
+                out["pending_family"] = pending_family
             if note:
                 out["note"] = note
             return out
@@ -726,11 +728,115 @@ def _raw_percept_cases() -> list[dict[str, Any]]:
             pending_family="RawScreen",
             note="an empty file still produces a header and no chunks",
         ),
+        # ---- branches a stubbed renderer would otherwise pass ----
+        _case(
+            "audio_legacy_transcript_filename",
+            "20260304/workstation/090000_300/session_transcript.jsonl",
+            None,
+            audio_rows,
+            pending_family="Audio",
+            note=(
+                "🔴 the fifth raw-percept pattern. */*/*/*_transcript.jsonl routes to the "
+                "audio formatter, and without this case a renderer wired for the four "
+                "other spellings passes every check while shipping four of five."
+            ),
+        ),
+        _case(
+            "audio_header_projects_metadata_generically",
+            AUDIO,
+            None,
+            [
+                {
+                    "model": "parakeet",
+                    "language": "en",
+                    "devices": ["mic", "headset"],
+                    "imported": {"facet": "work", "import_id": "imp-7"},
+                    "error": "should be skipped",
+                    "raw": "should be skipped",
+                    "sound_tags": ["should be skipped"],
+                },
+                {"start": "00:00:01", "speaker": "Ada", "text": "Morning."},
+            ],
+            pending_family="Audio",
+            note=(
+                "the header is a generic projection over metadata keys, not a fixed set. "
+                "⛔ A renderer that hardcodes model/language passes the nominal case and "
+                "is wrong on a real journal. Also pins which keys are skipped and the "
+                "separate treatment of the imported dict."
+            ),
+        ),
+        _case(
+            "audio_without_metadata_emits_no_header",
+            AUDIO,
+            None,
+            [{"start": "00:00:01", "speaker": "Ada", "text": "No metadata row."}],
+            pending_family="Audio",
+            note=(
+                "audio emits a header only when there is something to put in it, while "
+                "screen always emits one. ⚠ An always-emit renderer passes every other "
+                "audio case."
+            ),
+        ),
+        _case(
+            "screen_first_row_without_timestamp_or_raw_is_skipped_not_metadata",
+            SCREEN_RAW,
+            None,
+            [
+                {"monitor": "primary"},
+                {"timestamp": 3, "frame_id": "f1", "content": {"applications": ["nvim"]}},
+            ],
+            pending_family="RawScreen",
+            note=(
+                "the two metadata rules differ: audio treats any first row without a start "
+                "as metadata, screen requires the raw marker too and otherwise counts the "
+                "row as skipped. ⛔ Copying the audio rule to screen passes everything else."
+            ),
+        ),
+        _case(
+            "screen_frames_are_sorted_by_timestamp",
+            SCREEN_RAW,
+            None,
+            [
+                {"raw": True},
+                {"timestamp": 30, "frame_id": "late", "content": {"applications": ["b"]}},
+                {"timestamp": 5, "frame_id": "early", "content": {"applications": ["a"]}},
+            ],
+            pending_family="RawScreen",
+            note="screen sorts frames by timestamp; audio does not sort. Nothing else pins it.",
+        ),
+        _case(
+            "audio_turns_keep_file_order",
+            AUDIO,
+            None,
+            [
+                {"model": "parakeet"},
+                {"start": "00:00:30", "speaker": "Ada", "text": "later in the file"},
+                {"start": "00:00:05", "speaker": "Bo", "text": "earlier timestamp"},
+            ],
+            pending_family="Audio",
+            note="the inverted twin of the screen sort: audio emits in file order.",
+        ),
+        _case(
+            "screen_object_content_renders_as_a_json_block",
+            SCREEN_RAW,
+            None,
+            [
+                {"raw": True},
+                {
+                    "timestamp": 3,
+                    "frame_id": "f1",
+                    "content": {"meeting": {"participants": [{"name": "Ada"}]}},
+                },
+            ],
+            pending_family="RawScreen",
+            note="the object branch of content rendering; the nominal case only covers lists.",
+        ),
         _case(
             "screen_null_content_raises_in_the_reference",
             SCREEN_RAW,
             None,
             [{"raw": True}, {"timestamp": 3, "frame_id": "f1", "content": None}],
+            pending_family="RawScreen",
             expect_raises="AttributeError",
             note=(
                 "an explicit null content is dereferenced without a guard. The frame "

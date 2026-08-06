@@ -1537,6 +1537,329 @@
       "rel": "20260304/workstation/090000_300/screen.jsonl"
     },
     {
+      "agent": "audio",
+      "chunks": [
+        {
+          "markdown": "[00:00:01] Ada: Morning.",
+          "source": {
+            "end": "00:00:04",
+            "speaker": "Ada",
+            "start": "00:00:01",
+            "text": "Morning."
+          },
+          "timestamp_utc_ms": 1772614801000
+        },
+        {
+          "markdown": "[00:00:05] Bo: Shipping today.",
+          "source": {
+            "end": "00:00:09",
+            "speaker": "Bo",
+            "start": "00:00:05",
+            "text": "Shipping today."
+          },
+          "timestamp_utc_ms": 1772614805000
+        }
+      ],
+      "family": null,
+      "formatter": "format_audio",
+      "header": "Start: 2026-03-04 09:00am Model: parakeet Language: en",
+      "id": "audio_legacy_transcript_filename",
+      "input": [
+        {
+          "language": "en",
+          "model": "parakeet"
+        },
+        {
+          "end": "00:00:04",
+          "speaker": "Ada",
+          "start": "00:00:01",
+          "text": "Morning."
+        },
+        {
+          "end": "00:00:09",
+          "speaker": "Bo",
+          "start": "00:00:05",
+          "text": "Shipping today."
+        }
+      ],
+      "input_text": "{\"model\": \"parakeet\", \"language\": \"en\"}\n{\"start\": \"00:00:01\", \"end\": \"00:00:04\", \"speaker\": \"Ada\", \"text\": \"Morning.\"}\n{\"start\": \"00:00:05\", \"end\": \"00:00:09\", \"speaker\": \"Bo\", \"text\": \"Shipping today.\"}\n",
+      "note": "\ud83d\udd34 the fifth raw-percept pattern. */*/*/*_transcript.jsonl routes to the audio formatter, and without this case a renderer wired for the four other spellings passes every check while shipping four of five.",
+      "pending_family": "Audio",
+      "rel": "20260304/workstation/090000_300/session_transcript.jsonl"
+    },
+    {
+      "agent": "audio",
+      "chunks": [
+        {
+          "markdown": "[00:00:01] Ada: Morning.",
+          "source": {
+            "speaker": "Ada",
+            "start": "00:00:01",
+            "text": "Morning."
+          },
+          "timestamp_utc_ms": 1772614801000
+        }
+      ],
+      "family": null,
+      "formatter": "format_audio",
+      "header": "Start: 2026-03-04 09:00am Model: parakeet Language: en Devices: mic, headset Facet: work",
+      "id": "audio_header_projects_metadata_generically",
+      "input": [
+        {
+          "devices": [
+            "mic",
+            "headset"
+          ],
+          "error": "should be skipped",
+          "imported": {
+            "facet": "work",
+            "import_id": "imp-7"
+          },
+          "language": "en",
+          "model": "parakeet",
+          "raw": "should be skipped",
+          "sound_tags": [
+            "should be skipped"
+          ]
+        },
+        {
+          "speaker": "Ada",
+          "start": "00:00:01",
+          "text": "Morning."
+        }
+      ],
+      "input_text": "{\"model\": \"parakeet\", \"language\": \"en\", \"devices\": [\"mic\", \"headset\"], \"imported\": {\"facet\": \"work\", \"import_id\": \"imp-7\"}, \"error\": \"should be skipped\", \"raw\": \"should be skipped\", \"sound_tags\": [\"should be skipped\"]}\n{\"start\": \"00:00:01\", \"speaker\": \"Ada\", \"text\": \"Morning.\"}\n",
+      "note": "the header is a generic projection over metadata keys, not a fixed set. \u26d4 A renderer that hardcodes model/language passes the nominal case and is wrong on a real journal. Also pins which keys are skipped and the separate treatment of the imported dict.",
+      "pending_family": "Audio",
+      "rel": "20260304/workstation/090000_300/audio.jsonl"
+    },
+    {
+      "agent": "audio",
+      "chunks": [
+        {
+          "markdown": "[00:00:01] Ada: No metadata row.",
+          "source": {
+            "speaker": "Ada",
+            "start": "00:00:01",
+            "text": "No metadata row."
+          },
+          "timestamp_utc_ms": 1772614801000
+        }
+      ],
+      "family": null,
+      "formatter": "format_audio",
+      "header": "Start: 2026-03-04 09:00am",
+      "id": "audio_without_metadata_emits_no_header",
+      "input": [
+        {
+          "speaker": "Ada",
+          "start": "00:00:01",
+          "text": "No metadata row."
+        }
+      ],
+      "input_text": "{\"start\": \"00:00:01\", \"speaker\": \"Ada\", \"text\": \"No metadata row.\"}\n",
+      "note": "audio emits a header only when there is something to put in it, while screen always emits one. \u26a0 An always-emit renderer passes every other audio case.",
+      "pending_family": "Audio",
+      "rel": "20260304/workstation/090000_300/audio.jsonl"
+    },
+    {
+      "agent": "screen",
+      "chunks": [
+        {
+          "markdown": "### 09:00:03\n",
+          "source": {
+            "content": {
+              "applications": [
+                "nvim"
+              ]
+            },
+            "frame_id": "f1",
+            "timestamp": 3
+          },
+          "timestamp_utc_ms": 1772614803000
+        }
+      ],
+      "error": "Skipped 1 entries missing 'timestamp' field in 20260304/workstation/090000_300/screen.jsonl",
+      "family": null,
+      "formatter": "format_screen",
+      "header": "# Frame Analyses",
+      "id": "screen_first_row_without_timestamp_or_raw_is_skipped_not_metadata",
+      "input": [
+        {
+          "monitor": "primary"
+        },
+        {
+          "content": {
+            "applications": [
+              "nvim"
+            ]
+          },
+          "frame_id": "f1",
+          "timestamp": 3
+        }
+      ],
+      "input_text": "{\"monitor\": \"primary\"}\n{\"timestamp\": 3, \"frame_id\": \"f1\", \"content\": {\"applications\": [\"nvim\"]}}\n",
+      "note": "the two metadata rules differ: audio treats any first row without a start as metadata, screen requires the raw marker too and otherwise counts the row as skipped. \u26d4 Copying the audio rule to screen passes everything else.",
+      "pending_family": "RawScreen",
+      "rel": "20260304/workstation/090000_300/screen.jsonl"
+    },
+    {
+      "agent": "screen",
+      "chunks": [
+        {
+          "markdown": "### 09:00:05\n",
+          "source": {
+            "content": {
+              "applications": [
+                "a"
+              ]
+            },
+            "frame_id": "early",
+            "timestamp": 5
+          },
+          "timestamp_utc_ms": 1772614805000
+        },
+        {
+          "markdown": "### 09:00:30\n",
+          "source": {
+            "content": {
+              "applications": [
+                "b"
+              ]
+            },
+            "frame_id": "late",
+            "timestamp": 30
+          },
+          "timestamp_utc_ms": 1772614830000
+        }
+      ],
+      "family": null,
+      "formatter": "format_screen",
+      "header": "# Frame Analyses",
+      "id": "screen_frames_are_sorted_by_timestamp",
+      "input": [
+        {
+          "raw": true
+        },
+        {
+          "content": {
+            "applications": [
+              "b"
+            ]
+          },
+          "frame_id": "late",
+          "timestamp": 30
+        },
+        {
+          "content": {
+            "applications": [
+              "a"
+            ]
+          },
+          "frame_id": "early",
+          "timestamp": 5
+        }
+      ],
+      "input_text": "{\"raw\": true}\n{\"timestamp\": 30, \"frame_id\": \"late\", \"content\": {\"applications\": [\"b\"]}}\n{\"timestamp\": 5, \"frame_id\": \"early\", \"content\": {\"applications\": [\"a\"]}}\n",
+      "note": "screen sorts frames by timestamp; audio does not sort. Nothing else pins it.",
+      "pending_family": "RawScreen",
+      "rel": "20260304/workstation/090000_300/screen.jsonl"
+    },
+    {
+      "agent": "audio",
+      "chunks": [
+        {
+          "markdown": "[00:00:30] Ada: later in the file",
+          "source": {
+            "speaker": "Ada",
+            "start": "00:00:30",
+            "text": "later in the file"
+          },
+          "timestamp_utc_ms": 1772614830000
+        },
+        {
+          "markdown": "[00:00:05] Bo: earlier timestamp",
+          "source": {
+            "speaker": "Bo",
+            "start": "00:00:05",
+            "text": "earlier timestamp"
+          },
+          "timestamp_utc_ms": 1772614805000
+        }
+      ],
+      "family": null,
+      "formatter": "format_audio",
+      "header": "Start: 2026-03-04 09:00am Model: parakeet",
+      "id": "audio_turns_keep_file_order",
+      "input": [
+        {
+          "model": "parakeet"
+        },
+        {
+          "speaker": "Ada",
+          "start": "00:00:30",
+          "text": "later in the file"
+        },
+        {
+          "speaker": "Bo",
+          "start": "00:00:05",
+          "text": "earlier timestamp"
+        }
+      ],
+      "input_text": "{\"model\": \"parakeet\"}\n{\"start\": \"00:00:30\", \"speaker\": \"Ada\", \"text\": \"later in the file\"}\n{\"start\": \"00:00:05\", \"speaker\": \"Bo\", \"text\": \"earlier timestamp\"}\n",
+      "note": "the inverted twin of the screen sort: audio emits in file order.",
+      "pending_family": "Audio",
+      "rel": "20260304/workstation/090000_300/audio.jsonl"
+    },
+    {
+      "agent": "screen",
+      "chunks": [
+        {
+          "markdown": "### 09:00:03\n\n**Meeting** (unknown)\n\n**Participants:**\n- \ud83d\udd07 Ada (unknown)\n",
+          "source": {
+            "content": {
+              "meeting": {
+                "participants": [
+                  {
+                    "name": "Ada"
+                  }
+                ]
+              }
+            },
+            "frame_id": "f1",
+            "timestamp": 3
+          },
+          "timestamp_utc_ms": 1772614803000
+        }
+      ],
+      "family": null,
+      "formatter": "format_screen",
+      "header": "# Frame Analyses",
+      "id": "screen_object_content_renders_as_a_json_block",
+      "input": [
+        {
+          "raw": true
+        },
+        {
+          "content": {
+            "meeting": {
+              "participants": [
+                {
+                  "name": "Ada"
+                }
+              ]
+            }
+          },
+          "frame_id": "f1",
+          "timestamp": 3
+        }
+      ],
+      "input_text": "{\"raw\": true}\n{\"timestamp\": 3, \"frame_id\": \"f1\", \"content\": {\"meeting\": {\"participants\": [{\"name\": \"Ada\"}]}}}\n",
+      "note": "the object branch of content rendering; the nominal case only covers lists.",
+      "pending_family": "RawScreen",
+      "rel": "20260304/workstation/090000_300/screen.jsonl"
+    },
+    {
       "family": null,
       "formatter": "format_screen",
       "id": "screen_null_content_raises_in_the_reference",
@@ -1552,6 +1875,7 @@
       ],
       "input_text": "{\"raw\": true}\n{\"timestamp\": 3, \"frame_id\": \"f1\", \"content\": null}\n",
       "note": "an explicit null content is dereferenced without a guard. The frame carries a timestamp so it is not skipped, and the caller catches only ValueError and FileNotFoundError, so this escapes rather than skipping the file. \u26d4 The native renderer must treat a null content as absent.",
+      "pending_family": "RawScreen",
       "raise_message": "'NoneType' object has no attribute 'items'",
       "raises": "AttributeError",
       "rel": "20260304/workstation/090000_300/screen.jsonl"
