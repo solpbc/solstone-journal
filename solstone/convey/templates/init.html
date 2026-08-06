@@ -269,7 +269,7 @@
 
     <section class="init-section" id="section-observed-media">
       <h3>your original media (raw audio and screencast files)</h3>
-      <p class="section-hint">by default, your journal keeps your original media so you can access it again later. you can also expire originals after a number of days, or delete them as soon as they're processed. <a href="https://solpbc.org/privacy#recording-laws" target="_blank" rel="noopener">recording-consent laws</a> may apply in your jurisdiction.</p>
+      <p class="section-hint">by default, your journal keeps your original media so you can access it again later. you can also expire originals after a number of days, or mark originals as eligible after processing. <a href="https://solpbc.org/privacy#recording-laws" target="_blank" rel="noopener">recording-consent laws</a> may apply in your jurisdiction.</p>
       <div class="field-group">
         <div class="retention-options">
           <label class="retention-option">
@@ -289,7 +289,7 @@
           </label>
           <label class="retention-option">
             <input type="radio" name="retention_mode" value="processed">
-            <span class="retention-option-label">delete original media after processing</span>
+            <span class="retention-option-label">mark originals as eligible after processing</span>
           </label>
         </div>
         <p class="field-status" id="retention-status">&nbsp;</p>
@@ -557,7 +557,7 @@
     const RESULT_DISPLAY_MS = 1200;
 
     function deriveRetention(daysValue, mode) {
-      if (mode === 'processed') return { mode, days: null, statusText: 'currently: delete original media after processing' };
+      if (mode === 'processed') return { mode, days: null, statusText: 'currently: mark originals as eligible after processing' };
       if (mode === 'days') {
         const n = parseInt(daysValue, 10);
         if (Number.isFinite(n) && n >= 1) return { mode, days: n, statusText: `currently: keep ${n} days` };

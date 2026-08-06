@@ -2739,7 +2739,7 @@ button:focus:not(:focus-visible) {
 
       <div class="settings-field" id="retentionModeField">
         <label>retention mode</label>
-        <small>controls how long raw media files (audio, video, screen diffs) are kept after processing. <a href="https://solpbc.org/privacy#recording-laws" target="_blank" rel="noopener">recording-consent laws</a> may apply in your jurisdiction.</small>
+        <small>controls how long raw media files (audio, video, screen frames) are kept after processing. <a href="https://solpbc.org/privacy#recording-laws" target="_blank" rel="noopener">recording-consent laws</a> may apply in your jurisdiction.</small>
         <div id="retentionDaysField" class="retention-days-row" style="margin-top: 0.5em;">
           <button type="button" class="settings-preset-btn" data-days="7">7</button>
           <button type="button" class="settings-preset-btn" data-days="30">30</button>
@@ -2749,7 +2749,7 @@ button:focus:not(:focus-visible) {
         </div>
         <label for="retentionDontRetain" style="display: flex; align-items: center; gap: 0.5em; margin-top: 0.75em; color: #666; font-size: 0.9em;">
           <input type="checkbox" id="retentionDontRetain">
-          <span>don't retain original media (delete as soon as it's processed)</span>
+          <span>don't retain original media (mark originals as eligible after processing)</span>
         </label>
         <div id="retentionStatus" style="margin-top: 0.75em; color: #666; font-size: 0.9em;">currently: always retain — no expiration</div>
       </div>
@@ -2758,7 +2758,7 @@ button:focus:not(:focus-visible) {
 
       <div class="settings-field" id="logRetentionField">
         <label>operational logs</label>
-        <small>cleans up operational logs and execution traces sol keeps while working. this does not affect your original media or durable journal content.</small>
+        <small>cleans up the operational logs sol keeps while working. this does not affect your original media or durable journal content.</small>
         <div class="toggle-container" style="justify-content: flex-start; gap: 1em; margin-top: 0.75em;">
           <label class="toggle-switch toggle-positive">
             <input type="checkbox" id="logRetentionEnabled">
@@ -2775,14 +2775,14 @@ button:focus:not(:focus-visible) {
         </div>
         <div id="logRetentionStatus" style="margin-top: 0.75em; color: #666; font-size: 0.9em;">currently: keep operational logs 30 days</div>
         <div style="margin-top: 1em;">
-          <button type="button" id="cleanupLogsBtn" class="btn-secondary">clean up logs now</button>
-          <small style="display: block; margin-top: 0.5em; color: #666;">manually prune operational logs and execution traces older than a specified number of days.</small>
+          <button type="button" id="cleanupLogsBtn" class="btn-secondary">clean up logs</button>
+          <small style="display: block; margin-top: 0.5em; color: #666;">manually prune operational logs older than a specified number of days.</small>
         </div>
       </div>
 
       <div class="settings-danger-section">
-        <button type="button" id="cleanupNowBtn" class="action-button-danger">clean up now</button>
-        <small style="display: block; margin-top: 0.5em; color: #666;">review raw media eligible for removal and mark it for approval.</small>
+        <button type="button" id="cleanupNowBtn" class="action-button-danger">mark eligible originals</button>
+        <small style="display: block; margin-top: 0.5em; color: #666;">review raw media eligible under your retention policy. originals stay on disk until you act.</small>
       </div>
       </form>
     </section>
@@ -3079,8 +3079,8 @@ button:focus:not(:focus-visible) {
 <div id="cleanupModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="cleanupHeading">
   <div class="color-modal-content" style="max-width: 480px;">
     <span class="color-close" id="cleanupModalClose">&times;</span>
-    <h3 id="cleanupHeading">mark raw media for removal</h3>
-    <p style="color: #666; font-size: 0.9em; margin-bottom: 1em;">review raw media eligible under your retention policy and mark it for owner approval. nothing is removed here.</p>
+    <h3 id="cleanupHeading">mark eligible originals</h3>
+    <p style="color: #666; font-size: 0.9em; margin-bottom: 1em;">review raw media eligible under your retention policy. this marks eligible originals in a held list; originals stay on disk until you act.</p>
 
     <div class="settings-field" style="margin-bottom: 1em;">
       <label for="cleanupStreamFilter">stream filter (optional)</label>
@@ -3095,7 +3095,7 @@ button:focus:not(:focus-visible) {
     </div>
 
     <div style="display: flex; gap: 0.75em; justify-content: flex-end;">
-      <button type="button" id="cleanupPreviewBtn" class="cleanup-preview-btn">mark for review</button>
+      <button type="button" id="cleanupPreviewBtn" class="cleanup-preview-btn">mark eligible originals</button>
       <button type="button" id="cleanupConfirmBtn" class="cleanup-confirm-btn" disabled>done</button>
     </div>
   </div>
@@ -3105,8 +3105,8 @@ button:focus:not(:focus-visible) {
 <div id="cleanupLogsModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="cleanupLogsHeading">
   <div class="color-modal-content" style="max-width: 560px;">
     <span class="color-close" id="cleanupLogsModalClose">&times;</span>
-    <h3 id="cleanupLogsHeading">clean up operational logs</h3>
-    <p style="color: #666; font-size: 0.9em; margin-bottom: 1em;">prune operational logs and execution traces older than the specified number of days. this does not affect your original media or durable journal content.</p>
+    <h3 id="cleanupLogsHeading">clean up logs</h3>
+    <p style="color: #666; font-size: 0.9em; margin-bottom: 1em;">prune operational logs older than the specified number of days. this does not affect your original media or durable journal content.</p>
 
     <div class="settings-field" style="margin-bottom: 1em;">
       <label for="cleanupLogsDaysInput">older than</label>
@@ -6116,7 +6116,7 @@ if (resetAgentBtn) {
 let storageData = null;
 
 function deriveRetention(daysValue, dontRetain) {
-  if (dontRetain) return { mode: 'processed', days: null, statusText: 'currently: delete original media after processing' };
+  if (dontRetain) return { mode: 'processed', days: null, statusText: 'currently: mark originals as eligible after processing' };
   const n = parseInt(daysValue, 10);
   if (Number.isFinite(n) && n >= 1) return { mode: 'days', days: n, statusText: `currently: keep ${n} days` };
   return { mode: 'keep', days: null, statusText: 'currently: always retain — no expiration' };
@@ -6242,7 +6242,7 @@ function populateStreamOverrides(streams, perStream) {
     select.innerHTML = '<option value="">use global default</option>'
       + '<option value="keep">keep forever</option>'
       + '<option value="days">keep N days</option>'
-      + '<option value="processed">delete after processing</option>';
+      + '<option value="processed">eligible after processing</option>';
     select.value = mode;
 
     const daysInput = document.createElement('input');
@@ -6506,12 +6506,12 @@ async function runCleanupMark() {
     if (!marked.length && !held.length && !noMedia.length && !notEligible.length && !unreadableDays.length) {
       const standingTotal = result.standing_total || 0;
       previewText.textContent = standingTotal
-        ? `nothing new to mark under the current retention policy. ${standingTotal} proposal${standingTotal === 1 ? '' : 's'} still standing for owner approval.`
+        ? `nothing new to mark under the current retention policy. ${standingTotal} removal mark${standingTotal === 1 ? '' : 's'} ${standingTotal === 1 ? 'is' : 'are'} held; originals stay on disk until you act.`
         : 'nothing to mark under the current retention policy.';
     } else {
       const details = [
-        `${marked.length} new removal proposal${marked.length === 1 ? '' : 's'} marked.`,
-        `${result.standing_total || 0} proposal${result.standing_total === 1 ? '' : 's'} standing for owner approval.`,
+        `${marked.length} new removal mark${marked.length === 1 ? '' : 's'}.`,
+        `${result.standing_total || 0} removal mark${result.standing_total === 1 ? '' : 's'} ${(result.standing_total || 0) === 1 ? 'is' : 'are'} held; originals stay on disk until you act.`,
       ];
       if (held.length) details.push(`${held.length} segment${held.length === 1 ? '' : 's'} held.`);
       if (noMedia.length) details.push(`${noMedia.length} segment${noMedia.length === 1 ? '' : 's'} with no raw media.`);
@@ -6593,7 +6593,7 @@ function renderLogCleanupResult(result, phase) {
   let html = `<div style="font-weight: 600; margin-bottom: 0.5em;">${heading}</div>`;
 
   if (!totalWork) {
-    html += '<p>no operational logs or execution traces to clean up.</p>';
+    html += '<p>no operational logs to clean up.</p>';
   } else if (fileDirWork) {
     const fileBytes = Object.values(result.by_class || {}).reduce((sum, stats) => sum + (stats.bytes_freed || 0), 0);
     html += `<p>${result.files_deleted || 0} operational-log file(s) and ${result.dirs_deleted || 0} cache dir(s) (${fileBytes} B) ${actionText}.</p>`;

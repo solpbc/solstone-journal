@@ -947,7 +947,7 @@ def purge(
         None, "--stream", help="Only report proposals for this stream."
     ),
 ) -> None:
-    """Mark policy-eligible raw media for owner approval."""
+    """Mark eligible originals."""
     from solstone.think import retention_executor
     from solstone.think.utils import get_config
 
@@ -961,13 +961,12 @@ def purge(
                 retention_executor.read_policy_marks(before, stream=stream)
             )
             typer.echo(
-                "retention purge: your journal's retention policy keeps all original "
-                "files (no-op)"
+                "retention purge: your journal's retention policy keeps all originals"
             )
             typer.echo(
                 "  standing total: "
-                f"{standing_total} policy raw-media removal proposal(s) marked, "
-                "not yet removed."
+                f"{standing_total} removal mark(s) held; "
+                "originals stay on disk until you act."
             )
             return
 
@@ -980,7 +979,7 @@ def purge(
         )
     except retention_executor.RemovalRefused as refused:
         typer.echo(
-            "retention purge: some raw-media proposals could not be listed:",
+            "retention purge: some removal marks could not be listed:",
             err=True,
         )
         for entry in refused.refused.entries():
@@ -991,8 +990,8 @@ def purge(
         raise typer.Exit(1) from None
     except retention_executor.ExecutorUnavailable as unavailable:
         typer.echo(
-            "retention purge: the journal could not list policy raw-media removal "
-            f"proposals: {unavailable}",
+            "retention purge: the journal could not list removal marks: "
+            f"{unavailable}",
             err=True,
         )
         raise typer.Exit(1) from None
@@ -1000,19 +999,19 @@ def purge(
     report = retention_executor.describe_mark_receipt(before, after, stream=stream)
     if report["marked"]:
         typer.echo(
-            "retention purge: this pass marked "
-            f"{len(report['marked'])} new policy raw-media removal proposal(s); "
-            "not yet removed."
+            "retention purge: today's run marked "
+            f"{len(report['marked'])} new removal mark(s); "
+            "originals stay on disk until you act."
         )
     else:
         typer.echo(
-            "retention purge: this pass marked no new policy raw-media removal "
-            "proposals; not yet removed."
+            "retention purge: today's run marked no new removal marks; "
+            "originals stay on disk until you act."
         )
     typer.echo(
         "  standing total: "
-        f"{report['standing_total']} policy raw-media removal proposal(s) marked, "
-        "not yet removed."
+        f"{report['standing_total']} removal mark(s) held; "
+        "originals stay on disk until you act."
     )
     for mark in report["marked"]:
         typer.echo(f"  {mark['id']}: {mark['proposal']['reason']}")

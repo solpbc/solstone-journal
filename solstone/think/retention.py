@@ -390,9 +390,8 @@ def check_storage_health(
 
     retention = config.get("retention", {})
     keep_mode_nudge = (
-        " you're currently set to always retain original media — consider "
-        "choosing a retention value in settings to make media eligible for "
-        "owner-approved cleanup."
+        " you're currently set to always retain original media, so no eligible "
+        "originals are marked. originals stay on disk until you act."
     )
     always_retain_enabled = retention.get("raw_media", "keep") == "keep"
     warnings = []
@@ -406,8 +405,9 @@ def check_storage_health(
             if disk_percent >= disk_threshold:
                 message = (
                     f"Disk is {disk_percent}% full (threshold: {disk_threshold}%). "
-                    "Consider adjusting retention settings or running Clean Up Now "
-                    "to propose cleanup for owner approval."
+                    "You can adjust retention settings or select \"mark eligible "
+                    "originals\" to add eligible originals to the held list; "
+                    "originals stay on disk until you act."
                 )
                 if always_retain_enabled:
                     message += keep_mode_nudge
@@ -430,8 +430,9 @@ def check_storage_health(
         if raw_media_gb >= raw_media_gb_threshold:
             message = (
                 f"Raw media is {raw_media_gb} GB (threshold: {raw_media_gb_threshold} GB). "
-                "Consider adjusting retention settings or running Clean Up Now "
-                "to propose cleanup for owner approval."
+                "You can adjust retention settings or select \"mark eligible "
+                "originals\" to add eligible originals to the held list; "
+                "originals stay on disk until you act."
             )
             if always_retain_enabled:
                 message += keep_mode_nudge

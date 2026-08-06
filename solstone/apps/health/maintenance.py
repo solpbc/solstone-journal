@@ -20,11 +20,7 @@ MARK_RAW_MAX_RUNTIME = "60m"
 
 
 def run_mark_raw_routine(args: list[str]) -> int:
-    """List policy-eligible original files as durable removal proposals.
-
-    The accepted end state is a growing list of policy raw-media removal proposals with
-    no stated path forward.
-    """
+    """List eligible originals as durable removal marks."""
     require_solstone()
     parser = argparse.ArgumentParser(prog="journal maintenance run health:mark-raw")
     parser.parse_args(args)
@@ -37,7 +33,7 @@ def run_mark_raw_routine(args: list[str]) -> int:
 
     payload = retention_executor.policy_payload(retention)
     if not retention_executor.policy_would_release(payload):
-        print("mark-raw: your journal's retention policy keeps all original files (no-op)")
+        print("mark-raw: your journal's retention policy keeps all originals")
         return 0
 
     def policy_mark_ids(receipt):
@@ -52,13 +48,13 @@ def run_mark_raw_routine(args: list[str]) -> int:
         before_ids = policy_mark_ids(before)
         after = retention_executor.mark(journal, payload, today=today, now=stamp)
     except retention_executor.RemovalRefused as refused:
-        print("mark-raw: some raw-media proposals could not be listed:", file=sys.stderr)
+        print("mark-raw: some removal marks could not be listed:", file=sys.stderr)
         for entry in refused.refused.entries():
             print(f"  {entry.get('entry')}: {entry.get('reason')}", file=sys.stderr)
         return 1
     except retention_executor.ExecutorUnavailable as unavailable:
         print(
-            "mark-raw: the journal could not list policy raw-media removal proposals: "
+            "mark-raw: the journal could not list removal marks: "
             f"{unavailable}",
             file=sys.stderr,
         )
@@ -70,17 +66,19 @@ def run_mark_raw_routine(args: list[str]) -> int:
 
     if new_ids:
         print(
-            "mark-raw: this pass listed "
-            f"{len(new_ids)} new policy raw-media removal proposal(s); not yet removed."
+            "mark-raw: today's run listed "
+            f"{len(new_ids)} new removal mark(s); "
+            "originals stay on disk until you act."
         )
     else:
         print(
-            "mark-raw: this pass listed no new policy raw-media removal proposals; "
-            "not yet removed."
+            "mark-raw: today's run listed no new removal marks; "
+            "originals stay on disk until you act."
         )
     print(
         "  standing total: "
-        f"{len(after_ids)} policy raw-media removal proposal(s) listed, not yet removed."
+        f"{len(after_ids)} removal mark(s) held; "
+        "originals stay on disk until you act."
     )
     for mark_id in new_ids:
         print(f"  {mark_id}: {after_marks[mark_id]['proposal']['reason']}")
@@ -111,7 +109,7 @@ def run_prune_logs_routine(args: list[str]) -> int:
         print(f"prune-logs: executor unavailable: {unavailable}", file=sys.stderr)
         return 0
     if not result.enabled:
-        print("prune-logs: disabled (no-op)")
+        print("prune-logs: disabled")
         return 0
 
     action = "would prune" if result.dry_run else "pruned"
@@ -148,17 +146,14 @@ def run_prune_logs_routine(args: list[str]) -> int:
 ROUTINES = [
     MaintenanceRoutine(
         name="mark-raw",
-        description=(
-            "list policy-eligible original files as removal proposals without removing "
-            "them."
-        ),
+        description="list eligible originals as removal marks without removing them.",
         every="daily",
         run=run_mark_raw_routine,
         max_runtime=MARK_RAW_MAX_RUNTIME,
     ),
     MaintenanceRoutine(
         name="prune-logs",
-        description="prune old operational logs and execution traces.",
+        description="prune old operational logs.",
         every="daily",
         run=run_prune_logs_routine,
         max_runtime=retention_executor.PRUNE_LOGS_MAX_RUNTIME,

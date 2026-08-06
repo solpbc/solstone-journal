@@ -87,7 +87,7 @@ def test_prune_logs_routine_wrapper_disabled_and_real(monkeypatch, capsys):
     assert prune.call_count == 2
     prune.assert_called_with(ANY, days=None, dry_run=False)
     output = capsys.readouterr().out
-    assert "prune-logs: disabled (no-op)" in output
+    assert "prune-logs: disabled" in output
     assert (
         "prune-logs: pruned 2 operational-log file(s), 0 cache dir(s), "
         "0 B cutoff=20260316"

@@ -631,7 +631,7 @@ class TestCheckStorageHealth:
         assert warnings[0]["current"] >= 1
         assert warnings[0]["threshold"] == 1
         assert "retention settings" in warnings[0]["message"]
-        assert "Clean Up Now" in warnings[0]["message"]
+        assert "mark eligible originals" in warnings[0]["message"]
 
     def test_disk_percent_not_exceeded(self, tmp_path, monkeypatch):
         """No warning when disk is well below threshold."""

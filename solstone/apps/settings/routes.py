@@ -2124,7 +2124,7 @@ def update_storage() -> Any:
 
 @settings_bp.route("/api/storage/purge", methods=["POST"])
 def run_purge() -> Any:
-    """Mark policy-eligible raw media for owner approval."""
+    """Mark eligible originals."""
     try:
         request_data = request.get_json(silent=True) or {}
         if not isinstance(request_data, dict):
@@ -2172,12 +2172,12 @@ def run_purge() -> Any:
     except RemovalRefused as refused:
         logger.warning("retention mark refused: %s", refused)
         return _settings_operation_failed(
-            f"could not list raw-media removal proposals: {refused}"
+            f"could not list removal marks: {refused}"
         )
     except ExecutorUnavailable as unavailable:
         logger.warning("retention mark executor unavailable: %s", unavailable)
         return _settings_operation_failed(
-            f"could not list raw-media removal proposals: {unavailable}"
+            f"could not list removal marks: {unavailable}"
         )
     except Exception:
         logger.exception("error marking retention proposals")
