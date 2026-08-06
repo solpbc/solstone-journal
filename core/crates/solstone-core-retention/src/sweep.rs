@@ -96,6 +96,8 @@ pub struct Plan {
     /// Days whose directory could not be listed. ⚠ Named rather than dropped: an
     /// unreadable day is the one case where a smaller plan is not good news.
     pub unreadable_days: Vec<String>,
+    /// The chronicle root is missing or is not a directory.
+    pub chronicle_unavailable: bool,
 }
 
 impl Plan {
@@ -135,7 +137,12 @@ pub fn plan(
     now: DateTime<Utc>,
 ) -> Plan {
     let mut built = Plan::default();
+    if !crate::layout::chronicle_root_is_dir(journal) {
+        built.chronicle_unavailable = true;
+        return built;
+    }
     let Ok(days) = day_dirs(journal) else {
+        built.chronicle_unavailable = true;
         return built;
     };
     // Deterministic order, so two plans over one journal compare.

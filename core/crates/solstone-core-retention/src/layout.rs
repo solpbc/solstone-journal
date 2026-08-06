@@ -19,7 +19,14 @@
 //! oldest data forever while reporting success. That is why this is one function and
 //! `tests/architecture.rs` forbids the interpolation anywhere else.
 
+use std::path::Path;
+
 use solstone_core_journal_io::paths::DEFAULT_STREAM;
+
+/// Whether the journal has a chronicle directory to scan.
+pub fn chronicle_root_is_dir(journal: &Path) -> bool {
+    journal.join("chronicle").is_dir()
+}
 
 /// The directory holding a stream's segments, journal-relative.
 pub fn stream_rel(day: &str, stream: &str) -> String {
