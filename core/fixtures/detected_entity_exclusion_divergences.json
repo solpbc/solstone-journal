@@ -1,0 +1,48 @@
+{
+  "cause": "Measured agreement and divergence between the Python detected-entity exclusion path and the native read model.",
+  "counts": {"agree": 4, "now_hidden": 0, "now_offered": 0, "total": 4},
+  "entries": [
+    {
+      "fixture_index": 0,
+      "cause": "matcher-normalization",
+      "detected_name": "Straße Handel",
+      "detected_type": "Person",
+      "attached_setup": {"kind": "resolved", "entity_id": "strasse_handel", "identity_name": "STRASSE HANDEL"},
+      "reference_outcome": {"excluded": true, "tier": 4},
+      "native_outcome": {"excluded": true, "tier": 2},
+      "reason": "Both implementations exclude the twin; full Unicode case folding moves the native match from Python's slug tier to tier 2."
+    },
+    {
+      "fixture_index": 1,
+      "cause": "attached-set-flags",
+      "detected_name": "Alice",
+      "detected_type": "Person",
+      "attached_setup": {"kind": "detached", "entity_id": "alice", "identity_name": "Alice"},
+      "reference_outcome": {"excluded": false, "tier": null},
+      "native_outcome": {"excluded": false, "tier": null},
+      "reason": "Detached relationships are omitted from both attached candidate sets."
+    },
+    {
+      "fixture_index": 2,
+      "cause": "attached-set-flags",
+      "detected_name": "Bob",
+      "detected_type": "Person",
+      "attached_setup": {"kind": "blocked", "entity_id": "bob", "identity_name": "Bob"},
+      "reference_outcome": {"excluded": false, "tier": null},
+      "native_outcome": {"excluded": false, "tier": null},
+      "reason": "Blocked identities are omitted from both attached candidate sets."
+    },
+    {
+      "fixture_index": 3,
+      "cause": "unresolvable-identity",
+      "detected_name": "Orphan",
+      "detected_type": "Person",
+      "attached_setup": {"kind": "orphan", "entity_id": "orphan"},
+      "reference_outcome": {"excluded": false, "tier": null},
+      "native_outcome": {"excluded": false, "tier": null},
+      "reason": "Rust drops the unresolved relationship while Python retains a nameless candidate; neither can match the detected name."
+    }
+  ],
+  "note": "Reference outcomes were captured with the current Python activity loader against matching temporary journals. Native outcomes are executed by the consuming Rust fixture test.",
+  "when_this_file_reddens": "Treat a failure as a behavior change requiring review; do not regenerate this fixture automatically."
+}
