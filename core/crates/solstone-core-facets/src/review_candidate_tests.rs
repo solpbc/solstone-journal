@@ -45,6 +45,20 @@ fn record_merge_candidate_updates_one_keyed_row_without_replacing_first_metadata
     )
     .unwrap();
     assert!(created);
+    let path = temporary.path().join("entities/review-candidates.jsonl");
+    let mut rows: Vec<serde_json::Value> = fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    rows[0]["updated_at"] = json!("1970-01-01T00:00:00Z");
+    fs::write(
+        &path,
+        rows.iter()
+            .map(|row| serde_json::to_string(row).unwrap() + "\n")
+            .collect::<String>(),
+    )
+    .unwrap();
     let (second, created) = record_merge_candidate(
         temporary.path(),
         "scope",
@@ -60,8 +74,7 @@ fn record_merge_candidate_updates_one_keyed_row_without_replacing_first_metadata
     )
     .unwrap();
     assert!(!created);
-    let raw =
-        fs::read_to_string(temporary.path().join("entities/review-candidates.jsonl")).unwrap();
+    let raw = fs::read_to_string(&path).unwrap();
     let rows: Vec<serde_json::Value> = raw
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
@@ -73,5 +86,6 @@ fn record_merge_candidate_updates_one_keyed_row_without_replacing_first_metadata
     assert_eq!(second["last_surfaced"], "20260102");
     assert_eq!(second["first_surfaced"], first["first_surfaced"]);
     assert_eq!(second["created_at"], first["created_at"]);
+    assert_ne!(second["updated_at"], "1970-01-01T00:00:00Z");
     assert_eq!(rows[0], second);
 }

@@ -30,7 +30,10 @@ pub struct DetectionUpsertReport {
     pub wrote: usize,
 }
 
-/// Read detected records for one facet and day. Missing files are empty.
+/// Read detected records for one facet and day.
+///
+/// Missing files and directories at the day-file path are empty. Rows with an invalid type are
+/// ignored, and missing or non-string IDs are filled from the row name.
 pub fn read_detected_entities(
     journal_root: &Path,
     facet_dir: &str,
@@ -73,6 +76,9 @@ pub fn read_detected_entities(
 }
 
 /// Reconcile one segment's kept detections into the facet/day detected store.
+///
+/// Existing rows match their stored ID first, falling back to a slug from their current name only
+/// when the ID is absent.
 pub fn upsert_detection_segment(
     journal_root: &Path,
     facet_dir: &str,
