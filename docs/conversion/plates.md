@@ -148,9 +148,21 @@ The SQLite index. **Ephemeral by design and always rebuildable — that property
 
 Consistent formatting of **structured journal data** for its consumers — the indexer and the convey apps.
 
-🔴 **No import graph shows this plate's fan-out.** `FORMATTERS` (`think/formatters.py:139-265`) reaches 12 modules by **string key** via `import_module` + `getattr` (`:283-286`), with zero static import edges. It is the de facto read-side inventory of every on-disk shape, and it lives only in Python.
+🔴 **No import graph shows the reference implementation's fan-out.** `FORMATTERS` (`think/formatters.py:139-265`) reaches 12 modules — **18 entry-point functions** — by **string key** via `import_module` + `getattr` (`:283-286`), with zero static import edges. It is the de facto read-side inventory of every on-disk shape.
 
-🔴 **LIVE DEFECT, recorded 2026-08-05.** Dispatch is by **`fnmatch` on the journal path**, and **9 of 36 patterns embed a stream name**. Projected stream names match none of them, so `get_formatter()` returns `None` and **the read path silently loses its formatter** — no error, no fallback, just no formatting. Projected names are now being written. ⚠ This also forced the segment `kind` to carry a source dimension rather than being a flat enum. Enumeration: `vpe/workspace/ingest-cable-260804/tools/stream-name-dependents.md`.
+✅ **The indexer half is built.** `core/crates/solstone-core-indexer/src/content/` carries **30 of the reference's 36 patterns** across 15 families, and is the shipped index write path — `think/indexer/native.py` routes every index write operation to `solstone-core indexer` with no fallback. The 30 are exactly the reference's `indexed=True` subset; every family agrees.
+
+⚠ **The six missing are exactly the six the reference marks `indexed=False`:** `entities/*/entity.json`, `*/*/*/audio.jsonl`, `*/*/*/*_audio.jsonl`, `*/*/*/*_transcript.jsonl`, `*/*/*/screen.jsonl`, `*/*/*/*_screen.jsonl`. ⛔ **Name trap:** `content/screen.rs` is the `talents/screen.json` record formatter, **not** the raw `screen.jsonl` one — the file list overstates coverage.
+
+🔴 **The plate serves one of its two strands.** `produce_chunks` returns `IndexChunk { content }`. The formatter contract also carries a document `header`, a chunk `timestamp`, and the originating `source` record — fields the index never stores and the convey read path depends on for speaker attribution, audio seek and frame overlays. `S:web:format` has no implementation here at all. ⚠ Rule 1 says the one-to-many end cannot negotiate per-consumer, and an output shape chosen for the indexer is exactly that.
+
+⚠ **Corrections to the 2026-08-05 defect note, measured rather than inherited.** **10 of 36** patterns pin a stream name, not 9 — `*/chat/*/chat.jsonl` was missed because the enumeration scanned the `import.*` family; it is projection-stable, which is why nothing caught it. ⛔ **"Projected names are now being written" was not true** — the projection landed after the last release and no projected stream name has reached a journal. Against the largest journal available, a cutover changes **18 of 538,647** formatted files, all `*_transcript.md` under two import streams, and swaps none. ⛔ **And the failure mode is not a silent `None`:** six of the nine import patterns fall through to a *different* formatter — an AI-chat transcript lands on the audio formatter at `indexed=False`, so it stays formatted and silently stops being searchable. A `None` at least raises.
+
+📌 **The same shape is reachable with no projection involved:** `browser_*_screen.jsonl` matches `*/*/*/*_screen.jsonl` (`indexed=False`) before `*/*/*/browser_*.jsonl` (`indexed=True`), so discovery finds it as one shape and dispatch renders it as another. Latent today.
+
+⚠ **Three matchers, two semantics.** Reference dispatch uses `fnmatch`, where `*` crosses `/`; reference discovery uses `Path.glob`, and this crate uses `glob` with `require_literal_separator`, where it does not. Dispatch is the outlier — which is why discovery and dispatch can disagree about the same file.
+
+✅ **Every family is pinned to a reference-generated corpus** — `core/fixtures/content_families.json`, 40 cases from `scripts/content_family_corpus.py`, resolving each case through the registry by journal-relative path so it pins dispatch as well as render. ⚠ It is a **frozen record**: regenerating it needs a runnable reference tree. A `DIVERGENCES` ledger in `content/mod.rs` makes every difference a written decision; an unrecorded one fails the gate. 🔴 **One is an open defect:** chat speaker labels are hardcoded here and resolved from journal config by the reference, so a rescan rewrites the owner's own name out of indexed chat.
 
 ## `P-thinking`
 
