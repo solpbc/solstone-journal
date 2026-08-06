@@ -6,8 +6,10 @@ use std::fs;
 use serde_json::json;
 use solstone_core_entity::{record_merge_candidate, save_entity_identity};
 
-use crate::list_scoped_facet_entities;
 use crate::store_tests::{TempDir, create_test_facet, write_facet_relationship};
+use crate::{
+    accept_candidate, dismiss_candidate, facet_slug, list_scoped_facet_entities, load_candidates,
+};
 
 fn resolved_entity_id(root: &std::path::Path) -> String {
     create_test_facet(root, "scope");
@@ -88,4 +90,52 @@ fn record_merge_candidate_updates_one_keyed_row_without_replacing_first_metadata
     assert_eq!(second["created_at"], first["created_at"]);
     assert_ne!(second["updated_at"], "1970-01-01T00:00:00Z");
     assert_eq!(rows[0], second);
+}
+
+#[test]
+fn facet_review_candidates_skip_bad_rows_and_update_matching_keys() {
+    let temporary = TempDir::new();
+    let path = temporary.path().join("facets/review-candidates.jsonl");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        concat!(
+            "{\"name_key\":\"work\",\"name\":\"Work\",\"status\":\"open\",\"count\":4,\"updated_at\":\"1970-01-01T00:00:00Z\"}\n",
+            "not json\n",
+            "[\"not an object\"]\n",
+            "{\"name_key\":\"home\",\"status\":\"open\"}\n",
+        ),
+    )
+    .unwrap();
+
+    assert_eq!(load_candidates(temporary.path()).unwrap().len(), 2);
+    assert!(
+        accept_candidate(temporary.path(), "missing")
+            .unwrap()
+            .is_none()
+    );
+    let accepted = accept_candidate(temporary.path(), "home").unwrap().unwrap();
+    assert_eq!(accepted["status"], "accepted");
+    let dismissed = dismiss_candidate(temporary.path(), "work")
+        .unwrap()
+        .unwrap();
+    assert_eq!(dismissed["status"], "dismissed");
+    assert_eq!(dismissed["dismissed_count"], 4);
+    assert_ne!(dismissed["updated_at"], "1970-01-01T00:00:00Z");
+    assert!(dismissed["updated_at"].as_str().unwrap().ends_with('Z'));
+
+    let saved = load_candidates(temporary.path()).unwrap();
+    assert_eq!(saved.len(), 2);
+    assert!(
+        saved
+            .iter()
+            .any(|row| row["name_key"] == "work" && row["status"] == "dismissed")
+    );
+}
+
+#[test]
+fn facet_slug_matches_python_create_facet_normalization() {
+    assert_eq!(facet_slug("  Work & Home!  "), "work-home");
+    assert_eq!(facet_slug("123 start"), "123-start");
+    assert_eq!(facet_slug("équipe"), "quipe");
 }

@@ -51,6 +51,10 @@ pub(super) fn facets_dir(journal_root: &Path) -> Result<PathBuf, FacetStoreError
     contained_path(journal_root, "facets").map_err(Into::into)
 }
 
+pub(super) fn review_candidates_path(journal_root: &Path) -> Result<PathBuf, FacetStoreError> {
+    contained_path(journal_root, "facets/review-candidates.jsonl").map_err(Into::into)
+}
+
 pub(super) fn facet_entity_link_path(
     journal_root: &Path,
     facet_dir: &str,

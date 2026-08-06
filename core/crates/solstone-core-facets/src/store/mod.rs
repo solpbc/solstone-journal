@@ -19,6 +19,7 @@ mod recent_names;
 pub(crate) mod reference_scan;
 mod relationship_scans;
 mod repair;
+mod review_candidates;
 mod seeding;
 mod todos;
 mod write;
@@ -74,6 +75,9 @@ pub use relationship_scans::{
 pub use repair::{
     FacetEntityLinkRepairBranch, FacetEntityLinkRepairError, FacetEntityLinkRepairReport,
     FacetEntityLinkReport, repair_facet_entity_links, repair_facet_entity_links_journal_wide,
+};
+pub use review_candidates::{
+    FacetReviewCandidateError, accept_candidate, dismiss_candidate, facet_slug, load_candidates,
 };
 pub use seeding::{
     SeedEntitiesError, SeedEntityBaseOutcome, SeedEntityInput, SeedEntityItemResult,
