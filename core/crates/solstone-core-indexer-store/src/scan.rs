@@ -2307,15 +2307,44 @@ mod tests {
     }
 
     #[test]
-    fn light_mode_indexes_and_removes_historical_edge_sources_with_a_sibling() {
+    fn light_mode_indexes_historical_edge_sources() {
         let root = temp_root("light-historical-edges");
-        let removed = "20240101/default/090000_300/screen.jsonl";
-        let sibling = "20240101/default/090000_300/left_screen.jsonl";
-        write(&root, &format!("chronicle/{removed}"), r#"{"content":{}}"#);
-        write(&root, &format!("chronicle/{sibling}"), r#"{"content":{}}"#);
+        let first = "20240101/default/090000_300/screen.jsonl";
+        let second = "20240101/default/090000_300/left_screen.jsonl";
+        write(&root, &format!("chronicle/{first}"), r#"{"content":{}}"#);
+        write(&root, &format!("chronicle/{second}"), r#"{"content":{}}"#);
 
-        let first = scan_journal(&root, false).expect("light scan");
-        assert_eq!(first.edges_indexed, 2);
+        let report = scan_journal(&root, false).expect("light scan");
+        assert_eq!(report.edges_indexed, 2);
+        fs::remove_dir_all(root).expect("cleanup historical edges root");
+    }
+
+    #[test]
+    fn light_mode_removes_historical_edge_rows_with_a_sibling() {
+        let root = temp_root("light-historical-edge-removal");
+        let removed = "20240101/default/090000_300/talents/speaker_labels.json";
+        let sibling = "20240101/default/091000_300/talents/speaker_labels.json";
+        write(&root, &format!("chronicle/{removed}"), "{}");
+        write(&root, &format!("chronicle/{sibling}"), "{}");
+
+        let conn = open_index(&root).expect("open index");
+        for (rel, src, dst) in [(removed, "alice", "bob"), (sibling, "cora", "dan")] {
+            conn.execute(
+                "INSERT INTO edges(src, dst, kind, directed, source, path, weight) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                params![src, dst, "spoke-with", 0_i64, "speaker-labels", rel, 1_i64],
+            )
+            .expect("seed historical edge");
+            conn.execute(
+                "REPLACE INTO edge_files(path, mtime) VALUES (?, ?)",
+                params![
+                    rel,
+                    file_mtime_secs(&root.join(format!("chronicle/{rel}")))
+                        .expect("edge source mtime")
+                ],
+            )
+            .expect("seed historical edge mtime");
+        }
+        drop(conn);
         fs::remove_file(root.join(format!("chronicle/{removed}"))).expect("remove edge source");
 
         let report = scan_journal(&root, false).expect("light removal scan");
@@ -2323,7 +2352,21 @@ mod tests {
         let conn = Connection::open(db_path(&root)).expect("open db");
         assert_eq!(edge_file_mtime(&conn, removed), None);
         assert!(edge_file_mtime(&conn, sibling).is_some());
-        fs::remove_dir_all(root).expect("cleanup historical edges root");
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM edges WHERE path='20240101/default/090000_300/talents/speaker_labels.json'"
+            ),
+            0
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM edges WHERE path='20240101/default/091000_300/talents/speaker_labels.json'"
+            ),
+            1
+        );
+        fs::remove_dir_all(root).expect("cleanup historical edge removal root");
     }
 
     #[test]
@@ -2352,6 +2395,19 @@ mod tests {
                 "SELECT count(*) FROM files WHERE path='20240101/talents/keep.md'"
             ),
             1
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM chunks WHERE path='20240101/talents/old.md'"
+            ),
+            0
+        );
+        assert!(
+            count(
+                &conn,
+                "SELECT count(*) FROM chunks WHERE path='20240101/talents/keep.md'"
+            ) > 0
         );
         fs::remove_dir_all(root).expect("cleanup historical content root");
     }
