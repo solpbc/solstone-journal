@@ -8,11 +8,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
-use solstone_core_entity_matching::entity_slug;
+use solstone_core_entity_matching::{entity_slug, normalize_resolution_query};
 
 use crate::hold_facet_trust_lock;
 
 use super::error::FacetEntityWriteError;
+use super::facet_entities::list_scoped_facet_entities;
 use super::identity::read_facet_entity_link;
 use super::write::save_facet_entity_link;
 
@@ -25,7 +26,36 @@ pub struct FacetEntityMoveResult {
     pub merged: bool,
 }
 
-/// Move or merge a name-derived facet-memory directory without dropping files.
+/// Resolve a facet-scoped entity directory from a written name.
+///
+/// The relationship directory is a label, not an identity: a name can change
+/// after the link is written, and two names can compare equal while slugifying
+/// apart. Deriving the directory from the name alone therefore fails to find
+/// entities that exist, so the stored link identity is consulted first.
+///
+/// The derived form remains as a fallback because a facet directory can
+/// legitimately have no resolvable identity yet -- a restored backup arrives
+/// before the linking pass runs -- and that read compatibility is permanent.
+fn resolve_entity_dir(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_name: &str,
+) -> Result<String, FacetEntityWriteError> {
+    let wanted = normalize_resolution_query(entity_name);
+    for entity in list_scoped_facet_entities(journal_root, facet_dir, true, true)? {
+        let name = entity
+            .identity
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if normalize_resolution_query(name) == wanted {
+            return Ok(entity.relationship_dir);
+        }
+    }
+    Ok(entity_slug(entity_name))
+}
+
+/// Move or merge a facet-memory directory without dropping files.
 pub fn move_facet_entity(
     journal_root: &Path,
     entity_name: &str,
@@ -34,7 +64,7 @@ pub fn move_facet_entity(
     merge: bool,
 ) -> Result<FacetEntityMoveResult, FacetEntityWriteError> {
     let _trust = hold_facet_trust_lock(journal_root)?;
-    let entity_dir = entity_slug(entity_name);
+    let entity_dir = resolve_entity_dir(journal_root, from_facet, entity_name)?;
     let source = entity_root(journal_root, from_facet, &entity_dir)?;
     let destination = entity_root(journal_root, to_facet, &entity_dir)?;
     if !source.exists() {

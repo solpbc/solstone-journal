@@ -182,6 +182,13 @@ fn count_facet_relationships_and_observations(
                     counts.observation += 1;
                 }
             }
+            // The reference counts a directory whose NAME equals the entity id as
+            // an observation reference, additively with the field scan above.
+            // Under written identity that name is a label and the comparison is
+            // coincidental -- but the ownership signal it approximates is already
+            // carried correctly by the facet_relationship counter, which keys on
+            // the link's stored id. Reproduced as-is: diverging here changes a
+            // blocker count against the recorded corpus for no gain in safety.
             if entity_dir == entity_id {
                 counts.observation += 1;
             }

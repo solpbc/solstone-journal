@@ -4,6 +4,7 @@
 mod matcher;
 mod normalize;
 mod slug;
+mod slug_use_guard;
 
 pub use matcher::{
     EntityNameCandidate, EntityNameMatch, MatchTier, char_len, find_matching_entity,

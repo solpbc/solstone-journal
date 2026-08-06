@@ -85,3 +85,51 @@ fn move_merge_preserves_unresolved_source_entity_file() {
             .exists()
     );
 }
+
+#[test]
+fn move_resolves_a_relationship_directory_that_diverges_from_the_name() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "from");
+    create_test_facet(temporary.path(), "to");
+    // The entity answers to a name whose derived form is `renamed_person`, but
+    // its relationship directory still carries the label it was created under.
+    solstone_core_entity::save_entity_identity(
+        temporary.path(),
+        "legacy_label",
+        &json!({"id": "legacy_label", "name": "Renamed Person"}),
+        None,
+    )
+    .unwrap();
+    write_facet_relationship(
+        temporary.path(),
+        "from",
+        "legacy_label",
+        json!({"entity_id": "legacy_label", "description": "kept"}),
+    );
+    let observations = temporary
+        .path()
+        .join("facets/from/entities/legacy_label/observations.jsonl");
+    fs::write(&observations, b"{\"content\":\"noticed\"}\n").unwrap();
+
+    move_facet_entity(temporary.path(), "Renamed Person", "from", "to", false).unwrap();
+
+    assert_eq!(
+        relationship_value(temporary.path(), "to", "legacy_label")["description"],
+        "kept"
+    );
+    assert_eq!(
+        fs::read(
+            temporary
+                .path()
+                .join("facets/to/entities/legacy_label/observations.jsonl")
+        )
+        .unwrap(),
+        b"{\"content\":\"noticed\"}\n"
+    );
+    assert!(
+        !temporary
+            .path()
+            .join("facets/from/entities/legacy_label")
+            .exists()
+    );
+}
