@@ -1,0 +1,20 @@
+# The removal surface is closed to one door module, and the door does not exist
+# yet. Everything below is a floor rather than live dependency-graph enforcement:
+# the `tokio` namespace is absent from this crate's graph, and `libc` -- though
+# genuinely present transitively -- cannot be called at all, because the workspace
+# forbids `unsafe_code` unoverridably and the extern prelude lacks the crate.
+# `allow-invalid` is therefore required on the unresolvable entries and harmless
+# on the rest.
+disallowed-methods = [
+  { path = "std::fs::remove_file", reason = "removal belongs in the door module" },
+  { path = "std::fs::remove_dir", reason = "removal belongs in the door module" },
+  { path = "std::fs::remove_dir_all", reason = "removal belongs in the door module; use the contained primitive" },
+  { path = "std::fs::rename", reason = "renaming a segment belongs in the door module; use the contained primitive" },
+  { path = "tokio::fs::remove_file", reason = "floor", allow-invalid = true },
+  { path = "tokio::fs::remove_dir", reason = "floor", allow-invalid = true },
+  { path = "tokio::fs::remove_dir_all", reason = "floor", allow-invalid = true },
+  { path = "tokio::fs::rename", reason = "floor", allow-invalid = true },
+  { path = "libc::unlink", reason = "floor; forbid(unsafe_code) already makes this unwritable", allow-invalid = true },
+  { path = "libc::rename", reason = "floor; forbid(unsafe_code) already makes this unwritable", allow-invalid = true },
+  { path = "libc::rmdir", reason = "floor; forbid(unsafe_code) already makes this unwritable", allow-invalid = true },
+]

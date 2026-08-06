@@ -1759,6 +1759,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-retention"
+version = "1.0.22"
+dependencies = [
+ "serde",
+ "serde_json",
+ "solstone-core-journal-io",
+]
+
+[[package]]
 name = "solstone-core-segment"
 version = "1.0.22"
 dependencies = [
