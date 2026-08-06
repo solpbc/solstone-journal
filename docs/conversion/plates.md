@@ -345,7 +345,7 @@ Measured against hand-built segments, `eligible` meaning the owner's raw audio i
 
 **An image-only segment is releasable with no evidence, and with no sidecar at all.** `resolve_segment_gate` globs `audio.jsonl`, `*_audio.jsonl`, `screen.jsonl`, `*_screen.jsonl` (`retention.py:207-212`) while `is_raw_media` accepts all eight still-image formats (`:57`). The still-image handler writes its sidecar as `<stem>.jsonl` (`observe/depict.py:49`), which matches neither glob, so `has_audio_raw` and `has_video_raw` are both false, both incompleteness checks are skipped, and the verdict is `eligible` with `processed_at = None`. ⚠ The comment at `:216-218` claims `monitor_*_diff.png` diffs *"ride the whole-segment gate"* — true only when audio or video is **also** present. ✅ A predicate that resolves an expected handler **before** reading a record closes this by construction: no handler in the closed set means no obtainable proof, which must never release.
 
-**The raw-media policy has no runner.** `purge()` has no schedule entry, no maintenance routine and no timer; its only two callers are a CLI command and one HTTP route. So `retention.raw_media: "days"` and `"processed"` are owner-settable, rendered in the owner UI, and **never executed**. ⚠ The two doors also carry **opposite destructive defaults** — `--dry-run` defaults *false* on the CLI, *true* on the route — and the route requires `older_than_days >= 1`, so it cannot express the configured policy at all. A rebuild that ports the executor without a runner ports a feature that does not run.
+✅ **Resolved in W3a — historical finding:** **The raw-media policy has no runner.** `purge()` had no schedule entry, no maintenance routine and no timer; its only two callers were a CLI command and one HTTP route. So `retention.raw_media: "days"` and `"processed"` were owner-settable, rendered in the owner UI, and **never executed**. ⚠ The two doors also carried **opposite destructive defaults** — `--dry-run` defaulted *false* on the CLI, *true* on the route — and the route required `older_than_days >= 1`, so it could not express the configured policy at all. `purge()` is now removed; both doors call `mark()` against the configured policy and expose neither override nor dry-run mode.
 
 ### Retention marks; the owner approves
 
@@ -371,9 +371,9 @@ the set-aside directory is finished.
 
 ⚠ Retention imports `apps/backup/copy` and `think/offload.py` imports back out of retention, so deletion is coupled to backup. ✅ **No cycle** — `apps/backup/copy.py` is a leaf with two imports.
 
-⚠ **Two logs this plate writes and never prunes**: `health/retention.log` and `health/pruning-runs/{day}.jsonl`. The log-retention class list covers `chronicle/{day}/health/`, not the journal root's `health/`, so the subsystem that prunes logs does not prune its own. Both grow without bound.
+⚠ **Historical at ruling; partly superseded in W3a:** **Two logs this plate writes and never prunes**: `health/retention.log` and `health/pruning-runs/{day}.jsonl`. The log-retention class list covers `chronicle/{day}/health/`, not the journal root's `health/`, so the subsystem that prunes logs does not prune its own. `health/retention.log` no longer has a writer; `health/pruning-runs/{day}.jsonl` still grows from `raw_media_offload` audit records written by offload.
 
-⚠ **Two of this plate's writes bypass the journal write discipline** and pass the access lint by not importing the primitives it inspects: `_write_retention_log` uses a bare `open(path, "a")` (`retention.py:707-708`), as does `write_prune_audit` (`think/pruning_audit.py:55-56`).
+⚠ **Historical at ruling; partly superseded in W3a:** **Two of this plate's writes bypass the journal write discipline** and pass the access lint by not importing the primitives it inspects: `_write_retention_log` has been deleted; `write_prune_audit` still uses a bare `open(path, "a")` (`think/pruning_audit.py:55-56`).
 
 ⚠ **Two config keys are dead.** `retention.storage_warning_disk_percent` and `retention.storage_warning_raw_media_gb` are read (`retention.py:413`, `:439`) and written nowhere — no route, CLI, migration or UI. The owner cannot change either.
 

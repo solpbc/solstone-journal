@@ -35,7 +35,7 @@ Inventory of every non-test, non-scratch, non-atomic-tmp destructive removal (`s
 
 | file:line | target | trigger | path validation | audit log | dry-run | class | why |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `solstone/think/retention.py:578` | raw media files in gate-eligible segments | retention purge on eligible segments | `resolve_segment_gate()` plus retention-policy eligibility | per-segment `write_prune_audit()` record plus `_write_retention_log()` summary | yes | `✅` | reference template for this sweep |
+| `solstone/think/retention.py:578` | raw media files in gate-eligible segments | retention purge on eligible segments | `resolve_segment_gate()` plus retention-policy eligibility | per-segment `write_prune_audit()` record plus `_write_retention_log()` summary | yes | `✅` | historical reference template for this sweep (superseded — `purge()` removed in W3a; see `solstone/think/offload.py` for the current Python raw-media deletion reference) |
 
 ## think/offload
 
