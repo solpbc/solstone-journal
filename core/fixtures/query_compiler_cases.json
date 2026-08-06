@@ -477,6 +477,20 @@
       }
     },
     {
+      "case": "cjk_subrun",
+      "compiled": {
+        "day_from": null,
+        "day_to": null,
+        "expression": ""
+      },
+      "input": "日本語",
+      "temporal": {
+        "day_from": null,
+        "day_to": null,
+        "remaining_text": "日本語"
+      }
+    },
+    {
       "case": "cjk_kana",
       "compiled": {
         "day_from": null,
@@ -1093,6 +1107,8 @@
       }
     }
   ],
+  "generated_by": "scripts/query_compiler_corpus.py",
+  "reference_commit": "83cd9862b174e609f593cd58142be718b0faa0b0",
   "reference_instant": "2026-08-06T12:00:00",
   "reference_weekday": "Thursday",
   "tz": "UTC"

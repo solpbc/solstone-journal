@@ -101,6 +101,11 @@ CASES: list[tuple[str, str]] = [
     ("greek", "Αθήνα"),
     ("cyrillic", "Москва"),
     ("cjk_han", "会議"),
+    # ⚠ A sub-run of a longer CJK token. `unicode61` does not segment CJK, so a
+    # run of Han/Kana indexes as ONE token: this query cannot match text that
+    # merely contains it, whatever the query path does. Recorded so a
+    # replacement does not claim to have made it findable.
+    ("cjk_subrun", "日本語"),
     ("cjk_kana", "ミーティング"),
     ("hangul", "회의"),
     ("arabic", "اجتماع"),
@@ -178,6 +183,26 @@ def _run(case_id: str, text: str, reference: datetime) -> dict[str, Any]:
     }
 
 
+def _reference_commit() -> str:
+    """The tree these values were produced from.
+
+    ⚠ Load-bearing. Once the reference can no longer be executed, this file is
+    the only statement of what the query path meant, and a frozen record that
+    does not say what it was frozen from cannot be re-derived or audited.
+    """
+    import subprocess
+
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    )
+    if result.returncode != 0:
+        raise SystemExit("refusing to write a corpus that cannot name its reference tree")
+    return result.stdout.strip()
+
+
 def build() -> dict[str, Any]:
     reference = datetime.fromisoformat(REFERENCE_INSTANT)
     seen: set[str] = set()
@@ -191,6 +216,8 @@ def build() -> dict[str, Any]:
         "tz": "UTC",
         "reference_instant": REFERENCE_INSTANT,
         "reference_weekday": reference.strftime("%A"),
+        "reference_commit": _reference_commit(),
+        "generated_by": "scripts/query_compiler_corpus.py",
         "cases": cases,
     }
 
