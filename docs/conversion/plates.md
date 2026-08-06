@@ -379,7 +379,11 @@ the set-aside directory is finished.
 
 ⚠ **`retention.raw_media` accepts an arbitrary string.** The init-finalize route validates the day count and never checks the mode for membership, and `RetentionPolicy.is_eligible` (`:273-281`) reads an unknown mode as *keep* by falling off the end — it fails closed **by accident**, not by construction.
 
-## `P-web`
+## `P-web` — 🔴 SPLITS into `P-web-[app]`
+
+**Founder-ruled 2026-08-06: this plate breaks into a set of per-app plates**, `P-web-[app]`, worked through individually. ⏸ **The list of apps is a founder approval and has not been made yet** — ⛔ no `P-web-*` plate exists until it is.
+
+🆕 **The retention approval surface lives in the home app.** When retention has marked something for removal it populates there, with a minimal interface for the owner to choose. ⛔ That is the only owner-facing affordance for approving a removal.
 
 The journal web service — human interface, web apps, **and the API**.
 
