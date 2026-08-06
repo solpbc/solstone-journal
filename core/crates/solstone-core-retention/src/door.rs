@@ -22,10 +22,15 @@
 
 use std::path::Path;
 
-use solstone_core_journal_io::entry::{Removed, remove_file, sync_dir};
+use solstone_core_journal_io::entry::{Removed, remove_file, rename_within, sync_dir};
+use solstone_core_journal_io::paths::{DirEntryKind, list_dir_entries, path_lexists};
+use solstone_core_journal_io::removal::remove_dir_all;
+use solstone_core_journal_io::{AtomicWriteOptions, LockOptions, hold_lock, write_bytes_exclusive};
 
 use crate::eligibility::{Evidence, ProvenRaw};
-use crate::receipt::{NotRemoved, Outcome, RemovedPath, Target, TargetOutcome};
+use crate::receipt::{NotRemoved, Outcome, RemovedPath, RunHalt, Target, TargetOutcome};
+use crate::staging::staged_name;
+use crate::tombstone::{RemovalReason, TOMBSTONE_NAME, TombstoneBody, tombstone_bytes};
 
 /// How many files a run released on pre-record evidence rather than on a record.
 ///
@@ -150,6 +155,351 @@ fn owner_reason(error: &solstone_core_journal_io::errors::PathError) -> String {
             _ => "the file could not be removed; the journal was left unchanged".to_owned(),
         },
     }
+}
+
+/// Remove whole segments, leaving each holding only its tombstone.
+///
+/// ⛔ **Not all-or-nothing.** An owner deleting forty segments must not lose the
+/// thirty-nine that succeeded because the fortieth was unreadable, so each target
+/// is independent and a failure is a row on that target. `halted` means the run
+/// stopped before reaching every target, ⛔ never that one target failed.
+///
+/// ⛔ **This resolves nothing.** It receives targets the owner chose. There is no
+/// query anywhere in this crate from a source name to a set of segments, because
+/// there is no source-delete affordance to serve.
+///
+/// Duplicate targets are collapsed at entry: the second occurrence would meet the
+/// already-tombstoned guard and be reported as refused, telling an owner a segment
+/// they asked to delete was declined when in fact it was removed.
+pub fn remove_segments(
+    journal: &Path,
+    targets: &[Target],
+    deleted_at: &str,
+    reason: RemovalReason,
+    did: &str,
+) -> Outcome {
+    let mut outcome = Outcome {
+        targets: Vec::new(),
+        halted: None,
+    };
+    let mut seen: Vec<&Target> = Vec::new();
+    for target in targets {
+        if seen.contains(&target) {
+            continue;
+        }
+        seen.push(target);
+        outcome
+            .targets
+            .push(remove_one(journal, target, deleted_at, reason, did));
+    }
+    outcome
+}
+
+/// The parent directory of a segment, journal-relative.
+fn parent_rel(target: &Target) -> String {
+    format!("chronicle/{}/{}", target.day, target.stream)
+}
+
+fn segment_rel(target: &Target) -> String {
+    format!("{}/{}", parent_rel(target), target.dir)
+}
+
+fn refused(target: &Target, entry: String, reason: String) -> TargetOutcome {
+    TargetOutcome {
+        target: target.clone(),
+        removed: Vec::new(),
+        not_removed: vec![NotRemoved { entry, reason }],
+    }
+}
+
+fn remove_one(
+    journal: &Path,
+    target: &Target,
+    deleted_at: &str,
+    reason: RemovalReason,
+    did: &str,
+) -> TargetOutcome {
+    let live = segment_rel(target);
+    let staged = format!("{}/{}", parent_rel(target), staged_name(&target.dir));
+
+    // ⚠ A pre-lock existence filter, before step 0. Taking the lock creates the
+    // sidecar's parent directories, so locking a target whose day or stream
+    // directory does not exist would leave a phantom day in the chronicle behind a
+    // request that was then REFUSED. The authoritative checks still run under the
+    // lock below; this only avoids the side effect.
+    match path_lexists(&journal.join(&live)) {
+        Ok(true) => {}
+        Ok(false) => {
+            return refused(
+                target,
+                live,
+                "there is no such segment in your journal".to_owned(),
+            );
+        }
+        Err(error) => return refused(target, live, owner_reason(&error)),
+    }
+
+    // Step 0: the lock, keyed on the segment's DIRECTORY NAME.
+    //
+    // ⛔ Both the door and the recovery pass must derive it from the same string.
+    // The lock helper builds its sidecar from the path it is handed, so a door
+    // keyed on the live name and a recovery pass keyed on the staged name would
+    // take different sidecars and exclude nothing -- which is the one race this
+    // lock exists to prevent.
+    let _lock = match hold_lock(journal.join(&live), LockOptions::default()) {
+        Ok(lock) => lock,
+        Err(error) => {
+            return refused(
+                target,
+                live,
+                format!("another process is working on this segment ({error})"),
+            );
+        }
+    };
+
+    // Step 1: the guard, UNDER the lock.
+    //
+    // ⛔ Checking before locking lets two callers both pass and the second act on a
+    // verdict computed before the first ran -- by which time the segment is
+    // tombstone-only, so it would be staged again and step 4 would delete the
+    // owner's deletion record.
+    match path_lexists(&journal.join(&live).join(TOMBSTONE_NAME)) {
+        Ok(true) => {
+            return refused(
+                target,
+                live,
+                "this segment has already been removed".to_owned(),
+            );
+        }
+        Ok(false) => {}
+        Err(error) => return refused(target, live, owner_reason(&error)),
+    }
+    if !matches!(path_lexists(&journal.join(&live)), Ok(true)) {
+        return refused(
+            target,
+            live,
+            "there is no such segment in your journal".to_owned(),
+        );
+    }
+    // ⛔ Refuse rather than clobber: a rename onto an existing empty directory
+    // succeeds and destroys it.
+    if !matches!(path_lexists(&journal.join(&staged)), Ok(false)) {
+        return refused(
+            target,
+            staged,
+            "a previous removal of this segment did not finish; \
+             it needs looking at before this can be retried"
+                .to_owned(),
+        );
+    }
+
+    // Step 2: stage, then make the move durable.
+    if let Err(error) = rename_within(journal, &live, &staged) {
+        return refused(target, live, owner_reason(&error));
+    }
+    if let Err(error) = sync_dir(journal, &parent_rel(target)) {
+        return refused(target, staged, owner_reason(&error));
+    }
+
+    finish_staged(journal, target, &staged, deleted_at, reason, did)
+}
+
+/// Steps 3 to 6, from a staged directory. Shared with the recovery pass.
+fn finish_staged(
+    journal: &Path,
+    target: &Target,
+    staged: &str,
+    deleted_at: &str,
+    reason: RemovalReason,
+    did: &str,
+) -> TargetOutcome {
+    let live = segment_rel(target);
+
+    // Step 3: the manifest and the tombstone, written INTO the staged directory.
+    //
+    // ⚠ The manifest has to be captured here, before anything is removed: the
+    // tombstone is the only artifact that survives, so it is the only place a later
+    // pass can learn what went.
+    let entries = match list_dir_entries(&journal.join(staged)) {
+        Ok(entries) => entries,
+        Err(error) => return refused(target, staged.to_owned(), owner_reason(&error)),
+    };
+    let mut manifest = Vec::new();
+    let mut to_remove = Vec::new();
+    for entry in &entries {
+        let name = entry.name.to_string_lossy().into_owned();
+        if name == TOMBSTONE_NAME {
+            continue;
+        }
+        manifest.push(format!("{live}/{name}"));
+        to_remove.push((name, entry.kind));
+    }
+    manifest.sort();
+
+    let tombstone_path = journal.join(staged).join(TOMBSTONE_NAME);
+    if !matches!(path_lexists(&tombstone_path), Ok(true)) {
+        let body = TombstoneBody {
+            deleted_at: deleted_at.to_owned(),
+            did: did.to_owned(),
+            reason,
+            manifest: manifest.clone(),
+        };
+        let bytes = match tombstone_bytes(&body) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                return refused(
+                    target,
+                    staged.to_owned(),
+                    "the record of this removal could not be prepared".to_owned(),
+                );
+            }
+        };
+        if write_bytes_exclusive(&tombstone_path, &bytes, AtomicWriteOptions::default()).is_err() {
+            return refused(
+                target,
+                staged.to_owned(),
+                "the record of this removal could not be written".to_owned(),
+            );
+        }
+    }
+
+    // Step 4: empty the staged directory, keeping the tombstone.
+    //
+    // ⚠ Directories and files need different primitives; a file-only removal would
+    // fail on a `talents/` subdirectory and never reach the rest.
+    let mut failures = Vec::new();
+    for (name, kind) in &to_remove {
+        let rel = format!("{staged}/{name}");
+        let result = match kind {
+            DirEntryKind::Directory => remove_dir_all(journal, &rel).map(|()| Removed::Unlinked),
+            _ => remove_file(journal, &rel),
+        };
+        if let Err(error) = result {
+            failures.push(NotRemoved {
+                entry: format!("{live}/{name}"),
+                reason: owner_reason(&error),
+            });
+        }
+    }
+    if !failures.is_empty() {
+        // ⛔ Leave it staged and say where it went. Escalate rather than retry: the
+        // segment is not enumerable under its real name, so the reason is the only
+        // way anyone learns it is there.
+        failures.push(NotRemoved {
+            entry: staged.to_owned(),
+            reason: "this segment is part-way through removal and is set aside; \
+                     it is not listed with your other segments until it finishes"
+                .to_owned(),
+        });
+        return TargetOutcome {
+            target: target.clone(),
+            removed: Vec::new(),
+            not_removed: failures,
+        };
+    }
+    if let Err(error) = sync_dir(journal, staged) {
+        return refused(target, staged.to_owned(), owner_reason(&error));
+    }
+
+    // Step 5: restore, refusing a name something else has taken.
+    if !matches!(path_lexists(&journal.join(&live)), Ok(false)) {
+        return refused(
+            target,
+            staged.to_owned(),
+            "something new was written where this segment was, so it has been \
+             left set aside rather than overwritten"
+                .to_owned(),
+        );
+    }
+    if let Err(error) = rename_within(journal, staged, &live) {
+        return refused(target, staged.to_owned(), owner_reason(&error));
+    }
+    if let Err(error) = sync_dir(journal, &parent_rel(target)) {
+        return refused(target, live, owner_reason(&error));
+    }
+
+    // Step 6: mint, against the RESTORED path.
+    //
+    // ⛔ Not earlier. Staging makes every path under the live name absent the
+    // instant the rename lands, because the directory moved rather than because
+    // anything was removed -- so minting then would claim files nothing touched.
+    let mut removed = Vec::new();
+    let mut unverified = Vec::new();
+    for rel in &manifest {
+        match path_lexists(&journal.join(rel)) {
+            Ok(false) => removed.push(RemovedPath::confirmed(rel.clone())),
+            _ => unverified.push(NotRemoved {
+                entry: rel.clone(),
+                reason: "this could not be confirmed gone, so it is not being \
+                         reported as removed"
+                    .to_owned(),
+            }),
+        }
+    }
+    TargetOutcome {
+        target: target.clone(),
+        removed,
+        not_removed: unverified,
+    }
+}
+
+/// Finish removals a previous run left staged.
+///
+/// 🔴 Enumerates staged directories and **never inspects a live segment.** That is
+/// the whole contract: a live segment carries no evidence that a removal was ever
+/// requested, so a pass that acted on one would remove segments nobody asked about
+/// — including any segment where a *raw release* was merely interrupted, which by
+/// definition must keep its derived output.
+pub fn recover(journal: &Path, deleted_at: &str, reason: RemovalReason, did: &str) -> Outcome {
+    let mut outcome = Outcome {
+        targets: Vec::new(),
+        halted: None,
+    };
+    let chronicle = journal.join("chronicle");
+    let days = match list_dir_entries(&chronicle) {
+        Ok(days) => days,
+        Err(error) => {
+            outcome.halted = Some(RunHalt {
+                reason: owner_reason(&error),
+            });
+            return outcome;
+        }
+    };
+    for day in days.iter().filter(|d| d.kind == DirEntryKind::Directory) {
+        let day_name = day.name.to_string_lossy().into_owned();
+        let Ok(streams) = list_dir_entries(&day.path) else {
+            continue;
+        };
+        for stream in streams.iter().filter(|s| s.kind == DirEntryKind::Directory) {
+            let stream_name = stream.name.to_string_lossy().into_owned();
+            let Ok(entries) = list_dir_entries(&stream.path) else {
+                continue;
+            };
+            for entry in entries.iter().filter(|e| e.kind == DirEntryKind::Directory) {
+                let staged_dir = entry.name.to_string_lossy().into_owned();
+                // ⛔ A name alone is weak provenance, so the recovered original
+                // must be a name this crate could have staged.
+                let Some(original) = crate::staging::original_name(&staged_dir) else {
+                    continue;
+                };
+                let target = Target {
+                    day: day_name.clone(),
+                    stream: stream_name.clone(),
+                    dir: original.to_owned(),
+                };
+                let live = segment_rel(&target);
+                let staged = format!("{}/{}", parent_rel(&target), staged_dir);
+                // Same key as the door's, derived from the LIVE name.
+                let Ok(_lock) = hold_lock(journal.join(&live), LockOptions::default()) else {
+                    continue;
+                };
+                outcome.targets.push(finish_staged(
+                    journal, &target, &staged, deleted_at, reason, did,
+                ));
+            }
+        }
+    }
+    outcome
 }
 
 #[cfg(test)]
@@ -368,5 +718,347 @@ mod tests {
         let reason = &outcome.targets[0].not_removed[0].reason;
         assert!(!reason.contains(&bed.root.display().to_string()));
         assert!(reason.contains("folder"), "got {reason}");
+    }
+
+    // ---- remove_segments -------------------------------------------------
+
+    fn target(day: &str, stream: &str, dir: &str) -> Target {
+        Target {
+            day: day.to_owned(),
+            stream: stream.to_owned(),
+            dir: dir.to_owned(),
+        }
+    }
+
+    fn populated(bed: &Bed, dir: &str) -> PathBuf {
+        let segment = bed.segment("20260805", "field.audio", dir);
+        fs::write(segment.join("audio.flac"), b"raw").unwrap();
+        fs::write(segment.join("audio.jsonl"), b"{}").unwrap();
+        fs::write(segment.join("stream.json"), b"{}").unwrap();
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        fs::write(segment.join("talents/sense.json"), b"{}").unwrap();
+        segment
+    }
+
+    fn remove(bed: &Bed, targets: &[Target]) -> Outcome {
+        remove_segments(
+            &bed.root,
+            targets,
+            "2026-08-05T21:00:00Z",
+            RemovalReason::OwnerSegmentDelete,
+            "sha256:abc",
+        )
+    }
+
+    #[test]
+    fn a_removed_segment_holds_only_its_tombstone() {
+        let bed = Bed::new();
+        let segment = populated(&bed, "070000_17");
+        let outcome = remove(&bed, &[target("20260805", "field.audio", "070000_17")]);
+
+        assert!(outcome.halted.is_none());
+        assert!(outcome.targets[0].not_removed.is_empty());
+        assert_eq!(outcome.targets[0].removed.len(), 4, "four entries removed");
+
+        let names: Vec<String> = fs::read_dir(&segment)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec![TOMBSTONE_NAME.to_owned()]);
+    }
+
+    /// The tombstone names every path that went.
+    #[test]
+    fn the_tombstone_carries_the_manifest() {
+        let bed = Bed::new();
+        let segment = populated(&bed, "070000_17");
+        let setup = remove(&bed, &[target("20260805", "field.audio", "070000_17")]);
+        assert!(
+            setup.targets[0].not_removed.is_empty(),
+            "setup removal failed"
+        );
+        let json: serde_json::Value =
+            serde_json::from_slice(&fs::read(segment.join(TOMBSTONE_NAME)).unwrap()).unwrap();
+        let manifest: Vec<&str> = json["manifest"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(manifest.len(), 4);
+        assert!(manifest.iter().any(|p| p.ends_with("talents")));
+        assert!(
+            manifest
+                .iter()
+                .all(|p| p.starts_with("chronicle/20260805/"))
+        );
+    }
+
+    /// Two targets, the second missing: both reported, the first still removed.
+    #[test]
+    fn one_failing_target_does_not_abort_the_run() {
+        let bed = Bed::new();
+        populated(&bed, "070000_17");
+        bed.segment("20260805", "field.audio", "070100_17");
+        let outcome = remove(
+            &bed,
+            &[
+                target("20260805", "field.audio", "070000_17"),
+                target("20260805", "field.audio", "nosuch_99"),
+                target("20260805", "field.audio", "070100_17"),
+            ],
+        );
+        assert_eq!(outcome.targets.len(), 3);
+        assert!(!outcome.targets[0].removed.is_empty());
+        assert_eq!(outcome.targets[1].not_removed.len(), 1);
+        assert!(outcome.targets[2].not_removed.is_empty());
+        assert!(
+            outcome.halted.is_none(),
+            "a target failure is not a run halt"
+        );
+    }
+
+    #[test]
+    fn a_duplicate_target_is_collapsed_rather_than_reported_refused() {
+        let bed = Bed::new();
+        populated(&bed, "070000_17");
+        let t = target("20260805", "field.audio", "070000_17");
+        let outcome = remove(&bed, &[t.clone(), t]);
+        assert_eq!(outcome.targets.len(), 1, "collapsed at entry");
+        assert!(outcome.targets[0].not_removed.is_empty());
+    }
+
+    /// A second removal is refused, and the first tombstone is untouched.
+    #[test]
+    fn a_second_removal_is_refused_and_the_deletion_record_survives() {
+        let bed = Bed::new();
+        let segment = populated(&bed, "070000_17");
+        let t = target("20260805", "field.audio", "070000_17");
+        let setup = remove(&bed, std::slice::from_ref(&t));
+        assert!(
+            setup.targets[0].not_removed.is_empty(),
+            "setup removal failed"
+        );
+        let first = fs::read(segment.join(TOMBSTONE_NAME)).unwrap();
+
+        let second = remove(&bed, std::slice::from_ref(&t));
+        assert!(second.targets[0].removed.is_empty());
+        assert_eq!(second.targets[0].not_removed.len(), 1);
+        assert_eq!(
+            fs::read(segment.join(TOMBSTONE_NAME)).unwrap(),
+            first,
+            "the owner's deletion record must be byte-identical"
+        );
+    }
+
+    /// A refused request must not leave a phantom day behind.
+    ///
+    /// The lock helper creates its sidecar's parent directories, so locking before
+    /// filtering would create the day and stream for a target that does not exist.
+    #[test]
+    fn a_refused_request_creates_nothing() {
+        let bed = Bed::new();
+        let outcome = remove(&bed, &[target("20260806", "field.audio", "080000_1")]);
+        assert_eq!(outcome.targets[0].not_removed.len(), 1);
+        assert!(
+            !bed.root.join("chronicle/20260806").exists(),
+            "a refused request must not create a day directory"
+        );
+    }
+
+    #[test]
+    fn the_segment_is_not_listed_under_its_real_name_while_staged() {
+        let bed = Bed::new();
+        populated(&bed, "070000_17");
+        // After a completed removal the name is back, holding the tombstone.
+        let setup = remove(&bed, &[target("20260805", "field.audio", "070000_17")]);
+        assert!(
+            setup.targets[0].not_removed.is_empty(),
+            "setup removal failed"
+        );
+        let stream = bed.root.join("chronicle/20260805/field.audio");
+        let names: Vec<String> = fs::read_dir(&stream)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| !n.ends_with(".lock"))
+            .collect();
+        assert_eq!(names, vec!["070000_17".to_owned()], "no staged leftovers");
+    }
+
+    /// A directory name whose key differs from it round-trips exactly.
+    #[test]
+    fn a_suffixed_segment_name_is_restored_exactly() {
+        let bed = Bed::new();
+        populated(&bed, "093000_300_summary");
+        let outcome = remove(
+            &bed,
+            &[target("20260805", "field.audio", "093000_300_summary")],
+        );
+        assert!(outcome.targets[0].not_removed.is_empty());
+        assert!(
+            bed.root
+                .join("chronicle/20260805/field.audio/093000_300_summary")
+                .join(TOMBSTONE_NAME)
+                .exists(),
+            "the original directory name must come back, not the key"
+        );
+    }
+
+    // ---- recover ---------------------------------------------------------
+
+    fn recover_all(bed: &Bed) -> Outcome {
+        recover(
+            &bed.root,
+            "2026-08-05T22:00:00Z",
+            RemovalReason::OwnerSegmentDelete,
+            "sha256:abc",
+        )
+    }
+
+    /// 🔴 The negative twin, and the most important test here.
+    ///
+    /// A recovery pass must act only on positive evidence. Case (ii) is the one
+    /// that matters: an interrupted raw release leaves exactly what a
+    /// "nothing started" recovery row would act on, and acting on it would turn a
+    /// lifecycle release into a whole-segment deletion.
+    #[test]
+    fn recover_touches_nothing_without_a_staged_directory() {
+        let bed = Bed::new();
+        // (i) an ordinary untouched segment
+        let untouched = populated(&bed, "070000_17");
+        // (ii) a segment where a raw release was interrupted: raw gone, derived intact
+        let released = populated(&bed, "070100_17");
+        fs::remove_file(released.join("audio.flac")).unwrap();
+        // (iii) a completed removal
+        populated(&bed, "070200_17");
+        let setup = remove(&bed, &[target("20260805", "field.audio", "070200_17")]);
+        assert!(
+            setup.targets[0].not_removed.is_empty(),
+            "setup removal failed"
+        );
+        let completed = bed.root.join("chronicle/20260805/field.audio/070200_17");
+        let tombstone_before = fs::read(completed.join(TOMBSTONE_NAME)).unwrap();
+
+        let before: Vec<Vec<String>> = [&untouched, &released, &completed]
+            .iter()
+            .map(|dir| listing(dir))
+            .collect();
+
+        // (iv) a POSITIVE CONTROL in the same journal, so a pass that scanned
+        // nothing cannot satisfy this test.
+        populated(&bed, "070300_17");
+        let stream = bed.root.join("chronicle/20260805/field.audio");
+        fs::rename(stream.join("070300_17"), stream.join(".removing_070300_17")).unwrap();
+
+        let outcome = recover_all(&bed);
+
+        assert_eq!(
+            outcome.targets.len(),
+            1,
+            "exactly the staged segment was acted on"
+        );
+        assert_eq!(outcome.targets[0].target.dir, "070300_17");
+        assert!(outcome.targets[0].not_removed.is_empty());
+
+        let after: Vec<Vec<String>> = [&untouched, &released, &completed]
+            .iter()
+            .map(|dir| listing(dir))
+            .collect();
+        assert_eq!(before, after, "no live segment may be touched");
+        assert_eq!(
+            fs::read(completed.join(TOMBSTONE_NAME)).unwrap(),
+            tombstone_before
+        );
+    }
+
+    fn listing(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// A live segment holding a tombstone beside media is NOT a recovery trigger.
+    ///
+    /// Ordinary operation can produce that state, so a pass keyed on it would
+    /// re-stage and destroy newly captured media.
+    #[test]
+    fn a_tombstone_beside_media_is_not_a_recovery_trigger() {
+        let bed = Bed::new();
+        let segment = populated(&bed, "070000_17");
+        fs::write(segment.join(TOMBSTONE_NAME), b"{}").unwrap();
+        let before = listing(&segment);
+        let outcome = recover_all(&bed);
+        assert!(outcome.targets.is_empty());
+        assert_eq!(listing(&segment), before);
+    }
+
+    /// Recovery resumes from each interrupted staged state.
+    #[test]
+    fn recover_finishes_a_staged_directory_at_every_stage() {
+        // media present, no tombstone -> tombstone then empty then restore
+        let bed = Bed::new();
+        populated(&bed, "070000_17");
+        let stream = bed.root.join("chronicle/20260805/field.audio");
+        fs::rename(stream.join("070000_17"), stream.join(".removing_070000_17")).unwrap();
+        let outcome = recover_all(&bed);
+        assert_eq!(outcome.targets.len(), 1);
+        assert_eq!(listing(&stream.join("070000_17")), vec![TOMBSTONE_NAME]);
+
+        // only the tombstone -> restore
+        let bed = Bed::new();
+        let staged = bed.segment("20260805", "field.audio", ".removing_070100_17");
+        fs::write(staged.join(TOMBSTONE_NAME), b"{}").unwrap();
+        let outcome = recover_all(&bed);
+        assert_eq!(outcome.targets.len(), 1);
+        let stream = bed.root.join("chronicle/20260805/field.audio");
+        assert!(stream.join("070100_17").join(TOMBSTONE_NAME).exists());
+        assert!(!stream.join(".removing_070100_17").exists());
+
+        // empty staged -> tombstone then restore
+        let bed = Bed::new();
+        bed.segment("20260805", "field.audio", ".removing_070200_17");
+        let outcome = recover_all(&bed);
+        assert_eq!(outcome.targets.len(), 1);
+        let stream = bed.root.join("chronicle/20260805/field.audio");
+        assert!(stream.join("070200_17").join(TOMBSTONE_NAME).exists());
+    }
+
+    /// Recovery refuses a staged directory whose real name is occupied again.
+    #[test]
+    fn recover_refuses_when_the_live_name_was_taken() {
+        let bed = Bed::new();
+        let staged = bed.segment("20260805", "field.audio", ".removing_070000_17");
+        fs::write(staged.join(TOMBSTONE_NAME), b"{}").unwrap();
+        // Something new appeared at the original name.
+        let fresh = bed.segment("20260805", "field.audio", "070000_17");
+        fs::write(fresh.join("audio.flac"), b"new recording").unwrap();
+
+        let outcome = recover_all(&bed);
+        assert_eq!(outcome.targets.len(), 1);
+        assert!(outcome.targets[0].removed.is_empty());
+        assert_eq!(outcome.targets[0].not_removed.len(), 1);
+        assert_eq!(
+            fs::read(fresh.join("audio.flac")).unwrap(),
+            b"new recording",
+            "the new recording must survive untouched"
+        );
+        assert!(
+            staged.join(TOMBSTONE_NAME).exists(),
+            "the staged directory is left for inspection, not merged"
+        );
+    }
+
+    /// A directory this crate could not have staged is left alone.
+    #[test]
+    fn recover_ignores_a_directory_it_could_not_have_staged() {
+        let bed = Bed::new();
+        let stray = bed.segment("20260805", "field.audio", ".removing_");
+        fs::write(stray.join("something.flac"), b"not ours").unwrap();
+        let outcome = recover_all(&bed);
+        assert!(outcome.targets.is_empty());
+        assert!(stray.join("something.flac").exists());
     }
 }
