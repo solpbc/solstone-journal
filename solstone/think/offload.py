@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from solstone.think import retention_executor
 from solstone.think.backup.engine import (
     ArchiveCheckResult,
     BackupResult,
@@ -28,10 +29,12 @@ from solstone.think.backup.state import (
     record_offload_result,
 )
 from solstone.think.offload_ledger import OffloadFile, append_offload_event
-from solstone.think.offload_measurement import (
-    device_free_bytes,
-    measure_raw_media_usage,
+from solstone.think.offload_marks import (
+    OffloadMarkIndex,
+    load_offload_mark_index,
+    mark_index_from_receipt,
 )
+from solstone.think.offload_measurement import measure_raw_media_usage
 from solstone.think.pruning_audit import AuditOutcome, write_prune_audit
 from solstone.think.retention import get_raw_media_files, resolve_segment_gate
 from solstone.think.utils import day_dirs, get_journal, iter_segments
@@ -70,17 +73,19 @@ class OffloadSegmentDetail:
 class OffloadResult:
     status: str
     reason: str | None
-    files_offloaded: int
-    bytes_offloaded: int
-    ran_out_of_media: bool
+    files_marked: int
+    bytes_marked: int
+    files_already_marked: int
+    bytes_already_marked: int
+    ran_out_of_markable_media: bool
     dry_run: bool = False
     details: tuple[OffloadSegmentDetail, ...] = ()
 
 
 @dataclass
 class _Counters:
-    files_offloaded: int = 0
-    bytes_offloaded: int = 0
+    files_marked: int = 0
+    bytes_marked: int = 0
     details: list[OffloadSegmentDetail] = field(default_factory=list)
 
 
@@ -103,7 +108,9 @@ def run_offload(dry_run: bool = False) -> OffloadResult:
             "unexpected_error",
             dry_run=dry_run,
             counters=counters,
-            ran_out_of_media=False,
+            files_already_marked=0,
+            bytes_already_marked=0,
+            ran_out_of_markable_media=False,
         )
 
 
@@ -114,9 +121,11 @@ def _run_offload(*, dry_run: bool, counters: _Counters) -> OffloadResult:
         return OffloadResult(
             status="skipped",
             reason=None,
-            files_offloaded=0,
-            bytes_offloaded=0,
-            ran_out_of_media=False,
+            files_marked=0,
+            bytes_marked=0,
+            files_already_marked=0,
+            bytes_already_marked=0,
+            ran_out_of_markable_media=False,
             dry_run=dry_run,
         )
 
@@ -131,29 +140,32 @@ def _run_offload(*, dry_run: bool, counters: _Counters) -> OffloadResult:
             precondition_reason,
             dry_run=dry_run,
             counters=counters,
-            ran_out_of_media=False,
+            files_already_marked=0,
+            bytes_already_marked=0,
+            ran_out_of_markable_media=False,
         )
 
+    journal_path = Path(get_journal())
+    mark_index = load_offload_mark_index(str(journal_path))
+    bytes_already_marked = mark_index.total_bytes
+    files_already_marked = mark_index.total_files
     usage = measure_raw_media_usage()
     start_raw_bytes = usage.total_bytes
-    start_free_bytes = device_free_bytes()
     budget_bytes = offload_config.get("budget_bytes")
-    floor_bytes = offload_config.get("floor_bytes")
 
-    if _bounds_satisfied(
+    if _budget_satisfied(
         start_raw_bytes=start_raw_bytes,
-        start_free_bytes=start_free_bytes,
-        freed_bytes=0,
+        freed_bytes=bytes_already_marked,
         budget_bytes=budget_bytes,
-        floor_bytes=floor_bytes,
     ):
         return _ok_result(
             dry_run=dry_run,
             counters=counters,
-            ran_out_of_media=False,
+            files_already_marked=files_already_marked,
+            bytes_already_marked=bytes_already_marked,
+            ran_out_of_markable_media=False,
         )
 
-    journal_path = Path(get_journal())
     for day in sorted(day_dirs().keys()):
         for stream, segment, segment_path in iter_segments(day):
             raw_files = sorted(
@@ -167,6 +179,9 @@ def _run_offload(*, dry_run: bool, counters: _Counters) -> OffloadResult:
                 continue
             if gate.verdict != "eligible":
                 raise RuntimeError(f"unexpected retention gate verdict: {gate.verdict}")
+            raw_names = tuple(path.name for path in raw_files)
+            if mark_index.matches(day, stream, segment, raw_names) is not None:
+                continue
 
             if dry_run:
                 segment_files, segment_bytes = _stat_raw_files(raw_files)
@@ -182,7 +197,7 @@ def _run_offload(*, dry_run: bool, counters: _Counters) -> OffloadResult:
                     )
                 )
             else:
-                stall = _offload_segment(
+                stall, mark_index = _offload_segment(
                     journal_path=journal_path,
                     day=day,
                     stream=stream,
@@ -190,27 +205,33 @@ def _run_offload(*, dry_run: bool, counters: _Counters) -> OffloadResult:
                     raw_files=raw_files,
                     completion_files=gate.completion_files,
                     counters=counters,
+                    mark_index=mark_index,
+                    files_already_marked=files_already_marked,
+                    bytes_already_marked=bytes_already_marked,
                 )
                 if stall is not None:
                     return stall
 
-            if _bounds_satisfied(
+            if _budget_satisfied(
                 start_raw_bytes=start_raw_bytes,
-                start_free_bytes=start_free_bytes,
-                freed_bytes=_effective_freed_bytes(counters, dry_run=dry_run),
+                freed_bytes=bytes_already_marked
+                + _effective_marked_bytes(counters, dry_run=dry_run),
                 budget_bytes=budget_bytes,
-                floor_bytes=floor_bytes,
             ):
                 return _ok_result(
                     dry_run=dry_run,
                     counters=counters,
-                    ran_out_of_media=False,
+                    files_already_marked=files_already_marked,
+                    bytes_already_marked=bytes_already_marked,
+                    ran_out_of_markable_media=False,
                 )
 
     return _ok_result(
         dry_run=dry_run,
         counters=counters,
-        ran_out_of_media=True,
+        files_already_marked=files_already_marked,
+        bytes_already_marked=bytes_already_marked,
+        ran_out_of_markable_media=True,
     )
 
 
@@ -263,7 +284,10 @@ def _offload_segment(
     raw_files: list[Path],
     completion_files: list[Path],
     counters: _Counters,
-) -> OffloadResult | None:
+    mark_index: OffloadMarkIndex,
+    files_already_marked: int,
+    bytes_already_marked: int,
+) -> tuple[OffloadResult | None, OffloadMarkIndex]:
     prepared = _prepare_raw_files(raw_files)
 
     archive = run_archive_backup([file.path for file in prepared])
@@ -273,8 +297,10 @@ def _offload_segment(
             stall_reason,
             dry_run=False,
             counters=counters,
-            ran_out_of_media=False,
-        )
+            files_already_marked=files_already_marked,
+            bytes_already_marked=bytes_already_marked,
+            ran_out_of_markable_media=False,
+        ), mark_index
 
     snapshot_id = archive.snapshot_id
     if not isinstance(snapshot_id, str) or not snapshot_id:
@@ -282,8 +308,10 @@ def _offload_segment(
             "archive_failed",
             dry_run=False,
             counters=counters,
-            ran_out_of_media=False,
-        )
+            files_already_marked=files_already_marked,
+            bytes_already_marked=bytes_already_marked,
+            ran_out_of_markable_media=False,
+        ), mark_index
 
     confirm = check_archive_snapshot_files(
         snapshot_id,
@@ -295,8 +323,10 @@ def _offload_segment(
             stall_reason,
             dry_run=False,
             counters=counters,
-            ran_out_of_media=False,
-        )
+            files_already_marked=files_already_marked,
+            bytes_already_marked=bytes_already_marked,
+            ran_out_of_markable_media=False,
+        ), mark_index
 
     append_offload_event(
         day=day,
@@ -306,14 +336,20 @@ def _offload_segment(
         files=[file.ledger_file for file in prepared],
     )
 
-    segment_bytes = 0
-    segment_files = 0
-    for file in prepared:
-        file.path.unlink()
-        counters.files_offloaded += 1
-        counters.bytes_offloaded += file.ledger_file.bytes
-        segment_files += 1
-        segment_bytes += file.ledger_file.bytes
+    segment_files = len(prepared)
+    segment_bytes = sum(file.ledger_file.bytes for file in prepared)
+    receipt = retention_executor.mark_offload(
+        journal=str(journal_path),
+        day=day,
+        segment_dir=segment,
+        files=[file.ledger_file.name for file in prepared],
+        reason=f"restic-snapshot:{snapshot_id}",
+        now=retention_executor.now_stamp(),
+        stream=stream,
+    )
+    mark_index = mark_index_from_receipt(receipt)
+    counters.files_marked += segment_files
+    counters.bytes_marked += segment_bytes
 
     counters.details.append(
         OffloadSegmentDetail(
@@ -341,7 +377,7 @@ def _offload_segment(
             stream,
             segment,
         )
-    return None
+    return None, mark_index
 
 
 def _archive_stall_reason(result: BackupResult) -> str | None:
@@ -401,25 +437,21 @@ def _stat_raw_files(raw_files: list[Path]) -> tuple[int, int]:
     return files, bytes_total
 
 
-def _bounds_satisfied(
-    *,
-    start_raw_bytes: int,
-    start_free_bytes: int,
-    freed_bytes: int,
-    budget_bytes: Any,
-    floor_bytes: Any,
+def _budget_satisfied(
+    *, start_raw_bytes: int, freed_bytes: int, budget_bytes: Any
 ) -> bool:
+    # Marking preserves files on disk, so a free-space floor can never improve
+    # during this pass. Gating on it would force a full journal walk whenever a
+    # journal begins below that floor.
     if type(budget_bytes) is int and start_raw_bytes - freed_bytes > budget_bytes:
-        return False
-    if type(floor_bytes) is int and start_free_bytes + freed_bytes < floor_bytes:
         return False
     return True
 
 
-def _effective_freed_bytes(counters: _Counters, *, dry_run: bool) -> int:
+def _effective_marked_bytes(counters: _Counters, *, dry_run: bool) -> int:
     if dry_run:
         return sum(detail.bytes for detail in counters.details)
-    return counters.bytes_offloaded
+    return counters.bytes_marked
 
 
 def _stalled_result(
@@ -427,16 +459,20 @@ def _stalled_result(
     *,
     dry_run: bool,
     counters: _Counters,
-    ran_out_of_media: bool,
+    files_already_marked: int,
+    bytes_already_marked: int,
+    ran_out_of_markable_media: bool,
 ) -> OffloadResult:
     if reason not in OFFLOAD_STALL_REASONS:
         raise AssertionError(f"unknown media offload stall reason: {reason}")
     result = OffloadResult(
         status="stalled",
         reason=reason,
-        files_offloaded=counters.files_offloaded,
-        bytes_offloaded=counters.bytes_offloaded,
-        ran_out_of_media=ran_out_of_media,
+        files_marked=counters.files_marked,
+        bytes_marked=counters.bytes_marked,
+        files_already_marked=files_already_marked,
+        bytes_already_marked=bytes_already_marked,
+        ran_out_of_markable_media=ran_out_of_markable_media,
         dry_run=dry_run,
         details=tuple(counters.details),
     )
@@ -445,9 +481,9 @@ def _stalled_result(
             status="stalled",
             time=int(time.time()),
             reason=reason,
-            files_offloaded=counters.files_offloaded,
-            bytes_offloaded=counters.bytes_offloaded,
-            ran_out_of_media=ran_out_of_media,
+            files_marked=counters.files_marked,
+            bytes_marked=counters.bytes_marked,
+            ran_out_of_markable_media=ran_out_of_markable_media,
         )
     return result
 
@@ -456,14 +492,18 @@ def _ok_result(
     *,
     dry_run: bool,
     counters: _Counters,
-    ran_out_of_media: bool,
+    files_already_marked: int,
+    bytes_already_marked: int,
+    ran_out_of_markable_media: bool,
 ) -> OffloadResult:
     result = OffloadResult(
         status="ok",
         reason=None,
-        files_offloaded=counters.files_offloaded,
-        bytes_offloaded=counters.bytes_offloaded,
-        ran_out_of_media=ran_out_of_media,
+        files_marked=counters.files_marked,
+        bytes_marked=counters.bytes_marked,
+        files_already_marked=files_already_marked,
+        bytes_already_marked=bytes_already_marked,
+        ran_out_of_markable_media=ran_out_of_markable_media,
         dry_run=dry_run,
         details=tuple(counters.details),
     )
@@ -472,9 +512,9 @@ def _ok_result(
             status="ok",
             time=int(time.time()),
             reason=None,
-            files_offloaded=counters.files_offloaded,
-            bytes_offloaded=counters.bytes_offloaded,
-            ran_out_of_media=ran_out_of_media,
+            files_marked=counters.files_marked,
+            bytes_marked=counters.bytes_marked,
+            ran_out_of_markable_media=ran_out_of_markable_media,
         )
     return result
 
@@ -497,7 +537,7 @@ def _write_segment_offload_audit(
     stream: str,
     segment: str,
     files: list[dict[str, Any]],
-    bytes_freed: int,
+    bytes_marked: int,
     processed_at: str | None,
 ) -> AuditOutcome:
     run_record = {
@@ -509,12 +549,13 @@ def _write_segment_offload_audit(
         "stream": stream,
         "segment": segment,
         "files": files,
-        "bytes_freed": bytes_freed,
+        "bytes_marked": bytes_marked,
         "processed_at": processed_at,
     }
     message = (
-        f"raw-media offload: pruned {len(files)} raw media file(s) "
-        f"({bytes_freed} bytes) from segment {stream}/{segment}"
+        f"raw-media offload: archived and marked {len(files)} raw media file(s) "
+        f"({bytes_marked} bytes) for release from segment {stream}/{segment}, "
+        "pending owner-approved release"
     )
     return write_prune_audit(
         journal_path,

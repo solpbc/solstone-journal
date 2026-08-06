@@ -66,9 +66,9 @@ BACKUP_DEFAULTS: dict[str, Any] = {
         "status": None,
         "reason": None,
         "last_ok_time": None,
-        "files_offloaded": 0,
-        "bytes_offloaded": 0,
-        "ran_out_of_media": False,
+        "files_marked": 0,
+        "bytes_marked": 0,
+        "ran_out_of_markable_media": False,
     },
     "last_verification": {
         "time": None,
@@ -359,9 +359,9 @@ def record_offload_result(
     status: str,
     time: int | None,
     reason: str | None = None,
-    files_offloaded: int,
-    bytes_offloaded: int,
-    ran_out_of_media: bool,
+    files_marked: int,
+    bytes_marked: int,
+    ran_out_of_markable_media: bool,
 ) -> None:
     """Record the last media-offload run.
 
@@ -383,9 +383,9 @@ def record_offload_result(
             "status": status,
             "reason": reason,
             "last_ok_time": last_ok_time,
-            "files_offloaded": files_offloaded,
-            "bytes_offloaded": bytes_offloaded,
-            "ran_out_of_media": ran_out_of_media,
+            "files_marked": files_marked,
+            "bytes_marked": bytes_marked,
+            "ran_out_of_markable_media": ran_out_of_markable_media,
         }
         changed = backup.get("last_offload") != next_result
         backup["last_offload"] = next_result

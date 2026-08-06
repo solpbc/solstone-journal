@@ -29,6 +29,15 @@ GB = 1_000_000_000
 def _use_journal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
     think_utils._journal_path_cache = None
+    empty_marks = {"ok": True, "verb": "marks", "marks": {"version": 1, "marks": {}}}
+    monkeypatch.setattr(
+        offload.retention_executor, "marks", Mock(return_value=empty_marks)
+    )
+    monkeypatch.setattr(
+        offload.retention_executor,
+        "mark_offload",
+        Mock(return_value=empty_marks),
+    )
     return tmp_path
 
 
@@ -369,7 +378,7 @@ def test_verification_gate_uses_last_success_freshness_and_integrity_precedence(
     assert request.called is request_expected
 
 
-def test_dry_run_selects_without_hashing_or_side_effects(
+def test_dry_run_excludes_marked_segments_without_hashing_or_side_effects(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -377,6 +386,40 @@ def test_dry_run_selects_without_hashing_or_side_effects(
     now = 1_800_000_000
     _write_config(journal, _ready_config(now=now, budget_bytes=1))
     raw_path = _make_segment(journal, content=b"abcdef").joinpath("audio.wav")
+    _make_segment(journal, segment="120100_300", content=b"new-media").joinpath(
+        "audio.wav"
+    )
+    monkeypatch.setattr(
+        offload.retention_executor,
+        "marks",
+        Mock(
+            return_value={
+                "ok": True,
+                "verb": "marks",
+                "marks": {
+                    "version": 1,
+                    "marks": {
+                        "marked": {
+                            "id": "marked",
+                            "class": "offload_raw_release",
+                            "target": {
+                                "day": "20260101",
+                                "stream": "default",
+                                "dir": "120000_300",
+                            },
+                            "marked_at": "2026-01-01T00:00:00Z",
+                            "proposal": {
+                                "bytes": 6,
+                                "reason": "restic-snapshot:archive-1",
+                                "names": ["audio.wav"],
+                            },
+                            "state": "marked",
+                        }
+                    },
+                },
+            }
+        ),
+    )
     before_config = _config_path(journal).read_bytes()
     archive = Mock()
     confirm = Mock()
@@ -394,15 +437,15 @@ def test_dry_run_selects_without_hashing_or_side_effects(
 
     assert result.status == "ok"
     assert result.dry_run is True
-    assert result.files_offloaded == 0
-    assert result.bytes_offloaded == 0
+    assert result.files_marked == 0
+    assert result.bytes_marked == 0
     assert result.details == (
         offload.OffloadSegmentDetail(
             day="20260101",
             stream="default",
-            segment="120000_300",
+            segment="120100_300",
             files=1,
-            bytes=6,
+            bytes=9,
         ),
     )
     archive.assert_not_called()
@@ -451,7 +494,7 @@ def test_sparse_dry_run_measurement_uses_real_fixture_sizes(
     archive.assert_not_called()
 
 
-def test_success_appends_ledger_before_unlink_and_reuses_digest_for_audit(
+def test_success_appends_ledger_before_marking_and_reuses_digest_for_audit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -465,31 +508,43 @@ def test_success_appends_ledger_before_unlink_and_reuses_digest_for_audit(
     events: list[tuple[str, str]] = []
     archive_calls, confirm_calls = _install_successful_archive(monkeypatch)
     real_append_jsonl = offload_ledger.append_jsonl
-    real_unlink = Path.unlink
 
     def recording_append_jsonl(path: Path, record: Any) -> None:
         events.append(("ledger_append", record["segment"]))
         real_append_jsonl(path, record)
 
-    def recording_unlink(path: Path, *args: Any, **kwargs: Any) -> None:
-        if path == raw_path:
-            events.append(("unlink", path.name))
-        real_unlink(path, *args, **kwargs)
+    mark_offload = Mock(
+        return_value={
+            "ok": True,
+            "verb": "mark-offload",
+            "marks": {"version": 1, "marks": {}},
+        }
+    )
+
+    def recording_mark_offload(**kwargs: Any) -> dict[str, Any]:
+        events.append(("mark", kwargs["segment_dir"]))
+        return mark_offload(**kwargs)
 
     monkeypatch.setattr(offload_ledger, "append_jsonl", recording_append_jsonl)
-    monkeypatch.setattr(Path, "unlink", recording_unlink)
+    monkeypatch.setattr(
+        offload.retention_executor, "mark_offload", recording_mark_offload
+    )
 
     result = offload.run_offload()
 
     assert result.status == "ok"
-    assert result.files_offloaded == 1
-    assert result.bytes_offloaded == len(content)
+    assert result.files_marked == 1
+    assert result.bytes_marked == len(content)
     assert archive_calls == [(raw_path,)]
     assert confirm_calls == [{raw_path: len(content)}]
     assert events.index(("ledger_append", "120000_300")) < events.index(
-        ("unlink", "audio.wav")
+        ("mark", "120000_300")
     )
-    assert not raw_path.exists()
+    mark_offload.assert_called_once()
+    assert mark_offload.call_args.kwargs["reason"] == "restic-snapshot:archive-1"
+    assert mark_offload.call_args.kwargs["files"] == ["audio.wav"]
+    offload.retention_executor.marks.assert_called_once_with(str(journal))
+    assert raw_path.exists()
     assert (seg_path / "audio.jsonl").exists()
     assert (seg_path / "notes.jsonl").exists()
     assert (seg_path / "talents" / "keep.json").exists()
@@ -502,6 +557,7 @@ def test_success_appends_ledger_before_unlink_and_reuses_digest_for_audit(
     assert audit_records[0]["files"] == [
         {"name": "audio.wav", "bytes": len(content), "hash": expected_digest}
     ]
+    assert audit_records[0]["bytes_marked"] == len(content)
     assert summary.files[0].sha256 == audit_records[0]["files"][0]["hash"]
 
 
@@ -526,7 +582,7 @@ def test_success_appends_ledger_before_unlink_and_reuses_digest_for_audit(
         ),
     ],
 )
-def test_archive_failure_mapping_halts_before_confirm_or_delete(
+def test_archive_failure_mapping_halts_before_confirm_or_marking(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     archive_result: engine.BackupResult,
@@ -546,7 +602,10 @@ def test_archive_failure_mapping_halts_before_confirm_or_delete(
 
     assert result.status == "stalled"
     assert result.reason == expected_reason
+    assert result.files_marked == 0
+    assert result.bytes_marked == 0
     confirm.assert_not_called()
+    offload.retention_executor.mark_offload.assert_not_called()
     _assert_no_offload_side_effects(journal, raw_path)
 
 
@@ -559,7 +618,7 @@ def test_archive_failure_mapping_halts_before_confirm_or_delete(
         ("unconfirmed", "confirm_failed"),
     ],
 )
-def test_confirm_failure_mapping_halts_before_ledger_or_delete(
+def test_confirm_failure_mapping_halts_before_ledger_or_marking(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     confirm_case: str,
@@ -624,6 +683,9 @@ def test_confirm_failure_mapping_halts_before_ledger_or_delete(
 
     assert result.status == "stalled"
     assert result.reason == expected_reason
+    assert result.files_marked == 0
+    assert result.bytes_marked == 0
+    offload.retention_executor.mark_offload.assert_not_called()
     _assert_no_offload_side_effects(journal, raw_path)
 
 
@@ -644,9 +706,9 @@ def test_partial_progress_stall_records_honest_counters_and_halts(
                 "status": "ok",
                 "reason": None,
                 "last_ok_time": prior_last_ok_time,
-                "files_offloaded": 2,
-                "bytes_offloaded": 10,
-                "ran_out_of_media": False,
+                "files_marked": 2,
+                "bytes_marked": 10,
+                "ran_out_of_markable_media": False,
             },
         ),
     )
@@ -684,25 +746,25 @@ def test_partial_progress_stall_records_honest_counters_and_halts(
 
     assert result.status == "stalled"
     assert result.reason == "archive_failed"
-    assert result.files_offloaded == 1
-    assert result.bytes_offloaded == len(b"first")
+    assert result.files_marked == 1
+    assert result.bytes_marked == len(b"first")
     assert archive_calls == [(first,), (second,)]
-    assert not first.exists()
+    assert first.exists()
     assert second.exists()
     assert third.exists()
     last_offload = _read_config(journal)["backup"]["last_offload"]
-    assert last_offload["files_offloaded"] == 1
-    assert last_offload["bytes_offloaded"] == len(b"first")
+    assert last_offload["files_marked"] == 1
+    assert last_offload["bytes_marked"] == len(b"first")
     assert last_offload["last_ok_time"] == prior_last_ok_time
 
 
-def test_loop_stops_after_bounds_met_using_start_measurement_minus_freed_bytes(
+def test_loop_stops_after_budget_met_using_already_and_newly_marked_bytes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     journal = _use_journal(tmp_path, monkeypatch)
     now = 1_800_000_000
-    _write_config(journal, _ready_config(now=now, budget_bytes=7))
+    _write_config(journal, _ready_config(now=now, budget_bytes=6))
     first = _make_segment(journal, segment="090000_300", content=b"first").joinpath(
         "audio.wav"
     )
@@ -710,17 +772,50 @@ def test_loop_stops_after_bounds_met_using_start_measurement_minus_freed_bytes(
         "audio.wav"
     )
     archive_calls, _confirm_calls = _install_successful_archive(monkeypatch)
+    monkeypatch.setattr(
+        offload.retention_executor,
+        "marks",
+        Mock(
+            return_value={
+                "ok": True,
+                "verb": "marks",
+                "marks": {
+                    "version": 1,
+                    "marks": {
+                        "prior": {
+                            "id": "prior",
+                            "class": "offload_raw_release",
+                            "target": {
+                                "day": "20251231",
+                                "stream": "default",
+                                "dir": "090000_300",
+                            },
+                            "marked_at": "2025-12-31T00:00:00Z",
+                            "proposal": {
+                                "bytes": 2,
+                                "reason": "restic-snapshot:prior",
+                                "names": ["audio.wav"],
+                            },
+                            "state": "marked",
+                        }
+                    },
+                },
+            }
+        ),
+    )
 
     result = offload.run_offload()
 
     assert result.status == "ok"
-    assert result.ran_out_of_media is False
+    assert result.ran_out_of_markable_media is False
+    assert result.bytes_already_marked == 2
+    assert result.bytes_marked == len(b"first")
     assert archive_calls == [(first,)]
-    assert not first.exists()
+    assert first.exists()
     assert second.exists()
 
 
-def test_ledger_event_with_media_present_is_selected_and_summary_supersedes_old_event(
+def test_segment_matching_an_existing_mark_is_skipped_before_archiving(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -728,28 +823,48 @@ def test_ledger_event_with_media_present_is_selected_and_summary_supersedes_old_
     now = 1_800_000_000
     _write_config(journal, _ready_config(now=now, budget_bytes=1))
     raw_path = _make_segment(journal, content=b"new-content").joinpath("audio.wav")
-    append_offload_event(
-        day="20260101",
-        stream="default",
-        segment="120000_300",
-        snapshot_id="old-snapshot",
-        files=[
-            OffloadFile(
-                name="audio.wav",
-                bytes=999,
-                sha256="a" * 64,
-            )
-        ],
+    _make_segment(journal, segment="120100_300", content=b"incomplete", complete=False)
+    archive = Mock()
+    monkeypatch.setattr(offload, "run_archive_backup", archive)
+    monkeypatch.setattr(
+        offload.retention_executor,
+        "marks",
+        Mock(
+            return_value={
+                "ok": True,
+                "verb": "marks",
+                "marks": {
+                    "version": 1,
+                    "marks": {
+                        "marked": {
+                            "id": "marked",
+                            "class": "offload_raw_release",
+                            "target": {
+                                "day": "20260101",
+                                "stream": "default",
+                                "dir": "120000_300",
+                            },
+                            "marked_at": "2026-01-01T00:00:00Z",
+                            "proposal": {
+                                "bytes": len(b"new-content"),
+                                "reason": "restic-snapshot:archive-1",
+                                "names": ["audio.wav"],
+                            },
+                            "state": "marked",
+                        }
+                    },
+                },
+            }
+        ),
     )
-    archive_calls, _confirm_calls = _install_successful_archive(monkeypatch)
 
     result = offload.run_offload()
 
     assert result.status == "ok"
-    assert archive_calls == [(raw_path,)]
-    summary = summarize_segment("20260101", "default", "120000_300")
-    assert summary.offloaded_file_count == 1
-    assert summary.offloaded_bytes == len(b"new-content")
+    assert result.ran_out_of_markable_media is True
+    archive.assert_not_called()
+    offload.retention_executor.mark_offload.assert_not_called()
+    assert raw_path.exists()
 
 
 def test_ledger_event_with_media_absent_is_skipped_without_reading_summary(
@@ -816,11 +931,14 @@ def test_gate_blocks_incomplete_and_failed_segments_without_archiving(
     result = offload.run_offload()
 
     assert result.status == "ok"
-    assert result.ran_out_of_media is True
+    assert result.ran_out_of_markable_media is True
     archive.assert_not_called()
     assert incomplete.exists()
     assert failed.exists()
-    assert _read_config(journal)["backup"]["last_offload"]["ran_out_of_media"] is True
+    assert (
+        _read_config(journal)["backup"]["last_offload"]["ran_out_of_markable_media"]
+        is True
+    )
 
 
 def test_unexpected_exception_records_unexpected_error(
@@ -845,6 +963,35 @@ def test_unexpected_exception_records_unexpected_error(
         "unexpected_error"
     )
     assert raw_path.exists()
+
+
+def test_mark_failure_records_ledger_without_marking(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal = _use_journal(tmp_path, monkeypatch)
+    now = 1_800_000_000
+    _write_config(journal, _ready_config(now=now, budget_bytes=1))
+    raw_path = _make_segment(journal, content=b"abcdef").joinpath("audio.wav")
+    _install_successful_archive(monkeypatch)
+    mark_offload = Mock(
+        side_effect=offload.retention_executor.ExecutorUnavailable("boom")
+    )
+    monkeypatch.setattr(offload.retention_executor, "mark_offload", mark_offload)
+
+    result = offload.run_offload()
+
+    assert result.status == "stalled"
+    assert result.reason == "unexpected_error"
+    assert result.files_marked == 0
+    assert result.bytes_marked == 0
+    assert raw_path.exists()
+    mark_offload.assert_called_once()
+    assert offload.retention_executor.marks.return_value["marks"]["marks"] == {}
+    summary = summarize_segment("20260101", "default", "120000_300")
+    assert summary.currently_offloaded is True
+    assert summary.snapshot_id == "archive-1"
+    assert tuple(file.name for file in summary.files) == ("audio.wav",)
 
 
 def test_run_prune_keeps_archive_tag_guard_on_forget(

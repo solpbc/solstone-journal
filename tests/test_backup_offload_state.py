@@ -156,9 +156,9 @@ def test_offload_state_records_and_status_view(
         "status": None,
         "reason": None,
         "last_ok_time": None,
-        "files_offloaded": 0,
-        "bytes_offloaded": 0,
-        "ran_out_of_media": False,
+        "files_marked": 0,
+        "bytes_marked": 0,
+        "ran_out_of_markable_media": False,
     }
     assert config["last_verification"] == {
         "time": None,
@@ -185,17 +185,17 @@ def test_offload_state_records_and_status_view(
         status="ok",
         time=100,
         reason=None,
-        files_offloaded=2,
-        bytes_offloaded=50,
-        ran_out_of_media=False,
+        files_marked=2,
+        bytes_marked=50,
+        ran_out_of_markable_media=False,
     )
     state.record_offload_result(
         status="stalled",
         time=123,
         reason="backup_not_ready",
-        files_offloaded=1,
-        bytes_offloaded=25,
-        ran_out_of_media=False,
+        files_marked=1,
+        bytes_marked=25,
+        ran_out_of_markable_media=False,
     )
     state.record_verification_result(status="skipped", time=None, reason="disabled")
     state.record_restore_result(
@@ -231,9 +231,9 @@ def test_offload_state_records_and_status_view(
         "status": "stalled",
         "reason": "backup_not_ready",
         "last_ok_time": 100,
-        "files_offloaded": 1,
-        "bytes_offloaded": 25,
-        "ran_out_of_media": False,
+        "files_marked": 1,
+        "bytes_marked": 25,
+        "ran_out_of_markable_media": False,
     }
     assert backup["last_verification"] == {
         "time": None,
@@ -259,9 +259,9 @@ def test_offload_state_records_and_status_view(
         state.record_offload_result(
             status="degraded",
             time=1,
-            files_offloaded=0,
-            bytes_offloaded=0,
-            ran_out_of_media=False,
+            files_marked=0,
+            bytes_marked=0,
+            ran_out_of_markable_media=False,
         )
     with pytest.raises(ValueError):
         state.record_verification_result(status="stalled", time=1)
