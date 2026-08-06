@@ -109,7 +109,7 @@ fn armed(rule: Rule) -> Policy {
 fn captured_after(days: u32) -> Policy {
     armed(Rule {
         anchor: Anchor::Captured,
-        period: Days(days),
+        period: Some(Days(days)),
         priority: 0,
     })
 }
@@ -317,7 +317,7 @@ fn a_week_after_processing_is_expressible_and_measured_from_the_record() {
     );
     let policy = armed(Rule {
         anchor: Anchor::Processed,
-        period: Days(7),
+        period: Some(Days(7)),
         priority: 0,
     });
 
@@ -348,7 +348,7 @@ fn a_legacy_segment_holds_under_a_processed_rule_and_releases_under_a_captured_o
 
     let processed = armed(Rule {
         anchor: Anchor::Processed,
-        period: Days(7),
+        period: Some(Days(7)),
         priority: 0,
     });
     let held = bed.plan(&processed, "2026-08-05", "2026-08-05T00:00:00Z");
@@ -390,7 +390,7 @@ fn a_per_stream_rule_governs_only_its_own_stream() {
             "field.audio".to_owned(),
             Rule {
                 anchor: Anchor::Captured,
-                period: Days(7),
+                period: Some(Days(7)),
                 priority: 0,
             },
         )],
@@ -425,7 +425,7 @@ fn the_minimum_age_holds_content_a_rule_would_have_released() {
     let policy = Policy {
         default_rule: Rule {
             anchor: Anchor::Captured,
-            period: Days(1),
+            period: Some(Days(1)),
             priority: 0,
         },
         minimum_age: Days(30),

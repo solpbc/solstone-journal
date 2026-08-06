@@ -10,13 +10,19 @@
 //! processing"). Every mature retention engine converged on one shape instead:
 //!
 //! ```text
-//! eligible  ⟺  age_by(anchor) >= period          period == 0 means keep forever
+//! eligible  ⟺  age_by(anchor) >= period          no period at all means keep forever
 //! ```
 //!
-//! Then *keep* is `period: 0`, *after N days* is `{captured, N}`, *once processing
-//! completes* is `{processed, 0}`, and *a week after processing* is
-//! `{processed, 7d}` for free. Zero-means-forever also makes "forever" the default
-//! value of the same field, so there is no variant anyone can forget to handle.
+//! Then *keep* is no period, *after N days* is `{captured, N}`, *once processing
+//! completes* is `{processed, 0 days}`, and *a week after processing* is
+//! `{processed, 7 days}` for free. An **absent** period is the default value of the
+//! field, so "forever" is what an unset setting means and there is no variant anyone
+//! can forget to handle.
+//!
+//! ⚠ Absence and zero are deliberately different spellings. They were the same one
+//! -- zero meant forever -- and the collision made `{processed, 0}` silently
+//! `KeptForever`, so the mode this module documents as free did not work and no test
+//! said so. It was found by mapping the reference's config onto this type.
 //!
 //! # ⛔ A missing anchor is never eligible
 //!
@@ -66,7 +72,18 @@ pub enum Anchor {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Rule {
     pub anchor: Anchor,
-    pub period: Days,
+    /// How long to keep. ⛔ `None` is FOREVER; `Some(Days(0))` is "as soon as the
+    /// anchor has a value", which is what makes *once processing completes*
+    /// expressible as `{processed, Some(Days(0))}`.
+    ///
+    /// ⚠ This was a bare `Days` with zero meaning forever, and the two readings of
+    /// zero collided: `evaluate` short-circuited on zero before it ever looked at the
+    /// anchor, so `{processed, 0}` -- the mode this module's own documentation
+    /// promised fell out for free -- was silently `KeptForever` and no test covered
+    /// it. Absence and immediacy are different things and now have different
+    /// spellings; `#[serde(default)]` keeps an unset field meaning forever.
+    #[serde(default)]
+    pub period: Option<Days>,
     /// Higher wins when several rules match. Author-declared, ⛔ never derived from
     /// the rules' shapes — a reader must be able to tell which rule applies without
     /// simulating the engine.
@@ -78,7 +95,7 @@ impl Rule {
     pub fn keep() -> Self {
         Self {
             anchor: Anchor::Captured,
-            period: Days(0),
+            period: None,
             priority: 0,
         }
     }
@@ -121,9 +138,12 @@ impl Eligibility {
 
 /// Decide one segment against one rule.
 pub fn evaluate(rule: Rule, age: SegmentAge) -> Eligibility {
-    if rule.period.keeps_forever() {
+    // ⛔ Absence means forever. An immediate period (`Some(Days(0))`) must fall
+    // through to the anchor check below, or *once processing completes* is
+    // inexpressible.
+    let Some(period) = rule.period else {
         return Eligibility::KeptForever;
-    }
+    };
     let measured = match rule.anchor {
         Anchor::Captured => age.since_captured,
         Anchor::Processed => age.since_processed,
@@ -135,17 +155,17 @@ pub fn evaluate(rule: Rule, age: SegmentAge) -> Eligibility {
             anchor: rule.anchor,
         };
     };
-    if age_days >= rule.period.0 {
+    if age_days >= period.0 {
         Eligibility::Eligible {
             anchor: rule.anchor,
             age_days,
-            period: rule.period,
+            period,
         }
     } else {
         Eligibility::TooYoung {
             anchor: rule.anchor,
             age_days,
-            period: rule.period,
+            period,
         }
     }
 }
@@ -274,7 +294,7 @@ mod tests {
             evaluate(
                 Rule {
                     anchor: Anchor::Captured,
-                    period: Days(7),
+                    period: Some(Days(7)),
                     priority: 0
                 },
                 age
@@ -286,7 +306,7 @@ mod tests {
             evaluate(
                 Rule {
                     anchor: Anchor::Processed,
-                    period: Days(1),
+                    period: Some(Days(1)),
                     priority: 0
                 },
                 age
@@ -298,7 +318,7 @@ mod tests {
             !evaluate(
                 Rule {
                     anchor: Anchor::Processed,
-                    period: Days(7),
+                    period: Some(Days(7)),
                     priority: 0
                 },
                 age
@@ -317,7 +337,7 @@ mod tests {
         let verdict = evaluate(
             Rule {
                 anchor: Anchor::Processed,
-                period: Days(1),
+                period: Some(Days(1)),
                 priority: 0,
             },
             unprocessed,
@@ -341,7 +361,7 @@ mod tests {
         };
         let rule = Rule {
             anchor: Anchor::Captured,
-            period: Days(1),
+            period: Some(Days(1)),
             priority: 0,
         };
         let mut policy = Policy {
@@ -357,27 +377,108 @@ mod tests {
     }
 
     /// 🔴 The floor cannot be undercut by any rule.
+    /// 🔴 The mode this module documents as free, and which silently never fired.
+    ///
+    /// The reference offers *once processing completes*. It is spelled
+    /// `{processed, 0 days}`, and until the period became an `Option` it collided with
+    /// the spelling for *forever* -- `evaluate` short-circuited on zero before it ever
+    /// consulted the anchor. Eight tests passed and none of them was this one.
+    #[test]
+    fn once_processing_completes_is_expressible_and_actually_fires() {
+        let rule = Rule {
+            anchor: Anchor::Processed,
+            period: Some(Days(0)),
+            priority: 0,
+        };
+        let processed = SegmentAge {
+            since_captured: Some(0),
+            since_processed: Some(0),
+        };
+        assert_eq!(
+            evaluate(rule, processed),
+            Eligibility::Eligible {
+                anchor: Anchor::Processed,
+                age_days: 0,
+                period: Days(0),
+            },
+            "processing has finished, so a zero-day processed rule releases"
+        );
+
+        // ⛔ And it still fails closed when processing has NOT finished: an immediate
+        // period is not a licence to release something with no processed anchor.
+        let unprocessed = SegmentAge {
+            since_captured: Some(9999),
+            since_processed: None,
+        };
+        assert_eq!(
+            evaluate(rule, unprocessed),
+            Eligibility::AnchorMissing {
+                anchor: Anchor::Processed
+            },
+        );
+    }
+
+    /// Absence and zero are different, and only absence keeps forever.
+    #[test]
+    fn an_absent_period_keeps_forever_and_a_zero_period_does_not() {
+        let ancient = SegmentAge {
+            since_captured: Some(9999),
+            since_processed: Some(9999),
+        };
+        let keeps = Rule {
+            anchor: Anchor::Captured,
+            period: None,
+            priority: 0,
+        };
+        assert_eq!(evaluate(keeps, ancient), Eligibility::KeptForever);
+        assert_eq!(Rule::keep().period, None, "the default keeps");
+
+        let immediate = Rule {
+            period: Some(Days(0)),
+            ..keeps
+        };
+        assert!(
+            evaluate(immediate, ancient).is_eligible(),
+            "a zero period is immediate, not forever"
+        );
+    }
+
+    /// An unset period deserialises as forever, so a partial config cannot delete.
+    #[test]
+    fn a_rule_with_no_period_in_json_keeps_forever() {
+        let rule: Rule = serde_json::from_str(r#"{"anchor": "captured", "priority": 0}"#)
+            .expect("a rule with no period is valid");
+        assert_eq!(rule.period, None);
+        assert_eq!(
+            evaluate(
+                rule,
+                SegmentAge {
+                    since_captured: Some(9999),
+                    since_processed: Some(9999),
+                }
+            ),
+            Eligibility::KeptForever,
+            "⛔ an omitted period must be the SAFEST setting, not the most destructive"
+        );
+    }
+
     #[test]
     fn the_minimum_age_overrides_a_shorter_rule() {
+        // 🔴 `{processed, 0 days}` -- release as soon as processing finishes -- is
+        // the exact misconfiguration the floor exists to catch, and it is now
+        // expressible. 📌 This test previously built it, then immediately rebuilt the
+        // policy with `Days(1)` under a comment explaining that `Days(0)` meant
+        // forever. That comment was a written record of noticing the defect and
+        // routing around it in a test rather than fixing it.
         let policy = Policy {
             default_rule: Rule {
                 anchor: Anchor::Processed,
-                period: Days(0),
+                period: Some(Days(0)),
                 priority: 0,
             },
             minimum_age: Days(30),
             enabled: true,
             ..Policy::default()
-        };
-        // period 0 on `processed` would be "as soon as processing finishes" -- but
-        // Days(0) is forever, so express the misconfiguration as period 1.
-        let policy = Policy {
-            default_rule: Rule {
-                anchor: Anchor::Processed,
-                period: Days(1),
-                priority: 0,
-            },
-            ..policy
         };
         let fresh = SegmentAge {
             since_captured: Some(2),
@@ -400,14 +501,15 @@ mod tests {
         let policy = Policy {
             default_rule: Rule {
                 anchor: Anchor::Captured,
-                period: Days(1),
+                period: Some(Days(1)),
                 priority: 0,
             },
             per_stream: vec![(
                 "field.audio".to_owned(),
                 Rule {
                     anchor: Anchor::Captured,
-                    period: Days(0),
+                    // ⛔ `None`, not `Some(Days(0))`: this rule KEEPS.
+                    period: None,
                     priority: 0,
                 },
             )],
@@ -436,7 +538,7 @@ mod tests {
                     "field.audio".to_owned(),
                     Rule {
                         anchor: Anchor::Captured,
-                        period: Days(1),
+                        period: Some(Days(1)),
                         priority: 1,
                     },
                 ),
@@ -444,7 +546,8 @@ mod tests {
                     "field.audio".to_owned(),
                     Rule {
                         anchor: Anchor::Captured,
-                        period: Days(0),
+                        // ⛔ `None`, not `Some(Days(0))`: this rule KEEPS.
+                        period: None,
                         priority: 5,
                     },
                 ),
@@ -467,7 +570,7 @@ mod tests {
     fn a_verdict_carries_what_it_measured() {
         let policy = armed(Rule {
             anchor: Anchor::Captured,
-            period: Days(7),
+            period: Some(Days(7)),
             priority: 0,
         });
         match policy.evaluate(
