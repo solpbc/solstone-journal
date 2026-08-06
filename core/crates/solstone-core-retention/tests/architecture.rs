@@ -41,6 +41,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("eligibility", include_str!("../src/eligibility.rs")),
     ("layout", include_str!("../src/layout.rs")),
     ("logs", include_str!("../src/logs.rs")),
+    ("marks", include_str!("../src/marks.rs")),
     ("notify", include_str!("../src/notify.rs")),
     ("policy", include_str!("../src/policy.rs")),
     ("receipt", include_str!("../src/receipt.rs")),
@@ -141,19 +142,57 @@ fn no_module_names_a_removal_primitive() {
         if *name == DOOR {
             continue;
         }
-        for primitive in REMOVAL_PRIMITIVES {
-            assert!(
-                !source.contains(primitive),
-                "module `{name}` names the removal primitive `{primitive}`. \
-                 Removal belongs in `{DOOR}` and nowhere else."
-            );
-        }
+        assert_no_removal_primitive(name, source);
     }
     // lib.rs is scanned too: it is where the verbs will live.
     for primitive in REMOVAL_PRIMITIVES {
         assert!(
             !LIB.contains(primitive),
             "lib.rs names the removal primitive `{primitive}`"
+        );
+    }
+}
+
+fn removal_primitive_in(source: &str) -> Option<&'static str> {
+    REMOVAL_PRIMITIVES
+        .iter()
+        .copied()
+        .find(|primitive| source.contains(primitive))
+}
+
+fn assert_no_removal_primitive(name: &str, source: &str) {
+    if let Some(primitive) = removal_primitive_in(source) {
+        panic!(
+            "module `{name}` names the removal primitive `{primitive}`. \
+             Removal belongs in `{DOOR}` and nowhere else."
+        );
+    }
+}
+
+#[test]
+fn the_removal_primitive_scan_rejects_a_synthetic_violation() {
+    assert_eq!(
+        removal_primitive_in("synthetic fs::remove_file violation"),
+        Some("fs::remove_file")
+    );
+}
+
+#[test]
+fn target_remains_unkeyable() {
+    const RECEIPT: &str = include_str!("../src/receipt.rs");
+    let target = RECEIPT
+        .split("pub struct Target")
+        .next()
+        .unwrap_or_default();
+    let derive = target
+        .rfind("#[derive(")
+        .and_then(|start| target.get(start..))
+        .and_then(|tail| tail.split(")]").next())
+        .unwrap_or_default();
+    for forbidden in ["Ord", "PartialOrd", "Hash"] {
+        assert!(
+            !derive.contains(forbidden),
+            "Target's derive list must not contain `{forbidden}`"
         );
     }
 }

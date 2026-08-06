@@ -1770,6 +1770,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "sha2",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
  "solstone-core-processing-record",

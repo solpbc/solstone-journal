@@ -17,15 +17,16 @@
 //! terminal, and every derived output survives that. ⛔ There is no third unit,
 //! and no partial owner-directed delete.
 //!
-//! # What this crate does not do yet
+//! # Removal surface and proposals
 //!
-//! This is the foundation: the outcome types and the path type that proves a
-//! removal happened. Neither verb exists yet, so nothing here removes anything.
-//! The removal surface arrives in a later wave, confined to one module and held
-//! there by `tests/architecture.rs`.
+//! The removal door implements both whole-segment removal and raw release, and
+//! the retention executor exposes those operations through its CLI seam. Python's
+//! retention executor invokes that seam. This crate's architecture test confines
+//! irreversible work to the door module.
 //!
-//! ⛔ **This crate has no production caller, deliberately.** The removal an owner
-//! can reach today is still the Python implementation's.
+//! The `marks` register stores removal proposals only in this wave. It has no
+//! production caller yet: nothing invokes `reconcile`, `record_failure`, or
+//! `resolve` outside the register's own tests.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 // A panic destroys an outcome as surely as a lost return does, and the workspace lint
@@ -54,6 +55,7 @@ pub mod door;
 pub mod eligibility;
 pub mod layout;
 pub mod logs;
+pub mod marks;
 pub mod notify;
 pub mod policy;
 pub mod receipt;
@@ -65,6 +67,7 @@ pub mod tombstone;
 pub use content::{ContentName, HandlerRegistry, MediaClassifier};
 pub use door::{EvidenceTally, release_raw};
 pub use eligibility::{Blocker, Evidence, FoundContent, ProvenRaw, RawRelease, SidecarFacts};
+pub use marks::{Failure, Mark, MarkId, MarkState, Proposal, RemovalClass};
 pub use notify::{IndexNotify, NoIndex, NotifyError, PruneCounts};
 pub use policy::{Anchor, Days, Eligibility, Policy, Rule, SegmentAge};
 pub use receipt::{NotRemoved, Outcome, RemovedPath, RunHalt, Target, TargetOutcome};

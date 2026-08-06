@@ -8,7 +8,7 @@
 //! alike. The raw-release verb operates on individual files, and groups them by
 //! the segment each was proven in.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// One segment a removal run acted on. The unit BOTH verbs report against.
 ///
@@ -17,7 +17,7 @@ use serde::Serialize;
 /// duplicate target -- so a run given the same segment twice would report one
 /// row where the caller supplied two, and an owner's receipt would disagree with
 /// their request. `Vec` cannot do that.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Target {
     pub day: String,
     pub stream: String,
