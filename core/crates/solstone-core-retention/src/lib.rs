@@ -46,6 +46,7 @@ pub mod content;
 pub mod door;
 pub mod eligibility;
 pub mod layout;
+pub mod logs;
 pub mod notify;
 pub mod policy;
 pub mod receipt;

@@ -218,6 +218,64 @@ pub fn notify_index(
     index.paths_removed(&removed)
 }
 
+/// Remove operational log entries a plan judged prunable.
+///
+/// ⛔ Takes [`LogTarget`](crate::logs::LogTarget)s, never paths. Only the log planner
+/// can mint one and only from a declared class root — which matters more here than for
+/// media, because one class prunes `chronicle/<day>/health/`, a directory sitting
+/// beside the owner's streams. The guarantee that this cannot reach a recording is
+/// that it cannot be *asked* to.
+///
+/// ⛔ Returns [`Outcome`] and never `Result`, so it cannot lose its own report.
+///
+/// One [`TargetOutcome`] per class, in table order. A failed entry is a row on its
+/// class and never halts the run: one unreadable log must not stop the rest.
+pub fn remove_logs(journal: &Path, targets: &[crate::logs::LogTarget]) -> Outcome {
+    use crate::logs::EntryKind;
+
+    let mut by_class: Vec<TargetOutcome> = Vec::new();
+    for target in targets {
+        let class = target.class();
+        if !by_class.iter().any(|done| done.target.dir == class) {
+            by_class.push(TargetOutcome {
+                // ⚠ A log class is not a segment. `Target` is reused for its shape;
+                // the day and stream are empty because a class spans every day.
+                target: Target {
+                    day: String::new(),
+                    stream: String::new(),
+                    dir: class.to_owned(),
+                },
+                removed: Vec::new(),
+                not_removed: Vec::new(),
+            });
+        }
+        let Some(slot) = by_class.iter_mut().find(|done| done.target.dir == class) else {
+            continue;
+        };
+
+        let outcome = match target.kind() {
+            EntryKind::File => remove_file(journal, target.rel()),
+            EntryKind::Directory => {
+                remove_dir_all(journal, target.rel()).map(|()| Removed::Unlinked)
+            }
+        };
+        match outcome {
+            Ok(Removed::Unlinked | Removed::AlreadyAbsent) => {
+                slot.removed
+                    .push(RemovedPath::confirmed(target.rel().to_owned()));
+            }
+            Err(error) => slot.not_removed.push(NotRemoved {
+                entry: target.rel().to_owned(),
+                reason: format!("the log entry could not be removed: {error}"),
+            }),
+        }
+    }
+    Outcome {
+        targets: by_class,
+        halted: None,
+    }
+}
+
 /// The parent directory of a segment, journal-relative.
 fn parent_rel(target: &Target) -> String {
     crate::layout::stream_rel(&target.day, &target.stream)

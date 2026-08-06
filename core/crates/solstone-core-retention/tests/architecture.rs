@@ -40,6 +40,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("door", include_str!("../src/door.rs")),
     ("eligibility", include_str!("../src/eligibility.rs")),
     ("layout", include_str!("../src/layout.rs")),
+    ("logs", include_str!("../src/logs.rs")),
     ("notify", include_str!("../src/notify.rs")),
     ("policy", include_str!("../src/policy.rs")),
     ("receipt", include_str!("../src/receipt.rs")),
@@ -198,6 +199,20 @@ fn production(source: &str) -> &str {
     }
 }
 
+/// Production source with comments removed.
+///
+/// ⚠ A comment cannot build a path or read a clock, and prose about either is exactly
+/// what a module explaining its own hazard contains. Both guards below found this by
+/// failing on a doc comment that *documents* the default-stream rule -- the same
+/// substring-scan hazard that made a bare `"rename"` match `#[serde(rename_all)]`.
+fn code_only(source: &str) -> String {
+    production(source)
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<&str>>()
+        .join("\n")
+}
+
 /// 🔴 The default stream has no directory, so the path cannot be interpolated.
 #[test]
 fn no_module_builds_a_chronicle_path_by_hand() {
@@ -208,7 +223,7 @@ fn no_module_builds_a_chronicle_path_by_hand() {
         }
         scanned = scanned.saturating_add(1);
         assert!(
-            !production(source).contains("chronicle/"),
+            !code_only(source).contains("chronicle/"),
             "module `{name}` builds a chronicle path by hand. The default stream \
              contributes NO path component, so an interpolated path silently \
              addresses nothing for every default-stream segment. Use `{LAYOUT}`."
@@ -225,7 +240,7 @@ fn no_module_reads_the_clock() {
         scanned = scanned.saturating_add(1);
         for read in CLOCK_READS {
             assert!(
-                !production(source).contains(read),
+                !code_only(source).contains(read),
                 "module `{name}` reads the clock via `{read}`. The instant is an \
                  argument to every decision, so a verdict is reproducible."
             );
