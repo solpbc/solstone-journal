@@ -9,10 +9,14 @@
 //! would be two places owning one thing with nothing binding them — the drift
 //! class the one-contract-per-boundary rule exists to make unrepresentable.
 //!
-//! ⚠ There is no production implementor yet; the registry is another wave's. That
-//! is deliberate rather than incomplete: it converts a dependency into a trait
-//! boundary, so when the still-image handler joins the closed set, image raw
-//! becomes releasable **with no change to this crate.**
+//! The production implementors are at the bottom of this file, and both are thin
+//! delegations to the shared map in the record-vocabulary crate — which is the point:
+//! when the still-image handler joins the closed set, image raw becomes releasable
+//! with **no change to this crate**, because the closed set is not stated here.
+//!
+//! ⚠ The traits remain, rather than the map being called directly, because the
+//! decision functions must stay testable against a *stated* closed set. A test that
+//! passes the production registry cannot tell you which condition held.
 
 /// A validated single filename for content inside a segment.
 ///
@@ -91,6 +95,36 @@ where
     }
 }
 
+/// The production handler registry: the shared closed set.
+///
+/// ⛔ Stateless and unconfigurable on purpose. A registry a caller could extend
+/// would let a caller grant proof to content no handler consumed.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ClosedHandlerSet;
+
+impl HandlerRegistry for ClosedHandlerSet {
+    fn expected_handler(&self, name: &ContentName) -> Option<&str> {
+        solstone_core_processing_record::expected_handler(&name.extension()?)
+    }
+}
+
+/// The production media classifier: the shared format table.
+///
+/// ⚠ Deliberately **broad**. Being wrong in the inclusive direction holds a segment
+/// (an unclaimed media file blocks it); being wrong in the exclusive direction lets
+/// a file skip the predicate entirely. Only the first is safe, so anything the
+/// journal calls media is classified as the owner's.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct JournalMedia;
+
+impl MediaClassifier for JournalMedia {
+    fn is_owner_media(&self, name: &ContentName) -> bool {
+        name.extension().is_some_and(|extension| {
+            solstone_core_processing_record::is_media_extension(&extension)
+        })
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -138,5 +172,42 @@ mod tests {
                 .as_deref(),
             Some("flac")
         );
+    }
+
+    /// The production pair, and the asymmetry that makes an image held.
+    #[test]
+    fn an_image_is_owner_media_that_no_handler_claims() {
+        let image = ContentName::new("photo.png").unwrap();
+        assert!(JournalMedia.is_owner_media(&image));
+        assert_eq!(
+            ClosedHandlerSet.expected_handler(&image),
+            None,
+            "so the predicate holds the segment rather than releasing the original"
+        );
+
+        let audio = ContentName::new("audio.flac").unwrap();
+        assert!(JournalMedia.is_owner_media(&audio));
+        assert_eq!(
+            ClosedHandlerSet.expected_handler(&audio),
+            Some("transcribe")
+        );
+    }
+
+    /// A derived output is not the owner's media, so it is never a candidate.
+    #[test]
+    fn derived_and_metadata_files_are_not_owner_media() {
+        for name in ["audio.jsonl", "tombstone.json", "notes.txt", "manifest"] {
+            let name = ContentName::new(name).unwrap();
+            assert!(!JournalMedia.is_owner_media(&name), "{}", name.as_str());
+            assert_eq!(ClosedHandlerSet.expected_handler(&name), None);
+        }
+    }
+
+    /// ⛔ The narrow reading carries through to the production pair.
+    #[test]
+    fn a_leading_dot_name_is_not_owner_media_and_is_unclaimed() {
+        let hidden = ContentName::new(".flac").unwrap();
+        assert!(!JournalMedia.is_owner_media(&hidden));
+        assert_eq!(ClosedHandlerSet.expected_handler(&hidden), None);
     }
 }

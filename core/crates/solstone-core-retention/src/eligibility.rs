@@ -124,15 +124,12 @@ impl ProvenRaw {
 
     /// This content's segment directory, relative to the journal root.
     pub fn segment_rel(&self) -> String {
-        format!("chronicle/{}/{}/{}", self.day, self.stream, self.dir)
+        crate::layout::segment_rel(&self.day, &self.stream, &self.dir)
     }
 
     /// The path of this content, relative to the journal root.
     pub fn rel(&self) -> String {
-        format!(
-            "chronicle/{}/{}/{}/{}",
-            self.day, self.stream, self.dir, self.name
-        )
+        crate::layout::content_rel(&self.day, &self.stream, &self.dir, &self.name)
     }
 
     /// Build a proven value in tests, running the same validation `resolve` does.

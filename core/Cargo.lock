@@ -1763,6 +1763,7 @@ dependencies = [
 name = "solstone-core-retention"
 version = "1.0.22"
 dependencies = [
+ "chrono",
  "serde",
  "serde_json",
  "solstone-core-indexer-store",

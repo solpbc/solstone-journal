@@ -35,13 +35,17 @@
 const DOOR: &str = "door";
 
 const SOURCES: &[(&str, &str)] = &[
+    ("age", include_str!("../src/age.rs")),
     ("content", include_str!("../src/content.rs")),
     ("door", include_str!("../src/door.rs")),
     ("eligibility", include_str!("../src/eligibility.rs")),
+    ("layout", include_str!("../src/layout.rs")),
     ("notify", include_str!("../src/notify.rs")),
     ("policy", include_str!("../src/policy.rs")),
     ("receipt", include_str!("../src/receipt.rs")),
+    ("scan", include_str!("../src/scan.rs")),
     ("staging", include_str!("../src/staging.rs")),
+    ("sweep", include_str!("../src/sweep.rs")),
     ("tombstone", include_str!("../src/tombstone.rs")),
 ];
 
@@ -169,4 +173,63 @@ fn no_module_silences_must_use() {
              which silences #[must_use] on an Outcome"
         );
     }
+}
+
+/// The one module permitted to build a chronicle path.
+const LAYOUT: &str = "layout";
+
+/// Ways a caller reaches the current instant.
+///
+/// ⛔ A retention decision that reads the clock cannot be pinned by a test or
+/// reproduced from a receipt: the same segment and policy must yield the same verdict
+/// for a given instant. Every entry point takes the instant as an argument instead.
+const CLOCK_READS: &[&str] = &["Utc::now", "Local::now", "SystemTime::now", "Instant::now"];
+
+/// Production source only -- everything before the `#[cfg(test)]` module.
+///
+/// ⚠ Needed for the two guards below and NOT for the removal-primitive guard, which
+/// is deliberately stricter: a test that reaches a removal primitive outside the door
+/// is worth failing on, and the one legitimate case (bed teardown) lives in
+/// `tests/`, not in a `cfg(test)` module.
+fn production(source: &str) -> &str {
+    match source.find("\n#[cfg(test)]") {
+        Some(at) => source.split_at(at).0,
+        None => source,
+    }
+}
+
+/// 🔴 The default stream has no directory, so the path cannot be interpolated.
+#[test]
+fn no_module_builds_a_chronicle_path_by_hand() {
+    let mut scanned = 0usize;
+    for (name, source) in SOURCES.iter().chain(std::iter::once(&("lib", LIB))) {
+        if *name == LAYOUT {
+            continue;
+        }
+        scanned = scanned.saturating_add(1);
+        assert!(
+            !production(source).contains("chronicle/"),
+            "module `{name}` builds a chronicle path by hand. The default stream \
+             contributes NO path component, so an interpolated path silently \
+             addresses nothing for every default-stream segment. Use `{LAYOUT}`."
+        );
+    }
+    assert!(scanned > 1, "the scan covered nothing");
+}
+
+/// ⛔ This crate cannot ask what time it is.
+#[test]
+fn no_module_reads_the_clock() {
+    let mut scanned = 0usize;
+    for (name, source) in SOURCES.iter().chain(std::iter::once(&("lib", LIB))) {
+        scanned = scanned.saturating_add(1);
+        for read in CLOCK_READS {
+            assert!(
+                !production(source).contains(read),
+                "module `{name}` reads the clock via `{read}`. The instant is an \
+                 argument to every decision, so a verdict is reproducible."
+            );
+        }
+    }
+    assert!(scanned > 1, "the scan covered nothing");
 }

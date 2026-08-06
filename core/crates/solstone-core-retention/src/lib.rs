@@ -41,13 +41,17 @@
     clippy::unreachable
 )]
 
+pub mod age;
 pub mod content;
 pub mod door;
 pub mod eligibility;
+pub mod layout;
 pub mod notify;
 pub mod policy;
 pub mod receipt;
+pub mod scan;
 pub mod staging;
+pub mod sweep;
 pub mod tombstone;
 
 pub use content::{ContentName, HandlerRegistry, MediaClassifier};

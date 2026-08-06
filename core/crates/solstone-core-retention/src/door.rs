@@ -220,11 +220,11 @@ pub fn notify_index(
 
 /// The parent directory of a segment, journal-relative.
 fn parent_rel(target: &Target) -> String {
-    format!("chronicle/{}/{}", target.day, target.stream)
+    crate::layout::stream_rel(&target.day, &target.stream)
 }
 
 fn segment_rel(target: &Target) -> String {
-    format!("{}/{}", parent_rel(target), target.dir)
+    crate::layout::segment_rel(&target.day, &target.stream, &target.dir)
 }
 
 fn refused(target: &Target, entry: String, reason: String) -> TargetOutcome {
