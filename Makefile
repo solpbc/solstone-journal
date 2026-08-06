@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-deny build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-compat check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-no-legacy-chat check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-thin-base-install check-extras-consistency check-cogitate-prompts smoke-cogitate release release-test publish-release publish-release-test FORCE
+.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-deny build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-compat check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-no-legacy-chat check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-cogitate-prompts smoke-cogitate release release-test publish-release publish-release-test FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -584,6 +584,9 @@ install-checks: .installed
 	@echo "=== Checking the segment-name oracle ==="
 	@$(MAKE) check-segment-name-oracle
 	@echo ""
+	@echo "=== Checking media format parity ==="
+	@$(MAKE) check-media-format-parity
+	@echo ""
 	@echo "=== Checking spl health vocabulary ==="
 	@$(MAKE) check-spl-health-vocabulary
 	@echo "=== Running access-imports-clean check ==="
@@ -802,6 +805,14 @@ check-retention-release-oracle: .installed
 # disagreement arms at cutover. This gate executes BOTH references.
 check-segment-name-oracle: .installed
 	$(VENV_BIN)/python scripts/segment_name_oracle.py --check
+
+# Two implementations classify media by extension, and retention's release
+# predicate rests on the split: audio and video route to a handler whose record can
+# prove the raw was consumed, and an image routes to NO handler, which is what holds
+# an image's original forever. Drift stops a whole format working and no test in
+# either language notices. This gate reads BOTH tables.
+check-media-format-parity: .installed
+	$(VENV_BIN)/python scripts/media_format_parity.py
 
 # The spl link-health vocabulary spans two languages after the native cutover:
 # the native service emits the reason codes and the callosum event name, and the

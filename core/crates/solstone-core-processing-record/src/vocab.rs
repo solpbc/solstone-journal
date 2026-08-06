@@ -28,3 +28,15 @@ pub const REASON_ANALYSIS_FAILED: &str = "analysis_failed";
 pub const HANDLER_DESCRIBE: &str = "describe";
 // Parity: solstone/observe/processing_record.py:45.
 pub const HANDLER_TRANSCRIBE: &str = "transcribe";
+
+/// The JSONL row key proving screen (`describe`) analysis rows exist.
+pub const SCREEN_ANALYSIS_ROW_KEY: &str = "timestamp";
+
+/// The JSONL row key proving audio (`transcribe`) transcript rows exist.
+pub const AUDIO_TRANSCRIPT_ROW_KEY: &str = "start";
+
+/// How much of a sidecar may be read to find its metadata header.
+///
+/// ⛔ A bound, not a buffer size. A sidecar whose first line exceeds this has no
+/// readable record, which holds the raw rather than releasing it.
+pub const MAX_FIRST_ROW_BYTES: usize = 64 * 1024;

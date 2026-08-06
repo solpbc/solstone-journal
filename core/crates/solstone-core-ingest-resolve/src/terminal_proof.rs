@@ -62,11 +62,11 @@ pub(crate) fn is_media_name(name: &str) -> bool {
     expected_handler(name).is_some()
 }
 
+/// Delegates to the shared handler map.
+///
+/// ⚠ This was a second private copy of that map. It is kept as a thin adapter only
+/// because callers here pass a whole filename while the shared map takes an
+/// extension.
 fn expected_handler(name: &str) -> Option<&'static str> {
-    let extension = name.rsplit_once('.')?.1.to_ascii_lowercase();
-    match extension.as_str() {
-        "flac" | "opus" | "ogg" | "m4a" | "mp3" | "wav" => Some("transcribe"),
-        "webm" | "mp4" | "mov" => Some("describe"),
-        _ => None,
-    }
+    solstone_core_processing_record::expected_handler(name.rsplit_once('.')?.1)
 }
