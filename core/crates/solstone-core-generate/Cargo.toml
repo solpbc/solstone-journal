@@ -17,5 +17,10 @@ name = "solstone-generate-session-stub"
 path = "tests/bin/session_stub.rs"
 test = false
 
+[[bin]]
+name = "solstone-generate-session-kill-helper"
+path = "tests/bin/session_kill_helper.rs"
+test = false
+
 [lints]
 workspace = true
