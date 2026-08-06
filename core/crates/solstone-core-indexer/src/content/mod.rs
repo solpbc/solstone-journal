@@ -981,6 +981,58 @@ mod tests {
         }
     }
 
+    /// An indexed family wins over a known-unindexed pattern that also matches.
+    ///
+    /// The three AI-chat legacy filenames match their own family pattern *and*
+    /// `*/*/*/*_audio.jsonl`, and both are day-rooted, so namespace precedence
+    /// cannot separate them. The first assertion in each iteration proves the
+    /// collision is real rather than assumed — without it this test could pass
+    /// against patterns that never overlap and prove nothing.
+    ///
+    /// Why it is worth pinning: an unindexed resolution is `continue`d by the
+    /// scan with no warning and no skipped count, so if these three ever
+    /// resolved unindexed, every imported ChatGPT, Claude and Gemini transcript
+    /// would stop being searchable while the scan still reported success.
+    ///
+    /// ⚠ This pins the outcome, not a mechanism. Swapping the order in which
+    /// `classify` consults the two tables does **not** break it — that was
+    /// tried, and the full suite stayed green — so whatever decides this case
+    /// is not table order alone. Do not read the test as guarding an ordering.
+    ///
+    /// The final assertion is the inverted twin: a path matching *only* the
+    /// unindexed pattern must still resolve unindexed, so this cannot be
+    /// satisfied by a resolver that never consults the unindexed table at all.
+    #[test]
+    fn an_indexed_family_wins_over_a_matching_unindexed_pattern() {
+        let options = MatchOptions {
+            case_sensitive: true,
+            require_literal_separator: true,
+            require_literal_leading_dot: false,
+        };
+        for path in [
+            "20260101/import.chatgpt/conv_b/imported_audio.jsonl",
+            "20260101/import.claude/conv_b/imported_audio.jsonl",
+            "20260101/import.gemini/conv_b/imported_audio.jsonl",
+        ] {
+            assert!(
+                Pattern::new("*/*/*/*_audio.jsonl")
+                    .expect("valid unindexed pattern")
+                    .matches_path_with(Path::new(path), options),
+                "{path} must genuinely collide, or this test proves nothing"
+            );
+            assert_eq!(
+                classify(path),
+                ContentResolution::Indexed(Family::AiChat),
+                "{path}"
+            );
+        }
+
+        assert_eq!(
+            classify("20260101/default/123456_300/left_audio.jsonl"),
+            ContentResolution::Unindexed,
+        );
+    }
+
     #[test]
     fn every_cross_namespace_intersection_has_the_expected_resolution() {
         let structural_json = [
