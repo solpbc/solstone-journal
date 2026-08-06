@@ -148,7 +148,6 @@ OWNER_FILES: frozenset[str] = frozenset(
         "solstone/think/facets.py",
         "solstone/think/identity.py",
         "solstone/think/journal_config.py",
-        "solstone/think/log_retention.py",
         "solstone/think/offload_ledger.py",
         # Sole writer of content-free bundled-local inference telemetry.
         "solstone/think/providers/local_admission.py",

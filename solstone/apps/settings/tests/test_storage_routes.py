@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -13,7 +15,32 @@ import solstone.apps.settings.routes as settings_routes
 import solstone.think.utils as think_utils
 from solstone.convey import create_app
 from solstone.convey.reasons import INVALID_CONFIG_VALUE
-from solstone.think.log_retention import PruneResult
+from solstone.think.retention_executor import PruneResult
+
+
+@pytest.fixture(autouse=True)
+def _executor(monkeypatch: pytest.MonkeyPatch) -> None:
+    override = os.environ.get("SOLSTONE_RETENTION_BIN")
+    if override and os.access(override, os.X_OK):
+        monkeypatch.setenv("SOLSTONE_RETENTION_BIN", override)
+        return
+
+    found = shutil.which("solstone-retention")
+    if found:
+        monkeypatch.setenv("SOLSTONE_RETENTION_BIN", found)
+        return
+
+    root = Path(__file__).resolve().parents[4]
+    for profile in ("debug", "release"):
+        candidate = root / "core" / "target" / profile / "solstone-retention"
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            monkeypatch.setenv("SOLSTONE_RETENTION_BIN", str(candidate))
+            return
+
+    pytest.skip(
+        "solstone-retention is not built; prune-logs runs through it, so this test "
+        "has nothing real to assert against (cargo build -p solstone-core-retention-cli)"
+    )
 
 
 def _client(journal_path: Path):
@@ -236,7 +263,7 @@ def test_storage_prune_logs_serializes_partial_errors(settings_env, monkeypatch)
         audit_written=False,
         partial_error=True,
     )
-    monkeypatch.setattr(settings_routes, "prune", lambda **_kwargs: result)
+    monkeypatch.setattr(settings_routes, "prune_logs", lambda *_args, **_kwargs: result)
 
     response = client.post(
         "/app/settings/api/storage/prune-logs",

@@ -3,14 +3,14 @@
 
 from __future__ import annotations
 
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 from solstone.apps.health import maintenance
-from solstone.think.log_retention import PruneResult
 from solstone.think.maintenance import (
     discover_routines,
     expected_schedule_entry,
 )
+from solstone.think.retention_executor import PruneResult
 
 
 def _result(
@@ -76,7 +76,7 @@ def test_prune_logs_routine_wrapper_disabled_and_real(monkeypatch, capsys):
     require_solstone = Mock()
     prune = Mock(side_effect=[_result(enabled=False), _result(files_deleted=2)])
     monkeypatch.setattr(maintenance, "require_solstone", require_solstone)
-    monkeypatch.setattr(maintenance, "prune", prune)
+    monkeypatch.setattr(maintenance.retention_executor, "prune_logs", prune)
 
     disabled_code = maintenance.run_prune_logs_routine([])
     real_code = maintenance.run_prune_logs_routine([])
@@ -85,7 +85,7 @@ def test_prune_logs_routine_wrapper_disabled_and_real(monkeypatch, capsys):
     assert real_code == 0
     assert require_solstone.call_count == 2
     assert prune.call_count == 2
-    prune.assert_called_with(days=None, dry_run=False)
+    prune.assert_called_with(ANY, days=None, dry_run=False)
     output = capsys.readouterr().out
     assert "prune-logs: disabled (no-op)" in output
     assert (
@@ -98,7 +98,7 @@ def test_prune_logs_routine_rejects_nonpositive_days(monkeypatch, capsys):
     require_solstone = Mock()
     prune = Mock()
     monkeypatch.setattr(maintenance, "require_solstone", require_solstone)
-    monkeypatch.setattr(maintenance, "prune", prune)
+    monkeypatch.setattr(maintenance.retention_executor, "prune_logs", prune)
 
     code = maintenance.run_prune_logs_routine(["--days", "0"])
 
@@ -126,7 +126,7 @@ def test_prune_logs_routine_prints_root_task_log_work(monkeypatch, capsys):
         )
     )
     monkeypatch.setattr(maintenance, "require_solstone", require_solstone)
-    monkeypatch.setattr(maintenance, "prune", prune)
+    monkeypatch.setattr(maintenance.retention_executor, "prune_logs", prune)
 
     code = maintenance.run_prune_logs_routine([])
 
@@ -153,7 +153,7 @@ def test_prune_logs_routine_prints_partial_errors(monkeypatch, capsys):
         )
     )
     monkeypatch.setattr(maintenance, "require_solstone", require_solstone)
-    monkeypatch.setattr(maintenance, "prune", prune)
+    monkeypatch.setattr(maintenance.retention_executor, "prune_logs", prune)
 
     code = maintenance.run_prune_logs_routine([])
 
