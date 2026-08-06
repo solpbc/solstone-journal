@@ -1,0 +1,96 @@
+{
+  "files": [
+    {
+      "rel": "sense.json",
+      "text": "{\"entities\": [{\"name\": \"Ada\", \"type\": \"Person\"}]}"
+    },
+    {
+      "rel": "screen.json",
+      "text": "{\"summary\": \"Editor open\", \"applications\": [\"nvim\"]}"
+    },
+    {
+      "rel": "screen.md",
+      "text": "# Screen\n\nthis markdown must lose to the json\n"
+    },
+    {
+      "rel": "activity.md",
+      "text": "# Activity\n\nwalked to the office\n"
+    },
+    {
+      "rel": "work/notes.md",
+      "text": "# Notes\n\nnested talent output\n"
+    },
+    {
+      "rel": "unknown.json",
+      "text": "{\"whatever\": 1}"
+    },
+    {
+      "rel": "unknown.md",
+      "text": "# Unknown\n\nmarkdown fallback for an undispatched json\n"
+    },
+    {
+      "rel": "blank.md",
+      "text": "   \n"
+    }
+  ],
+  "fixture": "solstone-talent-projections",
+  "fixture_version": 1,
+  "generated_by": "make core-fixtures",
+  "generator_timezone": "UTC",
+  "map_keys": [
+    "activity",
+    "screen",
+    "sense",
+    "unknown",
+    "work/notes"
+  ],
+  "notes": [
+    "a key is the stem relative to the talents dir; nested keys keep the slash",
+    "json wins over a same-key md only when the registry dispatches it",
+    "an undispatched json falls through to its md sibling",
+    "empty rendered text is skipped on both paths",
+    "the stem filter runs before rendering, not after"
+  ],
+  "projections": [
+    {
+      "key": "activity",
+      "relative_path": "activity.md",
+      "source_suffix": ".md",
+      "stem": "activity",
+      "text": "# Activity\n\nwalked to the office"
+    },
+    {
+      "key": "screen",
+      "relative_path": "screen.json",
+      "source_suffix": ".json",
+      "stem": "screen",
+      "text": "## Entities\n\nNot specified"
+    },
+    {
+      "key": "sense",
+      "relative_path": "sense.json",
+      "source_suffix": ".json",
+      "stem": "sense",
+      "text": "### Entities\n- Person: Ada"
+    },
+    {
+      "key": "unknown",
+      "relative_path": "unknown.md",
+      "source_suffix": ".md",
+      "stem": "unknown",
+      "text": "# Unknown\n\nmarkdown fallback for an undispatched json"
+    },
+    {
+      "key": "work/notes",
+      "relative_path": "work/notes.md",
+      "source_suffix": ".md",
+      "stem": "notes",
+      "text": "# Notes\n\nnested talent output"
+    }
+  ],
+  "stem_filter_s_keys": [
+    "screen",
+    "sense"
+  ],
+  "talents_dir_rel": "chronicle/20260304/workstation/090000_300/talents"
+}
