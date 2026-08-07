@@ -31,6 +31,9 @@ cannot cross-compile from the Linux host. That exclusion is for the storage
 adapter, not for the indexer logic. The eventual iOS path is to link the system
 `libsqlite3` that iOS ships instead of bundling SQLite, then return the store
 crate to the iOS gate.
+`solstone-core-indexer-query` is likewise excluded now that its read-only
+execution path has a non-dev bundled-C SQLite dependency; it can return when
+the iOS path links the system `libsqlite3`.
 
 `solstone-core-speakers` stays in the iOS canary because its DSP and discovery
 clustering graph remains Rust-only; the `hdbscan`/`kdtree` clustering crates add
@@ -113,7 +116,7 @@ for the helper release lanes.
 | Rust dependency policy | `make check-rust-deny` | GNU-host check | Locked, offline bans/licenses/sources policy over the supported cargo-deny graph. |
 | SPL dependency pin | `make check-spl-dependency-pin` | GNU-host check | Verifies the Rust core workspace resolves `spl-core` and `spl-transport` only through the workspace-owned `spl-rust` tag pin, with member manifests inheriting it, lockfile binding intact, and local patch/source replacement routes rejected. |
 | Rust advisories | `make audit` | GNU-host check | Verifies a signed advisory mirror packet, materializes its bundle locally, then performs a locked offline advisory check without refreshing or mutating the operator inputs. |
-| iOS canary | `make check-rust-ios` | iOS cross-target canary | Cross-target drift evidence for eligible library crates; explicitly excludes `solstone-core-indexer-store` because the native SQLite store is not yet in the iOS gate, and `solstone-core-speakers-analyze` plus `solstone-core-speakers-onnx` because the analyzer transitively depends on ONNX Runtime host-only native linkage. |
+| iOS canary | `make check-rust-ios` | iOS cross-target canary | Cross-target drift evidence for eligible library crates; explicitly excludes `solstone-core-indexer-store` and `solstone-core-indexer-query` because their bundled-C SQLite paths are not yet in the iOS gate, and `solstone-core-speakers-analyze` plus `solstone-core-speakers-onnx` because the analyzer transitively depends on ONNX Runtime host-only native linkage. |
 | Core sdist compile inputs | `make check-core-sdist-compile-inputs` | Packaging-source check | Verifies shipping Rust compile-time inputs are discovered and covered by the normalized `solstone-core` sdist injection set. |
 | Release candidate rail | `scripts/release.sh --candidate` / `scripts/release.sh --recover <version> <source-commit>` | Frozen | During the Rust-conversion freeze, the script refuses unconditionally before producing any evidence. |
 
