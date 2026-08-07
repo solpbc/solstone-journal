@@ -11,11 +11,12 @@ use chrono::Local;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 use solstone_core_cli::{
-    BrainCommand, BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions,
-    Command, IndexerCommand, IndexerCountsOptions, IndexerOptions, IndexerQueryOptions,
-    IndexerReadOptions, IndexerSearchOptions, JournalConfigCommand, JournalConfigCommitOptions,
-    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand,
-    ServiceOptions, SplCommand, USAGE, evaluate_args, version_line,
+    BrainCommand, BrainPrerequisiteRenewalSessionOptions, BrainRefreshExpectArg,
+    BrainRefreshSessionOptions, BrainRuntimeFailureOptions, Command, IndexerCommand,
+    IndexerCountsOptions, IndexerOptions, IndexerQueryOptions, IndexerReadOptions,
+    IndexerSearchOptions, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
+    JournalConfigReadOptions, JournalPathOptions, LocalCommand, ServiceOptions, SplCommand, USAGE,
+    evaluate_args, version_line,
 };
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -48,6 +49,10 @@ const SESSION_INPUT_TIMEOUT: Duration = Duration::from_secs(90);
 const REFRESH_PROBE_SCHEMA: &str = "solstone.brain.refresh.probe.v1";
 const REFRESH_TERMINAL_SCHEMA: &str = "solstone.brain.refresh.terminal.v1";
 const REFRESH_RESULT_SCHEMA: &str = "solstone.brain.refresh.result.v1";
+const PREREQUISITE_RENEWAL_PROBE_SCHEMA: &str = "solstone.brain.prerequisite_renewal.probe.v1";
+const PREREQUISITE_RENEWAL_TERMINAL_SCHEMA: &str =
+    "solstone.brain.prerequisite_renewal.terminal.v1";
+const PREREQUISITE_RENEWAL_RESULT_SCHEMA: &str = "solstone.brain.prerequisite_renewal.result.v1";
 const ZERO_EDGE_HINT: &str = "Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run journal indexer --rebuild-edges to force full edge re-extraction.";
 const SOL_IDENTITY_TOKEN: &str = "__solstone_identity=sol";
 const SOLSTONE_IDENTITY_TOKEN: &str = "__solstone_identity=solstone";
@@ -172,9 +177,8 @@ fn run_brain(command: BrainCommand) -> ExitCode {
     match command {
         BrainCommand::RecordRuntimeFailure(options) => run_brain_runtime_failure(options),
         BrainCommand::RefreshSession(options) => run_brain_refresh_session(options),
-        BrainCommand::PrerequisiteRenewalSession(_) => {
-            eprintln!("brain session verbs are not yet implemented");
-            ExitCode::from(EXIT_UNAVAILABLE)
+        BrainCommand::PrerequisiteRenewalSession(options) => {
+            run_brain_prerequisite_renewal_session(options)
         }
     }
 }
@@ -210,7 +214,7 @@ fn run_brain_refresh_session(options: BrainRefreshSessionOptions) -> ExitCode {
             return write_refresh_projection(&line.path);
         }
         Ok(None) => {
-            return write_refresh_result(json!({
+            return write_session_result(json!({
                 "schema": REFRESH_RESULT_SCHEMA,
                 "kind": "not_started",
                 "status": "no_permit",
@@ -243,6 +247,65 @@ fn run_brain_refresh_session(options: BrainRefreshSessionOptions) -> ExitCode {
         }
     };
     runtime.block_on(run_refresh_session_loop(
+        line.path,
+        permit,
+        bundled_runtime_fingerprint_sha256,
+        session_input_timeout(),
+    ))
+}
+
+fn run_brain_prerequisite_renewal_session(
+    options: BrainPrerequisiteRenewalSessionOptions,
+) -> ExitCode {
+    let line = match resolve_journal_config_path(options.journal_override) {
+        Ok(line) => line,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let bundled_runtime_fingerprint_sha256 = options.bundled_runtime_fingerprint_sha256;
+    let begin = solstone_core_brain::begin_prerequisite_renewal(
+        &line.path,
+        chrono::Utc::now(),
+        options.run_id,
+        None,
+        bundled_runtime_fingerprint_sha256.clone(),
+    );
+    let permit = match begin {
+        solstone_core_brain::BeginPrerequisiteRenewal::Started(permit) => permit,
+        solstone_core_brain::BeginPrerequisiteRenewal::Busy { reason } => {
+            return write_session_result(json!({
+                "schema": PREREQUISITE_RENEWAL_RESULT_SCHEMA,
+                "kind": "not_started",
+                "status": "busy",
+                "reason": reason,
+            }));
+        }
+        solstone_core_brain::BeginPrerequisiteRenewal::Unsafe { reason } => {
+            return write_session_result(json!({
+                "schema": PREREQUISITE_RENEWAL_RESULT_SCHEMA,
+                "kind": "not_started",
+                "status": "unsafe",
+                "reason": reason,
+            }));
+        }
+    };
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!(
+                "brain prerequisite renewal failed: could not start session runtime: {error}"
+            );
+            drop(permit);
+            return ExitCode::from(EXIT_UNAVAILABLE);
+        }
+    };
+    runtime.block_on(run_prerequisite_renewal_session_loop(
         line.path,
         permit,
         bundled_runtime_fingerprint_sha256,
@@ -319,7 +382,67 @@ async fn run_refresh_session_loop(
     }
 }
 
+async fn run_prerequisite_renewal_session_loop(
+    journal_path: PathBuf,
+    permit: solstone_core_brain::BrainRefreshPermit,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+    timeout: Duration,
+) -> ExitCode {
+    let deadline = Instant::now() + timeout;
+    let mut stdin = BufReader::new(tokio::io::stdin());
+    let component = match read_prerequisite_renewal_session_input(&mut stdin, deadline).await {
+        PrerequisiteRenewalSessionInput::Clean(component) => component,
+        PrerequisiteRenewalSessionInput::BareEof => {
+            abandon_prerequisite_renewal_silently(
+                &journal_path,
+                permit,
+                bundled_runtime_fingerprint_sha256,
+            );
+            // A bare EOF means no caller remains to observe an answer.
+            return ExitCode::from(EXIT_UNAVAILABLE);
+        }
+        PrerequisiteRenewalSessionInput::Timeout => {
+            abandon_prerequisite_renewal(
+                &journal_path,
+                permit,
+                bundled_runtime_fingerprint_sha256,
+                true,
+            );
+            return ExitCode::SUCCESS;
+        }
+        PrerequisiteRenewalSessionInput::ProtocolViolation => {
+            abandon_prerequisite_renewal(
+                &journal_path,
+                permit,
+                bundled_runtime_fingerprint_sha256,
+                true,
+            );
+            return ExitCode::from(EXIT_PROTOCOL);
+        }
+    };
+    match solstone_core_brain::finish_prerequisite_renewal(
+        &journal_path,
+        permit,
+        component,
+        chrono::Utc::now(),
+        bundled_runtime_fingerprint_sha256,
+    ) {
+        Ok(_) => write_brain_projection(&journal_path, PREREQUISITE_RENEWAL_RESULT_SCHEMA),
+        Err(error) => {
+            eprintln!("brain prerequisite renewal failed: {error}");
+            ExitCode::from(EXIT_UNAVAILABLE)
+        }
+    }
+}
+
 enum RefreshSessionInput {
+    Clean(Value),
+    BareEof,
+    Timeout,
+    ProtocolViolation,
+}
+
+enum PrerequisiteRenewalSessionInput {
     Clean(Value),
     BareEof,
     Timeout,
@@ -369,7 +492,57 @@ async fn read_refresh_session_input(
     }
 }
 
+async fn read_prerequisite_renewal_session_input(
+    stdin: &mut BufReader<tokio::io::Stdin>,
+    deadline: Instant,
+) -> PrerequisiteRenewalSessionInput {
+    let mut component = None;
+    let mut terminal = false;
+    loop {
+        let mut line = Vec::new();
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return PrerequisiteRenewalSessionInput::Timeout;
+        }
+        let read = {
+            let mut limited = AsyncReadExt::take(&mut *stdin, (MAX_JSON_STDIN_BYTES + 1) as u64);
+            tokio::time::timeout(remaining, limited.read_until(b'\n', &mut line)).await
+        };
+        let count = match read {
+            Err(_) => return PrerequisiteRenewalSessionInput::Timeout,
+            Ok(Err(_)) => return PrerequisiteRenewalSessionInput::ProtocolViolation,
+            Ok(Ok(count)) => count,
+        };
+        if count == 0 {
+            return if terminal {
+                PrerequisiteRenewalSessionInput::Clean(component.expect("terminal requires probe"))
+            } else {
+                PrerequisiteRenewalSessionInput::BareEof
+            };
+        }
+        if line.len() > MAX_JSON_STDIN_BYTES {
+            return PrerequisiteRenewalSessionInput::ProtocolViolation;
+        }
+        match parse_prerequisite_renewal_session_record(&line, chrono::Utc::now()) {
+            Some(PrerequisiteRenewalSessionRecord::Probe(probe))
+                if !terminal && component.is_none() =>
+            {
+                component = Some(probe);
+            }
+            Some(PrerequisiteRenewalSessionRecord::Terminal) if component.is_some() => {
+                terminal = true;
+            }
+            _ => return PrerequisiteRenewalSessionInput::ProtocolViolation,
+        }
+    }
+}
+
 enum RefreshSessionRecord {
+    Probe(Value),
+    Terminal,
+}
+
+enum PrerequisiteRenewalSessionRecord {
     Probe(Value),
     Terminal,
 }
@@ -392,6 +565,36 @@ fn parse_refresh_session_record(
     let outcome = object.get("outcome")?.clone();
     solstone_core_brain::validate_refresh_probe_outcome(&outcome, now).ok()?;
     Some(RefreshSessionRecord::Probe(outcome))
+}
+
+fn parse_prerequisite_renewal_session_record(
+    bytes: &[u8],
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<PrerequisiteRenewalSessionRecord> {
+    let object = serde_json::from_slice::<Value>(bytes)
+        .ok()?
+        .as_object()?
+        .clone();
+    let schema = object.get("schema")?.as_str()?;
+    if schema == PREREQUISITE_RENEWAL_TERMINAL_SCHEMA && exact_fields(&object, &["schema"]) {
+        return Some(PrerequisiteRenewalSessionRecord::Terminal);
+    }
+    if schema != PREREQUISITE_RENEWAL_PROBE_SCHEMA
+        || !exact_fields(&object, &["schema", "lane_prerequisites"])
+    {
+        return None;
+    }
+    let component = object.get("lane_prerequisites")?.clone();
+    let evidence = json!({
+        "configuration": null,
+        "lane_prerequisites": component,
+        "generate": null,
+        "cogitate": null,
+    });
+    solstone_core_brain::validate_refresh_probe_outcome(&evidence, now).ok()?;
+    Some(PrerequisiteRenewalSessionRecord::Probe(
+        evidence["lane_prerequisites"].clone(),
+    ))
 }
 
 fn exact_fields(object: &Map<String, Value>, expected: &[&str]) -> bool {
@@ -420,7 +623,7 @@ fn abandon_refresh(
 ) {
     abandon_refresh_silently(journal_path, permit);
     if report
-        && write_refresh_result(json!({
+        && write_session_result(json!({
             "schema": REFRESH_RESULT_SCHEMA,
             "kind": "abandoned",
             "reason_code": "chat_timeout",
@@ -432,6 +635,46 @@ fn abandon_refresh(
 }
 
 fn write_refresh_projection(journal_path: &std::path::Path) -> ExitCode {
+    write_brain_projection(journal_path, REFRESH_RESULT_SCHEMA)
+}
+
+fn abandon_prerequisite_renewal_silently(
+    journal_path: &std::path::Path,
+    permit: solstone_core_brain::BrainRefreshPermit,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+) {
+    if let Err(error) = solstone_core_brain::abandon_prerequisite_renewal(
+        journal_path,
+        permit,
+        "nvattest_unavailable",
+        Map::new(),
+        chrono::Utc::now(),
+        bundled_runtime_fingerprint_sha256,
+    ) {
+        eprintln!("brain prerequisite renewal abandonment failed: {error}");
+    }
+}
+
+fn abandon_prerequisite_renewal(
+    journal_path: &std::path::Path,
+    permit: solstone_core_brain::BrainRefreshPermit,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+    report: bool,
+) {
+    abandon_prerequisite_renewal_silently(journal_path, permit, bundled_runtime_fingerprint_sha256);
+    if report
+        && write_session_result(json!({
+            "schema": PREREQUISITE_RENEWAL_RESULT_SCHEMA,
+            "kind": "abandoned",
+            "reason_code": "nvattest_unavailable",
+            "component": "lane_prerequisites",
+        })) != ExitCode::SUCCESS
+    {
+        eprintln!("brain prerequisite renewal abandonment report failed: stdout I/O error");
+    }
+}
+
+fn write_brain_projection(journal_path: &std::path::Path, result_schema: &str) -> ExitCode {
     let config = match read_journal_config(journal_path) {
         Ok(read) => read.config.unwrap_or_default(),
         Err(error) => {
@@ -442,8 +685,8 @@ fn write_refresh_projection(journal_path: &std::path::Path) -> ExitCode {
     let projection =
         solstone_core_brain::inspect_brain_state(journal_path, &config, chrono::Utc::now())
             .projection;
-    write_refresh_result(json!({
-        "schema": REFRESH_RESULT_SCHEMA,
+    write_session_result(json!({
+        "schema": result_schema,
         "kind": "projection",
         "projection": {
             "aggregate_state": projection.aggregate_state,
@@ -457,7 +700,7 @@ fn write_refresh_projection(journal_path: &std::path::Path) -> ExitCode {
     }))
 }
 
-fn write_refresh_result(output: Value) -> ExitCode {
+fn write_session_result(output: Value) -> ExitCode {
     let mut stdout = io::stdout().lock();
     if serde_json::to_writer(&mut stdout, &output).is_err()
         || stdout.write_all(b"\n").is_err()
