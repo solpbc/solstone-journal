@@ -18,6 +18,7 @@ use crate::ledger::{AuthorizationLedger, ClientEntry, ClientRole};
 use crate::mark::mark_from_jid;
 
 const VALID_DID: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const INIT_HTML: &str = include_str!("../../../../solstone/convey/templates/init.html");
 
 #[tokio::test]
 async fn init_routes_reject_linked_devices_and_serve_localhost() {
@@ -438,6 +439,8 @@ async fn init_reads_defaults_without_writing() {
     .await;
 
     assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(body.as_ref(), INIT_HTML.as_bytes());
     assert!(
         !temporary
             .path()

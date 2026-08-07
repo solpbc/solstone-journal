@@ -7,7 +7,7 @@
 //! let _ = solstone_core_journal_io::read_journal_config;
 //! ```
 //!
-//! ```compile_fail,E0425
+//! ```compile_fail,E0603
 //! let _ = solstone_core_journal_io::config::read_journal_config;
 //! ```
 //!
@@ -24,7 +24,7 @@
 
 pub mod append;
 pub mod atomic;
-pub mod config;
+mod config;
 pub mod entry;
 pub mod errors;
 pub mod locking;
