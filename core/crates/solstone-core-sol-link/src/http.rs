@@ -17,6 +17,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::{error_envelope, not_found_fallback};
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_journal_config::load_mutation_base;
 use solstone_core_journal_io::{ConfigMutationError, JournalConfigMutation, mutate_journal_config};
 
 use crate::establish::{self, EstablishError};
@@ -239,9 +240,9 @@ async fn init_state(
     if !is_local(&basis) {
         return init_local_only();
     }
-    let config = match materialize_config(&state.journal_root) {
-        Ok(config) => config,
-        Err(error) => return config_error(error),
+    let config = match load_mutation_base(&state.journal_root) {
+        Ok(base) => base.config,
+        Err(_) => return corrupt_config(),
     };
     let retention_mode = nested_string(&config, "retention", "raw_media");
     Json(InitStateResponse {
@@ -281,9 +282,9 @@ async fn init(
     if !is_local(&basis) {
         return init_local_only();
     }
-    let config = match materialize_config(&state.journal_root) {
-        Ok(config) => config,
-        Err(error) => return config_error(error),
+    let config = match load_mutation_base(&state.journal_root) {
+        Ok(base) => base.config,
+        Err(_) => return corrupt_config(),
     };
     if setup_is_complete(&config) {
         let mut response = StatusCode::FOUND.into_response();
@@ -435,7 +436,7 @@ async fn init_finalize(
 
     // Deliberately does not seed config/convey.json — see
     // solstone/convey/config.py:seed_default_app_navigation; out of scope this wave.
-    let result = mutate_journal_config(&state.journal_root, &config_defaults(), |config| {
+    let result = mutate_journal_config(&state.journal_root, |config| {
         if !finalize_config_sections_are_objects(config) {
             return JournalConfigMutation {
                 changed: false,
@@ -512,27 +513,11 @@ fn init_local_only() -> Response {
 }
 
 fn materialize_config(journal_root: &Path) -> Result<Map<String, Value>, ConfigMutationError> {
-    mutate_journal_config(journal_root, &config_defaults(), |config| {
-        JournalConfigMutation {
-            changed: false,
-            value: config.clone(),
-        }
+    mutate_journal_config(journal_root, |config| JournalConfigMutation {
+        changed: false,
+        value: config.clone(),
     })
     .map(|transaction| transaction.value)
-}
-
-fn config_defaults() -> Map<String, Value> {
-    Map::from_iter([
-        (
-            "identity".to_owned(),
-            json!({"name": "", "preferred": "", "timezone": ""}),
-        ),
-        (
-            "retention".to_owned(),
-            json!({"raw_media": "keep", "raw_media_days": null}),
-        ),
-        ("setup".to_owned(), json!({})),
-    ])
 }
 
 fn invalid_finalize_config_sections(config: &Map<String, Value>) -> Option<Response> {

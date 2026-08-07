@@ -9,6 +9,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{Value, json};
 use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+use solstone_core_journal_config::materialized_defaults;
 use tower::ServiceExt;
 
 use crate::establish;
@@ -392,7 +393,7 @@ async fn committed_mark_returns_the_locked_identity_mark() {
 }
 
 #[tokio::test]
-async fn init_state_materializes_config_and_init_redirects_after_finalize() {
+async fn init_state_reads_materialized_defaults_without_writing() {
     let temporary = TempDir::new();
     let state = request(
         temporary.path(),
@@ -403,7 +404,12 @@ async fn init_state_materializes_config_and_init_redirects_after_finalize() {
     )
     .await;
     let state = response_json(state).await;
-    assert_eq!(state["identity_name"], "");
+    let defaults = materialized_defaults();
+    assert_eq!(state["identity_name"], defaults["identity"]["name"]);
+    assert_eq!(
+        state["identity_preferred"],
+        defaults["identity"]["preferred"]
+    );
     assert_eq!(state["retention_mode"], "keep");
     assert_eq!(state["lanes"][0]["id"], "local");
     assert_eq!(
@@ -411,12 +417,39 @@ async fn init_state_materializes_config_and_init_redirects_after_finalize() {
         "confidential processing"
     );
     assert!(
-        temporary
+        !temporary
             .path()
             .join("config")
             .join("journal.json")
-            .is_file()
+            .exists()
     );
+}
+
+#[tokio::test]
+async fn init_reads_defaults_without_writing() {
+    let temporary = TempDir::new();
+    let response = request(
+        temporary.path(),
+        AccessBasis::Localhost,
+        Method::GET,
+        "/init",
+        None,
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        !temporary
+            .path()
+            .join("config")
+            .join("journal.json")
+            .exists()
+    );
+}
+
+#[tokio::test]
+async fn init_redirects_after_finalize() {
+    let temporary = TempDir::new();
 
     establish::current_candidate(temporary.path()).unwrap();
     establish::lock_in(temporary.path(), None).unwrap();
