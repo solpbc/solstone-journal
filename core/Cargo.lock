@@ -2069,6 +2069,7 @@ dependencies = [
  "imageproc",
  "serde",
  "serde_json",
+ "solstone-core-format",
  "solstone-core-generate",
  "solstone-core-journal-config",
  "solstone-core-journal-io",

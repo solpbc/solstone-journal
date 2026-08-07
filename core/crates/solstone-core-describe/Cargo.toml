@@ -16,6 +16,7 @@ imageproc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-journal-config.workspace = true
+solstone-core-format.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-processing-record.workspace = true
 solstone-core-journal-io.workspace = true
