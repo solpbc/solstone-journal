@@ -469,11 +469,12 @@ fn run_brain_prerequisite_renewal_session(
         }
     };
     let bundled_runtime_fingerprint_sha256 = options.bundled_runtime_fingerprint_sha256;
+    let expected_fingerprint_sha256 = options.expected_fingerprint_sha256;
     let begin = solstone_core_brain::begin_prerequisite_renewal(
         &line.path,
         chrono::Utc::now(),
         options.run_id,
-        None,
+        expected_fingerprint_sha256.as_deref(),
         bundled_runtime_fingerprint_sha256.clone(),
     );
     let permit = match begin {

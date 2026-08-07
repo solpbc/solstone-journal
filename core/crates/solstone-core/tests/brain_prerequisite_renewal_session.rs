@@ -121,9 +121,18 @@ fn terminal() -> Value {
 }
 
 fn start(root: &Path) -> Child {
-    Command::new(bin())
+    start_with_expected_fingerprint(root, None)
+}
+
+fn start_with_expected_fingerprint(root: &Path, expected: Option<&str>) -> Child {
+    let mut command = Command::new(bin());
+    command
         .args(["brain", "prerequisite-renewal", "--session", "--journal"])
-        .arg(root)
+        .arg(root);
+    if let Some(expected) = expected {
+        command.args(["--expect-fingerprint", expected]);
+    }
+    command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -388,5 +397,47 @@ fn unsafe_exits_immediately_for_a_non_spp_lane() {
     assert_eq!(result["status"], "unsafe");
     assert_eq!(result["reason"], "non_spp_lane");
     assert!(!solstone_core_brain::brain_state_path(&root).exists());
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn mismatched_expected_fingerprint_exits_unsafe_without_writing() {
+    let root = configured_spp_journal("expected-mismatch");
+    let record_path = solstone_core_brain::brain_state_path(&root);
+    let before = fs::read(&record_path).expect("read record");
+    let output = finish(
+        start_with_expected_fingerprint(&root, Some(&"0".repeat(64))),
+        &[],
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    let result = parse_output(&output);
+    assert_eq!(result["schema"], RESULT_SCHEMA);
+    assert_eq!(result["kind"], "not_started");
+    assert_eq!(result["status"], "unsafe");
+    assert_eq!(result["reason"], "fingerprint_mismatch");
+    assert_eq!(fs::read(record_path).expect("read record"), before);
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn matching_expected_fingerprint_reaches_a_real_session_permit() {
+    let root = configured_spp_journal("expected-match");
+    let record: Value = serde_json::from_slice(
+        &fs::read(solstone_core_brain::brain_state_path(&root)).expect("read record"),
+    )
+    .expect("record JSON");
+    let expected = record["fingerprint_sha256"]
+        .as_str()
+        .expect("seed record fingerprint")
+        .to_owned();
+    let output = finish(
+        start_with_expected_fingerprint(&root, Some(&expected)),
+        &[abandon("attestation_expired"), terminal()],
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    let result = parse_ready_and_result(&output).expect("abandonment result");
+    assert_eq!(result["kind"], "abandoned");
     fs::remove_dir_all(root).expect("cleanup root");
 }
