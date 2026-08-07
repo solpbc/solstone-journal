@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use serde_json::Value;
 use solstone_core_describe::{IdentityTransform, WinnowConfig, process_video_with_transform};
-use solstone_core_journal_io::read_journal_config;
+use solstone_core_journal_config::read_journal_config;
 
 const EXIT_DECODE_FAILURE: u8 = 2;
 const EXIT_USAGE: u8 = 64;
@@ -157,7 +157,8 @@ fn read_config(journal_path: Option<&Path>) -> Result<WinnowConfig, CliError> {
         return Ok(WinnowConfig::default());
     };
     let config = read_journal_config(journal_path)
-        .map_err(|error| CliError::Config(format!("failed to read journal config: {error}")))?;
+        .map_err(|error| CliError::Config(format!("failed to read journal config: {error}")))?
+        .config;
     let Some(describe) = config
         .as_ref()
         .and_then(|config| config.get("describe"))

@@ -13,7 +13,7 @@ ffmpeg-next = { version = "9.0.0", default-features = false, features = ["format
 ffmpeg-sys-next = { version = "9.0.0", default-features = false, features = ["build-portable"] }
 serde.workspace = true
 serde_json.workspace = true
-solstone-core-journal-io.workspace = true
+solstone-core-journal-config.workspace = true
 
 [lints]
 workspace = true
