@@ -7,24 +7,8 @@
 //! let _ = solstone_core_journal_io::read_journal_config;
 //! ```
 //!
-//! ```compile_fail,E0603
-//! let _ = solstone_core_journal_io::config::read_journal_config;
-//! ```
-//!
-//! ```
-//! use solstone_core_journal_io::{ConfigLoadError, ConfigMutationError};
-//!
-//! fn observe_load_error(error: ConfigMutationError) {
-//!     match error {
-//!         ConfigMutationError::Load(ConfigLoadError::Corrupt { path, .. }) => drop(path),
-//!         _ => {}
-//!     }
-//! }
-//! ```
-
 pub mod append;
 pub mod atomic;
-mod config;
 pub mod entry;
 pub mod errors;
 pub mod locking;
@@ -41,9 +25,6 @@ pub use append::{append_jsonl, append_text};
 pub use atomic::{
     AtomicWriteOptions, JsonWriteOptions, atomic_replace, install_file, write_bytes_exclusive,
     write_json, write_jsonl, write_text,
-};
-pub use config::{
-    ConfigMutationError, JournalConfigMutation, JournalConfigTransaction, mutate_journal_config,
 };
 pub use entry::{Removed, remove_file, rename_within, sync_dir};
 pub use errors::{
@@ -63,5 +44,4 @@ pub use removal::remove_dir_all;
 pub use snapshot::{
     JournalSnapshot, SnapshotDirectory, SnapshotFile, capture_snapshot, restore_snapshot,
 };
-pub use solstone_core_journal_config::ConfigLoadError;
 pub use staged::{StagedDirOptions, StagedWriteError, publish_staged_dir};

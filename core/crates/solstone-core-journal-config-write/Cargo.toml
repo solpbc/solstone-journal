@@ -1,0 +1,15 @@
+[package]
+name = "solstone-core-journal-config-write"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+serde_json.workspace = true
+solstone-core-journal-config.workspace = true
+solstone-core-journal-io.workspace = true
+
+[lints]
+workspace = true

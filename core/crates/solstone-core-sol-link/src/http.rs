@@ -18,7 +18,9 @@ use solstone_core_convey_http::envelope::{error_envelope, not_found_fallback};
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_journal_config::load_mutation_base;
-use solstone_core_journal_io::{ConfigMutationError, JournalConfigMutation, mutate_journal_config};
+use solstone_core_journal_config_write::{
+    ConfigMutationError, JournalConfigMutation, mutate_journal_config,
+};
 
 use crate::establish::{self, EstablishError};
 use crate::ledger::{AuthorizedClientsRead, read_authorized_clients};

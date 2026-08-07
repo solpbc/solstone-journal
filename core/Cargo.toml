@@ -10,8 +10,9 @@ members = [
     "crates/solstone-core-entity-matching",
     "crates/solstone-core-facets",
     "crates/solstone-core-journal",
-    "crates/solstone-core-journal-io",
     "crates/solstone-core-journal-config",
+    "crates/solstone-core-journal-config-write",
+    "crates/solstone-core-journal-io",
     "crates/solstone-core-brain",
     "crates/solstone-core-brain-cli",
     "crates/solstone-core-callosum",
@@ -58,8 +59,9 @@ solstone-core-indexer-store = { path = "crates/solstone-core-indexer-store" }
 solstone-core-indexer-query = { path = "crates/solstone-core-indexer-query" }
 solstone-core-ingest-resolve = { path = "crates/solstone-core-ingest-resolve" }
 solstone-core-journal = { path = "crates/solstone-core-journal" }
-solstone-core-journal-io = { path = "crates/solstone-core-journal-io" }
 solstone-core-journal-config = { path = "crates/solstone-core-journal-config" }
+solstone-core-journal-config-write = { path = "crates/solstone-core-journal-config-write" }
+solstone-core-journal-io = { path = "crates/solstone-core-journal-io" }
 solstone-core-brain = { path = "crates/solstone-core-brain" }
 solstone-core-callosum = { path = "crates/solstone-core-callosum" }
 solstone-core-processing-record = { path = "crates/solstone-core-processing-record" }

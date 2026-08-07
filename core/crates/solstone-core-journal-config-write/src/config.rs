@@ -9,10 +9,9 @@ use std::path::Path;
 
 use serde_json::{Map, Value};
 use solstone_core_journal_config::{ConfigLoadError, get_journal_config_path, load_mutation_base};
-
-use crate::atomic::{JsonWriteOptions, write_json};
-use crate::errors::{AtomicWriteError, LockError};
-use crate::locking::{LockOptions, hold_lock};
+use solstone_core_journal_io::{
+    AtomicWriteError, JsonWriteOptions, LockError, LockOptions, hold_lock, write_json,
+};
 
 /// A caller's requested mutation and return value.
 #[derive(Debug, Clone, PartialEq)]

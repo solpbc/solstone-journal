@@ -1728,6 +1728,8 @@ dependencies = [
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal",
+ "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
  "solstone-core-sol",
  "solstone-core-spl",
  "tokio",
@@ -1984,6 +1986,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-journal-config-write"
+version = "1.0.22"
+dependencies = [
+ "serde_json",
+ "solstone-core-journal-config",
+ "solstone-core-journal-io",
+]
+
+[[package]]
 name = "solstone-core-journal-io"
 version = "1.0.22"
 dependencies = [
@@ -1993,7 +2004,6 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-journal",
- "solstone-core-journal-config",
 ]
 
 [[package]]
@@ -2101,6 +2111,7 @@ dependencies = [
  "sha2",
  "solstone-core-convey-http",
  "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-sol-client",
  "spl-core",
