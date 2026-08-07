@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import copy
 import json
-import logging
 import random
 import subprocess
 import time
@@ -21,14 +20,11 @@ from solstone.think.journal_io import LockTimeout
 from solstone.think.utils import (
     CorruptConfigError,
     _load_default_config,
-    _resolve_os_identity,
-    _resolve_os_timezone,
     get_config,
     get_journal,
 )
 
 T = TypeVar("T")
-logger = logging.getLogger(__name__)
 
 _CONFIG_CONFLICT_RETRY_BUDGET_SECONDS = 0.4
 _CONFIG_CONFLICT_BACKOFF_INITIAL_SECONDS = 0.005
@@ -110,7 +106,7 @@ def _run_journal_config_read(
     helper: Path,
     journal_root: Path,
     config_path: Path,
-) -> tuple[bool, str | None, dict[str, Any] | None]:
+) -> tuple[bool, str | None, dict[str, Any]]:
     try:
         completed = subprocess.run(
             [str(helper), "journal-config", "read", "--journal", str(journal_root)],
@@ -139,9 +135,9 @@ def _run_journal_config_read(
     fingerprint = envelope.get("sha256")
     config = envelope.get("config")
     if not present:
-        if fingerprint is not None or config is not None:
+        if fingerprint is not None or not isinstance(config, dict):
             raise RuntimeError("journal-config read returned an invalid absent response")
-        return False, None, None
+        return False, None, config
     if (
         not isinstance(fingerprint, str)
         or not fingerprint.startswith("sha256:")
@@ -228,24 +224,7 @@ def mutate_journal_config(
             journal_root,
             config_path,
         )
-        config = existing if present else copy.deepcopy(_load_default_config())
-        if not present:
-            try:
-                full_name, login_name = _resolve_os_identity()
-            except Exception:
-                logger.debug("Failed to resolve OS identity", exc_info=True)
-                full_name = ""
-                login_name = ""
-            try:
-                timezone = _resolve_os_timezone()
-            except Exception:
-                logger.debug("Failed to resolve OS timezone", exc_info=True)
-                timezone = ""
-            config.setdefault("identity", {})
-            config["identity"]["name"] = full_name
-            config["identity"]["preferred"] = login_name
-            config["identity"]["timezone"] = timezone
-        assert config is not None
+        config = existing
         mutation = mutator(config)
         written = not present or mutation.changed
         if not written:

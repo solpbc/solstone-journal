@@ -15,7 +15,6 @@ import copy
 import json
 import logging
 import os
-import pwd
 import re
 import socket
 import sys
@@ -732,45 +731,6 @@ def _load_default_config() -> dict[str, Any]:
 
 # Cached default config (loaded once at first use)
 _default_config: dict[str, Any] | None = None
-
-
-def _resolve_os_identity() -> tuple[str, str]:
-    """Return (full_name, login_name) from the OS user record, '' on failure."""
-    full_name = ""
-    login_name = ""
-    try:
-        entry = pwd.getpwuid(os.getuid())
-    except Exception:
-        return ("", "")
-    try:
-        gecos = entry.pw_gecos or ""
-        full_name = gecos.split(",", 1)[0].strip()
-    except Exception:
-        full_name = ""
-    try:
-        login_name = entry.pw_name or ""
-    except Exception:
-        login_name = ""
-    return (full_name, login_name)
-
-
-def _zone_from_localtime_path(resolved: str) -> str:
-    """Extract the IANA zone name from a resolved /etc/localtime path.
-
-    macOS uses /var/db/timezone/zoneinfo/<Zone>; Linux uses /usr/share/zoneinfo/<Zone>.
-    Return everything after the last /zoneinfo/ segment, or '' if absent.
-    """
-    marker = "/zoneinfo/"
-    idx = resolved.rfind(marker)
-    return resolved[idx + len(marker) :] if idx != -1 else ""
-
-
-def _resolve_os_timezone() -> str:
-    """Return the system tzdata zone from /etc/localtime, '' on failure."""
-    try:
-        return _zone_from_localtime_path(str(Path("/etc/localtime").resolve()))
-    except Exception:
-        return ""
 
 
 def journal_is_active(path: str | Path) -> bool:
