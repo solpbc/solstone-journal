@@ -297,6 +297,8 @@ leaves the file untouched, which is the correct posture. **A port over any other
 Python-written JSON owes the same reachability check rather than the
 assumption.**
 
+For the Python-compatible body-import JSON decoding seam, `solstone-core-body-source` is a hand-rolled parser that retains arbitrary-precision integers and accepts non-finite floats; it is not a general-purpose `serde_json::Value` replacement.
+
 Python `str` maps to UTF-8 `String` or `&str`. Python `bytes` maps to
 `Vec<u8>`. Filesystem paths map to `PathBuf` or `OsStr`; POSIX paths are not
 guaranteed to be UTF-8, so ports must not use `.to_str().unwrap()`.
