@@ -6,7 +6,6 @@ use solstone_core_sol_client::aggregate::{self, InventoryEntry};
 use solstone_core_sol_client::command::CommandOutput;
 
 const ROOT_CONTRACT_JSON: &str = include_str!("../../../fixtures/native-sol/root-contract-v1.json");
-const NOTIFY_HELP: &str = "usage: sol notify [-h] [--title TITLE] [--icon ICON] [--event EVENT]\n                  [--action ACTION] [--facet FACET] [--app APP]\n                  [--badge BADGE] [--auto-dismiss AUTO_DISMISS] [--no-dismiss]\n                  [-v] [-d]\n                  message [message ...]\n\nSend a notification via callosum\n\npositional arguments:\n  message               notification message text\n\noptions:\n  -h, --help            show this help message and exit\n  --title TITLE         notification title\n  --icon ICON           Lucide icon name (default: mailbox)\n  --event EVENT         event name (default: show)\n  --action ACTION       URL path to open on click\n  --facet FACET         facet context\n  --app APP             source app name\n  --badge BADGE         badge text or number\n  --auto-dismiss AUTO_DISMISS\n                        auto-dismiss after N milliseconds\n  --no-dismiss          make notification non-dismissible\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging\n";
 
 pub struct RootHelpStatus<'a> {
     pub journal_path: Option<&'a str>,
@@ -105,11 +104,6 @@ pub fn render_link_help(args: &[String]) -> Option<CommandOutput> {
 pub fn render_top_level_help(command: &str, args: &[String]) -> Option<CommandOutput> {
     if args.len() != 1 || !is_help(args[0].as_str()) {
         return None;
-    }
-    if command == "notify" {
-        // Inventory-presence guard: without the authority, top-level help should fall through.
-        leaf_for_path("sol-notify", &[command.to_string()])?;
-        return Some(CommandOutput::success(NOTIFY_HELP));
     }
     let surface = match command {
         "chat" => "sol-chat",
@@ -361,9 +355,7 @@ fn push_line(output: &mut String, line: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DispatchSeams, dispatch_sol_notify_with_seams};
-    use solstone_core_sol_client::seam::ScriptedHttpTransport;
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeSet;
 
     #[test]
     fn root_help_matches_generated_fixture_projection() {
@@ -383,38 +375,6 @@ mod tests {
     fn root_call_groups_come_from_fixture() {
         assert_eq!(root_call_groups().len(), 20);
         assert!(root_call_groups().contains(&"journal".to_string()));
-    }
-
-    #[test]
-    fn notify_top_level_help_matches_argparse_bytes() {
-        let output =
-            render_top_level_help("notify", &["--help".to_string()]).expect("notify help output");
-
-        assert_eq!(output.stdout, NOTIFY_HELP);
-        assert_eq!(output.stderr, "");
-        assert_eq!(output.exit, 0);
-        assert_eq!(output.stdout.len(), 1017);
-
-        let args = vec!["--help".to_string()];
-        let env = BTreeMap::new();
-        let transport = ScriptedHttpTransport::new(vec![]);
-        let handler_output = dispatch_sol_notify_with_seams(
-            &args,
-            &env,
-            "",
-            "20260723",
-            DispatchSeams {
-                transport: &transport,
-                clock: None,
-                chat_events: None,
-                files: None,
-                build_identity: None,
-                client_item_ids: None,
-                notification_sink: None,
-            },
-        );
-        transport.assert_done();
-        assert_eq!(handler_output, output);
     }
 
     #[test]
@@ -453,7 +413,7 @@ mod tests {
         for entry in aggregate::entries() {
             if !matches!(
                 entry.surface,
-                "sol-call" | "sol-chat" | "sol-import" | "sol-link" | "sol-notify"
+                "sol-call" | "sol-chat" | "sol-import" | "sol-link"
             ) {
                 continue;
             }

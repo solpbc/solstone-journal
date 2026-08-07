@@ -244,7 +244,6 @@
   },
   "legacy_exceptions": [
     "sol-help-reads-local-journal",
-    "sol-notify-writes-local-socket",
     "sol-python-doctor-check",
     "sol-python-call-journal",
     "journal-python-public-entrypoint",

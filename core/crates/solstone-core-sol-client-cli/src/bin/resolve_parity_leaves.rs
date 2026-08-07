@@ -46,7 +46,6 @@ fn main() -> Result<(), String> {
                 "sol-import" => vec!["import".to_string()],
                 "sol-status" => vec!["status".to_string()],
                 "sol-link" => link_lookup_args(&argv),
-                "sol-notify" => vec!["notify".to_string()],
                 _ => argv,
             };
             let entry = resolve_surface_leaf(surface, &lookup_args);

@@ -105,8 +105,6 @@ def check_conformance(
         errors.append("native sol conformance missing top-level import authority")
     if not any(authority.entry_type == "top-level-link" for authority in authorities):
         errors.append("native sol conformance missing top-level link authority")
-    if not any(authority.entry_type == "top-level-notify" for authority in authorities):
-        errors.append("native sol conformance missing top-level notify authority")
     if not any(authority.entry_type == "top-level-status" for authority in authorities):
         errors.append("native sol conformance missing top-level status authority")
 
@@ -149,8 +147,6 @@ def check_conformance(
                     "status",
                 )
             )
-        elif authority.entry_type == "top-level-notify":
-            errors.extend(check_non_http_entry(authority, contract_by_operation))
         elif authority.entry_type == "top-level-link":
             errors.extend(check_non_http_entry(authority, contract_by_operation))
         else:

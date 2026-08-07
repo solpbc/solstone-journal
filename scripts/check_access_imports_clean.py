@@ -87,7 +87,6 @@ NATIVE_CASES: tuple[tuple[str, list[str]], ...] = (
     ("sol link --help", ["sol", "link", "--help"]),
     ("sol link join --help", ["sol", "link", "join", "--help"]),
     ("sol link serve --help", ["sol", "link", "serve", "--help"]),
-    ("sol notify --help", ["sol", "notify", "--help"]),
     ("sol call --help", ["sol", "call", "--help"]),
     ("sol call activities --help", ["sol", "call", "activities", "--help"]),
     (

@@ -40,8 +40,6 @@ mod solstone_think_native_import_command_rs;
 mod solstone_think_native_link_command_rs;
 #[path = "../../../../../solstone/think/native/moved/command.rs"]
 mod solstone_think_native_moved_command_rs;
-#[path = "../../../../../solstone/think/native/notify/command.rs"]
-mod solstone_think_native_notify_command_rs;
 #[path = "../../../../../solstone/think/native/status/command.rs"]
 mod solstone_think_native_status_command_rs;
 #[path = "../../../../../solstone/think/tools/native/health/command.rs"]
@@ -2185,21 +2183,6 @@ pub const ENTRIES: &[InventoryEntry] = &[
         resident: false,
     },
     InventoryEntry {
-        surface: "sol-notify",
-        path: &["notify"],
-        kind: "top-level",
-        help: "Send a notification via callosum",
-        authority_path: "solstone/think/native/notify/authority.toml",
-        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"message\",\"nargs\":-1,\"options\":[\"message\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"title\",\"nargs\":1,\"options\":[\"--title\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"icon\",\"nargs\":1,\"options\":[\"--icon\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":\"show\",\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"event\",\"nargs\":1,\"options\":[\"--event\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"action\",\"nargs\":1,\"options\":[\"--action\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"facet\",\"nargs\":1,\"options\":[\"--facet\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"app\",\"nargs\":1,\"options\":[\"--app\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"badge\",\"nargs\":1,\"options\":[\"--badge\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"auto_dismiss\",\"nargs\":1,\"options\":[\"--auto-dismiss\"],\"required\":false,\"secondary\":[],\"type\":\"integer\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"no_dismiss\",\"nargs\":1,\"options\":[\"--no-dismiss\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"verbose\",\"nargs\":1,\"options\":[\"-v\",\"--verbose\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"debug\",\"nargs\":1,\"options\":[\"-d\",\"--debug\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
-        entry_type: "top-level-notify",
-        operation_id: "notify.top_level",
-        method: None,
-        route: None,
-        contract_operation_id: None,
-        handler: "notify",
-        resident: false,
-    },
-    InventoryEntry {
         surface: "sol-status",
         path: &["status"],
         kind: "top-level",
@@ -2793,7 +2776,6 @@ pub const HANDLERS: &[Handler] = &[
     solstone_think_native_link_command_rs::link_join,
     solstone_think_native_moved_command_rs::identity,
     solstone_think_native_moved_command_rs::navigate,
-    solstone_think_native_notify_command_rs::notify,
     solstone_think_native_status_command_rs::status,
     solstone_think_tools_native_health_command_rs::summary,
     solstone_think_tools_native_health_command_rs::full,

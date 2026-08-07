@@ -9,8 +9,8 @@ use solstone_core_sol_client::command::CommandContext;
 use solstone_core_sol_client::error::ClientError;
 use solstone_core_sol_client::seam::{
     ChatInput, ExpectedHttpCall, FakeBuildIdentityProvider, FakeClientItemIdProvider, FakeClock,
-    FixtureFileProvider, RecordedHttpCall, RecordingNotificationSink, ScriptedChatEventSource,
-    ScriptedHttpTransport, ScriptedLinkJoinPairingSeam, ScriptedLinkServeRunner,
+    FixtureFileProvider, RecordedHttpCall, ScriptedChatEventSource, ScriptedHttpTransport,
+    ScriptedLinkJoinPairingSeam, ScriptedLinkServeRunner,
 };
 use solstone_core_sol_client::sse::iter_sse_events;
 use solstone_core_sol_client::transport::{
@@ -20,7 +20,7 @@ use solstone_core_sol_client::transport::{
 use solstone_core_sol_client_cli::{
     DispatchSeams, LinkDispatch, LinkDispatchSeams, dispatch_sol_call_with_seams,
     dispatch_sol_chat_with_seams, dispatch_sol_import_with_seams, dispatch_sol_link_with_seams,
-    dispatch_sol_notify_with_seams, dispatch_sol_status_with_seams,
+    dispatch_sol_status_with_seams,
 };
 
 const ACTIVITIES_VECTORS: &str =
@@ -44,7 +44,6 @@ const LINK_JOIN_VECTORS: &str = include_str!("../../../fixtures/native-sol/parit
 const LINK_SERVE_VECTORS: &str =
     include_str!("../../../fixtures/native-sol/parity/link_serve.jsonl");
 const MOVED_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/moved.jsonl");
-const NOTIFY_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/notify.jsonl");
 const PROFILE_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/profile.jsonl");
 const SETTINGS_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/settings.jsonl");
 const SOL_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/sol.jsonl");
@@ -77,7 +76,6 @@ fn native_matches_sol_call_parity_vectors() {
         .chain(load_vectors(LINK_JOIN_VECTORS))
         .chain(load_vectors(LINK_SERVE_VECTORS))
         .chain(load_vectors(MOVED_VECTORS))
-        .chain(load_vectors(NOTIFY_VECTORS))
         .chain(load_vectors(PROFILE_VECTORS))
         .chain(load_vectors(SETTINGS_VECTORS))
         .chain(load_vectors(SOL_VECTORS))
@@ -117,15 +115,6 @@ fn run_vector(vector: &Value) {
             .and_then(Value::as_str)
             .unwrap_or("11111111111141118111111111111111"),
     );
-    let notification_sink = if vector["notification_sink"]
-        .get("fail")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
-        RecordingNotificationSink::failing()
-    } else {
-        RecordingNotificationSink::new()
-    };
     let link_pairing = ScriptedLinkJoinPairingSeam::new(vec![]);
     let link_serve = ScriptedLinkServeRunner::new(vec![]);
 
@@ -176,22 +165,6 @@ fn run_vector(vector: &Value) {
                 build_identity: Some(&build_identity),
                 client_item_ids: Some(&client_item_ids),
                 notification_sink: None,
-            },
-        )
-    } else if vector["surface"].as_str() == Some("sol-notify") {
-        dispatch_sol_notify_with_seams(
-            &argv,
-            &env,
-            stdin,
-            today,
-            DispatchSeams {
-                transport: &transport,
-                clock: Some(&clock),
-                chat_events: None,
-                files: Some(&files),
-                build_identity: Some(&build_identity),
-                client_item_ids: Some(&client_item_ids),
-                notification_sink: Some(&notification_sink),
             },
         )
     } else if vector["surface"].as_str() == Some("sol-link") {
@@ -254,16 +227,12 @@ fn run_vector(vector: &Value) {
     transport.assert_done();
     link_pairing.assert_done();
     link_serve.assert_done();
-    let mut actual = json!({
+    let actual = json!({
         "stdout": output.stdout,
         "stderr": output.stderr,
         "exit": output.exit,
         "requests": recorded_calls_to_json(transport.recorded()),
     });
-    let notifications = notification_sink.recorded();
-    if vector["expected"].get("notifications").is_some() || !notifications.is_empty() {
-        actual["notifications"] = recorded_notifications_to_json(notifications);
-    }
     let normalizations = normalization_array(vector);
     assert_eq!(
         normalize_result(actual, &normalizations),
@@ -271,10 +240,6 @@ fn run_vector(vector: &Value) {
         "{}",
         vector["id"]
     );
-}
-
-fn recorded_notifications_to_json(lines: Vec<String>) -> Value {
-    Value::Array(lines.into_iter().map(Value::String).collect())
 }
 
 fn load_vectors(text: &str) -> Vec<Value> {

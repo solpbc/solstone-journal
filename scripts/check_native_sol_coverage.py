@@ -20,7 +20,6 @@ try:
         FINAL_TOP_LEVEL_CHAT_TOTAL,
         FINAL_TOP_LEVEL_IMPORT_TOTAL,
         FINAL_TOP_LEVEL_LINK_TOTAL,
-        FINAL_TOP_LEVEL_NOTIFY_TOTAL,
         FINAL_TOP_LEVEL_STATUS_TOTAL,
         REPO_ROOT,
         discover,
@@ -32,7 +31,6 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
         FINAL_TOP_LEVEL_CHAT_TOTAL,
         FINAL_TOP_LEVEL_IMPORT_TOTAL,
         FINAL_TOP_LEVEL_LINK_TOTAL,
-        FINAL_TOP_LEVEL_NOTIFY_TOTAL,
         FINAL_TOP_LEVEL_STATUS_TOTAL,
         REPO_ROOT,
         discover,
@@ -77,11 +75,6 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
         for entry in entries
         if entry.surface == "sol-import" and entry.entry_type == "top-level-import"
     }
-    required_top_level_notify = {
-        entry.operation_id
-        for entry in entries
-        if entry.surface == "sol-notify" and entry.entry_type == "top-level-notify"
-    }
     required_top_level_status = {
         entry.operation_id
         for entry in entries
@@ -98,7 +91,6 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
         | required_top_level_chat
         | required_top_level_import
         | required_top_level_link
-        | required_top_level_notify
         | required_top_level_status
     )
     vectors = load_vectors(PARITY_DIR)
@@ -179,11 +171,6 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
             f"current top-level import authority count {len(required_top_level_import)} "
             f"!= {FINAL_TOP_LEVEL_IMPORT_TOTAL}"
         )
-    if len(required_top_level_notify) != FINAL_TOP_LEVEL_NOTIFY_TOTAL:
-        errors.append(
-            f"current top-level notify authority count {len(required_top_level_notify)} "
-            f"!= {FINAL_TOP_LEVEL_NOTIFY_TOTAL}"
-        )
     if len(required_top_level_status) != FINAL_TOP_LEVEL_STATUS_TOTAL:
         errors.append(
             f"current top-level status authority count {len(required_top_level_status)} "
@@ -239,21 +226,6 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
                 f"top-level status {bucket_name}",
                 required_top_level_status,
                 status_buckets[bucket_name],
-            )
-        )
-    notify_buckets = collect_buckets(
-        vectors,
-        resolved,
-        required_top_level_notify,
-        {"top-level-notify"},
-        errors,
-    )
-    for bucket_name in ("notification_binding", "success", "failure"):
-        errors.extend(
-            compare_sets(
-                f"top-level notify {bucket_name}",
-                required_top_level_notify,
-                notify_buckets[bucket_name],
             )
         )
     link_buckets = collect_buckets(
@@ -403,7 +375,6 @@ def collect_buckets(
 ) -> dict[str, set[str]]:
     buckets: dict[str, set[str]] = {
         "request_binding": set(),
-        "notification_binding": set(),
         "success": set(),
         "failure": set(),
     }
@@ -419,13 +390,8 @@ def collect_buckets(
             continue
         expected = vector.get("expected") or {}
         requests = expected.get("requests") if isinstance(expected, dict) else None
-        notifications = (
-            expected.get("notifications") if isinstance(expected, dict) else None
-        )
         if pins_request_shape(requests):
             buckets["request_binding"].add(operation_id)
-        if pins_notification_shape(notifications):
-            buckets["notification_binding"].add(operation_id)
         if is_failure_vector(vector, expected):
             buckets["failure"].add(operation_id)
         elif is_success_vector(
@@ -433,12 +399,6 @@ def collect_buckets(
         ):
             buckets["success"].add(operation_id)
     return buckets
-
-
-def pins_notification_shape(notifications: Any) -> bool:
-    return isinstance(notifications, list) and any(
-        isinstance(item, str) and item.endswith("\n") for item in notifications
-    )
 
 
 def pins_request_shape(requests: Any) -> bool:

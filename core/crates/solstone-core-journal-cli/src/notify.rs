@@ -7,7 +7,6 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use solstone_core_sol_client::aggregate::handler_for;
 use solstone_core_sol_client::command::{CommandContext, CommandOutput};
 use solstone_core_sol_client::error::ClientError;
 use solstone_core_sol_client::seam::{HttpTransport, NotificationSink, NotificationSinkError};
@@ -18,6 +17,7 @@ use solstone_core_sol_client::transport::{
 use crate::Outcome;
 use crate::host::resolution_failure;
 use crate::layout::resolve_current_journal;
+use crate::notify_handler;
 
 const EXIT_TEMPFAIL: u8 = 75;
 const SOCKET_TIMEOUT: Duration = Duration::from_secs(2);
@@ -45,9 +45,7 @@ pub(crate) fn notify(owner_argv: &[OsString]) -> Outcome {
     let sink = UnixNotificationSink::new(journal.path.join("health/callosum.sock"));
     let env = BTreeMap::new();
     let transport = NotifyHttpTransport;
-    let (_, handler) = handler_for(&["notify"])
-        .expect("solstone-core-sol-client must provide the native notify handler");
-    command_output(handler(CommandContext {
+    command_output(notify_handler::notify(CommandContext {
         args: &args,
         env: &env,
         stdin: "",

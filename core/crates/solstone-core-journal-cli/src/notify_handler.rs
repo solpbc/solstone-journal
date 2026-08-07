@@ -3,13 +3,13 @@
 
 use std::fmt::Write as _;
 
-use crate::command::{CommandContext, CommandOutput};
+use solstone_core_sol_client::command::{CommandContext, CommandOutput};
 
 const HELP: &str = "usage: sol notify [-h] [--title TITLE] [--icon ICON] [--event EVENT]\n                  [--action ACTION] [--facet FACET] [--app APP]\n                  [--badge BADGE] [--auto-dismiss AUTO_DISMISS] [--no-dismiss]\n                  [-v] [-d]\n                  message [message ...]\n\nSend a notification via callosum\n\npositional arguments:\n  message               notification message text\n\noptions:\n  -h, --help            show this help message and exit\n  --title TITLE         notification title\n  --icon ICON           Lucide icon name (default: mailbox)\n  --event EVENT         event name (default: show)\n  --action ACTION       URL path to open on click\n  --facet FACET         facet context\n  --app APP             source app name\n  --badge BADGE         badge text or number\n  --auto-dismiss AUTO_DISMISS\n                        auto-dismiss after N milliseconds\n  --no-dismiss          make notification non-dismissible\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging\n";
 const FAILURE: &str = "Failed to send notification (is callosum running?)\n";
 
 #[must_use]
-pub fn notify(ctx: CommandContext<'_>) -> CommandOutput {
+pub(crate) fn notify(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(ctx.args) {
         Ok(parsed) => parsed,
         Err(error) => return argparse_error(error),
@@ -248,8 +248,10 @@ fn push_unicode_escape(output: &mut String, value: u32) {
 mod tests {
     use std::collections::BTreeMap;
 
-    use crate::command::{CommandContext, CommandOutput};
-    use crate::seam::{RecordingNotificationSink, ScriptedHttpTransport};
+    use solstone_core_sol_client::command::{CommandContext, CommandOutput};
+    use solstone_core_sol_client::seam::{
+        NotificationSink, RecordingNotificationSink, ScriptedHttpTransport,
+    };
 
     use super::*;
 
@@ -272,7 +274,7 @@ mod tests {
             files: None,
             build_identity: None,
             client_item_ids: None,
-            notification_sink: sink.map(|sink| sink as &dyn crate::seam::NotificationSink),
+            notification_sink: sink.map(|sink| sink as &dyn NotificationSink),
             link_pairing: None,
             link_serve: None,
             journal_root: None,

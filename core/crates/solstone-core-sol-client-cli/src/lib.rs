@@ -21,7 +21,6 @@ pub enum Outcome {
     Chat { args: Vec<OsString> },
     Import { args: Vec<OsString> },
     Status { args: Vec<OsString> },
-    Notify { args: Vec<OsString> },
     MovedStub { name: OsString },
     Unsupported { args: Vec<OsString> },
 }
@@ -83,16 +82,6 @@ pub fn evaluate_args(args: &[OsString]) -> Outcome {
                     args: args.to_vec(),
                 },
                 |_entry| Outcome::Status {
-                    args: rest.to_vec(),
-                },
-            )
-        }
-        [command, rest @ ..] if command == OsStr::new("notify") => {
-            match_generated_surface_path("sol-notify", &[String::from("notify")]).map_or_else(
-                || Outcome::Unsupported {
-                    args: args.to_vec(),
-                },
-                |_entry| Outcome::Notify {
                     args: rest.to_vec(),
                 },
             )
@@ -187,36 +176,6 @@ pub fn dispatch_sol_status_with_seams(
         build_identity: seams.build_identity,
         client_item_ids: seams.client_item_ids,
         notification_sink: None,
-        link_pairing: None,
-        link_serve: None,
-        journal_root: None,
-    })
-}
-
-#[must_use]
-pub fn dispatch_sol_notify_with_seams(
-    args: &[String],
-    env: &BTreeMap<String, String>,
-    stdin: &str,
-    today: &str,
-    seams: DispatchSeams<'_>,
-) -> CommandOutput {
-    let Some((_, handler)) = match_generated_surface_path("sol-notify", &[String::from("notify")])
-    else {
-        return CommandOutput::failure("Unsupported native sol command.\n", 64);
-    };
-    handler(CommandContext {
-        args,
-        env,
-        stdin,
-        today,
-        transport: seams.transport,
-        clock: seams.clock,
-        chat_events: None,
-        files: seams.files,
-        build_identity: seams.build_identity,
-        client_item_ids: seams.client_item_ids,
-        notification_sink: seams.notification_sink,
         link_pairing: None,
         link_serve: None,
         journal_root: None,
@@ -491,16 +450,6 @@ mod tests {
         assert_eq!(
             evaluate_args(&args(&["status"])),
             Outcome::Status { args: vec![] }
-        );
-    }
-
-    #[test]
-    fn routes_top_level_notify_to_notify_shell() {
-        assert_eq!(
-            evaluate_args(&args(&["notify", "hello"])),
-            Outcome::Notify {
-                args: args(&["hello"])
-            }
         );
     }
 

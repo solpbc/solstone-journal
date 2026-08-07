@@ -9,6 +9,7 @@ mod host;
 mod layout;
 pub mod manifest;
 mod notify;
+mod notify_handler;
 mod processes;
 mod runner;
 
