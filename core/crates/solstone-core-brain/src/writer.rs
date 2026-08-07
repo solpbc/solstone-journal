@@ -39,18 +39,13 @@ const BRAIN_FILE_MODE: u32 = 0o600;
 
 /// Terminal writer-parity cases from the frozen projection corpus.
 ///
-/// Intermediate checking, absent/foreign fingerprint, and superseded-marker
-/// records are composition-only. The remaining 40 cases are owned by a
-/// terminal writer lane and are retained as a reviewable selector for AC13.
-pub const REACHABLE_WRITE_CASES: [&str; 40] = [
-    "config_missing_provider/evidence_expired",
-    "config_missing_provider/ready",
-    "config_missing_provider/ready_expiring_within_the_hour",
-    "config_missing_provider/updated_at_in_the_future",
+/// Intermediate checking, absent/foreign fingerprint, marker, none-lane, and
+/// configuration-invalid records are composition-only. The remaining 28 cases
+/// are owned by `finish_refresh` and retained as a reviewable selector for AC13.
+pub const REACHABLE_WRITE_CASES: [&str; 28] = [
     "lane_bundled/cogitate_failed_generate_ok",
     "lane_bundled/evidence_expired",
     "lane_bundled/generate_failed",
-    "lane_bundled/marker_current",
     "lane_bundled/prerequisites_blocked",
     "lane_bundled/ready",
     "lane_bundled/ready_expiring_within_the_hour",
@@ -58,7 +53,6 @@ pub const REACHABLE_WRITE_CASES: [&str; 40] = [
     "lane_byo_cloud/cogitate_failed_generate_ok",
     "lane_byo_cloud/evidence_expired",
     "lane_byo_cloud/generate_failed",
-    "lane_byo_cloud/marker_current",
     "lane_byo_cloud/prerequisites_blocked",
     "lane_byo_cloud/ready",
     "lane_byo_cloud/ready_expiring_within_the_hour",
@@ -66,19 +60,13 @@ pub const REACHABLE_WRITE_CASES: [&str; 40] = [
     "lane_byo_endpoint/cogitate_failed_generate_ok",
     "lane_byo_endpoint/evidence_expired",
     "lane_byo_endpoint/generate_failed",
-    "lane_byo_endpoint/marker_current",
     "lane_byo_endpoint/prerequisites_blocked",
     "lane_byo_endpoint/ready",
     "lane_byo_endpoint/ready_expiring_within_the_hour",
     "lane_byo_endpoint/updated_at_in_the_future",
-    "lane_none/evidence_expired",
-    "lane_none/ready",
-    "lane_none/ready_expiring_within_the_hour",
-    "lane_none/updated_at_in_the_future",
     "lane_spp/cogitate_failed_generate_ok",
     "lane_spp/evidence_expired",
     "lane_spp/generate_failed",
-    "lane_spp/marker_current",
     "lane_spp/prerequisites_blocked",
     "lane_spp/ready",
     "lane_spp/ready_expiring_within_the_hour",
@@ -432,7 +420,7 @@ pub fn abandon_refresh(
     let mut evidence = object_field(&raw, "evidence")?.clone();
     evidence.insert(
         component.to_owned(),
-        component_for_reason(reason_code, diagnostic, now)?,
+        component_for_reason(reason_code, diagnostic.clone(), now)?,
     );
     let revision = next_revision(Some(&current));
     let record = compose_direct_record(DirectRecord {
@@ -448,7 +436,7 @@ pub fn abandon_refresh(
             .get("runtime_failure_marker")
             .cloned()
             .unwrap_or(Value::Null),
-        diagnostic: Value::Object(Map::new()),
+        diagnostic: Value::Object(diagnostic),
         now,
     });
     write_record(&path, &record, now)?;
@@ -813,10 +801,14 @@ fn begin_none_lane(
         active_provider: Some(resolution.provider.clone()),
         active_model: resolution.model.clone(),
         fingerprint_sha256: None,
-        evidence: Value::Object(Map::from_iter([(
-            "configuration".to_owned(),
-            component_for_reason("thinking_engine_not_chosen", Map::new(), now)?,
-        )])),
+        evidence: Value::Object({
+            let mut evidence = empty_evidence();
+            evidence.insert(
+                "configuration".to_owned(),
+                component_for_reason("thinking_engine_not_chosen", Map::new(), now)?,
+            );
+            evidence
+        }),
         checking: Value::Null,
         marker: Value::Null,
         diagnostic: Value::Object(Map::new()),
@@ -1294,6 +1286,12 @@ mod tests {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, serde_json::to_vec(record).unwrap()).unwrap();
         }
+
+        fn seed_value(&self, record: &Value) {
+            let path = brain_state_path(self.path());
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, serde_json::to_vec(record).unwrap()).unwrap();
+        }
     }
 
     impl Drop for TestJournal {
@@ -1370,16 +1368,67 @@ mod tests {
     }
 
     #[test]
-    fn reachable_writer_selector_has_the_documented_40_cases() {
-        assert_eq!(REACHABLE_WRITE_CASES.len(), 40);
+    fn reachable_writer_selector_has_the_documented_28_cases() {
+        assert_eq!(REACHABLE_WRITE_CASES.len(), 28);
+        assert!(REACHABLE_WRITE_CASES.iter().all(|name| {
+            name.starts_with("lane_bundled/")
+                || name.starts_with("lane_byo_cloud/")
+                || name.starts_with("lane_byo_endpoint/")
+                || name.starts_with("lane_spp/")
+        }));
         assert!(REACHABLE_WRITE_CASES.iter().all(|name| {
             !name.contains("fingerprint_")
-                && !name.contains("marker_superseded")
+                && !name.contains("marker_")
                 && projection_fixture()
                     .records
                     .get(*name)
                     .is_some_and(|record| record["checking"].is_null())
         }));
+    }
+
+    #[test]
+    fn reachable_writer_cases_are_emitted_by_finish_refresh() {
+        for name in REACHABLE_WRITE_CASES {
+            let fixture = projection_fixture();
+            let target = fixture.records.get(name).expect("reachable fixture record");
+            let (lane, _) = name.split_once('/').expect("fixture case name");
+            let now = DateTime::parse_from_rfc3339(
+                target["updated_at"].as_str().expect("fixture updated_at"),
+            )
+            .expect("fixture timestamp")
+            .with_timezone(&Utc);
+            let journal = TestJournal::new();
+            journal.write_config(lane);
+            journal.write_fixture_key();
+
+            let mut prior = fixture.records[&format!("{lane}/ready")].clone();
+            prior["revision"] = json!(1);
+            journal.seed_value(&prior);
+
+            let bundled_runtime = (lane == "lane_bundled")
+                .then(|| fixture.bundled_runtime_fingerprint_sha256.clone());
+            let permit = begin_refresh(
+                journal.path(),
+                now,
+                Some("writer-parity".to_owned()),
+                None,
+                false,
+                bundled_runtime.clone(),
+            )
+            .expect("begin refresh")
+            .expect("refresh permit");
+            let written = finish_refresh(
+                journal.path(),
+                permit,
+                target["evidence"].clone(),
+                now,
+                bundled_runtime,
+            )
+            .expect("finish refresh");
+            assert_eq!(written, *target, "writer parity mismatch: {name}");
+            let disk: Value = serde_json::from_slice(&record_bytes(&journal)).expect("record JSON");
+            assert_eq!(disk, *target, "writer parity disk mismatch: {name}");
+        }
     }
 
     #[test]
@@ -1441,6 +1490,12 @@ mod tests {
         validate_brain_state_record(&value, fixture_now()).unwrap();
         assert_eq!(value["reason_code"], "thinking_engine_not_chosen");
         assert!(value["runtime_failure_marker"].is_null());
+        let evidence = value["evidence"].as_object().expect("evidence object");
+        assert_eq!(evidence.len(), 4);
+        assert!(evidence["configuration"].is_object());
+        for component in ["lane_prerequisites", "generate", "cogitate"] {
+            assert!(evidence[component].is_null(), "{component} must be null");
+        }
     }
 
     #[test]
@@ -1699,6 +1754,30 @@ mod tests {
     }
 
     #[test]
+    fn abandon_refresh_preserves_caller_diagnostic_at_record_top_level() {
+        let journal = TestJournal::new();
+        let permit = begin_cloud(&journal);
+        let diagnostic = Map::from_iter([
+            ("phase".to_owned(), Value::String("failed".to_owned())),
+            (
+                "runtime_reason".to_owned(),
+                Value::String("gpu-unavailable".to_owned()),
+            ),
+        ]);
+        let record = abandon_refresh(
+            journal.path(),
+            permit,
+            "local_server_unhealthy",
+            diagnostic.clone(),
+            fixture_now(),
+        )
+        .expect("refresh abandon");
+        assert_eq!(record["diagnostic"], Value::Object(diagnostic.clone()));
+        let disk: Value = serde_json::from_slice(&record_bytes(&journal)).expect("record JSON");
+        assert_eq!(disk["diagnostic"], Value::Object(diagnostic));
+    }
+
+    #[test]
     fn finish_preserves_caller_evidence_timestamp_spelling() {
         let journal = TestJournal::new();
         journal.write_config("lane_byo_cloud");
@@ -1798,6 +1877,9 @@ mod tests {
 
     #[test]
     fn runtime_failure_precedence_prefers_reason_over_component() {
+        // There is no (1, 2) pair test: the native API receives `DateTime<Utc>`,
+        // so Python's fallible now-normalization has already completed before this
+        // function can run. Invalid timestamps are structurally unrepresentable here.
         let journal = TestJournal::new();
         let result = record_runtime_failure(
             journal.path(),

@@ -68,6 +68,30 @@ fn output(root: &Path) -> Value {
     serde_json::from_slice(&output.stdout).expect("inspect output should be JSON")
 }
 
+fn snapshot_tree(root: &Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
+    fn collect(root: &Path, current: &Path, entries: &mut Vec<(PathBuf, Option<Vec<u8>>)>) {
+        for entry in fs::read_dir(current).expect("read test directory") {
+            let entry = entry.expect("read test entry");
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .expect("test path should be under root")
+                .to_path_buf();
+            if path.is_dir() {
+                entries.push((relative, None));
+                collect(root, &path, entries);
+            } else {
+                entries.push((relative, Some(fs::read(path).expect("read test file"))));
+            }
+        }
+    }
+
+    let mut entries = Vec::new();
+    collect(root, root, &mut entries);
+    entries.sort();
+    entries
+}
+
 fn ready_outcome() -> Value {
     let now = Utc::now();
     let observed_at = now.to_rfc3339();
@@ -185,5 +209,16 @@ fn inspect_reports_an_unavailable_active_fingerprint_without_a_key() {
         "fingerprint_key_unavailable"
     );
 
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn inspect_does_not_modify_the_journal() {
+    let root = configured_journal("no-write", false);
+    let before = snapshot_tree(&root);
+
+    let _ = output(&root);
+
+    assert_eq!(snapshot_tree(&root), before);
     fs::remove_dir_all(root).expect("cleanup root");
 }

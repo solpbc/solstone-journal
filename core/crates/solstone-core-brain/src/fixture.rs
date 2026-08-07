@@ -142,6 +142,7 @@ pub(crate) struct CanonicalDigestVector {
 pub(crate) struct BrainProjectionFixture {
     pub now: String,
     pub hmac_key_hex: String,
+    pub bundled_runtime_fingerprint_sha256: String,
     pub unrelated_fingerprint: String,
     pub configs: BTreeMap<String, Value>,
     pub records: BTreeMap<String, Value>,
