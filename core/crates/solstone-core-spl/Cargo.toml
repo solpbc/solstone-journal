@@ -13,6 +13,7 @@ publish = false
 bytes = { workspace = true }
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }
 serde_json = { workspace = true }
+solstone-core-journal-config.workspace = true
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "rt", "rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
 tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }

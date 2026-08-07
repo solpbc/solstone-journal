@@ -10,9 +10,8 @@
 
 use std::{
     collections::VecDeque,
-    env, fs,
+    env,
     future::Future,
-    io,
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -22,6 +21,7 @@ use std::{
 };
 
 use serde_json::{Map, Value};
+use solstone_core_journal_config::{ConfigLoadError, plain_defaults, read_journal_config};
 use tokio::{
     io::AsyncWriteExt,
     sync::{Notify, watch},
@@ -168,10 +168,9 @@ impl ProcessServiceDeps {
             return Ok(endpoint);
         }
 
-        let config = read_journal_config(&self.journal_root).map_err(|_| ProcessStartError)?;
+        let config = read_journal_config_map(&self.journal_root).map_err(|_| ProcessStartError)?;
         let configured_endpoint = config
-            .as_object()
-            .and_then(|config| config.get("link"))
+            .get("link")
             .and_then(Value::as_object)
             .and_then(|link| link.get("relay_url"))
             .and_then(Value::as_str)
@@ -205,10 +204,10 @@ impl ServiceDeps for ProcessServiceDeps {
     type RunError = RelayError;
 
     fn read_posture(&mut self) -> Result<String, Self::PostureError> {
-        let config = read_journal_config(&self.journal_root).map_err(|_| ProcessPostureError)?;
+        let config =
+            read_journal_config_map(&self.journal_root).map_err(|_| ProcessPostureError)?;
         let posture = config
-            .as_object()
-            .and_then(|config| config.get("link"))
+            .get("link")
             .and_then(Value::as_object)
             .and_then(|link| link.get("posture"))
             .and_then(Value::as_str);
@@ -297,14 +296,9 @@ impl LoopbackDialer for LocalLoopbackDialer {
     }
 }
 
-fn read_journal_config(journal_root: &Path) -> Result<Value, io::Error> {
-    let path = journal_root.join("config").join("journal.json");
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Value::Null),
-        Err(error) => return Err(error),
-    };
-    serde_json::from_slice(&bytes).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))
+fn read_journal_config_map(journal_root: &Path) -> Result<Map<String, Value>, ConfigLoadError> {
+    let read = read_journal_config(journal_root)?;
+    Ok(read.config.unwrap_or_else(plain_defaults))
 }
 
 struct CallosumOutput {
@@ -1037,6 +1031,12 @@ mod tests {
                 .map_err(|_| "default endpoint failed")?,
             DEFAULT_RELAY_ENDPOINT
         );
+
+        let corrupt = TempJournal::new()?;
+        corrupt.write("config/journal.json", r#"{"link":NaN}"#)?;
+        let mut corrupt_deps = test_deps(corrupt.path());
+        assert!(corrupt_deps.load_relay_endpoint().is_err());
+        assert!(corrupt_deps.read_posture().is_err());
         Ok(())
     }
 

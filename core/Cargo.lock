@@ -2145,6 +2145,7 @@ dependencies = [
  "bytes",
  "futures-util",
  "serde_json",
+ "solstone-core-journal-config",
  "thiserror 2.0.19",
  "tokio",
  "tokio-tungstenite",
