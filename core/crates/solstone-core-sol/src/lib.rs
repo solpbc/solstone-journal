@@ -1249,6 +1249,160 @@ impl BuildIdentityProvider for RealBuildIdentityProvider {
 mod tests {
     use super::*;
 
+    const CLI_BOUNDARY_JSON: &str =
+        include_str!("../../../fixtures/native-sol/cli-boundary-v1.json");
+
+    fn cli_boundary_errors(value: &serde_json::Value) -> Vec<String> {
+        let mut errors = Vec::new();
+        let binary_count = value
+            .get("binary_count")
+            .and_then(serde_json::Value::as_u64);
+        if binary_count != Some(1) {
+            errors.push("binary_count must be one".to_owned());
+        }
+        let identities = value
+            .get("identities")
+            .and_then(serde_json::Value::as_object);
+        let Some(identities) = identities else {
+            errors.push("identities must be an object".to_owned());
+            return errors;
+        };
+        let identity_names = identities
+            .keys()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        if identity_names != string_values(&["journal", "sol"]) {
+            errors.push("identities must contain exactly journal and sol".to_owned());
+        }
+        let Some(sol) = identities.get("sol") else {
+            errors.push("sol identity is missing".to_owned());
+            return errors;
+        };
+        if sol.get("journal_reach").and_then(serde_json::Value::as_str) != Some("api-only") {
+            errors.push("sol journal reach must be api-only".to_owned());
+        }
+        let api = string_set(sol, "api_commands", &mut errors);
+        if api != string_values(&["call", "chat", "import", "notify", "status"]) {
+            errors.push("sol API command boundary drifted".to_owned());
+        }
+        let local = string_set(sol, "invoking_device_commands", &mut errors);
+        if local != string_values(&["link", "root", "skills"]) {
+            errors.push("sol invoking-device command boundary drifted".to_owned());
+        }
+        for duplicate in api.intersection(&local) {
+            errors.push(format!("sol command {duplicate} has two reaches"));
+        }
+        let forbidden_sol = string_set(sol, "forbidden_direct_journal_commands", &mut errors);
+        if forbidden_sol != string_values(&["--path", "check", "doctor", "path"]) {
+            errors.push("sol forbidden direct-journal command boundary drifted".to_owned());
+        }
+        let Some(journal) = identities.get("journal") else {
+            errors.push("journal identity is missing".to_owned());
+            return errors;
+        };
+        if journal
+            .get("journal_reach")
+            .and_then(serde_json::Value::as_str)
+            != Some("same-device")
+        {
+            errors.push("journal reach must be same-device".to_owned());
+        }
+        let may_use = string_set(journal, "may_use", &mut errors);
+        if may_use != string_values(&["direct", "localhost-api", "service-process"]) {
+            errors.push("journal allowed reach boundary drifted".to_owned());
+        }
+        let root = string_set(journal, "root_commands", &mut errors);
+        if root
+            != string_values(&[
+                "--path", "check", "contract", "doctor", "notify", "path", "root", "status",
+            ])
+        {
+            errors.push("journal root command boundary drifted".to_owned());
+        }
+        let service = string_set(journal, "service_commands", &mut errors);
+        let expected = JOURNAL_HOST_COMMANDS
+            .iter()
+            .map(|command| (*command).to_owned())
+            .collect::<std::collections::BTreeSet<_>>();
+        if service != expected {
+            errors.push("journal service command census drifted".to_owned());
+        }
+        let forbidden = string_set(journal, "forbidden_grammar", &mut errors);
+        if !forbidden.contains("dotted-module") {
+            errors.push("journal dotted-module grammar must be forbidden".to_owned());
+        }
+        let legacy = string_set(value, "legacy_exceptions", &mut errors);
+        if legacy
+            != string_values(&[
+                "journal-dotted-module-dispatch",
+                "journal-python-public-entrypoint",
+                "sol-help-reads-local-journal",
+                "sol-notify-writes-local-socket",
+                "sol-path-and-status-read-local-journal",
+                "sol-python-call-journal",
+                "sol-python-doctor-check",
+            ])
+        {
+            errors.push("legacy exception census drifted".to_owned());
+        }
+        errors
+    }
+
+    fn string_values(values: &[&str]) -> std::collections::BTreeSet<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    fn string_set(
+        value: &serde_json::Value,
+        field: &str,
+        errors: &mut Vec<String>,
+    ) -> std::collections::BTreeSet<String> {
+        let Some(items) = value.get(field).and_then(serde_json::Value::as_array) else {
+            errors.push(format!("{field} must be an array"));
+            return std::collections::BTreeSet::new();
+        };
+        let mut set = std::collections::BTreeSet::new();
+        for item in items {
+            let Some(item) = item.as_str() else {
+                errors.push(format!("{field} contains a non-string"));
+                continue;
+            };
+            if !set.insert(item.to_owned()) {
+                errors.push(format!("{field} contains duplicate {item}"));
+            }
+        }
+        set
+    }
+
+    #[test]
+    fn cli_boundary_fixture_is_total_for_the_current_journal_host_census() {
+        let value: serde_json::Value =
+            serde_json::from_str(CLI_BOUNDARY_JSON).expect("parse CLI boundary fixture");
+        assert_eq!(value["schema"], "solstone-cli-boundary-v1");
+        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 44);
+        assert_eq!(cli_boundary_errors(&value), Vec::<String>::new());
+    }
+
+    #[test]
+    fn cli_boundary_fixture_rejects_two_reaches_and_a_missing_identity() {
+        let mut value: serde_json::Value =
+            serde_json::from_str(CLI_BOUNDARY_JSON).expect("parse CLI boundary fixture");
+        value["identities"]["sol"]["invoking_device_commands"] =
+            serde_json::json!(["link", "notify"]);
+        value["identities"]["bridge"] = serde_json::json!({});
+        let errors = cli_boundary_errors(&value);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error == "sol command notify has two reaches")
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error == "identities must contain exactly journal and sol")
+        );
+    }
+
     use solstone_core_sol_client::seam::ScriptedHttpTransport;
 
     struct PanicStdinProvider;
