@@ -1,0 +1,344 @@
+{
+  "canonical_cases": [
+    {
+      "expected_canonical_json": "{\"a\":2,\"nested\":{\"\\ud83e\\udec0\":3}}",
+      "name": "duplicate_decoded_keys",
+      "raw_json": "{\"a\":1,\"\\u0061\":2,\"nested\":{\"\ud83e\udec0\":1,\"\\ud83e\\udec0\":3}}"
+    },
+    {
+      "expected_canonical_json": "[\"\\\"\",\"\\\\\",\"\\b\",\"\\f\",\"\\n\",\"\\r\",\"\\t\",\"\\u001f\",\"\\u007f\",\"\\u00e9\",\"\\ud83e\\udec0\",\"\\ud800\",\"\\udc00\",\"\\ud800A\",\"\\ud800\\ud800\",\"\\ud83e\\udec0\"]",
+      "name": "string_edges",
+      "raw_json": "[\"\\\"\",\"\\\\\",\"\\b\",\"\\f\",\"\\n\",\"\\r\",\"\\t\",\"\\u001f\",\"\\u007f\",\"\u00e9\",\"\ud83e\udec0\",\"\\ud800\",\"\\udc00\",\"\\ud800\\u0041\",\"\\ud800\\ud800\",\"\\ud83e\\udec0\"]"
+    },
+    {
+      "expected_canonical_json": "{\"a\":4,\"\\ud800\":1,\"\\udfff\":2,\"\\ue000\":5,\"\\ud83e\\udec0\":3}",
+      "name": "key_order_surrogates",
+      "raw_json": "{\"\\ud800\":1,\"\\udfff\":2,\"\ud83e\udec0\":3,\"a\":4,\"\ue000\":5}"
+    },
+    {
+      "expected_canonical_json": "[0,1.0,1e-07,1e+22,Infinity,-Infinity,0.0,-0.0,18446744073709551616,-9223372036854775809,NaN,Infinity,-Infinity]",
+      "name": "numeric_edges",
+      "raw_json": "[-0,1e0,1e-07,1e+22,1e999,-1e999,1e-999,-1e-999,18446744073709551616,-9223372036854775809,NaN,Infinity,-Infinity]"
+    }
+  ],
+  "float_cases": [
+    {
+      "expected_canonical_json": "0.0001",
+      "expected_f64_bits_hex": "0x3f1a36e2eb1c432d",
+      "name": "fixed_lower_boundary",
+      "raw_json": "1e-4"
+    },
+    {
+      "expected_canonical_json": "1e-05",
+      "expected_f64_bits_hex": "0x3ee4f8b588e368f1",
+      "name": "exponent_lower_boundary",
+      "raw_json": "1e-5"
+    },
+    {
+      "expected_canonical_json": "1000000000000000.0",
+      "expected_f64_bits_hex": "0x430c6bf526340000",
+      "name": "fixed_upper_boundary",
+      "raw_json": "1e15"
+    },
+    {
+      "expected_canonical_json": "1e+16",
+      "expected_f64_bits_hex": "0x4341c37937e08000",
+      "name": "exponent_upper_boundary",
+      "raw_json": "1e16"
+    },
+    {
+      "expected_canonical_json": "5e-324",
+      "expected_f64_bits_hex": "0x0000000000000001",
+      "name": "minimum_subnormal",
+      "raw_json": "5e-324"
+    },
+    {
+      "expected_canonical_json": "1.7976931348623157e+308",
+      "expected_f64_bits_hex": "0x7fefffffffffffff",
+      "name": "maximum_finite",
+      "raw_json": "1.7976931348623157e308"
+    }
+  ],
+  "long_numeric_cases": [
+    {
+      "expected_canonical_json": "0.12345678901234568",
+      "expected_canonical_sha256": "sha256:162d0205331896193ea0b09a9bf973bb64188453dde74ac35b7749b1447973a3",
+      "expected_f64_bits_hex": "0x3fbf9add3746f65f",
+      "expected_kind": "number",
+      "name": "long_fraction_rounding",
+      "raw_pattern": {
+        "prefix": "0.",
+        "repeat": "1234567890",
+        "repeat_count": 500
+      }
+    },
+    {
+      "expected_canonical_json": "Infinity",
+      "expected_canonical_sha256": "sha256:d0067cad9a63e0813759a2bb841051ca73570c0da2e08e840a8eb45db6a7a010",
+      "expected_f64_bits_hex": "0x7ff0000000000000",
+      "expected_kind": "number",
+      "name": "long_integer_part_float_overflow",
+      "raw_pattern": {
+        "repeat": "9",
+        "repeat_count": 5000,
+        "suffix": ".0"
+      }
+    },
+    {
+      "expected_canonical_json": "Infinity",
+      "expected_canonical_sha256": "sha256:d0067cad9a63e0813759a2bb841051ca73570c0da2e08e840a8eb45db6a7a010",
+      "expected_f64_bits_hex": "0x7ff0000000000000",
+      "expected_kind": "number",
+      "name": "long_positive_exponent_overflow",
+      "raw_pattern": {
+        "prefix": "1e",
+        "repeat": "9",
+        "repeat_count": 5000
+      }
+    },
+    {
+      "expected_canonical_json": "0.0",
+      "expected_canonical_sha256": "sha256:8aed642bf5118b9d3c859bd4be35ecac75b6e873cce34e7b6f554b06f75550d7",
+      "expected_f64_bits_hex": "0x0000000000000000",
+      "expected_kind": "number",
+      "name": "long_negative_exponent_underflow",
+      "raw_pattern": {
+        "prefix": "1e-",
+        "repeat": "9",
+        "repeat_count": 5000
+      }
+    },
+    {
+      "expected_canonical_json": "-0.0",
+      "expected_canonical_sha256": "sha256:c26617c7ccbcaa6631b45d851b8cf56e21d2ca624bdb1193afdbd4b560702cec",
+      "expected_f64_bits_hex": "0x8000000000000000",
+      "expected_kind": "number",
+      "name": "long_negative_underflow_sign",
+      "raw_pattern": {
+        "prefix": "-1e-",
+        "repeat": "9",
+        "repeat_count": 5000
+      }
+    },
+    {
+      "expected_canonical_json": null,
+      "expected_canonical_sha256": "sha256:916d8027b50598a584c7e66ba229c3b0363c6ad352b31dbbe5e228676aa09f22",
+      "expected_kind": "integer",
+      "name": "max_integer_digits",
+      "raw_pattern": {
+        "prefix": "1",
+        "repeat": "0",
+        "repeat_count": 4299
+      }
+    },
+    {
+      "expected_canonical_json": null,
+      "expected_canonical_sha256": "sha256:5963a977c205e4573202db4eb2ce60553c9cd4fe1bc24b594b685db48e5144d7",
+      "expected_kind": "integer",
+      "name": "max_negative_integer_digits",
+      "raw_pattern": {
+        "prefix": "-1",
+        "repeat": "0",
+        "repeat_count": 4299
+      }
+    }
+  ],
+  "malformed_cases": [
+    {
+      "expected_byte_offset": 5,
+      "expected_column": 6,
+      "expected_line": 1,
+      "expected_python_char_offset": 5,
+      "name": "truncated_object",
+      "raw_json": "{\"a\":"
+    },
+    {
+      "expected_byte_offset": 1,
+      "expected_column": 2,
+      "expected_line": 1,
+      "expected_python_char_offset": 1,
+      "name": "invalid_escape",
+      "raw_json": "\"\\x\""
+    },
+    {
+      "expected_byte_offset": 2,
+      "expected_column": 3,
+      "expected_line": 1,
+      "expected_python_char_offset": 2,
+      "name": "unescaped_control",
+      "raw_json": "\"a\u0001b\""
+    },
+    {
+      "expected_byte_offset": 2,
+      "expected_column": 3,
+      "expected_line": 1,
+      "expected_python_char_offset": 2,
+      "name": "extra_data",
+      "raw_json": "{}[]"
+    },
+    {
+      "expected_byte_offset": 4,
+      "expected_column": 4,
+      "expected_line": 1,
+      "expected_python_char_offset": 3,
+      "name": "extra_data_after_bmp",
+      "raw_json": "\"\u00e9\"[]"
+    },
+    {
+      "expected_byte_offset": 6,
+      "expected_column": 4,
+      "expected_line": 1,
+      "expected_python_char_offset": 3,
+      "name": "extra_data_after_astral",
+      "raw_json": "\"\ud83e\udec0\"[]"
+    },
+    {
+      "expected_byte_offset": 2,
+      "expected_column": 3,
+      "expected_line": 1,
+      "expected_python_char_offset": 2,
+      "name": "incomplete_unicode_escape",
+      "raw_json": "\"\\ud80\""
+    },
+    {
+      "expected_byte_offset": 0,
+      "expected_column": 1,
+      "expected_line": 1,
+      "expected_python_char_offset": 0,
+      "name": "leading_plus_infinity",
+      "raw_json": "+Infinity"
+    },
+    {
+      "expected_byte_offset": 0,
+      "expected_column": 1,
+      "expected_line": 1,
+      "expected_python_char_offset": 0,
+      "name": "signed_nan",
+      "raw_json": "-NaN"
+    },
+    {
+      "expected_byte_offset": 0,
+      "expected_column": 1,
+      "expected_line": 1,
+      "expected_python_char_offset": 0,
+      "name": "lowercase_nan",
+      "raw_json": "nan"
+    },
+    {
+      "expected_byte_offset": 0,
+      "expected_column": 1,
+      "expected_line": 1,
+      "expected_python_char_offset": 0,
+      "name": "lowercase_infinity",
+      "raw_json": "infinity"
+    },
+    {
+      "expected_byte_offset": 0,
+      "expected_column": 1,
+      "expected_line": 1,
+      "expected_python_char_offset": 0,
+      "name": "leading_plus_number",
+      "raw_json": "+1"
+    }
+  ],
+  "policy_cases": {
+    "invalid_utf8": [
+      {
+        "expected_byte_offset": 1,
+        "expected_error": "malformed_json",
+        "raw_hex": "22ff22"
+      },
+      {
+        "expected_byte_offset": 1,
+        "expected_error": "malformed_json",
+        "raw_hex": "22f09f22"
+      }
+    ],
+    "maximum_nesting": 128,
+    "too_deep": {
+      "expected_byte_offset": 128,
+      "expected_error": "malformed_json",
+      "raw_pattern": {
+        "prefix_repeat": "[",
+        "repeat_count": 129,
+        "suffix_repeat": "]"
+      }
+    },
+    "too_long_integers": [
+      {
+        "expected_byte_offset": 4300,
+        "expected_error": "number_too_long",
+        "raw_pattern": {
+          "prefix": "1",
+          "repeat": "0",
+          "repeat_count": 4300
+        }
+      },
+      {
+        "expected_byte_offset": 4301,
+        "expected_error": "number_too_long",
+        "raw_pattern": {
+          "prefix": "-1",
+          "repeat": "0",
+          "repeat_count": 4300
+        }
+      }
+    ]
+  },
+  "python_version": "3.12.3",
+  "schema": "solstone.body_source.python_json_vectors.v1",
+  "string_decode_cases": [
+    {
+      "expected_python_code_points_hex": [
+        "0x1fac0"
+      ],
+      "name": "raw_astral",
+      "raw_json": "\"\ud83e\udec0\""
+    },
+    {
+      "expected_python_code_points_hex": [
+        "0x1fac0"
+      ],
+      "name": "escaped_astral_pair",
+      "raw_json": "\"\\ud83e\\udec0\""
+    },
+    {
+      "expected_python_code_points_hex": [
+        "0xd800"
+      ],
+      "name": "lone_high",
+      "raw_json": "\"\\ud800\""
+    },
+    {
+      "expected_python_code_points_hex": [
+        "0xdc00"
+      ],
+      "name": "lone_low",
+      "raw_json": "\"\\udc00\""
+    },
+    {
+      "expected_python_code_points_hex": [
+        "0xd800",
+        "0x41"
+      ],
+      "name": "lone_high_then_scalar",
+      "raw_json": "\"\\ud800\\u0041\""
+    },
+    {
+      "expected_python_code_points_hex": [
+        "0xd800",
+        "0xd800"
+      ],
+      "name": "repeated_high",
+      "raw_json": "\"\\ud800\\ud800\""
+    },
+    {
+      "expected_python_code_points_hex": [
+        "0xdc00",
+        "0xd800"
+      ],
+      "name": "low_then_high",
+      "raw_json": "\"\\udc00\\ud800\""
+    }
+  ]
+}
