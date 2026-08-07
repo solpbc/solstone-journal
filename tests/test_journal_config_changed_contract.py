@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from solstone.convey import create_app
+from solstone.think import journal_config
 from tests.helpers.journal_config import seed_journal_config
 
 
@@ -22,6 +23,21 @@ class _FixedDateTime(datetime):
     @classmethod
     def now(cls, tz=None):
         return datetime(2026, 7, 19, 12, 0, tzinfo=tz or timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def use_built_core(monkeypatch: pytest.MonkeyPatch) -> None:
+    helper = Path(__file__).resolve().parents[1] / "core" / "target" / "debug" / "solstone-core"
+    monkeypatch.setattr(
+        journal_config.core_handshake,
+        "check_solstone_core_handshake",
+        lambda: journal_config.core_handshake.CoreHandshakeResult("ok"),
+    )
+    monkeypatch.setattr(
+        journal_config.core_handshake,
+        "helper_path_for_executable",
+        lambda: helper,
+    )
 
 
 def _base_config(**updates: Any) -> dict[str, Any]:
@@ -552,9 +568,9 @@ def test_backup_state_mutation_paths_report_changed_and_noop(
         lambda: state.record_offload_result(
             status="ok",
             time=1,
-            files_offloaded=1,
-            bytes_offloaded=2,
-            ran_out_of_media=False,
+            files_marked=1,
+            bytes_marked=2,
+            ran_out_of_markable_media=False,
         ),
         lambda: state.record_verification_result(
             status="ok", time=1, checked_subset="all"

@@ -480,6 +480,17 @@ production aggregate handler or an explicit direct native match-arm home for
 top-level local behavior, then the compatibility inventory and module exec
 bridge are deleted together.
 
+`solstone/think/journal_config.py` is a second sanctioned temporary boundary:
+its `mutate_journal_config` subprocess CAS client wraps the native
+`solstone-core journal-config read/commit` verbs documented above, with the
+former in-process writer deleted rather than retained as a fallback. The 46
+call sites in 19 Python modules and the in-process `read_journal_config()`
+read half remain Python-side until those modules move to native Rust/native
+`sol call` authorities. The removal criterion is zero Python callers of
+`mutate_journal_config`: once every caller has a native authority or direct
+native call home, delete this client and `journal_config.py`'s subprocess
+plumbing together.
+
 ## Version Lockstep
 
 `scripts/render_packaging.py` keeps Python leaf packages and Cargo metadata in

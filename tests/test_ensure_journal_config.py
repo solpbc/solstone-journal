@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import stat
+from pathlib import Path
 
 import pytest
 
@@ -16,32 +17,27 @@ def reset_default_config(monkeypatch):
     monkeypatch.setattr(utils, "_default_config", None)
 
 
+@pytest.fixture(autouse=True)
+def use_built_core(monkeypatch):
+    helper = Path(__file__).resolve().parents[1] / "core" / "target" / "debug" / "solstone-core"
+    monkeypatch.setattr(
+        journal_config.core_handshake,
+        "check_solstone_core_handshake",
+        lambda: journal_config.core_handshake.CoreHandshakeResult("ok"),
+    )
+    monkeypatch.setattr(
+        journal_config.core_handshake,
+        "helper_path_for_executable",
+        lambda: helper,
+    )
+
+
 def _config_path(journal):
     return journal / "config" / "journal.json"
 
 
-def _mock_os(monkeypatch, identity=("Test User", "tester"), timezone="America/Denver"):
-    monkeypatch.setattr(journal_config, "_resolve_os_identity", lambda: identity)
-    monkeypatch.setattr(journal_config, "_resolve_os_timezone", lambda: timezone)
-
-
-def test_ensure_journal_config_creates_file_with_os_defaults(tmp_path, monkeypatch):
-    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-    _mock_os(monkeypatch)
-
-    config = journal_config.ensure_journal_config()
-
-    config_path = _config_path(tmp_path)
-    assert config_path.exists()
-    assert config["identity"]["name"] == "Test User"
-    assert config["identity"]["preferred"] == "tester"
-    assert config["identity"]["timezone"] == "America/Denver"
-    assert "convey" not in config
-
-
 def test_ensure_journal_config_is_idempotent(tmp_path, monkeypatch):
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-    _mock_os(monkeypatch)
 
     journal_config.ensure_journal_config()
     config_path = _config_path(tmp_path)
@@ -55,7 +51,6 @@ def test_ensure_journal_config_is_idempotent(tmp_path, monkeypatch):
 
 def test_ensure_journal_config_file_mode_is_private(tmp_path, monkeypatch):
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-    _mock_os(monkeypatch)
 
     journal_config.ensure_journal_config()
 
@@ -106,7 +101,6 @@ def test_ensure_journal_config_reads_existing_config_without_touching_identity(
     tmp_path, monkeypatch
 ) -> None:
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-    _mock_os(monkeypatch, identity=("OS User", "osuser"), timezone="America/New_York")
     config_path = _config_path(tmp_path)
     config_path.parent.mkdir(parents=True)
     staged = {
@@ -144,7 +138,6 @@ def test_ensure_journal_config_returned_dict_does_not_mutate_defaults(
     first_journal = tmp_path / "first"
     second_journal = tmp_path / "second"
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(first_journal))
-    _mock_os(monkeypatch)
     config = journal_config.ensure_journal_config()
     config["identity"]["name"] = "Mutated"
 

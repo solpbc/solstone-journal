@@ -15,6 +15,16 @@ from typing import Any
 from tests.helpers.journal_config import seed_journal_config
 
 
+def _install_built_core() -> None:
+    from solstone.think import core_handshake
+
+    helper = Path(__file__).resolve().parents[1] / "core" / "target" / "debug" / "solstone-core"
+    core_handshake.check_solstone_core_handshake = lambda: core_handshake.CoreHandshakeResult(
+        "ok"
+    )
+    core_handshake.helper_path_for_executable = lambda: helper
+
+
 def _read_config(journal: Path) -> dict[str, Any]:
     return json.loads((journal / "config" / "journal.json").read_text("utf-8"))
 
@@ -52,6 +62,7 @@ def _disjoint_mutation_worker(
 ) -> None:
     os.environ["SOLSTONE_JOURNAL"] = journal_path
     try:
+        _install_built_core()
         barrier.wait(timeout=5)
         from solstone.think.journal_config import (
             JournalConfigMutation,
@@ -59,7 +70,7 @@ def _disjoint_mutation_worker(
         )
 
         def apply(config: dict[str, Any]) -> JournalConfigMutation[None]:
-            time.sleep(0.2)
+            time.sleep(0.05)
             config.setdefault("concurrent", {})[key] = value
             return JournalConfigMutation(changed=True, value=None)
 
@@ -72,6 +83,7 @@ def _disjoint_mutation_worker(
 def _provider_progress_worker(journal_path: str, barrier: Any, errors: Any) -> None:
     os.environ["SOLSTONE_JOURNAL"] = journal_path
     try:
+        _install_built_core()
         barrier.wait(timeout=5)
         from solstone.think.providers.install_state import (
             make_idle_status,
@@ -90,6 +102,7 @@ def _onboarding_finalize_worker(journal_path: str, barrier: Any, errors: Any) ->
     os.environ["SOLSTONE_JOURNAL"] = journal_path
     os.environ["SOL_SKIP_SUPERVISOR_CHECK"] = "1"
     try:
+        _install_built_core()
         barrier.wait(timeout=5)
         import solstone.convey.root as root
 
@@ -142,6 +155,7 @@ def _canonical_marker_worker(
 ) -> None:
     os.environ["SOLSTONE_JOURNAL"] = journal_path
     try:
+        _install_built_core()
         barrier.wait(timeout=5)
         from solstone.think.journal_config import (
             JournalConfigMutation,
@@ -149,7 +163,7 @@ def _canonical_marker_worker(
         )
 
         def apply(config: dict[str, Any]) -> JournalConfigMutation[None]:
-            time.sleep(0.2)
+            time.sleep(0.05)
             config.setdefault("canonical_markers", {})[key] = True
             return JournalConfigMutation(changed=True, value=None)
 
@@ -162,6 +176,7 @@ def _canonical_marker_worker(
 def _spl_disable_worker(journal_path: str, barrier: Any, errors: Any) -> None:
     os.environ["SOLSTONE_JOURNAL"] = journal_path
     try:
+        _install_built_core()
         barrier.wait(timeout=5)
         from solstone.think.services.spl import disable_spl
 

@@ -8,14 +8,16 @@ from __future__ import annotations
 import copy
 import json
 import logging
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+import random
+import subprocess
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
-from solstone.think.journal_io.atomic import atomic_replace
-from solstone.think.journal_io.locking import hold_lock
+from solstone.think import core_handshake
+from solstone.think.journal_io import LockTimeout
 from solstone.think.utils import (
     CorruptConfigError,
     _load_default_config,
@@ -27,6 +29,10 @@ from solstone.think.utils import (
 
 T = TypeVar("T")
 logger = logging.getLogger(__name__)
+
+_CONFIG_CONFLICT_RETRY_BUDGET_SECONDS = 0.4
+_CONFIG_CONFLICT_BACKOFF_INITIAL_SECONDS = 0.005
+_CONFIG_CONFLICT_BACKOFF_MAX_SECONDS = 0.04
 
 
 @dataclass(frozen=True)
@@ -84,54 +90,114 @@ def read_journal_config(journal_path: str | Path | None = None) -> dict[str, Any
         raise CorruptConfigError(config_path, error=exc) from exc
 
 
-def _write_journal_config(
-    config: dict[str, Any], journal_path: str | Path | None = None
-) -> None:
-    """Write journal config atomically with stable formatting and private permissions."""
-
-    config_path = get_journal_config_path(journal_path)
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_replace(
-        config_path,
-        json.dumps(config, indent=2, ensure_ascii=False) + "\n",
-        mode=0o600,
-    )
+def _require_journal_config_core() -> Path:
+    handshake = core_handshake.check_solstone_core_handshake()
+    if handshake.status != "ok":
+        raise RuntimeError(
+            "journal config requires a usable solstone-core helper: "
+            f"{handshake.message or 'unknown handshake failure'}"
+        )
+    return core_handshake.helper_path_for_executable()
 
 
-@contextmanager
-def _hold_config_lock(journal_path: str | Path | None = None) -> Iterator[None]:
-    """Hold the journal config read-modify-write lock."""
-
-    with hold_lock(get_journal_config_path(journal_path), mode=0o600):
-        yield
+def _native_failure(operation: str, completed: subprocess.CompletedProcess[str]) -> str:
+    detail = completed.stderr.strip()
+    message = f"journal-config {operation} failed with exit {completed.returncode}"
+    return f"{message}: {detail}" if detail else message
 
 
-def _materialized_default_config() -> dict[str, Any]:
-    config = copy.deepcopy(_load_default_config())
+def _run_journal_config_read(
+    helper: Path,
+    journal_root: Path,
+    config_path: Path,
+) -> tuple[bool, str | None, dict[str, Any] | None]:
     try:
-        full_name, login_name = _resolve_os_identity()
-    except Exception:
-        logger.debug("Failed to resolve OS identity", exc_info=True)
-        full_name = ""
-        login_name = ""
+        completed = subprocess.run(
+            [str(helper), "journal-config", "read", "--journal", str(journal_root)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise OSError(f"journal-config read failed to launch: {exc}") from exc
+
+    if completed.returncode == 69:
+        raise CorruptConfigError(config_path)
+    if completed.returncode in {73, 74}:
+        raise OSError(_native_failure("read", completed))
+    if completed.returncode != 0:
+        raise RuntimeError(_native_failure("read", completed))
+
     try:
-        timezone = _resolve_os_timezone()
-    except Exception:
-        logger.debug("Failed to resolve OS timezone", exc_info=True)
-        timezone = ""
-    config.setdefault("identity", {})
-    config["identity"]["name"] = full_name
-    config["identity"]["preferred"] = login_name
-    config["identity"]["timezone"] = timezone
-    return config
+        envelope = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("journal-config read returned malformed JSON") from exc
+    if not isinstance(envelope, dict) or not isinstance(envelope.get("present"), bool):
+        raise RuntimeError("journal-config read returned an invalid response envelope")
+
+    present = envelope["present"]
+    fingerprint = envelope.get("sha256")
+    config = envelope.get("config")
+    if not present:
+        if fingerprint is not None or config is not None:
+            raise RuntimeError("journal-config read returned an invalid absent response")
+        return False, None, None
+    if (
+        not isinstance(fingerprint, str)
+        or not fingerprint.startswith("sha256:")
+        or not isinstance(config, dict)
+    ):
+        raise RuntimeError("journal-config read returned an invalid present response")
+    return True, fingerprint, config
 
 
-def _read_existing_journal_config(config_path: Path) -> dict[str, Any]:
+def _run_journal_config_commit(
+    helper: Path,
+    journal_root: Path,
+    config_path: Path,
+    config: dict[str, Any],
+    expect: str,
+    lock_timeout_ms: int,
+) -> bool:
     try:
-        with config_path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except (json.JSONDecodeError, OSError) as exc:
-        raise CorruptConfigError(config_path, error=exc) from exc
+        completed = subprocess.run(
+            [
+                str(helper),
+                "journal-config",
+                "commit",
+                "--journal",
+                str(journal_root),
+                "--lock-timeout-ms",
+                str(lock_timeout_ms),
+                "--expect",
+                expect,
+            ],
+            input=json.dumps(config, ensure_ascii=False),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise OSError(f"journal-config commit failed to launch: {exc}") from exc
+
+    if completed.returncode == 0:
+        return False
+    if completed.returncode == 65:
+        return True
+    if completed.returncode == 69:
+        raise CorruptConfigError(config_path)
+    if completed.returncode in {73, 74}:
+        raise OSError(_native_failure("commit", completed))
+    if completed.returncode == 75:
+        raise LockTimeout(config_path, lock_timeout_ms / 1000)
+    raise RuntimeError(_native_failure("commit", completed))
+
+
+def _remaining_lock_timeout_ms(deadline: float, previous: int | None) -> int:
+    remaining = int((deadline - time.monotonic()) * 1000)
+    if previous is not None:
+        remaining = min(remaining, previous - 1)
+    return remaining
 
 
 def mutate_journal_config(
@@ -139,25 +205,84 @@ def mutate_journal_config(
     *,
     journal_path: str | Path | None = None,
 ) -> JournalConfigTransaction[T]:
-    """Mutate journal config under the canonical read-modify-write lock."""
+    """Mutate journal config through native compare-and-swap transactions.
 
+    The mutator may run more than once when a concurrent commit conflicts.
+    Logging or other side effects inside the mutator can therefore be duplicated.
+    Validation computed from state captured outside the mutator can be committed on
+    a retry against configuration that changed after that pre-validation.
+    """
+
+    helper = _require_journal_config_core()
+    journal_root = Path(journal_path) if journal_path is not None else get_journal()
     config_path = get_journal_config_path(journal_path)
-    with _hold_config_lock(journal_path):
-        materialized = not config_path.exists()
-        config = (
-            _materialized_default_config()
-            if materialized
-            else _read_existing_journal_config(config_path)
+    deadline = time.monotonic() + _CONFIG_CONFLICT_RETRY_BUDGET_SECONDS
+    previous_timeout_ms: int | None = None
+    attempt = 0
+
+    while True:
+        if attempt and time.monotonic() >= deadline:
+            raise LockTimeout(config_path, _CONFIG_CONFLICT_RETRY_BUDGET_SECONDS)
+        present, fingerprint, existing = _run_journal_config_read(
+            helper,
+            journal_root,
+            config_path,
         )
+        config = existing if present else copy.deepcopy(_load_default_config())
+        if not present:
+            try:
+                full_name, login_name = _resolve_os_identity()
+            except Exception:
+                logger.debug("Failed to resolve OS identity", exc_info=True)
+                full_name = ""
+                login_name = ""
+            try:
+                timezone = _resolve_os_timezone()
+            except Exception:
+                logger.debug("Failed to resolve OS timezone", exc_info=True)
+                timezone = ""
+            config.setdefault("identity", {})
+            config["identity"]["name"] = full_name
+            config["identity"]["preferred"] = login_name
+            config["identity"]["timezone"] = timezone
+        assert config is not None
         mutation = mutator(config)
-        written = materialized or mutation.changed
-        if written:
-            _write_journal_config(config, journal_path)
-        return JournalConfigTransaction(
-            value=mutation.value,
-            changed=mutation.changed,
-            written=written,
+        written = not present or mutation.changed
+        if not written:
+            return JournalConfigTransaction(
+                value=mutation.value,
+                changed=mutation.changed,
+                written=False,
+            )
+
+        lock_timeout_ms = _remaining_lock_timeout_ms(deadline, previous_timeout_ms)
+        if lock_timeout_ms < 1:
+            raise LockTimeout(config_path, _CONFIG_CONFLICT_RETRY_BUDGET_SECONDS)
+        conflict = _run_journal_config_commit(
+            helper,
+            journal_root,
+            config_path,
+            config,
+            "absent" if not present else fingerprint,
+            lock_timeout_ms,
         )
+        if not conflict:
+            return JournalConfigTransaction(
+                value=mutation.value,
+                changed=mutation.changed,
+                written=True,
+            )
+
+        previous_timeout_ms = lock_timeout_ms
+        attempt += 1
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise LockTimeout(config_path, _CONFIG_CONFLICT_RETRY_BUDGET_SECONDS)
+        backoff_cap = min(
+            _CONFIG_CONFLICT_BACKOFF_MAX_SECONDS,
+            _CONFIG_CONFLICT_BACKOFF_INITIAL_SECONDS * (2**(attempt - 1)),
+        )
+        time.sleep(min(random.uniform(0, backoff_cap), remaining))
 
 
 def ensure_journal_config(
