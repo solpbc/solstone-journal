@@ -13,6 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 use solstone_core_journal_config::materialized_defaults;
+use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
 
 struct TempDir {
     path: PathBuf,
@@ -159,6 +160,80 @@ fn assert_success(output: &Output) {
         "python failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn journal_config_client_ac4_materializes_only_in_rust() {
+    let harness = ClientHarness::new("python-os-resolution");
+    let output = harness.python(
+        r#"
+from unittest.mock import patch
+import pwd
+
+from solstone.think import journal_config
+from solstone.think.journal_config import JournalConfigMutation, mutate_journal_config
+
+def unexpected(*args, **kwargs):
+    raise AssertionError("Python must not resolve OS journal defaults")
+
+assert not hasattr(journal_config, "_resolve_os_identity")
+assert not hasattr(journal_config, "_resolve_os_timezone")
+
+with patch.object(pwd, "getpwuid", side_effect=unexpected):
+    result = mutate_journal_config(
+        lambda config: JournalConfigMutation(False, config["identity"].copy())
+    )
+
+print(result.written)
+"#,
+        &[],
+    );
+    assert_success(&output);
+    assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "True");
+    assert!(harness.journal.join("config/journal.json").exists());
+    assert_eq!(
+        harness
+            .lines()
+            .iter()
+            .filter(|line| line.contains("journal-config read"))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn journal_config_client_ac5_matches_in_process_materialization() {
+    let harness = ClientHarness::new("parity");
+    let output = harness.python(
+        r#"
+from solstone.think.journal_config import JournalConfigMutation, mutate_journal_config
+
+mutate_journal_config(lambda config: JournalConfigMutation(False, None))
+"#,
+        &[],
+    );
+    assert_success(&output);
+
+    let direct = TempDir::new("in-process");
+    let direct_journal = direct.path.join("journal");
+    fs::create_dir(&direct_journal).expect("create direct journal");
+    let transaction = mutate_journal_config(&direct_journal, |_config| JournalConfigMutation {
+        changed: false,
+        value: (),
+    })
+    .expect("direct materialization");
+    assert!(transaction.written);
+    assert!(!transaction.changed);
+
+    let python_config: Value = serde_json::from_slice(
+        &fs::read(harness.journal.join("config/journal.json")).expect("read Python config"),
+    )
+    .expect("parse Python config");
+    let direct_config: Value = serde_json::from_slice(
+        &fs::read(direct_journal.join("config/journal.json")).expect("read direct config"),
+    )
+    .expect("parse direct config");
+    assert_eq!(python_config, direct_config);
 }
 
 #[test]

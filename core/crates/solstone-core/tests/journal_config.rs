@@ -8,6 +8,7 @@ use std::process::{Command, Output, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
+use solstone_core_journal_config::materialized_defaults;
 use solstone_core_journal_config_write::{LockOptions, hold_lock};
 
 fn bin() -> &'static str {
@@ -70,7 +71,11 @@ fn journal_config_read_missing_prints_absent_envelope() {
 
     assert_eq!(
         read(&root),
-        json!({"present": false, "sha256": null, "config": null})
+        json!({
+            "present": false,
+            "sha256": null,
+            "config": serde_json::to_value(materialized_defaults()).unwrap(),
+        })
     );
     assert!(!root.join("config/journal.json").exists());
     assert!(!root.join("config/journal.json.lock").exists());

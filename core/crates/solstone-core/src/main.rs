@@ -25,7 +25,7 @@ use solstone_core_journal::{
     ConfigError, HomeError, Source, discover_home, ensure_journal_dir_with_label,
     read_config_journal, resolve_journal_path,
 };
-use solstone_core_journal_config::read_journal_config;
+use solstone_core_journal_config::{materialized_defaults, read_journal_config};
 use solstone_core_journal_config_write::{
     CommitConfigError, ConfigExpectation, LockError, LockOptions, commit_journal_config,
 };
@@ -105,10 +105,11 @@ fn run_journal_config_read(options: JournalConfigReadOptions) -> ExitCode {
             return ExitCode::from(EXIT_UNAVAILABLE);
         }
     };
+    let config = read.config.unwrap_or_else(materialized_defaults);
     let output = json!({
         "present": read.present,
         "sha256": read.sha256,
-        "config": read.config,
+        "config": config,
     });
     let mut stdout = io::stdout().lock();
     if serde_json::to_writer(&mut stdout, &output).is_err() || stdout.write_all(b"\n").is_err() {
