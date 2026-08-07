@@ -18,10 +18,6 @@ transactional reset. It does not implement the changes.
   inserts, then watermark writes, all currently independent autocommits. The operator
   approved this D0 scope at the gate, and the native implementation now ships
   it.
-- Fold segment aggregate rebuilds into the per-file transaction in
-  `scan_journal` and remove the separate batched phase currently at
-  `scan.rs:141`. Keep one rebuild per segment per scan run with an in-memory set
-  of rebuilt segment rels.
 - Replace `reset_index` file removal with transactional SQL reset: drop known
   index objects, recreate schema, and never unlink `journal.sqlite`,
   `journal.sqlite-wal`, or `journal.sqlite-shm`.
@@ -38,8 +34,8 @@ transactional reset. It does not implement the changes.
 `rescan_file`:
 - Open a mutable connection and wrap the selected content and/or edge
   replacement in a transaction.
-- For content files, delete old chunks, insert new chunks, update `files`, and
-  rebuild the affected segment aggregate inside the same transaction.
+- For content files, delete old chunks, insert new chunks, and update `files`
+  inside the same transaction.
 - For edge files, delete old edge rows and edge mtime, extract, insert edge
   rows, and update `edge_files` inside the same transaction.
 - On non-benign failure, roll back and return an error so `main.rs` exits 75.
@@ -49,22 +45,16 @@ transactional reset. It does not implement the changes.
 `scan_journal` per-file content replacement:
 - Keep discovery and mtime reads outside write transactions.
 - For each changed content file, open a per-file transaction. Delete old chunks,
-  index the file, rebuild its segment aggregate if applicable and not already
-  rebuilt in this scan run, update `files`, then commit.
+  index the file, update `files`, then commit.
 - If a content production warning occurs before any successful replacement,
   roll back that file transaction, increment `skipped`, warn, and continue.
-- If aggregate incompleteness occurs, roll back that file transaction,
-  increment `skipped`, warn, and continue.
 - If a SQL error occurs, roll back that file transaction and let the error
   propagate exactly as it does today.
 
 `scan_journal` removed-file phase:
 - For each removed content file, open a transaction, delete chunks and the
-  `files` row, rebuild the affected segment aggregate if applicable and not
-  already rebuilt, then commit.
-- If aggregate incompleteness or SQL failure occurs, roll back the removal,
-  increment `skipped` for aggregate incompleteness and continue, or propagate
-  the SQL error exactly as today.
+  `files` row, then commit. SQL failures roll back and propagate exactly as
+  today.
 
 `scan_journal` edge reconciliation:
 - Open one transaction for the reconciliation phase.
@@ -96,43 +86,6 @@ transactional reset. It does not implement the changes.
   transaction at the caller frame.
 - On SQL failure, roll back entity-search rows and watermarks and propagate the
   error exactly as today. This unit does not increment `ScanReport.failed`.
-
-## Segment Aggregates
-
-`build_segment_aggregate` currently reads from disk only: it resolves the
-segment directory, globs `talents/*.md` and `talents/*/*.md`, reads each member
-file, joins the markdown, and chunks the joined text. That makes the first
-aggregate rebuild for a segment in a scan run see all changed members' current
-disk content, regardless of which member's DB rows have been committed.
-
-Add a completeness marker to `SegmentAggregate`, for example `complete: bool`.
-The marker is false only when a member read or member parse failure means the
-aggregate content is incomplete. Benign path-resolution warnings at
-`segment_aggregate.rs:38-49` and glob warnings at `segment_aggregate.rs:105-135`
-keep today's behavior: warn, return rows if any, and do not mark incomplete.
-
-`index_segment_aggregates` must preserve prior aggregate rows on incompleteness.
-The clean shape is to build first, inspect `complete`, and only then delete and
-insert aggregate chunks. If the caller already opened a transaction, returning
-an incomplete error also rolls back the source file's chunk and mtime changes.
-Caller disposition is split: `rescan_file` treats incompleteness as a visible
-failure and exits 75, while `scan_journal` treats it like content-production
-warnings, increments `skipped`, warns, continues, and exits 0.
-
-Files A and B in segment S, with B failing after A commits:
-- A's transaction may commit an aggregate that includes both A and B's current
-  disk content because the aggregate builder reads disk, not DB rows.
-- B's file chunks and mtime remain stale because B's own transaction rolled
-  back.
-- This does not violate AC3 as designed: the failed file's own replacement is
-  preserved and retryable, the aggregate is internally complete, and the next
-  unchanged scan retries B because its mtime was not advanced. The risk is a
-  temporary cross-view mismatch between segment aggregate and B's per-file
-  chunks; accepting D1 means accepting that tradeoff for co-commit and retry
-  simplicity.
-
-Because `SegmentAggregate` lives in `solstone-core-indexer`, which is covered by
-the iOS gate, implementation must run `make check-rust-ios`.
 
 ## Reset Design
 
@@ -279,14 +232,6 @@ Rewrite only the verified section 3.6 list.
 - Add `report.failed == 1`, retry-on-unchanged scan coverage, and assert the
   scan still exits 0 through `main.rs`.
 
-`scan_segment_aggregate_warns_and_skips_unreadable_talent_markdown`
-(`scan.rs:1687`):
-- Rename to incomplete aggregate preserves prior aggregate.
-- Seed a prior aggregate and prior source mtime.
-- Make one member unreadable or unparsable.
-- Expect `report.skipped == 1`, warning contains `segment aggregate read failed`,
-  prior aggregate content remains, and the source file mtime is not advanced.
-
 `reset_removes_only_main_database_file` (`db.rs:333`):
 - Rename to transactional reset keeps database files and recreates schema.
 - Change `db.rs:340-342` expectations: main DB, WAL, and SHM are not manually
@@ -321,8 +266,6 @@ Rewrite only the verified section 3.6 list.
 - Extraction-level failure coverage separate from SQL injection. Use malformed
   edge extraction and candidate-load failure to prove failed edge files preserve
   stale rows and retry.
-- Segment aggregate incompleteness coverage. Member read or parse failure marks
-  incomplete, rolls back aggregate and source mtime, then converges after repair.
 - Reset from incomplete schema. Create a DB with only a subset of objects or
   stale shadow objects, run reset, assert schema, sentinel, `PRAGMA
   integrity_check`, and FTS5 integrity.
@@ -354,7 +297,7 @@ Add this text to `docs/PORTING.md` under `Indexer Native Write Routing`:
 
 > Native indexer compound writes are atomic at the logical replacement-unit
 > boundary. A content file replacement deletes old chunks, inserts new chunks,
-> writes its `files` mtime, and co-commits its segment aggregate rebuild. An edge
+> and writes its `files` mtime. An edge
 > file replacement deletes old edge rows and `edge_files` state, extracts and
 > inserts replacement rows, and writes the `edge_files` mtime as one unit.
 > Entity search deletes stale entity-search chunks, inserts replacement chunks,
@@ -373,9 +316,6 @@ Add this text to `docs/PORTING.md` under `Indexer Native Write Routing`:
 - D0 is included, approved, and shipped: `index_entity_search` is covered by the
   same transaction model because it has the same destructive replacement defect
   and only one call frame.
-- D1 accepts a temporary cross-view mismatch when one file in a segment fails
-  after a sibling has already committed an aggregate built from disk. The retry
-  story is correct, but the mismatch is visible until the next successful scan.
 - Removal-only trigger injection needs `BEFORE DELETE` triggers, not only
   `BEFORE INSERT`, because those units have no post-delete insert.
 - `ScanReport.failed` is a public struct-field addition. Existing callers should
@@ -389,16 +329,13 @@ Add this text to `docs/PORTING.md` under `Indexer Native Write Routing`:
   one transaction.
 - D0: include `index_entity_search`; it has three destructive deletes, N chunk
   inserts, and two watermark writes that must co-commit.
-- D1: fold segment aggregate rebuild into the source file/removal transaction,
-  remove the batched scan phase, and dedupe aggregate rebuilds per segment per
-  scan run.
 - Failure matrix: only `rescan_file` failed results and `rebuild_edges`
   non-benign failures change exit disposition to 75. `scan_journal` soft edge
   failures warn, continue, set `ScanReport.failed`, and still exit 0. Scan SQL
   errors propagate as `Err` and return 75 exactly as today. Invalid segments are
   benign everywhere, including `rescan_file`; drops stay non-fatal.
-- Test rewrites: `scan.rs:906`, `scan.rs:992`, `scan.rs:1063`,
-  `scan.rs:1687`, `db.rs:333`, and `scan.rs:3114` only.
+- Test rewrites: `scan.rs:906`, `scan.rs:992`, `scan.rs:1063`, `db.rs:333`,
+  and `scan.rs:3114` only.
 - New tests: trigger injection after destructive deletes, second-connection
   verification, integrity checks, retry-and-converge, extraction-level failure,
   incomplete-schema reset, and AC6 held `BEGIN EXCLUSIVE` busy-timeout exit 75.

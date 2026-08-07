@@ -435,7 +435,7 @@ the Rust relative-path resolver.
 
 Native indexer compound writes are atomic at the logical replacement-unit
 boundary. A content file replacement deletes old chunks, inserts new chunks,
-writes its `files` mtime, and co-commits its segment aggregate rebuild. An edge
+and writes its `files` mtime. An edge
 file replacement deletes old edge rows and `edge_files` state, extracts and
 inserts replacement rows, and writes the `edge_files` mtime as one unit.
 Entity search deletes stale entity-search chunks, inserts replacement chunks,
