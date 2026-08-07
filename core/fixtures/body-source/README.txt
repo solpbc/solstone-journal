@@ -24,6 +24,9 @@ The `python_nonfinite_value_cases` entries preserve a narrow predecessor
 compatibility edge: Python's JSON encoder emits `NaN`, `Infinity`, and
 `-Infinity` even though standard JSON does not. Their strings describe values
 the Rust test must construct; they are not ordinary JSON-number literals.
+Likewise, `python_overflow_value_cases` stores `1e999` as a string so ordinary
+fixture tooling can read the file; the body value codec must parse that raw
+numeric lexeme and match Python's positive-infinity result.
 
 body_source_codec_rows.json supplies independently hand-authored examples of
 all three normalized schemas currently accepted by the shipping body reader,

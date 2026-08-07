@@ -19,7 +19,9 @@
         "metadata": {
           "unknown_array": [1, "two", false, null, {"z": 2, "a": 1}],
           "nested": {"null": null, "truth": true},
-          "WorkoutStatistics": [{"unit": "km", "sum": "10.0"}]
+          "totalDistance": "10.0",
+          "totalDistanceUnit": "km",
+          "totalDistanceType": "HKQuantityTypeIdentifierDistanceWalkingRunning"
         },
         "raw_ref": "imports/synthetic-import/raw/export.xml#workout-6",
         "future_extension": {"z": 2, "a": 1},
@@ -27,7 +29,12 @@
         "month": "2026-01",
         "normalized_ref": "imports/synthetic-import/normalized/2026-01.jsonl#L6"
       },
-      "expected_canonical_json": "{\"day\":\"20260102\",\"dedupe_key\":\"sha256:1422cf525aecd1153993ec0d4dbbd3b7f192ae5523ec22f5b8ccfc8d203a93a5\",\"end_date\":\"2026-01-02 07:15:00 -0700\",\"future_extension\":{\"a\":1,\"z\":2},\"import_id\":\"synthetic-import\",\"kind\":\"workout\",\"metadata\":{\"WorkoutStatistics\":[{\"sum\":\"10.0\",\"unit\":\"km\"}],\"nested\":{\"null\":null,\"truth\":true},\"unknown_array\":[1,\"two\",false,null,{\"a\":1,\"z\":2}]},\"month\":\"2026-01\",\"normalized_ref\":\"imports/synthetic-import/normalized/2026-01.jsonl#L6\",\"raw_ref\":\"imports/synthetic-import/raw/export.xml#workout-6\",\"record_type\":\"HKWorkoutActivityTypeRunning\",\"schema\":\"solstone.health.apple_health.v1\",\"source_family\":\"apple_health\",\"source_name\":\"Synthetic Watch\",\"source_version\":\"1.0\",\"start_date\":\"2026-01-02 06:30:00 -0700\",\"unit\":\"min\",\"value\":\"45\"}"
+      "expected_canonical_json": "{\"day\":\"20260102\",\"dedupe_key\":\"sha256:1422cf525aecd1153993ec0d4dbbd3b7f192ae5523ec22f5b8ccfc8d203a93a5\",\"end_date\":\"2026-01-02 07:15:00 -0700\",\"future_extension\":{\"a\":1,\"z\":2},\"import_id\":\"synthetic-import\",\"kind\":\"workout\",\"metadata\":{\"nested\":{\"null\":null,\"truth\":true},\"totalDistance\":\"10.0\",\"totalDistanceType\":\"HKQuantityTypeIdentifierDistanceWalkingRunning\",\"totalDistanceUnit\":\"km\",\"unknown_array\":[1,\"two\",false,null,{\"a\":1,\"z\":2}]},\"month\":\"2026-01\",\"normalized_ref\":\"imports/synthetic-import/normalized/2026-01.jsonl#L6\",\"raw_ref\":\"imports/synthetic-import/raw/export.xml#workout-6\",\"record_type\":\"HKWorkoutActivityTypeRunning\",\"schema\":\"solstone.health.apple_health.v1\",\"source_family\":\"apple_health\",\"source_name\":\"Synthetic Watch\",\"source_version\":\"1.0\",\"start_date\":\"2026-01-02 06:30:00 -0700\",\"unit\":\"min\",\"value\":\"45\"}",
+      "identity_metadata": {
+        "unknown_array": [1, "two", false, null, {"z": 2, "a": 1}],
+        "nested": {"null": null, "truth": true}
+      },
+      "expected_identity_value_hash": "sha256:c66e84c7099ced3708ba7b04aeb5c1b4c88f15f1a94296c7321f00a7ab030eda"
     },
     {
       "name": "oura_v1_all_shapes",

@@ -60,6 +60,22 @@
         "value": "HKCategoryValueSleepAnalysisAsleepCore"
       },
       "name": "apple_composite_explicit_null_metadata"
+    },
+    {
+      "expected_dedupe_key": "sha256:e4f1f5200161888425a271c97e7c27f8aa7790fd5e01da72362006936727ca4a",
+      "expected_value_hash": "sha256:6647ae9857c406e7b4e0dbedd2e26f5b9e711122fe8fe9e295ef9762649007a2",
+      "identity": {
+        "end_time": null,
+        "metadata": {},
+        "record_type": "\u001cSyntheticType\u001f",
+        "source_family": "\u001cAPPLE_HEALTH\u001f",
+        "source_name": null,
+        "source_record_id": "\u001c synthetic-id \u001f",
+        "start_time": "\u001c2026-01-01T00:00:00Z\u001f",
+        "unit": "score",
+        "value": 1
+      },
+      "name": "python_only_strip_characters"
     }
   ],
   "schema": "solstone.body_source.hash_vectors.v1",
@@ -135,6 +151,26 @@
       "name": "exponent_float"
     },
     {
+      "expected_value_hash": "sha256:f67dae489a729ac90ad35dc012c8c59af9f64474c5e452000c8a948f66815479",
+      "input": {"metadata": {}, "unit": null, "value": 1e-07},
+      "name": "negative_exponent_zero_padding"
+    },
+    {
+      "expected_value_hash": "sha256:a841972ee884b84f8db38e8a42167f4bc8754f88a0a5fdc5676d87540550ce08",
+      "input": {"metadata": {}, "unit": null, "value": 1e+22},
+      "name": "positive_exponent_sign"
+    },
+    {
+      "expected_value_hash": "sha256:c0ee33534c6e086078c4fff5bf8fadcb1940790e4ab6f81f4b41d87493b96198",
+      "input": {"metadata": {}, "unit": null, "value": 18446744073709551616},
+      "name": "integer_above_u64"
+    },
+    {
+      "expected_value_hash": "sha256:1c5c95f002990e25736aa99d049ca7bbb349afd5b743c8f8074af5d52c67e74e",
+      "input": {"metadata": {}, "unit": null, "value": -9223372036854775809},
+      "name": "integer_below_i64"
+    },
+    {
       "expected_value_hash": "sha256:4b2eff4e8804fdaf73d63b9d64e34811325ff865576e77797116ba14f09dc668",
       "input": {"metadata": {}, "unit": "count", "value": 9007199254740993},
       "name": "large_integer"
@@ -164,6 +200,13 @@
       "expected_value_hash": "sha256:f832a25bf14ab1f2a6ea3f2f63cbfdb6382d491b48e81dd27327a7a9d8dc883c",
       "input_value_literal": "-Infinity",
       "name": "python_negative_infinity"
+    }
+  ],
+  "python_overflow_value_cases": [
+    {
+      "expected_value_hash": "sha256:30656dd673d38f78eb85d3e28e81007ffe1b69e19571c74e3d0d3d8d5f2ee8b7",
+      "input_numeric_literal": "1e999",
+      "name": "overflow_exponent_becomes_python_infinity"
     }
   ]
 }
