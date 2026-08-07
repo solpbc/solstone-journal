@@ -438,15 +438,17 @@ def test_time_bucket_population(journal_fixture):
     scan_journal(str(journal_fixture), verbose=True, full=True)
     conn, _ = get_journal_index(str(journal_fixture))
 
-    # Segment chunks should have correct time buckets
+    # Segment child chunks should have correct time buckets
     morning_rows = conn.execute(
-        "SELECT time_bucket FROM chunks WHERE agent='segment' AND path LIKE '%100000_300%'"
+        "SELECT time_bucket FROM chunks WHERE path LIKE '%100000_300/talents/%'"
     ).fetchall()
+    assert morning_rows
     assert all(r[0] == "morning" for r in morning_rows)
 
     evening_rows = conn.execute(
-        "SELECT time_bucket FROM chunks WHERE agent='segment' AND path LIKE '%200000_300%'"
+        "SELECT time_bucket FROM chunks WHERE path LIKE '%200000_300/talents/%'"
     ).fetchall()
+    assert evening_rows
     assert all(r[0] == "evening" for r in evening_rows)
 
     # Non-segment content should have empty time_bucket
@@ -464,25 +466,22 @@ def test_search_filter_by_time_bucket(journal_fixture):
 
     scan_journal(str(journal_fixture), verbose=True, full=True)
 
-    # Morning filter should find 100000 segment content
+    # Morning filter should find 100000 child content
     total, results = search_journal("", time_bucket="morning")
     assert total >= 1
-    # All segment results should be from morning segments
     for r in results:
-        if r["metadata"]["agent"] == "segment":
-            assert "100000_300" in r["metadata"]["path"]
+        assert "100000_300" in r["metadata"]["path"]
 
-    # Evening filter should find 200000 segment content
+    # Evening filter should find 200000 child content
     total, results = search_journal("", time_bucket="evening")
     assert total >= 1
     for r in results:
-        if r["metadata"]["agent"] == "segment":
-            assert "200000_300" in r["metadata"]["path"]
+        assert "200000_300" in r["metadata"]["path"]
 
-    # Non-matching bucket should return no segment content
+    # Non-matching bucket should return no content
     total, results = search_journal("", time_bucket="afternoon")
-    segment_results = [r for r in results if r["metadata"]["agent"] == "segment"]
-    assert len(segment_results) == 0
+    assert total == 0
+    assert results == []
 
 
 def test_time_bucket_non_segment_empty(journal_fixture):
@@ -659,26 +658,7 @@ def _ids(results):
     return [result["id"] for result in results]
 
 
-def test_collapse_drops_aggregate_when_child_matches(relax_fixture):
-    total, results = search_journal("Acme", relax=False)
-
-    assert total == 1
-    assert all(result["metadata"]["agent"] != "segment" for result in results)
-    assert _ids(results) == ["20240101/default/100000_300/talents/activity.md:0"]
-
-
-def test_collapse_keeps_aggregate_when_no_child_matches(relax_fixture):
-    total, results = search_journal("Zephyr Quokka", relax=False)
-
-    assert total == 1
-    assert len(results) == 1
-    result = results[0]
-    assert result["metadata"]["agent"] == "segment"
-    assert result["metadata"]["path"] == "20240101/default/110000_300"
-    assert result["metadata"]["idx"] == 1
-
-
-def test_collapse_total_parity_and_reduction(relax_fixture):
+def test_search_total_parity(relax_fixture):
     q = "Acme"
 
     total, _ = search_journal(q)
@@ -692,11 +672,10 @@ def test_collapse_total_parity_and_reduction(relax_fixture):
     ).fetchone()[0]
     conn.close()
 
-    assert raw == 2
-    assert search_journal(q)[0] < raw
+    assert raw == total
 
 
-def test_collapse_pagination_no_duplicate_aggregate(relax_fixture):
+def test_search_pagination_no_duplicates_or_missing_rows(relax_fixture):
     q = "Acme OR documentation"
 
     assert search_journal(q)[0] == 2
@@ -715,7 +694,6 @@ def test_collapse_pagination_no_duplicate_aggregate(relax_fixture):
         "20240101/default/100000_300/talents/screen.md:0",
     }
     assert len(ids) == len(set(ids))
-    assert all(result["metadata"]["agent"] != "segment" for result in pages)
 
 
 def test_search_counts_relaxed_flag(relax_fixture):
@@ -1604,113 +1582,21 @@ def test_delete_segment_index_rows_removes_only_target_segment(monkeypatch, tmp_
     conn.close()
 
 
-class TestSegmentChunks:
-    """Tests for segment-level concatenated FTS5 chunks."""
+def test_existing_agent_chunks_unchanged(journal_fixture):
+    """Per-file child chunks remain independently searchable."""
+    from solstone.think.indexer.journal import get_journal_index, scan_journal
 
-    def test_segment_chunks_created(self, journal_fixture):
-        """scan_journal creates segment chunks with agent='segment'."""
-        from solstone.think.indexer.journal import get_journal_index, scan_journal
-
-        scan_journal(str(journal_fixture), verbose=True, full=True)
-        conn, _ = get_journal_index(str(journal_fixture))
-        rows = conn.execute(
-            "SELECT content, path, day, facet, agent, stream FROM chunks WHERE agent='segment'"
-        ).fetchall()
-        conn.close()
-        assert len(rows) >= 1
-        content, path, day, facet, agent, stream = rows[0]
-        assert content
-        assert path == "20240101/default/100000_300"
-        assert day == "20240101"
-        assert facet == ""
-        assert agent == "segment"
-        assert stream == "default"
-
-    def test_segment_chunk_contains_all_agent_content(self, journal_fixture):
-        """Segment chunk content includes text from all agent files."""
-        from solstone.think.indexer.journal import get_journal_index, scan_journal
-
-        scan_journal(str(journal_fixture), verbose=True, full=True)
-        conn, _ = get_journal_index(str(journal_fixture))
-        rows = conn.execute(
-            "SELECT content FROM chunks WHERE agent='segment'"
-        ).fetchall()
-        conn.close()
-        all_content = " ".join(r[0] for r in rows)
-        assert "Viewed documentation" in all_content
-        assert "Scott Ward" in all_content
-
-    def test_segment_chunk_searchable(self, journal_fixture):
-        """Segment chunks are searchable via an explicit segment filter."""
-        from solstone.think.indexer.journal import scan_journal, search_journal
-
-        scan_journal(str(journal_fixture), verbose=True, full=True)
-        total, results = search_journal("Scott Ward", agent="segment")
-        assert total >= 1
-        segment_results = [r for r in results if r["metadata"]["agent"] == "segment"]
-        assert len(segment_results) >= 1
-
-    def test_segment_chunk_cross_file_search(self, journal_fixture):
-        """Segment-filtered search finds segment chunks for child terms."""
-        from solstone.think.indexer.journal import scan_journal, search_journal
-
-        scan_journal(str(journal_fixture), verbose=True, full=True)
-        total1, results1 = search_journal("documentation", agent="segment")
-        total2, results2 = search_journal("Acme deal", agent="segment")
-        assert total1 >= 1
-        assert total2 >= 1
-        seg1 = [r for r in results1 if r["metadata"]["agent"] == "segment"]
-        seg2 = [r for r in results2 if r["metadata"]["agent"] == "segment"]
-        assert len(seg1) >= 1
-        assert len(seg2) >= 1
-
-    def test_agent_filter_returns_only_segments(self, journal_fixture):
-        """agent='segment' filter returns only segment chunks."""
-        from solstone.think.indexer.journal import scan_journal, search_journal
-
-        scan_journal(str(journal_fixture), verbose=True, full=True)
-        total, results = search_journal("", agent="segment")
-        assert total >= 1
-        for r in results:
-            assert r["metadata"]["agent"] == "segment"
-
-    def test_existing_agent_chunks_unchanged(self, journal_fixture):
-        """Segment chunks are additive — agent-level chunks still exist."""
-        from solstone.think.indexer.journal import get_journal_index, scan_journal
-
-        scan_journal(str(journal_fixture), verbose=True, full=True)
-        conn, _ = get_journal_index(str(journal_fixture))
-        screen_chunks = conn.execute(
-            "SELECT count(*) FROM chunks WHERE path='20240101/default/100000_300/talents/screen.md'"
-        ).fetchone()[0]
-        activity_chunks = conn.execute(
-            "SELECT count(*) FROM chunks WHERE path='20240101/default/100000_300/talents/activity.md'"
-        ).fetchone()[0]
-        segment_chunks = conn.execute(
-            "SELECT count(*) FROM chunks WHERE agent='segment'"
-        ).fetchone()[0]
-        conn.close()
-        assert screen_chunks >= 1
-        assert activity_chunks >= 1
-        assert segment_chunks >= 1
-
-    def test_idempotent_scan(self, journal_fixture):
-        """Running scan_journal twice produces same segment chunk count."""
-        from solstone.think.indexer.journal import get_journal_index, scan_journal
-
-        scan_journal(str(journal_fixture), verbose=True, full=True)
-        conn, _ = get_journal_index(str(journal_fixture))
-        count1 = conn.execute(
-            "SELECT count(*) FROM chunks WHERE agent='segment'"
-        ).fetchone()[0]
-        conn.close()
-        scan_journal(str(journal_fixture), verbose=True, full=True)
-        conn, _ = get_journal_index(str(journal_fixture))
-        count2 = conn.execute(
-            "SELECT count(*) FROM chunks WHERE agent='segment'"
-        ).fetchone()[0]
-        conn.close()
-        assert count1 == count2
+    scan_journal(str(journal_fixture), verbose=True, full=True)
+    conn, _ = get_journal_index(str(journal_fixture))
+    screen_chunks = conn.execute(
+        "SELECT count(*) FROM chunks WHERE path='20240101/default/100000_300/talents/screen.md'"
+    ).fetchone()[0]
+    activity_chunks = conn.execute(
+        "SELECT count(*) FROM chunks WHERE path='20240101/default/100000_300/talents/activity.md'"
+    ).fetchone()[0]
+    conn.close()
+    assert screen_chunks >= 1
+    assert activity_chunks >= 1
 
 
 def test_chat_turn_is_searchable_after_rescan(journal_fixture):
@@ -1990,13 +1876,13 @@ def test_native_read_bridge_uses_real_binary_for_recency_and_unicode(tmp_path, m
 
     _seed_native_chunk(
         tmp_path,
-        content="unreadable aggregate",
+        content="ordinary unicode result",
         day="20260107",
         idx=99,
-        agent="segment",
+        agent="flow",
     )
-    _, segment_results = search_journal("unreadable aggregate")
-    assert set(segment_results[0]) == {"id", "text", "metadata", "score"}
+    _, ordinary_results = search_journal("ordinary unicode result")
+    assert set(ordinary_results[0]) == {"id", "text", "metadata", "score"}
 
 
 def test_native_read_shim_distinguishes_empty_and_absent_indexes(tmp_path, monkeypatch):
