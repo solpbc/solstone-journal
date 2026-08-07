@@ -108,6 +108,8 @@ def _link_health_message(
     generation: int,
     state: str = "connected",
     ts: int = 1_700_000_000_000,
+    ack_at: int | None = 1_700_000_000_200,
+    ack_generation: int | None = None,
 ) -> dict:
     return {
         "tract": "link",
@@ -118,6 +120,10 @@ def _link_health_message(
         "last_relay_tunnel_error": None,
         "last_relay_tunnel_error_at": None,
         "relay_tunnel_error_status": None,
+        "last_relay_listener_ack_at": ack_at,
+        "last_relay_listener_ack_generation": (
+            generation if ack_generation is None else ack_generation
+        ),
         "ts": ts,
     }
 
@@ -132,6 +138,8 @@ def test_bridge_caches_structured_link_health() -> None:
         "last_relay_tunnel_error": None,
         "last_relay_tunnel_error_at": None,
         "relay_tunnel_error_status": None,
+        "last_relay_listener_ack_at": 1_700_000_000_200,
+        "last_relay_listener_ack_generation": 7,
         "ts": 1_700_000_000_000,
     }
 
@@ -159,6 +167,8 @@ def test_bridge_drops_older_link_health_generation() -> None:
     health = convey_bridge.get_cached_state()["link_health"]
     assert health["listen_generation"] == 3
     assert health["state"] == "connected"
+    assert health["last_relay_listener_ack_at"] == 1_700_000_000_200
+    assert health["last_relay_listener_ack_generation"] == 3
 
 
 def test_bridge_overwrites_equal_or_newer_link_health_generation() -> None:
@@ -176,6 +186,28 @@ def test_bridge_overwrites_equal_or_newer_link_health_generation() -> None:
     health = convey_bridge.get_cached_state()["link_health"]
     assert health["listen_generation"] == 4
     assert health["state"] == "reconnecting"
+    assert health["last_relay_listener_ack_at"] == 1_700_000_000_200
+    assert health["last_relay_listener_ack_generation"] == 4
+
+
+def test_bridge_replaces_health_with_new_generation_before_listener_ack() -> None:
+    convey_bridge._broadcast_callosum_event(
+        _link_health_message(generation=3, state="connected")
+    )
+    convey_bridge._broadcast_callosum_event(
+        _link_health_message(
+            generation=4,
+            state="connecting",
+            ack_at=1_700_000_000_200,
+            ack_generation=3,
+        )
+    )
+
+    health = convey_bridge.get_cached_state()["link_health"]
+    assert health["listen_generation"] == 4
+    assert health["state"] == "connecting"
+    assert health["last_relay_listener_ack_at"] == 1_700_000_000_200
+    assert health["last_relay_listener_ack_generation"] == 3
 
 
 def test_callosum_sse_multi_client_fanout(convey_env):

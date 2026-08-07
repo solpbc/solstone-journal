@@ -558,6 +558,18 @@ OPERATIONS: list[OperationSpec] = [
                         raw_schema={"type": ["integer", "null"]},
                     ),
                     FieldSpec(
+                        "last_relay_listener_ack_at",
+                        "integer",
+                        required=True,
+                        raw_schema={"type": ["integer", "null"]},
+                    ),
+                    FieldSpec(
+                        "last_relay_listener_ack_generation",
+                        "integer",
+                        required=True,
+                        raw_schema={"type": ["integer", "null"]},
+                    ),
+                    FieldSpec(
                         "home_address",
                         "string",
                         required=True,
@@ -631,6 +643,8 @@ OPERATIONS: list[OperationSpec] = [
                     "last_successful_relay_tunnel_at": None,
                     "last_relay_tunnel_error": None,
                     "last_relay_tunnel_error_at": None,
+                    "last_relay_listener_ack_at": None,
+                    "last_relay_listener_ack_generation": None,
                     "home_address": None,
                     "vpn": {"active": None, "candidates": []},
                     "home_candidates": [],

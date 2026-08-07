@@ -560,6 +560,12 @@ def api_status() -> Any:
             "last_relay_tunnel_error_at": (
                 health["last_relay_tunnel_error_at"] if health else None
             ),
+            "last_relay_listener_ack_at": (
+                health["last_relay_listener_ack_at"] if health else None
+            ),
+            "last_relay_listener_ack_generation": (
+                health["last_relay_listener_ack_generation"] if health else None
+            ),
             "home_address": home_status.home_address,
             "vpn": {"active": None, "candidates": vpn_candidates},
             "home_candidates": home_status.home_candidates,

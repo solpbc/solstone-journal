@@ -39,6 +39,8 @@ STATUS_FIELD_SET = {
     "last_successful_relay_tunnel_at",
     "last_relay_tunnel_error",
     "last_relay_tunnel_error_at",
+    "last_relay_listener_ack_at",
+    "last_relay_listener_ack_generation",
     "home_address",
     "vpn",
     "home_candidates",
@@ -62,6 +64,8 @@ def _health(
     success_at: int | None = None,
     error: str | None = None,
     error_at: int | None = None,
+    ack_at: int | None = None,
+    ack_generation: int | None = None,
 ) -> dict[str, Any]:
     return {
         "state": state,
@@ -70,6 +74,8 @@ def _health(
         "last_relay_tunnel_error": error,
         "last_relay_tunnel_error_at": error_at,
         "relay_tunnel_error_status": None,
+        "last_relay_listener_ack_at": ack_at,
+        "last_relay_listener_ack_generation": ack_generation,
         "ts": ts,
     }
 
@@ -212,6 +218,24 @@ def test_lan_unreachable_precedence_over_spl(link_env, monkeypatch) -> None:
     assert data["relay_listen_generation"] == 1
 
 
+def test_api_status_projects_relay_listener_ack_fields(link_env, monkeypatch) -> None:
+    env = link_env(local_endpoints=[])
+    _write_config(env, link={"posture": "spl"})
+    _write_service_token(env)
+    monkeypatch.setattr(link_routes, "_detect_lan_ip", lambda: "192.168.1.50")
+    monkeypatch.setattr(link_routes, "now_ms", lambda: NOW)
+    monkeypatch.setattr(
+        link_routes,
+        "_read_link_health",
+        lambda: _health(ack_at=NOW - 20, ack_generation=3),
+    )
+
+    data = _get_status(env)
+
+    assert data["last_relay_listener_ack_at"] == NOW - 20
+    assert data["last_relay_listener_ack_generation"] == 3
+
+
 def test_relay_state_helper() -> None:
     assert link_routes._derive_relay_state(False) == "not-enrolled"
     assert link_routes._derive_relay_state(True) == "offline"
@@ -254,6 +278,17 @@ def test_spl_relay_state_never_parks_without_connected() -> None:
         == "reconnecting"
     )
     assert link_routes._derive_spl_relay_state(True, _health(), NOW) == "parked"
+
+
+def test_spl_relay_state_stays_connecting_for_new_generation_before_ack() -> None:
+    health = _health(
+        state="connecting",
+        generation=2,
+        ack_at=NOW - 1,
+        ack_generation=1,
+    )
+
+    assert link_routes._derive_spl_relay_state(True, health, NOW) == "connecting"
 
 
 def test_current_tunnel_error_ignores_error_older_than_success() -> None:
@@ -543,6 +578,8 @@ def test_back_compat_field_set(link_env, monkeypatch) -> None:
     assert isinstance(data["relay_url"], str)
     assert isinstance(data["ca_fingerprint"], str) or data["ca_fingerprint"] is None
     assert isinstance(data["lan_accessible"], bool)
+    assert data["last_relay_listener_ack_at"] is None
+    assert data["last_relay_listener_ack_generation"] is None
 
 
 def test_api_status_unprovisioned(link_env, monkeypatch) -> None:
@@ -560,4 +597,6 @@ def test_api_status_unprovisioned(link_env, monkeypatch) -> None:
     assert set(data) == STATUS_FIELD_SET
     assert data["instance_id"] is None
     assert data["home_label"] is None
+    assert data["last_relay_listener_ack_at"] is None
+    assert data["last_relay_listener_ack_generation"] is None
     assert not (env.journal / "link" / "state.json").exists()

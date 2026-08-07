@@ -142,6 +142,10 @@ def _broadcast_callosum_event(message: Dict[str, Any]) -> None:
             "last_relay_tunnel_error": message.get("last_relay_tunnel_error"),
             "last_relay_tunnel_error_at": message.get("last_relay_tunnel_error_at"),
             "relay_tunnel_error_status": message.get("relay_tunnel_error_status"),
+            "last_relay_listener_ack_at": message.get("last_relay_listener_ack_at"),
+            "last_relay_listener_ack_generation": message.get(
+                "last_relay_listener_ack_generation"
+            ),
             "ts": _message_ts_ms(message),
         }
         cached = _STATE_CACHE["link_health"]
