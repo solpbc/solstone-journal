@@ -22,6 +22,7 @@ from solstone.think.models import (
     LOCAL_MODEL,
     get_model_provider,
 )
+from solstone.think import core_handshake
 from solstone.think.providers.artifact_proof import ReadinessOutcome
 from solstone.think.responsiveness import NON_RESPONSIVE_REASON_CODE
 from solstone.think.schema_prep import SCHEMA_TRUNCATE_KEY
@@ -58,6 +59,66 @@ def _default_endpoint_models_unknown(monkeypatch):
     monkeypatch.setattr(httpx, "get", fake_get)
     yield
     local_endpoint.reset_endpoint_served_window_cache()
+
+
+def _local_connect_outcome(
+    outcome: str = "ready",
+    *,
+    port: int = 4321,
+    served_model_id: str = LOCAL_MODEL,
+    parallel_slots: int = 1,
+    capacity_source: str = "default",
+    profile: str = "floor",
+    reason: str = "test outcome",
+) -> dict:
+    if outcome != "ready":
+        return {"outcome": outcome, "reason": reason}
+    return {
+        "outcome": "ready",
+        "server": {
+            "model_id": LOCAL_MODEL,
+            "served_model_id": served_model_id,
+            "port": port,
+            "base_url": f"http://127.0.0.1:{port}",
+            "parallel_slots": parallel_slots,
+            "capacity_source": capacity_source,
+            "profile": profile,
+        },
+    }
+
+
+@pytest.fixture(autouse=True)
+def _local_core_connect(monkeypatch):
+    from solstone.think.providers import local_server
+
+    real = local_server._core_connect_outcome
+
+    def inject(*outcomes: dict) -> list[list[str]]:
+        calls: list[list[str]] = []
+        pending = iter(outcomes)
+        last = outcomes[-1]
+
+        def runner(argv: list[str], **_kwargs) -> SimpleNamespace:
+            calls.append(argv)
+            return SimpleNamespace(
+                stdout=json.dumps(next(pending, last)),
+                stderr="",
+                returncode=0,
+            )
+
+        monkeypatch.setattr(
+            local_server,
+            "_core_connect_outcome",
+            lambda: real(
+                handshake_checker=lambda: core_handshake.CoreHandshakeResult("ok"),
+                helper_locator=lambda: Path("/tmp/bin/solstone-core"),
+                runner=runner,
+            ),
+        )
+        return calls
+
+    inject(_local_connect_outcome())
+    return inject
 
 
 def _provider():
@@ -1145,10 +1206,9 @@ def _patch_bundled_server(
 
 
 def _launched_context_tokens(plan) -> int:
-    from solstone.think import supervisor
-
-    cmd = supervisor._build_local_llama_cmd(plan, 4321)
-    return int(cmd[cmd.index("-c") + 1])
+    assert plan.context_tokens is not None
+    assert plan.parallel_slots is not None
+    return plan.context_tokens * plan.parallel_slots
 
 
 def _budget_count_tokens(text: str, _base_url: str | None = None) -> int:
@@ -1700,7 +1760,6 @@ def test_run_generate_bundled_ac3_capable_49152_bounds_launched_pool(monkeypatch
         model_path=Path("/tmp/model.gguf"),
         context_tokens=tier.context_tokens,
         parallel_slots=tier.parallel_slots,
-        prompt_cache_mib=tier.prompt_cache_mib,
     )
     launched_c = _launched_context_tokens(plan)
     max_output_tokens = 49152
@@ -1998,7 +2057,6 @@ def test_run_generate_bundled_ac3_fitted_prompt_bounds_launched_pool(
         model_path=Path("/tmp/model.gguf"),
         context_tokens=tier.context_tokens,
         parallel_slots=tier.parallel_slots,
-        prompt_cache_mib=tier.prompt_cache_mib,
     )
     launched_c = _launched_context_tokens(plan)
 
@@ -4152,9 +4210,9 @@ def test_local_context_window_split_floor_vs_tier():
     assert "tier.context_tokens" in truth_src
     launcher_src = inspect.getsource(supervisor.start_local_server)
     assert "select_server_tier" not in launcher_src
-    assert "plan.context_tokens" in inspect.getsource(
-        supervisor._start_llama_local_server
-    )
+    llama_launcher_src = inspect.getsource(supervisor._start_llama_local_server)
+    assert "_request_local_launch_plan(plan, port)" in llama_launcher_src
+    assert '"context_tokens"' in llama_launcher_src
     assert '"16384"' not in launcher_src
     llm_src = inspect.getsource(openhands._build_llm)
     assert "LOCAL_MIN_CONTEXT_TOKENS" in llm_src
@@ -4692,14 +4750,14 @@ def test_build_provider_status_local_configured_ignores_ram_flag(monkeypatch):
     assert status["issues"] == []
 
 
-def test_local_server_connect_returns_healthy_service(monkeypatch):
+def test_local_server_connect_returns_healthy_service(_local_core_connect):
     from solstone.think.providers import local_server
 
-    monkeypatch.setattr(local_server, "read_service_port", lambda service: 2468)
-    monkeypatch.setattr(
-        local_server,
-        "_fetch_health",
-        lambda port: ("ready", None, {"loaded_model": "/path/to/snapshot"}),
+    calls = _local_core_connect(
+        _local_connect_outcome(
+            port=2468,
+            served_model_id="/path/to/snapshot",
+        )
     )
 
     info = local_server.connect()
@@ -4708,6 +4766,7 @@ def test_local_server_connect_returns_healthy_service(monkeypatch):
     assert info.served_model_id == "/path/to/snapshot"
     assert info.base_url == "http://127.0.0.1:2468"
     assert info.state == local_server.STATE_READY
+    assert len(calls) == 1
 
 
 def test_resolve_served_model_id_returns_valid_loaded_model_verbatim():
@@ -4741,10 +4800,10 @@ def test_resolve_served_model_id_rejects_invalid_loaded_model(body):
     assert local_server._resolve_served_model_id(body) is None
 
 
-def test_local_server_connect_missing_port_raises_named_copy(monkeypatch):
+def test_local_server_connect_missing_port_raises_named_copy(_local_core_connect):
     from solstone.think.providers import local_server
 
-    monkeypatch.setattr(local_server, "read_service_port", lambda service: None)
+    _local_core_connect(_local_connect_outcome("not-ready", reason="no local service port"))
 
     with pytest.raises(local_server.LocalProviderError) as exc:
         local_server.connect()
@@ -4753,15 +4812,10 @@ def test_local_server_connect_missing_port_raises_named_copy(monkeypatch):
     assert str(exc.value) == local_server.LOCAL_MODEL_NOT_READY_COPY
 
 
-def test_local_server_connect_failed_health_raises_named_copy(monkeypatch):
+def test_local_server_connect_failed_health_raises_named_copy(_local_core_connect):
     from solstone.think.providers import local_server
 
-    monkeypatch.setattr(local_server, "read_service_port", lambda service: 2468)
-    monkeypatch.setattr(
-        local_server,
-        "_fetch_health",
-        lambda port: (local_server.STATE_FAILED, None, None),
-    )
+    _local_core_connect(_local_connect_outcome("failed", reason="connection refused"))
 
     with pytest.raises(local_server.LocalProviderError) as exc:
         local_server.connect()
@@ -4770,15 +4824,10 @@ def test_local_server_connect_failed_health_raises_named_copy(monkeypatch):
     assert str(exc.value) == local_server.LOCAL_MODEL_NOT_READY_COPY
 
 
-def test_local_server_connect_loading_health_raises_named_copy(monkeypatch):
+def test_local_server_connect_loading_health_raises_named_copy(_local_core_connect):
     from solstone.think.providers import local_server
 
-    monkeypatch.setattr(local_server, "read_service_port", lambda service: 2468)
-    monkeypatch.setattr(
-        local_server,
-        "_fetch_health",
-        lambda port: (local_server.STATE_LOADING, None, None),
-    )
+    _local_core_connect(_local_connect_outcome("loading", reason="loading model"))
 
     with pytest.raises(local_server.LocalProviderError) as exc:
         local_server.connect()
@@ -4794,12 +4843,16 @@ def test_local_server_connect_loading_health_raises_named_copy(monkeypatch):
         {"loaded_model": ""},
     ],
 )
-def test_local_server_connect_invalid_loaded_model_raises_named_copy(monkeypatch, body):
+def test_local_server_connect_invalid_loaded_model_raises_named_copy(
+    body, _local_core_connect
+):
     from solstone.think.providers import local_server
 
-    monkeypatch.setattr(local_server, "read_service_port", lambda service: 2468)
-    monkeypatch.setattr(
-        local_server, "_fetch_health", lambda port: ("ready", None, body)
+    _local_core_connect(
+        _local_connect_outcome(
+            "not-ready",
+            reason=f"health loaded_model is blank or invalid: {body!r}",
+        )
     )
 
     with pytest.raises(local_server.LocalProviderError) as exc:
@@ -4809,15 +4862,10 @@ def test_local_server_connect_invalid_loaded_model_raises_named_copy(monkeypatch
     assert str(exc.value) == local_server.LOCAL_MODEL_NOT_READY_COPY
 
 
-def test_local_server_connect_linux_health_shape_uses_logical_model(monkeypatch):
+def test_local_server_connect_linux_health_shape_uses_logical_model(_local_core_connect):
     from solstone.think.providers import local_server
 
-    monkeypatch.setattr(local_server, "read_service_port", lambda service: 2468)
-    monkeypatch.setattr(
-        local_server,
-        "_fetch_health",
-        lambda port: ("ready", None, {"status": "ok"}),
-    )
+    _local_core_connect(_local_connect_outcome(port=2468))
 
     info = local_server.connect()
 
@@ -4838,19 +4886,19 @@ def _local_journal(monkeypatch, tmp_path: Path) -> Path:
     return journal
 
 
-def test_read_server_parallel_slots_prefers_live_props(monkeypatch, tmp_path):
+def test_read_server_parallel_slots_prefers_live_props(
+    monkeypatch, tmp_path, _local_core_connect
+):
     from solstone.think.providers import local_server
 
     journal = _local_journal(monkeypatch, tmp_path)
     (journal / "health" / "local.port").write_text("2468")
-    # A launch-time context window that maps to the floor tier's single slot.
-    (journal / "health" / "local.ctx").write_text(
-        str(local_server._FLOOR_TIER.context_tokens)
-    )
-    monkeypatch.setattr(
-        local_server,
-        "fetch_props",
-        lambda port, timeout_s=1.0: {"n_ctx": 32768, "total_slots": 2},
+    _local_core_connect(
+        _local_connect_outcome(
+            parallel_slots=2,
+            capacity_source="props",
+            profile="capable",
+        )
     )
 
     # /props is ground truth; it wins over the persisted tier.
@@ -4863,30 +4911,23 @@ def test_read_server_parallel_slots_prefers_live_props(monkeypatch, tmp_path):
 
 
 def test_read_server_parallel_slots_no_port_returns_floor(
-    monkeypatch, tmp_path, caplog
+    monkeypatch, tmp_path, _local_core_connect
 ):
     from solstone.think.providers import local_server
 
     _local_journal(monkeypatch, tmp_path)
 
-    def _no_network(port, timeout_s=1.0):
-        raise AssertionError("fetch_props must not run without a port")
-
-    monkeypatch.setattr(local_server, "fetch_props", _no_network)
-
-    caplog.set_level(logging.INFO)
+    _local_core_connect(_local_connect_outcome("not-ready", reason="no local service port"))
     assert local_server.read_server_parallel_slots() == 1
-    assert (
-        "local_server_parallel_slots fallback slots=1 port=None "
-        "context_tokens=None source=default" in caplog.text
-    )
 
 
-def test_server_capacity_uses_explicit_apple_profile(monkeypatch, tmp_path):
+def test_server_capacity_uses_explicit_apple_profile(
+    monkeypatch, tmp_path, _local_core_connect
+):
     from solstone.think.providers import local_server
 
     _local_journal(monkeypatch, tmp_path)
-    monkeypatch.setattr(local_server.sys, "platform", "darwin")
+    _local_core_connect(_local_connect_outcome(profile="apple"))
 
     assert local_server.read_server_capacity() == local_server.ServerCapacity(
         parallel_slots=1,
@@ -4897,57 +4938,62 @@ def test_server_capacity_uses_explicit_apple_profile(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("slots", [1, 2])
 def test_read_server_parallel_slots_falls_back_to_launched_tier(
-    monkeypatch, tmp_path, slots
+    monkeypatch, tmp_path, slots, _local_core_connect
 ):
     from solstone.think.providers import local_server
 
     tier = local_server._FLOOR_TIER if slots == 1 else local_server._CAPABLE_TIER
     journal = _local_journal(monkeypatch, tmp_path)
-    (journal / "health" / "local.port").write_text("2468")
-    (journal / "health" / "local.ctx").write_text(str(tier.context_tokens))
-    monkeypatch.setattr(local_server, "fetch_props", lambda port, timeout_s=1.0: None)
+    _local_core_connect(
+        _local_connect_outcome(
+            parallel_slots=tier.parallel_slots,
+            capacity_source="local_ctx",
+            profile=tier.name,
+        )
+    )
 
     assert local_server.read_server_parallel_slots() == tier.parallel_slots
 
 
 def test_read_server_parallel_slots_unknown_context_window_returns_floor(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, _local_core_connect
 ):
     from solstone.think.providers import local_server
 
     journal = _local_journal(monkeypatch, tmp_path)
-    (journal / "health" / "local.port").write_text("2468")
-    (journal / "health" / "local.ctx").write_text("99999")
-    monkeypatch.setattr(local_server, "fetch_props", lambda port, timeout_s=1.0: None)
+    _local_core_connect(_local_connect_outcome("not-ready", reason="no local service port"))
 
     assert local_server.read_server_parallel_slots() == 1
 
 
 @pytest.mark.parametrize("props", [{}, {"total_slots": 0}, {"total_slots": "many"}])
 def test_read_server_parallel_slots_rejects_unusable_total_slots(
-    monkeypatch, tmp_path, props
+    monkeypatch, tmp_path, props, _local_core_connect
+):
+    from solstone.think.providers import local_server
+
+    journal = _local_journal(monkeypatch, tmp_path)
+    _local_core_connect(
+        _local_connect_outcome("not-ready", reason=f"unusable total_slots: {props!r}")
+    )
+
+    assert local_server.read_server_parallel_slots() == 1
+
+
+def test_read_server_parallel_slots_is_memoized_and_resettable(
+    monkeypatch, tmp_path, _local_core_connect
 ):
     from solstone.think.providers import local_server
 
     journal = _local_journal(monkeypatch, tmp_path)
     (journal / "health" / "local.port").write_text("2468")
-    monkeypatch.setattr(local_server, "fetch_props", lambda port, timeout_s=1.0: props)
-
-    assert local_server.read_server_parallel_slots() == 1
-
-
-def test_read_server_parallel_slots_is_memoized_and_resettable(monkeypatch, tmp_path):
-    from solstone.think.providers import local_server
-
-    journal = _local_journal(monkeypatch, tmp_path)
-    (journal / "health" / "local.port").write_text("2468")
-    calls = []
-
-    def counting_props(port, timeout_s=1.0):
-        calls.append(port)
-        return {"total_slots": 2}
-
-    monkeypatch.setattr(local_server, "fetch_props", counting_props)
+    calls = _local_core_connect(
+        _local_connect_outcome(
+            parallel_slots=2,
+            capacity_source="props",
+            profile="capable",
+        )
+    )
 
     assert local_server.read_server_parallel_slots() == 2
     assert local_server.read_server_parallel_slots() == 2

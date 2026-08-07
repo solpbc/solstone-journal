@@ -22,7 +22,7 @@ import threading
 import time
 import uuid
 from collections import OrderedDict, deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -2007,6 +2007,116 @@ def _required_plan_int(value: int | None, field_name: str) -> int:
     return value
 
 
+def _required_launch_plan_int(launch_plan: dict[str, Any], field_name: str) -> int:
+    value = launch_plan.get(field_name)
+    if not isinstance(value, int):
+        raise ValueError(f"native launch plan is missing {field_name}")
+    return value
+
+
+def _request_local_launch_plan(
+    plan: LocalServerLaunchPlan,
+    port: int,
+    *,
+    mlx_interpreter_path: Path | None = None,
+    handshake_checker=core_handshake.check_solstone_core_handshake,
+    helper_locator=core_handshake.helper_path_for_executable,
+    runner=subprocess.run,
+) -> dict[str, Any]:
+    """Render a supervisor-observed local plan through the native boundary."""
+    handshake = handshake_checker()
+    if handshake.status != "ok":
+        raise RuntimeError(
+            "local plan requires a usable solstone-core helper: "
+            f"{handshake.message or 'unknown handshake failure'}"
+        )
+
+    is_cuda = plan.backend == "cuda"
+    is_vulkan = plan.backend == "vulkan"
+    if plan.backend == "mlx":
+        if mlx_interpreter_path is None:
+            raise ValueError("MLX launch requires an interpreter path")
+        model_path = ""
+    else:
+        model_path = str(_required_plan_path(plan.model_path, "model_path"))
+
+    nvidia_probe = None
+    if is_cuda:
+        nvidia_probe = {
+            "schema": "solstone-local-nvidia-probe-v1",
+            "detected": True,
+            "gpu_index": plan.gpu_index,
+            "gpu_name": plan.gpu_name,
+            "compute_cap": None,
+            "arch": None,
+            "driver_cuda_major": None,
+            "vram_mib": plan.gpu_vram_mib,
+            "unified_memory_mib": None,
+            "probe_error": None,
+        }
+    vulkan_devices = None
+    if is_vulkan:
+        gpu_index = _required_plan_int(plan.gpu_index, "gpu_index")
+        gpu_name = plan.gpu_name
+        gpu_vram_mib = plan.gpu_vram_mib
+        if gpu_name is None or gpu_vram_mib is None:
+            raise ValueError("launch plan is missing Vulkan GPU details")
+        vulkan_devices = [
+            {"index": gpu_index, "name": gpu_name, "vram_mib": gpu_vram_mib}
+        ]
+
+    payload = {
+        "schema": "solstone-local-plan-input-v1",
+        "platform": "darwin" if sys.platform == "darwin" else "linux",
+        "backend_override": plan.backend,
+        "bind_address": "127.0.0.1",
+        "port": port,
+        "desired_fingerprint_json": json.loads(plan.desired_fingerprint_json),
+        "desired_fingerprint_sha256": plan.desired_fingerprint_sha256,
+        "model_id": plan.model_id,
+        "model_path": model_path,
+        "mmproj_path": str(plan.mmproj_path) if plan.mmproj_path else None,
+        "runtime_dir": str(plan.runtime_dir) if plan.runtime_dir else None,
+        "mlx_interpreter_path": (
+            str(mlx_interpreter_path) if mlx_interpreter_path is not None else None
+        ),
+        "cuda_binary_path": str(plan.binary_path) if is_cuda and plan.binary_path else None,
+        "vulkan_binary_path": (
+            str(plan.binary_path) if is_vulkan and plan.binary_path else None
+        ),
+        "lib_dir": str(plan.lib_dir) if plan.lib_dir else None,
+        "inherited_ld_library_path": os.environ.get("LD_LIBRARY_PATH", ""),
+        "nvidia_probe": nvidia_probe,
+        "cuda_embedded_arch_set": [],
+        "cuda_min_driver_version": None,
+        "cuda_artifact_trust": None,
+        "cuda_persisted_installed_cuda_target": None,
+        "vulkan_devices": vulkan_devices,
+        "vulkan_selected_gpu_index": plan.gpu_index if is_vulkan else None,
+        "vulkan_selected_gpu_name": plan.gpu_name if is_vulkan else None,
+        "vulkan_selected_vram_mib": plan.gpu_vram_mib if is_vulkan else None,
+        "vram_before_mib": plan.vram_before_mib if is_vulkan else None,
+    }
+    try:
+        completed = runner(
+            [str(helper_locator()), "local", "plan"],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"solstone-core local plan failed to launch: {exc}") from exc
+    if completed.returncode != 0:
+        raise RuntimeError(f"solstone-core local plan failed: {completed.stderr}")
+    outcome = json.loads(completed.stdout)
+    if outcome.get("outcome") == "rejected":
+        raise RuntimeError(f"solstone-core local plan rejected: {outcome.get('reason')}")
+    if outcome.get("outcome") != "launch":
+        raise RuntimeError("solstone-core local plan returned an invalid outcome")
+    return outcome
+
+
 def _outcome(
     status: LaunchOutcomeStatus,
     reason_code: ReasonCode,
@@ -2101,18 +2211,7 @@ def _start_mlx_local_server(
         reservation if reservation is not None else ReservedPort.reserve()
     )
     port = owned_reservation.port
-    script_path = str(Path(sys.executable).with_name(MLX_SERVER_PROCESS_NAME))
-    cmd = [
-        script_path,
-        "--host",
-        "127.0.0.1",
-        "--port",
-        str(port),
-        "--model",
-        str(runtime_dir),
-    ]
-    if "0.0.0.0" in cmd:
-        raise RuntimeError("Local server may not bind 0.0.0.0.")
+    script_path = Path(sys.executable).with_name(MLX_SERVER_PROCESS_NAME)
 
     logging.info("Starting mlx-vlm server for %s from %s", plan.model_id, runtime_dir)
     if _launch_cancel_requested(cancel_event):
@@ -2126,6 +2225,12 @@ def _start_mlx_local_server(
         )
     try:
         owned_reservation.release_for_spawn()
+        launch_plan = _request_local_launch_plan(
+            plan,
+            port,
+            mlx_interpreter_path=script_path,
+        )
+        cmd = launch_plan["argv"]
         managed = _launch_process(MLX_SERVER_PROCESS_NAME, cmd)
     except Exception as exc:
         owned_reservation.close()
@@ -2769,8 +2874,6 @@ def _observe_linux_local_provider_truth() -> ProviderTruthObservation:
         else:
             tier = local_server.select_server_tier(probe.tiering_memory_mib)
         lib_dir = local_install.cuda_binary_dir()
-        existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
-        ld_library_path = f"{lib_dir}:{existing_ld}" if existing_ld else str(lib_dir)
         plan = LocalServerLaunchPlan(
             backend="cuda",
             desired_fingerprint_json=before_json,
@@ -2783,13 +2886,7 @@ def _observe_linux_local_provider_truth() -> ProviderTruthObservation:
             gpu_vram_mib=probe.vram_mib,
             context_tokens=tier.context_tokens,
             parallel_slots=tier.parallel_slots,
-            prompt_cache_mib=tier.prompt_cache_mib,
             visible_devices_env=local_install.CUDA_SERVER_PIN.visible_devices_env,
-            visible_devices_value=str(gpu_index),
-            env_updates={
-                local_install.CUDA_SERVER_PIN.visible_devices_env: str(gpu_index),
-                "LD_LIBRARY_PATH": ld_library_path,
-            },
             backend_reason=str(readiness.host["backend_reason"]),
         )
     else:
@@ -2826,10 +2923,7 @@ def _observe_linux_local_provider_truth() -> ProviderTruthObservation:
             vram_before_mib=local_vulkan.device_local_used_mib(selected.index),
             context_tokens=tier.context_tokens,
             parallel_slots=tier.parallel_slots,
-            prompt_cache_mib=tier.prompt_cache_mib,
             visible_devices_env="GGML_VK_VISIBLE_DEVICES",
-            visible_devices_value=str(selected.index),
-            env_updates={"GGML_VK_VISIBLE_DEVICES": str(selected.index)},
             backend_reason=str(readiness.host["backend_reason"]),
         )
     before_identity_json, before_identity_sha = _target_fingerprint_pair(
@@ -3214,45 +3308,6 @@ def _build_parakeet_cmd(
     return cmd
 
 
-def _build_local_llama_cmd(plan: LocalServerLaunchPlan, port: int) -> list[str]:
-    binary_path = _required_plan_path(plan.binary_path, "binary_path")
-    model_path = _required_plan_path(plan.model_path, "model_path")
-    context_tokens = _required_plan_int(plan.context_tokens, "context_tokens")
-    parallel_slots = _required_plan_int(plan.parallel_slots, "parallel_slots")
-    prompt_cache_mib = _required_plan_int(plan.prompt_cache_mib, "prompt_cache_mib")
-    launched_context_tokens = context_tokens * parallel_slots
-    device_flag = "CUDA0" if plan.backend == "cuda" else "Vulkan0"
-    cmd = [
-        str(binary_path),
-        "-m",
-        str(model_path),
-        "--alias",
-        plan.model_id,
-        "--host",
-        "127.0.0.1",
-        "--port",
-        str(port),
-        "--jinja",
-        "--n-gpu-layers",
-        "999",
-        "-c",
-        str(launched_context_tokens),
-        "--parallel",
-        str(parallel_slots),
-        "--kv-unified",
-        "--cache-ram",
-        str(prompt_cache_mib),
-        "--no-context-shift",
-        "--device",
-        device_flag,
-    ]
-    if plan.mmproj_path is not None:
-        cmd.extend(["--mmproj", str(plan.mmproj_path)])
-    if "0.0.0.0" in cmd:
-        raise RuntimeError("Local server may not bind 0.0.0.0.")
-    return cmd
-
-
 def _start_llama_local_server(
     plan: LocalServerLaunchPlan,
     reservation: ReservedPort | None = None,
@@ -3270,14 +3325,6 @@ def _start_llama_local_server(
     )
     port = owned_reservation.port
     try:
-        cmd = _build_local_llama_cmd(plan, port)
-        logging.info(
-            "local server backend=%s context=%d parallel=%d cache=%d MiB",
-            plan.backend,
-            _required_plan_int(plan.context_tokens, "context_tokens"),
-            _required_plan_int(plan.parallel_slots, "parallel_slots"),
-            _required_plan_int(plan.prompt_cache_mib, "prompt_cache_mib"),
-        )
         if _launch_cancel_requested(cancel_event):
             owned_reservation.close()
             return _cancelled_launch_outcome(
@@ -3288,10 +3335,28 @@ def _start_llama_local_server(
                 reason="provider launch cancelled before spawn",
             )
         owned_reservation.release_for_spawn()
+        launch_plan = _request_local_launch_plan(plan, port)
+        cmd = launch_plan["argv"]
+        context_tokens = _required_launch_plan_int(launch_plan, "context_tokens")
+        parallel_slots = _required_launch_plan_int(launch_plan, "parallel_slots")
+        prompt_cache_mib = _required_launch_plan_int(launch_plan, "prompt_cache_mib")
+        extra_env = launch_plan.get("extra_env")
+        if not isinstance(extra_env, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in extra_env.items()
+        ):
+            raise ValueError("native launch plan is missing extra_env")
+        logging.info(
+            "local server backend=%s context=%d parallel=%d cache=%d MiB",
+            plan.backend,
+            context_tokens,
+            parallel_slots,
+            prompt_cache_mib,
+        )
         managed = _launch_process(
             LOCAL_SERVER_PROCESS_NAME,
             cmd,
-            env=os.environ | plan.env_updates,
+            env=os.environ | extra_env,
         )
     except Exception as exc:
         owned_reservation.close()
@@ -3362,7 +3427,15 @@ def _start_llama_local_server(
             total_slots = (
                 local_server._extract_total_slots(props) if props is not None else None
             )
-            _log_context_assertion(plan, n_ctx, total_slots)
+            _log_context_assertion(
+                replace(
+                    plan,
+                    context_tokens=context_tokens,
+                    parallel_slots=parallel_slots,
+                ),
+                n_ctx,
+                total_slots,
+            )
             logging.info("llama-server ready on port %s", port)
             return _outcome(
                 "ready",

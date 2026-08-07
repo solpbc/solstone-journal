@@ -321,8 +321,6 @@ def _local_plan() -> supervisor.LocalServerLaunchPlan:
         model_path=Path("/tmp/model.gguf"),
         context_tokens=16384,
         parallel_slots=1,
-        prompt_cache_mib=0,
-        env_updates={"GGML_VK_VISIBLE_DEVICES": "0"},
     )
 
 
@@ -338,10 +336,7 @@ def _cuda_plan() -> supervisor.LocalServerLaunchPlan:
         gpu_vram_mib=24576,
         context_tokens=32768,
         parallel_slots=1,
-        prompt_cache_mib=0,
         visible_devices_env="CUDA_VISIBLE_DEVICES",
-        visible_devices_value="0",
-        env_updates={"CUDA_VISIBLE_DEVICES": "0", "LD_LIBRARY_PATH": "/tmp/cuda/lib"},
     )
 
 
@@ -353,6 +348,96 @@ def _mlx_plan() -> supervisor.LocalServerLaunchPlan:
         model_id=supervisor.LOCAL_MODEL,
         runtime_dir=Path("/tmp/mlx-runtime"),
     )
+
+
+def _native_launch_plan_for_test(
+    plan: supervisor.LocalServerLaunchPlan,
+    port: int,
+    *,
+    mlx_interpreter_path: Path | None = None,
+) -> dict[str, Any]:
+    """Return the native-plan contract for supervisor launch tests."""
+    if plan.backend == "mlx":
+        assert mlx_interpreter_path is not None
+        return {
+            "outcome": "launch",
+            "argv": [
+                str(mlx_interpreter_path),
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+                "--model",
+                str(plan.runtime_dir),
+            ],
+            "context_tokens": 0,
+            "parallel_slots": 0,
+            "prompt_cache_mib": 0,
+            "extra_env": {},
+        }
+
+    assert plan.binary_path is not None
+    assert plan.model_path is not None
+    assert plan.context_tokens is not None
+    assert plan.parallel_slots is not None
+    prompt_cache_mib = 2048 if plan.context_tokens >= 32768 else 0
+    argv = [
+        str(plan.binary_path),
+        "-m",
+        str(plan.model_path),
+        "--alias",
+        plan.model_id,
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--jinja",
+        "--n-gpu-layers",
+        "999",
+        "-c",
+        str(plan.context_tokens * plan.parallel_slots),
+        "--parallel",
+        str(plan.parallel_slots),
+        "--kv-unified",
+        "--cache-ram",
+        str(prompt_cache_mib),
+        "--no-context-shift",
+        "--device",
+        "CUDA0" if plan.backend == "cuda" else "Vulkan0",
+    ]
+    if plan.mmproj_path is not None:
+        argv.extend(["--mmproj", str(plan.mmproj_path)])
+    return {
+        "outcome": "launch",
+        "argv": argv,
+        "context_tokens": plan.context_tokens,
+        "parallel_slots": plan.parallel_slots,
+        "prompt_cache_mib": prompt_cache_mib,
+        "extra_env": (
+            {"CUDA_VISIBLE_DEVICES": str(plan.gpu_index)}
+            if plan.backend == "cuda" and plan.gpu_index is not None
+            else (
+                {"GGML_VK_VISIBLE_DEVICES": str(plan.gpu_index)}
+                if plan.gpu_index is not None
+                else {}
+            )
+        ),
+    }
+
+
+def _core_ready_capacity_for_context(
+    local_server: Any,
+) -> dict[str, Any]:
+    context_tokens = local_server.read_local_context_window()
+    capable = context_tokens == 32768
+    return {
+        "outcome": "ready",
+        "server": {
+            "parallel_slots": 2 if capable else 1,
+            "capacity_source": "local_ctx" if capable else "default",
+            "profile": "capable" if capable else "floor",
+        },
+    }
 
 
 def _parakeet_plan(backend: str = "cpu") -> supervisor.ParakeetServerLaunchPlan:
@@ -2525,6 +2610,12 @@ def test_start_worker_cancellation_cleans_child_at_warmup_boundaries(
         return parakeet_server.STATE_FAILED, "warming"
 
     monkeypatch.setattr(supervisor, "_launch_process", launch_process)
+    if not backend.startswith("parakeet"):
+        monkeypatch.setattr(
+            supervisor,
+            "_request_local_launch_plan",
+            _native_launch_plan_for_test,
+        )
     monkeypatch.setattr(local_server, "_probe_health", local_probe)
     monkeypatch.setattr(parakeet_server, "_probe_health", parakeet_probe)
 
@@ -4657,7 +4748,11 @@ def test_mlx_ready_clears_stale_local_context_and_capacity_cache(
     health.mkdir(parents=True, exist_ok=True)
     (health / "local.ctx").write_text("32768", encoding="utf-8")
     supervisor.write_service_port("local", 11111)
-    monkeypatch.setattr(local_server, "fetch_props", lambda _port: None)
+    monkeypatch.setattr(
+        local_server,
+        "_core_connect_outcome",
+        lambda: _core_ready_capacity_for_context(local_server),
+    )
     local_server.reset_parallel_slots_cache()
     assert local_server.read_server_capacity().parallel_slots == 2
 
@@ -4692,7 +4787,11 @@ def test_local_capacity_observed_before_ready_is_reset_on_ready(
 ) -> None:
     from solstone.think.providers import local_server
 
-    monkeypatch.setattr(local_server, "fetch_props", lambda _port: None)
+    monkeypatch.setattr(
+        local_server,
+        "_core_connect_outcome",
+        lambda: _core_ready_capacity_for_context(local_server),
+    )
     local_server.reset_parallel_slots_cache()
     assert local_server.read_server_capacity().parallel_slots == 1
 
@@ -5122,6 +5221,11 @@ def test_launch_helper_returns_reserved_port_without_publishing(monkeypatch):
     )
     monkeypatch.setattr(local_server, "fetch_props", lambda _port: None)
     monkeypatch.setattr(local_vulkan, "device_local_used_mib", lambda _index: None)
+    monkeypatch.setattr(
+        supervisor,
+        "_request_local_launch_plan",
+        _native_launch_plan_for_test,
+    )
     monkeypatch.setattr(
         supervisor,
         "_launch_process",

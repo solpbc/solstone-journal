@@ -5,15 +5,17 @@
 
 from __future__ import annotations
 
-import logging
+import json
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from solstone.think import core_handshake
 from solstone.think.models import LOCAL_MODEL
 from solstone.think.providers.local import LocalProviderError
-from solstone.think.utils import get_journal, read_service_port
+from solstone.think.utils import get_journal
 
 STATE_IDLE = "idle"
 STATE_STARTING = "starting"
@@ -23,7 +25,6 @@ STATE_FAILED = "failed"
 STATE_STOPPED = "stopped"
 
 _HOST = "127.0.0.1"
-_SERVICE_NAME = "local"
 
 # Minimum/floor context window. This is the OpenHands agent
 # `max_input_tokens` floor, the floor-tier llama-server `-c`, and the sizing
@@ -230,26 +231,10 @@ def _profile_for_slots(slots: int) -> str:
 
 
 def _discover_server_capacity() -> ServerCapacity:
-    port = read_service_port(_SERVICE_NAME)
-    props = fetch_props(port) if port is not None else None
-    if props is not None:
-        slots = _extract_total_slots(props)
-        if slots is not None:
-            return ServerCapacity(slots, "props", _profile_for_slots(slots))
-
-    context_tokens = read_local_context_window()
-    slots = _slots_from_launched_tier(context_tokens)
-    source = "local_ctx" if slots is not None else "default"
-    slots = slots if slots is not None else _UNKNOWN_SLOTS
-    logging.info(
-        "local_server_parallel_slots fallback slots=%d port=%s "
-        "context_tokens=%s source=%s",
-        slots,
-        port,
-        context_tokens,
-        source,
-    )
-    return ServerCapacity(slots, source, _profile_for_slots(slots))
+    outcome = _core_connect_outcome()
+    if outcome["outcome"] == STATE_READY:
+        return _capacity_from_ready(outcome)
+    return ServerCapacity(_UNKNOWN_SLOTS, "default", _profile_for_slots(_UNKNOWN_SLOTS))
 
 
 def read_server_capacity() -> ServerCapacity:
@@ -286,40 +271,77 @@ def _resolve_served_model_id(health_body: dict[str, Any] | None) -> str | None:
     return None
 
 
+def _core_connect_outcome(
+    *,
+    handshake_checker=core_handshake.check_solstone_core_handshake,
+    helper_locator=core_handshake.helper_path_for_executable,
+    runner=subprocess.run,
+) -> dict[str, Any]:
+    handshake = handshake_checker()
+    if handshake.status != "ok":
+        raise RuntimeError(
+            "local connect requires a usable solstone-core helper: "
+            f"{handshake.message or 'unknown handshake failure'}"
+        )
+    payload = {
+        "schema": "solstone-local-connect-input-v1",
+        "journal_path": str(get_journal()),
+        "bind_address": _HOST,
+        "default_model_id": LOCAL_MODEL,
+        "platform": "darwin" if sys.platform == "darwin" else "linux",
+    }
+    try:
+        completed = runner(
+            [str(helper_locator()), "local", "connect"],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"solstone-core local connect failed to launch: {exc}") from exc
+    if completed.returncode != 0:
+        raise RuntimeError(f"solstone-core local connect failed: {completed.stderr}")
+    return json.loads(completed.stdout)
+
+
+def _capacity_from_ready(outcome: dict[str, Any]) -> ServerCapacity:
+    server = outcome["server"]
+    return ServerCapacity(
+        int(server["parallel_slots"]),
+        str(server["capacity_source"]),
+        str(server["profile"]),
+    )
+
+
 def is_healthy() -> bool:
-    port = read_service_port(_SERVICE_NAME)
-    if port is None:
-        return False
-    state, _ = _probe_health(port)
-    return state == STATE_READY
+    return _core_connect_outcome()["outcome"] == STATE_READY
 
 
 def probe_state() -> tuple[str, str | None]:
-    port = read_service_port(_SERVICE_NAME)
-    if port is None:
-        return STATE_FAILED, "no port"
-    return _probe_health(port)
+    outcome = _core_connect_outcome()
+    state = outcome["outcome"]
+    return (STATE_READY, None) if state == STATE_READY else (state, outcome.get("reason"))
 
 
 def connect() -> LocalServerInfo:
-    port = read_service_port(_SERVICE_NAME)
-    if port is None:
-        raise LocalProviderError("local_model_not_ready", LOCAL_MODEL_NOT_READY_COPY)
-    state, _, body = _fetch_health(port)
+    global _SERVER_CAPACITY_CACHE
+    outcome = _core_connect_outcome()
+    state = outcome["outcome"]
     if state == STATE_LOADING:
         raise LocalProviderError("local_model_loading", LOCAL_MODEL_NOT_READY_COPY)
     if state != STATE_READY:
         raise LocalProviderError("local_model_not_ready", LOCAL_MODEL_NOT_READY_COPY)
-    served_model_id = _resolve_served_model_id(body)
-    if served_model_id is None:
-        raise LocalProviderError("local_model_not_ready", LOCAL_MODEL_NOT_READY_COPY)
-    capacity = read_server_capacity()
+    server = outcome["server"]
+    if _SERVER_CAPACITY_CACHE is None:
+        _SERVER_CAPACITY_CACHE = _capacity_from_ready(outcome)
+    capacity = _SERVER_CAPACITY_CACHE
     return LocalServerInfo(
         model_id=LOCAL_MODEL,
-        port=port,
-        base_url=_base_url(port),
+        port=int(server["port"]),
+        base_url=str(server["base_url"]),
         state=STATE_READY,
-        served_model_id=served_model_id,
+        served_model_id=str(server["served_model_id"]),
         parallel_slots=capacity.parallel_slots,
         capacity_source=capacity.source,
         profile=capacity.profile,

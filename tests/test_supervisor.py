@@ -1788,6 +1788,78 @@ class _FakeReservation:
         self.closed = True
 
 
+def _native_launch_plan_for_test(plan, port: int, *, mlx_interpreter_path=None):
+    """Return the native-plan contract used by supervisor launch tests."""
+    if plan.backend == "mlx":
+        assert mlx_interpreter_path is not None
+        return {
+            "outcome": "launch",
+            "argv": [
+                str(mlx_interpreter_path),
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+                "--model",
+                str(plan.runtime_dir),
+            ],
+            "context_tokens": 0,
+            "parallel_slots": 0,
+            "prompt_cache_mib": 0,
+            "extra_env": {},
+        }
+
+    assert plan.binary_path is not None
+    assert plan.model_path is not None
+    assert plan.context_tokens is not None
+    assert plan.parallel_slots is not None
+    prompt_cache_mib = 2048 if plan.context_tokens >= 32768 else 0
+    argv = [
+        str(plan.binary_path),
+        "-m",
+        str(plan.model_path),
+        "--alias",
+        plan.model_id,
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--jinja",
+        "--n-gpu-layers",
+        "999",
+        "-c",
+        str(plan.context_tokens * plan.parallel_slots),
+        "--parallel",
+        str(plan.parallel_slots),
+        "--kv-unified",
+        "--cache-ram",
+        str(prompt_cache_mib),
+        "--no-context-shift",
+        "--device",
+        "CUDA0" if plan.backend == "cuda" else "Vulkan0",
+    ]
+    if plan.mmproj_path is not None:
+        argv.extend(["--mmproj", str(plan.mmproj_path)])
+    extra_env = {}
+    if plan.backend == "cuda" and plan.gpu_index is not None:
+        extra_env["CUDA_VISIBLE_DEVICES"] = str(plan.gpu_index)
+        if plan.lib_dir is not None:
+            inherited = os.environ.get("LD_LIBRARY_PATH")
+            extra_env["LD_LIBRARY_PATH"] = (
+                f"{plan.lib_dir}:{inherited}" if inherited else str(plan.lib_dir)
+            )
+    elif plan.gpu_index is not None:
+        extra_env["GGML_VK_VISIBLE_DEVICES"] = str(plan.gpu_index)
+    return {
+        "outcome": "launch",
+        "argv": argv,
+        "context_tokens": plan.context_tokens,
+        "parallel_slots": plan.parallel_slots,
+        "prompt_cache_mib": prompt_cache_mib,
+        "extra_env": extra_env,
+    }
+
+
 def _mlx_launch_plan(mod, runtime_dir: Path, *, model_id: str = "mlx-model"):
     return mod.LocalServerLaunchPlan(
         backend="mlx",
@@ -1822,10 +1894,7 @@ def _vulkan_launch_plan(
         vram_before_mib=512,
         context_tokens=tier.context_tokens,
         parallel_slots=tier.parallel_slots,
-        prompt_cache_mib=tier.prompt_cache_mib,
         visible_devices_env="GGML_VK_VISIBLE_DEVICES",
-        visible_devices_value="1",
-        env_updates={"GGML_VK_VISIBLE_DEVICES": "1"},
         backend_reason="test vulkan",
     )
 
@@ -1843,8 +1912,6 @@ def _cuda_launch_plan(
     from solstone.think.providers import local_server
 
     tier = local_server.select_server_tier(tiering_memory_mib or 0)
-    existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
-    ld_library_path = f"{lib_dir}:{existing_ld}" if existing_ld else str(lib_dir)
     return mod.LocalServerLaunchPlan(
         backend="cuda",
         desired_fingerprint_json='{"provider":"local"}',
@@ -1857,13 +1924,7 @@ def _cuda_launch_plan(
         gpu_vram_mib=tiering_memory_mib,
         context_tokens=tier.context_tokens,
         parallel_slots=tier.parallel_slots,
-        prompt_cache_mib=tier.prompt_cache_mib,
         visible_devices_env="CUDA_VISIBLE_DEVICES",
-        visible_devices_value=visible_device,
-        env_updates={
-            "CUDA_VISIBLE_DEVICES": visible_device,
-            "LD_LIBRARY_PATH": ld_library_path,
-        },
         backend_reason="test cuda",
     )
 
@@ -3660,6 +3721,7 @@ def test_start_local_server_launches_mlx_server_on_darwin(
         lambda service, port: written_ports.append((service, port)),
     )
     monkeypatch.setattr(local_server, "_probe_health", lambda port: ("ready", None))
+    monkeypatch.setattr(mod, "_request_local_launch_plan", _native_launch_plan_for_test)
 
     def fake_spawn(cmd, *, ref=None, callosum=None, day=None, env=None):
         spawned.append(cmd)
@@ -3808,6 +3870,7 @@ def test_start_local_server_launches_llama_server_key_and_cmd(
     )
     monkeypatch.setattr(local_server, "_probe_health", lambda port: ("ready", None))
     monkeypatch.setattr(local_server, "fetch_props", lambda port: None)
+    monkeypatch.setattr(mod, "_request_local_launch_plan", _native_launch_plan_for_test)
 
     def fake_spawn(cmd, *, ref=None, callosum=None, day=None, env=None):
         spawned.append(cmd)
@@ -3974,6 +4037,7 @@ def _configure_linux_llama_start(
     )
     monkeypatch.setattr(local_server, "_probe_health", lambda _port: ("ready", None))
     monkeypatch.setattr(local_server, "fetch_props", lambda _port: None)
+    monkeypatch.setattr(mod, "_request_local_launch_plan", _native_launch_plan_for_test)
 
     def fake_spawn(cmd, *, ref=None, callosum=None, day=None, env=None):
         spawned.append(cmd)
@@ -4122,6 +4186,7 @@ def _configure_cuda_llama_start(
         ),
     )
     monkeypatch.setattr(local_server, "fetch_props", lambda _port: None)
+    monkeypatch.setattr(mod, "_request_local_launch_plan", _native_launch_plan_for_test)
 
     def fake_spawn(cmd, *, ref=None, callosum=None, day=None, env=None):
         spawned.append(cmd)
