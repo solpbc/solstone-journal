@@ -244,10 +244,29 @@ Consistent formatting of **structured journal data** for its consumers — the i
 
 ## `P-local`
 
-Local model runtime, inside the security boundary. **8,709 lines** across eleven strictly-local provider
-modules; **12,510** once the install, health and lease machinery they depend on is counted, and that
-machinery is shared with the speech-recognition sidecar and the vision detector. ⚠ Zero dead modules —
-with one correction: `providers/oci_image.py` has **no runtime importer at all** and is reached only from
+Local model runtime, inside the security boundary. **Native**: `solstone-core-brain` owns the durable
+record; `solstone-core-local` owns the launch plan, the loopback bind, the connect client, the NVIDIA
+probe, the install machinery and `generate`. Both are reached as `solstone-core brain …` and
+`solstone-core local …` subcommands of the packaged binary, ⛔ never as a standalone executable — the
+wheel check builds an exact member set from a one-name script list, so a separate binary is unreachable
+on an installed host and a Rust-only gate cannot see that it is.
+
+⚠ **Four things here are still Python, each for a stated reason**, so the remainder is not read as
+unfinished work:
+
+- the **Vulkan** device enumeration and its VRAM-usage sibling — they call `libvulkan` in-process
+  through `ctypes`, and `solstone-core` ships **static musl** on both Linux lanes, which cannot
+  `dlopen`. That is linkage, not effort; the shape it needs is a separately packaged, dynamically
+  linked helper on its own glibc lanes, the way the speaker analyzer ships;
+- the **endpoint and confidential arms** of the provider module, and the request builder, schema
+  preparation, response parser and finish-reason normaliser they share with the bundled arm — those
+  belong to `P-BYO` and `P-SPP`, and they are **egress**;
+- the **install-state, install-lease and fit-report** machinery — shared with the speech-recognition
+  sidecar and the vision detector. Their records are **per-provider on disk**, which is the only reason
+  the local half could convert on its own;
+- the **tool-using runtime's** local branch, which is `cogitate`'s contract and not `generate`'s.
+
+⚠ `providers/oci_image.py` has **no runtime importer at all** and is reached only from
 `scripts/repack_cuda_runtime.py`. It is packaging-time machinery, live but outside the shipped runtime
 path, and a rebuild does not carry it into the runtime.
 

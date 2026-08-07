@@ -194,10 +194,16 @@ fn handle_local_request(mut stream: TcpStream, state: Arc<StubState>) {
             continue;
         };
         let header = String::from_utf8_lossy(&request[..header_end]);
+        // Header names are case-insensitive and the provider client lowercases
+        // them. Matching `Content-Length` exactly read the length as zero, so this
+        // stub answered before it had read a megabyte-scale body and then reset the
+        // connection on close — which reaches the caller as a refused request, not
+        // as a stub fault.
         let content_length = header
             .lines()
-            .find_map(|line| line.strip_prefix("Content-Length: "))
-            .and_then(|value| value.parse::<usize>().ok())
+            .filter_map(|line| line.split_once(':'))
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+            .and_then(|(_, value)| value.trim().parse::<usize>().ok())
             .unwrap_or_default();
         if request.len() >= header_end + 4 + content_length {
             break;
