@@ -66,6 +66,18 @@ class CorruptConfigError(Exception):
         )
 
 
+class JournalReadPathError(ValueError):
+    """A journal-relative path is invalid or escapes the journal root."""
+
+
+class JournalReadTooLargeError(ValueError):
+    """A journal file exceeds the bounded HTTP read size."""
+
+
+class JournalReadEncodingError(ValueError):
+    """A journal file is not valid UTF-8 text."""
+
+
 def now_ms() -> int:
     """Return current time as Unix epoch milliseconds."""
     return int(time.time() * 1000)
@@ -226,6 +238,42 @@ def resolve_journal_path(journal: str | Path, rel: str) -> Path:
     if DATE_RE.fullmatch(parts[0]):
         return journal_path / CHRONICLE_DIR / rel
     return journal_path / rel
+
+
+def resolve_journal_read_path(journal: str | Path, rel: str) -> Path:
+    """Resolve an existing readable file without allowing encoded or symlink escapes."""
+    from urllib.parse import unquote
+
+    if unquote(rel) != rel:
+        raise JournalReadPathError("rel must not contain percent-encoded components")
+    try:
+        candidate = resolve_journal_path(journal, rel)
+    except ValueError as exc:
+        raise JournalReadPathError(str(exc)) from exc
+    if not candidate.is_file():
+        raise FileNotFoundError(rel)
+    resolved_journal = Path(journal).resolve(strict=True)
+    resolved_candidate = candidate.resolve(strict=True)
+    try:
+        resolved_candidate.relative_to(resolved_journal)
+    except ValueError as exc:
+        raise JournalReadPathError("rel must resolve within the journal") from exc
+    return resolved_candidate
+
+
+def read_journal_text_file(
+    journal: str | Path, rel: str, *, max_bytes: int = 16_384
+) -> str:
+    """Read a bounded UTF-8 journal file after path containment validation."""
+    path = resolve_journal_read_path(journal, rel)
+    if path.stat().st_size > max_bytes:
+        raise JournalReadTooLargeError(
+            f"file exceeds the {max_bytes:,}-byte read limit"
+        )
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise JournalReadEncodingError("file is not valid UTF-8") from exc
 
 
 def journal_relative_path(journal: str | Path, abs_path: str | Path) -> str:
@@ -454,6 +502,57 @@ def iter_segments(day: str | Path) -> list[tuple[str, str, Path]]:
 
     results.sort(key=lambda x: x[1])
     return results
+
+
+def _talent_output_records(directory: Path) -> list[dict[str, int | str]]:
+    """Return the bounded set of talent outputs exposed by the journal CLI."""
+    records: list[dict[str, int | str]] = []
+    if not directory.is_dir():
+        return records
+    for entry in sorted(directory.iterdir()):
+        candidates = [entry] if entry.is_file() else sorted(entry.iterdir()) if entry.is_dir() else []
+        for file_path in candidates:
+            if not file_path.is_file() or file_path.suffix not in {".md", ".json", ".jsonl"}:
+                continue
+            name = file_path.name if entry.is_file() else f"{entry.name}/{file_path.name}"
+            records.append({"name": name, "bytes": file_path.stat().st_size})
+    return records
+
+
+def list_talent_outputs(day: str, *, segment: str | None = None) -> dict[str, Any]:
+    """List daily or segment talent output files for a chronicle day."""
+    day_dir = day_path(day, create=False)
+    if segment is not None:
+        return {
+            "day": day,
+            "segment": segment,
+            "outputs": _talent_output_records(day_dir / segment / "talents"),
+        }
+    return {
+        "day": day,
+        "daily": _talent_output_records(day_dir / "talents"),
+        "segments": [
+            {
+                "stream": stream,
+                "segment": segment_key_value,
+                "outputs": _talent_output_records(segment_path / "talents"),
+            }
+            for stream, segment_key_value, segment_path in iter_segments(day_dir)
+        ],
+    }
+
+
+def find_talent_output_path(
+    journal: str | Path, agent: str, day: str, *, segment: str | None = None
+) -> str:
+    """Return the journal-relative path for an agent output, if it exists."""
+    day_dir = Path(journal) / CHRONICLE_DIR / day
+    talents_dir = day_dir / segment / "talents" if segment else day_dir / "talents"
+    for extension in (".md", ".json", ".jsonl"):
+        candidate = talents_dir / f"{agent}{extension}"
+        if candidate.is_file():
+            return candidate.relative_to(Path(journal) / CHRONICLE_DIR).as_posix()
+    raise FileNotFoundError(agent)
 
 
 def segment_key(name_or_path: str) -> str | None:

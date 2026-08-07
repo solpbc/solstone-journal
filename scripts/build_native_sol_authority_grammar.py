@@ -17,9 +17,9 @@ try:
         REPO_ROOT,
         AuthorityEntry,
         check_oracle_subset,
-        collect_oracle_paths,
         discover,
         format_paths,
+        transformed_oracle_entries,
     )
 except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
     from build_native_sol_inventory import (  # type: ignore[no-redef]
@@ -28,9 +28,9 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
         REPO_ROOT,
         AuthorityEntry,
         check_oracle_subset,
-        collect_oracle_paths,
         discover,
         format_paths,
+        transformed_oracle_entries,
     )
 
 SCHEMA = "native-sol-authority-grammar-v1"
@@ -68,7 +68,8 @@ def build_projection(root: Path) -> tuple[bytes, list[str]]:
 
 def reconcile_against_oracle(entries: list[AuthorityEntry]) -> list[str]:
     errors = check_oracle_subset(entries, ORACLE_PATH)
-    oracle_errors, oracle_paths = collect_oracle_paths(ORACLE_PATH)
+    oracle_errors, oracle_entries = transformed_oracle_entries(ORACLE_PATH)
+    oracle_paths = set(oracle_entries)
     errors.extend(oracle_errors)
     authority_paths = {entry.path for entry in entries if entry.surface == "sol-call"}
     if not authority_paths:

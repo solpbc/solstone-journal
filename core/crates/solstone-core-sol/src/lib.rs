@@ -2068,11 +2068,11 @@ mod tests {
     }
 
     #[test]
-    fn call_journal_delegates_only_after_native_miss() {
+    fn call_journal_delegates_only_for_compat_remainder() {
         let journal = os_args(&["call", "journal", "search"]);
         let journal_outcome = evaluate_args(&journal);
-        assert!(matches!(journal_outcome, Outcome::Unsupported { .. }));
-        assert!(should_delegate_to_compat_after_native_miss(
+        assert!(matches!(journal_outcome, Outcome::Migrated { .. }));
+        assert!(!should_delegate_to_compat_after_native_miss(
             &journal,
             &journal_outcome
         ));

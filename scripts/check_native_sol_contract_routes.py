@@ -66,8 +66,8 @@ def _contract_operations(
 
 def _expected_routes(
     authorities: list[AuthorityEntry] | None = None,
-) -> tuple[dict[tuple[str, str], str], list[str]]:
-    expected: dict[tuple[str, str], str] = {}
+) -> tuple[dict[tuple[str, str], str | None], list[str]]:
+    expected: dict[tuple[str, str], str | None] = {}
     errors: list[str] = []
     for entry in authorities if authorities is not None else discover(REPO_ROOT):
         if entry.surface != "sol-call" or entry.entry_type != "http":
@@ -75,15 +75,14 @@ def _expected_routes(
         if (
             entry.method is None
             or entry.route is None
-            or entry.contract_operation_id is None
         ):
             errors.append(
-                f"{entry.operation_id}: HTTP authority is missing route fields"
+                f"{entry.operation_id}: HTTP authority is missing method or route"
             )
             continue
         key = (entry.method, entry.route)
         existing = expected.get(key)
-        if existing is not None and existing != entry.contract_operation_id:
+        if key in expected and existing != entry.contract_operation_id:
             errors.append(
                 f"{entry.operation_id}: duplicate native route {entry.method} "
                 f"{entry.route} already bound to {existing}"
@@ -95,7 +94,9 @@ def _expected_routes(
 
 def main() -> int:
     expected, errors = _expected_routes()
-    expected_operation_ids = set(expected.values())
+    expected_operation_ids = {
+        operation_id for operation_id in expected.values() if operation_id is not None
+    }
     flask_routes = _flask_routes(_route_app())
     contract_routes, contract_errors = _contract_operations(build_document())
     errors.extend(contract_errors)
@@ -103,6 +104,8 @@ def main() -> int:
     for key, operation_id in sorted(expected.items()):
         if key not in flask_routes:
             errors.append(f"missing Flask route for {key[0]} {key[1]}")
+        if operation_id is None:
+            continue
         actual_operation_id = contract_routes.get(key)
         if actual_operation_id is None:
             errors.append(
@@ -130,6 +133,8 @@ def main() -> int:
             )
 
     for key, operation_id in sorted(expected.items()):
+        if operation_id is None:
+            continue
         if key in flask_routes and key not in contract_routes:
             errors.append(
                 f"migrated Flask route has no contract: {key[0]} {key[1]} "

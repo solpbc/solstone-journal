@@ -817,6 +817,7 @@ def import_update_metadata() -> Any:
 @import_bp.route("/api/list")
 def import_list() -> Any:
     """Get list of all imports with their metadata."""
+    source_filter = request.args.get("source", "").strip() or None
     # Get all import timestamps using utility function
     timestamps = list_import_timestamps(journal_root=Path(state.journal_root))
 
@@ -836,7 +837,8 @@ def import_list() -> Any:
         import_data["error"] = resolution.error
         import_data["error_stage"] = resolution.error_stage
 
-        imports.append(import_data)
+        if source_filter is None or import_data.get("source_type") == source_filter:
+            imports.append(import_data)
 
     # Sort by imported_at (newest first)
     imports.sort(key=lambda x: x.get("imported_at", 0), reverse=True)

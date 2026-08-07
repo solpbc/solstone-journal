@@ -1243,7 +1243,7 @@ def format_logs(
     return chunks, meta
 
 
-def rename_facet(old_name: str, new_name: str) -> None:
+def rename_facet(old_name: str, new_name: str, *, consent: bool = False) -> None:
     """Rename a facet by updating its directory and config references.
 
     Performs the following steps:
@@ -1318,3 +1318,7 @@ def rename_facet(old_name: str, new_name: str) -> None:
     print(
         "Facet renamed. Rebuild the search index with: journal indexer --reset --rescan-full"
     )
+    params: dict[str, Any] = {"old_name": old_name, "new_name": new_name}
+    if consent:
+        params["consent"] = True
+    log_call_action(facet=new_name, action="facet_rename", params=params)

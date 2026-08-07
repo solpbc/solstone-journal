@@ -26,6 +26,8 @@ from solstone.apps.body.routes import body_bp
 from solstone.apps.curation.routes import curation_bp
 from solstone.apps.entities.routes import entities_bp
 from solstone.apps.network.routes import network_bp
+from solstone.apps.news.routes import news_bp
+from solstone.apps.search.routes import search_bp
 from solstone.apps.settings.routes import settings_bp
 from solstone.apps.sol.routes import sol_bp
 from solstone.apps.speakers.routes import speakers_bp
@@ -156,18 +158,15 @@ def check_http_entry(
     if authority.method is None or authority.route is None:
         errors.append(f"{operation_id}: HTTP authority must declare method and route")
         return errors
-    if authority.contract_operation_id is None:
-        errors.append(
-            f"{operation_id}: HTTP authority must declare contract_operation_id"
-        )
-        return errors
-
     route_key = (authority.method, authority.route)
     view = route_map.get(route_key)
     if view is None:
         errors.append(
             f"{operation_id}: no Flask route for {authority.method} {authority.route}"
         )
+
+    if authority.contract_operation_id is None:
+        return errors
 
     contract = contract_by_operation.get(authority.contract_operation_id)
     if contract is None:
@@ -303,6 +302,8 @@ def register_native_blueprints(app: Flask) -> None:
         settings_bp,
         speakers_bp,
         thinking_bp,
+        search_bp,
+        news_bp,
     ):
         app.register_blueprint(blueprint)
 

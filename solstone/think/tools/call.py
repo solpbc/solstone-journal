@@ -371,14 +371,10 @@ def rename(
 ) -> None:
     """Rename a facet."""
     try:
-        rename_facet(name, new_name)
+        rename_facet(name, new_name, consent=consent)
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
-    params: dict = {"old_name": name, "new_name": new_name}
-    if consent:
-        params["consent"] = True
-    log_call_action(facet=new_name, action="facet_rename", params=params)
 
 
 @facet_app.command()

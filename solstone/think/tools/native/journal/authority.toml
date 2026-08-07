@@ -1,0 +1,192 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+schema = "native-sol-authority-v1"
+source = "command.rs"
+
+[[entries]]
+path=["journal","agents"]
+kind="command"
+help="List available agent outputs for a day."
+operation_id="journal.agents"
+entry_type="http"
+method="GET"
+route="/app/search/api/agents"
+handler="agents"
+params=[{name="day",kind="argument",type="text",required=false,nargs=1,multiple=false,options=["day"],secondary=[],hidden=false,is_flag=false,count=false},{name="day_opt",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--day","-d"],secondary=[],hidden=false,is_flag=false,count=false},{name="segment",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--segment","-s"],secondary=[],hidden=false,is_flag=false,count=false}]
+
+[[entries]]
+path=["journal","facet","create"]
+kind="command"
+help="Create a new facet."
+operation_id="journal.facet.create"
+entry_type="http"
+method="POST"
+route="/app/settings/api/facet"
+handler="facet_create"
+params=[{name="title",kind="argument",type="text",required=true,nargs=1,multiple=false,options=["title"],secondary=[],hidden=false,is_flag=false,count=false},{name="emoji",kind="option",type="text",required=false,nargs=1,multiple=false,default="📦",options=["--emoji"],secondary=[],hidden=false,is_flag=false,count=false},{name="color",kind="option",type="text",required=false,nargs=1,multiple=false,default="#667eea",options=["--color"],secondary=[],hidden=false,is_flag=false,count=false},{name="description",kind="option",type="text",required=false,nargs=1,multiple=false,default="",options=["--description"],secondary=[],hidden=false,is_flag=false,count=false},{name="icon",kind="option",type="text",required=false,nargs=1,multiple=false,default="",options=["--icon"],secondary=[],hidden=false,is_flag=false,count=false},{name="consent",kind="option",type="boolean",required=false,nargs=1,multiple=false,default=false,options=["--consent"],secondary=[],hidden=false,is_flag=true,count=false,flag_value=true}]
+
+[[entries]]
+path=["journal","facet","delete"]
+kind="command"
+help="Delete a facet and all its data."
+operation_id="journal.facet.delete"
+entry_type="http"
+method="DELETE"
+route="/app/settings/api/facet/{facet_name}"
+handler="facet_delete"
+params=[{name="name",kind="argument",type="text",required=true,nargs=1,multiple=false,options=["name"],secondary=[],hidden=false,is_flag=false,count=false},{name="yes",kind="option",type="boolean",required=false,nargs=1,multiple=false,default=false,options=["--yes"],secondary=[],hidden=false,is_flag=true,count=false,flag_value=true},{name="consent",kind="option",type="boolean",required=false,nargs=1,multiple=false,default=false,options=["--consent"],secondary=[],hidden=false,is_flag=true,count=false,flag_value=true}]
+
+[[entries]]
+path=["journal","facet","mute"]
+kind="command"
+help="Mute a facet (hide from default listings)."
+operation_id="journal.facet.mute"
+entry_type="http"
+method="PUT"
+route="/app/settings/api/facet/{facet_name}"
+handler="facet_mute"
+params=[{name="name",kind="argument",type="text",required=true,nargs=1,multiple=false,options=["name"],secondary=[],hidden=false,is_flag=false,count=false}]
+
+[[entries]]
+path=["journal","facet","rename"]
+kind="command"
+help="Rename a facet."
+operation_id="journal.facet.rename"
+entry_type="http"
+method="POST"
+route="/app/settings/api/facet/{facet_name}/rename"
+handler="facet_rename"
+params=[{name="name",kind="argument",type="text",required=true,nargs=1,multiple=false,options=["name"],secondary=[],hidden=false,is_flag=false,count=false},{name="new_name",kind="argument",type="text",required=true,nargs=1,multiple=false,options=["new_name"],secondary=[],hidden=false,is_flag=false,count=false},{name="consent",kind="option",type="boolean",required=false,nargs=1,multiple=false,default=false,options=["--consent"],secondary=[],hidden=false,is_flag=true,count=false,flag_value=true}]
+
+[[entries]]
+path=["journal","facet","show"]
+kind="command"
+help="Show facet summary."
+operation_id="journal.facet.show"
+entry_type="http"
+method="GET"
+route="/app/settings/api/facet/{facet_name}"
+handler="facet_show"
+params=[{name="name",kind="argument",type="text",required=false,nargs=1,multiple=false,options=["name"],secondary=[],hidden=false,is_flag=false,count=false}]
+
+[[entries]]
+path=["journal","facet","unmute"]
+kind="command"
+help="Unmute a facet (show in default listings)."
+operation_id="journal.facet.unmute"
+entry_type="http"
+method="PUT"
+route="/app/settings/api/facet/{facet_name}"
+handler="facet_unmute"
+params=[{name="name",kind="argument",type="text",required=true,nargs=1,multiple=false,options=["name"],secondary=[],hidden=false,is_flag=false,count=false}]
+
+[[entries]]
+path=["journal","facet","update"]
+kind="command"
+help="Update facet configuration."
+operation_id="journal.facet.update"
+entry_type="http"
+method="PUT"
+route="/app/settings/api/facet/{facet_name}"
+handler="facet_update"
+params=[{name="name",kind="argument",type="text",required=true,nargs=1,multiple=false,options=["name"],secondary=[],hidden=false,is_flag=false,count=false},{name="title",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--title"],secondary=[],hidden=false,is_flag=false,count=false},{name="description",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--description"],secondary=[],hidden=false,is_flag=false,count=false},{name="emoji",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--emoji"],secondary=[],hidden=false,is_flag=false,count=false},{name="color",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--color"],secondary=[],hidden=false,is_flag=false,count=false},{name="icon",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--icon"],secondary=[],hidden=false,is_flag=false,count=false}]
+
+[[entries]]
+path=["journal","facets"]
+kind="command"
+help="List facets."
+operation_id="journal.facets"
+entry_type="http"
+method="GET"
+route="/app/settings/api/facets"
+handler="facets"
+params=[{name="all_",kind="option",type="boolean",required=false,nargs=1,multiple=false,default=false,options=["--all"],secondary=[],hidden=false,is_flag=true,count=false,flag_value=true}]
+
+[[entries]]
+path=["journal","import"]
+kind="command"
+help="Show full metadata for a single import."
+operation_id="journal.import"
+entry_type="http"
+method="GET"
+route="/app/import/api/{timestamp}"
+handler="import"
+params=[{name="id",kind="argument",type="text",required=true,nargs=1,multiple=false,options=["id"],secondary=[],hidden=false,is_flag=false,count=false}]
+
+[[entries]]
+path=["journal","imports"]
+kind="command"
+help="List recent imports with metadata."
+operation_id="journal.imports"
+entry_type="http"
+method="GET"
+route="/app/import/api/list"
+handler="imports"
+params=[{name="limit",kind="option",type="integer",required=false,nargs=1,multiple=false,default=20,options=["--limit","-n"],secondary=[],hidden=false,is_flag=false,count=false},{name="source",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--source","-s"],secondary=[],hidden=false,is_flag=false,count=false},{name="json_output",kind="option",type="boolean",required=false,nargs=1,multiple=false,default=false,options=["--json"],secondary=[],hidden=false,is_flag=true,count=false,flag_value=true}]
+
+[[entries]]
+path=["journal","news"]
+kind="command"
+help="Read facet news."
+operation_id="journal.news"
+entry_type="http"
+method="GET"
+route="/app/news/api/facet/{facet}"
+handler="news"
+params=[{name="name",kind="argument",type="text",required=false,nargs=1,multiple=false,options=["name"],secondary=[],hidden=false,is_flag=false,count=false},{name="facet_opt",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--facet","-f"],secondary=[],hidden=false,is_flag=false,count=false},{name="day",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--day","-d"],secondary=[],hidden=false,is_flag=false,count=false},{name="limit",kind="option",type="integer",required=false,nargs=1,multiple=false,default=5,options=["--limit","-n"],secondary=[],hidden=false,is_flag=false,count=false},{name="cursor",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--cursor"],secondary=[],hidden=false,is_flag=false,count=false}]
+
+[[entries]]
+path=["journal","read"]
+kind="command"
+help="Read full content of an agent output."
+operation_id="journal.read"
+entry_type="http"
+method="GET"
+route="/app/search/api/read"
+handler="read"
+params=[{name="agent",kind="argument",type="text",required=false,nargs=1,multiple=false,options=["agent"],secondary=[],hidden=false,is_flag=false,count=false},{name="day",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--day","-d"],secondary=[],hidden=false,is_flag=false,count=false},{name="segment",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--segment","-s"],secondary=[],hidden=false,is_flag=false,count=false},{name="max_bytes",kind="option",type="integer",required=false,nargs=1,multiple=false,default=16384,options=["--max"],secondary=[],hidden=false,is_flag=false,count=false},{name="path",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--path"],secondary=[],hidden=false,is_flag=false,count=false}]
+
+[[entries]]
+path=["journal","retention","config"]
+kind="command"
+help="Show or update retention configuration."
+operation_id="journal.retention.config"
+entry_type="http"
+method="GET"
+route="/app/settings/api/storage"
+handler="retention_config"
+params=[{name="mode",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--mode"],secondary=[],hidden=false,is_flag=false,count=false},{name="days",kind="option",type="integer",required=false,nargs=1,multiple=false,options=["--days"],secondary=[],hidden=false,is_flag=false,count=false},{name="stream",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--stream"],secondary=[],hidden=false,is_flag=false,count=false},{name="clear",kind="option",type="boolean",required=false,nargs=1,multiple=false,default=false,options=["--clear"],secondary=[],hidden=false,is_flag=true,count=false,flag_value=true}]
+
+[[entries]]
+path=["journal","retention","list"]
+kind="command"
+help="List original media ready for removal."
+operation_id="journal.retention.list"
+entry_type="http"
+method="POST"
+route="/app/settings/api/storage/purge"
+handler="retention_list"
+params=[{name="stream",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--stream"],secondary=[],hidden=false,is_flag=false,count=false}]
+
+[[entries]]
+path=["journal","search"]
+kind="command"
+help="Search the journal index.\n\nUse 2-4 content terms instead of natural-language questions; question words\nlike what/how/did/when add noise in this keyword/BM25 index. Syntax: OR for\nany term, quoted phrases for exact text, and * for prefix matches. Zero\nresults means zero: broaden by dropping terms, using OR, then adding *.\nCounts help drill down with --facet, --agent, --day, and --time-bucket.\nResult ids are path:idx; read a hit with `sol call journal read --path\n<path>` after stripping the :idx suffix."
+operation_id="journal.search"
+entry_type="http"
+method="GET"
+route="/app/search/api/search"
+handler="search"
+params=[{name="query",kind="argument",type="text",required=false,nargs=1,multiple=false,default="",options=["query"],secondary=[],hidden=false,is_flag=false,count=false},{name="query_opt",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--query","-q"],secondary=[],hidden=false,is_flag=false,count=false},{name="limit",kind="option",type="integer",required=false,nargs=1,multiple=false,default=10,options=["--limit","-n"],secondary=[],hidden=false,is_flag=false,count=false},{name="offset",kind="option",type="integer",required=false,nargs=1,multiple=false,default=0,options=["--offset"],secondary=[],hidden=false,is_flag=false,count=false},{name="day",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--day","-d"],secondary=[],hidden=false,is_flag=false,count=false},{name="day_from",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--day-from"],secondary=[],hidden=false,is_flag=false,count=false},{name="day_to",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--day-to"],secondary=[],hidden=false,is_flag=false,count=false},{name="facet",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--facet","-f"],secondary=[],hidden=false,is_flag=false,count=false},{name="agent",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--agent","-a"],secondary=[],hidden=false,is_flag=false,count=false},{name="stream",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--stream"],secondary=[],hidden=false,is_flag=false,count=false},{name="time_bucket",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--time-bucket"],secondary=[],hidden=false,is_flag=false,count=false},{name="json_output",kind="option",type="boolean",required=false,nargs=1,multiple=false,default=false,options=["--json"],secondary=[],hidden=false,is_flag=true,count=false,flag_value=true}]
+
+[[entries]]
+path=["journal","storage-summary"]
+kind="command"
+help="Show journal storage summary."
+operation_id="journal.storage-summary"
+entry_type="http"
+method="GET"
+route="/app/settings/api/storage"
+handler="storage_summary"
+params=[{name="json_output",kind="option",type="boolean",required=false,nargs=1,multiple=false,default=false,options=["--json"],secondary=[],hidden=false,is_flag=true,count=false,flag_value=true},{name="check",kind="option",type="boolean",required=false,nargs=1,multiple=false,default=false,options=["--check"],secondary=[],hidden=false,is_flag=true,count=false,flag_value=true}]

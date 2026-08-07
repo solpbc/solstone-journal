@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import re
@@ -47,9 +48,9 @@ ENTRY_TYPES = {
 }
 COMMAND_KINDS = {"command", "callback", "top-level"}
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
-FINAL_ORACLE_TOTAL = 173
-FINAL_HTTP_TOTAL = 147
-FINAL_JOURNAL_PYTHON_COMPAT_TOTAL = 23
+FINAL_ORACLE_TOTAL = 169
+FINAL_HTTP_TOTAL = 164
+FINAL_JOURNAL_PYTHON_COMPAT_TOTAL = 2
 FINAL_TOP_LEVEL_CHAT_TOTAL = 1
 FINAL_TOP_LEVEL_IMPORT_TOTAL = 1
 FINAL_TOP_LEVEL_LINK_TOTAL = 2
@@ -64,6 +65,7 @@ FINAL_HTTP_GROUP_COUNTS = {
     "facets": 3,
     "health": 4,
     "import": 5,
+    "journal": 17,
     "ledger": 4,
     "link": 8,
     "profile": 4,
@@ -73,6 +75,34 @@ FINAL_HTTP_GROUP_COUNTS = {
     "support": 11,
     "thinking": 18,
     "transcripts": 5,
+}
+
+# The frozen grammar records the pre-migration spellings.  These are the only
+# two surviving commands whose native authority intentionally differs from it.
+# Keep this table path-keyed and deliberately narrow: it documents migration
+# policy rather than introducing a general per-authority override mechanism.
+ORACLE_GRAMMAR_TRANSFORMS: dict[tuple[str, ...], dict[str, Any]] = {
+    ("journal", "news"): {
+        "path": ("journal", "news"),
+        "help": "Read facet news.",
+        "drop_params": {"write"},
+    },
+    ("journal", "retention", "purge"): {
+        "path": ("journal", "retention", "list"),
+        "help": "List original media ready for removal.",
+        "drop_params": set(),
+    },
+}
+
+# These four compatibility leaves are deliberately retired, rather than
+# represented by a native authority.  They are excluded from the final native
+# grammar partition while their removal from the Python compatibility host is
+# completed in the later retirement round.
+RETIRED_JOURNAL_ORACLE_PATHS = {
+    ("journal", "export"),
+    ("journal", "facet", "doctor"),
+    ("journal", "facet", "merge"),
+    ("journal", "merge"),
 }
 
 
@@ -199,7 +229,7 @@ def parse_entry(
     if entry_type == "http":
         method = require_optional_string(method, "method", label)
         route = require_optional_string(route, "route", label)
-        contract_operation_id = require_optional_string(
+        contract_operation_id = optional_string(
             contract_operation_id, "contract_operation_id", label
         )
         if method not in HTTP_METHODS:
@@ -255,6 +285,14 @@ def require_text(data: dict[str, Any], key: str, path: Path) -> str:
 def require_optional_string(value: Any, key: str, label: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{label}: {key} must be a non-empty string")
+    return value
+
+
+def optional_string(value: Any, key: str, label: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{label}: {key} must be a non-empty string when present")
     return value
 
 
@@ -368,16 +406,40 @@ def render(entries: list[AuthorityEntry], output: Path) -> str:
     return "\n".join(lines)
 
 
+def transformed_oracle_entries(oracle_path: Path) -> tuple[list[str], dict[tuple[str, ...], dict[str, Any]]]:
+    """Return the final native grammar projection of the frozen oracle."""
+    if not oracle_path.is_file():
+        return [f"{oracle_path} is missing"], {}
+    oracle = json.loads(oracle_path.read_text())
+    output: dict[tuple[str, ...], dict[str, Any]] = {}
+    errors: list[str] = []
+    for raw_entry in oracle.get("entries", []):
+        if not isinstance(raw_entry, dict) or not isinstance(raw_entry.get("path"), list):
+            continue
+        path = tuple(raw_entry["path"])
+        if path in RETIRED_JOURNAL_ORACLE_PATHS:
+            continue
+        entry = copy.deepcopy(raw_entry)
+        transform = ORACLE_GRAMMAR_TRANSFORMS.get(path)
+        if transform is not None:
+            entry["path"] = list(transform["path"])
+            entry["help"] = transform["help"]
+            entry["params"] = [
+                param
+                for param in entry.get("params", [])
+                if param.get("name") not in transform["drop_params"]
+            ]
+            path = tuple(transform["path"])
+        if path in output:
+            errors.append(f"transformed oracle has duplicate path {list(path)!r}")
+        output[path] = entry
+    return errors, output
+
+
 def check_oracle_subset(entries: list[AuthorityEntry], oracle_path: Path) -> list[str]:
     if not oracle_path.is_file():
         return [f"{oracle_path} is missing"]
-    oracle = json.loads(oracle_path.read_text())
-    oracle_entries = {
-        tuple(entry["path"]): entry
-        for entry in oracle.get("entries", [])
-        if isinstance(entry, dict) and isinstance(entry.get("path"), list)
-    }
-    errors: list[str] = []
+    errors, oracle_entries = transformed_oracle_entries(oracle_path)
     for entry in entries:
         if entry.surface != "sol-call":
             continue
@@ -415,7 +477,8 @@ def check_complete_partition(
 
     expected_stub_counts = expected_stub_counts or FINAL_STUB_COUNTS
     expected_http_group_counts = expected_http_group_counts or FINAL_HTTP_GROUP_COUNTS
-    oracle_errors, oracle_paths = collect_oracle_paths(oracle_path)
+    oracle_errors, oracle_entries = transformed_oracle_entries(oracle_path)
+    oracle_paths = set(oracle_entries)
     errors = list(oracle_errors)
     if len(oracle_paths) != expected_oracle_total:
         errors.append(
@@ -458,14 +521,6 @@ def check_complete_partition(
         errors.append(
             f"uncovered non-journal oracle paths: {format_paths(non_journal_uncovered)}"
         )
-    journal_authorities = [
-        entry.path for entry in entries if first_group(entry.path) == "journal"
-    ]
-    if journal_authorities:
-        errors.append(
-            f"journal paths must remain Python: {format_paths(journal_authorities)}"
-        )
-
     expected_entry_type_counts = {"http": expected_http_total, **expected_stub_counts}
     actual_entry_type_counts: dict[str, int] = {}
     for entry in entries:

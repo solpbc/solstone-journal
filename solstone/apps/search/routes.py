@@ -13,7 +13,14 @@ from flask import Blueprint, jsonify, request
 
 from solstone.convey.day_grid import build_day_grid_payload
 from solstone.convey.icons import lucide_svg
-from solstone.convey.reasons import INVALID_DAY, SEARCH_FAILED
+from solstone.convey.reasons import (
+    FILE_NOT_FOUND,
+    FILE_READ_FAILED,
+    INVALID_DAY,
+    INVALID_PATH,
+    INVALID_REQUEST_VALUE,
+    SEARCH_FAILED,
+)
 from solstone.convey.utils import error_response, format_date, parse_pagination_params
 from solstone.think.facets import get_facets
 from solstone.think.indexer.journal import (
@@ -22,6 +29,16 @@ from solstone.think.indexer.journal import (
     search_journal,
 )
 from solstone.think.indexer.native import NativeIndexerReadError
+from solstone.think.utils import (
+    JournalReadEncodingError,
+    JournalReadPathError,
+    JournalReadTooLargeError,
+    find_talent_output_path,
+    get_journal,
+    get_sol_day,
+    list_talent_outputs,
+    read_journal_text_file,
+)
 
 search_bp = Blueprint(
     "app:search",
@@ -97,6 +114,11 @@ def _parse_agent_filter() -> str | None:
 def _parse_stream_filter() -> str | None:
     """Parse stream filter from request args."""
     return request.args.get("stream", "").strip() or None
+
+
+def _parse_time_bucket_filter() -> str | None:
+    """Parse the optional time-of-day filter from request args."""
+    return request.args.get("time_bucket", "").strip() or None
 
 
 def _parse_day_bound(name: str) -> str | None:
@@ -229,6 +251,7 @@ def search_journal_api() -> Any:
     facet_filter = _parse_facet_filter()
     agent_filter = _parse_agent_filter()
     stream_filter = _parse_stream_filter()
+    time_bucket_filter = _parse_time_bucket_filter()
     day_from_filter, day_to_filter, day_range_error = _parse_day_range_filter()
     if day_range_error:
         return error_response(INVALID_DAY, detail=day_range_error)
@@ -240,7 +263,12 @@ def search_journal_api() -> Any:
     try:
         # Get aggregation counts efficiently (lightweight query, no content)
         # First get unfiltered counts for sidebar display
-        base_counts = search_counts(query, stream=stream_filter, relax=True)
+        base_counts = search_counts(
+            query,
+            stream=stream_filter,
+            time_bucket=time_bucket_filter,
+            relax=True,
+        )
         facet_counts = dict(base_counts["facets"])
         agent_counts = dict(base_counts["agents"])
 
@@ -250,6 +278,7 @@ def search_journal_api() -> Any:
             facet=facet_filter,
             agent=agent_filter,
             stream=stream_filter,
+            time_bucket=time_bucket_filter,
             relax=True,
         )
         day_counts = dict(filtered_counts["days"])
@@ -285,6 +314,7 @@ def search_journal_api() -> Any:
                 facet=facet_filter,
                 agent=agent_filter,
                 stream=stream_filter,
+                time_bucket=time_bucket_filter,
                 relax=True,
                 include_total=False,
             )
@@ -349,6 +379,80 @@ def search_journal_api() -> Any:
             "day_grid": day_grid,
         }
     )
+
+
+@search_bp.route("/api/agents")
+def list_agents_api() -> Any:
+    """List the daily and segment talent outputs available for a day."""
+    day = request.args.get("day", "").strip() or get_sol_day()
+    if not day:
+        return error_response(INVALID_DAY, detail="day is required")
+    if not DAY_RE.fullmatch(day):
+        return error_response(INVALID_DAY, detail="day must be YYYYMMDD")
+    segment = request.args.get("segment", "").strip() or None
+    return jsonify(list_talent_outputs(day, segment=segment))
+
+
+@search_bp.route("/api/read")
+def read_journal_api() -> Any:
+    """Read one bounded UTF-8 journal file by safe path or talent lookup."""
+    path = request.args.get("path")
+    agent = request.args.get("agent")
+    day = request.args.get("day")
+    segment = request.args.get("segment")
+    max_bytes = request.args.get("max_bytes", default=16_384, type=int)
+    if max_bytes != 16_384:
+        return error_response(
+            INVALID_REQUEST_VALUE,
+            detail="max_bytes must be 16384 for HTTP reads",
+        )
+
+    if path is not None:
+        if agent is not None or day is not None or segment is not None:
+            return error_response(
+                INVALID_PATH,
+                detail="path cannot be combined with agent, day, or segment",
+            )
+        if path.startswith("entity_search:"):
+            return error_response(
+                INVALID_PATH,
+                detail="entity results have no file to read",
+            )
+        if re.search(r":\d+$", path):
+            return error_response(
+                INVALID_PATH,
+                detail="strip the search-result :idx suffix before reading a path",
+            )
+        rel = path
+    else:
+        if not agent:
+            return error_response(
+                INVALID_REQUEST_VALUE,
+                detail="agent or path is required",
+            )
+        resolved_day = day or get_sol_day()
+        if not resolved_day or not DAY_RE.fullmatch(resolved_day):
+            return error_response(INVALID_DAY, detail="day must be YYYYMMDD")
+        try:
+            rel = find_talent_output_path(
+                get_journal(), agent, resolved_day, segment=segment or None
+            )
+        except FileNotFoundError:
+            return error_response(FILE_NOT_FOUND, detail="talent output not found")
+
+    try:
+        content = read_journal_text_file(get_journal(), rel)
+    except JournalReadPathError as exc:
+        return error_response(INVALID_PATH, detail=str(exc))
+    except FileNotFoundError:
+        return error_response(FILE_NOT_FOUND, detail="journal file not found")
+    except JournalReadTooLargeError as exc:
+        return error_response(INVALID_REQUEST_VALUE, detail=str(exc))
+    except JournalReadEncodingError as exc:
+        return error_response(FILE_READ_FAILED, detail=str(exc))
+    except OSError:
+        return error_response(FILE_READ_FAILED, detail="unable to read journal file")
+    return jsonify({"path": rel, "content": content})
 
 
 @search_bp.route("/api/day_results")

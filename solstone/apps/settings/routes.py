@@ -1420,6 +1420,48 @@ def update_facet_config(facet_name: str) -> Any:
         return _settings_operation_failed()
 
 
+@settings_bp.route("/api/facet/<facet_name>", methods=["DELETE"])
+def delete_facet_config(facet_name: str) -> Any:
+    """Delete a facet after an explicit informed-consent assertion."""
+    data = request.get_json(silent=True)
+    if data is None:
+        return error_response(MISSING_REQUEST_BODY, detail="consent is required")
+    if "consent" not in data:
+        return error_response(MISSING_REQUIRED_FIELD, detail="consent is required")
+    if data["consent"] is not True:
+        return error_response(INVALID_REQUEST_VALUE, detail="consent must be true")
+    try:
+        facets.delete_facet(facet_name, consent=True)
+    except FileNotFoundError:
+        return error_response(FACET_NOT_FOUND, detail="Facet not found")
+    except Exception:
+        logger.exception("error deleting facet")
+        return _settings_operation_failed()
+    return jsonify({"success": True, "facet": facet_name})
+
+
+@settings_bp.route("/api/facet/<facet_name>/rename", methods=["POST"])
+def rename_facet_config(facet_name: str) -> Any:
+    """Rename a facet using the owning facets module."""
+    data = request.get_json(silent=True)
+    if data is None:
+        return error_response(MISSING_REQUEST_BODY, detail="new_name is required")
+    new_name = data.get("new_name")
+    if not isinstance(new_name, str) or not new_name.strip():
+        return error_response(MISSING_REQUIRED_FIELD, detail="new_name is required")
+    consent = data.get("consent", False)
+    if not isinstance(consent, bool):
+        return error_response(INVALID_REQUEST_VALUE, detail="consent must be boolean")
+    try:
+        facets.rename_facet(facet_name, new_name.strip(), consent=consent)
+    except ValueError as exc:
+        return error_response(INVALID_REQUEST_VALUE, detail=str(exc))
+    except Exception:
+        logger.exception("error renaming facet")
+        return _settings_operation_failed()
+    return jsonify({"success": True, "facet": new_name.strip()})
+
+
 def _get_logs_from_dir(logs_dir: Path, cursor: str | None) -> dict:
     """Load action logs from a directory, one day at a time.
 

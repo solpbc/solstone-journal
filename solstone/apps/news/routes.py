@@ -10,14 +10,20 @@ from typing import Any, Callable
 from urllib.parse import urlsplit
 
 import frontmatter
-from flask import Blueprint, Response, current_app, jsonify, render_template, url_for
+from flask import Blueprint, Response, current_app, jsonify, render_template, request, url_for
 from markdown import Markdown
 
 from solstone.apps.news import copy as news_copy
 from solstone.apps.news.dates import format_news_list_date, next_newsletter_when
 from solstone.convey.date_nav import build_date_nav_index
 from solstone.convey.day_grid import build_day_grid_payload
-from solstone.convey.reasons import FILE_NOT_FOUND, INVALID_DAY, INVALID_MONTH
+from solstone.convey.reasons import (
+    FILE_NOT_FOUND,
+    INVALID_DAY,
+    INVALID_MONTH,
+    INVALID_REQUEST_VALUE,
+)
+from solstone.think.facets import get_facet_news
 from solstone.convey.utils import DATE_RE, error_response
 from solstone.think.features import require_extra
 from solstone.think.utils import get_journal, get_owner_timezone
@@ -275,6 +281,27 @@ def api_day(day: str) -> Any:
     if not rows:
         payload["empty"] = True
     return jsonify(payload)
+
+
+@news_bp.route("/api/facet/<facet>")
+def api_facet_news(facet: str) -> Any:
+    """Return a paginated facet-news feed for the native journal command."""
+    if not _FACET_RE.fullmatch(facet):
+        return error_response(INVALID_REQUEST_VALUE, detail="invalid facet")
+    day = request.args.get("day", "").strip() or None
+    cursor = request.args.get("cursor", "").strip() or None
+    if day is not None and not DATE_RE.fullmatch(day):
+        return error_response(INVALID_DAY, detail="day must be YYYYMMDD")
+    if cursor is not None and not DATE_RE.fullmatch(cursor):
+        return error_response(INVALID_REQUEST_VALUE, detail="cursor must be YYYYMMDD")
+    try:
+        limit = int(request.args.get("limit", 5))
+    except ValueError:
+        return error_response(INVALID_REQUEST_VALUE, detail="limit must be an integer")
+    if not 1 <= limit <= 100:
+        return error_response(INVALID_REQUEST_VALUE, detail="limit must be between 1 and 100")
+    result = get_facet_news(facet, cursor=cursor, limit=limit, day=day)
+    return jsonify({"facet": facet, **result})
 
 
 @news_bp.route("/sample")
