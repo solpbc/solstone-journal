@@ -340,8 +340,12 @@ fn mutation_resolution_waits_for_the_outermost_trust_guard() {
         "resolution completed before the trust guard dropped"
     );
     drop(outer);
+    // Liveness, not latency: the claim is that dropping the guard lets the
+    // worker through, and the 100ms bound above is what proves the guard held
+    // it. This ceiling only has to outlast a loaded machine, and one second
+    // does not -- `make ci` runs a whole nested `make ci` alongside this suite.
     let result = finished_rx
-        .recv_timeout(Duration::from_secs(1))
+        .recv_timeout(Duration::from_secs(60))
         .unwrap()
         .unwrap();
     assert_eq!(result.outcome, EntityResolutionOutcome::Ambiguous);
