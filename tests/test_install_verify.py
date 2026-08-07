@@ -24,9 +24,9 @@ def _run_in_tmp(args: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_import_think_sol_compat_cli_from_tmp():
+def test_import_think_utils_from_tmp():
     result = _run_in_tmp(
-        [str(VENV_PYTHON), "-c", "from solstone.think.sol_compat_cli import main"]
+        [str(VENV_PYTHON), "-c", "from solstone.think.utils import get_journal"]
     )
 
     assert result.returncode == 0, result.stderr

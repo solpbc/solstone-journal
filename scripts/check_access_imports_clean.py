@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Smoke guard for the native `sol` access surface and compatibility module."""
+"""Smoke guard for the native `sol` access surface."""
 
 from __future__ import annotations
 
@@ -41,14 +41,10 @@ try:
     from scripts.build_native_sol_journal_host_commands import (
         extract as extract_journal_host_commands,
     )
-    from scripts.check_native_sol_compat import frozen_journal_remainder_paths
     from scripts.check_wheel_contents import CORE_SCRIPT_NAMES, ROOT_LAUNCHER_NAMES
 except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
     from build_native_sol_journal_host_commands import (  # type: ignore[no-redef]
         extract as extract_journal_host_commands,
-    )
-    from check_native_sol_compat import (
-        frozen_journal_remainder_paths,  # type: ignore[no-redef]
     )
     from check_wheel_contents import (  # type: ignore[no-redef]
         CORE_SCRIPT_NAMES,
@@ -56,13 +52,6 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
     )
 
 from solstone.think.generated.access_rejections import JOURNAL_ACCESS_ONLY_COMMANDS
-from solstone.think.sol_compat_inventory import (
-    JOURNAL_CALL_PREFIX,
-    SENTINEL,
-    SENTINEL_ARMED,
-    TOP_LEVEL_COMPAT_MODULES,
-    marker_for_public_argv0,
-)
 
 if "import" not in JOURNAL_ACCESS_ONLY_COMMANDS:
     raise RuntimeError(
@@ -78,8 +67,6 @@ NATIVE_CASES: tuple[tuple[str, list[str]], ...] = (
     ("sol --help", ["sol", "--help"]),
     ("sol --version", ["sol", "--version"]),
     ("sol -V", ["sol", "-V"]),
-    ("sol --path", ["sol", "--path"]),
-    ("sol path", ["sol", "path"]),
     ("sol root", ["sol", "root"]),
     ("sol status", ["sol", "status"]),
     ("sol chat --help", ["sol", "chat", "--help"]),
@@ -92,17 +79,6 @@ NATIVE_CASES: tuple[tuple[str, list[str]], ...] = (
     (
         "sol call activities list --help",
         ["sol", "call", "activities", "list", "--help"],
-    ),
-)
-TOP_LEVEL_COMPAT_CASES: tuple[tuple[str, list[str], str], ...] = tuple(
-    (f"sol {command} --help", ["sol", command, "--help"], module)
-    for command, module in sorted(TOP_LEVEL_COMPAT_MODULES.items())
-)
-JOURNAL_COMPAT_CASES: tuple[tuple[str, list[str], str], ...] = (
-    (
-        "sol call journal --help",
-        ["sol", *JOURNAL_CALL_PREFIX, "--help"],
-        "solstone.think.tools.call",
     ),
 )
 JOURNAL_CASES: tuple[tuple[str, list[str]], ...] = (
@@ -124,12 +100,7 @@ NATIVE_FAILURE_CASES: tuple[tuple[str, list[str], int, str], ...] = (
         "Moved to `journal identity`",
     ),
 )
-ACCESS_CASES: tuple[tuple[str, list[str]], ...] = (
-    NATIVE_CASES
-    + tuple((label, argv) for label, argv, _module in TOP_LEVEL_COMPAT_CASES)
-    + tuple((label, argv) for label, argv, _module in JOURNAL_COMPAT_CASES)
-    + JOURNAL_CASES
-)
+ACCESS_CASES: tuple[tuple[str, list[str]], ...] = NATIVE_CASES + JOURNAL_CASES
 SERVICE_MOVED_ROUTING_CASES: tuple[tuple[str, list[str], str], ...] = tuple(
     (
         f"service-only native command {command}",
@@ -139,6 +110,16 @@ SERVICE_MOVED_ROUTING_CASES: tuple[tuple[str, list[str], str], ...] = tuple(
     for command in extract_journal_host_commands()
 )
 ROUTING_CASES: tuple[tuple[str, list[str], str], ...] = (
+    (
+        "retired native path flag",
+        ["sol", "--path"],
+        "Usage: sol <command> [args...]",
+    ),
+    (
+        "retired native path command",
+        ["sol", "path"],
+        "Unsupported native sol command.",
+    ),
     (
         "unknown native command",
         ["sol", "does-not-exist"],
@@ -155,46 +136,6 @@ EXPECTED_SCRIPT_OWNERS = {
     **{name: ["solstone-core"] for name in CORE_SCRIPT_NAMES},
 }
 _SOURCE_NATIVE_BIN_DIR: Path | None = None
-
-CHILD = r"""
-import importlib
-import json
-import os
-import sys
-
-payload = json.loads(sys.argv[1])
-root = payload["root"]
-if payload.get("source_root_on_path", True) and root not in sys.path:
-    sys.path.insert(0, root)
-
-blocked = tuple(payload["blocked"])
-
-def blocked_family(fullname):
-    return any(fullname == family or fullname.startswith(family + ".") for family in blocked)
-
-class BlockHeavyFinder:
-    def find_spec(self, fullname, path=None, target=None):
-        if blocked_family(fullname):
-            raise ModuleNotFoundError(f"No module named {fullname!r}", name=fullname)
-        return None
-
-sys.meta_path.insert(0, BlockHeavyFinder())
-
-real_import_module = importlib.import_module
-inject_heavy_module = os.environ.get("SOLSTONE_ACCESS_GUARD_INJECT_HEAVY_MODULE")
-
-def guarded_import_module(name, package=None):
-    if inject_heavy_module and name == inject_heavy_module:
-        __import__("numpy")
-    return real_import_module(name, package)
-
-importlib.import_module = guarded_import_module
-
-from solstone.think import sol_compat_cli
-
-raise SystemExit(sol_compat_cli.main(payload["argv"]))
-"""
-
 
 def _source_native_bin_dir() -> Path:
     global _SOURCE_NATIVE_BIN_DIR
@@ -224,18 +165,6 @@ def _source_native_bin_dir() -> Path:
         shutil.copy2(launcher, target)
         target.chmod(0o755)
     return _SOURCE_NATIVE_BIN_DIR
-
-
-def _check_journal_compat_inventory_nonempty() -> list[str]:
-    errors, paths = frozen_journal_remainder_paths()
-    if errors:
-        return [
-            f"access-imports-clean: FAIL journal compat inventory {error}"
-            for error in errors
-        ]
-    if not paths:
-        return ["access-imports-clean: FAIL compat journal subtree derivation is empty"]
-    return []
 
 
 def _bin_dir(python: str | None, *, source_root_on_path: bool) -> Path:
@@ -318,43 +247,6 @@ def _run_with_terminal_stdin(
             os.close(master_fd)
 
 
-def _run_compat_case(
-    label: str,
-    argv: list[str],
-    *,
-    module: str,
-    extra_env: dict[str, str] | None = None,
-    python: str | None = None,
-    source_root_on_path: bool = True,
-) -> subprocess.CompletedProcess[str]:
-    env = os.environ.copy()
-    env.setdefault("SOLSTONE_JOURNAL", str(ROOT / "tests" / "fixtures" / "journal"))
-    env[SENTINEL] = SENTINEL_ARMED
-    if source_root_on_path:
-        env["PYTHONPATH"] = (
-            str(ROOT)
-            if not env.get("PYTHONPATH")
-            else str(ROOT) + os.pathsep + env["PYTHONPATH"]
-        )
-    if extra_env:
-        env.update(extra_env)
-    payload = {
-        "root": str(ROOT),
-        "argv": [marker_for_public_argv0(argv[0]), *argv[1:]],
-        "blocked": BLOCKED_FAMILIES,
-        "label": f"{label} [{module}]",
-        "source_root_on_path": source_root_on_path,
-    }
-    return subprocess.run(
-        [python or sys.executable, "-c", CHILD, json.dumps(payload)],
-        cwd=ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=90,
-    )
-
-
 def _format_failure(label: str, result: subprocess.CompletedProcess[str]) -> str:
     return (
         f"access-imports-clean: FAIL {label} exited {result.returncode}\n"
@@ -416,13 +308,10 @@ def _check_failure_result(
 
 def run_checks(
     *,
-    extra_env: dict[str, str] | None = None,
     python: str | None = None,
     source_root_on_path: bool = True,
 ) -> list[str]:
     failures: list[str] = []
-    failures.extend(_check_journal_compat_inventory_nonempty())
-    compat_cases = TOP_LEVEL_COMPAT_CASES + JOURNAL_COMPAT_CASES
     for label, argv in NATIVE_CASES + JOURNAL_CASES:
         if argv[0] == "journal" and not source_root_on_path:
             continue
@@ -465,20 +354,6 @@ def run_checks(
                 ),
                 expected_exit,
                 expected_text,
-            )
-        )
-    for label, argv, module in compat_cases:
-        failures.extend(
-            _check_success_result(
-                f"{label} [{module}]",
-                _run_compat_case(
-                    label,
-                    argv,
-                    module=module,
-                    extra_env=extra_env,
-                    python=python,
-                    source_root_on_path=source_root_on_path,
-                ),
             )
         )
     for label, argv, expected in ROUTING_CASES:
@@ -750,7 +625,6 @@ def _check_installed_sol_root_canonicalization(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=ROOT)
-    parser.add_argument("--inject-heavy-module")
     parser.add_argument(
         "--real-install",
         action="store_true",
@@ -760,12 +634,6 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
-
-    extra_env = {}
-    if args.inject_heavy_module:
-        extra_env["SOLSTONE_ACCESS_GUARD_INJECT_HEAVY_MODULE"] = (
-            args.inject_heavy_module
-        )
 
     root = args.root.resolve()
     if root != ROOT:
@@ -779,13 +647,12 @@ def main(argv: list[str] | None = None) -> int:
             failures.extend(_check_installed_sol_root_canonicalization(python, root))
             failures.extend(
                 run_checks(
-                    extra_env=extra_env or None,
                     python=python,
                     source_root_on_path=False,
                 )
             )
     else:
-        failures = run_checks(extra_env=extra_env or None)
+        failures = run_checks()
 
     if failures:
         for failure in failures:

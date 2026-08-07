@@ -475,15 +475,9 @@ old/new route is a deliberate, time-boxed, per-change exception. Each dual path
 needs a named deletion schedule. Do not add compatibility aliases,
 deprecated-parameter handling, or compatibility re-exports.
 
-The native `sol` cutover has one sanctioned temporary delegation boundary: the
-finite private compatibility inventory in `solstone/think/sol_compat_inventory.py`,
-checked by `scripts/check_native_sol_compat.py`. The inventory is the only
-authority for that command set; do not copy the list into docs or gates. The
-removal criterion is zero Python delegation from supported-platform native
-`sol`: every remaining compatibility path has either a native authority with a
-production aggregate handler or an explicit direct native match-arm home for
-top-level local behavior, then the compatibility inventory and module exec
-bridge are deleted together.
+The native `sol` cutover no longer has a Python delegation boundary: every
+supported command has a native authority with a production aggregate handler or
+an explicit direct native match-arm home for top-level local behavior.
 
 `solstone/think/journal_config.py` is a second sanctioned temporary boundary:
 its `mutate_journal_config` subprocess CAS client wraps the native

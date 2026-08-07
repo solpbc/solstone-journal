@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from solstone.think.call import call_app
+from solstone.think.tools.call import retention_app
 from tests.helpers.journal_config import seed_journal_config
 
 runner = CliRunner()
@@ -28,7 +28,7 @@ def _load_json(path: Path) -> dict:
 
 
 def test_show_default(journal_env):
-    result = runner.invoke(call_app, ["journal", "retention", "config"])
+    result = runner.invoke(retention_app, ["config"])
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
@@ -38,7 +38,7 @@ def test_show_default(journal_env):
 def test_show_custom(journal_env):
     _write_config(journal_env, {"retention": {"raw_media": "keep"}})
 
-    result = runner.invoke(call_app, ["journal", "retention", "config"])
+    result = runner.invoke(retention_app, ["config"])
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
@@ -47,7 +47,7 @@ def test_show_custom(journal_env):
 
 def test_set_mode_and_days(journal_env):
     result = runner.invoke(
-        call_app, ["journal", "retention", "config", "--mode", "days", "--days", "30"]
+        retention_app, ["config", "--mode", "days", "--days", "30"]
     )
 
     assert result.exit_code == 0
@@ -63,7 +63,7 @@ def test_set_mode_and_days(journal_env):
 
 def test_set_mode_days_without_days_flag(journal_env):
     result = runner.invoke(
-        call_app, ["journal", "retention", "config", "--mode", "days"]
+        retention_app, ["config", "--mode", "days"]
     )
 
     assert result.exit_code == 1
@@ -72,10 +72,8 @@ def test_set_mode_days_without_days_flag(journal_env):
 
 def test_set_per_stream(journal_env):
     result = runner.invoke(
-        call_app,
+        retention_app,
         [
-            "journal",
-            "retention",
             "config",
             "--stream",
             "plaud",
@@ -102,8 +100,8 @@ def test_clear_per_stream(journal_env):
     )
 
     result = runner.invoke(
-        call_app,
-        ["journal", "retention", "config", "--stream", "plaud", "--clear"],
+        retention_app,
+        ["config", "--stream", "plaud", "--clear"],
     )
 
     assert result.exit_code == 0
@@ -112,7 +110,7 @@ def test_clear_per_stream(journal_env):
 
 
 def test_clear_without_stream(journal_env):
-    result = runner.invoke(call_app, ["journal", "retention", "config", "--clear"])
+    result = runner.invoke(retention_app, ["config", "--clear"])
 
     assert result.exit_code == 1
     assert "--clear requires --stream" in result.output
@@ -120,7 +118,7 @@ def test_clear_without_stream(journal_env):
 
 def test_invalid_mode(journal_env):
     result = runner.invoke(
-        call_app, ["journal", "retention", "config", "--mode", "invalid"]
+        retention_app, ["config", "--mode", "invalid"]
     )
 
     assert result.exit_code == 1
@@ -129,10 +127,8 @@ def test_invalid_mode(journal_env):
 
 def test_clear_with_mode_rejected(journal_env):
     result = runner.invoke(
-        call_app,
+        retention_app,
         [
-            "journal",
-            "retention",
             "config",
             "--stream",
             "plaud",
@@ -148,7 +144,7 @@ def test_clear_with_mode_rejected(journal_env):
 
 def test_negative_days_rejected(journal_env):
     result = runner.invoke(
-        call_app, ["journal", "retention", "config", "--mode", "keep", "--days", "-1"]
+        retention_app, ["config", "--mode", "keep", "--days", "-1"]
     )
 
     assert result.exit_code == 1
@@ -157,7 +153,7 @@ def test_negative_days_rejected(journal_env):
 
 def test_action_logged(journal_env):
     result = runner.invoke(
-        call_app, ["journal", "retention", "config", "--mode", "days", "--days", "7"]
+        retention_app, ["config", "--mode", "days", "--days", "7"]
     )
 
     assert result.exit_code == 0

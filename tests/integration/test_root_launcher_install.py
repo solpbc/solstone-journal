@@ -396,19 +396,14 @@ def test_cold_uv_tool_install_exports_root_launchers_only(
     assert native_solstone.stdout == f"sol (solstone) {built_wheels.version}\n"
     assert not log.exists()
 
-    journal = tmp_path / "journal"
-    journal.mkdir()
-    compat_env = {**env, "SOLSTONE_JOURNAL": str(journal)}
-    compat = _run(
+    journal_help = _run(
         [tool_bin / "sol", "call", "journal", "--help"],
         cwd=unrelated,
-        env=compat_env,
+        env=env,
     )
-    assert compat.returncode != 78, compat.stderr
-    assert log.exists(), compat.stderr
-    spy = log.read_text(encoding="utf-8")
-    assert "-P -m solstone.think.sol_compat_cli" in spy
-    assert "__solstone_native_argv0=sol call journal --help" in spy
+    assert journal_help.returncode == 0, journal_help.stderr
+    assert "Usage: sol call journal <command> [args...]" in journal_help.stdout
+    assert not log.exists()
 
 
 def test_isolated_pip_venv_install_exposes_new_layout(

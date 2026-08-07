@@ -137,7 +137,7 @@ class TestSolImportable:
         assert result.status == "ok"
         assert (
             result.detail
-            == "from solstone.think.sol_compat_cli import main succeeded outside repo cwd"
+            == "from solstone.think.utils import get_journal succeeded outside repo cwd"
         )
 
     def test_fail_on_module_not_found(self, doctor, monkeypatch, tmp_path):
