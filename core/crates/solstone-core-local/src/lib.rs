@@ -3,8 +3,11 @@
 
 //! Local-model runtime primitives with explicit process-boundary records.
 
+pub mod admission;
 pub mod bind;
 pub mod connect;
+mod fixture;
+pub mod generate;
 pub mod install;
 pub mod nvidia;
 pub mod plan;
@@ -12,6 +15,13 @@ pub(crate) mod tier;
 
 pub use bind::LoopbackAddr;
 pub use connect::{ConnectInput, ConnectOutcome, connect};
+pub use generate::{
+    ContextWindow, GenerateError, GenerateFailure, GenerateInput, GenerateResult, GenerateSuccess,
+    GenerateTransport, HttpResponse, Inference, InputBudget, PreparedRequest, RequestBudget,
+    ServerInference, UreqTransport, Usage, build_messages, build_request_body, generate,
+    generate_with, normalize_finish_reason, parse_response, prepare_bundled_request,
+    prepare_local_schema,
+};
 pub use install::{
     DispatchError as InstallDispatchError, InstallEnvelope, InstallVerb,
     dispatch as dispatch_install,

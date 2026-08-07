@@ -1117,8 +1117,45 @@
       }
     ]
   },
+  "local_generate": {
+    "finish_reasons": [
+      "stop",
+      "max_tokens",
+      "content_filter"
+    ],
+    "outcomes": [
+      "success",
+      "failure"
+    ],
+    "prompt_cache_states": [
+      "warm",
+      "cold",
+      "unknown"
+    ],
+    "reason_codes": {
+      "admission_timeout": "local_queue_timeout",
+      "capacity_exhausted": "local_capacity_exhausted",
+      "context_fitted_overflow": "context_budget_exceeded",
+      "context_image_overflow": "context_budget_exceeded",
+      "context_preserved_overflow": "context_budget_exceeded",
+      "context_server_overflow": "context_budget_exceeded",
+      "model_loading": "local_model_loading",
+      "model_not_ready": "local_model_not_ready",
+      "response_invalid": "provider_response_invalid"
+    },
+    "reference_sources": [
+      "solstone/think/providers/local.py",
+      "solstone/think/providers/local_budget.py",
+      "solstone/think/providers/local_server.py"
+    ],
+    "schema_identifiers": {
+      "input": "solstone-local-generate-input-v1",
+      "result": "solstone-local-generate-result-v1"
+    },
+    "schema_version": 1
+  },
   "fixture": "solstone-local-contract",
-  "fixture_version": 1,
+  "fixture_version": 2,
   "generated_by": "make core-fixtures",
   "generator": "scripts/local_contract_corpus.py",
   "reference_commit": "3373ff91a4d9e9562ed2c80030d1549f4dbb595d",
