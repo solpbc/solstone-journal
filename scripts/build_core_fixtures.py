@@ -136,8 +136,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import content_family_corpus  # noqa: E402  — sibling module, not a package
 import talent_projection_corpus  # noqa: E402  — sibling module, not a package
 import entity_corpus  # noqa: E402  — sibling module, not a package
-import local_contract_corpus  # noqa: E402  — sibling module, not a package
-import brain_projection_corpus  # noqa: E402  — sibling module, not a package
 import install_status_corpus  # noqa: E402  — sibling module, not a package
 
 FIXTURE_DIR = ROOT / "core" / "fixtures"
@@ -146,8 +144,6 @@ TALENT_PROJECTIONS_ARTIFACT_PATH = FIXTURE_DIR / "talent_projections.json"
 CALLOSUM_ARTIFACT_PATH = FIXTURE_DIR / "callosum_registry.json"
 COGITATE_ARTIFACT_PATH = FIXTURE_DIR / "cogitate_contract.json"
 GENERATE_ARTIFACT_PATH = FIXTURE_DIR / "generate_contract.json"
-LOCAL_CONTRACT_ARTIFACT_PATH = FIXTURE_DIR / "local_contract.json"
-BRAIN_PROJECTION_ARTIFACT_PATH = FIXTURE_DIR / "brain_projection.json"
 INSTALL_STATUS_ARTIFACT_PATH = FIXTURE_DIR / "install_status.json"
 EDGE_SCHEMA_ARTIFACT_PATH = FIXTURE_DIR / "edge_schema.json"
 MARKDOWN_CHUNKS_ARTIFACT_PATH = FIXTURE_DIR / "markdown_chunks.json"
@@ -1554,12 +1550,6 @@ def expected_outputs() -> dict[Path, ArtifactDescriptor]:
         ),
         GENERATE_ARTIFACT_PATH: ArtifactDescriptor(
             build_generate_contract_fixture,
-        ),
-        LOCAL_CONTRACT_ARTIFACT_PATH: ArtifactDescriptor(
-            local_contract_corpus.build_local_contract_fixture,
-        ),
-        BRAIN_PROJECTION_ARTIFACT_PATH: ArtifactDescriptor(
-            brain_projection_corpus.build_brain_projection_fixture,
         ),
         INSTALL_STATUS_ARTIFACT_PATH: ArtifactDescriptor(
             install_status_corpus.build_install_status_fixture,

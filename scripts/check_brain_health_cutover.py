@@ -79,6 +79,24 @@ PROCESS_LOCAL_ATTESTATION_IMPORT_MODULES = {
         "local_endpoint": "solstone.think.providers.local_endpoint",
     },
 }
+BRAIN_WRITE_CALLEES = {
+    "open",
+    "atomic_replace",
+    "write_json",
+    "hold_lock",
+    "acquire_file_lease",
+}
+BRAIN_PATH_WRITE_METHODS = {"write_text", "write_bytes"}
+BRAIN_PATH_HELPERS = {
+    "brain_state_path",
+    "brain_fingerprint_key_path",
+    "brain_refresh_lease_path",
+}
+BRAIN_PATH_FRAGMENTS = (
+    "health/brain.json",
+    "brain-fingerprint.key",
+    "brain-refresh.lease",
+)
 
 
 @dataclass(frozen=True)
@@ -224,6 +242,123 @@ def _process_local_attestation_calls(path: Path, text: str) -> set[str]:
     return findings
 
 
+def _brain_write_bindings(
+    tree: ast.AST,
+) -> tuple[dict[str, str], set[str]]:
+    """Return writer aliases and names assigned from brain-path helpers."""
+    writer_aliases: dict[str, str] = {}
+    helper_aliases: set[str] = set(BRAIN_PATH_HELPERS)
+    module_aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                local = alias.asname or alias.name.rsplit(".", 1)[-1]
+                module_aliases[local] = alias.name
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                local = alias.asname or alias.name
+                if alias.name in BRAIN_WRITE_CALLEES:
+                    writer_aliases[local] = alias.name
+                if alias.name in BRAIN_PATH_HELPERS:
+                    helper_aliases.add(local)
+
+    helper_paths: set[str] = set()
+    for node in ast.walk(tree):
+        value: ast.AST | None = None
+        targets: list[ast.expr] = []
+        if isinstance(node, ast.Assign):
+            value = node.value
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign):
+            value = node.value
+            targets = [node.target]
+        if not isinstance(value, ast.Call):
+            continue
+        dotted = _dotted_name(value.func)
+        if dotted is None:
+            continue
+        helper_name = dotted.rsplit(".", 1)[-1]
+        helper_module = dotted.rpartition(".")[0]
+        is_helper = helper_name in helper_aliases
+        if helper_module and module_aliases.get(helper_module) == (
+            "solstone.think.providers.brain_state"
+        ):
+            is_helper = helper_name in BRAIN_PATH_HELPERS
+        if not is_helper:
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name):
+                helper_paths.add(target.id)
+    return writer_aliases, helper_paths
+
+
+def _brain_writer_callee(
+    func: ast.expr,
+    writer_aliases: dict[str, str],
+) -> str | None:
+    dotted = _dotted_name(func)
+    if dotted is None:
+        return None
+    if dotted in writer_aliases:
+        return writer_aliases[dotted]
+    if dotted in BRAIN_WRITE_CALLEES:
+        return dotted
+    attribute = dotted.rsplit(".", 1)[-1]
+    if attribute in BRAIN_WRITE_CALLEES:
+        return attribute
+    if attribute in BRAIN_PATH_WRITE_METHODS:
+        return f"Path.{attribute}"
+    return None
+
+
+def _contains_brain_path_literal(node: ast.AST) -> bool:
+    return any(
+        isinstance(child, ast.Constant)
+        and isinstance(child.value, str)
+        and any(fragment in child.value for fragment in BRAIN_PATH_FRAGMENTS)
+        for child in ast.walk(node)
+    )
+
+
+def _brain_state_write_calls(root: Path, path: Path, text: str) -> list[Finding]:
+    if path.suffix != ".py":
+        return []
+    try:
+        tree = ast.parse(text, filename=str(path))
+    except SyntaxError:
+        return []
+    writer_aliases, helper_paths = _brain_write_bindings(tree)
+    findings: list[Finding] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        callee = _brain_writer_callee(node.func, writer_aliases)
+        if callee is None:
+            continue
+        literal_target = any(
+            _contains_brain_path_literal(argument)
+            for argument in (*node.args, *(keyword.value for keyword in node.keywords))
+        )
+        helper_target = bool(node.args) and isinstance(node.args[0], ast.Name) and (
+            node.args[0].id in helper_paths
+        )
+        method_helper_target = (
+            callee in {"Path.write_text", "Path.write_bytes"}
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id in helper_paths
+        )
+        if literal_target or helper_target or method_helper_target:
+            findings.append(
+                Finding(
+                    f"{_rel(root, path)}:{node.lineno}",
+                    "python-brain-state-writer",
+                    callee,
+                )
+            )
+    return findings
+
+
 def scan(root: Path, *, all_files: bool = False) -> list[Finding]:
     findings: list[Finding] = []
     for path in _tracked_files(root, all_files=all_files):
@@ -274,6 +409,7 @@ def scan(root: Path, *, all_files: bool = False) -> list[Finding]:
                         ", ".join(sorted(attestation_calls)),
                     )
                 )
+            findings.extend(_brain_state_write_calls(root, path, text))
     return findings
 
 

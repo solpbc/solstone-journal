@@ -494,6 +494,15 @@ read half remain Python-side until those modules move to native Rust/native
 native call home, delete this client and `journal_config.py`'s subprocess
 plumbing together.
 
+Native brain verbs ship as `solstone-core brain <verb>` subcommands of the
+installed aggregate binary, not as a standalone writer binary.
+`scripts/local_contract_corpus.py` and `scripts/brain_projection_corpus.py`
+are retired from `expected_outputs()` because they import from `brain_state.py`,
+which Wave 2 reduces to a thin transport shim. The checked-in contract and
+projection fixtures remain frozen native compatibility corpus; regenerating
+them requires the recorded pre-cut source tree, not a fallback implementation
+in the post-cut tree.
+
 ## Version Lockstep
 
 `scripts/render_packaging.py` keeps Python leaf packages and Cargo metadata in
