@@ -286,7 +286,7 @@ check-rust-deny:
 check-differentials:
 	@$(REQUIRE_CARGO)
 	$(MAKE) install
-	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core --features differential --locked --test journal_config_client --test journal_config_corruption
+	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core --features differential --locked --test journal_config_client --test journal_config_corruption --test journal_process_bootstrap
 	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-generate --features differential --locked --test no_downgrade --test session --test session_real --test wire
 
 build:

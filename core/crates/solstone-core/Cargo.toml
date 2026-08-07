@@ -26,6 +26,11 @@ name = "journal_config_corruption"
 path = "tests/journal_config_corruption.rs"
 required-features = ["differential"]
 
+[[test]]
+name = "journal_process_bootstrap"
+path = "tests/journal_process_bootstrap.rs"
+required-features = ["differential"]
+
 [dependencies]
 chrono.workspace = true
 serde.workspace = true
