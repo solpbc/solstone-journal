@@ -9,6 +9,7 @@ use super::candidates::EdgeResolver;
 use super::{
     EdgeContext, EdgeError, EdgeRow, EdgeValue, JsonObject, json_type_name, segment_start_ts_ms,
 };
+use solstone_core_journal::python_strip;
 
 #[derive(Clone, PartialEq)]
 struct MessageKey {
@@ -43,7 +44,7 @@ pub(crate) fn extract_screen_edges(
     resolver: &mut EdgeResolver,
 ) -> Result<Vec<EdgeRow>, EdgeError> {
     let (anchor, segment) = segment_ref(&context.path)?;
-    let ts = segment_start_ts_ms(&context.day, &segment, resolver.owner_timezone())?;
+    let ts = segment_start_ts_ms(&context.day, &segment, resolver.owner_timezone()?)?;
     let mut rows = messaging_rows(entries, context, resolver, &anchor, ts)?;
     rows.extend(calendar_rows(entries, context, resolver, &anchor, ts)?);
     Ok(rows)
@@ -292,7 +293,7 @@ fn event_day(value: Option<&Value>) -> Option<String> {
     let Some(Value::String(value)) = value else {
         return None;
     };
-    let text = super::python_strip(value);
+    let text = python_strip(value);
     if text.len() >= 10
         && text.as_bytes().get(4) == Some(&b'-')
         && text.as_bytes().get(7) == Some(&b'-')
@@ -325,7 +326,7 @@ fn segment_ref(path: &str) -> Result<(String, String), EdgeError> {
 
 fn string_field(value: Option<&Value>) -> String {
     match value {
-        Some(Value::String(value)) => super::python_strip(value).to_string(),
+        Some(Value::String(value)) => python_strip(value).to_string(),
         _ => String::new(),
     }
 }

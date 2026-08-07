@@ -38,7 +38,7 @@ pub struct EdgeResolver {
     journal: PathBuf,
     cache: BTreeMap<String, Vec<EntityNameCandidate>>,
     drops: EdgeDropCounter,
-    owner_timezone: Option<Tz>,
+    owner_timezone: Option<Result<Tz, EdgeError>>,
     mention_candidates: Option<MentionCandidateIndex>,
 }
 
@@ -102,12 +102,16 @@ impl EdgeResolver {
         self.drops.record_drop();
     }
 
-    pub(super) fn owner_timezone(&mut self) -> Tz {
-        if let Some(timezone) = self.owner_timezone {
-            return timezone;
+    pub fn preflight_owner_timezone(&mut self) -> Result<(), EdgeError> {
+        self.owner_timezone().map(|_| ())
+    }
+
+    pub(super) fn owner_timezone(&mut self) -> Result<Tz, EdgeError> {
+        if let Some(timezone) = &self.owner_timezone {
+            return timezone.clone();
         }
         let timezone = super::owner_timezone_for_journal(&self.journal);
-        self.owner_timezone = Some(timezone);
+        self.owner_timezone = Some(timezone.clone());
         timezone
     }
 

@@ -7,8 +7,9 @@ use serde_json::Value;
 use super::candidates::EdgeResolver;
 use super::{
     EdgeContext, EdgeError, EdgeRow, EdgeValue, JsonObject, PythonIntParse, json_truthy,
-    parse_python_int_literal, python_str, python_strip,
+    parse_python_int_literal, python_str,
 };
+use solstone_core_journal::python_strip;
 
 pub(super) enum LocalSelection {
     EpochMillis(i64),

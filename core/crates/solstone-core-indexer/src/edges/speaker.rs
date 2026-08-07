@@ -11,6 +11,7 @@ use super::candidates::EdgeResolver;
 use super::{
     EdgeContext, EdgeError, EdgeRow, EdgeValue, JsonObject, json_truthy, segment_start_ts_ms,
 };
+use solstone_core_journal::python_strip;
 
 #[derive(Clone)]
 struct MentionCandidate {
@@ -62,7 +63,7 @@ pub(crate) fn extract_speaker_edges(
         });
     }
 
-    let ts = segment_start_ts_ms(&context.day, &segment, resolver.owner_timezone())?;
+    let ts = segment_start_ts_ms(&context.day, &segment, resolver.owner_timezone()?)?;
     let mut rows = spoke_with_rows(&speaker_ids, context, &composite_id, ts);
     let mention_labels = valid_label_records(labels);
     if mention_labels.is_empty() {
@@ -110,7 +111,7 @@ pub(super) fn build_candidate_index(journal: &Path) -> Result<MentionCandidateIn
         let Some(Value::String(entity_name)) = entity.get("name") else {
             continue;
         };
-        if super::python_strip(entity_name).is_empty() {
+        if python_strip(entity_name).is_empty() {
             continue;
         }
 
@@ -624,13 +625,13 @@ fn variants_from_name(name: &str) -> Vec<String> {
     }
 
     let mut variants = Vec::new();
-    let base = super::python_strip(&base);
+    let base = python_strip(&base);
     if !base.is_empty() {
         variants.push(base.to_string());
     }
     for group in groups {
         for item in group.split(',') {
-            let item = super::python_strip(item);
+            let item = python_strip(item);
             if !item.is_empty() {
                 variants.push(item.to_string());
             }

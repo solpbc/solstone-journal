@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use super::candidates::EdgeResolver;
 use super::{EdgeContext, EdgeError, EdgeRow, EdgeValue, JsonObject, segment_start_ts_ms};
+use solstone_core_journal::python_strip;
 
 pub(crate) fn extract_document_edges(
     payload: &JsonObject,
@@ -18,7 +19,7 @@ pub(crate) fn extract_document_edges(
     };
 
     let (anchor, segment) = segment_ref(&context.path)?;
-    let ts = segment_start_ts_ms(&context.day, &segment, resolver.owner_timezone())?;
+    let ts = segment_start_ts_ms(&context.day, &segment, resolver.owner_timezone()?)?;
     let mut resolved = BTreeMap::new();
     for party in parties {
         let Value::Object(party) = party else {
@@ -33,7 +34,7 @@ pub(crate) fn extract_document_edges(
         };
         resolved
             .entry(entity_id)
-            .or_insert_with(|| super::python_strip(name).to_string());
+            .or_insert_with(|| python_strip(name).to_string());
     }
 
     let mut rows = Vec::new();

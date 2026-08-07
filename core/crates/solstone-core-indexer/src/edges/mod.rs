@@ -14,7 +14,7 @@ mod speaker;
 
 use std::fmt;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use chrono::{Datelike, Duration, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone};
 use chrono_tz::Tz;
@@ -24,6 +24,8 @@ use crate::edges::candidates::EdgeResolver;
 use crate::edges::registry::{EdgeSourceKind, edge_source_for_rel};
 use crate::metadata::extract_path_metadata;
 use solstone_core_format::segment::{segment_key, segment_parse};
+use solstone_core_journal::python_strip;
+use solstone_core_journal_config::{get_journal_config_path, plain_defaults, read_journal_config};
 
 type JsonObject = Map<String, Value>;
 
@@ -124,6 +126,10 @@ pub struct EdgeFileRows {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EdgeError {
     Io(String),
+    JournalConfigCorrupt {
+        path: PathBuf,
+        message: String,
+    },
     UnknownKind(String),
     MissingSrc,
     MissingDst,
@@ -164,6 +170,7 @@ impl fmt::Display for EdgeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             EdgeError::Io(error) => write!(formatter, "{error}"),
+            EdgeError::JournalConfigCorrupt { message, .. } => formatter.write_str(message),
             EdgeError::UnknownKind(kind) => write!(formatter, "Unknown edge kind: {kind:?}"),
             EdgeError::MissingSrc => formatter.write_str("edge row requires non-empty string src"),
             EdgeError::MissingDst => formatter.write_str("edge row requires non-empty string dst"),
@@ -367,23 +374,6 @@ pub(crate) fn json_truthy(value: Option<&Value>) -> bool {
         Some(Value::Array(value)) => !value.is_empty(),
         Some(Value::Object(value)) => !value.is_empty(),
     }
-}
-
-pub(crate) fn python_strip(value: &str) -> &str {
-    let start = value
-        .char_indices()
-        .find_map(|(index, ch)| (!is_python_whitespace(ch)).then_some(index))
-        .unwrap_or(value.len());
-    let end = value
-        .char_indices()
-        .rev()
-        .find_map(|(index, ch)| (!is_python_whitespace(ch)).then_some(index + ch.len_utf8()))
-        .unwrap_or(start);
-    &value[start..end]
-}
-
-fn is_python_whitespace(ch: char) -> bool {
-    ch.is_whitespace() || matches!(ch, '\u{001c}'..='\u{001f}')
 }
 
 pub(crate) fn python_str(value: &Value, field: &'static str) -> Result<String, EdgeError> {
@@ -627,25 +617,23 @@ fn read_json_object(path: &Path, source: &'static str) -> Result<JsonObject, Edg
     }
 }
 
-pub(crate) fn owner_timezone_for_journal(journal: &Path) -> Tz {
-    let path = journal.join("config").join("journal.json");
-    let Ok(text) = fs::read_to_string(path) else {
-        return Tz::UTC;
-    };
-    let Ok(Value::Object(config)) = serde_json::from_str::<Value>(&text) else {
-        return Tz::UTC;
-    };
+pub(crate) fn owner_timezone_for_journal(journal: &Path) -> Result<Tz, EdgeError> {
+    let read = read_journal_config(journal).map_err(|error| EdgeError::JournalConfigCorrupt {
+        path: get_journal_config_path(journal),
+        message: error.to_string(),
+    })?;
+    let config = read.config.unwrap_or_else(plain_defaults);
     let Some(Value::Object(identity)) = config.get("identity") else {
-        return Tz::UTC;
+        return Ok(Tz::UTC);
     };
     let Some(Value::String(timezone)) = identity.get("timezone") else {
-        return Tz::UTC;
+        return Ok(Tz::UTC);
     };
     let timezone = python_strip(timezone);
     if timezone.is_empty() {
-        return Tz::UTC;
+        return Ok(Tz::UTC);
     }
-    timezone.parse::<Tz>().unwrap_or(Tz::UTC)
+    Ok(timezone.parse::<Tz>().unwrap_or(Tz::UTC))
 }
 
 pub(crate) fn segment_start_ts_ms(
@@ -1452,7 +1440,7 @@ mod tests {
             "config/journal.json",
             json!({"identity":{"timezone":"America/Denver"}}),
         );
-        let timezone = owner_timezone_for_journal(&configured);
+        let timezone = owner_timezone_for_journal(&configured).expect("read configured timezone");
         assert_eq!(
             segment_start_ts_ms("20260308", "023000_300", timezone)
                 .expect("compute denver spring gap timestamp"),
@@ -1465,12 +1453,15 @@ mod tests {
         );
 
         let fallback = temp_root("utc-timezone");
-        assert_eq!(owner_timezone_for_journal(&fallback), Tz::UTC);
+        assert_eq!(
+            owner_timezone_for_journal(&fallback).expect("read missing config defaults"),
+            Tz::UTC
+        );
         assert_eq!(
             segment_start_ts_ms(
                 "20260308",
                 "023000_300",
-                owner_timezone_for_journal(&fallback)
+                owner_timezone_for_journal(&fallback).expect("read missing config defaults")
             )
             .expect("compute utc fallback timestamp"),
             1_772_937_000_000
@@ -1481,19 +1472,45 @@ mod tests {
             "config/journal.json",
             json!({"identity":{"timezone":"Not/A_Zone"}}),
         );
-        assert_eq!(owner_timezone_for_journal(&invalid), Tz::UTC);
+        assert_eq!(
+            owner_timezone_for_journal(&invalid).expect("read invalid zone config"),
+            Tz::UTC
+        );
         assert_eq!(
             segment_start_ts_ms(
                 "20260308",
                 "023000_300",
-                owner_timezone_for_journal(&invalid)
+                owner_timezone_for_journal(&invalid).expect("read invalid zone config")
             )
             .expect("compute invalid timezone utc fallback timestamp"),
             1_772_937_000_000
         );
+        let corrupt = temp_root("corrupt-timezone");
+        let corrupt_path = corrupt.join("config").join("journal.json");
+        fs::create_dir_all(corrupt_path.parent().expect("config parent"))
+            .expect("create corrupt config parent");
+        fs::write(&corrupt_path, b"{\"identity\":{\"timezone\":NaN}}")
+            .expect("write corrupt config");
+        let error = owner_timezone_for_journal(&corrupt).expect_err("NaN config must fail");
+        assert!(matches!(
+            error,
+            EdgeError::JournalConfigCorrupt { ref path, ref message }
+                if path == &corrupt_path && message.starts_with("I couldn't read your settings file")
+        ));
+
+        let unreadable = temp_root("directory-timezone");
+        let unreadable_path = unreadable.join("config").join("journal.json");
+        fs::create_dir_all(&unreadable_path).expect("create directory config fixture");
+        assert!(matches!(
+            owner_timezone_for_journal(&unreadable),
+            Err(EdgeError::JournalConfigCorrupt { path, .. }) if path == unreadable_path
+        ));
+
         fs::remove_dir_all(configured).expect("cleanup configured timezone root");
         let _ = fs::remove_dir_all(fallback);
         fs::remove_dir_all(invalid).expect("cleanup invalid timezone root");
+        fs::remove_dir_all(corrupt).expect("cleanup corrupt timezone root");
+        fs::remove_dir_all(unreadable).expect("cleanup directory timezone root");
     }
 
     #[test]

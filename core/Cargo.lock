@@ -1903,6 +1903,8 @@ dependencies = [
  "serde_json",
  "solstone-core-entity-matching",
  "solstone-core-format",
+ "solstone-core-journal",
+ "solstone-core-journal-config",
 ]
 
 [[package]]
