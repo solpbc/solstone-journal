@@ -118,6 +118,35 @@
         "value": "1"
       },
       "name": "string_not_integer"
+    },
+    {
+      "expected_value_hash": "sha256:672116c858ee3be0cf549e6d7cff9b087704fe02c2cfe5f337249fbbebf909ad",
+      "input": {"metadata": {}, "unit": null, "value": 1.0},
+      "name": "float_one_not_integer"
+    },
+    {
+      "expected_value_hash": "sha256:6503109ca9a423b83995639c6782133092267e8370b23cd98b91bd2af4af693e",
+      "input": {"metadata": {}, "unit": null, "value": -0.0},
+      "name": "negative_zero"
+    },
+    {
+      "expected_value_hash": "sha256:ccb8981e6aeb792e12cc52f35c2d12eb28f5dd1c1d03670cfe72df7c0bb117b4",
+      "input": {"metadata": {}, "unit": "score", "value": 1e+20},
+      "name": "exponent_float"
+    },
+    {
+      "expected_value_hash": "sha256:4b2eff4e8804fdaf73d63b9d64e34811325ff865576e77797116ba14f09dc668",
+      "input": {"metadata": {}, "unit": "count", "value": 9007199254740993},
+      "name": "large_integer"
+    },
+    {
+      "expected_value_hash": "sha256:5c3fc4a6621f44ee50ecaccf832018960b6f5369a22484d6cfb8beefdd77ecb3",
+      "input": {
+        "metadata": {"script": "𝄞", "emoji": "🫀"},
+        "unit": null,
+        "value": "synthetic-🪨"
+      },
+      "name": "astral_unicode_surrogate_escaping"
     }
   ]
 }

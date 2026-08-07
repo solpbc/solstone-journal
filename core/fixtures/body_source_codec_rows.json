@@ -1,0 +1,74 @@
+{
+  "schema": "solstone.body_source.codec_rows.v1",
+  "rows": [
+    {
+      "name": "apple_v1_all_shapes",
+      "row": {
+        "schema": "solstone.health.apple_health.v1",
+        "source_family": "apple_health",
+        "kind": "workout",
+        "dedupe_key": "sha256:1422cf525aecd1153993ec0d4dbbd3b7f192ae5523ec22f5b8ccfc8d203a93a5",
+        "record_type": "HKWorkoutActivityTypeRunning",
+        "day": "20260102",
+        "start_date": "2026-01-02 06:30:00 -0700",
+        "end_date": "2026-01-02 07:15:00 -0700",
+        "source_name": "Synthetic Watch",
+        "source_version": "1.0",
+        "unit": "min",
+        "value": "45",
+        "metadata": {
+          "unknown_array": [1, "two", false, null, {"z": 2, "a": 1}],
+          "nested": {"null": null, "truth": true},
+          "WorkoutStatistics": [{"unit": "km", "sum": "10.0"}]
+        },
+        "raw_ref": "imports/synthetic-import/raw/export.xml#workout-6",
+        "future_extension": {"z": 2, "a": 1}
+      },
+      "expected_canonical_json": "{\"day\":\"20260102\",\"dedupe_key\":\"sha256:1422cf525aecd1153993ec0d4dbbd3b7f192ae5523ec22f5b8ccfc8d203a93a5\",\"end_date\":\"2026-01-02 07:15:00 -0700\",\"future_extension\":{\"a\":1,\"z\":2},\"kind\":\"workout\",\"metadata\":{\"WorkoutStatistics\":[{\"sum\":\"10.0\",\"unit\":\"km\"}],\"nested\":{\"null\":null,\"truth\":true},\"unknown_array\":[1,\"two\",false,null,{\"a\":1,\"z\":2}]},\"raw_ref\":\"imports/synthetic-import/raw/export.xml#workout-6\",\"record_type\":\"HKWorkoutActivityTypeRunning\",\"schema\":\"solstone.health.apple_health.v1\",\"source_family\":\"apple_health\",\"source_name\":\"Synthetic Watch\",\"source_version\":\"1.0\",\"start_date\":\"2026-01-02 06:30:00 -0700\",\"unit\":\"min\",\"value\":\"45\"}"
+    },
+    {
+      "name": "oura_v1_all_shapes",
+      "row": {
+        "schema": "solstone.health.oura.v1",
+        "source_family": "oura_api",
+        "kind": "daily_summary",
+        "dedupe_key": "sha256:cf5b6fc199a3bcbc4d9361346d957f9098c356fe75f226803d2bd57580d95258",
+        "record_type": "oura.daily_readiness",
+        "day": "20260102",
+        "start_date": "2026-01-02",
+        "end_date": "2026-01-03",
+        "source_record_id": "synthetic-readiness-1",
+        "unit": "score",
+        "value": 91,
+        "metadata": {
+          "contributors": {"hrv_balance": 88, "sleep_balance": null},
+          "tags": ["synthetic", 3, true],
+          "deviation": -0.0
+        },
+        "raw_ref": "imports/synthetic-import/raw/oura/daily_readiness-0001.json#item-0"
+      },
+      "expected_canonical_json": "{\"day\":\"20260102\",\"dedupe_key\":\"sha256:cf5b6fc199a3bcbc4d9361346d957f9098c356fe75f226803d2bd57580d95258\",\"end_date\":\"2026-01-03\",\"kind\":\"daily_summary\",\"metadata\":{\"contributors\":{\"hrv_balance\":88,\"sleep_balance\":null},\"deviation\":-0.0,\"tags\":[\"synthetic\",3,true]},\"raw_ref\":\"imports/synthetic-import/raw/oura/daily_readiness-0001.json#item-0\",\"record_type\":\"oura.daily_readiness\",\"schema\":\"solstone.health.oura.v1\",\"source_family\":\"oura_api\",\"source_record_id\":\"synthetic-readiness-1\",\"start_date\":\"2026-01-02\",\"unit\":\"score\",\"value\":91}"
+    },
+    {
+      "name": "legacy_normalized_v1",
+      "row": {
+        "schema": "solstone.health.normalized.v1",
+        "source_family": "apple_health",
+        "kind": "record",
+        "dedupe_key": "apple-health:synthetic:legacy-1",
+        "record_type": "HKQuantityTypeIdentifierHeartRate",
+        "day": "20260101",
+        "month": "2026-01",
+        "start_date": "2026-01-01T08:00:00-07:00",
+        "end_date": null,
+        "source_name": "Synthetic Device",
+        "unit": "count/min",
+        "value": "72",
+        "metadata": {"legacy": true, "optional": null},
+        "import_id": "legacy-synthetic-import",
+        "normalized_ref": "imports/legacy-synthetic-import/normalized/2026-01.jsonl#L1"
+      },
+      "expected_canonical_json": "{\"day\":\"20260101\",\"dedupe_key\":\"apple-health:synthetic:legacy-1\",\"end_date\":null,\"import_id\":\"legacy-synthetic-import\",\"kind\":\"record\",\"metadata\":{\"legacy\":true,\"optional\":null},\"month\":\"2026-01\",\"normalized_ref\":\"imports/legacy-synthetic-import/normalized/2026-01.jsonl#L1\",\"record_type\":\"HKQuantityTypeIdentifierHeartRate\",\"schema\":\"solstone.health.normalized.v1\",\"source_family\":\"apple_health\",\"source_name\":\"Synthetic Device\",\"start_date\":\"2026-01-01T08:00:00-07:00\",\"unit\":\"count/min\",\"value\":\"72\"}"
+    }
+  ]
+}
