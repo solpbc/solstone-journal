@@ -1719,9 +1719,13 @@ dependencies = [
 name = "solstone-core"
 version = "1.0.22"
 dependencies = [
+ "chrono",
  "futures-util",
+ "rusqlite",
+ "serde",
  "serde_json",
  "solstone-core-cli",
+ "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal",
  "solstone-core-sol",

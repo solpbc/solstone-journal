@@ -3,13 +3,13 @@
 
 use std::ffi::{OsStr, OsString};
 
-pub const USAGE: &str = "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n";
+pub const USAGE: &str = "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Version,
     JournalPath(JournalPathOptions),
-    Indexer(IndexerOptions),
+    Indexer(Box<IndexerCommand>),
     Spl(SplCommand),
 }
 
@@ -40,6 +40,50 @@ pub struct IndexerOptions {
     pub rescan_file: Option<OsString>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IndexerCommand {
+    Maintenance(IndexerOptions),
+    Search(IndexerSearchOptions),
+    Counts(IndexerCountsOptions),
+    Agents(IndexerReadOptions),
+    Coverage(IndexerReadOptions),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexerQueryOptions {
+    pub journal_override: Option<OsString>,
+    pub json: bool,
+    pub query: Option<String>,
+    pub day: Option<String>,
+    pub day_from: Option<String>,
+    pub day_to: Option<String>,
+    pub facet: Option<String>,
+    pub agent: Option<String>,
+    pub stream: Option<String>,
+    pub time_bucket: Option<String>,
+    pub relax: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexerSearchOptions {
+    pub query: IndexerQueryOptions,
+    pub limit: usize,
+    pub offset: usize,
+    pub counts: bool,
+    pub order: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexerCountsOptions {
+    pub query: IndexerQueryOptions,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexerReadOptions {
+    pub journal_override: Option<OsString>,
+    pub json: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UsageError;
 
@@ -50,7 +94,7 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             parse_journal_path(rest).map(Command::JournalPath)
         }
         [command, rest @ ..] if command == OsStr::new("indexer") => {
-            parse_indexer(rest).map(Command::Indexer)
+            parse_indexer(rest).map(|command| Command::Indexer(Box::new(command)))
         }
         [command, rest @ ..] if command == OsStr::new("spl") => parse_spl(rest).map(Command::Spl),
         _ => Err(UsageError),
@@ -124,7 +168,25 @@ fn parse_journal_path(args: &[OsString]) -> Result<JournalPathOptions, UsageErro
     })
 }
 
-fn parse_indexer(args: &[OsString]) -> Result<IndexerOptions, UsageError> {
+fn parse_indexer(args: &[OsString]) -> Result<IndexerCommand, UsageError> {
+    match args {
+        [verb, rest @ ..] if verb == OsStr::new("search") => {
+            parse_indexer_search(rest).map(IndexerCommand::Search)
+        }
+        [verb, rest @ ..] if verb == OsStr::new("counts") => {
+            parse_indexer_counts(rest).map(IndexerCommand::Counts)
+        }
+        [verb, rest @ ..] if verb == OsStr::new("agents") => {
+            parse_indexer_read(rest).map(IndexerCommand::Agents)
+        }
+        [verb, rest @ ..] if verb == OsStr::new("coverage") => {
+            parse_indexer_read(rest).map(IndexerCommand::Coverage)
+        }
+        _ => parse_indexer_maintenance(args).map(IndexerCommand::Maintenance),
+    }
+}
+
+fn parse_indexer_maintenance(args: &[OsString]) -> Result<IndexerOptions, UsageError> {
     let mut journal_override = None;
     let mut reset = false;
     let mut rebuild_edges = false;
@@ -171,7 +233,7 @@ fn parse_indexer(args: &[OsString]) -> Result<IndexerOptions, UsageError> {
                 return Err(UsageError);
             }
             let value = args.get(index + 1).ok_or(UsageError)?;
-            if is_indexer_flag(value.as_os_str()) {
+            if is_maintenance_indexer_flag(value.as_os_str()) {
                 return Err(UsageError);
             }
             journal_override = Some(value.clone());
@@ -183,7 +245,7 @@ fn parse_indexer(args: &[OsString]) -> Result<IndexerOptions, UsageError> {
                 return Err(UsageError);
             }
             let value = args.get(index + 1).ok_or(UsageError)?;
-            if is_indexer_flag(value.as_os_str()) {
+            if is_maintenance_indexer_flag(value.as_os_str()) {
                 return Err(UsageError);
             }
             rescan_file = Some(value.clone());
@@ -207,7 +269,7 @@ fn parse_indexer(args: &[OsString]) -> Result<IndexerOptions, UsageError> {
     })
 }
 
-fn is_indexer_flag(value: &OsStr) -> bool {
+fn is_maintenance_indexer_flag(value: &OsStr) -> bool {
     matches!(
         value.to_str(),
         Some(
@@ -221,6 +283,216 @@ fn is_indexer_flag(value: &OsStr) -> bool {
     )
 }
 
+fn parse_indexer_search(args: &[OsString]) -> Result<IndexerSearchOptions, UsageError> {
+    let parsed = parse_indexer_query(args, true)?;
+    Ok(IndexerSearchOptions {
+        query: parsed.query,
+        limit: parsed.limit,
+        offset: parsed.offset,
+        counts: parsed.counts,
+        order: parsed.order,
+    })
+}
+
+fn parse_indexer_counts(args: &[OsString]) -> Result<IndexerCountsOptions, UsageError> {
+    let parsed = parse_indexer_query(args, false)?;
+    Ok(IndexerCountsOptions {
+        query: parsed.query,
+    })
+}
+
+fn parse_indexer_read(args: &[OsString]) -> Result<IndexerReadOptions, UsageError> {
+    let mut journal_override = None;
+    let mut json = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--json") {
+            if json {
+                return Err(UsageError);
+            }
+            json = true;
+            index += 1;
+            continue;
+        }
+        if arg == OsStr::new("--journal") {
+            if journal_override.is_some() {
+                return Err(UsageError);
+            }
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if is_query_flag(value.as_os_str()) {
+                return Err(UsageError);
+            }
+            journal_override = Some(value.clone());
+            index += 2;
+            continue;
+        }
+        return Err(UsageError);
+    }
+    Ok(IndexerReadOptions {
+        journal_override,
+        json,
+    })
+}
+
+struct ParsedIndexerQuery {
+    query: IndexerQueryOptions,
+    limit: usize,
+    offset: usize,
+    counts: bool,
+    order: String,
+}
+
+fn parse_indexer_query(
+    args: &[OsString],
+    allow_search_options: bool,
+) -> Result<ParsedIndexerQuery, UsageError> {
+    let mut query = None;
+    let mut journal_override = None;
+    let mut json = false;
+    let mut day = None;
+    let mut day_from = None;
+    let mut day_to = None;
+    let mut facet = None;
+    let mut agent = None;
+    let mut stream = None;
+    let mut time_bucket = None;
+    let mut relax = false;
+    let mut limit = 10;
+    let mut offset = 0;
+    let mut counts = false;
+    let mut order = "relevance".to_string();
+    let mut limit_seen = false;
+    let mut offset_seen = false;
+    let mut order_seen = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--json") {
+            if json {
+                return Err(UsageError);
+            }
+            json = true;
+            index += 1;
+            continue;
+        }
+        if arg == OsStr::new("--relax") {
+            if relax {
+                return Err(UsageError);
+            }
+            relax = true;
+            index += 1;
+            continue;
+        }
+        if arg == OsStr::new("--journal") {
+            if journal_override.is_some() {
+                return Err(UsageError);
+            }
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if is_query_flag(value.as_os_str()) {
+                return Err(UsageError);
+            }
+            journal_override = Some(value.clone());
+            index += 2;
+            continue;
+        }
+        let string_slot = match arg.to_str() {
+            Some("--day") => Some(&mut day),
+            Some("--day-from") => Some(&mut day_from),
+            Some("--day-to") => Some(&mut day_to),
+            Some("--facet") => Some(&mut facet),
+            Some("--agent") => Some(&mut agent),
+            Some("--stream") => Some(&mut stream),
+            Some("--time-bucket") => Some(&mut time_bucket),
+            _ => None,
+        };
+        if let Some(slot) = string_slot {
+            if slot.is_some() {
+                return Err(UsageError);
+            }
+            let value = query_value(args, index)?;
+            *slot = Some(value);
+            index += 2;
+            continue;
+        }
+        if allow_search_options && arg == OsStr::new("--limit") {
+            if limit_seen {
+                return Err(UsageError);
+            }
+            limit = parse_usize_option(args, index)?;
+            limit_seen = true;
+            index += 2;
+            continue;
+        }
+        if allow_search_options && arg == OsStr::new("--offset") {
+            if offset_seen {
+                return Err(UsageError);
+            }
+            offset = parse_usize_option(args, index)?;
+            offset_seen = true;
+            index += 2;
+            continue;
+        }
+        if allow_search_options && arg == OsStr::new("--counts") {
+            if counts {
+                return Err(UsageError);
+            }
+            counts = true;
+            index += 1;
+            continue;
+        }
+        if allow_search_options && arg == OsStr::new("--order") {
+            if order_seen {
+                return Err(UsageError);
+            }
+            order = query_value(args, index)?;
+            order_seen = true;
+            index += 2;
+            continue;
+        }
+        if arg.to_str().is_some_and(|value| value.starts_with('-')) || query.is_some() {
+            return Err(UsageError);
+        }
+        query = Some(arg.to_str().ok_or(UsageError)?.to_string());
+        index += 1;
+    }
+    Ok(ParsedIndexerQuery {
+        query: IndexerQueryOptions {
+            journal_override,
+            json,
+            query,
+            day,
+            day_from,
+            day_to,
+            facet,
+            agent,
+            stream,
+            time_bucket,
+            relax,
+        },
+        limit,
+        offset,
+        counts,
+        order,
+    })
+}
+
+fn query_value(args: &[OsString], index: usize) -> Result<String, UsageError> {
+    let value = args.get(index + 1).ok_or(UsageError)?;
+    if is_query_flag(value.as_os_str()) {
+        return Err(UsageError);
+    }
+    value.to_str().map(str::to_string).ok_or(UsageError)
+}
+
+fn parse_usize_option(args: &[OsString], index: usize) -> Result<usize, UsageError> {
+    query_value(args, index)?.parse().map_err(|_| UsageError)
+}
+
+fn is_query_flag(value: &OsStr) -> bool {
+    value.to_str().is_some_and(|value| value.starts_with('-'))
+}
+
 pub fn version_line(version: &str) -> String {
     format!("solstone-core {version}\n")
 }
@@ -231,6 +503,10 @@ mod tests {
 
     fn args(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
+    }
+
+    fn indexer(command: IndexerCommand) -> Command {
+        Command::Indexer(Box::new(command))
     }
 
     #[test]
@@ -271,15 +547,109 @@ mod tests {
     fn accepts_indexer_without_operation_flags() {
         assert_eq!(
             evaluate_args(&args(&["indexer"])),
-            Ok(Command::Indexer(IndexerOptions {
+            Ok(indexer(IndexerCommand::Maintenance(IndexerOptions {
                 journal_override: None,
                 reset: false,
                 rebuild_edges: false,
                 rescan: false,
                 rescan_full: false,
                 rescan_file: None,
-            }))
+            })))
         );
+    }
+
+    #[test]
+    fn accepts_indexer_search_with_filters_and_options() {
+        assert_eq!(
+            evaluate_args(&args(&[
+                "indexer",
+                "search",
+                "needle",
+                "--journal",
+                "/tmp/journal",
+                "--json",
+                "--limit",
+                "12",
+                "--offset",
+                "3",
+                "--day-from",
+                "20260101",
+                "--agent",
+                "flow",
+                "--relax",
+                "--counts",
+                "--order",
+                "recency",
+            ])),
+            Ok(indexer(IndexerCommand::Search(IndexerSearchOptions {
+                query: IndexerQueryOptions {
+                    journal_override: Some(OsString::from("/tmp/journal")),
+                    json: true,
+                    query: Some("needle".to_string()),
+                    day: None,
+                    day_from: Some("20260101".to_string()),
+                    day_to: None,
+                    facet: None,
+                    agent: Some("flow".to_string()),
+                    stream: None,
+                    time_bucket: None,
+                    relax: true,
+                },
+                limit: 12,
+                offset: 3,
+                counts: true,
+                order: "recency".to_string(),
+            })))
+        );
+    }
+
+    #[test]
+    fn accepts_indexer_counts_and_read_verbs() {
+        assert_eq!(
+            evaluate_args(&args(&["indexer", "counts", "--facet", "work"])),
+            Ok(indexer(IndexerCommand::Counts(IndexerCountsOptions {
+                query: IndexerQueryOptions {
+                    journal_override: None,
+                    json: false,
+                    query: None,
+                    day: None,
+                    day_from: None,
+                    day_to: None,
+                    facet: Some("work".to_string()),
+                    agent: None,
+                    stream: None,
+                    time_bucket: None,
+                    relax: false,
+                },
+            })))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["indexer", "agents", "--json"])),
+            Ok(indexer(IndexerCommand::Agents(IndexerReadOptions {
+                journal_override: None,
+                json: true,
+            })))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["indexer", "coverage"])),
+            Ok(indexer(IndexerCommand::Coverage(IndexerReadOptions {
+                journal_override: None,
+                json: false,
+            })))
+        );
+    }
+
+    #[test]
+    fn rejects_indexer_verb_unknown_duplicate_and_disallowed_options() {
+        for values in [
+            &["indexer", "search", "--limit", "10", "--limit", "10"][..],
+            &["indexer", "search", "needle", "second"][..],
+            &["indexer", "counts", "--limit", "10"][..],
+            &["indexer", "agents", "needle"][..],
+            &["indexer", "coverage", "--day", "20260101"][..],
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+        }
     }
 
     #[test]
@@ -393,14 +763,14 @@ mod tests {
                 "--reset",
                 "--rescan-full",
             ])),
-            Ok(Command::Indexer(IndexerOptions {
+            Ok(indexer(IndexerCommand::Maintenance(IndexerOptions {
                 journal_override: Some(OsString::from("/tmp/journal")),
                 reset: true,
                 rebuild_edges: false,
                 rescan: false,
                 rescan_full: true,
                 rescan_file: None,
-            }))
+            })))
         );
     }
 
@@ -412,14 +782,14 @@ mod tests {
                 "--rescan-file",
                 "20240101/talents/flow.md",
             ])),
-            Ok(Command::Indexer(IndexerOptions {
+            Ok(indexer(IndexerCommand::Maintenance(IndexerOptions {
                 journal_override: None,
                 reset: false,
                 rebuild_edges: false,
                 rescan: false,
                 rescan_full: false,
                 rescan_file: Some(OsString::from("20240101/talents/flow.md")),
-            }))
+            })))
         );
     }
 
@@ -427,14 +797,14 @@ mod tests {
     fn accepts_indexer_rebuild_edges_composed_with_rescan() {
         assert_eq!(
             evaluate_args(&args(&["indexer", "--rebuild-edges", "--rescan"])),
-            Ok(Command::Indexer(IndexerOptions {
+            Ok(indexer(IndexerCommand::Maintenance(IndexerOptions {
                 journal_override: None,
                 reset: false,
                 rebuild_edges: true,
                 rescan: true,
                 rescan_full: false,
                 rescan_file: None,
-            }))
+            })))
         );
     }
 
@@ -556,7 +926,7 @@ mod tests {
     fn usage_lists_supported_commands() {
         assert_eq!(
             USAGE,
-            "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
+            "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
         );
     }
 }

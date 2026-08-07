@@ -10,14 +10,18 @@ publish = false
 workspace = true
 
 [dependencies]
+chrono.workspace = true
+serde.workspace = true
 solstone-core-cli.workspace = true
+solstone-core-indexer-query.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-journal.workspace = true
 solstone-core-sol.workspace = true
 solstone-core-spl.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 futures-util = { version = "0.3.33", default-features = false, features = ["std"] }
-serde_json.workspace = true
+rusqlite.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "time", "sync"] }
 tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["handshake"] }

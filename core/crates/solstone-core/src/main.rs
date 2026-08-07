@@ -4,9 +4,14 @@
 use std::process::ExitCode;
 use std::{env, ffi::OsStr, path::PathBuf};
 
+use chrono::Local;
 use solstone_core_cli::{
-    Command, IndexerOptions, JournalPathOptions, ServiceOptions, SplCommand, USAGE, evaluate_args,
-    version_line,
+    Command, IndexerCommand, IndexerCountsOptions, IndexerOptions, IndexerQueryOptions,
+    IndexerReadOptions, IndexerSearchOptions, JournalPathOptions, ServiceOptions, SplCommand,
+    USAGE, evaluate_args, version_line,
+};
+use solstone_core_indexer_query::{
+    IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
 };
 use solstone_core_indexer_store::db::reset_index;
 use solstone_core_indexer_store::scan::{
@@ -56,7 +61,7 @@ fn main() -> ExitCode {
                 ExitCode::from(EXIT_TEMPFAIL)
             }
         },
-        Ok(Command::Indexer(options)) => run_indexer(options),
+        Ok(Command::Indexer(command)) => run_indexer(*command),
         Ok(Command::Spl(command)) => run_spl_process(command),
         Err(_) => {
             eprint!("{USAGE}");
@@ -114,7 +119,17 @@ fn run_journal_path(options: JournalPathOptions) -> Result<JournalPathLine, Jour
     Ok(line)
 }
 
-fn run_indexer(options: IndexerOptions) -> ExitCode {
+fn run_indexer(command: IndexerCommand) -> ExitCode {
+    match command {
+        IndexerCommand::Maintenance(options) => run_indexer_maintenance(options),
+        IndexerCommand::Search(options) => run_indexer_search(options),
+        IndexerCommand::Counts(options) => run_indexer_counts(options),
+        IndexerCommand::Agents(options) => run_indexer_agents(options),
+        IndexerCommand::Coverage(options) => run_indexer_coverage(options),
+    }
+}
+
+fn run_indexer_maintenance(options: IndexerOptions) -> ExitCode {
     if !options.reset
         && !options.rebuild_edges
         && !options.rescan
@@ -125,18 +140,11 @@ fn run_indexer(options: IndexerOptions) -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let line = if let Some(path) = options.journal_override {
-        JournalPathLine {
-            label: "cli",
-            path: PathBuf::from(path),
-        }
-    } else {
-        match resolve_process_journal_path() {
-            Ok(line) => line,
-            Err(error) => {
-                eprint_journal_path_error(error);
-                return ExitCode::from(EXIT_TEMPFAIL);
-            }
+    let line = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
 
@@ -206,6 +214,176 @@ fn run_indexer(options: IndexerOptions) -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+fn run_indexer_search(options: IndexerSearchOptions) -> ExitCode {
+    let json = options.query.json;
+    let request = match search_request(
+        &options.query,
+        options.limit,
+        options.offset,
+        options.counts,
+        &options.order,
+    ) {
+        Ok(request) => request,
+        Err(()) => return print_usage_error(),
+    };
+    let journal = match resolve_indexer_journal_path(options.query.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    match search(&journal, &request, Local::now().date_naive()) {
+        Ok(response) => {
+            if json {
+                print_json(&response);
+            } else {
+                println!("{} result(s)", response.results.len());
+                for hit in response.results {
+                    println!("{}\t{}", hit.id, hit.text);
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => print_index_access_error(error, json),
+    }
+}
+
+fn run_indexer_counts(options: IndexerCountsOptions) -> ExitCode {
+    let json = options.query.json;
+    let request = match search_request(&options.query, 10, 0, false, "relevance") {
+        Ok(request) => request,
+        Err(()) => return print_usage_error(),
+    };
+    let journal = match resolve_indexer_journal_path(options.query.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    match search_counts(&journal, &request, Local::now().date_naive()) {
+        Ok(response) => {
+            if json {
+                print_json(&response);
+            } else {
+                println!("{} matching chunk(s)", response.total);
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => print_index_access_error(error, json),
+    }
+}
+
+fn run_indexer_agents(options: IndexerReadOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    match agents(&journal) {
+        Ok(response) => {
+            if options.json {
+                print_json(&response);
+            } else {
+                for agent in response {
+                    println!("{agent}");
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => print_index_access_error(error, options.json),
+    }
+}
+
+fn run_indexer_coverage(options: IndexerReadOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    match coverage(&journal) {
+        Ok(response) => {
+            if options.json {
+                print_json(&response);
+            } else if let (Some(start), Some(end)) = (response.start, response.end) {
+                println!("available: {start} through {end}");
+            } else {
+                println!("no dated chunks");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => print_index_access_error(error, options.json),
+    }
+}
+
+fn search_request(
+    options: &IndexerQueryOptions,
+    limit: usize,
+    offset: usize,
+    counts: bool,
+    order: &str,
+) -> Result<SearchRequest, ()> {
+    let order = match order {
+        "relevance" => Order::Relevance,
+        "recency" => Order::Recency,
+        "reranked" => Order::Reranked,
+        _ => return Err(()),
+    };
+    let mut request =
+        SearchRequest::new(options.query.clone().unwrap_or_default(), order).map_err(|_| ())?;
+    request.limit = limit;
+    request.offset = offset;
+    request.day = options.day.clone();
+    request.day_from = options.day_from.clone();
+    request.day_to = options.day_to.clone();
+    request.facet = options.facet.clone();
+    request.agent = options.agent.clone();
+    request.stream = options.stream.clone();
+    request.time_bucket = options.time_bucket.clone();
+    request.relax = options.relax;
+    request.counts = counts;
+    Ok(request)
+}
+
+fn resolve_indexer_journal_path(
+    journal_override: Option<std::ffi::OsString>,
+) -> Result<JournalPathLine, JournalPathError> {
+    if let Some(path) = journal_override {
+        Ok(JournalPathLine {
+            label: "cli",
+            path: PathBuf::from(path),
+        })
+    } else {
+        resolve_process_journal_path()
+    }
+}
+
+fn print_json<T: serde::Serialize>(value: &T) {
+    println!(
+        "{}",
+        serde_json::to_string(value).expect("query responses serialize to JSON")
+    );
+}
+
+fn print_index_access_error(error: IndexAccessError, json: bool) -> ExitCode {
+    if json {
+        print_json(&serde_json::json!({
+            "error": {"reason": error.reason(), "message": error.to_string()}
+        }));
+    } else {
+        eprintln!("Error: {error}");
+    }
+    let exit = if error.reason() == "index_locked" {
+        EXIT_TEMPFAIL
+    } else {
+        EXIT_UNAVAILABLE
+    };
+    ExitCode::from(exit)
+}
+
+fn print_usage_error() -> ExitCode {
+    eprint!("{USAGE}");
+    ExitCode::from(EXIT_USAGE)
+}
+
+fn print_journal_error(error: JournalPathError) -> ExitCode {
+    eprint_journal_path_error(error);
+    ExitCode::from(EXIT_TEMPFAIL)
 }
 
 fn resolve_process_journal_path() -> Result<JournalPathLine, JournalPathError> {
