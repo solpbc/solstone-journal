@@ -9,18 +9,31 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+# Cross-language differentials — tests that drive a real Python process as an
+# oracle. They need a populated `.venv` (`make install`), so they are off by
+# default; that is what lets the frozen native `make ci` run on a bare
+# checkout. They run from `make check-differentials`.
+differential = []
+
 [dependencies]
+nix = { workspace = true, features = ["time"] }
 serde.workspace = true
 serde_json.workspace = true
 ureq.workspace = true
 chrono.workspace = true
 hmac.workspace = true
-nix.workspace = true
 sha2.workspace = true
 tar.workspace = true
 flate2.workspace = true
 thiserror.workspace = true
 solstone-core-brain.workspace = true
+uuid = { version = "1", features = ["v4"] }
+
+[[test]]
+name = "admission_cross_process"
+path = "tests/admission_cross_process.rs"
+required-features = ["differential"]
 
 [lints]
 workspace = true

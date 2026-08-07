@@ -12,13 +12,18 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import copy
+import json
 import logging
 import re
+import subprocess
+import sys
 import time
 import traceback
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Literal
 
 from solstone.think.models import LOCAL_MODEL
@@ -43,6 +48,7 @@ from solstone.think.providers.shared import (
     safe_raw,
 )
 from solstone.think.schema_prep import SCHEMA_TRUNCATE_KEY
+from solstone.think.utils import get_journal
 
 LOG = logging.getLogger(__name__)
 
@@ -128,7 +134,7 @@ LOCAL_MODEL_SPECS: dict[str, LocalModelSpec] = {
 class LocalProviderError(RuntimeError):
     """Local provider failure with a recovery reason code."""
 
-    def __init__(self, reason_code: str, message: str) -> None:
+    def __init__(self, reason_code: str | None, message: str) -> None:
         super().__init__(message)
         self.reason_code = reason_code
 
@@ -208,6 +214,138 @@ def _normalize_request_text(value: Any) -> Any:
             return value
         return normalized_items
     return value
+
+
+_LOCAL_CONTRACT_PATH = Path(__file__).parents[3] / "core/fixtures/local_contract.json"
+
+
+@lru_cache(maxsize=1)
+def _local_generate_contract() -> dict[str, Any]:
+    with _LOCAL_CONTRACT_PATH.open(encoding="utf-8") as handle:
+        return json.load(handle)["local_generate"]
+
+
+def _native_generate_contents(value: Any) -> Any:
+    """Copy a request tree into the local-core JSON image representation."""
+    if is_image_part(value):
+        mime_type, data = encode_image_part(value)
+        return {"type": "image", "mime_type": mime_type, "data": data}
+    if isinstance(value, list | tuple):
+        converted = [_native_generate_contents(item) for item in value]
+        return tuple(converted) if isinstance(value, tuple) else converted
+    if isinstance(value, dict):
+        return {key: _native_generate_contents(item) for key, item in value.items()}
+    return value
+
+
+def _native_generate_payload(
+    *,
+    contents: Any,
+    system_instruction: str | None,
+    temperature: float,
+    max_output_tokens: int,
+    json_output: bool,
+    json_schema: dict | None,
+    timeout_s: float | None,
+    local_exclusive_admission: bool,
+    retry_index: int,
+) -> dict[str, Any]:
+    contract = _local_generate_contract()
+    return {
+        "schema": contract["schema_identifiers"]["input"],
+        "journal_path": str(get_journal()),
+        "bind_address": "127.0.0.1",
+        "default_model_id": LOCAL_MODEL,
+        "platform": "darwin" if sys.platform == "darwin" else "linux",
+        "contents": _native_generate_contents(_normalize_request_text(contents)),
+        "system_instruction": _normalize_request_text(system_instruction),
+        "temperature": temperature,
+        "max_output_tokens": max_output_tokens,
+        "json_output": json_output,
+        "json_schema": json_schema,
+        "timeout_s": timeout_s,
+        "exclusive_admission": local_exclusive_admission,
+        "attempt_index": retry_index,
+    }
+
+
+def _run_native_generate(payload: dict[str, Any]) -> dict[str, Any]:
+    from solstone.think import core_handshake
+
+    handshake = core_handshake.check_solstone_core_handshake()
+    if handshake.status != "ok":
+        raise RuntimeError(
+            "local generate requires a usable solstone-core helper: "
+            f"{handshake.message or 'unknown handshake failure'}"
+        )
+    try:
+        completed = subprocess.run(
+            [str(core_handshake.helper_path_for_executable()), "local", "generate"],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"solstone-core local generate failed to launch: {exc}") from exc
+    if completed.returncode != 0:
+        raise RuntimeError(f"solstone-core local generate failed: {completed.stderr}")
+    return json.loads(completed.stdout)
+
+
+def _native_telemetry(inference: dict[str, Any], request_id: str) -> dict[str, Any]:
+    public_reason = _local_generate_contract()["reason_codes"].get(
+        inference.get("reason_code")
+    )
+    telemetry = {
+        "timestamp": time.time(), "request_id": request_id, "kind": "generate",
+        "provider": "local", "model": LOCAL_MODEL,
+        "profile": inference["profile"], "serving_capacity": inference["serving_capacity"],
+        "capacity_source": inference["capacity_source"], "admission_slot": inference["admission_slot"],
+        "queue_wait_ms": round(inference["queue_wait_ms"], 3),
+        "client_total_ms": round(inference["client_total_ms"], 3),
+        "retry_index": inference["retry_index"], "outcome": inference["outcome"],
+        "finish_reason": inference["finish_reason"], "reason_code": public_reason,
+        "timed_out": inference["timed_out"], "cancelled": inference["cancelled"],
+    }
+    if isinstance(inference.get("server"), dict):
+        telemetry.update(inference["server"])
+    return telemetry
+
+
+def _raise_native_generate_failure(result: dict[str, Any]) -> None:
+    local_code = result.get("reason_code")
+    detail = str(result.get("detail", "Local generation failed."))
+    if local_code in {"context_image_overflow", "context_preserved_overflow", "context_fitted_overflow", "context_server_overflow"}:
+        raise ContextBudgetExceeded(detail)
+    if local_code == "capacity_exhausted":
+        raise LocalCapacityExhausted()
+    if local_code == "admission_timeout":
+        from solstone.think.providers.local_admission import LocalAdmissionTimeout
+        raise LocalAdmissionTimeout(detail)
+    public_code = _local_generate_contract()["reason_codes"].get(local_code)
+    raise LocalProviderError(public_code, detail)
+
+
+def _native_generate_result(result: dict[str, Any], request_id: str) -> GenerateResult:
+    inference = result.get("inference")
+    if isinstance(inference, dict):
+        from solstone.think.providers.local_admission import record_local_inference
+        telemetry = _native_telemetry(inference, request_id)
+        record_local_inference(telemetry)
+    else:
+        telemetry = None
+    if result.get("outcome") == "failure":
+        _raise_native_generate_failure(result)
+    output: GenerateResult = {
+        "text": str(result["text"]), "model": str(result["model"]),
+        "usage": result.get("usage"), "finish_reason": result["finish_reason"], "thinking": None,
+        "inference": telemetry,
+        "request_budget": result["request_budget"],
+    }
+    if result.get("input_budget") is not None:
+        output["input_budget"] = result["input_budget"]
+    return output
 
 
 def _image_content_part(part: Any) -> dict[str, Any]:
@@ -598,90 +736,6 @@ def _endpoint_overflow_decision(
     return _EndpointOverflowDecision("contract")
 
 
-def _prepare_bundled_request(
-    *,
-    server: Any,
-    contents: str | list[Any],
-    system_instruction: str | None,
-    temperature: float,
-    max_output_tokens: int,
-    json_output: bool,
-    json_schema: dict | None,
-) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, int]]:
-    # Normalize here because this prep entry sits above every bundled fit, count,
-    # and serialize path.
-    contents = _normalize_request_text(contents)
-    system_instruction = _normalize_request_text(system_instruction)
-
-    from solstone.think.providers import local_budget
-
-    def counter(text: str) -> int:
-        return local_budget.count_tokens(text, server.base_url)
-
-    resolution = local_budget.resolve_context_window()
-    window = resolution.window_tokens
-    image_tokens = local_budget._ESTIMATED_IMAGE_TOKENS * _count_image_parts(contents)
-    effective_window = window - image_tokens
-    if effective_window < local_budget._SAFETY_MARGIN_TOKENS + _MIN_COMPLETION_TOKENS:
-        raise ContextBudgetExceeded(
-            "Local request image content exceeds the local model context window."
-        )
-
-    fitted_contents, input_budget = local_budget.fit_contents(
-        contents,
-        system_instruction,
-        max_output_tokens,
-        count=counter,
-        window=effective_window,
-    )
-    messages = _build_messages(fitted_contents, system_instruction)
-    estimated_prompt_tokens = counter(_serialized_message_text(messages))
-    room = (
-        window
-        - estimated_prompt_tokens
-        - image_tokens
-        - local_budget._SAFETY_MARGIN_TOKENS
-    )
-    if room < _MIN_COMPLETION_TOKENS:
-        raise ContextBudgetExceeded(
-            "Local request prompt and image content exceed the local model "
-            "context window."
-        )
-    clamped_max_tokens = min(max_output_tokens, room)
-    request_budget = {
-        "window": window,
-        "slots": resolution.slots,
-        "estimated_prompt_tokens": estimated_prompt_tokens,
-        "image_tokens": image_tokens,
-        "clamped_max_tokens": clamped_max_tokens,
-        "requested_max_output_tokens": max_output_tokens,
-    }
-    if clamped_max_tokens < max_output_tokens:
-        LOG.info(
-            "local bundled max_tokens clamped requested=%d clamped=%d "
-            "window=%d slots=%d estimated_prompt_tokens=%d image_tokens=%d",
-            max_output_tokens,
-            clamped_max_tokens,
-            window,
-            resolution.slots,
-            estimated_prompt_tokens,
-            image_tokens,
-        )
-    return (
-        _build_request_body(
-            server.served_model_id,
-            messages,
-            temperature,
-            clamped_max_tokens,
-            json_output,
-            json_schema,
-            True,
-        ),
-        input_budget,
-        request_budget,
-    )
-
-
 def _prepare_endpoint_request(
     *,
     endpoint: Any,
@@ -794,37 +848,6 @@ def _prepare_endpoint_request_with_resolution(
     )
 
 
-def _raise_bundled_status(response: Any) -> None:
-    import httpx
-
-    try:
-        response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        if _contains_any(response.text.lower(), _CONTEXT_WINDOW_PATTERNS):
-            if _bundled_error_type(response) == "exceed_context_size_error":
-                raise ContextBudgetExceeded(
-                    "Local request exceeded the model context window after fitting."
-                ) from exc
-            raise LocalCapacityExhausted() from exc
-        raise
-
-
-def _bundled_error_type(response: Any) -> str | None:
-    try:
-        data = response.json()
-    except Exception:
-        return None
-    if not isinstance(data, dict):
-        return None
-    error = data.get("error")
-    if not isinstance(error, dict):
-        return None
-    error_type = error.get("type")
-    if isinstance(error_type, str):
-        return error_type
-    return None
-
-
 def run_generate(
     contents: str | list[Any],
     model: str,
@@ -847,101 +870,13 @@ def run_generate(
     # Validate the requested logical id; served id comes from the server.
     normalize_model_id(model)
     if endpoint.is_bundled:
-        from solstone.think.providers import local_server
-        from solstone.think.providers.local_admission import (
-            LocalAdmissionTimeout,
-            acquire_local_slot,
-            record_local_inference,
+        payload = _native_generate_payload(
+            contents=contents, system_instruction=system_instruction,
+            temperature=temperature, max_output_tokens=max_output_tokens,
+            json_output=json_output, json_schema=json_schema, timeout_s=timeout_s,
+            local_exclusive_admission=local_exclusive_admission, retry_index=retry_index,
         )
-
-        started = time.monotonic()
-        request_id = uuid.uuid4().hex
-        timeout = timeout_s or _DEFAULT_TIMEOUT
-        server = local_server.connect()
-        capacity = local_server.read_server_capacity()
-        body, input_budget, request_budget = _prepare_bundled_request(
-            server=server,
-            contents=contents,
-            system_instruction=system_instruction,
-            temperature=temperature,
-            max_output_tokens=max_output_tokens,
-            json_output=json_output,
-            json_schema=json_schema,
-        )
-
-        import httpx
-
-        permit = None
-        try:
-            permit = acquire_local_slot(
-                capacity.parallel_slots,
-                _remaining_timeout(started, timeout),
-                exclusive=local_exclusive_admission,
-            )
-            with permit:
-                response = httpx.post(
-                    f"{server.base_url}/v1/chat/completions",
-                    json=body,
-                    timeout=_remaining_timeout(started, timeout),
-                )
-                _raise_bundled_status(response)
-                response_data = response.json()
-            result = _parse_response(response_data)
-            telemetry = _telemetry_record(
-                request_id=request_id,
-                kind="generate",
-                model=LOCAL_MODEL,
-                profile=capacity.profile,
-                capacity=capacity.parallel_slots,
-                capacity_source=capacity.source,
-                started=started,
-                queue_wait_ms=permit.queue_wait_ms,
-                admission_slot=permit.slot_index,
-                retry_index=retry_index,
-                outcome="success",
-                finish_reason=result.get("finish_reason"),
-                response_data=response_data,
-            )
-            record_local_inference(telemetry)
-            result["inference"] = telemetry
-            if input_budget is not None:
-                result["input_budget"] = input_budget
-            result["request_budget"] = request_budget
-            return result
-        except BaseException as exc:
-            if isinstance(exc, KeyboardInterrupt | SystemExit):
-                raise
-            if permit is not None:
-                permit.release()
-            outcome = (
-                "timeout"
-                if isinstance(exc, (LocalAdmissionTimeout, httpx.TimeoutException))
-                else "cancelled"
-                if isinstance(exc, asyncio.CancelledError)
-                else "error"
-            )
-            record_local_inference(
-                _telemetry_record(
-                    request_id=request_id,
-                    kind="generate",
-                    model=LOCAL_MODEL,
-                    profile=capacity.profile,
-                    capacity=capacity.parallel_slots,
-                    capacity_source=capacity.source,
-                    started=started,
-                    queue_wait_ms=(
-                        permit.queue_wait_ms
-                        if permit is not None
-                        else (time.monotonic() - started) * 1000.0
-                    ),
-                    admission_slot=permit.slot_index if permit is not None else None,
-                    retry_index=retry_index,
-                    outcome=outcome,
-                    reason_code=getattr(exc, "reason_code", None)
-                    or classify_provider_error(exc, "local"),
-                )
-            )
-            raise
+        return _native_generate_result(_run_native_generate(payload), uuid.uuid4().hex)
 
     body, input_budget, request_budget = _prepare_endpoint_request_with_resolution(
         endpoint=endpoint,
@@ -1164,100 +1099,14 @@ async def run_agenerate(
         except Exception as exc:
             raise _classify_byo_generate_error(exc, endpoint) from exc
 
-    from solstone.think.providers import local_server
-    from solstone.think.providers.local_admission import (
-        LocalAdmissionTimeout,
-        acquire_local_slot_async,
-        record_local_inference,
+    payload = _native_generate_payload(
+        contents=contents, system_instruction=system_instruction,
+        temperature=temperature, max_output_tokens=max_output_tokens,
+        json_output=json_output, json_schema=json_schema, timeout_s=timeout_s,
+        local_exclusive_admission=local_exclusive_admission, retry_index=retry_index,
     )
-
-    started = time.monotonic()
-    request_id = uuid.uuid4().hex
-    timeout = timeout_s or _DEFAULT_TIMEOUT
-    server = local_server.connect()
-    capacity = local_server.read_server_capacity()
-    body, input_budget, request_budget = await asyncio.to_thread(
-        _prepare_bundled_request,
-        server=server,
-        contents=contents,
-        system_instruction=system_instruction,
-        temperature=temperature,
-        max_output_tokens=max_output_tokens,
-        json_output=json_output,
-        json_schema=json_schema,
-    )
-    permit = None
-    try:
-        permit = await acquire_local_slot_async(
-            capacity.parallel_slots,
-            _remaining_timeout(started, timeout),
-            exclusive=local_exclusive_admission,
-        )
-        async with permit:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{server.base_url}/v1/chat/completions",
-                    json=body,
-                    timeout=_remaining_timeout(started, timeout),
-                )
-            _raise_bundled_status(response)
-            response_data = response.json()
-        result = _parse_response(response_data)
-        telemetry = _telemetry_record(
-            request_id=request_id,
-            kind="generate",
-            model=LOCAL_MODEL,
-            profile=capacity.profile,
-            capacity=capacity.parallel_slots,
-            capacity_source=capacity.source,
-            started=started,
-            queue_wait_ms=permit.queue_wait_ms,
-            admission_slot=permit.slot_index,
-            retry_index=retry_index,
-            outcome="success",
-            finish_reason=result.get("finish_reason"),
-            response_data=response_data,
-        )
-        record_local_inference(telemetry)
-        result["inference"] = telemetry
-        if input_budget is not None:
-            result["input_budget"] = input_budget
-        result["request_budget"] = request_budget
-        return result
-    except BaseException as exc:
-        if isinstance(exc, KeyboardInterrupt | SystemExit):
-            raise
-        if permit is not None:
-            permit.release()
-        outcome = (
-            "cancelled"
-            if isinstance(exc, asyncio.CancelledError)
-            else "timeout"
-            if isinstance(exc, (LocalAdmissionTimeout, httpx.TimeoutException))
-            else "error"
-        )
-        record_local_inference(
-            _telemetry_record(
-                request_id=request_id,
-                kind="generate",
-                model=LOCAL_MODEL,
-                profile=capacity.profile,
-                capacity=capacity.parallel_slots,
-                capacity_source=capacity.source,
-                started=started,
-                queue_wait_ms=(
-                    permit.queue_wait_ms
-                    if permit is not None
-                    else (time.monotonic() - started) * 1000.0
-                ),
-                admission_slot=permit.slot_index if permit is not None else None,
-                retry_index=retry_index,
-                outcome=outcome,
-                reason_code=getattr(exc, "reason_code", None)
-                or classify_provider_error(exc, "local"),
-            )
-        )
-        raise
+    result = await asyncio.to_thread(_run_native_generate, payload)
+    return _native_generate_result(result, uuid.uuid4().hex)
 
 
 async def run_cogitate(

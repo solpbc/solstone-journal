@@ -58,6 +58,7 @@ const PREREQUISITE_RENEWAL_TERMINAL_SCHEMA: &str =
     "solstone.brain.prerequisite_renewal.terminal.v1";
 const PREREQUISITE_RENEWAL_RESULT_SCHEMA: &str = "solstone.brain.prerequisite_renewal.result.v1";
 const PREREQUISITE_RENEWAL_READY_SCHEMA: &str = "solstone.brain.prerequisite_renewal.ready.v1";
+const MAX_LOCAL_GENERATE_STDIN_BYTES: usize = 64 * 1024 * 1024;
 const ZERO_EDGE_HINT: &str = "Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run journal indexer --rebuild-edges to force full edge re-extraction.";
 const SOL_IDENTITY_TOKEN: &str = "__solstone_identity=sol";
 const SOLSTONE_IDENTITY_TOKEN: &str = "__solstone_identity=solstone";
@@ -167,11 +168,12 @@ fn run_local(command: LocalCommand) -> ExitCode {
         LocalCommand::Plan => run_local_json(solstone_core_local::plan),
         LocalCommand::Connect => run_local_json(solstone_core_local::connect),
         LocalCommand::Install(command) => run_local_install(command),
+        LocalCommand::Generate => run_local_generate_json(solstone_core_local::generate),
     }
 }
 
 fn run_local_install(command: InstallCommand) -> ExitCode {
-    let input = match read_local_stdin() {
+    let input = match read_local_stdin(MAX_LOCAL_STDIN_BYTES) {
         Ok(input) => input,
         Err(LocalStdinError::Content) => return ExitCode::from(EXIT_USAGE),
         Err(LocalStdinError::Io) => return ExitCode::from(EXIT_IOERR),
@@ -214,10 +216,30 @@ where
     T: DeserializeOwned,
     O: serde::Serialize,
 {
-    let input = match read_local_stdin() {
+    run_local_json_with_limit(operation, MAX_LOCAL_STDIN_BYTES, "1 MiB")
+}
+
+fn run_local_generate_json<T, O>(operation: impl FnOnce(T) -> O) -> ExitCode
+where
+    T: DeserializeOwned,
+    O: serde::Serialize,
+{
+    run_local_json_with_limit(operation, MAX_LOCAL_GENERATE_STDIN_BYTES, "64 MiB")
+}
+
+fn run_local_json_with_limit<T, O>(
+    operation: impl FnOnce(T) -> O,
+    max_bytes: usize,
+    limit_label: &str,
+) -> ExitCode
+where
+    T: DeserializeOwned,
+    O: serde::Serialize,
+{
+    let input = match read_local_stdin(max_bytes) {
         Ok(input) => input,
         Err(LocalStdinError::Content) => {
-            eprintln!("local command failed: stdin was not valid JSON within 1 MiB");
+            eprintln!("local command failed: stdin was not valid JSON within {limit_label}");
             return ExitCode::from(EXIT_USAGE);
         }
         Err(LocalStdinError::Io) => {
@@ -237,7 +259,7 @@ enum LocalStdinError {
     Io,
 }
 
-fn read_local_stdin<T: DeserializeOwned>() -> Result<T, LocalStdinError> {
+fn read_local_stdin<T: DeserializeOwned>(max_bytes: usize) -> Result<T, LocalStdinError> {
     let mut stdin = io::stdin().lock();
     let mut bytes = Vec::new();
     let mut chunk = [0_u8; 8192];
@@ -249,7 +271,7 @@ fn read_local_stdin<T: DeserializeOwned>() -> Result<T, LocalStdinError> {
         if bytes
             .len()
             .checked_add(read)
-            .is_none_or(|next| next > MAX_LOCAL_STDIN_BYTES)
+            .is_none_or(|next| next > max_bytes)
         {
             return Err(LocalStdinError::Content);
         }

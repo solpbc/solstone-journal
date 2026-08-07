@@ -5,16 +5,12 @@
 
 from __future__ import annotations
 
-import logging
 import math
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
 from solstone.think.providers.local import ContextBudgetExceeded
-
-LOG = logging.getLogger(__name__)
 
 _SAFETY_MARGIN_TOKENS = 256
 # Conservative per-image upper estimate; images inform endpoint completion
@@ -22,79 +18,15 @@ _SAFETY_MARGIN_TOKENS = 256
 _ESTIMATED_IMAGE_TOKENS = 2500
 _OUTPUT_RESERVE_DIVISOR = 4
 _CHARS_PER_TOKEN = 3
-_TOKENIZE_TIMEOUT_S = 5.0
 _ENTRY_HEADER_RE = re.compile(r"^#{2,3}\s")
 TRUNCATION_MARKER = "[earlier input truncated to fit the on-device model's context]"
-
-
-@dataclass(frozen=True)
-class ContextWindowResolution:
-    window_tokens: int
-    slots: int
-
-
-def resolve_context_window() -> ContextWindowResolution:
-    from solstone.think.providers import local_server
-    from solstone.think.utils import read_service_port
-
-    port = read_service_port("local")
-    if port is not None:
-        props = local_server.read_server_context_props(port)
-        if props is not None:
-            # The divide applies to the /props pool value only, never the
-            # sidecar: local.ctx already stores the per-slot window
-            # (supervisor.py:4084).
-            slots = (
-                props.total_slots
-                if props.total_slots is not None
-                else local_server._CAPABLE_TIER.parallel_slots
-            )
-            return ContextWindowResolution(props.n_ctx // slots, slots)
-    sidecar = local_server.read_local_context_window()
-    if sidecar is not None and sidecar > 0:
-        slots = (
-            local_server._slots_from_launched_tier(sidecar)
-            or local_server._UNKNOWN_SLOTS
-        )
-        return ContextWindowResolution(sidecar, slots)
-    return ContextWindowResolution(
-        local_server.LOCAL_MIN_CONTEXT_TOKENS,
-        local_server._UNKNOWN_SLOTS,
-    )
-
-
-def context_window_tokens() -> int:
-    return resolve_context_window().window_tokens
 
 
 def estimate_tokens(text: str) -> int:
     return math.ceil(len(text) / _CHARS_PER_TOKEN)
 
 
-def count_tokens(text: str, base_url: str | None = None) -> int:
-    if base_url is None:
-        return estimate_tokens(text)
-
-    try:
-        import httpx
-
-        response = httpx.post(
-            f"{base_url}/tokenize",
-            json={"content": text},
-            timeout=_TOKENIZE_TIMEOUT_S,
-        )
-        response.raise_for_status()
-        tokens = response.json().get("tokens")
-        if not isinstance(tokens, list):
-            raise ValueError("llama-server /tokenize returned no tokens list")
-        return len(tokens)
-    except Exception:
-        LOG.debug("Falling back to estimated local token count", exc_info=True)
-        return estimate_tokens(text)
-
-
-def compute_input_budget(max_output_tokens: int, window: int | None = None) -> int:
-    window = window if window is not None else context_window_tokens()
+def compute_input_budget(max_output_tokens: int, window: int) -> int:
     reserve = min(max_output_tokens, window // _OUTPUT_RESERVE_DIVISOR)
     return window - reserve - _SAFETY_MARGIN_TOKENS
 
@@ -129,7 +61,7 @@ def fit_contents(
     max_output_tokens: int,
     *,
     count: Callable[[str], int],
-    window: int | None = None,
+    window: int,
 ) -> tuple[Any, dict | None]:
     budget = compute_input_budget(max_output_tokens, window)
 
@@ -188,12 +120,8 @@ def fit_contents(
 
 __all__ = [
     "TRUNCATION_MARKER",
-    "ContextWindowResolution",
     "compute_input_budget",
-    "context_window_tokens",
-    "count_tokens",
     "estimate_tokens",
     "fit_contents",
-    "resolve_context_window",
     "split_entries",
 ]

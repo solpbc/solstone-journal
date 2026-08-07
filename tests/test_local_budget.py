@@ -49,8 +49,7 @@ def test_split_entries_round_trips_realistic_markdown():
     assert entries[3].startswith("### Screen Activity")
 
 
-def test_dedup_runs_before_clip_and_prevents_marker(monkeypatch):
-    monkeypatch.setattr(local_budget, "context_window_tokens", lambda: 1000)
+def test_dedup_runs_before_clip_and_prevents_marker():
     entry = "### Screen Activity\n" + ("same screen\n" * 30)
     block = entry * 3
 
@@ -59,6 +58,7 @@ def test_dedup_runs_before_clip_and_prevents_marker(monkeypatch):
         None,
         50,
         count=_count_chars,
+        window=1000,
     )
 
     assert fitted == entry
@@ -84,6 +84,7 @@ def test_fit_contents_clips_oldest_entries_to_tail():
         system_instruction,
         8192 * 6,
         count=_count_chars,
+        window=16384,
     )
 
     assert isinstance(fitted_contents, list)
@@ -108,8 +109,7 @@ def test_fit_contents_clips_oldest_entries_to_tail():
     )
 
 
-def test_fit_contents_leaves_non_overflow_unmarked(monkeypatch):
-    monkeypatch.setattr(local_budget, "context_window_tokens", lambda: 1000)
+def test_fit_contents_leaves_non_overflow_unmarked():
     contents = ["## Segment\n### Transcript\nshort\n", "prompt"]
 
     fitted, input_budget = local_budget.fit_contents(
@@ -117,6 +117,7 @@ def test_fit_contents_leaves_non_overflow_unmarked(monkeypatch):
         "system",
         50,
         count=_count_chars,
+        window=1000,
     )
 
     assert fitted == contents
@@ -124,8 +125,7 @@ def test_fit_contents_leaves_non_overflow_unmarked(monkeypatch):
     assert local_budget.TRUNCATION_MARKER not in fitted[0]
 
 
-def test_fit_contents_raises_when_preserved_content_exceeds_budget(monkeypatch):
-    monkeypatch.setattr(local_budget, "context_window_tokens", lambda: 400)
+def test_fit_contents_raises_when_preserved_content_exceeds_budget():
 
     with pytest.raises(ContextBudgetExceeded) as exc:
         local_budget.fit_contents(
@@ -133,6 +133,7 @@ def test_fit_contents_raises_when_preserved_content_exceeds_budget(monkeypatch):
             "s" * 200,
             10,
             count=_count_chars,
+            window=400,
         )
 
     assert exc.value.reason_code == "context_budget_exceeded"
@@ -147,12 +148,14 @@ def test_fit_contents_noops_role_dicts_and_empty_lists():
         None,
         10,
         count=_count_chars,
+        window=16384,
     )
     fitted_empty, empty_budget = local_budget.fit_contents(
         empty,
         None,
         10,
         count=_count_chars,
+        window=16384,
     )
 
     assert fitted_messages is role_messages
