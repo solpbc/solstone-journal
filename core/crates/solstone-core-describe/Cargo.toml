@@ -27,5 +27,10 @@ name = "solstone-describe-session-stub"
 path = "tests/bin/session_stub.rs"
 test = false
 
+[[bin]]
+name = "solstone-describe-detect-stub"
+path = "tests/bin/detector_stub.rs"
+test = false
+
 [lints]
 workspace = true

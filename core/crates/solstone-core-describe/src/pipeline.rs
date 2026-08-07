@@ -16,6 +16,7 @@ use crate::WinnowConfig;
 use crate::decode::{
     IdentityTransform, QualifiedFrame, process_video_with_transform, resize_for_vlm_png,
 };
+use crate::detect;
 use crate::extraction;
 use crate::notify;
 use crate::request;
@@ -281,6 +282,7 @@ pub fn run_with_factory(
         .collect::<std::collections::HashSet<_>>();
     categorized.sort_unstable_by_key(|row| row.frame_id);
     let mut final_rows = Vec::new();
+    let mut detection_disabled = false;
     for row in categorized {
         let mut result = json!({"frame_id":row.frame_id,"timestamp":row.timestamp,"requests":row.requests,"finish_reason":row.finish_reason});
         if let Some(analysis) = &row.analysis {
@@ -295,6 +297,9 @@ pub fn run_with_factory(
             final_rows.push(result);
             continue;
         };
+        if let Some(detections) = maybe_detect(&mut detection_disabled, analysis, &row.png) {
+            result["detections"] = detections;
+        }
         if !selected.contains(&row.frame_id) {
             result["enhanced"] = json!(false);
             rows.row(&result)?;
@@ -450,6 +455,22 @@ fn finalize_incomplete(mut results: Vec<(Value, usize)>) -> Vec<Value> {
 
 fn has_row_failures(rows: &[Value]) -> bool {
     rows.iter().any(|row| row.get("error").is_some())
+}
+
+fn maybe_detect(disabled: &mut bool, analysis: &Value, png: &[u8]) -> Option<Value> {
+    if *disabled {
+        return None;
+    }
+    let gate = detect::screen_gate(analysis)?;
+    let result =
+        detect::detect(png).and_then(|result| detect::detections_block(&result, "screen", &gate));
+    match result {
+        Ok(result) => Some(result),
+        Err(_) => {
+            *disabled = true;
+            None
+        }
+    }
 }
 
 #[cfg(test)]

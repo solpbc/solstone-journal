@@ -108,6 +108,8 @@ fn categorization_response(id: &str, mode: &str) {
         "category_messaging" => ("messaging", "none", true),
         "category_meeting" => ("meeting", "none", true),
         "category_secondary" => ("code", "messaging", false),
+        "category_media" => ("media", "none", true),
+        "category_secondary_social" => ("code", "social", true),
         "extraction_json_retry_then_succeed" => ("messaging", "none", true),
         "extraction_json_unparseable" => ("messaging", "none", true),
         _ => unreachable!("category mode"),

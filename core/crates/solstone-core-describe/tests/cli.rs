@@ -14,6 +14,7 @@ use serde::Deserialize;
 
 const BINARY: &str = env!("CARGO_BIN_EXE_solstone-core-describe");
 const SESSION_STUB: &str = env!("CARGO_BIN_EXE_solstone-describe-session-stub");
+const DETECT_STUB: &str = env!("CARGO_BIN_EXE_solstone-describe-detect-stub");
 
 #[derive(Deserialize)]
 struct Fixture {
@@ -113,6 +114,10 @@ fn extraction_requests(path: &Path) -> Vec<serde_json::Value> {
             context.starts_with("observe.describe.") && context != "observe.describe.frame"
         })
         .collect()
+}
+
+fn detector_requests(path: &Path) -> Vec<serde_json::Value> {
+    read_jsonl(path)
 }
 
 fn no_temp_files(root: &Path) -> bool {
@@ -731,6 +736,84 @@ fn extraction_markdown_stop_and_unknown_are_clean_without_retry() {
         let rows = read_jsonl(&video.with_extension("jsonl"));
         assert_eq!(rows[1]["content"]["code"], "# extracted markdown", "{mode}");
         assert!(rows[1].get("error").is_none(), "{mode}");
+        fs::remove_dir_all(root).expect("remove root");
+    }
+}
+
+#[test]
+fn detection_runs_for_unselected_media_and_preserves_unfiltered_objects() {
+    let root = temporary_root("detect-media");
+    let video = copied_video(&root, "mixed_vp8_screen.webm");
+    fs::create_dir_all(root.join("config")).expect("config directory");
+    fs::write(
+        root.join("config/journal.json"),
+        r#"{"describe":{"max_extractions":1}}"#,
+    )
+    .expect("config");
+    let detector_log = root.join("detector.jsonl");
+    let output = describe(&root, &video, "category_media")
+        .env("SOLSTONE_DESCRIBE_DETECT_BINARY", DETECT_STUB)
+        .env("SOLSTONE_DESCRIBE_DETECT_STUB_REQUESTS_PATH", &detector_log)
+        .output()
+        .expect("describe");
+    assert!(output.status.success());
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    let unselected = rows[1..]
+        .iter()
+        .find(|row| row["enhanced"] == false)
+        .expect("unselected row");
+    assert_eq!(unselected["detections"]["gate"], "primary:media");
+    assert_eq!(
+        unselected["detections"]["objects"][1]["class_name"],
+        "person"
+    );
+    assert_eq!(unselected["detections"]["objects"][1]["score"], 0.1);
+    let requests = detector_requests(&detector_log);
+    assert!(!requests.is_empty());
+    assert!(requests[0]["input_bytes"].as_u64().expect("input bytes") > 0);
+    assert_eq!(requests[0]["threshold"], "0.25");
+    assert_eq!(requests[0]["threads"], "4");
+    fs::remove_dir_all(root).expect("remove root");
+}
+
+#[test]
+fn detection_secondary_gate_uses_secondary_label() {
+    let root = temporary_root("detect-secondary");
+    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    let output = describe(&root, &video, "category_secondary_social")
+        .env("SOLSTONE_DESCRIBE_DETECT_BINARY", DETECT_STUB)
+        .output()
+        .expect("describe");
+    assert!(output.status.success());
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    assert_eq!(rows[1]["detections"]["gate"], "secondary:social");
+    fs::remove_dir_all(root).expect("remove root");
+}
+
+#[test]
+fn detection_failure_and_timeout_latch_after_one_attempt() {
+    for (mode, timeout) in [("invalid_json", None), ("hang", Some("100"))] {
+        let root = temporary_root(mode);
+        let video = copied_video(&root, "mixed_vp8_screen.webm");
+        let detector_log = root.join("detector.jsonl");
+        let start = Instant::now();
+        let mut command = describe(&root, &video, "category_media");
+        command
+            .env("SOLSTONE_DESCRIBE_DETECT_BINARY", DETECT_STUB)
+            .env("SOLSTONE_DESCRIBE_DETECT_STUB_MODE", mode)
+            .env("SOLSTONE_DESCRIBE_DETECT_STUB_REQUESTS_PATH", &detector_log);
+        if let Some(timeout) = timeout {
+            command.env("SOLSTONE_DESCRIBE_DETECT_TIMEOUT_MS", timeout);
+        }
+        let output = command.output().expect("describe");
+        assert!(output.status.success(), "{mode}");
+        assert_eq!(detector_requests(&detector_log).len(), 1, "{mode}");
+        if mode == "hang" {
+            assert!(start.elapsed() < Duration::from_secs(2));
+        }
+        let rows = read_jsonl(&video.with_extension("jsonl"));
+        assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
+        assert!(rows[1..].iter().all(|row| row.get("detections").is_none()));
         fs::remove_dir_all(root).expect("remove root");
     }
 }

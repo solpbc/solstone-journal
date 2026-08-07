@@ -6,6 +6,7 @@
 mod bounding;
 pub mod categories;
 mod decode;
+pub mod detect;
 pub mod extraction;
 mod fiducial;
 mod hash;
