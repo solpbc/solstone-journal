@@ -1,0 +1,123 @@
+{
+  "dedupe_cases": [
+    {
+      "expected_dedupe_key": "sha256:ebda4b2f6bbeef535eafd2fabfd8a7377a0a879688812b41716b61aaca7d2dc6",
+      "expected_value_hash": "sha256:8e2de8edfdba959d70fa1e91bb885f2bbc6fecef84b40cc9828ceb6893c0048a",
+      "identity": {
+        "end_time": null,
+        "metadata": {
+          "z_nested": {
+            "β": 2,
+            "a": null
+          },
+          "note": "café",
+          "flag": true
+        },
+        "record_type": "HKQuantityTypeIdentifierStepCount",
+        "source_family": " Apple_Health ",
+        "source_name": "Synthetic Phone",
+        "source_record_id": null,
+        "start_time": "2026-01-01 08:00:00 -0700",
+        "unit": "count",
+        "value": "1234"
+      },
+      "name": "apple_composite_whitespace_and_nested_ascii"
+    },
+    {
+      "expected_dedupe_key": "sha256:30af07a1750265029d73e31656e8f8fe3e50048a93ddf268c52d9fd289e57faf",
+      "expected_value_hash": "sha256:3e3a8ef3eda2f37985505ce1cf2ac69b60f7a0cb2fc8c0a2fea84b78aa4b392d",
+      "identity": {
+        "end_time": "2026-01-03",
+        "metadata": {
+          "contributors": {
+            "hrv_balance": 88
+          }
+        },
+        "record_type": "oura.daily_readiness",
+        "source_family": " OURA_API ",
+        "source_name": "ignored",
+        "source_record_id": " readiness-α ",
+        "start_time": "2026-01-02",
+        "unit": "score",
+        "value": 91
+      },
+      "name": "oura_source_id_ignores_value_payload"
+    },
+    {
+      "expected_dedupe_key": "sha256:dde62351c23eb06e1bcfa9e6c41b5da81aea851101df1a1bc37a43d8c260d00b",
+      "expected_value_hash": "sha256:846a1125c77002a72f38dee0ffcb490b78e23a404adcb373e6a7e0d1b4b8cf51",
+      "identity": {
+        "end_time": "2026-01-03 06:00:00 -0700",
+        "metadata": {
+          "optional": null
+        },
+        "record_type": "HKCategoryTypeIdentifierSleepAnalysis",
+        "source_family": "apple_health",
+        "source_name": "Watch",
+        "source_record_id": null,
+        "start_time": "2026-01-02 22:00:00 -0700",
+        "unit": null,
+        "value": "HKCategoryValueSleepAnalysisAsleepCore"
+      },
+      "name": "apple_composite_explicit_null_metadata"
+    }
+  ],
+  "schema": "solstone.body_source.hash_vectors.v1",
+  "value_cases": [
+    {
+      "expected_value_hash": "sha256:0748531ffc9cd453bc48b1d7eeb2901613c811741031dd7f657574770c857216",
+      "input": {
+        "metadata": {
+          "z": [
+            3,
+            {
+              "β": "µ"
+            }
+          ],
+          "a": true
+        },
+        "unit": "bpm",
+        "value": 72.5
+      },
+      "name": "nested_key_order_and_unicode"
+    },
+    {
+      "expected_value_hash": "sha256:cc4dd58be891a2efc303a8cceaf35f9d96a8d6c38b2c9ef2d48dd516b062fac9",
+      "input": {
+        "metadata": {
+          "optional": null
+        },
+        "unit": null,
+        "value": null
+      },
+      "name": "explicit_null_key"
+    },
+    {
+      "expected_value_hash": "sha256:2c065b1ce2059619b4f3c3007d17027f2f00f33173387fe7464e7ffae35a4ad8",
+      "input": {
+        "metadata": {},
+        "unit": null,
+        "value": null
+      },
+      "name": "absent_key"
+    },
+    {
+      "expected_value_hash": "sha256:6647ae9857c406e7b4e0dbedd2e26f5b9e711122fe8fe9e295ef9762649007a2",
+      "input": {
+        "metadata": {},
+        "unit": "score",
+        "value": 1
+      },
+      "name": "integer_not_string"
+    },
+    {
+      "expected_value_hash": "sha256:e9df5ab1f6f310d8ef82cd2c3b8bbdc0bf801444337a8e75fd8826ee3c02a3c4",
+      "input": {
+        "metadata": {},
+        "unit": "score",
+        "value": "1"
+      },
+      "name": "string_not_integer"
+    }
+  ]
+}

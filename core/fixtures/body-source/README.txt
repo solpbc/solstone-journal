@@ -13,3 +13,17 @@ keys, no insignificant whitespace, and ASCII escaping. value_hash and
 dedupe_key are the reference implementation's exact outputs. A replacement
 normalizer must match both the per-row vectors and the ordered whole-result
 digest; changing a vector requires a separately reviewed contract decision.
+
+body_source_hash_vectors.json supplies the canonical hash inputs as well as
+the shipping Python outputs. It deliberately distinguishes explicit null from
+an absent metadata key, integers from strings, nested-object key order,
+non-ASCII escaping, source-family and source-record-id trimming, and composite
+from source-id identity.
+
+legacy_health_dedupe.sqlite was created by the shipping Python
+health_dedupe.py implementation at commit 392d6d8d79baff2ff3a92eb5c6c06c471342dcb6.
+It is an independent compatibility fixture for Rust: one legacy Apple row has
+no reconstructible value_hash, and one Oura row was revised so first_import_id
+and latest-seen fields exercise the current upsert contract. Audit timestamps
+record fixture-generation time and are not parity inputs. The file contains
+only synthetic identifiers and values.
