@@ -93,6 +93,29 @@ pub struct RelayWebSocketReader {
     inner: SplitStream<RelayStream>,
 }
 
+/// A listen-channel event whose WebSocket control framing is significant.
+pub enum ListenEvent {
+    /// A relay control message carried as text or binary bytes.
+    Message(Bytes),
+    /// A raw WebSocket Pong payload.
+    Pong(Bytes),
+}
+
+impl RelayWebSocketReader {
+    /// Reads one relay-listen event while retaining raw Pong payloads.
+    pub async fn next_listen_event(&mut self) -> Result<ListenEvent, WsClosed> {
+        loop {
+            match self.inner.next().await {
+                Some(Ok(Message::Binary(bytes))) => return Ok(ListenEvent::Message(bytes)),
+                Some(Ok(Message::Text(text))) => return Ok(ListenEvent::Message(text.into())),
+                Some(Ok(Message::Pong(bytes))) => return Ok(ListenEvent::Pong(bytes)),
+                Some(Ok(Message::Ping(_) | Message::Frame(_))) => {}
+                Some(Ok(Message::Close(_)) | Err(_)) | None => return Err(WsClosed),
+            }
+        }
+    }
+}
+
 impl WsByteSource for RelayWebSocketReader {
     async fn next_message(&mut self) -> Result<Option<Bytes>, WsClosed> {
         loop {
@@ -109,6 +132,16 @@ impl WsByteSource for RelayWebSocketReader {
 /// The write half of a connected relay WebSocket.
 pub struct RelayWebSocketWriter {
     inner: SplitSink<RelayStream, Message>,
+}
+
+impl RelayWebSocketWriter {
+    /// Sends and flushes a WebSocket Ping with its opaque acknowledgement nonce.
+    pub async fn send_ping(&mut self, payload: Bytes) -> Result<(), WsClosed> {
+        self.inner
+            .send(Message::Ping(payload))
+            .await
+            .map_err(|_| WsClosed)
+    }
 }
 
 impl WsByteSink for RelayWebSocketWriter {
@@ -149,14 +182,16 @@ fn unbounded_config() -> WebSocketConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::{RelayWebSocket, RelayWebSocketError, relay_request, unbounded_config};
+    use super::{
+        ListenEvent, RelayWebSocket, RelayWebSocketError, relay_request, unbounded_config,
+    };
     use crate::{
         PostureGate, PostureInput, RelayDecision, TokenInput, WsByteSink, WsByteSource,
         relay_tunnel_url,
     };
     use bytes::Bytes;
     use futures_util::{SinkExt, StreamExt};
-    use tokio::net::TcpListener;
+    use tokio::{net::TcpListener, time::timeout};
     use tokio_tungstenite::{
         accept_async,
         tungstenite::{Message, http::header::AUTHORIZATION},
@@ -267,6 +302,72 @@ mod tests {
             .send(Bytes::from_static(b"reply"))
             .await
             .map_err(|_| "sink response failed".to_owned())?;
+        server
+            .await
+            .map_err(|_| "server task failed".to_owned())??;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn listen_events_surface_pongs_and_flush_automatic_ping_replies() -> Result<(), String> {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|_| "listener bind failed".to_owned())?;
+        let address = listener
+            .local_addr()
+            .map_err(|_| "listener address failed".to_owned())?;
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener
+                .accept()
+                .await
+                .map_err(|_| "listener accept failed".to_owned())?;
+            let mut websocket = accept_async(stream)
+                .await
+                .map_err(|_| "server upgrade failed".to_owned())?;
+            websocket
+                .send(Message::Ping(Bytes::from_static(b"peer-ping")))
+                .await
+                .map_err(|_| "server ping send failed".to_owned())?;
+            let reply = timeout(std::time::Duration::from_secs(1), websocket.next())
+                .await
+                .map_err(|_| "client did not flush automatic pong".to_owned())?
+                .ok_or_else(|| "client closed before pong".to_owned())?
+                .map_err(|_| "client pong read failed".to_owned())?;
+            if reply != Message::Pong(Bytes::from_static(b"peer-ping")) {
+                return Err("client automatic pong payload differed".to_owned());
+            }
+            websocket
+                .send(Message::Pong(Bytes::from_static(b"heartbeat")))
+                .await
+                .map_err(|_| "server pong send failed".to_owned())?;
+            websocket
+                .send(Message::Text("{\"type\":\"incoming\"}".into()))
+                .await
+                .map_err(|_| "server control send failed".to_owned())
+        });
+
+        let token = token()?;
+        let endpoint = format!("ws://{address}");
+        let url = relay_tunnel_url(&endpoint, "/session/listen", "home-a", token.as_str());
+        let websocket = RelayWebSocket::connect(&url, &token)
+            .await
+            .map_err(|error| error.to_string())?;
+        let (mut reader, _writer) = websocket.split();
+
+        assert!(matches!(
+            reader
+                .next_listen_event()
+                .await
+                .map_err(|_| "listen pong read failed".to_owned())?,
+            ListenEvent::Pong(payload) if payload == Bytes::from_static(b"heartbeat")
+        ));
+        assert!(matches!(
+            reader
+                .next_listen_event()
+                .await
+                .map_err(|_| "listen control read failed".to_owned())?,
+            ListenEvent::Message(payload) if payload == Bytes::from_static(b"{\"type\":\"incoming\"}")
+        ));
         server
             .await
             .map_err(|_| "server task failed".to_owned())??;

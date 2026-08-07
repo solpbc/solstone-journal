@@ -48,7 +48,9 @@ pub use reconnect_backoff::{
     INITIAL_RECONNECT_BASE, MAX_RECONNECT_BASE, ReconnectBackoffError, ReconnectSchedule,
     schedule_reconnect,
 };
-pub(crate) use relay_client::HEALTH_REFRESH_INTERVAL;
+pub(crate) use relay_client::{
+    LISTEN_ACK_STABILITY_WINDOW, LISTEN_PING_ACK_TIMEOUT, LISTEN_PING_INTERVAL,
+};
 pub use relay_client::{
     LoopbackConnect, LoopbackDialer, LoopbackStream, RelayClient, RelayClientConfig, RelayError,
 };

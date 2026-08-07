@@ -78,6 +78,8 @@ pub struct RelayHealth {
     last_relay_tunnel_error_at: Option<u64>,
     relay_tunnel_error_status: Option<u16>,
     relay_admission_saturated_count: u64,
+    last_relay_listener_ack_at: Option<u64>,
+    last_relay_listener_ack_generation: Option<u64>,
 }
 
 impl RelayHealth {
@@ -91,6 +93,8 @@ impl RelayHealth {
             last_relay_tunnel_error_at: None,
             relay_tunnel_error_status: None,
             relay_admission_saturated_count: 0,
+            last_relay_listener_ack_at: None,
+            last_relay_listener_ack_generation: None,
         }
     }
 
@@ -119,6 +123,12 @@ impl RelayHealth {
         self.relay_tunnel_error_status = failure.status();
     }
 
+    /// Records an acknowledged heartbeat for the current listener generation.
+    pub fn record_listener_ack(&mut self, timestamp_ms: u64) {
+        self.last_relay_listener_ack_at = Some(timestamp_ms);
+        self.last_relay_listener_ack_generation = Some(self.listen_generation);
+    }
+
     /// Replaces the cumulative relay-admission saturation count.
     pub fn set_relay_admission_saturated_count(&mut self, count: u64) {
         self.relay_admission_saturated_count = count;
@@ -134,6 +144,8 @@ impl RelayHealth {
             "last_relay_tunnel_error_at": self.last_relay_tunnel_error_at,
             "relay_tunnel_error_status": self.relay_tunnel_error_status,
             "relay_admission_saturated_count": self.relay_admission_saturated_count,
+            "last_relay_listener_ack_at": self.last_relay_listener_ack_at,
+            "last_relay_listener_ack_generation": self.last_relay_listener_ack_generation,
         })
     }
 }
@@ -173,6 +185,8 @@ mod tests {
                 "last_relay_tunnel_error_at": null,
                 "relay_tunnel_error_status": null,
                 "relay_admission_saturated_count": 0,
+                "last_relay_listener_ack_at": null,
+                "last_relay_listener_ack_generation": null,
             })
         );
     }
@@ -197,6 +211,8 @@ mod tests {
                 "last_relay_tunnel_error_at": 1_700_000_000_123_u64,
                 "relay_tunnel_error_status": 503,
                 "relay_admission_saturated_count": 0,
+                "last_relay_listener_ack_at": null,
+                "last_relay_listener_ack_generation": null,
             })
         );
     }
@@ -220,6 +236,8 @@ mod tests {
                 "last_relay_tunnel_error_at": null,
                 "relay_tunnel_error_status": null,
                 "relay_admission_saturated_count": 7,
+                "last_relay_listener_ack_at": null,
+                "last_relay_listener_ack_generation": null,
             })
         );
     }
@@ -277,6 +295,7 @@ mod tests {
             rejected.begin_listen_attempt();
         }
         rejected.set_state(RelayHealthState::Connected);
+        rejected.record_listener_ack(1_750_000_000_000);
         rejected.record_tunnel_success(1_750_000_000_000);
         rejected.record_tunnel_failure(
             RelayTunnelFailure::RelayTunnelRejected { status: 502 },

@@ -1,7 +1,7 @@
 {
   "_provenance": {
-    "generated_from_commit": "adf2e9c5f",
-    "valid_for_commits": ["c3b7cc6e5", "5ed4dacb8", "adf2e9c5f"],
+    "generated_from_commit": "69fed5eee",
+    "valid_for_commits": ["69fed5eee"],
     "equivalence_proof": "The retained health vocabulary was byte-identical across the verified source commits."
   },
   "constants": {
@@ -27,7 +27,9 @@
       "last_relay_tunnel_error": null,
       "last_relay_tunnel_error_at": null,
       "relay_tunnel_error_status": null,
-      "relay_admission_saturated_count": 0
+      "relay_admission_saturated_count": 0,
+      "last_relay_listener_ack_at": null,
+      "last_relay_listener_ack_generation": null
     },
     "populated_rejected": {
       "state": "connected",
@@ -36,7 +38,9 @@
       "last_relay_tunnel_error": "relay_tunnel_rejected",
       "last_relay_tunnel_error_at": 1750000001000,
       "relay_tunnel_error_status": 502,
-      "relay_admission_saturated_count": 3
+      "relay_admission_saturated_count": 3,
+      "last_relay_listener_ack_at": 1750000000000,
+      "last_relay_listener_ack_generation": 7
     },
     "_key_order_is_contract": [
       "state",
@@ -45,7 +49,9 @@
       "last_relay_tunnel_error",
       "last_relay_tunnel_error_at",
       "relay_tunnel_error_status",
-      "relay_admission_saturated_count"
+      "relay_admission_saturated_count",
+      "last_relay_listener_ack_at",
+      "last_relay_listener_ack_generation"
     ]
   }
 }

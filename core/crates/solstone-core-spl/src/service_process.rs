@@ -242,7 +242,9 @@ impl ServiceDeps for ProcessServiceDeps {
                 relay_endpoint,
                 service_token: ServiceToken::new(token.as_str().to_owned()),
                 dispatch_read_deadline: DISPATCH_READ_DEADLINE,
-                health_refresh_interval: crate::HEALTH_REFRESH_INTERVAL,
+                ping_interval: crate::LISTEN_PING_INTERVAL,
+                ping_ack_timeout: crate::LISTEN_PING_ACK_TIMEOUT,
+                ack_stability_window: crate::LISTEN_ACK_STABILITY_WINDOW,
                 global_admission_ceiling: GLOBAL_ADMISSION_CEILING,
             },
             Arc::new(LoggingEmit::new(
