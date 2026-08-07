@@ -129,33 +129,23 @@ and FTS5 integrity clean.
 | `rescan_file` | `invalid_segment` | No; marker commit remains | Existing skip semantics | Yes | 0 |
 | `rescan_file` | drop | No | Not surfaced | No | 0 if otherwise clean |
 | `rescan_file` | SQL error | Whole rescan transaction | No report; returns error | stderr via `main.rs` | 75 |
-| `rescan_file` | aggregate incompleteness | Whole rescan transaction | No report; returns error | stderr via `main.rs` | 75 |
 | `scan_journal` per-file | `failed` | Not applicable | Not applicable | Not applicable | Not applicable |
 | `scan_journal` per-file | `invalid_segment` | Not applicable | Not applicable | Not applicable | Not applicable |
 | `scan_journal` per-file | drop | Not applicable | Not applicable | Not applicable | Not applicable |
 | `scan_journal` per-file | SQL error | Current file/removal transaction | Not counted; error propagates | stderr via `main.rs` | 75 |
-| `scan_journal` per-file | aggregate incompleteness | Current file/removal transaction | `skipped += 1` | Yes | 0 |
 | `scan_journal` edge reconcile | `failed` | Current edge-file savepoint | `ScanReport.failed += 1` | Yes | 0 |
 | `scan_journal` edge reconcile | `invalid_segment` | No; marker commit remains | Existing skip semantics | Yes | 0 if otherwise clean |
 | `scan_journal` edge reconcile | drop | No | Not surfaced in `ScanReport` | No | 0 if otherwise clean |
 | `scan_journal` edge reconcile | SQL error while processing one edge file | Current edge-file savepoint | `ScanReport.failed += 1` | Yes | 0 |
 | `scan_journal` edge reconcile | phase commit SQL error | Phase transaction | Not counted; error propagates | stderr via `main.rs` | 75 |
-| `scan_journal` edge reconcile | aggregate incompleteness | Not applicable | Not applicable | Not applicable | Not applicable |
 | `rebuild_edges` | `failed` | Full rebuild transaction | `EdgeRebuildReport.failed += 1` | Yes | 75 |
 | `rebuild_edges` | `invalid_segment` | No if no failed files | `EdgeRebuildReport.skipped += 1` | Yes | 0 if otherwise clean |
 | `rebuild_edges` | drop | No | `EdgeRebuildReport.drops += n` | No | 0 if otherwise clean |
 | `rebuild_edges` | SQL error | Full rebuild transaction | Fatal error | stderr via `main.rs` | 75 |
-| `rebuild_edges` | aggregate incompleteness | Not applicable | Not applicable | Not applicable | Not applicable |
-| `index_segment_aggregates` | `failed` | Caller transaction | Caller-owned | Yes through caller | Caller-owned |
-| `index_segment_aggregates` | `invalid_segment` | Not applicable | Not applicable | Not applicable | Not applicable |
-| `index_segment_aggregates` | drop | Not applicable | Not applicable | Not applicable | Not applicable |
-| `index_segment_aggregates` | SQL error | Caller transaction | Not counted; error propagates | stderr via caller | 75 |
-| `index_segment_aggregates` | aggregate incompleteness | Caller transaction | `rescan_file`: error; `scan_journal`: `skipped += 1` | Yes | `rescan_file`: 75; `scan_journal`: 0 |
 | `index_entity_search` | `failed` | Not applicable | Not applicable | Not applicable | Not applicable |
 | `index_entity_search` | `invalid_segment` | Not applicable | Not applicable | Not applicable | Not applicable |
 | `index_entity_search` | drop | Not applicable | Not applicable | Not applicable | Not applicable |
 | `index_entity_search` | SQL error | Entity-search transaction | Not counted; error propagates | stderr via `main.rs` | 75 |
-| `index_entity_search` | aggregate incompleteness | Not applicable | Not applicable | Not applicable | Not applicable |
 
 The encoded marker split is exactly:
 - `failed: true` comes from insertion failure after extraction and from
@@ -167,8 +157,7 @@ The encoded marker split is exactly:
 Add `failed: usize` to `ScanReport` so soft edge failed results are no longer
 discarded. It counts only `EdgeProcessResult.failed` from the two existing
 producers: insertion failure after extraction and extraction `Err`. It does not
-count SQL errors, aggregate incompleteness, invalid segments, drops, or content
-production warnings.
+count SQL errors, invalid segments, drops, or content production warnings.
 
 `main.rs` keeps scan exit behavior unchanged: print all scan warnings as today
 and return success when `scan_journal` returns `Ok(report)`, even when
@@ -192,14 +181,6 @@ The helper must use triggers only, generate unique trigger names, and drop them
 before the connection is closed when the test continues to reuse the connection.
 It must not require feature flags, lock files, retry loops, sleeps, or
 test-only production hooks.
-
-One unit with no own post-delete non-virtual insert is
-`index_segment_aggregates`: it only deletes and inserts into the FTS virtual
-`chunks` table. Under D1 it is no longer a standalone `scan_journal` phase, so
-test aggregate atomicity through its enclosing per-file transaction and the
-subsequent `files` write. If a future standalone aggregate command appears, it
-needs either a caller-owned non-virtual marker or a direct transaction rollback
-test, still without authorizers.
 
 ## Test Rewrite List
 

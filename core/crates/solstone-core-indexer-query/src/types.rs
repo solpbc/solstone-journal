@@ -124,7 +124,7 @@ pub struct SearchMetadata {
     pub idx: i64,
 }
 
-/// Search rows and optional post-collapse aggregate counts.
+/// Search rows and optional requested counts.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SearchResponse {
     pub results: Vec<SearchHit>,
@@ -158,7 +158,7 @@ pub struct IndexBuildCounts {
     pub chunks: u64,
 }
 
-/// Post-collapse aggregation matching Python's ``search_counts`` fields.
+/// Requested aggregation matching Python's ``search_counts`` fields.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct CountsResponse {
     pub total: u64,
