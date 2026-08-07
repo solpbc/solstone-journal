@@ -1895,12 +1895,19 @@ def _native_read_kwargs() -> dict:
     }
 
 
-def _seed_native_chunk(journal: Path, *, content: str, day: str, idx: int = 0) -> None:
+def _seed_native_chunk(
+    journal: Path,
+    *,
+    content: str,
+    day: str,
+    idx: int = 0,
+    agent: str = "flow",
+) -> None:
     conn, _ = get_journal_index(str(journal))
     conn.execute(
         "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (content, f"notes/{day}-{idx}.md", day, "work", "flow", "default", idx, ""),
+        (content, f"notes/{day}-{idx}.md", day, "work", agent, "default", idx, ""),
     )
     conn.commit()
     conn.close()
@@ -1943,6 +1950,16 @@ def test_native_read_bridge_uses_real_binary_for_recency_and_unicode(tmp_path, m
     assert len(browse_results) == 5
     assert search_journal("José")[0] == 21
 
+    _seed_native_chunk(
+        tmp_path,
+        content="unreadable aggregate",
+        day="20260107",
+        idx=99,
+        agent="segment",
+    )
+    _, segment_results = search_journal("unreadable aggregate")
+    assert set(segment_results[0]) == {"id", "text", "metadata", "score"}
+
 
 def test_native_read_shim_distinguishes_empty_and_absent_indexes(tmp_path, monkeypatch):
     """Only an existing empty index maps to the legacy empty read shapes."""
@@ -1976,6 +1993,8 @@ def test_native_read_shim_distinguishes_empty_and_absent_indexes(tmp_path, monke
 
 
 def test_non_tokenizable_native_reason_is_available_at_bridge_boundary(tmp_path):
+    from collections import Counter
+
     from solstone.think.indexer import native
 
     response = native.run_native_indexer_search(
@@ -1983,6 +2002,14 @@ def test_non_tokenizable_native_reason_is_available_at_bridge_boundary(tmp_path)
     )
     assert response["reason"] == "not_tokenizable"
     assert search_journal("📅") == (0, [])
+    assert search_counts("📅") == {
+        "total": 0,
+        "facets": Counter(),
+        "agents": Counter(),
+        "days": Counter(),
+        "streams": Counter(),
+        "relaxed": False,
+    }
 
 
 def test_rerank_requests_native_pool_with_limit_fifty(monkeypatch):

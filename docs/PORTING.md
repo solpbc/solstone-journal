@@ -399,15 +399,17 @@ stdout.
 | 74 | EX_IOERR | commit | Non-timeout lock I/O failure (`LockError::Io`), or a stdin/stdout stream I/O failure. |
 | 75 | EX_TEMPFAIL | commit | Lock acquisition timed out (`LockError::Timeout`) — retry is appropriate. |
 
-### Indexer Native Write Routing
+### Indexer Native Routing
 
 `journal indexer` routes command writes (`--reset`, `--rebuild-edges`,
 `--rescan`, `--rescan-full`, and `--rescan-file`) to the sibling
-`solstone-core indexer` binary. Query-only invocations remain in Python. Mixed
-write+query invocations run native writes first; on native success they enter
-the Python query path, and on native non-zero they return that code without
-querying. The command no longer reads journal config for write routing, so stale
-old routing keys in `config/journal.json` are inert.
+`solstone-core indexer` binary. `search_journal`, `search_counts`,
+`known_agents`, and `get_corpus_day_coverage` also route through that binary via
+the Python native bridge. Mixed write+query invocations run native writes first;
+on native success they enter the native-backed query path, and on native
+non-zero they return that code without querying. The command no longer reads
+journal config for write routing, so stale old routing keys in
+`config/journal.json` are inert.
 
 Before launching the native helper, the wrapper checks that the current runtime
 has a compatible `solstone-core` wheel: the normalized host tuple must be in

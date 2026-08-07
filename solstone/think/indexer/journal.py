@@ -914,7 +914,8 @@ def search_counts(
 ) -> dict[str, Any]:
     """Get aggregated counts for a search query.
 
-    Uses single query + Python aggregation for efficiency.
+    Routes a limit-zero native search through ``run_native_indexer_search`` and
+    decodes its Rust ``counts`` aggregation.
 
     Args:
         query: FTS5 search query (empty string for all)

@@ -3,9 +3,9 @@
 
 """Journal indexer command routing.
 
-Write-bearing invocations run `solstone-core indexer`. Query, count, display,
-and interactive search stay in Python. Invalid `--rescan-file` combinations exit
-64 before any side effect.
+Write-bearing invocations and journal index reads execute through
+`solstone-core indexer`; reads are routed by `native.py`. Invalid
+`--rescan-file` combinations exit 64 before any side effect.
 """
 
 import argparse

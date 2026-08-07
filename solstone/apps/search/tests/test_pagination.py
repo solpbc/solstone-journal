@@ -108,6 +108,20 @@ def test_day_results_lower_bound(search_client, monkeypatch):
     assert recorded["offset"] == 0
 
 
+def test_result_fetches_omit_total(search_client, monkeypatch):
+    recorded = _stub_search(monkeypatch, {"days": {"20260304": 1}, "total": 1})
+
+    response = search_client.get("/app/search/api/search?q=test")
+
+    assert response.status_code == 200
+    assert recorded["search_journal"][-1]["include_total"] is False
+
+    response = search_client.get("/app/search/api/day_results?q=test&day=20260304")
+
+    assert response.status_code == 200
+    assert recorded["search_journal"][-1]["include_total"] is False
+
+
 def test_search_non_numeric_limit_is_200(search_client, monkeypatch):
     recorded = _stub_search(
         monkeypatch,
