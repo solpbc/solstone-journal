@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-/// An arbitrary-size JSON integer with a canonical sign and digit sequence.
+/// A Python-compatible JSON integer of up to 4,300 decimal digits.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BodyInteger {
     negative: bool,

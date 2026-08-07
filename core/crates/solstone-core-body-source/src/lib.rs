@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Python-compatible JSON source decoding for body import data.
+//! Python-compatible JSON source decoding and canonicalization for body import data.
 
 mod canonicalize;
 mod error;
