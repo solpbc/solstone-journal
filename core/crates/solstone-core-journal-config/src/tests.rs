@@ -359,6 +359,26 @@ fn corrupt_content_is_rejected_without_modifying_disk_for_both_entry_points() {
 }
 
 #[test]
+fn bare_nan_is_corrupt_without_modifying_disk() {
+    let temporary = TempDir::new();
+    let original = b"{\"value\":NaN}\n";
+    let path = write_config(&temporary, original);
+
+    assert_corrupt(read_journal_config(temporary.path()));
+    assert_eq!(fs::read(path).unwrap(), original);
+}
+
+#[test]
+fn u64_max_round_trips_through_the_config_map() {
+    let temporary = TempDir::new();
+    write_config(&temporary, b"{\"maximum\":18446744073709551615}\n");
+
+    let read = read_journal_config(temporary.path()).unwrap();
+    let config = read.config.expect("present config map");
+    assert_eq!(config["maximum"].as_u64(), Some(u64::MAX));
+}
+
+#[test]
 fn corrupt_display_preserves_the_owner_voice_message() {
     let temporary = TempDir::new();
     let path = get_journal_config_path(temporary.path());
