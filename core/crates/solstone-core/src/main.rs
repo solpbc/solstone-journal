@@ -10,10 +10,11 @@ use chrono::Local;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 use solstone_core_cli::{
-    Command, IndexerCommand, IndexerCountsOptions, IndexerOptions, IndexerQueryOptions,
-    IndexerReadOptions, IndexerSearchOptions, JournalConfigCommand, JournalConfigCommitOptions,
-    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand,
-    ServiceOptions, SplCommand, USAGE, evaluate_args, version_line,
+    BrainCommand, BrainRuntimeFailureOptions, Command, IndexerCommand, IndexerCountsOptions,
+    IndexerOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
+    JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
+    JournalConfigReadOptions, JournalPathOptions, LocalCommand, ServiceOptions, SplCommand, USAGE,
+    evaluate_args, version_line,
 };
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -37,7 +38,7 @@ const EXIT_TEMPFAIL: u8 = 75;
 const EXIT_DATAERR: u8 = 65;
 const EXIT_CANTCREAT: u8 = 73;
 const EXIT_IOERR: u8 = 74;
-const MAX_JOURNAL_CONFIG_STDIN_BYTES: usize = 1024 * 1024;
+const MAX_JSON_STDIN_BYTES: usize = 1024 * 1024;
 const MAX_LOCAL_STDIN_BYTES: usize = 1024 * 1024;
 const ZERO_EDGE_HINT: &str = "Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run journal indexer --rebuild-edges to force full edge re-extraction.";
 const SOL_IDENTITY_TOKEN: &str = "__solstone_identity=sol";
@@ -78,6 +79,7 @@ fn main() -> ExitCode {
         Ok(Command::Indexer(command)) => run_indexer(*command),
         Ok(Command::JournalConfig(command)) => run_journal_config(command),
         Ok(Command::Local(command)) => run_local(command),
+        Ok(Command::Brain(command)) => run_brain(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
         Err(_) => {
             eprint!("{USAGE}");
@@ -158,6 +160,109 @@ fn run_journal_config(command: JournalConfigCommand) -> ExitCode {
     }
 }
 
+fn run_brain(command: BrainCommand) -> ExitCode {
+    match command {
+        BrainCommand::RecordRuntimeFailure(options) => run_brain_runtime_failure(options),
+        BrainCommand::RefreshSession(_) | BrainCommand::PrerequisiteRenewalSession(_) => {
+            eprintln!("brain session verbs are not yet implemented");
+            ExitCode::from(EXIT_UNAVAILABLE)
+        }
+    }
+}
+
+struct RuntimeFailureRequest {
+    reason_code: String,
+    component: String,
+    expected_fingerprint_sha256: String,
+    diagnostic: Map<String, Value>,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+}
+
+fn run_brain_runtime_failure(options: BrainRuntimeFailureOptions) -> ExitCode {
+    let request = match read_bounded_json_stdin().and_then(parse_runtime_failure_request) {
+        Ok(request) => request,
+        Err(JsonStdinError::Content) => {
+            eprintln!(
+                "brain record-runtime-failure failed: stdin was not a valid request JSON object within 1 MiB"
+            );
+            return ExitCode::from(EXIT_USAGE);
+        }
+        Err(JsonStdinError::Io) => {
+            eprintln!("brain record-runtime-failure failed: stdin I/O error");
+            return ExitCode::from(EXIT_IOERR);
+        }
+    };
+    let line = match resolve_journal_config_path(options.journal_override) {
+        Ok(line) => line,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let result = solstone_core_brain::record_runtime_failure(
+        &line.path,
+        &request.reason_code,
+        &request.component,
+        &request.expected_fingerprint_sha256,
+        request.diagnostic,
+        chrono::Utc::now(),
+        request.bundled_runtime_fingerprint_sha256,
+    );
+    let output = json!({
+        "accepted": result.accepted,
+        "record": result.record,
+        "rejected_reason": result.rejected_reason,
+        "error": result.error,
+    });
+    let mut stdout = io::stdout().lock();
+    if serde_json::to_writer(&mut stdout, &output).is_err() || stdout.write_all(b"\n").is_err() {
+        eprintln!("brain record-runtime-failure failed: stdout I/O error");
+        return ExitCode::from(EXIT_IOERR);
+    }
+    ExitCode::SUCCESS
+}
+
+fn parse_runtime_failure_request(
+    request: Map<String, Value>,
+) -> Result<RuntimeFailureRequest, JsonStdinError> {
+    const FIELDS: [&str; 5] = [
+        "reason_code",
+        "component",
+        "expected_fingerprint_sha256",
+        "diagnostic",
+        "bundled_runtime_fingerprint_sha256",
+    ];
+    if request.keys().any(|key| !FIELDS.contains(&key.as_str())) {
+        return Err(JsonStdinError::Content);
+    }
+    let string = |field: &str| {
+        request
+            .get(field)
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .ok_or(JsonStdinError::Content)
+    };
+    let diagnostic = match request.get("diagnostic") {
+        None => Map::new(),
+        Some(Value::Object(value)) => value.clone(),
+        Some(_) => return Err(JsonStdinError::Content),
+    };
+    let bundled_runtime_fingerprint_sha256 = match request.get("bundled_runtime_fingerprint_sha256")
+    {
+        None => None,
+        Some(Value::String(value)) if !value.is_empty() => Some(value.clone()),
+        Some(_) => return Err(JsonStdinError::Content),
+    };
+    Ok(RuntimeFailureRequest {
+        reason_code: string("reason_code")?,
+        component: string("component")?,
+        expected_fingerprint_sha256: string("expected_fingerprint_sha256")?,
+        diagnostic,
+        bundled_runtime_fingerprint_sha256,
+    })
+}
+
 fn run_journal_config_read(options: JournalConfigReadOptions) -> ExitCode {
     let line = match resolve_journal_config_path(options.journal_override) {
         Ok(line) => line,
@@ -190,13 +295,13 @@ fn run_journal_config_read(options: JournalConfigReadOptions) -> ExitCode {
 fn run_journal_config_commit(options: JournalConfigCommitOptions) -> ExitCode {
     let replacement = match read_journal_config_stdin() {
         Ok(replacement) => replacement,
-        Err(JournalConfigStdinError::Content) => {
+        Err(JsonStdinError::Content) => {
             eprintln!(
                 "journal-config commit failed: stdin was not a valid JSON object within 1 MiB"
             );
             return ExitCode::from(EXIT_USAGE);
         }
-        Err(JournalConfigStdinError::Io) => {
+        Err(JsonStdinError::Io) => {
             eprintln!("journal-config commit failed: stdin I/O error");
             return ExitCode::from(EXIT_IOERR);
         }
@@ -241,36 +346,38 @@ fn resolve_journal_config_path(
     }
 }
 
-enum JournalConfigStdinError {
+enum JsonStdinError {
     Content,
     Io,
 }
 
-fn read_journal_config_stdin() -> Result<Map<String, Value>, JournalConfigStdinError> {
+fn read_journal_config_stdin() -> Result<Map<String, Value>, JsonStdinError> {
+    read_bounded_json_stdin()
+}
+
+fn read_bounded_json_stdin() -> Result<Map<String, Value>, JsonStdinError> {
     let stdin = io::stdin();
     let mut stdin = stdin.lock();
     let mut bytes = Vec::new();
     let mut chunk = [0_u8; 8192];
     loop {
-        let read = stdin
-            .read(&mut chunk)
-            .map_err(|_| JournalConfigStdinError::Io)?;
+        let read = stdin.read(&mut chunk).map_err(|_| JsonStdinError::Io)?;
         if read == 0 {
             break;
         }
         if bytes
             .len()
             .checked_add(read)
-            .is_none_or(|next| next > MAX_JOURNAL_CONFIG_STDIN_BYTES)
+            .is_none_or(|next| next > MAX_JSON_STDIN_BYTES)
         {
-            return Err(JournalConfigStdinError::Content);
+            return Err(JsonStdinError::Content);
         }
         bytes.extend_from_slice(&chunk[..read]);
     }
     let config = serde_json::from_slice::<Value>(&bytes)
         .ok()
         .and_then(|value| value.as_object().cloned())
-        .ok_or(JournalConfigStdinError::Content)?;
+        .ok_or(JsonStdinError::Content)?;
     drop(bytes);
     Ok(config)
 }

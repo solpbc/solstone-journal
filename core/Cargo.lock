@@ -1930,6 +1930,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "solstone-core-brain",
  "solstone-core-cli",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",

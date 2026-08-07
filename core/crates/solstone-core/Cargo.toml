@@ -30,6 +30,7 @@ required-features = ["differential"]
 chrono.workspace = true
 serde.workspace = true
 solstone-core-cli.workspace = true
+solstone-core-brain.workspace = true
 solstone-core-indexer-query.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-journal.workspace = true
