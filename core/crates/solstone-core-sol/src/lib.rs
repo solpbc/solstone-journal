@@ -1282,7 +1282,7 @@ mod tests {
             errors.push("sol journal reach must be api-only".to_owned());
         }
         let api = string_set(sol, "api_commands", &mut errors);
-        if api != string_values(&["call", "chat", "import", "notify", "status"]) {
+        if api != string_values(&["call", "chat", "import", "status"]) {
             errors.push("sol API command boundary drifted".to_owned());
         }
         let local = string_set(sol, "invoking_device_commands", &mut errors);
@@ -1293,8 +1293,50 @@ mod tests {
             errors.push(format!("sol command {duplicate} has two reaches"));
         }
         let forbidden_sol = string_set(sol, "forbidden_direct_journal_commands", &mut errors);
-        if forbidden_sol != string_values(&["--path", "check", "doctor", "path"]) {
+        if forbidden_sol != string_values(&["--path", "check", "doctor", "notify", "path"]) {
             errors.push("sol forbidden direct-journal command boundary drifted".to_owned());
+        }
+        let http_journal_calls = string_set(sol, "http_paths", &mut errors);
+        if http_journal_calls
+            != string_values(&[
+                "call journal agents",
+                "call journal facet create",
+                "call journal facet delete",
+                "call journal facet mute",
+                "call journal facet rename",
+                "call journal facet show",
+                "call journal facet unmute",
+                "call journal facet update",
+                "call journal facets",
+                "call journal import",
+                "call journal imports",
+                "call journal news",
+                "call journal read",
+                "call journal retention config",
+                "call journal retention list",
+                "call journal search",
+                "call journal storage-summary",
+            ])
+        {
+            errors.push("sol HTTP journal-call boundary drifted".to_owned());
+        }
+        let retired_sol = string_set(sol, "retired_invocations", &mut errors);
+        if retired_sol
+            != string_values(&[
+                "--path",
+                "call journal export",
+                "call journal facet doctor",
+                "call journal facet merge",
+                "call journal merge",
+                "call journal news --write",
+                "call journal retention purge",
+                "check",
+                "doctor",
+                "notify",
+                "path",
+            ])
+        {
+            errors.push("retired sol invocation census drifted".to_owned());
         }
         let Some(journal) = identities.get("journal") else {
             errors.push("journal identity is missing".to_owned());
@@ -1318,6 +1360,18 @@ mod tests {
             ])
         {
             errors.push("journal root command boundary drifted".to_owned());
+        }
+        let planned_local = string_set(journal, "planned_local_paths", &mut errors);
+        if planned_local
+            != string_values(&[
+                "archive export",
+                "archive merge",
+                "facet doctor",
+                "facet merge",
+                "news write",
+            ])
+        {
+            errors.push("journal planned local command boundary drifted".to_owned());
         }
         let service = string_set(journal, "service_commands", &mut errors);
         let expected = JOURNAL_HOST_COMMANDS
@@ -1388,13 +1442,13 @@ mod tests {
         let mut value: serde_json::Value =
             serde_json::from_str(CLI_BOUNDARY_JSON).expect("parse CLI boundary fixture");
         value["identities"]["sol"]["invoking_device_commands"] =
-            serde_json::json!(["link", "notify"]);
+            serde_json::json!(["link", "status"]);
         value["identities"]["bridge"] = serde_json::json!({});
         let errors = cli_boundary_errors(&value);
         assert!(
             errors
                 .iter()
-                .any(|error| error == "sol command notify has two reaches")
+                .any(|error| error == "sol command status has two reaches")
         );
         assert!(
             errors

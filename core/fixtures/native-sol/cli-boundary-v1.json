@@ -9,7 +9,6 @@
         "call",
         "chat",
         "import",
-        "notify",
         "status"
       ],
       "invoking_device_commands": [
@@ -21,7 +20,40 @@
         "--path",
         "path",
         "doctor",
-        "check"
+        "check",
+        "notify"
+      ],
+      "http_paths": [
+        "call journal agents",
+        "call journal facet create",
+        "call journal facet delete",
+        "call journal facet mute",
+        "call journal facet rename",
+        "call journal facet show",
+        "call journal facet unmute",
+        "call journal facet update",
+        "call journal facets",
+        "call journal import",
+        "call journal imports",
+        "call journal news",
+        "call journal read",
+        "call journal retention config",
+        "call journal retention list",
+        "call journal search",
+        "call journal storage-summary"
+      ],
+      "retired_invocations": [
+        "--path",
+        "path",
+        "doctor",
+        "check",
+        "notify",
+        "call journal export",
+        "call journal facet doctor",
+        "call journal facet merge",
+        "call journal merge",
+        "call journal news --write",
+        "call journal retention purge"
       ]
     },
     "journal": {
@@ -40,6 +72,13 @@
         "check",
         "contract",
         "notify"
+      ],
+      "planned_local_paths": [
+        "archive export",
+        "archive merge",
+        "facet doctor",
+        "facet merge",
+        "news write"
       ],
       "service_commands": [
         "backfill-processing-records",
