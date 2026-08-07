@@ -61,7 +61,7 @@ def fit_contents(
     max_output_tokens: int,
     *,
     count: Callable[[str], int],
-    window: int | None = None,
+    window: int,
 ) -> tuple[Any, dict | None]:
     budget = compute_input_budget(max_output_tokens, window)
 

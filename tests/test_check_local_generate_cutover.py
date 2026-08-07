@@ -29,3 +29,9 @@ def test_comment_is_not_a_violation():
         )
         == []
     )
+
+
+def test_nested_helper_is_not_a_bundled_branch_violation():
+    findings = checker.scan_directory(ROOT / "scripts/fixtures")
+
+    assert not any(path == "nested_helper_not_bundled_branch_violation.py" for path, *_ in findings)

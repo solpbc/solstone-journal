@@ -70,6 +70,30 @@ def _forbidden_call(node: ast.Call) -> bool:
     )
 
 
+class _BundledBodyWalker(ast.NodeVisitor):
+    """Collect direct bundled-branch calls without entering nested scopes."""
+
+    def __init__(self) -> None:
+        self.calls: list[ast.Call] = []
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return None
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return None
+
+    def visit_Call(self, node: ast.Call) -> None:
+        self.calls.append(node)
+        self.generic_visit(node)
+
+
+def _bundled_calls(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.Call]:
+    walker = _BundledBodyWalker()
+    for statement in _bundled_body(function):
+        walker.visit(statement)
+    return walker.calls
+
+
 def scan_source(source: str, filename: str, relative: str) -> list[tuple[str, int, str]]:
     tree = ast.parse(source, filename=filename)
     findings: list[tuple[str, int, str]] = []
@@ -82,11 +106,10 @@ def scan_source(source: str, filename: str, relative: str) -> list[tuple[str, in
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
         and node.name in {"run_generate", "run_agenerate"}
     ):
-        body = ast.Module(body=_bundled_body(function), type_ignores=[])
-        for node in ast.walk(body):
-            if isinstance(node, ast.Call) and _forbidden_call(node):
+        for call in _bundled_calls(function):
+            if _forbidden_call(call):
                 findings.append(
-                    (relative, node.lineno, "bundled branch owns local transport/admission")
+                    (relative, call.lineno, "bundled branch owns local transport/admission")
                 )
     return findings
 
