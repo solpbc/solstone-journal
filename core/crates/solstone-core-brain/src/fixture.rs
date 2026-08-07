@@ -58,6 +58,7 @@ pub(crate) struct LocalContract {
 #[derive(Debug, Deserialize)]
 pub(crate) struct BrainStateVocabulary {
     pub schema_version: u64,
+    pub checking_ttl_seconds: u64,
     pub fingerprint_schema_version: u64,
     pub fingerprint_key_bytes: usize,
     pub paths: BrainStatePaths,

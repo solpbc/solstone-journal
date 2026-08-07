@@ -177,7 +177,7 @@ pub fn validate_brain_state_record(
     Ok(record)
 }
 
-fn parse_evidence(
+pub(crate) fn parse_evidence(
     value: Option<&Value>,
     now: DateTime<Utc>,
 ) -> Result<BTreeMap<String, Option<EvidenceComponent>>, ValidationError> {
@@ -236,7 +236,7 @@ fn parse_evidence(
     Ok(result)
 }
 
-fn parse_component(
+pub(crate) fn parse_component(
     component: &str,
     value: &Value,
     now: DateTime<Utc>,
@@ -311,7 +311,10 @@ fn parse_component(
     })
 }
 
-fn parse_checking(value: &Value, now: DateTime<Utc>) -> Result<Checking, ValidationError> {
+pub(crate) fn parse_checking(
+    value: &Value,
+    now: DateTime<Utc>,
+) -> Result<Checking, ValidationError> {
     let vocabulary = &local_contract().brain_state;
     let object = value
         .as_object()
@@ -333,7 +336,7 @@ fn parse_checking(value: &Value, now: DateTime<Utc>) -> Result<Checking, Validat
     })
 }
 
-fn parse_runtime_failure_marker(
+pub(crate) fn parse_runtime_failure_marker(
     value: &Value,
     now: DateTime<Utc>,
 ) -> Result<RuntimeFailureMarker, ValidationError> {
@@ -540,7 +543,7 @@ fn closed(
     Ok(())
 }
 
-fn component_status_for_reason(reason: &str) -> Result<String, ValidationError> {
+pub(crate) fn component_status_for_reason(reason: &str) -> Result<String, ValidationError> {
     match local_contract()
         .brain_state
         .reason_to_aggregate

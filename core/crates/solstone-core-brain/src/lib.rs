@@ -8,6 +8,7 @@ mod fixture;
 mod inspect;
 mod record;
 mod runtime_health;
+mod writer;
 
 #[cfg(test)]
 mod corpus_tests;
@@ -23,6 +24,12 @@ pub use inspect::{
 };
 pub use record::{BrainStateRecord, ValidationError, validate_brain_state_record};
 pub use runtime_health::{RuntimeRecordInspection, inspect_runtime_health};
+pub use writer::{
+    BeginPrerequisiteRenewal, BeginRefreshError, BrainRefreshPermit, REACHABLE_WRITE_CASES,
+    RuntimeFailureResult, WriterError, abandon_prerequisite_renewal, abandon_refresh,
+    begin_prerequisite_renewal, begin_refresh, finish_prerequisite_renewal, finish_refresh,
+    generate_fingerprint_key, record_runtime_failure,
+};
 
 pub use solstone_core_journal_config::read_journal_config;
 pub use solstone_core_journal_io::resolve_configured_journal;

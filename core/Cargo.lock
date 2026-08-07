@@ -1950,6 +1950,7 @@ dependencies = [
  "chrono",
  "hmac",
  "nix",
+ "ring",
  "ryu",
  "serde",
  "serde_json",
