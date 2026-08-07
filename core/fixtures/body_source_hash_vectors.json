@@ -67,11 +67,11 @@
       "identity": {
         "end_time": null,
         "metadata": {},
-        "record_type": "\u001cSyntheticType\u001f",
-        "source_family": "\u001cAPPLE_HEALTH\u001f",
+        "record_type": "\u001dSyntheticType\u001d",
+        "source_family": "\u001cAPPLE_HEALTH\u001c",
         "source_name": null,
         "source_record_id": "\u001c synthetic-id \u001f",
-        "start_time": "\u001c2026-01-01T00:00:00Z\u001f",
+        "start_time": "\u001e2026-01-01T00:00:00Z\u001e",
         "unit": "score",
         "value": 1
       },
@@ -207,6 +207,16 @@
       "expected_value_hash": "sha256:30656dd673d38f78eb85d3e28e81007ffe1b69e19571c74e3d0d3d8d5f2ee8b7",
       "input_numeric_literal": "1e999",
       "name": "overflow_exponent_becomes_python_infinity"
+    }
+  ],
+  "python_large_integer_value_cases": [
+    {
+      "decimal_pattern": {
+        "leading": "1",
+        "trailing_zeros": 4299
+      },
+      "expected_value_hash": "sha256:d84b35b82ac9235fd4bcafbe62d5d721dda72d9362fd06ee1174910d89bf6bd3",
+      "name": "python_4300_digit_integer_limit"
     }
   ]
 }
