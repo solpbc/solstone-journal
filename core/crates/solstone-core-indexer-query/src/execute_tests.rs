@@ -105,8 +105,49 @@ fn untokenizable_query_succeeds_without_an_index() {
         search(&root, &request("📅"), reference_date()).expect("not tokenizable succeeds");
     assert!(response.results.is_empty());
     assert_eq!(response.reason.as_deref(), Some("not_tokenizable"));
+    assert_eq!(response.cleaned_query, "📅");
     assert_eq!(response.order, Order::Recency);
     assert!(!root.join("indexer").exists());
+}
+
+#[test]
+fn search_response_reports_temporal_stripped_cleaned_query() {
+    let (root, connection) = seeded_root("cleaned-query");
+    insert(
+        &connection,
+        "meeting notes from yesterday",
+        "notes/yesterday.md",
+        "20260106",
+        "work",
+        "flow",
+        "default",
+        0,
+    );
+    insert(
+        &connection,
+        "meeting notes from earlier",
+        "notes/earlier.md",
+        "20260105",
+        "work",
+        "flow",
+        "default",
+        1,
+    );
+    drop(connection);
+
+    let plain = search(&root, &request("meeting"), reference_date()).expect("plain search");
+    assert_eq!(plain.cleaned_query, "meeting");
+
+    let temporal_request = request("meeting yesterday");
+    let compilation = compile_query(&temporal_request.query, reference_date());
+    assert_eq!(compilation.temporal.remaining_text, "meeting");
+    assert_eq!(compilation.temporal.day_from.as_deref(), Some("20260106"));
+    assert_eq!(compilation.temporal.day_to.as_deref(), Some("20260106"));
+    let temporal = search(&root, &temporal_request, reference_date()).expect("temporal search");
+    assert_eq!(temporal.cleaned_query, "meeting");
+    assert_eq!(temporal.results.len(), 1);
+    assert_eq!(temporal.results[0].metadata.day, "20260106");
+    fs::remove_dir_all(root).expect("cleanup cleaned query index");
 }
 
 #[test]

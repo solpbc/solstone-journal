@@ -91,8 +91,16 @@ fn indexer_search_reaches_query_engine_and_pins_json_envelope() {
     ));
     assert_eq!(
         object_keys(&response),
-        BTreeSet::from(["counts", "order", "relaxed", "results", "total"])
+        BTreeSet::from([
+            "cleaned_query",
+            "counts",
+            "order",
+            "relaxed",
+            "results",
+            "total",
+        ])
     );
+    assert_eq!(response["cleaned_query"], "José");
     assert_eq!(response["order"], "relevance");
     assert_eq!(response["relaxed"], false);
     assert_eq!(response["total"], 1);

@@ -32,6 +32,7 @@ pub fn search(
             total: None,
             counts: None,
             reason: Some("not_tokenizable".to_string()),
+            cleaned_query: compilation.temporal.remaining_text.clone(),
         });
     }
     let mut connection = open_read_only(journal)?;
@@ -71,6 +72,7 @@ fn search_on_connection(
     reference_date: NaiveDate,
     compilation: crate::QueryCompilation,
 ) -> Result<SearchResponse, IndexAccessError> {
+    let cleaned_query = compilation.temporal.remaining_text.clone();
     let (plan, relaxed) = resolve_plan(connection, request, reference_date, compilation)?;
     let order = order_for_plan(plan.has_live_match_expression);
     let results = connection.fetch_hits(&plan, request.limit, request.offset, order)?;
@@ -85,6 +87,7 @@ fn search_on_connection(
         total: counts.as_ref().map(|value| value.total),
         counts,
         reason: None,
+        cleaned_query,
     })
 }
 
@@ -243,11 +246,12 @@ impl QueryConnection {
                 path: self.path.clone(),
             });
         }
-        let total: i64 = self
+        let found: Option<i64> = self
             .connection
-            .query_row("SELECT COUNT(*) FROM chunks", [], |row| row.get(0))
+            .query_row("SELECT 1 FROM chunks LIMIT 1", [], |row| row.get(0))
+            .optional()
             .map_err(|error| self.classify(error))?;
-        if total == 0 {
+        if found.is_none() {
             return Err(IndexAccessError::Empty {
                 path: self.path.clone(),
             });

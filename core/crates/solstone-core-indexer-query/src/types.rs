@@ -137,6 +137,7 @@ pub struct SearchResponse {
     pub counts: Option<CountsResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    pub cleaned_query: String,
 }
 
 /// Post-collapse aggregation matching Python's ``search_counts`` fields.
