@@ -90,7 +90,7 @@ pub fn acquire_file_lease(
             &file,
             Mode::from_bits_truncate(options.mode as nix::libc::mode_t),
         )
-            .map_err(|source| io_error(path, io::Error::from_raw_os_error(source as i32)))?;
+        .map_err(|source| io_error(path, io::Error::from_raw_os_error(source as i32)))?;
 
         match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
             Ok(guard) => {
