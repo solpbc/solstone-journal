@@ -49,7 +49,7 @@ from pathlib import Path
 from typing import Any
 
 from solstone.think.providers.local import LocalProviderError
-from solstone.think.providers.local_install import CUDA_SERVER_PIN
+from solstone.think.providers import local_install
 from solstone.think.providers.oci_image import (
     _MANIFEST_ACCEPT,
     OciImageError,
@@ -718,7 +718,7 @@ def artifact_basename(build_tag: str, arch: str) -> str:
 
 def validate_arch(arch: str) -> tuple[str, ...]:
     try:
-        return CUDA_SERVER_PIN.wanted_files_for_arch(arch)
+        return local_install.cuda_server_pin().wanted_files_for_arch(arch)
     except LocalProviderError as exc:
         raise OciImageError(
             "unsupported_arch", f"unsupported OCI architecture {arch}: {exc}"
@@ -918,7 +918,7 @@ def repack_cuda_runtime(
 
 
 def supported_arches() -> tuple[str, ...]:
-    return tuple(CUDA_SERVER_PIN.cpu_wanted_files_by_arch)
+    return tuple(local_install.cuda_server_pin().cpu_wanted_files_by_arch)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -938,9 +938,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def print_pin_snippet(artifacts: Sequence[RepackArtifact]) -> None:
+    pin = local_install.cuda_server_pin()
     payload = {
         artifact.arch: {
-            "binary_name": CUDA_SERVER_PIN.binary_name,
+            "binary_name": pin.binary_name,
             "filename": artifact.tarball_path.name,
             "release_tag": artifact.release_tag,
             "sha256": artifact.tarball_sha256,
