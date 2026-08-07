@@ -268,10 +268,12 @@ pub fn run_with_factory(
     }
     let mut selection_frames = categorized
         .iter()
-        .map(|row| CategorizedFrame {
-            frame_id: row.frame_id,
-            timestamp: row.timestamp,
-            analysis: row.analysis.clone().unwrap_or(Value::Null),
+        .filter_map(|row| {
+            row.analysis.as_ref().map(|analysis| CategorizedFrame {
+                frame_id: row.frame_id,
+                timestamp: row.timestamp,
+                analysis: analysis.clone(),
+            })
         })
         .collect::<Vec<_>>();
     selection_frames.sort_unstable_by_key(|frame| frame.frame_id);
@@ -388,13 +390,7 @@ pub fn run_with_factory(
     let final_rows = finalize_incomplete(final_rows.into_iter().map(|row| (row, 0)).collect());
     failures |= has_row_failures(&final_rows);
     let _ = session.close();
-    let (state, reason) = if decoded.decode_failed {
-        (vocab::STATE_FAILED, vocab::REASON_CORRUPT_INPUT)
-    } else if failures {
-        (vocab::STATE_FAILED, vocab::REASON_ANALYSIS_FAILED)
-    } else {
-        (vocab::STATE_ANALYZED, vocab::REASON_OK)
-    };
+    let (state, reason) = verdict(decoded.decode_failed, failures);
     promote(Promotion {
         output: &output,
         rows: &rows.path,
@@ -549,6 +545,16 @@ fn has_row_failures(rows: &[Value]) -> bool {
     rows.iter().any(|row| row.get("error").is_some())
 }
 
+fn verdict(decode_failed: bool, failures: bool) -> (&'static str, &'static str) {
+    if decode_failed {
+        (vocab::STATE_FAILED, vocab::REASON_CORRUPT_INPUT)
+    } else if failures {
+        (vocab::STATE_FAILED, vocab::REASON_ANALYSIS_FAILED)
+    } else {
+        (vocab::STATE_ANALYZED, vocab::REASON_OK)
+    }
+}
+
 fn maybe_detect(disabled: &mut bool, analysis: &Value, png: &[u8]) -> Option<Value> {
     if *disabled {
         return None;
@@ -660,7 +666,9 @@ fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
 mod tests {
     use serde_json::json;
 
-    use super::{finalize_incomplete, has_row_failures};
+    use solstone_core_processing_record::vocab;
+
+    use super::{finalize_incomplete, has_row_failures, verdict};
 
     #[test]
     fn incomplete_extractions_keep_partial_content_and_fail_verdict() {
@@ -671,5 +679,9 @@ mod tests {
         assert_eq!(rows[0]["content"]["code"], "partial");
         assert_eq!(rows[0]["error"], "Extraction never completed");
         assert!(has_row_failures(&rows));
+        assert_eq!(
+            verdict(false, has_row_failures(&rows)),
+            (vocab::STATE_FAILED, vocab::REASON_ANALYSIS_FAILED)
+        );
     }
 }

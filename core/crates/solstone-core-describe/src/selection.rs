@@ -431,14 +431,14 @@ mod tests {
 
     #[test]
     fn category_caps_only_consult_config_overrides_and_restore_first_frame() {
-        let frames = frames(&[
+        let categorized_frames = frames(&[
             (1, 0.0, "gaming"),
             (2, 1.0, "gaming"),
             (3, 2.0, "gaming"),
             (4, 3.0, "code"),
         ]);
         assert_eq!(
-            apply_category_caps(vec![4, 3, 2, 1], &frames, &BTreeMap::new()),
+            apply_category_caps(vec![4, 3, 2, 1], &categorized_frames, &BTreeMap::new()),
             vec![1, 2, 3, 4],
             "gaming frontmatter importance is not a cap"
         );
@@ -451,10 +451,45 @@ mod tests {
             },
         );
         assert_eq!(
-            finalize_selection(vec![4, 3, 2, 1], &frames, &overrides),
+            finalize_selection(vec![4, 3, 2, 1], &categorized_frames, &overrides),
             vec![1, 4],
             "the first frame is restored after its ignored category is dropped"
         );
+
+        overrides.insert(
+            "gaming".to_owned(),
+            CategoryOverride {
+                importance: Some(Importance::Low),
+                extraction: None,
+            },
+        );
+        assert_eq!(
+            apply_category_caps(vec![4, 3, 2, 1], &categorized_frames, &overrides),
+            vec![1, 2, 4],
+            "low keeps the two lowest frame ids in a category"
+        );
+
+        let many_code = frames(&[
+            (1, 0.0, "code"),
+            (2, 1.0, "code"),
+            (3, 2.0, "code"),
+            (4, 3.0, "code"),
+        ]);
+        for importance in [Importance::Normal, Importance::High] {
+            let mut overrides = BTreeMap::new();
+            overrides.insert(
+                "code".to_owned(),
+                CategoryOverride {
+                    importance: Some(importance),
+                    extraction: None,
+                },
+            );
+            assert_eq!(
+                apply_category_caps(vec![4, 3, 2, 1], &many_code, &overrides),
+                vec![1, 2, 3, 4],
+                "{importance:?} is uncapped"
+            );
+        }
     }
 
     #[test]

@@ -92,14 +92,19 @@ pub fn parse_response(
 }
 
 fn category(name: &str) -> Option<&'static CategoryMeta> {
-    CATEGORIES_META
+    find_category(&CATEGORIES_META, name)
+}
+
+fn find_category<'a>(categories: &'a [CategoryMeta], name: &str) -> Option<&'a CategoryMeta> {
+    categories
         .iter()
-        .find(|category| category.name == name)
+        .find(|category| category.name == name && category.extractable)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::categories_for_analysis;
+    use super::{categories_for_analysis, find_category};
+    use crate::categories::{CategoryMeta, OutputKind};
     use serde_json::json;
 
     #[test]
@@ -144,5 +149,21 @@ mod tests {
             )
             .is_empty()
         );
+    }
+
+    #[test]
+    fn category_lookup_requires_an_extractable_prompt() {
+        let categories = [CategoryMeta {
+            name: "empty",
+            description: String::new(),
+            output: OutputKind::Markdown,
+            max_output_tokens: 4096,
+            context: "observe.describe.empty".to_owned(),
+            extraction: None,
+            extractable: false,
+            instruction: String::new(),
+            schema: None,
+        }];
+        assert!(find_category(&categories, "empty").is_none());
     }
 }

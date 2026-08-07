@@ -9,7 +9,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::json;
-use solstone_core_generate::{contract, decode_session_request_line, decode_session_terminal_line};
+use solstone_core_generate::{
+    ContentPart, contract, decode_session_request_line, decode_session_terminal_line,
+};
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
@@ -18,6 +20,14 @@ fn main() {
         env::var("SOLSTONE_DESCRIBE_SESSION_STUB_MODE").unwrap_or_else(|_| "generated".to_owned());
     if let Some(path) = env::var_os("SOLSTONE_DESCRIBE_SESSION_STUB_PID_PATH") {
         std::fs::write(path, std::process::id().to_string()).unwrap();
+    }
+    if let Some(path) = env::var_os("SOLSTONE_DESCRIBE_SESSION_STUB_LAUNCH_LOG_PATH") {
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .unwrap();
+        writeln!(file, "{}", std::process::id()).unwrap();
     }
     let mut seen = 0usize;
     let pause_after = env::var("SOLSTONE_DESCRIBE_SESSION_STUB_PAUSE_AFTER")
@@ -49,7 +59,17 @@ fn main() {
                 .append(true)
                 .open(path)
                 .unwrap();
-            writeln!(file, "{}", json!({"id":request.id,"attempt_index":request.attempt_index,"context":request.context,"json_output":request.json_output,"temperature":request.temperature,"max_output_tokens":request.max_output_tokens,"thinking_budget":request.thinking_budget,"system_instruction":request.system_instruction})).unwrap();
+            let contents = request
+                .contents
+                .iter()
+                .map(|part| match part {
+                    ContentPart::Text { text } => json!({"type":"text","text":text}),
+                    ContentPart::Image { mime_type, .. } => {
+                        json!({"type":"image","mime_type":mime_type})
+                    }
+                })
+                .collect::<Vec<_>>();
+            writeln!(file, "{}", json!({"id":request.id,"attempt_index":request.attempt_index,"context":request.context,"contents":contents,"json_output":request.json_output,"json_schema":request.json_schema,"temperature":request.temperature,"max_output_tokens":request.max_output_tokens,"thinking_budget":request.thinking_budget,"system_instruction":request.system_instruction})).unwrap();
         }
         if mode == "exit_after_all" && seen == 3 {
             return;
@@ -62,6 +82,12 @@ fn main() {
             continue;
         }
         let id = request.id.unwrap();
+        if request.context == "observe.extract.selection" && mode == "selection_skips_failed_first"
+        {
+            generated_text(&id, r#"{"frame_ids":[13]}"#);
+            pause_after_response(pause_after, seen);
+            continue;
+        }
         if request.context == "observe.extract.selection" && mode == "generated" {
             generated_text(
                 &id,
@@ -72,9 +98,6 @@ fn main() {
         }
         if request.context == "observe.extract.selection" && mode.starts_with("selection_") {
             selection_response(&id, &mode);
-            if let Some(path) = env::var_os("SOLSTONE_DESCRIBE_SESSION_STUB_STATS_PATH") {
-                std::fs::write(path, json!({"requests": seen}).to_string()).unwrap();
-            }
             pause_after_response(pause_after, seen);
             continue;
         }
@@ -90,9 +113,16 @@ fn main() {
             && (mode.starts_with("category_")
                 || matches!(
                     mode.as_str(),
-                    "extraction_json_retry_then_succeed" | "extraction_json_unparseable"
+                    "extraction_json_retry_then_succeed"
+                        | "extraction_json_unparseable"
+                        | "selection_skips_failed_first"
                 ))
         {
+            if mode == "selection_skips_failed_first" && id.starts_with("frame:1:") {
+                refused(&id, true, false, Some("chat_timeout"));
+                pause_after_response(pause_after, seen);
+                continue;
+            }
             categorization_response(&id, &mode);
             pause_after_response(pause_after, seen);
             continue;
@@ -116,9 +146,6 @@ fn main() {
             generated(&first_id);
         }
         pause_after_response(pause_after, seen);
-        if let Some(path) = env::var_os("SOLSTONE_DESCRIBE_SESSION_STUB_STATS_PATH") {
-            std::fs::write(path, json!({"requests": seen}).to_string()).unwrap();
-        }
     }
 }
 
@@ -136,8 +163,10 @@ fn categorization_response(id: &str, mode: &str) {
         "category_secondary" => ("code", "messaging", false),
         "category_media" => ("media", "none", true),
         "category_secondary_social" => ("code", "social", true),
+        "category_unextractable" => ("not-a-real-category", "none", true),
         "extraction_json_retry_then_succeed" => ("messaging", "none", true),
         "extraction_json_unparseable" => ("messaging", "none", true),
+        "selection_skips_failed_first" => ("code", "none", true),
         _ => unreachable!("category mode"),
     };
     let text = json!({"visual_description":"stub","primary":primary,"secondary":secondary,"overlap":overlap}).to_string();
@@ -150,6 +179,7 @@ fn extraction_response(id: &str, mode: &str, attempt: u64) {
         "extraction_markdown_unknown" => {
             generated_text_with_finish(id, "# extracted markdown", "unknown")
         }
+        "extraction_markdown_empty" => generated_text_with_finish(id, "# extracted markdown", ""),
         "extraction_markdown_length" => generated_text_with_finish(id, "truncated", "length"),
         "extraction_json_retry_then_succeed" if attempt == 0 => generated_text(id, "not json"),
         "extraction_json_retry_then_succeed" => generated_text(id, r#"{"ok":true}"#),

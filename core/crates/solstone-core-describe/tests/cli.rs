@@ -578,6 +578,49 @@ fn selection_accepts_bare_and_wrapped_responses_and_uses_selection_contract() {
         assert_eq!(request["temperature"], 0.3);
         assert_eq!(request["max_output_tokens"], 1024);
         assert_eq!(request["thinking_budget"], 4096);
+        assert_eq!(
+            request["json_schema"],
+            serde_json::from_str::<serde_json::Value>(include_str!(
+                "../../../../solstone/observe/extract.schema.json"
+            ))
+            .expect("selection schema")
+        );
+        let summaries = request["contents"]
+            .as_array()
+            .and_then(|contents| contents.first())
+            .and_then(|content| content["text"].as_str())
+            .map(serde_json::from_str::<Vec<serde_json::Value>>)
+            .expect("selection summaries")
+            .expect("selection summaries JSON");
+        assert_eq!(
+            summaries
+                .iter()
+                .map(|summary| summary["frame_id"].as_u64().expect("frame id"))
+                .collect::<Vec<_>>(),
+            vec![1, 7, 13],
+            "summaries stay in frame order"
+        );
+        for summary in summaries {
+            assert_eq!(
+                summary
+                    .as_object()
+                    .expect("summary object")
+                    .keys()
+                    .cloned()
+                    .collect::<BTreeSet<_>>(),
+                [
+                    "frame_id",
+                    "overlap",
+                    "primary",
+                    "secondary",
+                    "timestamp",
+                    "visual_description",
+                ]
+                .into_iter()
+                .map(str::to_owned)
+                .collect()
+            );
+        }
         assert!(
             request["system_instruction"]
                 .as_str()
@@ -586,6 +629,61 @@ fn selection_accepts_bare_and_wrapped_responses_and_uses_selection_contract() {
         );
         fs::remove_dir_all(root).expect("remove temporary root");
     }
+}
+
+#[test]
+fn selection_excludes_failed_categorization_frames() {
+    let root = temporary_root("selection-failed-frame");
+    let video = copied_video(&root, "mixed_vp8_screen.webm");
+    fs::create_dir_all(root.join("config")).expect("config directory");
+    fs::write(
+        root.join("config/journal.json"),
+        r#"{"describe":{"max_extractions":1}}"#,
+    )
+    .expect("config");
+    let request_log = root.join("requests.jsonl");
+    let output = describe(&root, &video, "selection_skips_failed_first")
+        .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+        .output()
+        .expect("describe");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let selection = selection_requests(&request_log);
+    assert_eq!(selection.len(), 1);
+    let summaries = selection[0]["contents"][0]["text"]
+        .as_str()
+        .map(serde_json::from_str::<Vec<serde_json::Value>>)
+        .expect("selection summaries")
+        .expect("selection summary JSON");
+    assert_eq!(
+        summaries
+            .iter()
+            .map(|summary| summary["frame_id"].as_u64().expect("frame id"))
+            .collect::<Vec<_>>(),
+        vec![7, 13]
+    );
+    assert_eq!(
+        read_jsonl(&request_log)
+            .iter()
+            .filter(|request| {
+                request["context"] == "observe.describe.frame"
+                    && request["id"]
+                        .as_str()
+                        .is_some_and(|id| id.starts_with("frame:1:"))
+            })
+            .count(),
+        5
+    );
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    let first_success = rows[1..]
+        .iter()
+        .find(|row| row["frame_id"] == 7)
+        .expect("frame 7 row");
+    assert_eq!(first_success["enhanced"], true);
+    fs::remove_dir_all(root).expect("remove root");
 }
 
 #[test]
@@ -632,13 +730,14 @@ fn selection_nonblocking_or_unparseable_response_uses_fallback() {
 
 #[test]
 fn extraction_uses_per_category_contracts_and_redaction() {
-    for (mode, context, tokens, thinking, json_output) in [
+    for (mode, context, tokens, thinking, json_output, prompt_fragment) in [
         (
             "category_browsing",
             "observe.describe.browsing",
             2048,
             4096,
             false,
+            "# Web Browsing Text Extraction",
         ),
         (
             "category_messaging",
@@ -646,6 +745,7 @@ fn extraction_uses_per_category_contracts_and_redaction() {
             8192,
             6144,
             true,
+            "# Messaging Extraction",
         ),
         (
             "category_meeting",
@@ -653,6 +753,7 @@ fn extraction_uses_per_category_contracts_and_redaction() {
             4096,
             6144,
             true,
+            "# Meeting State Analysis",
         ),
     ] {
         let root = temporary_root(mode);
@@ -683,6 +784,13 @@ fn extraction_uses_per_category_contracts_and_redaction() {
                 .expect("instruction")
                 .ends_with("- secret\n")
         );
+        assert!(
+            request["system_instruction"]
+                .as_str()
+                .expect("instruction")
+                .contains(prompt_fragment),
+            "{mode} uses its category prompt body"
+        );
         fs::remove_dir_all(root).expect("remove root");
     }
 }
@@ -692,18 +800,43 @@ fn extraction_secondary_and_retry_paths_are_independent() {
     let root = temporary_root("extraction-secondary");
     let video = copied_video(&root, "single_frame_vp8_screen.webm");
     let request_log = root.join("requests.jsonl");
+    let launch_log = root.join("launches.log");
+    fs::create_dir_all(root.join("config")).expect("config directory");
+    fs::write(
+        root.join("config/journal.json"),
+        r#"{"describe":{"redact":["secret"]}}"#,
+    )
+    .expect("config");
     let output = describe(&root, &video, "category_secondary")
         .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+        .env(
+            "SOLSTONE_DESCRIBE_SESSION_STUB_LAUNCH_LOG_PATH",
+            &launch_log,
+        )
         .output()
         .expect("describe");
     assert!(output.status.success());
-    let contexts = extraction_requests(&request_log)
-        .into_iter()
+    let category_requests = extraction_requests(&request_log);
+    let contexts = category_requests
+        .iter()
         .map(|request| request["context"].clone())
         .collect::<Vec<_>>();
     assert_eq!(
         contexts,
         vec!["observe.describe.code", "observe.describe.messaging"]
+    );
+    assert!(category_requests.iter().all(|request| {
+        request["system_instruction"]
+            .as_str()
+            .is_some_and(|instruction| instruction.ends_with("- secret\n"))
+    }));
+    assert_eq!(
+        fs::read_to_string(&launch_log)
+            .expect("launch log")
+            .lines()
+            .count(),
+        1,
+        "all describe phases share one session child"
     );
     fs::remove_dir_all(&root).expect("remove root");
 
@@ -727,8 +860,15 @@ fn extraction_exhaustion_fails_and_blocking_refusal_aborts() {
     for mode in ["extraction_refusal", "extraction_markdown_length"] {
         let root = temporary_root(mode);
         let video = copied_video(&root, "single_frame_vp8_screen.webm");
-        let output = describe(&root, &video, mode).output().expect("describe");
+        let request_log = root.join("requests.jsonl");
+        let output = describe(&root, &video, mode)
+            .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+            .output()
+            .expect("describe");
         assert!(output.status.success(), "{mode}");
+        if mode == "extraction_markdown_length" {
+            assert_eq!(extraction_requests(&request_log).len(), 5, "{mode}");
+        }
         let rows = read_jsonl(&video.with_extension("jsonl"));
         assert_eq!(rows[0]["_solstone_processing"]["state"], "failed");
         assert_eq!(
@@ -816,8 +956,12 @@ fn journal_request_records_match_phase_one_and_category_shapes() {
 }
 
 #[test]
-fn extraction_markdown_stop_and_unknown_are_clean_without_retry() {
-    for mode in ["extraction_markdown_success", "extraction_markdown_unknown"] {
+fn extraction_markdown_stop_unknown_and_empty_are_clean_without_retry() {
+    for mode in [
+        "extraction_markdown_success",
+        "extraction_markdown_unknown",
+        "extraction_markdown_empty",
+    ] {
         let root = temporary_root(mode);
         let video = copied_video(&root, "single_frame_vp8_screen.webm");
         let request_log = root.join("requests.jsonl");
@@ -832,6 +976,21 @@ fn extraction_markdown_stop_and_unknown_are_clean_without_retry() {
         assert!(rows[1].get("error").is_none(), "{mode}");
         fs::remove_dir_all(root).expect("remove root");
     }
+}
+
+#[test]
+fn selected_unknown_category_emits_an_unenhanced_clean_row() {
+    let root = temporary_root("unextractable-category");
+    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    let output = describe(&root, &video, "category_unextractable")
+        .output()
+        .expect("describe");
+    assert!(output.status.success());
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    assert_eq!(rows[1]["enhanced"], false);
+    assert!(rows[1].get("content").is_none());
+    assert!(rows[1].get("error").is_none());
+    fs::remove_dir_all(root).expect("remove root");
 }
 
 #[test]
@@ -886,7 +1045,11 @@ fn detection_secondary_gate_uses_secondary_label() {
 
 #[test]
 fn detection_failure_and_timeout_latch_after_one_attempt() {
-    for (mode, timeout) in [("invalid_json", None), ("hang", Some("100"))] {
+    for (mode, timeout) in [
+        ("invalid_json", None),
+        ("exit_failure", None),
+        ("hang", Some("100")),
+    ] {
         let root = temporary_root(mode);
         let video = copied_video(&root, "mixed_vp8_screen.webm");
         let detector_log = root.join("detector.jsonl");
@@ -910,6 +1073,68 @@ fn detection_failure_and_timeout_latch_after_one_attempt() {
         assert!(rows[1..].iter().all(|row| row.get("detections").is_none()));
         fs::remove_dir_all(root).expect("remove root");
     }
+}
+
+#[test]
+fn multi_frame_rows_have_exact_reference_keys_and_never_leak_pending() {
+    let root = temporary_root("complete-row-keys");
+    let video = copied_video(&root, "mixed_vp8_screen.webm");
+    fs::create_dir_all(root.join("config")).expect("config directory");
+    fs::write(
+        root.join("config/journal.json"),
+        r#"{"describe":{"max_extractions":1}}"#,
+    )
+    .expect("config");
+    let output = describe(&root, &video, "category_media")
+        .env("SOLSTONE_DESCRIBE_DETECT_BINARY", DETECT_STUB)
+        .output()
+        .expect("describe");
+    assert!(output.status.success());
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    assert_eq!(rows.len(), 4);
+    assert!(rows.iter().skip(1).all(|row| row.get("pending").is_none()));
+    let expected_extracted = [
+        "analysis",
+        "content",
+        "detections",
+        "enhanced",
+        "frame_id",
+        "requests",
+        "timestamp",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<BTreeSet<_>>();
+    let expected_unselected = [
+        "analysis",
+        "detections",
+        "enhanced",
+        "frame_id",
+        "requests",
+        "timestamp",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<BTreeSet<_>>();
+    for row in &rows[1..] {
+        let keys = row
+            .as_object()
+            .expect("row object")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            keys,
+            if row["enhanced"] == true {
+                expected_extracted.clone()
+            } else {
+                expected_unselected.clone()
+            }
+        );
+    }
+    assert!(rows[1..].iter().any(|row| row["enhanced"] == true));
+    assert!(rows[1..].iter().any(|row| row["enhanced"] == false));
+    fs::remove_dir_all(root).expect("remove root");
 }
 
 #[test]
