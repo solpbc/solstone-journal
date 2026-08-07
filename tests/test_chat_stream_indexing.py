@@ -7,6 +7,12 @@ def test_append_chat_event_indexes_without_rescan(tmp_path, monkeypatch):
     from solstone.think.indexer.journal import search_journal
 
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    from solstone.think.indexer.journal import get_journal_index
+    import solstone.think.utils as think_utils
+
+    think_utils._journal_path_cache = None
+    conn, _ = get_journal_index(str(tmp_path))
+    conn.close()
 
     total, results = search_journal("nebula phrase X42", stream="chat")
     assert total == 0

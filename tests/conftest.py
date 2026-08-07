@@ -189,6 +189,41 @@ def set_test_journal_path(monkeypatch, _isolate_os_environ):
 
 
 @pytest.fixture(autouse=True)
+def _native_index_read_bridge(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Route read-surface tests through the checked-out native query binary."""
+    from solstone.think import core_handshake
+    from solstone.think.indexer import journal, native
+
+    helper = ROOT / "core" / "target" / "debug" / "solstone-core"
+    if not helper.is_file():
+        return
+
+    kwargs = {
+        "handshake_checker": lambda: core_handshake.CoreHandshakeResult("ok"),
+        "helper_locator": lambda: helper,
+        "platform_reader": lambda: ("linux", "x86_64"),
+        "platform_tag_reader": lambda: {"manylinux2014_x86_64"},
+    }
+    monkeypatch.setattr(
+        journal,
+        "run_native_indexer_search",
+        lambda query, journal_path, **options: native.run_native_indexer_search(
+            query, journal_path, **options, **kwargs
+        ),
+    )
+    monkeypatch.setattr(
+        journal,
+        "run_native_indexer_agents",
+        lambda journal_path: native.run_native_indexer_agents(journal_path, **kwargs),
+    )
+    monkeypatch.setattr(
+        journal,
+        "run_native_indexer_coverage",
+        lambda journal_path: native.run_native_indexer_coverage(journal_path, **kwargs),
+    )
+
+
+@pytest.fixture(autouse=True)
 def _speakers_analyze_startup_invariant_ready(
     monkeypatch: pytest.MonkeyPatch,
     request: pytest.FixtureRequest,

@@ -62,6 +62,7 @@ def _render_evidence(entity_name: str, facet: str) -> str:
             entity_name,
             limit=5,
             facet=facet or None,
+            include_total=False,
         )
     except Exception as exc:
         logger.warning("entity_describe evidence search unavailable: %s", exc)

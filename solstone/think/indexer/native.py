@@ -3,17 +3,17 @@
 
 """Native journal-indexer command runner.
 
-The journal indexer CLI sends command write operations to `solstone-core
-indexer`. Query and interactive search stay in Python, and in-process index
-writers such as backup-restore rescans, direct `index_file()` callers, chat
-stream appends, importers, day-accumulator writes, observer prune, share delete,
-and entity-merge edge maintenance continue to call the Python indexer APIs
-directly.
+The journal indexer CLI sends command write operations and journal-index reads
+to `solstone-core indexer`. In-process index writers such as backup-restore
+rescans, direct `index_file()` callers, chat stream appends, importers,
+day-accumulator writes, observer prune, share delete, and entity-merge edge
+maintenance continue to call the Python indexer APIs directly.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import subprocess
 import sys
@@ -86,11 +86,53 @@ COMPOSED_COMMAND_WARNING = (
     "indexer command."
 )
 
+READ_UNSUPPORTED_HOST_MESSAGE = (
+    "journal indexer requires a compatible solstone-core wheel for journal index "
+    "reads. Supported wheel platforms: Linux x86_64 glibc 2.17+ "
+    "(manylinux2014); Linux aarch64 glibc 2.17+ (manylinux2014); macOS 14.0+ "
+    "arm64. This host has no compatible solstone-core wheel. Use a supported "
+    "host or install a compatible solstone-core wheel, then retry the read."
+)
+READ_HANDSHAKE_SKIP_MESSAGE = (
+    "journal indexer requires solstone-core for journal index reads, but "
+    "solstone-core distribution metadata is missing in this source checkout. "
+    "Run make install to restore the journal-host environment, then retry the read."
+)
+READ_HANDSHAKE_FAIL_MESSAGE = (
+    "journal indexer cannot run native journal index reads: {message}"
+)
+READ_NATIVE_USAGE_MESSAGE = (
+    "journal indexer usage error: native solstone-core indexer rejected the read "
+    "arguments with exit 64. This is a command argument-construction bug; update "
+    "solstone or report the full journal indexer command."
+)
+READ_NATIVE_LAUNCH_FAILED_MESSAGE = (
+    "journal indexer failed to launch solstone-core indexer for a journal index read: "
+    "{error}. Run make install in a source checkout or reinstall solstone-journal, "
+    "then retry the read."
+)
+READ_NATIVE_SIGNAL_MESSAGE = (
+    "journal indexer native read command died from signal {signal_number} "
+    "(returncode {returncode}); fix the cause and retry the read."
+)
+READ_NATIVE_OTHER_NONZERO_MESSAGE = (
+    "journal indexer native read command exited {returncode}. Fix the reported "
+    "cause and retry the read."
+)
+
 HandshakeChecker = Callable[[], core_handshake.CoreHandshakeResult]
 HelperLocator = Callable[[], Path]
 NativeRunner = Callable[..., subprocess.CompletedProcess[Any]]
 PlatformReader = Callable[[], probe.CorePlatform]
 PlatformTagReader = Callable[[], Iterable[str]]
+
+
+class NativeIndexerReadError(RuntimeError):
+    """Raised when the native indexer cannot satisfy a journal read."""
+
+    def __init__(self, message: str, *, reason: str | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 def _packaging_platform_tags() -> set[str]:
@@ -162,6 +204,148 @@ def run_native_indexer(
         return EXIT_TEMPFAIL
 
     return _map_native_returncode(completed.returncode, _operation_count(args))
+
+
+def run_native_indexer_search(
+    query: str,
+    journal: str,
+    *,
+    limit: int,
+    offset: int,
+    day: str | None = None,
+    day_from: str | None = None,
+    day_to: str | None = None,
+    facet: str | None = None,
+    agent: str | None = None,
+    stream: str | None = None,
+    time_bucket: str | None = None,
+    relax: bool = False,
+    include_counts: bool = True,
+    **di_kwargs: Any,
+) -> dict[str, Any]:
+    """Run a native search and return its JSON response envelope."""
+    argv_tail = ["search", query, "--limit", str(limit), "--offset", str(offset)]
+    for flag, value in (
+        ("--day", day),
+        ("--day-from", day_from),
+        ("--day-to", day_to),
+        ("--facet", facet),
+        ("--agent", agent),
+        ("--stream", stream),
+        ("--time-bucket", time_bucket),
+    ):
+        if value is not None:
+            argv_tail.extend([flag, value])
+    if relax:
+        argv_tail.append("--relax")
+    if include_counts:
+        argv_tail.append("--counts")
+    response = _run_native_indexer_read(argv_tail, journal, **di_kwargs)
+    if not isinstance(response, dict):
+        raise NativeIndexerReadError(
+            "native journal search returned a non-object JSON response"
+        )
+    return response
+
+
+def run_native_indexer_agents(
+    journal: str,
+    **di_kwargs: Any,
+) -> list[str]:
+    """Return distinct agents from the native indexer."""
+    response = _run_native_indexer_read(["agents"], journal, **di_kwargs)
+    if not isinstance(response, list) or not all(
+        isinstance(agent, str) for agent in response
+    ):
+        raise NativeIndexerReadError(
+            "native journal agents returned an invalid JSON response"
+        )
+    return response
+
+
+def run_native_indexer_coverage(
+    journal: str,
+    **di_kwargs: Any,
+) -> dict[str, Any]:
+    """Return native index coverage JSON."""
+    response = _run_native_indexer_read(["coverage"], journal, **di_kwargs)
+    if not isinstance(response, dict):
+        raise NativeIndexerReadError(
+            "native journal coverage returned a non-object JSON response"
+        )
+    return response
+
+
+def _run_native_indexer_read(
+    argv_tail: list[str],
+    journal: str,
+    *,
+    handshake_checker: HandshakeChecker = core_handshake.check_solstone_core_handshake,
+    helper_locator: HelperLocator = core_handshake.helper_path_for_executable,
+    native_runner: NativeRunner = subprocess.run,
+    platform_reader: PlatformReader = probe.current_solstone_core_platform,
+    platform_tag_reader: PlatformTagReader = _packaging_platform_tags,
+) -> dict[str, Any] | list[Any]:
+    if not runtime_has_solstone_core_wheel_coverage(
+        platform_reader=platform_reader,
+        platform_tag_reader=platform_tag_reader,
+    ):
+        raise NativeIndexerReadError(READ_UNSUPPORTED_HOST_MESSAGE)
+
+    handshake = handshake_checker()
+    if handshake.status == "skip":
+        raise NativeIndexerReadError(READ_HANDSHAKE_SKIP_MESSAGE)
+    if handshake.status == "fail":
+        raise NativeIndexerReadError(
+            READ_HANDSHAKE_FAIL_MESSAGE.format(
+                message=handshake.message or "unknown reason",
+            )
+        )
+
+    argv = [
+        str(helper_locator()),
+        "indexer",
+        *argv_tail,
+        "--journal",
+        journal,
+        "--json",
+    ]
+    try:
+        completed = native_runner(argv, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        raise NativeIndexerReadError(
+            READ_NATIVE_LAUNCH_FAILED_MESSAGE.format(error=exc)
+        ) from exc
+
+    if completed.returncode == 0:
+        try:
+            return json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise NativeIndexerReadError(
+                "native journal index read returned invalid JSON"
+            ) from exc
+    if completed.returncode in (EXIT_UNAVAILABLE, EXIT_TEMPFAIL):
+        try:
+            error = json.loads(completed.stdout)["error"]
+            message = error["message"]
+            reason = error["reason"]
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise NativeIndexerReadError(
+                "native journal index read returned an invalid error response"
+            ) from exc
+        raise NativeIndexerReadError(message, reason=reason)
+    if completed.returncode < 0:
+        raise NativeIndexerReadError(
+            READ_NATIVE_SIGNAL_MESSAGE.format(
+                signal_number=abs(completed.returncode),
+                returncode=completed.returncode,
+            )
+        )
+    if completed.returncode == EXIT_USAGE:
+        raise NativeIndexerReadError(READ_NATIVE_USAGE_MESSAGE)
+    raise NativeIndexerReadError(
+        READ_NATIVE_OTHER_NONZERO_MESSAGE.format(returncode=completed.returncode)
+    )
 
 
 def _operation_count(args: argparse.Namespace) -> int:

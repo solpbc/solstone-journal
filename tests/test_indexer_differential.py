@@ -113,20 +113,12 @@ def _command(tmp_path: Path, mode: str) -> str:
 
 
 def _journal_indexer_command(tmp_path: Path) -> str:
-    script = tmp_path / "run_journal_indexer.py"
-    script.write_text(
-        """
-import subprocess
-import sys
-from pathlib import Path
-
-journal_bin = Path(sys.executable).with_name("journal")
-completed = subprocess.run([str(journal_bin), "indexer", "--rescan-full"], check=False)
-raise SystemExit(completed.returncode)
-""".lstrip(),
-        encoding="utf-8",
+    del tmp_path
+    return _quote_command(
+        harness.ROOT / "core" / "target" / "debug" / "solstone-core",
+        "indexer",
+        "--rescan-full",
     )
-    return _quote_command(sys.executable, script)
 
 
 def _tree_inventory(root: Path) -> dict[str, tuple[int, int]]:
@@ -339,19 +331,13 @@ def _compare_functional_paths(tmp_path: Path, left: Path, right: Path) -> dict:
 def _fixture_index(tmp_path: Path) -> Path:
     journal = tmp_path / "indexed-journal"
     harness.copytree_tracked(FIXTURE_JOURNAL, journal)
-    journal_bin = Path(sys.executable).with_name("journal")
-    env = os.environ.copy()
-    env["SOLSTONE_JOURNAL"] = str(journal)
-    env["SOL_SKIP_SUPERVISOR_CHECK"] = "1"
-    env["SOLSTONE_DISABLE_CONVEY_SIDE_RUNTIMES"] = "1"
-    subprocess.run(
-        [str(journal_bin), "indexer", "--rescan-full"],
-        cwd=harness.ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    os.environ["SOLSTONE_JOURNAL"] = str(journal)
+    import solstone.think.utils as think_utils
+
+    think_utils._journal_path_cache = None
+    from solstone.think.indexer.journal import scan_journal
+
+    scan_journal(str(journal), full=True)
     return journal
 
 

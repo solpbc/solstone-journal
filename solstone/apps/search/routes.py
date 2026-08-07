@@ -21,6 +21,7 @@ from solstone.think.indexer.journal import (
     search_counts,
     search_journal,
 )
+from solstone.think.indexer.native import NativeIndexerReadError
 
 search_bp = Blueprint(
     "app:search",
@@ -285,6 +286,7 @@ def search_journal_api() -> Any:
                 agent=agent_filter,
                 stream=stream_filter,
                 relax=True,
+                include_total=False,
             )
             total_in_day = day_counts.get(day, 0)
 
@@ -302,7 +304,7 @@ def search_journal_api() -> Any:
                     "results": formatted_results,
                 }
             )
-    except sqlite3.OperationalError as exc:
+    except (NativeIndexerReadError, sqlite3.OperationalError) as exc:
         return error_response(SEARCH_FAILED, detail=str(exc))
 
     # Build facet list for sidebar with counts (unfiltered counts for discovery)
@@ -397,10 +399,11 @@ def day_results_api() -> Any:
             agent=agent_filter,
             stream=stream_filter,
             relax=True,
+            include_total=False,
         )
 
         formatted = [_format_result(r, query, facets_map) for r in rows]
-    except sqlite3.OperationalError as exc:
+    except (NativeIndexerReadError, sqlite3.OperationalError) as exc:
         return error_response(SEARCH_FAILED, detail=str(exc))
 
     return jsonify(

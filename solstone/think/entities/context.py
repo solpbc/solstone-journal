@@ -242,7 +242,11 @@ def _search_related_snippets(
 ) -> list[str]:
     try:
         _, results = search_journal(
-            entity_name, day=day, facet=facet, limit=MAX_SEARCH_SNIPPETS
+            entity_name,
+            day=day,
+            facet=facet,
+            limit=MAX_SEARCH_SNIPPETS,
+            include_total=False,
         )
     except Exception as exc:
         logger.warning(

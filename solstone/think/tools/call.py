@@ -152,20 +152,27 @@ def search(
     from solstone.think.indexer.journal import known_agents
     from solstone.think.indexer.journal import search_counts as search_counts_impl
     from solstone.think.indexer.journal import search_journal as search_journal_impl
+    from solstone.think.indexer.native import EXIT_UNAVAILABLE, NativeIndexerReadError
 
-    if agent is not None:
-        known = known_agents()
-        if known and agent.lower() not in known:
-            typer.echo(
-                f"error: unknown agent '{agent}'. Known agents: {', '.join(sorted(known))}",
-                err=True,
-            )
-            raise typer.Exit(1)
+    try:
+        if agent is not None:
+            known = known_agents()
+            if known and agent.lower() not in known:
+                typer.echo(
+                    f"error: unknown agent '{agent}'. Known agents: {', '.join(sorted(known))}",
+                    err=True,
+                )
+                raise typer.Exit(1)
 
-    total, results = search_journal_impl(query, limit, offset, rerank=True, **kwargs)
+        total, results = search_journal_impl(
+            query, limit, offset, rerank=True, **kwargs
+        )
+        counts = search_counts_impl(query, **kwargs)
+    except NativeIndexerReadError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(EXIT_UNAVAILABLE) from exc
 
     # Counts summary
-    counts = search_counts_impl(query, **kwargs)
     typer.echo(f"{total} results")
 
     facet_counts = counts.get("facets", {})

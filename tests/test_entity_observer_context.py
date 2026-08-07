@@ -386,7 +386,10 @@ def test_assemble_observer_context_search_lever(tmp_path, monkeypatch):
         ],
     )
 
+    calls = []
+
     def fake_search(query: str, **kwargs) -> tuple[int, list[dict]]:
+        calls.append((query, kwargs))
         return 3, [
             {
                 "text": "Deduped segment evidence should not show.",
@@ -413,6 +416,7 @@ def test_assemble_observer_context_search_lever(tmp_path, monkeypatch):
     assert "Deduped segment evidence should not show." not in result
     assert "Chat noise should not show." not in result
     assert entity_context.THIN_SOURCE_MARKER not in result
+    assert calls[0][1]["include_total"] is False
 
 
 def test_assemble_observer_context_no_active_entities(tmp_path, monkeypatch):

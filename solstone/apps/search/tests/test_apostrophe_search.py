@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -28,6 +29,35 @@ def apostrophe_search_client(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+    import solstone.think.utils as think_utils
+    from solstone.think import core_handshake
+    from solstone.think.indexer import journal as journal_index, native
+
+    think_utils._journal_path_cache = None
+    helper = Path(__file__).resolve().parents[4] / "core" / "target" / "debug" / "solstone-core"
+    native_kwargs = {
+        "handshake_checker": lambda: core_handshake.CoreHandshakeResult("ok"),
+        "helper_locator": lambda: helper,
+        "platform_reader": lambda: ("linux", "x86_64"),
+        "platform_tag_reader": lambda: {"manylinux2014_x86_64"},
+    }
+    monkeypatch.setattr(
+        journal_index,
+        "run_native_indexer_search",
+        lambda query, journal_path, **options: native.run_native_indexer_search(
+            query, journal_path, **options, **native_kwargs
+        ),
+    )
+    monkeypatch.setattr(
+        journal_index,
+        "run_native_indexer_agents",
+        lambda journal_path: native.run_native_indexer_agents(journal_path, **native_kwargs),
+    )
+    monkeypatch.setattr(
+        journal_index,
+        "run_native_indexer_coverage",
+        lambda journal_path: native.run_native_indexer_coverage(journal_path, **native_kwargs),
+    )
 
     seeded_day = "20240101"
     talents_dir = journal / "chronicle" / seeded_day / "talents"

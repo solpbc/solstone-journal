@@ -35,11 +35,11 @@ def _prompt(current: str = "Existing description") -> str:
 
 def test_entity_describe_pre_hook_renders_found_evidence(monkeypatch):
     module = _load_entity_describe_module()
+    calls = []
 
-    monkeypatch.setattr(
-        module,
-        "search_journal",
-        lambda query, limit, facet: (
+    def fake_search(query, **kwargs):
+        calls.append((query, kwargs))
+        return (
             1,
             [
                 {
@@ -51,8 +51,9 @@ def test_entity_describe_pre_hook_renders_found_evidence(monkeypatch):
                     },
                 }
             ],
-        ),
-    )
+        )
+
+    monkeypatch.setattr(module, "search_journal", fake_search)
 
     vars_ = module.pre_process({"prompt": _prompt()})["template_vars"]
 
@@ -61,13 +62,16 @@ def test_entity_describe_pre_hook_renders_found_evidence(monkeypatch):
     assert vars_["facet"] == "work"
     assert vars_["current_description"] == "Existing description"
     assert "Alice Example led the rollout planning." in vars_["evidence"]
+    assert calls == [
+        ("Alice Example", {"limit": 5, "facet": "work", "include_total": False})
+    ]
 
 
 def test_entity_describe_pre_hook_empty_evidence_preserves_generic_inputs(
     monkeypatch,
 ):
     module = _load_entity_describe_module()
-    monkeypatch.setattr(module, "search_journal", lambda query, limit, facet: (0, []))
+    monkeypatch.setattr(module, "search_journal", lambda *_args, **_kwargs: (0, []))
 
     vars_ = module.pre_process({"prompt": _prompt("(none)")})["template_vars"]
 

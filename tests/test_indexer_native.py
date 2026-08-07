@@ -370,3 +370,61 @@ def test_composed_native_usage_64_does_not_warn(
     assert result == 64
     assert native_argvs == [_native_argv("--reset", "--rebuild-edges", "--rescan")]
     assert native.COMPOSED_COMMAND_WARNING not in capsys.readouterr().err
+
+
+def _read_kwargs(native_runner) -> dict[str, Any]:
+    return {
+        "handshake_checker": _ok,
+        "helper_locator": lambda: Path("/tmp/bin/solstone-core"),
+        "native_runner": native_runner,
+        "platform_reader": lambda: ("linux", "x86_64"),
+        "platform_tag_reader": lambda: {"manylinux2014_x86_64"},
+    }
+
+
+@pytest.mark.parametrize(
+    "invoke",
+    [
+        lambda kwargs: native.run_native_indexer_search(
+            "needle", "/tmp/journal", limit=10, offset=0, **kwargs
+        ),
+        lambda kwargs: native.run_native_indexer_search(
+            "", "/tmp/journal", limit=0, offset=0, **kwargs
+        ),
+        lambda kwargs: native.run_native_indexer_agents("/tmp/journal", **kwargs),
+        lambda kwargs: native.run_native_indexer_coverage("/tmp/journal", **kwargs),
+    ],
+)
+def test_read_verbs_raise_named_error_when_native_launch_fails(invoke) -> None:
+    def broken_runner(*_args, **_kwargs):
+        raise OSError("missing helper")
+
+    with pytest.raises(native.NativeIndexerReadError, match="missing helper"):
+        invoke(_read_kwargs(broken_runner))
+
+
+@pytest.mark.parametrize(
+    ("returncode", "reason"),
+    [
+        (69, "index_absent"),
+        (69, "index_unreadable"),
+        (75, "index_locked"),
+        (69, "empty_index"),
+    ],
+)
+def test_read_access_errors_preserve_native_reason(returncode: int, reason: str) -> None:
+    def runner(argv, *, capture_output: bool, text: bool, check: bool):
+        assert capture_output is True
+        assert text is True
+        assert check is False
+        return subprocess.CompletedProcess(
+            argv,
+            returncode,
+            stdout=f'{{"error": {{"reason": "{reason}", "message": "native message"}}}}',
+        )
+
+    with pytest.raises(native.NativeIndexerReadError, match="native message") as exc_info:
+        native.run_native_indexer_search(
+            "needle", "/tmp/journal", limit=10, offset=0, **_read_kwargs(runner)
+        )
+    assert exc_info.value.reason == reason

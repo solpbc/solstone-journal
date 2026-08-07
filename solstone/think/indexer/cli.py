@@ -18,7 +18,7 @@ from .journal import (
     search_counts,
     search_journal,
 )
-from .native import EXIT_USAGE, run_native_indexer
+from .native import EXIT_UNAVAILABLE, EXIT_USAGE, NativeIndexerReadError, run_native_indexer
 
 INVALID_RESCAN_FILE_SCAN_MESSAGE = (
     "journal indexer usage error: --rescan-file cannot be combined with --rescan "
@@ -220,11 +220,15 @@ def main() -> int | None:
 
         if args.query:
             # Single query mode - show counts then results
-            counts = search_counts(args.query, **query_kwargs)
+            try:
+                counts = search_counts(args.query, **query_kwargs)
+                total, results = search_journal(
+                    args.query, args.limit, args.offset, **query_kwargs
+                )
+            except NativeIndexerReadError as exc:
+                print(exc, file=sys.stderr)
+                return EXIT_UNAVAILABLE
             _display_counts(counts, args.top)
-            total, results = search_journal(
-                args.query, args.limit, args.offset, **query_kwargs
-            )
             _display_search_results(results, total, args.offset)
         else:
             # Interactive mode
@@ -235,9 +239,13 @@ def main() -> int | None:
                     break
                 if not query:
                     break
-                counts = search_counts(query, **query_kwargs)
+                try:
+                    counts = search_counts(query, **query_kwargs)
+                    total, results = search_journal(
+                        query, args.limit, args.offset, **query_kwargs
+                    )
+                except NativeIndexerReadError as exc:
+                    print(exc, file=sys.stderr)
+                    return EXIT_UNAVAILABLE
                 _display_counts(counts, args.top)
-                total, results = search_journal(
-                    query, args.limit, args.offset, **query_kwargs
-                )
                 _display_search_results(results, total, args.offset)

@@ -5,6 +5,7 @@
 
 import hashlib
 import json
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock
@@ -12,275 +13,11 @@ from unittest.mock import Mock
 import pytest
 
 from solstone.convey.chat_stream import append_chat_event
-from solstone.think.indexer import sanitize_fts_query
 from solstone.think.indexer.journal import (
-    _build_where_clause,
-    extract_temporal_references,
     get_journal_index,
     search_counts,
     search_journal,
 )
-
-
-class TestSanitizeFtsQuery:
-    """Tests for FTS5 query sanitization."""
-
-    def test_simple_words(self):
-        """Simple words get NEAR proximity formulation."""
-        assert sanitize_fts_query("foo bar baz") == (
-            "NEAR(foo bar baz, 10) OR (foo AND bar AND baz)",
-            None,
-            None,
-        )
-
-    def test_preserves_or_operator(self):
-        """OR operator is preserved."""
-        assert sanitize_fts_query("foo OR bar") == ("foo OR bar", None, None)
-
-    def test_preserves_and_operator(self):
-        """AND operator is preserved."""
-        assert sanitize_fts_query("foo AND bar") == ("foo AND bar", None, None)
-
-    def test_preserves_not_operator(self):
-        """NOT operator is preserved."""
-        assert sanitize_fts_query("foo NOT bar") == ("foo NOT bar", None, None)
-
-    def test_preserves_asterisk_prefix_match(self):
-        """Asterisk for prefix matching is preserved."""
-        assert sanitize_fts_query("test*") == ("test*", None, None)
-
-    def test_preserves_quoted_phrases(self):
-        """Quoted phrases are preserved."""
-        assert sanitize_fts_query('"public benefit"') == (
-            '"public benefit"',
-            None,
-            None,
-        )
-
-    def test_complex_query_with_or_and_quotes(self):
-        """Complex query with OR and quoted phrases."""
-        result = sanitize_fts_query('solstone OR pbc OR "public benefit"')
-        assert result == ('solstone OR pbc OR "public benefit"', None, None)
-
-    def test_dot_replaced_with_space(self):
-        """Dots are replaced with spaces."""
-        assert sanitize_fts_query("config.json") == (
-            "NEAR(config json, 10) OR (config AND json)",
-            None,
-            None,
-        )
-
-    def test_colon_replaced_with_space(self):
-        """Colons are replaced with spaces."""
-        assert sanitize_fts_query("foo:bar") == (
-            "NEAR(foo bar, 10) OR (foo AND bar)",
-            None,
-            None,
-        )
-
-    def test_special_chars_replaced_with_space(self):
-        """Various special characters are replaced with spaces."""
-        assert sanitize_fts_query("a@b#c$d") == (
-            "NEAR(a b c d, 10) OR (a AND b AND c AND d)",
-            None,
-            None,
-        )
-
-    def test_preserves_apostrophe(self):
-        """Apostrophes in contractions are preserved."""
-        assert sanitize_fts_query("what's up") == (
-            'NEAR("what\'s" up, 10) OR ("what\'s" AND up)',
-            None,
-            None,
-        )
-
-    def test_unbalanced_quote_removed(self):
-        """Unbalanced quotes are removed entirely."""
-        assert sanitize_fts_query('"unbalanced') == ("unbalanced", None, None)
-
-    def test_unbalanced_quote_removes_all(self):
-        """When quotes are unbalanced, all quotes are removed."""
-        assert sanitize_fts_query('foo "bar" baz "qux') == (
-            "NEAR(foo bar baz qux, 10) OR (foo AND bar AND baz AND qux)",
-            None,
-            None,
-        )
-
-    def test_balanced_quotes_preserved(self):
-        """Balanced quotes are kept."""
-        assert sanitize_fts_query('"foo" "bar"') == ('"foo" "bar"', None, None)
-
-    def test_near_two_words(self):
-        """Two plain words get NEAR proximity formulation."""
-        assert sanitize_fts_query("git commit") == (
-            "NEAR(git commit, 10) OR (git AND commit)",
-            None,
-            None,
-        )
-
-    def test_near_three_words(self):
-        """Three plain words get NEAR proximity formulation."""
-        assert sanitize_fts_query("meeting with Alice") == (
-            "NEAR(meeting with Alice, 10) OR (meeting AND with AND Alice)",
-            None,
-            None,
-        )
-
-    def test_near_with_prefix(self):
-        """Prefix matching works within NEAR formulation."""
-        assert sanitize_fts_query("test* foo") == (
-            "NEAR(test* foo, 10) OR (test* AND foo)",
-            None,
-            None,
-        )
-
-    def test_single_word_no_near(self):
-        """Single word does not get NEAR treatment."""
-        assert sanitize_fts_query("hello") == ("hello", None, None)
-
-    def test_empty_query(self):
-        """Empty query returns empty string."""
-        assert sanitize_fts_query("") == ("", None, None)
-
-    def test_near_normalizes_whitespace(self):
-        """Extra whitespace in input is normalized in NEAR output."""
-        assert sanitize_fts_query("foo  bar") == (
-            "NEAR(foo bar, 10) OR (foo AND bar)",
-            None,
-            None,
-        )
-
-
-def test_build_where_clause_binds_match_param():
-    """FTS MATCH query text is bound as the first positional parameter."""
-    where_clause, params = _build_where_clause("it's")
-
-    assert where_clause == "chunks MATCH ?"
-    assert params[0] == '"it\'s"'
-
-
-class TestTemporalExtraction:
-    """Tests for temporal date extraction from queries."""
-
-    REF = datetime(2024, 1, 15)  # Monday
-
-    def test_yesterday(self):
-        result = sanitize_fts_query("meeting yesterday", self.REF)
-        assert result == ("meeting", "20240114", "20240114")
-
-    def test_today(self):
-        result = sanitize_fts_query("meeting today", self.REF)
-        assert result == ("meeting", "20240115", "20240115")
-
-    def test_last_week(self):
-        result = sanitize_fts_query("meeting last week", self.REF)
-        assert result == ("meeting", "20240108", "20240114")
-
-    def test_this_week(self):
-        result = sanitize_fts_query("meeting this week", self.REF)
-        assert result == ("meeting", "20240115", "20240121")
-
-    def test_last_month(self):
-        result = sanitize_fts_query("meeting last month", self.REF)
-        assert result == ("meeting", "20231201", "20231231")
-
-    def test_this_month(self):
-        result = sanitize_fts_query("meeting this month", self.REF)
-        assert result == ("meeting", "20240101", "20240131")
-
-    def test_last_monday(self):
-        # ref is Monday, so "last monday" = 7 days ago
-        result = sanitize_fts_query("meeting last Monday", self.REF)
-        assert result == ("meeting", "20240108", "20240108")
-
-    def test_last_tuesday(self):
-        result = sanitize_fts_query("meeting last Tuesday", self.REF)
-        assert result == ("meeting", "20240109", "20240109")
-
-    def test_last_wednesday(self):
-        result = sanitize_fts_query("meeting last Wednesday", self.REF)
-        assert result == ("meeting", "20240110", "20240110")
-
-    def test_last_thursday(self):
-        result = sanitize_fts_query("meeting last Thursday", self.REF)
-        assert result == ("meeting", "20240111", "20240111")
-
-    def test_last_friday(self):
-        result = sanitize_fts_query("meeting last Friday", self.REF)
-        assert result == ("meeting", "20240112", "20240112")
-
-    def test_last_saturday(self):
-        result = sanitize_fts_query("meeting last Saturday", self.REF)
-        assert result == ("meeting", "20240113", "20240113")
-
-    def test_last_sunday(self):
-        result = sanitize_fts_query("meeting last Sunday", self.REF)
-        assert result == ("meeting", "20240114", "20240114")
-
-    def test_over_the_weekend(self):
-        result = sanitize_fts_query("meeting over the weekend", self.REF)
-        assert result == ("meeting", "20240113", "20240114")
-
-    def test_on_the_weekend(self):
-        result = sanitize_fts_query("meeting on the weekend", self.REF)
-        assert result == ("meeting", "20240113", "20240114")
-
-    def test_case_insensitive(self):
-        result = sanitize_fts_query("meeting Last Monday", self.REF)
-        assert result == ("meeting", "20240108", "20240108")
-
-    def test_temporal_only_query(self):
-        """Pure temporal query produces empty FTS string + date filter."""
-        result = sanitize_fts_query("yesterday", self.REF)
-        assert result == ("", "20240114", "20240114")
-
-    def test_no_temporal_reference(self):
-        """Query without temporal words returns None dates."""
-        result = sanitize_fts_query("machine learning", self.REF)
-        assert result == (
-            "NEAR(machine learning, 10) OR (machine AND learning)",
-            None,
-            None,
-        )
-
-    def test_temporal_at_start(self):
-        result = sanitize_fts_query("yesterday meeting with Alice", self.REF)
-        assert result == (
-            "NEAR(meeting with Alice, 10) OR (meeting AND with AND Alice)",
-            "20240114",
-            "20240114",
-        )
-
-    def test_temporal_in_middle(self):
-        result = sanitize_fts_query("project last week update", self.REF)
-        assert result == (
-            "NEAR(project update, 10) OR (project AND update)",
-            "20240108",
-            "20240114",
-        )
-
-    def test_quoted_temporal_not_extracted(self):
-        """Temporal words inside quotes are not extracted."""
-        result = sanitize_fts_query('"last week" meeting', self.REF)
-        assert result == ('"last week" meeting', None, None)
-
-    def test_multiple_temporal_first_wins(self):
-        """When multiple temporal references exist, first one wins."""
-        result = sanitize_fts_query("yesterday last week meeting", self.REF)
-        assert result == (
-            "NEAR(last week meeting, 10) OR (last AND week AND meeting)",
-            "20240114",
-            "20240114",
-        )
-
-    def test_extract_temporal_references_directly(self):
-        """Test extract_temporal_references for the cleaned query."""
-        cleaned, day_from, day_to = extract_temporal_references(
-            "meeting last week", self.REF
-        )
-        assert cleaned == "meeting"
-        assert day_from == "20240108"
-        assert day_to == "20240114"
 
 
 @pytest.fixture
@@ -481,16 +218,17 @@ def test_known_agents_returns_indexed_agents(journal_fixture):
     assert all(a and a == a.lower() for a in agents)
 
 
-def test_known_agents_empty_on_unscanned_journal(tmp_path, monkeypatch):
-    """A fresh journal with no built index yields an empty set."""
-    from solstone.think.indexer.journal import known_agents
+def test_known_agents_absent_index_raises(tmp_path, monkeypatch):
+    """A fresh journal surfaces an absent native index."""
+    from solstone.think.indexer.journal import NativeIndexerReadError, known_agents
 
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
     import solstone.think.utils as think_utils
 
     think_utils._journal_path_cache = None
     try:
-        assert known_agents() == set()
+        with pytest.raises(NativeIndexerReadError, match="index"):
+            known_agents()
     finally:
         think_utils._journal_path_cache = None
 
@@ -2143,3 +1881,143 @@ def test_scan_journal_rescan_does_not_record_entity_ambiguities(journal_copy):
 
     assert not ambiguity_path.exists()
     assert load_ambiguities() == []
+
+
+def _native_read_kwargs() -> dict:
+    from solstone.think import core_handshake
+
+    helper = Path(__file__).resolve().parents[1] / "core" / "target" / "debug" / "solstone-core"
+    return {
+        "handshake_checker": lambda: core_handshake.CoreHandshakeResult("ok"),
+        "helper_locator": lambda: helper,
+        "platform_reader": lambda: ("linux", "x86_64"),
+        "platform_tag_reader": lambda: {"manylinux2014_x86_64"},
+    }
+
+
+def _seed_native_chunk(journal: Path, *, content: str, day: str, idx: int = 0) -> None:
+    conn, _ = get_journal_index(str(journal))
+    conn.execute(
+        "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (content, f"notes/{day}-{idx}.md", day, "work", "flow", "default", idx, ""),
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_native_read_bridge_uses_real_binary_for_recency_and_unicode(tmp_path, monkeypatch):
+    """The public shim preserves Rust browse ordering and Unicode retrieval."""
+    import solstone.think.utils as think_utils
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    think_utils._journal_path_cache = None
+    for day in range(1, 8):
+        for idx in range(3):
+            _seed_native_chunk(
+                tmp_path,
+                content="José planning meeting",
+                day=f"2026010{day}",
+                idx=idx,
+            )
+
+    total, results = search_journal(
+        "", day_from="20260101", day_to="20260107", agent="flow", limit=12
+    )
+    assert total == 21
+    assert [result["metadata"]["day"] for result in results] == [
+        "20260107",
+        "20260107",
+        "20260107",
+        "20260106",
+        "20260106",
+        "20260106",
+        "20260105",
+        "20260105",
+        "20260105",
+        "20260104",
+        "20260104",
+        "20260104",
+    ]
+    _, browse_results = search_journal("", rerank=True, limit=5, offset=0)
+    assert len(browse_results) == 5
+    assert search_journal("José")[0] == 21
+
+
+def test_native_read_shim_distinguishes_empty_and_absent_indexes(tmp_path, monkeypatch):
+    """Only an existing empty index maps to the legacy empty read shapes."""
+    import solstone.think.utils as think_utils
+    from solstone.think.indexer.journal import (
+        NativeIndexerReadError,
+        get_corpus_day_coverage,
+        known_agents,
+    )
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    think_utils._journal_path_cache = None
+    conn, _ = get_journal_index(str(tmp_path))
+    conn.close()
+    assert search_journal("needle") == (0, [])
+    assert search_counts("needle")["total"] == 0
+    assert known_agents() == set()
+    assert get_corpus_day_coverage() is None
+
+    absent = tmp_path / "absent"
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(absent))
+    think_utils._journal_path_cache = None
+    for read in (
+        lambda: search_journal("needle"),
+        lambda: search_counts("needle"),
+        known_agents,
+        get_corpus_day_coverage,
+    ):
+        with pytest.raises(NativeIndexerReadError, match="index"):
+            read()
+
+
+def test_non_tokenizable_native_reason_is_available_at_bridge_boundary(tmp_path):
+    from solstone.think.indexer import native
+
+    response = native.run_native_indexer_search(
+        "📅", str(tmp_path), limit=0, offset=0, **_native_read_kwargs()
+    )
+    assert response["reason"] == "not_tokenizable"
+    assert search_journal("📅") == (0, [])
+
+
+def test_rerank_requests_native_pool_with_limit_fifty(monkeypatch):
+    """Reranking fetches a fixed native pool before local scoring."""
+    from solstone.think.indexer import journal, native
+
+    argvs: list[list[str]] = []
+
+    def runner(argv, *, capture_output, text, check):
+        assert capture_output is True
+        assert text is True
+        assert check is False
+        argvs.append(argv)
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=json.dumps(
+                {
+                    "results": [],
+                    "order": "relevance",
+                    "relaxed": False,
+                    "total": 0,
+                    "counts": {"total": 0, "facets": {}, "agents": {}, "days": {}, "streams": {}, "relaxed": False},
+                    "cleaned_query": "needle",
+                }
+            ),
+        )
+
+    monkeypatch.setattr(
+        journal,
+        "run_native_indexer_search",
+        lambda query, journal_path, **options: native.run_native_indexer_search(
+            query, journal_path, native_runner=runner, **_native_read_kwargs(), **options
+        ),
+    )
+    search_journal("needle", limit=5, offset=0, rerank=True)
+    assert argvs[0][argvs[0].index("--limit") + 1] == "50"
+    assert argvs[0][argvs[0].index("--offset") + 1] == "0"

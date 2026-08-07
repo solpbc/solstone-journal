@@ -14,14 +14,13 @@ then indexed with metadata fields for filtering (day, facet, agent).
 Raw audio/screen transcripts are formattable but not indexed by default.
 """
 
-import calendar
 import logging
 import os
-import re
 import sqlite3
 import time
+from collections import Counter
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -43,6 +42,12 @@ from solstone.think.indexer.edges import (
     discover_edge_files,
     edge_file_mtimes,
     replace_edge_file_mtime,
+)
+from solstone.think.indexer.native import (
+    NativeIndexerReadError,
+    run_native_indexer_agents,
+    run_native_indexer_coverage,
+    run_native_indexer_search,
 )
 from solstone.think.indexer.rerank_scorer import score
 from solstone.think.markdown import format_markdown
@@ -810,537 +815,6 @@ def scan_journal(journal: str, verbose: bool = False, full: bool = False) -> Sca
     )
 
 
-# Compiled patterns for temporal extraction (checked against unquoted text only)
-_TEMPORAL_PATTERNS: list[tuple[re.Pattern, str]] = []
-
-
-def _build_temporal_patterns():
-    """Build compiled regex patterns for temporal date references.
-
-    Each entry is (compiled_regex, handler_name). Longer patterns are listed
-    first so "last monday" is tried before "last week".
-    """
-    days = "monday|tuesday|wednesday|thursday|friday|saturday|sunday"
-    patterns = [
-        # "over the weekend" / "on the weekend"
-        (r"\b(?:over|on)\s+the\s+weekend\b", "weekend"),
-        # "last monday" through "last sunday"
-        (rf"\blast\s+({days})\b", "last_day"),
-        # Multi-word phrases
-        (r"\blast\s+week\b", "last_week"),
-        (r"\bthis\s+week\b", "this_week"),
-        (r"\blast\s+month\b", "last_month"),
-        (r"\bthis\s+month\b", "this_month"),
-        # Single words
-        (r"\byesterday\b", "yesterday"),
-        (r"\btoday\b", "today"),
-    ]
-    return [(re.compile(p, re.IGNORECASE), name) for p, name in patterns]
-
-
-_TEMPORAL_PATTERNS = _build_temporal_patterns()
-
-_RELAX_STOPWORDS: frozenset[str] = frozenset(
-    """
-    what who whom whose when where why how which
-    did do does doing done is are was were am be been being
-    the a an this that these those there here
-    i we you it me us them they he she his her its my our your their
-    about with for of to in on at by from as into over under up down out off
-    and or not any some
-    have has had will would can could should shall may might must
-    get got gets
-    """.split()
-)
-_RERANK_POOL_SIZE = 50
-_FTS_MATCH_PREFIX = "chunks MATCH"
-
-
-def extract_temporal_references(
-    query: str, reference_date: datetime | None = None
-) -> tuple[str, str | None, str | None]:
-    """Extract temporal date references from a query string.
-
-    Scans unquoted portions of the query for temporal phrases like "yesterday",
-    "last week", "last Monday", etc. Returns the query with the temporal phrase
-    removed, plus day_from/day_to as YYYYMMDD strings.
-
-    Only the first temporal match is used. Content inside double quotes is
-    never matched.
-
-    Args:
-        query: Raw query string.
-        reference_date: Pin "today" for testability. Defaults to datetime.now().
-
-    Returns:
-        Tuple of (cleaned_query, day_from, day_to). day_from/day_to are None
-        if no temporal reference was found.
-    """
-    if not query:
-        return query, None, None
-
-    ref = reference_date or datetime.now()
-
-    # Split into quoted and unquoted segments to protect quoted content.
-    # re.split with a capturing group keeps the delimiters in the list.
-    segments = re.split(r'("(?:[^"]*)")', query)
-
-    best_match: tuple[int, int, str, re.Match] | None = None
-
-    # Scan unquoted segments only and keep the earliest match in query order.
-    for i, seg in enumerate(segments):
-        if i % 2 == 1:  # odd indices are quoted segments
-            continue
-        for pattern, handler in _TEMPORAL_PATTERNS:
-            m = pattern.search(seg)
-            if not m:
-                continue
-            candidate = (i, m.start(), handler, m)
-            if best_match is None:
-                best_match = candidate
-                continue
-            best_i, best_start, _, _ = best_match
-            if i < best_i or (i == best_i and m.start() < best_start):
-                best_match = candidate
-
-    if best_match:
-        seg_idx, _, handler, match = best_match
-        seg = segments[seg_idx]
-        # Remove the matched text from this segment
-        segments[seg_idx] = seg[: match.start()] + seg[match.end() :]
-        cleaned = "".join(segments).strip()
-        # Collapse multiple spaces
-        cleaned = re.sub(r"\s{2,}", " ", cleaned)
-        day_from, day_to = _resolve_temporal(handler, match, ref)
-        return cleaned, day_from, day_to
-
-    return query, None, None
-
-
-def _resolve_temporal(
-    handler: str, match: re.Match, ref: datetime
-) -> tuple[str | None, str | None]:
-    """Resolve a temporal handler + match into (day_from, day_to) YYYYMMDD strings."""
-    fmt = "%Y%m%d"
-
-    if handler == "yesterday":
-        d = ref - timedelta(days=1)
-        s = d.strftime(fmt)
-        return s, s
-
-    if handler == "today":
-        s = ref.strftime(fmt)
-        return s, s
-
-    if handler == "last_week":
-        # Monday of this week, then back 7 days
-        mon_this = ref - timedelta(days=ref.weekday())
-        mon_last = mon_this - timedelta(days=7)
-        sun_last = mon_last + timedelta(days=6)
-        return mon_last.strftime(fmt), sun_last.strftime(fmt)
-
-    if handler == "this_week":
-        mon = ref - timedelta(days=ref.weekday())
-        sun = mon + timedelta(days=6)
-        return mon.strftime(fmt), sun.strftime(fmt)
-
-    if handler == "last_month":
-        first_this = ref.replace(day=1)
-        last_prev = first_this - timedelta(days=1)
-        first_prev = last_prev.replace(day=1)
-        return first_prev.strftime(fmt), last_prev.strftime(fmt)
-
-    if handler == "this_month":
-        first = ref.replace(day=1)
-        last_day = calendar.monthrange(ref.year, ref.month)[1]
-        last = ref.replace(day=last_day)
-        return first.strftime(fmt), last.strftime(fmt)
-
-    if handler == "last_day":
-        # "last monday" etc. — match group 1 is the day name
-        day_name = match.group(1).lower()
-        day_map = {
-            "monday": 0,
-            "tuesday": 1,
-            "wednesday": 2,
-            "thursday": 3,
-            "friday": 4,
-            "saturday": 5,
-            "sunday": 6,
-        }
-        target = day_map[day_name]
-        days_back = (ref.weekday() - target) % 7
-        if days_back == 0:
-            days_back = 7  # "last Monday" on a Monday = a week ago
-        d = ref - timedelta(days=days_back)
-        s = d.strftime(fmt)
-        return s, s
-
-    if handler == "weekend":
-        # Most recent Saturday-Sunday
-        weekday = ref.weekday()
-        if weekday >= 5:  # Sat=5, Sun=6
-            sat = ref - timedelta(days=(weekday - 5))
-        else:
-            sat = ref - timedelta(days=(weekday + 2))
-        sun = sat + timedelta(days=1)
-        return sat.strftime(fmt), sun.strftime(fmt)
-
-    return None, None  # unreachable
-
-
-def _quote_term(word: str) -> str:
-    """Phrase-quote a bare term carrying an apostrophe so it is FTS5-valid.
-
-    Plain alphanumeric terms and bareword operators pass through untouched. A
-    trailing ``*`` wildcard stays OUTSIDE the quotes (``O'Bri*`` -> ``"O'Bri"*``)
-    so it still prefix-matches; a wildcard buried inside the quotes matches
-    nothing. The FTS5 default tokenizer splits on the apostrophe, so ``it's``
-    indexes as ``[it, s]`` and the ``"it's"`` phrase matches it.
-    """
-    if word in ("AND", "OR", "NOT"):
-        return word
-    base, star = (word[:-1], "*") if word.endswith("*") else (word, "")
-    if "'" in base:
-        return f'"{base}"{star}'
-    return word
-
-
-def _formulate_fts(words: list[str]) -> str:
-    quoted = [_quote_term(word) for word in words]
-    if len(quoted) > 1:
-        return f"NEAR({' '.join(quoted)}, 10) OR ({' AND '.join(quoted)})"
-    return " ".join(quoted)
-
-
-def sanitize_fts_query(
-    query: str, reference_date: datetime | None = None
-) -> tuple[str, str | None, str | None]:
-    """Sanitize query for FTS5 and extract temporal date references.
-
-    Extracts temporal phrases (yesterday, last week, etc.) from the query,
-    then sanitizes the remaining text for FTS5: keeps alphanumeric, spaces,
-    quotes, apostrophes, and *.
-
-    For plain multi-word queries (no explicit operators or quotes), produces
-    a NEAR-proximity formulation with an AND alternative:
-        NEAR(term1 term2, 10) OR (term1 AND term2)
-
-    Returns:
-        Tuple of (sanitized_query, day_from, day_to) where day_from/day_to
-        are YYYYMMDD strings or None.
-    """
-    # Extract temporal references before sanitization
-    query, day_from, day_to = extract_temporal_references(query, reference_date)
-
-    result = re.sub(r"[^a-zA-Z0-9\s\"'*]", " ", query)
-    # Remove all quotes if unbalanced
-    if result.count('"') % 2:
-        result = result.replace('"', "")
-    # NEAR formulation for plain multi-word queries
-    words = result.split()
-    has_operators = any(word in ("AND", "OR", "NOT") for word in words)
-    has_quotes = '"' in result
-    # Balanced user quotes pass through untouched — never re-quote them.
-    if has_quotes:
-        return result, day_from, day_to
-    # No user quotes present: phrase-quote each bare term so apostrophes are
-    # FTS5-valid. has_operators/has_quotes were computed on the pre-quoted words.
-    if len(words) > 1 and not has_operators:
-        result = _formulate_fts(words)
-    else:
-        result = " ".join(_quote_term(word) for word in words)
-    return result, day_from, day_to
-
-
-def _where_from_fts(
-    fts_match: str,
-    day: str | None = None,
-    day_from: str | None = None,
-    day_to: str | None = None,
-    extracted_from: str | None = None,
-    extracted_to: str | None = None,
-    facet: str | None = None,
-    agent: str | None = None,
-    stream: str | None = None,
-    time_bucket: str | None = None,
-) -> tuple[str, list[Any]]:
-    params: list[Any] = []
-
-    if fts_match:
-        where_clause = "chunks MATCH ?"
-        params.append(fts_match)
-    else:
-        where_clause = "1=1"
-
-    if day:
-        where_clause += " AND day=?"
-        params.append(day)
-    elif day_from or day_to:
-        if day_from:
-            where_clause += " AND day>=?"
-            params.append(day_from)
-        if day_to:
-            where_clause += " AND day<=?"
-            params.append(day_to)
-    elif extracted_from or extracted_to:
-        if extracted_from:
-            where_clause += " AND day>=?"
-            params.append(extracted_from)
-        if extracted_to:
-            where_clause += " AND day<=?"
-            params.append(extracted_to)
-    if facet:
-        where_clause += " AND facet=?"
-        params.append(facet.lower())
-    if agent:
-        where_clause += " AND agent=?"
-        params.append(agent.lower())
-    if stream:
-        where_clause += " AND stream=?"
-        params.append(stream)
-    if time_bucket:
-        where_clause += " AND time_bucket=?"
-        params.append(time_bucket)
-
-    return where_clause, params
-
-
-def _build_where_clause(
-    query: str,
-    day: str | None = None,
-    day_from: str | None = None,
-    day_to: str | None = None,
-    facet: str | None = None,
-    agent: str | None = None,
-    stream: str | None = None,
-    time_bucket: str | None = None,
-) -> tuple[str, list[Any]]:
-    """Build WHERE clause and params for FTS5 search.
-
-    Args:
-        query: FTS5 search query
-        day: Filter by exact day (YYYYMMDD) - mutually exclusive with day_from/day_to
-        day_from: Filter by date range start (YYYYMMDD, inclusive)
-        day_to: Filter by date range end (YYYYMMDD, inclusive)
-        facet: Filter by facet name
-        agent: Filter by agent
-        stream: Filter by stream name
-        time_bucket: Filter by time of day bucket (morning, afternoon, evening, night)
-
-    Returns:
-        Tuple of (where_clause, params)
-    """
-    if query:
-        sanitized, extracted_from, extracted_to = sanitize_fts_query(query)
-    else:
-        sanitized, extracted_from, extracted_to = "", None, None
-
-    return _where_from_fts(
-        sanitized,
-        day,
-        day_from,
-        day_to,
-        extracted_from,
-        extracted_to,
-        facet,
-        agent,
-        stream,
-        time_bucket,
-    )
-
-
-def _relax_where(
-    conn: sqlite3.Connection,
-    query: str,
-    day: str | None = None,
-    day_from: str | None = None,
-    day_to: str | None = None,
-    facet: str | None = None,
-    agent: str | None = None,
-    stream: str | None = None,
-    time_bucket: str | None = None,
-) -> tuple[str, list[Any], int] | None:
-    cleaned, extracted_from, extracted_to = extract_temporal_references(query)
-    stripped = re.sub(r"[^a-zA-Z0-9\s\"'*]", " ", cleaned)
-    if stripped.count('"') % 2:
-        stripped = stripped.replace('"', "")
-    words = stripped.split()
-    if any(word in ("AND", "OR", "NOT") for word in words) or ('"' in stripped):
-        return None
-
-    content = [word for word in words if word.lower() not in _RELAX_STOPWORDS]
-
-    def probe(fts_match: str) -> tuple[str, list[Any], int]:
-        where_clause, params = _where_from_fts(
-            fts_match,
-            day,
-            day_from,
-            day_to,
-            extracted_from,
-            extracted_to,
-            facet,
-            agent,
-            stream,
-            time_bucket,
-        )
-        total = conn.execute(
-            f"SELECT count(*) FROM chunks WHERE {where_clause}", params
-        ).fetchone()[0]
-        return where_clause, params, total
-
-    if content and content != words:
-        where_clause, params, total = probe(_formulate_fts(content))
-        if total > 0:
-            return where_clause, params, total
-
-    if len(content) > 1:
-        where_clause, params, total = probe(
-            " OR ".join(_quote_term(word) for word in content)
-        )
-        if total > 0:
-            return where_clause, params, total
-
-    if not content and (day or day_from or day_to or extracted_from or extracted_to):
-        return probe("")
-
-    return None
-
-
-def _fetch_results(
-    conn: sqlite3.Connection,
-    where_clause: str,
-    params: list[Any],
-    limit: int,
-    offset: int,
-) -> list[dict[str, Any]]:
-    cursor = conn.execute(
-        f"""
-        SELECT content, path, day, facet, agent, stream, idx, bm25(chunks) as rank
-        FROM chunks WHERE {where_clause}
-        ORDER BY rank LIMIT ? OFFSET ?
-        """,
-        params + [limit, offset],
-    )
-
-    results = []
-    for (
-        content,
-        path,
-        day_val,
-        facet_val,
-        agent_val,
-        stream_val,
-        idx,
-        rank,
-    ) in cursor.fetchall():
-        results.append(
-            {
-                "id": f"{path}:{idx}",
-                "text": content,
-                "metadata": {
-                    "day": day_val,
-                    "facet": facet_val,
-                    "agent": agent_val,
-                    "stream": stream_val,
-                    "path": path,
-                    "idx": idx,
-                },
-                "score": rank,
-            }
-        )
-    return results
-
-
-def _reranked_results(
-    conn: sqlite3.Connection,
-    where_clause: str,
-    params: list[Any],
-    cleaned_query: str,
-    limit: int,
-    offset: int,
-) -> list[dict[str, Any]]:
-    pool = _fetch_results(conn, where_clause, params, _RERANK_POOL_SIZE, 0)
-    if len(pool) <= 1:
-        return pool[offset : offset + limit]
-
-    scores = score(cleaned_query, [result["text"] for result in pool])
-    if scores is None:
-        return pool[offset : offset + limit]
-
-    order = sorted(range(len(pool)), key=lambda i: -scores[i])
-    reranked = [{**pool[i], "rerank_score": scores[i]} for i in order]
-    return reranked[offset : offset + limit]
-
-
-def known_agents() -> set[str]:
-    """Return the distinct, non-empty agent names present in the index.
-
-    Read-only: used to validate an explicit ``--agent`` filter before searching,
-    so an unknown agent fails loudly instead of silently matching nothing. Agent
-    names are stored lowercased at index time, so the returned set is lowercase.
-    """
-    conn, _ = get_journal_index()
-    rows = conn.execute(
-        "SELECT DISTINCT agent FROM chunks WHERE agent IS NOT NULL AND agent != ''"
-    ).fetchall()
-    conn.close()
-    return {row[0] for row in rows}
-
-
-def _collapse_redundant_segments(
-    conn: sqlite3.Connection,
-    where_clause: str,
-    params: list[Any],
-) -> tuple[str, list[Any], bool]:
-    """Drop segment-aggregate chunks that duplicate a matched child, at query time.
-
-    A segment aggregate (``agent='segment'``, ``path="{day}/{stream}/{seg}"``)
-    intentionally duplicates its talent children in the index for cross-agent
-    precision. When a match set contains both an aggregate and >=1 child from the
-    same segment directory, the aggregate is redundant: this returns the WHERE
-    augmented with ``AND path NOT IN (...)`` for those aggregate paths.
-
-    Read-only: two ``SELECT DISTINCT`` probes on the already-resolved WHERE (run
-    AFTER any relax ladder). When there is no aggregate/child overlap it returns
-    the inputs unchanged with ``collapsed=False`` so the caller stays byte-identical
-    to pre-collapse behavior (no extra clause, no re-count).
-
-    Returns:
-        (where_clause, params, collapsed) where ``collapsed`` is True iff at least
-        one aggregate path was suppressed.
-    """
-    agg_paths = {
-        row[0]
-        for row in conn.execute(
-            f"SELECT DISTINCT path FROM chunks WHERE {where_clause} AND agent='segment'",
-            params,
-        )
-    }
-    if not agg_paths:
-        return where_clause, params, False
-
-    child_parents: set[str] = set()
-    for (path,) in conn.execute(
-        f"SELECT DISTINCT path FROM chunks WHERE {where_clause} AND agent!='segment'",
-        params,
-    ):
-        parts = path.replace("\\", "/").split("/")
-        if len(parts) >= 4 and segment_key(parts[2]):
-            child_parents.add("/".join(parts[:3]))
-
-    redundant = sorted(agg_paths & child_parents)
-    if not redundant:
-        return where_clause, params, False
-
-    placeholders = ", ".join("?" * len(redundant))
-    return (
-        f"{where_clause} AND path NOT IN ({placeholders})",
-        params + redundant,
-        True,
-    )
-
-
 def search_journal(
     query: str,
     limit: int = 10,
@@ -1355,6 +829,7 @@ def search_journal(
     time_bucket: str | None = None,
     relax: bool = False,
     rerank: bool = False,
+    include_total: bool = True,
 ) -> tuple[int, list[dict[str, Any]]]:
     """Search the journal index.
 
@@ -1383,53 +858,45 @@ def search_journal(
             - score: BM25 relevance score
             - rerank_score: Optional rerank score on reranked result pages
     """
-    conn, _ = get_journal_index()
-    where_clause, params = _build_where_clause(
-        query, day, day_from, day_to, facet, agent, stream, time_bucket
-    )
-
-    # Get total count
-    total = conn.execute(
-        f"SELECT count(*) FROM chunks WHERE {where_clause}", params
-    ).fetchone()[0]
-
-    if relax and total == 0:
-        relaxed = _relax_where(
-            conn,
+    used_pool_fetch = rerank and offset + limit <= 50
+    native_limit, native_offset = (50, 0) if used_pool_fetch else (limit, offset)
+    try:
+        response = run_native_indexer_search(
             query,
-            day,
-            day_from,
-            day_to,
-            facet,
-            agent,
-            stream,
-            time_bucket,
+            str(get_journal()),
+            limit=native_limit,
+            offset=native_offset,
+            day=day,
+            day_from=day_from,
+            day_to=day_to,
+            facet=facet,
+            agent=agent,
+            stream=stream,
+            time_bucket=time_bucket,
+            relax=relax,
+            include_counts=include_total,
         )
-        if relaxed is not None:
-            where_clause, params, total = relaxed
+    except NativeIndexerReadError as exc:
+        if exc.reason == "empty_index":
+            return 0, []
+        raise
 
-    where_clause, params, collapsed = _collapse_redundant_segments(
-        conn, where_clause, params
-    )
-    if collapsed:
-        total = conn.execute(
-            f"SELECT count(*) FROM chunks WHERE {where_clause}", params
-        ).fetchone()[0]
-
-    do_rerank = (
-        rerank
-        and where_clause.startswith(_FTS_MATCH_PREFIX)
-        and offset + limit <= _RERANK_POOL_SIZE
-    )
-    if do_rerank:
-        cleaned_query = extract_temporal_references(query)[0]
-        results = _reranked_results(
-            conn, where_clause, params, cleaned_query, limit, offset
-        )
-    else:
-        results = _fetch_results(conn, where_clause, params, limit, offset)
-
-    conn.close()
+    if response.get("reason") == "not_tokenizable":
+        return 0, []
+    results = _decode_search_results(response["results"])
+    if used_pool_fetch:
+        if response["order"] == "relevance" and len(results) > 1:
+            scores = score(
+                response["cleaned_query"],
+                [result["text"] for result in results],
+            )
+            if scores is not None:
+                order = sorted(range(len(results)), key=lambda index: -scores[index])
+                results = [
+                    {**results[index], "rerank_score": scores[index]} for index in order
+                ]
+        results = results[offset : offset + limit]
+    total = int(response["total"]) if include_total else 0
     return total, results
 
 
@@ -1472,70 +939,86 @@ def search_counts(
               ladder rescued the query (only possible with relax=True); False
               otherwise.
     """
-    from collections import Counter
-
-    conn, _ = get_journal_index()
-    where_clause, params = _build_where_clause(
-        query, day, day_from, day_to, facet, agent, stream, time_bucket
-    )
-
-    rows = conn.execute(
-        f"SELECT facet, agent, day, stream FROM chunks WHERE {where_clause}", params
-    ).fetchall()
-
-    did_relax = False
-    if relax and not rows:
-        relaxed = _relax_where(
-            conn,
+    # Search exposes not_tokenizable while the counts verb intentionally does not.
+    try:
+        response = run_native_indexer_search(
             query,
-            day,
-            day_from,
-            day_to,
-            facet,
-            agent,
-            stream,
-            time_bucket,
+            str(get_journal()),
+            limit=0,
+            offset=0,
+            day=day,
+            day_from=day_from,
+            day_to=day_to,
+            facet=facet,
+            agent=agent,
+            stream=stream,
+            time_bucket=time_bucket,
+            relax=relax,
         )
-        if relaxed is not None:
-            did_relax = True
-            where_clause, params, _ = relaxed
-            rows = conn.execute(
-                f"SELECT facet, agent, day, stream FROM chunks WHERE {where_clause}",
-                params,
-            ).fetchall()
-
-    where_clause, params, collapsed = _collapse_redundant_segments(
-        conn, where_clause, params
-    )
-    if collapsed:
-        rows = conn.execute(
-            f"SELECT facet, agent, day, stream FROM chunks WHERE {where_clause}",
-            params,
-        ).fetchall()
-
-    conn.close()
-
+    except NativeIndexerReadError as exc:
+        if exc.reason == "empty_index":
+            return _empty_search_counts()
+        raise
+    if response.get("reason") == "not_tokenizable":
+        return _empty_search_counts()
+    counts = response["counts"]
     return {
-        "total": len(rows),
-        "facets": Counter(r[0] for r in rows if r[0]),
-        "agents": Counter(r[1] for r in rows if r[1]),
-        "days": Counter(r[2] for r in rows if r[2]),
-        "streams": Counter(r[3] for r in rows if r[3]),
-        "relaxed": did_relax,
+        "total": int(counts["total"]),
+        "facets": Counter(counts["facets"]),
+        "agents": Counter(counts["agents"]),
+        "days": Counter(counts["days"]),
+        "streams": Counter(counts["streams"]),
+        "relaxed": bool(counts["relaxed"]),
     }
 
 
 def get_corpus_day_coverage() -> dict[str, str] | None:
     """Return the indexed corpus day span, or None when no dated chunks exist."""
-    conn, _ = get_journal_index()
-    row = conn.execute(
-        "SELECT MIN(day), MAX(day) FROM chunks WHERE day != ''"
-    ).fetchone()
-    conn.close()
-
-    if not row or not row[0] or not row[1]:
+    try:
+        coverage = run_native_indexer_coverage(str(get_journal()))
+    except NativeIndexerReadError as exc:
+        if exc.reason == "empty_index":
+            return None
+        raise
+    if coverage["state"] == "no_dated_chunks":
         return None
-    return {"start": row[0], "end": row[1]}
+    return {"start": coverage["start"], "end": coverage["end"]}
+
+
+def known_agents() -> set[str]:
+    """Return the distinct, non-empty agent names present in the index."""
+    try:
+        return set(run_native_indexer_agents(str(get_journal())))
+    except NativeIndexerReadError as exc:
+        if exc.reason == "empty_index":
+            return set()
+        raise
+
+
+def _decode_search_results(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": hit["id"],
+            "text": hit["text"],
+            "metadata": {
+                key: hit["metadata"][key]
+                for key in ("day", "facet", "agent", "stream", "path", "idx")
+            },
+            "score": hit["score"],
+        }
+        for hit in hits
+    ]
+
+
+def _empty_search_counts() -> dict[str, Any]:
+    return {
+        "total": 0,
+        "facets": Counter(),
+        "agents": Counter(),
+        "days": Counter(),
+        "streams": Counter(),
+        "relaxed": False,
+    }
 
 
 def _load_index_entity_dicts() -> list[dict[str, Any]]:

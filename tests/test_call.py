@@ -187,7 +187,7 @@ class TestDiscovery:
 class TestJournal:
     """Tests for 'sol call journal' commands."""
 
-    def test_journal_search(self):
+    def test_journal_search(self, search_index_journal):
         """Search command runs without error."""
         result = runner.invoke(call_app, ["journal", "search", "test", "--limit", "5"])
         assert result.exit_code == 0
@@ -273,10 +273,10 @@ class TestJournal:
         assert result.exit_code == 0
         assert "0 results" in result.output
 
-    def test_journal_search_empty_index_skips_agent_validation(
+    def test_journal_search_absent_index_surfaces_native_error(
         self, tmp_path, monkeypatch
     ):
-        """An empty/un-indexed journal must not false-positive on --agent."""
+        """An absent index is an access error, not an empty-agent result."""
         journal = tmp_path / "journal"
         journal.mkdir()
         monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
@@ -287,7 +287,8 @@ class TestJournal:
             result = runner.invoke(
                 call_app, ["journal", "search", "", "-a", "anything"]
             )
-            assert result.exit_code == 0
+            assert result.exit_code == 69
+            assert "index" in result.stderr.lower()
         finally:
             think_utils._journal_path_cache = None
 
@@ -325,7 +326,7 @@ class TestJournal:
         assert positional.exit_code == flag.exit_code
         assert positional.stdout == flag.stdout
 
-    def test_journal_search_shows_counts(self):
+    def test_journal_search_shows_counts(self, search_index_journal):
         """Search output includes facet/agent/day counts."""
         result = runner.invoke(call_app, ["journal", "search", ""])
         assert result.exit_code == 0
