@@ -10,6 +10,7 @@ members = [
     "crates/solstone-core-entity-matching",
     "crates/solstone-core-facets",
     "crates/solstone-core-journal",
+    "crates/solstone-core-journal-cli",
     "crates/solstone-core-journal-config",
     "crates/solstone-core-journal-config-write",
     "crates/solstone-core-journal-io",
@@ -60,6 +61,7 @@ solstone-core-indexer-store = { path = "crates/solstone-core-indexer-store" }
 solstone-core-indexer-query = { path = "crates/solstone-core-indexer-query" }
 solstone-core-ingest-resolve = { path = "crates/solstone-core-ingest-resolve" }
 solstone-core-journal = { path = "crates/solstone-core-journal" }
+solstone-core-journal-cli = { path = "crates/solstone-core-journal-cli" }
 solstone-core-journal-config = { path = "crates/solstone-core-journal-config" }
 solstone-core-journal-config-write = { path = "crates/solstone-core-journal-config-write" }
 solstone-core-journal-io = { path = "crates/solstone-core-journal-io" }
