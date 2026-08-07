@@ -311,24 +311,39 @@ Facets and their per-facet contents, including facet-scoped entity and speaker m
 
 ✅ **Carry forward — this is the house style, not a local quirk.** `CorruptConfigError` (`think/utils.py:53-68`): a **missing** config returns deep-copied defaults; a config that **exists and will not parse raises**, in owner voice — *"I couldn't read your settings file… Your settings were NOT changed."* Two deliberately different postures on two failure modes, never silently substituting on the dangerous one.
 
-🔴 **The style holds in every writer and is already broken in four readers — three of them in Rust.** It is a thing to **restore**, not merely to preserve:
+🔴 **The style holds in every writer and is still broken in two Python readers.** It is a thing to
+**restore**, not merely to preserve:
 
 | Reader | On a config that exists and will not parse |
 |---|---|
-| `think/utils.py:776` `journal_is_active()` | swallows the parse error → **`False`**, so an onboarded journal presents as un-onboarded |
-| `think/doctor.py:1335` `_resolve_configured_backend()` | swallows it → **`None`**, so the diagnostic tool reports the *default* backend instead of saying the settings are unreadable. ⚠ It catches only the JSON error, not `OSError`, so the two failure modes get two different answers |
-| `core/…-indexer/src/edges/mod.rs` `owner_timezone_for_journal` | silently returns **`Tz::UTC`** — and the owner timezone is what buckets a segment into a **day**, so records file under the wrong date with no signal. ⚠ UTC on an **absent** config is correct and documented; ⛔ do not collapse the two |
-| `core/…-indexer-store/src/scan.rs` `resolve_chat_labels` | its helper distinguishes missing from malformed **and says so in a doc comment**; the sole caller collapses both into `Owner`/`Sol` + a warning, so a corrupt config **indexes the owner's chat under substitute labels**. 📌 A doc comment is a claim, not a measurement |
+| `think/utils.py` `journal_is_active()` | swallows the parse error → **`False`**, so an onboarded journal presents as un-onboarded |
+| `think/doctor.py` `_resolve_configured_backend()` | swallows it → **`None`**, so the diagnostic tool reports the *default* backend instead of saying the settings are unreadable. ⚠ It catches only the JSON error, not `OSError`, so the two failure modes get two different answers |
+
+✅ **Two Rust readers had the same defect and no longer do.** They are recorded because the *reason*
+they existed is the durable lesson: the durable-write crate is banned outside the write authorities —
+correctly — so a reader that needed the config had nowhere legitimate to go, and three crates
+hand-rolled their own. The edge indexer answered `Tz::UTC` on a corrupt config, and the owner timezone
+is what buckets a segment into a **day**, so records filed under the wrong date with no signal. The
+chat-label caller answered substitute speaker labels, **erasing the owner's own name from indexed
+chat** — the same harm `P-format` had just closed on a different path. ⚠ Its helper distinguished
+missing from malformed *and said so in a doc comment*; only the caller threw the answer away.
+📌 **A doc comment is a claim, not a measurement.**
+
+🔴 **The lesson, not the defect:** a read path with no home does not stay unread — it grows private
+copies, and they diverge. A reader must be able to depend on the contract **without** the write
+primitive.
 
 ⚠ **The owner-visible path, traced:** the convey root gate reads `journal_is_active()` → `False` → redirects to the **first-run wizard** → the wizard materializes → raises → 500 whose JSON `detail` carries the sentence, rendered as raw JSON in a browser. So the owner is told their journal is not set up and then shown a JSON error. The fail-closed **writer** is the only reason their settings survive it.
 
-🔴 **There are TWO default sets and conflating them is a defect no test of either alone catches.** A **reader** that finds no config yields `journal_default.json` verbatim — identity fields empty. A **mutation** that materializes a config starts from those defaults **plus** the OS user record and `/etc/localtime`. ⛔ A reader handing back the materialized set, or a mutation starting from the plain set, is wrong; the second silently drops the owner's name from every journal created through that path. ⚠ There is already a Rust materializer supplying a **three-key** default set where the real one has **eleven** sections; because an existing config is authoritative and never merged with defaults, a config materialized through it is permanently missing eight of them.
+🔴 **There are TWO default sets and conflating them is a defect no test of either alone catches.** A **reader** that finds no config yields `journal_default.json` verbatim — identity fields empty. A **mutation** that materializes a config starts from those defaults **plus** the OS user record and `/etc/localtime`. ⛔ A reader handing back the materialized set, or a mutation starting from the plain set, is wrong; the second silently drops the owner's name from every journal created through that path. ⚠ A Rust materializer once supplied a **three-key** default set where the real one has **eleven** sections; because an existing config is authoritative and never merged with defaults, a config materialized through it would have been permanently missing eight of them. ✅ Closed by making the defaults **non-negotiable** — no caller supplies a default set, and the two adapters are named so neither can be reached by accident.
 
-⚠ **A rebuild reads what Python could have written, and two shapes are unresolved.** `json.dumps` **emits** bare `NaN` and `Infinity` for non-finite floats and accepts them back; Python integers are arbitrary precision. Neither is valid JSON and a conforming Rust parser refuses both, so a config the reference writer could have produced may be unreadable by its replacement — the one outcome *write new, read old* calls unacceptable. **Measure it before assuming it is unreachable.**
+✅ **A rebuild reads what Python could have written — measured, both shapes.** `json.dumps` **emits** bare `NaN` and `Infinity` and accepts them back; `serde_json` **hard-rejects** all three non-finite tokens, so a config the reference writer could have produced is unreadable by its replacement. ⚠ Reachability was measured too: no config writer coerces a float and nothing in the production tree can produce one, and the reader's answer is a strict-load failure that leaves the file untouched — the right posture. Integers, by contrast, are **not** rejected: `u64::MAX` round-trips byte-identically, and only beyond it does a value degrade to `f64`. 📌 That refuted a line of [`../PORTING.md`](../PORTING.md) § Data Boundaries, now corrected there. **The general rule: measure reachability rather than assuming it, and do it while the reference still runs.**
 
 ⚠ **The config file being the source of truth is an external commitment made in writing.** A contract-breaking pass here can violate it by accident.
 
 ⚠ **The single-owner lint is real, unreachable, and holed.** `scripts/check_journal_config_owner.py` enforces one transactional owner, but it runs only from `install-checks`, which `ci` no longer reaches — and it detects replacement only through `atomic_replace` / `os.replace` / `Path.replace` / a second `hold_lock`. A plain `write_text` at the config path is outside its detection set, and there is a live instance in the tree. Proved with planted controls: it catches the first class and not the second.
+
+🔴 **And it is about to see less, not more.** Once the durable write lives behind a process boundary, the real writer is a **subprocess**, which no lint over Python call shapes can observe: any module could invoke the config verb and the lint would still report `pass`. ⛔ Do not read a green single-owner gate as the invariant it used to approximate.
 
 ## `P-journal-retention`
 
