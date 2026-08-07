@@ -61,8 +61,7 @@ fn exceeds_mask_threshold(polygon_area: f64, frame_area: f64) -> bool {
 
 pub fn detect_markers(frame: &RgbFrame) -> Option<ArucoFrame> {
     let gray = grayscale(frame)?;
-    // The adaptive result suppresses locally dark content; the fixed dark threshold keeps
-    // the binary marker border intact in its uniformly black cells.
+    // Adaptive thresholding adds locally dark regions; the fixed threshold retains uniformly black marker borders.
     let adaptive = adaptive_threshold(&gray, 11, 7);
     let mut binary = GrayImage::new(frame.width, frame.height);
     for (x, y, pixel) in binary.enumerate_pixels_mut() {
@@ -481,6 +480,19 @@ mod tests {
             .expect("valid fiducial oracle")
     }
 
+    fn raw_fixture_case(file: &str) -> serde_json::Value {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/describe_fiducials.json"))
+                .expect("valid fiducial oracle");
+        fixture["cases"]
+            .as_array()
+            .expect("fixture cases")
+            .iter()
+            .find(|case| case["file"] == file)
+            .cloned()
+            .expect("fixture case")
+    }
+
     fn frame(file: &str) -> RgbFrame {
         let image = image::open(
             Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -592,21 +604,42 @@ mod tests {
     #[test]
     fn mask_fill_blacks_inside_without_touching_outside() {
         let mut image = frame("coverage_far_under.png");
-        let outside = image.pixels[..3].to_vec();
+        let original = image.pixels.clone();
         let mut transform = ConveyFiducialMask;
         let PreHashOutcome::Apply { aruco: Some(aruco) } = transform.apply(1, 0.0, &mut image)
         else {
             panic!("sub-threshold fixture is applied");
         };
         assert!(aruco.masked);
-        aruco.polygon.expect("four tags form polygon");
-        for y in 250..450 {
-            for x in 300..900 {
+        let polygon = aruco.polygon.expect("four tags form polygon");
+        for y in 0..image.height {
+            for x in 0..image.width {
                 let offset = ((y * image.width + x) * 3) as usize;
-                assert_eq!(&image.pixels[offset..offset + 3], [0, 0, 0]);
+                match pixel_region(x, y, &polygon) {
+                    PixelRegion::Inside => {
+                        assert_eq!(&image.pixels[offset..offset + 3], [0, 0, 0], "{x},{y}");
+                    }
+                    PixelRegion::Outside => {
+                        assert_eq!(
+                            &image.pixels[offset..offset + 3],
+                            &original[offset..offset + 3],
+                            "{x},{y}"
+                        );
+                    }
+                    PixelRegion::Boundary => {}
+                }
             }
         }
-        assert_eq!(&image.pixels[..3], outside);
+    }
+
+    #[test]
+    fn no_tags_oracle_omits_skip_verdict() {
+        let raw = raw_fixture_case("no_tags.png");
+        assert!(
+            !raw.as_object()
+                .expect("fixture case object")
+                .contains_key("skips_frame")
+        );
     }
 
     #[test]
@@ -637,5 +670,60 @@ mod tests {
         );
         assert_eq!(aruco.extrapolated, Some(4));
         assert_eq!(aruco.polygon.unwrap()[3], [0.0, 10.0]);
+    }
+
+    #[derive(Clone, Copy)]
+    enum PixelRegion {
+        Inside,
+        Outside,
+        Boundary,
+    }
+
+    fn pixel_region(x: u32, y: u32, polygon: &[[f32; 2]; 4]) -> PixelRegion {
+        let point = [x as f32 + 0.5, y as f32 + 0.5];
+        let boundary_distance = polygon
+            .iter()
+            .zip(polygon.iter().cycle().skip(1))
+            .take(4)
+            .map(|(start, end)| distance_to_segment(point, *start, *end))
+            .fold(f32::INFINITY, f32::min);
+        if boundary_distance <= std::f32::consts::FRAC_1_SQRT_2 {
+            PixelRegion::Boundary
+        } else if point_in_polygon(point, polygon) {
+            PixelRegion::Inside
+        } else {
+            PixelRegion::Outside
+        }
+    }
+
+    fn point_in_polygon(point: [f32; 2], polygon: &[[f32; 2]; 4]) -> bool {
+        polygon
+            .iter()
+            .zip(polygon.iter().cycle().skip(1))
+            .take(4)
+            .fold(false, |inside, (start, end)| {
+                let crosses = (start[1] > point[1]) != (end[1] > point[1]);
+                let intersection =
+                    (end[0] - start[0]) * (point[1] - start[1]) / (end[1] - start[1]) + start[0];
+                if crosses && point[0] < intersection {
+                    !inside
+                } else {
+                    inside
+                }
+            })
+    }
+
+    fn distance_to_segment(point: [f32; 2], start: [f32; 2], end: [f32; 2]) -> f32 {
+        let direction = [end[0] - start[0], end[1] - start[1]];
+        let length_squared = direction[0].powi(2) + direction[1].powi(2);
+        let progress = ((point[0] - start[0]) * direction[0]
+            + (point[1] - start[1]) * direction[1])
+            / length_squared;
+        let progress = progress.clamp(0.0, 1.0);
+        let closest = [
+            start[0] + progress * direction[0],
+            start[1] + progress * direction[1],
+        ];
+        (point[0] - closest[0]).hypot(point[1] - closest[1])
     }
 }
