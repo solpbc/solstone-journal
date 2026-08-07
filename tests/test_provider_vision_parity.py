@@ -14,10 +14,8 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from solstone.think.models import LOCAL_MODEL
 from solstone.think.providers import PROVIDER_REGISTRY, local, openhands
 from tests.openhands_fakes import install_fake_openhands
-from tests.test_local import _bundled_endpoint, _patch_bundled_server, _provider
 
 
 @dataclass(frozen=True)
@@ -141,57 +139,8 @@ def test_provider_vision_lane_table_matches_registry() -> None:
         )
 
 
-def _local_data_url(monkeypatch: pytest.MonkeyPatch, part: Any) -> str:
-    provider = _provider()
-    monkeypatch.setattr(provider, "resolve_local_endpoint", _bundled_endpoint)
-    _patch_bundled_server(monkeypatch)
-    captured: dict[str, Any] = {}
-
-    class TokenResponse:
-        text = ""
-
-        def raise_for_status(self) -> None:
-            return None
-
-        def json(self) -> dict[str, Any]:
-            return {"tokens": [1]}
-
-    class ChatResponse:
-        text = ""
-
-        def raise_for_status(self) -> None:
-            return None
-
-        def json(self) -> dict[str, Any]:
-            return {
-                "model": LOCAL_MODEL,
-                "choices": [
-                    {
-                        "message": {"content": "ok"},
-                        "finish_reason": "stop",
-                    }
-                ],
-            }
-
-    def fake_post(url: str, json: dict[str, Any], timeout: float) -> Any:
-        del timeout
-        if url.endswith("/tokenize"):
-            return TokenResponse()
-        if url.endswith("/v1/chat/completions"):
-            captured["body"] = json
-            return ChatResponse()
-        raise AssertionError(f"unexpected local provider URL: {url}")
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-    provider.run_generate(["look", part], model=LOCAL_MODEL)
-
-    assert "body" in captured
-    content = captured["body"]["messages"][-1]["content"]
-    return next(
-        item["image_url"]["url"] for item in content if item.get("type") == "image_url"
-    )
+def _local_data_url(part: Any) -> str:
+    return local._image_content_part(part)["image_url"]["url"]
 
 
 def _openhands_data_url(monkeypatch: pytest.MonkeyPatch, part: Any) -> str:
@@ -220,7 +169,7 @@ def test_provider_vision_media_matrix(
     part = image_case.make_part()
     lane = _LANES[name]
     if lane.driver == "local":
-        url = _local_data_url(monkeypatch, part)
+        url = _local_data_url(part)
     else:
         url = _openhands_data_url(monkeypatch, part)
 

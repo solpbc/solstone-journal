@@ -429,250 +429,12 @@ def test_validate_key_uses_tiny_generate(monkeypatch):
     assert calls[0][1]["max_output_tokens"] == 8
 
 
-def test_run_generate_posts_to_loopback(monkeypatch):
-    provider = _provider()
-    served_model_id = (
-        "/Users/sol/.cache/huggingface/hub/"
-        "models--mlx-community--Qwen3.5-9B/snapshots/abc123"
-    )
-    monkeypatch.setattr(
-        "solstone.think.providers.local_server.connect",
-        lambda: SimpleNamespace(
-            port=4321,
-            base_url="http://127.0.0.1:4321",
-            served_model_id=served_model_id,
-        ),
-    )
-    captured = {}
-
-    class Response:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {
-                "model": served_model_id,
-                "choices": [
-                    {
-                        "message": {"content": "hello"},
-                        "finish_reason": "stop",
-                    }
-                ],
-                "usage": {
-                    "prompt_tokens": 3,
-                    "completion_tokens": 2,
-                    "total_tokens": 5,
-                },
-            }
-
-    def fake_post(url, json, timeout):
-        captured.update({"url": url, "json": json, "timeout": timeout})
-        return Response()
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    result = provider.run_generate("hello", model=LOCAL_MODEL, max_output_tokens=16)
-
-    assert captured["url"] == "http://127.0.0.1:4321/v1/chat/completions"
-    assert captured["json"]["model"] == served_model_id
-    assert captured["json"]["messages"] == [{"role": "user", "content": "hello"}]
-    assert captured["json"]["max_tokens"] == 16
-    assert captured["json"]["chat_template_kwargs"] == {"enable_thinking": False}
-    assert captured["json"]["top_p"] == 0.8
-    assert captured["json"]["top_k"] == 20
-    assert captured["json"]["min_p"] == 0.0
-    assert captured["json"]["presence_penalty"] == 1.5
-    assert result["text"] == "hello"
-    assert result["model"] == LOCAL_MODEL
-    assert result["usage"] == {
-        "input_tokens": 3,
-        "output_tokens": 2,
-        "total_tokens": 5,
-    }
 
 
-def test_run_generate_emits_chat_completions_image_url(monkeypatch):
-    provider = _provider()
-    monkeypatch.setattr(
-        "solstone.think.providers.local_server.connect",
-        lambda: SimpleNamespace(
-            port=4321,
-            base_url="http://127.0.0.1:4321",
-            served_model_id=LOCAL_MODEL,
-        ),
-    )
-    png = b"\x89PNG\r\n\x1a\npayload"
-    captured = {}
-
-    class Response:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {
-                "model": LOCAL_MODEL,
-                "choices": [
-                    {
-                        "message": {"content": "ok"},
-                        "finish_reason": "stop",
-                    }
-                ],
-            }
-
-    def fake_post(url, json, timeout):
-        captured.update({"url": url, "json": json, "timeout": timeout})
-        return Response()
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    provider.run_generate(["look", png], model=LOCAL_MODEL)
-
-    assert captured["json"]["messages"] == [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "look"},
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": "data:image/png;base64,"
-                        + base64.b64encode(png).decode("ascii")
-                    },
-                },
-            ],
-        }
-    ]
 
 
-def test_run_generate_bundled_clips_oversized_text_block(monkeypatch):
-    provider = _provider()
-    monkeypatch.setattr(
-        "solstone.think.providers.local_server.connect",
-        lambda: SimpleNamespace(
-            port=4321,
-            base_url="http://127.0.0.1:4321",
-            served_model_id=LOCAL_MODEL,
-        ),
-    )
-    from solstone.think.providers import local_budget
-
-    monkeypatch.setattr(local_budget, "count_tokens", lambda text, _base_url: len(text))
-    chunks = [
-        "## 2026-06-23 09:00:00 - 09:05:00\n",
-        "### Transcript\noldest " + ("o" * 5000) + "\n",
-        "### Screen Activity\nmiddle " + ("m" * 5000) + "\n",
-        "## 2026-06-23 09:05:00 - 09:10:00\n",
-        "### Transcript\nrecent " + ("r" * 5000) + "\n",
-        "### Screen Activity\nlatest " + ("l" * 5000) + "\n",
-    ]
-    big_block = "".join(chunks)
-    captured = {}
-
-    class Response:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {
-                "model": LOCAL_MODEL,
-                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
-            }
-
-    def fake_post(url, json, timeout):
-        captured.update({"url": url, "json": json, "timeout": timeout})
-        return Response()
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    schema = {"type": "object"}
-    result = provider.run_generate(
-        [big_block, "talent prompt"],
-        model=LOCAL_MODEL,
-        max_output_tokens=8192 * 6,
-        system_instruction="system",
-        json_schema=schema,
-    )
-
-    assert captured["json"]["messages"][0] == {"role": "system", "content": "system"}
-    user_message = captured["json"]["messages"][1]["content"]
-    assert local_budget.TRUNCATION_MARKER in user_message
-    assert "oldest " not in user_message
-    assert "latest " in user_message
-    assert "talent prompt" in user_message
-    assert len(user_message) < len(big_block)
-    assert captured["json"]["response_format"]["json_schema"]["schema"] == schema
-    assert result["input_budget"]["clipped"] is True
 
 
-def test_run_generate_does_not_mutate_caller_schema(monkeypatch):
-    provider = _provider()
-    monkeypatch.setattr(
-        "solstone.think.providers.local_server.connect",
-        lambda: SimpleNamespace(
-            port=4321,
-            base_url="http://127.0.0.1:4321",
-            served_model_id=LOCAL_MODEL,
-        ),
-    )
-    captured = {}
-
-    class Response:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {
-                "model": LOCAL_MODEL,
-                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
-            }
-
-    def fake_post(url, json, timeout):
-        captured.update({"url": url, "json": json, "timeout": timeout})
-        return Response()
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    schema = {
-        "type": "object",
-        "properties": {
-            "timestamp": {
-                "type": "string",
-                "pattern": r"^\d{2}:\d{2}:\d{2}$",
-                "minLength": 8,
-                "maxLength": 8,
-                SCHEMA_TRUNCATE_KEY: True,
-            },
-            "slots": {"type": "array", "items": {"type": "string"}},
-        },
-    }
-    original_schema = copy.deepcopy(schema)
-
-    provider.run_generate("hello", model=LOCAL_MODEL, json_schema=schema)
-
-    posted_schema = captured["json"]["response_format"]["json_schema"]["schema"]
-    unsupported = {"pattern", "minLength", "maxLength", SCHEMA_TRUNCATE_KEY}
-    assert _schema_keyword_paths(posted_schema, unsupported) == []
-    assert posted_schema["properties"]["slots"]["maxItems"] == 192
-    assert schema == original_schema
-    assert schema["properties"]["timestamp"]["pattern"] == r"^\d{2}:\d{2}:\d{2}$"
-    assert schema["properties"]["timestamp"]["minLength"] == 8
-    assert schema["properties"]["timestamp"]["maxLength"] == 8
-    assert schema["properties"]["timestamp"][SCHEMA_TRUNCATE_KEY] is True
-    assert sorted(_schema_keyword_paths(schema, unsupported)) == [
-        "$/properties/timestamp/maxLength",
-        "$/properties/timestamp/minLength",
-        "$/properties/timestamp/pattern",
-        f"$/properties/timestamp/{SCHEMA_TRUNCATE_KEY}",
-    ]
-    assert "maxItems" not in schema["properties"]["slots"]
 
 
 def test_prepare_local_schema_bounds_arrays_only_and_preserves_input():
@@ -778,301 +540,18 @@ def test_prepare_local_schema_bounds_array_schema_with_enum():
     assert prepared["enum"] == [["a"], ["b"]]
 
 
-def test_run_generate_bundled_non_overflow_keeps_body_unmarked(monkeypatch):
-    provider = _provider()
-    monkeypatch.setattr(
-        "solstone.think.providers.local_server.connect",
-        lambda: SimpleNamespace(
-            port=4321,
-            base_url="http://127.0.0.1:4321",
-            served_model_id=LOCAL_MODEL,
-        ),
-    )
-    from solstone.think.providers import local_budget
-
-    monkeypatch.setattr(local_budget, "count_tokens", lambda text, _base_url: len(text))
-    small_block = "## Segment\n### Transcript\nsmall\n"
-    captured = {}
-
-    class Response:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {
-                "model": LOCAL_MODEL,
-                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
-            }
-
-    def fake_post(url, json, timeout):
-        captured.update({"url": url, "json": json, "timeout": timeout})
-        return Response()
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    result = provider.run_generate(
-        [small_block, "talent prompt"],
-        model=LOCAL_MODEL,
-        max_output_tokens=1024,
-        system_instruction="system",
-    )
-
-    assert captured["json"]["messages"][1]["content"] == (
-        small_block + "\ntalent prompt"
-    )
-    assert (
-        local_budget.TRUNCATION_MARKER not in captured["json"]["messages"][1]["content"]
-    )
-    assert "input_budget" not in result
 
 
-def test_run_generate_bundled_preserved_exceeds_budget_skips_post(monkeypatch):
-    provider = _provider()
-    monkeypatch.setattr(
-        "solstone.think.providers.local_server.connect",
-        lambda: SimpleNamespace(
-            port=4321,
-            base_url="http://127.0.0.1:4321",
-            served_model_id=LOCAL_MODEL,
-        ),
-    )
-    from solstone.think.providers import local_budget
-
-    monkeypatch.setattr(local_budget, "count_tokens", lambda text, _base_url: len(text))
-
-    def fake_post(*_args, **_kwargs):
-        raise AssertionError("httpx.post not expected")
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    with pytest.raises(provider.ContextBudgetExceeded) as exc:
-        provider.run_generate(
-            "## Segment\n### Transcript\nsmall\n",
-            model=LOCAL_MODEL,
-            max_output_tokens=8192 * 6,
-            system_instruction="s" * 13000,
-        )
-
-    assert exc.value.reason_code == "context_budget_exceeded"
 
 
-def test_run_generate_bundled_context_rejection_backstop(monkeypatch):
-    provider = _provider()
-    monkeypatch.setattr(
-        "solstone.think.providers.local_server.connect",
-        lambda: SimpleNamespace(
-            port=4321,
-            base_url="http://127.0.0.1:4321",
-            served_model_id=LOCAL_MODEL,
-        ),
-    )
-    from solstone.think.providers import local_budget
-
-    monkeypatch.setattr(local_budget, "count_tokens", lambda text, _base_url: len(text))
-
-    def fake_post(url, json, timeout):
-        del json, timeout
-        request = httpx.Request("POST", url)
-        return httpx.Response(
-            400,
-            request=request,
-            json={
-                "error": {
-                    "type": "exceed_context_size_error",
-                    "message": (
-                        "request (17 tokens) exceeds the available context size "
-                        "(16 tokens), try increasing it"
-                    ),
-                    "n_prompt_tokens": 17,
-                    "n_ctx": 16,
-                }
-            },
-        )
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    with pytest.raises(provider.ContextBudgetExceeded) as exc:
-        provider.run_generate("hello", model=LOCAL_MODEL, max_output_tokens=16)
-
-    assert exc.value.reason_code == "context_budget_exceeded"
 
 
-def test_run_generate_bundled_context_rejection_backstop_alt_phrasing(monkeypatch):
-    # llama-server emits this after post-admission unified-KV exhaustion; the
-    # fitted prompt is not proven too long, so this is transient capacity.
-    provider = _provider()
-    monkeypatch.setattr(
-        "solstone.think.providers.local_server.connect",
-        lambda: SimpleNamespace(
-            port=4321,
-            base_url="http://127.0.0.1:4321",
-            served_model_id=LOCAL_MODEL,
-        ),
-    )
-    from solstone.think.providers import local_budget
-
-    monkeypatch.setattr(local_budget, "count_tokens", lambda text, _base_url: len(text))
-
-    def fake_post(url, json, timeout):
-        del json, timeout
-        request = httpx.Request("POST", url)
-        return httpx.Response(
-            500,
-            request=request,
-            json={
-                "error": {
-                    "type": "server_error",
-                    "message": "Context size has been exceeded.",
-                }
-            },
-        )
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    with pytest.raises(provider.LocalProviderError) as exc:
-        provider.run_generate("hello", model=LOCAL_MODEL, max_output_tokens=16)
-
-    assert type(exc.value).__name__ == "LocalCapacityExhausted"
-    assert exc.value.reason_code == "local_capacity_exhausted"
 
 
-def test_run_generate_bundled_context_rejection_missing_type_is_capacity(
-    monkeypatch,
-):
-    provider = _provider()
-    monkeypatch.setattr(
-        "solstone.think.providers.local_server.connect",
-        lambda: SimpleNamespace(
-            port=4321,
-            base_url="http://127.0.0.1:4321",
-            served_model_id=LOCAL_MODEL,
-        ),
-    )
-    from solstone.think.providers import local_budget
-
-    monkeypatch.setattr(local_budget, "count_tokens", lambda text, _base_url: len(text))
-
-    def fake_post(url, json, timeout):
-        del json, timeout
-        request = httpx.Request("POST", url)
-        return httpx.Response(
-            500,
-            request=request,
-            json={"error": {"message": "Context size has been exceeded."}},
-        )
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    with pytest.raises(provider.LocalProviderError) as exc:
-        provider.run_generate("hello", model=LOCAL_MODEL, max_output_tokens=16)
-
-    assert type(exc.value).__name__ == "LocalCapacityExhausted"
-    assert exc.value.reason_code == "local_capacity_exhausted"
 
 
-def test_run_agenerate_bundled_capacity_rejection_matches_sync(monkeypatch):
-    provider = _provider()
-    monkeypatch.setattr(provider, "resolve_local_endpoint", _bundled_endpoint)
-    _patch_bundled_server(monkeypatch)
-
-    class Response:
-        text = '{"error":{"type":"server_error","message":"Context size has been exceeded."}}'
-
-        def raise_for_status(self):
-            request = httpx.Request(
-                "POST",
-                "http://127.0.0.1:4321/v1/chat/completions",
-            )
-            response = httpx.Response(500, request=request, text=self.text)
-            raise httpx.HTTPStatusError(
-                "server error",
-                request=request,
-                response=response,
-            )
-
-    class AsyncClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return None
-
-        async def post(self, *_args, **_kwargs):
-            return Response()
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "AsyncClient", AsyncClient)
-
-    with pytest.raises(provider.LocalProviderError) as exc:
-        asyncio.run(provider.run_agenerate("hello", model=LOCAL_MODEL))
-
-    assert type(exc.value).__name__ == "LocalCapacityExhausted"
-    assert exc.value.reason_code == "local_capacity_exhausted"
 
 
-def test_run_generate_bundled_capacity_rejection_records_retry_telemetry(monkeypatch):
-    provider = _provider()
-    monkeypatch.setattr(provider, "resolve_local_endpoint", _bundled_endpoint)
-    _patch_bundled_server(monkeypatch)
-
-    from solstone.think.providers import local_admission
-
-    records: list[dict] = []
-    monkeypatch.setattr(local_admission, "record_local_inference", records.append)
-
-    def fake_post(url, json, timeout):
-        del json, timeout
-        request = httpx.Request("POST", url)
-        return httpx.Response(
-            500,
-            request=request,
-            json={
-                "error": {
-                    "type": "server_error",
-                    "message": "Context size has been exceeded.",
-                }
-            },
-        )
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    with pytest.raises(provider.LocalProviderError):
-        provider.run_generate(
-            "private prompt text",
-            model=LOCAL_MODEL,
-            max_output_tokens=16,
-        )
-    with pytest.raises(provider.LocalProviderError):
-        provider.run_generate(
-            "private prompt text",
-            model=LOCAL_MODEL,
-            max_output_tokens=16,
-            inference_retry_index=1,
-            local_exclusive_admission=True,
-        )
-
-    assert len(records) == 2
-    assert [record["retry_index"] for record in records] == [0, 1]
-    for record in records:
-        assert record["reason_code"] == "local_capacity_exhausted"
-        assert record["outcome"] == "error"
-        serialized = json.dumps(record, sort_keys=True)
-        assert "private prompt text" not in serialized
-        assert "Context size has been exceeded." not in serialized
-        assert "server_error" not in serialized
 
 
 def test_openhands_local_llm_kwargs(monkeypatch):
@@ -1203,77 +682,6 @@ def _patch_bundled_server(
             total_slots=slots,
         ),
     )
-
-
-def _launched_context_tokens(plan) -> int:
-    assert plan.context_tokens is not None
-    assert plan.parallel_slots is not None
-    return plan.context_tokens * plan.parallel_slots
-
-
-def _budget_count_tokens(text: str, _base_url: str | None = None) -> int:
-    if text.startswith("b'budget-image"):
-        return 0
-    return len(text)
-
-
-def _block_that_trims_to_budget(budget_tokens: int) -> str:
-    from solstone.think.providers import local_budget
-
-    marker_tokens = len(local_budget.TRUNCATION_MARKER + "\n\n")
-    keep_prefix = "## keep\n"
-    keep_tokens = budget_tokens - marker_tokens
-    assert keep_tokens > len(keep_prefix)
-    dropped = "## drop\n" + ("o" * budget_tokens) + "\n"
-    kept = keep_prefix + ("k" * (keep_tokens - len(keep_prefix)))
-    return dropped + kept
-
-
-def _run_bundled_generate_capture(
-    monkeypatch,
-    *,
-    contents,
-    window: int,
-    slots: int,
-    max_output_tokens: int,
-    profile: str | None = None,
-):
-    provider = _provider()
-    monkeypatch.setattr(provider, "resolve_local_endpoint", _bundled_endpoint)
-    _patch_bundled_server(
-        monkeypatch,
-        window=window,
-        slots=slots,
-        profile=profile,
-    )
-
-    from solstone.think.providers import local_budget
-
-    monkeypatch.setattr(local_budget, "count_tokens", _budget_count_tokens)
-    monkeypatch.setattr(
-        provider,
-        "encode_image_part",
-        lambda _part: ("image/png", "encoded"),
-    )
-    captured = {}
-
-    def fake_post(url, json, timeout):
-        del timeout
-        if str(url).endswith("/v1/chat/completions"):
-            captured["body"] = json
-            return _ChatResponse("ok")
-        raise AssertionError(f"unexpected local provider URL: {url}")
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    result = provider.run_generate(
-        contents,
-        model=LOCAL_MODEL,
-        max_output_tokens=max_output_tokens,
-    )
-    return result, captured, provider
 
 
 @pytest.mark.parametrize(
@@ -1443,44 +851,6 @@ def test_run_generate_endpoint_known_window_normalizes_before_fit_and_serializat
     assert captured_post["decoded"].encode("utf-8") == captured_post["content"]
 
 
-def test_run_generate_bundled_tokenize_and_chat_receive_normalized_text(monkeypatch):
-    provider = _provider()
-    monkeypatch.setattr(provider, "resolve_local_endpoint", _bundled_endpoint)
-    _patch_bundled_server(monkeypatch)
-    tokenize_texts = []
-    captured_chat = {}
-
-    def fake_post(url, **kwargs):
-        payload, decoded, content = _request_json_payload(url, kwargs["json"])
-        if str(url).endswith("/tokenize"):
-            text = payload["content"]
-            tokenize_texts.append(text)
-            return httpx.Response(
-                200,
-                request=httpx.Request("POST", url),
-                json={"tokens": list(range(max(1, len(text) // 3)))},
-            )
-        if str(url).endswith("/v1/chat/completions"):
-            captured_chat.update(
-                {"payload": payload, "decoded": decoded, "content": content}
-            )
-            return _ChatResponse("ok")
-        raise AssertionError(f"unexpected local provider URL: {url}")
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    provider.run_generate("pre\ud83dpost", model=LOCAL_MODEL, max_output_tokens=7)
-
-    assert tokenize_texts
-    assert "pre\ufffdpost" in tokenize_texts
-    for text in tokenize_texts:
-        _assert_no_surrogate_codepoint(text)
-    message = captured_chat["payload"]["messages"][0]["content"]
-    assert message == "pre\ufffdpost"
-    _assert_no_surrogate_codepoint(message)
-    assert captured_chat["decoded"].encode("utf-8") == captured_chat["content"]
 
 
 def test_run_generate_confidential_endpoint_serializes_normalized_text_and_keeps_qwen_block(
@@ -1702,383 +1072,26 @@ def test_run_generate_does_not_mutate_contents_or_schema_when_normalizing(monkey
     assert captured["decoded"].encode("utf-8") == captured["content"]
 
 
-def test_run_generate_bundled_above_quarter_bounds_footprint(monkeypatch):
-    provider = _provider()
-    monkeypatch.setattr(provider, "resolve_local_endpoint", _bundled_endpoint)
-    window = 32768
-    _patch_bundled_server(monkeypatch, window=window, slots=2, profile="capable")
-
-    from solstone.think.providers import local_budget
-
-    max_output_tokens = 16384
-    input_budget = local_budget.compute_input_budget(max_output_tokens, window)
-    monkeypatch.setattr(local_budget, "count_tokens", lambda text, _base_url: len(text))
-    captured = {}
-
-    def fake_post(url, json, timeout):
-        del timeout
-        if str(url).endswith("/v1/chat/completions"):
-            captured["body"] = json
-            return _ChatResponse("ok")
-        raise AssertionError(f"unexpected local provider URL: {url}")
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    result = provider.run_generate(
-        "x" * input_budget,
-        model=LOCAL_MODEL,
-        max_output_tokens=max_output_tokens,
-    )
-    request_budget = result["request_budget"]
-    completion = request_budget["clamped_max_tokens"]
-
-    assert captured["body"]["max_tokens"] == completion
-    assert input_budget + completion + local_budget._SAFETY_MARGIN_TOKENS <= window
 
 
-def test_run_generate_bundled_ac3_capable_49152_bounds_launched_pool(monkeypatch):
-    provider = _provider()
-    monkeypatch.setattr(provider, "resolve_local_endpoint", _bundled_endpoint)
-
-    from solstone.think import supervisor
-    from solstone.think.providers import local_budget, local_server
-
-    tier = local_server._CAPABLE_TIER
-    _patch_bundled_server(
-        monkeypatch,
-        window=tier.context_tokens,
-        slots=tier.parallel_slots,
-        profile=tier.name,
-    )
-    plan = supervisor.LocalServerLaunchPlan(
-        backend="vulkan",
-        desired_fingerprint_json='{"provider":"local"}',
-        desired_fingerprint_sha256="fp-local",
-        binary_path=Path("/tmp/llama-server"),
-        model_path=Path("/tmp/model.gguf"),
-        context_tokens=tier.context_tokens,
-        parallel_slots=tier.parallel_slots,
-    )
-    launched_c = _launched_context_tokens(plan)
-    max_output_tokens = 49152
-    input_budget = local_budget.compute_input_budget(
-        max_output_tokens,
-        tier.context_tokens,
-    )
-    monkeypatch.setattr(local_budget, "count_tokens", lambda text, _base_url: len(text))
-    captured = {}
-
-    def fake_post(url, json, timeout):
-        del timeout
-        if str(url).endswith("/v1/chat/completions"):
-            captured["body"] = json
-            return _ChatResponse("ok")
-        raise AssertionError(f"unexpected local provider URL: {url}")
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    result = provider.run_generate(
-        "x" * input_budget,
-        model=LOCAL_MODEL,
-        max_output_tokens=max_output_tokens,
-    )
-    request_budget = result["request_budget"]
-    completion = request_budget["clamped_max_tokens"]
-
-    assert captured["body"]["max_tokens"] == completion
-    assert (
-        request_budget["estimated_prompt_tokens"]
-        + request_budget["image_tokens"]
-        + completion
-    ) * request_budget["slots"] <= launched_c
 
 
-@pytest.mark.parametrize(
-    ("max_output_tokens", "expected_completion"),
-    [(16384, 8192), (4096, 4096)],
-)
-def test_run_generate_bundled_bounds_above_and_below_quarter(
-    monkeypatch,
-    max_output_tokens,
-    expected_completion,
-):
-    from solstone.think.providers import local_budget, local_server
-
-    window = local_server._CAPABLE_TIER.context_tokens
-    prompt_tokens = local_budget.compute_input_budget(max_output_tokens, window)
-
-    result, captured, _provider_mod = _run_bundled_generate_capture(
-        monkeypatch,
-        contents="x" * prompt_tokens,
-        window=window,
-        slots=local_server._CAPABLE_TIER.parallel_slots,
-        max_output_tokens=max_output_tokens,
-        profile=local_server._CAPABLE_TIER.name,
-    )
-
-    request_budget = result["request_budget"]
-    true_room = (
-        window
-        - request_budget["estimated_prompt_tokens"]
-        - request_budget["image_tokens"]
-        - local_budget._SAFETY_MARGIN_TOKENS
-    )
-    assert request_budget["clamped_max_tokens"] == expected_completion
-    assert request_budget["clamped_max_tokens"] == true_room
-    assert captured["body"]["max_tokens"] == expected_completion
 
 
-def test_run_generate_bundled_clamp_is_prompt_derived_and_ample_room_unclamped(
-    monkeypatch,
-):
-    from solstone.think.providers import local_budget, local_server
-
-    tier = local_server._CAPABLE_TIER
-    requested = 16384
-    small, _small_captured, _provider_mod = _run_bundled_generate_capture(
-        monkeypatch,
-        contents="short",
-        window=tier.context_tokens,
-        slots=tier.parallel_slots,
-        max_output_tokens=requested,
-        profile=tier.name,
-    )
-    large_prompt = "x" * local_budget.compute_input_budget(
-        requested, tier.context_tokens
-    )
-    large, _large_captured, _provider_mod = _run_bundled_generate_capture(
-        monkeypatch,
-        contents=large_prompt,
-        window=tier.context_tokens,
-        slots=tier.parallel_slots,
-        max_output_tokens=requested,
-        profile=tier.name,
-    )
-
-    assert small["request_budget"]["clamped_max_tokens"] == requested
-    assert large["request_budget"]["clamped_max_tokens"] != requested
-    assert (
-        small["request_budget"]["clamped_max_tokens"]
-        != large["request_budget"]["clamped_max_tokens"]
-    )
 
 
-def test_run_generate_bundled_role_dict_chat_payload_is_bounded_not_trimmed(
-    monkeypatch,
-):
-    from solstone.think.providers import local_budget, local_server
-
-    window = local_server._CAPABLE_TIER.context_tokens
-    prompt = "x" * 30000
-    result, captured, provider_mod = _run_bundled_generate_capture(
-        monkeypatch,
-        contents=[{"role": "user", "content": prompt}],
-        window=window,
-        slots=local_server._CAPABLE_TIER.parallel_slots,
-        max_output_tokens=16384,
-        profile=local_server._CAPABLE_TIER.name,
-    )
-
-    serialized = provider_mod._serialized_message_text(captured["body"]["messages"])
-    assert serialized == prompt
-    assert local_budget.TRUNCATION_MARKER not in serialized
-    assert "input_budget" not in result
-    assert (
-        captured["body"]["max_tokens"]
-        + len(serialized)
-        + local_budget._SAFETY_MARGIN_TOKENS
-        <= window
-    )
 
 
-def test_run_generate_bundled_role_dict_impossible_raises_context_budget(
-    monkeypatch,
-):
-    from solstone.think.providers import local_server
-
-    with pytest.raises(Exception) as exc:
-        _run_bundled_generate_capture(
-            monkeypatch,
-            contents=[{"role": "user", "content": "x" * 32600}],
-            window=local_server._CAPABLE_TIER.context_tokens,
-            slots=local_server._CAPABLE_TIER.parallel_slots,
-            max_output_tokens=4096,
-            profile=local_server._CAPABLE_TIER.name,
-        )
-
-    assert getattr(exc.value, "reason_code", None) == "context_budget_exceeded"
 
 
-@pytest.mark.parametrize(("image_count", "expected_image_tokens"), [(0, 0), (1, 2500)])
-def test_run_generate_bundled_accounts_image_tokens(
-    monkeypatch,
-    image_count,
-    expected_image_tokens,
-):
-    from solstone.think.providers import local_budget, local_server
-
-    images = [f"budget-image-{idx}".encode("ascii") for idx in range(image_count)]
-    contents = "hello" if image_count == 0 else ["hello", *images]
-
-    result, captured, _provider_mod = _run_bundled_generate_capture(
-        monkeypatch,
-        contents=contents,
-        window=local_server._CAPABLE_TIER.context_tokens,
-        slots=local_server._CAPABLE_TIER.parallel_slots,
-        max_output_tokens=49152,
-        profile=local_server._CAPABLE_TIER.name,
-    )
-
-    request_budget = result["request_budget"]
-    true_room = (
-        request_budget["window"]
-        - request_budget["estimated_prompt_tokens"]
-        - expected_image_tokens
-        - local_budget._SAFETY_MARGIN_TOKENS
-    )
-    assert request_budget["image_tokens"] == expected_image_tokens
-    assert request_budget["clamped_max_tokens"] == min(49152, true_room)
-    assert captured["body"]["max_tokens"] == request_budget["clamped_max_tokens"]
 
 
-def test_run_generate_bundled_floor_two_images_trims_and_sends(monkeypatch):
-    from solstone.think.providers import local_budget, local_server
-
-    tier = local_server._FLOOR_TIER
-    requested = 49152
-    image_tokens = local_budget._ESTIMATED_IMAGE_TOKENS * 2
-    effective_window = tier.context_tokens - image_tokens
-    input_budget = local_budget.compute_input_budget(requested, effective_window)
-    images = [b"budget-image-0", b"budget-image-1"]
-
-    result, captured, _provider_mod = _run_bundled_generate_capture(
-        monkeypatch,
-        contents=[_block_that_trims_to_budget(input_budget), *images],
-        window=tier.context_tokens,
-        slots=tier.parallel_slots,
-        max_output_tokens=requested,
-        profile=tier.name,
-    )
-
-    request_budget = result["request_budget"]
-    text_part = captured["body"]["messages"][0]["content"][0]["text"]
-    assert local_budget.TRUNCATION_MARKER in text_part
-    assert result["input_budget"]["budget_tokens"] == 8282
-    assert request_budget["estimated_prompt_tokens"] == 8282
-    assert request_budget["image_tokens"] == 5000
-    assert request_budget["clamped_max_tokens"] == 2846
-    assert captured["body"]["max_tokens"] == 2846
 
 
-def test_run_generate_bundled_request_budget_and_clamp_log(caplog, monkeypatch):
-    from solstone.think.providers import local_budget, local_server
-
-    tier = local_server._CAPABLE_TIER
-    requested = 49152
-    input_budget = local_budget.compute_input_budget(requested, tier.context_tokens)
-
-    with caplog.at_level(logging.INFO):
-        result, _captured, _provider_mod = _run_bundled_generate_capture(
-            monkeypatch,
-            contents="x" * input_budget,
-            window=tier.context_tokens,
-            slots=tier.parallel_slots,
-            max_output_tokens=requested,
-            profile=tier.name,
-        )
-
-    request_budget = result["request_budget"]
-    assert request_budget == {
-        "window": tier.context_tokens,
-        "slots": tier.parallel_slots,
-        "estimated_prompt_tokens": input_budget,
-        "image_tokens": 0,
-        "clamped_max_tokens": 8192,
-        "requested_max_output_tokens": requested,
-    }
-    assert any(
-        "local bundled max_tokens clamped" in record.message
-        for record in caplog.records
-    )
 
 
-def test_run_generate_bundled_image_content_impossible_raises_before_fit(
-    monkeypatch,
-):
-    from solstone.think.providers import local_server
-
-    images = [f"budget-image-{idx}".encode("ascii") for idx in range(7)]
-    with pytest.raises(Exception) as exc:
-        _run_bundled_generate_capture(
-            monkeypatch,
-            contents=["prompt", *images],
-            window=local_server._FLOOR_TIER.context_tokens,
-            slots=local_server._FLOOR_TIER.parallel_slots,
-            max_output_tokens=49152,
-            profile=local_server._FLOOR_TIER.name,
-        )
-
-    assert getattr(exc.value, "reason_code", None) == "context_budget_exceeded"
-    assert "image content" in str(exc.value)
-    assert "context window" in str(exc.value)
 
 
-@pytest.mark.parametrize("image_count", [0, 1])
-@pytest.mark.parametrize("tier_name", ["floor", "capable"])
-def test_run_generate_bundled_ac3_fitted_prompt_bounds_launched_pool(
-    monkeypatch,
-    tier_name,
-    image_count,
-):
-    from solstone.think import supervisor
-    from solstone.think.providers import local_budget, local_server
-
-    tier = (
-        local_server._FLOOR_TIER if tier_name == "floor" else local_server._CAPABLE_TIER
-    )
-    requested = 49152
-    images = [f"budget-image-{idx}".encode("ascii") for idx in range(image_count)]
-    image_tokens = local_budget._ESTIMATED_IMAGE_TOKENS * image_count
-    input_budget = local_budget.compute_input_budget(
-        requested,
-        tier.context_tokens - image_tokens,
-    )
-    block = _block_that_trims_to_budget(input_budget)
-    contents = block if image_count == 0 else [block, *images]
-    plan = supervisor.LocalServerLaunchPlan(
-        backend="vulkan",
-        desired_fingerprint_json='{"provider":"local"}',
-        desired_fingerprint_sha256="fp-local",
-        binary_path=Path("/tmp/llama-server"),
-        model_path=Path("/tmp/model.gguf"),
-        context_tokens=tier.context_tokens,
-        parallel_slots=tier.parallel_slots,
-    )
-    launched_c = _launched_context_tokens(plan)
-
-    result, _captured, _provider_mod = _run_bundled_generate_capture(
-        monkeypatch,
-        contents=contents,
-        window=tier.context_tokens,
-        slots=tier.parallel_slots,
-        max_output_tokens=requested,
-        profile=tier.name,
-    )
-
-    resolved = local_budget.resolve_context_window()
-    request_budget = result["request_budget"]
-    assert resolved.window_tokens == tier.context_tokens
-    assert request_budget["window"] == resolved.window_tokens
-    assert request_budget["estimated_prompt_tokens"] == input_budget
-    assert (
-        request_budget["estimated_prompt_tokens"]
-        + request_budget["image_tokens"]
-        + request_budget["clamped_max_tokens"]
-    ) * request_budget["slots"] <= launched_c
 
 
 def test_run_generate_endpoint_clamps_large_default_budget_against_served_window(
@@ -2465,114 +1478,14 @@ def test_run_generate_confidential_body_carries_qwen_block(monkeypatch):
     assert captured["json"]["presence_penalty"] == 1.5
 
 
-def test_run_generate_bundled_request_body_matches_golden(monkeypatch):
-    provider = _provider()
-    monkeypatch.setattr(provider, "resolve_local_endpoint", _bundled_endpoint)
-    _patch_bundled_server(monkeypatch)
-    captured = {}
-
-    def fake_post(url, **kwargs):
-        if str(url).endswith("/tokenize"):
-            return _FakeRejectEndpoint().post(url, **kwargs)
-        if str(url).endswith("/v1/chat/completions"):
-            captured.update({"url": url, **kwargs})
-            return _ChatResponse("ok")
-        raise AssertionError(f"unexpected local provider URL: {url}")
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    provider.run_generate(
-        "hello",
-        model=LOCAL_MODEL,
-        temperature=0.4,
-        max_output_tokens=7,
-    )
-
-    assert captured["json"] == {
-        "model": LOCAL_MODEL,
-        "messages": [{"role": "user", "content": "hello"}],
-        "temperature": 0.4,
-        "max_tokens": 7,
-        "stream": False,
-        "chat_template_kwargs": {"enable_thinking": False},
-        "top_p": 0.8,
-        "top_k": 20,
-        "min_p": 0.0,
-        "presence_penalty": 1.5,
-    }
 
 
-def test_run_generate_bundled_encodes_image_once(monkeypatch):
-    provider = _provider()
-    monkeypatch.setattr(provider, "resolve_local_endpoint", _bundled_endpoint)
-    _patch_bundled_server(monkeypatch)
-    png = b"\x89PNG\r\n\x1a\npayload"
-    calls = []
-    captured = {}
-
-    def count_encode(part):
-        calls.append(part)
-        return "image/png", base64.b64encode(b"encoded").decode("ascii")
-
-    class TokenResponse:
-        text = ""
-
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {"tokens": [1]}
-
-    class ChatResponse:
-        text = ""
-
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {
-                "model": LOCAL_MODEL,
-                "choices": [
-                    {
-                        "message": {"content": "ok"},
-                        "finish_reason": "stop",
-                    }
-                ],
-            }
-
-    def fake_post(url, json, timeout):
-        del timeout
-        if url.endswith("/tokenize"):
-            return TokenResponse()
-        if url.endswith("/v1/chat/completions"):
-            captured["body"] = json
-            return ChatResponse()
-        raise AssertionError(f"unexpected local provider URL: {url}")
-
-    import httpx
-
-    monkeypatch.setattr(provider, "encode_image_part", count_encode)
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    result = provider.run_generate(["look", png], model=LOCAL_MODEL)
-
-    assert result["text"] == "ok"
-    assert "body" in captured
-    assert len(calls) == 1
-    assert calls == [png]
 
 
 def test_run_generate_byo_posts_to_normalized_endpoint_and_skips_connect(monkeypatch):
     provider = _provider()
     monkeypatch.setattr(provider, "resolve_local_endpoint", _byo_endpoint)
     from solstone.think.providers import local_budget
-
-    def fail_count(*_args, **_kwargs):
-        raise AssertionError("count_tokens not expected")
-
-    monkeypatch.setattr(local_budget, "count_tokens", fail_count)
     monkeypatch.setattr(
         "solstone.think.providers.local_server.connect",
         lambda: (_ for _ in ()).throw(AssertionError("connect not expected")),
@@ -2789,7 +1702,6 @@ def test_run_generate_confidential_posts_to_forwarder_not_configured_endpoint(
 ):
     provider = _provider()
 
-    from solstone.think.providers import local_budget
     from solstone.think.providers.local_endpoint import LocalEndpoint
 
     configured_endpoint = "https://spp.example.test"
@@ -2808,7 +1720,6 @@ def test_run_generate_confidential_posts_to_forwarder_not_configured_endpoint(
         "solstone.think.services.spp_transport.confidential_egress_base_url",
         lambda base_url: forwarder if base_url == configured_endpoint else base_url,
     )
-    monkeypatch.setattr(local_budget, "count_tokens", lambda *_args, **_kwargs: 1)
     monkeypatch.setattr(
         "solstone.think.providers.local_server.connect",
         lambda: (_ for _ in ()).throw(AssertionError("connect not expected")),
@@ -3528,62 +2439,18 @@ def test_run_generate_byo_json_decode_maps_to_contract_failed(monkeypatch):
     assert str(exc.value) == provider.LOCAL_ENDPOINT_CONTRACT_COPY
 
 
-def test_run_generate_malformed_response_matches_bundled_and_byo(monkeypatch):
-    provider = _provider()
-    malformed = {"choices": []}
-
-    class Response:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return malformed
-
-    def fake_post(*_args, **_kwargs):
-        return Response()
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    monkeypatch.setattr(provider, "resolve_local_endpoint", _byo_endpoint)
-    with pytest.raises(provider.LocalProviderError) as byo_exc:
-        provider.run_generate("hello", model=LOCAL_MODEL)
-
-    monkeypatch.setattr(provider, "resolve_local_endpoint", _bundled_endpoint)
-    _patch_bundled_server(monkeypatch)
-    with pytest.raises(provider.LocalProviderError) as bundled_exc:
-        provider.run_generate("hello", model=LOCAL_MODEL)
-
-    assert byo_exc.value.reason_code == bundled_exc.value.reason_code
-    assert byo_exc.value.reason_code == "provider_response_invalid"
-    assert str(byo_exc.value) == str(bundled_exc.value)
 
 
-def test_bundled_local_admission_timeout_reason_code_escapes(monkeypatch):
+def test_cogitate_local_admission_timeout_reason_code_escapes(monkeypatch):
     provider = _provider()
     _patch_bundled_server(monkeypatch)
 
     from solstone.think.providers import local_admission
 
-    def raise_timeout(*_args, **_kwargs):
+    async def raise_timeout(*_args, **_kwargs):
         raise local_admission.LocalAdmissionTimeout("busy")
 
-    async def raise_timeout_async(*_args, **_kwargs):
-        raise local_admission.LocalAdmissionTimeout("busy")
-
-    monkeypatch.setattr(local_admission, "acquire_local_slot", raise_timeout)
-    monkeypatch.setattr(
-        local_admission, "acquire_local_slot_async", raise_timeout_async
-    )
-
-    with pytest.raises(local_admission.LocalAdmissionTimeout) as sync_exc:
-        provider.run_generate("hello", model=LOCAL_MODEL)
-    assert sync_exc.value.reason_code == "local_queue_timeout"
-
-    with pytest.raises(local_admission.LocalAdmissionTimeout) as async_exc:
-        asyncio.run(provider.run_agenerate("hello", model=LOCAL_MODEL))
-    assert async_exc.value.reason_code == "local_queue_timeout"
+    monkeypatch.setattr(local_admission, "acquire_local_slot_async", raise_timeout)
 
     with pytest.raises(local_admission.LocalAdmissionTimeout) as cogitate_exc:
         asyncio.run(provider.run_cogitate({"model": LOCAL_MODEL}))
@@ -3819,21 +2686,6 @@ def test_run_cogitate_confidential_with_stray_slots_skips_admission(monkeypatch)
     assert asyncio.run(provider.run_cogitate({"model": LOCAL_MODEL})) == "ok"
 
 
-def test_run_generate_bundled_context_budget_exceeded_reason_code_escapes(
-    monkeypatch,
-):
-    provider = _provider()
-    _patch_bundled_server(monkeypatch)
-
-    def raise_context_budget(**_kwargs):
-        raise provider.ContextBudgetExceeded("too large")
-
-    monkeypatch.setattr(provider, "_prepare_bundled_request", raise_context_budget)
-
-    with pytest.raises(provider.ContextBudgetExceeded) as exc:
-        provider.run_generate("hello", model=LOCAL_MODEL)
-
-    assert exc.value.reason_code == "context_budget_exceeded"
 
 
 def test_run_cogitate_byo_classified_error_uses_fixed_copy_and_redacts(
@@ -4343,138 +3195,16 @@ def test_read_server_context_props_fetch_props(monkeypatch):
     assert local_server.read_server_context_props(2468) is None
 
 
-def test_context_window_tokens_fallback(monkeypatch):
-    from solstone.think import utils
-    from solstone.think.providers import local_budget, local_server
-
-    local_server.reset_parallel_slots_cache()
-    monkeypatch.setattr(utils, "read_service_port", lambda service: 2468)
-    monkeypatch.setattr(
-        local_server,
-        "read_server_context_props",
-        lambda port: local_server.ServerContextProps(n_ctx=65536, total_slots=2),
-    )
-    monkeypatch.setattr(local_server, "read_local_context_window", lambda: None)
-    assert local_budget.context_window_tokens() == 32768
-    assert local_budget.resolve_context_window().slots == 2
-
-    monkeypatch.setattr(local_server, "read_server_context_props", lambda port: None)
-    monkeypatch.setattr(local_server, "read_local_context_window", lambda: 32768)
-    assert local_budget.context_window_tokens() == 32768
-
-    monkeypatch.setattr(utils, "read_service_port", lambda service: None)
-    monkeypatch.setattr(local_server, "read_local_context_window", lambda: None)
-    assert local_budget.context_window_tokens() == local_server.LOCAL_MIN_CONTEXT_TOKENS
 
 
-@pytest.mark.parametrize(
-    ("n_ctx", "total_slots", "expected_window"),
-    [(65536, 2, 32768), (16384, 1, 16384)],
-)
-def test_context_window_tokens_divides_props_pool_by_total_slots(
-    monkeypatch,
-    n_ctx,
-    total_slots,
-    expected_window,
-):
-    from solstone.think import utils
-    from solstone.think.providers import local_budget, local_server
-
-    local_server.reset_parallel_slots_cache()
-    monkeypatch.setattr(utils, "read_service_port", lambda service: 2468)
-    monkeypatch.setattr(
-        local_server,
-        "read_server_context_props",
-        lambda port: local_server.ServerContextProps(
-            n_ctx=n_ctx,
-            total_slots=total_slots,
-        ),
-    )
-    monkeypatch.setattr(local_server, "read_local_context_window", lambda: None)
-
-    resolution = local_budget.resolve_context_window()
-    assert resolution.window_tokens == expected_window
-    assert resolution.slots == total_slots
 
 
-def test_context_window_tokens_props_without_total_slots_fails_closed_to_two(
-    monkeypatch,
-):
-    from solstone.think import utils
-    from solstone.think.providers import local_budget, local_server
-
-    monkeypatch.setattr(utils, "read_service_port", lambda service: 2468)
-    monkeypatch.setattr(
-        local_server,
-        "read_server_context_props",
-        lambda port: local_server.ServerContextProps(n_ctx=65536, total_slots=None),
-    )
-    monkeypatch.setattr(local_server, "read_local_context_window", lambda: None)
-
-    resolution = local_budget.resolve_context_window()
-    assert resolution.window_tokens == 32768
-    assert resolution.slots == local_server._CAPABLE_TIER.parallel_slots
 
 
-def test_context_window_tokens_props_absent_sidecar_is_not_halved(monkeypatch):
-    from solstone.think import utils
-    from solstone.think.providers import local_budget, local_server
-
-    monkeypatch.setattr(utils, "read_service_port", lambda service: 2468)
-    monkeypatch.setattr(local_server, "read_server_context_props", lambda port: None)
-    monkeypatch.setattr(local_server, "read_local_context_window", lambda: 32768)
-
-    resolution = local_budget.resolve_context_window()
-    assert resolution.window_tokens == 32768
-    assert resolution.slots == local_server._CAPABLE_TIER.parallel_slots
 
 
-def test_context_window_tokens_darwin_no_props_no_sidecar_uses_floor(monkeypatch):
-    from solstone.think import utils
-    from solstone.think.providers import local_budget, local_server
-
-    monkeypatch.setattr(local_server.sys, "platform", "darwin")
-    monkeypatch.setattr(utils, "read_service_port", lambda service: 2468)
-    monkeypatch.setattr(local_server, "read_server_context_props", lambda port: None)
-    monkeypatch.setattr(local_server, "read_local_context_window", lambda: None)
-
-    assert local_budget.context_window_tokens() == local_server.LOCAL_MIN_CONTEXT_TOKENS
 
 
-@pytest.mark.parametrize(
-    ("props_total_slots", "capacity_slots", "expect_strict"),
-    [(1, 1, False), (None, 2, False), (None, 1, True)],
-)
-def test_context_window_resolution_divisor_not_less_than_capacity(
-    monkeypatch,
-    props_total_slots,
-    capacity_slots,
-    expect_strict,
-):
-    from solstone.think import utils
-    from solstone.think.providers import local_budget, local_server
-
-    local_server.reset_parallel_slots_cache()
-    monkeypatch.setattr(utils, "read_service_port", lambda service: 2468)
-    monkeypatch.setattr(
-        local_server,
-        "read_server_context_props",
-        lambda port: local_server.ServerContextProps(
-            n_ctx=65536,
-            total_slots=props_total_slots,
-        ),
-    )
-    monkeypatch.setattr(
-        local_server,
-        "read_server_capacity",
-        lambda: local_server.ServerCapacity(capacity_slots, "test", "capable"),
-    )
-
-    resolution = local_budget.resolve_context_window()
-    reported_slots = local_server.read_server_capacity().parallel_slots
-    assert resolution.slots >= reported_slots
-    if expect_strict:
-        assert resolution.slots > reported_slots
 
 
 def _select_local_provider(monkeypatch) -> None:
