@@ -385,27 +385,22 @@ Facets and their per-facet contents, including facet-scoped entity and speaker m
 
 ✅ **Carry forward — this is the house style, not a local quirk.** `CorruptConfigError` (`think/utils.py:53-68`): a **missing** config returns deep-copied defaults; a config that **exists and will not parse raises**, in owner voice — *"I couldn't read your settings file… Your settings were NOT changed."* Two deliberately different postures on two failure modes, never silently substituting on the dangerous one.
 
-🔴 **The style holds in every writer and is still broken in two Python readers.** It is a thing to
-**restore**, not merely to preserve:
+✅ **The style now holds on both sides, and restoring it was the plate's real work.** It was broken in
+four readers when this plate was measured — two Rust, two Python — and each broke it the same way:
+by answering as though the file were *absent* when it was present and unreadable.
 
-| Reader | On a config that exists and will not parse |
+| Reader | What it used to answer on a config that would not parse |
 |---|---|
-| `think/utils.py` `journal_is_active()` | swallows the parse error → **`False`**, so an onboarded journal presents as un-onboarded |
-| `think/doctor.py` `_resolve_configured_backend()` | swallows it → **`None`**, so the diagnostic tool reports the *default* backend instead of saying the settings are unreadable. ⚠ It catches only the JSON error, not `OSError`, so the two failure modes get two different answers |
+| the edge indexer's owner-timezone read | `Tz::UTC` — and the owner timezone buckets a segment into a **day**, so records filed under the wrong date with no signal |
+| the chat-label caller | substitute speaker labels, **erasing the owner's own name from indexed chat** — the same harm `P-format` had just closed on a different path. ⚠ Its helper distinguished missing from malformed *and said so in a doc comment*; only the caller threw the answer away |
+| `journal_is_active()` | `False`, so an onboarded journal presented as un-onboarded and the owner was sent to the first-run wizard |
+| `doctor`'s two STT checks | the *default* backend, and *"not applicable"* — the diagnostic tool answering about a file it could not read |
 
-✅ **Two Rust readers had the same defect and no longer do.** They are recorded because the *reason*
-they existed is the durable lesson: the durable-write crate is banned outside the write authorities —
-correctly — so a reader that needed the config had nowhere legitimate to go, and three crates
-hand-rolled their own. The edge indexer answered `Tz::UTC` on a corrupt config, and the owner timezone
-is what buckets a segment into a **day**, so records filed under the wrong date with no signal. The
-chat-label caller answered substitute speaker labels, **erasing the owner's own name from indexed
-chat** — the same harm `P-format` had just closed on a different path. ⚠ Its helper distinguished
-missing from malformed *and said so in a doc comment*; only the caller threw the answer away.
-📌 **A doc comment is a claim, not a measurement.**
-
-🔴 **The lesson, not the defect:** a read path with no home does not stay unread — it grows private
-copies, and they diverge. A reader must be able to depend on the contract **without** the write
-primitive.
+📌 **Three lessons worth more than the fixes.** **A doc comment is a claim, not a measurement.**
+**A read path with no home does not stay unread — it grows private copies, and they diverge.** And
+**presence is decided by the read attempt, never by `exists()`**, which answers `false` for *"I cannot
+tell"*: a symlink loop or an unreadable parent reads as *no config at all*, and every reader then
+substitutes defaults for settings that are sitting right there.
 
 ⚠ **The owner-visible path, traced:** the convey root gate reads `journal_is_active()` → `False` → redirects to the **first-run wizard** → the wizard materializes → raises → 500 whose JSON `detail` carries the sentence, rendered as raw JSON in a browser. So the owner is told their journal is not set up and then shown a JSON error. The fail-closed **writer** is the only reason their settings survive it.
 
@@ -415,7 +410,7 @@ primitive.
 
 ⚠ **The config file being the source of truth is an external commitment made in writing.** A contract-breaking pass here can violate it by accident.
 
-⚠ **The single-owner lint is real, unreachable, and holed.** `scripts/check_journal_config_owner.py` enforces one transactional owner, but it runs only from `install-checks`, which `ci` no longer reaches — and it detects replacement only through `atomic_replace` / `os.replace` / `Path.replace` / a second `hold_lock`. A plain `write_text` at the config path is outside its detection set, and there is a live instance in the tree. Proved with planted controls: it catches the first class and not the second.
+⚠ **The single-owner lint is real, unreachable, and holed.** `scripts/check_journal_config_owner.py` enforces one transactional owner, but it runs only from `install-checks`, which `ci` no longer reaches — and it detects replacement only through `atomic_replace` / `os.replace` / `Path.replace` / a second `hold_lock`. ✅ Both are closed: the detection set now covers `write_text` / `write_bytes`, `open()` in a writing mode and `Path.open()` in a writing mode, and the tree carries no violator. ⚠ **Proved two-directionally** — it fires on one planted violation of each class, stays silent on a reader opening the same path for reading, and passes on the real tree. ⛔ A gate asserted rather than exercised is how this one sat blind.
 
 🔴 **And it is about to see less, not more.** Once the durable write lives behind a process boundary, the real writer is a **subprocess**, which no lint over Python call shapes can observe: any module could invoke the config verb and the lint would still report `pass`. ⛔ Do not read a green single-owner gate as the invariant it used to approximate.
 
