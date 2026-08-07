@@ -25,6 +25,8 @@ def main():
             "argv": sys.argv,
             "cwd": os.getcwd(),
             "debug": logging.getLogger().getEffectiveLevel() == logging.DEBUG,
+            "module": __name__,
+            "verbose_env": os.environ.get("JOURNAL_CLI_VERBOSE"),
         }, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -87,11 +89,13 @@ impl Harness {
         fs::write(python_path.join("solstone/__init__.py"), "").expect("write package init");
         fs::write(python_path.join("solstone/think/__init__.py"), "")
             .expect("write think package init");
-        fs::write(
-            python_path.join("solstone/think/service.py"),
-            RECORDING_MODULE,
-        )
-        .expect("write recording service module");
+        for module in ["service.py", "doctor.py", "backup_cli.py"] {
+            fs::write(
+                python_path.join("solstone/think").join(module),
+                RECORDING_MODULE,
+            )
+            .expect("write recording process module");
+        }
 
         let binary = bin.join("solstone-core");
         fs::copy(env!("CARGO_BIN_EXE_solstone-core"), &binary).expect("copy native binary");
@@ -114,7 +118,14 @@ impl Harness {
         }
     }
 
-    fn run(&self, name: &str, mode: &str, verbose: bool, poison_verbose_env: bool) -> Run {
+    fn run(
+        &self,
+        name: &str,
+        token: &str,
+        mode: &str,
+        verbose: bool,
+        poison_verbose_env: bool,
+    ) -> Run {
         let record = self
             .binary
             .parent()
@@ -128,7 +139,8 @@ impl Harness {
             command.arg("--verbose");
         }
         command
-            .args(["up", "--help", "-v", "-V", "owner.thing", "snow ☃"])
+            .arg(token)
+            .args(OWNER_ARGV)
             .current_dir(&self.cwd)
             .env("PYTHONPATH", &self.python_path)
             .env("BOOTSTRAP_RECORD", &record)
@@ -162,22 +174,37 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn assert_process_contract(run: &Run, harness: &Harness, expected_code: i32, debug: bool) {
+const OWNER_ARGV: &[&str] = &[
+    "--help",
+    "-v",
+    "-V",
+    "0",
+    "1",
+    "solstone.think.service",
+    "journal up",
+    "owner.thing",
+    "snow ☃",
+];
+
+fn assert_process_contract(
+    run: &Run,
+    harness: &Harness,
+    expected_code: i32,
+    debug: bool,
+    token: &str,
+    module: &str,
+    preset: &[&str],
+) {
     assert_eq!(run.output.status.code(), Some(expected_code));
-    assert_eq!(
-        run.record["argv"],
-        serde_json::json!([
-            "journal up",
-            "up",
-            "--help",
-            "-v",
-            "-V",
-            "owner.thing",
-            "snow ☃"
-        ])
-    );
+    let expected_argv: Vec<_> = std::iter::once(format!("journal {token}"))
+        .chain(preset.iter().map(|value| (*value).to_owned()))
+        .chain(OWNER_ARGV.iter().map(|value| (*value).to_owned()))
+        .collect();
+    assert_eq!(run.record["argv"], serde_json::json!(expected_argv));
     assert_eq!(run.record["cwd"], harness.cwd.to_string_lossy().as_ref());
     assert_eq!(run.record["debug"], debug);
+    assert_eq!(run.record["module"], module);
+    assert_eq!(run.record["verbose_env"], Value::Null);
     assert_eq!(run.output.stdout, b"bootstrap stdout\n");
 }
 
@@ -185,20 +212,64 @@ fn assert_process_contract(run: &Run, harness: &Harness, expected_code: i32, deb
 fn real_python_bootstrap_preserves_process_contract() {
     let harness = Harness::new();
 
-    let none = harness.run("none", "none", false, false);
-    assert_process_contract(&none, &harness, 0, false);
+    let none = harness.run("none", "up", "none", false, false);
+    assert_process_contract(
+        &none,
+        &harness,
+        0,
+        false,
+        "up",
+        "solstone.think.service",
+        &["up"],
+    );
     assert_eq!(none.output.stderr, b"bootstrap stderr\n");
 
-    let integer = harness.run("integer", "integer", true, false);
-    assert_process_contract(&integer, &harness, 23, true);
+    let integer = harness.run("integer", "doctor", "integer", true, false);
+    assert_process_contract(
+        &integer,
+        &harness,
+        23,
+        true,
+        "doctor",
+        "solstone.think.doctor",
+        &[],
+    );
     assert_eq!(integer.output.stderr, b"bootstrap stderr\n");
 
-    let exit_integer = harness.run("system-exit-integer", "system-exit-integer", false, false);
-    assert_process_contract(&exit_integer, &harness, 31, false);
+    let exit_integer = harness.run(
+        "system-exit-integer",
+        "backup",
+        "system-exit-integer",
+        false,
+        false,
+    );
+    assert_process_contract(
+        &exit_integer,
+        &harness,
+        31,
+        false,
+        "backup",
+        "solstone.think.backup_cli",
+        &[],
+    );
     assert_eq!(exit_integer.output.stderr, b"bootstrap stderr\n");
 
-    let exit_string = harness.run("system-exit-string", "system-exit-string", false, false);
-    assert_process_contract(&exit_string, &harness, 1, false);
+    let exit_string = harness.run(
+        "system-exit-string",
+        "up",
+        "system-exit-string",
+        false,
+        false,
+    );
+    assert_process_contract(
+        &exit_string,
+        &harness,
+        1,
+        false,
+        "up",
+        "solstone.think.service",
+        &["up"],
+    );
     assert_eq!(
         exit_string.output.stderr,
         b"bootstrap stderr\nbootstrap exit string\n"
@@ -208,6 +279,15 @@ fn real_python_bootstrap_preserves_process_contract() {
 #[test]
 fn ambient_verbose_environment_cannot_enable_debug_logging() {
     let harness = Harness::new();
-    let run = harness.run("ambient-verbose", "none", false, true);
+    let run = harness.run("ambient-verbose", "up", "none", false, true);
     assert_eq!(run.record["debug"], false);
+    assert_eq!(run.record["verbose_env"], "ambient-poison");
+}
+
+#[test]
+fn root_verbose_does_not_create_a_verbose_environment_override() {
+    let harness = Harness::new();
+    let run = harness.run("root-verbose-env", "up", "none", true, false);
+    assert_eq!(run.record["debug"], true);
+    assert_eq!(run.record["verbose_env"], Value::Null);
 }
