@@ -22,6 +22,7 @@ from solstone.think.install_guard import (
 )
 from solstone.think.service import service_is_installed, service_is_running
 from solstone.think.utils import (
+    CorruptConfigError,
     SolstoneNotConfigured,
     get_journal_info,
     get_project_root,
@@ -628,12 +629,16 @@ def cmd_journal(
         yes=yes,
         dry_run=dry_run,
     )
-    change = build_change(
-        args,
-        alias_path=alias,
-        sol_bin=parsed["sol_bin"],
-        current_path=Path(parsed["journal"]),
-    )
+    try:
+        change = build_change(
+            args,
+            alias_path=alias,
+            sol_bin=parsed["sol_bin"],
+            current_path=Path(parsed["journal"]),
+        )
+    except CorruptConfigError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     decision = decide(change)
     return execute(change, decision)
 
