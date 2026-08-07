@@ -13,8 +13,8 @@ use crate::execute::{
     agents_with_connection_for_test, order_for_plan, search_with_connection_for_test,
 };
 use crate::{
-    CompileOutcome, CoverageState, IndexAccessError, Order, SearchRequest, compile_query, coverage,
-    search, search_counts,
+    CompileOutcome, CoverageState, IndexAccessError, IndexBuildCounts, IndexDegraded, Order,
+    SearchRequest, compile_query, coverage, search, search_counts,
 };
 
 const REFERENCE_DATE: &str = "2026-01-07";
@@ -59,11 +59,50 @@ fn read_only(root: &Path) -> Connection {
 fn seeded_root(name: &str) -> (PathBuf, Connection) {
     let root = temp_root(name);
     let connection = open_index(&root).expect("create test index");
+    seed_complete_state(&connection);
     (root, connection)
+}
+
+fn building_root(name: &str) -> (PathBuf, Connection) {
+    let root = temp_root(name);
+    let connection = open_index(&root).expect("create test index");
+    connection
+        .execute(
+            "REPLACE INTO index_build_state(id, schema_version, state, files_count, chunks_count) VALUES (1, 1, 'building', 0, 0)",
+            [],
+        )
+        .expect("seed building state");
+    (root, connection)
+}
+
+fn absent_state_root(name: &str) -> (PathBuf, Connection) {
+    let root = temp_root(name);
+    let connection = open_index(&root).expect("create test index");
+    (root, connection)
+}
+
+fn seed_complete_state(connection: &Connection) {
+    connection
+        .execute(
+            "REPLACE INTO index_build_state(id, schema_version, state, files_count, chunks_count) VALUES (1, 1, 'complete', 0, 0)",
+            [],
+        )
+        .expect("seed complete state");
 }
 
 fn request(query: &str) -> SearchRequest {
     SearchRequest::new(query, Order::Relevance).expect("valid request")
+}
+
+fn building_degraded(files: u64, chunks: u64) -> IndexDegraded {
+    IndexDegraded::Building {
+        state_schema_version: 1,
+        recorded_counts: IndexBuildCounts {
+            files: 0,
+            chunks: 0,
+        },
+        observed_counts: IndexBuildCounts { files, chunks },
+    }
 }
 
 #[test]
@@ -178,9 +217,107 @@ fn empty_and_undated_indexes_have_distinct_states() {
             state: CoverageState::NoDatedChunks,
             start: None,
             end: None,
+            degraded: None,
         }
     );
     fs::remove_dir_all(root).expect("cleanup undated index");
+}
+
+#[test]
+fn building_state_is_reported_across_search_counts_and_coverage() {
+    let (root, connection) = building_root("building-degraded");
+    insert(
+        &connection,
+        "needle while indexing",
+        "notes/building.md",
+        "20260107",
+        "work",
+        "flow",
+        "default",
+        0,
+    );
+    drop(connection);
+
+    let expected = building_degraded(0, 1);
+    assert_eq!(
+        search(&root, &request("needle"), reference_date())
+            .expect("search")
+            .degraded,
+        Some(expected.clone())
+    );
+    assert_eq!(
+        search_counts(&root, &request("needle"), reference_date())
+            .expect("counts")
+            .degraded,
+        Some(expected.clone())
+    );
+    assert_eq!(coverage(&root).expect("coverage").degraded, Some(expected));
+    fs::remove_dir_all(root).expect("cleanup building degraded index");
+}
+
+#[test]
+fn absent_state_is_reported_as_unknown_across_read_responses() {
+    let (root, connection) = absent_state_root("unknown-degraded");
+    insert(
+        &connection,
+        "needle without a state row",
+        "notes/unknown.md",
+        "20260107",
+        "work",
+        "flow",
+        "default",
+        0,
+    );
+    drop(connection);
+
+    assert_eq!(
+        search(&root, &request("needle"), reference_date())
+            .expect("search")
+            .degraded,
+        Some(IndexDegraded::Unknown)
+    );
+    assert_eq!(
+        search_counts(&root, &request("needle"), reference_date())
+            .expect("counts")
+            .degraded,
+        Some(IndexDegraded::Unknown)
+    );
+    assert_eq!(
+        coverage(&root).expect("coverage").degraded,
+        Some(IndexDegraded::Unknown)
+    );
+    fs::remove_dir_all(root).expect("cleanup unknown degraded index");
+}
+
+#[test]
+fn complete_state_is_omitted_across_read_responses() {
+    let (root, connection) = seeded_root("complete-degraded");
+    insert(
+        &connection,
+        "needle after indexing",
+        "notes/complete.md",
+        "20260107",
+        "work",
+        "flow",
+        "default",
+        0,
+    );
+    drop(connection);
+
+    assert_eq!(
+        search(&root, &request("needle"), reference_date())
+            .expect("search")
+            .degraded,
+        None
+    );
+    assert_eq!(
+        search_counts(&root, &request("needle"), reference_date())
+            .expect("counts")
+            .degraded,
+        None
+    );
+    assert_eq!(coverage(&root).expect("coverage").degraded, None);
+    fs::remove_dir_all(root).expect("cleanup complete degraded index");
 }
 
 #[test]

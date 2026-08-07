@@ -1913,6 +1913,44 @@ def _seed_native_chunk(
     conn.close()
 
 
+def test_search_journal_exposes_building_state_without_changing_tuple_shape(
+    tmp_path, monkeypatch
+):
+    """The native reset state reaches the opt-in degraded output dictionary."""
+    import solstone.think.utils as think_utils
+    from solstone.think.indexer import journal, native
+
+    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    think_utils._journal_path_cache = None
+    helper = Path(__file__).resolve().parents[1] / "core" / "target" / "debug" / "solstone-core"
+    subprocess.run(
+        [str(helper), "indexer", "--journal", str(tmp_path), "--reset"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    _seed_native_chunk(
+        tmp_path,
+        content="building state needle",
+        day="20260107",
+    )
+    monkeypatch.setattr(
+        journal,
+        "run_native_indexer_search",
+        lambda query, journal_path, **options: native.run_native_indexer_search(
+            query, journal_path, **_native_read_kwargs(), **options
+        ),
+    )
+
+    degraded: dict[str, object] = {}
+    result = search_journal("needle", degraded_out=degraded)
+
+    assert isinstance(result, tuple)
+    assert result[0] == 1
+    assert len(result[1]) == 1
+    assert degraded["kind"] == "building"
+
+
 def test_native_read_bridge_uses_real_binary_for_recency_and_unicode(tmp_path, monkeypatch):
     """The public shim preserves Rust browse ordering and Unicode retrieval."""
     import solstone.think.utils as think_utils
@@ -2009,6 +2047,7 @@ def test_non_tokenizable_native_reason_is_available_at_bridge_boundary(tmp_path)
         "days": Counter(),
         "streams": Counter(),
         "relaxed": False,
+        "degraded": None,
     }
 
 

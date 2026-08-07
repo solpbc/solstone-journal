@@ -830,6 +830,7 @@ def search_journal(
     relax: bool = False,
     rerank: bool = False,
     include_total: bool = True,
+    degraded_out: dict[str, Any] | None = None,
 ) -> tuple[int, list[dict[str, Any]]]:
     """Search the journal index.
 
@@ -858,6 +859,8 @@ def search_journal(
             - score: BM25 relevance score
             - rerank_score: Optional rerank score on reranked result pages
     """
+    if degraded_out is not None:
+        degraded_out.clear()
     used_pool_fetch = rerank and offset + limit <= 50
     native_limit, native_offset = (50, 0) if used_pool_fetch else (limit, offset)
     try:
@@ -881,6 +884,10 @@ def search_journal(
             return 0, []
         raise
 
+    if degraded_out is not None:
+        degraded = response.get("degraded")
+        if degraded is not None:
+            degraded_out.update(degraded)
     if response.get("reason") == "not_tokenizable":
         return 0, []
     results = _decode_search_results(response["results"])
@@ -970,6 +977,7 @@ def search_counts(
         "days": Counter(counts["days"]),
         "streams": Counter(counts["streams"]),
         "relaxed": bool(counts["relaxed"]),
+        "degraded": response.get("degraded"),
     }
 
 
@@ -1019,6 +1027,7 @@ def _empty_search_counts() -> dict[str, Any]:
         "days": Counter(),
         "streams": Counter(),
         "relaxed": False,
+        "degraded": None,
     }
 
 

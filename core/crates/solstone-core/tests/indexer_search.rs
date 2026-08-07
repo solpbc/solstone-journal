@@ -8,7 +8,7 @@ use std::{env, fs, path::Path};
 
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
-use solstone_core_indexer_store::db::{db_path, open_index};
+use solstone_core_indexer_store::db::{db_path, open_index, reset_index};
 
 fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_solstone-core")
@@ -40,6 +40,22 @@ fn insert(
             params![content, path, day, facet, agent, stream, idx],
         )
         .expect("seed chunk");
+}
+
+fn mark_complete(connection: &Connection) {
+    let (files_count, chunks_count): (i64, i64) = connection
+        .query_row(
+            "SELECT (SELECT count(*) FROM files), (SELECT count(*) FROM chunks)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read complete state counts");
+    connection
+        .execute(
+            "REPLACE INTO index_build_state(id, schema_version, state, files_count, chunks_count) VALUES (1, 1, 'complete', ?1, ?2)",
+            params![files_count, chunks_count],
+        )
+        .expect("seed complete state");
 }
 
 fn run_indexer_verb(root: &Path, verb: &str, args: &[&str]) -> Output {
@@ -82,6 +98,7 @@ fn indexer_search_reaches_query_engine_and_pins_json_envelope() {
         "default",
         7,
     );
+    mark_complete(&connection);
     drop(connection);
 
     let response = json_stdout(run_indexer_verb(
@@ -218,6 +235,53 @@ fn indexer_query_verbs_classify_absent_unreadable_and_empty_indexes() {
 }
 
 #[test]
+fn interrupted_full_rescan_reports_building_state_after_reopen() {
+    let root = temp_path("interrupted-rescan");
+    reset_index(&root).expect("reset index into building state");
+    let connection = open_index(&root).expect("open reset index");
+    insert(
+        &connection,
+        "needle retained before the interrupted rescan",
+        "notes/retained.md",
+        "20260102",
+        "work",
+        "flow",
+        "default",
+        0,
+    );
+    connection
+        .execute(
+            "CREATE TRIGGER abort_full_rescan BEFORE INSERT ON files \
+             WHEN NEW.path='20260717/talents/flow.md' \
+             BEGIN SELECT RAISE(ABORT, 'abort_full_rescan'); END",
+            [],
+        )
+        .expect("create full-rescan abort trigger");
+    drop(connection);
+    let source = root.join("chronicle/20260717/talents/flow.md");
+    fs::create_dir_all(source.parent().expect("source parent")).expect("create source parent");
+    fs::write(source, "# Flow\n\nthis rescan is interrupted").expect("write scan source");
+
+    let failed = Command::new(bin())
+        .args(["indexer", "--journal"])
+        .arg(&root)
+        .arg("--rescan-full")
+        .output()
+        .expect("run interrupted full rescan");
+    assert!(!failed.status.success(), "full rescan should fail");
+    assert!(
+        String::from_utf8(failed.stderr)
+            .expect("stderr utf-8")
+            .contains("abort_full_rescan"),
+        "full rescan reports the trigger failure"
+    );
+
+    let response = json_stdout(run_indexer_verb(&root, "search", &["--json", "needle"]));
+    assert_eq!(response["degraded"]["kind"], "building");
+    fs::remove_dir_all(root).expect("cleanup interrupted rescan index");
+}
+
+#[test]
 fn indexer_coverage_and_filter_only_search_are_reachable_through_the_binary() {
     let root = temp_path("coverage");
     let connection = open_index(&root).expect("create test index");
@@ -241,6 +305,7 @@ fn indexer_coverage_and_filter_only_search_are_reachable_through_the_binary() {
         "",
         2,
     );
+    mark_complete(&connection);
     drop(connection);
 
     let filter_only = json_stdout(run_indexer_verb(
@@ -268,6 +333,7 @@ fn indexer_coverage_and_filter_only_search_are_reachable_through_the_binary() {
         "",
         0,
     );
+    mark_complete(&connection);
     drop(connection);
     assert_eq!(
         json_stdout(run_indexer_verb(&undated_root, "coverage", &["--json"])),

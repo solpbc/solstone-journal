@@ -17,8 +17,8 @@ pub use execute::{agents, coverage, search, search_counts};
 pub use predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
 pub use temporal::{TemporalExtraction, extract_temporal_references};
 pub use types::{
-    CountsResponse, CoverageResponse, CoverageState, IndexAccessError, Order, RequestError,
-    SearchHit, SearchMetadata, SearchRequest, SearchResponse,
+    CountsResponse, CoverageResponse, CoverageState, IndexAccessError, IndexBuildCounts,
+    IndexDegraded, Order, RequestError, SearchHit, SearchMetadata, SearchRequest, SearchResponse,
 };
 
 #[cfg(test)]

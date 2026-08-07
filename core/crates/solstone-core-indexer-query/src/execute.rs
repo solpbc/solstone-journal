@@ -13,8 +13,8 @@ use crate::ladder::relaxed_plan;
 use crate::predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
 use crate::temporal::TemporalExtraction;
 use crate::types::{
-    CountsResponse, CoverageResponse, CoverageState, IndexAccessError, Order, SearchHit,
-    SearchMetadata, SearchRequest, SearchResponse,
+    CountsResponse, CoverageResponse, CoverageState, IndexAccessError, IndexBuildCounts,
+    IndexDegraded, Order, SearchHit, SearchMetadata, SearchRequest, SearchResponse,
 };
 
 /// Execute one journal search using only a read-only SQLite connection.
@@ -33,6 +33,7 @@ pub fn search(
             counts: None,
             reason: Some("not_tokenizable".to_string()),
             cleaned_query: compilation.temporal.remaining_text.clone(),
+            degraded: None,
         });
     }
     let mut connection = open_read_only(journal)?;
@@ -51,7 +52,9 @@ pub fn search_counts(
     }
     let mut connection = open_read_only(journal)?;
     let (plan, relaxed) = resolve_plan(&mut connection, request, reference_date, compilation)?;
-    connection.aggregate_counts(&plan, relaxed)
+    let mut counts = connection.aggregate_counts(&plan, relaxed)?;
+    counts.degraded = connection.index_degraded()?;
+    Ok(counts)
 }
 
 /// Return the distinct nonempty indexed agents. Search never calls this query.
@@ -63,7 +66,9 @@ pub fn agents(journal: &Path) -> Result<Vec<String>, IndexAccessError> {
 /// Return the dated span of a nonempty index.
 pub fn coverage(journal: &Path) -> Result<CoverageResponse, IndexAccessError> {
     let mut connection = open_read_only(journal)?;
-    connection.coverage()
+    let mut coverage = connection.coverage()?;
+    coverage.degraded = connection.index_degraded()?;
+    Ok(coverage)
 }
 
 fn search_on_connection(
@@ -88,6 +93,7 @@ fn search_on_connection(
         counts,
         reason: None,
         cleaned_query,
+        degraded: connection.index_degraded()?,
     })
 }
 
@@ -257,6 +263,44 @@ impl QueryConnection {
             });
         }
         Ok(())
+    }
+
+    fn index_degraded(&self) -> Result<Option<IndexDegraded>, IndexAccessError> {
+        let state = solstone_core_indexer_store::db::read_index_build_state(&self.connection)
+            .map_err(|error| match error {
+                solstone_core_indexer_store::StoreError::Sql(error) => self.classify(error),
+                other => IndexAccessError::Unreadable {
+                    path: self.path.clone(),
+                    detail: other.to_string(),
+                },
+            })?;
+        let Some(state) = state else {
+            return Ok(Some(IndexDegraded::Unknown));
+        };
+        match state.state {
+            solstone_core_indexer_store::db::IndexBuildLifecycle::Complete => Ok(None),
+            solstone_core_indexer_store::db::IndexBuildLifecycle::Building => {
+                let (files, chunks): (i64, i64) = self
+                    .connection
+                    .query_row(
+                        "SELECT (SELECT count(*) FROM files), (SELECT count(*) FROM chunks)",
+                        [],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .map_err(|error| self.classify(error))?;
+                Ok(Some(IndexDegraded::Building {
+                    state_schema_version: state.schema_version,
+                    recorded_counts: IndexBuildCounts {
+                        files: state.files_count as u64,
+                        chunks: state.chunks_count as u64,
+                    },
+                    observed_counts: IndexBuildCounts {
+                        files: files as u64,
+                        chunks: chunks as u64,
+                    },
+                }))
+            }
+        }
     }
 
     pub(crate) fn has_rows(&mut self, plan: &SqlPlan) -> Result<bool, IndexAccessError> {
@@ -432,12 +476,14 @@ impl QueryConnection {
                 state: CoverageState::NoDatedChunks,
                 start: None,
                 end: None,
+                degraded: None,
             });
         }
         Ok(CoverageResponse {
             state: CoverageState::Available,
             start,
             end,
+            degraded: None,
         })
     }
 

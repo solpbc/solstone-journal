@@ -138,6 +138,25 @@ pub struct SearchResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     pub cleaned_query: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub degraded: Option<IndexDegraded>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum IndexDegraded {
+    Building {
+        state_schema_version: i64,
+        recorded_counts: IndexBuildCounts,
+        observed_counts: IndexBuildCounts,
+    },
+    Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct IndexBuildCounts {
+    pub files: u64,
+    pub chunks: u64,
 }
 
 /// Post-collapse aggregation matching Python's ``search_counts`` fields.
@@ -149,6 +168,8 @@ pub struct CountsResponse {
     pub days: BTreeMap<String, u64>,
     pub streams: BTreeMap<String, u64>,
     pub relaxed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub degraded: Option<IndexDegraded>,
 }
 
 /// The dated portion of a nonempty index.
@@ -160,11 +181,13 @@ pub enum CoverageState {
 }
 
 /// Corpus coverage, keeping an undated corpus distinct from an unavailable index.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CoverageResponse {
     pub state: CoverageState,
     pub start: Option<String>,
     pub end: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub degraded: Option<IndexDegraded>,
 }
 
 /// Why the read-only executor could not use an index.
