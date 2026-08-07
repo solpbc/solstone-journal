@@ -27,6 +27,27 @@ PYTHON := $(VENV_PY)
 RUST_MANIFEST := core/Cargo.toml
 IOS_TARGET := aarch64-apple-ios
 RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx
+
+# bindgen (inside ffmpeg-sys-next, which solstone-core-describe pulls in) asks
+# libclang for its builtin-header directory, and libclang derives that path from
+# its own .so location. On Fedora libclang ships in /usr/lib64 while the headers
+# ship in /usr/lib/clang/<ver>/include, so the derived path misses and every
+# glibc header doing `#include_next <limits.h>` dies with
+#   fatal error: 'limits.h' file not found
+# taking check-rust-msrv, -clippy, -test and build down with it.
+#
+# The wildcard is empty on hosts whose resource dir already resolves (macOS,
+# Debian/Ubuntu), so this is a no-op there rather than a second opinion.
+#
+# ⚠ HOST BUILDS ONLY. The wheel recipes below assign their own
+# BINDGEN_EXTRA_CLANG_ARGS against zig's sysroot with -nostdinc; a recipe-level
+# shell assignment overrides this exported value, which is what keeps the two
+# from fighting. Setting it only in the wheel recipe is exactly how the host
+# gate ended up red while the wheel built fine.
+CLANG_BUILTIN_INCLUDE := $(firstword $(wildcard /usr/lib/clang/*/include))
+ifneq ($(CLANG_BUILTIN_INCLUDE),)
+export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
+endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for the iOS gate; install rustup and retry" >&2; exit 1; }
 # Prep measured, rather than merely anticipated, that a host GNU cargo build of
