@@ -47,6 +47,13 @@ fn main() {
             continue;
         }
         let id = request.id.unwrap();
+        if request.context == "observe.extract.selection" && mode.starts_with("selection_") {
+            selection_response(&id, &mode);
+            if let Some(path) = env::var_os("SOLSTONE_DESCRIBE_SESSION_STUB_STATS_PATH") {
+                std::fs::write(path, json!({"requests": seen}).to_string()).unwrap();
+            }
+            continue;
+        }
         if mode == "always_retryable" || (mode == "retryable_then_generated" && seen == 1) {
             refused(&id, true, false, Some("chat_timeout"));
         } else if mode == "blocking_retryable" {
@@ -74,6 +81,20 @@ fn main() {
     }
 }
 
+fn selection_response(id: &str, mode: &str) {
+    match mode {
+        "selection_bare_array" => generated_text(id, "[3,1,2]"),
+        "selection_over_cap" => generated_text(id, r#"{"frame_ids":[999,3,1,2,0]}"#),
+        "selection_unparseable" => generated_text(id, "not JSON"),
+        "selection_blocking_refusal" => refused(id, true, true, Some("binary_missing")),
+        "selection_nonblocking_retryable_refusal" => {
+            refused(id, true, false, Some("chat_timeout"));
+        }
+        "selection_unknown_code" => refused(id, false, false, Some("future_code")),
+        _ => unreachable!("selection-only mode"),
+    }
+}
+
 fn generated(id: &str) {
     generated_with_finish(id, "stop");
 }
@@ -81,6 +102,12 @@ fn generated_with_finish(id: &str, finish_reason: &str) {
     let text =
         json!({"visual_description":"stub","primary":"code","secondary":"none","overlap":true})
             .to_string();
+    generated_text_with_finish(id, &text, finish_reason);
+}
+fn generated_text(id: &str, text: &str) {
+    generated_text_with_finish(id, text, "stop");
+}
+fn generated_text_with_finish(id: &str, text: &str, finish_reason: &str) {
     println!(
         "{}",
         json!({"schema":contract()["schema_identifiers"]["response"],"id":id,"outcome":"generated","text":text,"model":"describe-stub","usage":{},"finish_reason":finish_reason,"thinking":null,"schema_validation":null,"input_budget":null,"request_budget":null,"inference":null})

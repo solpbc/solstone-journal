@@ -98,6 +98,13 @@ fn read_jsonl(path: &Path) -> Vec<serde_json::Value> {
         .collect()
 }
 
+fn selection_requests(path: &Path) -> Vec<serde_json::Value> {
+    read_jsonl(path)
+        .into_iter()
+        .filter(|request| request["context"] == "observe.extract.selection")
+        .collect()
+}
+
 fn no_temp_files(root: &Path) -> bool {
     fs::read_dir(root).expect("read root").all(|entry| {
         !entry
@@ -377,6 +384,10 @@ fn retryable_refusals_stop_after_five_attempts() {
         String::from_utf8_lossy(&output.stderr)
     );
     let requests = read_jsonl(&request_log);
+    let requests = requests
+        .into_iter()
+        .filter(|request| request["context"] == "observe.describe.frame")
+        .collect::<Vec<_>>();
     assert_eq!(requests.len(), 5);
     assert_eq!(
         requests
@@ -480,6 +491,80 @@ fn unknown_finish_reason_is_clean_and_request_uses_phase_one_contract() {
     assert_eq!(rows[1]["finish_reason"], "unknown");
     assert!(rows[1].get("error").is_none());
     fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+#[test]
+fn selection_accepts_bare_and_wrapped_responses_and_uses_selection_contract() {
+    for mode in ["selection_bare_array", "selection_over_cap"] {
+        let root = temporary_root(mode);
+        let video = copied_video(&root, "mixed_vp8_screen.webm");
+        let request_log = root.join("requests.jsonl");
+        let output = describe(&root, &video, mode)
+            .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+            .output()
+            .expect("run describe binary");
+        assert!(
+            output.status.success(),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let requests = selection_requests(&request_log);
+        assert_eq!(requests.len(), 1, "{mode}");
+        let request = &requests[0];
+        assert_eq!(request["json_output"], true);
+        assert_eq!(request["temperature"], 0.3);
+        assert_eq!(request["max_output_tokens"], 1024);
+        assert_eq!(request["thinking_budget"], 4096);
+        assert!(
+            request["system_instruction"]
+                .as_str()
+                .expect("system instruction")
+                .contains("select the frames most valuable for text extraction")
+        );
+        fs::remove_dir_all(root).expect("remove temporary root");
+    }
+}
+
+#[test]
+fn selection_blocking_and_unknown_refusals_abort_after_one_selection_request() {
+    for mode in ["selection_blocking_refusal", "selection_unknown_code"] {
+        let root = temporary_root(mode);
+        let video = copied_video(&root, "mixed_vp8_screen.webm");
+        let request_log = root.join("requests.jsonl");
+        let output = describe(&root, &video, mode)
+            .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+            .output()
+            .expect("run describe binary");
+        assert_eq!(output.status.code(), Some(69), "{mode}");
+        assert_eq!(selection_requests(&request_log).len(), 1, "{mode}");
+        assert!(!video.with_extension("jsonl").exists(), "{mode}");
+        assert!(no_temp_files(&root), "{mode}");
+        remove_temporary_root(&root);
+    }
+}
+
+#[test]
+fn selection_nonblocking_or_unparseable_response_uses_fallback() {
+    for mode in [
+        "selection_nonblocking_retryable_refusal",
+        "selection_unparseable",
+    ] {
+        let root = temporary_root(mode);
+        let video = copied_video(&root, "mixed_vp8_screen.webm");
+        let request_log = root.join("requests.jsonl");
+        let output = describe(&root, &video, mode)
+            .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+            .output()
+            .expect("run describe binary");
+        assert!(
+            output.status.success(),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(selection_requests(&request_log).len(), 1, "{mode}");
+        assert!(video.with_extension("jsonl").exists(), "{mode}");
+        fs::remove_dir_all(root).expect("remove temporary root");
+    }
 }
 
 #[test]

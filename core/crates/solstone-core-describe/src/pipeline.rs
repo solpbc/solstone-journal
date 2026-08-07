@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -16,6 +16,7 @@ use crate::WinnowConfig;
 use crate::decode::{IdentityTransform, QualifiedFrame, process_video_with_transform};
 use crate::notify;
 use crate::request;
+use crate::selection::{self, CategorizedFrame, CategoryOverride, SelectionError};
 use crate::session::{DescribeSessionFactory, SystemSessionFactory};
 
 pub const EXIT_PROVIDER_BLOCKED: i32 = 69;
@@ -30,6 +31,12 @@ pub enum RunError {
 struct Pending {
     frame: QualifiedFrame,
     attempt: u64,
+}
+
+struct CategorizedRow {
+    frame_id: u64,
+    timestamp: f64,
+    analysis: Value,
 }
 
 struct Promotion<'a> {
@@ -83,6 +90,8 @@ pub struct DescribeOptions<'a> {
     pub jobs: usize,
     pub config: WinnowConfig,
     pub redact_rules: Vec<String>,
+    pub max_extractions: u32,
+    pub category_overrides: BTreeMap<String, CategoryOverride>,
 }
 
 pub fn run(options: DescribeOptions<'_>) -> Result<(), RunError> {
@@ -137,6 +146,7 @@ pub fn run_with_factory(
         .map(|frame| Pending { frame, attempt: 0 })
         .collect();
     let mut outstanding: HashMap<String, Pending> = HashMap::new();
+    let mut categorized = Vec::new();
     let mut failures = false;
     let mut model = None;
     let window = options.jobs.saturating_mul(2);
@@ -179,6 +189,11 @@ pub fn run_with_factory(
                 let error = analysis.get("error").is_some();
                 failures |= error;
                 rows.row(&json!({"frame_id":pending.frame.frame_id,"timestamp":pending.frame.timestamp,"analysis":analysis,"enhanced":false,"finish_reason":generated.finish_reason,"requests":[{"type":"describe","model":generated.model,"attempt":pending.attempt,"retries":pending.attempt}]}))?;
+                categorized.push(CategorizedRow {
+                    frame_id: pending.frame.frame_id,
+                    timestamp: pending.frame.timestamp,
+                    analysis,
+                });
             }
             GenerateResponse::Refused(refusal) => {
                 let code = refusal.reason_code.as_ref().map(|value| value.as_wire());
@@ -200,8 +215,47 @@ pub fn run_with_factory(
                 } else {
                     failures = true;
                     rows.row(&json!({"frame_id":pending.frame.frame_id,"timestamp":pending.frame.timestamp,"error":refusal.detail,"enhanced":false,"finish_reason":"unknown","requests":[{"type":"describe","attempt":pending.attempt,"retries":pending.attempt,"reason_code":code}]}))?;
+                    categorized.push(CategorizedRow {
+                        frame_id: pending.frame.frame_id,
+                        timestamp: pending.frame.timestamp,
+                        analysis: json!({"error": refusal.detail}),
+                    });
                 }
             }
+        }
+    }
+    let mut selection_frames = categorized
+        .iter()
+        .map(|row| CategorizedFrame {
+            frame_id: row.frame_id,
+            timestamp: row.timestamp,
+            analysis: row.analysis.clone(),
+        })
+        .collect::<Vec<_>>();
+    selection_frames.sort_unstable_by_key(|frame| frame.frame_id);
+    match selection::select(
+        session.as_ref(),
+        &selection_frames,
+        options.max_extractions,
+        &options.category_overrides,
+    ) {
+        Ok(_) => {}
+        Err(SelectionError::Blocked {
+            reason_code,
+            provider,
+        }) => {
+            let _ = session.close();
+            return Err(blocked(
+                options.journal,
+                work_key,
+                reason_code.as_deref(),
+                provider.as_deref(),
+                Some("observe.extract.selection"),
+            ));
+        }
+        Err(SelectionError::Session) => {
+            let _ = session.close();
+            return Err(blocked(options.journal, work_key, None, None, None));
         }
     }
     let _ = session.close();

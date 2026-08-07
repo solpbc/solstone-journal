@@ -3,12 +3,14 @@
 
 //! Decode and winnow screencast video frames for `journal describe`.
 
+pub mod categories;
 mod decode;
 mod fiducial;
 mod hash;
 mod notify;
 pub mod pipeline;
 pub mod request;
+pub mod selection;
 pub mod session;
 mod winnow;
 

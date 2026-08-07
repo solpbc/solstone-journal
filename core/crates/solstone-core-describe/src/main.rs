@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsString;
 use std::io::{self, Write};
@@ -8,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use serde_json::Value;
+use solstone_core_describe::selection::{CategoryOverride, Importance};
 use solstone_core_describe::{
     ConveyFiducialMask, WinnowConfig, pipeline, process_video_with_transform,
 };
@@ -107,6 +109,8 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
                 jobs: arguments.jobs,
                 config: config.winnow,
                 redact_rules: config.redact_rules,
+                max_extractions: config.max_extractions,
+                category_overrides: config.category_overrides,
             })
             .map_err(|error| match error {
                 pipeline::RunError::Blocked => CliError::Blocked,
@@ -224,6 +228,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
 struct DescribeConfig {
     winnow: WinnowConfig,
     redact_rules: Vec<String>,
+    max_extractions: u32,
+    category_overrides: BTreeMap<String, CategoryOverride>,
 }
 
 fn read_config(journal_path: Option<&Path>) -> Result<DescribeConfig, CliError> {
@@ -231,6 +237,8 @@ fn read_config(journal_path: Option<&Path>) -> Result<DescribeConfig, CliError> 
         return Ok(DescribeConfig {
             winnow: WinnowConfig::default(),
             redact_rules: Vec::new(),
+            max_extractions: 20,
+            category_overrides: BTreeMap::new(),
         });
     };
     let config = read_journal_config(journal_path)
@@ -244,6 +252,8 @@ fn read_config(journal_path: Option<&Path>) -> Result<DescribeConfig, CliError> 
         return Ok(DescribeConfig {
             winnow: WinnowConfig::default(),
             redact_rules: Vec::new(),
+            max_extractions: 20,
+            category_overrides: BTreeMap::new(),
         });
     };
 
@@ -280,9 +290,48 @@ fn read_config(journal_path: Option<&Path>) -> Result<DescribeConfig, CliError> 
             ));
         }
     };
+    let max_extractions = match describe.get("max_extractions") {
+        None => 20,
+        Some(value) => value
+            .as_u64()
+            .and_then(|value| u32::try_from(value).ok())
+            .ok_or_else(|| {
+                CliError::Config(
+                    "describe.max_extractions must be an unsigned 32-bit integer".to_owned(),
+                )
+            })?,
+    };
+    let category_overrides = match describe.get("categories") {
+        None => BTreeMap::new(),
+        Some(Value::Object(categories)) => categories
+            .iter()
+            .filter_map(|(name, value)| (!value.is_null()).then_some((name, value)))
+            .map(|(name, value)| {
+                let value = value.as_object().ok_or_else(|| {
+                    CliError::Config(format!("describe.categories.{name} must be an object"))
+                })?;
+                let importance = match value.get("importance") {
+                    None => None,
+                    Some(Value::String(value)) => Some(Importance::parse(value).ok_or_else(|| {
+                        CliError::Config(format!("describe.categories.{name}.importance must be ignore, low, normal, or high"))
+                    })?),
+                    Some(_) => return Err(CliError::Config(format!("describe.categories.{name}.importance must be a string"))),
+                };
+                let extraction = match value.get("extraction") {
+                    None => None,
+                    Some(Value::String(value)) => Some(value.clone()),
+                    Some(_) => return Err(CliError::Config(format!("describe.categories.{name}.extraction must be a string"))),
+                };
+                Ok((name.clone(), CategoryOverride { importance, extraction }))
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()?,
+        Some(_) => return Err(CliError::Config("describe.categories must be an object".to_owned())),
+    };
     Ok(DescribeConfig {
         winnow: result,
         redact_rules,
+        max_extractions,
+        category_overrides,
     })
 }
 
