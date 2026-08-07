@@ -1936,6 +1936,7 @@ dependencies = [
  "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
+ "solstone-core-local",
  "solstone-core-sol",
  "solstone-core-spl",
  "tokio",
@@ -2212,6 +2213,15 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-journal",
+]
+
+[[package]]
+name = "solstone-core-local"
+version = "1.0.22"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ureq",
 ]
 
 [[package]]
