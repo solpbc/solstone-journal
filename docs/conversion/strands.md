@@ -270,8 +270,8 @@ file — 31 through the reader, 19 through the mutator across 46 call sites — 
 negotiate a posture per caller.
 
 See [`plates.md`](plates.md) § `P-journal-config` for the fail-closed posture that is the house style,
-the four readers that already break it, the two default sets, and the two *write new, read old*
-questions that are still open.
+the four readers that used to break it, the two default sets, and what the two *write new, read old*
+shapes were measured to do.
 
 🔴 **What every consumer of this strand is entitled to, and what it must not do:**
 
@@ -287,10 +287,12 @@ questions that are still open.
 - ⛔ **The defaults are not a caller parameter.** A consumer never supplies a default set; the plate
   owns both of them. Two writers supplying different defaults is how a three-key set became the
   materialized contents of a config.
-- ⚠ **A consumer that only reads must be able to depend on the read half.** The durable-write
+- ✅ **A consumer that only reads depends on the read half, and it now has one.** The durable-write
   primitives are banned outside the write authorities, and that ban is correct — but it is also why
-  three crates hand-rolled their own reader and two lost the posture. **Without a home a reader may
-  legitimately depend on, this contract has no enforcement at the boundary it names.**
+  three crates once hand-rolled their own reader and two lost the posture. 📌 **A contract with no
+  home a reader may legitimately depend on has no enforcement at the boundary it names**, and that
+  generalizes past this strand: wherever a ban is right, check that the permitted side has somewhere
+  to go.
 
 ### `S:web:thinking` — chat
 **Owner** `P-thinking` · **Tier** schema
