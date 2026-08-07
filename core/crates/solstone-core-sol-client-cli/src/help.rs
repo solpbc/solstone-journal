@@ -7,24 +7,11 @@ use solstone_core_sol_client::command::CommandOutput;
 
 const ROOT_CONTRACT_JSON: &str = include_str!("../../../fixtures/native-sol/root-contract-v1.json");
 
-pub struct RootHelpStatus<'a> {
-    pub journal_path: Option<&'a str>,
-    pub days: Option<usize>,
-}
-
 #[must_use]
-pub fn render_root_help(status: RootHelpStatus<'_>) -> String {
+pub fn render_root_help() -> String {
     let contract = root_contract();
     let mut output = String::new();
     push_line(&mut output, contract["header"].as_str().unwrap_or_default());
-    output.push('\n');
-    push_line(
-        &mut output,
-        &format!("Journal: {}", status.journal_path.unwrap_or("unavailable")),
-    );
-    if let Some(days) = status.days {
-        push_line(&mut output, &format!("Days: {days}"));
-    }
     output.push('\n');
     push_line(&mut output, contract["usage"].as_str().unwrap_or_default());
     output.push('\n');
@@ -108,6 +95,7 @@ pub fn render_top_level_help(command: &str, args: &[String]) -> Option<CommandOu
     let surface = match command {
         "chat" => "sol-chat",
         "import" => "sol-import",
+        "status" => "sol-status",
         _ => return None,
     };
     let entry = leaf_for_path(surface, &[command.to_string()])?;
@@ -359,16 +347,30 @@ mod tests {
 
     #[test]
     fn root_help_matches_generated_fixture_projection() {
-        let output = render_root_help(RootHelpStatus {
-            journal_path: Some("${JOURNAL}"),
-            days: Some(2),
-        });
+        let output = render_root_help();
         assert_eq!(
             output,
             root_contract()["expected_bare_sol_stdout"]
                 .as_str()
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn status_top_level_help_is_inventory_driven() {
+        let output = render_top_level_help("status", &["--help".to_string()])
+            .expect("status top-level help");
+
+        assert_eq!(output.stderr, "");
+        assert_eq!(output.exit, 0);
+        assert!(output.stdout.contains("Usage: sol status [args...]"));
+        assert!(output.stdout.contains("Show journal network status."));
+        assert!(
+            output
+                .stdout
+                .contains("Authority: solstone/think/native/status/authority.toml")
+        );
+        assert!(output.stdout.contains("Operation: status.top_level"));
     }
 
     #[test]

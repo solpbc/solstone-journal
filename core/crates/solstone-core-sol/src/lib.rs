@@ -115,13 +115,9 @@ fn version_output() -> CommandOutput {
 }
 
 fn help_output() -> CommandOutput {
-    let status = root_help_status();
     CommandOutput {
-        stdout: help::render_root_help(help::RootHelpStatus {
-            journal_path: status.journal_path.as_deref(),
-            days: status.days,
-        }),
-        stderr: status.warnings,
+        stdout: help::render_root_help(),
+        stderr: String::new(),
         exit: 0,
     }
 }
@@ -408,85 +404,6 @@ fn dispatch_top_level_link_with_runtime_seams(
             journal_root: runtime.journal_root,
         },
     )
-}
-
-struct RootHelpStatus {
-    journal_path: Option<String>,
-    days: Option<usize>,
-    warnings: String,
-}
-
-fn root_help_status() -> RootHelpStatus {
-    let line = match resolve_process_journal_path() {
-        Ok(line) => line,
-        Err(error) => {
-            return RootHelpStatus {
-                journal_path: None,
-                days: None,
-                warnings: format!(
-                    "Warning: could not resolve journal status ({error}). Check SOLSTONE_JOURNAL or ~/.config/solstone/config.toml; showing command help without journal metadata.\n"
-                ),
-            };
-        }
-    };
-    match inspect_journal_days(&line) {
-        Ok(days) => RootHelpStatus {
-            journal_path: Some(line.display().to_string()),
-            days,
-            warnings: String::new(),
-        },
-        Err(error) => RootHelpStatus {
-            journal_path: Some(line.display().to_string()),
-            days: None,
-            warnings: format!(
-                "Warning: could not read journal day status for {} ({error}); showing command help without day count.\n",
-                line.display()
-            ),
-        },
-    }
-}
-
-fn inspect_journal_days(journal: &Path) -> Result<Option<usize>, std::io::Error> {
-    match fs::metadata(journal) {
-        Ok(metadata) => {
-            if !metadata.is_dir() {
-                return Ok(None);
-            }
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error),
-    }
-
-    let chronicle = journal.join("chronicle");
-    match fs::metadata(&chronicle) {
-        Ok(metadata) => {
-            if !metadata.is_dir() {
-                return Ok(Some(0));
-            }
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Some(0)),
-        Err(error) => return Err(error),
-    }
-
-    let mut days = 0;
-    for entry in fs::read_dir(&chronicle)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        if !name.to_str().is_some_and(is_day_dir_name) {
-            continue;
-        }
-        match entry.metadata() {
-            Ok(metadata) if metadata.is_dir() => days += 1,
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
-        }
-    }
-    Ok(Some(days))
-}
-
-fn is_day_dir_name(value: &str) -> bool {
-    value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn run_dispatched(
@@ -1553,6 +1470,7 @@ mod tests {
     fn help_output_matches_restored_root_contract_shape() {
         let output = help_output();
         assert_eq!(output.exit, 0);
+        assert_eq!(output.stderr, "");
         assert!(
             output
                 .stdout
@@ -1562,6 +1480,8 @@ mod tests {
         assert!(output.stdout.contains("Conversation\n  chat\n"));
         assert!(output.stdout.contains("Apps (sol call <app>):\n"));
         assert!(output.stdout.contains("  call journal\n"));
+        assert!(!output.stdout.contains("Journal: "));
+        assert!(!output.stdout.contains("Days: "));
     }
 
     #[test]
@@ -1668,24 +1588,6 @@ mod tests {
             "native sol project root resolution failed: could not locate source checkout or installed solstone package"
         ));
         fs::remove_dir_all(root).expect("cleanup temp root");
-    }
-
-    #[test]
-    fn absent_journal_omits_days_without_warning_condition() {
-        let root = temp_path("absent-journal");
-        assert_eq!(inspect_journal_days(&root).unwrap(), None);
-    }
-
-    #[test]
-    fn journal_day_count_counts_valid_chronicle_day_dirs_only() {
-        let root = temp_path("day-count");
-        let chronicle = root.join("chronicle");
-        fs::create_dir_all(chronicle.join("20260722")).expect("create first day");
-        fs::create_dir_all(chronicle.join("20260723")).expect("create second day");
-        fs::create_dir_all(chronicle.join("not-a-day")).expect("create invalid day");
-        fs::write(chronicle.join("20260724"), "").expect("write day-shaped file");
-        assert_eq!(inspect_journal_days(&root).unwrap(), Some(2));
-        fs::remove_dir_all(root).expect("cleanup day-count journal");
     }
 
     #[test]

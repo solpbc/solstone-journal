@@ -53,30 +53,6 @@ fn sol_root_output(program: &Path, cwd: &Path, public_argv0: &str) -> Output {
     )
 }
 
-#[cfg(unix)]
-fn compat_child_with_retry(program: &Path, public_argv0: &str) -> std::process::Child {
-    for _ in 0..100 {
-        match Command::new(program)
-            .arg(identity_arg(public_argv0))
-            .args(["check", "message"])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-        {
-            Ok(child) => return child,
-            Err(error) if error.kind() == ErrorKind::ExecutableFileBusy => {
-                sleep(Duration::from_millis(20));
-            }
-            Err(error) => panic!("solstone-core should spawn: {error:?}"),
-        }
-    }
-    panic!(
-        "fake solstone-core stayed busy after retries: {}",
-        program.display()
-    )
-}
-
 #[test]
 fn version_writes_stdout_and_exits_zero() {
     let output = Command::new(bin())
@@ -374,64 +350,4 @@ fn sol_root_installed_layout_canonicalizes_lib64_alias_independent_of_cwd() {
         );
     }
     fs::remove_dir_all(env_root).expect("cleanup fake install layout");
-}
-
-#[cfg(unix)]
-#[test]
-fn sol_and_solstone_identities_forward_compat_with_public_argv0_identity() {
-    use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
-
-    let env_root = temp_path("compat-sibling-python");
-    let bin_dir = env_root.join("bin");
-    fs::create_dir_all(&bin_dir).expect("create fake bin dir");
-    let fake_solstone_core = bin_dir.join("solstone-core");
-    fs::copy(bin(), &fake_solstone_core)
-        .expect("copy solstone-core binary into fake install layout");
-    fs::set_permissions(&fake_solstone_core, fs::Permissions::from_mode(0o755))
-        .expect("make fake solstone-core executable");
-
-    let python = bin_dir.join("python3");
-    fs::write(
-        &python,
-        "#!/bin/sh\n".to_string()
-            + "printf 'sentinel=%s\\n' \"$SOLSTONE_NATIVE_COMPAT_ACTIVE\"\n"
-            + "printf 'python_argv='\n"
-            + "for arg in \"$@\"; do printf '<%s>' \"$arg\"; done\n"
-            + "printf '\\nstdin='\n"
-            + "cat\n"
-            + "printf 'compat stderr\\n' >&2\n"
-            + "exit 23\n",
-    )
-    .expect("write fake sibling python");
-    fs::set_permissions(&python, fs::Permissions::from_mode(0o755))
-        .expect("make fake sibling python executable");
-
-    for (public_argv0, expected_marker) in [
-        ("sol", "__solstone_native_argv0=sol"),
-        ("solstone", "__solstone_native_argv0=solstone"),
-    ] {
-        let mut child = compat_child_with_retry(&fake_solstone_core, public_argv0);
-        child
-            .stdin
-            .as_mut()
-            .expect("stdin should be piped")
-            .write_all(b"payload")
-            .expect("write stdin");
-        let output = child.wait_with_output().expect("wait for native bin");
-
-        assert_eq!(output.status.code(), Some(23));
-        assert_eq!(
-            String::from_utf8(output.stdout).expect("stdout should be utf-8"),
-            format!(
-                "sentinel=armed\npython_argv=<-P><-m><solstone.think.sol_compat_cli><{expected_marker}><check><message>\nstdin=payload"
-            )
-        );
-        assert_eq!(
-            String::from_utf8(output.stderr).expect("stderr should be utf-8"),
-            "compat stderr\n"
-        );
-    }
-
-    fs::remove_dir_all(env_root).expect("cleanup compat sibling python");
 }

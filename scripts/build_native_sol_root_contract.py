@@ -20,7 +20,7 @@ ORACLE_BLOB = "a20570fc0994f6215a013e8c89ce7776ddec7d17"
 CALL_PATH = "solstone/think/call.py"
 JOURNAL_PLACEHOLDER = "${JOURNAL}"
 VERSION_PLACEHOLDER = "${VERSION}"
-RETIRED_ACCESS_COMMANDS = frozenset({"contract"})
+RETIRED_ACCESS_COMMANDS = frozenset({"contract", "notify", "doctor", "check"})
 
 
 def git_bytes(*args: str) -> bytes:
@@ -111,16 +111,6 @@ def print_literals(fn: ast.FunctionDef) -> list[str]:
     return values
 
 
-def has_status_fstring(fn: ast.FunctionDef, prefix: str) -> bool:
-    for node in ast.walk(fn):
-        if not isinstance(node, ast.JoinedStr):
-            continue
-        if node.values and isinstance(node.values[0], ast.Constant):
-            if node.values[0].value == prefix:
-                return True
-    return False
-
-
 def access_groups(tree: ast.Module, names: dict[str, str]) -> list[dict[str, Any]]:
     raw = assignment(tree, "ACCESS_HELP_GROUPS")
     if not isinstance(raw, ast.Tuple):
@@ -161,11 +151,8 @@ def filter_retired_access_commands(
             for command in group["commands"]
             if command not in RETIRED_ACCESS_COMMANDS
         ]
-        if not commands:
-            raise RuntimeError(
-                f"retired access command filter emptied group {group['heading']!r}"
-            )
-        filtered.append({"heading": group["heading"], "commands": commands})
+        if commands:
+            filtered.append({"heading": group["heading"], "commands": commands})
     return filtered
 
 
@@ -242,9 +229,6 @@ def render_stdout(
     lines: list[str] = [
         header,
         "",
-        f"Journal: {JOURNAL_PLACEHOLDER}",
-        "Days: 2",
-        "",
         usage,
         "",
     ]
@@ -269,15 +253,6 @@ def build() -> dict[str, Any]:
     usage = next(
         value.strip() for value in help_literals if value.startswith("Usage: sol ")
     )
-    status_fn = function(tree, "print_status")
-    if not has_status_fstring(status_fn, "Journal: "):
-        raise RuntimeError("oracle print_status no longer prints Journal: f-string")
-    if not has_status_fstring(status_fn, "Days: "):
-        raise RuntimeError("oracle print_status no longer prints Days: f-string")
-    if "os.path.isdir(path)" not in oracle_text:
-        raise RuntimeError(
-            "oracle no longer uses os.path.isdir(path) for Days omission"
-        )
     groups = filter_retired_access_commands(access_groups(tree, names))
     apps = call_groups()
     return {
@@ -286,7 +261,6 @@ def build() -> dict[str, Any]:
             "commit": ORACLE_COMMIT,
             "path": ORACLE_PATH,
             "blob": ORACLE_BLOB,
-            "status_days_condition": "os.path.isdir(path)",
         },
         "placeholders": {
             "journal": JOURNAL_PLACEHOLDER,
@@ -294,8 +268,6 @@ def build() -> dict[str, Any]:
         },
         "header": header,
         "usage": usage,
-        "journal_line": f"Journal: {JOURNAL_PLACEHOLDER}",
-        "days_line": "Days: 2",
         "access_groups": groups,
         "call_groups": apps,
         "expected_bare_sol_stdout": render_stdout(
