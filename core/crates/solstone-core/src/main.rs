@@ -11,9 +11,9 @@ use chrono::Local;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 use solstone_core_cli::{
-    BrainCommand, BrainPrerequisiteRenewalSessionOptions, BrainRefreshExpectArg,
-    BrainRefreshSessionOptions, BrainRuntimeFailureOptions, Command, IndexerCommand,
-    IndexerCountsOptions, IndexerOptions, IndexerQueryOptions, IndexerReadOptions,
+    BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
+    BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, Command,
+    IndexerCommand, IndexerCountsOptions, IndexerOptions, IndexerQueryOptions, IndexerReadOptions,
     IndexerSearchOptions, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
     JournalConfigReadOptions, JournalPathOptions, LocalCommand, ServiceOptions, SplCommand, USAGE,
     evaluate_args, version_line,
@@ -182,7 +182,112 @@ fn run_brain(command: BrainCommand) -> ExitCode {
         BrainCommand::PrerequisiteRenewalSession(options) => {
             run_brain_prerequisite_renewal_session(options)
         }
+        BrainCommand::Inspect(options) => run_brain_inspect(options),
     }
+}
+
+fn run_brain_inspect(options: BrainInspectOptions) -> ExitCode {
+    let line = match resolve_journal_config_path(options.journal_override) {
+        Ok(line) => line,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let config = match read_journal_config(&line.path) {
+        Ok(read) => read.config.unwrap_or_default(),
+        Err(error) => {
+            eprintln!("brain inspect failed: could not read journal config: {error}");
+            return ExitCode::from(EXIT_UNAVAILABLE);
+        }
+    };
+    let inspection =
+        solstone_core_brain::inspect_brain_state(&line.path, &config, chrono::Utc::now());
+    let active_fingerprint = active_brain_fingerprint(
+        &line.path,
+        &config,
+        options.bundled_runtime_fingerprint_sha256,
+    );
+    // `inspection` is the transport form of Python's `inspect_brain_state`;
+    // `active_fingerprint` serves both of its active-fingerprint read callers.
+    let output = json!({
+        "status": inspection_status_name(&inspection.status),
+        "path": solstone_core_brain::brain_state_path(&line.path),
+        "record": inspection.record,
+        "projection": {
+            "aggregate_state": inspection.projection.aggregate_state,
+            "reason_code": inspection.projection.reason_code,
+            "active_lane": inspection.projection.active_lane,
+            "active_provider": inspection.projection.active_provider,
+            "active_model": inspection.projection.active_model,
+            "fingerprint_sha256": inspection.projection.fingerprint_sha256,
+            "runtime_transition_in_progress": inspection.projection.runtime_transition_in_progress,
+        },
+        "reason_code": inspection.projection.reason_code,
+        "error": inspection.error,
+        "active_fingerprint": active_fingerprint,
+    });
+    let mut stdout = io::stdout().lock();
+    if serde_json::to_writer(&mut stdout, &output).is_err()
+        || stdout.write_all(b"\n").is_err()
+        || stdout.flush().is_err()
+    {
+        eprintln!("brain inspect failed: stdout I/O error");
+        ExitCode::from(EXIT_IOERR)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+fn inspection_status_name(status: &solstone_core_brain::InspectionStatus) -> &'static str {
+    match status {
+        solstone_core_brain::InspectionStatus::Ok => "ok",
+        solstone_core_brain::InspectionStatus::Corrupt => "corrupt",
+        solstone_core_brain::InspectionStatus::Unavailable => "unavailable",
+    }
+}
+
+fn active_brain_fingerprint(
+    journal_path: &std::path::Path,
+    config: &Map<String, Value>,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+) -> Value {
+    let resolution = solstone_core_brain::derive_active_brain_lane(config);
+    let mut diagnostic = Map::new();
+    let bundled_runtime = (resolution.lane.as_deref() == Some("bundled"))
+        .then_some(bundled_runtime_fingerprint_sha256)
+        .flatten();
+    let (ok, fingerprint_sha256, reason_code) =
+        match solstone_core_brain::load_existing_fingerprint_key(journal_path) {
+            None => (false, None, Some("fingerprint_key_unavailable".to_owned())),
+            Some(key) => match solstone_core_brain::build_active_brain_fingerprint(
+                config,
+                &key,
+                bundled_runtime.clone().map(Value::String),
+            ) {
+                Ok(Some(fingerprint)) => (true, Some(fingerprint), None),
+                Ok(None) => (false, None, Some("fingerprint_not_available".to_owned())),
+                Err(error) => {
+                    if error.0 == "configuration_invalid" {
+                        diagnostic.insert(
+                            "field".to_owned(),
+                            Value::String("providers.active.provider".to_owned()),
+                        );
+                    }
+                    (false, None, Some(error.0))
+                }
+            },
+        };
+    json!({
+        "ok": ok,
+        "fingerprint_sha256": fingerprint_sha256,
+        "active_lane": resolution.lane,
+        "active_provider": resolution.provider,
+        "active_model": resolution.model,
+        "reason_code": reason_code,
+        "diagnostic": diagnostic,
+        "bundled_runtime_fingerprint_sha256": bundled_runtime,
+    })
 }
 
 fn run_brain_refresh_session(options: BrainRefreshSessionOptions) -> ExitCode {
