@@ -37,7 +37,7 @@ use solstone_core_sol_client::transport::UreqHttpTransport;
 use solstone_core_sol_client_cli::{
     DispatchSeams, LinkDispatch, LinkDispatchSeams, Outcome, dispatch_sol_call_with_seams,
     dispatch_sol_chat_with_seams, dispatch_sol_import_with_seams, dispatch_sol_link_with_seams,
-    dispatch_sol_notify_with_seams, evaluate_args, help,
+    dispatch_sol_notify_with_seams, dispatch_sol_status_with_seams, evaluate_args, help,
 };
 #[cfg(not(target_os = "ios"))]
 use solstone_core_sol_link::{SplLinkJoinPairingSeam, SplLinkServeRunner};
@@ -90,7 +90,9 @@ fn run_with_stdin_provider(
         [command] if command == OsStr::new("root") => run_root(),
         [command] if command == OsStr::new("--path") => run_plain_path(),
         [command] if command == OsStr::new("path") => run_path(),
-        [command] if command == OsStr::new("status") => run_status(),
+        [command, rest @ ..] if command == OsStr::new("status") => {
+            run_top_level_native(public_argv0, &args, "status", rest, stdin_provider)
+        }
         [command, rest @ ..] if command == OsStr::new("skills") => render_output(skills::run(rest)),
         [command, rest @ ..] if command == OsStr::new("call") => {
             run_call(public_argv0, &args, rest, stdin_provider)
@@ -454,28 +456,8 @@ fn plain_path_output(line: &JournalPathLine) -> CommandOutput {
     CommandOutput::success(format!("{}\n", line.path.display()))
 }
 
-fn run_status() -> ExitCode {
-    match resolve_process_journal_path() {
-        Ok(line) => {
-            let port = read_convey_port(&line.path);
-            render_output(status_output(&line, port))
-        }
-        Err(error) => {
-            eprintln!("native sol journal resolution failed: {error}");
-            ExitCode::from(EXIT_TEMPFAIL)
-        }
-    }
-}
-
 fn path_output(line: &JournalPathLine) -> CommandOutput {
     CommandOutput::success(format!("{}\t{}\n", line.label, line.path.display()))
-}
-
-fn status_output(line: &JournalPathLine, port: i64) -> CommandOutput {
-    CommandOutput::success(format!(
-        "journal\t{}\nconvey_port\t{port}\n",
-        line.path.display()
-    ))
 }
 
 struct RootHelpStatus {
@@ -635,6 +617,21 @@ fn run_dispatched(
             },
         ),
         Outcome::Import { .. } => dispatch_sol_import_with_seams(
+            &args,
+            &env,
+            &stdin,
+            &today,
+            DispatchSeams {
+                transport: &transport,
+                clock: None,
+                chat_events: None,
+                files: Some(&files),
+                build_identity: Some(&build_identity),
+                client_item_ids: Some(&client_item_ids),
+                notification_sink: None,
+            },
+        ),
+        Outcome::Status { .. } => dispatch_sol_status_with_seams(
             &args,
             &env,
             &stdin,
@@ -1449,7 +1446,6 @@ mod tests {
                 "journal-python-public-entrypoint",
                 "sol-help-reads-local-journal",
                 "sol-notify-writes-local-socket",
-                "sol-path-and-status-read-local-journal",
                 "sol-python-call-journal",
                 "sol-python-doctor-check",
             ])
@@ -1841,18 +1837,6 @@ mod tests {
     }
 
     #[test]
-    fn status_output_keeps_structured_native_proof_surface() {
-        let line = JournalPathLine {
-            label: "default",
-            path: PathBuf::from("/tmp/journal"),
-        };
-        assert_eq!(
-            status_output(&line, 5015),
-            CommandOutput::success("journal\t/tmp/journal\nconvey_port\t5015\n")
-        );
-    }
-
-    #[test]
     fn service_host_command_moves_to_journal() {
         assert_eq!(
             service_moved_output(OsStr::new("think")),
@@ -1893,7 +1877,6 @@ mod tests {
             os_args(&["--path"]),
             os_args(&["path"]),
             os_args(&["root"]),
-            os_args(&["status"]),
             os_args(&["does-not-exist"]),
             os_args(&["think"]),
             os_args(&["call"]),

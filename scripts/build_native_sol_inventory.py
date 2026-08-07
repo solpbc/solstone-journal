@@ -44,6 +44,7 @@ ENTRY_TYPES = {
     "top-level-import",
     "top-level-link",
     "top-level-notify",
+    "top-level-status",
     "local",
 }
 COMMAND_KINDS = {"command", "callback", "top-level"}
@@ -55,6 +56,7 @@ FINAL_TOP_LEVEL_CHAT_TOTAL = 1
 FINAL_TOP_LEVEL_IMPORT_TOTAL = 1
 FINAL_TOP_LEVEL_LINK_TOTAL = 2
 FINAL_TOP_LEVEL_NOTIFY_TOTAL = 1
+FINAL_TOP_LEVEL_STATUS_TOTAL = 1
 FINAL_STUB_COUNTS = {"moved-stub": 2, "local": 1}
 FINAL_HTTP_GROUP_COUNTS = {
     "activities": 6,
@@ -187,7 +189,14 @@ def parse_entry(
         raise ValueError(f"{label}: path must be a non-empty string list")
     command_path = tuple(raw_path)
     surface = raw_entry.get("surface", "sol-call")
-    if surface not in {"sol-call", "sol-chat", "sol-import", "sol-link", "sol-notify"}:
+    if surface not in {
+        "sol-call",
+        "sol-chat",
+        "sol-import",
+        "sol-link",
+        "sol-notify",
+        "sol-status",
+    }:
         raise ValueError(f"{label}: unsupported surface {surface!r}")
     kind = require_string(raw_entry, "kind", Path(label))
     if kind not in COMMAND_KINDS:
@@ -564,6 +573,7 @@ def check_top_level_partition(entries: list[AuthorityEntry]) -> list[str]:
         ("sol-import", "top-level-import"): FINAL_TOP_LEVEL_IMPORT_TOTAL,
         ("sol-link", "top-level-link"): FINAL_TOP_LEVEL_LINK_TOTAL,
         ("sol-notify", "top-level-notify"): FINAL_TOP_LEVEL_NOTIFY_TOTAL,
+        ("sol-status", "top-level-status"): FINAL_TOP_LEVEL_STATUS_TOTAL,
     }
     actual: dict[tuple[str, str], int] = {}
     for entry in entries:

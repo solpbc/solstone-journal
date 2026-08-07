@@ -20,7 +20,7 @@ use solstone_core_sol_client::transport::{
 use solstone_core_sol_client_cli::{
     DispatchSeams, LinkDispatch, LinkDispatchSeams, dispatch_sol_call_with_seams,
     dispatch_sol_chat_with_seams, dispatch_sol_import_with_seams, dispatch_sol_link_with_seams,
-    dispatch_sol_notify_with_seams,
+    dispatch_sol_notify_with_seams, dispatch_sol_status_with_seams,
 };
 
 const ACTIVITIES_VECTORS: &str =
@@ -48,6 +48,7 @@ const NOTIFY_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/n
 const PROFILE_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/profile.jsonl");
 const SETTINGS_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/settings.jsonl");
 const SOL_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/sol.jsonl");
+const STATUS_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/status.jsonl");
 const SPEAKERS_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/speakers.jsonl");
 const SUPPORT_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/support.jsonl");
 const SUPPORT_COVERAGE_VECTORS: &str =
@@ -80,6 +81,7 @@ fn native_matches_sol_call_parity_vectors() {
         .chain(load_vectors(PROFILE_VECTORS))
         .chain(load_vectors(SETTINGS_VECTORS))
         .chain(load_vectors(SOL_VECTORS))
+        .chain(load_vectors(STATUS_VECTORS))
         .chain(load_vectors(SPEAKERS_VECTORS))
         .chain(load_vectors(SUPPORT_VECTORS))
         .chain(load_vectors(SUPPORT_COVERAGE_VECTORS))
@@ -147,6 +149,22 @@ fn run_vector(vector: &Value) {
         let import_args = argv.iter().skip(1).cloned().collect::<Vec<_>>();
         dispatch_sol_import_with_seams(
             &import_args,
+            &env,
+            stdin,
+            today,
+            DispatchSeams {
+                transport: &transport,
+                clock: Some(&clock),
+                chat_events: None,
+                files: Some(&files),
+                build_identity: Some(&build_identity),
+                client_item_ids: Some(&client_item_ids),
+                notification_sink: None,
+            },
+        )
+    } else if vector["surface"].as_str() == Some("sol-status") {
+        dispatch_sol_status_with_seams(
+            &argv,
             &env,
             stdin,
             today,

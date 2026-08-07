@@ -17,6 +17,20 @@
         "unreachable": ["import-top-level-unreachable-save"],
         "partial_failure": ["import-top-level-partial-start-failure"]
       }
+    },
+    "status.top_level": {
+      "surface": "sol-status",
+      "path": ["status"],
+      "entry_type": "top-level-status",
+      "backing_contract_operation_ids": ["link.status"],
+      "case_ids": {
+        "success": ["status-success"],
+        "reason_code": ["status-reason-code"],
+        "unreachable": ["status-unreachable"],
+        "timeout": ["status-timeout"],
+        "malformed": ["status-malformed"],
+        "server_error": ["status-server-error"]
+      }
     }
   },
   "entries": {

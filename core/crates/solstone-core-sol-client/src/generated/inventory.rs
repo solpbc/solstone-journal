@@ -42,6 +42,8 @@ mod solstone_think_native_link_command_rs;
 mod solstone_think_native_moved_command_rs;
 #[path = "../../../../../solstone/think/native/notify/command.rs"]
 mod solstone_think_native_notify_command_rs;
+#[path = "../../../../../solstone/think/native/status/command.rs"]
+mod solstone_think_native_status_command_rs;
 #[path = "../../../../../solstone/think/tools/native/health/command.rs"]
 mod solstone_think_tools_native_health_command_rs;
 #[path = "../../../../../solstone/think/tools/native/journal/command.rs"]
@@ -2198,6 +2200,21 @@ pub const ENTRIES: &[InventoryEntry] = &[
         resident: false,
     },
     InventoryEntry {
+        surface: "sol-status",
+        path: &["status"],
+        kind: "top-level",
+        help: "Show journal network status.",
+        authority_path: "solstone/think/native/status/authority.toml",
+        params_json: "[]",
+        entry_type: "top-level-status",
+        operation_id: "status.top_level",
+        method: None,
+        route: None,
+        contract_operation_id: None,
+        handler: "status",
+        resident: false,
+    },
+    InventoryEntry {
         surface: "sol-call",
         path: &["health", "summary"],
         kind: "command",
@@ -2777,6 +2794,7 @@ pub const HANDLERS: &[Handler] = &[
     solstone_think_native_moved_command_rs::identity,
     solstone_think_native_moved_command_rs::navigate,
     solstone_think_native_notify_command_rs::notify,
+    solstone_think_native_status_command_rs::status,
     solstone_think_tools_native_health_command_rs::summary,
     solstone_think_tools_native_health_command_rs::full,
     solstone_think_tools_native_health_command_rs::for_range,

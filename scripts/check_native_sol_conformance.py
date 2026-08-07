@@ -107,6 +107,8 @@ def check_conformance(
         errors.append("native sol conformance missing top-level link authority")
     if not any(authority.entry_type == "top-level-notify" for authority in authorities):
         errors.append("native sol conformance missing top-level notify authority")
+    if not any(authority.entry_type == "top-level-status" for authority in authorities):
+        errors.append("native sol conformance missing top-level status authority")
 
     for authority in sorted(authorities, key=lambda entry: entry.operation_id):
         raw_authority = raw_authority_by_operation.get(authority.operation_id)
@@ -134,6 +136,17 @@ def check_conformance(
                     route_map,
                     "top-level-import",
                     "import",
+                )
+            )
+        elif authority.entry_type == "top-level-status":
+            errors.extend(
+                check_top_level_backing_contracts(
+                    authority,
+                    raw_authority,
+                    contract_by_operation,
+                    route_map,
+                    "top-level-status",
+                    "status",
                 )
             )
         elif authority.entry_type == "top-level-notify":

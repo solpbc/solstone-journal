@@ -21,6 +21,7 @@ try:
         FINAL_TOP_LEVEL_IMPORT_TOTAL,
         FINAL_TOP_LEVEL_LINK_TOTAL,
         FINAL_TOP_LEVEL_NOTIFY_TOTAL,
+        FINAL_TOP_LEVEL_STATUS_TOTAL,
         REPO_ROOT,
         discover,
     )
@@ -32,6 +33,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
         FINAL_TOP_LEVEL_IMPORT_TOTAL,
         FINAL_TOP_LEVEL_LINK_TOTAL,
         FINAL_TOP_LEVEL_NOTIFY_TOTAL,
+        FINAL_TOP_LEVEL_STATUS_TOTAL,
         REPO_ROOT,
         discover,
     )
@@ -80,6 +82,11 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
         for entry in entries
         if entry.surface == "sol-notify" and entry.entry_type == "top-level-notify"
     }
+    required_top_level_status = {
+        entry.operation_id
+        for entry in entries
+        if entry.surface == "sol-status" and entry.entry_type == "top-level-status"
+    }
     required_top_level_link = {
         entry.operation_id
         for entry in entries
@@ -92,6 +99,7 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
         | required_top_level_import
         | required_top_level_link
         | required_top_level_notify
+        | required_top_level_status
     )
     vectors = load_vectors(PARITY_DIR)
     resolved = resolve_vectors(PARITY_DIR, vectors)
@@ -141,12 +149,28 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
         if not isinstance(top_level_entries, dict):
             errors.append("applicability top_level_entries must be an object")
             top_level_entries = {}
-        import_keys = set(top_level_entries)
+        import_keys = {
+            operation_id
+            for operation_id in top_level_entries
+            if operation_id in required_top_level_import
+        }
         errors.extend(
             compare_sets(
                 "top-level import applicability keys",
                 required_top_level_import,
                 import_keys,
+            )
+        )
+        status_keys = {
+            operation_id
+            for operation_id in top_level_entries
+            if operation_id in required_top_level_status
+        }
+        errors.extend(
+            compare_sets(
+                "top-level status applicability keys",
+                required_top_level_status,
+                status_keys,
             )
         )
 
@@ -159,6 +183,11 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
         errors.append(
             f"current top-level notify authority count {len(required_top_level_notify)} "
             f"!= {FINAL_TOP_LEVEL_NOTIFY_TOTAL}"
+        )
+    if len(required_top_level_status) != FINAL_TOP_LEVEL_STATUS_TOTAL:
+        errors.append(
+            f"current top-level status authority count {len(required_top_level_status)} "
+            f"!= {FINAL_TOP_LEVEL_STATUS_TOTAL}"
         )
     if len(required_top_level_link) != FINAL_TOP_LEVEL_LINK_TOTAL:
         errors.append(
@@ -195,6 +224,21 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
                 f"top-level import {bucket_name}",
                 required_top_level_import,
                 import_buckets[bucket_name],
+            )
+        )
+    status_buckets = collect_buckets(
+        vectors,
+        resolved,
+        required_top_level_status,
+        {"top-level-status"},
+        errors,
+    )
+    for bucket_name in ("request_binding", "success", "failure"):
+        errors.extend(
+            compare_sets(
+                f"top-level status {bucket_name}",
+                required_top_level_status,
+                status_buckets[bucket_name],
             )
         )
     notify_buckets = collect_buckets(
@@ -235,7 +279,7 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
             )
         )
         errors.extend(
-            check_top_level_import_cases(
+            check_top_level_cases(
                 applicability.get("top_level_entries", {}),
                 vectors,
                 resolved,
@@ -454,7 +498,7 @@ def compare_sets(label: str, required: set[str], actual: set[str]) -> list[str]:
     return errors
 
 
-def check_top_level_import_cases(
+def check_top_level_cases(
     entries: Any,
     vectors: dict[str, dict[str, Any]],
     resolved: dict[str, dict[str, Any]],

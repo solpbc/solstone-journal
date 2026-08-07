@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+schema = "native-sol-authority-v1"
+source = "command.rs"
+
+[[entries]]
+surface = "sol-status"
+path = ["status"]
+kind = "top-level"
+help = "Show journal network status."
+operation_id = "status.top_level"
+entry_type = "top-level-status"
+handler = "status"
+backing_contract_operation_ids = ["link.status"]
