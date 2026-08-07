@@ -1,539 +1,108 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
+"""Public Python transport contract for native MLX installation."""
+
 from __future__ import annotations
 
-import hashlib
-import importlib
 import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import huggingface_hub
 import pytest
-from huggingface_hub import RepoFile
-from huggingface_hub import constants as hf_constants
 
-from solstone.think.journal_config import read_journal_config
-from solstone.think.models import GEMMA4_26B_A4B_4BIT, QWEN_35_9B
-from solstone.think.providers import fit_report, memory, mlx_install
-from solstone.think.providers.artifact_proof import (
-    mlx_snapshot_manifest_path,
-    mlx_variant_manifest_path,
-    prove_manifest,
-)
-from solstone.think.providers.install_state import read_install_status
+from solstone.think.providers import mlx_install
 
 
-def _init_journal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config_dir = tmp_path / "config"
-    config_dir.mkdir(parents=True)
-    (config_dir / "journal.json").write_text(
-        json.dumps({"providers": {}}) + "\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-    monkeypatch.setattr(hf_constants, "HF_HUB_CACHE", str(tmp_path / "hf"))
+MODEL = mlx_install.QWEN_35_9B
+PINS = {"mlx_models": [{"name": MODEL, "repo": "mlx-community/example", "revision": "revision", "size_bytes": 10}]}
 
 
-def _local_status() -> dict:
-    return read_install_status(name="local")
+def test_mlx_model_spec_is_reconstructed_from_native_pins(monkeypatch):
+    monkeypatch.setattr(mlx_install, "_pins", lambda: PINS)
+    spec = mlx_install.resolve_model_spec()
+    assert spec == mlx_install.MLXModelSpec(MODEL, "mlx-community/example", "revision", 10)
 
 
-def _allow_install(monkeypatch: pytest.MonkeyPatch, *, ram_gb: int = 64) -> None:
-    monkeypatch.setattr(mlx_install, "_check_platform_and_package", lambda: (True, ""))
-    monkeypatch.setattr(mlx_install, "is_mlx_platform_supported", lambda: True)
-    monkeypatch.setattr(
-        memory.psutil,
-        "virtual_memory",
-        lambda: SimpleNamespace(available=ram_gb * 1024**3, total=64 * 1024**3),
-    )
+def test_platform_and_package_checks_cover_available_and_import_error(monkeypatch):
+    monkeypatch.setattr(mlx_install.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(mlx_install, "_pins", lambda: PINS)
+    monkeypatch.setattr(mlx_install.importlib, "import_module", lambda _name: object())
+    assert mlx_install.is_mlx_platform_supported()
+    assert mlx_install.check_platform_and_package() == (True, "ready")
+    monkeypatch.setattr(mlx_install.importlib, "import_module", lambda _name: (_ for _ in ()).throw(ImportError()))
+    assert mlx_install.check_platform_and_package() == (False, "package_unavailable")
 
 
-def _fit(severity: fit_report.FitSeverity) -> fit_report.FitReport:
-    return fit_report.FitReport(
-        artifact="test MLX",
-        checks=(fit_report.FitCheck("test", severity, f"{severity} detail"),),
-    )
-
-
-def _write_snapshot(
-    spec: mlx_install.MLXModelSpec,
-    *,
-    include_gemma_config: bool = False,
-    weight_bytes: bytes = b"weights",
-) -> tuple[Path, str]:
-    snapshot_dir = mlx_install.snapshot_dir_for_spec(spec)
-    snapshot_dir.mkdir(parents=True)
-    weight_name = "model-00001-of-00001.safetensors"
-    (snapshot_dir / weight_name).write_bytes(weight_bytes)
-    (snapshot_dir / "model.safetensors.index.json").write_text(
-        json.dumps({"weight_map": {"layer.weight": weight_name}}) + "\n",
-        encoding="utf-8",
-    )
-    (snapshot_dir / "tokenizer.json").write_text("{}\n", encoding="utf-8")
-    if include_gemma_config:
-        (snapshot_dir / "config.json").write_text(
-            json.dumps(
-                {
-                    "vision_config": {
-                        "default_output_length": 280,
-                        "pooling_kernel_size": 3,
-                        "position_embedding_size": 10240,
-                    },
-                    "vision_soft_tokens_per_image": 280,
-                }
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        (snapshot_dir / "processor_config.json").write_text(
-            json.dumps(
-                {
-                    "image_processor": {
-                        "image_processor_type": "Gemma4ImageProcessor",
-                        "max_soft_tokens": 280,
-                        "image_seq_length": 280,
-                        "pooling_kernel_size": 3,
-                    },
-                    "image_seq_length": 280,
-                }
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-    return snapshot_dir, hashlib.sha256(weight_bytes).hexdigest()
-
-
-def _metadata_for_snapshot(snapshot_dir: Path) -> dict[str, tuple[str, int]]:
-    metadata: dict[str, tuple[str, int]] = {}
-    for path in snapshot_dir.rglob("*.safetensors"):
-        rel_path = path.relative_to(snapshot_dir).as_posix()
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        metadata[rel_path] = (digest, path.stat().st_size)
-    return metadata
-
-
-def test_module_import_is_mlx_vlm_free(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(sys.modules, "mlx_vlm", None)
-
-    reloaded = importlib.reload(mlx_install)
-
-    assert not hasattr(reloaded, "mlx_vlm")
-
-
-def test_default_model_and_registry_contents() -> None:
-    assert mlx_install.resolve_model_spec().name == QWEN_35_9B
-    assert set(mlx_install._MLX_MODEL_REGISTRY) == {
-        QWEN_35_9B,
-        GEMMA4_26B_A4B_4BIT,
-    }
-    assert (
-        mlx_install._MLX_MODEL_REGISTRY[GEMMA4_26B_A4B_4BIT].repo
-        == "mlx-community/gemma-4-26b-a4b-it-4bit"
-    )
-    assert mlx_install._MLX_MODEL_REGISTRY[QWEN_35_9B].size_bytes == 10453446077
-    assert (
-        mlx_install._MLX_MODEL_REGISTRY[GEMMA4_26B_A4B_4BIT].size_bytes == 15641241224
-    )
-
-
-def test_inspect_readiness_ram_sufficient_matches_available_floor(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _init_journal(tmp_path, monkeypatch)
-    monkeypatch.setattr(mlx_install, "_check_platform_and_package", lambda: (True, ""))
-    monkeypatch.setattr(mlx_install, "is_mlx_platform_supported", lambda: True)
-    monkeypatch.setattr(
-        memory.psutil,
-        "virtual_memory",
-        lambda: SimpleNamespace(
-            available=memory.MLX_AVAILABLE_FLOOR_BYTES,
-            total=64 * 1024**3,
-        ),
-    )
-
-    assert mlx_install.inspect_readiness(QWEN_35_9B).host["ram_sufficient"] is True
-
-    monkeypatch.setattr(
-        memory.psutil,
-        "virtual_memory",
-        lambda: SimpleNamespace(
-            available=memory.MLX_AVAILABLE_FLOOR_BYTES - 1,
-            total=64 * 1024**3,
-        ),
-    )
-
-    readiness = mlx_install.inspect_readiness(QWEN_35_9B)
-    assert readiness.host["ram_sufficient"] is False
-
-
-def test_install_local_mlx_writes_canonical_sequence(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _init_journal(tmp_path, monkeypatch)
-    _allow_install(monkeypatch)
-    spec = mlx_install._MLX_MODEL_REGISTRY[GEMMA4_26B_A4B_4BIT]
-    snapshot_dir, _sha = _write_snapshot(spec, include_gemma_config=True)
-    variant_dir = mlx_install.variant_dir_for_snapshot(snapshot_dir)
-    observed: list[tuple[str, str, dict]] = []
-
-    def fake_fit(_model_id):
-        observed.append(("fit", _local_status()["install_state"], {}))
-        return _fit("ok")
-
-    def fake_snapshot_download(*, repo_id, revision):
-        assert repo_id == spec.repo
-        assert revision == spec.revision
-        observed.append(("download", _local_status()["install_state"], {}))
-        return str(snapshot_dir)
-
-    def fake_verify(_spec, _snapshot_dir):
-        observed.append(("verify", _local_status()["install_state"], {}))
-        return _metadata_for_snapshot(_snapshot_dir)
-
-    def fake_create(_snapshot_dir):
-        observed.append(("install", _local_status()["install_state"], {}))
-        variant_dir.mkdir(parents=True, exist_ok=True)
-        return variant_dir
-
-    monkeypatch.setattr(fit_report, "build_mlx_fit_report", fake_fit)
-    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot_download)
-    monkeypatch.setattr(mlx_install, "validate_snapshot_sha256", fake_verify)
-    monkeypatch.setattr(mlx_install, "create_gemma4_variant", fake_create)
-
-    result = mlx_install.install_local_mlx(GEMMA4_26B_A4B_4BIT)
-
-    assert [entry[0] for entry in observed] == [
-        "fit",
-        "download",
-        "verify",
-        "install",
-    ]
-    assert [entry[1] for entry in observed] == [
-        "resolving",
-        "downloading",
-        "verifying",
-        "installing",
-    ]
-    assert result["install_state"] == "installed"
-    assert prove_manifest(
-        mlx_snapshot_manifest_path(spec.repo, spec.revision),
-        provider="local",
-        pin_identity=mlx_install._pin_identity(spec),
-    ).ready
-    assert prove_manifest(
-        mlx_variant_manifest_path(spec.repo, spec.revision),
-        provider="local",
-        pin_identity=mlx_install._variant_pin_identity(spec),
-    ).ready
-    assert "mlx" not in read_journal_config()["providers"]
-
-
-def test_unsupported_platform_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    _init_journal(tmp_path, monkeypatch)
+def test_platform_unsupported_does_not_import_package(monkeypatch):
     monkeypatch.setattr(mlx_install.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(mlx_install.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(mlx_install, "_pins", lambda: PINS)
+    assert mlx_install.check_platform_and_package() == (False, "platform_unsupported")
 
-    with pytest.raises(mlx_install.MLXInstallUnavailableError, match="macOS"):
+
+def test_target_fingerprint_parses_native_json(monkeypatch):
+    calls = []
+    monkeypatch.setattr(mlx_install, "_pins", lambda: PINS)
+    monkeypatch.setattr(mlx_install, "get_journal", lambda: "/journal")
+    monkeypatch.setattr(mlx_install, "_core_install_call", lambda verb, request: calls.append((verb, request)) or {"target_fingerprint_json": '{"provider":"local","runtime":"mlx"}'})
+    assert mlx_install.target_fingerprint() == {"provider": "local", "runtime": "mlx"}
+    assert calls == [(["fingerprint", "mlx"], {"journal": "/journal", "model_id": MODEL})]
+
+
+@pytest.mark.parametrize("status, ready", [("ready", True), ("missing-or-mismatched", False)])
+def test_inspect_artifacts_and_readiness_reconstruct_native_response(monkeypatch, status, ready):
+    response = {"provider": "local", "ready": ready, "status": status, "reason_code": "ready" if ready else "manifest_missing", "target": {"model_id": MODEL}, "host": {"platform_supported": True, "package_available": True}, "artifacts": {"model_id": MODEL, "model_installed": ready, "snapshot_installed": ready}, "proof": {"snapshot": {}}}
+    monkeypatch.setattr(mlx_install, "_pins", lambda: PINS)
+    monkeypatch.setattr(mlx_install, "check_platform_and_package", lambda: (True, "ready"))
+    monkeypatch.setattr(mlx_install, "is_mlx_platform_supported", lambda: True)
+    monkeypatch.setattr(mlx_install, "_core_install_call", lambda _verb, _request: response)
+    outcome = mlx_install.inspect_readiness()
+    assert outcome.ready is ready and mlx_install.inspect_artifacts()["model_installed"] is ready
+
+
+def test_install_local_mlx_fetches_metadata_and_passes_real_lfs_hashes(monkeypatch, tmp_path):
+    spec = mlx_install.MLXModelSpec(MODEL, "mlx-community/example", "revision", 10)
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    module = SimpleNamespace(snapshot_download=lambda **_kwargs: str(snapshot))
+    monkeypatch.setitem(sys.modules, "huggingface_hub", module)
+    monkeypatch.setattr(mlx_install, "resolve_model_spec", lambda _model: spec)
+    monkeypatch.setattr(mlx_install, "validate_snapshot_sha256", lambda _spec, _snapshot: {"model-00001.safetensors": ("a" * 64, 10)})
+    monkeypatch.setattr(mlx_install, "get_journal", lambda: "/journal")
+    calls = []
+    monkeypatch.setattr(mlx_install, "_core_install_call", lambda verb, request: calls.append((verb, request)) or {"status": {"install_state": "installed"}})
+    assert mlx_install.install_local_mlx(owner={"entry": "test"}) == {"install_state": "installed"}
+    assert calls[0] == (["run", "mlx"], {"journal": "/journal", "model_id": MODEL, "owner": {"entry": "test"}, "source_snapshot": str(snapshot), "lfs_sha256": {"model-00001.safetensors": "a" * 64}})
+
+
+def test_install_local_mlx_maps_busy_and_failure(monkeypatch):
+    monkeypatch.setattr(mlx_install, "_run_request", lambda *_args: {})
+    monkeypatch.setattr(mlx_install, "_core_install_call", lambda *_args: (_ for _ in ()).throw(mlx_install.MLXInstallBusyError("busy")))
+    with pytest.raises(mlx_install.MLXInstallBusyError):
+        mlx_install.install_local_mlx()
+    monkeypatch.setattr(mlx_install, "_core_install_call", lambda *_args: (_ for _ in ()).throw(mlx_install.MLXInstallUnavailableError("failed")))
+    with pytest.raises(mlx_install.MLXInstallUnavailableError, match="failed"):
         mlx_install.install_local_mlx()
 
-    assert _local_status()["install_state"] == "failed"
-    assert "macOS" in _local_status()["install_error"]
+
+def test_spawn_install_local_mlx_returns_process_without_waiting(monkeypatch):
+    process = object()
+    calls = []
+    monkeypatch.setattr(mlx_install, "_run_request", lambda model, owner: {"model_id": model, "owner": owner})
+    monkeypatch.setattr(mlx_install, "_spawn_core_install", lambda verb, request: calls.append((verb, request)) or process)
+    assert mlx_install.spawn_install_local_mlx(owner={"entry": "ui"}) is process
+    assert calls == [(["run", "mlx"], {"model_id": MODEL, "owner": {"entry": "ui"}})]
 
 
-def test_insufficient_ram_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    _init_journal(tmp_path, monkeypatch)
-    _allow_install(monkeypatch, ram_gb=1)
+def test_remote_metadata_requires_all_requested_lfs_hashes(monkeypatch):
+    class File:
+        path = "one.safetensors"
+        lfs = SimpleNamespace(sha256="a" * 64, size=1)
 
-    with pytest.raises(
-        mlx_install.MLXInstallUnavailableError, match="insufficient RAM"
-    ):
-        mlx_install.install_local_mlx()
-
-    assert _local_status()["install_state"] == "failed"
-    assert "insufficient RAM" in _local_status()["install_error"]
-
-
-def test_install_local_mlx_blocks_before_download(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _init_journal(tmp_path, monkeypatch)
-    _allow_install(monkeypatch)
-    monkeypatch.setattr(
-        fit_report, "build_mlx_fit_report", lambda _model_id: _fit("blocked")
-    )
-    monkeypatch.setattr(
-        huggingface_hub,
-        "snapshot_download",
-        lambda **_kwargs: pytest.fail("download should not start"),
-    )
-
-    with pytest.raises(mlx_install.MLXInstallUnavailableError, match="blocked detail"):
-        mlx_install.install_local_mlx()
-
-
-def test_install_local_mlx_warning_continues_to_download(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _init_journal(tmp_path, monkeypatch)
-    _allow_install(monkeypatch)
-    spec = mlx_install._MLX_MODEL_REGISTRY[QWEN_35_9B]
-    snapshot_dir = mlx_install.snapshot_dir_for_spec(spec)
-    calls = {"download": 0}
-    monkeypatch.setattr(
-        fit_report, "build_mlx_fit_report", lambda _model_id: _fit("warning")
-    )
-
-    def fake_snapshot_download(**_kwargs):
-        calls["download"] += 1
-        _write_snapshot(spec)
-        return str(snapshot_dir)
-
-    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot_download)
-    monkeypatch.setattr(
-        mlx_install,
-        "validate_snapshot_sha256",
-        lambda _spec, snapshot_dir: _metadata_for_snapshot(snapshot_dir),
-    )
-
-    assert mlx_install.install_local_mlx()["install_state"] == "installed"
-    assert calls == {"download": 1}
-
-
-def test_download_failure_transitions_failed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _init_journal(tmp_path, monkeypatch)
-    _allow_install(monkeypatch)
-    monkeypatch.setattr(
-        fit_report, "build_mlx_fit_report", lambda _model_id: _fit("ok")
-    )
-
-    def fail_download(**_kwargs):
-        raise RuntimeError("download broke")
-
-    monkeypatch.setattr(huggingface_hub, "snapshot_download", fail_download)
-
-    with pytest.raises(RuntimeError, match="download broke"):
-        mlx_install.install_local_mlx()
-
-    assert _local_status()["install_state"] == "failed"
-    assert _local_status()["install_error"] == "download broke"
-
-
-def test_verify_failure_transitions_failed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _init_journal(tmp_path, monkeypatch)
-    _allow_install(monkeypatch)
-    spec = mlx_install._MLX_MODEL_REGISTRY[QWEN_35_9B]
-    snapshot_dir = mlx_install.snapshot_dir_for_spec(spec)
-    monkeypatch.setattr(
-        fit_report, "build_mlx_fit_report", lambda _model_id: _fit("ok")
-    )
-
-    def fake_snapshot_download(**_kwargs):
-        _write_snapshot(spec)
-        return str(snapshot_dir)
-
-    def fail_verify(_spec, _snapshot_dir):
-        raise mlx_install.MLXVerificationError("verify broke")
-
-    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot_download)
-    monkeypatch.setattr(mlx_install, "validate_snapshot_sha256", fail_verify)
-
-    with pytest.raises(mlx_install.MLXVerificationError, match="verify broke"):
-        mlx_install.install_local_mlx()
-
-    assert _local_status()["install_state"] == "failed"
-    assert _local_status()["install_error"] == "verify broke"
-
-
-def test_installing_failure_transitions_failed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _init_journal(tmp_path, monkeypatch)
-    _allow_install(monkeypatch)
-    spec = mlx_install._MLX_MODEL_REGISTRY[GEMMA4_26B_A4B_4BIT]
-    snapshot_dir, _sha = _write_snapshot(spec)
-    monkeypatch.setattr(
-        fit_report, "build_mlx_fit_report", lambda _model_id: _fit("ok")
-    )
-
-    monkeypatch.setattr(
-        huggingface_hub, "snapshot_download", lambda **_kwargs: str(snapshot_dir)
-    )
-    monkeypatch.setattr(
-        mlx_install,
-        "validate_snapshot_sha256",
-        lambda _spec, snapshot_dir: _metadata_for_snapshot(snapshot_dir),
-    )
-
-    with pytest.raises(FileNotFoundError):
-        mlx_install.install_local_mlx(GEMMA4_26B_A4B_4BIT)
-
-    assert _local_status()["install_state"] == "failed"
-    assert "config.json" in _local_status()["install_error"]
-
-
-def test_idempotent_rerun_skips_network(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _init_journal(tmp_path, monkeypatch)
-    _allow_install(monkeypatch)
-    spec = mlx_install._MLX_MODEL_REGISTRY[QWEN_35_9B]
-    snapshot_dir = mlx_install.snapshot_dir_for_spec(spec)
-    calls = {"download": 0, "verify": 0}
-    monkeypatch.setattr(
-        fit_report, "build_mlx_fit_report", lambda _model_id: _fit("ok")
-    )
-
-    def fake_snapshot_download(**_kwargs):
-        calls["download"] += 1
-        _write_snapshot(spec)
-        return str(snapshot_dir)
-
-    def fake_verify(_spec, _snapshot_dir):
-        calls["verify"] += 1
-        return _metadata_for_snapshot(_snapshot_dir)
-
-    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot_download)
-    monkeypatch.setattr(mlx_install, "validate_snapshot_sha256", fake_verify)
-
-    assert mlx_install.install_local_mlx()["install_state"] == "installed"
-    assert calls == {"download": 1, "verify": 1}
-
-    monkeypatch.setattr(
-        fit_report,
-        "build_mlx_fit_report",
-        lambda _model_id: pytest.fail("fit report should not run"),
-    )
-    assert mlx_install.install_local_mlx()["install_state"] == "installed"
-    assert calls == {"download": 1, "verify": 1}
-    assert prove_manifest(
-        mlx_snapshot_manifest_path(spec.repo, spec.revision),
-        provider="local",
-        pin_identity=mlx_install._pin_identity(spec),
-    ).ready
-
-
-def test_validate_snapshot_sha256_uses_lfs_metadata(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _init_journal(tmp_path, monkeypatch)
-    spec = mlx_install._MLX_MODEL_REGISTRY[QWEN_35_9B]
-    snapshot_dir, sha = _write_snapshot(spec, weight_bytes=b"abc")
-    calls: list[dict[str, object]] = []
-
-    class FakeApi:
-        def list_repo_tree(self, **kwargs):
-            calls.append(kwargs)
-            return [
-                RepoFile(
-                    path="model-00001-of-00001.safetensors",
-                    size=3,
-                    oid="oid",
-                    lfs={"size": 3, "oid": sha, "pointerSize": 123},
-                )
-            ]
-
-    monkeypatch.setattr(huggingface_hub, "HfApi", lambda: FakeApi())
-
-    mlx_install.validate_snapshot_sha256(spec, snapshot_dir)
-
-    assert calls == [
-        {
-            "repo_id": spec.repo,
-            "revision": spec.revision,
-            "repo_type": "model",
-            "recursive": True,
-        }
-    ]
-
-
-def test_create_gemma4_variant_rewrites_json_and_symlinks_rest(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _init_journal(tmp_path, monkeypatch)
-    spec = mlx_install._MLX_MODEL_REGISTRY[GEMMA4_26B_A4B_4BIT]
-    snapshot_dir, _sha = _write_snapshot(
-        spec,
-        include_gemma_config=True,
-        weight_bytes=b"gemma weights",
-    )
-    (snapshot_dir / "generation_config.json").write_text("{}\n", encoding="utf-8")
-
-    variant_dir = mlx_install.create_gemma4_variant(snapshot_dir)
-
-    config = json.loads((variant_dir / "config.json").read_text(encoding="utf-8"))
-    processor_config = json.loads(
-        (variant_dir / "processor_config.json").read_text(encoding="utf-8")
-    )
-    budget = mlx_install.MLX_SOFT_TOKEN_BUDGET
-    assert config["vision_config"]["default_output_length"] == budget
-    assert processor_config["image_processor"]["max_soft_tokens"] == budget
-    assert processor_config["image_processor"]["image_seq_length"] == budget
-    assert processor_config["image_seq_length"] == budget
-    assert config["vision_config"]["default_output_length"] != 280
-    assert processor_config["image_processor"]["max_soft_tokens"] != 280
-    assert processor_config["image_processor"]["image_seq_length"] != 280
-    assert processor_config["image_seq_length"] != 280
-
-    symlinked = {
-        "model.safetensors.index.json",
-        "model-00001-of-00001.safetensors",
-        "tokenizer.json",
-        "generation_config.json",
-    }
-    for rel_path in symlinked:
-        target = variant_dir / rel_path
-        assert target.is_symlink()
-        assert target.resolve() == (snapshot_dir / rel_path).resolve()
-
-    real_files = sorted(
-        path.relative_to(variant_dir).as_posix()
-        for path in variant_dir.rglob("*")
-        if path.is_file() and not path.is_symlink()
-    )
-    assert real_files == ["config.json", "processor_config.json"]
-    assert sum((variant_dir / path).stat().st_size for path in real_files) < 64 * 1024
-
-
-def test_gemma4_variant_valid_rejects_stale_top_level_image_seq_length(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _init_journal(tmp_path, monkeypatch)
-    budget = mlx_install.MLX_SOFT_TOKEN_BUDGET
-    variant_dir = tmp_path / "variant"
-    variant_dir.mkdir()
-    (variant_dir / "config.json").write_text(
-        json.dumps(
-            {
-                "vision_config": {
-                    "default_output_length": budget,
-                    "position_embedding_size": 10240,
-                }
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (variant_dir / "processor_config.json").write_text(
-        json.dumps(
-            {
-                "image_processor": {
-                    "max_soft_tokens": budget,
-                    "image_seq_length": budget,
-                },
-                "image_seq_length": 280,
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    assert not mlx_install._gemma4_variant_valid(variant_dir)
+    hub = SimpleNamespace(RepoFile=File, HfApi=lambda: SimpleNamespace(list_repo_tree=lambda **_kwargs: [File()]))
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    spec = mlx_install.MLXModelSpec(MODEL, "repo", "rev", 1)
+    assert mlx_install._remote_safetensors_metadata(spec, ["one.safetensors"]) == {"one.safetensors": ("a" * 64, 1)}
+    with pytest.raises(mlx_install.MLXVerificationError):
+        mlx_install._remote_safetensors_metadata(spec, ["missing.safetensors"])

@@ -338,7 +338,7 @@ def test_legacy_local_vulkan_not_promoted_when_cuda_pin_selected(
         ],
     )
     monkeypatch.setattr(local_vulkan, "gpu_probe_ok", lambda: True)
-    monkeypatch.setattr(local_install, "_verify_sha256", lambda _path, _sha: None)
+    monkeypatch.setattr(local_install, "verify_artifact_sha256", lambda _path, _sha: None)
 
     result = install_state.migrate_legacy_provider_artifact_truth(journal_path=tmp_path)
 

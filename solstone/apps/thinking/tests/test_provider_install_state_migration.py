@@ -234,8 +234,8 @@ def test_cache_write_failure_does_not_block_migration_promotion(tmp_path, monkey
         "solstone.think.providers.install_state._verify_legacy_local_llama",
         lambda _legacy: None,
     )
-    monkeypatch.setattr(local_install, "_write_vulkan_manifest", lambda **_kwargs: None)
-    monkeypatch.setattr(local_install, "_write_model_manifest", lambda **_kwargs: None)
+    monkeypatch.setattr(local_install, "write_vulkan_manifest", lambda **_kwargs: None)
+    monkeypatch.setattr(local_install, "write_model_manifest", lambda **_kwargs: None)
 
     def fail_cache_replace(path, *_args, **_kwargs):
         if path == proof_cache_path("local", journal_path=tmp_path):
