@@ -146,3 +146,40 @@ fn inspect_valid_none_lane_record_emits_ok_json_only() {
     assert_eq!(body["projection"]["active_lane"], "none");
     assert_eq!(String::from_utf8(output.stdout).unwrap().lines().count(), 1);
 }
+
+#[test]
+fn inspect_carries_the_record_it_read_and_null_when_there_is_none() {
+    // The inspection's own answer about the record is not derivable from the
+    // projection: a caller cannot tell an `ok` inspection's revision, checking
+    // block or evidence from an aggregate state. The writer that follows needs
+    // all three, and this field was dropped once already.
+    let journal = Journal::new();
+    let path = journal_argument(&journal);
+
+    let missing = output_json(&journal.run(&["inspect", "--journal", &path]));
+    assert_eq!(missing["status"], "unavailable");
+    assert!(
+        missing["record"].is_null(),
+        "a journal with no record must carry a null record, got {}",
+        missing["record"]
+    );
+
+    journal.write_none_record();
+    let present = output_json(&journal.run(&["inspect", "--journal", &path]));
+    assert_eq!(present["status"], "ok");
+    // Byte-for-byte what is on disk, not a re-serialization of the parsed
+    // record: re-encoding a durable format would re-decide its null-versus-
+    // absent distinctions, and the point of this field is that it does not.
+    let on_disk: Value =
+        serde_json::from_slice(&fs::read(journal.root.join("health/brain.json")).expect("record"))
+            .expect("record parses");
+    assert_eq!(present["record"], on_disk);
+
+    fs::write(journal.root.join("health/brain.json"), b"not json").expect("corrupt the record");
+    let corrupt = output_json(&journal.run(&["inspect", "--journal", &path]));
+    assert_eq!(corrupt["status"], "corrupt");
+    assert!(
+        corrupt["record"].is_null(),
+        "a record that does not validate is not half-carried"
+    );
+}

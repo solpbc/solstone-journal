@@ -39,6 +39,12 @@ pub struct BrainInspection {
     pub status: InspectionStatus,
     pub projection: BrainProjection,
     pub error: Option<String>,
+    /// The record exactly as it was read, or `None` when there is nothing valid
+    /// to carry. Deliberately the raw parsed value rather than a re-serialized
+    /// view of the typed record: this is what is on disk, so it cannot drift
+    /// from it, and a durable format's null-versus-absent distinctions are not
+    /// re-decided by a `Serialize` impl.
+    pub record: Option<Value>,
 }
 
 pub fn brain_state_path(journal_path: &Path) -> PathBuf {
@@ -83,14 +89,17 @@ pub fn inspect_brain_state(
     config: &Map<String, Value>,
     now: DateTime<Utc>,
 ) -> BrainInspection {
-    let (record, status, record_reason, error) = match fs::read(brain_state_path(journal_path)) {
+    let (record, raw, status, record_reason, error) = match fs::read(brain_state_path(journal_path))
+    {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
+            None,
             None,
             InspectionStatus::Unavailable,
             Some("brain_record_missing"),
             None,
         ),
         Err(error) => (
+            None,
             None,
             InspectionStatus::Unavailable,
             Some("brain_record_unavailable"),
@@ -102,10 +111,15 @@ pub fn inspect_brain_state(
                 if !value.is_object() {
                     return Err("record: brain state must be an object".to_owned());
                 }
-                validate_brain_state_record(&value, now).map_err(|error| error.to_string())
+                validate_brain_state_record(&value, now)
+                    .map(|record| (record, value))
+                    .map_err(|error| error.to_string())
             }) {
-            Ok(record) => (Some(record), InspectionStatus::Ok, None, None),
+            Ok((record, value)) => (Some(record), Some(value), InspectionStatus::Ok, None, None),
+            // A record that does not validate is not carried: half a record is
+            // the state this contract exists to make unrepresentable.
             Err(error) => (
+                None,
                 None,
                 InspectionStatus::Corrupt,
                 Some("brain_record_invalid"),
@@ -119,6 +133,7 @@ pub fn inspect_brain_state(
             status,
             project_brain_state(record.as_ref(), config, false, None, None, now),
             error,
+            raw,
         );
     }
     let Some(record) = record else {
@@ -126,6 +141,7 @@ pub fn inspect_brain_state(
             status,
             record_outcome_projection(record_reason.expect("record outcome reason"), &resolution),
             error,
+            raw,
         );
     };
     if resolution.lane.as_deref() == Some("none") {
@@ -133,6 +149,7 @@ pub fn inspect_brain_state(
             status,
             project_brain_state(Some(&record), config, false, None, None, now),
             error,
+            raw,
         );
     }
     let key = match load_existing_fingerprint_key(journal_path) {
@@ -142,6 +159,7 @@ pub fn inspect_brain_state(
                 status,
                 record_projection(&record, "unknown", Some("fingerprint_key_unavailable")),
                 error,
+                raw,
             );
         }
     };
@@ -155,6 +173,7 @@ pub fn inspect_brain_state(
                     status,
                     record_projection(&record, "unknown", Some("brain_check_interrupted")),
                     Some(error.to_string()),
+                    raw,
                 );
             }
         }
@@ -172,6 +191,7 @@ pub fn inspect_brain_state(
             now,
         ),
         None,
+        raw,
     )
 }
 
@@ -438,10 +458,12 @@ fn inspection(
     status: InspectionStatus,
     projection: BrainProjection,
     error: Option<String>,
+    record: Option<Value>,
 ) -> BrainInspection {
     BrainInspection {
         status,
         projection,
         error,
+        record,
     }
 }

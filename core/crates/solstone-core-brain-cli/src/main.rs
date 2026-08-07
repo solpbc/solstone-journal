@@ -57,6 +57,7 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
             "runtime_transition_in_progress": projection.runtime_transition_in_progress,
         },
         "error": inspection.error,
+        "record": inspection.record,
     });
     println!(
         "{}",
