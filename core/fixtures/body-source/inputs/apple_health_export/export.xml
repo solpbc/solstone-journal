@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE HealthData>
+<HealthData locale="en_US">
+  <ExportDate value="2026-01-03 12:00:00 -0700"/>
+  <Me HKCharacteristicTypeIdentifierDateOfBirth="1990-01-01" HKCharacteristicTypeIdentifierBiologicalSex="HKBiologicalSexNotSet"/>
+  <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Synthetic Watch" sourceVersion="1.0" unit="count" creationDate="2026-01-01 08:05:00 -0700" startDate="2026-01-01 08:00:00 -0700" endDate="2026-01-01 08:05:00 -0700" value="500"/>
+  <Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Synthetic Watch" sourceVersion="1.0" unit="count/min" creationDate="2026-01-01 08:00:00 -0700" startDate="2026-01-01 08:00:00 -0700" endDate="2026-01-01 08:00:00 -0700" value="62"/>
+  <Record type="HKQuantityTypeIdentifierRestingHeartRate" sourceName="Synthetic Ring Mirror" sourceVersion="1.0" unit="count/min" creationDate="2026-01-02 07:00:00 -0700" startDate="2026-01-02 07:00:00 -0700" endDate="2026-01-02 07:00:00 -0700" value="55"/>
+  <Record type="HKQuantityTypeIdentifierBloodGlucose" sourceName="Synthetic Stelo" sourceVersion="1.0" unit="mg/dL" creationDate="2026-01-02 12:30:00 -0700" startDate="2026-01-02 12:30:00 -0700" endDate="2026-01-02 12:30:00 -0700" value="105"/>
+  <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Synthetic Watch" sourceVersion="1.0" creationDate="2026-01-03 06:30:00 -0700" startDate="2026-01-02 22:30:00 -0700" endDate="2026-01-03 06:30:00 -0700" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+  <Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="30" durationUnit="min" totalDistance="5000" totalDistanceUnit="m" totalEnergyBurned="300" totalEnergyBurnedUnit="Cal" sourceName="Synthetic Watch" sourceVersion="1.0" creationDate="2026-01-02 18:30:00 -0700" startDate="2026-01-02 18:00:00 -0700" endDate="2026-01-02 18:30:00 -0700"/>
+</HealthData>

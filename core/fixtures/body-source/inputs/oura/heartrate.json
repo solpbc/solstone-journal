@@ -1,0 +1,29 @@
+{
+  "data": [
+    {
+      "timestamp": "2026-01-02T03:15:00-07:00",
+      "timestamp_unix": 1767348900,
+      "bpm": 49,
+      "source": "sleep"
+    },
+    {
+      "timestamp": "2026-01-02T14:40:00-07:00",
+      "timestamp_unix": 1767390000,
+      "bpm": 71,
+      "source": "awake"
+    },
+    {
+      "timestamp": "2026-01-03T02:05:00-07:00",
+      "timestamp_unix": 1767431100,
+      "bpm": 53,
+      "source": "sleep"
+    },
+    {
+      "timestamp": "2026-01-03T17:20:00-07:00",
+      "timestamp_unix": 1767486000,
+      "bpm": 88,
+      "source": "workout"
+    }
+  ],
+  "next_token": null
+}

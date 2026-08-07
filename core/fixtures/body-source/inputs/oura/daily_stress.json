@@ -1,0 +1,13 @@
+{
+  "data": [
+    {
+      "id": "synthetic-stress-2026-01-02",
+      "day": "2026-01-02",
+      "stress_high": 7200,
+      "recovery_high": 20400,
+      "day_summary": "normal",
+      "timestamp": "2026-01-02T00:00:00-07:00"
+    }
+  ],
+  "next_token": null
+}

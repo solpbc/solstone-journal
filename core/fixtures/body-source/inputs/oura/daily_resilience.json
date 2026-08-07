@@ -1,0 +1,16 @@
+{
+  "data": [
+    {
+      "id": "synthetic-resilience-2026-01-02",
+      "day": "2026-01-02",
+      "level": "solid",
+      "timestamp": "2026-01-02T00:00:00-07:00",
+      "contributors": {
+        "sleep_recovery": 81.5,
+        "daytime_recovery": 64.2,
+        "stress": 58.9
+      }
+    }
+  ],
+  "next_token": null
+}

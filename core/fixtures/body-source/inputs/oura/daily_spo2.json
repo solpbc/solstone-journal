@@ -1,0 +1,14 @@
+{
+  "data": [
+    {
+      "id": "synthetic-spo2-2026-01-02",
+      "day": "2026-01-02",
+      "spo2_percentage": {
+        "average": 97.4
+      },
+      "breathing_disturbance_index": 3,
+      "timestamp": "2026-01-02T00:00:00-07:00"
+    }
+  ],
+  "next_token": null
+}

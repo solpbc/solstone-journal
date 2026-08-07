@@ -1,0 +1,17 @@
+{
+  "data": [
+    {
+      "id": "synthetic-cardio-age-2026-01-02",
+      "day": "2026-01-02",
+      "pulse_wave_velocity": 7.1,
+      "vascular_age": 34
+    },
+    {
+      "id": "synthetic-cardio-age-2026-01-03",
+      "day": "2026-01-03",
+      "pulse_wave_velocity": null,
+      "vascular_age": 35
+    }
+  ],
+  "next_token": null
+}

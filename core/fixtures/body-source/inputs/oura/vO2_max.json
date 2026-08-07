@@ -1,0 +1,17 @@
+{
+  "data": [
+    {
+      "id": "synthetic-vo2max-2026-01-02",
+      "day": "2026-01-02",
+      "timestamp": "2026-01-02T00:00:00-07:00",
+      "vo2_max": 41
+    },
+    {
+      "id": "synthetic-vo2max-2026-01-03",
+      "day": "2026-01-03",
+      "timestamp": "2026-01-03T00:00:00-07:00",
+      "vo2_max": 42
+    }
+  ],
+  "next_token": null
+}

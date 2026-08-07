@@ -1,0 +1,21 @@
+{
+  "data": [
+    {
+      "timestamp": "2026-01-02T15:05:00Z",
+      "glucose": 92
+    },
+    {
+      "timestamp": "2026-01-02T19:35:00Z",
+      "glucose": 118
+    },
+    {
+      "timestamp": "2026-01-03T04:20:00Z",
+      "glucose": 101
+    },
+    {
+      "timestamp": "2026-01-03T16:50:00Z",
+      "glucose": 87
+    }
+  ],
+  "next_token": null
+}

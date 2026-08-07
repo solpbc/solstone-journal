@@ -1,0 +1,47 @@
+{
+  "data": [
+    {
+      "id": "synthetic-sleep-period-2026-01-02",
+      "day": "2026-01-02",
+      "type": "long_sleep",
+      "bedtime_start": "2026-01-01T22:41:00-07:00",
+      "bedtime_end": "2026-01-02T06:32:00-07:00",
+      "total_sleep_duration": 26340,
+      "deep_sleep_duration": 5460,
+      "rem_sleep_duration": 6480,
+      "light_sleep_duration": 14400,
+      "awake_time": 1920,
+      "time_in_bed": 28260,
+      "efficiency": 93,
+      "latency": 540,
+      "average_heart_rate": 54.5,
+      "lowest_heart_rate": 47,
+      "average_hrv": 62,
+      "average_breath": 14.25,
+      "sleep_phase_5_min": "444422221111222233334444222211112222",
+      "timestamp": "2026-01-01T22:41:00-07:00"
+    },
+    {
+      "id": "synthetic-sleep-period-2026-01-03",
+      "day": "2026-01-03",
+      "type": "long_sleep",
+      "bedtime_start": "2026-01-02T23:58:00-07:00",
+      "bedtime_end": "2026-01-03T06:04:00-07:00",
+      "total_sleep_duration": 20520,
+      "deep_sleep_duration": 3660,
+      "rem_sleep_duration": 4320,
+      "light_sleep_duration": 12540,
+      "awake_time": 1440,
+      "time_in_bed": 21960,
+      "efficiency": 88,
+      "latency": 780,
+      "average_heart_rate": 58.0,
+      "lowest_heart_rate": 51,
+      "average_hrv": 48,
+      "average_breath": 15.0,
+      "sleep_phase_5_min": "44442222111122223333",
+      "timestamp": "2026-01-02T23:58:00-07:00"
+    }
+  ],
+  "next_token": null
+}

@@ -1,0 +1,25 @@
+{
+  "data": [
+    {
+      "id": "synthetic-tag-2026-01-02",
+      "tag_type_code": "tag_generic_nocaffeine",
+      "start_time": "2026-01-02T14:45:12-07:00",
+      "end_time": null,
+      "start_day": "2026-01-02",
+      "end_day": null,
+      "comment": null,
+      "custom_name": null
+    },
+    {
+      "id": "synthetic-tag-2026-01-03",
+      "tag_type_code": null,
+      "start_time": "2026-01-03T22:20:00-07:00",
+      "end_time": "2026-01-04T07:10:00-07:00",
+      "start_day": "2026-01-03",
+      "end_day": "2026-01-04",
+      "comment": "synthetic note text",
+      "custom_name": "synthetic custom tag"
+    }
+  ],
+  "next_token": null
+}

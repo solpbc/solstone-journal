@@ -1,0 +1,35 @@
+{
+  "data": [
+    {
+      "id": "synthetic-session-2026-01-02",
+      "day": "2026-01-02",
+      "start_datetime": "2026-01-02T17:10:00.000-07:00",
+      "end_datetime": "2026-01-02T17:30:00.000-07:00",
+      "type": "meditation",
+      "mood": "good",
+      "heart_rate": {
+        "interval": 300.0,
+        "items": [62.0, 60.5, null, 58.0],
+        "timestamp": "2026-01-02T17:10:00.000-07:00"
+      },
+      "heart_rate_variability": {
+        "interval": 300.0,
+        "items": [48.0, 52.0, 55.0, null],
+        "timestamp": "2026-01-02T17:10:00.000-07:00"
+      },
+      "motion_count": null
+    },
+    {
+      "id": "synthetic-session-2026-01-03",
+      "day": "2026-01-03",
+      "start_datetime": "2026-01-03T21:02:10.500-07:00",
+      "end_datetime": "2026-01-03T21:09:41.200-07:00",
+      "type": "rest",
+      "mood": null,
+      "heart_rate": null,
+      "heart_rate_variability": null,
+      "motion_count": null
+    }
+  ],
+  "next_token": null
+}

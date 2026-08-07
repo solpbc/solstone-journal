@@ -1,0 +1,29 @@
+{
+  "data": [
+    {
+      "id": "synthetic-workout-2026-01-02",
+      "activity": "walking",
+      "calories": 148.5,
+      "day": "2026-01-02",
+      "distance": 2412.9,
+      "end_datetime": "2026-01-02T08:41:00.000-07:00",
+      "intensity": "moderate",
+      "label": null,
+      "source": "confirmed",
+      "start_datetime": "2026-01-02T08:05:00.000-07:00"
+    },
+    {
+      "id": "synthetic-workout-2026-01-03",
+      "activity": "cycling",
+      "calories": 321.25,
+      "day": "2026-01-03",
+      "distance": 9120.4,
+      "end_datetime": "2026-01-03T23:58:00.000-07:00",
+      "intensity": "hard",
+      "label": "synthetic night ride",
+      "source": "manual",
+      "start_datetime": "2026-01-03T23:12:00.000-07:00"
+    }
+  ],
+  "next_token": null
+}
