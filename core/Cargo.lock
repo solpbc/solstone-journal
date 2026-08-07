@@ -1937,6 +1937,7 @@ dependencies = [
  "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
+ "solstone-core-journal-io",
  "solstone-core-local",
  "solstone-core-sol",
  "solstone-core-spl",

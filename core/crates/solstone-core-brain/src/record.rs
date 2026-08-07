@@ -236,6 +236,17 @@ pub(crate) fn parse_evidence(
     Ok(result)
 }
 
+/// Validate the four-component refresh probe payload before its permit is consumed.
+///
+/// The session transport needs this separate from full-record validation: it must
+/// reject a malformed probe while it can still abandon the live refresh permit.
+pub fn validate_refresh_probe_outcome(
+    value: &Value,
+    now: DateTime<Utc>,
+) -> Result<(), ValidationError> {
+    parse_evidence(Some(value), now).map(|_| ())
+}
+
 pub(crate) fn parse_component(
     component: &str,
     value: &Value,

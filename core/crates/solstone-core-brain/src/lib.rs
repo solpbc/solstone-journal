@@ -22,7 +22,9 @@ pub use inspect::{
     brain_refresh_lease_path, brain_state_path, inspect_brain_state, load_existing_fingerprint_key,
     probe_file_lease_held, project_brain_state,
 };
-pub use record::{BrainStateRecord, ValidationError, validate_brain_state_record};
+pub use record::{
+    BrainStateRecord, ValidationError, validate_brain_state_record, validate_refresh_probe_outcome,
+};
 pub use runtime_health::{RuntimeRecordInspection, inspect_runtime_health};
 pub use writer::{
     BeginPrerequisiteRenewal, BeginRefreshError, BrainRefreshPermit, REACHABLE_WRITE_CASES,

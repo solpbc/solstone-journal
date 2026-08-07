@@ -131,34 +131,114 @@ The host then sends the exact, fieldless terminal record and closes stdin:
 This order is intentional.  The server buffers the probe outcome until it sees
 the terminal record; it does not commit a result on receipt of an unclosed
 request.  A terminal record is clean close authority, exactly as Generate's
-session terminal is.  EOF **before** a terminal record is bare EOF: the caller
-has died or abandoned the request, so the server abandons its permit.  EOF
-after the terminal is normal closure.  A terminal before a probe, duplicate
-probe, malformed JSON, non-object line, unknown fields, or a non-EOF record
-after terminal is a protocol failure: abandon if the permit still exists, write
-no successful projection, and return a nonzero protocol exit.  This provides a
-meaningful distinction while retaining the Generate rule that bare EOF cancels
-in-flight work (`generate_wire.py:377-400`).
+session terminal is.
 
-On clean terminal handling, the server consumes the buffered outcome, finishes
-the refresh, and writes exactly one stdout record before exit:
+**Correction (an earlier draft of this section contradicted itself on
+terminal-before-probe — resolved here; treat this version as authoritative):**
+
+- **Bare EOF** (stdin closes with no terminal record ever received): the
+  caller has disappeared. Abandon internally (revision incremented, checking
+  cleared, `chat_timeout`/`generate` per §4 below) and exit —
+  attempt **no** stdout write. There is normally no listener on the other end
+  of a bare-EOF pipe, so a best-effort write to a broken pipe is pointless; the
+  durable state change (the abandon write to `health/brain.json`) is what
+  matters, not the report of it.
+- **Timeout** (`SESSION_INPUT_TIMEOUT` elapses with the caller still
+  connected, i.e. stdin has not closed): the caller is alive but stuck. Abandon
+  the same way, but the caller may still be listening, so emit the
+  `kind:"abandoned"` result record on stdout (best-effort — an I/O error
+  writing it is logged, not treated as a second failure) before exiting.
+  Process exit is `0` (`ExitCode::SUCCESS`): the session behaved exactly as
+  designed, correctly detecting and reporting a hung caller — this is not the
+  caller's protocol misuse, so it is not signaled as one.
+- **Protocol violation** (terminal-before-probe, duplicate probe, malformed
+  JSON, a non-object line, unknown top-level fields, or any record received
+  after the terminal that is not itself the terminal repeated verbatim):
+  the caller sent something the wire contract does not allow. Abandon
+  internally if a permit still exists (same write as above), **and still
+  emit the `kind:"abandoned"` result record** — the caller sent a terminal or
+  another well-formed-enough line, so it is plausibly still listening and
+  benefits from a concrete diagnostic rather than a bare nonzero exit. What
+  distinguishes this path from timeout is the **exit code**: use a dedicated
+  `EXIT_PROTOCOL` code (`76`, sysexits' `EX_PROTOCOL` — add it alongside this
+  binary's existing sysexits-derived constants at
+  `core/crates/solstone-core/src/main.rs:33-39`) rather than `0`, so the host
+  can tell "hung caller, handled cleanly" apart from "caller broke the wire
+  contract" even though both leave a structured record on stdout.
+- **EOF after the terminal**: normal closure, no special handling — this is
+  simply the tail end of the clean-terminal path below.
+
+On clean terminal handling (terminal received after exactly one valid probe
+record, in order, nothing after it but EOF), the server consumes the buffered
+outcome, finishes the refresh, and writes exactly one stdout record before
+exit:
 
 ```json
 {"schema":"solstone.brain.refresh.result.v1","kind":"projection","projection":{"aggregate_state":"ready","reason_code":null,"active_lane":"byo-cloud","active_provider":"anthropic","active_model":"…","fingerprint_sha256":"…","runtime_transition_in_progress":false}}
 ```
 
-If it can report an abandonment to a still-connected caller (for example a
-terminal-without-probe or an input timeout), it instead emits exactly one
-record:
+Derive `projection` by calling W1's `inspect::inspect_brain_state` fresh
+against the journal after the write, rather than hand-deriving a projection
+inline in the writer — this is the same call the ordinary read path already
+uses and keeps projection logic in exactly one place.
+
+For an abandonment, the result record is:
 
 ```json
-{"schema":"solstone.brain.refresh.result.v1","kind":"abandoned","reason_code":"probe_internal_error","component":"lane_prerequisites"}
+{"schema":"solstone.brain.refresh.result.v1","kind":"abandoned","reason_code":"chat_timeout","component":"generate"}
 ```
 
-The stdout record is flushed before exit.  Bare EOF normally has no listener,
-so the server prioritizes durable abandonment and exit over a best-effort write
-to its broken pipe.  The host treats missing/invalid result records or nonzero
-exit as failure; it never calculates a Python fallback projection.
+### 3.2 Immediate-exit outcomes (no permit ever taken)
+
+`begin_refresh` can resolve before any lease is taken or any NDJSON record is
+read at all — the session process must handle these without entering the read
+loop:
+
+- **None-lane write already completed** (`begin_refresh` internally routed
+  through the non-lease none-lane write and returned `Ok(None)`): a record
+  *was* written. Emit the same `kind:"projection"` shape as a normal finish
+  (call `inspect_brain_state` fresh, same as above) and exit `0`.
+- **Ordinary lease contention, no `expected_contract`** (`Ok(None)`, nothing
+  written): emit
+  `{"schema":"solstone.brain.refresh.result.v1","kind":"not_started","status":"no_permit","reason":"lease_held"}`
+  and exit `0` — this is a normal, expected outcome (someone else is already
+  refreshing), not a failure.
+- **`BeginRefreshError::ExpectedFingerprintStale`**: a genuine precondition
+  failure the caller asked to be told about explicitly (via
+  `--expect-fingerprint`/`--expect-absent`). No stdout record; print the error
+  to stderr and exit `EXIT_DATAERR` (`65`), matching how `journal-config
+  commit`'s `CommitConfigError::Conflict` is already mapped in this binary.
+- **`BeginRefreshError::InvalidArgument`**: unreachable through the CLI as
+  designed (§3.1's `BrainRefreshExpectArg` enum structurally prevents
+  supplying both `--expect-fingerprint` and `--expect-absent`), but keep the
+  match arm exhaustive — treat it the same as a usage error, `EXIT_USAGE`
+  (`64`), rather than panicking or silently ignoring an unreachable-in-practice
+  variant.
+
+### 3.3 `prerequisite-renewal --session` — the same framing, narrower payload
+
+Identical wire discipline (NDJSON, terminal-then-EOF vs bare-EOF vs timeout vs
+protocol-violation with the exact same exit-code taxonomy above), driving
+`begin_prerequisite_renewal` → `finish_prerequisite_renewal`/
+`abandon_prerequisite_renewal` instead. Differences only in schema and the
+immediate-exit taxonomy:
+
+- Probe-in: `{"schema":"solstone.brain.prerequisite_renewal.probe.v1","lane_prerequisites":{...}}`
+  — a single component object (matching `finish_prerequisite_renewal`'s
+  `lane_prerequisites: Value` parameter), not a four-component `outcome`
+  wrapper.
+- Terminal: `{"schema":"solstone.brain.prerequisite_renewal.terminal.v1"}`.
+- Result: same `kind:"projection"`/`kind:"abandoned"` shapes, schema renamed
+  to `solstone.brain.prerequisite_renewal.result.v1`.
+- Immediate exit on `BeginPrerequisiteRenewal::Busy { reason }`: emit
+  `{"schema":"solstone.brain.prerequisite_renewal.result.v1","kind":"not_started","status":"busy","reason":"<reason>"}`
+  and exit `0` — this is the one place `busy` is a real status (AC18), unlike
+  refresh's contention case above.
+- Immediate exit on `BeginPrerequisiteRenewal::Unsafe { reason }`: emit the
+  same shape with `"status":"unsafe"` and exit `0` — `Unsafe` covers a family
+  of preconditions that failed to hold (non-SPP lane, fingerprint mismatch,
+  unsafe evidence, etc.), all still normal, well-formed answers, not process
+  failures.
 
 ### Hung-but-alive caller bound (AC15)
 
@@ -174,25 +254,125 @@ observable lease interval.  Timeout takes the same abandonment path as bare
 EOF, releases the lease, and exits; it cannot leave a checking record until the
 600-second stale recovery.
 
+### 3.1 Corrected CLI verb surface (found during CLI-stage design, not covered above)
+
+Section 2's writer functions include `abandon_refresh`/`abandon_prerequisite_renewal`,
+which both take a `BrainRefreshPermit` by value — and `BrainRefreshPermit`
+holds a live `FileLease` (an owned, un-clone-able, unserializable OS file
+descriptor guard). A `BrainRefreshPermit` therefore cannot survive being
+printed to stdout by one `solstone-core brain <verb>` process and read back by
+a second, later one: the lease is released the instant the first process
+exits, and there is no JSON encoding of a live fd. Standalone one-shot verbs
+like `begin-refresh` / `finish-refresh` / `begin-renewal` / `finish-renewal`
+are therefore unsound for the write lanes above and must not be built as
+separate CLI invocations — only the writer function that both takes and
+consumes a lease-holding permit within the *same process* is safe, which is
+exactly what `--session` mode is for. This constraint was previously reasoned
+through only for `refresh`, but it applies identically to prerequisite
+renewal, which was not designed against it in the assignment's own `§2 In
+scope` wording ("A session-child command, `solstone-core brain refresh
+--session`...") and needed correcting here before implementation.
+
+The corrected CLI verb surface has exactly three families:
+
+- **`solstone-core brain refresh --session`** — as specified above: begin,
+  hold the lease across the caller's probe, finish or abandon, all in one
+  process. When `begin_refresh` returns `Ok(None)` (no-lease none-lane write
+  already completed, or ordinary lease contention with no `expected_contract`)
+  or a `BeginRefreshError` (stale-fingerprint/invalid-argument), the session
+  process emits a single terminal result record reflecting that outcome (see
+  below) and exits immediately without ever entering the NDJSON read loop —
+  there is no lease to hold and nothing further to negotiate.
+- **`solstone-core brain prerequisite-renewal --session`** — the identical
+  NDJSON framing (probe-outcome-in, terminal, result-out, same 90-second
+  `SESSION_INPUT_TIMEOUT`, same bare-EOF-abandons contract), but: (a) the
+  probe-outcome-in record carries a single `lane_prerequisites` component,
+  not the four-component `refresh` shape, matching
+  `finish_prerequisite_renewal`'s narrower `lane_prerequisites: Value`
+  parameter; (b) internally calls `begin_prerequisite_renewal` →
+  `finish_prerequisite_renewal`/`abandon_prerequisite_renewal`; (c) on
+  `BeginPrerequisiteRenewal::Busy { reason }` or `::Unsafe { reason }` (no
+  permit, no lease taken), emits an immediate terminal result carrying that
+  status and reason and exits without entering the read loop, mirroring
+  refresh's own no-permit fast exit above.
+- **`solstone-core brain record-runtime-failure`** — an ordinary one-shot
+  verb: bounded JSON on stdin (`reason_code`, `component`,
+  `expected_fingerprint_sha256`, `diagnostic`, optional
+  `bundled_runtime_fingerprint_sha256`), one JSON `RuntimeFailureResult` on
+  stdout. No lease is ever taken by `record_runtime_failure` (confirmed:
+  it only holds the scoped `health/brain.json.lock`, never
+  `acquire_file_lease`), so this is safe as a standalone, independently
+  invocable process, exactly like `journal-config read`/`commit`.
+
+There is no standalone `begin-refresh`, `finish-refresh`, `abandon-refresh`,
+`begin-renewal`, `finish-renewal`, or `abandon-renewal` verb. AC2's "reaches
+every one of them" is satisfied by these three verb families covering the
+full operation space (refresh begin/finish/abandon/none-lane via the first,
+renewal begin/finish/abandon via the second, runtime-failure via the third) —
+not by a one-verb-per-Python-function mapping, which the lease-lifetime
+constraint above rules out.
+
 ## 4. AC16 abandonment reason
 
-Choose `probe_internal_error` on `lane_prerequisites`: it is an
-evidence-recordable pair in the contract, unlike the adjacent
-`runtime_failure_rejected_reasons` list, which lists API rejection outcomes
-rather than recordable evidence (`core/fixtures/local_contract.json:529-558`,
-`:812-818`).  It is the least falsely specific representation of a caller that
-died before delivering a probe result.
+**Superseded during implementation — `probe_internal_error` does not work and
+is replaced below.** The original choice was disqualified by a real,
+structural finding, not just the aggregate-mapping mismatch this section used
+to flag (kept below for the record, but no longer the operative concern):
 
-There is a scope/contract mismatch to carry into implementation review:
-`probe_internal_error` currently maps to aggregate and component status
-**`unknown`**, not `blocked` (`local_contract.json:748-750`; the component
-mapping is `brain_state.py:915-926`).  Thus this selection durably marks the
-prerequisite lane unknown and clears checking; it does *not* durably block the
-lane.  The conditional AC16 wording that says this pair “marks that lane
-blocked” is stale against the authoritative fixture.  Changing that mapping
-would change the projection corpus and is not part of this wave.  The intended
-tradeoff is nevertheless durable: caller death becomes visible state instead
-of silently leaving a checking lease/record.
+`probe_internal_error` maps to aggregate `"unknown"` → component status
+`"unknown"`. A record.rs fix (landed separately, correcting a genuine porting
+bug where the reducer discarded the real reason for any non-ok/not_attempted/
+failed/blocked status) makes an `"unknown"`-status component's reason at least
+survive reduction — but every `"unknown"`-status candidate still sits at
+**priority 4**, the SAME priority tier as a missing/null lane-applicable
+component's `"brain_record_invalid"` candidate. `reduce_evidence_with_runtime`
+breaks priority-4 ties by `component_order` index
+(`configuration`, `lane_prerequisites`, `generate`, `cogitate`), and
+`configuration` sorts first. Abandoning a **freshly begun** checking record —
+exactly AC16's scenario, and exactly what `refresh --session`'s bare-EOF/
+timeout path does — leaves every OTHER lane-applicable component still null,
+including `configuration`. `configuration`'s null-component candidate
+(`(4, 0, "brain_record_invalid")`) always wins the tie-break over
+`lane_prerequisites`'s `(4, 1, "probe_internal_error")` candidate, so the
+composed record's real abandon reason is discarded by the reducer regardless
+of the discard-vs-preserve fix — `probe_internal_error` can never be the
+*winning* reason when abandoning a fresh checking record, only when every
+higher-index null component happens to already carry real (non-null)
+evidence, which is not this scenario.
+
+**Corrected choice: a reason whose aggregate is `unhealthy` (→ component
+status `failed`, priority 2) or `blocked` (→ priority 3) — both of which beat
+every priority-4 null-component candidate outright, regardless of
+`component_order` position.** Restricting further to reasons with an *empty*
+`diagnostic_metadata_schemas` entry (so the abandon call's empty diagnostic
+object needs no fabricated fields) and a defensible "the exchange never
+completed" reading:
+
+- **`refresh --session`**: `chat_timeout` (aggregate `unhealthy`, empty
+  diagnostic schema, present in the `generate` component's reason vocabulary
+  only — `writer::target_component("chat_timeout")` resolves to `generate`,
+  the first `component_order` entry whose vocabulary contains it). Call
+  `abandon_refresh(permit, "chat_timeout", Map::new(), now)`.
+- **`prerequisite-renewal --session`**: `nvattest_unavailable` (aggregate
+  `blocked`, empty diagnostic schema, present in the `lane_prerequisites`
+  vocabulary — `finish_prerequisite_renewal`'s component is fixed to
+  `lane_prerequisites` by construction, and `target_component` resolves this
+  reason there since it's the first, and only, applicable component).
+  `local_server_unhealthy` was considered and rejected: while its aggregate
+  (`unhealthy`) fits, its diagnostic schema *requires* `phase` and
+  `runtime_reason` from closed enums describing real local-inference runtime
+  states, none of which genuinely apply to "the session's caller vanished" —
+  fabricating one to satisfy validation would be actively misleading. Call
+  `abandon_prerequisite_renewal(permit, "nvattest_unavailable", Map::new(), now, ...)`.
+
+Neither choice is a perfect semantic match for "the caller disappeared" — the
+evidence-recordable vocabulary was not designed with a session-caller-timeout
+case in mind — but both are defensible ("the exchange timed out" /
+"verification did not respond") and, unlike `probe_internal_error`, both are
+STRUCTURALLY guaranteed to survive reduction as the record's actual reason
+regardless of which other lane-applicable components happen to be null at
+abandon time. This is the load-bearing property AC16 requires and
+`probe_internal_error` could not provide.
 
 ## 5. Direct port checklists
 
@@ -366,7 +546,7 @@ bound during the cut.
 | AC | Assignment criterion | Design disposition |
 | --- | --- | --- |
 | 1 | Exactly three write lanes plus the reference's one non-lease write path: `begin` on a `none` lane writes `thinking_engine_not_chosen` WITHOUT taking the lease and returns no permit. | The native writer ports the reference's `lane == "none"` branch as a fourth, non-lease begin outcome: state lock + atomic write only, `thinking_engine_not_chosen`, no lifetime lease, and `None` permit. Add a direct no-lease/no-permit test. |
-| 2 | `solstone-core brain <verb>` reaches every one of them and is wired into the packaged `solstone-core` binary. A test asserts the subcommand surface exists and an unknown verb is a usage error, not a panic. | Add `Command::Brain` → `parse_brain` → `run_brain` in the aggregate binary (section 1). Cover all three lanes plus the none begin path through verbs, and assert unknown verb returns usage. |
+| 2 | `solstone-core brain <verb>` reaches every one of them and is wired into the packaged `solstone-core` binary. A test asserts the subcommand surface exists and an unknown verb is a usage error, not a panic. | **Corrected in section 3.1:** the verb surface is exactly `refresh --session`, `prerequisite-renewal --session`, and `record-runtime-failure` — not one verb per Python function. A `BrainRefreshPermit`'s live `FileLease` cannot cross a process boundary, so standalone begin/finish/abandon verbs are unsound for both lease-taking lanes; only a single-process session command can safely hold a lease across a caller-driven probe. `record-runtime-failure` never takes a lease and is a genuine one-shot verb. Add `Command::Brain` → `parse_brain` → `run_brain` in the aggregate binary (section 1) with exactly these three verbs, and assert unknown verb returns usage. |
 | 3 | Every write acquires `health/brain.json.lock` (10s bounded non-blocking retry) before the atomic replace; the lock file is never unlinked. A two-real-process test issues a runtime-failure write and a refresh finish concurrently and asserts both serialize and exactly one lands, the loser refused not merged. | Every emitting path takes existing `hold_lock` on the record before `write_json`; do not unlink its sidecar. **Implementation attention:** add the named two-process race and byte/state assertions; retain the lock's existing 10-second contract. |
 | 4 | Record is `0600`, `indent=2`, `sort_keys=true`, trailing newline. | Configure native `write_json` with all four options on every record publication. **Implementation attention:** assert bytes and mode on each representative write path, including none lane. |
 | 5 | Caller-supplied evidence timestamps pass through byte-identical (`...Z` form preserved, no chrono normalization); `updated_at` is `datetime`-isoformat style (`...+00:00`). | Deserialize evidence timestamps as validated strings and serialize their original bytes; use the native `now` formatter only for newly-owned fields such as `updated_at`. **At risk:** chrono/serde defaults can normalize `Z`, so parity tests must pin both forms. |
@@ -380,7 +560,7 @@ bound during the cut.
 | 13 | Write-lane parity, over the reachable subset only (design corrected this to 28/46 — use that; an earlier implementation-time draft of this document said 40/34, which double-checking against the actual write-lane code disproved — see section 6). Do not report criterion 12 as satisfying this. | **Corrected, satisfied by implementation:** the explicit semantic 28 reachable / 46 unreachable selector from section 6, asserted at that cardinality, drives `finish_refresh` from a seeded prior state for all 28 and asserts field-for-field equality against the fixture. AC12's 74-record composition test does not satisfy this criterion on its own — this is a separate, write-path-driven test. |
 | 14 | Lease held by a live process for the whole refresh, released by process death alone. Test kills the holder, asserts a second refresh acquires with no intervening repair. | The journal-I/O RAII `FileLease` is retained from begin through external probe/terminal resolution; kernel close on process death releases it. **Implementation attention:** add the kill-holder cross-process test with no stale-file repair. |
 | 15 | A hung caller does not wedge refresh — the child bounds its own life independent of the generate contract's caller-death handling (design's 90s bound). Test holds a child open past its bound with the parent alive, asserts the lease is free afterward. | **Satisfied by design:** session server has a non-resetting 90-second bound independent of Generate, then abandons and exits. Add the live-parent/hung-child test; use a test-only controllable clock/timeout hook so it does not wait 90 real seconds. |
-| 16 | A bare EOF is abandonment, not a finish: revision incremented, `checking` cleared, a named reason on a named component (design chose `probe_internal_error`/`lane_prerequisites` — flag the unknown-vs-blocked correction here again). | **Corrected/at risk:** bare EOF invokes native abandon with `probe_internal_error` / `lane_prerequisites`, incrementing revision and clearing checking. Current `local_contract.json` maps that reason to `unknown`, not `blocked`; any test/AC wording requiring blocked must be reconciled with the fixture before implementation. |
+| 16 | A bare EOF is abandonment, not a finish: revision incremented, `checking` cleared, a named reason on a named component (design originally chose `probe_internal_error`/`lane_prerequisites`; superseded in section 4 by `chat_timeout`/`generate` for refresh and `nvattest_unavailable`/`lane_prerequisites` for renewal, after discovering the original choice can never win the priority-4 tie-break against a null `configuration` component on a freshly begun checking record). | **Corrected, satisfied:** bare EOF/timeout invokes native abandon with the corrected reason/component pair from section 4, which is structurally guaranteed (priority 2/3, not 4) to survive reduction as the record's actual reason regardless of which other components are null, incrementing revision and clearing checking. |
 | 17 | A crash after `begin` leaves all-null evidence plus a fresh checking block — test the record the writer actually writes (not the fixture's `checking_expired_after_crash`); assert it validates and projects `brain_check_interrupted` through W1's read path once the lease frees. | Begin writes the actual fresh checking record with all-null evidence before the process dies. **Implementation attention:** crash a real holder after begin, assert that exact record validates, then inspect through W1 after kernel lease release and assert `brain_check_interrupted`. |
 | 18 | Two concurrent refresh attempts: exactly one acquires, the other reports no permit and writes nothing (not `busy` — that status is prerequisite-renewal-only per the reference; keep that split or explicitly document a new status). | Preserve the reference split: `begin_refresh` returns **no permit** (`None`) on lease contention and writes nothing; it does **not** return `busy`. `begin_prerequisite_renewal` returns its existing **`busy`** result on contention. Add a two-attempt test for both operations and do not introduce a new status. |
 | 19 | `inspect` still creates nothing — record, key, either lock, lease. Re-assert with the same full-tree snapshot approach W1 used. | Keep `solstone-core-brain` inspection read-only; neither inspect nor composition acquires/creates record, key, state lock, or refresh lease. **Implementation attention:** re-run W1's full-tree snapshot assertion against native inspect. |
@@ -397,6 +577,6 @@ bound during the cut.
 | 30 | End-to-end verification through a real Python caller against a live journal is explicitly VPE-direct post-ship work — do not attempt it in the lode, do not report it as done. | Explicitly out of lode scope. Implementation may run fixtures/process tests only; it must neither attempt live-journal VPE-direct nor claim it complete. |
 
 The material corrections remain AC7 (seven fences), AC13 (explicit 40/34
-writer subset), and AC16 (`probe_internal_error` is `unknown`, not `blocked`).
+writer subset), and AC16 (the original `probe_internal_error`/`lane_prerequisites` choice could never win its own priority-4 tie-break on a fresh checking record; corrected in section 4 to `chat_timeout`/`generate` and `nvattest_unavailable`/`lane_prerequisites`).
 AC18 additionally fixes the behavioral fork: refresh contention is no-permit
 with no write, while prerequisite-renewal contention is `busy`.
