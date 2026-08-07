@@ -6,6 +6,52 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+use solstone_core_body_source::BodyValue;
+
+/// Asserts recursive body-value equality with floating-point bits compared exactly.
+pub fn assert_body_value_bitwise_eq(actual: &BodyValue, expected: &BodyValue) {
+    assert_body_value_at_path(actual, expected, "$");
+}
+
+fn assert_body_value_at_path(actual: &BodyValue, expected: &BodyValue, path: &str) {
+    match (actual, expected) {
+        (BodyValue::Number(actual), BodyValue::Number(expected)) => {
+            assert_eq!(
+                actual.to_bits(),
+                expected.to_bits(),
+                "number bits differ at {path}"
+            );
+        }
+        (BodyValue::Array(actual), BodyValue::Array(expected)) => {
+            assert_eq!(
+                actual.len(),
+                expected.len(),
+                "array length differs at {path}"
+            );
+            for (index, (actual, expected)) in actual.iter().zip(expected).enumerate() {
+                assert_body_value_at_path(actual, expected, &format!("{path}[{index}]"));
+            }
+        }
+        (BodyValue::Object(actual), BodyValue::Object(expected)) => {
+            assert_eq!(
+                actual.len(),
+                expected.len(),
+                "object size differs at {path}"
+            );
+            for (key, actual) in actual {
+                let expected = expected.get(key).unwrap_or_else(|| {
+                    panic!("missing object key {:?} at {path}", key.code_points())
+                });
+                assert_body_value_at_path(
+                    actual,
+                    expected,
+                    &format!("{path}[{:?}]", key.code_points()),
+                );
+            }
+        }
+        _ => assert_eq!(actual, expected, "value differs at {path}"),
+    }
+}
 
 pub fn fixture_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
