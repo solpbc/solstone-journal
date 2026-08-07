@@ -1,10 +1,19 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
 use std::fs;
+use std::io::Read;
+use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
 
 const BINARY: &str = env!("CARGO_BIN_EXE_solstone-core-describe");
+const SESSION_STUB: &str = env!("CARGO_BIN_EXE_solstone-describe-session-stub");
 
 #[derive(Deserialize)]
 struct Fixture {
@@ -46,6 +55,86 @@ fn frames_only(file: &str) -> Command {
     let mut command = Command::new(BINARY);
     command.arg("--frames-only").arg(corpus_path(file));
     command
+}
+
+fn temporary_root(label: &str) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "solstone-describe-{label}-{}-{nanos}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&path).expect("create temporary root");
+    path
+}
+
+fn copied_video(root: &Path, file: &str) -> PathBuf {
+    let video = root.join(file);
+    fs::copy(corpus_path(file), &video).expect("copy test video");
+    video
+}
+
+fn describe(root: &Path, video: &Path, mode: &str) -> Command {
+    let mut command = Command::new(BINARY);
+    command
+        .arg("--describe")
+        .arg(video)
+        .arg("--journal")
+        .arg(root)
+        .arg("-j")
+        .arg("2");
+    command.env("SOLSTONE_DESCRIBE_GENERATE_WIRE", SESSION_STUB);
+    command.env("SOLSTONE_DESCRIBE_SESSION_STUB_MODE", mode);
+    command
+}
+
+fn read_jsonl(path: &Path) -> Vec<serde_json::Value> {
+    fs::read_to_string(path)
+        .expect("read JSONL")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("valid JSONL row"))
+        .collect()
+}
+
+fn no_temp_files(root: &Path) -> bool {
+    fs::read_dir(root).expect("read root").all(|entry| {
+        !entry
+            .expect("entry")
+            .file_name()
+            .to_string_lossy()
+            .ends_with(".tmp")
+    })
+}
+
+fn remove_temporary_root(root: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(1);
+    loop {
+        match fs::remove_dir_all(root) {
+            Ok(()) => return,
+            Err(error)
+                if Instant::now() < deadline
+                    && error.kind() == std::io::ErrorKind::DirectoryNotEmpty =>
+            {
+                thread::sleep(Duration::from_millis(10))
+            }
+            Err(error) => panic!("remove temporary root: {error}"),
+        }
+    }
+}
+
+fn notification_listener(root: &Path) -> UnixListener {
+    let health = root.join("health");
+    fs::create_dir_all(&health).expect("create health directory");
+    UnixListener::bind(health.join("callosum.sock")).expect("bind callosum socket")
+}
+
+fn notification(listener: &UnixListener) -> serde_json::Value {
+    let (mut stream, _) = listener.accept().expect("accept notification");
+    let mut line = String::new();
+    stream.read_to_string(&mut line).expect("read notification");
+    serde_json::from_str(line.trim()).expect("valid notification JSON")
 }
 
 #[test]
@@ -119,4 +208,410 @@ fn decode_failures_use_exit_code_two() {
         assert_eq!(output.status.code(), Some(2), "{file}");
         assert!(output.stdout.is_empty(), "{file}");
     }
+}
+
+#[test]
+fn describe_runs_one_session_and_promotes_an_analyzed_artifact() {
+    let root = temporary_root("generated");
+    let video = copied_video(&root, "mixed_vp8_screen.webm");
+    let pid_path = root.join("child.pid");
+    let output = describe(&root, &video, "generated")
+        .env("SOLSTONE_DESCRIBE_SESSION_STUB_PID_PATH", &pid_path)
+        .output()
+        .expect("run describe binary");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(pid_path.exists(), "the one generate child records its pid");
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
+    assert_eq!(rows[0]["_solstone_processing"]["reason_code"], "ok");
+    assert_eq!(rows[0]["_solstone_thinking"]["model"], "describe-stub");
+    assert!(rows[1..].iter().all(|row| row["finish_reason"] == "stop"));
+    assert!(no_temp_files(&root));
+    fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+#[test]
+fn retry_uses_a_fresh_id_and_attempt_index() {
+    let root = temporary_root("retry");
+    let video = copied_video(&root, "mixed_vp8_screen.webm");
+    let request_log = root.join("requests.jsonl");
+    let output = describe(&root, &video, "retryable_then_generated")
+        .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+        .output()
+        .expect("run describe binary");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let requests = read_jsonl(&request_log);
+    let frame_id = fixture_case("mixed_vp8_screen.webm").frames[0].frame_id;
+    assert!(
+        requests
+            .iter()
+            .any(|row| row["id"] == format!("frame:{frame_id}:attempt:0")
+                && row["attempt_index"] == 0)
+    );
+    assert!(
+        requests
+            .iter()
+            .any(|row| row["id"] == format!("frame:{frame_id}:attempt:1")
+                && row["attempt_index"] == 1)
+    );
+    fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+#[test]
+fn blocking_or_unknown_refusals_abort_without_an_artifact() {
+    for mode in ["blocking_retryable", "unknown_code"] {
+        let root = temporary_root(mode);
+        let video = copied_video(&root, "mixed_vp8_screen.webm");
+        let request_log = root.join("requests.jsonl");
+        let output = describe(&root, &video, mode)
+            .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+            .output()
+            .expect("run describe binary");
+        assert_eq!(output.status.code(), Some(69), "{mode}");
+        assert!(!video.with_extension("jsonl").exists(), "{mode}");
+        assert!(no_temp_files(&root), "{mode}");
+        let first_frame = fixture_case("mixed_vp8_screen.webm").frames[0].frame_id;
+        let request_text = fs::read_to_string(&request_log).expect("read request log");
+        assert_eq!(
+            request_text
+                .matches(&format!("\"id\":\"frame:{first_frame}:attempt:0\""))
+                .count(),
+            1,
+            "{mode} must not retry the blocking response"
+        );
+        remove_temporary_root(&root);
+    }
+}
+
+#[test]
+fn non_responsive_is_a_nonblocking_failed_analysis() {
+    let root = temporary_root("non-responsive");
+    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    let output = describe(&root, &video, "non_responsive")
+        .output()
+        .expect("run describe binary");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "failed");
+    assert_eq!(
+        rows[0]["_solstone_processing"]["reason_code"],
+        "analysis_failed"
+    );
+    assert_eq!(rows[0]["_solstone_processing"]["attempts"], 1);
+    fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+#[test]
+fn launch_failure_is_blocked_not_empty() {
+    let root = temporary_root("launch-failure");
+    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    let output = Command::new(BINARY)
+        .arg("--describe")
+        .arg(&video)
+        .arg("--journal")
+        .arg(&root)
+        .env(
+            "SOLSTONE_DESCRIBE_GENERATE_WIRE",
+            root.join("does-not-exist"),
+        )
+        .output()
+        .expect("run describe binary");
+    assert_eq!(output.status.code(), Some(69));
+    assert!(!video.with_extension("jsonl").exists());
+    assert!(no_temp_files(&root));
+    fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+#[test]
+fn segment_meta_is_merged_before_describe_owned_values() {
+    let root = temporary_root("metadata");
+    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    let meta = serde_json::json!({
+        "raw": "meta-raw", "observer": "meta-observer", "qualified_count": 999,
+        "_solstone_thinking": {"model":"meta"}, "_solstone_processing": {"state":"meta"}
+    });
+    let output = describe(&root, &video, "generated")
+        .env("OBSERVER_NAME", "observer-name")
+        .env("SEGMENT_META", meta.to_string())
+        .output()
+        .expect("run describe binary");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    let header = &rows[0];
+    assert_eq!(header["raw"], "meta-raw");
+    assert_eq!(header["observer"], "meta-observer");
+    assert_ne!(header["qualified_count"], 999);
+    assert_eq!(header["_solstone_thinking"]["model"], "describe-stub");
+    assert_eq!(header["_solstone_processing"]["state"], "analyzed");
+    fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+#[test]
+fn retryable_refusals_stop_after_five_attempts() {
+    let root = temporary_root("retry-exhaustion");
+    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    let request_log = root.join("requests.jsonl");
+    let output = describe(&root, &video, "always_retryable")
+        .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+        .output()
+        .expect("run describe binary");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let requests = read_jsonl(&request_log);
+    assert_eq!(requests.len(), 5);
+    assert_eq!(
+        requests
+            .iter()
+            .map(|row| row["attempt_index"].as_u64())
+            .collect::<Vec<_>>(),
+        vec![Some(0), Some(1), Some(2), Some(3), Some(4)]
+    );
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    assert!(rows[1].get("error").is_some());
+    assert_eq!(rows[1]["requests"][0]["retries"], 4);
+    fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+#[test]
+fn no_engine_and_session_child_failures_abort_without_artifacts() {
+    for (mode, file) in [
+        ("no_engine_configured", "single_frame_vp8_screen.webm"),
+        ("exit_after_all", "mixed_vp8_screen.webm"),
+        ("exit_after_one", "mixed_vp8_screen.webm"),
+    ] {
+        let root = temporary_root(mode);
+        let video = copied_video(&root, file);
+        let output = describe(&root, &video, mode)
+            .output()
+            .expect("run describe binary");
+        assert_eq!(
+            output.status.code(),
+            Some(69),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!video.with_extension("jsonl").exists(), "{mode}");
+        assert!(no_temp_files(&root), "{mode}");
+        fs::remove_dir_all(root).expect("remove temporary root");
+    }
+}
+
+#[test]
+fn processing_record_is_complete_and_decode_failure_has_no_thinking() {
+    let root = temporary_root("record");
+    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    let output = describe(&root, &video, "generated")
+        .output()
+        .expect("run describe binary");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    let record = &rows[0]["_solstone_processing"];
+    assert_eq!(record["schema"], "solstone.processing.v1");
+    assert_eq!(record["handler"], "describe");
+    chrono::DateTime::parse_from_rfc3339(record["attempted_at"].as_str().expect("timestamp"))
+        .expect("RFC 3339 timestamp");
+    assert_eq!(
+        record["input_size"],
+        fs::metadata(&video).expect("metadata").len()
+    );
+
+    let corrupt = copied_video(&root, "audio_only_screen.mov");
+    let output = describe(&root, &corrupt, "generated")
+        .output()
+        .expect("run describe binary");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let header = &read_jsonl(&corrupt.with_extension("jsonl"))[0];
+    assert_eq!(
+        header["_solstone_processing"]["reason_code"],
+        "corrupt_input"
+    );
+    assert!(header.get("_solstone_thinking").is_none());
+    fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+#[test]
+fn unknown_finish_reason_is_clean_and_request_uses_phase_one_contract() {
+    let root = temporary_root("request");
+    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    let request_log = root.join("requests.jsonl");
+    let output = describe(&root, &video, "generated_unknown_finish")
+        .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+        .output()
+        .expect("run describe binary");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let request = &read_jsonl(&request_log)[0];
+    assert_eq!(request["context"], "observe.describe.frame");
+    assert_eq!(request["json_output"], true);
+    assert_eq!(request["temperature"], 0.7);
+    assert_eq!(request["max_output_tokens"], 512);
+    assert_eq!(request["thinking_budget"], 1024);
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    assert_eq!(rows[1]["finish_reason"], "unknown");
+    assert!(rows[1].get("error").is_none());
+    fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+#[test]
+fn redact_config_is_appended_in_order() {
+    let root = temporary_root("redact");
+    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    fs::create_dir_all(root.join("config")).expect("create config dir");
+    fs::write(
+        root.join("config/journal.json"),
+        r#"{"describe":{"redact":["rule one","rule two"]}}"#,
+    )
+    .expect("write config");
+    let request_log = root.join("requests.jsonl");
+    let output = describe(&root, &video, "generated")
+        .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+        .output()
+        .expect("run describe binary");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let instruction = read_jsonl(&request_log)[0]["system_instruction"]
+        .as_str()
+        .expect("instruction")
+        .to_owned();
+    assert!(instruction.ends_with("Redaction rules (apply these exactly as written, do not generalize):\n- rule one\n- rule two\n"));
+    fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+#[test]
+fn tier_one_temp_is_nonempty_before_atomic_promotion_and_is_removed_afterward() {
+    let root = temporary_root("temp");
+    let video = copied_video(&root, "mixed_vp8_screen.webm");
+    let release = root.join("release");
+    let mut child = describe(&root, &video, "pause_after_first")
+        .env("SOLSTONE_DESCRIBE_SESSION_STUB_RELEASE_PATH", &release)
+        .spawn()
+        .expect("spawn describe binary");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut saw_nonempty = false;
+    while Instant::now() < deadline {
+        saw_nonempty = fs::read_dir(&root)
+            .expect("read root")
+            .filter_map(Result::ok)
+            .any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".describe-")
+                    && entry
+                        .metadata()
+                        .map(|metadata| metadata.len() > 0)
+                        .unwrap_or(false)
+            });
+        if saw_nonempty {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        saw_nonempty,
+        "tier-one rows temp became nonempty while the run was active"
+    );
+    fs::write(&release, b"release").expect("release stub");
+    assert!(child.wait().expect("wait child").success());
+    assert!(no_temp_files(&root));
+    fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+#[test]
+fn session_submits_a_later_request_before_the_first_response() {
+    let root = temporary_root("submit-ahead");
+    let video = copied_video(&root, "mixed_vp8_screen.webm");
+    let output = describe(&root, &video, "hold_first_until_second")
+        .output()
+        .expect("run describe binary");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        read_jsonl(&video.with_extension("jsonl"))[0]["_solstone_processing"]["state"],
+        "analyzed"
+    );
+    fs::remove_dir_all(root).expect("remove temporary root");
+}
+
+#[test]
+fn blocking_and_session_abort_notifications_have_distinct_flat_shapes() {
+    for (mode, is_refusal) in [("blocking_retryable", true), ("exit_after_one", false)] {
+        let root = temporary_root(mode);
+        let video = copied_video(&root, "mixed_vp8_screen.webm");
+        let listener = notification_listener(&root);
+        let output = describe(&root, &video, mode)
+            .output()
+            .expect("run describe binary");
+        assert_eq!(output.status.code(), Some(69), "{mode}");
+        let row = notification(&listener);
+        assert_eq!(row["tract"], "notification");
+        assert_eq!(row["event"], "show");
+        assert!(row.get("work_key").is_some());
+        if is_refusal {
+            assert_eq!(row["reason_code"], "binary_missing");
+            assert_eq!(row["provider"], "stub");
+        } else {
+            assert!(row.get("reason_code").is_none());
+            assert!(row.get("provider").is_none());
+        }
+        listener
+            .set_nonblocking(true)
+            .expect("nonblocking listener");
+        assert!(
+            matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock)
+        );
+        fs::remove_dir_all(root).expect("remove temporary root");
+    }
+}
+
+#[test]
+fn unwritable_output_parent_is_an_internal_non_boundary_error() {
+    let root = temporary_root("unwritable");
+    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o555)).expect("make parent unwritable");
+    let output = describe(&root, &video, "generated")
+        .output()
+        .expect("run describe binary");
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o755))
+        .expect("restore parent permissions");
+    assert!(!output.status.success());
+    assert_ne!(output.status.code(), Some(69));
+    assert!(!video.with_extension("jsonl").exists());
+    fs::remove_dir_all(root).expect("remove temporary root");
 }

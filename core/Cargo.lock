@@ -2042,13 +2042,18 @@ dependencies = [
 name = "solstone-core-describe"
 version = "1.0.22"
 dependencies = [
+ "base64",
+ "chrono",
  "ffmpeg-next",
  "ffmpeg-sys-next",
  "image",
  "imageproc",
  "serde",
  "serde_json",
+ "solstone-core-generate",
  "solstone-core-journal-config",
+ "solstone-core-journal-io",
+ "solstone-core-processing-record",
 ]
 
 [[package]]

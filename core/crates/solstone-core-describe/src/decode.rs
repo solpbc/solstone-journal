@@ -1,6 +1,11 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use std::io::Cursor;
 use std::path::Path;
 
 use ffmpeg_next as ffmpeg;
+use image::{DynamicImage, ImageBuffer, ImageFormat, Rgb, imageops::FilterType};
 
 use crate::{
     ArucoFrame, HashedFrame, WinnowConfig, WinnowCounters, WinnowState, WinnowVerdict, dhash,
@@ -57,6 +62,8 @@ pub struct QualifiedFrame {
     pub frame_id: u64,
     pub timestamp: f64,
     pub aruco: Option<ArucoFrame>,
+    /// Inline PNG bytes cross the generate boundary; never materialized as a file.
+    pub png: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -240,6 +247,7 @@ fn receive_frames<T: PreHashTransform>(
                         frame_id: *frame_id,
                         timestamp,
                         aruco,
+                        png: encode_png(&frame).ok_or(ffmpeg::Error::InvalidData)?,
                     });
                 }
             }
@@ -249,6 +257,52 @@ fn receive_frames<T: PreHashTransform>(
         }
     }
     Ok(())
+}
+
+fn encode_png(frame: &RgbFrame) -> Option<Vec<u8>> {
+    let image =
+        ImageBuffer::<Rgb<u8>, _>::from_raw(frame.width, frame.height, frame.pixels.clone())?;
+    let image = resize_for_categorization(image);
+    let mut output = Cursor::new(Vec::new());
+    DynamicImage::ImageRgb8(image)
+        .write_to(&mut output, ImageFormat::Png)
+        .ok()?;
+    Some(output.into_inner())
+}
+
+/// Keep every categorization image inside the local Qwen token budget. This is
+/// deliberately provider-independent: every generate backend receives the
+/// identical resized image.
+fn resize_for_categorization(
+    image: ImageBuffer<Rgb<u8>, Vec<u8>>,
+) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
+    const MAX_DIMENSION: f64 = 1920.0;
+    const MAX_PIXELS: f64 = 1024.0 * 32.0 * 32.0;
+    let width = image.width();
+    let height = image.height();
+    let mut scale = (MAX_DIMENSION / f64::from(width.max(height))).min(1.0);
+    scale = scale.min((MAX_PIXELS / (f64::from(width) * f64::from(height))).sqrt());
+    if scale >= 1.0 {
+        return image;
+    }
+    let target_width = (f64::from(width) * scale).floor().max(1.0) as u32;
+    let target_height = (f64::from(height) * scale).floor().max(1.0) as u32;
+    image::imageops::resize(&image, target_width, target_height, FilterType::Lanczos3)
+}
+
+#[cfg(test)]
+mod image_tests {
+    use image::{ImageBuffer, Rgb};
+
+    use super::resize_for_categorization;
+
+    #[test]
+    fn categorization_images_obey_the_unconditional_pixel_budget() {
+        let image = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(4096, 2160);
+        let resized = resize_for_categorization(image);
+        assert!(u64::from(resized.width()) * u64::from(resized.height()) <= 1024 * 32 * 32);
+        assert!(resized.width() <= 1920 && resized.height() <= 1920);
+    }
 }
 
 fn rgb_frame(frame: &ffmpeg::frame::Video) -> Option<RgbFrame> {
@@ -474,7 +528,16 @@ mod tests {
             let vp8_result = process_video(&corpus_path(vp8));
             let h264_result = process_video(&corpus_path(h264));
             assert_eq!(
-                vp8_result.qualified_frames, h264_result.qualified_frames,
+                vp8_result
+                    .qualified_frames
+                    .iter()
+                    .map(|frame| (frame.frame_id, frame.timestamp))
+                    .collect::<Vec<_>>(),
+                h264_result
+                    .qualified_frames
+                    .iter()
+                    .map(|frame| (frame.frame_id, frame.timestamp))
+                    .collect::<Vec<_>>(),
                 "{vp8}/{h264}"
             );
             assert_eq!(

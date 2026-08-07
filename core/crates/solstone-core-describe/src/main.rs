@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
 use std::env;
 use std::ffi::OsString;
 use std::io::{self, Write};
@@ -5,12 +8,15 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use serde_json::Value;
-use solstone_core_describe::{ConveyFiducialMask, WinnowConfig, process_video_with_transform};
+use solstone_core_describe::{
+    ConveyFiducialMask, WinnowConfig, pipeline, process_video_with_transform,
+};
 use solstone_core_journal_config::read_journal_config;
 
 const EXIT_DECODE_FAILURE: u8 = 2;
 const EXIT_USAGE: u8 = 64;
 const EXIT_CONFIG: u8 = 78;
+const EXIT_PROVIDER_BLOCKED: u8 = 69;
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1)) {
@@ -26,6 +32,11 @@ fn main() -> ExitCode {
         Err(CliError::Decode(message)) => {
             eprintln!("{message}");
             ExitCode::from(EXIT_DECODE_FAILURE)
+        }
+        Err(CliError::Blocked) => ExitCode::from(EXIT_PROVIDER_BLOCKED),
+        Err(CliError::Internal(message)) => {
+            eprintln!("{message}");
+            ExitCode::FAILURE
         }
     }
 }
@@ -46,7 +57,7 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
             let config = read_config(arguments.journal.as_deref())?;
             let mut transform = ConveyFiducialMask;
             let result =
-                process_video_with_transform(&arguments.video_path, &mut transform, config);
+                process_video_with_transform(&arguments.video_path, &mut transform, config.winnow);
             if result.decode_failed {
                 return Err(CliError::Decode(format!(
                     "failed to decode video: {}",
@@ -82,23 +93,51 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
                 .write_all(format!("{rendered}\n").as_bytes())
                 .map_err(|error| CliError::Decode(format!("failed to write output: {error}")))
         }
+        Command::Describe(arguments) => {
+            let config = read_config(arguments.journal.as_deref())?;
+            let default_journal = env::var_os("SOLSTONE_JOURNAL").map(PathBuf::from);
+            let journal = arguments
+                .journal
+                .as_deref()
+                .or(default_journal.as_deref())
+                .unwrap_or_else(|| Path::new("."));
+            pipeline::run(pipeline::DescribeOptions {
+                video: &arguments.video_path,
+                journal,
+                jobs: arguments.jobs,
+                config: config.winnow,
+                redact_rules: config.redact_rules,
+            })
+            .map_err(|error| match error {
+                pipeline::RunError::Blocked => CliError::Blocked,
+                pipeline::RunError::Internal(message) => CliError::Internal(message),
+            })
+        }
     }
 }
 
 enum Command {
     Version,
     FramesOnly(FramesOnlyArguments),
+    Describe(DescribeArguments),
 }
 
 struct FramesOnlyArguments {
     video_path: PathBuf,
     journal: Option<PathBuf>,
 }
+struct DescribeArguments {
+    video_path: PathBuf,
+    journal: Option<PathBuf>,
+    jobs: usize,
+}
 
 enum CliError {
     Usage(String),
     Config(String),
     Decode(String),
+    Blocked,
+    Internal(String),
 }
 
 fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Command, CliError> {
@@ -114,6 +153,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
     }
 
     let mut frames_only = false;
+    let mut describe = false;
+    let mut jobs = None;
     let mut journal = None;
     let mut video_path = None;
     let mut pending = Some(first);
@@ -123,6 +164,24 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
                 return Err(usage("--frames-only was provided more than once"));
             }
             frames_only = true;
+        } else if argument == "--describe" {
+            if describe {
+                return Err(usage("--describe was provided more than once"));
+            }
+            describe = true;
+        } else if argument == "-j" || argument == "--jobs" {
+            let Some(value) = values.next() else {
+                return Err(usage("--jobs requires a positive integer"));
+            };
+            let value = value
+                .to_string_lossy()
+                .parse::<usize>()
+                .ok()
+                .filter(|value| *value > 0)
+                .ok_or_else(|| usage("--jobs requires a positive integer"))?;
+            if jobs.replace(value).is_some() {
+                return Err(usage("--jobs was provided more than once"));
+            }
         } else if argument == "--journal" {
             let Some(path) = values.next() else {
                 return Err(usage("--journal requires a path"));
@@ -140,21 +199,39 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
         }
     }
 
-    if !frames_only {
-        return Err(usage("--frames-only is required"));
+    if frames_only == describe {
+        return Err(usage(
+            "exactly one of --frames-only or --describe is required",
+        ));
     }
     let Some(video_path) = video_path else {
         return Err(usage("missing video path"));
     };
-    Ok(Command::FramesOnly(FramesOnlyArguments {
-        video_path,
-        journal,
-    }))
+    if frames_only {
+        Ok(Command::FramesOnly(FramesOnlyArguments {
+            video_path,
+            journal,
+        }))
+    } else {
+        Ok(Command::Describe(DescribeArguments {
+            video_path,
+            journal,
+            jobs: jobs.unwrap_or(1),
+        }))
+    }
 }
 
-fn read_config(journal_path: Option<&Path>) -> Result<WinnowConfig, CliError> {
+struct DescribeConfig {
+    winnow: WinnowConfig,
+    redact_rules: Vec<String>,
+}
+
+fn read_config(journal_path: Option<&Path>) -> Result<DescribeConfig, CliError> {
     let Some(journal_path) = journal_path else {
-        return Ok(WinnowConfig::default());
+        return Ok(DescribeConfig {
+            winnow: WinnowConfig::default(),
+            redact_rules: Vec::new(),
+        });
     };
     let config = read_journal_config(journal_path)
         .map_err(|error| CliError::Config(format!("failed to read journal config: {error}")))?
@@ -164,7 +241,10 @@ fn read_config(journal_path: Option<&Path>) -> Result<WinnowConfig, CliError> {
         .and_then(|config| config.get("describe"))
         .and_then(Value::as_object)
     else {
-        return Ok(WinnowConfig::default());
+        return Ok(DescribeConfig {
+            winnow: WinnowConfig::default(),
+            redact_rules: Vec::new(),
+        });
     };
 
     let mut result = WinnowConfig::default();
@@ -184,11 +264,30 @@ fn read_config(journal_path: Option<&Path>) -> Result<WinnowConfig, CliError> {
         };
         result.min_stride_seconds = value;
     }
-    Ok(result)
+    let redact_rules = match describe.get("redact") {
+        None => Vec::new(),
+        Some(Value::Array(rules)) => rules
+            .iter()
+            .map(|value| {
+                value.as_str().map(str::to_owned).ok_or_else(|| {
+                    CliError::Config("describe.redact must be an array of strings".to_owned())
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        Some(_) => {
+            return Err(CliError::Config(
+                "describe.redact must be an array of strings".to_owned(),
+            ));
+        }
+    };
+    Ok(DescribeConfig {
+        winnow: result,
+        redact_rules,
+    })
 }
 
 fn usage(message: &str) -> CliError {
     CliError::Usage(format!(
-        "{message}\nUsage: solstone-core-describe --frames-only <video-path> [--journal <path>]\n       solstone-core-describe --version"
+        "{message}\nUsage: solstone-core-describe --frames-only <video-path> [--journal <path>]\n       solstone-core-describe --describe <video-path> [-j N] [--journal <path>]\n       solstone-core-describe --version"
     ))
 }

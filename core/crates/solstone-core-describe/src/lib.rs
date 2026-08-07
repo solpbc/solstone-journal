@@ -1,8 +1,15 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
 //! Decode and winnow screencast video frames for `journal describe`.
 
 mod decode;
 mod fiducial;
 mod hash;
+mod notify;
+pub mod pipeline;
+pub mod request;
+pub mod session;
 mod winnow;
 
 pub use decode::{
