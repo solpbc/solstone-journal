@@ -5,5 +5,4 @@ pub mod discovery;
 pub mod edges;
 pub mod entity_search;
 pub mod metadata;
-pub mod segment_aggregate;
 pub mod stream;

@@ -4,7 +4,6 @@
 //! Compilation and read-only execution of journal full-text queries.
 
 mod atomize;
-mod collapse;
 mod compile;
 mod execute;
 mod ladder;

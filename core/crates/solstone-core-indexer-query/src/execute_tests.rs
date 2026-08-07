@@ -3,9 +3,11 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::NaiveDate;
+use rusqlite::trace::{TraceEvent, TraceEventCodes};
 use rusqlite::{Connection, OpenFlags, params};
 use solstone_core_indexer_store::db::{db_path, open_index};
 
@@ -18,6 +20,13 @@ use crate::{
 };
 
 const REFERENCE_DATE: &str = "2026-01-07";
+static SQL_TRACE: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+
+fn record_sql(event: TraceEvent<'_>) {
+    if let TraceEvent::Stmt(_, sql) = event {
+        SQL_TRACE.lock().expect("trace lock").push(sql.to_string());
+    }
+}
 
 fn reference_date() -> NaiveDate {
     NaiveDate::parse_from_str(REFERENCE_DATE, "%Y-%m-%d").expect("reference date")
@@ -467,15 +476,15 @@ fn final_plan_order_is_falsifiable_against_compile_outcome_and_request_intent() 
 }
 
 #[test]
-fn relevance_uses_live_match_and_segment_hits_are_marked_not_directly_readable() {
+fn relevance_uses_live_match() {
     let (root, connection) = seeded_root("relevance");
     insert(
         &connection,
         "needle needle",
-        "20260101/default/090000_60",
+        "notes/first.md",
         "20260101",
         "",
-        "segment",
+        "flow",
         "default",
         0,
     );
@@ -492,28 +501,46 @@ fn relevance_uses_live_match_and_segment_hits_are_marked_not_directly_readable()
     drop(connection);
     let response = search(&root, &request("needle"), reference_date()).expect("term search");
     assert_eq!(response.order, Order::Relevance);
-    assert!(
-        response
-            .results
-            .iter()
-            .any(|hit| hit.metadata.agent == "segment" && hit.not_directly_readable)
-    );
+    assert_eq!(response.results.len(), 2);
     fs::remove_dir_all(root).expect("cleanup relevance index");
 }
 
 #[test]
-fn counts_are_post_collapse_and_only_run_when_requested() {
-    let (root, connection) = seeded_root("counts-collapse");
+fn search_prepares_no_distinct_path_statement() {
+    let (root, connection) = seeded_root("no-distinct-path");
     insert(
         &connection,
-        "needle aggregate",
-        "20260101/default/090000_60",
+        "needle",
+        "notes/needle.md",
         "20260101",
         "",
-        "segment",
-        "default",
+        "flow",
+        "",
         0,
     );
+    SQL_TRACE.lock().expect("trace lock").clear();
+    connection.trace_v2(TraceEventCodes::SQLITE_TRACE_STMT, Some(record_sql));
+    let response = search_with_connection_for_test(
+        connection,
+        db_path(&root),
+        &request("needle"),
+        reference_date(),
+    )
+    .expect("search with trace");
+    assert_eq!(response.0.results.len(), 1);
+    assert!(
+        SQL_TRACE
+            .lock()
+            .expect("trace lock")
+            .iter()
+            .all(|sql| !sql.contains("SELECT DISTINCT path"))
+    );
+    fs::remove_dir_all(root).expect("cleanup trace index");
+}
+
+#[test]
+fn counts_only_run_when_requested() {
+    let (root, connection) = seeded_root("counts");
     insert(
         &connection,
         "needle child",
@@ -521,16 +548,6 @@ fn counts_are_post_collapse_and_only_run_when_requested() {
         "20260101",
         "work",
         "flow",
-        "default",
-        0,
-    );
-    insert(
-        &connection,
-        "needle second aggregate",
-        "20260102/default/100000_60",
-        "20260102",
-        "",
-        "segment",
         "default",
         0,
     );
@@ -552,7 +569,6 @@ fn counts_are_post_collapse_and_only_run_when_requested() {
         search_with_connection_for_test(connection, db_path(&root), &no_counts, reference_date())
             .expect("search without counts");
     assert_eq!(counters.aggregate_calls, 0);
-    assert_eq!(counters.collapse_bound_parameters, 2);
     assert_eq!(response.total, None);
     assert_eq!(response.results.len(), 2);
 
@@ -568,7 +584,6 @@ fn counts_are_post_collapse_and_only_run_when_requested() {
     assert_eq!(counts.total, 2);
     assert_eq!(counts.agents.get("flow"), Some(&1));
     assert_eq!(counts.agents.get("news"), Some(&1));
-    assert!(!counts.agents.contains_key("segment"));
 
     let independent =
         search_counts(&root, &with_counts, reference_date()).expect("independent counts");

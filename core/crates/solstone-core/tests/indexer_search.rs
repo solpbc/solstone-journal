@@ -124,12 +124,11 @@ fn indexer_search_reaches_query_engine_and_pins_json_envelope() {
     let hit = &response["results"][0];
     assert_eq!(
         object_keys(hit),
-        BTreeSet::from(["id", "metadata", "not_directly_readable", "score", "text"])
+        BTreeSet::from(["id", "metadata", "score", "text"])
     );
     assert_eq!(hit["id"], "notes/jose.md:7");
     assert_eq!(hit["text"], "José completed the migration");
     assert!(hit["score"].is_number());
-    assert_eq!(hit["not_directly_readable"], false);
     assert_eq!(
         object_keys(&hit["metadata"]),
         BTreeSet::from(["agent", "day", "facet", "idx", "path", "stream"])

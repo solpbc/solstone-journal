@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use chrono::NaiveDate;
 use rusqlite::{Connection, Error, ErrorCode, OpenFlags, OptionalExtension, params_from_iter};
 
-use crate::collapse::collapse_redundant_segments;
 use crate::compile::{CompileOutcome, compile_query};
 use crate::ladder::relaxed_plan;
 use crate::predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
@@ -112,7 +111,6 @@ fn resolve_plan(
         plan = candidate;
         relaxed = true;
     }
-    plan = collapse_redundant_segments(connection, plan)?;
     Ok((plan, relaxed))
 }
 
@@ -207,8 +205,6 @@ pub(crate) struct QueryConnection {
     aggregate_calls: usize,
     #[cfg(test)]
     agents_calls: usize,
-    #[cfg(test)]
-    collapse_bound_parameters: usize,
 }
 
 fn open_read_only(journal: &Path) -> Result<QueryConnection, IndexAccessError> {
@@ -232,8 +228,6 @@ impl QueryConnection {
             aggregate_calls: 0,
             #[cfg(test)]
             agents_calls: 0,
-            #[cfg(test)]
-            collapse_bound_parameters: 0,
         }
     }
 
@@ -313,38 +307,6 @@ impl QueryConnection {
         Ok(found.is_some())
     }
 
-    pub(crate) fn distinct_paths(
-        &mut self,
-        plan: &SqlPlan,
-        agent_clause: &str,
-    ) -> Result<BTreeSet<String>, IndexAccessError> {
-        let sql = format!(
-            "SELECT DISTINCT path FROM chunks WHERE {} AND {agent_clause}",
-            plan.where_clause
-        );
-        let mut statement = self
-            .connection
-            .prepare(&sql)
-            .map_err(|error| self.classify(error))?;
-        let paths = statement
-            .query_map(params_from_iter(plan.params.iter()), |row| {
-                row.get::<_, String>(0)
-            })
-            .map_err(|error| self.classify(error))?
-            .collect::<Result<BTreeSet<_>, _>>()
-            .map_err(|error| self.classify(error))?;
-        Ok(paths)
-    }
-
-    pub(crate) fn note_collapse_bind_count(&mut self, count: usize) {
-        #[cfg(test)]
-        {
-            self.collapse_bound_parameters = count;
-        }
-        #[cfg(not(test))]
-        let _ = count;
-    }
-
     fn fetch_hits(
         &mut self,
         plan: &SqlPlan,
@@ -391,7 +353,6 @@ impl QueryConnection {
                         idx,
                     },
                     score,
-                    not_directly_readable: agent == "segment",
                 })
             })
             .map_err(|error| self.classify(error))?
@@ -520,7 +481,6 @@ fn classify_sql_error(path: PathBuf, error: Error) -> IndexAccessError {
 pub(crate) struct QueryCounters {
     pub(crate) aggregate_calls: usize,
     pub(crate) agents_calls: usize,
-    pub(crate) collapse_bound_parameters: usize,
 }
 
 #[cfg(test)]
@@ -538,7 +498,6 @@ pub(crate) fn search_with_connection_for_test(
         QueryCounters {
             aggregate_calls: connection.aggregate_calls,
             agents_calls: connection.agents_calls,
-            collapse_bound_parameters: connection.collapse_bound_parameters,
         },
     ))
 }
@@ -555,7 +514,6 @@ pub(crate) fn agents_with_connection_for_test(
         QueryCounters {
             aggregate_calls: connection.aggregate_calls,
             agents_calls: connection.agents_calls,
-            collapse_bound_parameters: connection.collapse_bound_parameters,
         },
     ))
 }

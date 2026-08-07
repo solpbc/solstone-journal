@@ -11,10 +11,6 @@ use std::path::PathBuf;
 
 #[derive(Debug)]
 pub enum StoreError {
-    AggregateIncomplete {
-        segment: String,
-        warnings: Vec<String>,
-    },
     Discovery(solstone_core_indexer::discovery::DiscoveryError),
     Edge(solstone_core_indexer::edges::EdgeError),
     EdgeFileFailed(String),
@@ -31,17 +27,6 @@ pub enum StoreError {
 impl fmt::Display for StoreError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            StoreError::AggregateIncomplete { segment, warnings } => {
-                if warnings.is_empty() {
-                    write!(formatter, "segment aggregate incomplete for {segment}")
-                } else {
-                    write!(
-                        formatter,
-                        "segment aggregate incomplete for {segment}: {}",
-                        warnings.join("; ")
-                    )
-                }
-            }
             StoreError::Discovery(error) => write!(formatter, "{error}"),
             StoreError::Edge(error) => write!(formatter, "{error}"),
             StoreError::EdgeFileFailed(message) => write!(formatter, "{message}"),

@@ -111,7 +111,6 @@ pub struct SearchHit {
     pub text: String,
     pub metadata: SearchMetadata,
     pub score: f64,
-    pub not_directly_readable: bool,
 }
 
 /// Metadata attached to a journal search result.
