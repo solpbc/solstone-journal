@@ -12,7 +12,7 @@ use std::{
     time::Duration,
 };
 
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::{
     io::AsyncBufReadExt,
@@ -93,10 +93,26 @@ async fn native_service_drives_its_relay_then_closes_it_when_posture_leaves_spl(
             .await
             .map_err(|_| "fake relay WebSocket upgrade failed".to_owned())?;
         let _ = opened_send.send(());
-        let message = timeout(Duration::from_secs(7), socket.next())
-            .await
-            .map_err(|_| "native service kept the relay socket open".to_owned())?;
-        let closed = matches!(message, None | Some(Err(_)) | Some(Ok(Message::Close(_))));
+        // The listener heartbeats: it Pings as soon as the socket is up and
+        // gates its own Connected health on the matching Pong, so a relay that
+        // swallows the Ping tears the transport down for the wrong reason.
+        // Answer the heartbeat and keep reading until the transport ends.
+        let closed = timeout(Duration::from_secs(7), async {
+            loop {
+                match socket.next().await {
+                    None | Some(Err(_)) | Some(Ok(Message::Close(_))) => {
+                        return Ok::<bool, String>(true);
+                    }
+                    Some(Ok(Message::Ping(nonce))) => socket
+                        .send(Message::Pong(nonce))
+                        .await
+                        .map_err(|_| "fake relay could not answer the heartbeat".to_owned())?,
+                    Some(Ok(_)) => return Ok(false),
+                }
+            }
+        })
+        .await
+        .map_err(|_| "native service kept the relay socket open".to_owned())??;
         let _ = closed_send.send(closed);
         Ok::<(), String>(())
     });
