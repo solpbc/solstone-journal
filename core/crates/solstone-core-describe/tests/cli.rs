@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
@@ -251,7 +252,11 @@ fn describe_runs_one_session_and_promotes_an_analyzed_artifact() {
     assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
     assert_eq!(rows[0]["_solstone_processing"]["reason_code"], "ok");
     assert_eq!(rows[0]["_solstone_thinking"]["model"], "describe-stub");
-    assert!(rows[1..].iter().all(|row| row["finish_reason"] == "stop"));
+    assert!(
+        rows[1..]
+            .iter()
+            .all(|row| row.get("finish_reason").is_none())
+    );
     assert!(no_temp_files(&root));
     fs::remove_dir_all(root).expect("remove temporary root");
 }
@@ -503,7 +508,7 @@ fn unknown_finish_reason_is_clean_and_request_uses_phase_one_contract() {
     assert_eq!(request["max_output_tokens"], 512);
     assert_eq!(request["thinking_budget"], 1024);
     let rows = read_jsonl(&video.with_extension("jsonl"));
-    assert_eq!(rows[1]["finish_reason"], "unknown");
+    assert!(rows[1].get("finish_reason").is_none());
     assert!(rows[1].get("error").is_none());
     fs::remove_dir_all(root).expect("remove temporary root");
 }
@@ -713,11 +718,57 @@ fn extraction_unparseable_json_retries_to_its_own_ceiling() {
     assert_eq!(extraction_requests(&request_log).len(), 5);
     let rows = read_jsonl(&video.with_extension("jsonl"));
     assert!(rows[1].get("error").is_some());
+    let record = rows[1]["requests"][1].as_object().expect("category record");
+    assert_eq!(record.get("retries"), Some(&serde_json::json!(4)));
+    assert_eq!(
+        record.keys().cloned().collect::<BTreeSet<_>>(),
+        ["category", "duration", "model", "retries", "type"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    );
     assert_eq!(rows[0]["_solstone_processing"]["state"], "failed");
     assert_eq!(
         rows[0]["_solstone_processing"]["reason_code"],
         "analysis_failed"
     );
+    fs::remove_dir_all(root).expect("remove root");
+}
+
+#[test]
+fn journal_request_records_match_phase_one_and_category_shapes() {
+    let root = temporary_root("request-record-shape");
+    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    let output = describe(&root, &video, "generated")
+        .output()
+        .expect("describe");
+    assert!(output.status.success());
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    let requests = rows[1]["requests"].as_array().expect("requests array");
+    assert_eq!(requests.len(), 2);
+    let describe = requests[0].as_object().expect("describe record");
+    assert_eq!(
+        describe.keys().cloned().collect::<BTreeSet<_>>(),
+        ["duration", "model", "type"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    );
+    assert_eq!(describe["type"], "describe");
+    assert_eq!(describe["model"], "describe-stub");
+    assert!(describe["duration"].is_number());
+    let category = requests[1].as_object().expect("category record");
+    assert_eq!(
+        category.keys().cloned().collect::<BTreeSet<_>>(),
+        ["category", "duration", "model", "type"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    );
+    assert_eq!(category["type"], "category");
+    assert_eq!(category["category"], "code");
+    assert_eq!(category["model"], "describe-stub");
+    assert!(category["duration"].is_number());
     fs::remove_dir_all(root).expect("remove root");
 }
 

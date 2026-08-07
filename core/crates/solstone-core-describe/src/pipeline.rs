@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value, json};
 use solstone_core_generate::{GenerateResponse, RefusalReason, SessionCompletion};
@@ -37,6 +37,11 @@ struct Pending {
     attempt: u64,
 }
 
+struct Outstanding {
+    pending: Pending,
+    submitted_at: Instant,
+}
+
 struct CategorizedRow {
     frame_id: u64,
     timestamp: f64,
@@ -44,7 +49,6 @@ struct CategorizedRow {
     analysis: Option<Value>,
     error: Option<String>,
     requests: Vec<Value>,
-    finish_reason: String,
 }
 
 struct Promotion<'a> {
@@ -153,7 +157,7 @@ pub fn run_with_factory(
         .into_iter()
         .map(|frame| Pending { frame, attempt: 0 })
         .collect();
-    let mut outstanding: HashMap<String, Pending> = HashMap::new();
+    let mut outstanding: HashMap<String, Outstanding> = HashMap::new();
     let mut categorized = Vec::new();
     let mut failures = false;
     let mut model = None;
@@ -168,10 +172,17 @@ pub fn run_with_factory(
             })?;
             let req = request::request(pending.frame.frame_id, pending.attempt, &png, &instruction);
             let id = req.id.clone().expect("describe request ids are present");
+            let submitted_at = Instant::now();
             if session.submit(req).is_err() {
                 return Err(blocked(options.journal, work_key, None, None, None));
             }
-            outstanding.insert(id, pending);
+            outstanding.insert(
+                id,
+                Outstanding {
+                    pending,
+                    submitted_at,
+                },
+            );
         }
         let completion = session
             .recv_timeout(Duration::from_secs(120))
@@ -184,9 +195,13 @@ pub fn run_with_factory(
             GenerateResponse::Refused(r) => r.id.clone(),
         }
         .ok_or_else(|| RunError::Internal("session response omitted id".to_owned()))?;
-        let pending = outstanding
+        let Outstanding {
+            pending,
+            submitted_at,
+        } = outstanding
             .remove(&id)
             .ok_or_else(|| RunError::Internal("uncorrelated response".to_owned()))?;
+        let duration = submitted_at.elapsed().as_secs_f64();
         match response {
             GenerateResponse::Generated(generated) => {
                 model.get_or_insert(generated.model.clone());
@@ -207,8 +222,13 @@ pub fn run_with_factory(
                     png: pending.frame.png,
                     analysis: (!error).then_some(parsed).flatten(),
                     error: error_message,
-                    requests: vec![json!({"type":"describe","model":generated.model,"attempt":pending.attempt,"retries":pending.attempt})],
-                    finish_reason: generated.finish_reason,
+                    requests: vec![request_record(
+                        "describe",
+                        generated.model,
+                        duration,
+                        pending.attempt,
+                        None,
+                    )],
                 });
             }
             GenerateResponse::Refused(refusal) => {
@@ -236,8 +256,13 @@ pub fn run_with_factory(
                         png: pending.frame.png,
                         analysis: None,
                         error: Some(refusal.detail),
-                        requests: vec![json!({"type":"describe","attempt":pending.attempt,"retries":pending.attempt,"reason_code":code})],
-                        finish_reason: "unknown".to_owned(),
+                        requests: vec![request_record(
+                            "describe",
+                            String::new(),
+                            duration,
+                            pending.attempt,
+                            None,
+                        )],
                     });
                 }
             }
@@ -284,7 +309,8 @@ pub fn run_with_factory(
     let mut final_rows = Vec::new();
     let mut detection_disabled = false;
     for row in categorized {
-        let mut result = json!({"frame_id":row.frame_id,"timestamp":row.timestamp,"requests":row.requests,"finish_reason":row.finish_reason});
+        let mut result =
+            json!({"frame_id":row.frame_id,"timestamp":row.timestamp,"requests":row.requests});
         if let Some(analysis) = &row.analysis {
             result["analysis"] = analysis.clone();
         }
@@ -323,8 +349,20 @@ pub fn run_with_factory(
                 &row.png,
                 &options.redact_rules,
             ) {
-                Ok(value) => result["content"][category.name] = value,
-                Err(ExtractionError::Failed(error)) => {
+                Ok((value, record)) => {
+                    result["requests"]
+                        .as_array_mut()
+                        .expect("requests array")
+                        .push(record);
+                    result["content"][category.name] = value;
+                }
+                Err(ExtractionError::Failed { error, record }) => {
+                    if let Some(record) = record {
+                        result["requests"]
+                            .as_array_mut()
+                            .expect("requests array")
+                            .push(record);
+                    }
                     failures = true;
                     if result.get("error").is_none() {
                         result["error"] = json!(error);
@@ -376,7 +414,10 @@ enum ExtractionError {
         code: Option<String>,
         provider: Option<String>,
     },
-    Failed(String),
+    Failed {
+        error: String,
+        record: Option<Value>,
+    },
     Session,
 }
 
@@ -386,14 +427,16 @@ fn extract_category(
     category: &crate::categories::CategoryMeta,
     png: &[u8],
     redact_rules: &[String],
-) -> Result<Value, ExtractionError> {
+) -> Result<(Value, Value), ExtractionError> {
     let mut attempt = 0;
     loop {
         let request = extraction::request(frame_id, category, png, attempt, redact_rules)
-            .ok_or_else(|| {
-                ExtractionError::Failed("failed to resize extraction frame".to_owned())
+            .ok_or_else(|| ExtractionError::Failed {
+                error: "failed to resize extraction frame".to_owned(),
+                record: None,
             })?;
         let id = request.id.clone().expect("extraction ids are present");
+        let submitted_at = Instant::now();
         session
             .submit(request)
             .map_err(|_| ExtractionError::Session)?;
@@ -410,15 +453,28 @@ fn extract_category(
         if response_id != Some(id.as_str()) {
             return Err(ExtractionError::Session);
         }
-        let failure = match response {
+        let duration = submitted_at.elapsed().as_secs_f64();
+        let (failure, model) = match response {
             GenerateResponse::Generated(generated) => {
+                let model = generated.model;
                 match extraction::parse_response(
                     category,
                     &generated.text,
                     &generated.finish_reason,
                 ) {
-                    Ok(value) => return Ok(value),
-                    Err(error) => error,
+                    Ok(value) => {
+                        return Ok((
+                            value,
+                            request_record(
+                                "category",
+                                model,
+                                duration,
+                                attempt,
+                                Some(category.name),
+                            ),
+                        ));
+                    }
+                    Err(error) => (error, model),
                 }
             }
             GenerateResponse::Refused(refusal) => {
@@ -429,16 +485,54 @@ fn extract_category(
                     });
                 }
                 if !refusal.retryable {
-                    return Err(ExtractionError::Failed(refusal.detail));
+                    return Err(ExtractionError::Failed {
+                        error: refusal.detail,
+                        record: Some(request_record(
+                            "category",
+                            String::new(),
+                            duration,
+                            attempt,
+                            Some(category.name),
+                        )),
+                    });
                 }
-                refusal.detail
+                (refusal.detail, String::new())
             }
         };
         if attempt + 1 >= MAX_ATTEMPTS {
-            return Err(ExtractionError::Failed(failure));
+            return Err(ExtractionError::Failed {
+                error: failure,
+                record: Some(request_record(
+                    "category",
+                    model,
+                    duration,
+                    attempt,
+                    Some(category.name),
+                )),
+            });
         }
         attempt += 1;
     }
+}
+
+fn request_record(
+    request_type: &str,
+    model: String,
+    duration: f64,
+    retries: u64,
+    category: Option<&str>,
+) -> Value {
+    let mut record = Map::new();
+    record.insert("type".to_owned(), json!(request_type));
+    record.insert("model".to_owned(), json!(model));
+    record.insert("duration".to_owned(), json!(duration));
+    if let Some(category) = category {
+        record.insert("category".to_owned(), json!(category));
+    }
+    if retries > 0 {
+        record.insert("retries".to_owned(), json!(retries));
+    }
+    Value::Object(record)
 }
 
 fn finalize_incomplete(mut results: Vec<(Value, usize)>) -> Vec<Value> {
