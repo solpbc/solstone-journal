@@ -148,5 +148,22 @@
       },
       "name": "astral_unicode_surrogate_escaping"
     }
+  ],
+  "python_nonfinite_value_cases": [
+    {
+      "expected_value_hash": "sha256:326eda6764180d48e6e3adc65706147b40990422f6f61a8f3444036c1df38a61",
+      "input_value_literal": "NaN",
+      "name": "python_nan"
+    },
+    {
+      "expected_value_hash": "sha256:30656dd673d38f78eb85d3e28e81007ffe1b69e19571c74e3d0d3d8d5f2ee8b7",
+      "input_value_literal": "Infinity",
+      "name": "python_positive_infinity"
+    },
+    {
+      "expected_value_hash": "sha256:f832a25bf14ab1f2a6ea3f2f63cbfdb6382d491b48e81dd27327a7a9d8dc883c",
+      "input_value_literal": "-Infinity",
+      "name": "python_negative_infinity"
+    }
   ]
 }

@@ -20,6 +20,11 @@ an absent metadata key, integers from strings, nested-object key order,
 non-ASCII escaping, source-family and source-record-id trimming, and composite
 from source-id identity.
 
+The `python_nonfinite_value_cases` entries preserve a narrow predecessor
+compatibility edge: Python's JSON encoder emits `NaN`, `Infinity`, and
+`-Infinity` even though standard JSON does not. Their strings describe values
+the Rust test must construct; they are not ordinary JSON-number literals.
+
 body_source_codec_rows.json supplies independently hand-authored examples of
 all three normalized schemas currently accepted by the shipping body reader,
 including every JSON value shape, unknown nested metadata, explicit nulls,
