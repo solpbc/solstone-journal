@@ -82,7 +82,7 @@ def read_journal_config(journal_path: str | Path | None = None) -> dict[str, Any
     try:
         with config_path.open("r", encoding="utf-8") as handle:
             return json.load(handle)
-    except (json.JSONDecodeError, OSError) as exc:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
         raise CorruptConfigError(config_path, error=exc) from exc
 
 

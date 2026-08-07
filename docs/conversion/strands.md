@@ -180,7 +180,41 @@ Talent output landing durably. Carries the failure semantics: retries, back-offs
 ### `S:thinking:local`
 **Connects** `P-thinking` → `P-local` · **Owner** `P-thinking` · **Tier** schema + fixture
 
-The local model lane. ⚠ Not a types boundary — it is loopback HTTP **plus a durable record**. See [`plates.md`](plates.md) § `P-local` for the two things not to carry.
+The local model lane. ⚠ Not a types boundary — it is loopback HTTP **plus a durable record**. See
+[`plates.md`](plates.md) § `P-local` for what must and must not be carried across it.
+
+🔴 **The record that crosses this strand is the local lane's own, not a `generate` response.** The
+obvious design — have the local side emit the boundary's tagged-union response directly — is both
+unsatisfiable and unobservable, and both halves are worth writing down because the design reads as
+correct:
+
+- **Unsatisfiable.** A refusal needs `reason`, drawn from the boundary's closed refusal vocabulary, and
+  the only reason-code→reason mapping in `core/fixtures/generate_contract.json` is its conformance
+  vectors — **every one of which is an exception raised above this strand.** No local reason code has a
+  vector, so "read it from the fixture, hold no copy" cannot be satisfied for any refusal this lane
+  produces.
+- **Unobservable.** The exception→refusal mapping already lives at the wire: it resolves the reason from
+  the raising exception's class and computes `retryable` and `blocking` from the fixture by reason code.
+  A local side that also emitted them would have its answer round-trip through a Python exception and be
+  **re-derived at the wire**, which silently wins. An implementation that hard-coded both booleans would
+  produce byte-identical output.
+
+✅ **So this strand carries a local result record** — a completion with its usage, finish reason, budgets
+and inference block, or a failure carrying a reason code and a detail — and the boundary above keeps
+owning the contract translation. One derivation, at the end that owns it. The record's shape is pinned
+in `core/fixtures/local_contract.json`.
+
+⚠ **`finish_reason` is load-bearing across this strand.** A completion the provider cut off arrives as a
+success, and the caller is the one that must notice; it is also normalised on the way through, so a
+consumer matching the endpoint's own spelling sees nothing wrong.
+
+⚠ **The inference telemetry is part of this strand's durable surface, not a log.** One row per call —
+success and every error path — carrying the queue wait, the admission slot, the serving capacity and its
+source, the prompt-cache state, the server timings, the retry index, the outcome and the reason code.
+🔴 And it is load-bearing for the boundary above in a way nothing states: the wire reports a hint applied
+**only if the result carries an inference block**, so an implementation that drops the block makes the
+applied-hints set empty forever, and an assertion that a hint is reported as not-applied is satisfied by
+reporting nothing at all.
 
 ### `S:journal:index`
 **Connects** `P-journal` → `P-index` · **Owner** `P-index` · **Tier** fixture

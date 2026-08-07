@@ -315,6 +315,44 @@ def _is_path_replace_call(node: ast.Call) -> bool:
     return isinstance(node.func, ast.Attribute) and node.func.attr == "replace"
 
 
+_PLAIN_WRITE_METHODS = frozenset({"write_text", "write_bytes"})
+_WRITE_MODE_CHARS = frozenset("wax+")
+
+
+def _plain_write_method(node: ast.Call) -> str | None:
+    """Return the method name for ``<expr>.write_text(...)`` / ``.write_bytes(...)``.
+
+    D5 - Plain-write detection. ``atomic_replace``/``os.replace``/``Path.replace``
+    are not the only ways to publish bytes at a path. A bare ``write_text`` is a
+    non-atomic, unlocked, default-mode write of the same file, and it was outside
+    this gate's detection set while a live instance sat in the tree.
+    """
+    func = node.func
+    if isinstance(func, ast.Attribute) and func.attr in _PLAIN_WRITE_METHODS:
+        return func.attr
+    return None
+
+
+def _open_mode_is_write(node: ast.Call, mode_index: int) -> bool:
+    """True when an ``open``-shaped call names a writing mode."""
+    mode: str | None = None
+    if len(node.args) > mode_index and isinstance(node.args[mode_index], ast.Constant):
+        value = node.args[mode_index].value
+        if isinstance(value, str):
+            mode = value
+    for keyword in node.keywords:
+        if keyword.arg == "mode" and isinstance(keyword.value, ast.Constant):
+            value = keyword.value.value
+            if isinstance(value, str):
+                mode = value
+    return mode is not None and bool(_WRITE_MODE_CHARS & frozenset(mode))
+
+
+def _is_builtin_open_call(func: ast.expr) -> bool:
+    """True for a bare ``open(...)`` call."""
+    return isinstance(func, ast.Name) and func.id == "open"
+
+
 def scan_source(source: str, filename: str = "<source>") -> list[tuple[int, str, str]]:
     """Return sorted ``(lineno, kind, detail)`` production violations."""
     tree = ast.parse(source, filename=filename)
@@ -396,6 +434,41 @@ def scan_source(source: str, filename: str = "<source>") -> list[tuple[int, str,
                             node.lineno,
                             "journal_config_replace",
                             "Path.replace targets config/journal.json",
+                        )
+                    )
+            elif (plain_write := _plain_write_method(node)) is not None:
+                if isinstance(node.func, ast.Attribute) and _is_config_path_expr(
+                    node.func.value, bindings, config_path_names
+                ):
+                    findings.append(
+                        (
+                            node.lineno,
+                            "journal_config_replace",
+                            f"{plain_write} targets config/journal.json",
+                        )
+                    )
+            elif _is_builtin_open_call(node.func):
+                if (
+                    node.args
+                    and _is_config_path_expr(node.args[0], bindings, config_path_names)
+                    and _open_mode_is_write(node, 1)
+                ):
+                    findings.append(
+                        (
+                            node.lineno,
+                            "journal_config_replace",
+                            "open() for writing targets config/journal.json",
+                        )
+                    )
+            elif isinstance(node.func, ast.Attribute) and node.func.attr == "open":
+                if _is_config_path_expr(
+                    node.func.value, bindings, config_path_names
+                ) and _open_mode_is_write(node, 0):
+                    findings.append(
+                        (
+                            node.lineno,
+                            "journal_config_replace",
+                            "Path.open() for writing targets config/journal.json",
                         )
                     )
             elif _called_hold_lock(node.func, bindings):

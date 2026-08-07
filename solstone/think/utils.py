@@ -740,7 +740,7 @@ def _read_existing_journal_config(config_path: Path) -> dict[str, Any] | None:
             config = json.load(f)
     except (FileNotFoundError, NotADirectoryError):
         return None
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise CorruptConfigError(config_path, error=exc) from exc
     if not isinstance(config, dict):
         raise CorruptConfigError(config_path)
@@ -795,7 +795,7 @@ def get_config() -> dict[str, Any]:
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             return json.load(f)
-    except (json.JSONDecodeError, OSError) as exc:
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
         raise CorruptConfigError(config_path, error=exc) from exc
 
 
