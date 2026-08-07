@@ -231,7 +231,32 @@ See [`plates.md`](plates.md) — this store fails by **bricking**, not degrading
 ### `S:*:journal-config`
 **Owner** `P-journal-config` · **Tier** fixture
 
-See [`plates.md`](plates.md) § `P-journal-config` for the fail-closed posture that is the house style.
+The many-to-one shape is the whole reason the contract sits here: **55 production modules** touch this
+file — 31 through the reader, 19 through the mutator across 46 call sites — and the plate cannot
+negotiate a posture per caller.
+
+See [`plates.md`](plates.md) § `P-journal-config` for the fail-closed posture that is the house style,
+the four readers that already break it, the two default sets, and the two *write new, read old*
+questions that are still open.
+
+🔴 **What every consumer of this strand is entitled to, and what it must not do:**
+
+- **A missing config is not an error** — it yields defaults and the consumer gets values. **A config
+  that exists and cannot be read or parsed is an error**, and the consumer carries it rather than
+  substituting. ⛔ *"Log a warning and use a default"* is the failure this contract exists to prevent,
+  and it is what three of the four broken readers do.
+- ⛔ **`Path.exists()` is not the missing-versus-present test.** It answers `false` on *any* stat
+  error, so an unreadable parent directory reads as *no config at all* and every reader silently
+  substitutes defaults for the owner's real settings. Only a read failing with **not-found** is
+  missing; every other read failure is an error. ⚠ The same trap catches an instrument — a symlink
+  loop and a directory-in-place both report "absent" through `exists()`.
+- ⛔ **The defaults are not a caller parameter.** A consumer never supplies a default set; the plate
+  owns both of them. Two writers supplying different defaults is how a three-key set became the
+  materialized contents of a config.
+- ⚠ **A consumer that only reads must be able to depend on the read half.** The durable-write
+  primitives are banned outside the write authorities, and that ban is correct — but it is also why
+  three crates hand-rolled their own reader and two lost the posture. **Without a home a reader may
+  legitimately depend on, this contract has no enforcement at the boundary it names.**
 
 ### `S:web:thinking` — chat
 **Owner** `P-thinking` · **Tier** schema
