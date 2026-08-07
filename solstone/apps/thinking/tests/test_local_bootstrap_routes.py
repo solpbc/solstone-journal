@@ -152,33 +152,69 @@ def test_start_bootstrap_timeout_terminates_and_marks_launch_failure(monkeypatch
     monkeypatch.setattr(local_bootstrap.time, "monotonic", lambda: next(values))
     monkeypatch.setattr(local_bootstrap.time, "sleep", lambda _seconds: None)
     marked = []
-    monkeypatch.setattr(local_bootstrap, "_mark_native_launch_failure", lambda target, message: marked.append((target, message)))
+    monkeypatch.setattr(local_bootstrap, "_mark_native_launch_failure", lambda target, message, **kwargs: marked.append((target, message, kwargs)))
     with pytest.raises(local_bootstrap.LocalBootstrapStartError):
         local_bootstrap.start_bootstrap(MODEL)
-    assert process.terminated and marked[0][0] == "target"
+    assert process.terminated and marked[0][0] == {"provider": "local"}
 
 
 def test_start_bootstrap_popen_error_marks_launch_failure(monkeypatch):
     _base_start(monkeypatch)
     monkeypatch.setattr(local_bootstrap.local_install, "spawn_install_local", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("missing core")))
     marked = []
-    monkeypatch.setattr(local_bootstrap, "_mark_native_launch_failure", lambda target, message: marked.append((target, message)))
+    monkeypatch.setattr(local_bootstrap, "_mark_native_launch_failure", lambda target, message, **kwargs: marked.append((target, message, kwargs)))
     with pytest.raises(local_bootstrap.LocalBootstrapStartError, match="missing core"):
         local_bootstrap.start_bootstrap(MODEL)
-    assert marked == [("target", "missing core")]
+    assert marked == [({"provider": "local"}, "missing core", {})]
 
 
-def test_guarded_launch_failure_never_overwrites_different_target(monkeypatch):
+def test_guarded_timeout_failure_uses_captured_attempt_and_ignores_newer_attempt(monkeypatch):
     class Lease:
         def release(self):
             pass
 
     writes = []
+    captured = {
+        "provider": "local", "install_state": "downloading", "attempt_id": "old",
+        "target_fingerprint_json": "{}", "target_fingerprint_sha256": "target",
+        "revision": 1, "schema_version": 1, "started_at": None, "last_transition_at": None,
+        "last_progress_at": None, "completed_at": None, "progress_bytes_received": None,
+        "progress_bytes_total": None, "install_error": None, "error_code": None, "owner": None,
+    }
     monkeypatch.setattr(local_bootstrap, "acquire_install_lease", lambda _provider: Lease())
-    monkeypatch.setattr(local_bootstrap, "_read_status", lambda: {"install_state": "downloading", "target_fingerprint_sha256": "different"})
+    def stale_write(status):
+        writes.append(status)
+        raise RuntimeError("attempt id changed")
+
+    monkeypatch.setattr(local_bootstrap, "_write_status", stale_write)
+    local_bootstrap._mark_native_launch_failure({"provider": "local"}, "timeout", attempt=captured)
+    assert writes[0]["attempt_id"] == "old"
+
+
+def test_launch_failure_begins_and_persists_a_durable_failed_attempt(monkeypatch):
+    class Lease:
+        def release(self):
+            pass
+
+    begun = []
+    writes = []
+    attempt = {
+        "provider": "local", "install_state": "resolving", "attempt_id": "new",
+        "target_fingerprint_json": "{}", "target_fingerprint_sha256": "target",
+        "revision": 1, "schema_version": 1, "started_at": None, "last_transition_at": None,
+        "last_progress_at": None, "completed_at": None, "progress_bytes_received": None,
+        "progress_bytes_total": None, "install_error": None, "error_code": None, "owner": None,
+    }
+    monkeypatch.setattr(local_bootstrap, "acquire_install_lease", lambda _provider: Lease())
+    monkeypatch.setattr(
+        local_bootstrap,
+        "begin_or_replace_install_attempt",
+        lambda provider, target, **kwargs: begun.append((provider, target, kwargs)) or attempt,
+    )
     monkeypatch.setattr(local_bootstrap, "_write_status", lambda status: writes.append(status))
-    local_bootstrap._mark_native_launch_failure("target", "launch failed")
-    assert writes == []
+    local_bootstrap._mark_native_launch_failure({"provider": "local"}, "missing core")
+    assert begun[0][1] == {"provider": "local"}
+    assert writes[0]["install_state"] == "failed"
 
 
 def test_reaper_removes_completed_process(monkeypatch):
@@ -196,3 +232,28 @@ def test_mlx_branch_spawns_mlx_native_process(monkeypatch):
     monkeypatch.setattr(local_bootstrap.mlx_install, "spawn_install_local_mlx", lambda *_args, **_kwargs: process)
     monkeypatch.setattr(local_bootstrap, "_reap_process", lambda *_args: None)
     assert local_bootstrap.start_bootstrap(MODEL) == ({"install_state": "resolving"}, 202)
+
+
+def test_mlx_pending_fetch_returns_202_without_waiting_for_native_status(monkeypatch):
+    process = _Process([None, None])
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_request(_model, _owner):
+        started.set()
+        assert release.wait(timeout=1)
+        return {"model_id": local_bootstrap.QWEN_35_9B}
+
+    _base_start(monkeypatch, mlx=True, statuses=[{"install_state": "idle", "target_fingerprint_sha256": None}] * 3)
+    monkeypatch.setattr(local_bootstrap.mlx_install, "_run_request", slow_request)
+    monkeypatch.setattr(local_bootstrap.mlx_install, "_spawn_core_install", lambda *_args: process)
+    monkeypatch.setattr(local_bootstrap, "_reap_process", lambda *_args: None)
+    values = iter([0.0, 0.0, 6.0])
+    monkeypatch.setattr(local_bootstrap.time, "monotonic", lambda: next(values))
+    monkeypatch.setattr(local_bootstrap.time, "sleep", lambda _seconds: None)
+    assert local_bootstrap.start_bootstrap(MODEL) == ({"install_state": "resolving"}, 202)
+    assert started.wait(timeout=1)
+    handle = local_bootstrap._INSTALL_PROCESSES[local_bootstrap.QWEN_35_9B]
+    assert handle.pending is True
+    release.set()
+    handle.wait(timeout=1)

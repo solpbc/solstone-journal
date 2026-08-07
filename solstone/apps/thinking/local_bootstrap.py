@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+from typing import Any
 
 from solstone.apps.thinking.install_copy import (
     LOCAL_MEMORY_WARNING_LOW_TEMPLATE,
@@ -23,6 +24,7 @@ from solstone.think.providers.install_lease import acquire_install_lease, probe_
 from solstone.think.providers.install_state import (
     IN_FLIGHT_STATES,
     InstallStatus,
+    begin_or_replace_install_attempt,
     read_install_status,
     transition_state,
     write_install_status,
@@ -44,7 +46,7 @@ from solstone.think.providers.memory import (
 
 logger = logging.getLogger(__name__)
 
-_INSTALL_PROCESSES: dict[str, subprocess.Popen[str]] = {}
+_INSTALL_PROCESSES: dict[str, Any] = {}
 _INSTALL_LOCK = threading.Lock()
 _MLX_MODEL_LABEL = f"qwen 3.5 9B VLM — {gb_label(MLX_AVAILABLE_FLOOR_BYTES)} GB"
 
@@ -316,11 +318,14 @@ def start_bootstrap(model: str) -> tuple[dict[str, str], int]:
         try:
             process = mlx_install.spawn_install_local_mlx(model_id, owner={"entry": "thinking_bootstrap"}) if _is_mlx_backend() else local_install.spawn_install_local(model_id, owner={"entry": "thinking_bootstrap"})
         except Exception as exc:
-            _mark_native_launch_failure(target_sha, str(exc))
+            _mark_native_launch_failure(fingerprint, str(exc))
             raise LocalBootstrapStartError(str(exc)) from exc
     deadline = time.monotonic() + 5.0
+    attempt_context: InstallStatus | None = None
     while time.monotonic() < deadline:
         status = _read_status()
+        if status["target_fingerprint_sha256"] == target_sha:
+            attempt_context = status
         if status["install_state"] in IN_FLIGHT_STATES and status["target_fingerprint_sha256"] == target_sha:
             with _INSTALL_LOCK:
                 _INSTALL_PROCESSES[model_id] = process
@@ -329,11 +334,27 @@ def start_bootstrap(model: str) -> tuple[dict[str, str], int]:
         if process.poll() is not None:
             if process.returncode == 75:
                 return {"install_state": _read_status()["install_state"], "reason_code": "install_busy"}, 409
+            launch_error = getattr(process, "launch_error", None)
+            if launch_error is not None:
+                _mark_native_launch_failure(fingerprint, str(launch_error))
             raise LocalBootstrapStartError("local bootstrap process exited before starting")
         time.sleep(0.05)
+    if _is_mlx_backend() and bool(getattr(process, "pending", False)):
+        with _INSTALL_LOCK:
+            _INSTALL_PROCESSES[model_id] = process
+        threading.Thread(target=_reap_process, args=(model_id, process), name=f"local-provider-reaper-{model_id}", daemon=True).start()
+        return {"install_state": "resolving"}, 202
     process.terminate()
-    process.wait(timeout=5)
-    _mark_native_launch_failure(target_sha, "local bootstrap process did not publish initial status")
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+    _mark_native_launch_failure(
+        fingerprint,
+        "local bootstrap process did not publish initial status",
+        attempt=attempt_context,
+    )
     raise LocalBootstrapStartError("local bootstrap process did not publish initial status")
 
 
@@ -361,21 +382,47 @@ def _disk_blocked_reason(report: FitReport) -> str:
     return ""
 
 
-def _reap_process(model: str, process: subprocess.Popen[str]) -> None:
+def _reap_process(model: str, process: Any) -> None:
     process.wait()
     with _INSTALL_LOCK:
         if _INSTALL_PROCESSES.get(model) is process:
             _INSTALL_PROCESSES.pop(model, None)
 
 
-def _mark_native_launch_failure(target_sha: str, message: str) -> None:
-    """The only Python failure write: a launch/publish failure native code cannot see."""
+def _mark_native_launch_failure(
+    target: dict[str, Any],
+    message: str,
+    *,
+    attempt: InstallStatus | None = None,
+) -> None:
+    """Durably fail a missing launch or the exact attempt observed by this poll."""
     lease = acquire_install_lease(local_install.LOCAL_PROVIDER_NAME)
     if lease is None:
         return
     try:
-        status = _read_status()
-        if status["install_state"] in IN_FLIGHT_STATES and status["target_fingerprint_sha256"] == target_sha:
-            _write_status(transition_state(status, new_state="failed", error=message, error_code="native_launch_failed"))
+        if attempt is None:
+            status = begin_or_replace_install_attempt(
+                local_install.LOCAL_PROVIDER_NAME,
+                target,
+                initial_state="resolving",
+                owner={"entry": "thinking_bootstrap", "failure": "native_launch"},
+            )
+            error_code = "native_launch_failed"
+        else:
+            status = attempt
+            error_code = "native_launch_timeout"
+        try:
+            _write_status(
+                transition_state(
+                    status,
+                    new_state="failed",
+                    error=message,
+                    error_code=error_code,
+                )
+            )
+        except Exception:
+            if attempt is None:
+                raise
+            logger.warning("native bootstrap timeout failure was superseded", exc_info=True)
     finally:
         lease.release()

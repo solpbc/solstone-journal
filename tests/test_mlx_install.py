@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -86,12 +87,25 @@ def test_install_local_mlx_maps_busy_and_failure(monkeypatch):
         mlx_install.install_local_mlx()
 
 
-def test_spawn_install_local_mlx_returns_process_without_waiting(monkeypatch):
+def test_spawn_install_local_mlx_returns_before_snapshot_fetch_finishes(monkeypatch):
     process = object()
     calls = []
-    monkeypatch.setattr(mlx_install, "_run_request", lambda model, owner: {"model_id": model, "owner": owner})
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_request(model, owner):
+        started.set()
+        assert release.wait(timeout=1)
+        return {"model_id": model, "owner": owner}
+
+    monkeypatch.setattr(mlx_install, "_run_request", slow_request)
     monkeypatch.setattr(mlx_install, "_spawn_core_install", lambda verb, request: calls.append((verb, request)) or process)
-    assert mlx_install.spawn_install_local_mlx(owner={"entry": "ui"}) is process
+    handle = mlx_install.spawn_install_local_mlx(owner={"entry": "ui"})
+    assert started.wait(timeout=1)
+    assert handle.pending is True
+    assert calls == []
+    release.set()
+    handle.wait(timeout=1)
     assert calls == [(["run", "mlx"], {"model_id": MODEL, "owner": {"entry": "ui"}})]
 
 

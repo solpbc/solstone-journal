@@ -9,6 +9,7 @@ import importlib
 import json
 import platform
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,87 @@ class MLXVerificationError(RuntimeError):
 
 class MLXInstallBusyError(MLXInstallUnavailableError):
     """The native installer refused because another local install owns the lease."""
+
+
+class MlxInstallProcess:
+    """Process-like handle for background snapshot acquisition followed by native install."""
+
+    def __init__(self, model_id: str, owner: dict[str, Any] | None) -> None:
+        self._cancelled = threading.Event()
+        self._done = threading.Event()
+        self._lock = threading.Lock()
+        self._process: subprocess.Popen[str] | None = None
+        self._returncode: int | None = None
+        self.launch_error: Exception | None = None
+        self._thread = threading.Thread(
+            target=self._run,
+            args=(model_id, owner),
+            name=f"mlx-install-fetch-{model_id}",
+            daemon=True,
+        )
+        self._thread.start()
+
+    @property
+    def pending(self) -> bool:
+        with self._lock:
+            return self._process is None and not self._done.is_set()
+
+    @property
+    def returncode(self) -> int | None:
+        with self._lock:
+            return self._returncode
+
+    def _run(self, model_id: str, owner: dict[str, Any] | None) -> None:
+        try:
+            request = _run_request(model_id, owner)
+            if self._cancelled.is_set():
+                return
+            process = _spawn_core_install(["run", "mlx"], request)
+            with self._lock:
+                self._process = process
+            if self._cancelled.is_set():
+                process.terminate()
+            returncode = process.wait()
+            with self._lock:
+                self._returncode = returncode
+        except Exception as exc:  # The bootstrap caller makes the durable launch failure visible.
+            self.launch_error = exc
+            with self._lock:
+                self._returncode = 74
+        finally:
+            self._done.set()
+
+    def poll(self) -> int | None:
+        with self._lock:
+            process = self._process
+            returncode = self._returncode
+        if process is None:
+            return returncode
+        result = process.poll()
+        if result is not None:
+            with self._lock:
+                self._returncode = result
+        return result
+
+    def terminate(self) -> None:
+        self._cancelled.set()
+        with self._lock:
+            process = self._process
+        if process is not None and process.poll() is None:
+            process.terminate()
+
+    def kill(self) -> None:
+        self._cancelled.set()
+        with self._lock:
+            process = self._process
+        if process is not None and process.poll() is None:
+            process.kill()
+
+    def wait(self, timeout: float | None = None) -> int | None:
+        self._thread.join(timeout)
+        if self._thread.is_alive():
+            raise subprocess.TimeoutExpired("mlx-install-fetch", timeout)
+        return self.returncode
 
 
 def _core_install_command(verb_words: list[str]) -> list[str]:
@@ -191,11 +273,11 @@ def install_local_mlx(model_id: str = QWEN_35_9B, *, owner: dict[str, Any] | Non
     return dict(_core_install_call(["run", "mlx"], _run_request(model_id, owner))["status"])
 
 
-def spawn_install_local_mlx(model_id: str = QWEN_35_9B, *, owner: dict[str, Any] | None = None, initial_state: str = "downloading") -> subprocess.Popen[str]:
+def spawn_install_local_mlx(model_id: str = QWEN_35_9B, *, owner: dict[str, Any] | None = None, initial_state: str = "downloading") -> MlxInstallProcess:
     del initial_state
-    return _spawn_core_install(["run", "mlx"], _run_request(model_id, owner))
+    return MlxInstallProcess(model_id, owner)
 
 
 __all__ = [
-    "GEMMA4_26B_A4B_4BIT", "MLXInstallBusyError", "MLXInstallUnavailableError", "MLXModelSpec", "MLXVerificationError", "MLX_SOFT_TOKEN_BUDGET", "QWEN_35_9B", "check_platform_and_package", "inspect_artifacts", "inspect_readiness", "install_local_mlx", "is_mlx_platform_supported", "resolve_model_spec", "snapshot_dir_for_spec", "spawn_install_local_mlx", "target_fingerprint", "validate_snapshot_sha256", "variant_dir_for_snapshot",
+    "GEMMA4_26B_A4B_4BIT", "MLXInstallBusyError", "MLXInstallUnavailableError", "MLXModelSpec", "MLXVerificationError", "MLX_SOFT_TOKEN_BUDGET", "MlxInstallProcess", "QWEN_35_9B", "check_platform_and_package", "inspect_artifacts", "inspect_readiness", "install_local_mlx", "is_mlx_platform_supported", "resolve_model_spec", "snapshot_dir_for_spec", "spawn_install_local_mlx", "target_fingerprint", "validate_snapshot_sha256", "variant_dir_for_snapshot",
 ]
