@@ -227,11 +227,8 @@ pub fn run_with_factory(
         .qualified_frames
         .iter()
         .filter(|frame| {
-            plan.as_ref().is_none_or(|plan| {
-                plan.phase1_gap_ids.contains(&frame.frame_id)
-                    || (!plan.reusable_rows.contains_key(&frame.frame_id)
-                        && !plan.phase3_gaps.contains_key(&frame.frame_id))
-            })
+            plan.as_ref()
+                .is_none_or(|plan| plan.phase1_gap_ids.contains(&frame.frame_id))
         })
         .cloned()
         .map(|frame| Pending { frame, attempt: 0 })
@@ -487,10 +484,6 @@ pub fn run_with_factory(
     if let Some(plan) = &plan {
         for (frame_id, (existing_row, missing_categories)) in &plan.phase3_gaps {
             let mut result = existing_row.clone();
-            result["content"] = existing_row
-                .get("content")
-                .cloned()
-                .unwrap_or_else(|| json!({}));
             result["enhanced"] = json!(true);
             result
                 .as_object_mut()

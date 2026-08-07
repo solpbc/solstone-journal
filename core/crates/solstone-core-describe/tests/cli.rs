@@ -1395,9 +1395,10 @@ fn reentry_merges_gaps_and_preserves_reusable_raw_bytes() {
             .any(|request| request["id"] == format!("frame:{phase_one_id}:attempt:0"))
     );
     assert!(requested.iter().all(|request| {
-        request["id"]
-            .as_str()
-            .is_none_or(|id| !id.starts_with(&format!("frame:{reusable_id}:")))
+        request["id"].as_str().is_none_or(|id| {
+            !id.starts_with(&format!("frame:{reusable_id}:"))
+                && !id.starts_with(&format!("extract:{reusable_id}:"))
+        })
     }));
     assert!(requested.iter().any(|request| {
         request["context"] == "observe.describe.code"
@@ -1667,5 +1668,47 @@ fn incremental_all_failures_complete_while_zero_qualified_reentry_discards_rows(
         "corrupt_input"
     );
     assert_eq!(corrupt[0]["_solstone_processing"]["attempts"], 2);
+    remove_temporary_root(&root);
+}
+
+#[test]
+fn incremental_all_failures_complete_with_zero_reusable_rows() {
+    let root = temporary_root("incremental-all-gaps");
+    let video = copied_video(&root, "mixed_vp8_screen.webm");
+    let artifact = video.with_extension("jsonl");
+    assert!(
+        describe(&root, &video, "generated")
+            .output()
+            .expect("initial")
+            .status
+            .success()
+    );
+    mark_for_reentry(&artifact, 1);
+    let mut rows = read_jsonl(&artifact);
+    for row in &mut rows[1..] {
+        row["analysis"] = Value::Null;
+        row["enhanced"] = json!(false);
+    }
+    let mut contents = String::new();
+    for row in rows {
+        contents.push_str(&format!("{row}\n"));
+    }
+    fs::write(&artifact, contents).expect("all-gap fixture");
+    let listener = notification_listener(&root);
+    let output = describe(&root, &video, "always_retryable")
+        .output()
+        .expect("incremental failure");
+    assert!(
+        output.status.success(),
+        "a plan with no reusable rows still suppresses the fresh error"
+    );
+    let rows = read_jsonl(&artifact);
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "failed");
+    assert_eq!(
+        rows[0]["_solstone_processing"]["reason_code"],
+        "analysis_failed"
+    );
+    assert_eq!(rows[0]["_solstone_processing"]["attempts"], 2);
+    assert_eq!(notification(&listener)["event"], "described");
     remove_temporary_root(&root);
 }
