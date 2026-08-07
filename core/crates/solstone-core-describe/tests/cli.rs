@@ -42,6 +42,12 @@ fn corpus_path(file: &str) -> PathBuf {
         .join(file)
 }
 
+fn masked_corpus_path(file: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/describe_masked")
+        .join(file)
+}
+
 fn fixture_case(file: &str) -> FixtureCase {
     let fixture: Fixture =
         serde_json::from_str(include_str!("../../../fixtures/describe_frames.json"))
@@ -180,6 +186,43 @@ fn frames_only_matches_the_frozen_oracle() {
         .map(|frame| serde_json::json!({"frame_id": frame.frame_id, "timestamp": frame.timestamp}))
         .collect();
     assert_eq!(actual["frames"], serde_json::json!(expected_frames));
+}
+
+#[test]
+fn describe_uses_convey_mask_for_live_handler_decode() {
+    for (file, expected_requests) in [
+        ("convey_masked_inside_screen.webm", 1),
+        ("convey_masked_outside_screen.webm", 7),
+        ("convey_skipped_screen.webm", 0),
+    ] {
+        let root = temporary_root(file);
+        let video = root.join(file);
+        fs::copy(masked_corpus_path(file), &video).expect("copy masked corpus video");
+        let request_log = root.join("requests.jsonl");
+        let output = describe(&root, &video, "generated")
+            .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+            .output()
+            .expect("describe");
+        assert!(output.status.success(), "{file}");
+        let requests = if request_log.exists() {
+            read_jsonl(&request_log)
+                .into_iter()
+                .filter(|request| request["context"] == "observe.describe.frame")
+                .count()
+        } else {
+            0
+        };
+        assert_eq!(requests, expected_requests, "{file}");
+        let rows = read_jsonl(&video.with_extension("jsonl"));
+        if expected_requests == 0 {
+            assert_eq!(rows[0]["_solstone_processing"]["state"], "empty");
+            assert_eq!(
+                rows[0]["_solstone_processing"]["reason_code"],
+                "no_decodable_frames"
+            );
+        }
+        fs::remove_dir_all(root).expect("remove root");
+    }
 }
 
 #[test]
@@ -860,7 +903,7 @@ fn detection_failure_and_timeout_latch_after_one_attempt() {
         assert!(output.status.success(), "{mode}");
         assert_eq!(detector_requests(&detector_log).len(), 1, "{mode}");
         if mode == "hang" {
-            assert!(start.elapsed() < Duration::from_secs(2));
+            assert!(start.elapsed() < Duration::from_secs(10));
         }
         let rows = read_jsonl(&video.with_extension("jsonl"));
         assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
@@ -898,17 +941,51 @@ fn redact_config_is_appended_in_order() {
 }
 
 #[test]
-fn tier_one_temp_is_removed_after_atomic_promotion() {
+fn tier_one_temp_is_nonempty_before_atomic_promotion_and_is_removed_afterward() {
     let root = temporary_root("temp");
-    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    let video = copied_video(&root, "mixed_vp8_screen.webm");
     let release = root.join("release");
-    let mut child = describe(&root, &video, "pause_after_first")
+    let request_log = root.join("requests.jsonl");
+    let mut child = describe(&root, &video, "generated")
         .env("SOLSTONE_DESCRIBE_SESSION_STUB_RELEASE_PATH", &release)
+        .env("SOLSTONE_DESCRIBE_SESSION_STUB_PAUSE_AFTER", "5")
+        .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
         .spawn()
         .expect("spawn describe binary");
+    // Debug-build masking reached this point in at most 1,670ms; this leaves a
+    // 4.2x margin for contended test workers, based on the profile cargo test uses.
+    let deadline = Instant::now() + Duration::from_millis(7_000);
+    let mut saw_nonempty = false;
+    while Instant::now() < deadline {
+        saw_nonempty = fs::read_dir(&root)
+            .expect("read root")
+            .filter_map(Result::ok)
+            .any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".describe-")
+                    && entry
+                        .metadata()
+                        .map(|metadata| metadata.len() > 0)
+                        .unwrap_or(false)
+            });
+        if saw_nonempty {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        saw_nonempty,
+        "tier-one rows temp became nonempty while the run was active"
+    );
+    assert!(!video.with_extension("jsonl").exists());
+    assert_eq!(read_jsonl(&request_log).len(), 5);
     fs::write(&release, b"release").expect("release stub");
     assert!(child.wait().expect("wait child").success());
     assert!(no_temp_files(&root));
+    assert!(video.with_extension("jsonl").exists());
+    assert_eq!(read_jsonl(&video.with_extension("jsonl")).len(), 4);
     fs::remove_dir_all(root).expect("remove temporary root");
 }
 

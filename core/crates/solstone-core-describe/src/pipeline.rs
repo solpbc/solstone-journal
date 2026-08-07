@@ -12,16 +12,14 @@ use solstone_core_generate::{GenerateResponse, RefusalReason, SessionCompletion}
 use solstone_core_journal_io::{AtomicWriteOptions, install_file};
 use solstone_core_processing_record::vocab;
 
-use crate::WinnowConfig;
-use crate::decode::{
-    IdentityTransform, QualifiedFrame, process_video_with_transform, resize_for_vlm_png,
-};
+use crate::decode::{QualifiedFrame, process_video_with_transform, resize_for_vlm_png};
 use crate::detect;
 use crate::extraction;
 use crate::notify;
 use crate::request;
 use crate::selection::{self, CategorizedFrame, CategoryOverride, SelectionError};
 use crate::session::{DescribeSession, DescribeSessionFactory, SystemSessionFactory};
+use crate::{ConveyFiducialMask, WinnowConfig};
 
 pub const EXIT_PROVIDER_BLOCKED: i32 = 69;
 const MAX_ATTEMPTS: u64 = 5;
@@ -124,7 +122,7 @@ pub fn run_with_factory(
     let input_size = fs::metadata(options.video)
         .map_err(|error| RunError::Internal(error.to_string()))?
         .len();
-    let mut transform = IdentityTransform;
+    let mut transform = ConveyFiducialMask;
     let mut decoded = process_video_with_transform(options.video, &mut transform, options.config);
     let mut rows = RowTemp::new(parent)?;
     if decoded.qualified_frames.is_empty() {

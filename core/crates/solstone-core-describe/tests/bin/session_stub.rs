@@ -20,7 +20,11 @@ fn main() {
         std::fs::write(path, std::process::id().to_string()).unwrap();
     }
     let mut seen = 0usize;
+    let pause_after = env::var("SOLSTONE_DESCRIBE_SESSION_STUB_PAUSE_AFTER")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok());
     let mut held_id = None;
+    let mut categorized_frame_ids = Vec::new();
     for line in io::stdin().lock().lines() {
         let line = line.unwrap();
         if decode_session_terminal_line(&line).is_ok() {
@@ -28,6 +32,19 @@ fn main() {
         }
         let request = decode_session_request_line(&line).unwrap();
         seen += 1;
+        if request.context == "observe.describe.frame" {
+            if let Some(frame_id) = request
+                .id
+                .as_deref()
+                .and_then(|id| id.strip_prefix("frame:"))
+                .and_then(|id| id.split(':').next())
+                .and_then(|id| id.parse::<u64>().ok())
+            {
+                if !categorized_frame_ids.contains(&frame_id) {
+                    categorized_frame_ids.push(frame_id);
+                }
+            }
+        }
         if let Some(path) = env::var_os("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH") {
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
@@ -47,11 +64,20 @@ fn main() {
             continue;
         }
         let id = request.id.unwrap();
+        if request.context == "observe.extract.selection" && mode == "generated" {
+            generated_text(
+                &id,
+                &json!({"frame_ids": categorized_frame_ids}).to_string(),
+            );
+            pause_after_response(pause_after, seen);
+            continue;
+        }
         if request.context == "observe.extract.selection" && mode.starts_with("selection_") {
             selection_response(&id, &mode);
             if let Some(path) = env::var_os("SOLSTONE_DESCRIBE_SESSION_STUB_STATS_PATH") {
                 std::fs::write(path, json!({"requests": seen}).to_string()).unwrap();
             }
+            pause_after_response(pause_after, seen);
             continue;
         }
         if request.context != "observe.describe.frame"
@@ -59,6 +85,7 @@ fn main() {
             && mode.starts_with("extraction_")
         {
             extraction_response(&id, &mode, request.attempt_index);
+            pause_after_response(pause_after, seen);
             continue;
         }
         if request.context == "observe.describe.frame"
@@ -69,6 +96,7 @@ fn main() {
                 ))
         {
             categorization_response(&id, &mode);
+            pause_after_response(pause_after, seen);
             continue;
         }
         if mode == "always_retryable" || (mode == "retryable_then_generated" && seen == 1) {
@@ -89,16 +117,16 @@ fn main() {
         if let Some(first_id) = held_id.take() {
             generated(&first_id);
         }
-        if mode == "pause_after_first"
-            && request.context != "observe.describe.frame"
-            && request.context != "observe.extract.selection"
-            && seen >= 3
-        {
-            wait_for_release();
-        }
+        pause_after_response(pause_after, seen);
         if let Some(path) = env::var_os("SOLSTONE_DESCRIBE_SESSION_STUB_STATS_PATH") {
             std::fs::write(path, json!({"requests": seen}).to_string()).unwrap();
         }
+    }
+}
+
+fn pause_after_response(pause_after: Option<usize>, seen: usize) {
+    if pause_after == Some(seen) {
+        wait_for_release();
     }
 }
 
