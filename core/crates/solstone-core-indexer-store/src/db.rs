@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, OpenFlags, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, params};
 
 use crate::StoreError;
 
@@ -33,6 +33,7 @@ time_bucket UNINDEXED
 // Source of truth: solstone/think/indexer/edges.py EDGES_SCHEMA_PATH / EDGES_SCHEMA_VERSION
 pub(crate) const EDGES_SCHEMA_PATH: &str = "edges:__schema__";
 pub(crate) const EDGES_SCHEMA_VERSION: i64 = 1;
+pub(crate) const INDEX_BUILD_STATE_SCHEMA_VERSION: i64 = 1;
 const CREATE_EDGE_FILES: &str =
     "CREATE TABLE IF NOT EXISTS edge_files(path TEXT PRIMARY KEY, mtime INTEGER)";
 const CREATE_EDGES: &str = "\
@@ -57,6 +58,28 @@ const CREATE_EDGES_SRC_INDEX: &str =
     "CREATE INDEX IF NOT EXISTS idx_edges_src ON edges(src, kind, day)";
 const CREATE_EDGES_DST_INDEX: &str =
     "CREATE INDEX IF NOT EXISTS idx_edges_dst ON edges(dst, kind, day)";
+const CREATE_INDEX_BUILD_STATE: &str = "\
+CREATE TABLE IF NOT EXISTS index_build_state(
+id INTEGER PRIMARY KEY CHECK (id = 1),
+schema_version INTEGER NOT NULL,
+state TEXT NOT NULL CHECK (state IN ('building', 'complete')),
+files_count INTEGER NOT NULL CHECK (files_count >= 0),
+chunks_count INTEGER NOT NULL CHECK (chunks_count >= 0)
+)";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IndexBuildLifecycle {
+    Building,
+    Complete,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IndexBuildState {
+    pub schema_version: i64,
+    pub state: IndexBuildLifecycle,
+    pub files_count: i64,
+    pub chunks_count: i64,
+}
 
 pub fn db_path(journal: &Path) -> PathBuf {
     journal.join(INDEX_DIR).join(DB_NAME)
@@ -108,6 +131,10 @@ pub fn reset_index(journal: &Path) -> Result<(), StoreError> {
     tx.execute("DROP TABLE IF EXISTS edge_files", [])?;
     tx.execute("DROP TABLE IF EXISTS files", [])?;
     create_schema(&tx)?;
+    tx.execute(
+        "REPLACE INTO index_build_state(id, schema_version, state, files_count, chunks_count) VALUES (1, ?, 'building', 0, 0)",
+        [INDEX_BUILD_STATE_SCHEMA_VERSION],
+    )?;
     tx.commit()?;
     Ok(())
 }
@@ -203,9 +230,64 @@ fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(CREATE_EDGES_PATH_INDEX, [])?;
     conn.execute(CREATE_EDGES_SRC_INDEX, [])?;
     conn.execute(CREATE_EDGES_DST_INDEX, [])?;
+    conn.execute(CREATE_INDEX_BUILD_STATE, [])?;
     conn.execute(
         "REPLACE INTO edge_files(path, mtime) VALUES (?, ?)",
         params![EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION],
+    )?;
+    Ok(())
+}
+
+/// Read the index build state when this index was created by a compatible writer.
+///
+/// Missing, legacy, or malformed state is deliberately reported as unknown rather
+/// than failing a read-only query.
+pub fn read_index_build_state(conn: &Connection) -> Result<Option<IndexBuildState>, StoreError> {
+    if !sqlite_table_exists(conn, "index_build_state")? {
+        return Ok(None);
+    }
+    let row = conn
+        .query_row(
+            "SELECT CAST(schema_version AS INTEGER), CAST(state AS TEXT), CAST(files_count AS INTEGER), CAST(chunks_count AS INTEGER) FROM index_build_state WHERE id=1",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, Option<i64>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((Some(schema_version), Some(state), Some(files_count), Some(chunks_count))) = row
+    else {
+        return Ok(None);
+    };
+    if schema_version != INDEX_BUILD_STATE_SCHEMA_VERSION || files_count < 0 || chunks_count < 0 {
+        return Ok(None);
+    }
+    let state = match state.as_str() {
+        "building" => IndexBuildLifecycle::Building,
+        "complete" => IndexBuildLifecycle::Complete,
+        _ => return Ok(None),
+    };
+    Ok(Some(IndexBuildState {
+        schema_version,
+        state,
+        files_count,
+        chunks_count,
+    }))
+}
+
+pub(crate) fn mark_index_build_complete(
+    tx: &Transaction<'_>,
+    files_count: i64,
+    chunks_count: i64,
+) -> Result<(), StoreError> {
+    tx.execute(
+        "REPLACE INTO index_build_state(id, schema_version, state, files_count, chunks_count) VALUES (1, ?, 'complete', ?, ?)",
+        params![INDEX_BUILD_STATE_SCHEMA_VERSION, files_count, chunks_count],
     )?;
     Ok(())
 }
@@ -242,6 +324,38 @@ mod tests {
         open_index(&root).expect("create index");
         assert!(is_index_readable(&root));
         fs::remove_dir_all(root).expect("remove test index");
+    }
+
+    #[test]
+    fn reset_creates_a_building_state_row() {
+        let root = temp_root("reset-building-state");
+        reset_index(&root).expect("reset index");
+        let conn = open_index(&root).expect("open reset index");
+        assert_eq!(
+            read_index_build_state(&conn).expect("read build state"),
+            Some(IndexBuildState {
+                schema_version: INDEX_BUILD_STATE_SCHEMA_VERSION,
+                state: IndexBuildLifecycle::Building,
+                files_count: 0,
+                chunks_count: 0,
+            })
+        );
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup reset state root");
+    }
+
+    #[test]
+    fn open_and_stream_prune_do_not_create_a_build_state_row() {
+        let root = temp_root("no-build-state-writes");
+        let conn = open_index(&root).expect("open index");
+        assert_eq!(read_index_build_state(&conn).expect("read state"), None);
+        drop(conn);
+
+        prune_chunks_by_stream(&root, "default").expect("prune empty stream");
+        let conn = open_index(&root).expect("reopen index");
+        assert_eq!(read_index_build_state(&conn).expect("read state"), None);
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup no-state root");
     }
 
     fn table_schema_json(conn: &Connection, table: &str) -> serde_json::Value {

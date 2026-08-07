@@ -28,7 +28,7 @@ use solstone_core_indexer::stream::extract_stream;
 use solstone_core_journal_config::{ConfigLoadError, plain_defaults, read_journal_config};
 
 use crate::StoreError;
-use crate::db::{EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, open_index};
+use crate::db::{EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, mark_index_build_complete, open_index};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ScanReport {
@@ -250,6 +250,13 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
     report.edge_rows_inserted = edge_report.rows_inserted;
     report.failed += edge_report.failed;
     report.warnings.extend(edge_report.warnings);
+    if full && report.failed == 0 && report.warnings.is_empty() {
+        let tx = conn.transaction()?;
+        let files_count = tx.query_row("SELECT count(*) FROM files", [], |row| row.get(0))?;
+        let chunks_count = tx.query_row("SELECT count(*) FROM chunks", [], |row| row.get(0))?;
+        mark_index_build_complete(&tx, files_count, chunks_count)?;
+        tx.commit()?;
+    }
     Ok(report)
 }
 
@@ -908,7 +915,9 @@ fn file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{db_path, reset_index};
+    use crate::db::{
+        IndexBuildLifecycle, IndexBuildState, db_path, read_index_build_state, reset_index,
+    };
     use rusqlite::{Connection, params};
     use solstone_core_format::content::RawPerceptFamily;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1122,6 +1131,110 @@ mod tests {
             ts,
             weight: 1,
         }
+    }
+
+    #[test]
+    fn clean_full_scan_marks_build_state_complete_with_live_counts() {
+        let root = temp_root("complete-build-state");
+        let rel = "20260717/talents/flow.md";
+        write(
+            &root,
+            &format!("chronicle/{rel}"),
+            "# Flow\n\ncomplete state",
+        );
+        reset_index(&root).expect("reset index");
+
+        let report = scan_journal(&root, true).expect("clean full scan");
+        assert_eq!(report.failed, 0);
+        assert!(report.warnings.is_empty());
+        let conn = open_index(&root).expect("open completed index");
+        assert_eq!(
+            read_index_build_state(&conn).expect("read build state"),
+            Some(IndexBuildState {
+                schema_version: 1,
+                state: IndexBuildLifecycle::Complete,
+                files_count: count(&conn, "SELECT count(*) FROM files"),
+                chunks_count: count(&conn, "SELECT count(*) FROM chunks"),
+            })
+        );
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup complete build state root");
+    }
+
+    #[test]
+    fn failed_full_scan_leaves_build_state_unchanged() {
+        let root = temp_root("failed-build-state");
+        let rel = "20260717/talents/flow.md";
+        write(
+            &root,
+            &format!("chronicle/{rel}"),
+            "# Flow\n\ninterrupted state",
+        );
+        reset_index(&root).expect("reset index");
+        let conn = open_index(&root).expect("open reset index");
+        create_abort_trigger(
+            &conn,
+            "abort_build_state_completion",
+            "BEFORE",
+            "INSERT",
+            "files",
+            Some("NEW.path='20260717/talents/flow.md'"),
+        );
+        drop(conn);
+
+        scan_journal(&root, true).expect_err("trigger aborts full scan");
+        let conn = open_index(&root).expect("open interrupted index");
+        assert_eq!(
+            read_index_build_state(&conn).expect("read build state"),
+            Some(IndexBuildState {
+                schema_version: 1,
+                state: IndexBuildLifecycle::Building,
+                files_count: 0,
+                chunks_count: 0,
+            })
+        );
+        drop_trigger(&conn, "abort_build_state_completion");
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup failed build state root");
+    }
+
+    #[test]
+    fn light_scan_leaves_complete_build_state_unchanged() {
+        let root = temp_root("light-build-state");
+        write(
+            &root,
+            "chronicle/20260717/talents/flow.md",
+            "# Flow\n\ncomplete state",
+        );
+        reset_index(&root).expect("reset index");
+        scan_journal(&root, true).expect("clean full scan");
+        let conn = open_index(&root).expect("open completed index");
+        let before = read_index_build_state(&conn)
+            .expect("read completed state")
+            .expect("completed state row");
+        drop(conn);
+
+        scan_journal(&root, false).expect("light scan");
+        let conn = open_index(&root).expect("open light-scanned index");
+        assert_eq!(
+            read_index_build_state(&conn).expect("read state after light scan"),
+            Some(before)
+        );
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup light build state root");
+    }
+
+    #[test]
+    fn light_scan_does_not_create_a_build_state_row() {
+        let root = temp_root("light-no-build-state");
+        scan_journal(&root, false).expect("light scan");
+        let conn = open_index(&root).expect("open light-scanned index");
+        assert_eq!(
+            read_index_build_state(&conn).expect("read build state"),
+            None
+        );
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup light no-state root");
     }
 
     #[test]
