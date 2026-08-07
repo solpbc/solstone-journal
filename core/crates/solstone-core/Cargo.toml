@@ -9,6 +9,23 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+# Cross-language differentials — tests that execute the Python implementation as
+# their oracle. They need a populated `.venv` (`make install`), so they are off
+# by default; that is what lets the frozen native `make ci` run on a bare
+# checkout. They run from `make check-differentials`.
+differential = []
+
+[[test]]
+name = "journal_config_client"
+path = "tests/journal_config_client.rs"
+required-features = ["differential"]
+
+[[test]]
+name = "journal_config_corruption"
+path = "tests/journal_config_corruption.rs"
+required-features = ["differential"]
+
 [dependencies]
 chrono.workspace = true
 serde.workspace = true

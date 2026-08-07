@@ -82,6 +82,46 @@ fn dependency_keys(manifest: &str) -> BTreeSet<String> {
     keys
 }
 
+/// Manually declared `[[test]]` targets and the features each one requires.
+fn manual_test_targets(manifest: &str) -> Vec<(String, BTreeSet<String>)> {
+    let mut targets = Vec::new();
+    let mut current: Option<(Option<String>, BTreeSet<String>)> = None;
+
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            if let Some((Some(name), features)) = current.take() {
+                targets.push((name, features));
+            }
+            if trimmed == "[[test]]" {
+                current = Some((None, BTreeSet::new()));
+            }
+            continue;
+        }
+        let Some((name, features)) = current.as_mut() else {
+            continue;
+        };
+        if let Some(value) = trimmed.strip_prefix("name = ") {
+            *name = Some(value.trim().trim_matches('"').to_owned());
+        } else if let Some(value) = trimmed.strip_prefix("required-features = ") {
+            features.extend(
+                value
+                    .trim()
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .split(',')
+                    .map(|item| item.trim().trim_matches('"').to_owned())
+                    .filter(|item| !item.is_empty()),
+            );
+        }
+    }
+    if let Some((Some(name), features)) = current {
+        targets.push((name, features));
+    }
+
+    targets
+}
+
 fn workspace_members(workspace: &str) -> Vec<String> {
     let mut members = Vec::new();
     let mut in_members = false;
@@ -174,6 +214,48 @@ fn make_ci_never_executes_forbidden_interpreters() {
                 .is_empty(),
         "make ci invoked a forbidden interpreter: {}",
         fs::read_to_string(&sentinel).unwrap_or_default(),
+    );
+}
+
+/// A test kept out of `make ci` because it executes the Python implementation
+/// must still be run by something. `check-differentials` is that something, and
+/// this pins the two halves together: gating a test off the native gate without
+/// naming it in the differential gate fails here rather than silently retiring
+/// its coverage.
+#[test]
+fn every_differential_test_is_named_in_its_own_gate() {
+    let root = repo_root();
+    let core = root.join("core");
+    let members = workspace_members(
+        &fs::read_to_string(core.join("Cargo.toml")).expect("read workspace manifest"),
+    );
+    let makefile = fs::read_to_string(root.join("Makefile")).expect("read Makefile");
+
+    let differentials = members
+        .iter()
+        .flat_map(|member| {
+            let manifest = fs::read_to_string(core.join(member).join("Cargo.toml"))
+                .expect("read member manifest");
+            manual_test_targets(&manifest)
+        })
+        .filter(|(_name, features)| features.contains("differential"))
+        .map(|(name, _features)| name)
+        .collect::<BTreeSet<_>>();
+    assert!(
+        !differentials.is_empty(),
+        "the differential feature must still gate at least one test target"
+    );
+
+    let gate = target_body(&makefile, "check-differentials");
+    for name in &differentials {
+        assert!(
+            gate.contains(&format!("--test {name}")),
+            "{name} is gated off make ci but not named in check-differentials"
+        );
+    }
+    assert!(
+        !target_body(&makefile, "check-rust-test").contains("differential"),
+        "make ci must not enable the differential feature"
     );
 }
 

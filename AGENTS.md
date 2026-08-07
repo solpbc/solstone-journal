@@ -122,7 +122,8 @@ Verified against `Makefile`. Grouped by use.
 | `make test-only TEST=<path-or-pattern>` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
 | `make coverage` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
 | `make watch` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
-| `make ci` | Rust-only gate: `check-rust-fmt`, MSRV, clippy, Rust tests, iOS canary, and Rust dependency policy. |
+| `make ci` | Rust-only gate: `check-rust-fmt`, MSRV, clippy, Rust tests, iOS canary, and Rust dependency policy. Gates the cross-language differentials off by feature, so it needs no Python environment and runs on a bare checkout. |
+| `make check-differentials` | The Rust tests whose oracle is the running Python implementation. Installs first, because they need a populated `.venv`. Run it when a change touches a seam both languages implement. |
 | `make verify` | Alias for `make ci` during the Rust-conversion freeze. |
 | `make install-checks` | Directly runnable full Python-and-Rust preflight chain (format, ruff, layer hygiene, and related checks); no longer called by `ci` or `verify`. |
 | `make check-layer-hygiene` | Run `scripts/check_layer_hygiene.py` alone. Useful when iterating on an L1–L2 violation flagged by `make install-checks`. |
@@ -318,7 +319,7 @@ sets only the local verification path and may use any local filename.
 
 ## 6. Testing quickstart
 
-- **Rust gate:** `make` / `make all`, `make ci`, `make test`, `make verify`, and `make build` operate only on the native `core/` Cargo workspace during the Rust-conversion freeze. `make ci` runs formatting, MSRV, clippy, Rust tests, the iOS canary, and Rust dependency policy.
+- **Rust gate:** `make` / `make all`, `make ci`, `make test`, `make verify`, and `make build` operate only on the native `core/` Cargo workspace during the Rust-conversion freeze. `make ci` runs formatting, MSRV, clippy, Rust tests, the iOS canary, and Rust dependency policy. The Rust tests that execute the Python implementation as their oracle carry `required-features = ["differential"]` in their crate manifests, which gates them off that run and lets it work on a bare checkout; they run from `make check-differentials` instead. `ci_gate_purity::every_differential_test_is_named_in_its_own_gate` fails if one is gated off the native gate without being named in `make check-differentials`.
 - **Python suite:** pytest files remain `test_*.py` with `test_*` functions, shared fixtures in `tests/conftest.py`, and the fixture journal at `tests/fixtures/journal/`. The autouse `set_test_journal_path` fixture is unchanged; tests that write, scan, or rebuild journal/index state must use `journal_copy` or a smaller `tmp_path` journal (see §8). Run this suite directly with bare `pytest` when needed. `tests/` and `solstone/apps/*/tests/` are unchanged, but the former Python Make rails, including `make test-app`, `make test-only`, and the other `make test-*` targets, now fail with the freeze diagnostic.
 - **Marked Python tests:** integration, performance, and release tests remain in the suite and can be selected with bare pytest as needed; their former Make rails are frozen. Live product verification still uses `make sandbox`.
 - **After editing `solstone/convey/` or `solstone/apps/`:** `journal restart-convey` to reload code in a running stack.

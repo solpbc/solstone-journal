@@ -271,6 +271,20 @@ check-rust-deny:
 	cargo fetch --manifest-path $(RUST_MANIFEST) --locked
 	cargo deny --manifest-path $(RUST_MANIFEST) --locked --offline check bans licenses sources
 
+# Cross-language differentials: Rust tests whose oracle is the running Python
+# implementation. They need a populated .venv, so they carry
+# `required-features = ["differential"]` in their crate manifests, which gates
+# them off `make ci` and is what lets that gate run on a bare checkout. This
+# target installs first, then runs exactly those tests.
+# ci_gate_purity::every_differential_test_is_named_in_its_own_gate asserts that
+# every differential target in the workspace is named here, so a differential
+# cannot be gated off `make ci` and then run nowhere.
+check-differentials:
+	@$(REQUIRE_CARGO)
+	$(MAKE) install
+	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core --features differential --locked --test journal_config_client --test journal_config_corruption
+	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-generate --features differential --locked --test no_downgrade --test session --test session_real --test wire
+
 build:
 	@$(REQUIRE_CARGO)
 	cargo build --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked
@@ -733,6 +747,7 @@ ci:
 	@$(MAKE) check-rust-ios
 	@$(MAKE) check-rust-deny
 	@echo "All CI checks passed (Rust-only; Rust-conversion freeze in effect — see docs/PORTING.md)"
+	@echo "Not run here: the cross-language differentials, which need a Python install. Run 'make check-differentials' when you touch a seam both languages implement."
 
 verify: ci
 	@echo "Verification complete! (alias for ci during the Rust-conversion freeze)"
