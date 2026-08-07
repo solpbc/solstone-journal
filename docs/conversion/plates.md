@@ -244,13 +244,87 @@ Consistent formatting of **structured journal data** for its consumers — the i
 
 ## `P-local`
 
-Local model runtime, inside the security boundary. ~9k lines of live install/runtime machinery with zero dead modules.
+Local model runtime, inside the security boundary. **8,709 lines** across eleven strictly-local provider
+modules; **12,510** once the install, health and lease machinery they depend on is counted, and that
+machinery is shared with the speech-recognition sidecar and the vision detector. ⚠ Zero dead modules —
+with one correction: `providers/oci_image.py` has **no runtime importer at all** and is reached only from
+`scripts/repack_cuda_runtime.py`. It is packaging-time machinery, live but outside the shipped runtime
+path, and a rebuild does not carry it into the runtime.
 
-⚠ The boundary is loopback HTTP **plus a durable record** — `health/brain.json`, written and validated by `providers/brain_state.py` (2,692 lines, HMAC-fingerprinted, refresh lease, three lanes). Calling it a types boundary drops the durable half.
+⚠ The boundary is loopback HTTP **plus a durable record.** Calling it a types boundary drops the durable
+half.
 
-⚠ **Do not carry** the in-loop USD ceiling — it fabricates a cloud price for local runs and force-stops them. Keep the **context**-fraction half of the same function.
+🔴 **The durable record is NOT this plate's.** `providers/brain_state.py`'s own docstring says *"the
+single selected thinking lane"*, and `BrainLaneId` is a five-member closed set — `none`, `bundled`,
+`spp`, `byo-cloud`, `byo-endpoint`. `build_active_brain_fingerprint` has a dedicated branch for each: a
+hashed cloud credential, an endpoint plus served model plus hashed credential, those **plus a
+confidential provenance digest**, and the bundled runtime's own digest. One file, one writer, five lanes
+— two of which are the egress siblings. ✅ **So it converts once, for all five**, with the egress lanes
+continuing to run their own probes and handing the *outcome* to the single writer. Converting it "for
+the local lane only" would put a native writer and a Python writer on one file, which is the shape the
+cutover rule forbids and the case where it would be silent.
 
-⚠ **Do not carry the loopback "guard" as written.** The `cmd` list is built with `"--host", "127.0.0.1"` hardcoded and the next statement is `if "0.0.0.0" in cmd: raise` — a membership test against a literal set three lines above. It cannot fire at runtime and would miss `--host=0.0.0.0`, `::`, or a hostname. ✅ **The honest statement of the same invariant is `services/spp_transport.py:190-197`** — it binds `("127.0.0.1", 0)` and writes down why same-UID reachability is acceptable and which constraints are actually load-bearing. Carry that one.
+⚠ **"three lanes" means the three WRITE lanes** — refresh, prerequisite renewal, runtime-failure marker
+— not the five lane **ids**. Both readings are live in the module and they are different dimensions.
+
+**Durable artifacts, measured rather than listed from the module that names a path:**
+`health/brain.json` · `health/brain-fingerprint.key` · `health/brain-refresh.lease` ·
+`health/brain.json.lock` and `health/brain-fingerprint.key.lock` (stable sidecars, `LOCK_EX|LOCK_NB`,
+⛔ never unlinked) · `health/providers/local.json` · `health/providers/runtime/` · `health/local.ctx` ·
+`health/local.port` · `health/local-inference/YYYYMMDD.jsonl` (one row per inference, success **and**
+every error path) · `health/local-inference-admission/` (the slot ticket queue).
+📌 **The last four were missed by an inventory that read the modules naming paths** — the lock sidecars
+are built by the locking primitive and the inference log by the admission module. **Count the writers,
+not the filenames.**
+
+🔴 **Atomic replace is not atomic read-modify-write.** Every write to the record takes a lock on the
+stable sidecar *first*. An implementation that does the atomic replace alone converts a loud conflict
+into a **silent lost update**, and it passes any criterion that says only "writes are atomic".
+
+🔴 **An OS lease cannot be held by a one-record command.** The refresh permit, the prerequisite-renewal
+permit and the install lease are all `flock` on an open descriptor, which the kernel drops when the
+holder exits — so a `begin` that runs as its own process has released the permit before its caller uses
+it. ✅ The shape that fits is the session child `GENERATE.md` already ruled for the same question: a
+terminal record then EOF means finish, a **bare EOF means the caller is gone** and the work is abandoned.
+⚠ And process death is only half — a caller that *hangs* never dies, so the child needs its own bound or
+the lane reports busy forever with nothing red.
+
+🔴 **The canonical fingerprint diverges from `serde_json` in THREE ways, not one**, and none of them
+fails loudly — the digest simply stops matching, the record's evidence is fenced out, and the journal
+quietly re-enters `checking`. `ensure_ascii` escapes non-ASCII; a non-BMP codepoint escapes as a UTF-16
+**surrogate pair**; and exponents are written `1e+22` and `1e-07` rather than `1e22` and `1e-7`.
+✅ All three, plus the rules that *do* port, are pinned in `core/fixtures/local_contract.json` with the
+canonical text recorded beside each digest, so a divergence fails on the string rather than on a hex
+value that says only "different".
+
+⚠ **Do not carry** the in-loop USD ceiling — it fabricates a cloud price for local runs and force-stops
+them. Keep the **context**-fraction half of the same function. ⚠ It sits on `run_cogitate`, not
+`run_generate`, so nothing in a `generate` rebuild reproduces it; it is recorded here so whoever converts
+the local tool-using loop inherits the ruling rather than the code.
+
+⚠ **Do not carry the loopback "guard" as written.** The `cmd` list is built with `"--host", "127.0.0.1"`
+hardcoded and a later statement is `if "0.0.0.0" in cmd: raise` — a membership test against a literal set
+three to twenty lines above. It cannot fire at runtime and would miss `--host=0.0.0.0`, `::`, or a
+hostname. ⚠ **There are three copies in `think/supervisor.py`, two of them this plate's and one the
+speech-recognition sidecar's.** ✅ **The honest statement of the same invariant is
+`think/services/spp_transport.py:189-195`** — it binds `("127.0.0.1", 0)` and writes down why same-UID
+reachability is acceptable and which constraints are actually load-bearing: loopback bind, ephemeral
+port, per-session lifetime, creation only after the environment is verified, teardown on failure. Carry
+that one. ✅ **And carry it as a type rather than a predicate** — build the argv *from* a bind value that
+cannot express a non-loopback address, so there is nothing left to check.
+
+🔴 **One probe cannot move into the packaged binary, and it is linkage rather than effort.** The Vulkan
+device enumeration calls `libvulkan` in-process through `ctypes`, inside a subprocess of itself so a
+driver fault cannot take down the journal; a second, separate call reports per-device memory in use.
+`solstone-core` ships **static musl** on both Linux lanes and a static musl binary cannot `dlopen`.
+✅ The shape it needs is already shipped here for exactly this reason — a separately packaged,
+dynamically linked helper on its own glibc lanes, the way the speaker analyzer ships. ✅ The NVIDIA probe
+is **not** affected: it is a subprocess and a file read.
+
+🔴 **A native verb reaches this plate as `solstone-core <verb>`, never as a standalone binary.** The
+wheel check builds an **exact** member set from a one-name script list, and the Python↔Rust seam resolves
+that one name behind a version handshake. A separate executable is unreachable on an installed host, and
+a Rust-only gate cannot see that it is.
 
 ## `P-BYO`
 
