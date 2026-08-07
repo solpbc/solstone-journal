@@ -34,6 +34,19 @@ RETIRED_DEFINITIONS = frozenset({
     "_write_cuda_manifest", "_write_model_manifest", "LLAMA_SERVER_PINS",
     "CUDA_SERVER_PIN",
 })
+RETIRED_LOCAL_REFERENCES = frozenset({
+    "CUDA_SERVER_PIN", "LLAMA_SERVER_PINS", "_safe_extract_tarball",
+    "_download_file", "_chmod_executable", "_clear_macos_quarantine",
+    "_is_legacy_cuda_oci_tree", "_cleanup_legacy_cuda_oci_dirs",
+    "install_llama_server", "_install_cuda_llama_server", "install_model",
+    "_sha256_file", "_verify_sha256", "_write_vulkan_manifest",
+    "_write_cuda_manifest", "_write_model_manifest",
+})
+RETIRED_MLX_REFERENCES = frozenset({
+    "_MLX_MODEL_REGISTRY", "create_gemma4_variant", "_rewrite_config",
+    "_rewrite_processor_config", "_manifest_inventory_for_tree",
+    "_write_snapshot_manifest", "_write_variant_manifest",
+})
 RETIRED_IMPORTS = frozenset({"tarfile", "hashlib", "httpx"})
 
 
@@ -115,8 +128,66 @@ def scan_directory(directory: Path) -> list[tuple[str, int, str]]:
     return findings
 
 
+def scan_retired_references(root: Path) -> list[tuple[str, int, str]]:
+    """Reject retired transport symbols imported from either former owner anywhere."""
+    findings: list[tuple[str, int, str]] = []
+    excluded = {
+        "scripts/check_local_install_transport.py",
+        "scripts/fixtures/retired_local_install_transport.py",
+    }
+    for path in sorted(root.rglob("*.py")):
+        relative = path.relative_to(root).as_posix()
+        if relative in excluded:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        local_modules = {"local_install"}
+        mlx_modules = {"mlx_install"}
+        imported_local: set[str] = set()
+        imported_mlx: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.endswith(".local_install"):
+                        local_modules.add(alias.asname or alias.name.rsplit(".", 1)[-1])
+                    if alias.name.endswith(".mlx_install"):
+                        mlx_modules.add(alias.asname or alias.name.rsplit(".", 1)[-1])
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                if node.module.endswith(".local_install"):
+                    imported_local.update(
+                        (alias.asname or alias.name)
+                        for alias in node.names
+                        if alias.name in RETIRED_LOCAL_REFERENCES
+                    )
+                if node.module.endswith(".mlx_install"):
+                    imported_mlx.update(
+                        (alias.asname or alias.name)
+                        for alias in node.names
+                        if alias.name in RETIRED_MLX_REFERENCES
+                    )
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and (
+                node.id in imported_local or node.id in imported_mlx
+            ):
+                findings.append((relative, node.lineno, "retired_import"))
+            elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                if (
+                    node.value.id in local_modules
+                    and node.attr in RETIRED_LOCAL_REFERENCES
+                ) or (
+                    node.value.id in mlx_modules
+                    and node.attr in RETIRED_MLX_REFERENCES
+                ):
+                    findings.append((relative, node.lineno, "retired_reference"))
+    return findings
+
+
 def scan_production(root: Path) -> list[tuple[str, int, str]]:
-    return [finding for relative in sorted(TRANSPORT_MODULES | CALLER_MODULES) for finding in scan_file(root / relative, relative)]
+    findings = [
+        finding
+        for relative in sorted(TRANSPORT_MODULES | CALLER_MODULES)
+        for finding in scan_file(root / relative, relative)
+    ]
+    return findings + scan_retired_references(root)
 
 
 def main(argv: list[str] | None = None) -> int:
