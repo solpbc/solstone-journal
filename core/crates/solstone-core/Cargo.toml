@@ -35,6 +35,7 @@ solstone-core-indexer-store.workspace = true
 solstone-core-journal.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
+solstone-core-local.workspace = true
 solstone-core-sol.workspace = true
 solstone-core-spl.workspace = true
 serde_json.workspace = true

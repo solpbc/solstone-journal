@@ -7,12 +7,13 @@ use std::time::Duration;
 use std::{env, ffi::OsStr, path::PathBuf};
 
 use chrono::Local;
+use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 use solstone_core_cli::{
     Command, IndexerCommand, IndexerCountsOptions, IndexerOptions, IndexerQueryOptions,
     IndexerReadOptions, IndexerSearchOptions, JournalConfigCommand, JournalConfigCommitOptions,
-    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, ServiceOptions,
-    SplCommand, USAGE, evaluate_args, version_line,
+    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand,
+    ServiceOptions, SplCommand, USAGE, evaluate_args, version_line,
 };
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -37,6 +38,7 @@ const EXIT_DATAERR: u8 = 65;
 const EXIT_CANTCREAT: u8 = 73;
 const EXIT_IOERR: u8 = 74;
 const MAX_JOURNAL_CONFIG_STDIN_BYTES: usize = 1024 * 1024;
+const MAX_LOCAL_STDIN_BYTES: usize = 1024 * 1024;
 const ZERO_EDGE_HINT: &str = "Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run journal indexer --rebuild-edges to force full edge re-extraction.";
 const SOL_IDENTITY_TOKEN: &str = "__solstone_identity=sol";
 const SOLSTONE_IDENTITY_TOKEN: &str = "__solstone_identity=solstone";
@@ -75,12 +77,78 @@ fn main() -> ExitCode {
         },
         Ok(Command::Indexer(command)) => run_indexer(*command),
         Ok(Command::JournalConfig(command)) => run_journal_config(command),
+        Ok(Command::Local(command)) => run_local(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
         Err(_) => {
             eprint!("{USAGE}");
             ExitCode::from(EXIT_USAGE)
         }
     }
+}
+
+fn run_local(command: LocalCommand) -> ExitCode {
+    match command {
+        LocalCommand::ProbeNvidia => {
+            let probe = solstone_core_local::probe_nvidia_gpu();
+            let stdout = io::stdout();
+            let mut stdout = stdout.lock();
+            if serde_json::to_writer(&mut stdout, &probe).is_err() || writeln!(stdout).is_err() {
+                return ExitCode::from(EXIT_IOERR);
+            }
+            ExitCode::SUCCESS
+        }
+        LocalCommand::Plan => run_local_json(solstone_core_local::plan),
+        LocalCommand::Connect => run_local_json(solstone_core_local::connect),
+    }
+}
+
+fn run_local_json<T, O>(operation: impl FnOnce(T) -> O) -> ExitCode
+where
+    T: DeserializeOwned,
+    O: serde::Serialize,
+{
+    let input = match read_local_stdin() {
+        Ok(input) => input,
+        Err(LocalStdinError::Content) => {
+            eprintln!("local command failed: stdin was not valid JSON within 1 MiB");
+            return ExitCode::from(EXIT_USAGE);
+        }
+        Err(LocalStdinError::Io) => {
+            eprintln!("local command failed: stdin I/O error");
+            return ExitCode::from(EXIT_IOERR);
+        }
+    };
+    let mut stdout = io::stdout().lock();
+    if serde_json::to_writer(&mut stdout, &operation(input)).is_err() || writeln!(stdout).is_err() {
+        return ExitCode::from(EXIT_IOERR);
+    }
+    ExitCode::SUCCESS
+}
+
+enum LocalStdinError {
+    Content,
+    Io,
+}
+
+fn read_local_stdin<T: DeserializeOwned>() -> Result<T, LocalStdinError> {
+    let mut stdin = io::stdin().lock();
+    let mut bytes = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let read = stdin.read(&mut chunk).map_err(|_| LocalStdinError::Io)?;
+        if read == 0 {
+            break;
+        }
+        if bytes
+            .len()
+            .checked_add(read)
+            .is_none_or(|next| next > MAX_LOCAL_STDIN_BYTES)
+        {
+            return Err(LocalStdinError::Content);
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+    serde_json::from_slice(&bytes).map_err(|_| LocalStdinError::Content)
 }
 
 fn run_journal_config(command: JournalConfigCommand) -> ExitCode {
