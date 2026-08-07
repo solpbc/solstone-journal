@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value, json};
 use solstone_core_generate::{GenerateResponse, RefusalReason, SessionCompletion};
 use solstone_core_journal_io::{AtomicWriteOptions, install_file};
-use solstone_core_processing_record::vocab;
+use solstone_core_processing_record::{record_attempts, vocab};
 
 use crate::decode::{QualifiedFrame, process_video_with_transform, resize_for_vlm_png};
 use crate::detect;
@@ -20,6 +20,7 @@ use crate::request;
 use crate::selection::{self, CategorizedFrame, CategoryOverride, SelectionError};
 use crate::session::{DescribeSession, DescribeSessionFactory, SystemSessionFactory};
 use crate::{ConveyFiducialMask, WinnowConfig};
+use crate::{merge, reentry};
 
 pub const EXIT_PROVIDER_BLOCKED: i32 = 69;
 const MAX_ATTEMPTS: u64 = 5;
@@ -58,6 +59,13 @@ struct Promotion<'a> {
     model: Option<String>,
     state: &'a str,
     reason: &'a str,
+    previous_attempts: i64,
+    carry_forward_observer: Option<&'a str>,
+}
+
+enum RowContent {
+    Raw(String),
+    Value(Value),
 }
 
 struct RowTemp {
@@ -87,6 +95,14 @@ impl RowTemp {
             .flush()
             .map_err(|error| RunError::Internal(error.to_string()))
     }
+    fn raw_row(&mut self, raw_line: &str) -> Result<(), RunError> {
+        self.file
+            .write_all(raw_line.as_bytes())
+            .map_err(|error| RunError::Internal(error.to_string()))?;
+        self.file
+            .flush()
+            .map_err(|error| RunError::Internal(error.to_string()))
+    }
 }
 impl Drop for RowTemp {
     fn drop(&mut self) {
@@ -98,6 +114,7 @@ pub struct DescribeOptions<'a> {
     pub video: &'a Path,
     pub journal: &'a Path,
     pub jobs: usize,
+    pub redo: bool,
     pub config: WinnowConfig,
     pub redact_rules: Vec<String>,
     pub max_extractions: u32,
@@ -116,6 +133,17 @@ pub fn run_with_factory(
         return Err(RunError::Internal("--jobs must be positive".to_owned()));
     }
     let output = options.video.with_extension("jsonl");
+    let mut previous_attempts = 0;
+    let mut incremental_source = None;
+    if !options.redo && output.exists() {
+        let record = reentry::read_processing_record_header(&output);
+        if !reentry::should_reenter_analysis_output(record.as_ref(), &output) {
+            return Ok(());
+        }
+        previous_attempts = record.as_ref().map(record_attempts).unwrap_or(0);
+        incremental_source = Some(output.clone());
+    }
+    let start = Instant::now();
     let parent = output
         .parent()
         .ok_or_else(|| RunError::Internal("video has no parent".to_owned()))?;
@@ -123,15 +151,42 @@ pub fn run_with_factory(
         .map_err(|error| RunError::Internal(error.to_string()))?
         .len();
     let mut transform = ConveyFiducialMask;
-    let mut decoded = process_video_with_transform(options.video, &mut transform, options.config);
+    let decoded = process_video_with_transform(options.video, &mut transform, options.config);
     let mut rows = RowTemp::new(parent)?;
+    let existing_artifact = incremental_source
+        .as_deref()
+        .and_then(merge::read_existing_describe_artifact);
+    let carry_forward_observer = existing_artifact.as_ref().and_then(|artifact| {
+        if std::env::var("OBSERVER_NAME").is_ok_and(|value| !value.is_empty()) {
+            return None;
+        }
+        artifact
+            .header
+            .get("observer")?
+            .as_str()
+            .filter(|observer| !observer.is_empty())
+            .map(str::to_owned)
+    });
+    let qualified_ids = decoded
+        .qualified_frames
+        .iter()
+        .map(|frame| frame.frame_id)
+        .collect::<BTreeSet<_>>();
+    let plan = merge::build_incremental_merge_plan(
+        existing_artifact.as_ref(),
+        &qualified_ids,
+        input_size,
+        decoded.first_hash,
+        decoded.last_hash,
+        decoded.qualified_count,
+    );
     if decoded.qualified_frames.is_empty() {
         let (state, reason) = if decoded.decode_failed {
             (vocab::STATE_FAILED, vocab::REASON_CORRUPT_INPUT)
         } else {
             (vocab::STATE_EMPTY, vocab::REASON_NO_DECODABLE_FRAMES)
         };
-        return promote(Promotion {
+        promote(Promotion {
             output: &output,
             rows: &rows.path,
             video: options.video,
@@ -140,7 +195,11 @@ pub fn run_with_factory(
             model: None,
             state,
             reason,
-        });
+            previous_attempts,
+            carry_forward_observer: carry_forward_observer.as_deref(),
+        })?;
+        send_described(&options, &output, start);
+        return Ok(());
     }
     let work_key = options
         .video
@@ -151,13 +210,34 @@ pub fn run_with_factory(
         .spawn(options.jobs)
         .map_err(|_| blocked(options.journal, work_key, None, None, None))?;
     let instruction = request::system_instruction(&options.redact_rules);
-    let mut waiting: VecDeque<Pending> = std::mem::take(&mut decoded.qualified_frames)
-        .into_iter()
+    let frame_pngs = decoded
+        .qualified_frames
+        .iter()
+        .map(|frame| (frame.frame_id, frame.png.clone()))
+        .collect::<HashMap<_, _>>();
+    let mut incremental_rows = plan.as_ref().map(|_| BTreeMap::new());
+    let mut final_rows = Vec::new();
+    if let (Some(plan), Some(incremental_rows)) = (&plan, &mut incremental_rows) {
+        for (frame_id, row) in &plan.reusable_rows {
+            incremental_rows.insert(*frame_id, RowContent::Raw(row.raw_line.clone()));
+            final_rows.push(row.data.clone());
+        }
+    }
+    let mut waiting: VecDeque<Pending> = decoded
+        .qualified_frames
+        .iter()
+        .filter(|frame| {
+            plan.as_ref().is_none_or(|plan| {
+                plan.phase1_gap_ids.contains(&frame.frame_id)
+                    || (!plan.reusable_rows.contains_key(&frame.frame_id)
+                        && !plan.phase3_gaps.contains_key(&frame.frame_id))
+            })
+        })
+        .cloned()
         .map(|frame| Pending { frame, attempt: 0 })
         .collect();
     let mut outstanding: HashMap<String, Outstanding> = HashMap::new();
     let mut categorized = Vec::new();
-    let mut failures = false;
     let mut model = None;
     let window = options.jobs.saturating_mul(2);
     while !waiting.is_empty() || !outstanding.is_empty() {
@@ -213,7 +293,6 @@ pub fn run_with_factory(
                 } else {
                     None
                 };
-                failures |= error_message.is_some();
                 categorized.push(CategorizedRow {
                     frame_id: pending.frame.frame_id,
                     timestamp: pending.frame.timestamp,
@@ -247,7 +326,6 @@ pub fn run_with_factory(
                         attempt: pending.attempt + 1,
                     });
                 } else {
-                    failures = true;
                     categorized.push(CategorizedRow {
                         frame_id: pending.frame.frame_id,
                         timestamp: pending.frame.timestamp,
@@ -266,6 +344,26 @@ pub fn run_with_factory(
             }
         }
     }
+    let total_frames = categorized.len();
+    let failed_frames = categorized.iter().filter(|row| row.error.is_some()).count();
+    if total_frames > 0 && failed_frames == total_frames && plan.is_none() {
+        let _ = session.close();
+        promote(Promotion {
+            output: &output,
+            rows: &rows.path,
+            video: options.video,
+            input_size,
+            decoded: &decoded,
+            model,
+            state: vocab::STATE_FAILED,
+            reason: vocab::REASON_ANALYSIS_FAILED,
+            previous_attempts,
+            carry_forward_observer: carry_forward_observer.as_deref(),
+        })?;
+        return Err(RunError::Internal(
+            "all describe frame requests failed".to_owned(),
+        ));
+    }
     let mut selection_frames = categorized
         .iter()
         .filter_map(|row| {
@@ -277,36 +375,36 @@ pub fn run_with_factory(
         })
         .collect::<Vec<_>>();
     selection_frames.sort_unstable_by_key(|frame| frame.frame_id);
-    let selected = match selection::select(
-        session.as_ref(),
-        &selection_frames,
-        options.max_extractions,
-        &options.category_overrides,
-    ) {
-        Ok(selected) => selected,
-        Err(SelectionError::Blocked {
-            reason_code,
-            provider,
-        }) => {
-            let _ = session.close();
-            return Err(blocked(
-                options.journal,
-                work_key,
-                reason_code.as_deref(),
-                provider.as_deref(),
-                Some("observe.extract.selection"),
-            ));
-        }
-        Err(SelectionError::Session) => {
-            let _ = session.close();
-            return Err(blocked(options.journal, work_key, None, None, None));
+    let selected = if selection_frames.is_empty() {
+        Vec::new()
+    } else {
+        match selection::select(
+            session.as_ref(),
+            &selection_frames,
+            options.max_extractions,
+            &options.category_overrides,
+        ) {
+            Ok(selected) => selected,
+            Err(SelectionError::Blocked {
+                reason_code,
+                provider,
+            }) => {
+                let _ = session.close();
+                return Err(blocked(
+                    options.journal,
+                    work_key,
+                    reason_code.as_deref(),
+                    provider.as_deref(),
+                    Some("observe.extract.selection"),
+                ));
+            }
+            Err(SelectionError::Session) => {
+                let _ = session.close();
+                return Err(blocked(options.journal, work_key, None, None, None));
+            }
         }
     };
-    let selected = selected
-        .into_iter()
-        .collect::<std::collections::HashSet<_>>();
-    categorized.sort_unstable_by_key(|row| row.frame_id);
-    let mut final_rows = Vec::new();
+    let selected = selected.into_iter().collect::<HashSet<_>>();
     let mut detection_disabled = false;
     for row in categorized {
         let mut result =
@@ -319,7 +417,7 @@ pub fn run_with_factory(
         }
         let Some(analysis) = row.analysis.as_ref() else {
             result["enhanced"] = json!(false);
-            rows.row(&result)?;
+            emit_value(&mut rows, &mut incremental_rows, result.clone())?;
             final_rows.push(result);
             continue;
         };
@@ -328,14 +426,14 @@ pub fn run_with_factory(
         }
         if !selected.contains(&row.frame_id) {
             result["enhanced"] = json!(false);
-            rows.row(&result)?;
+            emit_value(&mut rows, &mut incremental_rows, result.clone())?;
             final_rows.push(result);
             continue;
         }
         let categories = extraction::categories_for_analysis(analysis);
         if categories.is_empty() {
             result["enhanced"] = json!(false);
-            rows.row(&result)?;
+            emit_value(&mut rows, &mut incremental_rows, result.clone())?;
             final_rows.push(result);
             continue;
         }
@@ -363,7 +461,6 @@ pub fn run_with_factory(
                             .expect("requests array")
                             .push(record);
                     }
-                    failures = true;
                     if result.get("error").is_none() {
                         result["error"] = json!(error);
                     }
@@ -384,11 +481,91 @@ pub fn run_with_factory(
                 }
             }
         }
-        rows.row(&result)?;
+        emit_value(&mut rows, &mut incremental_rows, result.clone())?;
         final_rows.push(result);
     }
+    if let Some(plan) = &plan {
+        for (frame_id, (existing_row, missing_categories)) in &plan.phase3_gaps {
+            let mut result = existing_row.clone();
+            result["content"] = existing_row
+                .get("content")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            result["enhanced"] = json!(true);
+            result
+                .as_object_mut()
+                .expect("merge rows are objects")
+                .remove("error");
+            let png = frame_pngs
+                .get(frame_id)
+                .ok_or_else(|| RunError::Internal("missing merge frame".to_owned()))?;
+            let analysis = result.get("analysis").expect("merge rows have analysis");
+            let categories = extraction::categories_for_analysis(analysis);
+            for name in missing_categories {
+                let category = categories
+                    .iter()
+                    .find(|category| category.name == *name)
+                    .expect("merge plan category is current");
+                match extract_category(
+                    session.as_ref(),
+                    *frame_id,
+                    category,
+                    png,
+                    &options.redact_rules,
+                ) {
+                    Ok((value, record)) => {
+                        result["requests"]
+                            .as_array_mut()
+                            .expect("requests array")
+                            .push(record);
+                        result["content"][*name] = value;
+                    }
+                    Err(ExtractionError::Failed { error, record }) => {
+                        if let Some(record) = record {
+                            result["requests"]
+                                .as_array_mut()
+                                .expect("requests array")
+                                .push(record);
+                        }
+                        if result.get("error").is_none() {
+                            result["error"] = json!(error);
+                        }
+                    }
+                    Err(ExtractionError::Blocked { code, provider }) => {
+                        let _ = session.close();
+                        return Err(blocked(
+                            options.journal,
+                            work_key,
+                            code.as_deref(),
+                            provider.as_deref(),
+                            Some(&category.context),
+                        ));
+                    }
+                    Err(ExtractionError::Session) => {
+                        let _ = session.close();
+                        return Err(blocked(options.journal, work_key, None, None, None));
+                    }
+                }
+            }
+            emit_value(&mut rows, &mut incremental_rows, result.clone())?;
+            final_rows.push(result);
+        }
+    }
+    if let Some(incremental_rows) = incremental_rows.take() {
+        for (_, row) in incremental_rows {
+            match row {
+                RowContent::Raw(line) => rows.raw_row(&line)?,
+                RowContent::Value(row) => rows.row(&row)?,
+            }
+        }
+    }
     let final_rows = finalize_incomplete(final_rows.into_iter().map(|row| (row, 0)).collect());
-    failures |= has_row_failures(&final_rows);
+    let failures = has_row_failures(&final_rows)
+        || final_rows
+            .iter()
+            .filter_map(|row| row.get("frame_id").and_then(Value::as_u64))
+            .collect::<BTreeSet<_>>()
+            != qualified_ids;
     let _ = session.close();
     let (state, reason) = verdict(decoded.decode_failed, failures);
     promote(Promotion {
@@ -400,7 +577,11 @@ pub fn run_with_factory(
         model,
         state,
         reason,
-    })
+        previous_attempts,
+        carry_forward_observer: carry_forward_observer.as_deref(),
+    })?;
+    send_described(&options, &output, start);
+    Ok(())
 }
 
 enum ExtractionError {
@@ -545,6 +726,23 @@ fn has_row_failures(rows: &[Value]) -> bool {
     rows.iter().any(|row| row.get("error").is_some())
 }
 
+fn emit_value(
+    rows: &mut RowTemp,
+    incremental_rows: &mut Option<BTreeMap<u64, RowContent>>,
+    row: Value,
+) -> Result<(), RunError> {
+    if let Some(incremental_rows) = incremental_rows {
+        let frame_id = row
+            .get("frame_id")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| RunError::Internal("describe row omitted frame_id".to_owned()))?;
+        incremental_rows.insert(frame_id, RowContent::Value(row));
+        Ok(())
+    } else {
+        rows.row(&row)
+    }
+}
+
 fn verdict(decode_failed: bool, failures: bool) -> (&'static str, &'static str) {
     if decode_failed {
         (vocab::STATE_FAILED, vocab::REASON_CORRUPT_INPUT)
@@ -582,6 +780,23 @@ fn blocked(
     RunError::Blocked
 }
 
+fn send_described(options: &DescribeOptions<'_>, output: &Path, start: Instant) {
+    let day = notify::day_for_path(options.video);
+    let segment = notify::segment_for_video_path(options.video);
+    let observer = std::env::var("OBSERVER_NAME")
+        .ok()
+        .filter(|observer| !observer.is_empty());
+    notify::described(
+        options.journal,
+        options.video,
+        output,
+        start.elapsed().as_millis() as u64,
+        day.as_deref(),
+        segment.as_deref(),
+        observer.as_deref(),
+    );
+}
+
 fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
     let parent = promotion
         .output
@@ -600,8 +815,10 @@ fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
                     .unwrap_or_default()
             ),
         );
-        if let Ok(observer) = std::env::var("OBSERVER_NAME")
-            && !observer.is_empty()
+        if let Some(observer) = std::env::var("OBSERVER_NAME")
+            .ok()
+            .filter(|observer| !observer.is_empty())
+            .or_else(|| promotion.carry_forward_observer.map(str::to_owned))
         {
             header.insert("observer".to_owned(), json!(observer));
         }
@@ -633,25 +850,17 @@ fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
         }
         let mut record = json!({"schema":vocab::SCHEMA,"state":promotion.state,"reason_code":promotion.reason,"handler":vocab::HANDLER_DESCRIBE,"attempted_at":chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),"input_size":promotion.input_size});
         if promotion.state == vocab::STATE_FAILED {
-            record["attempts"] = json!(1);
+            record["attempts"] = json!(promotion.previous_attempts + 1);
         }
         header.insert("_solstone_processing".to_owned(), record);
         let mut final_file =
             File::create(&final_path).map_err(|error| RunError::Internal(error.to_string()))?;
         writeln!(final_file, "{}", Value::Object(header))
             .map_err(|error| RunError::Internal(error.to_string()))?;
-        for line in BufReader::new(
-            File::open(promotion.rows).map_err(|error| RunError::Internal(error.to_string()))?,
-        )
-        .lines()
-        {
-            writeln!(
-                final_file,
-                "{}",
-                line.map_err(|error| RunError::Internal(error.to_string()))?
-            )
+        let mut row_file =
+            File::open(promotion.rows).map_err(|error| RunError::Internal(error.to_string()))?;
+        std::io::copy(&mut row_file, &mut final_file)
             .map_err(|error| RunError::Internal(error.to_string()))?;
-        }
         drop(final_file);
         install_file(&final_path, promotion.output, AtomicWriteOptions::default())
             .map_err(|error| RunError::Internal(error.to_string()))

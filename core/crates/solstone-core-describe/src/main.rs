@@ -107,6 +107,7 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
                 video: &arguments.video_path,
                 journal,
                 jobs: arguments.jobs,
+                redo: arguments.redo,
                 config: config.winnow,
                 redact_rules: config.redact_rules,
                 max_extractions: config.max_extractions,
@@ -134,6 +135,7 @@ struct DescribeArguments {
     video_path: PathBuf,
     journal: Option<PathBuf>,
     jobs: usize,
+    redo: bool,
 }
 
 enum CliError {
@@ -158,6 +160,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
 
     let mut frames_only = false;
     let mut describe = false;
+    let mut redo = false;
     let mut jobs = None;
     let mut journal = None;
     let mut video_path = None;
@@ -173,6 +176,11 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
                 return Err(usage("--describe was provided more than once"));
             }
             describe = true;
+        } else if argument == "--redo" {
+            if redo {
+                return Err(usage("--redo was provided more than once"));
+            }
+            redo = true;
         } else if argument == "-j" || argument == "--jobs" {
             let Some(value) = values.next() else {
                 return Err(usage("--jobs requires a positive integer"));
@@ -212,6 +220,9 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
         return Err(usage("missing video path"));
     };
     if frames_only {
+        if redo {
+            return Err(usage("--redo requires --describe"));
+        }
         Ok(Command::FramesOnly(FramesOnlyArguments {
             video_path,
             journal,
@@ -221,6 +232,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
             video_path,
             journal,
             jobs: jobs.unwrap_or(1),
+            redo,
         }))
     }
 }
@@ -337,6 +349,6 @@ fn read_config(journal_path: Option<&Path>) -> Result<DescribeConfig, CliError> 
 
 fn usage(message: &str) -> CliError {
     CliError::Usage(format!(
-        "{message}\nUsage: solstone-core-describe --frames-only <video-path> [--journal <path>]\n       solstone-core-describe --describe <video-path> [-j N] [--journal <path>]\n       solstone-core-describe --version"
+        "{message}\nUsage: solstone-core-describe --frames-only <video-path> [--journal <path>]\n       solstone-core-describe --describe <video-path> [--redo] [-j N] [--journal <path>]\n       solstone-core-describe --version"
     ))
 }
