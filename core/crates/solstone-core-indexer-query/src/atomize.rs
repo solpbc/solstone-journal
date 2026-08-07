@@ -61,6 +61,36 @@ pub(super) fn compile_expression(text: &str) -> Option<String> {
     has_term.then_some(output)
 }
 
+/// Return plain, indexable terms for the relaxation ladder.
+///
+/// This deliberately shares the compiler's normalization and atomization. A
+/// bare FTS operator is power-user syntax, so the recall ladder leaves it
+/// untouched. Unbalanced quotes are stripped before atomizing; balanced
+/// quotes bail out, matching the Python reference.
+pub(super) fn relaxation_terms(text: &str) -> Option<Vec<String>> {
+    let mut normalized = normalize_compile_text(text);
+    if !normalized.matches('"').count().is_multiple_of(2) {
+        normalized = normalized.replace('"', "");
+    }
+    if normalized.contains('"') {
+        return None;
+    }
+    let atoms = atoms(&normalized);
+    if atoms
+        .iter()
+        .any(|atom| !atom.quoted && matches!(atom.text.as_str(), "AND" | "OR" | "NOT"))
+    {
+        return None;
+    }
+    Some(
+        atoms
+            .into_iter()
+            .filter(|atom| is_indexable(&atom.text))
+            .map(|atom| atom.text)
+            .collect(),
+    )
+}
+
 /// Normalize only the FTS input: temporal echo text retains its raw bytes.
 fn normalize_compile_text(text: &str) -> String {
     text.nfc()

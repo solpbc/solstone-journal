@@ -14,8 +14,11 @@ workspace = true
 
 [dependencies]
 chrono.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+solstone-core-format.workspace = true
+solstone-core-indexer-store.workspace = true
 unicode-normalization.workspace = true
 
 [dev-dependencies]
-rusqlite.workspace = true
 serde_json.workspace = true

@@ -1907,7 +1907,10 @@ version = "1.0.22"
 dependencies = [
  "chrono",
  "rusqlite",
+ "serde",
  "serde_json",
+ "solstone-core-format",
+ "solstone-core-indexer-store",
  "unicode-normalization",
 ]
 
