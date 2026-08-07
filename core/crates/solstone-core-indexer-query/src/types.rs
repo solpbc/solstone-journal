@@ -98,7 +98,7 @@ impl SearchRequest {
     }
 }
 
-/// Request-construction failures intended for a later CLI parser to report as usage errors.
+/// Request-construction failures reported as CLI usage errors.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RequestError {
     RerankedOrderIsResponseOnly,
@@ -176,7 +176,7 @@ pub enum IndexAccessError {
 }
 
 impl IndexAccessError {
-    /// Stable machine-readable error reason for a later CLI JSON envelope.
+    /// Stable machine-readable error reason for the CLI JSON envelope.
     pub fn reason(&self) -> &'static str {
         match self {
             Self::Absent { .. } => "index_absent",

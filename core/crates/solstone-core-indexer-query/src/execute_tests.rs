@@ -204,6 +204,48 @@ fn browse_uses_recency_and_rowid_instead_of_bm25_ties() {
 }
 
 #[test]
+fn relevance_pagination_uses_rowid_without_gaps_or_repeats() {
+    let (root, connection) = seeded_root("relevance-pagination");
+    for idx in 0..12 {
+        insert(
+            &connection,
+            "needle",
+            &format!("notes/relevance-{idx}.md"),
+            "20260101",
+            "work",
+            "flow",
+            "default",
+            idx,
+        );
+    }
+    drop(connection);
+
+    let mut first_page = request("needle");
+    first_page.limit = 6;
+    let first = search(&root, &first_page, reference_date()).expect("first relevance page");
+    assert_eq!(first.order, Order::Relevance);
+    assert_eq!(first.results.len(), 6);
+
+    let mut second_page = first_page.clone();
+    second_page.offset = 6;
+    let second = search(&root, &second_page, reference_date()).expect("second relevance page");
+    assert_eq!(second.results.len(), 6);
+
+    let mut full_request = first_page.clone();
+    full_request.limit = 12;
+    let full = search(&root, &full_request, reference_date()).expect("full relevance page");
+    let paged_ids: Vec<&str> = first
+        .results
+        .iter()
+        .chain(&second.results)
+        .map(|hit| hit.id.as_str())
+        .collect();
+    let full_ids: Vec<&str> = full.results.iter().map(|hit| hit.id.as_str()).collect();
+    assert_eq!(paged_ids, full_ids);
+    fs::remove_dir_all(root).expect("cleanup relevance pagination index");
+}
+
+#[test]
 fn final_plan_order_is_falsifiable_against_compile_outcome_and_request_intent() {
     let (root, connection) = seeded_root("order-counterfactual");
     insert(
