@@ -16,7 +16,7 @@ use std::{env, fs};
 use chrono::Local;
 use serde_json::json;
 use solstone_core_journal::{
-    ConfigError, HomeError, Source, detect_checkout_root, discover_home, read_config_journal,
+    ConfigError, HomeError, detect_checkout_root, discover_home, read_config_journal,
     resolve_journal_path,
 };
 use solstone_core_sol_client::command::{CommandContext, CommandOutput};
@@ -60,7 +60,6 @@ const COMPAT_SENTINEL_ARMED: &str = "armed";
 const COMPAT_ARGV0_MARKER_PREFIX: &str = "__solstone_native_argv0=";
 const COMPAT_RECURSION_ERROR: &str =
     "sol: compatibility dispatch recursion detected. Reinstall solstone and solstone-core.";
-const TOP_LEVEL_COMPAT_COMMANDS: &[&str] = &["doctor", "check"];
 
 pub fn run(public_argv0: &str, args: Vec<OsString>) -> ExitCode {
     run_with_stdin_provider(public_argv0, args, &RealStdinProvider)
@@ -88,8 +87,6 @@ fn run_with_stdin_provider(
             render_output(help_output())
         }
         [command] if command == OsStr::new("root") => run_root(),
-        [command] if command == OsStr::new("--path") => run_plain_path(),
-        [command] if command == OsStr::new("path") => run_path(),
         [command, rest @ ..] if command == OsStr::new("status") => {
             run_top_level_native(public_argv0, &args, "status", rest, stdin_provider)
         }
@@ -114,9 +111,6 @@ fn run_with_stdin_provider(
         }
         [command, ..] if is_journal_host_command(command) => {
             render_output(service_moved_output(command))
-        }
-        [command, ..] if is_top_level_compat_command(command) => {
-            delegate_to_compat(public_argv0, &args)
         }
         _ => render_output(unsupported_output()),
     }
@@ -154,12 +148,6 @@ fn service_moved_output(command: &OsStr) -> CommandOutput {
         ),
         SERVICE_MOVED_EXIT,
     )
-}
-
-fn is_top_level_compat_command(command: &OsStr) -> bool {
-    command
-        .to_str()
-        .is_some_and(|value| TOP_LEVEL_COMPAT_COMMANDS.contains(&value))
 }
 
 fn is_journal_host_command(command: &OsStr) -> bool {
@@ -289,34 +277,10 @@ fn should_delegate_to_compat_after_native_miss(all_args: &[OsString], outcome: &
     matches!(outcome, Outcome::Unsupported { .. }) && is_compat_public_args(all_args)
 }
 
-fn is_compat_public_args(all_args: &[OsString]) -> bool {
-    match all_args {
-        [command, ..] if is_top_level_compat_command(command) => true,
-        [command, group, ..] if command == OsStr::new("call") && group == OsStr::new("journal") => {
-            true
-        }
-        _ => false,
-    }
-}
-
-fn run_plain_path() -> ExitCode {
-    match resolve_process_journal_path() {
-        Ok(line) => render_output(plain_path_output(&line)),
-        Err(error) => {
-            eprintln!("native sol journal resolution failed: {error}");
-            ExitCode::from(EXIT_TEMPFAIL)
-        }
-    }
-}
-
-fn run_path() -> ExitCode {
-    match resolve_process_journal_path() {
-        Ok(line) => render_output(path_output(&line)),
-        Err(error) => {
-            eprintln!("native sol journal resolution failed: {error}");
-            ExitCode::from(EXIT_TEMPFAIL)
-        }
-    }
+fn is_compat_public_args(_all_args: &[OsString]) -> bool {
+    // The compatibility bridge remains installed until its physical-deletion
+    // round, but no native public command is eligible to reach it.
+    false
 }
 
 fn run_call(
@@ -367,7 +331,7 @@ fn run_top_level_link(
         None => return render_output(usage_error_output()),
     };
     let today = Local::now().format("%Y%m%d").to_string();
-    let journal_root = resolve_process_journal_path().ok().map(|line| line.path);
+    let journal_root = resolve_process_journal_path().ok();
     let port = journal_root
         .as_ref()
         .map_or(DEFAULT_CONVEY_PORT, read_convey_port);
@@ -452,14 +416,6 @@ fn dispatch_top_level_link_with_runtime_seams(
     )
 }
 
-fn plain_path_output(line: &JournalPathLine) -> CommandOutput {
-    CommandOutput::success(format!("{}\n", line.path.display()))
-}
-
-fn path_output(line: &JournalPathLine) -> CommandOutput {
-    CommandOutput::success(format!("{}\t{}\n", line.label, line.path.display()))
-}
-
 struct RootHelpStatus {
     journal_path: Option<String>,
     days: Option<usize>,
@@ -479,18 +435,18 @@ fn root_help_status() -> RootHelpStatus {
             };
         }
     };
-    match inspect_journal_days(&line.path) {
+    match inspect_journal_days(&line) {
         Ok(days) => RootHelpStatus {
-            journal_path: Some(line.path.display().to_string()),
+            journal_path: Some(line.display().to_string()),
             days,
             warnings: String::new(),
         },
         Err(error) => RootHelpStatus {
-            journal_path: Some(line.path.display().to_string()),
+            journal_path: Some(line.display().to_string()),
             days: None,
             warnings: format!(
                 "Warning: could not read journal day status for {} ({error}); showing command help without day count.\n",
-                line.path.display()
+                line.display()
             ),
         },
     }
@@ -567,7 +523,7 @@ fn run_dispatched(
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
-    let port = read_convey_port(&journal.path);
+    let port = read_convey_port(&journal);
     let transport = UreqHttpTransport::new(port);
     let env = env::vars().collect::<BTreeMap<_, _>>();
     let stdin = match stdin_provider.read_if_piped() {
@@ -583,7 +539,7 @@ fn run_dispatched(
     let build_identity = RealBuildIdentityProvider;
     let client_item_ids = RealClientItemIdProvider;
     let chat_events = ChannelChatEventSource::default();
-    let notification_sink = UnixNotificationSink::new(journal.path.join("health/callosum.sock"));
+    let notification_sink = UnixNotificationSink::new(journal.join("health/callosum.sock"));
 
     let output = match outcome {
         Outcome::Migrated { .. } | Outcome::MovedStub { .. } => dispatch_sol_call_with_seams(
@@ -957,11 +913,6 @@ fn os_strings_to_strings(args: &[OsString]) -> Option<Vec<String>> {
         .collect()
 }
 
-struct JournalPathLine {
-    label: &'static str,
-    path: PathBuf,
-}
-
 #[derive(Debug)]
 enum JournalPathError {
     Config,
@@ -979,16 +930,13 @@ impl std::fmt::Display for JournalPathError {
 
 impl std::error::Error for JournalPathError {}
 
-fn resolve_process_journal_path() -> Result<JournalPathLine, JournalPathError> {
+fn resolve_process_journal_path() -> Result<PathBuf, JournalPathError> {
     let env_journal = env::var_os("SOLSTONE_JOURNAL");
     if let Some(path) = env_journal
         .as_deref()
         .filter(|value| *value != OsStr::new(""))
     {
-        return Ok(JournalPathLine {
-            label: "env",
-            path: PathBuf::from(path),
-        });
+        return Ok(PathBuf::from(path));
     }
 
     let home = discover_binary_home().map_err(|HomeError::Unavailable| JournalPathError::Home)?;
@@ -1001,15 +949,7 @@ fn resolve_process_journal_path() -> Result<JournalPathLine, JournalPathError> {
         checkout_root.as_deref(),
         &home,
     );
-    Ok(JournalPathLine {
-        label: match resolved.source {
-            Source::Env => "env",
-            Source::Config => "config",
-            Source::Source => "source",
-            Source::Default => "default",
-        },
-        path: resolved.path,
-    })
+    Ok(resolved.path)
 }
 
 fn detect_process_checkout_root() -> Option<PathBuf> {
@@ -1795,30 +1735,6 @@ mod tests {
     }
 
     #[test]
-    fn path_output_keeps_labeled_native_proof_surface() {
-        let line = JournalPathLine {
-            label: "default",
-            path: PathBuf::from("/tmp/journal"),
-        };
-        assert_eq!(
-            path_output(&line),
-            CommandOutput::success("default\t/tmp/journal\n")
-        );
-    }
-
-    #[test]
-    fn plain_path_output_matches_oracle_path_flag() {
-        let line = JournalPathLine {
-            label: "default",
-            path: PathBuf::from("/tmp/journal"),
-        };
-        assert_eq!(
-            plain_path_output(&line),
-            CommandOutput::success("/tmp/journal\n")
-        );
-    }
-
-    #[test]
     fn absent_journal_omits_days_without_warning_condition() {
         let root = temp_path("absent-journal");
         assert_eq!(inspect_journal_days(&root).unwrap(), None);
@@ -1874,8 +1790,6 @@ mod tests {
             os_args(&["help"]),
             os_args(&["--version"]),
             os_args(&["-V"]),
-            os_args(&["--path"]),
-            os_args(&["path"]),
             os_args(&["root"]),
             os_args(&["does-not-exist"]),
             os_args(&["think"]),
@@ -1888,6 +1802,33 @@ mod tests {
             os_args(&["notify", "--help"]),
         ] {
             let _ = run_with_stdin_provider("sol", args, &provider);
+        }
+    }
+
+    #[test]
+    fn retired_invocations_are_nonzero_without_runtime_side_effects() {
+        let provider = PanicStdinProvider;
+        for args in [
+            os_args(&["--path"]),
+            os_args(&["path"]),
+            os_args(&["doctor"]),
+            os_args(&["check"]),
+            os_args(&["call", "journal", "export"]),
+            os_args(&["call", "journal", "facet", "doctor"]),
+            os_args(&["call", "journal", "facet", "merge"]),
+            os_args(&["call", "journal", "merge"]),
+            os_args(&["call", "journal"]),
+            os_args(&["call", "journal", "facet"]),
+        ] {
+            let outcome = evaluate_args(&args);
+            assert!(matches!(outcome, Outcome::Unsupported { .. }));
+            assert!(!should_delegate_to_compat_after_native_miss(
+                &args, &outcome
+            ));
+            assert_ne!(
+                run_with_stdin_provider("sol", args, &provider),
+                ExitCode::SUCCESS
+            );
         }
     }
 
@@ -2051,7 +1992,7 @@ mod tests {
     }
 
     #[test]
-    fn call_journal_delegates_only_for_compat_remainder() {
+    fn call_journal_matches_only_exact_native_leaves() {
         let journal = os_args(&["call", "journal", "search"]);
         let journal_outcome = evaluate_args(&journal);
         assert!(matches!(journal_outcome, Outcome::Migrated { .. }));
@@ -2075,11 +2016,18 @@ mod tests {
             &unknown,
             &unknown_outcome
         ));
+
+        let partial = os_args(&["call", "journal", "sear"]);
+        let partial_outcome = evaluate_args(&partial);
+        assert!(matches!(partial_outcome, Outcome::Unsupported { .. }));
+        assert!(!should_delegate_to_compat_after_native_miss(
+            &partial,
+            &partial_outcome
+        ));
     }
 
     #[test]
     fn retired_contract_is_unsupported_not_compat() {
-        assert!(!is_top_level_compat_command(OsStr::new("contract")));
         assert!(matches!(
             evaluate_args(&os_args(&["contract"])),
             Outcome::Unsupported { .. }
