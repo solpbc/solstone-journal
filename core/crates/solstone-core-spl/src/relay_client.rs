@@ -82,9 +82,6 @@ pub enum RelayError {
     /// The relay refused or could not establish the listen WebSocket.
     #[error("relay listen connection failed")]
     ListenConnection,
-    /// The active listen WebSocket ended and the client will reconnect.
-    #[error("relay listen connection closed")]
-    ListenClosed,
 }
 
 #[derive(Clone)]
@@ -554,7 +551,7 @@ mod tests {
         collections::HashSet,
         future,
         sync::{Arc, Mutex},
-        time::Duration,
+        time::{Duration, Instant},
     };
 
     use super::{
@@ -868,15 +865,19 @@ mod tests {
                 Some(Ok(Message::Ping(_))) => {}
                 _ => return Err(()),
             }
-            for _ in 0..3 {
-                listen
+            for _ in 0..4 {
+                tokio::time::sleep(Duration::from_millis(40)).await;
+                if listen
                     .send(Message::Pong(Bytes::from_static(b"wrong")))
                     .await
-                    .map_err(|_| ())?;
-                listen
-                    .send(Message::Text("{\"type\":\"ignored\"}".into()))
-                    .await
-                    .map_err(|_| ())?;
+                    .is_err()
+                    || listen
+                        .send(Message::Text("{\"type\":\"ignored\"}".into()))
+                        .await
+                        .is_err()
+                {
+                    return Ok(());
+                }
             }
             future::pending::<()>().await;
             Ok::<(), ()>(())
@@ -889,14 +890,23 @@ mod tests {
             Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
             Arc::new(Dialer::new(oneshot::channel().0)),
         );
+        let started_at = Instant::now();
         let run = {
             let client = client.clone();
             tokio::spawn(async move { client.run().await })
         };
 
-        timeout(Duration::from_secs(1), emitter.wait_for_event("disconnect"))
-            .await
-            .map_err(|_| "missed acknowledgement did not disconnect".to_owned())?;
+        timeout(
+            Duration::from_millis(150),
+            emitter.wait_for_event("disconnect"),
+        )
+        .await
+        .map_err(|_| "missed acknowledgement did not disconnect".to_owned())?;
+        if started_at.elapsed() > Duration::from_millis(150) {
+            return Err(
+                "wrong Pong/control traffic postponed the acknowledgement deadline".to_owned(),
+            );
+        }
         let events = emitter.snapshot();
         assert!(events.iter().all(|(event, _)| event != "connected"));
         assert!(
@@ -909,6 +919,41 @@ mod tests {
         let _ = run.await;
         server.abort();
         let _ = server.await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn listener_ack_before_stability_window_does_not_reset_backoff() -> Result<(), String> {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|_| "relay bind failed".to_owned())?;
+        let address = listener
+            .local_addr()
+            .map_err(|_| "relay address failed".to_owned())?;
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.map_err(|_| ())?;
+            let mut listen = accept_async(stream).await.map_err(|_| ())?;
+            answer_one_ping(&mut listen).await?;
+            listen.close(None).await.map_err(|_| ())
+        });
+        let mut config = client_config(address, "test-token");
+        config.ping_interval = Duration::from_millis(60);
+        config.ping_ack_timeout = Duration::from_millis(30);
+        config.ack_stability_window = Duration::from_millis(120);
+        let client = RelayClient::new(
+            config,
+            Arc::new(Emitter::default()) as Arc<dyn CallosumEmit>,
+            Arc::new(Dialer::new(oneshot::channel().0)),
+        );
+
+        let attempt = timeout(Duration::from_secs(2), client.run_once())
+            .await
+            .map_err(|_| "under-window listener did not end".to_owned())?;
+        assert!(!attempt.reset_backoff);
+        server
+            .await
+            .map_err(|_| "relay server panicked".to_owned())?
+            .map_err(|_| "relay server failed".to_owned())?;
         Ok(())
     }
 
