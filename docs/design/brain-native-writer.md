@@ -30,11 +30,13 @@ there are not independent writer consumers which justify a separate
 crate (`core/crates/solstone-core-journal-config-write/src/commit.rs:108-147`);
 the brain writer is the one authority for the brain domain.
 
-No new wrapper name is added to `core/deny.toml`: `solstone-core-brain` is
-already in the `solstone-core-journal-io` wrappers list
-(`core/deny.toml:30`).  Implementation must update that entry's explanatory
-phrase from “read-only brain inspector” to describe the native brain authority;
-the wrappers list itself is unchanged.
+No new brain-writer crate or wrapper name is needed: `solstone-core-brain` is
+already in the `solstone-core-journal-io` wrappers list (`core/deny.toml:30`).
+Implementation must update that entry's explanatory phrase from “read-only
+brain inspector” to describe the native brain authority. **Implementation
+addendum:** `solstone-core` itself was later added to that wrappers list solely
+because its cross-process lease-contention integration tests directly depend on
+`solstone-core-journal-io`; this is unrelated to the writer crate boundary.
 
 The CLI follows the existing aggregate-binary pattern: add `Command::Brain`, a
 `BrainCommand` verb enum, and `parse_brain` to
@@ -310,7 +312,7 @@ renewal, which was not designed against it in the assignment's own `§2 In
 scope` wording ("A session-child command, `solstone-core brain refresh
 --session`...") and needed correcting here before implementation.
 
-The corrected CLI verb surface has exactly three families:
+The corrected write CLI surface has exactly three families:
 
 - **`solstone-core brain refresh --session`** — as specified above: begin,
   hold the lease across the caller's probe, finish or abandon, all in one
@@ -340,6 +342,15 @@ The corrected CLI verb surface has exactly three families:
   it only holds the scoped `health/brain.json.lock`, never
   `acquire_file_lease`), so this is safe as a standalone, independently
   invocable process, exactly like `journal-config read`/`commit`.
+
+**Implementation addendum (read and pure transport verbs):** Two later,
+non-writing verbs complete the Python transport surface without changing the
+three write families above. `solstone-core brain inspect` provides native
+inspection and the current active fingerprint for `inspect_brain_state` and
+`read_active_brain_fingerprint_sha256`; `solstone-core brain fingerprint`
+computes a fingerprint from caller-supplied config and HMAC key for
+`build_active_brain_fingerprint`. They were needed once AC20 removed the
+Python validator, projector, and fingerprint algorithm.
 
 There is no standalone `begin-refresh`, `finish-refresh`, `abandon-refresh`,
 `begin-renewal`, `finish-renewal`, or `abandon-renewal` verb. AC2's "reaches
@@ -462,9 +473,9 @@ fatal” rewrite.
 
 ## 6. AC13 writer-parity corpus rule
 
-**Revised during implementation** (this section originally claimed a 40-record
+**Revised during implementation** (this section originally claimed a larger
 subset; that claim did not survive contact with the actual write-lane code and
-is corrected here to the verified count).
+is corrected here to the verified 28/46 split).
 
 The fixture has 74 named records, but it has no reachability annotation.  Use
 a semantic, explicit 28-record subset for writer-parity tests: a record is
@@ -594,7 +605,7 @@ bound during the cut.
 | 10 | A record carrying a non-null `checking` block composes with `refresh_permit_active = true` unconditionally (the validator hardcodes this; do not reduce against live lease state while composing a checking record). | Keep composition pure: a non-null `checking` forces `refresh_permit_active=true`; composition never probes the live lease. **Implementation attention:** add a checking-record composition test with no held lease. |
 | 11 | Every record any write path emits validates under W1's validator, including the `none`-lane path; every refusal path leaves the on-disk record byte-identical to before and leaves the permit defined. State each assertion per path. | All native records pass the shared W1 validator before publication. Build a per-path matrix for refresh finish/abandon, renewal finish/abandon, runtime failure, and none begin: emitted record validates; each refusal preserves bytes and does not consume/undefine a permit except where the reference's finally-release contract requires release. **At risk:** implement must distinguish “permit value remains defined for assertion” from lease ownership after a reference finally block. |
 | 12 | Composition parity — for all 74 fixture records, composing from that record's own evidence/fingerprint/revision/checking/marker equals the recorded one field-for-field except `updated_at` (pinned as `now` per-record). | Retain all 74 as native compose/projection parity input. This is deliberately separate from write-lane parity; pin `now` to each fixture's `updated_at` expectation. |
-| 13 | Write-lane parity, over the reachable subset only (design corrected this to 28/46 — use that; an earlier implementation-time draft of this document said 40/34, which double-checking against the actual write-lane code disproved — see section 6). Do not report criterion 12 as satisfying this. | **Corrected, satisfied by implementation:** the explicit semantic 28 reachable / 46 unreachable selector from section 6, asserted at that cardinality, drives `finish_refresh` from a seeded prior state for all 28 and asserts field-for-field equality against the fixture. AC12's 74-record composition test does not satisfy this criterion on its own — this is a separate, write-path-driven test. |
+| 13 | Write-lane parity, over the reachable subset only (design corrected this to 28/46 — use that; an earlier implementation-time draft used a larger subset, which double-checking against the actual write-lane code disproved — see section 6). Do not report criterion 12 as satisfying this. | **Corrected, satisfied by implementation:** the explicit semantic 28 reachable / 46 unreachable selector from section 6, asserted at that cardinality, drives `finish_refresh` from a seeded prior state for all 28 and asserts field-for-field equality against the fixture. AC12's 74-record composition test does not satisfy this criterion on its own — this is a separate, write-path-driven test. |
 | 14 | Lease held by a live process for the whole refresh, released by process death alone. Test kills the holder, asserts a second refresh acquires with no intervening repair. | The journal-I/O RAII `FileLease` is retained from begin through external probe/terminal resolution; kernel close on process death releases it. **Implementation attention:** add the kill-holder cross-process test with no stale-file repair. |
 | 15 | A hung caller does not wedge refresh — the child bounds its own life independent of the generate contract's caller-death handling (design's 90s bound). Test holds a child open past its bound with the parent alive, asserts the lease is free afterward. | **Satisfied by design:** session server has a non-resetting 90-second bound independent of Generate, then abandons and exits. Add the live-parent/hung-child test; use a test-only controllable clock/timeout hook so it does not wait 90 real seconds. |
 | 16 | A bare EOF is abandonment, not a finish: revision incremented, `checking` cleared, a named reason on a named component (design originally chose `probe_internal_error`/`lane_prerequisites`; superseded in section 4 by `chat_timeout`/`generate` for refresh and `nvattest_unavailable`/`lane_prerequisites` for renewal, after discovering the original choice can never win the priority-4 tie-break against a null `configuration` component on a freshly begun checking record). | **Corrected, satisfied:** bare EOF/timeout invokes native abandon with the corrected reason/component pair from section 4, which is structurally guaranteed (priority 2/3, not 4) to survive reduction as the record's actual reason regardless of which other components are null, incrementing revision and clearing checking. |
@@ -610,10 +621,10 @@ bound during the cut.
 | 26 | No file under `solstone/think/providers/` other than `brain_state.py` is modified. | Restrict Python provider edits to `brain_state.py`; enforce with final path review. **At risk:** if a sibling provider change seems necessary, stop for scope approval rather than broaden this wave. |
 | 27 | `core/fixtures/local_contract.json` and `core/fixtures/brain_projection.json` are byte-unchanged — assert via hash comparison against the lode's base commit, not `git diff` against HEAD. | Treat both fixtures as frozen; implementation verification compares their hashes to the lode base commit. Do not use HEAD diff as the proof. |
 | 28 | The `generate` contract, its fixture, and `solstone-core-generate` are untouched. | Session framing borrows Generate's protocol discipline only; it makes no source, fixture, crate, or contract change under Generate. Enforce with final path review. |
-| 29 | `core/deny.toml:30`'s stale reason string is updated; if a new writer crate is introduced, it is also added to the `wrappers` list itself (design chose no new crate, so this is just the string update). | Satisfied by the existing-crate decision: update only the stale reason string at line 30; no new crate and no wrappers-list addition. |
+| 29 | `core/deny.toml:30`'s stale reason string is updated; if a new writer crate is introduced, it is also added to the `wrappers` list itself. | Satisfied by the existing-crate decision: no new writer crate was added. **Implementation correction:** `solstone-core` was later added to the wrappers list for its own real cross-process lease-contention tests, not for a new writer authority. |
 | 30 | End-to-end verification through a real Python caller against a live journal is explicitly VPE-direct post-ship work — do not attempt it in the lode, do not report it as done. | Explicitly out of lode scope. Implementation may run fixtures/process tests only; it must neither attempt live-journal VPE-direct nor claim it complete. |
 
-The material corrections remain AC7 (seven fences), AC13 (explicit 40/34
+The material corrections remain AC7 (seven fences), AC13 (explicit 28/46
 writer subset), and AC16 (the original `probe_internal_error`/`lane_prerequisites` choice could never win its own priority-4 tie-break on a fresh checking record; corrected in section 4 to `chat_timeout`/`generate` and `nvattest_unavailable`/`lane_prerequisites`).
 AC18 additionally fixes the behavioral fork: refresh contention is no-permit
 with no write, while prerequisite-renewal contention is `busy`.

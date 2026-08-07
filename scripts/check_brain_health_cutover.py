@@ -244,7 +244,7 @@ def _process_local_attestation_calls(path: Path, text: str) -> set[str]:
 
 def _brain_write_bindings(
     tree: ast.AST,
-) -> tuple[dict[str, str], set[str]]:
+) -> tuple[dict[str, str], set[str], set[str], dict[str, str]]:
     """Return writer aliases and names assigned from brain-path helpers."""
     writer_aliases: dict[str, str] = {}
     helper_aliases: set[str] = set(BRAIN_PATH_HELPERS)
@@ -274,22 +274,32 @@ def _brain_write_bindings(
             targets = [node.target]
         if not isinstance(value, ast.Call):
             continue
-        dotted = _dotted_name(value.func)
-        if dotted is None:
-            continue
-        helper_name = dotted.rsplit(".", 1)[-1]
-        helper_module = dotted.rpartition(".")[0]
-        is_helper = helper_name in helper_aliases
-        if helper_module and module_aliases.get(helper_module) == (
-            "solstone.think.providers.brain_state"
-        ):
-            is_helper = helper_name in BRAIN_PATH_HELPERS
-        if not is_helper:
+        if not _is_brain_path_helper_call(value, helper_aliases, module_aliases):
             continue
         for target in targets:
             if isinstance(target, ast.Name):
                 helper_paths.add(target.id)
-    return writer_aliases, helper_paths
+    return writer_aliases, helper_paths, helper_aliases, module_aliases
+
+
+def _is_brain_path_helper_call(
+    node: ast.AST,
+    helper_aliases: set[str],
+    module_aliases: dict[str, str],
+) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    dotted = _dotted_name(node.func)
+    if dotted is None:
+        return False
+    helper_name = dotted.rsplit(".", 1)[-1]
+    helper_module = dotted.rpartition(".")[0]
+    is_helper = helper_name in helper_aliases
+    if helper_module and module_aliases.get(helper_module) == (
+        "solstone.think.providers.brain_state"
+    ):
+        is_helper = helper_name in BRAIN_PATH_HELPERS
+    return is_helper
 
 
 def _brain_writer_callee(
@@ -327,7 +337,9 @@ def _brain_state_write_calls(root: Path, path: Path, text: str) -> list[Finding]
         tree = ast.parse(text, filename=str(path))
     except SyntaxError:
         return []
-    writer_aliases, helper_paths = _brain_write_bindings(tree)
+    writer_aliases, helper_paths, helper_aliases, module_aliases = _brain_write_bindings(
+        tree
+    )
     findings: list[Finding] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -342,13 +354,29 @@ def _brain_state_write_calls(root: Path, path: Path, text: str) -> list[Finding]
         helper_target = bool(node.args) and isinstance(node.args[0], ast.Name) and (
             node.args[0].id in helper_paths
         )
+        inline_helper_target = bool(node.args) and _is_brain_path_helper_call(
+            node.args[0], helper_aliases, module_aliases
+        )
         method_helper_target = (
             callee in {"Path.write_text", "Path.write_bytes"}
             and isinstance(node.func, ast.Attribute)
             and isinstance(node.func.value, ast.Name)
             and node.func.value.id in helper_paths
         )
-        if literal_target or helper_target or method_helper_target:
+        inline_method_helper_target = (
+            callee in {"Path.write_text", "Path.write_bytes"}
+            and isinstance(node.func, ast.Attribute)
+            and _is_brain_path_helper_call(
+                node.func.value, helper_aliases, module_aliases
+            )
+        )
+        if (
+            literal_target
+            or helper_target
+            or inline_helper_target
+            or method_helper_target
+            or inline_method_helper_target
+        ):
             findings.append(
                 Finding(
                     f"{_rel(root, path)}:{node.lineno}",
