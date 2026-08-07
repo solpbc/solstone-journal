@@ -20,6 +20,8 @@ pub mod pins;
 pub mod readiness;
 pub mod status;
 
+static PUBLISH_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 #[cfg(test)]
 mod tests;
 
@@ -239,6 +241,13 @@ fn run(object: &Map<String, Value>, mlx: bool) -> Result<Value, DispatchError> {
     };
     match result {
         Ok(result) => {
+            if !mlx && result["backend"] == "cuda" {
+                let key = pins::platform_key();
+                if let Some((_, digest, _)) = pins::cuda_pin(&key) {
+                    let root = pins::cache_root(&journal).join("cuda").join(&key);
+                    cleanup_legacy_cuda_oci_dirs(&root, &root.join(digest));
+                }
+            }
             let terminal = status::transition(state, "installed", None, None)
                 .and_then(|value| status::write_status(&journal, value))
                 .map_err(|error| failure("state", "terminal_write_failed", error, 74))?;
@@ -299,13 +308,49 @@ pub(crate) fn local_backend_choice(
     nvidia_probe: Option<crate::NvidiaProbe>,
 ) -> crate::BackendChoice {
     let probe = nvidia_probe.unwrap_or_else(crate::probe_nvidia_gpu);
+    let key = pins::platform_key();
+    let trust = pins::cuda_pin(&key)
+        .map(|(_, digest, _)| {
+            let artifact = pins::cache_root(journal)
+                .join("cuda")
+                .join(&key)
+                .join(digest)
+                .join("llama-server");
+            let declared = crate::CUDA_EMBEDDED_ARCH_SET
+                .iter()
+                .map(|arch| (*arch).to_owned())
+                .collect::<Vec<_>>();
+            match manifest::cuda_trust(&artifact, &declared)["trust"].as_str() {
+                Some("trusted") => crate::ArtifactTrust::Trusted,
+                Some("absent") => crate::ArtifactTrust::Absent,
+                _ => crate::ArtifactTrust::Unavailable,
+            }
+        })
+        .unwrap_or(crate::ArtifactTrust::Unavailable);
     crate::select_local_backend(
         &probe,
         &crate::CUDA_EMBEDDED_ARCH_SET,
         crate::CUDA_MIN_DRIVER_VERSION,
-        crate::ArtifactTrust::Trusted,
+        trust,
         status::read_status(journal, "local")
-            .map(|value| value.install_state == "installed")
+            .map(|value| {
+                value.install_state == "installed"
+                    && value
+                        .target_fingerprint_json
+                        .as_deref()
+                        .is_some_and(|target| {
+                            serde_json::from_str::<Value>(target)
+                                .ok()
+                                .and_then(|target| {
+                                    target
+                                        .get("backend")
+                                        .and_then(Value::as_str)
+                                        .map(str::to_owned)
+                                })
+                                .as_deref()
+                                == Some("cuda")
+                        })
+            })
             .unwrap_or(false),
     )
 }
@@ -452,15 +497,16 @@ fn run_local_install(
     manifest::write_manifest(&manifest::artifact_manifest_path(&staging), &manifest_value)
         .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
     if cuda {
-        let wanted = pins::cuda_wanted_files(pins::cuda_runtime_arch(&key).unwrap()).unwrap();
-        let trust = manifest::cuda_trust(&final_binary, &wanted);
+        let declared = crate::CUDA_EMBEDDED_ARCH_SET
+            .iter()
+            .map(|arch| (*arch).to_owned())
+            .collect::<Vec<_>>();
+        let trust = manifest::cuda_trust(&final_binary, &declared);
         if trust["trust"] != "trusted" {
             return Err(failure("verification", "cuda_runtime_untrusted", trust, 65));
         }
-        cleanup_legacy_cuda_oci_dirs(&root.join("cuda").join(&key), &install_dir);
     }
-    let _ = fs::remove_dir_all(&install_dir);
-    fs::rename(&staging, &install_dir)
+    publish_staged_tree(&staging, &install_dir)
         .map_err(|error| failure("io", "publish_failed", error, 74))?;
     install_model(&journal, &model_id, status_value)?;
     Ok(
@@ -489,13 +535,14 @@ fn run_mlx_install(object: &Map<String, Value>) -> Result<Value, DispatchError> 
             65,
         ));
     }
-    if destination.exists() {
-        std::fs::remove_dir_all(&destination)
-            .map_err(|error| failure("io", "snapshot_replace_failed", error, 74))?;
-    }
-    std::fs::create_dir_all(&destination)
+    let staging = destination.parent().unwrap().join(format!(
+        ".{}.staging",
+        destination.file_name().unwrap().to_string_lossy()
+    ));
+    let _ = fs::remove_dir_all(&staging);
+    std::fs::create_dir_all(&staging)
         .map_err(|error| failure("io", "snapshot_create_failed", error, 74))?;
-    copy_tree(&source, &destination)?;
+    copy_tree(&source, &staging)?;
     let hashes = object
         .get("lfs_sha256")
         .and_then(Value::as_object)
@@ -508,8 +555,10 @@ fn run_mlx_install(object: &Map<String, Value>) -> Result<Value, DispatchError> 
                 65,
             )
         })?;
-    mlx::validate_snapshot_sha256(&destination, &hashes)
+    mlx::validate_snapshot_sha256(&staging, &hashes)
         .map_err(|error| failure("verification", "snapshot_sha256_mismatch", error, 65))?;
+    publish_staged_tree(&staging, &destination)
+        .map_err(|error| failure("io", "snapshot_replace_failed", error, 74))?;
     let target = mlx_target(&model_id)?;
     let target_json = fingerprint::canonical(target)
         .map_err(|error| failure("input", "fingerprint_invalid", error, 65))?;
@@ -640,26 +689,106 @@ fn find_file(root: &Path, name: &str) -> Option<PathBuf> {
     }
     None
 }
+
+fn publish_staged_tree(staging: &Path, target: &Path) -> std::io::Result<()> {
+    publish_staged_tree_with(staging, target, &mut |from, to| fs::rename(from, to))
+}
+
+fn publish_staged_tree_with(
+    staging: &Path,
+    target: &Path,
+    rename: &mut impl FnMut(&Path, &Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let parent = target.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "target has no parent")
+    })?;
+    let name = target.file_name().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "target has no file name")
+    })?;
+    let aside = loop {
+        let candidate = parent.join(format!(
+            ".{}.previous.{}.{}",
+            name.to_string_lossy(),
+            std::process::id(),
+            PUBLISH_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        ));
+        if !candidate.exists() {
+            break candidate;
+        }
+    };
+    let had_target = target.exists();
+    if had_target {
+        rename(target, &aside)?;
+    }
+    if let Err(error) = rename(staging, target) {
+        if had_target {
+            let _ = rename(&aside, target);
+        }
+        let _ = fs::remove_dir_all(staging);
+        return Err(error);
+    }
+    if had_target {
+        let _ = fs::remove_dir_all(aside);
+    }
+    Ok(())
+}
+
 fn cleanup_legacy_cuda_oci_dirs(root: &Path, keep: &Path) {
     let Ok(entries) = fs::read_dir(root) else {
         return;
     };
+    let keep_resolved = keep.canonicalize().unwrap_or_else(|_| keep.to_path_buf());
     for entry in entries.flatten() {
         let path = entry.path();
         let name = path
             .file_name()
             .and_then(|value| value.to_str())
             .unwrap_or("");
-        if path != keep
-            && path.is_dir()
-            && !path.is_symlink()
-            && name.len() == 64
-            && name.bytes().all(|byte| byte.is_ascii_hexdigit())
-            && path.join(".oci-install.json").is_file()
+        if path.canonicalize().ok().as_ref() != Some(&keep_resolved)
+            && is_legacy_cuda_oci_tree(&path, name)
         {
             let _ = fs::remove_dir_all(path);
         }
     }
+}
+
+fn is_legacy_cuda_oci_tree(path: &Path, name: &str) -> bool {
+    if !path.is_dir()
+        || fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
+        || name.len() != 64
+        || !name.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return false;
+    }
+    let Ok(sidecar) = fs::read(path.join(".oci-install.json")) else {
+        return false;
+    };
+    let Ok(record) = serde_json::from_slice::<Value>(&sidecar) else {
+        return false;
+    };
+    let Some(record) = record.as_object() else {
+        return false;
+    };
+    let Some(image_ref) = record.get("image_ref").and_then(Value::as_str) else {
+        return false;
+    };
+    if !image_ref.ends_with(&format!("@sha256:{name}")) {
+        return false;
+    }
+    let Some(arch) = record.get("arch").and_then(Value::as_str) else {
+        return false;
+    };
+    if pins::cuda_wanted_files(arch).is_none() {
+        return false;
+    }
+    let Some(files) = record.get("files").and_then(Value::as_object) else {
+        return false;
+    };
+    files.values().all(|digest| {
+        digest.as_str().is_some_and(|digest| {
+            digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
+    })
 }
 
 fn journal(object: &Map<String, Value>) -> Result<PathBuf, DispatchError> {

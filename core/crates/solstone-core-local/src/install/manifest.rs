@@ -115,14 +115,16 @@ pub fn write_manifest(path: &Path, manifest: &Value) -> Result<Value, String> {
 }
 
 pub fn prove_manifest(path: &Path, pin_identity: &Value) -> Value {
-    let manifest: Value = match fs::read(path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-    {
-        Some(value) if value.is_object() => value,
-        Some(_) => return proof("missing-or-mismatched", "manifest_malformed"),
-        None if !path.exists() => return proof("missing-or-mismatched", "manifest_missing"),
-        None => return proof("proof-unavailable", "manifest_io_error"),
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return proof("missing-or-mismatched", "manifest_missing");
+        }
+        Err(_) => return proof("proof-unavailable", "manifest_io_error"),
+    };
+    let manifest: Value = match serde_json::from_slice::<Value>(&bytes) {
+        Ok(value) if value.is_object() => value,
+        Ok(_) | Err(_) => return proof("missing-or-mismatched", "manifest_malformed"),
     };
     let expected = normalize_pin_identity(pin_identity).unwrap_or(Value::Null);
     if manifest.pointer("/source/pin_identity") != Some(&expected) {
@@ -140,6 +142,19 @@ pub fn prove_manifest(path: &Path, pin_identity: &Value) -> Value {
         let Some(relative) = entry.get("relative_path").and_then(Value::as_str) else {
             return proof("missing-or-mismatched", "inventory_malformed");
         };
+        let relative = Path::new(relative);
+        if relative.is_absolute()
+            || relative.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            })
+        {
+            return proof("missing-or-mismatched", "inventory_malformed");
+        }
         let member = root.join(relative);
         if !member.is_file() {
             return proof("missing-or-mismatched", "inventory_member_missing");

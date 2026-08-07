@@ -11,7 +11,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::{
-    InstallVerb, archive, dispatch, fingerprint, lease, manifest, pins, readiness, status,
+    InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, dispatch, fingerprint, lease,
+    local_backend_choice, manifest, pins, publish_staged_tree_with, readiness, status,
 };
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -40,6 +41,7 @@ fn status_corpus_replays_the_full_transition_matrix() {
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 63);
     let target = fixture["targets"]["primary"].clone();
+    let other_target = fixture["targets"]["other"].clone();
     let mut visited = BTreeSet::new();
     for case in cases.iter().filter(|case| {
         case["name"].as_str().unwrap().starts_with("transition_")
@@ -82,7 +84,7 @@ fn status_corpus_replays_the_full_transition_matrix() {
         assert_durable_case(&root, case);
         let _ = fs::remove_dir_all(root);
     }
-    replay_status_special_cases(cases, target, &mut visited);
+    replay_status_special_cases(cases, target, other_target, &mut visited);
     assert_eq!(
         visited,
         cases
@@ -92,7 +94,12 @@ fn status_corpus_replays_the_full_transition_matrix() {
     );
 }
 
-fn replay_status_special_cases(cases: &[Value], target: Value, visited: &mut BTreeSet<String>) {
+fn replay_status_special_cases(
+    cases: &[Value],
+    target: Value,
+    other_target: Value,
+    visited: &mut BTreeSet<String>,
+) {
     for case in cases {
         let name = case["name"].as_str().unwrap();
         if name.starts_with("transition_")
@@ -105,23 +112,17 @@ fn replay_status_special_cases(cases: &[Value], target: Value, visited: &mut BTr
         let outcome = match name {
             "read_before_any_write" => Ok(status::read_status(&root, "local").unwrap()),
             "begin_from_idle" => Ok(begin_for_test(&root, target.clone())),
-            "begin_twice_same_target" | "begin_twice_different_target" => {
+            "begin_twice_same_target" => {
                 let _ = begin_for_test(&root, target.clone());
-                let canonical = fingerprint::canonical(target.clone()).unwrap();
-                status::begin(
-                    &root,
-                    canonical.clone(),
-                    fingerprint::sha256(&canonical),
-                    None,
-                    "resolving",
-                )
+                begin_for_test_result(&root, target.clone())
+            }
+            "begin_twice_different_target" => {
+                let _ = begin_for_test(&root, target.clone());
+                begin_for_test_result(&root, other_target.clone())
             }
             "begin_or_replace_takes_over" => {
                 let _ = begin_for_test(&root, target.clone());
-                let other = fingerprint::canonical(
-                    json!({"model":"local/qwen3.5-4b","server":"b9999","backend":"cuda"}),
-                )
-                .unwrap();
+                let other = fingerprint::canonical(other_target.clone()).unwrap();
                 status::begin_or_replace(
                     &root,
                     other.clone(),
@@ -178,10 +179,7 @@ fn replay_status_special_cases(cases: &[Value], target: Value, visited: &mut BTr
             }
             "stale_attempt_write_is_refused" => {
                 let stale = begin_for_test(&root, target.clone());
-                let other = fingerprint::canonical(
-                    json!({"model":"local/qwen3.5-4b","server":"b9999","backend":"cuda"}),
-                )
-                .unwrap();
+                let other = fingerprint::canonical(other_target.clone()).unwrap();
                 let _ = status::begin_or_replace(
                     &root,
                     other.clone(),
@@ -194,10 +192,7 @@ fn replay_status_special_cases(cases: &[Value], target: Value, visited: &mut BTr
             }
             "assert_current_after_replacement" => {
                 let stale = begin_for_test(&root, target.clone());
-                let other = fingerprint::canonical(
-                    json!({"model":"local/qwen3.5-4b","server":"b9999","backend":"cuda"}),
-                )
-                .unwrap();
+                let other = fingerprint::canonical(other_target.clone()).unwrap();
                 let _ = status::begin_or_replace(
                     &root,
                     other.clone(),
@@ -258,15 +253,21 @@ fn assert_durable_case(root: &std::path::Path, case: &Value) {
 }
 
 fn begin_for_test(root: &std::path::Path, target: Value) -> status::InstallStatus {
+    begin_for_test_result(root, target).unwrap()
+}
+
+fn begin_for_test_result(
+    root: &std::path::Path,
+    target: Value,
+) -> Result<status::InstallStatus, status::StatusError> {
     let canonical = fingerprint::canonical(target).unwrap();
-    let mut state = status::idle_status("local");
-    state.target_fingerprint_json = Some(canonical.clone());
-    state.target_fingerprint_sha256 = Some(fingerprint::sha256(&canonical));
-    status::write_status(
+    status::begin(
         root,
-        status::transition(state, "resolving", None, None).unwrap(),
+        canonical.clone(),
+        fingerprint::sha256(&canonical),
+        None,
+        "resolving",
     )
-    .unwrap()
 }
 
 fn redact_status(value: &Value) -> Value {
@@ -437,6 +438,139 @@ fn extraction_refuses_relative_and_absolute_escapes_without_parent_changes() {
     }
 }
 
+#[test]
+fn extraction_refuses_symlink_and_hardlink_escapes_without_parent_changes() {
+    for (name, kind) in [
+        ("symlink", tar::EntryType::Symlink),
+        ("hardlink", tar::EntryType::Link),
+    ] {
+        let root = temp(name);
+        let archive_path = root.join("bad-link.tar.gz");
+        write_link_escape_tar(&archive_path, kind);
+        let before = archive::snapshot_tree(&root).unwrap();
+        assert!(matches!(
+            archive::extract_tar_gz(&archive_path, &root.join("dest")),
+            Err(archive::ArchiveError::PathEscape(_))
+        ));
+        assert_eq!(archive::snapshot_tree(&root).unwrap(), before);
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[test]
+fn failed_local_publish_restores_the_existing_tree() {
+    assert_failed_publish_restores_the_existing_tree("local-publish-rollback");
+}
+
+#[test]
+fn failed_mlx_publish_restores_the_existing_tree() {
+    assert_failed_publish_restores_the_existing_tree("mlx-publish-rollback");
+}
+
+fn assert_failed_publish_restores_the_existing_tree(name: &str) {
+    let root = temp(name);
+    let target = root.join("target");
+    let staging = root.join("staging");
+    fs::create_dir_all(&target).unwrap();
+    fs::write(target.join("old"), b"old").unwrap();
+    fs::create_dir_all(&staging).unwrap();
+    fs::write(staging.join("new"), b"new").unwrap();
+    let mut calls = 0;
+    let error = publish_staged_tree_with(&staging, &target, &mut |from, to| {
+        calls += 1;
+        if calls == 2 {
+            return Err(std::io::Error::other("injected publish failure"));
+        }
+        fs::rename(from, to)
+    })
+    .unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::Other);
+    assert_eq!(fs::read(target.join("old")).unwrap(), b"old");
+    assert!(!staging.exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn backend_choice_requires_a_trusted_cuda_artifact() {
+    let root = temp("backend-trust");
+    let key = pins::platform_key();
+    let Some((_, digest, _)) = pins::cuda_pin(&key) else {
+        return;
+    };
+    let probe: crate::NvidiaProbe = serde_json::from_value(json!({
+        "schema": NVIDIA_PROBE_SCHEMA,
+        "detected": true,
+        "gpu_index": 0,
+        "gpu_name": "test GPU",
+        "compute_cap": "8.6",
+        "arch": "sm_86",
+        "driver_cuda_major": 13,
+        "vram_mib": 1024,
+        "unified_memory_mib": null,
+        "probe_error": null,
+    }))
+    .unwrap();
+    let absent = local_backend_choice(&root, Some(probe.clone()));
+    assert_eq!(absent.backend, crate::Backend::Vulkan);
+    let artifact = pins::cache_root(&root)
+        .join("cuda")
+        .join(&key)
+        .join(digest)
+        .join("llama-server");
+    fs::create_dir_all(artifact.parent().unwrap()).unwrap();
+    fs::write(&artifact, b"sm_86 sm_89 sm_120a sm_121a").unwrap();
+    let trusted = local_backend_choice(&root, Some(probe));
+    assert_eq!(trusted.backend, crate::Backend::Cuda);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn legacy_cuda_cleanup_requires_the_original_validated_sidecar_shape() {
+    let root = temp("legacy-cleanup");
+    let keep = root.join("keep");
+    fs::create_dir_all(&keep).unwrap();
+    let valid = root.join("a".repeat(64));
+    fs::create_dir_all(&valid).unwrap();
+    fs::write(
+        valid.join(".oci-install.json"),
+        json!({
+            "image_ref": format!("ghcr.io/example@sha256:{}", valid.file_name().unwrap().to_string_lossy()),
+            "arch": "amd64",
+            "files": {"llama-server": "b".repeat(64)},
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let invalid = root.join("c".repeat(64));
+    fs::create_dir_all(&invalid).unwrap();
+    fs::write(invalid.join(".oci-install.json"), "{}").unwrap();
+    cleanup_legacy_cuda_oci_dirs(&root, &keep);
+    assert!(!valid.exists());
+    assert!(invalid.exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn manifest_proof_rejects_malformed_json_and_escaping_inventory_paths() {
+    let root = temp("manifest-proof");
+    let path = root.join("manifest.json");
+    fs::write(&path, "{").unwrap();
+    assert_eq!(
+        manifest::prove_manifest(&path, &json!({}))["reason_code"],
+        "manifest_malformed"
+    );
+    fs::write(
+        &path,
+        json!({"source":{"pin_identity":{}},"inventory":[{"relative_path":"../escape","sha256":"00"}]}).to_string(),
+    )
+    .unwrap();
+    assert_eq!(
+        manifest::prove_manifest(&path, &json!({}))["reason_code"],
+        "inventory_malformed"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
 fn write_unsafe_tar(path: &std::path::Path, member: &str) {
     let file = fs::File::create(path).unwrap();
     let mut encoder = GzEncoder::new(file, Compression::default());
@@ -459,6 +593,22 @@ fn write_unsafe_tar(path: &std::path::Path, member: &str) {
     encoder.write_all(&[0_u8; 509]).unwrap();
     encoder.write_all(&[0_u8; 1024]).unwrap();
     encoder.finish().unwrap();
+}
+
+fn write_link_escape_tar(path: &std::path::Path, kind: tar::EntryType) {
+    let file = fs::File::create(path).unwrap();
+    let encoder = GzEncoder::new(file, Compression::default());
+    let mut builder = tar::Builder::new(encoder);
+    let mut header = tar::Header::new_gnu();
+    header.set_entry_type(kind);
+    header.set_size(0);
+    header.set_mode(0o777);
+    header.set_link_name("../../outside").unwrap();
+    header.set_cksum();
+    builder
+        .append_data(&mut header, "safe/link", std::io::empty())
+        .unwrap();
+    builder.into_inner().unwrap().finish().unwrap();
 }
 
 #[test]

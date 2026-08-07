@@ -103,23 +103,73 @@ pub fn extract_tar_gz(archive: &Path, destination: &Path) -> Result<(), ArchiveE
     for entry in tar.entries()? {
         let mut entry = entry?;
         let path = entry.path()?;
-        if path.is_absolute()
-            || path.components().any(|part| {
-                matches!(
-                    part,
-                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
-                )
-            })
-        {
+        if escapes_destination(&path) {
             return Err(ArchiveError::PathEscape(path.display().to_string()));
         }
         let output = destination.join(&path);
         if !output.starts_with(destination) {
             return Err(ArchiveError::PathEscape(path.display().to_string()));
         }
+        if (entry.header().entry_type().is_symlink() || entry.header().entry_type().is_hard_link())
+            && let Some(link) = entry.link_name()?
+            && !link_stays_within(
+                destination,
+                if entry.header().entry_type().is_symlink() {
+                    output.parent().unwrap_or(destination)
+                } else {
+                    destination
+                },
+                &link,
+            )
+        {
+            return Err(ArchiveError::PathEscape(format!(
+                "{} -> {}",
+                path.display(),
+                link.display()
+            )));
+        }
         entry.unpack(output)?;
     }
     Ok(())
+}
+
+fn escapes_destination(path: &Path) -> bool {
+    path.is_absolute()
+        || path.components().any(|part| {
+            matches!(
+                part,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+}
+
+fn link_stays_within(root: &Path, base: &Path, link: &Path) -> bool {
+    if link.is_absolute() {
+        return false;
+    }
+    let Ok(relative_base) = base.strip_prefix(root) else {
+        return false;
+    };
+    let mut components: Vec<_> = relative_base
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(value) => Some(value),
+            _ => None,
+        })
+        .collect();
+    for component in link.components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(value) => components.push(value),
+            Component::ParentDir => {
+                if components.pop().is_none() {
+                    return false;
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => return false,
+        }
+    }
+    true
 }
 
 pub fn make_executable(path: &Path) -> Result<(), ArchiveError> {
