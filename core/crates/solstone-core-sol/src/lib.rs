@@ -1320,6 +1320,63 @@ mod tests {
         {
             errors.push("sol HTTP journal-call boundary drifted".to_owned());
         }
+        let http_bindings = http_binding_map(sol, &mut errors);
+        let expected_http_bindings = binding_values(&[
+            ("status", &["GET /app/network/api/status"]),
+            ("call journal agents", &["GET /app/search/api/agents"]),
+            (
+                "call journal facet create",
+                &["POST /app/settings/api/facet"],
+            ),
+            (
+                "call journal facet delete",
+                &["DELETE /app/settings/api/facet/{facet_name}"],
+            ),
+            (
+                "call journal facet mute",
+                &["PUT /app/settings/api/facet/{facet_name}"],
+            ),
+            (
+                "call journal facet rename",
+                &["POST /app/settings/api/facet/{facet_name}/rename"],
+            ),
+            (
+                "call journal facet show",
+                &["GET /app/settings/api/facet/{facet_name}"],
+            ),
+            (
+                "call journal facet unmute",
+                &["PUT /app/settings/api/facet/{facet_name}"],
+            ),
+            (
+                "call journal facet update",
+                &["PUT /app/settings/api/facet/{facet_name}"],
+            ),
+            ("call journal facets", &["GET /app/settings/api/facets"]),
+            ("call journal import", &["GET /app/import/api/{timestamp}"]),
+            ("call journal imports", &["GET /app/import/api/list"]),
+            ("call journal news", &["GET /app/news/api/facet/{facet}"]),
+            ("call journal read", &["GET /app/search/api/read"]),
+            (
+                "call journal retention config",
+                &[
+                    "GET /app/settings/api/storage",
+                    "PUT /app/settings/api/storage",
+                ],
+            ),
+            (
+                "call journal retention list",
+                &["POST /app/settings/api/storage/purge"],
+            ),
+            ("call journal search", &["GET /app/search/api/search"]),
+            (
+                "call journal storage-summary",
+                &["GET /app/settings/api/storage"],
+            ),
+        ]);
+        if http_bindings != expected_http_bindings {
+            errors.push("sol HTTP method/route boundary drifted".to_owned());
+        }
         let retired_sol = string_set(sol, "retired_invocations", &mut errors);
         if retired_sol
             != string_values(&[
@@ -1404,6 +1461,58 @@ mod tests {
 
     fn string_values(values: &[&str]) -> std::collections::BTreeSet<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    fn binding_values(
+        values: &[(&str, &[&str])],
+    ) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+        values
+            .iter()
+            .map(|(path, bindings)| ((*path).to_owned(), string_values(bindings)))
+            .collect()
+    }
+
+    fn http_binding_map(
+        sol: &serde_json::Value,
+        errors: &mut Vec<String>,
+    ) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+        let Some(entries) = sol
+            .get("http_bindings")
+            .and_then(serde_json::Value::as_array)
+        else {
+            errors.push("http_bindings must be an array".to_owned());
+            return std::collections::BTreeMap::new();
+        };
+        let mut output = std::collections::BTreeMap::new();
+        for entry in entries {
+            let Some(path) = entry.get("path").and_then(serde_json::Value::as_str) else {
+                errors.push("http_bindings entry has no string path".to_owned());
+                continue;
+            };
+            let Some(bindings) = entry.get("bindings").and_then(serde_json::Value::as_array) else {
+                errors.push(format!("http_bindings {path} has no bindings array"));
+                continue;
+            };
+            let mut projected = std::collections::BTreeSet::new();
+            for binding in bindings {
+                let method = binding.get("method").and_then(serde_json::Value::as_str);
+                let route = binding.get("route").and_then(serde_json::Value::as_str);
+                let (Some(method), Some(route)) = (method, route) else {
+                    errors.push(format!("http_bindings {path} has a malformed binding"));
+                    continue;
+                };
+                if !projected.insert(format!("{method} {route}")) {
+                    errors.push(format!("http_bindings {path} contains a duplicate binding"));
+                }
+            }
+            if projected.is_empty() {
+                errors.push(format!("http_bindings {path} must not be empty"));
+            }
+            if output.insert(path.to_owned(), projected).is_some() {
+                errors.push(format!("http_bindings contains duplicate path {path}"));
+            }
+        }
+        output
     }
 
     fn string_set(

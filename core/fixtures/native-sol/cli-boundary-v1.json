@@ -42,6 +42,117 @@
         "call journal search",
         "call journal storage-summary"
       ],
+      "http_bindings": [
+        {
+          "path": "status",
+          "bindings": [
+            {"method": "GET", "route": "/app/network/api/status"}
+          ]
+        },
+        {
+          "path": "call journal agents",
+          "bindings": [
+            {"method": "GET", "route": "/app/search/api/agents"}
+          ]
+        },
+        {
+          "path": "call journal facet create",
+          "bindings": [
+            {"method": "POST", "route": "/app/settings/api/facet"}
+          ]
+        },
+        {
+          "path": "call journal facet delete",
+          "bindings": [
+            {"method": "DELETE", "route": "/app/settings/api/facet/{facet_name}"}
+          ]
+        },
+        {
+          "path": "call journal facet mute",
+          "bindings": [
+            {"method": "PUT", "route": "/app/settings/api/facet/{facet_name}"}
+          ]
+        },
+        {
+          "path": "call journal facet rename",
+          "bindings": [
+            {"method": "POST", "route": "/app/settings/api/facet/{facet_name}/rename"}
+          ]
+        },
+        {
+          "path": "call journal facet show",
+          "bindings": [
+            {"method": "GET", "route": "/app/settings/api/facet/{facet_name}"}
+          ]
+        },
+        {
+          "path": "call journal facet unmute",
+          "bindings": [
+            {"method": "PUT", "route": "/app/settings/api/facet/{facet_name}"}
+          ]
+        },
+        {
+          "path": "call journal facet update",
+          "bindings": [
+            {"method": "PUT", "route": "/app/settings/api/facet/{facet_name}"}
+          ]
+        },
+        {
+          "path": "call journal facets",
+          "bindings": [
+            {"method": "GET", "route": "/app/settings/api/facets"}
+          ]
+        },
+        {
+          "path": "call journal import",
+          "bindings": [
+            {"method": "GET", "route": "/app/import/api/{timestamp}"}
+          ]
+        },
+        {
+          "path": "call journal imports",
+          "bindings": [
+            {"method": "GET", "route": "/app/import/api/list"}
+          ]
+        },
+        {
+          "path": "call journal news",
+          "bindings": [
+            {"method": "GET", "route": "/app/news/api/facet/{facet}"}
+          ]
+        },
+        {
+          "path": "call journal read",
+          "bindings": [
+            {"method": "GET", "route": "/app/search/api/read"}
+          ]
+        },
+        {
+          "path": "call journal retention config",
+          "bindings": [
+            {"method": "GET", "route": "/app/settings/api/storage"},
+            {"method": "PUT", "route": "/app/settings/api/storage"}
+          ]
+        },
+        {
+          "path": "call journal retention list",
+          "bindings": [
+            {"method": "POST", "route": "/app/settings/api/storage/purge"}
+          ]
+        },
+        {
+          "path": "call journal search",
+          "bindings": [
+            {"method": "GET", "route": "/app/search/api/search"}
+          ]
+        },
+        {
+          "path": "call journal storage-summary",
+          "bindings": [
+            {"method": "GET", "route": "/app/settings/api/storage"}
+          ]
+        }
+      ],
       "retired_invocations": [
         "--path",
         "path",
