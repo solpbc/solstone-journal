@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::io::{self, Read, Write};
 use std::process::ExitCode;
+use std::time::Duration;
 use std::{env, ffi::OsStr, path::PathBuf};
 
 use chrono::Local;
+use serde_json::{Map, Value, json};
 use solstone_core_cli::{
     Command, IndexerCommand, IndexerCountsOptions, IndexerOptions, IndexerQueryOptions,
-    IndexerReadOptions, IndexerSearchOptions, JournalPathOptions, ServiceOptions, SplCommand,
-    USAGE, evaluate_args, version_line,
+    IndexerReadOptions, IndexerSearchOptions, JournalConfigCommand, JournalConfigCommitOptions,
+    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, ServiceOptions,
+    SplCommand, USAGE, evaluate_args, version_line,
 };
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -21,10 +25,18 @@ use solstone_core_journal::{
     ConfigError, HomeError, Source, discover_home, ensure_journal_dir_with_label,
     read_config_journal, resolve_journal_path,
 };
+use solstone_core_journal_config::read_journal_config;
+use solstone_core_journal_config_write::{
+    CommitConfigError, ConfigExpectation, LockError, LockOptions, commit_journal_config,
+};
 
 const EXIT_USAGE: u8 = 64;
 const EXIT_UNAVAILABLE: u8 = 69;
 const EXIT_TEMPFAIL: u8 = 75;
+const EXIT_DATAERR: u8 = 65;
+const EXIT_CANTCREAT: u8 = 73;
+const EXIT_IOERR: u8 = 74;
+const MAX_JOURNAL_CONFIG_STDIN_BYTES: usize = 1024 * 1024;
 const ZERO_EDGE_HINT: &str = "Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run journal indexer --rebuild-edges to force full edge re-extraction.";
 const SOL_IDENTITY_TOKEN: &str = "__solstone_identity=sol";
 const SOLSTONE_IDENTITY_TOKEN: &str = "__solstone_identity=solstone";
@@ -62,11 +74,145 @@ fn main() -> ExitCode {
             }
         },
         Ok(Command::Indexer(command)) => run_indexer(*command),
+        Ok(Command::JournalConfig(command)) => run_journal_config(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
         Err(_) => {
             eprint!("{USAGE}");
             ExitCode::from(EXIT_USAGE)
         }
+    }
+}
+
+fn run_journal_config(command: JournalConfigCommand) -> ExitCode {
+    match command {
+        JournalConfigCommand::Read(options) => run_journal_config_read(options),
+        JournalConfigCommand::Commit(options) => run_journal_config_commit(options),
+    }
+}
+
+fn run_journal_config_read(options: JournalConfigReadOptions) -> ExitCode {
+    let line = match resolve_journal_config_path(options.journal_override) {
+        Ok(line) => line,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let read = match read_journal_config(&line.path) {
+        Ok(read) => read,
+        Err(error) => {
+            eprintln!("journal-config read failed: {error}");
+            return ExitCode::from(EXIT_UNAVAILABLE);
+        }
+    };
+    let output = json!({
+        "present": read.present,
+        "sha256": read.sha256,
+        "config": read.config,
+    });
+    let mut stdout = io::stdout().lock();
+    if serde_json::to_writer(&mut stdout, &output).is_err() || stdout.write_all(b"\n").is_err() {
+        eprintln!("journal-config read failed: stdout I/O error");
+        return ExitCode::from(EXIT_IOERR);
+    }
+    ExitCode::SUCCESS
+}
+
+fn run_journal_config_commit(options: JournalConfigCommitOptions) -> ExitCode {
+    let replacement = match read_journal_config_stdin() {
+        Ok(replacement) => replacement,
+        Err(JournalConfigStdinError::Content) => {
+            eprintln!(
+                "journal-config commit failed: stdin was not a valid JSON object within 1 MiB"
+            );
+            return ExitCode::from(EXIT_USAGE);
+        }
+        Err(JournalConfigStdinError::Io) => {
+            eprintln!("journal-config commit failed: stdin I/O error");
+            return ExitCode::from(EXIT_IOERR);
+        }
+    };
+    let line = match resolve_journal_config_path(options.journal_override) {
+        Ok(line) => line,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let expectation = match options.expect {
+        JournalConfigExpectArg::Absent => ConfigExpectation::Absent,
+        JournalConfigExpectArg::Sha256(fingerprint) => ConfigExpectation::Sha256(fingerprint),
+    };
+    let lock_options = LockOptions {
+        timeout: options
+            .lock_timeout_ms
+            .map(Duration::from_millis)
+            .unwrap_or_else(|| LockOptions::default().timeout),
+        ..LockOptions::default()
+    };
+    match commit_journal_config(&line.path, expectation, &replacement, lock_options) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            let exit = commit_config_error_exit(&error);
+            eprintln!("journal-config commit failed: {error}");
+            ExitCode::from(exit)
+        }
+    }
+}
+
+fn resolve_journal_config_path(
+    journal_override: Option<std::ffi::OsString>,
+) -> Result<JournalPathLine, JournalPathError> {
+    match journal_override {
+        Some(path) => Ok(JournalPathLine {
+            label: "cli",
+            path: PathBuf::from(path),
+        }),
+        None => resolve_process_journal_path(),
+    }
+}
+
+enum JournalConfigStdinError {
+    Content,
+    Io,
+}
+
+fn read_journal_config_stdin() -> Result<Map<String, Value>, JournalConfigStdinError> {
+    let stdin = io::stdin();
+    let mut stdin = stdin.lock();
+    let mut bytes = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let read = stdin
+            .read(&mut chunk)
+            .map_err(|_| JournalConfigStdinError::Io)?;
+        if read == 0 {
+            break;
+        }
+        if bytes
+            .len()
+            .checked_add(read)
+            .is_none_or(|next| next > MAX_JOURNAL_CONFIG_STDIN_BYTES)
+        {
+            return Err(JournalConfigStdinError::Content);
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+    let config = serde_json::from_slice::<Value>(&bytes)
+        .ok()
+        .and_then(|value| value.as_object().cloned())
+        .ok_or(JournalConfigStdinError::Content)?;
+    drop(bytes);
+    Ok(config)
+}
+
+fn commit_config_error_exit(error: &CommitConfigError) -> u8 {
+    match error {
+        CommitConfigError::Conflict(_) => EXIT_DATAERR,
+        CommitConfigError::Load(_) => EXIT_UNAVAILABLE,
+        CommitConfigError::Write(_) => EXIT_CANTCREAT,
+        CommitConfigError::Lock(LockError::Io { .. }) => EXIT_IOERR,
+        CommitConfigError::Lock(LockError::Timeout(_)) => EXIT_TEMPFAIL,
     }
 }
 
@@ -435,5 +581,63 @@ fn eprint_journal_path_error(error: JournalPathError) {
             eprintln!("journal-path failed: could not determine home directory")
         }
         JournalPathError::Create(error) => eprintln!("{error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    use solstone_core_journal_config_write::{
+        AtomicWriteError, ConfigConflict, ConfigExpectation, ConfigFingerprint, LockTimeout,
+    };
+
+    use super::*;
+
+    fn test_path() -> PathBuf {
+        PathBuf::from("/tmp/journal-config-test")
+    }
+
+    #[test]
+    fn commit_config_error_exit_maps_all_variants() {
+        assert_eq!(
+            commit_config_error_exit(&CommitConfigError::Conflict(ConfigConflict {
+                expected: ConfigExpectation::Absent,
+                actual: ConfigFingerprint::Absent,
+            })),
+            EXIT_DATAERR
+        );
+        assert_eq!(
+            commit_config_error_exit(&CommitConfigError::Load(
+                solstone_core_journal_config::ConfigLoadError::Corrupt {
+                    path: test_path(),
+                    source: Box::new(io::Error::other("test")),
+                },
+            )),
+            EXIT_UNAVAILABLE
+        );
+        assert_eq!(
+            commit_config_error_exit(&CommitConfigError::Write(AtomicWriteError::Io {
+                path: test_path(),
+                source: io::Error::other("test"),
+            })),
+            EXIT_CANTCREAT
+        );
+        assert_eq!(
+            commit_config_error_exit(&CommitConfigError::Lock(LockError::Io {
+                path: test_path(),
+                source: io::Error::other("test"),
+            })),
+            EXIT_IOERR
+        );
+        assert_eq!(
+            commit_config_error_exit(&CommitConfigError::Lock(LockError::Timeout(LockTimeout {
+                path: test_path(),
+                timeout: Duration::from_millis(1),
+            },))),
+            EXIT_TEMPFAIL
+        );
     }
 }

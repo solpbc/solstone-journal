@@ -378,6 +378,26 @@ temporary failures (75). Signal death is normalized to temporary failure (75).
 The supervisor intentionally keeps mapping non-zero scheduled-task exits to
 `error`; command stderr carries the operator-facing detail.
 
+### Journal Config Native Verb
+
+`solstone-core journal-config read [--journal PATH]` emits one JSON envelope
+containing `present`, `sha256`, and `config`. `solstone-core journal-config
+commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>`
+accepts a complete replacement JSON object only on stdin. `--expect` is
+required; `absent` represents a missing config file and fingerprints use the
+strict reader's `sha256:<lowercase hex>` form. Successful commits write no
+stdout.
+
+| Exit | Name | Applies to | Meaning |
+|---:|---|---|---|
+| 0 | success | read, commit | Read completed, or commit performed one matched atomic replacement. |
+| 64 | EX_USAGE | read, commit | Bad argv (unknown/duplicate/missing-value flag, malformed `--lock-timeout-ms`, malformed `--expect`, omitted `--expect` on commit), OR (commit only) stdin that is not valid JSON, is not a JSON object, or exceeds 1 MiB. None of these become valid on retry. |
+| 65 | EX_DATAERR | commit | CAS fingerprint conflict only — the caller's `--expect` did not match the config's actual current state (present-with-different-hash, present-when-absent-was-expected, or absent-when-a-hash-was-expected). The one code a client is expected to retry against. |
+| 69 | EX_UNAVAILABLE | read, commit | Existing `config/journal.json` present but unreadable/corrupt (`ConfigLoadError::Corrupt`). |
+| 73 | EX_CANTCREAT | commit | Atomic replacement of the config file failed (`AtomicWriteError`). |
+| 74 | EX_IOERR | commit | Non-timeout lock I/O failure (`LockError::Io`), or a stdin/stdout stream I/O failure. |
+| 75 | EX_TEMPFAIL | commit | Lock acquisition timed out (`LockError::Timeout`) — retry is appropriate. |
+
 ### Indexer Native Write Routing
 
 `journal indexer` routes command writes (`--reset`, `--rebuild-edges`,

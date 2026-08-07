@@ -3,14 +3,39 @@
 
 use std::ffi::{OsStr, OsString};
 
-pub const USAGE: &str = "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n";
+pub const USAGE: &str = "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Version,
     JournalPath(JournalPathOptions),
     Indexer(Box<IndexerCommand>),
+    JournalConfig(JournalConfigCommand),
     Spl(SplCommand),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JournalConfigCommand {
+    Read(JournalConfigReadOptions),
+    Commit(JournalConfigCommitOptions),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JournalConfigReadOptions {
+    pub journal_override: Option<OsString>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JournalConfigCommitOptions {
+    pub journal_override: Option<OsString>,
+    pub lock_timeout_ms: Option<u64>,
+    pub expect: JournalConfigExpectArg,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JournalConfigExpectArg {
+    Absent,
+    Sha256(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,9 +121,133 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("indexer") => {
             parse_indexer(rest).map(|command| Command::Indexer(Box::new(command)))
         }
+        [command, rest @ ..] if command == OsStr::new("journal-config") => {
+            parse_journal_config(rest).map(Command::JournalConfig)
+        }
         [command, rest @ ..] if command == OsStr::new("spl") => parse_spl(rest).map(Command::Spl),
         _ => Err(UsageError),
     }
+}
+
+fn parse_journal_config(args: &[OsString]) -> Result<JournalConfigCommand, UsageError> {
+    match args {
+        [command, rest @ ..] if command == OsStr::new("read") => {
+            parse_journal_config_read(rest).map(JournalConfigCommand::Read)
+        }
+        [command, rest @ ..] if command == OsStr::new("commit") => {
+            parse_journal_config_commit(rest).map(JournalConfigCommand::Commit)
+        }
+        _ => Err(UsageError),
+    }
+}
+
+fn parse_journal_config_read(args: &[OsString]) -> Result<JournalConfigReadOptions, UsageError> {
+    let mut journal_override = None;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--journal") {
+            if journal_override.is_some() {
+                return Err(UsageError);
+            }
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if is_journal_config_flag(value.as_os_str()) {
+                return Err(UsageError);
+            }
+            journal_override = Some(value.clone());
+            index += 2;
+            continue;
+        }
+        return Err(UsageError);
+    }
+    Ok(JournalConfigReadOptions { journal_override })
+}
+
+fn parse_journal_config_commit(
+    args: &[OsString],
+) -> Result<JournalConfigCommitOptions, UsageError> {
+    let mut journal_override = None;
+    let mut lock_timeout_ms = None;
+    let mut expect = None;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--journal") {
+            if journal_override.is_some() {
+                return Err(UsageError);
+            }
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if is_journal_config_flag(value.as_os_str()) {
+                return Err(UsageError);
+            }
+            journal_override = Some(value.clone());
+            index += 2;
+            continue;
+        }
+        if arg == OsStr::new("--lock-timeout-ms") {
+            if lock_timeout_ms.is_some() {
+                return Err(UsageError);
+            }
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if is_journal_config_flag(value.as_os_str()) {
+                return Err(UsageError);
+            }
+            let value = value.to_str().ok_or(UsageError)?;
+            if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(UsageError);
+            }
+            let timeout = value.parse::<u64>().map_err(|_| UsageError)?;
+            if timeout == 0 {
+                return Err(UsageError);
+            }
+            lock_timeout_ms = Some(timeout);
+            index += 2;
+            continue;
+        }
+        if arg == OsStr::new("--expect") {
+            if expect.is_some() {
+                return Err(UsageError);
+            }
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if is_journal_config_flag(value.as_os_str()) {
+                return Err(UsageError);
+            }
+            expect = Some(parse_journal_config_expect(value)?);
+            index += 2;
+            continue;
+        }
+        return Err(UsageError);
+    }
+    Ok(JournalConfigCommitOptions {
+        journal_override,
+        lock_timeout_ms,
+        expect: expect.ok_or(UsageError)?,
+    })
+}
+
+fn parse_journal_config_expect(value: &OsString) -> Result<JournalConfigExpectArg, UsageError> {
+    if value == OsStr::new("absent") {
+        return Ok(JournalConfigExpectArg::Absent);
+    }
+    let value = value.to_str().ok_or(UsageError)?;
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return Err(UsageError);
+    };
+    if hex.len() != 64
+        || !hex
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(UsageError);
+    }
+    Ok(JournalConfigExpectArg::Sha256(value.to_owned()))
+}
+
+fn is_journal_config_flag(value: &OsStr) -> bool {
+    matches!(
+        value.to_str(),
+        Some("--journal" | "--lock-timeout-ms" | "--expect")
+    )
 }
 
 fn parse_spl(args: &[OsString]) -> Result<SplCommand, UsageError> {
@@ -640,6 +789,55 @@ mod tests {
     }
 
     #[test]
+    fn accepts_journal_config_read_and_commit() {
+        assert_eq!(
+            evaluate_args(&args(&[
+                "journal-config",
+                "read",
+                "--journal",
+                "/tmp/journal"
+            ])),
+            Ok(Command::JournalConfig(JournalConfigCommand::Read(
+                JournalConfigReadOptions {
+                    journal_override: Some(OsString::from("/tmp/journal")),
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "journal-config",
+                "commit",
+                "--lock-timeout-ms",
+                "25",
+                "--expect",
+                "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "--journal",
+                "/tmp/journal",
+            ])),
+            Ok(Command::JournalConfig(JournalConfigCommand::Commit(
+                JournalConfigCommitOptions {
+                    journal_override: Some(OsString::from("/tmp/journal")),
+                    lock_timeout_ms: Some(25),
+                    expect: JournalConfigExpectArg::Sha256(
+                        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                            .to_owned()
+                    ),
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["journal-config", "commit", "--expect", "absent"])),
+            Ok(Command::JournalConfig(JournalConfigCommand::Commit(
+                JournalConfigCommitOptions {
+                    journal_override: None,
+                    lock_timeout_ms: None,
+                    expect: JournalConfigExpectArg::Absent,
+                }
+            )))
+        );
+    }
+
+    #[test]
     fn rejects_indexer_verb_unknown_duplicate_and_disallowed_options() {
         for values in [
             &["indexer", "search", "--limit", "10", "--limit", "10"][..],
@@ -647,6 +845,76 @@ mod tests {
             &["indexer", "counts", "--limit", "10"][..],
             &["indexer", "agents", "needle"][..],
             &["indexer", "coverage", "--day", "20260101"][..],
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_journal_config_args() {
+        for values in [
+            &["journal-config"][..],
+            &["journal-config", "unknown"][..],
+            &["journal-config", "read", "--expect", "absent"][..],
+            &["journal-config", "read", "--journal"][..],
+            &["journal-config", "read", "--journal", "--expect"][..],
+            &["journal-config", "commit"][..],
+            &["journal-config", "commit", "--expect"][..],
+            &["journal-config", "commit", "--expect", "bogus"][..],
+            &[
+                "journal-config",
+                "commit",
+                "--expect",
+                "sha256:ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+            ][..],
+            &[
+                "journal-config",
+                "commit",
+                "--expect",
+                "absent",
+                "--expect",
+                "absent",
+            ][..],
+            &[
+                "journal-config",
+                "commit",
+                "--expect",
+                "absent",
+                "--lock-timeout-ms",
+                "0",
+            ][..],
+            &[
+                "journal-config",
+                "commit",
+                "--expect",
+                "absent",
+                "--lock-timeout-ms",
+                "-1",
+            ][..],
+            &[
+                "journal-config",
+                "commit",
+                "--expect",
+                "absent",
+                "--lock-timeout-ms",
+                "1ms",
+            ][..],
+            &[
+                "journal-config",
+                "commit",
+                "--expect",
+                "absent",
+                "--lock-timeout-ms",
+                "18446744073709551616",
+            ][..],
+            &[
+                "journal-config",
+                "commit",
+                "--expect",
+                "absent",
+                "--journal",
+                "--lock-timeout-ms",
+            ][..],
         ] {
             assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
         }
@@ -926,7 +1194,7 @@ mod tests {
     fn usage_lists_supported_commands() {
         assert_eq!(
             USAGE,
-            "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
+            "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
         );
     }
 }
