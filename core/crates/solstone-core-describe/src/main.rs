@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use serde_json::Value;
-use solstone_core_describe::{IdentityTransform, WinnowConfig, process_video_with_transform};
+use solstone_core_describe::{ConveyFiducialMask, WinnowConfig, process_video_with_transform};
 use solstone_core_journal_config::read_journal_config;
 
 const EXIT_DECODE_FAILURE: u8 = 2;
@@ -44,7 +44,7 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
         }
         Command::FramesOnly(arguments) => {
             let config = read_config(arguments.journal.as_deref())?;
-            let mut transform = IdentityTransform;
+            let mut transform = ConveyFiducialMask;
             let result =
                 process_video_with_transform(&arguments.video_path, &mut transform, config);
             if result.decode_failed {

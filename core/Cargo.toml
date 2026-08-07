@@ -89,6 +89,7 @@ chrono-tz = "0.10.4"
 glob = "0.3.3"
 hdbscan = { version = "0.12.0", default-features = false, features = ["serial"] }
 image = { version = "0.25.9", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
+imageproc = { version = "0.27.0", default-features = false }
 log = "0.4.29"
 md5 = "0.8.1"
 nix = { version = "0.30.1", default-features = false, features = ["fs"] }
