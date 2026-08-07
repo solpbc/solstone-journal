@@ -11,6 +11,7 @@ members = [
     "crates/solstone-core-facets",
     "crates/solstone-core-journal",
     "crates/solstone-core-journal-io",
+    "crates/solstone-core-journal-config",
     "crates/solstone-core-callosum",
     "crates/solstone-core-processing-record",
     "crates/solstone-core-retention",
@@ -56,6 +57,7 @@ solstone-core-indexer-query = { path = "crates/solstone-core-indexer-query" }
 solstone-core-ingest-resolve = { path = "crates/solstone-core-ingest-resolve" }
 solstone-core-journal = { path = "crates/solstone-core-journal" }
 solstone-core-journal-io = { path = "crates/solstone-core-journal-io" }
+solstone-core-journal-config = { path = "crates/solstone-core-journal-config" }
 solstone-core-callosum = { path = "crates/solstone-core-callosum" }
 solstone-core-processing-record = { path = "crates/solstone-core-processing-record" }
 solstone-core-retention = { path = "crates/solstone-core-retention" }

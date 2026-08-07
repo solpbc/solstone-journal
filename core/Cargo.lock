@@ -1776,7 +1776,7 @@ dependencies = [
  "ffmpeg-sys-next",
  "serde",
  "serde_json",
- "solstone-core-journal-io",
+ "solstone-core-journal-config",
 ]
 
 [[package]]
@@ -1938,6 +1938,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-journal-config"
+version = "1.0.22"
+dependencies = [
+ "nix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-journal",
+]
+
+[[package]]
 name = "solstone-core-journal-io"
 version = "1.0.22"
 dependencies = [
@@ -1947,6 +1958,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-journal",
+ "solstone-core-journal-config",
 ]
 
 [[package]]
@@ -2053,6 +2065,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "solstone-core-convey-http",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-sol-client",
  "spl-core",

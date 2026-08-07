@@ -164,7 +164,7 @@ pub fn ensure_journal_dir_with_label(
     })
 }
 
-fn python_strip(value: &str) -> &str {
+pub fn python_strip(value: &str) -> &str {
     let start = value
         .char_indices()
         .find_map(|(index, ch)| (!is_python_whitespace(ch)).then_some(index))
