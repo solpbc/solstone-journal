@@ -733,28 +733,39 @@ def _load_default_config() -> dict[str, Any]:
 _default_config: dict[str, Any] | None = None
 
 
-def journal_is_active(path: str | Path) -> bool:
-    """Return whether the journal has been onboarded (setup completed)."""
+def _read_existing_journal_config(config_path: Path) -> dict[str, Any] | None:
+    """Read an existing journal config, distinguishing absence from corruption."""
     try:
-        journal_path = Path(path)
-        if not journal_path.is_dir():
-            return False
-        config_path = journal_path / "config" / "journal.json"
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CorruptConfigError(config_path, error=exc) from exc
+    if not isinstance(config, dict):
+        raise CorruptConfigError(config_path)
+    return config
+
+
+def journal_is_active(path: str | Path) -> bool:
+    """Return whether the journal has been onboarded (setup completed).
+
+    Raises CorruptConfigError when an existing config cannot be read or parsed.
+    """
+    journal_path = Path(path)
+    if not journal_path.is_dir():
+        return False
+    config = _read_existing_journal_config(journal_path / "config" / "journal.json")
+    if config is None:
+        return False
+    try:
         completed = config["setup"]["completed_at"]
         return (
             isinstance(completed, (int, float))
             and not isinstance(completed, bool)
             and completed > 0
         )
-    except (
-        OSError,
-        json.JSONDecodeError,
-        KeyError,
-        TypeError,
-        AttributeError,
-    ):
+    except (KeyError, TypeError, AttributeError):
         return False
 
 
