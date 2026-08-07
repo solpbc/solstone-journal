@@ -37,7 +37,9 @@ fn codec_rows_project_without_mutating_presentation_values() {
     for row in fixture["rows"].as_array().expect("rows") {
         let name = row["name"].as_str().expect("row name");
         let compact = serde_json::to_string(&row["row"]).expect("row should serialize");
-        let presentation = PresentationRow::from(parse(compact.as_bytes()).expect("row parses"));
+        let value = parse(compact.as_bytes()).expect("row parses");
+        let presentation = PresentationRow::new(&value, &Coordinate::new("bundle", "shard", 1))
+            .expect("row constructs");
         let expected_canonical = row["expected_canonical_json"]
             .as_str()
             .expect("expected canonical JSON");
@@ -171,6 +173,59 @@ fn codec_rows_project_without_mutating_presentation_values() {
 }
 
 #[test]
+fn object_rows_construct_and_recover_bitwise_exact() {
+    let fixture = codec_rows();
+    for row in fixture["rows"].as_array().expect("rows") {
+        let compact = serde_json::to_string(&row["row"]).expect("row should serialize");
+        let value = parse(compact.as_bytes()).expect("row parses");
+        let presentation = PresentationRow::new(&value, &Coordinate::new("bundle", "shard", 1))
+            .expect("row constructs");
+        assert_body_value_bitwise_eq(presentation.value(), &value);
+    }
+
+    let key = |name: &str| {
+        BodyString::from_code_points(name.bytes().map(u32::from).collect())
+            .expect("ASCII key is valid")
+    };
+    let quiet = 0x7ff8_0000_0000_0001;
+    let signaling = 0x7ff0_0000_0000_0001;
+    let value = BodyValue::Object(BTreeMap::from([
+        (
+            key("quiet_positive"),
+            BodyValue::Number(f64::from_bits(quiet)),
+        ),
+        (
+            key("quiet_negative"),
+            BodyValue::Number(f64::from_bits(quiet | (1_u64 << 63))),
+        ),
+        (
+            key("signaling_positive"),
+            BodyValue::Number(f64::from_bits(signaling)),
+        ),
+        (
+            key("signaling_negative"),
+            BodyValue::Number(f64::from_bits(signaling | (1_u64 << 63))),
+        ),
+        (key("positive_zero"), BodyValue::Number(f64::from_bits(0))),
+        (
+            key("negative_zero"),
+            BodyValue::Number(f64::from_bits(1_u64 << 63)),
+        ),
+        (
+            key("positive_infinity"),
+            BodyValue::Number(f64::from_bits(0x7ff0_0000_0000_0000)),
+        ),
+        (
+            key("negative_infinity"),
+            BodyValue::Number(f64::from_bits(0xfff0_0000_0000_0000)),
+        ),
+    ]));
+    let presentation = PresentationRow::new(&value, &Coordinate::new("bundle", "shard", 1))
+        .expect("float edge-case row constructs");
+    assert_body_value_bitwise_eq(presentation.value(), &value);
+}
+
+#[test]
 fn nonobject_rows_refuse_before_schema_and_remain_recoverable() {
     for literal in [
         "null",
@@ -185,31 +240,35 @@ fn nonobject_rows_refuse_before_schema_and_remain_recoverable() {
         "[1,2,3]",
     ] {
         let parsed = parse(literal.as_bytes()).expect("literal parses");
-        let presentation = PresentationRow::from(parsed);
-        let error = project(&presentation, Coordinate::new("b", "s", 1))
+        let error = PresentationRow::new(&parsed, &Coordinate::new("b", "s", 1))
             .expect_err("nonobject row should refuse");
         assert_eq!(error.code, CandidateErrorCode::WrongType);
         assert_eq!(error.field, CandidateErrorField::Row);
 
         let reparsed = parse(literal.as_bytes()).expect("literal reparses");
-        assert_body_value_bitwise_eq(presentation.value(), &reparsed);
+        assert_body_value_bitwise_eq(&parsed, &reparsed);
         if !matches!(reparsed, BodyValue::Number(_)) {
             assert_eq!(
-                canonicalize(presentation.value()).expect("row canonicalizes"),
+                canonicalize(&parsed).expect("row canonicalizes"),
                 canonicalize(&reparsed).expect("reparsed value canonicalizes")
             );
         }
     }
 
-    let empty_object = PresentationRow::from(BodyValue::Object(BTreeMap::new()));
+    let empty_object = PresentationRow::new(
+        &BodyValue::Object(BTreeMap::new()),
+        &Coordinate::new("b", "s", 1),
+    )
+    .expect("empty object row constructs");
     let error = project(&empty_object, Coordinate::new("b", "s", 1))
         .expect_err("object without schema should refuse");
     assert_eq!(error.code, CandidateErrorCode::UnsupportedSchema);
     assert_eq!(error.field, CandidateErrorField::Schema);
 
     let integer = BodyInteger::new(false, "1").expect("integer construction works");
-    assert!(matches!(
-        PresentationRow::from(BodyValue::Integer(integer)).value(),
-        BodyValue::Integer(_)
-    ));
+    let value = BodyValue::Integer(integer);
+    let error = PresentationRow::new(&value, &Coordinate::new("b", "s", 1))
+        .expect_err("integer row should refuse");
+    assert_eq!(error.code, CandidateErrorCode::WrongType);
+    assert_eq!(error.field, CandidateErrorField::Row);
 }

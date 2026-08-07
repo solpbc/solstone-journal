@@ -41,20 +41,18 @@ impl Coordinate {
     }
 
     /// Returns the row line number.
-    pub fn line(&self) -> u64 {
-        self.line
+    pub fn line(&self) -> Option<u64> {
+        (self.line != 0).then_some(self.line)
     }
 }
 
 impl fmt::Display for Coordinate {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "{}/{}#L{}",
-            self.bundle(),
-            self.shard(),
-            self.line()
-        )
+        write!(formatter, "{}/{}#L", self.bundle(), self.shard())?;
+        match self.line() {
+            Some(line) => write!(formatter, "{line}"),
+            None => write!(formatter, "{INVALID_COMPONENT}"),
+        }
     }
 }
 

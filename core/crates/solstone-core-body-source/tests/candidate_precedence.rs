@@ -23,10 +23,10 @@ fn valid_row() -> Map<String, Value> {
 
 fn presentation_from_json(row: Map<String, Value>) -> (PresentationRow, String) {
     let text = serde_json::to_string(&Value::Object(row)).expect("row serializes");
-    (
-        PresentationRow::from(parse(text.as_bytes()).expect("row parses")),
-        text,
-    )
+    let value = parse(text.as_bytes()).expect("row parses");
+    let presentation = PresentationRow::new(&value, &Coordinate::new("bundle", "shard", 1))
+        .expect("row constructs");
+    (presentation, text)
 }
 
 fn assert_failure_preserves_row(
@@ -56,8 +56,8 @@ fn malformed_json_fails_before_presentation_exists() {
 #[test]
 fn nonobject_rows_fail_before_schema_validation() {
     for input in [br#"[]"#.as_slice(), br#""not an object""#.as_slice()] {
-        let presentation = PresentationRow::from(parse(input).expect("input parses"));
-        let error = project(&presentation, Coordinate::new("bundle", "shard", 1))
+        let value = parse(input).expect("input parses");
+        let error = PresentationRow::new(&value, &Coordinate::new("bundle", "shard", 1))
             .expect_err("nonobject should fail");
         assert_eq!(error.code, CandidateErrorCode::WrongType);
         assert_eq!(error.field, CandidateErrorField::Row);

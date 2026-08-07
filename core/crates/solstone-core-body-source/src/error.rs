@@ -134,6 +134,20 @@ pub struct CandidateError {
     pub field: CandidateErrorField,
 }
 
+impl CandidateError {
+    pub(crate) fn new(
+        coordinate: &Coordinate,
+        code: CandidateErrorCode,
+        field: CandidateErrorField,
+    ) -> Self {
+        Self {
+            coordinate: coordinate.clone(),
+            code,
+            field,
+        }
+    }
+}
+
 impl fmt::Display for CandidateError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

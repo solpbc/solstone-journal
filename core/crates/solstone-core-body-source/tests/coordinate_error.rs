@@ -72,9 +72,29 @@ fn coordinate_redacts_every_invalid_component_category() {
 
 #[test]
 fn coordinate_line_and_error_rendering_are_bounded_and_redacted() {
-    assert_eq!(Coordinate::new("b", "s", 0).line(), 0);
-    assert_eq!(Coordinate::new("b", "s", 1).line(), 1);
-    assert_eq!(Coordinate::new("b", "s", u64::MAX).line(), u64::MAX);
+    assert_eq!(Coordinate::new("b", "s", 0).line(), None);
+    assert_eq!(Coordinate::new("b", "s", 1).line(), Some(1));
+    assert_eq!(Coordinate::new("b", "s", u64::MAX).line(), Some(u64::MAX));
+    assert_eq!(Coordinate::new("b", "s", 0).to_string(), "b/s#L<invalid>");
+    assert_eq!(Coordinate::new("b", "s", 1).to_string(), "b/s#L1");
+    assert_eq!(
+        Coordinate::new("b", "s", u64::MAX).to_string(),
+        format!("b/s#L{}", u64::MAX)
+    );
+
+    let invalid_line = CandidateError {
+        coordinate: Coordinate::new("b", "s", 0),
+        code: CandidateErrorCode::WrongType,
+        field: CandidateErrorField::Row,
+    };
+    assert_eq!(
+        invalid_line.to_string(),
+        "body-row[b/s#L<invalid>] wrong_type: row"
+    );
+    assert_eq!(
+        format!("{invalid_line:?}"),
+        "body-row[b/s#L<invalid>] wrong_type: row"
+    );
 
     let representative = CandidateError {
         coordinate: Coordinate::new("bundle", "shard", 7),

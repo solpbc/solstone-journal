@@ -48,7 +48,8 @@ fn valid_row() -> Map<String, Value> {
 
 fn presentation_from_json(row: Map<String, Value>) -> PresentationRow {
     let text = serde_json::to_string(&Value::Object(row)).expect("row serializes");
-    PresentationRow::from(parse(text.as_bytes()).expect("row parses"))
+    let value = parse(text.as_bytes()).expect("row parses");
+    PresentationRow::new(&value, &Coordinate::new("bundle", "shard", 1)).expect("row constructs")
 }
 
 fn project_json(
@@ -273,7 +274,9 @@ fn required_identity_fields_enforce_exact_python_blank_rules() {
             body_key(field),
             BodyValue::String(BodyString::from_code_points(vec![0xd800]).expect("surrogate")),
         );
-        let presentation = PresentationRow::from(BodyValue::Object(surrogate));
+        let value = BodyValue::Object(surrogate);
+        let presentation = PresentationRow::new(&value, &Coordinate::new("bundle", "shard", 1))
+            .expect("row constructs");
         if field == "source_family" {
             assert_error(
                 project(&presentation, Coordinate::new("bundle", "shard", 1)),
@@ -386,7 +389,9 @@ fn metadata_preserves_tri_state_and_requires_objects() {
 #[test]
 fn metadata_preserves_bitwise_float_variants() {
     let row_text = r#"{"schema":"solstone.health.apple_health.v1","source_family":"apple_health","record_type":"rt","dedupe_key":"dk","start_date":"sd","day":"20260101","metadata":{"neg_zero":-0.0,"pos_zero":0.0,"pos_inf":Infinity,"neg_inf":-Infinity,"nan":NaN}}"#;
-    let presentation = PresentationRow::from(parse(row_text.as_bytes()).expect("row parses"));
+    let value = parse(row_text.as_bytes()).expect("row parses");
+    let presentation = PresentationRow::new(&value, &Coordinate::new("bundle", "shard", 1))
+        .expect("row constructs");
     let candidate = project(&presentation, Coordinate::new("bundle", "shard", 1))
         .expect("float-bearing metadata is valid");
     let FieldState::Present(actual) = candidate.metadata() else {
@@ -426,7 +431,9 @@ fn metadata_preserves_bitwise_float_variants() {
     let expected = BodyValue::Object(metadata.clone());
     let mut row = body_object();
     row.insert(body_key("metadata"), BodyValue::Object(metadata));
-    let presentation = PresentationRow::from(BodyValue::Object(row));
+    let value = BodyValue::Object(row);
+    let presentation = PresentationRow::new(&value, &Coordinate::new("bundle", "shard", 1))
+        .expect("row constructs");
     let candidate = project(&presentation, Coordinate::new("bundle", "shard", 1))
         .expect("bit-constructed NaN metadata is valid");
     let FieldState::Present(actual) = candidate.metadata() else {
@@ -452,7 +459,9 @@ fn value_preserves_every_f1_value_variant() {
         let value = parse(literal.as_bytes()).expect("value literal parses");
         let mut object = body_object();
         object.insert(body_key("value"), value.clone());
-        let presentation = PresentationRow::from(BodyValue::Object(object));
+        let row = BodyValue::Object(object);
+        let presentation = PresentationRow::new(&row, &Coordinate::new("bundle", "shard", 1))
+            .expect("row constructs");
         let candidate = project(&presentation, Coordinate::new("bundle", "shard", 1))
             .expect("every value type is valid");
         let ValueState::Present(actual) = candidate.value() else {

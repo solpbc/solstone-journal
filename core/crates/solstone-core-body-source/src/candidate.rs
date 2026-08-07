@@ -160,13 +160,7 @@ pub fn project(
     row: &PresentationRow,
     coordinate: Coordinate,
 ) -> Result<LedgerCandidate, CandidateError> {
-    let BodyValue::Object(object) = row.value() else {
-        return Err(candidate_error(
-            &coordinate,
-            CandidateErrorCode::WrongType,
-            CandidateErrorField::Row,
-        ));
-    };
+    let object = row.object();
 
     let schema = field_value(object, "schema")
         .and_then(|value| match value {
@@ -174,53 +168,57 @@ pub fn project(
             _ => None,
         })
         .ok_or_else(|| {
-            candidate_error(
+            CandidateError::new(
                 &coordinate,
                 CandidateErrorCode::UnsupportedSchema,
                 CandidateErrorField::Schema,
             )
         })?;
 
-    let source_family = required_nonblank_string(object, "source_family")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::SourceFamily))?;
+    let source_family = required_nonblank_string(object, "source_family").map_err(|code| {
+        CandidateError::new(&coordinate, code, CandidateErrorField::SourceFamily)
+    })?;
     if !body_string_matches(source_family, schema.expected_family()) {
-        return Err(candidate_error(
+        return Err(CandidateError::new(
             &coordinate,
             CandidateErrorCode::IncompatibleField,
             CandidateErrorField::SourceFamily,
         ));
     }
     let record_type = required_nonblank_string(object, "record_type")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::RecordType))?;
+        .map_err(|code| CandidateError::new(&coordinate, code, CandidateErrorField::RecordType))?;
     let dedupe_key = required_nonblank_string(object, "dedupe_key")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::DedupeKey))?;
+        .map_err(|code| CandidateError::new(&coordinate, code, CandidateErrorField::DedupeKey))?;
     let start_date = required_nonblank_string(object, "start_date")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::StartDate))?;
+        .map_err(|code| CandidateError::new(&coordinate, code, CandidateErrorField::StartDate))?;
     let day = required_string(object, "day")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::Day))?;
+        .map_err(|code| CandidateError::new(&coordinate, code, CandidateErrorField::Day))?;
 
     let kind = optional_string(object, "kind")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::Kind))?;
+        .map_err(|code| CandidateError::new(&coordinate, code, CandidateErrorField::Kind))?;
     let import_id = optional_string(object, "import_id")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::ImportId))?;
+        .map_err(|code| CandidateError::new(&coordinate, code, CandidateErrorField::ImportId))?;
     let month = optional_string(object, "month")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::Month))?;
+        .map_err(|code| CandidateError::new(&coordinate, code, CandidateErrorField::Month))?;
     let end_date = optional_string(object, "end_date")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::EndDate))?;
-    let source_record_id = optional_string(object, "source_record_id")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::SourceRecordId))?;
+        .map_err(|code| CandidateError::new(&coordinate, code, CandidateErrorField::EndDate))?;
+    let source_record_id = optional_string(object, "source_record_id").map_err(|code| {
+        CandidateError::new(&coordinate, code, CandidateErrorField::SourceRecordId)
+    })?;
     let source_name = optional_string(object, "source_name")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::SourceName))?;
-    let source_version = optional_string(object, "source_version")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::SourceVersion))?;
+        .map_err(|code| CandidateError::new(&coordinate, code, CandidateErrorField::SourceName))?;
+    let source_version = optional_string(object, "source_version").map_err(|code| {
+        CandidateError::new(&coordinate, code, CandidateErrorField::SourceVersion)
+    })?;
     let unit = optional_string(object, "unit")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::Unit))?;
-    let normalized_ref = optional_string(object, "normalized_ref")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::NormalizedRef))?;
+        .map_err(|code| CandidateError::new(&coordinate, code, CandidateErrorField::Unit))?;
+    let normalized_ref = optional_string(object, "normalized_ref").map_err(|code| {
+        CandidateError::new(&coordinate, code, CandidateErrorField::NormalizedRef)
+    })?;
     let raw_ref = optional_string(object, "raw_ref")
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::RawRef))?;
+        .map_err(|code| CandidateError::new(&coordinate, code, CandidateErrorField::RawRef))?;
     let metadata = optional_metadata(object)
-        .map_err(|code| candidate_error(&coordinate, code, CandidateErrorField::Metadata))?;
+        .map_err(|code| CandidateError::new(&coordinate, code, CandidateErrorField::Metadata))?;
     let value = match field_value(object, "value") {
         None => ValueState::Absent,
         Some(value) => ValueState::Present(value.clone()),
@@ -246,18 +244,6 @@ pub fn project(
         metadata,
         value,
     })
-}
-
-fn candidate_error(
-    coordinate: &Coordinate,
-    code: CandidateErrorCode,
-    field: CandidateErrorField,
-) -> CandidateError {
-    CandidateError {
-        coordinate: coordinate.clone(),
-        code,
-        field,
-    }
 }
 
 fn field_value<'a>(object: &'a BodyObject, name: &str) -> Option<&'a BodyValue> {
