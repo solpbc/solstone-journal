@@ -565,20 +565,20 @@ def _migrate_legacy_local(legacy: object, journal: Path) -> dict[str, Any]:
             ),
         )
 
-    choice = local_cuda.resolve_local_backend(local_install.CUDA_SERVER_PIN)
+    choice = local_cuda.resolve_local_backend(local_install.cuda_server_pin())
     if choice.backend != "vulkan":
         return _not_promoted_action(
             "local", "missing-or-mismatched", "manifest_missing"
         )
     try:
         _verify_legacy_local_llama(legacy)
-        local_install._write_vulkan_manifest(
+        local_install.write_vulkan_manifest(
             artifact_key=local_install.llama_server_artifact_key(),
             pin=local_install.pin_for_current_platform(),
             attempt_status=None,
             fingerprint=fingerprint,
         )
-        local_install._write_model_manifest(
+        local_install.write_model_manifest(
             model_id=LOCAL_MODEL,
             attempt_status=None,
             fingerprint=fingerprint,
@@ -669,12 +669,12 @@ def _verify_legacy_local_llama(legacy: dict[str, Any]) -> None:
         raise ValueError("legacy_model_id_mismatch")
     if legacy.get("model_path") != str(local_install.model_path(spec.model_id)):
         raise ValueError("legacy_model_path_mismatch")
-    local_install._verify_sha256(local_install.model_path(spec.model_id), spec.sha256)
+    local_install.verify_artifact_sha256(local_install.model_path(spec.model_id), spec.sha256)
     if spec.mmproj_sha256:
         projector = local_install.mmproj_path(spec.model_id)
         if projector is None or legacy.get("mmproj_path") != str(projector):
             raise ValueError("legacy_projector_path_mismatch")
-        local_install._verify_sha256(projector, spec.mmproj_sha256)
+        local_install.verify_artifact_sha256(projector, spec.mmproj_sha256)
 
 
 def _verify_legacy_parakeet(legacy: dict[str, Any], journal: Path) -> None:
