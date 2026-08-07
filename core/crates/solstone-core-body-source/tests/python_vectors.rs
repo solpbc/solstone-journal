@@ -1,37 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::path::{Path, PathBuf};
+use std::collections::BTreeMap;
 
-use serde_json::Value;
-use solstone_core_body_source::{BodyInteger, BodyString, BodyValue, ParseError, parse};
+use sha2::{Digest, Sha256};
+use solstone_core_body_source::{
+    BodyInteger, BodyString, BodyValue, ParseError, canonicalize, parse,
+};
 
-fn fixture_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../core/fixtures/body_source_python_json_vectors.json")
-}
+mod support;
 
-fn vectors() -> Value {
-    serde_json::from_str(&std::fs::read_to_string(fixture_path()).expect("fixture should read"))
-        .expect("fixture should parse")
-}
-
-fn expand(pattern: &Value) -> String {
-    let prefix = pattern
-        .get("prefix")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let repeat = pattern
-        .get("repeat")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let count = pattern["repeat_count"].as_u64().expect("repeat count") as usize;
-    let suffix = pattern
-        .get("suffix")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    format!("{prefix}{}{suffix}", repeat.repeat(count))
-}
+use support::{expand, vectors};
 
 fn expect_malformed(error: ParseError, offset: usize) {
     assert_eq!(
@@ -439,4 +418,129 @@ fn integer_limits_depth_and_drop_are_safe() {
 
     let within_limit = format!("{}0{}", "[".repeat(127), "]".repeat(127));
     drop(parse(within_limit.as_bytes()).expect("deep value should parse and drop"));
+}
+
+#[test]
+fn canonicalization_vectors_match_python_oracles() {
+    let fixture = vectors();
+    for case in fixture["canonical_cases"]
+        .as_array()
+        .expect("canonical cases")
+    {
+        let value = parse(case["raw_json"].as_str().expect("raw JSON").as_bytes())
+            .expect("canonical case should parse");
+        assert_eq!(
+            canonicalize(&value).expect("canonicalization should succeed"),
+            case["expected_canonical_json"]
+                .as_str()
+                .expect("expected canonical JSON"),
+            "{}",
+            case["name"].as_str().expect("name")
+        );
+    }
+
+    for case in fixture["float_cases"].as_array().expect("float cases") {
+        let value = parse(case["raw_json"].as_str().expect("raw JSON").as_bytes())
+            .expect("float case should parse");
+        let BodyValue::Number(number) = value else {
+            panic!("float case should parse as a number");
+        };
+        let expected_bits = u64::from_str_radix(
+            case["expected_f64_bits_hex"]
+                .as_str()
+                .expect("bits")
+                .trim_start_matches("0x"),
+            16,
+        )
+        .expect("valid bits");
+        assert_eq!(number.to_bits(), expected_bits, "{}", case["name"]);
+        assert_eq!(
+            canonicalize(&BodyValue::Number(number)).expect("canonicalization should succeed"),
+            case["expected_canonical_json"]
+                .as_str()
+                .expect("expected canonical JSON"),
+            "{}",
+            case["name"]
+        );
+    }
+
+    let string_expected = [
+        ("raw_astral", r#""\ud83e\udec0""#),
+        ("escaped_astral_pair", r#""\ud83e\udec0""#),
+        ("lone_high", r#""\ud800""#),
+        ("lone_low", r#""\udc00""#),
+        ("lone_high_then_scalar", r#""\ud800A""#),
+        ("repeated_high", r#""\ud800\ud800""#),
+        ("low_then_high", r#""\udc00\ud800""#),
+    ];
+    for case in fixture["string_decode_cases"]
+        .as_array()
+        .expect("string decode cases")
+    {
+        let expected = string_expected
+            .iter()
+            .find_map(|(name, expected)| {
+                (*name == case["name"].as_str().expect("name")).then_some(*expected)
+            })
+            .expect("pinned expected canonical string");
+        let value = parse(case["raw_json"].as_str().expect("raw JSON").as_bytes())
+            .expect("string decode case should parse");
+        assert_eq!(canonicalize(&value).unwrap(), expected, "{}", case["name"]);
+    }
+
+    for case in fixture["long_numeric_cases"]
+        .as_array()
+        .expect("long numeric cases")
+    {
+        let raw = expand(&case["raw_pattern"]);
+        let value = parse(raw.as_bytes()).expect("long numeric case should parse");
+        let canonical = canonicalize(&value).expect("canonicalization should succeed");
+        if let Some(expected) = case["expected_canonical_json"].as_str() {
+            assert_eq!(canonical, expected, "{}", case["name"]);
+        } else {
+            assert_eq!(canonical, raw, "{}", case["name"]);
+        }
+        assert_eq!(
+            format!("sha256:{:x}", Sha256::digest(canonical.as_bytes())),
+            case["expected_canonical_sha256"]
+                .as_str()
+                .expect("expected canonical SHA-256"),
+            "{}",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn canonicalization_uses_code_point_key_order_not_utf16() {
+    let keys = [0xd800, 0xdfff, 0xe000, 0x1fac0];
+    let object =
+        keys.into_iter()
+            .enumerate()
+            .fold(BTreeMap::new(), |mut object, (index, code_point)| {
+                object.insert(
+                    BodyString::from_code_points(vec![code_point]).expect("valid body string"),
+                    BodyValue::Integer(BodyInteger::new(false, (index + 1).to_string()).unwrap()),
+                );
+                object
+            });
+    let canonical =
+        canonicalize(&BodyValue::Object(object)).expect("canonicalization should succeed");
+    assert_eq!(
+        canonical,
+        r#"{"\ud800":1,"\udfff":2,"\ue000":3,"\ud83e\udec0":4}"#
+    );
+    let utf16_order = r#"{"\ud800":1,"\ud83e\udec0":4,"\udfff":2,"\ue000":3}"#;
+    assert_ne!(canonical, utf16_order);
+}
+
+#[test]
+fn python_float_transforms_are_load_bearing() {
+    for (value, expected) in [(1e-5, "1e-05"), (1e-7, "1e-07")] {
+        assert_ne!(value.to_string(), expected);
+        let mut buffer = ryu::Buffer::new();
+        assert_ne!(buffer.format_finite(value), expected);
+        assert_ne!(serde_json::to_string(&value).unwrap(), expected);
+        assert_eq!(canonicalize(&BodyValue::Number(value)).unwrap(), expected);
+    }
 }

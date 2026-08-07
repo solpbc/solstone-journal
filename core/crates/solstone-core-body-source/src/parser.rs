@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use crate::{BodyInteger, BodyString, BodyValue, ParseError};
 
-const MAX_NESTING: usize = 128;
+pub(crate) const MAX_NESTING: usize = 128;
 
 /// Decodes exactly one Python-3.12-compatible JSON text from UTF-8 bytes.
 pub fn parse(bytes: &[u8]) -> Result<BodyValue, ParseError> {

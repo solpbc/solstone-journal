@@ -1987,7 +1987,10 @@ name = "solstone-core-body-source"
 version = "1.0.22"
 dependencies = [
  "allocation-counter",
+ "ryu",
  "serde_json",
+ "sha2",
+ "solstone-core-brain",
 ]
 
 [[package]]

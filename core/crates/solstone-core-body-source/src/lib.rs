@@ -3,13 +3,15 @@
 
 //! Python-compatible JSON source decoding for body import data.
 
+mod canonicalize;
 mod error;
 mod integer;
 mod parser;
 mod string;
 mod value;
 
-pub use error::ParseError;
+pub use canonicalize::canonicalize;
+pub use error::{CanonicalizeError, ParseError};
 pub use integer::BodyInteger;
 pub use parser::parse;
 pub use string::BodyString;

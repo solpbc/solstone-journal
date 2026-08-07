@@ -30,3 +30,24 @@ impl fmt::Display for ParseError {
 }
 
 impl std::error::Error for ParseError {}
+
+/// A bounded body-value canonicalization failure.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CanonicalizeError {
+    ValueTooDeep { depth: usize },
+}
+
+impl fmt::Display for CanonicalizeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ValueTooDeep { depth } => {
+                write!(
+                    formatter,
+                    "value nesting exceeds maximum depth at container depth {depth}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for CanonicalizeError {}

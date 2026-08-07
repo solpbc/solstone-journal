@@ -13,7 +13,10 @@ publish = false
 workspace = true
 
 [dependencies]
+ryu.workspace = true
 
 [dev-dependencies]
 allocation-counter = "0.8.1"
+sha2.workspace = true
 serde_json = { workspace = true }
+solstone-core-brain = { path = "../solstone-core-brain" }
