@@ -89,7 +89,13 @@ from solstone.think.service import (
 )
 from solstone.think.setup_events import STATUS_TRANSLATION, JsonlEmitter, utc_now_iso
 from solstone.think.sync_check import check_journal_sync, format_doctor_report
-from solstone.think.utils import get_journal_info, is_packaged_install, now_ms
+from solstone.think.utils import (
+    CorruptConfigError,
+    _read_existing_journal_config,
+    get_journal_info,
+    is_packaged_install,
+    now_ms,
+)
 
 
 @dataclass(frozen=True)
@@ -124,6 +130,7 @@ _HOST_DEPENDENCY_MODULES = (
     ("flask", "Flask"),
     ("onnxruntime", "ONNX runtime"),
 )
+_CORRUPT_CONFIG_FIX = "repair or restore config/journal.json from a backup"
 HOST_DEPENDENCY_REINSTALL_GUIDANCE = (
     "Reinstall the journal host stack: "
     "pip install --upgrade solstone-journal  |  "
@@ -1333,20 +1340,13 @@ def orphan_segment_pdf_check(args: Args) -> CheckResult:
 
 
 def _resolve_configured_backend() -> str | None:
-    """Read transcribe.backend from an existing journal config without creating anything.
-
-    Returns the configured backend, or None when no config is present (caller
-    treats None as the parakeet default). Never materializes the journal dir.
-    """
+    """Read transcribe.backend without materializing the journal directory."""
     path_text, _source = get_journal_info()
     config_path = Path(path_text) / "config" / "journal.json"
-    if not config_path.is_file():
+    config = _read_existing_journal_config(config_path)
+    if config is None:
         return None
-    try:
-        data = json.loads(config_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
-    backend = data.get("transcribe", {}).get("backend")
+    backend = config.get("transcribe", {}).get("backend")
     return backend if isinstance(backend, str) else None
 
 
@@ -1397,7 +1397,10 @@ def _parakeet_cpp_ready_result(check: Check) -> CheckResult:
 def default_stt_ready_check(args: Args) -> CheckResult:
     del args
     check = DEFAULT_STT_READY_CHECK
-    backend = _resolve_configured_backend()
+    try:
+        backend = _resolve_configured_backend()
+    except CorruptConfigError as exc:
+        return make_result(check, "fail", str(exc), fix=_CORRUPT_CONFIG_FIX)
     if backend and backend != "parakeet":
         return make_result(
             check,
@@ -1425,7 +1428,11 @@ def default_stt_ready_check(args: Args) -> CheckResult:
 def parakeet_cpp_stt_ready_check(args: Args) -> CheckResult:
     del args
     check = PARAKEET_CPP_STT_READY_CHECK
-    if _resolve_configured_backend() != "parakeet-cpp":
+    try:
+        backend = _resolve_configured_backend()
+    except CorruptConfigError as exc:
+        return make_result(check, "fail", str(exc), fix=_CORRUPT_CONFIG_FIX)
+    if backend != "parakeet-cpp":
         return make_result(
             check,
             "skip",
