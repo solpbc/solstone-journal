@@ -6,6 +6,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+#[path = "../src/processes.rs"]
+mod production_processes;
+
 const PROCESS_CENSUS_JSON: &str =
     include_str!("../../../fixtures/native-journal/process-census-v1.json");
 const EXPECTED_PREDECESSOR_COMMIT: &str = "d8200fdf34e4af31f106c7f28fb73cd439d0081b";
@@ -63,6 +66,21 @@ fn census_digest(commands: &[Value], aliases: &[Value]) -> Result<String, String
         }
     }
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn production_digest() -> String {
+    let mut hasher = Sha256::new();
+    for spec in production_processes::PROCESS_SPECS {
+        hash_field(&mut hasher, spec.kind.census_kind());
+        hash_field(&mut hasher, spec.token);
+        hash_field(&mut hasher, spec.module);
+        hash_field(&mut hasher, spec.kind.surface());
+        hasher.update((spec.preset_argv.len() as u64).to_be_bytes());
+        for arg in spec.preset_argv {
+            hash_field(&mut hasher, arg);
+        }
+    }
+    format!("{:x}", hasher.finalize())
 }
 
 fn validate_fixture(fixture: &Value) -> Result<(), String> {
@@ -168,6 +186,19 @@ fn validate_fixture(fixture: &Value) -> Result<(), String> {
 fn process_census_is_hash_bound_and_complete() {
     let fixture: Value = serde_json::from_str(PROCESS_CENSUS_JSON).expect("parse process census");
     validate_fixture(&fixture).expect("validate process census");
+}
+
+#[test]
+fn production_process_table_matches_the_hash_bound_census() {
+    assert_eq!(production_processes::PROCESS_SPECS.len(), 47);
+    assert_eq!(
+        production_processes::PROCESS_SPECS
+            .iter()
+            .filter(|spec| spec.kind.requires_coherence())
+            .count(),
+        44
+    );
+    assert_eq!(production_digest(), EXPECTED_CENSUS_SHA256);
 }
 
 #[test]

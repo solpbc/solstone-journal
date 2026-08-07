@@ -5,61 +5,21 @@
 
 use std::env;
 use std::fs;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read};
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::UnixListener;
+use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::thread::sleep;
+use std::thread::{self, sleep};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const ROOT_COMMANDS: &[&str] = &[
-    "--path", "path", "status", "root", "doctor", "check", "contract", "notify",
-];
-const SERVICE_COMMANDS: &[&str] = &[
-    "backfill-processing-records",
-    "backup",
-    "brain",
-    "config",
-    "convey",
-    "cortex",
-    "depict",
-    "describe",
-    "down",
-    "engage",
-    "export",
-    "facet-candidates",
-    "grab",
-    "health",
-    "heartbeat",
-    "identity",
-    "importer",
-    "indexer",
-    "install-models",
-    "install-provider",
-    "journal-stats",
-    "maint",
-    "maintenance",
-    "navigate",
-    "observer",
-    "reprocess",
-    "restart-convey",
-    "schedule",
-    "segment",
-    "sense",
-    "service",
-    "settings",
-    "setup",
-    "spl",
-    "start",
-    "streams",
-    "supervisor",
-    "talent",
-    "think",
-    "top",
-    "transcribe",
-    "transfer",
-    "up",
-    "warm",
+const UNAVAILABLE_LOCAL_PATHS: &[&str] = &[
+    "archive export",
+    "archive merge",
+    "facet doctor",
+    "facet merge",
+    "news write",
 ];
 
 struct TempDir {
@@ -119,6 +79,26 @@ fn run_journal(args: &[&str], path: Option<&Path>) -> Output {
     output_with_retry(&full, path)
 }
 
+fn run_journal_with_journal(args: &[&str], path: Option<&Path>, journal: &Path) -> Output {
+    let mut full = vec![identity_arg("journal")];
+    full.extend(args.iter().map(|arg| (*arg).to_owned()));
+    for _ in 0..100 {
+        let mut command = Command::new(bin());
+        command.args(&full).env("SOLSTONE_JOURNAL", journal);
+        if let Some(path) = path {
+            command.env("PATH", path);
+        }
+        match command.output() {
+            Ok(output) => return output,
+            Err(error) if error.kind() == ErrorKind::ExecutableFileBusy => {
+                sleep(Duration::from_millis(20));
+            }
+            Err(error) => panic!("solstone-core should execute: {error:?}"),
+        }
+    }
+    panic!("solstone-core stayed busy after retries")
+}
+
 fn write_forbidden_shim(path: &Path, sentinel: &Path) {
     let script = format!(
         "#!/bin/sh\nprintf '%s %s\\n' \"$0\" \"$*\" >> '{}'\nexit 97\n",
@@ -155,6 +135,74 @@ fn assert_sentinel_untouched(sentinel: &Path) {
     );
 }
 
+struct InstalledLayout {
+    binary: PathBuf,
+    bin: PathBuf,
+    site_packages: PathBuf,
+}
+
+fn installed_layout(temp: &TempDir) -> InstalledLayout {
+    let prefix = temp.path.join("prefix");
+    let bin_dir = prefix.join("bin");
+    let site_packages = prefix.join("lib/python3.95/site-packages");
+    fs::create_dir_all(site_packages.join("solstone")).expect("create installed package fixture");
+    fs::write(site_packages.join("solstone/__init__.py"), "").expect("write package marker");
+    fs::create_dir_all(&bin_dir).expect("create installed binary directory");
+    let binary = bin_dir.join("solstone-core");
+    fs::copy(bin(), &binary).expect("copy solstone-core binary");
+    fs::set_permissions(&binary, fs::Permissions::from_mode(0o755))
+        .expect("make copied binary executable");
+    for (directory, name) in [
+        ("solstone-1.2.3.dist-info", "solstone"),
+        ("solstone_journal-1.2.3.dist-info", "solstone-journal"),
+    ] {
+        let dist_info = site_packages.join(directory);
+        fs::create_dir(&dist_info).expect("create installed metadata fixture");
+        fs::write(
+            dist_info.join("METADATA"),
+            format!("Name: {name}\nVersion: 1.2.3\n\n"),
+        )
+        .expect("write installed metadata fixture");
+    }
+    InstalledLayout {
+        binary,
+        bin: bin_dir,
+        site_packages,
+    }
+}
+
+fn write_recording_interpreter(path: &Path) {
+    fs::write(
+        path,
+        "#!/bin/sh\nprintf '%s\\0' \"$@\" > \"$RECORD_FILE\"\nif [ -n \"${VERBOSE_RECORD_FILE:-}\" ]; then\n  printf '%s' \"${JOURNAL_CLI_VERBOSE-}\" > \"$VERBOSE_RECORD_FILE\"\nfi\nexec /bin/sleep 60\n",
+    )
+    .expect("write recording interpreter");
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+        .expect("make recording interpreter executable");
+}
+
+fn installed_output(layout: &InstalledLayout, args: &[&str]) -> Output {
+    let mut command = Command::new(&layout.binary);
+    command.arg(identity_arg("journal")).args(args);
+    command
+        .output()
+        .expect("installed solstone-core should execute")
+}
+
+fn wait_for_record(path: &Path) -> Vec<Vec<u8>> {
+    for _ in 0..100 {
+        if let Ok(bytes) = fs::read(path) {
+            return bytes
+                .split(|byte| *byte == 0)
+                .filter(|part| !part.is_empty())
+                .map(Vec::from)
+                .collect();
+        }
+        sleep(Duration::from_millis(20));
+    }
+    panic!("recording interpreter did not write argv")
+}
+
 #[test]
 fn journal_identity_is_distinct_from_sol_identity() {
     let sol = output_with_retry(&[identity_arg("sol"), "--version".to_owned()], None);
@@ -180,17 +228,18 @@ fn journal_identity_is_distinct_from_sol_identity() {
     assert!(
         String::from_utf8(journal_think.stderr)
             .expect("journal stderr should be utf-8")
-            .contains("journal_command_unavailable")
+            .contains("native journal Python is missing")
     );
 }
 
 #[test]
-fn journal_identity_marks_all_known_tokens_unavailable_without_spawning() {
+fn journal_identity_marks_unavailable_local_tokens_unavailable_without_spawning() {
     let temp = TempDir::new("journal-known-tokens");
     let (path, sentinel) = poison_path(&temp);
 
-    for token in ROOT_COMMANDS.iter().chain(SERVICE_COMMANDS.iter()) {
-        let output = run_journal(&[token], Some(&path));
+    for token in UNAVAILABLE_LOCAL_PATHS {
+        let parts = token.split_once(' ').expect("unavailable path has a group");
+        let output = run_journal(&[parts.0, parts.1], Some(&path));
         assert_eq!(output.status.code(), Some(69), "{token}");
         assert_eq!(output.stdout, b"", "{token}");
         let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
@@ -200,8 +249,288 @@ fn journal_identity_marks_all_known_tokens_unavailable_without_spawning() {
             "{token}: {stderr}"
         );
     }
-    assert_eq!(ROOT_COMMANDS.len() + SERVICE_COMMANDS.len(), 52);
+    assert_eq!(UNAVAILABLE_LOCAL_PATHS.len(), 5);
     assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn journal_identity_runs_path_status_and_root_without_spawning() {
+    let temp = TempDir::new("journal-host-primitives");
+    let (path, sentinel) = poison_path(&temp);
+    let journal = temp.path.join("journal");
+
+    for token in ["--path", "path"] {
+        let output = run_journal_with_journal(&[token], Some(&path), &journal);
+        assert_eq!(output.status.code(), Some(0), "{token}");
+        assert_eq!(
+            String::from_utf8(output.stdout).expect("stdout should be utf-8"),
+            format!("{}\n", journal.display()),
+            "{token}"
+        );
+        assert_eq!(output.stderr, b"", "{token}");
+        assert!(!journal.exists(), "{token} must not create the journal");
+    }
+
+    let status = run_journal_with_journal(&["status"], Some(&path), &journal);
+    assert_eq!(status.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8(status.stdout).expect("stdout should be utf-8"),
+        format!(
+            "Journal: {}\nSource: env\nExists: no\nDays: 0\n",
+            journal.display()
+        )
+    );
+    assert_eq!(status.stderr, b"");
+
+    let root = run_journal_with_journal(&["root"], Some(&path), &journal);
+    assert_eq!(root.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8(root.stdout).expect("stdout should be utf-8"),
+        format!("{}\n", repo_root().display())
+    );
+    assert_eq!(root.stderr, b"");
+    assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn journal_identity_notify_reuses_the_native_handler_and_socket_protocol() {
+    let temp = TempDir::new("journal-notify");
+    let (path, sentinel) = poison_path(&temp);
+    let journal = temp.path.join("journal");
+
+    let missing_socket = run_journal_with_journal(&["notify", "hello"], Some(&path), &journal);
+    assert_eq!(missing_socket.status.code(), Some(1));
+    assert_eq!(missing_socket.stdout, b"");
+    assert_eq!(
+        String::from_utf8(missing_socket.stderr).expect("missing socket stderr should be utf-8"),
+        "Failed to send notification (is callosum running?)\n"
+    );
+
+    for args in [
+        vec!["notify", "--auto-dismiss", "nope", "hello"],
+        vec!["notify"],
+    ] {
+        let output = run_journal_with_journal(&args, Some(&path), &journal);
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert_eq!(output.stdout, b"", "{args:?}");
+        assert!(
+            String::from_utf8(output.stderr)
+                .expect("notify argparse stderr should be utf-8")
+                .contains("sol notify: error:"),
+            "{args:?}"
+        );
+    }
+
+    let socket = journal.join("health/callosum.sock");
+    fs::create_dir_all(socket.parent().expect("socket parent")).expect("create health directory");
+    let listener = UnixListener::bind(&socket).expect("bind callosum socket");
+    let received = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept notification connection");
+        let mut line = String::new();
+        stream
+            .read_to_string(&mut line)
+            .expect("read notification line");
+        line
+    });
+    let output = run_journal_with_journal(
+        &[
+            "notify",
+            "--title",
+            "Test",
+            "--icon",
+            "triangle-alert",
+            "--event",
+            "custom",
+            "--action",
+            "/open",
+            "--facet",
+            "work",
+            "--app",
+            "alerts",
+            "--badge",
+            "7",
+            "--auto-dismiss",
+            "3000",
+            "--no-dismiss",
+            "-v",
+            "-d",
+            "hello",
+            "world",
+        ],
+        Some(&path),
+        &journal,
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, b"");
+    assert_eq!(output.stderr, b"Notification sent\n");
+    assert_eq!(
+        received
+            .join()
+            .expect("notification listener should finish"),
+        "{\"tract\": \"notification\", \"event\": \"custom\", \"message\": \"hello world\", \"title\": \"Test\", \"icon\": \"triangle-alert\", \"action\": \"/open\", \"facet\": \"work\", \"app\": \"alerts\", \"badge\": \"7\", \"autoDismiss\": 3000, \"dismissible\": false}\n"
+    );
+    assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn journal_identity_exec_replaces_itself_and_forwards_process_argv() {
+    use nix::sys::signal::{Signal, kill};
+    use nix::unistd::Pid;
+
+    let temp = TempDir::new("journal-installed-exec");
+    let layout = installed_layout(&temp);
+    let record = temp.path.join("argv.nul");
+    let verbose_record = temp.path.join("verbose.txt");
+    write_recording_interpreter(&layout.bin.join("python3"));
+    fs::write(layout.bin.join("python"), "#!/bin/sh\nexit 98\n")
+        .expect("write fallback interpreter");
+    fs::set_permissions(layout.bin.join("python"), fs::Permissions::from_mode(0o755))
+        .expect("make fallback interpreter executable");
+
+    let root = installed_output(&layout, &["root"]);
+    assert_eq!(root.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8(root.stdout).expect("root stdout should be utf-8"),
+        format!("{}\n", layout.site_packages.display())
+    );
+    assert_eq!(root.stderr, b"");
+
+    let owner = [
+        "has space",
+        "héllo",
+        "--help",
+        "-v",
+        "--verbose",
+        "-V",
+        "a.b.c",
+    ];
+    let mut command = Command::new(&layout.binary);
+    command
+        .arg(identity_arg("journal"))
+        .arg("-v")
+        .arg("up")
+        .args(owner)
+        .env("RECORD_FILE", &record)
+        .env("VERBOSE_RECORD_FILE", &verbose_record);
+    let mut child = command.spawn().expect("installed journal should start");
+    let pid = child.id();
+    let recorded = wait_for_record(&record);
+    let expected = [
+        vec![
+            b"-c".to_vec(),
+            solstone_core_journal_cli::python_bootstrap_script()
+                .as_bytes()
+                .to_vec(),
+            b"solstone.think.service".to_vec(),
+            b"up".to_vec(),
+        ],
+        owner
+            .iter()
+            .map(|argument| argument.as_bytes().to_vec())
+            .collect(),
+    ]
+    .concat();
+    assert_eq!(recorded, expected);
+    assert_eq!(
+        fs::read_to_string(&verbose_record).expect("read verbose record"),
+        "1"
+    );
+
+    kill(Pid::from_raw(pid as i32), Signal::SIGTERM).expect("terminate replaced process");
+    let status = child.wait().expect("wait for replaced process");
+    assert_eq!(status.signal(), Some(Signal::SIGTERM as i32));
+    #[cfg(target_os = "linux")]
+    assert!(
+        !Path::new(&format!("/proc/{pid}")).exists(),
+        "exec replacement must not leave the launched process alive"
+    );
+}
+
+#[test]
+fn journal_identity_requires_an_executable_sibling_interpreter() {
+    let temp = TempDir::new("journal-missing-python");
+    let layout = installed_layout(&temp);
+
+    let missing = installed_output(&layout, &["think"]);
+    assert_eq!(missing.status.code(), Some(69));
+    assert_eq!(missing.stdout, b"");
+    assert!(
+        String::from_utf8(missing.stderr)
+            .expect("missing interpreter stderr should be utf-8")
+            .contains("native journal Python is missing")
+    );
+
+    fs::write(layout.bin.join("python3"), "not executable")
+        .expect("write non-executable interpreter");
+    fs::set_permissions(
+        layout.bin.join("python3"),
+        fs::Permissions::from_mode(0o644),
+    )
+    .expect("make interpreter non-executable");
+    let non_executable = installed_output(&layout, &["think"]);
+    assert_eq!(non_executable.status.code(), Some(69));
+    assert_eq!(non_executable.stdout, b"");
+    assert!(
+        String::from_utf8(non_executable.stderr)
+            .expect("non-executable interpreter stderr should be utf-8")
+            .contains("native journal Python is not executable")
+    );
+}
+
+#[test]
+fn journal_identity_coherence_mismatch_blocks_the_interpreter() {
+    let temp = TempDir::new("journal-coherence-mismatch");
+    let layout = installed_layout(&temp);
+    let sentinel = temp.path.join("interpreter.log");
+    write_forbidden_shim(&layout.bin.join("python3"), &sentinel);
+    fs::write(
+        layout
+            .site_packages
+            .join("solstone_journal-1.2.3.dist-info/METADATA"),
+        "Name: solstone-journal\nVersion: 1.2.2\n\n",
+    )
+    .expect("write mismatched metadata");
+
+    let output = installed_output(&layout, &["think"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout, b"");
+    assert!(
+        String::from_utf8(output.stderr)
+            .expect("mismatch stderr should be utf-8")
+            .contains("Journal package versions are out of sync.")
+    );
+    assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn journal_status_counts_days_and_rejects_a_file_root() {
+    let temp = TempDir::new("journal-status");
+    let journal = temp.path.join("journal");
+    fs::create_dir_all(journal.join("chronicle/20260807")).expect("create day");
+    fs::create_dir(journal.join("chronicle/2026080x")).expect("create lookalike");
+    fs::write(journal.join("chronicle/20260808"), "not a directory").expect("write file");
+
+    let status = run_journal_with_journal(&["status"], None, &journal);
+    assert_eq!(status.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8(status.stdout).expect("stdout should be utf-8"),
+        format!(
+            "Journal: {}\nSource: env\nExists: yes\nDays: 1\n",
+            journal.display()
+        )
+    );
+    assert_eq!(status.stderr, b"");
+
+    let file_root = temp.path.join("journal-file");
+    fs::write(&file_root, "not a directory").expect("write journal file");
+    let rejected = run_journal_with_journal(&["status"], None, &file_root);
+    assert_eq!(rejected.status.code(), Some(74));
+    assert_eq!(rejected.stdout, b"");
+    assert!(
+        String::from_utf8(rejected.stderr)
+            .expect("stderr should be utf-8")
+            .contains("not a directory")
+    );
 }
 
 #[test]

@@ -1962,6 +1962,7 @@ version = "1.0.22"
 dependencies = [
  "chrono",
  "futures-util",
+ "nix",
  "rusqlite",
  "serde",
  "serde_json",
@@ -2241,7 +2242,9 @@ version = "1.0.22"
 dependencies = [
  "serde_json",
  "sha2",
+ "solstone-core-journal",
  "solstone-core-sol",
+ "solstone-core-sol-client",
 ]
 
 [[package]]

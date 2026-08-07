@@ -45,6 +45,7 @@ tokio = { workspace = true, features = ["io-std", "io-util", "rt", "time"] }
 
 [dev-dependencies]
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }
+nix = { workspace = true, features = ["signal"] }
 rusqlite.workspace = true
 solstone-core-journal-io.workspace = true
 tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["handshake"] }

@@ -3,8 +3,14 @@
 
 use std::ffi::{OsStr, OsString};
 
+mod coherence;
 pub mod help;
+mod host;
+mod layout;
 pub mod manifest;
+mod notify;
+mod processes;
+mod runner;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JournalCommand {
@@ -13,6 +19,12 @@ pub enum JournalCommand {
     Known {
         token: &'static str,
         rest: Vec<OsString>,
+        verbose: bool,
+    },
+    UnavailableLocal {
+        token: &'static str,
+        rest: Vec<OsString>,
+        verbose: bool,
     },
     DottedModule,
     Unknown,
@@ -22,91 +34,237 @@ pub enum JournalCommand {
 pub enum Outcome {
     Help(String),
     Version(String),
-    Unavailable { token: &'static str },
+    Unavailable {
+        token: &'static str,
+    },
     Rejected,
+    LocalSuccess {
+        stdout: String,
+        stderr: String,
+    },
+    LocalFailure {
+        stdout: String,
+        stderr: String,
+        exit: u8,
+    },
+    ProcessLaunched,
+    ProcessFailure {
+        stderr: String,
+        exit: u8,
+    },
 }
 
 pub trait ProcessSpawner {
-    fn spawn(&self, program: &str, args: &[String]) -> std::io::Result<()>;
+    fn spawn(&self, program: &OsStr, args: &[OsString], verbose: bool) -> std::io::Result<()>;
 }
 
 pub struct RealProcessSpawner;
 
 impl ProcessSpawner for RealProcessSpawner {
-    fn spawn(&self, program: &str, args: &[String]) -> std::io::Result<()> {
-        unimplemented!(
-            "solstone-core-journal-cli M1 never spawns a process; this seam is reserved for a future wave: {program} {args:?}"
-        )
+    fn spawn(&self, program: &OsStr, args: &[OsString], verbose: bool) -> std::io::Result<()> {
+        runner::exec_process(program, args, verbose)
     }
 }
 
 #[must_use]
 pub fn evaluate_args(args: &[OsString]) -> JournalCommand {
-    let Some(first) = args.first() else {
+    let mut offset = 0;
+    let mut verbose = false;
+    if args
+        .first()
+        .is_some_and(|first| first == OsStr::new("-v") || first == OsStr::new("--verbose"))
+    {
+        verbose = true;
+        offset = 1;
+    }
+    let Some(first) = args.get(offset) else {
         return JournalCommand::Help;
     };
-    if first == OsStr::new("--help") || first == OsStr::new("-h") {
-        return JournalCommand::Help;
+    let rest = &args[offset + 1..];
+    if first == OsStr::new("--help") || first == OsStr::new("-h") || first == OsStr::new("help") {
+        return if rest.is_empty() {
+            JournalCommand::Help
+        } else {
+            JournalCommand::Unknown
+        };
     }
-    if first == OsStr::new("--version") {
-        return JournalCommand::Version;
+    if first == OsStr::new("--version") || first == OsStr::new("-V") {
+        return if rest.is_empty() {
+            JournalCommand::Version
+        } else {
+            JournalCommand::Unknown
+        };
     }
     let Some(value) = first.to_str() else {
         return JournalCommand::Unknown;
     };
-    if value.contains('.') {
-        return JournalCommand::DottedModule;
-    }
-    match manifest::known_token(value) {
-        Some(token) => JournalCommand::Known {
+    if let Some(token) = manifest::known_token(value) {
+        if matches!(
+            manifest::primitive_for(token),
+            Some(
+                manifest::Primitive::Path | manifest::Primitive::Status | manifest::Primitive::Root
+            )
+        ) && !rest.is_empty()
+        {
+            return JournalCommand::Unknown;
+        }
+        return JournalCommand::Known {
             token,
-            rest: args[1..].to_vec(),
-        },
-        None => JournalCommand::Unknown,
+            rest: rest.to_vec(),
+            verbose,
+        };
+    }
+    if matches!(value, "archive" | "facet" | "news") {
+        let Some(leaf) = rest.first().and_then(|leaf| leaf.to_str()) else {
+            return JournalCommand::Unknown;
+        };
+        return manifest::unavailable_local_for(value, leaf).map_or(
+            JournalCommand::Unknown,
+            |token| JournalCommand::UnavailableLocal {
+                token,
+                rest: rest[1..].to_vec(),
+                verbose,
+            },
+        );
+    }
+    if value.contains('.') {
+        JournalCommand::DottedModule
+    } else {
+        JournalCommand::Unknown
     }
 }
 
 #[must_use]
-pub fn dispatch(command: JournalCommand, _spawner: &dyn ProcessSpawner) -> Outcome {
+pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcome {
     match command {
         JournalCommand::Help => Outcome::Help(help::render_help()),
         JournalCommand::Version => Outcome::Version(help::version_line()),
-        JournalCommand::Known { token, .. } => Outcome::Unavailable { token },
+        JournalCommand::Known {
+            token,
+            rest,
+            verbose,
+        } => match manifest::primitive_for(token) {
+            Some(manifest::Primitive::Path) => host::path(),
+            Some(manifest::Primitive::Status) => host::status(),
+            Some(manifest::Primitive::Root) => host::root(),
+            Some(manifest::Primitive::Notify) => notify::notify(&rest),
+            None => dispatch_process(token, &rest, verbose, spawner),
+        },
+        JournalCommand::UnavailableLocal { token, .. } => Outcome::Unavailable { token },
         JournalCommand::DottedModule | JournalCommand::Unknown => Outcome::Rejected,
     }
 }
 
 pub use help::{JOURNAL_USAGE, unavailable_message};
 
+/// Cross-language differential contract for the fixed Python process bootstrap.
+#[must_use]
+pub fn python_bootstrap_script() -> &'static str {
+    runner::PYTHON_BOOTSTRAP_SCRIPT
+}
+
+fn dispatch_process(
+    token: &'static str,
+    owner_argv: &[OsString],
+    verbose: bool,
+    spawner: &dyn ProcessSpawner,
+) -> Outcome {
+    let spec = processes::process_spec_for(token)
+        .expect("journal manifest process token must have a ProcessSpec");
+    if spec.kind.requires_coherence()
+        && let Err(error) = coherence::guard_current_installation()
+    {
+        return Outcome::ProcessFailure {
+            stderr: format!("{error}\n"),
+            exit: 1,
+        };
+    }
+    let interpreter = match runner::sibling_python_for_current_executable() {
+        Ok(interpreter) => interpreter,
+        Err(error) => {
+            let exit = match error {
+                runner::InterpreterError::Missing { .. }
+                | runner::InterpreterError::NonExecutable { .. } => 69,
+                runner::InterpreterError::CurrentExe(_) => 70,
+            };
+            return Outcome::ProcessFailure {
+                stderr: format!("native journal process launch failed: {error}\n"),
+                exit,
+            };
+        }
+    };
+    dispatch_process_with_interpreter(spec, &interpreter, owner_argv, verbose, spawner)
+}
+
+fn dispatch_process_with_interpreter(
+    spec: &processes::ProcessSpec,
+    interpreter: &std::path::Path,
+    owner_argv: &[OsString],
+    verbose: bool,
+    spawner: &dyn ProcessSpawner,
+) -> Outcome {
+    let args = runner::process_args(spec, owner_argv);
+    match spawner.spawn(interpreter.as_os_str(), &args, verbose) {
+        Ok(()) => Outcome::ProcessLaunched,
+        Err(error) => Outcome::ProcessFailure {
+            stderr: format!("native journal process launch failed: {error}\n"),
+            exit: 70,
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manifest::{JOURNAL_COMMAND_COUNT, ROOT_COMMANDS};
+    use crate::manifest::{
+        JOURNAL_COMMAND_COUNT, JOURNAL_HOST_COMMAND_COUNT, JOURNAL_HOST_COMMANDS, all_leaf_paths,
+        process_command_tokens,
+    };
+    use crate::processes::PROCESS_SPECS;
+    use std::cell::RefCell;
     use std::collections::BTreeSet;
-
-    const CLI_BOUNDARY_JSON: &str =
-        include_str!("../../../fixtures/native-sol/cli-boundary-v1.json");
-    const EXPECTED_HELP: &str = "journal - native journal command root (solstone)\n\nUsage: journal <command> [args...]\n\nRoot commands:\n  --path\n  path\n  status\n  root\n  doctor\n  check\n  contract\n  notify\n\nService commands:\n  backfill-processing-records\n  backup\n  brain\n  config\n  convey\n  cortex\n  depict\n  describe\n  down\n  engage\n  export\n  facet-candidates\n  grab\n  health\n  heartbeat\n  identity\n  importer\n  indexer\n  install-models\n  install-provider\n  journal-stats\n  maint\n  maintenance\n  navigate\n  observer\n  reprocess\n  restart-convey\n  schedule\n  segment\n  sense\n  service\n  settings\n  setup\n  spl\n  start\n  streams\n  supervisor\n  talent\n  think\n  top\n  transcribe\n  transfer\n  up\n  warm\n\nOptions:\n  -h, --help    Show this help\n  --version     Show version\n";
+    use std::path::Path;
 
     fn args(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
     }
 
-    fn all_tokens() -> impl Iterator<Item = &'static str> {
-        ROOT_COMMANDS
-            .iter()
-            .copied()
-            .chain(solstone_core_sol::JOURNAL_HOST_COMMANDS.iter().copied())
+    struct PanicSpawner;
+
+    impl ProcessSpawner for PanicSpawner {
+        fn spawn(
+            &self,
+            _program: &OsStr,
+            _args: &[OsString],
+            _verbose: bool,
+        ) -> std::io::Result<()> {
+            panic!("M1 dispatch must not spawn")
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingSpawner {
+        calls: RefCell<Vec<(OsString, Vec<OsString>, bool)>>,
+    }
+
+    impl ProcessSpawner for RecordingSpawner {
+        fn spawn(&self, program: &OsStr, args: &[OsString], verbose: bool) -> std::io::Result<()> {
+            self.calls
+                .borrow_mut()
+                .push((program.to_os_string(), args.to_vec(), verbose));
+            Ok(())
+        }
     }
 
     #[test]
-    fn evaluate_args_recognizes_every_manifest_token_and_rest() {
-        for token in all_tokens() {
+    fn evaluate_args_recognizes_processes_and_preserves_owner_argv() {
+        for token in process_command_tokens() {
             assert_eq!(
-                evaluate_args(&args(&[token, "opaque", "--flag"])),
+                evaluate_args(&args(&[token, "opaque", "--help", "a.b"])),
                 JournalCommand::Known {
                     token,
-                    rest: args(&["opaque", "--flag"]),
+                    rest: args(&["opaque", "--help", "a.b"]),
+                    verbose: false,
                 },
                 "{token}"
             );
@@ -114,91 +272,207 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_args_classifies_special_and_unrecognized_inputs() {
+    fn evaluate_args_classifies_root_grammar() {
         assert_eq!(evaluate_args(&[]), JournalCommand::Help);
+        assert_eq!(evaluate_args(&args(&["-v"])), JournalCommand::Help);
         assert_eq!(evaluate_args(&args(&["--help"])), JournalCommand::Help);
-        assert_eq!(evaluate_args(&args(&["-h"])), JournalCommand::Help);
+        assert_eq!(evaluate_args(&args(&["help"])), JournalCommand::Help);
         assert_eq!(
             evaluate_args(&args(&["--version"])),
             JournalCommand::Version
+        );
+        assert_eq!(evaluate_args(&args(&["-V"])), JournalCommand::Version);
+        assert_eq!(
+            evaluate_args(&args(&["help", "extra"])),
+            JournalCommand::Unknown
+        );
+        assert_eq!(
+            evaluate_args(&args(&["--version", "extra"])),
+            JournalCommand::Unknown
+        );
+        assert_eq!(
+            evaluate_args(&args(&["--verbose", "think", "-v"])),
+            JournalCommand::Known {
+                token: "think",
+                rest: args(&["-v"]),
+                verbose: true,
+            }
+        );
+        assert_eq!(
+            evaluate_args(&args(&["archive", "export", "--help"])),
+            JournalCommand::UnavailableLocal {
+                token: "archive export",
+                rest: args(&["--help"]),
+                verbose: false,
+            }
+        );
+        assert_eq!(
+            evaluate_args(&args(&["archive", "unknown"])),
+            JournalCommand::Unknown
+        );
+        assert_eq!(
+            evaluate_args(&args(&["status", "extra"])),
+            JournalCommand::Unknown
         );
         assert_eq!(
             evaluate_args(&args(&["solstone.think.supervisor"])),
             JournalCommand::DottedModule
         );
-        assert_eq!(evaluate_args(&args(&["a.b"])), JournalCommand::DottedModule);
-        assert_eq!(evaluate_args(&args(&["bogus"])), JournalCommand::Unknown);
     }
 
     #[cfg(unix)]
     #[test]
-    fn evaluate_args_classifies_non_utf8_first_argument_as_unknown() {
+    fn evaluate_args_preserves_non_utf8_owner_argv() {
         use std::os::unix::ffi::OsStringExt;
 
+        assert_eq!(
+            evaluate_args(&[OsString::from("think"), OsString::from_vec(vec![0xff])]),
+            JournalCommand::Known {
+                token: "think",
+                rest: vec![OsString::from_vec(vec![0xff])],
+                verbose: false,
+            }
+        );
         assert_eq!(
             evaluate_args(&[OsString::from_vec(vec![0xff])]),
             JournalCommand::Unknown
         );
     }
 
+    #[cfg(unix)]
     #[test]
-    fn manifest_has_fifty_two_commands() {
-        assert_eq!(JOURNAL_COMMAND_COUNT, 52);
-        assert_eq!(all_tokens().count(), JOURNAL_COMMAND_COUNT);
+    fn notify_rejects_non_utf8_owner_argv_without_spawning() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let outcome = dispatch(
+            evaluate_args(&[OsString::from("notify"), OsString::from_vec(vec![0xff])]),
+            &PanicSpawner,
+        );
+        assert!(matches!(
+            outcome,
+            Outcome::LocalFailure {
+                stdout,
+                stderr,
+                exit: 75,
+            } if stdout.is_empty() && stderr.contains("not valid UTF-8")
+        ));
     }
 
-    struct PanicSpawner;
-
-    impl ProcessSpawner for PanicSpawner {
-        fn spawn(&self, _program: &str, _args: &[String]) -> std::io::Result<()> {
-            panic!("M1 dispatch must not spawn")
-        }
+    #[test]
+    fn manifest_has_fifty_seven_unique_leaf_paths() {
+        let paths = all_leaf_paths();
+        let unique = paths
+            .iter()
+            .map(|path| path.join("\u{0}"))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(JOURNAL_COMMAND_COUNT, 57);
+        assert_eq!(paths.len(), JOURNAL_COMMAND_COUNT);
+        assert_eq!(unique.len(), JOURNAL_COMMAND_COUNT);
+        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 44);
+        let coherence_tokens = PROCESS_SPECS
+            .iter()
+            .filter(|spec| spec.kind.requires_coherence())
+            .map(|spec| spec.token)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            coherence_tokens,
+            JOURNAL_HOST_COMMANDS.iter().copied().collect()
+        );
     }
 
     #[test]
-    fn dispatch_never_invokes_the_spawner() {
-        let spawner = PanicSpawner;
-        for token in all_tokens() {
+    fn every_process_spec_builds_exact_bootstrap_argv() {
+        let spawner = RecordingSpawner::default();
+        let owner_argv = args(&[
+            "has space",
+            "h\u{e9}llo",
+            "--help",
+            "-v",
+            "--verbose",
+            "-V",
+            "a.b.c",
+        ]);
+        for spec in PROCESS_SPECS {
             assert_eq!(
-                dispatch(
-                    JournalCommand::Known {
-                        token,
-                        rest: args(&["opaque"]),
-                    },
+                dispatch_process_with_interpreter(
+                    spec,
+                    Path::new("/recording-python"),
+                    &owner_argv,
+                    true,
                     &spawner,
                 ),
-                Outcome::Unavailable { token },
-                "{token}"
+                Outcome::ProcessLaunched,
+                "{}",
+                spec.token
             );
         }
+        let calls = spawner.calls.borrow();
+        assert_eq!(calls.len(), PROCESS_SPECS.len());
+        for (spec, (program, argv, verbose)) in PROCESS_SPECS.iter().zip(calls.iter()) {
+            assert_eq!(program, OsStr::new("/recording-python"), "{}", spec.token);
+            assert!(*verbose, "{}", spec.token);
+            let expected = [
+                vec![
+                    OsString::from("-c"),
+                    OsString::from(python_bootstrap_script()),
+                    OsString::from(spec.module),
+                ],
+                spec.preset_argv.iter().map(OsString::from).collect(),
+                owner_argv.clone(),
+            ]
+            .concat();
+            assert_eq!(*argv, expected, "{}", spec.token);
+        }
+    }
+
+    #[test]
+    fn non_process_categories_never_invoke_the_spawner() {
+        let spawner = PanicSpawner;
+        for token in ["--path", "path", "status", "root"] {
+            assert!(matches!(
+                dispatch(evaluate_args(&args(&[token])), &spawner),
+                Outcome::LocalSuccess { .. } | Outcome::LocalFailure { .. }
+            ));
+        }
         assert!(matches!(
-            dispatch(JournalCommand::Help, &spawner),
-            Outcome::Help(_)
+            dispatch(evaluate_args(&args(&["notify", "opaque"])), &spawner),
+            Outcome::LocalSuccess { .. } | Outcome::LocalFailure { .. }
         ));
-        assert!(matches!(
-            dispatch(JournalCommand::Version, &spawner),
-            Outcome::Version(_)
-        ));
+        for command in [
+            JournalCommand::Help,
+            JournalCommand::Version,
+            JournalCommand::Unknown,
+        ] {
+            assert!(matches!(
+                dispatch(command, &spawner),
+                Outcome::Help(_) | Outcome::Version(_) | Outcome::Rejected
+            ));
+        }
         assert_eq!(
-            dispatch(JournalCommand::DottedModule, &spawner),
-            Outcome::Rejected
-        );
-        assert_eq!(
-            dispatch(JournalCommand::Unknown, &spawner),
-            Outcome::Rejected
+            dispatch(
+                JournalCommand::UnavailableLocal {
+                    token: "archive export",
+                    rest: vec![],
+                    verbose: false,
+                },
+                &spawner,
+            ),
+            Outcome::Unavailable {
+                token: "archive export"
+            }
         );
     }
 
     #[test]
-    fn render_help_matches_the_manifest_projection() {
+    fn render_help_projects_the_manifest() {
         let output = help::render_help();
-        assert_eq!(output, EXPECTED_HELP);
-        for command in ROOT_COMMANDS
-            .iter()
-            .chain(solstone_core_sol::JOURNAL_HOST_COMMANDS.iter())
-        {
-            assert!(output.contains(&format!("  {command}\n")), "{command}");
+        for path in all_leaf_paths() {
+            assert!(
+                output.contains(&format!("  {}\n", path.join(" "))),
+                "{path:?}"
+            );
         }
+        assert!(!output.contains("solstone.think."));
     }
 
     #[test]
@@ -207,62 +481,5 @@ mod tests {
             help::version_line(),
             format!("journal (solstone) {}\n", env!("CARGO_PKG_VERSION"))
         );
-    }
-
-    #[test]
-    fn unavailable_message_names_the_token_and_category() {
-        let message = unavailable_message("think");
-        assert!(message.contains("think"));
-        assert!(message.contains("journal_command_unavailable"));
-    }
-
-    fn fixture_tokens(value: &serde_json::Value, field: &str) -> BTreeSet<String> {
-        value["identities"]["journal"][field]
-            .as_array()
-            .expect("fixture field must be an array")
-            .iter()
-            .map(|item| {
-                item.as_str()
-                    .expect("fixture command must be a string")
-                    .to_owned()
-            })
-            .collect()
-    }
-
-    fn manifest_matches_fixture(
-        value: &serde_json::Value,
-        roots: &[&str],
-        service: &[&str],
-    ) -> bool {
-        fixture_tokens(value, "root_commands")
-            == roots.iter().map(|item| (*item).to_owned()).collect()
-            && fixture_tokens(value, "service_commands")
-                == service.iter().map(|item| (*item).to_owned()).collect()
-    }
-
-    #[test]
-    fn manifest_matches_the_journal_fixture() {
-        let value: serde_json::Value =
-            serde_json::from_str(CLI_BOUNDARY_JSON).expect("parse CLI boundary fixture");
-        assert!(manifest_matches_fixture(
-            &value,
-            ROOT_COMMANDS,
-            solstone_core_sol::JOURNAL_HOST_COMMANDS,
-        ));
-    }
-
-    #[test]
-    fn fixture_comparison_rejects_a_corrupted_manifest() {
-        let value: serde_json::Value =
-            serde_json::from_str(CLI_BOUNDARY_JSON).expect("parse CLI boundary fixture");
-        let mut corrupted_roots = ROOT_COMMANDS.to_vec();
-        corrupted_roots.remove(0);
-        corrupted_roots.push("invented-command");
-
-        assert!(!manifest_matches_fixture(
-            &value,
-            &corrupted_roots,
-            solstone_core_sol::JOURNAL_HOST_COMMANDS,
-        ));
     }
 }

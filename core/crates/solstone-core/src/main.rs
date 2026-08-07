@@ -126,6 +126,26 @@ fn run_journal_identity(args: Vec<std::ffi::OsString>) -> ExitCode {
             eprint!("{}", solstone_core_journal_cli::unavailable_message(token));
             ExitCode::from(EXIT_UNAVAILABLE)
         }
+        solstone_core_journal_cli::Outcome::LocalSuccess { stdout, stderr } => {
+            print!("{stdout}");
+            eprint!("{stderr}");
+            ExitCode::SUCCESS
+        }
+        solstone_core_journal_cli::Outcome::LocalFailure {
+            stdout,
+            stderr,
+            exit,
+        } => {
+            print!("{stdout}");
+            eprint!("{stderr}");
+            ExitCode::from(exit)
+        }
+        // A real Unix process launch replaces this process and never returns.
+        solstone_core_journal_cli::Outcome::ProcessLaunched => ExitCode::SUCCESS,
+        solstone_core_journal_cli::Outcome::ProcessFailure { stderr, exit } => {
+            eprint!("{stderr}");
+            ExitCode::from(exit)
+        }
         solstone_core_journal_cli::Outcome::Rejected => {
             eprint!("{}", solstone_core_journal_cli::JOURNAL_USAGE);
             ExitCode::from(EXIT_USAGE)
