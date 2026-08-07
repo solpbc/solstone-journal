@@ -31,6 +31,12 @@ numeric lexeme and match Python's positive-infinity result.
 one `1` plus 4,299 zeroes. The Rust test must build and parse that raw lexeme;
 the expected hash is the shipping Python oracle.
 
+body_source_python_json_vectors.json freezes Python's raw JSON behavior that
+ordinary Rust strings/numbers cannot represent: duplicate keys, lone
+surrogates, key ordering, float rounding and overflow/underflow, long numeric
+patterns, and malformed-input coordinates. It was generated with the shipping
+Python 3.12 runtime; Hopper consumes it but never regenerates it.
+
 body_source_codec_rows.json supplies independently hand-authored examples of
 all three normalized schemas currently accepted by the shipping body reader,
 including diverse JSON shapes across fields and metadata, unknown nested and
