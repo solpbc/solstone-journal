@@ -185,6 +185,7 @@ fn run_brain(command: BrainCommand) -> ExitCode {
             run_brain_prerequisite_renewal_session(options)
         }
         BrainCommand::Inspect(options) => run_brain_inspect(options),
+        BrainCommand::Fingerprint => run_brain_fingerprint(),
     }
 }
 
@@ -254,32 +255,44 @@ fn active_brain_fingerprint(
     config: &Map<String, Value>,
     bundled_runtime_fingerprint_sha256: Option<String>,
 ) -> Value {
+    let key = solstone_core_brain::load_existing_fingerprint_key(journal_path);
+    brain_fingerprint_result(
+        config,
+        key.as_ref().map(|key| key.as_slice()),
+        bundled_runtime_fingerprint_sha256,
+    )
+}
+
+fn brain_fingerprint_result(
+    config: &Map<String, Value>,
+    hmac_key: Option<&[u8]>,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+) -> Value {
     let resolution = solstone_core_brain::derive_active_brain_lane(config);
     let mut diagnostic = Map::new();
     let bundled_runtime = (resolution.lane.as_deref() == Some("bundled"))
         .then_some(bundled_runtime_fingerprint_sha256)
         .flatten();
-    let (ok, fingerprint_sha256, reason_code) =
-        match solstone_core_brain::load_existing_fingerprint_key(journal_path) {
-            None => (false, None, Some("fingerprint_key_unavailable".to_owned())),
-            Some(key) => match solstone_core_brain::build_active_brain_fingerprint(
-                config,
-                &key,
-                bundled_runtime.clone().map(Value::String),
-            ) {
-                Ok(Some(fingerprint)) => (true, Some(fingerprint), None),
-                Ok(None) => (false, None, Some("fingerprint_not_available".to_owned())),
-                Err(error) => {
-                    if error.0 == "configuration_invalid" {
-                        diagnostic.insert(
-                            "field".to_owned(),
-                            Value::String("providers.active.provider".to_owned()),
-                        );
-                    }
-                    (false, None, Some(error.0))
+    let (ok, fingerprint_sha256, reason_code) = match hmac_key {
+        None => (false, None, Some("fingerprint_key_unavailable".to_owned())),
+        Some(key) => match solstone_core_brain::build_active_brain_fingerprint(
+            config,
+            key,
+            bundled_runtime.clone().map(Value::String),
+        ) {
+            Ok(Some(fingerprint)) => (true, Some(fingerprint), None),
+            Ok(None) => (false, None, Some("fingerprint_not_available".to_owned())),
+            Err(error) => {
+                if error.0 == "configuration_invalid" {
+                    diagnostic.insert(
+                        "field".to_owned(),
+                        Value::String("providers.active.provider".to_owned()),
+                    );
                 }
-            },
-        };
+                (false, None, Some(error.0))
+            }
+        },
+    };
     json!({
         "ok": ok,
         "fingerprint_sha256": fingerprint_sha256,
@@ -290,6 +303,88 @@ fn active_brain_fingerprint(
         "diagnostic": diagnostic,
         "bundled_runtime_fingerprint_sha256": bundled_runtime,
     })
+}
+
+struct BrainFingerprintRequest {
+    config: Map<String, Value>,
+    hmac_key: [u8; 32],
+    bundled_runtime_fingerprint_sha256: Option<String>,
+}
+
+fn run_brain_fingerprint() -> ExitCode {
+    let request = match read_bounded_json_stdin().and_then(parse_brain_fingerprint_request) {
+        Ok(request) => request,
+        Err(JsonStdinError::Content) => {
+            eprintln!(
+                "brain fingerprint failed: stdin was not a valid request JSON object within 1 MiB"
+            );
+            return ExitCode::from(EXIT_USAGE);
+        }
+        Err(JsonStdinError::Io) => {
+            eprintln!("brain fingerprint failed: stdin I/O error");
+            return ExitCode::from(EXIT_IOERR);
+        }
+    };
+    let output = brain_fingerprint_result(
+        &request.config,
+        Some(&request.hmac_key),
+        request.bundled_runtime_fingerprint_sha256,
+    );
+    let mut stdout = io::stdout().lock();
+    if serde_json::to_writer(&mut stdout, &output).is_err()
+        || stdout.write_all(b"\n").is_err()
+        || stdout.flush().is_err()
+    {
+        eprintln!("brain fingerprint failed: stdout I/O error");
+        ExitCode::from(EXIT_IOERR)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+fn parse_brain_fingerprint_request(
+    request: Map<String, Value>,
+) -> Result<BrainFingerprintRequest, JsonStdinError> {
+    const FIELDS: [&str; 3] = [
+        "config",
+        "hmac_key_hex",
+        "bundled_runtime_fingerprint_sha256",
+    ];
+    if request.keys().any(|key| !FIELDS.contains(&key.as_str())) {
+        return Err(JsonStdinError::Content);
+    }
+    let config = request
+        .get("config")
+        .and_then(Value::as_object)
+        .cloned()
+        .ok_or(JsonStdinError::Content)?;
+    let hmac_key = request
+        .get("hmac_key_hex")
+        .and_then(Value::as_str)
+        .and_then(decode_hmac_key)
+        .ok_or(JsonStdinError::Content)?;
+    let bundled_runtime_fingerprint_sha256 = match request.get("bundled_runtime_fingerprint_sha256")
+    {
+        None => None,
+        Some(Value::String(value)) => Some(value.clone()),
+        Some(_) => return Err(JsonStdinError::Content),
+    };
+    Ok(BrainFingerprintRequest {
+        config,
+        hmac_key,
+        bundled_runtime_fingerprint_sha256,
+    })
+}
+
+fn decode_hmac_key(value: &str) -> Option<[u8; 32]> {
+    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut key = [0_u8; 32];
+    for (index, byte) in key.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16).ok()?;
+    }
+    Some(key)
 }
 
 fn run_brain_refresh_session(options: BrainRefreshSessionOptions) -> ExitCode {
