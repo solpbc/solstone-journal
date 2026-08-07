@@ -455,7 +455,13 @@ pub(crate) fn reduce_evidence_with_runtime(
             "not_attempted" => None,
             "failed" => component_record.reason.as_deref().map(|reason| (2, reason)),
             "blocked" => component_record.reason.as_deref().map(|reason| (3, reason)),
-            _ => Some((4, "brain_record_invalid")),
+            _ => Some((
+                4,
+                component_record
+                    .reason
+                    .as_deref()
+                    .unwrap_or("brain_record_invalid"),
+            )),
         };
         if let Some((priority, reason)) = reason {
             candidates.push((priority, index, reason.to_owned()));
@@ -693,5 +699,48 @@ fn failure(path: &str, reason: &str) -> ValidationError {
     ValidationError {
         path: path.to_owned(),
         reason: reason.to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reducer_preserves_an_unknown_component_reason() {
+        let now = Utc::now();
+        let record = BrainStateRecord {
+            schema_version: local_contract().brain_state.schema_version,
+            revision: 1,
+            updated_at: now,
+            aggregate_state: "unknown".to_owned(),
+            reason_code: Some("endpoint_configuration_incomplete".to_owned()),
+            active_lane: "byo-cloud".to_owned(),
+            active_provider: Some("anthropic".to_owned()),
+            active_model: None,
+            fingerprint_sha256: None,
+            evidence: BTreeMap::from([
+                (
+                    "configuration".to_owned(),
+                    Some(EvidenceComponent {
+                        status: "unknown".to_owned(),
+                        observed_at: now,
+                        reason: Some("endpoint_configuration_incomplete".to_owned()),
+                        expires_at: None,
+                        diagnostic: BTreeMap::new(),
+                    }),
+                ),
+                ("lane_prerequisites".to_owned(), None),
+                ("generate".to_owned(), None),
+                ("cogitate".to_owned(), None),
+            ]),
+            checking: None,
+            runtime_failure_marker: None,
+            diagnostic: BTreeMap::new(),
+        };
+
+        let (aggregate, reason) = reduce_evidence_with_runtime(&record, now, false, None);
+        assert_eq!(aggregate, "blocked");
+        assert_eq!(reason.as_deref(), Some("endpoint_configuration_incomplete"));
     }
 }
