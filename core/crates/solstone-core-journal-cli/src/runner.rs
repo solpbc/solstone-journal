@@ -8,7 +8,7 @@ use std::process::Command;
 
 use crate::processes::ProcessSpec;
 
-pub(crate) const PYTHON_BOOTSTRAP_SCRIPT: &str = "import importlib, logging, os, sys\nif os.environ.get(\"JOURNAL_CLI_VERBOSE\"):\n    logging.basicConfig(level=logging.DEBUG)\nmodule = sys.argv[1]\nsys.argv = sys.argv[1:]\nresult = importlib.import_module(module).main()\nsys.exit(0 if result is None else int(result))\n";
+pub(crate) const PYTHON_BOOTSTRAP_SCRIPT: &str = "import importlib, logging, sys\nmodule = sys.argv[1]\ndisplay_argv0 = sys.argv[2]\nverbose_marker = sys.argv[3]\nif verbose_marker == \"1\":\n    logging.basicConfig(level=logging.DEBUG)\nsys.argv = [display_argv0, *sys.argv[4:]]\nresult = importlib.import_module(module).main()\nsys.exit(0 if result is None else int(result))\n";
 
 #[derive(Debug)]
 pub(crate) enum InterpreterError {
@@ -61,36 +61,35 @@ pub(crate) fn sibling_python_for_executable(
     Err(InterpreterError::Missing { dir })
 }
 
-pub(crate) fn process_args(spec: &ProcessSpec, owner_argv: &[OsString]) -> Vec<OsString> {
+pub(crate) fn process_args(
+    spec: &ProcessSpec,
+    verbose: bool,
+    owner_argv: &[OsString],
+) -> Vec<OsString> {
     let mut args = vec![
         OsString::from("-c"),
         OsString::from(PYTHON_BOOTSTRAP_SCRIPT),
         OsString::from(spec.module),
+        OsString::from(format!("journal {}", spec.token)),
+        OsString::from(if verbose { "1" } else { "0" }),
     ];
     args.extend(spec.preset_argv.iter().map(OsString::from));
     args.extend(owner_argv.iter().cloned());
     args
 }
 
-pub(crate) fn exec_process(
-    program: &OsStr,
-    args: &[OsString],
-    verbose: bool,
-) -> std::io::Result<()> {
+pub(crate) fn exec_process(program: &OsStr, args: &[OsString]) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
 
         let mut command = Command::new(program);
         command.args(args);
-        if verbose {
-            command.env("JOURNAL_CLI_VERBOSE", "1");
-        }
         Err(command.exec())
     }
     #[cfg(not(unix))]
     {
-        let _ = (program, args, verbose);
+        let _ = (program, args);
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "native journal Python process replacement is unavailable on this platform",
@@ -197,7 +196,7 @@ mod tests {
 
         let spec = crate::processes::process_spec_for("up").expect("up ProcessSpec");
         let owner = vec![OsString::from_vec(vec![0xff])];
-        let args = process_args(spec, &owner);
+        let args = process_args(spec, false, &owner);
         assert_eq!(args.last(), owner.last());
     }
 }

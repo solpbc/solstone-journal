@@ -174,7 +174,7 @@ fn installed_layout(temp: &TempDir) -> InstalledLayout {
 fn write_recording_interpreter(path: &Path) {
     fs::write(
         path,
-        "#!/bin/sh\nprintf '%s\\0' \"$@\" > \"$RECORD_FILE\"\nif [ -n \"${VERBOSE_RECORD_FILE:-}\" ]; then\n  printf '%s' \"${JOURNAL_CLI_VERBOSE-}\" > \"$VERBOSE_RECORD_FILE\"\nfi\nexec /bin/sleep 60\n",
+        "#!/bin/sh\nprintf '%s\\0' \"$@\" > \"$RECORD_FILE\"\nif [ -n \"${VERBOSE_RECORD_FILE:-}\" ]; then\n  printf '%s' \"$5\" > \"$VERBOSE_RECORD_FILE\"\nfi\nexec /bin/sleep 60\n",
     )
     .expect("write recording interpreter");
     fs::set_permissions(path, fs::Permissions::from_mode(0o755))
@@ -429,6 +429,8 @@ fn journal_identity_exec_replaces_itself_and_forwards_process_argv() {
                 .as_bytes()
                 .to_vec(),
             b"solstone.think.service".to_vec(),
+            b"journal up".to_vec(),
+            b"1".to_vec(),
             b"up".to_vec(),
         ],
         owner
@@ -542,6 +544,8 @@ fn journal_identity_universal_command_bypasses_coherence_mismatch() {
                 .as_bytes()
                 .to_vec(),
             b"solstone.think.doctor".to_vec(),
+            b"journal doctor".to_vec(),
+            b"0".to_vec(),
         ]
     );
     kill(Pid::from_raw(pid as i32), Signal::SIGTERM).expect("terminate replaced process");

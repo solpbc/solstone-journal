@@ -55,14 +55,14 @@ pub enum Outcome {
 }
 
 pub trait ProcessSpawner {
-    fn spawn(&self, program: &OsStr, args: &[OsString], verbose: bool) -> std::io::Result<()>;
+    fn spawn(&self, program: &OsStr, args: &[OsString]) -> std::io::Result<()>;
 }
 
 pub struct RealProcessSpawner;
 
 impl ProcessSpawner for RealProcessSpawner {
-    fn spawn(&self, program: &OsStr, args: &[OsString], verbose: bool) -> std::io::Result<()> {
-        runner::exec_process(program, args, verbose)
+    fn spawn(&self, program: &OsStr, args: &[OsString]) -> std::io::Result<()> {
+        runner::exec_process(program, args)
     }
 }
 
@@ -203,8 +203,8 @@ fn dispatch_process_with_interpreter(
     verbose: bool,
     spawner: &dyn ProcessSpawner,
 ) -> Outcome {
-    let args = runner::process_args(spec, owner_argv);
-    match spawner.spawn(interpreter.as_os_str(), &args, verbose) {
+    let args = runner::process_args(spec, verbose, owner_argv);
+    match spawner.spawn(interpreter.as_os_str(), &args) {
         Ok(()) => Outcome::ProcessLaunched,
         Err(error) => Outcome::ProcessFailure {
             stderr: format!("native journal process launch failed: {error}\n"),
@@ -232,26 +232,21 @@ mod tests {
     struct PanicSpawner;
 
     impl ProcessSpawner for PanicSpawner {
-        fn spawn(
-            &self,
-            _program: &OsStr,
-            _args: &[OsString],
-            _verbose: bool,
-        ) -> std::io::Result<()> {
+        fn spawn(&self, _program: &OsStr, _args: &[OsString]) -> std::io::Result<()> {
             panic!("non-process dispatch must not spawn")
         }
     }
 
     #[derive(Default)]
     struct RecordingSpawner {
-        calls: RefCell<Vec<(OsString, Vec<OsString>, bool)>>,
+        calls: RefCell<Vec<(OsString, Vec<OsString>)>>,
     }
 
     impl ProcessSpawner for RecordingSpawner {
-        fn spawn(&self, program: &OsStr, args: &[OsString], verbose: bool) -> std::io::Result<()> {
+        fn spawn(&self, program: &OsStr, args: &[OsString]) -> std::io::Result<()> {
             self.calls
                 .borrow_mut()
-                .push((program.to_os_string(), args.to_vec(), verbose));
+                .push((program.to_os_string(), args.to_vec()));
             Ok(())
         }
     }
@@ -390,38 +385,56 @@ mod tests {
             "-v",
             "--verbose",
             "-V",
+            "0",
+            "1",
+            "solstone.think.service",
+            "journal up",
             "a.b.c",
         ]);
-        for spec in PROCESS_SPECS {
-            assert_eq!(
-                dispatch_process_with_interpreter(
-                    spec,
-                    Path::new("/recording-python"),
-                    &owner_argv,
-                    true,
-                    &spawner,
-                ),
-                Outcome::ProcessLaunched,
-                "{}",
-                spec.token
-            );
+        for verbose in [false, true] {
+            for spec in PROCESS_SPECS {
+                assert_eq!(
+                    dispatch_process_with_interpreter(
+                        spec,
+                        Path::new("/recording-python"),
+                        &owner_argv,
+                        verbose,
+                        &spawner,
+                    ),
+                    Outcome::ProcessLaunched,
+                    "{}",
+                    spec.token
+                );
+            }
         }
         let calls = spawner.calls.borrow();
-        assert_eq!(calls.len(), PROCESS_SPECS.len());
-        for (spec, (program, argv, verbose)) in PROCESS_SPECS.iter().zip(calls.iter()) {
-            assert_eq!(program, OsStr::new("/recording-python"), "{}", spec.token);
-            assert!(*verbose, "{}", spec.token);
-            let expected = [
-                vec![
-                    OsString::from("-c"),
-                    OsString::from(python_bootstrap_script()),
-                    OsString::from(spec.module),
-                ],
-                spec.preset_argv.iter().map(OsString::from).collect(),
-                owner_argv.clone(),
-            ]
-            .concat();
-            assert_eq!(*argv, expected, "{}", spec.token);
+        assert_eq!(calls.len(), PROCESS_SPECS.len() * 2);
+        for (verbose, calls) in [false, true]
+            .into_iter()
+            .zip(calls.chunks_exact(PROCESS_SPECS.len()))
+        {
+            for (spec, (program, argv)) in PROCESS_SPECS.iter().zip(calls) {
+                assert_eq!(program, OsStr::new("/recording-python"), "{}", spec.token);
+                let expected = [
+                    vec![
+                        OsString::from("-c"),
+                        OsString::from(python_bootstrap_script()),
+                        OsString::from(spec.module),
+                        OsString::from(format!("journal {}", spec.token)),
+                        OsString::from(if verbose { "1" } else { "0" }),
+                    ],
+                    spec.preset_argv.iter().map(OsString::from).collect(),
+                    owner_argv.clone(),
+                ]
+                .concat();
+                assert_eq!(*argv, expected, "{}", spec.token);
+                assert_eq!(
+                    &argv[5 + spec.preset_argv.len()..],
+                    owner_argv.as_slice(),
+                    "{}",
+                    spec.token
+                );
+            }
         }
     }
 
