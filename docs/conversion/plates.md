@@ -152,6 +152,42 @@ The SQLite index. **Ephemeral by design and always rebuildable — that property
 - ⚠ **The index cannot search non-ASCII text.** The query path strips every character outside `[a-zA-Z0-9\s"'*]` before the term reaches FTS5, so `José` becomes `Jos `. The corpus is indexed correctly — 98.6% of chunks contain non-ASCII and the terms are reachable when queried directly. ⛔ The sanitizer's job is FTS5 **syntax** safety, never charset restriction; a rebuild must escape and quote rather than delete.
 - ⚠ **Aggregation is part of every read**, not a separate feature — results are always paired with counts by facet/agent/day/stream, and today that is done by pulling every matching row into the application.
 
+🆕 **Measured 2026-08-06 against a populated journal, and three of these correct the notes above.**
+
+- 🔴 **Coverage degrades by recency, and the newest content is the least indexed.** Not an average
+  miss rate — a cliff. On a real journal the four newest days held **1,400 talent files across 967
+  segments with zero index rows**, neither individually nor through the aggregate, while days a week
+  older were 37% and 61% covered. The mechanism: the daily pipeline produces a day's talent output
+  *after* that day closes, and a light scan excluded any day directory sorting before wall-clock
+  today — so the scan that exists to index the day's output could not index it. ✅ **Closed:** scan
+  scope now follows discovery, and `scan_journal` no longer takes a clock at all. ⚠ A light scan may
+  still retain rows for a day discovery produced *no* files for, and warns when it does; only a full
+  rescan removes those.
+- 🔴 **The read path, not the invocation path, is where the time goes.** An earlier reading attributed
+  ~500 ms of a search to process startup. Measured: interpreter and import cost **66 ms**, the native
+  binary spawns in **under 1 ms**, and of a 761 ms search **~695 ms is the read path doing work**. The
+  filter-only browse shape costs **1,644 ms** against **0 ms** of full-text work — 483 ms of it a full
+  scan to validate an agent name against a 31-element set, 330 ms materialising counts nobody asked
+  for, 326 ms counting a match set with no `MATCH` term. ⛔ Do not size a redesign as though the
+  invocation path dominates; it is ~9%.
+- 🔴 **A wholly non-Latin query returned the entire corpus, presented as a match.** The query path
+  deleted every character outside `[a-zA-Z0-9\s"'*]`, so a query in Han, Arabic or Greek compiled to
+  the empty string; an empty expression means no `MATCH` term, which means every row qualifies. On a
+  real journal that reported over 1.4 million results with confident facet and agent breakdowns, while
+  a genuinely-unmatched term correctly returned zero. ⛔ "Non-ASCII is unsearchable" understates it:
+  it was **mis-answered**, which no caller can distinguish from a real result.
+- ⚠ **The honest invariant is that no query text FTS5 could act on is destroyed before it gets
+  there** — ⛔ **not** "any token in any script is searchable." With `unicode61` a run of Han indexes
+  as **one** token, so a query for part of it cannot match; emoji are separators and are not indexed
+  at all. Both were measured. Making those findable is a **tokenizer** decision, not a query-path one.
+- 🔴 **Schema work is gated on there being one writer, and there are two.** Only the CLI write
+  operations are native; the in-process writers — day-accumulator appends, chat stream appends,
+  importers, backup restore, observer prune, share delete, entity-merge — still write the index
+  directly from the reference implementation, against its own copy of the DDL. Day-ordered
+  identities, a typed `day`, a content-type dimension and `secure_delete` on every writer connection
+  all need both writers moved together. ⛔ Do not scope a schema change as though the write path were
+  already single.
+
 ## `P-format`
 
 Consistent formatting of **structured journal data** for its consumers — the indexer and the convey apps.

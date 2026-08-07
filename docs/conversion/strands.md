@@ -215,7 +215,7 @@ The indexer's and the convey apps' consumption of consistently formatted structu
 - ⚠ **Talent-projection keys are owner-visible** — each becomes a tab label. Renaming a key renames a tab.
 
 ### `S:index:*` — the read / query path
-**Owner** ⚠ unassigned · **Tier** schema
+**Owner** `P-index` · **Tier** schema
 
 Nine production readers across search, tools, voice, talents and entity context, plus three more on the edge half (`apps/home/connections.py`, `think/curation.py`, `apps/entities/routes.py`). The `search_journal` / `search_counts` interface — which `P-thinking` calls **directly, in-process, on every talent that searches** — belongs to no strand yet.
 
@@ -278,7 +278,7 @@ First-run journal establishment. **Creates the identity root** that `S:device-li
 
 ⚠ **`S:journal-retention:system` has two shapes that must not be conflated:** *when the policy sweep runs* — a schedule entry, `P-system`'s contract — and *a removal request arriving from another plate*, which is synchronous and needs no schedule. 🔴 **Today the first does not exist**: nothing schedules the raw-media pass, so two of the three configured retention modes never execute. See [`plates.md`](plates.md).
 
-🔴 **`S:journal-retention:index` has no entry point to call.** The only path-keyed native index verb refuses a path that no longer exists, and the only prune is keyed by **stream name**, not by removed path — so a segment under one stream that held another source's originals keeps its rows after those originals are gone. The Python reference has the right shape (`think/indexer/journal.py:184-215`, `DELETE FROM chunks WHERE path = ? OR path LIKE ?`, segment-prefix-scoped) and has never been ported.
+✅ **`S:journal-retention:index` now has its entry point.** `prune_by_paths` matches each removed path exactly **and** as a directory prefix, so passing a segment clears the segment and everything that was inside it; a path the index never held is ordinary rather than an error, and it deliberately does not create an index that does not exist. ⛔ The earlier note that this had "never been ported" is retired. ⚠ The stream-keyed prune still exists alongside it and is the wrong tool for a removal — a segment under one stream that held another source's originals keeps its rows if pruned by stream name.
 
 🔴 **Why the ordering is a safety property and not a preference.** Index discovery is a pure filesystem glob with no database input, and the scan deletes any row the glob no longer produces — so the index re-converges on the chronicle every run. **Remove, then notify:** a crash between them leaves stale rows the next scan deletes, because the file is gone; self-healing, and the owner is never told something is gone that is not. **Notify, then remove:** a crash leaves the index missing rows for a file *still on disk*, so in that window the owner has been told their data is out of search while it is still there — and the next scan **puts it back**. Only one order is safe from the owner's point of view.
 
