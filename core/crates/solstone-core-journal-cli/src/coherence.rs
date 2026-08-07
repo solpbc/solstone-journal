@@ -278,6 +278,21 @@ mod tests {
     }
 
     #[test]
+    fn matching_cpu_leaf_allows_a_mismatched_cuda_leaf() {
+        let temp = TempDir::new();
+        let site = site_packages(&temp);
+        metadata(&site, "solstone-1.2.3.dist-info", SOLSTONE, "1.2.3");
+        metadata(&site, "solstone_journal-1.2.3.dist-info", JOURNAL, "1.2.3");
+        metadata(
+            &site,
+            "solstone_journal_cuda-1.2.2.dist-info",
+            JOURNAL_CUDA,
+            "1.2.2",
+        );
+        assert!(guard_site_packages(Some(&site)).is_ok());
+    }
+
+    #[test]
     fn mismatched_leaf_prefers_cuda_in_the_error() {
         let temp = TempDir::new();
         let site = site_packages(&temp);

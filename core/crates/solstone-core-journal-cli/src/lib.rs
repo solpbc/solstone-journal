@@ -238,7 +238,7 @@ mod tests {
             _args: &[OsString],
             _verbose: bool,
         ) -> std::io::Result<()> {
-            panic!("M1 dispatch must not spawn")
+            panic!("non-process dispatch must not spawn")
         }
     }
 

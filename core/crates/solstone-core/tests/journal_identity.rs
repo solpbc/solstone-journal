@@ -182,11 +182,18 @@ fn write_recording_interpreter(path: &Path) {
 }
 
 fn installed_output(layout: &InstalledLayout, args: &[&str]) -> Output {
-    let mut command = Command::new(&layout.binary);
-    command.arg(identity_arg("journal")).args(args);
-    command
-        .output()
-        .expect("installed solstone-core should execute")
+    for _ in 0..100 {
+        let mut command = Command::new(&layout.binary);
+        command.arg(identity_arg("journal")).args(args);
+        match command.output() {
+            Ok(output) => return output,
+            Err(error) if error.kind() == ErrorKind::ExecutableFileBusy => {
+                sleep(Duration::from_millis(20));
+            }
+            Err(error) => panic!("installed solstone-core should execute: {error:?}"),
+        }
+    }
+    panic!("installed solstone-core stayed busy after retries")
 }
 
 fn wait_for_record(path: &Path) -> Vec<Vec<u8>> {
@@ -500,6 +507,48 @@ fn journal_identity_coherence_mismatch_blocks_the_interpreter() {
             .contains("Journal package versions are out of sync.")
     );
     assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn journal_identity_universal_command_bypasses_coherence_mismatch() {
+    use nix::sys::signal::{Signal, kill};
+    use nix::unistd::Pid;
+
+    let temp = TempDir::new("journal-universal-coherence");
+    let layout = installed_layout(&temp);
+    let record = temp.path.join("argv.nul");
+    write_recording_interpreter(&layout.bin.join("python3"));
+    fs::write(
+        layout
+            .site_packages
+            .join("solstone_journal-1.2.3.dist-info/METADATA"),
+        "Name: solstone-journal\nVersion: 1.2.2\n\n",
+    )
+    .expect("write mismatched metadata");
+
+    let mut command = Command::new(&layout.binary);
+    command
+        .arg(identity_arg("journal"))
+        .arg("doctor")
+        .env("RECORD_FILE", &record);
+    let mut child = command.spawn().expect("universal command should start");
+    let pid = child.id();
+    let recorded = wait_for_record(&record);
+    assert_eq!(
+        recorded,
+        vec![
+            b"-c".to_vec(),
+            solstone_core_journal_cli::python_bootstrap_script()
+                .as_bytes()
+                .to_vec(),
+            b"solstone.think.doctor".to_vec(),
+        ]
+    );
+    kill(Pid::from_raw(pid as i32), Signal::SIGTERM).expect("terminate replaced process");
+    assert_eq!(
+        child.wait().expect("wait for replaced process").signal(),
+        Some(Signal::SIGTERM as i32)
+    );
 }
 
 #[test]

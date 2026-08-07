@@ -191,6 +191,13 @@ fn process_census_is_hash_bound_and_complete() {
 #[test]
 fn production_process_table_matches_the_hash_bound_census() {
     assert_eq!(production_processes::PROCESS_SPECS.len(), 47);
+    assert_eq!(production_processes::process_tokens().count(), 47);
+    for spec in production_processes::PROCESS_SPECS {
+        assert_eq!(
+            production_processes::process_spec_for(spec.token),
+            Some(spec)
+        );
+    }
     assert_eq!(
         production_processes::PROCESS_SPECS
             .iter()

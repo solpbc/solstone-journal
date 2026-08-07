@@ -25,7 +25,6 @@ impl ProcessKind {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) const fn requires_coherence(self) -> bool {
         matches!(self, Self::Service | Self::Alias)
     }
@@ -328,12 +327,10 @@ pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
     },
 ];
 
-#[allow(dead_code)]
 pub(crate) fn process_spec_for(token: &str) -> Option<&'static ProcessSpec> {
     PROCESS_SPECS.iter().find(|spec| spec.token == token)
 }
 
-#[allow(dead_code)]
 pub(crate) fn process_tokens() -> impl Iterator<Item = &'static str> {
     PROCESS_SPECS.iter().map(|spec| spec.token)
 }
