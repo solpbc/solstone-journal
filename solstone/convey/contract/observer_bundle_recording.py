@@ -29,6 +29,7 @@ from solstone.convey.secure_listener import ConveyIdentity
 from solstone.observe import protocol
 from solstone.observe.processing_record import HANDLER_TRANSCRIBE, STATE_EMPTY
 from solstone.observe.processing_record import SCHEMA as PROCESSING_SCHEMA
+from solstone.think.journal_config import JournalConfigMutation, mutate_journal_config
 from solstone.think.link.auth import AuthorizedClients
 from solstone.think.link.paths import authorized_clients_path
 
@@ -1181,13 +1182,11 @@ def _prepare_recording_journal(destination: Path) -> Path:
 
 
 def _mark_setup_complete(journal: Path) -> None:
-    config_path = journal / "config" / "journal.json"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config = {}
-    if config_path.exists():
-        config = json.loads(config_path.read_text(encoding="utf-8"))
-    config["setup"] = {"completed_at": 1700000000000}
-    config_path.write_text(render_json(config), encoding="utf-8")
+    def apply(config: dict) -> JournalConfigMutation[None]:
+        config["setup"] = {"completed_at": 1700000000000}
+        return JournalConfigMutation(changed=True, value=None)
+
+    mutate_journal_config(apply, journal_path=journal)
 
 
 @contextmanager
