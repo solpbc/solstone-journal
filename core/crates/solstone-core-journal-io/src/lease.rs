@@ -82,7 +82,14 @@ pub fn acquire_file_lease(
         let file = open_options
             .open(path)
             .map_err(|source| io_error(path, source))?;
-        fchmod(&file, Mode::from_bits_truncate(options.mode))
+        // `mode_t` is u32 on Linux and u16 on Apple targets, so the bitflags
+        // constructor takes a different width per platform. Narrowing through
+        // the libc type keeps one expression correct on both rather than
+        // pinning whichever one the host happens to be.
+        fchmod(
+            &file,
+            Mode::from_bits_truncate(options.mode as nix::libc::mode_t),
+        )
             .map_err(|source| io_error(path, io::Error::from_raw_os_error(source as i32)))?;
 
         match Flock::lock(file, FlockArg::LockExclusiveNonblock) {

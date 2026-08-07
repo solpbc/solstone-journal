@@ -14,7 +14,7 @@ use std::fs;
 use std::path::Path;
 
 use chrono::{DateTime, Duration, Utc};
-use ring::rand::{SecureRandom, SystemRandom};
+use getrandom::fill as fill_random;
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{
     AtomicWriteOptions, FileLease, JsonWriteOptions, LeaseOptions, LockOptions, acquire_file_lease,
@@ -1172,19 +1172,20 @@ fn is_sha256(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+// ⚠ These two are the crate's ONLY use of a cryptographic RNG, and the
+// dependency that served them pulled a C build step into a crate the iOS canary
+// compiles. `getrandom` is the OS entropy syscall and nothing else: no C, no
+// linkage, no native-dependency release proof owed. `docs/PORTING.md` § native
+// dependency release proof is the rule that makes the distinction load-bearing.
 fn secure_key() -> Result<[u8; FINGERPRINT_KEY_BYTES], WriterError> {
     let mut key = [0_u8; FINGERPRINT_KEY_BYTES];
-    SystemRandom::new()
-        .fill(&mut key)
-        .map_err(|_| WriterError::Random)?;
+    fill_random(&mut key).map_err(|_| WriterError::Random)?;
     Ok(key)
 }
 
 fn random_id() -> Result<String, WriterError> {
     let mut bytes = [0_u8; 16];
-    SystemRandom::new()
-        .fill(&mut bytes)
-        .map_err(|_| WriterError::Random)?;
+    fill_random(&mut bytes).map_err(|_| WriterError::Random)?;
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
