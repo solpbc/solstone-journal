@@ -17,7 +17,7 @@ from solstone.think.link import establish
 from solstone.think.link.auth import AuthorizedClients
 from solstone.think.link.ca import load_or_generate_ca
 from solstone.think.link.paths import LinkState, authorized_clients_path, ca_dir
-from solstone.think.utils import get_journal, journal_is_active
+from solstone.think.utils import CorruptConfigError, get_journal, journal_is_active
 
 from .accept import SecureListener
 from .admission import SecureListenerAdmission, resolve_admission_config
@@ -134,7 +134,13 @@ def start_secure_listener(app: Any) -> None:
     if not app.config.get("SECURE_LISTENER_ENABLED", False):
         return
 
-    if not journal_is_active(get_journal()):
+    try:
+        active = journal_is_active(get_journal())
+    except CorruptConfigError as exc:
+        logger.warning("secure_listener: %s", exc)
+        return
+
+    if not active:
         if establish.is_committed():
             logger.warning(
                 "secure_listener: journal identity is committed but setup is "
