@@ -15,6 +15,7 @@ impl BodyInteger {
         if digits.is_empty()
             || !digits.bytes().all(|byte| byte.is_ascii_digit())
             || (digits.len() > 1 && digits.starts_with('0'))
+            || digits.len() > 4300
         {
             return None;
         }
