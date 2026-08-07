@@ -5,11 +5,10 @@
 
 use std::error::Error;
 use std::fmt;
-use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{Map, Value};
+use solstone_core_journal_config::{ConfigLoadError, get_journal_config_path, load_mutation_base};
 
 use crate::atomic::{JsonWriteOptions, write_json};
 use crate::errors::{AtomicWriteError, LockError};
@@ -33,50 +32,6 @@ pub struct JournalConfigTransaction<T> {
     pub changed: bool,
     /// Whether this transaction materialized or rewrote the file.
     pub written: bool,
-}
-
-/// Strict-load failure for an existing `config/journal.json`.
-///
-/// This intentionally carries no decoded map, mutation value, or transaction;
-/// callers cannot obtain a writable configuration from a failed load.
-///
-/// ```compile_fail
-/// use solstone_core_journal_io::ConfigLoadError;
-///
-/// fn extract_writable_config(error: ConfigLoadError) {
-///     let ConfigLoadError::Corrupt { config, .. } = error;
-///     drop(config);
-/// }
-/// ```
-#[derive(Debug)]
-pub enum ConfigLoadError {
-    /// The existing file could not be read, parsed, or interpreted as an object.
-    Corrupt {
-        /// Existing configuration path.
-        path: PathBuf,
-        /// Low-level cause retained only for diagnostics.
-        source: Box<dyn Error + Send + Sync>,
-    },
-}
-
-impl fmt::Display for ConfigLoadError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Corrupt { path, .. } => write!(
-                formatter,
-                "I couldn't read your settings file at {}. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-                path.display()
-            ),
-        }
-    }
-}
-
-impl Error for ConfigLoadError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Corrupt { source, .. } => Some(source.as_ref()),
-        }
-    }
 }
 
 /// Failure before a config transaction successfully returns its result.
@@ -110,35 +65,13 @@ impl Error for ConfigMutationError {
     }
 }
 
-/// Return the canonical config path below `journal_path`.
-pub fn get_journal_config_path(journal_path: &Path) -> PathBuf {
-    journal_path.join("config").join("journal.json")
-}
-
-/// Read an existing journal configuration without acquiring its write lock.
-///
-/// A missing configuration is distinct from a malformed configuration: callers
-/// receive `Ok(None)` only when the file does not exist. This helper never
-/// materializes defaults or writes journal state.
-pub fn read_journal_config(
-    journal_path: &Path,
-) -> Result<Option<Map<String, Value>>, ConfigLoadError> {
-    let config_path = get_journal_config_path(journal_path);
-    if !config_path.exists() {
-        return Ok(None);
-    }
-    load_existing_config(&config_path).map(Some)
-}
-
 /// Strictly load, mutate, and conditionally atomically write journal config.
 ///
-/// Missing config materializes an exact clone of `defaults`. Existing config is
+/// Missing config materializes canonical defaults. Existing config is
 /// authoritative and is not merged with defaults. The mutator receives the only
-/// mutable map, exclusively after strict load has succeeded under the sidecar
-/// lock.
+/// mutable map, exclusively after strict load has succeeded under the sidecar lock.
 pub fn mutate_journal_config<T, F>(
     journal_path: &Path,
-    defaults: &Map<String, Value>,
     mutator: F,
 ) -> Result<JournalConfigTransaction<T>, ConfigMutationError>
 where
@@ -153,12 +86,9 @@ where
         },
     )
     .map_err(ConfigMutationError::Lock)?;
-    let materialized = !config_path.exists();
-    let mut config = if materialized {
-        defaults.clone()
-    } else {
-        load_existing_config(&config_path).map_err(ConfigMutationError::Load)?
-    };
+    let mutation_base = load_mutation_base(journal_path).map_err(ConfigMutationError::Load)?;
+    let materialized = mutation_base.materialized;
+    let mut config = mutation_base.config;
     let mutation = mutator(&mut config);
     let written = materialized || mutation.changed;
     if written {
@@ -179,27 +109,6 @@ where
     })
 }
 
-fn load_existing_config(path: &Path) -> Result<Map<String, Value>, ConfigLoadError> {
-    let contents = fs::read_to_string(path).map_err(|source| corrupt(path, source))?;
-    let value = serde_json::from_str::<Value>(&contents).map_err(|source| corrupt(path, source))?;
-    value.as_object().cloned().ok_or_else(|| {
-        corrupt(
-            path,
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "journal config must be a JSON object",
-            ),
-        )
-    })
-}
-
-fn corrupt(path: &Path, source: impl Error + Send + Sync + 'static) -> ConfigLoadError {
-    ConfigLoadError::Corrupt {
-        path: path.to_path_buf(),
-        source: Box::new(source),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -209,18 +118,11 @@ mod tests {
     use super::*;
     use crate::test_support::TempDir;
 
-    fn defaults() -> Map<String, Value> {
-        Map::from_iter([
-            ("known".to_owned(), json!("default")),
-            ("only_default".to_owned(), json!(true)),
-        ])
-    }
-
     #[test]
-    fn missing_config_materializes_the_supplied_defaults() {
+    fn missing_config_materializes_canonical_defaults() {
         let temporary = TempDir::new();
-        let result = mutate_journal_config(temporary.path(), &defaults(), |config| {
-            assert_eq!(config.get("known"), Some(&json!("default")));
+        let result = mutate_journal_config(temporary.path(), |config| {
+            assert_eq!(config["retention"]["raw_media"], json!("keep"));
             JournalConfigMutation {
                 changed: false,
                 value: "created",
@@ -234,7 +136,26 @@ mod tests {
         let value: Value =
             serde_json::from_slice(&fs::read(get_journal_config_path(temporary.path())).unwrap())
                 .unwrap();
-        assert_eq!(value, Value::Object(defaults()));
+        assert_eq!(value["retention"]["raw_media"], json!("keep"));
+        assert!(value.get("setup").is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn materialized_config_is_private_and_pretty_printed() {
+        use std::os::unix::fs::MetadataExt;
+
+        let temporary = TempDir::new();
+        mutate_journal_config(temporary.path(), |_config| JournalConfigMutation {
+            changed: false,
+            value: (),
+        })
+        .unwrap();
+        let path = get_journal_config_path(temporary.path());
+        let contents = fs::read_to_string(&path).unwrap();
+
+        assert_eq!(fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
+        assert!(contents.contains("\n  \"identity\": "));
     }
 
     #[test]
@@ -244,9 +165,9 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, b"{\"known\":\"existing\"}\n").unwrap();
 
-        let result = mutate_journal_config(temporary.path(), &defaults(), |config| {
+        let result = mutate_journal_config(temporary.path(), |config| {
             assert_eq!(config.get("known"), Some(&json!("existing")));
-            assert!(!config.contains_key("only_default"));
+            assert!(!config.contains_key("identity"));
             JournalConfigMutation {
                 changed: false,
                 value: (),
@@ -264,11 +185,9 @@ mod tests {
         let original = b"{not valid json\n";
         fs::write(&path, original).unwrap();
 
-        let error = mutate_journal_config(temporary.path(), &defaults(), |_config| {
-            JournalConfigMutation {
-                changed: true,
-                value: (),
-            }
+        let error = mutate_journal_config(temporary.path(), |_config| JournalConfigMutation {
+            changed: true,
+            value: (),
         })
         .unwrap_err();
         assert_eq!(
@@ -292,7 +211,7 @@ mod tests {
         )
         .unwrap();
 
-        mutate_journal_config(temporary.path(), &defaults(), |config| {
+        mutate_journal_config(temporary.path(), |config| {
             config.insert("known".to_owned(), json!("after"));
             JournalConfigMutation {
                 changed: true,
@@ -316,44 +235,12 @@ mod tests {
         fs::write(&path, b"{\"known\":\"existing\"}\n").unwrap();
         let inode = fs::metadata(&path).unwrap().ino();
 
-        let result = mutate_journal_config(temporary.path(), &defaults(), |_config| {
-            JournalConfigMutation {
-                changed: false,
-                value: (),
-            }
+        let result = mutate_journal_config(temporary.path(), |_config| JournalConfigMutation {
+            changed: false,
+            value: (),
         })
         .unwrap();
         assert!(!result.written);
         assert_eq!(fs::metadata(path).unwrap().ino(), inode);
-    }
-
-    #[test]
-    fn read_missing_config_returns_none_without_materializing() {
-        let temporary = TempDir::new();
-        assert_eq!(read_journal_config(temporary.path()).unwrap(), None);
-        assert!(!get_journal_config_path(temporary.path()).exists());
-    }
-
-    #[test]
-    fn read_valid_config_returns_its_object() {
-        let temporary = TempDir::new();
-        let path = get_journal_config_path(temporary.path());
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, b"{\"identity\":{\"preferred\":\"Ari\"}}\n").unwrap();
-
-        let config = read_journal_config(temporary.path()).unwrap().unwrap();
-        assert_eq!(config["identity"]["preferred"], json!("Ari"));
-    }
-
-    #[test]
-    fn read_rejects_empty_malformed_and_non_object_config() {
-        let temporary = TempDir::new();
-        let path = get_journal_config_path(temporary.path());
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        for contents in [b"".as_slice(), b"{bad".as_slice(), b"[]".as_slice()] {
-            fs::write(&path, contents).unwrap();
-            assert!(read_journal_config(temporary.path()).is_err());
-            assert_eq!(fs::read(&path).unwrap(), contents);
-        }
     }
 }
