@@ -66,6 +66,12 @@ state TEXT NOT NULL CHECK (state IN ('building', 'complete')),
 files_count INTEGER NOT NULL CHECK (files_count >= 0),
 chunks_count INTEGER NOT NULL CHECK (chunks_count >= 0)
 )";
+const CREATE_ENTITY_SEARCH_WATERMARK: &str = "\
+CREATE TABLE IF NOT EXISTS entity_search_watermark(
+id INTEGER PRIMARY KEY CHECK (id = 1),
+mtime INTEGER NOT NULL,
+count INTEGER NOT NULL
+)";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IndexBuildLifecycle {
@@ -79,6 +85,12 @@ pub struct IndexBuildState {
     pub state: IndexBuildLifecycle,
     pub files_count: i64,
     pub chunks_count: i64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EntitySearchWatermark {
+    pub mtime: i64,
+    pub count: i64,
 }
 
 pub fn db_path(journal: &Path) -> PathBuf {
@@ -131,6 +143,7 @@ pub fn reset_index(journal: &Path) -> Result<(), StoreError> {
     tx.execute("DROP TABLE IF EXISTS edge_files", [])?;
     tx.execute("DROP TABLE IF EXISTS files", [])?;
     create_schema(&tx)?;
+    tx.execute("DELETE FROM entity_search_watermark", [])?;
     tx.execute(
         "REPLACE INTO index_build_state(id, schema_version, state, files_count, chunks_count) VALUES (1, ?, 'building', 0, 0)",
         [INDEX_BUILD_STATE_SCHEMA_VERSION],
@@ -231,9 +244,45 @@ fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(CREATE_EDGES_SRC_INDEX, [])?;
     conn.execute(CREATE_EDGES_DST_INDEX, [])?;
     conn.execute(CREATE_INDEX_BUILD_STATE, [])?;
+    conn.execute(CREATE_ENTITY_SEARCH_WATERMARK, [])?;
     conn.execute(
         "REPLACE INTO edge_files(path, mtime) VALUES (?, ?)",
         params![EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION],
+    )?;
+    Ok(())
+}
+
+/// Read the entity-search watermark when one has been written by the native indexer.
+///
+/// Absence is a normal migration/reset state and lets the scanner seed it from
+/// a legacy writer once.
+pub fn read_entity_search_watermark(
+    conn: &Connection,
+) -> Result<Option<EntitySearchWatermark>, StoreError> {
+    if !sqlite_table_exists(conn, "entity_search_watermark")? {
+        return Ok(None);
+    }
+    let row = conn
+        .query_row(
+            "SELECT CAST(mtime AS INTEGER), CAST(count AS INTEGER) FROM entity_search_watermark WHERE id=1",
+            [],
+            |row| Ok((row.get::<_, Option<i64>>(0)?, row.get::<_, Option<i64>>(1)?)),
+        )
+        .optional()?;
+    let Some((Some(mtime), Some(count))) = row else {
+        return Ok(None);
+    };
+    Ok(Some(EntitySearchWatermark { mtime, count }))
+}
+
+pub fn write_entity_search_watermark(
+    conn: &Connection,
+    mtime: i64,
+    count: i64,
+) -> Result<(), StoreError> {
+    conn.execute(
+        "REPLACE INTO entity_search_watermark(id, mtime, count) VALUES (1, ?, ?)",
+        params![mtime, count],
     )?;
     Ok(())
 }
@@ -340,8 +389,36 @@ mod tests {
                 chunks_count: 0,
             })
         );
+        assert_eq!(
+            read_entity_search_watermark(&conn).expect("read reset entity watermark"),
+            None
+        );
         drop(conn);
         fs::remove_dir_all(root).expect("cleanup reset state root");
+    }
+
+    #[test]
+    fn entity_search_watermark_round_trips_and_reset_clears_it() {
+        let root = temp_root("entity-search-watermark");
+        let conn = open_index(&root).expect("open index");
+        write_entity_search_watermark(&conn, 123, 4).expect("write entity watermark");
+        assert_eq!(
+            read_entity_search_watermark(&conn).expect("read entity watermark"),
+            Some(EntitySearchWatermark {
+                mtime: 123,
+                count: 4,
+            })
+        );
+        drop(conn);
+
+        reset_index(&root).expect("reset index");
+        let conn = open_index(&root).expect("open reset index");
+        assert_eq!(
+            read_entity_search_watermark(&conn).expect("read cleared entity watermark"),
+            None
+        );
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup entity watermark root");
     }
 
     #[test]
