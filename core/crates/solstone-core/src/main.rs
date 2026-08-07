@@ -601,6 +601,16 @@ mod tests {
     }
 
     #[test]
+    fn exit_code_constants_match_the_documented_contract() {
+        assert_eq!(EXIT_USAGE, 64);
+        assert_eq!(EXIT_DATAERR, 65);
+        assert_eq!(EXIT_UNAVAILABLE, 69);
+        assert_eq!(EXIT_CANTCREAT, 73);
+        assert_eq!(EXIT_IOERR, 74);
+        assert_eq!(EXIT_TEMPFAIL, 75);
+    }
+
+    #[test]
     fn commit_config_error_exit_maps_all_variants() {
         assert_eq!(
             commit_config_error_exit(&CommitConfigError::Conflict(ConfigConflict {
