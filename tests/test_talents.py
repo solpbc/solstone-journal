@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -20,7 +20,13 @@ from solstone.think.providers.brain_state import (
     inspect_brain_state,
 )
 
-NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+NOW = datetime.now(timezone.utc)
+
+
+def _install_native_brain_binary(monkeypatch: pytest.MonkeyPatch) -> None:
+    binary = Path(__file__).resolve().parents[1] / "core/target/debug/solstone-core"
+    assert binary.is_file()
+    monkeypatch.setattr(brain_state_module, "_native_binary", lambda **_kwargs: binary)
 
 
 def _write_brain_config(journal: Path) -> None:
@@ -46,7 +52,7 @@ def _ok_component() -> dict[str, str]:
     return {
         "status": "ok",
         "observed_at": NOW.isoformat(),
-        "expires_at": datetime(2026, 1, 3, 3, 4, 5, tzinfo=timezone.utc).isoformat(),
+        "expires_at": (NOW + timedelta(days=1)).isoformat(),
     }
 
 
@@ -97,6 +103,7 @@ def test_cogitate_terminal_infrastructure_records_brain_failure(
     event_kind: str,
 ) -> None:
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    _install_native_brain_binary(monkeypatch)
     _write_ready_brain(tmp_path)
     original_record_failure = brain_state_module.record_brain_runtime_failure
     accepted: list[bool] = []

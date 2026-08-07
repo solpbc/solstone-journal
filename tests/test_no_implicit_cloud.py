@@ -48,6 +48,14 @@ def _empty_journal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
+def _install_native_brain_binary(monkeypatch: pytest.MonkeyPatch) -> None:
+    from solstone.think.providers import brain_state
+
+    binary = Path(__file__).resolve().parents[1] / "core/target/debug/solstone-core"
+    assert binary.is_file()
+    monkeypatch.setattr(brain_state, "_native_binary", lambda **_kwargs: binary)
+
+
 def _cloud_call_mocks(monkeypatch: pytest.MonkeyPatch) -> list[Mock]:
     mocks: list[Mock] = []
     targets = [
@@ -363,6 +371,7 @@ def test_persisted_spp_brain_evidence_never_authorizes_generate_egress(
     from solstone.think.services import spp
 
     _empty_journal(tmp_path, monkeypatch)
+    _install_native_brain_binary(monkeypatch)
     config = _confidential_config()
     config["providers"] = {
         "active": {"provider": "local", "model": LOCAL_MODEL},
@@ -420,6 +429,7 @@ def test_persisted_spp_brain_evidence_never_authorizes_cogitate_egress(
     from solstone.think.services import spp
 
     _empty_journal(tmp_path, monkeypatch)
+    _install_native_brain_binary(monkeypatch)
     config = _confidential_config()
     config["providers"] = {
         "active": {"provider": "local", "model": LOCAL_MODEL},
