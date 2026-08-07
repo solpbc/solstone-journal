@@ -39,14 +39,18 @@ RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solston
 # The wildcard is empty on hosts whose resource dir already resolves (macOS,
 # Debian/Ubuntu), so this is a no-op there rather than a second opinion.
 #
-# ⚠ HOST BUILDS ONLY. The wheel recipes below assign their own
-# BINDGEN_EXTRA_CLANG_ARGS against zig's sysroot with -nostdinc; a recipe-level
-# shell assignment overrides this exported value, which is what keeps the two
-# from fighting. Setting it only in the wheel recipe is exactly how the host
-# gate ended up red while the wheel built fine.
+# ⚠ SCOPED TO THE HOST RUST TARGETS, and that scoping is load-bearing — it was
+# a global `export` for one commit and it BROKE the wheel build, because the
+# wheel cross-compiles with zig and a host clang include path injected into a
+# cross-compile makes bindgen fail to find uint8_t. Measured both ways:
+# `make wheel-describe-linux-x86_64` fails with the global export and succeeds
+# with CLANG_BUILTIN_INCLUDE= empty.
+#
+# ⛔ Do not widen this back to a global export. The wheel recipes must NOT
+# inherit it.
 CLANG_BUILTIN_INCLUDE := $(firstword $(wildcard /usr/lib/clang/*/include))
 ifneq ($(CLANG_BUILTIN_INCLUDE),)
-export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
+build check-rust-msrv check-rust-clippy check-rust-test: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for the iOS gate; install rustup and retry" >&2; exit 1; }
