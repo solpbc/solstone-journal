@@ -15,3 +15,4 @@ serde_json.workspace = true
 sha2.workspace = true
 solstone-core-format.workspace = true
 solstone-core-indexer.workspace = true
+solstone-core-journal-config.workspace = true

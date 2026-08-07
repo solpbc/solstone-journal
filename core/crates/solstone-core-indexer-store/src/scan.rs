@@ -25,6 +25,7 @@ use solstone_core_indexer::entity_search::{
 use solstone_core_indexer::metadata::extract_path_metadata;
 use solstone_core_indexer::segment_aggregate::build_segment_aggregate;
 use solstone_core_indexer::stream::extract_stream;
+use solstone_core_journal_config::{ConfigLoadError, plain_defaults, read_journal_config};
 
 use crate::StoreError;
 use crate::db::{EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, open_index};
@@ -98,10 +99,17 @@ pub enum RescanFileStatus {
     Declined,
 }
 
+struct ResolvedChatLabels {
+    labels: ChatLabels,
+    warning: Option<String>,
+}
+
 pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError> {
     let mut conn = open_index(journal)?;
     let mut report = ScanReport::default();
-    let (chat_labels, chat_config_warning) = resolve_chat_labels(journal);
+    let chat_labels = resolve_chat_labels(journal);
+    let default_chat_labels = ChatLabels::default();
+    let mut chat_config_error_reported = false;
     let files = discover_indexable_files(journal)?;
 
     let db_mtimes = load_file_mtimes(&conn)?;
@@ -135,6 +143,20 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
             }
             ContentResolution::Unindexed(_) | ContentResolution::IndexedElsewhere => continue,
         };
+        if family == Family::Chat
+            && let Err(error) = &chat_labels
+        {
+            report.failed += 1;
+            if !chat_config_error_reported {
+                report.warnings.push(error.to_string());
+                chat_config_error_reported = true;
+            }
+            continue;
+        }
+        let (chat_labels, chat_config_warning) = match &chat_labels {
+            Ok(resolved) => (&resolved.labels, resolved.warning.as_deref()),
+            Err(_error) => (&default_chat_labels, None),
+        };
         let tx = conn.transaction()?;
         tx.execute("DELETE FROM chunks WHERE path=?", [rel])?;
         let mut warnings = match index_file(
@@ -143,8 +165,8 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
             rel,
             path,
             family,
-            &chat_labels,
-            chat_config_warning.as_deref(),
+            chat_labels,
+            chat_config_warning,
         ) {
             Ok(warnings) => warnings,
             Err(warning) => {
@@ -226,7 +248,7 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
     report.edges_indexed = edge_report.indexed;
     report.edges_removed = edge_report.removed;
     report.edge_rows_inserted = edge_report.rows_inserted;
-    report.failed = edge_report.failed;
+    report.failed += edge_report.failed;
     report.warnings.extend(edge_report.warnings);
     Ok(report)
 }
@@ -247,12 +269,25 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     if !path.is_file() {
         return Err(StoreError::MissingFile(path));
     }
+    let chat_labels = if matches!(family, Some(Family::Chat)) {
+        Some(resolve_chat_labels(journal)?)
+    } else {
+        None
+    };
+    let default_chat_labels = ChatLabels::default();
+    let mut edge_resolver = EdgeResolver::new(journal);
+    if edge_source.is_some() {
+        edge_resolver.preflight_owner_timezone()?;
+    }
     let mtime = file_mtime_secs(&path)?;
     let mut conn = open_index(journal)?;
     let tx = conn.transaction()?;
     let mut warnings = Vec::new();
-    let (chat_labels, chat_config_warning) = resolve_chat_labels(journal);
     if let Some(family) = family {
+        let (chat_labels, chat_config_warning) = match &chat_labels {
+            Some(resolved) => (&resolved.labels, resolved.warning.as_deref()),
+            None => (&default_chat_labels, None),
+        };
         tx.execute("DELETE FROM chunks WHERE path=?", [&rel])?;
         match index_file(
             &tx,
@@ -260,8 +295,8 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
             &rel,
             &path,
             family,
-            &chat_labels,
-            chat_config_warning.as_deref(),
+            chat_labels,
+            chat_config_warning,
         ) {
             Ok(content_warnings) => {
                 warnings.extend(content_warnings);
@@ -284,9 +319,8 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
         }
     }
     if edge_source.is_some() {
-        let mut resolver = EdgeResolver::new(journal);
         delete_edges_for_path(&tx, &rel)?;
-        let result = process_edge_file(&tx, journal, &rel, &path, &mut resolver)?;
+        let result = process_edge_file(&tx, journal, &rel, &path, &mut edge_resolver)?;
         warnings.extend(result.warnings);
         if result.failed {
             return Err(StoreError::EdgeFileFailed(warnings.join("; ")));
@@ -299,7 +333,15 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
 
 pub fn rebuild_edges(journal: &Path) -> Result<EdgeRebuildReport, StoreError> {
     let mut conn = open_index(journal)?;
+    let mut resolver = EdgeResolver::new(journal);
+    let mut report = EdgeRebuildReport::default();
     let tx = conn.transaction()?;
+    if let Err(error) = resolver.preflight_owner_timezone() {
+        report.failed = 1;
+        report.warnings.push(error.to_string());
+        tx.rollback()?;
+        return Ok(report);
+    }
     tx.execute("DELETE FROM edges", [])?;
     tx.execute("DELETE FROM edge_files", [])?;
     tx.execute(
@@ -308,8 +350,6 @@ pub fn rebuild_edges(journal: &Path) -> Result<EdgeRebuildReport, StoreError> {
     )?;
 
     let files = discover_edge_files(journal)?;
-    let mut resolver = EdgeResolver::new(journal);
-    let mut report = EdgeRebuildReport::default();
     for (rel, path) in files {
         let mtime = match file_mtime_secs(&path) {
             Ok(mtime) => mtime,
@@ -369,6 +409,11 @@ fn reconcile_edges(
 
     let mut resolver = EdgeResolver::new(journal);
     let mut report = EdgeScanReport::default();
+    if let Err(error) = resolver.preflight_owner_timezone() {
+        report.failed = 1;
+        report.warnings.push(error.to_string());
+        return Ok(report);
+    }
     let (removed, retained_days) = removal_candidates(&db_mtimes, &files, full);
     report.warnings.extend(
         retained_days
@@ -791,65 +836,48 @@ fn index_file(
     Ok(warnings)
 }
 
-/// Read `config/journal.json` without depending on the durable-write crate.
-///
-/// `solstone-core-journal-io` is banned outside the write authorities that own
-/// durable journal I/O (`core/deny.toml`), and the indexer is a reader. This
-/// mirrors how this crate's sibling already reads a stream marker, and how the
-/// spl service reads this same file: a plain read of something we never write.
-/// A missing file stays distinct from a malformed one — only the former is
-/// `Ok(None)`, so a corrupt config cannot masquerade as an absent one.
-fn read_journal_config_for_labels(
-    journal: &Path,
-) -> Result<Option<serde_json::Map<String, serde_json::Value>>, ()> {
-    let config_path = journal.join("config").join("journal.json");
-    let text = match fs::read_to_string(&config_path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err(()),
-    };
-    match serde_json::from_str::<serde_json::Value>(&text) {
-        Ok(serde_json::Value::Object(config)) => Ok(Some(config)),
-        Ok(_) | Err(_) => Err(()),
-    }
-}
-
-fn resolve_chat_labels(journal: &Path) -> (ChatLabels, Option<String>) {
-    match read_journal_config_for_labels(journal) {
-        Ok(Some(config)) => {
+/// Resolve chat labels from a strict journal configuration read.
+fn resolve_chat_labels(journal: &Path) -> Result<ResolvedChatLabels, ConfigLoadError> {
+    let read = read_journal_config(journal)?;
+    let missing = !read.present;
+    let config = read.config.unwrap_or_else(plain_defaults);
+    let identity = config
+        .get("identity")
+        .and_then(serde_json::Value::as_object);
+    let owner = identity
+        .and_then(|identity| identity.get("preferred"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
             let identity = config
                 .get("identity")
                 .and_then(serde_json::Value::as_object);
-            let owner = identity
-                .and_then(|identity| identity.get("preferred"))
+            identity
+                .and_then(|identity| identity.get("name"))
                 .and_then(serde_json::Value::as_str)
                 .filter(|value| !value.trim().is_empty())
-                .or_else(|| {
-                    identity
-                        .and_then(|identity| identity.get("name"))
-                        .and_then(serde_json::Value::as_str)
-                        .filter(|value| !value.trim().is_empty())
-                })
-                .unwrap_or("Owner")
-                .trim();
-            let agent = config
-                .get("agent")
-                .and_then(serde_json::Value::as_object)
-                .and_then(|agent| agent.get("name"))
-                .and_then(serde_json::Value::as_str)
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or("Sol")
-                .trim();
-            (ChatLabels::new(owner, agent), None)
-        }
-        Ok(None) | Err(_) => (
-            ChatLabels::default(),
-            Some(
-                "chat labels unavailable from journal config; using fallback labels Owner/Sol"
-                    .to_string(),
-            ),
-        ),
-    }
+        })
+        .unwrap_or("Owner")
+        .trim();
+    let agent = config
+        .get("agent")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|agent| agent.get("name"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("Sol")
+        .trim();
+    Ok(ResolvedChatLabels {
+        labels: if missing {
+            ChatLabels::default()
+        } else {
+            ChatLabels::new(owner, agent)
+        },
+        warning: missing.then(|| {
+            "chat labels unavailable from journal config; using fallback labels Owner/Sol"
+                .to_string()
+        }),
+    })
 }
 
 fn resolve_rescan_target(journal: &Path, input: &Path) -> Result<(String, PathBuf), StoreError> {
@@ -1941,6 +1969,75 @@ mod tests {
     }
 
     #[test]
+    fn rebuild_edges_corrupt_config_reports_once_and_preserves_existing_rows() {
+        let root = temp_root("edge-rebuild-corrupt-config");
+        let rel = "facets/work/entities/20260304.jsonl";
+        let conn = open_index(&root).expect("open index");
+        conn.execute(
+            "INSERT INTO edges(src, dst, kind, directed, source, path, anchor, weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                "stale",
+                "edge",
+                "co-present",
+                0_i64,
+                "co-presence",
+                rel,
+                "stale-anchor",
+                1_i64,
+            ],
+        )
+        .expect("seed stale edge");
+        conn.execute(
+            "REPLACE INTO edge_files(path, mtime) VALUES (?, ?)",
+            params![rel, 0_i64],
+        )
+        .expect("seed stale edge mtime");
+        let before_rows = edge_rows(&conn);
+        let before_mtime = edge_file_mtime(&conn, rel);
+        drop(conn);
+        write(
+            &root,
+            "config/journal.json",
+            r#"{"identity":{"timezone":NaN}}"#,
+        );
+
+        let report = rebuild_edges(&root).expect("corrupt config is reported in rebuild report");
+        assert_eq!(report.rows, 0);
+        assert!(report.failed >= 1);
+        assert_eq!(report.warnings.len(), 1);
+        assert!(report.warnings[0].starts_with("I couldn't read your settings file"));
+        assert!(!report.warnings[0].starts_with("Skipping edge extraction for"));
+        let conn = Connection::open(db_path(&root)).expect("open index after corrupt rebuild");
+        assert_eq!(edge_rows(&conn), before_rows);
+        assert_eq!(edge_file_mtime(&conn, rel), before_mtime);
+        fs::remove_dir_all(root).expect("cleanup corrupt rebuild root");
+    }
+
+    #[test]
+    fn scan_corrupt_timezone_reports_once_without_per_file_warning() {
+        let root = temp_root("edge-scan-corrupt-config");
+        for rel in [
+            "chronicle/20260430/default/090000_300/screen.jsonl",
+            "chronicle/20260430/default/090000_300/talents/documents.json",
+            "chronicle/20260430/default/090000_300/talents/speakers.json",
+        ] {
+            write(&root, rel, "{}");
+        }
+        write(
+            &root,
+            "config/journal.json",
+            r#"{"identity":{"timezone":NaN}}"#,
+        );
+
+        let report = scan_journal(&root, true).expect("corrupt timezone scan is reported");
+        assert_eq!(report.failed, 1);
+        assert_eq!(report.warnings.len(), 1);
+        assert!(report.warnings[0].starts_with("I couldn't read your settings file"));
+        assert!(!report.warnings[0].contains("Skipping edge extraction for"));
+        fs::remove_dir_all(root).expect("cleanup corrupt scan root");
+    }
+
+    #[test]
     fn rescan_file_indexes_edge_rows_for_facet_entity_file() {
         let root = temp_root("edge-rescan-file");
         seed_edge_entity(&root, "alice", "Alice Edge");
@@ -1970,6 +2067,42 @@ mod tests {
             1
         );
         fs::remove_dir_all(root).expect("cleanup edge rescan file root");
+    }
+
+    #[test]
+    fn rescan_edge_with_corrupt_config_preserves_prior_rows() {
+        let root = temp_root("edge-rescan-corrupt-config");
+        seed_edge_entity(&root, "alice", "Alice Edge");
+        seed_edge_entity(&root, "bob", "Bob Edge");
+        let rel = "facets/work/entities/20260304.jsonl";
+        write(
+            &root,
+            rel,
+            r#"{"name":"Alice Edge","segments":["s1"]}
+{"name":"Bob Edge","segments":["s1"]}
+"#,
+        );
+        scan_journal(&root, true).expect("initial edge scan");
+        let conn = Connection::open(db_path(&root)).expect("open index before corrupt rescan");
+        let before_rows = edge_rows(&conn);
+        let before_mtime = edge_file_mtime(&conn, rel);
+        drop(conn);
+        write(
+            &root,
+            "config/journal.json",
+            r#"{"identity":{"timezone":NaN}}"#,
+        );
+
+        assert!(matches!(
+            rescan_file(&root, Path::new(rel)),
+            Err(StoreError::Edge(
+                solstone_core_indexer::edges::EdgeError::JournalConfigCorrupt { .. }
+            ))
+        ));
+        let conn = Connection::open(db_path(&root)).expect("open index after corrupt rescan");
+        assert_eq!(edge_rows(&conn), before_rows);
+        assert_eq!(edge_file_mtime(&conn, rel), before_mtime);
+        fs::remove_dir_all(root).expect("cleanup corrupt edge rescan root");
     }
 
     #[test]
@@ -3759,29 +3892,94 @@ mod tests {
     }
 
     #[test]
-    fn scan_chat_config_failures_use_default_labels_and_warn_per_chat_file() {
-        for (name, config) in [
-            ("missing", None),
-            ("empty", Some("")),
-            ("malformed", Some("{")),
-        ] {
-            let root = temp_root(&format!("chat-label-fallback-{name}"));
-            let rel = seed_owner_chat(&root);
-            if let Some(config) = config {
-                write(&root, "config/journal.json", config);
-            }
+    fn scan_missing_chat_config_uses_default_labels_and_warns_per_chat_file() {
+        let root = temp_root("chat-label-missing");
+        let rel = seed_owner_chat(&root);
 
-            let report = scan_journal(&root, true).expect("scan fallback chat labels");
-            assert!(
-                report
-                    .warnings
-                    .iter()
-                    .any(|warning| warning.contains("chat labels unavailable")),
-                "{name} config must diagnose the fallback"
-            );
-            assert_chat_labels(&root, rel, "Owner", "Sol");
-            fs::remove_dir_all(root).expect("cleanup chat fallback root");
-        }
+        let report = scan_journal(&root, true).expect("scan missing chat config");
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("chat labels unavailable"))
+        );
+        assert_chat_labels(&root, rel, "Owner", "Sol");
+        fs::remove_dir_all(root).expect("cleanup missing chat config root");
+    }
+
+    #[test]
+    fn scan_corrupt_chat_config_never_indexes_fallback_labels() {
+        let root = temp_root("chat-label-corrupt");
+        let rel = seed_owner_chat(&root);
+        write(
+            &root,
+            "config/journal.json",
+            r#"{"identity":{"timezone":NaN}}"#,
+        );
+        write(
+            &root,
+            "chronicle/20260508/chat/120100_300/chat.jsonl",
+            r#"{"kind":"owner_message","ts":3,"text":"Second chat"}
+{"kind":"sol_message","ts":4,"text":"Still no fallback"}
+"#,
+        );
+        write(
+            &root,
+            "chronicle/20260508/talents/flow.md",
+            "# Flow\n\nStill indexed",
+        );
+
+        let report = scan_journal(&root, true).expect("scan corrupt chat config");
+        assert_eq!(report.failed, 3);
+        assert_eq!(report.warnings.len(), 2);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .all(|warning| warning.starts_with("I couldn't read your settings file"))
+        );
+        let conn = Connection::open(db_path(&root)).expect("open index after corrupt chat scan");
+        assert_eq!(
+            count(
+                &conn,
+                &format!("SELECT count(*) FROM chunks WHERE path='{rel}'")
+            ),
+            0
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM chunks WHERE content LIKE '**Owner**%' OR content LIKE '**Sol**%'"
+            ),
+            0
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM chunks WHERE path='20260508/talents/flow.md'"
+            ),
+            1
+        );
+        fs::remove_dir_all(root).expect("cleanup corrupt chat config root");
+    }
+
+    #[test]
+    fn rescan_chat_with_corrupt_config_preserves_prior_chunks() {
+        let root = temp_root("chat-rescan-corrupt");
+        let rel = seed_owner_chat(&root);
+        scan_journal(&root, true).expect("scan missing chat config");
+        write(
+            &root,
+            "config/journal.json",
+            r#"{"identity":{"timezone":NaN}}"#,
+        );
+
+        assert!(matches!(
+            rescan_file(&root, Path::new(rel)),
+            Err(StoreError::JournalConfig(_))
+        ));
+        assert_chat_labels(&root, rel, "Owner", "Sol");
+        fs::remove_dir_all(root).expect("cleanup corrupt chat rescan root");
     }
 
     #[test]

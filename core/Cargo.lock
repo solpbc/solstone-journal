@@ -1929,6 +1929,7 @@ dependencies = [
  "sha2",
  "solstone-core-format",
  "solstone-core-indexer",
+ "solstone-core-journal-config",
 ]
 
 [[package]]

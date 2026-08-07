@@ -18,6 +18,7 @@ pub enum StoreError {
     Discovery(solstone_core_indexer::discovery::DiscoveryError),
     Edge(solstone_core_indexer::edges::EdgeError),
     EdgeFileFailed(String),
+    JournalConfig(solstone_core_journal_config::ConfigLoadError),
     Io(io::Error),
     Path(solstone_core_format::paths::JournalPathError),
     Sql(rusqlite::Error),
@@ -44,6 +45,7 @@ impl fmt::Display for StoreError {
             StoreError::Discovery(error) => write!(formatter, "{error}"),
             StoreError::Edge(error) => write!(formatter, "{error}"),
             StoreError::EdgeFileFailed(message) => write!(formatter, "{message}"),
+            StoreError::JournalConfig(error) => write!(formatter, "{error}"),
             StoreError::Io(error) => write!(formatter, "{error}"),
             StoreError::Path(error) => write!(formatter, "{error}"),
             StoreError::Sql(error) => write!(formatter, "{error}"),
@@ -78,6 +80,12 @@ impl From<solstone_core_indexer::discovery::DiscoveryError> for StoreError {
 impl From<solstone_core_indexer::edges::EdgeError> for StoreError {
     fn from(error: solstone_core_indexer::edges::EdgeError) -> Self {
         StoreError::Edge(error)
+    }
+}
+
+impl From<solstone_core_journal_config::ConfigLoadError> for StoreError {
+    fn from(error: solstone_core_journal_config::ConfigLoadError) -> Self {
+        StoreError::JournalConfig(error)
     }
 }
 
