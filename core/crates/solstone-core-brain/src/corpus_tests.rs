@@ -15,7 +15,7 @@ use crate::fingerprint::{CanonicalInput, canonical_fingerprint, canonical_json, 
 use crate::fixture::{brain_state_keys, local_contract, projection_fixture};
 use crate::inspect::{FINGERPRINT_KEY_BYTES, project_brain_state};
 use crate::record::validate_brain_state_record;
-use crate::runtime_health::inspection_from_fixture;
+use crate::runtime_health::{inspect_runtime_health, inspection_from_fixture};
 use crate::{
     InspectionStatus, brain_fingerprint_key_path, brain_refresh_lease_path, brain_state_path,
     build_active_brain_fingerprint, derive_active_brain_lane, inspect_brain_state,
@@ -217,24 +217,35 @@ fn config_fingerprint_corpus_has_exact_count() {
     let fixture = projection_fixture();
     assert_eq!(fixture.configs.len(), 9);
     let key = hex(&fixture.hmac_key_hex);
+    let mut executed = 0;
     for (name, config) in &fixture.configs {
-        let lane = derive_active_brain_lane(object(config));
-        if name == "config_missing_provider" {
-            assert_eq!(lane.unwrap(), "none");
+        let resolution = derive_active_brain_lane(object(config));
+        let runtime = (resolution.lane.as_deref() == Some("bundled"))
+            .then(|| Value::String(fixture.unrelated_fingerprint.clone()));
+        let fingerprint = build_active_brain_fingerprint(object(config), &key, runtime);
+        executed += 1;
+        if name == "config_missing_provider" || name == "lane_none" {
+            assert_eq!(resolution.lane.as_deref(), Some("none"));
+            let expected = local_contract()
+                .canonical_fingerprint
+                .vectors
+                .iter()
+                .find(|vector| vector.name == "lane_none_shape")
+                .expect("none-lane canonical vector");
+            assert_eq!(
+                fingerprint.unwrap().as_deref(),
+                Some(expected.sha256.as_str())
+            );
             continue;
         }
         if name.contains("partial") || name.contains("unmatched") || name.contains("unknown") {
-            assert!(lane.is_err(), "{name}");
+            assert_eq!(resolution.lane, None, "{name}");
+            assert!(fingerprint.is_err(), "{name}");
             continue;
         }
-        let lane = lane.unwrap();
-        let runtime =
-            (lane == "bundled").then(|| Value::String(fixture.unrelated_fingerprint.clone()));
-        assert!(
-            build_active_brain_fingerprint(object(config), &key, runtime).is_ok(),
-            "{name}"
-        );
+        assert!(fingerprint.is_ok(), "{name}");
     }
+    assert_eq!(executed, 9);
 }
 
 #[test]
@@ -277,51 +288,34 @@ fn projection_corpus_has_exact_count_and_coverage() {
     let mut reasons = std::collections::BTreeSet::new();
     let mut null_reason = false;
     let mut transition = false;
+    let mut executed = 0;
     for case in &fixture.projection {
-        if case.record == "absent" {
-            aggregates.insert(case.projection.aggregate_state.clone());
-            if let Some(reason) = &case.projection.reason_code {
-                reasons.insert(reason.clone());
-            }
-            continue;
-        }
-        let record = fixture
-            .records
-            .get(&case.record)
-            .filter(|record| !record.is_null())
-            .or_else(|| fixture.malformed_records.get(&case.record))
-            .unwrap_or_else(|| panic!("named record {}", case.record));
-        let record =
-            validate_brain_state_record(record, fixture_now()).expect("valid corpus record");
-        let config = fixture.configs.get(&case.config).expect("named config");
-        let lane = match derive_active_brain_lane(object(config)) {
-            Ok(lane) => lane,
-            Err(_) => {
-                assert_eq!(
-                    case.projection.reason_code.as_deref(),
-                    Some("configuration_invalid")
-                );
-                aggregates.insert(case.projection.aggregate_state.clone());
-                if let Some(reason) = &case.projection.reason_code {
-                    reasons.insert(reason.clone());
-                }
-                continue;
-            }
+        let record = if case.record == "absent" {
+            None
+        } else {
+            let record = fixture
+                .records
+                .get(&case.record)
+                .filter(|record| !record.is_null())
+                .or_else(|| fixture.malformed_records.get(&case.record))
+                .unwrap_or_else(|| panic!("named record {}", case.record));
+            Some(validate_brain_state_record(record, fixture_now()).expect("valid corpus record"))
         };
+        let config = fixture.configs.get(&case.config).expect("named config");
         let runtime_value = fixture
             .runtime_health
             .get(&case.runtime_health)
             .expect("runtime case");
         let runtime = inspection_from_fixture(runtime_value);
         let result = project_brain_state(
-            &record,
-            &lane,
-            Some(object(config)),
-            Some(&runtime),
+            record.as_ref(),
+            object(config),
             case.refresh_permit_active,
             case.hmac_key_present.then_some(&key),
+            Some(&runtime),
             fixture_now(),
         );
+        executed += 1;
         let expected = &case.projection;
         assert_eq!(
             result.aggregate_state, expected.aggregate_state,
@@ -354,6 +348,7 @@ fn projection_corpus_has_exact_count_and_coverage() {
         }
         transition |= result.runtime_transition_in_progress;
     }
+    assert_eq!(executed, 553);
     assert_eq!(aggregates.len(), 5);
     assert!(reasons.len() >= 15);
     assert!(null_reason);
@@ -446,7 +441,8 @@ fn brain_state_vocabulary_has_an_explicit_consumed_or_deferred_owner() {
 }
 
 #[test]
-fn fixed_fingerprint_key_length_and_config_diagnostic_alias_match_the_fixture() {
+fn fixed_fingerprint_key_length_config_diagnostic_alias_and_inspection_statuses_match_the_fixture()
+{
     let vocabulary = &local_contract().brain_state;
     assert_eq!(vocabulary.fingerprint_key_bytes, FINGERPRINT_KEY_BYTES);
     assert_eq!(
@@ -457,6 +453,16 @@ fn fixed_fingerprint_key_length_and_config_diagnostic_alias_match_the_fixture() 
             .and_then(|schema| schema.get("field"))
             .cloned()
             .expect("configuration-invalid field schema")
+    );
+    let mut statuses = vocabulary.inspection_statuses.clone();
+    statuses.sort();
+    assert_eq!(
+        statuses,
+        vec![
+            "corrupt".to_owned(),
+            "ok".to_owned(),
+            "unavailable".to_owned(),
+        ]
     );
 }
 
@@ -505,6 +511,132 @@ fn diagnostics_and_component_reason_rules_are_reason_scoped() {
             .unwrap_err()
             .path,
         "evidence.configuration.status"
+    );
+}
+
+#[test]
+fn checking_and_runtime_marker_shapes_match_python_validation() {
+    let mut checking = projection_fixture()
+        .records
+        .get("lane_bundled/checking_fresh")
+        .expect("checking record")
+        .clone();
+    checking["checking"]["fingerprint_sha256"] = Value::Null;
+    checking["checking"]["checking_revision"] = Value::from(-1);
+    assert!(validate_brain_state_record(&checking, fixture_now()).is_ok());
+
+    checking["checking"]["run_id"] = Value::String(String::new());
+    assert_eq!(
+        validate_brain_state_record(&checking, fixture_now())
+            .unwrap_err()
+            .path,
+        "checking.run_id"
+    );
+
+    let mut marker = projection_fixture()
+        .records
+        .get("lane_bundled/marker_superseded")
+        .expect("superseded marker record")
+        .clone();
+    marker["runtime_failure_marker"]["revision"] = Value::from(-1);
+    assert!(validate_brain_state_record(&marker, fixture_now()).is_ok());
+    marker["runtime_failure_marker"]["marker_id"] = Value::String(String::new());
+    assert_eq!(
+        validate_brain_state_record(&marker, fixture_now())
+            .unwrap_err()
+            .path,
+        "runtime_failure_marker.marker_id"
+    );
+}
+
+#[test]
+fn invalid_runtime_health_files_are_corrupt() {
+    let journal = TestJournal::new();
+    let runtime_dir = journal.path.join("health/providers/runtime");
+    fs::create_dir_all(&runtime_dir).expect("runtime directory");
+    let absent = inspect_runtime_health(&journal.path);
+    assert_eq!(absent.status, "ok");
+    assert_eq!(absent.record_kind.as_deref(), Some("health"));
+    assert_eq!(
+        absent
+            .record
+            .as_ref()
+            .and_then(Value::as_object)
+            .and_then(|record| record.get("desired_fingerprint_sha256")),
+        Some(&Value::Null)
+    );
+    for (name, field, value) in [
+        ("phase", "phase", serde_json::json!("unknown-phase")),
+        ("reason", "reason_code", serde_json::json!("unknown-reason")),
+        ("revision", "revision", serde_json::json!(-1)),
+        ("detail", "detail", serde_json::json!("not-an-object")),
+        ("process", "process", serde_json::json!("not-an-object")),
+        ("schema", "schema_version", serde_json::json!(2)),
+    ] {
+        let mut record = serde_json::json!({
+            "phase": "ready",
+            "detail": {},
+            "process": null,
+            "reason_code": null,
+        });
+        record[field] = value;
+        fs::write(
+            runtime_dir.join("local.json"),
+            serde_json::to_vec(&record).expect("runtime JSON"),
+        )
+        .expect("write runtime record");
+        let inspection = inspect_runtime_health(&journal.path);
+        assert_eq!(inspection.status, "corrupt", "{name}");
+        assert_eq!(inspection.record_kind.as_deref(), Some("health"), "{name}");
+    }
+}
+
+#[test]
+fn lease_probe_error_returns_interrupted_projection_with_error() {
+    let journal = TestJournal::new();
+    journal.health();
+    let record = projection_fixture()
+        .records
+        .get("lane_bundled/checking_fresh")
+        .expect("checking record");
+    fs::write(
+        brain_state_path(&journal.path),
+        serde_json::to_vec(record).expect("record JSON"),
+    )
+    .expect("write record");
+    fs::write(
+        brain_fingerprint_key_path(&journal.path),
+        hex(&projection_fixture().hmac_key_hex),
+    )
+    .expect("write key");
+    fs::create_dir(brain_refresh_lease_path(&journal.path)).expect("lease directory");
+
+    let inspection = inspect_brain_state(&journal.path, bundled_config(), fixture_now());
+    assert_eq!(inspection.status, InspectionStatus::Ok);
+    assert_eq!(
+        inspection.projection.reason_code.as_deref(),
+        Some("brain_check_interrupted")
+    );
+    assert_eq!(
+        inspection.projection.active_lane.as_deref(),
+        Some("bundled")
+    );
+    assert!(inspection.error.is_some());
+}
+
+#[test]
+fn none_lane_inspection_without_key_reports_fingerprint_key_unavailable() {
+    let journal = TestJournal::new();
+    write_valid_bundled_record(&journal);
+    let config = serde_json::json!({
+        "providers": {"active": {"provider": "none"}},
+    });
+
+    let inspection = inspect_brain_state(&journal.path, object(&config), fixture_now());
+    assert_eq!(inspection.status, InspectionStatus::Ok);
+    assert_eq!(
+        inspection.projection.reason_code.as_deref(),
+        Some("fingerprint_key_unavailable")
     );
 }
 

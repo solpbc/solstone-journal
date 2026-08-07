@@ -24,6 +24,14 @@ impl fmt::Display for FingerprintError {
 
 impl std::error::Error for FingerprintError {}
 
+/// The configured active provider and model, with an optional resolved lane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaneResolution {
+    pub lane: Option<String>,
+    pub provider: String,
+    pub model: Option<String>,
+}
+
 /// Inputs that Python normalizes before canonical JSON encoding.
 #[derive(Debug, Clone)]
 pub enum CanonicalInput {
@@ -259,10 +267,14 @@ fn python_float(value: f64) -> String {
     format!("{sign}{fixed}")
 }
 
-pub fn derive_active_brain_lane(config: &Map<String, Value>) -> Result<String, FingerprintError> {
-    let (provider, _) = active_config(config);
+pub fn derive_active_brain_lane(config: &Map<String, Value>) -> LaneResolution {
+    let (provider, model) = active_config(config);
     if provider == "none" {
-        return Ok("none".to_owned());
+        return LaneResolution {
+            lane: Some("none".to_owned()),
+            provider,
+            model,
+        };
     }
     if local_contract()
         .brain_state
@@ -270,20 +282,46 @@ pub fn derive_active_brain_lane(config: &Map<String, Value>) -> Result<String, F
         .iter()
         .any(|candidate| candidate == &provider)
     {
-        Ok("byo-cloud".to_owned())
+        LaneResolution {
+            lane: Some("byo-cloud".to_owned()),
+            provider,
+            model,
+        }
     } else if provider == "local" {
         let endpoint = local_endpoint(config);
         match endpoint.state.as_str() {
-            "missing" => Ok("bundled".to_owned()),
-            "partial" => Err(FingerprintError("configuration_invalid".to_owned())),
-            _ if spp_provenance_matches(config, &endpoint) => Ok("spp".to_owned()),
-            _ if confidential_block(config).is_some() => {
-                Err(FingerprintError("configuration_invalid".to_owned()))
-            }
-            _ => Ok("byo-endpoint".to_owned()),
+            "missing" => LaneResolution {
+                lane: Some("bundled".to_owned()),
+                provider,
+                model,
+            },
+            "partial" => LaneResolution {
+                lane: None,
+                provider,
+                model,
+            },
+            _ if spp_provenance_matches(config, &endpoint) => LaneResolution {
+                lane: Some("spp".to_owned()),
+                provider,
+                model,
+            },
+            _ if confidential_block(config).is_some() => LaneResolution {
+                lane: None,
+                provider,
+                model,
+            },
+            _ => LaneResolution {
+                lane: Some("byo-endpoint".to_owned()),
+                provider,
+                model,
+            },
         }
     } else {
-        Err(FingerprintError("configuration_invalid".to_owned()))
+        LaneResolution {
+            lane: None,
+            provider,
+            model,
+        }
     }
 }
 
@@ -292,11 +330,12 @@ pub fn build_active_brain_fingerprint(
     hmac_key: &[u8],
     bundled_runtime: Option<Value>,
 ) -> Result<Option<String>, FingerprintError> {
-    let lane = derive_active_brain_lane(config)?;
-    if lane == "none" {
-        return Ok(None);
-    }
-    let (provider, model) = active_config(config);
+    let resolution = derive_active_brain_lane(config);
+    let lane = resolution
+        .lane
+        .ok_or_else(|| FingerprintError("configuration_invalid".to_owned()))?;
+    let provider = resolution.provider;
+    let model = resolution.model.unwrap_or_default();
     let mut components = Map::new();
     components.insert(
         "schema_version".to_owned(),
@@ -340,7 +379,7 @@ pub fn build_active_brain_fingerprint(
         );
         endpoint.insert(
             "credential".to_owned(),
-            if local.credential.is_none() {
+            if local.credential.as_deref().is_none_or(str::is_empty) {
                 Value::Null
             } else {
                 Value::String(hmac_sha256(
@@ -377,14 +416,14 @@ pub fn build_active_brain_fingerprint(
     canonical_fingerprint(&CanonicalInput::Json(Value::Object(components))).map(Some)
 }
 
-fn active_config(config: &Map<String, Value>) -> (String, String) {
+fn active_config(config: &Map<String, Value>) -> (String, Option<String>) {
     let active = config
         .get("providers")
         .and_then(Value::as_object)
         .and_then(|providers| providers.get("active"))
         .and_then(Value::as_object);
     let Some(active) = active else {
-        return ("none".to_owned(), String::new());
+        return ("none".to_owned(), None);
     };
     let Some(provider) = active
         .get("provider")
@@ -392,10 +431,10 @@ fn active_config(config: &Map<String, Value>) -> (String, String) {
         .map(str::trim)
         .filter(|value| !value.is_empty())
     else {
-        return ("none".to_owned(), String::new());
+        return ("none".to_owned(), None);
     };
     if provider == "none" {
-        return ("none".to_owned(), String::new());
+        return ("none".to_owned(), None);
     }
     let model = active
         .get("model")
@@ -403,17 +442,15 @@ fn active_config(config: &Map<String, Value>) -> (String, String) {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
+        // Mirrors solstone/think/models.py:148-156 and :176-180.
         .unwrap_or_else(|| match provider {
-            "local" => "local/qwen3.5-4b".to_owned(),
+            "google" => "gemini-3.5-flash".to_owned(),
+            "openai" => "gpt-5.4-mini".to_owned(),
             "anthropic" => "claude-sonnet-4-6".to_owned(),
+            "local" => "local/qwen3.5-4b".to_owned(),
             _ => String::new(),
         });
-    (provider.to_owned(), model)
-}
-
-pub(crate) fn active_brain_config(config: &Map<String, Value>) -> (String, Option<String>) {
-    let (provider, model) = active_config(config);
-    (provider, (!model.is_empty()).then_some(model))
+    (provider.to_owned(), Some(model))
 }
 
 struct LocalEndpoint {

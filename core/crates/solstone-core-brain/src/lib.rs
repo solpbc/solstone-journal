@@ -13,8 +13,8 @@ mod runtime_health;
 mod corpus_tests;
 
 pub use fingerprint::{
-    CanonicalInput, FingerprintError, build_active_brain_fingerprint, canonical_fingerprint,
-    canonical_json, derive_active_brain_lane, fingerprint_sha256,
+    CanonicalInput, FingerprintError, LaneResolution, build_active_brain_fingerprint,
+    canonical_fingerprint, canonical_json, derive_active_brain_lane, fingerprint_sha256,
 };
 pub use inspect::{
     BrainInspection, BrainProjection, InspectionStatus, brain_fingerprint_key_path,

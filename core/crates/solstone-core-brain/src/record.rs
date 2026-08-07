@@ -53,8 +53,8 @@ pub struct EvidenceComponent {
 pub struct Checking {
     pub started_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
-    pub checking_revision: u64,
-    pub fingerprint_sha256: String,
+    pub checking_revision: i64,
+    pub fingerprint_sha256: Option<String>,
     pub run_id: String,
     pub runtime_failure_marker_seen: Option<String>,
 }
@@ -62,7 +62,7 @@ pub struct Checking {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RuntimeFailureMarker {
     pub marker_id: String,
-    pub revision: u64,
+    pub revision: i64,
     pub recorded_at: DateTime<Utc>,
     pub reason: String,
 }
@@ -325,11 +325,11 @@ fn parse_checking(value: &Value, now: DateTime<Utc>) -> Result<Checking, Validat
             .map_err(|error| prefix_error(error, "checking"))?,
         expires_at: required_time(object, "expires_at", now)
             .map_err(|error| prefix_error(error, "checking"))?,
-        checking_revision: required_u64(object, "checking_revision")
+        checking_revision: required_i64(object, "checking_revision")
             .map_err(|error| prefix_error(error, "checking"))?,
-        fingerprint_sha256: required_string(object, "fingerprint_sha256")
+        fingerprint_sha256: optional_sha256(object, "fingerprint_sha256")
             .map_err(|error| prefix_error(error, "checking"))?,
-        run_id: required_string(object, "run_id")
+        run_id: required_nonempty_string(object, "run_id")
             .map_err(|error| prefix_error(error, "checking"))?,
         runtime_failure_marker_seen: optional_string(object, "runtime_failure_marker_seen")
             .map_err(|error| prefix_error(error, "checking"))?,
@@ -350,9 +350,9 @@ fn parse_runtime_failure_marker(
         "runtime_failure_marker.",
     )?;
     Ok(RuntimeFailureMarker {
-        marker_id: required_string(object, "marker_id")
+        marker_id: required_nonempty_string(object, "marker_id")
             .map_err(|error| prefix_error(error, "runtime_failure_marker"))?,
-        revision: required_u64(object, "revision")
+        revision: required_i64(object, "revision")
             .map_err(|error| prefix_error(error, "runtime_failure_marker"))?,
         recorded_at: required_time(object, "recorded_at", now)
             .map_err(|error| prefix_error(error, "runtime_failure_marker"))?,
@@ -482,7 +482,7 @@ fn runtime_failure_marker_active(record: &BrainStateRecord) -> bool {
         return false;
     };
     let Some(checking) = &record.checking else {
-        return marker.revision == record.revision;
+        return u64::try_from(marker.revision).ok() == Some(record.revision);
     };
     if checking.runtime_failure_marker_seen.as_deref() == Some(&marker.marker_id) {
         return false;
@@ -568,6 +568,17 @@ fn required_string(object: &Map<String, Value>, key: &str) -> Result<String, Val
         .ok_or_else(|| failure(key, "must be a string"))
 }
 
+fn required_nonempty_string(
+    object: &Map<String, Value>,
+    key: &str,
+) -> Result<String, ValidationError> {
+    let value = required_string(object, key)?;
+    if value.is_empty() {
+        return Err(failure(key, "must be non-empty"));
+    }
+    Ok(value)
+}
+
 fn optional_string(
     object: &Map<String, Value>,
     key: &str,
@@ -586,6 +597,24 @@ fn required_u64(object: &Map<String, Value>, key: &str) -> Result<u64, Validatio
         .get(key)
         .and_then(Value::as_u64)
         .ok_or_else(|| failure(key, "must be a non-negative integer"))
+}
+
+fn required_i64(object: &Map<String, Value>, key: &str) -> Result<i64, ValidationError> {
+    object
+        .get(key)
+        .and_then(Value::as_i64)
+        .ok_or_else(|| failure(key, "must be an integer"))
+}
+
+fn optional_sha256(
+    object: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<String>, ValidationError> {
+    let value = optional_string(object, key)?;
+    if value.as_deref().is_some_and(|value| !is_sha256(value)) {
+        return Err(failure(key, "expected SHA-256 hex string"));
+    }
+    Ok(value)
 }
 
 fn required_known(
