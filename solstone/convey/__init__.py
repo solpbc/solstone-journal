@@ -57,7 +57,7 @@ def install_identity_stamper(app: Flask) -> None:
 
 def install_api_error_handlers(app: Flask) -> None:
     """Guarantee JSON error envelopes for every API path."""
-    from flask import g, request
+    from flask import Response, g, request
     from werkzeug.exceptions import HTTPException, InternalServerError
 
     from solstone.think.utils import CorruptConfigError
@@ -70,6 +70,8 @@ def install_api_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(CorruptConfigError)
     def _handle_corrupt_config(exc: CorruptConfigError):
+        if not _is_api_request():
+            return Response(str(exc), status=500, mimetype="text/plain")
         return error_response(CORRUPT_CONFIG, detail=str(exc))
 
     @app.errorhandler(HTTPException)
