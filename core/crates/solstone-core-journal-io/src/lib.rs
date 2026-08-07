@@ -11,6 +11,7 @@ pub mod append;
 pub mod atomic;
 pub mod entry;
 pub mod errors;
+pub mod lease;
 pub mod locking;
 pub mod paths;
 pub mod readers;
@@ -28,8 +29,12 @@ pub use atomic::{
 };
 pub use entry::{Removed, remove_file, rename_within, sync_dir};
 pub use errors::{
-    AppendError, AtomicWriteError, LockError, LockTimeout, MalformedDataError, PathError,
-    PathEscapeError, ReadError, SnapshotError,
+    AppendError, AtomicWriteError, LeaseError, LockError, LockTimeout, MalformedDataError,
+    PathError, PathEscapeError, ReadError, SnapshotError,
+};
+pub use lease::{
+    DEFAULT_LEASE_ATTEMPTS, DEFAULT_LEASE_MODE, DEFAULT_LEASE_RETRY_MAX, FileLease, LeaseOptions,
+    acquire_file_lease,
 };
 pub use locking::{
     DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, FileLock, LockOptions, hold_lock,

@@ -110,6 +110,29 @@ impl Error for LockError {
     }
 }
 
+/// File-lease acquisition failure.
+#[derive(Debug)]
+pub enum LeaseError {
+    /// A filesystem operation failed.
+    Io { path: PathBuf, source: io::Error },
+}
+
+impl fmt::Display for LeaseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io { path, source } => write!(formatter, "{}: {source}", path.display()),
+        }
+    }
+}
+
+impl Error for LeaseError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+        }
+    }
+}
+
 /// Reader failure. It deliberately carries no decoded value.
 #[derive(Debug)]
 pub enum ReadError {
