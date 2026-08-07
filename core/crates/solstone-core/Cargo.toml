@@ -30,6 +30,7 @@ required-features = ["differential"]
 chrono.workspace = true
 serde.workspace = true
 solstone-core-cli.workspace = true
+solstone-core-brain.workspace = true
 solstone-core-indexer-query.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-journal.workspace = true
@@ -39,9 +40,10 @@ solstone-core-local.workspace = true
 solstone-core-sol.workspace = true
 solstone-core-spl.workspace = true
 serde_json.workspace = true
+tokio = { workspace = true, features = ["io-std", "io-util", "rt", "time"] }
 
 [dev-dependencies]
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }
 rusqlite.workspace = true
-tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "time", "sync"] }
+solstone-core-journal-io.workspace = true
 tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["handshake"] }

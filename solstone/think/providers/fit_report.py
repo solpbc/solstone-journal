@@ -78,7 +78,8 @@ def build_local_fit_report(model_id: str) -> FitReport:
     brain_lane_active = True
     if sys.platform.startswith("linux"):
         probe = local_cuda.probe_nvidia_gpu()
-        choice = local_cuda.resolve_local_backend(local_install.CUDA_SERVER_PIN)
+        cuda_pin = local_install.cuda_server_pin()
+        choice = local_cuda.resolve_local_backend(cuda_pin)
         unknown_server = "llama-server tarball"
         devices = local_vulkan.detect_gpus()
         try:
@@ -102,7 +103,7 @@ def build_local_fit_report(model_id: str) -> FitReport:
         and choice.backend == "cuda"
     ):
         cuda_artifact_pin = local_install.cuda_artifact_pin_for_current_platform(
-            local_install.CUDA_SERVER_PIN
+            cuda_pin
         )
         if cuda_artifact_pin is not None:
             known_artifacts.append(
@@ -295,7 +296,7 @@ def _mlx_package_check(platform_supported: bool) -> FitCheck:
             "unknown",
             "mlx-vlm package was not checked because the platform is unsupported",
         )
-    ok, reason = mlx_install._check_platform_and_package()
+    ok, reason = mlx_install.check_platform_and_package()
     if ok:
         return FitCheck("package", "ok", "mlx-vlm package is importable")
     return FitCheck("package", "blocked", reason or "mlx-vlm package is unavailable")

@@ -1,17 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::io::{self, Read, Write};
+use std::fs;
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::ExitCode;
-use std::time::Duration;
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 use std::{env, ffi::OsStr, path::PathBuf};
 
 use chrono::Local;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 use solstone_core_cli::{
-    Command, IndexerCommand, IndexerCountsOptions, IndexerOptions, IndexerQueryOptions,
-    IndexerReadOptions, IndexerSearchOptions, JournalConfigCommand, JournalConfigCommitOptions,
+    BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
+    BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, Command,
+    IndexerCommand, IndexerCountsOptions, IndexerOptions, IndexerQueryOptions, IndexerReadOptions,
+    IndexerSearchOptions, InstallCommand, JournalConfigCommand, JournalConfigCommitOptions,
     JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand,
     ServiceOptions, SplCommand, USAGE, evaluate_args, version_line,
 };
@@ -30,15 +35,29 @@ use solstone_core_journal_config::{materialized_defaults, read_journal_config};
 use solstone_core_journal_config_write::{
     CommitConfigError, ConfigExpectation, LockError, LockOptions, commit_journal_config,
 };
-
 const EXIT_USAGE: u8 = 64;
 const EXIT_UNAVAILABLE: u8 = 69;
 const EXIT_TEMPFAIL: u8 = 75;
 const EXIT_DATAERR: u8 = 65;
 const EXIT_CANTCREAT: u8 = 73;
 const EXIT_IOERR: u8 = 74;
-const MAX_JOURNAL_CONFIG_STDIN_BYTES: usize = 1024 * 1024;
+/// `EX_PROTOCOL`: the caller broke a brain-session framing contract.
+const EXIT_PROTOCOL: u8 = 76;
+const MAX_JSON_STDIN_BYTES: usize = 1024 * 1024;
 const MAX_LOCAL_STDIN_BYTES: usize = 1024 * 1024;
+const SESSION_INPUT_TIMEOUT: Duration = Duration::from_secs(90);
+const SESSION_RESULT_WRITE_TIMEOUT: Duration = Duration::from_secs(1);
+const REFRESH_PROBE_SCHEMA: &str = "solstone.brain.refresh.probe.v1";
+const REFRESH_ABANDON_SCHEMA: &str = "solstone.brain.refresh.abandon.v1";
+const REFRESH_TERMINAL_SCHEMA: &str = "solstone.brain.refresh.terminal.v1";
+const REFRESH_RESULT_SCHEMA: &str = "solstone.brain.refresh.result.v1";
+const REFRESH_READY_SCHEMA: &str = "solstone.brain.refresh.ready.v1";
+const PREREQUISITE_RENEWAL_PROBE_SCHEMA: &str = "solstone.brain.prerequisite_renewal.probe.v1";
+const PREREQUISITE_RENEWAL_ABANDON_SCHEMA: &str = "solstone.brain.prerequisite_renewal.abandon.v1";
+const PREREQUISITE_RENEWAL_TERMINAL_SCHEMA: &str =
+    "solstone.brain.prerequisite_renewal.terminal.v1";
+const PREREQUISITE_RENEWAL_RESULT_SCHEMA: &str = "solstone.brain.prerequisite_renewal.result.v1";
+const PREREQUISITE_RENEWAL_READY_SCHEMA: &str = "solstone.brain.prerequisite_renewal.ready.v1";
 const ZERO_EDGE_HINT: &str = "Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run journal indexer --rebuild-edges to force full edge re-extraction.";
 const SOL_IDENTITY_TOKEN: &str = "__solstone_identity=sol";
 const SOLSTONE_IDENTITY_TOKEN: &str = "__solstone_identity=solstone";
@@ -78,6 +97,7 @@ fn main() -> ExitCode {
         Ok(Command::Indexer(command)) => run_indexer(*command),
         Ok(Command::JournalConfig(command)) => run_journal_config(command),
         Ok(Command::Local(command)) => run_local(command),
+        Ok(Command::Brain(command)) => run_brain(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
         Err(_) => {
             eprint!("{USAGE}");
@@ -99,7 +119,47 @@ fn run_local(command: LocalCommand) -> ExitCode {
         }
         LocalCommand::Plan => run_local_json(solstone_core_local::plan),
         LocalCommand::Connect => run_local_json(solstone_core_local::connect),
+        LocalCommand::Install(command) => run_local_install(command),
     }
+}
+
+fn run_local_install(command: InstallCommand) -> ExitCode {
+    let input = match read_local_stdin() {
+        Ok(input) => input,
+        Err(LocalStdinError::Content) => return ExitCode::from(EXIT_USAGE),
+        Err(LocalStdinError::Io) => return ExitCode::from(EXIT_IOERR),
+    };
+    let verb = match command {
+        InstallCommand::PinsLocal => solstone_core_local::InstallVerb::PinsLocal,
+        InstallCommand::PathsLocal => solstone_core_local::InstallVerb::PathsLocal,
+        InstallCommand::FingerprintLocal => solstone_core_local::InstallVerb::FingerprintLocal,
+        InstallCommand::FingerprintMlx => solstone_core_local::InstallVerb::FingerprintMlx,
+        InstallCommand::VerifySha256 => solstone_core_local::InstallVerb::VerifySha256,
+        InstallCommand::CudaTrust => solstone_core_local::InstallVerb::CudaTrust,
+        InstallCommand::ManifestVulkan => solstone_core_local::InstallVerb::ManifestVulkan,
+        InstallCommand::ManifestCuda => solstone_core_local::InstallVerb::ManifestCuda,
+        InstallCommand::ManifestModel => solstone_core_local::InstallVerb::ManifestModel,
+        InstallCommand::InspectLocal => solstone_core_local::InstallVerb::InspectLocal,
+        InstallCommand::InspectMlx => solstone_core_local::InstallVerb::InspectMlx,
+        InstallCommand::ProbeBinary => solstone_core_local::InstallVerb::ProbeBinary,
+        InstallCommand::RunLocal => solstone_core_local::InstallVerb::RunLocal,
+        InstallCommand::RunMlx => solstone_core_local::InstallVerb::RunMlx,
+    };
+    match solstone_core_local::dispatch_install(verb, input) {
+        Ok(envelope) => write_install_envelope(&envelope, ExitCode::SUCCESS),
+        Err(error) => write_install_envelope(&error.envelope, ExitCode::from(error.exit_code)),
+    }
+}
+
+fn write_install_envelope(
+    envelope: &solstone_core_local::InstallEnvelope,
+    exit: ExitCode,
+) -> ExitCode {
+    let mut stdout = io::stdout().lock();
+    if serde_json::to_writer(&mut stdout, envelope).is_err() || writeln!(stdout).is_err() {
+        return ExitCode::from(EXIT_IOERR);
+    }
+    exit
 }
 
 fn run_local_json<T, O>(operation: impl FnOnce(T) -> O) -> ExitCode
@@ -158,6 +218,1013 @@ fn run_journal_config(command: JournalConfigCommand) -> ExitCode {
     }
 }
 
+fn run_brain(command: BrainCommand) -> ExitCode {
+    match command {
+        BrainCommand::RecordRuntimeFailure(options) => run_brain_runtime_failure(options),
+        BrainCommand::RefreshSession(options) => run_brain_refresh_session(options),
+        BrainCommand::PrerequisiteRenewalSession(options) => {
+            run_brain_prerequisite_renewal_session(options)
+        }
+        BrainCommand::Inspect(options) => run_brain_inspect(options),
+        BrainCommand::Fingerprint => run_brain_fingerprint(),
+    }
+}
+
+fn run_brain_inspect(options: BrainInspectOptions) -> ExitCode {
+    let line = match resolve_journal_config_path(options.journal_override) {
+        Ok(line) => line,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let config = match read_journal_config(&line.path) {
+        Ok(read) => read.config.unwrap_or_default(),
+        Err(error) => {
+            eprintln!("brain inspect failed: could not read journal config: {error}");
+            return ExitCode::from(EXIT_UNAVAILABLE);
+        }
+    };
+    let inspection =
+        solstone_core_brain::inspect_brain_state(&line.path, &config, chrono::Utc::now());
+    let active_fingerprint = active_brain_fingerprint(
+        &line.path,
+        &config,
+        options.bundled_runtime_fingerprint_sha256,
+    );
+    // `inspection` is the transport form of Python's `inspect_brain_state`;
+    // `active_fingerprint` serves both of its active-fingerprint read callers.
+    let output = json!({
+        "status": inspection_status_name(&inspection.status),
+        "path": solstone_core_brain::brain_state_path(&line.path),
+        "record": inspection.record,
+        "projection": {
+            "aggregate_state": inspection.projection.aggregate_state,
+            "reason_code": inspection.projection.reason_code,
+            "active_lane": inspection.projection.active_lane,
+            "active_provider": inspection.projection.active_provider,
+            "active_model": inspection.projection.active_model,
+            "fingerprint_sha256": inspection.projection.fingerprint_sha256,
+            "runtime_transition_in_progress": inspection.projection.runtime_transition_in_progress,
+        },
+        "reason_code": inspection.projection.reason_code,
+        "error": inspection.error,
+        "active_fingerprint": active_fingerprint,
+    });
+    let mut stdout = io::stdout().lock();
+    if serde_json::to_writer(&mut stdout, &output).is_err()
+        || stdout.write_all(b"\n").is_err()
+        || stdout.flush().is_err()
+    {
+        eprintln!("brain inspect failed: stdout I/O error");
+        ExitCode::from(EXIT_IOERR)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+fn inspection_status_name(status: &solstone_core_brain::InspectionStatus) -> &'static str {
+    match status {
+        solstone_core_brain::InspectionStatus::Ok => "ok",
+        solstone_core_brain::InspectionStatus::Corrupt => "corrupt",
+        solstone_core_brain::InspectionStatus::Unavailable => "unavailable",
+    }
+}
+
+fn active_brain_fingerprint(
+    journal_path: &std::path::Path,
+    config: &Map<String, Value>,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+) -> Value {
+    let key = solstone_core_brain::load_existing_fingerprint_key(journal_path);
+    brain_fingerprint_result(
+        config,
+        key.as_ref().map(|key| key.as_slice()),
+        bundled_runtime_fingerprint_sha256,
+    )
+}
+
+fn brain_fingerprint_result(
+    config: &Map<String, Value>,
+    hmac_key: Option<&[u8]>,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+) -> Value {
+    let resolution = solstone_core_brain::derive_active_brain_lane(config);
+    let mut diagnostic = Map::new();
+    let bundled_runtime = (resolution.lane.as_deref() == Some("bundled"))
+        .then_some(bundled_runtime_fingerprint_sha256)
+        .flatten();
+    let (ok, fingerprint_sha256, reason_code) = match hmac_key {
+        None => (false, None, Some("fingerprint_key_unavailable".to_owned())),
+        Some(key) => match solstone_core_brain::build_active_brain_fingerprint(
+            config,
+            key,
+            bundled_runtime.clone().map(Value::String),
+        ) {
+            Ok(Some(fingerprint)) => (true, Some(fingerprint), None),
+            Ok(None) => (false, None, Some("fingerprint_not_available".to_owned())),
+            Err(error) => {
+                if error.0 == "configuration_invalid" {
+                    diagnostic.insert(
+                        "field".to_owned(),
+                        Value::String("providers.active.provider".to_owned()),
+                    );
+                }
+                (false, None, Some(error.0))
+            }
+        },
+    };
+    json!({
+        "ok": ok,
+        "fingerprint_sha256": fingerprint_sha256,
+        "active_lane": resolution.lane,
+        "active_provider": resolution.provider,
+        "active_model": resolution.model,
+        "reason_code": reason_code,
+        "diagnostic": diagnostic,
+        "bundled_runtime_fingerprint_sha256": bundled_runtime,
+    })
+}
+
+struct BrainFingerprintRequest {
+    config: Map<String, Value>,
+    hmac_key: [u8; 32],
+    bundled_runtime_fingerprint_sha256: Option<String>,
+}
+
+fn run_brain_fingerprint() -> ExitCode {
+    let request = match read_bounded_json_stdin().and_then(parse_brain_fingerprint_request) {
+        Ok(request) => request,
+        Err(JsonStdinError::Content) => {
+            eprintln!(
+                "brain fingerprint failed: stdin was not a valid request JSON object within 1 MiB"
+            );
+            return ExitCode::from(EXIT_USAGE);
+        }
+        Err(JsonStdinError::Io) => {
+            eprintln!("brain fingerprint failed: stdin I/O error");
+            return ExitCode::from(EXIT_IOERR);
+        }
+    };
+    let output = brain_fingerprint_result(
+        &request.config,
+        Some(&request.hmac_key),
+        request.bundled_runtime_fingerprint_sha256,
+    );
+    let mut stdout = io::stdout().lock();
+    if serde_json::to_writer(&mut stdout, &output).is_err()
+        || stdout.write_all(b"\n").is_err()
+        || stdout.flush().is_err()
+    {
+        eprintln!("brain fingerprint failed: stdout I/O error");
+        ExitCode::from(EXIT_IOERR)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+fn parse_brain_fingerprint_request(
+    request: Map<String, Value>,
+) -> Result<BrainFingerprintRequest, JsonStdinError> {
+    const FIELDS: [&str; 3] = [
+        "config",
+        "hmac_key_hex",
+        "bundled_runtime_fingerprint_sha256",
+    ];
+    if request.keys().any(|key| !FIELDS.contains(&key.as_str())) {
+        return Err(JsonStdinError::Content);
+    }
+    let config = request
+        .get("config")
+        .and_then(Value::as_object)
+        .cloned()
+        .ok_or(JsonStdinError::Content)?;
+    let hmac_key = request
+        .get("hmac_key_hex")
+        .and_then(Value::as_str)
+        .and_then(decode_hmac_key)
+        .ok_or(JsonStdinError::Content)?;
+    let bundled_runtime_fingerprint_sha256 = match request.get("bundled_runtime_fingerprint_sha256")
+    {
+        None => None,
+        Some(Value::String(value)) => Some(value.clone()),
+        Some(_) => return Err(JsonStdinError::Content),
+    };
+    Ok(BrainFingerprintRequest {
+        config,
+        hmac_key,
+        bundled_runtime_fingerprint_sha256,
+    })
+}
+
+fn decode_hmac_key(value: &str) -> Option<[u8; 32]> {
+    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut key = [0_u8; 32];
+    for (index, byte) in key.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16).ok()?;
+    }
+    Some(key)
+}
+
+fn run_brain_refresh_session(options: BrainRefreshSessionOptions) -> ExitCode {
+    let line = match resolve_journal_config_path(options.journal_override) {
+        Ok(line) => line,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let (expected, expect_absent) = match options.expect {
+        Some(BrainRefreshExpectArg::Absent) => (None, true),
+        Some(BrainRefreshExpectArg::Sha256(fingerprint)) => (Some(fingerprint), false),
+        None => (None, false),
+    };
+    let before_revision = brain_record_revision(&line.path);
+    let bundled_runtime_fingerprint_sha256 = options.bundled_runtime_fingerprint_sha256;
+    let begin = solstone_core_brain::begin_refresh(
+        &line.path,
+        chrono::Utc::now(),
+        options.run_id,
+        expected.as_deref(),
+        expect_absent,
+        bundled_runtime_fingerprint_sha256.clone(),
+    );
+    let permit = match begin {
+        Ok(Some(permit)) => permit,
+        Ok(None)
+            if brain_record_was_written(before_revision, brain_record_revision(&line.path)) =>
+        {
+            return write_refresh_projection(&line.path);
+        }
+        Ok(None) => {
+            return write_session_result(json!({
+                "schema": REFRESH_RESULT_SCHEMA,
+                "kind": "not_started",
+                "status": "no_permit",
+                "reason": "lease_held",
+            }));
+        }
+        Err(solstone_core_brain::BeginRefreshError::ExpectedFingerprintStale(error)) => {
+            eprintln!("brain refresh failed: {error}");
+            return ExitCode::from(EXIT_DATAERR);
+        }
+        Err(solstone_core_brain::BeginRefreshError::InvalidArgument(error)) => {
+            eprintln!("brain refresh failed: {error}");
+            return ExitCode::from(EXIT_USAGE);
+        }
+        Err(solstone_core_brain::BeginRefreshError::Writer(error)) => {
+            eprintln!("brain refresh failed: {error}");
+            return ExitCode::from(EXIT_UNAVAILABLE);
+        }
+    };
+    run_refresh_session_loop(
+        line.path,
+        permit,
+        bundled_runtime_fingerprint_sha256,
+        session_input_timeout(),
+    )
+}
+
+fn run_brain_prerequisite_renewal_session(
+    options: BrainPrerequisiteRenewalSessionOptions,
+) -> ExitCode {
+    let line = match resolve_journal_config_path(options.journal_override) {
+        Ok(line) => line,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let bundled_runtime_fingerprint_sha256 = options.bundled_runtime_fingerprint_sha256;
+    let expected_fingerprint_sha256 = options.expected_fingerprint_sha256;
+    let begin = solstone_core_brain::begin_prerequisite_renewal(
+        &line.path,
+        chrono::Utc::now(),
+        options.run_id,
+        expected_fingerprint_sha256.as_deref(),
+        bundled_runtime_fingerprint_sha256.clone(),
+    );
+    let permit = match begin {
+        solstone_core_brain::BeginPrerequisiteRenewal::Started(permit) => permit,
+        solstone_core_brain::BeginPrerequisiteRenewal::Busy { reason } => {
+            return write_session_result(json!({
+                "schema": PREREQUISITE_RENEWAL_RESULT_SCHEMA,
+                "kind": "not_started",
+                "status": "busy",
+                "reason": reason,
+            }));
+        }
+        solstone_core_brain::BeginPrerequisiteRenewal::Unsafe { reason } => {
+            return write_session_result(json!({
+                "schema": PREREQUISITE_RENEWAL_RESULT_SCHEMA,
+                "kind": "not_started",
+                "status": "unsafe",
+                "reason": reason,
+            }));
+        }
+    };
+    run_prerequisite_renewal_session_loop(
+        line.path,
+        permit,
+        bundled_runtime_fingerprint_sha256,
+        session_input_timeout(),
+    )
+}
+
+fn brain_record_revision(journal_path: &std::path::Path) -> Option<u64> {
+    fs::read(solstone_core_brain::brain_state_path(journal_path))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|record| record.get("revision").and_then(Value::as_u64))
+}
+
+fn brain_record_was_written(before: Option<u64>, after: Option<u64>) -> bool {
+    match (before, after) {
+        (None, Some(_)) => true,
+        (Some(before), Some(after)) => before != after,
+        _ => false,
+    }
+}
+
+fn session_input_timeout() -> Duration {
+    // Integration binaries are debug builds, so this bounded test hook avoids
+    // making AC15 wait ninety seconds. Release builds always use the protocol
+    // contract's fixed ninety-second bound.
+    #[cfg(debug_assertions)]
+    if let Some(timeout) = env::var("SOLSTONE_CORE_BRAIN_SESSION_TIMEOUT_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|timeout| *timeout > 0)
+    {
+        return Duration::from_millis(timeout);
+    }
+    SESSION_INPUT_TIMEOUT
+}
+
+fn run_refresh_session_loop(
+    journal_path: PathBuf,
+    permit: solstone_core_brain::BrainRefreshPermit,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+    timeout: Duration,
+) -> ExitCode {
+    if write_session_result(json!({"schema": REFRESH_READY_SCHEMA})) != ExitCode::SUCCESS {
+        return ExitCode::from(EXIT_IOERR);
+    }
+    let deadline = Instant::now() + timeout;
+    match read_refresh_session_input(deadline) {
+        RefreshSessionInput::Clean(outcome) => match solstone_core_brain::finish_refresh(
+            &journal_path,
+            permit,
+            outcome,
+            chrono::Utc::now(),
+            bundled_runtime_fingerprint_sha256,
+        ) {
+            Ok(_) => write_refresh_projection(&journal_path),
+            Err(error) => {
+                eprintln!("brain refresh failed: {error}");
+                ExitCode::from(EXIT_UNAVAILABLE)
+            }
+        },
+        RefreshSessionInput::CallerAbandon(abandon) => {
+            abandon_refresh_for_caller(&journal_path, permit, abandon)
+        }
+        RefreshSessionInput::BareEof => {
+            abandon_refresh_silently(&journal_path, permit);
+            // A bare EOF means no caller remains to observe an answer.
+            ExitCode::from(EXIT_UNAVAILABLE)
+        }
+        RefreshSessionInput::Timeout => {
+            abandon_refresh(&journal_path, permit, true);
+            ExitCode::SUCCESS
+        }
+        RefreshSessionInput::ProtocolViolation => {
+            abandon_refresh(&journal_path, permit, true);
+            ExitCode::from(EXIT_PROTOCOL)
+        }
+    }
+}
+
+fn run_prerequisite_renewal_session_loop(
+    journal_path: PathBuf,
+    permit: solstone_core_brain::BrainRefreshPermit,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+    timeout: Duration,
+) -> ExitCode {
+    if write_session_result(json!({"schema": PREREQUISITE_RENEWAL_READY_SCHEMA}))
+        != ExitCode::SUCCESS
+    {
+        return ExitCode::from(EXIT_IOERR);
+    }
+    let deadline = Instant::now() + timeout;
+    match read_prerequisite_renewal_session_input(deadline) {
+        PrerequisiteRenewalSessionInput::Clean(component) => {
+            match solstone_core_brain::finish_prerequisite_renewal(
+                &journal_path,
+                permit,
+                component,
+                chrono::Utc::now(),
+                bundled_runtime_fingerprint_sha256,
+            ) {
+                Ok(_) => write_brain_projection(&journal_path, PREREQUISITE_RENEWAL_RESULT_SCHEMA),
+                Err(error) => {
+                    eprintln!("brain prerequisite renewal failed: {error}");
+                    ExitCode::from(EXIT_UNAVAILABLE)
+                }
+            }
+        }
+        PrerequisiteRenewalSessionInput::CallerAbandon(abandon) => {
+            abandon_prerequisite_renewal_for_caller(
+                &journal_path,
+                permit,
+                abandon,
+                bundled_runtime_fingerprint_sha256,
+            )
+        }
+        PrerequisiteRenewalSessionInput::BareEof => {
+            abandon_prerequisite_renewal_silently(
+                &journal_path,
+                permit,
+                bundled_runtime_fingerprint_sha256,
+            );
+            // A bare EOF means no caller remains to observe an answer.
+            ExitCode::from(EXIT_UNAVAILABLE)
+        }
+        PrerequisiteRenewalSessionInput::Timeout => {
+            abandon_prerequisite_renewal(
+                &journal_path,
+                permit,
+                bundled_runtime_fingerprint_sha256,
+                true,
+            );
+            ExitCode::SUCCESS
+        }
+        PrerequisiteRenewalSessionInput::ProtocolViolation => {
+            abandon_prerequisite_renewal(
+                &journal_path,
+                permit,
+                bundled_runtime_fingerprint_sha256,
+                true,
+            );
+            ExitCode::from(EXIT_PROTOCOL)
+        }
+    }
+}
+
+enum RefreshSessionInput {
+    Clean(Value),
+    CallerAbandon(CallerAbandon),
+    BareEof,
+    Timeout,
+    ProtocolViolation,
+}
+
+enum PrerequisiteRenewalSessionInput {
+    Clean(Value),
+    CallerAbandon(CallerAbandon),
+    BareEof,
+    Timeout,
+    ProtocolViolation,
+}
+
+struct CallerAbandon {
+    reason_code: String,
+    diagnostic: Map<String, Value>,
+}
+
+enum CappedLineEvent {
+    Line { bytes: Vec<u8>, count: usize },
+    IoError,
+}
+
+fn spawn_capped_line_reader(max_bytes: usize) -> mpsc::Receiver<CappedLineEvent> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let stdin = io::stdin();
+        let mut reader = BufReader::new(stdin.lock());
+        loop {
+            let mut bytes = Vec::new();
+            let read = {
+                let mut limited = reader.by_ref().take(max_bytes as u64);
+                limited.read_until(b'\n', &mut bytes)
+            };
+            match read {
+                Ok(count) => {
+                    if sender.send(CappedLineEvent::Line { bytes, count }).is_err() || count == 0 {
+                        return;
+                    }
+                }
+                Err(_) => {
+                    let _ = sender.send(CappedLineEvent::IoError);
+                    return;
+                }
+            }
+        }
+    });
+    receiver
+}
+
+fn read_refresh_session_input(deadline: Instant) -> RefreshSessionInput {
+    let receiver = spawn_capped_line_reader(MAX_JSON_STDIN_BYTES + 1);
+    let mut request = None;
+    let mut terminal = false;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return RefreshSessionInput::Timeout;
+        }
+        let (line, count) = match receiver.recv_timeout(remaining) {
+            Ok(CappedLineEvent::Line { bytes, count }) => (bytes, count),
+            Ok(CappedLineEvent::IoError) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return RefreshSessionInput::ProtocolViolation;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => return RefreshSessionInput::Timeout,
+        };
+        if count == 0 {
+            return if terminal {
+                match request.expect("terminal requires request") {
+                    RefreshSessionRecord::Probe(outcome) => RefreshSessionInput::Clean(outcome),
+                    RefreshSessionRecord::Abandon(abandon) => {
+                        RefreshSessionInput::CallerAbandon(abandon)
+                    }
+                    RefreshSessionRecord::Terminal => unreachable!("terminal is not buffered"),
+                }
+            } else {
+                RefreshSessionInput::BareEof
+            };
+        }
+        if line.len() > MAX_JSON_STDIN_BYTES {
+            return RefreshSessionInput::ProtocolViolation;
+        }
+        match parse_refresh_session_record(&line, chrono::Utc::now()) {
+            Some(record @ (RefreshSessionRecord::Probe(_) | RefreshSessionRecord::Abandon(_)))
+                if !terminal && request.is_none() =>
+            {
+                request = Some(record);
+            }
+            Some(RefreshSessionRecord::Terminal) if request.is_some() => {
+                terminal = true;
+            }
+            _ => return RefreshSessionInput::ProtocolViolation,
+        }
+    }
+}
+
+fn read_prerequisite_renewal_session_input(deadline: Instant) -> PrerequisiteRenewalSessionInput {
+    let receiver = spawn_capped_line_reader(MAX_JSON_STDIN_BYTES + 1);
+    let mut request = None;
+    let mut terminal = false;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return PrerequisiteRenewalSessionInput::Timeout;
+        }
+        let (line, count) = match receiver.recv_timeout(remaining) {
+            Ok(CappedLineEvent::Line { bytes, count }) => (bytes, count),
+            Ok(CappedLineEvent::IoError) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return PrerequisiteRenewalSessionInput::ProtocolViolation;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                return PrerequisiteRenewalSessionInput::Timeout;
+            }
+        };
+        if count == 0 {
+            return if terminal {
+                match request.expect("terminal requires request") {
+                    PrerequisiteRenewalSessionRecord::Probe(component) => {
+                        PrerequisiteRenewalSessionInput::Clean(component)
+                    }
+                    PrerequisiteRenewalSessionRecord::Abandon(abandon) => {
+                        PrerequisiteRenewalSessionInput::CallerAbandon(abandon)
+                    }
+                    PrerequisiteRenewalSessionRecord::Terminal => {
+                        unreachable!("terminal is not buffered")
+                    }
+                }
+            } else {
+                PrerequisiteRenewalSessionInput::BareEof
+            };
+        }
+        if line.len() > MAX_JSON_STDIN_BYTES {
+            return PrerequisiteRenewalSessionInput::ProtocolViolation;
+        }
+        match parse_prerequisite_renewal_session_record(&line, chrono::Utc::now()) {
+            Some(
+                record @ (PrerequisiteRenewalSessionRecord::Probe(_)
+                | PrerequisiteRenewalSessionRecord::Abandon(_)),
+            ) if !terminal && request.is_none() => {
+                request = Some(record);
+            }
+            Some(PrerequisiteRenewalSessionRecord::Terminal) if request.is_some() => {
+                terminal = true;
+            }
+            _ => return PrerequisiteRenewalSessionInput::ProtocolViolation,
+        }
+    }
+}
+
+enum RefreshSessionRecord {
+    Probe(Value),
+    Abandon(CallerAbandon),
+    Terminal,
+}
+
+enum PrerequisiteRenewalSessionRecord {
+    Probe(Value),
+    Abandon(CallerAbandon),
+    Terminal,
+}
+
+fn parse_refresh_session_record(
+    bytes: &[u8],
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<RefreshSessionRecord> {
+    let object = serde_json::from_slice::<Value>(bytes)
+        .ok()?
+        .as_object()?
+        .clone();
+    let schema = object.get("schema")?.as_str()?;
+    if schema == REFRESH_TERMINAL_SCHEMA && exact_fields(&object, &["schema"]) {
+        return Some(RefreshSessionRecord::Terminal);
+    }
+    if schema == REFRESH_ABANDON_SCHEMA {
+        return parse_caller_abandon(&object).map(RefreshSessionRecord::Abandon);
+    }
+    if schema != REFRESH_PROBE_SCHEMA || !exact_fields(&object, &["schema", "outcome"]) {
+        return None;
+    }
+    let outcome = object.get("outcome")?.clone();
+    solstone_core_brain::validate_refresh_probe_outcome(&outcome, now).ok()?;
+    Some(RefreshSessionRecord::Probe(outcome))
+}
+
+fn parse_prerequisite_renewal_session_record(
+    bytes: &[u8],
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<PrerequisiteRenewalSessionRecord> {
+    let object = serde_json::from_slice::<Value>(bytes)
+        .ok()?
+        .as_object()?
+        .clone();
+    let schema = object.get("schema")?.as_str()?;
+    if schema == PREREQUISITE_RENEWAL_TERMINAL_SCHEMA && exact_fields(&object, &["schema"]) {
+        return Some(PrerequisiteRenewalSessionRecord::Terminal);
+    }
+    if schema == PREREQUISITE_RENEWAL_ABANDON_SCHEMA {
+        return parse_caller_abandon(&object).map(PrerequisiteRenewalSessionRecord::Abandon);
+    }
+    if schema != PREREQUISITE_RENEWAL_PROBE_SCHEMA
+        || !exact_fields(&object, &["schema", "lane_prerequisites"])
+    {
+        return None;
+    }
+    let component = object.get("lane_prerequisites")?.clone();
+    let evidence = json!({
+        "configuration": null,
+        "lane_prerequisites": component,
+        "generate": null,
+        "cogitate": null,
+    });
+    solstone_core_brain::validate_refresh_probe_outcome(&evidence, now).ok()?;
+    Some(PrerequisiteRenewalSessionRecord::Probe(
+        evidence["lane_prerequisites"].clone(),
+    ))
+}
+
+fn parse_caller_abandon(object: &Map<String, Value>) -> Option<CallerAbandon> {
+    if !exact_fields(object, &["schema", "reason_code"])
+        && !exact_fields(object, &["schema", "reason_code", "diagnostic"])
+    {
+        return None;
+    }
+    let reason_code = object.get("reason_code")?.as_str()?;
+    if reason_code.is_empty() {
+        return None;
+    }
+    let diagnostic = match object.get("diagnostic") {
+        None => Map::new(),
+        Some(Value::Object(diagnostic)) => diagnostic.clone(),
+        Some(_) => return None,
+    };
+    Some(CallerAbandon {
+        reason_code: reason_code.to_owned(),
+        diagnostic,
+    })
+}
+
+fn exact_fields(object: &Map<String, Value>, expected: &[&str]) -> bool {
+    object.len() == expected.len() && expected.iter().all(|field| object.contains_key(*field))
+}
+
+fn abandon_refresh_silently(
+    journal_path: &std::path::Path,
+    permit: solstone_core_brain::BrainRefreshPermit,
+) {
+    if let Err(error) = solstone_core_brain::abandon_refresh(
+        journal_path,
+        permit,
+        "chat_timeout",
+        Map::new(),
+        chrono::Utc::now(),
+    ) {
+        eprintln!("brain refresh abandonment failed: {error}");
+    }
+}
+
+fn abandon_refresh(
+    journal_path: &std::path::Path,
+    permit: solstone_core_brain::BrainRefreshPermit,
+    report: bool,
+) {
+    abandon_refresh_silently(journal_path, permit);
+    if report
+        && write_session_result(json!({
+            "schema": REFRESH_RESULT_SCHEMA,
+            "kind": "abandoned",
+            "reason_code": "chat_timeout",
+            "component": "generate",
+        })) != ExitCode::SUCCESS
+    {
+        eprintln!("brain refresh abandonment report failed: stdout I/O error");
+    }
+}
+
+fn abandon_refresh_for_caller(
+    journal_path: &std::path::Path,
+    permit: solstone_core_brain::BrainRefreshPermit,
+    abandon: CallerAbandon,
+) -> ExitCode {
+    let before = read_brain_record_value(journal_path);
+    let reason_code = abandon.reason_code;
+    match solstone_core_brain::abandon_refresh(
+        journal_path,
+        permit,
+        &reason_code,
+        abandon.diagnostic,
+        chrono::Utc::now(),
+    ) {
+        Ok(record) => match changed_evidence_component(&before, &record, &reason_code) {
+            Some(component) => write_session_result(json!({
+                "schema": REFRESH_RESULT_SCHEMA,
+                "kind": "abandoned",
+                "reason_code": reason_code,
+                "component": component,
+            })),
+            None => {
+                eprintln!("brain refresh abandonment failed: could not identify changed component");
+                ExitCode::from(EXIT_UNAVAILABLE)
+            }
+        },
+        Err(error) => {
+            eprintln!("brain refresh abandonment failed: {error}");
+            ExitCode::from(EXIT_UNAVAILABLE)
+        }
+    }
+}
+
+fn write_refresh_projection(journal_path: &std::path::Path) -> ExitCode {
+    write_brain_projection(journal_path, REFRESH_RESULT_SCHEMA)
+}
+
+fn abandon_prerequisite_renewal_silently(
+    journal_path: &std::path::Path,
+    permit: solstone_core_brain::BrainRefreshPermit,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+) {
+    if let Err(error) = solstone_core_brain::abandon_prerequisite_renewal(
+        journal_path,
+        permit,
+        "nvattest_unavailable",
+        Map::new(),
+        chrono::Utc::now(),
+        bundled_runtime_fingerprint_sha256,
+    ) {
+        eprintln!("brain prerequisite renewal abandonment failed: {error}");
+    }
+}
+
+fn abandon_prerequisite_renewal(
+    journal_path: &std::path::Path,
+    permit: solstone_core_brain::BrainRefreshPermit,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+    report: bool,
+) {
+    abandon_prerequisite_renewal_silently(journal_path, permit, bundled_runtime_fingerprint_sha256);
+    if report
+        && write_session_result(json!({
+            "schema": PREREQUISITE_RENEWAL_RESULT_SCHEMA,
+            "kind": "abandoned",
+            "reason_code": "nvattest_unavailable",
+            "component": "lane_prerequisites",
+        })) != ExitCode::SUCCESS
+    {
+        eprintln!("brain prerequisite renewal abandonment report failed: stdout I/O error");
+    }
+}
+
+fn abandon_prerequisite_renewal_for_caller(
+    journal_path: &std::path::Path,
+    permit: solstone_core_brain::BrainRefreshPermit,
+    abandon: CallerAbandon,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+) -> ExitCode {
+    let before = read_brain_record_value(journal_path);
+    let reason_code = abandon.reason_code;
+    match solstone_core_brain::abandon_prerequisite_renewal(
+        journal_path,
+        permit,
+        &reason_code,
+        abandon.diagnostic,
+        chrono::Utc::now(),
+        bundled_runtime_fingerprint_sha256,
+    ) {
+        Ok(record) => match changed_evidence_component(&before, &record, &reason_code) {
+            Some(component) => write_session_result(json!({
+                "schema": PREREQUISITE_RENEWAL_RESULT_SCHEMA,
+                "kind": "abandoned",
+                "reason_code": reason_code,
+                "component": component,
+            })),
+            None => {
+                eprintln!(
+                    "brain prerequisite renewal abandonment failed: could not identify changed component"
+                );
+                ExitCode::from(EXIT_UNAVAILABLE)
+            }
+        },
+        Err(error) => {
+            eprintln!("brain prerequisite renewal abandonment failed: {error}");
+            ExitCode::from(EXIT_UNAVAILABLE)
+        }
+    }
+}
+
+fn read_brain_record_value(journal_path: &std::path::Path) -> Option<Value> {
+    fs::read(solstone_core_brain::brain_state_path(journal_path))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+}
+
+fn changed_evidence_component(
+    before: &Option<Value>,
+    after: &Value,
+    reason_code: &str,
+) -> Option<String> {
+    let before_evidence = before
+        .as_ref()
+        .and_then(|record| record.get("evidence"))
+        .and_then(Value::as_object);
+    after
+        .get("evidence")
+        .and_then(Value::as_object)?
+        .iter()
+        .find_map(|(component, value)| {
+            (before_evidence.and_then(|evidence| evidence.get(component)) != Some(value)
+                && value.get("reason_code").and_then(Value::as_str) == Some(reason_code))
+            .then(|| component.clone())
+        })
+}
+
+fn write_brain_projection(journal_path: &std::path::Path, result_schema: &str) -> ExitCode {
+    let config = match read_journal_config(journal_path) {
+        Ok(read) => read.config.unwrap_or_default(),
+        Err(error) => {
+            eprintln!("brain refresh failed: could not read journal config: {error}");
+            return ExitCode::from(EXIT_UNAVAILABLE);
+        }
+    };
+    let projection =
+        solstone_core_brain::inspect_brain_state(journal_path, &config, chrono::Utc::now())
+            .projection;
+    write_session_result(json!({
+        "schema": result_schema,
+        "kind": "projection",
+        "projection": {
+            "aggregate_state": projection.aggregate_state,
+            "reason_code": projection.reason_code,
+            "active_lane": projection.active_lane,
+            "active_provider": projection.active_provider,
+            "active_model": projection.active_model,
+            "fingerprint_sha256": projection.fingerprint_sha256,
+            "runtime_transition_in_progress": projection.runtime_transition_in_progress,
+        },
+    }))
+}
+
+fn write_session_result(output: Value) -> ExitCode {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let mut stdout = io::stdout().lock();
+        let written = serde_json::to_writer(&mut stdout, &output).is_ok()
+            && stdout.write_all(b"\n").is_ok()
+            && stdout.flush().is_ok();
+        let _ = sender.send(written);
+    });
+    if receiver
+        .recv_timeout(SESSION_RESULT_WRITE_TIMEOUT)
+        .is_ok_and(|written| written)
+    {
+        ExitCode::SUCCESS
+    } else {
+        eprintln!("brain refresh failed: stdout I/O error");
+        ExitCode::from(EXIT_IOERR)
+    }
+}
+
+struct RuntimeFailureRequest {
+    reason_code: String,
+    component: String,
+    expected_fingerprint_sha256: String,
+    diagnostic: Map<String, Value>,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+}
+
+fn run_brain_runtime_failure(options: BrainRuntimeFailureOptions) -> ExitCode {
+    let request = match read_bounded_json_stdin().and_then(parse_runtime_failure_request) {
+        Ok(request) => request,
+        Err(JsonStdinError::Content) => {
+            eprintln!(
+                "brain record-runtime-failure failed: stdin was not a valid request JSON object within 1 MiB"
+            );
+            return ExitCode::from(EXIT_USAGE);
+        }
+        Err(JsonStdinError::Io) => {
+            eprintln!("brain record-runtime-failure failed: stdin I/O error");
+            return ExitCode::from(EXIT_IOERR);
+        }
+    };
+    let line = match resolve_journal_config_path(options.journal_override) {
+        Ok(line) => line,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let result = solstone_core_brain::record_runtime_failure(
+        &line.path,
+        &request.reason_code,
+        &request.component,
+        &request.expected_fingerprint_sha256,
+        request.diagnostic,
+        chrono::Utc::now(),
+        request.bundled_runtime_fingerprint_sha256,
+    );
+    let output = json!({
+        "accepted": result.accepted,
+        "record": result.record,
+        "rejected_reason": result.rejected_reason,
+        "error": result.error,
+    });
+    let mut stdout = io::stdout().lock();
+    if serde_json::to_writer(&mut stdout, &output).is_err() || stdout.write_all(b"\n").is_err() {
+        eprintln!("brain record-runtime-failure failed: stdout I/O error");
+        return ExitCode::from(EXIT_IOERR);
+    }
+    ExitCode::SUCCESS
+}
+
+fn parse_runtime_failure_request(
+    request: Map<String, Value>,
+) -> Result<RuntimeFailureRequest, JsonStdinError> {
+    const FIELDS: [&str; 5] = [
+        "reason_code",
+        "component",
+        "expected_fingerprint_sha256",
+        "diagnostic",
+        "bundled_runtime_fingerprint_sha256",
+    ];
+    if request.keys().any(|key| !FIELDS.contains(&key.as_str())) {
+        return Err(JsonStdinError::Content);
+    }
+    let string = |field: &str| {
+        request
+            .get(field)
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .ok_or(JsonStdinError::Content)
+    };
+    let diagnostic = match request.get("diagnostic") {
+        None => Map::new(),
+        Some(Value::Object(value)) => value.clone(),
+        Some(_) => return Err(JsonStdinError::Content),
+    };
+    let bundled_runtime_fingerprint_sha256 = match request.get("bundled_runtime_fingerprint_sha256")
+    {
+        None => None,
+        Some(Value::String(value)) if !value.is_empty() => Some(value.clone()),
+        Some(_) => return Err(JsonStdinError::Content),
+    };
+    Ok(RuntimeFailureRequest {
+        reason_code: string("reason_code")?,
+        component: string("component")?,
+        expected_fingerprint_sha256: string("expected_fingerprint_sha256")?,
+        diagnostic,
+        bundled_runtime_fingerprint_sha256,
+    })
+}
+
 fn run_journal_config_read(options: JournalConfigReadOptions) -> ExitCode {
     let line = match resolve_journal_config_path(options.journal_override) {
         Ok(line) => line,
@@ -190,13 +1257,13 @@ fn run_journal_config_read(options: JournalConfigReadOptions) -> ExitCode {
 fn run_journal_config_commit(options: JournalConfigCommitOptions) -> ExitCode {
     let replacement = match read_journal_config_stdin() {
         Ok(replacement) => replacement,
-        Err(JournalConfigStdinError::Content) => {
+        Err(JsonStdinError::Content) => {
             eprintln!(
                 "journal-config commit failed: stdin was not a valid JSON object within 1 MiB"
             );
             return ExitCode::from(EXIT_USAGE);
         }
-        Err(JournalConfigStdinError::Io) => {
+        Err(JsonStdinError::Io) => {
             eprintln!("journal-config commit failed: stdin I/O error");
             return ExitCode::from(EXIT_IOERR);
         }
@@ -241,36 +1308,38 @@ fn resolve_journal_config_path(
     }
 }
 
-enum JournalConfigStdinError {
+enum JsonStdinError {
     Content,
     Io,
 }
 
-fn read_journal_config_stdin() -> Result<Map<String, Value>, JournalConfigStdinError> {
+fn read_journal_config_stdin() -> Result<Map<String, Value>, JsonStdinError> {
+    read_bounded_json_stdin()
+}
+
+fn read_bounded_json_stdin() -> Result<Map<String, Value>, JsonStdinError> {
     let stdin = io::stdin();
     let mut stdin = stdin.lock();
     let mut bytes = Vec::new();
     let mut chunk = [0_u8; 8192];
     loop {
-        let read = stdin
-            .read(&mut chunk)
-            .map_err(|_| JournalConfigStdinError::Io)?;
+        let read = stdin.read(&mut chunk).map_err(|_| JsonStdinError::Io)?;
         if read == 0 {
             break;
         }
         if bytes
             .len()
             .checked_add(read)
-            .is_none_or(|next| next > MAX_JOURNAL_CONFIG_STDIN_BYTES)
+            .is_none_or(|next| next > MAX_JSON_STDIN_BYTES)
         {
-            return Err(JournalConfigStdinError::Content);
+            return Err(JsonStdinError::Content);
         }
         bytes.extend_from_slice(&chunk[..read]);
     }
     let config = serde_json::from_slice::<Value>(&bytes)
         .ok()
         .and_then(|value| value.as_object().cloned())
-        .ok_or(JournalConfigStdinError::Content)?;
+        .ok_or(JsonStdinError::Content)?;
     drop(bytes);
     Ok(config)
 }
@@ -677,6 +1746,15 @@ mod tests {
         assert_eq!(EXIT_CANTCREAT, 73);
         assert_eq!(EXIT_IOERR, 74);
         assert_eq!(EXIT_TEMPFAIL, 75);
+        assert_eq!(EXIT_PROTOCOL, 76);
+    }
+
+    #[test]
+    fn brain_record_write_observation_requires_a_new_revision() {
+        assert!(!brain_record_was_written(None, None));
+        assert!(!brain_record_was_written(Some(7), Some(7)));
+        assert!(brain_record_was_written(None, Some(1)));
+        assert!(brain_record_was_written(Some(7), Some(8)));
     }
 
     #[test]

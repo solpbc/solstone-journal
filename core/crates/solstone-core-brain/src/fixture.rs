@@ -58,6 +58,7 @@ pub(crate) struct LocalContract {
 #[derive(Debug, Deserialize)]
 pub(crate) struct BrainStateVocabulary {
     pub schema_version: u64,
+    pub checking_ttl_seconds: u64,
     pub fingerprint_schema_version: u64,
     pub fingerprint_key_bytes: usize,
     pub paths: BrainStatePaths,
@@ -141,6 +142,7 @@ pub(crate) struct CanonicalDigestVector {
 pub(crate) struct BrainProjectionFixture {
     pub now: String,
     pub hmac_key_hex: String,
+    pub bundled_runtime_fingerprint_sha256: String,
     pub unrelated_fingerprint: String,
     pub configs: BTreeMap<String, Value>,
     pub records: BTreeMap<String, Value>,

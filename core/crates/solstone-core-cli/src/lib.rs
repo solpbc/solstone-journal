@@ -3,7 +3,7 @@
 
 use std::ffi::{OsStr, OsString};
 
-pub const USAGE: &str = "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n";
+pub const USAGE: &str = "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -12,6 +12,7 @@ pub enum Command {
     Indexer(Box<IndexerCommand>),
     JournalConfig(JournalConfigCommand),
     Local(LocalCommand),
+    Brain(BrainCommand),
     Spl(SplCommand),
 }
 
@@ -20,6 +21,67 @@ pub enum LocalCommand {
     ProbeNvidia,
     Plan,
     Connect,
+    Install(InstallCommand),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallCommand {
+    PinsLocal,
+    PathsLocal,
+    FingerprintLocal,
+    FingerprintMlx,
+    VerifySha256,
+    CudaTrust,
+    ManifestVulkan,
+    ManifestCuda,
+    ManifestModel,
+    InspectLocal,
+    InspectMlx,
+    ProbeBinary,
+    RunLocal,
+    RunMlx,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BrainCommand {
+    RefreshSession(BrainRefreshSessionOptions),
+    PrerequisiteRenewalSession(BrainPrerequisiteRenewalSessionOptions),
+    RecordRuntimeFailure(BrainRuntimeFailureOptions),
+    Inspect(BrainInspectOptions),
+    Fingerprint,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrainRefreshSessionOptions {
+    pub journal_override: Option<OsString>,
+    pub run_id: Option<String>,
+    pub expect: Option<BrainRefreshExpectArg>,
+    pub bundled_runtime_fingerprint_sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BrainRefreshExpectArg {
+    Absent,
+    Sha256(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrainPrerequisiteRenewalSessionOptions {
+    pub journal_override: Option<OsString>,
+    pub run_id: Option<String>,
+    pub expected_fingerprint_sha256: Option<String>,
+    pub bundled_runtime_fingerprint_sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrainRuntimeFailureOptions {
+    pub journal_override: Option<OsString>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrainInspectOptions {
+    pub journal_override: Option<OsString>,
+    pub bundled_runtime_fingerprint_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,6 +197,9 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("local") => {
             parse_local(rest).map(Command::Local)
         }
+        [command, rest @ ..] if command == OsStr::new("brain") => {
+            parse_brain(rest).map(Command::Brain)
+        }
         [command, rest @ ..] if command == OsStr::new("spl") => parse_spl(rest).map(Command::Spl),
         _ => Err(UsageError),
     }
@@ -145,6 +210,55 @@ fn parse_local(args: &[OsString]) -> Result<LocalCommand, UsageError> {
         [command] if command == OsStr::new("probe-nvidia") => Ok(LocalCommand::ProbeNvidia),
         [command] if command == OsStr::new("plan") => Ok(LocalCommand::Plan),
         [command] if command == OsStr::new("connect") => Ok(LocalCommand::Connect),
+        [command, rest @ ..] if command == OsStr::new("install") => {
+            parse_local_install(rest).map(LocalCommand::Install)
+        }
+        _ => Err(UsageError),
+    }
+}
+
+fn parse_local_install(args: &[OsString]) -> Result<InstallCommand, UsageError> {
+    match args {
+        [one, two] if one == OsStr::new("pins") && two == OsStr::new("local") => {
+            Ok(InstallCommand::PinsLocal)
+        }
+        [one, two] if one == OsStr::new("paths") && two == OsStr::new("local") => {
+            Ok(InstallCommand::PathsLocal)
+        }
+        [one, two] if one == OsStr::new("fingerprint") && two == OsStr::new("local") => {
+            Ok(InstallCommand::FingerprintLocal)
+        }
+        [one, two] if one == OsStr::new("fingerprint") && two == OsStr::new("mlx") => {
+            Ok(InstallCommand::FingerprintMlx)
+        }
+        [one, two] if one == OsStr::new("verify") && two == OsStr::new("sha256") => {
+            Ok(InstallCommand::VerifySha256)
+        }
+        [one, two] if one == OsStr::new("cuda") && two == OsStr::new("trust") => {
+            Ok(InstallCommand::CudaTrust)
+        }
+        [one, two] if one == OsStr::new("manifest") && two == OsStr::new("vulkan") => {
+            Ok(InstallCommand::ManifestVulkan)
+        }
+        [one, two] if one == OsStr::new("manifest") && two == OsStr::new("cuda") => {
+            Ok(InstallCommand::ManifestCuda)
+        }
+        [one, two] if one == OsStr::new("manifest") && two == OsStr::new("model") => {
+            Ok(InstallCommand::ManifestModel)
+        }
+        [one, two] if one == OsStr::new("inspect") && two == OsStr::new("local") => {
+            Ok(InstallCommand::InspectLocal)
+        }
+        [one, two] if one == OsStr::new("inspect") && two == OsStr::new("mlx") => {
+            Ok(InstallCommand::InspectMlx)
+        }
+        [one] if one == OsStr::new("probe-binary") => Ok(InstallCommand::ProbeBinary),
+        [one, two] if one == OsStr::new("run") && two == OsStr::new("local") => {
+            Ok(InstallCommand::RunLocal)
+        }
+        [one, two] if one == OsStr::new("run") && two == OsStr::new("mlx") => {
+            Ok(InstallCommand::RunMlx)
+        }
         _ => Err(UsageError),
     }
 }
@@ -159,6 +273,244 @@ fn parse_journal_config(args: &[OsString]) -> Result<JournalConfigCommand, Usage
         }
         _ => Err(UsageError),
     }
+}
+
+fn parse_brain(args: &[OsString]) -> Result<BrainCommand, UsageError> {
+    match args {
+        [command, rest @ ..] if command == OsStr::new("refresh") => {
+            parse_brain_refresh_session(rest).map(BrainCommand::RefreshSession)
+        }
+        [command, rest @ ..] if command == OsStr::new("prerequisite-renewal") => {
+            parse_brain_prerequisite_renewal_session(rest)
+                .map(BrainCommand::PrerequisiteRenewalSession)
+        }
+        [command, rest @ ..] if command == OsStr::new("record-runtime-failure") => {
+            parse_brain_runtime_failure(rest).map(BrainCommand::RecordRuntimeFailure)
+        }
+        [command, rest @ ..] if command == OsStr::new("inspect") => {
+            parse_brain_inspect(rest).map(BrainCommand::Inspect)
+        }
+        [command, rest @ ..] if command == OsStr::new("fingerprint") => {
+            parse_brain_fingerprint(rest).map(|()| BrainCommand::Fingerprint)
+        }
+        _ => Err(UsageError),
+    }
+}
+
+fn parse_brain_refresh_session(
+    args: &[OsString],
+) -> Result<BrainRefreshSessionOptions, UsageError> {
+    let mut journal_override = None;
+    let mut run_id = None;
+    let mut expect = None;
+    let mut bundled_runtime_fingerprint_sha256 = None;
+    let mut session = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--session") {
+            if session {
+                return Err(UsageError);
+            }
+            session = true;
+            index += 1;
+            continue;
+        }
+        if arg == OsStr::new("--journal") {
+            if journal_override.is_some() {
+                return Err(UsageError);
+            }
+            journal_override = Some(brain_os_value(args, index)?);
+            index += 2;
+            continue;
+        }
+        if arg == OsStr::new("--run-id") {
+            if run_id.is_some() {
+                return Err(UsageError);
+            }
+            run_id = Some(brain_string_value(args, index)?);
+            index += 2;
+            continue;
+        }
+        if arg == OsStr::new("--expect-fingerprint") {
+            if expect.is_some() {
+                return Err(UsageError);
+            }
+            expect = Some(BrainRefreshExpectArg::Sha256(brain_sha256_value(
+                args, index,
+            )?));
+            index += 2;
+            continue;
+        }
+        if arg == OsStr::new("--expect-absent") {
+            if expect.is_some() {
+                return Err(UsageError);
+            }
+            expect = Some(BrainRefreshExpectArg::Absent);
+            index += 1;
+            continue;
+        }
+        if arg == OsStr::new("--bundled-runtime-fingerprint") {
+            if bundled_runtime_fingerprint_sha256.is_some() {
+                return Err(UsageError);
+            }
+            bundled_runtime_fingerprint_sha256 = Some(brain_sha256_value(args, index)?);
+            index += 2;
+            continue;
+        }
+        return Err(UsageError);
+    }
+    if !session {
+        return Err(UsageError);
+    }
+    Ok(BrainRefreshSessionOptions {
+        journal_override,
+        run_id,
+        expect,
+        bundled_runtime_fingerprint_sha256,
+    })
+}
+
+fn parse_brain_prerequisite_renewal_session(
+    args: &[OsString],
+) -> Result<BrainPrerequisiteRenewalSessionOptions, UsageError> {
+    let mut journal_override = None;
+    let mut run_id = None;
+    let mut expected_fingerprint_sha256 = None;
+    let mut bundled_runtime_fingerprint_sha256 = None;
+    let mut session = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--session") {
+            if session {
+                return Err(UsageError);
+            }
+            session = true;
+            index += 1;
+            continue;
+        }
+        if arg == OsStr::new("--journal") {
+            if journal_override.is_some() {
+                return Err(UsageError);
+            }
+            journal_override = Some(brain_os_value(args, index)?);
+            index += 2;
+            continue;
+        }
+        if arg == OsStr::new("--run-id") {
+            if run_id.is_some() {
+                return Err(UsageError);
+            }
+            run_id = Some(brain_string_value(args, index)?);
+            index += 2;
+            continue;
+        }
+        if arg == OsStr::new("--expect-fingerprint") {
+            if expected_fingerprint_sha256.is_some() {
+                return Err(UsageError);
+            }
+            expected_fingerprint_sha256 = Some(brain_sha256_value(args, index)?);
+            index += 2;
+            continue;
+        }
+        if arg == OsStr::new("--bundled-runtime-fingerprint") {
+            if bundled_runtime_fingerprint_sha256.is_some() {
+                return Err(UsageError);
+            }
+            bundled_runtime_fingerprint_sha256 = Some(brain_sha256_value(args, index)?);
+            index += 2;
+            continue;
+        }
+        return Err(UsageError);
+    }
+    if !session {
+        return Err(UsageError);
+    }
+    Ok(BrainPrerequisiteRenewalSessionOptions {
+        journal_override,
+        run_id,
+        expected_fingerprint_sha256,
+        bundled_runtime_fingerprint_sha256,
+    })
+}
+
+fn parse_brain_runtime_failure(
+    args: &[OsString],
+) -> Result<BrainRuntimeFailureOptions, UsageError> {
+    let mut journal_override = None;
+    let mut index = 0;
+    while index < args.len() {
+        if args[index].as_os_str() != OsStr::new("--journal") || journal_override.is_some() {
+            return Err(UsageError);
+        }
+        journal_override = Some(brain_os_value(args, index)?);
+        index += 2;
+    }
+    Ok(BrainRuntimeFailureOptions { journal_override })
+}
+
+fn parse_brain_inspect(args: &[OsString]) -> Result<BrainInspectOptions, UsageError> {
+    let mut journal_override = None;
+    let mut bundled_runtime_fingerprint_sha256 = None;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--journal") {
+            if journal_override.is_some() {
+                return Err(UsageError);
+            }
+            journal_override = Some(brain_os_value(args, index)?);
+            index += 2;
+            continue;
+        }
+        if arg == OsStr::new("--bundled-runtime-fingerprint") {
+            if bundled_runtime_fingerprint_sha256.is_some() {
+                return Err(UsageError);
+            }
+            bundled_runtime_fingerprint_sha256 = Some(brain_sha256_value(args, index)?);
+            index += 2;
+            continue;
+        }
+        return Err(UsageError);
+    }
+    Ok(BrainInspectOptions {
+        journal_override,
+        bundled_runtime_fingerprint_sha256,
+    })
+}
+
+fn parse_brain_fingerprint(args: &[OsString]) -> Result<(), UsageError> {
+    if args.is_empty() {
+        Ok(())
+    } else {
+        Err(UsageError)
+    }
+}
+
+fn brain_os_value(args: &[OsString], index: usize) -> Result<OsString, UsageError> {
+    let value = args.get(index + 1).ok_or(UsageError)?;
+    if value.to_str().is_some_and(|value| value.starts_with('-')) {
+        return Err(UsageError);
+    }
+    Ok(value.clone())
+}
+
+fn brain_string_value(args: &[OsString], index: usize) -> Result<String, UsageError> {
+    let value = brain_os_value(args, index)?;
+    let value = value.into_string().map_err(|_| UsageError)?;
+    if value.is_empty() {
+        return Err(UsageError);
+    }
+    Ok(value)
+}
+
+fn brain_sha256_value(args: &[OsString], index: usize) -> Result<String, UsageError> {
+    let value = brain_string_value(args, index)?;
+    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(UsageError);
+    }
+    Ok(value)
 }
 
 fn parse_journal_config_read(args: &[OsString]) -> Result<JournalConfigReadOptions, UsageError> {
@@ -885,6 +1237,180 @@ mod tests {
     }
 
     #[test]
+    fn accepts_brain_verbs() {
+        let hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        assert_eq!(
+            evaluate_args(&args(&[
+                "brain",
+                "refresh",
+                "--session",
+                "--journal",
+                "/tmp/journal",
+                "--run-id",
+                "run-1",
+                "--expect-fingerprint",
+                hash,
+                "--bundled-runtime-fingerprint",
+                hash,
+            ])),
+            Ok(Command::Brain(BrainCommand::RefreshSession(
+                BrainRefreshSessionOptions {
+                    journal_override: Some(OsString::from("/tmp/journal")),
+                    run_id: Some("run-1".to_owned()),
+                    expect: Some(BrainRefreshExpectArg::Sha256(hash.to_owned())),
+                    bundled_runtime_fingerprint_sha256: Some(hash.to_owned()),
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(
+                &["brain", "refresh", "--expect-absent", "--session",]
+            )),
+            Ok(Command::Brain(BrainCommand::RefreshSession(
+                BrainRefreshSessionOptions {
+                    journal_override: None,
+                    run_id: None,
+                    expect: Some(BrainRefreshExpectArg::Absent),
+                    bundled_runtime_fingerprint_sha256: None,
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "brain",
+                "prerequisite-renewal",
+                "--session",
+                "--run-id",
+                "renew-1",
+                "--expect-fingerprint",
+                hash,
+                "--bundled-runtime-fingerprint",
+                hash,
+            ])),
+            Ok(Command::Brain(BrainCommand::PrerequisiteRenewalSession(
+                BrainPrerequisiteRenewalSessionOptions {
+                    journal_override: None,
+                    run_id: Some("renew-1".to_owned()),
+                    expected_fingerprint_sha256: Some(hash.to_owned()),
+                    bundled_runtime_fingerprint_sha256: Some(hash.to_owned()),
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "brain",
+                "record-runtime-failure",
+                "--journal",
+                "/tmp/journal",
+            ])),
+            Ok(Command::Brain(BrainCommand::RecordRuntimeFailure(
+                BrainRuntimeFailureOptions {
+                    journal_override: Some(OsString::from("/tmp/journal")),
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "brain",
+                "inspect",
+                "--journal",
+                "/tmp/journal",
+                "--bundled-runtime-fingerprint",
+                hash,
+            ])),
+            Ok(Command::Brain(BrainCommand::Inspect(BrainInspectOptions {
+                journal_override: Some(OsString::from("/tmp/journal")),
+                bundled_runtime_fingerprint_sha256: Some(hash.to_owned()),
+            })))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["brain", "inspect"])),
+            Ok(Command::Brain(BrainCommand::Inspect(BrainInspectOptions {
+                journal_override: None,
+                bundled_runtime_fingerprint_sha256: None,
+            })))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["brain", "fingerprint"])),
+            Ok(Command::Brain(BrainCommand::Fingerprint))
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_brain_args() {
+        let hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        for values in [
+            &["brain"][..],
+            &["brain", "unknown"][..],
+            &["brain", "refresh"][..],
+            &["brain", "prerequisite-renewal"][..],
+            &[
+                "brain",
+                "refresh",
+                "--session",
+                "--expect-fingerprint",
+                hash,
+                "--expect-absent",
+            ][..],
+            &["brain", "refresh", "--session", "--session"][..],
+            &["brain", "refresh", "--session", "--run-id"][..],
+            &[
+                "brain",
+                "refresh",
+                "--session",
+                "--journal",
+                "--run-id",
+                "id",
+            ][..],
+            &[
+                "brain",
+                "refresh",
+                "--session",
+                "--bundled-runtime-fingerprint",
+                "bad",
+            ][..],
+            &[
+                "brain",
+                "prerequisite-renewal",
+                "--session",
+                "--expect-absent",
+            ][..],
+            &[
+                "brain",
+                "prerequisite-renewal",
+                "--session",
+                "--expect-fingerprint",
+                "bad",
+            ][..],
+            &[
+                "brain",
+                "prerequisite-renewal",
+                "--session",
+                "--expect-fingerprint",
+                hash,
+                "--expect-fingerprint",
+                hash,
+            ][..],
+            &["brain", "record-runtime-failure", "--journal"][..],
+            &["brain", "inspect", "--unknown"][..],
+            &["brain", "fingerprint", "--journal", "/tmp/journal"][..],
+            &["brain", "inspect", "--journal"][..],
+            &["brain", "inspect", "--bundled-runtime-fingerprint", "bad"][..],
+            &["brain", "inspect", "--journal", "/a", "--journal", "/b"][..],
+            &[
+                "brain",
+                "record-runtime-failure",
+                "--journal",
+                "/a",
+                "--journal",
+                "/b",
+            ][..],
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+        }
+    }
+
+    #[test]
     fn rejects_indexer_verb_unknown_duplicate_and_disallowed_options() {
         for values in [
             &["indexer", "search", "--limit", "10", "--limit", "10"][..],
@@ -1261,7 +1787,7 @@ mod tests {
     fn usage_lists_supported_commands() {
         assert_eq!(
             USAGE,
-            "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
+            "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
         );
     }
 }

@@ -284,7 +284,7 @@ def test_resolve_local_backend_uses_pinned_cuda_artifact_when_present(
     monkeypatch.setattr(local_install.platform, "machine", lambda: "x86_64")
     monkeypatch.setattr(local_install.sys, "platform", "linux")
 
-    assert local_cuda.resolve_local_backend(local_install.CUDA_SERVER_PIN) == (
+    assert local_cuda.resolve_local_backend(local_install.cuda_server_pin()) == (
         local_cuda.BackendChoice(
             "cuda",
             "compute_cap sm_86 covered; driver CUDA 13 >= 13",
@@ -310,7 +310,7 @@ def test_resolve_local_backend_uses_byte_identical_vulkan_reason_without_platfor
     )
     monkeypatch.setattr(local_install.platform, "machine", lambda: "x86_64")
     monkeypatch.setattr(local_install.sys, "platform", "linux")
-    pin = replace(local_install.CUDA_SERVER_PIN, artifacts_by_key={})
+    pin = replace(local_install.cuda_server_pin(), artifacts_by_key={})
 
     assert local_cuda.resolve_local_backend(pin) == local_cuda.BackendChoice(
         "vulkan",

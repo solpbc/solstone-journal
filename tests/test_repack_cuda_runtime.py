@@ -42,6 +42,34 @@ def block_real_network() -> Iterator[None]:
 
     patch.setattr(socket.socket, "connect", blocked_connect)
     patch.setattr(socket.socket, "connect_ex", blocked_connect)
+    pin = runtime.local_install.CudaServerPin(
+        cuda_version=13,
+        embedded_arch_set=frozenset({"sm_86", "sm_89", "sm_120a", "sm_121a"}),
+        binary_name="llama-server",
+        device_flag_value="CUDA0",
+        visible_devices_env="CUDA_VISIBLE_DEVICES",
+        shared_wanted_files=(
+            "llama-server", "libllama-server-impl.so", "libllama-common.so.0",
+            "libmtmd.so.0", "libllama.so.0", "libggml.so.0", "libggml-base.so.0",
+            "libggml-cuda.so", "libcudart.so.13", "libcublas.so.13", "libcublasLt.so.13",
+        ),
+        cpu_wanted_files_by_arch={
+            "amd64": (
+                "libggml-cpu-x64.so", "libggml-cpu-sse42.so", "libggml-cpu-sandybridge.so",
+                "libggml-cpu-ivybridge.so", "libggml-cpu-piledriver.so", "libggml-cpu-haswell.so",
+                "libggml-cpu-skylakex.so", "libggml-cpu-cannonlake.so", "libggml-cpu-cascadelake.so",
+                "libggml-cpu-icelake.so", "libggml-cpu-cooperlake.so", "libggml-cpu-zen4.so",
+                "libggml-cpu-alderlake.so", "libggml-cpu-sapphirerapids.so",
+            ),
+            "arm64": (
+                "libggml-cpu-armv8.0_1.so", "libggml-cpu-armv8.2_1.so", "libggml-cpu-armv8.2_2.so",
+                "libggml-cpu-armv8.2_3.so", "libggml-cpu-armv8.6_1.so", "libggml-cpu-armv8.6_2.so",
+                "libggml-cpu-armv9.2_1.so", "libggml-cpu-armv9.2_2.so",
+            ),
+        },
+        artifacts_by_key={},
+    )
+    patch.setattr(runtime.local_install, "cuda_server_pin", lambda: pin)
     yield
     patch.undo()
 
@@ -153,7 +181,7 @@ class _Registry:
 
 
 def _wanted_files() -> tuple[str, ...]:
-    return runtime.CUDA_SERVER_PIN.wanted_files_for_arch(ARCH)
+    return runtime.local_install.cuda_server_pin().wanted_files_for_arch(ARCH)
 
 
 def _base_entries(
@@ -680,7 +708,7 @@ def test_pin_snippet_matches_local_install_shape(
 
     assert payload == {
         ARCH: {
-            "binary_name": runtime.CUDA_SERVER_PIN.binary_name,
+            "binary_name": runtime.local_install.cuda_server_pin().binary_name,
             "filename": artifact.tarball_path.name,
             "release_tag": "b10068",
             "sha256": artifact.tarball_sha256,

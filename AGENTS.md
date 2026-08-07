@@ -374,7 +374,7 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Schedules (`config/schedules.json`) | `solstone/think/schedule_config.py` |
 | Push devices (`config/push_devices.json`) | `solstone/think/push/devices.py` |
 | Local inference operational telemetry (`health/local-inference/YYYYMMDD.jsonl`) | `solstone/think/providers/local_admission.py` |
-| Active-brain state (`health/brain.json`, `health/brain-fingerprint.key`, `health/brain-refresh.lease`) | `solstone/think/providers/brain_state.py` |
+| Active-brain state (`health/brain.json`, `health/brain-fingerprint.key`, `health/brain-refresh.lease`) | `core/crates/solstone-core-brain/` via `solstone-core brain <verb>`; `solstone/think/providers/brain_state.py` is transport only |
 | Provider install status records and proof cache (`health/providers/{local,parakeet}.json`, `health/providers/{local,parakeet}.proof-cache.json`) | `solstone/think/providers/install_state.py` + `solstone/think/providers/artifact_proof.py` |
 | Provider install leases (`health/providers/{local,parakeet}.lease`) | `solstone/think/providers/install_lease.py` |
 | Provider runtime health and retry-token records (`health/providers/runtime/{local,parakeet}.json`, `health/providers/runtime/{local,parakeet}.retry-token.json`, `health/providers/runtime/{local,parakeet}.operation.lock`) | `solstone/think/providers/runtime_health.py` |

@@ -27,6 +27,7 @@ from solstone.think.models import (
     resolve_provider,
 )
 from solstone.think.providers.artifact_proof import ReadinessOutcome
+from solstone.think.providers import brain_state as brain_state_module
 from solstone.think.providers.brain_state import (
     BRAIN_REASON_CODES,
     begin_brain_refresh,
@@ -45,6 +46,32 @@ INSTALL_STATUS_FIELDS = {
 }
 CANONICAL_INSTALL_STATES = set(get_args(InstallState))
 REMOVED_PROVIDER = "mlx"
+
+
+@pytest.fixture(autouse=True)
+def native_brain_binary(monkeypatch):
+    """Exercise the transport shim against the workspace native binary."""
+    from solstone.think import core_handshake
+
+    binary = (
+        Path(__file__).resolve().parents[4]
+        / "core"
+        / "target"
+        / "debug"
+        / "solstone-core"
+    )
+    assert binary.is_file()
+    monkeypatch.setattr(
+        brain_state_module,
+        "_native_binary",
+        lambda **_kwargs: binary,
+    )
+    monkeypatch.setattr(
+        core_handshake,
+        "check_solstone_core_handshake",
+        lambda: core_handshake.CoreHandshakeResult("ok"),
+    )
+    monkeypatch.setattr(core_handshake, "helper_path_for_executable", lambda: binary)
 
 
 @pytest.fixture
@@ -1515,7 +1542,7 @@ def test_get_providers_uses_one_config_snapshot_across_lanes(
 ):
     from solstone.think import brain_health, models
     from solstone.think import journal_config as journal_config_module
-    from solstone.think.providers import brain_state, local_endpoint
+    from solstone.think.providers import local_endpoint
     from solstone.think.services import spp
 
     client, journal_path = settings_client_with_journal
@@ -1568,7 +1595,6 @@ def test_get_providers_uses_one_config_snapshot_across_lanes(
 
     monkeypatch.setattr(routes, "get_journal_config", read_once)
     monkeypatch.setattr(brain_health, "inspect_brain_state", inspect_once)
-    monkeypatch.setattr(brain_state, "read_journal_config", fail_reread)
     monkeypatch.setattr(local_endpoint, "read_journal_config", fail_reread)
     monkeypatch.setattr(spp, "read_journal_config", fail_reread)
     monkeypatch.setattr(journal_config_module, "read_journal_config", fail_reread)
@@ -1601,7 +1627,7 @@ def test_spp_narrow_routes_use_one_config_and_one_brain_inspection(
 ):
     from solstone.think import brain_health
     from solstone.think import journal_config as journal_config_module
-    from solstone.think.providers import brain_state, local_endpoint
+    from solstone.think.providers import local_endpoint
     from solstone.think.services import spp
 
     client, journal_path = settings_client_with_journal
@@ -1633,7 +1659,6 @@ def test_spp_narrow_routes_use_one_config_and_one_brain_inspection(
     monkeypatch.setattr(routes, "get_journal_config", read_once)
     monkeypatch.setattr(routes, "request_brain_refresh", lambda **_kwargs: False)
     monkeypatch.setattr(brain_health, "inspect_brain_state", inspect_once)
-    monkeypatch.setattr(brain_state, "read_journal_config", fail_reread)
     monkeypatch.setattr(local_endpoint, "read_journal_config", fail_reread)
     monkeypatch.setattr(spp, "read_journal_config", fail_reread)
     monkeypatch.setattr(journal_config_module, "read_journal_config", fail_reread)

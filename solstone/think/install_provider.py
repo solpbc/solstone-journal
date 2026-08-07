@@ -17,7 +17,7 @@ from typing import Any
 
 from solstone.think.providers import local_install, mlx_install, parakeet_install
 from solstone.think.providers.fit_report import FitReport
-from solstone.think.providers.install_lease import acquire_install_lease
+from solstone.think.providers.install_lease import acquire_install_lease, probe_install_lease_free
 from solstone.think.providers.install_state import (
     IN_FLIGHT_STATES,
     begin_or_replace_install_attempt,
@@ -127,28 +127,17 @@ def _install_mlx_local() -> int:
         return 0
     fingerprint = mlx_install.target_fingerprint(spec.name)
     target_sha = _target_sha(fingerprint)
-    lease = acquire_install_lease("local")
-    if lease is None:
+    if not probe_install_lease_free("local"):
         return _observe_same_target("local", target_sha)
     try:
         from solstone.think.providers import fit_report
 
         _render_fit_report(fit_report.build_mlx_fit_report(spec.name))
-        attempt_status = begin_or_replace_install_attempt(
-            "local",
-            fingerprint,
-            initial_state="resolving",
-            owner={"entry": "install_provider"},
-        )
-        status = mlx_install.install_local_mlx(
-            spec.name,
-            lease=lease,
-            attempt_status=attempt_status,
-        )
+        status = mlx_install.install_local_mlx(spec.name, owner={"entry": "install_provider"})
+    except mlx_install.MLXInstallBusyError:
+        return _observe_same_target("local", target_sha)
     except Exception as exc:
         return _handle_install_failure("local", exc)
-    finally:
-        lease.release()
     print(json.dumps(status, indent=2))
     return _status_exit_code(status)
 
@@ -214,24 +203,17 @@ def main() -> int:
         return 0
     fingerprint = local_install.target_fingerprint()
     target_sha = _target_sha(fingerprint)
-    lease = acquire_install_lease("local")
-    if lease is None:
+    if not probe_install_lease_free("local"):
         return _observe_same_target("local", target_sha)
     try:
         from solstone.think.providers import fit_report
 
         _render_fit_report(fit_report.build_local_fit_report(local_install.LOCAL_MODEL))
-        attempt_status = begin_or_replace_install_attempt(
-            "local",
-            fingerprint,
-            initial_state="resolving",
-            owner={"entry": "install_provider"},
-        )
-        status = local_install.install_local(lease=lease, attempt_status=attempt_status)
+        status = local_install.install_local(owner={"entry": "install_provider"})
+    except local_install.LocalInstallBusyError:
+        return _observe_same_target("local", target_sha)
     except Exception as exc:
         return _handle_install_failure("local", exc)
-    finally:
-        lease.release()
     print(json.dumps(status, indent=2))
     return _status_exit_code(status)
 

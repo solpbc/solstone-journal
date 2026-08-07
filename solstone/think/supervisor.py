@@ -2886,7 +2886,7 @@ def _observe_linux_local_provider_truth() -> ProviderTruthObservation:
             gpu_vram_mib=probe.tiering_memory_mib,
             context_tokens=tier.context_tokens,
             parallel_slots=tier.parallel_slots,
-            visible_devices_env=local_install.CUDA_SERVER_PIN.visible_devices_env,
+            visible_devices_env=local_install.cuda_server_pin().visible_devices_env,
             backend_reason=str(readiness.host["backend_reason"]),
         )
     else:

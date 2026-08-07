@@ -6,8 +6,11 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import sys
 import threading
+import time
+from typing import Any
 
 from solstone.apps.thinking.install_copy import (
     LOCAL_MEMORY_WARNING_LOW_TEMPLATE,
@@ -17,11 +20,7 @@ from solstone.apps.thinking.install_copy import (
 from solstone.think.models import LOCAL_MODEL, QWEN_35_9B
 from solstone.think.providers import local_install, mlx_install
 from solstone.think.providers.fit_report import FitReport
-from solstone.think.providers.install_lease import (
-    InstallLease,
-    acquire_install_lease,
-    probe_install_lease_free,
-)
+from solstone.think.providers.install_lease import acquire_install_lease, probe_install_lease_free
 from solstone.think.providers.install_state import (
     IN_FLIGHT_STATES,
     InstallStatus,
@@ -47,7 +46,7 @@ from solstone.think.providers.memory import (
 
 logger = logging.getLogger(__name__)
 
-_INSTALL_THREADS: dict[str, threading.Thread] = {}
+_INSTALL_PROCESSES: dict[str, Any] = {}
 _INSTALL_LOCK = threading.Lock()
 _MLX_MODEL_LABEL = f"qwen 3.5 9B VLM — {gb_label(MLX_AVAILABLE_FLOOR_BYTES)} GB"
 
@@ -58,21 +57,6 @@ class LocalBootstrapUnavailableError(RuntimeError):
 
 class LocalBootstrapStartError(RuntimeError):
     """Raised when the bootstrap worker could not be started."""
-
-
-def _ack_install_transfer(
-    ack: threading.Event,
-    cancel: threading.Event | None,
-    transfer_lock: threading.Lock | None,
-) -> bool:
-    if cancel is None or transfer_lock is None:
-        ack.set()
-        return True
-    with transfer_lock:
-        if cancel.is_set():
-            return False
-        ack.set()
-        return True
 
 
 def _is_mlx_backend() -> bool:
@@ -302,147 +286,76 @@ def get_state(model: str) -> dict[str, int | str | None]:
 
 
 def start_bootstrap(model: str) -> tuple[dict[str, str], int]:
-    """Start the local provider bootstrap worker if needed."""
+    """Launch native installation and wait briefly for its durable initial state."""
     if not resolve_local_endpoint().is_bundled:
-        logger.info("local bootstrap refused: BYO local endpoint is active")
         raise LocalBootstrapUnavailableError("BYO local endpoint is active")
-
     model_id = _resolve_model_id(model)
-    readiness = (
-        mlx_install.inspect_readiness(model_id)
-        if _is_mlx_backend()
-        else local_install.inspect_readiness(model_id)
-    )
+    readiness = mlx_install.inspect_readiness(model_id) if _is_mlx_backend() else local_install.inspect_readiness(model_id)
     if readiness.ready:
         return {"install_state": "installed"}, 200
     if readiness.status in {"proof-unavailable", "host-ineligible"}:
         raise LocalBootstrapUnavailableError(readiness.reason_code)
-
     availability = get_availability_payload(model_id)
     installed = bool(availability["binary_present"] and availability["model_present"])
-    fingerprint = (
-        mlx_install.target_fingerprint(model_id)
-        if _is_mlx_backend()
-        else local_install.target_fingerprint(model_id)
-    )
-    from solstone.think.providers.install_state import (
-        canonical_fingerprint,
-        fingerprint_sha256,
-    )
-
+    fingerprint = mlx_install.target_fingerprint(model_id) if _is_mlx_backend() else local_install.target_fingerprint(model_id)
+    from solstone.think.providers.install_state import canonical_fingerprint, fingerprint_sha256
     target_sha = fingerprint_sha256(canonical_fingerprint(fingerprint))
-    lease = acquire_install_lease(local_install.LOCAL_PROVIDER_NAME)
-    if lease is None:
+    if not probe_install_lease_free(local_install.LOCAL_PROVIDER_NAME):
         status = _read_status()
-        if (
-            status["install_state"] in IN_FLIGHT_STATES
-            and status["target_fingerprint_sha256"] == target_sha
-        ):
+        if status["install_state"] in IN_FLIGHT_STATES and status["target_fingerprint_sha256"] == target_sha:
             return {"install_state": status["install_state"]}, 200
-        return {
-            "install_state": status["install_state"],
-            "reason_code": "install_busy",
-        }, 409
-
-    try:
-        with _INSTALL_LOCK:
-            status = _read_status()
-            if readiness.ready:
-                lease.release()
-                return {"install_state": "installed"}, 200
-
-            if status["install_state"] == "idle" and installed:
-                lease.release()
-                return {"install_state": "installed"}, 200
-
-            if (
-                status["install_state"] in IN_FLIGHT_STATES
-                and status["target_fingerprint_sha256"] == target_sha
-            ):
-                lease.release()
-                return {"install_state": status["install_state"]}, 200
-
-            # Only genuinely-missing artifacts reach here: build the host-fit report
-            # and gate the download. Already-installed/in-flight paths returned above
-            # without ever constructing a fit report.
-            report = _fit_report_for_model(model_id)
-            blocked_reason = _blocked_reason(report)
-            if blocked_reason:
-                lease.release()
-                raise LocalBootstrapUnavailableError(blocked_reason)
-
-            disk_reason = _disk_blocked_reason(report)
-            if disk_reason:
-                lease.release()
-                raise LocalBootstrapUnavailableError(disk_reason)
-
-            worker = (
-                _mlx_bootstrap_worker if _is_mlx_backend() else _run_bootstrap_worker
-            )
-            attempt_status = begin_or_replace_install_attempt(
-                local_install.LOCAL_PROVIDER_NAME,
-                fingerprint,
-                initial_state="downloading",
-                owner={"entry": "thinking_bootstrap"},
-            )
-            ack = threading.Event()
-            cancel = threading.Event()
-            transfer_lock = threading.Lock()
-            thread = threading.Thread(
-                target=worker,
-                args=(model_id, lease, attempt_status, ack, cancel, transfer_lock),
-                name=f"local-provider-bootstrap-{model_id}",
-                daemon=True,
-            )
-            _INSTALL_THREADS[model_id] = thread
-    except LocalBootstrapUnavailableError:
-        lease.release()
-        raise
-    except Exception as exc:
-        lease.release()
-        if "attempt_status" in locals():
-            try:
-                _write_status(
-                    transition_state(
-                        attempt_status,
-                        new_state="failed",
-                        error=str(exc),
-                        error_code=getattr(exc, "reason_code", None),
-                    )
-                )
-            except Exception:
-                logger.exception("could not mark failed local bootstrap construction")
-        raise
-
-    try:
-        thread.start()
-    except Exception as exc:
-        with _INSTALL_LOCK:
-            if _INSTALL_THREADS.get(model_id) is thread:
-                _INSTALL_THREADS.pop(model_id, None)
-        lease.release()
-        _write_status(
-            transition_state(
-                _read_status(),
-                new_state="failed",
-                error=str(exc),
-                error_code=getattr(exc, "reason_code", None),
-            )
-        )
-        raise LocalBootstrapStartError(str(exc)) from exc
-    if not ack.wait(timeout=5.0):
-        cancelled = False
-        with transfer_lock:
-            if not ack.is_set():
-                cancel.set()
-                cancelled = True
-        if cancelled:
+        return {"install_state": status["install_state"], "reason_code": "install_busy"}, 409
+    with _INSTALL_LOCK:
+        status = _read_status()
+        if readiness.ready or (status["install_state"] == "idle" and installed):
+            return {"install_state": "installed"}, 200
+        if status["install_state"] in IN_FLIGHT_STATES and status["target_fingerprint_sha256"] == target_sha:
+            return {"install_state": status["install_state"]}, 200
+        report = _fit_report_for_model(model_id)
+        blocked_reason = _blocked_reason(report) or _disk_blocked_reason(report)
+        if blocked_reason:
+            raise LocalBootstrapUnavailableError(blocked_reason)
+        try:
+            process = mlx_install.spawn_install_local_mlx(model_id, owner={"entry": "thinking_bootstrap"}) if _is_mlx_backend() else local_install.spawn_install_local(model_id, owner={"entry": "thinking_bootstrap"})
+        except Exception as exc:
+            _mark_native_launch_failure(fingerprint, str(exc))
+            raise LocalBootstrapStartError(str(exc)) from exc
+    deadline = time.monotonic() + 5.0
+    attempt_context: InstallStatus | None = None
+    while time.monotonic() < deadline:
+        status = _read_status()
+        if status["target_fingerprint_sha256"] == target_sha:
+            attempt_context = status
+        if status["install_state"] in IN_FLIGHT_STATES and status["target_fingerprint_sha256"] == target_sha:
             with _INSTALL_LOCK:
-                if _INSTALL_THREADS.get(model_id) is thread:
-                    _INSTALL_THREADS.pop(model_id, None)
-            lease.release()
-            raise LocalBootstrapStartError("local bootstrap worker did not acknowledge")
-    return {"install_state": "downloading"}, 202
+                _INSTALL_PROCESSES[model_id] = process
+            threading.Thread(target=_reap_process, args=(model_id, process), name=f"local-provider-reaper-{model_id}", daemon=True).start()
+            return {"install_state": status["install_state"]}, 202
+        if process.poll() is not None:
+            if process.returncode == 75:
+                return {"install_state": _read_status()["install_state"], "reason_code": "install_busy"}, 409
+            launch_error = getattr(process, "launch_error", None)
+            if launch_error is not None:
+                _mark_native_launch_failure(fingerprint, str(launch_error))
+            raise LocalBootstrapStartError("local bootstrap process exited before starting")
+        time.sleep(0.05)
+    if _is_mlx_backend() and bool(getattr(process, "pending", False)):
+        with _INSTALL_LOCK:
+            _INSTALL_PROCESSES[model_id] = process
+        threading.Thread(target=_reap_process, args=(model_id, process), name=f"local-provider-reaper-{model_id}", daemon=True).start()
+        return {"install_state": "resolving"}, 202
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+    _mark_native_launch_failure(
+        fingerprint,
+        "local bootstrap process did not publish initial status",
+        attempt=attempt_context,
+    )
+    raise LocalBootstrapStartError("local bootstrap process did not publish initial status")
 
 
 def _fit_report_for_model(model_id: str) -> FitReport:
@@ -469,69 +382,47 @@ def _disk_blocked_reason(report: FitReport) -> str:
     return ""
 
 
-def _mlx_bootstrap_worker(
-    model: str,
-    lease: InstallLease,
-    attempt_status: InstallStatus,
-    ack: threading.Event,
-    cancel: threading.Event | None = None,
-    transfer_lock: threading.Lock | None = None,
-) -> None:
-    current_thread = threading.current_thread()
-    if not _ack_install_transfer(ack, cancel, transfer_lock):
-        with _INSTALL_LOCK:
-            if _INSTALL_THREADS.get(model) is current_thread:
-                _INSTALL_THREADS.pop(model, None)
-        return
-    try:
-        mlx_install.install_local_mlx(
-            model,
-            lease=lease,
-            attempt_status=attempt_status,
-        )
-    except Exception:
-        logger.exception("local MLX provider bootstrap failed")
-    finally:
-        lease.release()
-        with _INSTALL_LOCK:
-            if _INSTALL_THREADS.get(model) is current_thread:
-                _INSTALL_THREADS.pop(model, None)
+def _reap_process(model: str, process: Any) -> None:
+    process.wait()
+    with _INSTALL_LOCK:
+        if _INSTALL_PROCESSES.get(model) is process:
+            _INSTALL_PROCESSES.pop(model, None)
 
 
-def _run_bootstrap_worker(
-    model: str,
-    lease: InstallLease,
-    attempt_status: InstallStatus,
-    ack: threading.Event,
-    cancel: threading.Event | None = None,
-    transfer_lock: threading.Lock | None = None,
+def _mark_native_launch_failure(
+    target: dict[str, Any],
+    message: str,
+    *,
+    attempt: InstallStatus | None = None,
 ) -> None:
-    current_thread = threading.current_thread()
-    if not _ack_install_transfer(ack, cancel, transfer_lock):
-        with _INSTALL_LOCK:
-            if _INSTALL_THREADS.get(model) is current_thread:
-                _INSTALL_THREADS.pop(model, None)
+    """Durably fail a missing launch or the exact attempt observed by this poll."""
+    lease = acquire_install_lease(local_install.LOCAL_PROVIDER_NAME)
+    if lease is None:
         return
     try:
-        local_install.install_local(
-            model,
-            lease=lease,
-            attempt_status=attempt_status,
-        )
-    except Exception as exc:
-        logger.exception("local provider bootstrap failed")
-        _write_status(
-            transition_state(
-                _read_status(),
-                new_state="failed",
-                error=str(exc),
-                error_code=getattr(exc, "reason_code", None),
+        if attempt is None:
+            status = begin_or_replace_install_attempt(
+                local_install.LOCAL_PROVIDER_NAME,
+                target,
+                initial_state="resolving",
+                owner={"entry": "thinking_bootstrap", "failure": "native_launch"},
             )
-        )
-    else:
-        logger.info("local provider bootstrap complete")
+            error_code = "native_launch_failed"
+        else:
+            status = attempt
+            error_code = "native_launch_timeout"
+        try:
+            _write_status(
+                transition_state(
+                    status,
+                    new_state="failed",
+                    error=message,
+                    error_code=error_code,
+                )
+            )
+        except Exception:
+            if attempt is None:
+                raise
+            logger.warning("native bootstrap timeout failure was superseded", exc_info=True)
     finally:
         lease.release()
-        with _INSTALL_LOCK:
-            if _INSTALL_THREADS.get(model) is current_thread:
-                _INSTALL_THREADS.pop(model, None)

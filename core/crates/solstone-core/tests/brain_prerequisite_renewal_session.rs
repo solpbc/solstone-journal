@@ -1,0 +1,458 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Output, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use chrono::{Duration as ChronoDuration, Utc};
+use serde_json::{Value, json};
+use solstone_core_journal_io::{LeaseOptions, acquire_file_lease};
+
+const RESULT_SCHEMA: &str = "solstone.brain.prerequisite_renewal.result.v1";
+const READY_SCHEMA: &str = "solstone.brain.prerequisite_renewal.ready.v1";
+
+fn bin() -> &'static str {
+    env!("CARGO_BIN_EXE_solstone-core")
+}
+
+fn temp_path(name: &str) -> PathBuf {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time should be available")
+        .as_nanos();
+    std::env::temp_dir().join(format!("solstone-core-brain-renewal-{name}-{stamp}"))
+}
+
+fn write(root: &Path, relative: &str, contents: &[u8]) {
+    let path = root.join(relative);
+    fs::create_dir_all(path.parent().expect("test path has parent")).expect("create parent");
+    fs::write(path, contents).expect("write test file");
+}
+
+fn ready_component() -> Value {
+    let now = Utc::now();
+    json!({
+        "status": "ok",
+        "observed_at": now.to_rfc3339(),
+        "expires_at": (now + ChronoDuration::hours(1)).to_rfc3339(),
+    })
+}
+
+fn ready_outcome() -> Value {
+    json!({
+        "configuration": ready_component(),
+        "lane_prerequisites": ready_component(),
+        "generate": ready_component(),
+        "cogitate": ready_component(),
+    })
+}
+
+fn configured_spp_journal(name: &str) -> PathBuf {
+    let root = temp_path(name);
+    fs::create_dir(&root).expect("create root");
+    let config = json!({
+        "providers": {
+            "active": {"model": "served-model", "provider": "local"},
+            "local": {
+                "credential": "endpoint-credential",
+                "endpoint_url": "http://127.0.0.1:9099",
+                "served_model_id": "served-model",
+            },
+        },
+        "services": {
+            "confidential": {
+                "credential_fingerprint_sha256": "cca56da30e3c8a13a11277193fd3263961e2e3d6d9f98038a91dac05e8fde16a",
+                "endpoint_url": "http://127.0.0.1:9099",
+                "prior_active": {"provider": "local"},
+                "served_model_id": "served-model",
+            },
+        },
+    });
+    write(
+        &root,
+        "config/journal.json",
+        &serde_json::to_vec(&config).expect("encode config"),
+    );
+    write(&root, "health/brain-fingerprint.key", &[7_u8; 32]);
+    let permit = solstone_core_brain::begin_refresh(&root, Utc::now(), None, None, false, None)
+        .expect("begin seed refresh")
+        .expect("seed permit");
+    solstone_core_brain::finish_refresh(&root, permit, ready_outcome(), Utc::now(), None)
+        .expect("finish seed refresh");
+    root
+}
+
+fn configured_non_spp_journal(name: &str) -> PathBuf {
+    let root = temp_path(name);
+    fs::create_dir(&root).expect("create root");
+    let config = json!({
+        "env": {"ANTHROPIC_API_KEY": "sk-test"},
+        "providers": {"active": {"provider": "anthropic"}},
+    });
+    write(
+        &root,
+        "config/journal.json",
+        &serde_json::to_vec(&config).expect("encode config"),
+    );
+    write(&root, "health/brain-fingerprint.key", &[7_u8; 32]);
+    root
+}
+
+fn probe(component: Value) -> Value {
+    json!({
+        "schema": "solstone.brain.prerequisite_renewal.probe.v1",
+        "lane_prerequisites": component,
+    })
+}
+
+fn abandon(reason_code: &str) -> Value {
+    json!({
+        "schema": "solstone.brain.prerequisite_renewal.abandon.v1",
+        "reason_code": reason_code,
+    })
+}
+
+fn terminal() -> Value {
+    json!({"schema": "solstone.brain.prerequisite_renewal.terminal.v1"})
+}
+
+fn start(root: &Path) -> Child {
+    start_with_expected_fingerprint(root, None)
+}
+
+fn start_with_expected_fingerprint(root: &Path, expected: Option<&str>) -> Child {
+    let mut command = Command::new(bin());
+    command
+        .args(["brain", "prerequisite-renewal", "--session", "--journal"])
+        .arg(root);
+    if let Some(expected) = expected {
+        command.args(["--expect-fingerprint", expected]);
+    }
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("solstone-core should execute")
+}
+
+fn finish(mut child: Child, records: &[Value]) -> Output {
+    let mut stdin = child.stdin.take().expect("stdin should be piped");
+    for record in records {
+        serde_json::to_writer(&mut stdin, record).expect("encode input record");
+        stdin.write_all(b"\n").expect("write input newline");
+    }
+    drop(stdin);
+    child.wait_with_output().expect("wait for solstone-core")
+}
+
+fn parse_output(output: &Output) -> Value {
+    serde_json::from_slice(&output.stdout).expect("session should emit JSON")
+}
+
+fn parse_ready_and_result(output: &Output) -> Option<Value> {
+    let mut lines = output
+        .stdout
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty());
+    let ready: Value = serde_json::from_slice(lines.next().expect("ready line"))
+        .expect("ready line should be JSON");
+    assert_eq!(ready["schema"], READY_SCHEMA);
+    let result = lines
+        .next()
+        .map(|line| serde_json::from_slice(line).expect("result line should be JSON"));
+    assert!(
+        lines.next().is_none(),
+        "session should emit at most one result"
+    );
+    result
+}
+
+fn assert_abandoned(output: &Output, status: i32) {
+    assert_eq!(
+        output.status.code(),
+        Some(status),
+        "stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result = parse_ready_and_result(output).expect("abandonment result");
+    assert_eq!(result["schema"], RESULT_SCHEMA);
+    assert_eq!(result["kind"], "abandoned");
+    assert_eq!(result["reason_code"], "nvattest_unavailable");
+    assert_eq!(result["component"], "lane_prerequisites");
+}
+
+fn assert_lease_free(root: &Path) {
+    assert!(
+        acquire_file_lease(
+            solstone_core_brain::brain_refresh_lease_path(root),
+            LeaseOptions::default(),
+        )
+        .expect("probe lease")
+        .is_some(),
+        "refresh lease should be released"
+    );
+}
+
+fn direct_projection_after_finish(root: &Path, component: Value) -> Value {
+    let permit =
+        match solstone_core_brain::begin_prerequisite_renewal(root, Utc::now(), None, None, None) {
+            solstone_core_brain::BeginPrerequisiteRenewal::Started(permit) => permit,
+            result => panic!("expected renewal permit, got {result:?}"),
+        };
+    solstone_core_brain::finish_prerequisite_renewal(root, permit, component, Utc::now(), None)
+        .expect("finish renewal");
+    let config = solstone_core_brain::read_journal_config(root)
+        .expect("read config")
+        .config
+        .unwrap_or_default();
+    let projection = solstone_core_brain::inspect_brain_state(root, &config, Utc::now()).projection;
+    json!({
+        "schema": RESULT_SCHEMA,
+        "kind": "projection",
+        "projection": {
+            "aggregate_state": projection.aggregate_state,
+            "reason_code": projection.reason_code,
+            "active_lane": projection.active_lane,
+            "active_provider": projection.active_provider,
+            "active_model": projection.active_model,
+            "fingerprint_sha256": projection.fingerprint_sha256,
+            "runtime_transition_in_progress": projection.runtime_transition_in_progress,
+        },
+    })
+}
+
+#[test]
+fn clean_terminal_finishes_and_reports_the_fresh_inspection_projection() {
+    let component = ready_component();
+    let session_root = configured_spp_journal("clean-session");
+    let direct_root = configured_spp_journal("clean-direct");
+    let output = finish(
+        start(&session_root),
+        &[probe(component.clone()), terminal()],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        parse_ready_and_result(&output).expect("projection result"),
+        direct_projection_after_finish(&direct_root, component)
+    );
+    fs::remove_dir_all(session_root).expect("cleanup session root");
+    fs::remove_dir_all(direct_root).expect("cleanup direct root");
+}
+
+#[test]
+fn bare_eof_abandons_without_a_report_and_releases_the_lease() {
+    let root = configured_spp_journal("bare-eof");
+    let output = finish(start(&root), &[]);
+    assert_eq!(output.status.code(), Some(69));
+    assert!(parse_ready_and_result(&output).is_none());
+    assert_lease_free(&root);
+    let record: Value = serde_json::from_slice(
+        &fs::read(solstone_core_brain::brain_state_path(&root)).expect("read brain record"),
+    )
+    .expect("record JSON");
+    assert!(record["checking"].is_null());
+    assert_eq!(record["reason_code"], "nvattest_unavailable");
+    assert_eq!(
+        record["evidence"]["lane_prerequisites"]["reason_code"],
+        "nvattest_unavailable"
+    );
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn timeout_abandons_a_live_session_without_wedging_the_lease() {
+    let root = configured_spp_journal("timeout");
+    let mut child = Command::new(bin())
+        .args(["brain", "prerequisite-renewal", "--session", "--journal"])
+        .arg(&root)
+        .env("SOLSTONE_CORE_BRAIN_SESSION_TIMEOUT_MS", "50")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("solstone-core should execute");
+    // 🔴 Hold stdin OPEN for the whole wait. The behaviour under test is a caller
+    // that HANGS — alive, silent, never closing — and the child bounding itself so
+    // a stuck caller cannot wedge the permit forever. Closing stdin is the other
+    // signal entirely: a bare EOF means the caller is gone, and it exits 69.
+    //
+    // The first version slept past the bound and then dropped stdin, racing the
+    // two signals against each other; on a loaded host the child reached its
+    // select loop after stdin had already closed and exited 69 against an
+    // assertion of 0. ⚠ A timing-dependent test that passes by luck is worse than
+    // none, so the fix is to stop sending the other signal — not to widen the sleep.
+    //
+    // ⚠ `wait_with_output` is what drains stdout and stderr while it waits. A
+    // poll loop that does not drain them deadlocks the child on a full pipe the
+    // moment it logs enough, which is the documented hazard of every piped child
+    // in this tree.
+    let stdin = child.stdin.take().expect("stdin should be piped");
+    let output = child
+        .wait_with_output()
+        .expect("wait for self-bounded child");
+    drop(stdin);
+    assert_abandoned(&output, 0);
+    assert_lease_free(&root);
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn malformed_json_abandons_with_protocol_exit() {
+    let root = configured_spp_journal("malformed");
+    let mut child = start(&root);
+    let mut stdin = child.stdin.take().expect("stdin should be piped");
+    stdin
+        .write_all(b"{not json}\n")
+        .expect("write malformed input");
+    drop(stdin);
+    let output = child.wait_with_output().expect("wait for child");
+    assert_abandoned(&output, 76);
+    assert_lease_free(&root);
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn terminal_before_probe_abandons_with_protocol_exit() {
+    let root = configured_spp_journal("terminal-first");
+    let output = finish(start(&root), &[terminal()]);
+    assert_abandoned(&output, 76);
+    assert_lease_free(&root);
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn duplicate_probe_abandons_with_protocol_exit() {
+    let root = configured_spp_journal("duplicate-probe");
+    let output = finish(
+        start(&root),
+        &[probe(ready_component()), probe(ready_component())],
+    );
+    assert_abandoned(&output, 76);
+    assert_lease_free(&root);
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn caller_abandon_records_its_reason_and_target_component() {
+    let root = configured_spp_journal("caller-abandon");
+    let output = finish(start(&root), &[abandon("attestation_expired"), terminal()]);
+    assert_eq!(output.status.code(), Some(0));
+    let result = parse_ready_and_result(&output).expect("abandonment result");
+    assert_eq!(result["schema"], RESULT_SCHEMA);
+    assert_eq!(result["kind"], "abandoned");
+    assert_eq!(result["reason_code"], "attestation_expired");
+    assert_eq!(result["component"], "lane_prerequisites");
+    assert_lease_free(&root);
+    let record: Value = serde_json::from_slice(
+        &fs::read(solstone_core_brain::brain_state_path(&root)).expect("read brain record"),
+    )
+    .expect("record JSON");
+    assert!(record["checking"].is_null());
+    assert_eq!(record["reason_code"], "attestation_expired");
+    assert_eq!(
+        record["evidence"]["lane_prerequisites"]["reason_code"],
+        "attestation_expired"
+    );
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn abandon_followed_by_another_request_is_a_protocol_violation() {
+    let root = configured_spp_journal("duplicate-abandon");
+    let output = finish(
+        start(&root),
+        &[abandon("attestation_expired"), probe(ready_component())],
+    );
+    assert_abandoned(&output, 76);
+    assert_lease_free(&root);
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn busy_exits_immediately_without_writing() {
+    let root = configured_spp_journal("busy");
+    let before = fs::read(solstone_core_brain::brain_state_path(&root)).expect("read record");
+    let _lease = acquire_file_lease(
+        solstone_core_brain::brain_refresh_lease_path(&root),
+        LeaseOptions::default(),
+    )
+    .expect("acquire holder lease")
+    .expect("holder lease");
+    let output = finish(start(&root), &[]);
+    assert_eq!(output.status.code(), Some(0));
+    let result = parse_output(&output);
+    assert_eq!(result["schema"], RESULT_SCHEMA);
+    assert_eq!(result["kind"], "not_started");
+    assert_eq!(result["status"], "busy");
+    assert_eq!(result["reason"], "lease_held");
+    assert_eq!(
+        fs::read(solstone_core_brain::brain_state_path(&root)).unwrap(),
+        before
+    );
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn unsafe_exits_immediately_for_a_non_spp_lane() {
+    let root = configured_non_spp_journal("unsafe");
+    let output = finish(start(&root), &[]);
+    assert_eq!(output.status.code(), Some(0));
+    let result = parse_output(&output);
+    assert_eq!(result["schema"], RESULT_SCHEMA);
+    assert_eq!(result["kind"], "not_started");
+    assert_eq!(result["status"], "unsafe");
+    assert_eq!(result["reason"], "non_spp_lane");
+    assert!(!solstone_core_brain::brain_state_path(&root).exists());
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn mismatched_expected_fingerprint_exits_unsafe_without_writing() {
+    let root = configured_spp_journal("expected-mismatch");
+    let record_path = solstone_core_brain::brain_state_path(&root);
+    let before = fs::read(&record_path).expect("read record");
+    let output = finish(
+        start_with_expected_fingerprint(&root, Some(&"0".repeat(64))),
+        &[],
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    let result = parse_output(&output);
+    assert_eq!(result["schema"], RESULT_SCHEMA);
+    assert_eq!(result["kind"], "not_started");
+    assert_eq!(result["status"], "unsafe");
+    assert_eq!(result["reason"], "fingerprint_mismatch");
+    assert_eq!(fs::read(record_path).expect("read record"), before);
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn matching_expected_fingerprint_reaches_a_real_session_permit() {
+    let root = configured_spp_journal("expected-match");
+    let record: Value = serde_json::from_slice(
+        &fs::read(solstone_core_brain::brain_state_path(&root)).expect("read record"),
+    )
+    .expect("record JSON");
+    let expected = record["fingerprint_sha256"]
+        .as_str()
+        .expect("seed record fingerprint")
+        .to_owned();
+    let output = finish(
+        start_with_expected_fingerprint(&root, Some(&expected)),
+        &[abandon("attestation_expired"), terminal()],
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    let result = parse_ready_and_result(&output).expect("abandonment result");
+    assert_eq!(result["kind"], "abandoned");
+    fs::remove_dir_all(root).expect("cleanup root");
+}
