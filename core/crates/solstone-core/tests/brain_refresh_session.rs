@@ -5,8 +5,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
-use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{Duration as ChronoDuration, Utc};
 use serde_json::{Value, json};
@@ -237,10 +236,18 @@ fn timeout_abandons_a_live_session_without_wedging_the_lease() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("solstone-core should execute");
+    // Hold stdin OPEN for the whole wait. The behavior under test is a caller
+    // that hangs — alive, silent, never closing — and the child bounding itself
+    // so a stuck caller cannot wedge the permit forever. Closing stdin is the
+    // other signal entirely: a bare EOF means the caller is gone, and it exits 69.
+    //
+    // `wait_with_output` drains stdout and stderr while it waits. A poll loop
+    // that does not drain them can deadlock a child on full output pipes.
     let stdin = child.stdin.take().expect("stdin should be piped");
-    thread::sleep(Duration::from_millis(150));
+    let output = child
+        .wait_with_output()
+        .expect("wait for self-bounded child");
     drop(stdin);
-    let output = child.wait_with_output().expect("wait for timed-out child");
     assert_abandoned(&output, 0);
     assert_lease_free(&root);
     fs::remove_dir_all(root).expect("cleanup root");

@@ -2,8 +2,10 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::ExitCode;
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 use std::{env, ffi::OsStr, path::PathBuf};
 
@@ -33,8 +35,6 @@ use solstone_core_journal_config::{materialized_defaults, read_journal_config};
 use solstone_core_journal_config_write::{
     CommitConfigError, ConfigExpectation, LockError, LockOptions, commit_journal_config,
 };
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
-
 const EXIT_USAGE: u8 = 64;
 const EXIT_UNAVAILABLE: u8 = 69;
 const EXIT_TEMPFAIL: u8 = 75;
@@ -46,6 +46,7 @@ const EXIT_PROTOCOL: u8 = 76;
 const MAX_JSON_STDIN_BYTES: usize = 1024 * 1024;
 const MAX_LOCAL_STDIN_BYTES: usize = 1024 * 1024;
 const SESSION_INPUT_TIMEOUT: Duration = Duration::from_secs(90);
+const SESSION_RESULT_WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 const REFRESH_PROBE_SCHEMA: &str = "solstone.brain.refresh.probe.v1";
 const REFRESH_ABANDON_SCHEMA: &str = "solstone.brain.refresh.abandon.v1";
 const REFRESH_TERMINAL_SCHEMA: &str = "solstone.brain.refresh.terminal.v1";
@@ -438,24 +439,12 @@ fn run_brain_refresh_session(options: BrainRefreshSessionOptions) -> ExitCode {
             return ExitCode::from(EXIT_UNAVAILABLE);
         }
     };
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_io()
-        .enable_time()
-        .build()
-    {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            eprintln!("brain refresh failed: could not start session runtime: {error}");
-            drop(permit);
-            return ExitCode::from(EXIT_UNAVAILABLE);
-        }
-    };
-    runtime.block_on(run_refresh_session_loop(
+    run_refresh_session_loop(
         line.path,
         permit,
         bundled_runtime_fingerprint_sha256,
         session_input_timeout(),
-    ))
+    )
 }
 
 fn run_brain_prerequisite_renewal_session(
@@ -496,26 +485,12 @@ fn run_brain_prerequisite_renewal_session(
             }));
         }
     };
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_io()
-        .enable_time()
-        .build()
-    {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            eprintln!(
-                "brain prerequisite renewal failed: could not start session runtime: {error}"
-            );
-            drop(permit);
-            return ExitCode::from(EXIT_UNAVAILABLE);
-        }
-    };
-    runtime.block_on(run_prerequisite_renewal_session_loop(
+    run_prerequisite_renewal_session_loop(
         line.path,
         permit,
         bundled_runtime_fingerprint_sha256,
         session_input_timeout(),
-    ))
+    )
 }
 
 fn brain_record_revision(journal_path: &std::path::Path) -> Option<u64> {
@@ -548,7 +523,7 @@ fn session_input_timeout() -> Duration {
     SESSION_INPUT_TIMEOUT
 }
 
-async fn run_refresh_session_loop(
+fn run_refresh_session_loop(
     journal_path: PathBuf,
     permit: solstone_core_brain::BrainRefreshPermit,
     bundled_runtime_fingerprint_sha256: Option<String>,
@@ -558,8 +533,7 @@ async fn run_refresh_session_loop(
         return ExitCode::from(EXIT_IOERR);
     }
     let deadline = Instant::now() + timeout;
-    let mut stdin = BufReader::new(tokio::io::stdin());
-    match read_refresh_session_input(&mut stdin, deadline).await {
+    match read_refresh_session_input(deadline) {
         RefreshSessionInput::Clean(outcome) => match solstone_core_brain::finish_refresh(
             &journal_path,
             permit,
@@ -592,7 +566,7 @@ async fn run_refresh_session_loop(
     }
 }
 
-async fn run_prerequisite_renewal_session_loop(
+fn run_prerequisite_renewal_session_loop(
     journal_path: PathBuf,
     permit: solstone_core_brain::BrainRefreshPermit,
     bundled_runtime_fingerprint_sha256: Option<String>,
@@ -604,8 +578,7 @@ async fn run_prerequisite_renewal_session_loop(
         return ExitCode::from(EXIT_IOERR);
     }
     let deadline = Instant::now() + timeout;
-    let mut stdin = BufReader::new(tokio::io::stdin());
-    match read_prerequisite_renewal_session_input(&mut stdin, deadline).await {
+    match read_prerequisite_renewal_session_input(deadline) {
         PrerequisiteRenewalSessionInput::Clean(component) => {
             match solstone_core_brain::finish_prerequisite_renewal(
                 &journal_path,
@@ -680,26 +653,53 @@ struct CallerAbandon {
     diagnostic: Map<String, Value>,
 }
 
-async fn read_refresh_session_input(
-    stdin: &mut BufReader<tokio::io::Stdin>,
-    deadline: Instant,
-) -> RefreshSessionInput {
+enum CappedLineEvent {
+    Line { bytes: Vec<u8>, count: usize },
+    IoError,
+}
+
+fn spawn_capped_line_reader(max_bytes: usize) -> mpsc::Receiver<CappedLineEvent> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let stdin = io::stdin();
+        let mut reader = BufReader::new(stdin.lock());
+        loop {
+            let mut bytes = Vec::new();
+            let read = {
+                let mut limited = reader.by_ref().take(max_bytes as u64);
+                limited.read_until(b'\n', &mut bytes)
+            };
+            match read {
+                Ok(count) => {
+                    if sender.send(CappedLineEvent::Line { bytes, count }).is_err() || count == 0 {
+                        return;
+                    }
+                }
+                Err(_) => {
+                    let _ = sender.send(CappedLineEvent::IoError);
+                    return;
+                }
+            }
+        }
+    });
+    receiver
+}
+
+fn read_refresh_session_input(deadline: Instant) -> RefreshSessionInput {
+    let receiver = spawn_capped_line_reader(MAX_JSON_STDIN_BYTES + 1);
     let mut request = None;
     let mut terminal = false;
     loop {
-        let mut line = Vec::new();
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             return RefreshSessionInput::Timeout;
         }
-        let read = {
-            let mut limited = AsyncReadExt::take(&mut *stdin, (MAX_JSON_STDIN_BYTES + 1) as u64);
-            tokio::time::timeout(remaining, limited.read_until(b'\n', &mut line)).await
-        };
-        let count = match read {
-            Err(_) => return RefreshSessionInput::Timeout,
-            Ok(Err(_)) => return RefreshSessionInput::ProtocolViolation,
-            Ok(Ok(count)) => count,
+        let (line, count) = match receiver.recv_timeout(remaining) {
+            Ok(CappedLineEvent::Line { bytes, count }) => (bytes, count),
+            Ok(CappedLineEvent::IoError) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return RefreshSessionInput::ProtocolViolation;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => return RefreshSessionInput::Timeout,
         };
         if count == 0 {
             return if terminal {
@@ -731,26 +731,23 @@ async fn read_refresh_session_input(
     }
 }
 
-async fn read_prerequisite_renewal_session_input(
-    stdin: &mut BufReader<tokio::io::Stdin>,
-    deadline: Instant,
-) -> PrerequisiteRenewalSessionInput {
+fn read_prerequisite_renewal_session_input(deadline: Instant) -> PrerequisiteRenewalSessionInput {
+    let receiver = spawn_capped_line_reader(MAX_JSON_STDIN_BYTES + 1);
     let mut request = None;
     let mut terminal = false;
     loop {
-        let mut line = Vec::new();
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             return PrerequisiteRenewalSessionInput::Timeout;
         }
-        let read = {
-            let mut limited = AsyncReadExt::take(&mut *stdin, (MAX_JSON_STDIN_BYTES + 1) as u64);
-            tokio::time::timeout(remaining, limited.read_until(b'\n', &mut line)).await
-        };
-        let count = match read {
-            Err(_) => return PrerequisiteRenewalSessionInput::Timeout,
-            Ok(Err(_)) => return PrerequisiteRenewalSessionInput::ProtocolViolation,
-            Ok(Ok(count)) => count,
+        let (line, count) = match receiver.recv_timeout(remaining) {
+            Ok(CappedLineEvent::Line { bytes, count }) => (bytes, count),
+            Ok(CappedLineEvent::IoError) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return PrerequisiteRenewalSessionInput::ProtocolViolation;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                return PrerequisiteRenewalSessionInput::Timeout;
+            }
         };
         if count == 0 {
             return if terminal {
@@ -1076,15 +1073,22 @@ fn write_brain_projection(journal_path: &std::path::Path, result_schema: &str) -
 }
 
 fn write_session_result(output: Value) -> ExitCode {
-    let mut stdout = io::stdout().lock();
-    if serde_json::to_writer(&mut stdout, &output).is_err()
-        || stdout.write_all(b"\n").is_err()
-        || stdout.flush().is_err()
+    let (sender, receiver) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let mut stdout = io::stdout().lock();
+        let written = serde_json::to_writer(&mut stdout, &output).is_ok()
+            && stdout.write_all(b"\n").is_ok()
+            && stdout.flush().is_ok();
+        let _ = sender.send(written);
+    });
+    if receiver
+        .recv_timeout(SESSION_RESULT_WRITE_TIMEOUT)
+        .is_ok_and(|written| written)
     {
+        ExitCode::SUCCESS
+    } else {
         eprintln!("brain refresh failed: stdout I/O error");
         ExitCode::from(EXIT_IOERR)
-    } else {
-        ExitCode::SUCCESS
     }
 }
 
