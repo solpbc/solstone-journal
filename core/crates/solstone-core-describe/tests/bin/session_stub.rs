@@ -32,18 +32,16 @@ fn main() {
         }
         let request = decode_session_request_line(&line).unwrap();
         seen += 1;
-        if request.context == "observe.describe.frame" {
-            if let Some(frame_id) = request
+        if request.context == "observe.describe.frame"
+            && let Some(frame_id) = request
                 .id
                 .as_deref()
                 .and_then(|id| id.strip_prefix("frame:"))
                 .and_then(|id| id.split(':').next())
                 .and_then(|id| id.parse::<u64>().ok())
-            {
-                if !categorized_frame_ids.contains(&frame_id) {
-                    categorized_frame_ids.push(frame_id);
-                }
-            }
+            && !categorized_frame_ids.contains(&frame_id)
+        {
+            categorized_frame_ids.push(frame_id);
         }
         if let Some(path) = env::var_os("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH") {
             let mut file = std::fs::OpenOptions::new()

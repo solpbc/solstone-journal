@@ -23,10 +23,10 @@ const TIMEOUT_ENV: &str = "SOLSTONE_DESCRIBE_DETECT_TIMEOUT_MS";
 
 pub fn screen_gate(analysis: &Value) -> Option<String> {
     for (field, prefix) in [("primary", "primary"), ("secondary", "secondary")] {
-        if let Some(value) = analysis.get(field).and_then(Value::as_str) {
-            if matches!(value, "media" | "social") {
-                return Some(format!("{prefix}:{value}"));
-            }
+        if let Some(value) = analysis.get(field).and_then(Value::as_str)
+            && matches!(value, "media" | "social")
+        {
+            return Some(format!("{prefix}:{value}"));
         }
     }
     None

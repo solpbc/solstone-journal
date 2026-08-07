@@ -565,24 +565,6 @@ fn maybe_detect(disabled: &mut bool, analysis: &Value, png: &[u8]) -> Option<Val
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::{finalize_incomplete, has_row_failures};
-
-    #[test]
-    fn incomplete_extractions_keep_partial_content_and_fail_verdict() {
-        let rows = finalize_incomplete(vec![(
-            json!({"frame_id":1,"enhanced":true,"content":{"code":"partial"}}),
-            1,
-        )]);
-        assert_eq!(rows[0]["content"]["code"], "partial");
-        assert_eq!(rows[0]["error"], "Extraction never completed");
-        assert!(has_row_failures(&rows));
-    }
-}
-
 fn blocked(
     journal: &Path,
     work_key: &str,
@@ -672,4 +654,22 @@ fn promote(promotion: Promotion<'_>) -> Result<(), RunError> {
         let _ = fs::remove_file(&final_path);
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{finalize_incomplete, has_row_failures};
+
+    #[test]
+    fn incomplete_extractions_keep_partial_content_and_fail_verdict() {
+        let rows = finalize_incomplete(vec![(
+            json!({"frame_id":1,"enhanced":true,"content":{"code":"partial"}}),
+            1,
+        )]);
+        assert_eq!(rows[0]["content"]["code"], "partial");
+        assert_eq!(rows[0]["error"], "Extraction never completed");
+        assert!(has_row_failures(&rows));
+    }
 }

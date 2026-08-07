@@ -327,9 +327,11 @@ fn extraction_guidance(overrides: &BTreeMap<String, CategoryOverride>) -> String
         }
     }
     if high.is_empty() && low.is_empty() && ignore.is_empty() {
-        return (!normal.is_empty())
-            .then(|| normal.join("\n"))
-            .unwrap_or_else(|| "No category-specific rules.".to_owned());
+        return if !normal.is_empty() {
+            normal.join("\n")
+        } else {
+            "No category-specific rules.".to_owned()
+        };
     }
     let mut sections = Vec::new();
     if !high.is_empty() {
@@ -344,9 +346,11 @@ fn extraction_guidance(overrides: &BTreeMap<String, CategoryOverride>) -> String
     if !ignore.is_empty() {
         sections.push(format!("**Skip unless notable:**\n{}", ignore.join("\n")));
     }
-    (!sections.is_empty())
-        .then(|| sections.join("\n\n"))
-        .unwrap_or_else(|| "No category-specific rules.".to_owned())
+    if !sections.is_empty() {
+        sections.join("\n\n")
+    } else {
+        "No category-specific rules.".to_owned()
+    }
 }
 
 #[cfg(test)]

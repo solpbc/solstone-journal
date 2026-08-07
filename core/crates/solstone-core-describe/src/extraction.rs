@@ -23,10 +23,11 @@ pub fn categories_for_analysis(analysis: &Value) -> Vec<&'static CategoryMeta> {
     if let Some(category) = primary.and_then(category) {
         categories.push(category);
     }
-    if !overlap && secondary != Some("none") {
-        if let Some(category) = secondary.and_then(category) {
-            categories.push(category);
-        }
+    if !overlap
+        && secondary != Some("none")
+        && let Some(category) = secondary.and_then(category)
+    {
+        categories.push(category);
     }
     categories
 }
