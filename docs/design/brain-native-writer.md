@@ -133,6 +133,23 @@ normal component fields (`status`, `observed_at`, and optional `reason_code`,
 (`brain_state.py:429-513`; `brain_cli.py:606-634`).  The server validates it by
 the native equivalent of `_validate_probe_outcome` before publication.
 
+**Implementation addendum (caller-driven abandon):** A connected caller can
+send this record *instead of* the probe, then send the same terminal record
+and EOF:
+
+```json
+{"schema":"solstone.brain.refresh.abandon.v1","reason_code":"provider_unavailable","diagnostic":{}}
+```
+
+`diagnostic` is optional and defaults to `{}`. The server buffers exactly one
+probe-or-abandon request, so a second request of either kind is a protocol
+violation. After the terminal, an abandon invokes `abandon_refresh` with the
+caller-supplied reason and diagnostic, emits `kind:"abandoned"` with the
+writer-selected component, and exits `0`. This is distinct from the fixed
+reason used for caller disappearance: `brain_cli.py` runs probes outside the
+session and can deliberately call `abandon_brain_refresh` with the diagnosed
+reason when it cannot produce a usable full outcome (`brain_cli.py:772-805`).
+
 The host then sends the exact, fieldless terminal record and closes stdin:
 
 ```json
@@ -238,6 +255,12 @@ immediate-exit taxonomy:
   — a single component object (matching `finish_prerequisite_renewal`'s
   `lane_prerequisites: Value` parameter), not a four-component `outcome`
   wrapper.
+- Caller-abandon: `{"schema":"solstone.brain.prerequisite_renewal.abandon.v1","reason_code":"attestation_expired","diagnostic":{}}`
+  — mutually exclusive with probe-in, buffered until terminal, then delegated
+  to `abandon_prerequisite_renewal` with the caller's reason and diagnostic.
+  The response is `kind:"abandoned"` with the component the writer actually
+  changed, and exits `0`; this preserves `brain_cli.py`'s external-probe
+  fallback to `abandon_brain_prerequisite_renewal` (`brain_cli.py:684-704`).
 - Terminal: `{"schema":"solstone.brain.prerequisite_renewal.terminal.v1"}`.
 - A successful begin first writes and flushes
   `{"schema":"solstone.brain.prerequisite_renewal.ready.v1"}` before waiting

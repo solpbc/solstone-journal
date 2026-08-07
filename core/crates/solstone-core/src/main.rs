@@ -47,10 +47,12 @@ const MAX_JSON_STDIN_BYTES: usize = 1024 * 1024;
 const MAX_LOCAL_STDIN_BYTES: usize = 1024 * 1024;
 const SESSION_INPUT_TIMEOUT: Duration = Duration::from_secs(90);
 const REFRESH_PROBE_SCHEMA: &str = "solstone.brain.refresh.probe.v1";
+const REFRESH_ABANDON_SCHEMA: &str = "solstone.brain.refresh.abandon.v1";
 const REFRESH_TERMINAL_SCHEMA: &str = "solstone.brain.refresh.terminal.v1";
 const REFRESH_RESULT_SCHEMA: &str = "solstone.brain.refresh.result.v1";
 const REFRESH_READY_SCHEMA: &str = "solstone.brain.refresh.ready.v1";
 const PREREQUISITE_RENEWAL_PROBE_SCHEMA: &str = "solstone.brain.prerequisite_renewal.probe.v1";
+const PREREQUISITE_RENEWAL_ABANDON_SCHEMA: &str = "solstone.brain.prerequisite_renewal.abandon.v1";
 const PREREQUISITE_RENEWAL_TERMINAL_SCHEMA: &str =
     "solstone.brain.prerequisite_renewal.terminal.v1";
 const PREREQUISITE_RENEWAL_RESULT_SCHEMA: &str = "solstone.brain.prerequisite_renewal.result.v1";
@@ -461,33 +463,35 @@ async fn run_refresh_session_loop(
     }
     let deadline = Instant::now() + timeout;
     let mut stdin = BufReader::new(tokio::io::stdin());
-    let outcome = match read_refresh_session_input(&mut stdin, deadline).await {
-        RefreshSessionInput::Clean(outcome) => outcome,
+    match read_refresh_session_input(&mut stdin, deadline).await {
+        RefreshSessionInput::Clean(outcome) => match solstone_core_brain::finish_refresh(
+            &journal_path,
+            permit,
+            outcome,
+            chrono::Utc::now(),
+            bundled_runtime_fingerprint_sha256,
+        ) {
+            Ok(_) => write_refresh_projection(&journal_path),
+            Err(error) => {
+                eprintln!("brain refresh failed: {error}");
+                ExitCode::from(EXIT_UNAVAILABLE)
+            }
+        },
+        RefreshSessionInput::CallerAbandon(abandon) => {
+            abandon_refresh_for_caller(&journal_path, permit, abandon)
+        }
         RefreshSessionInput::BareEof => {
             abandon_refresh_silently(&journal_path, permit);
             // A bare EOF means no caller remains to observe an answer.
-            return ExitCode::from(EXIT_UNAVAILABLE);
+            ExitCode::from(EXIT_UNAVAILABLE)
         }
         RefreshSessionInput::Timeout => {
             abandon_refresh(&journal_path, permit, true);
-            return ExitCode::SUCCESS;
+            ExitCode::SUCCESS
         }
         RefreshSessionInput::ProtocolViolation => {
             abandon_refresh(&journal_path, permit, true);
-            return ExitCode::from(EXIT_PROTOCOL);
-        }
-    };
-    match solstone_core_brain::finish_refresh(
-        &journal_path,
-        permit,
-        outcome,
-        chrono::Utc::now(),
-        bundled_runtime_fingerprint_sha256,
-    ) {
-        Ok(_) => write_refresh_projection(&journal_path),
-        Err(error) => {
-            eprintln!("brain refresh failed: {error}");
-            ExitCode::from(EXIT_UNAVAILABLE)
+            ExitCode::from(EXIT_PROTOCOL)
         }
     }
 }
@@ -505,8 +509,30 @@ async fn run_prerequisite_renewal_session_loop(
     }
     let deadline = Instant::now() + timeout;
     let mut stdin = BufReader::new(tokio::io::stdin());
-    let component = match read_prerequisite_renewal_session_input(&mut stdin, deadline).await {
-        PrerequisiteRenewalSessionInput::Clean(component) => component,
+    match read_prerequisite_renewal_session_input(&mut stdin, deadline).await {
+        PrerequisiteRenewalSessionInput::Clean(component) => {
+            match solstone_core_brain::finish_prerequisite_renewal(
+                &journal_path,
+                permit,
+                component,
+                chrono::Utc::now(),
+                bundled_runtime_fingerprint_sha256,
+            ) {
+                Ok(_) => write_brain_projection(&journal_path, PREREQUISITE_RENEWAL_RESULT_SCHEMA),
+                Err(error) => {
+                    eprintln!("brain prerequisite renewal failed: {error}");
+                    ExitCode::from(EXIT_UNAVAILABLE)
+                }
+            }
+        }
+        PrerequisiteRenewalSessionInput::CallerAbandon(abandon) => {
+            abandon_prerequisite_renewal_for_caller(
+                &journal_path,
+                permit,
+                abandon,
+                bundled_runtime_fingerprint_sha256,
+            )
+        }
         PrerequisiteRenewalSessionInput::BareEof => {
             abandon_prerequisite_renewal_silently(
                 &journal_path,
@@ -514,7 +540,7 @@ async fn run_prerequisite_renewal_session_loop(
                 bundled_runtime_fingerprint_sha256,
             );
             // A bare EOF means no caller remains to observe an answer.
-            return ExitCode::from(EXIT_UNAVAILABLE);
+            ExitCode::from(EXIT_UNAVAILABLE)
         }
         PrerequisiteRenewalSessionInput::Timeout => {
             abandon_prerequisite_renewal(
@@ -523,7 +549,7 @@ async fn run_prerequisite_renewal_session_loop(
                 bundled_runtime_fingerprint_sha256,
                 true,
             );
-            return ExitCode::SUCCESS;
+            ExitCode::SUCCESS
         }
         PrerequisiteRenewalSessionInput::ProtocolViolation => {
             abandon_prerequisite_renewal(
@@ -532,26 +558,14 @@ async fn run_prerequisite_renewal_session_loop(
                 bundled_runtime_fingerprint_sha256,
                 true,
             );
-            return ExitCode::from(EXIT_PROTOCOL);
-        }
-    };
-    match solstone_core_brain::finish_prerequisite_renewal(
-        &journal_path,
-        permit,
-        component,
-        chrono::Utc::now(),
-        bundled_runtime_fingerprint_sha256,
-    ) {
-        Ok(_) => write_brain_projection(&journal_path, PREREQUISITE_RENEWAL_RESULT_SCHEMA),
-        Err(error) => {
-            eprintln!("brain prerequisite renewal failed: {error}");
-            ExitCode::from(EXIT_UNAVAILABLE)
+            ExitCode::from(EXIT_PROTOCOL)
         }
     }
 }
 
 enum RefreshSessionInput {
     Clean(Value),
+    CallerAbandon(CallerAbandon),
     BareEof,
     Timeout,
     ProtocolViolation,
@@ -559,16 +573,22 @@ enum RefreshSessionInput {
 
 enum PrerequisiteRenewalSessionInput {
     Clean(Value),
+    CallerAbandon(CallerAbandon),
     BareEof,
     Timeout,
     ProtocolViolation,
+}
+
+struct CallerAbandon {
+    reason_code: String,
+    diagnostic: Map<String, Value>,
 }
 
 async fn read_refresh_session_input(
     stdin: &mut BufReader<tokio::io::Stdin>,
     deadline: Instant,
 ) -> RefreshSessionInput {
-    let mut outcome = None;
+    let mut request = None;
     let mut terminal = false;
     loop {
         let mut line = Vec::new();
@@ -587,7 +607,13 @@ async fn read_refresh_session_input(
         };
         if count == 0 {
             return if terminal {
-                RefreshSessionInput::Clean(outcome.expect("terminal requires outcome"))
+                match request.expect("terminal requires request") {
+                    RefreshSessionRecord::Probe(outcome) => RefreshSessionInput::Clean(outcome),
+                    RefreshSessionRecord::Abandon(abandon) => {
+                        RefreshSessionInput::CallerAbandon(abandon)
+                    }
+                    RefreshSessionRecord::Terminal => unreachable!("terminal is not buffered"),
+                }
             } else {
                 RefreshSessionInput::BareEof
             };
@@ -596,10 +622,12 @@ async fn read_refresh_session_input(
             return RefreshSessionInput::ProtocolViolation;
         }
         match parse_refresh_session_record(&line, chrono::Utc::now()) {
-            Some(RefreshSessionRecord::Probe(probe)) if !terminal && outcome.is_none() => {
-                outcome = Some(probe);
+            Some(record @ (RefreshSessionRecord::Probe(_) | RefreshSessionRecord::Abandon(_)))
+                if !terminal && request.is_none() =>
+            {
+                request = Some(record);
             }
-            Some(RefreshSessionRecord::Terminal) if outcome.is_some() => {
+            Some(RefreshSessionRecord::Terminal) if request.is_some() => {
                 terminal = true;
             }
             _ => return RefreshSessionInput::ProtocolViolation,
@@ -611,7 +639,7 @@ async fn read_prerequisite_renewal_session_input(
     stdin: &mut BufReader<tokio::io::Stdin>,
     deadline: Instant,
 ) -> PrerequisiteRenewalSessionInput {
-    let mut component = None;
+    let mut request = None;
     let mut terminal = false;
     loop {
         let mut line = Vec::new();
@@ -630,7 +658,17 @@ async fn read_prerequisite_renewal_session_input(
         };
         if count == 0 {
             return if terminal {
-                PrerequisiteRenewalSessionInput::Clean(component.expect("terminal requires probe"))
+                match request.expect("terminal requires request") {
+                    PrerequisiteRenewalSessionRecord::Probe(component) => {
+                        PrerequisiteRenewalSessionInput::Clean(component)
+                    }
+                    PrerequisiteRenewalSessionRecord::Abandon(abandon) => {
+                        PrerequisiteRenewalSessionInput::CallerAbandon(abandon)
+                    }
+                    PrerequisiteRenewalSessionRecord::Terminal => {
+                        unreachable!("terminal is not buffered")
+                    }
+                }
             } else {
                 PrerequisiteRenewalSessionInput::BareEof
             };
@@ -639,12 +677,13 @@ async fn read_prerequisite_renewal_session_input(
             return PrerequisiteRenewalSessionInput::ProtocolViolation;
         }
         match parse_prerequisite_renewal_session_record(&line, chrono::Utc::now()) {
-            Some(PrerequisiteRenewalSessionRecord::Probe(probe))
-                if !terminal && component.is_none() =>
-            {
-                component = Some(probe);
+            Some(
+                record @ (PrerequisiteRenewalSessionRecord::Probe(_)
+                | PrerequisiteRenewalSessionRecord::Abandon(_)),
+            ) if !terminal && request.is_none() => {
+                request = Some(record);
             }
-            Some(PrerequisiteRenewalSessionRecord::Terminal) if component.is_some() => {
+            Some(PrerequisiteRenewalSessionRecord::Terminal) if request.is_some() => {
                 terminal = true;
             }
             _ => return PrerequisiteRenewalSessionInput::ProtocolViolation,
@@ -654,11 +693,13 @@ async fn read_prerequisite_renewal_session_input(
 
 enum RefreshSessionRecord {
     Probe(Value),
+    Abandon(CallerAbandon),
     Terminal,
 }
 
 enum PrerequisiteRenewalSessionRecord {
     Probe(Value),
+    Abandon(CallerAbandon),
     Terminal,
 }
 
@@ -673,6 +714,9 @@ fn parse_refresh_session_record(
     let schema = object.get("schema")?.as_str()?;
     if schema == REFRESH_TERMINAL_SCHEMA && exact_fields(&object, &["schema"]) {
         return Some(RefreshSessionRecord::Terminal);
+    }
+    if schema == REFRESH_ABANDON_SCHEMA {
+        return parse_caller_abandon(&object).map(RefreshSessionRecord::Abandon);
     }
     if schema != REFRESH_PROBE_SCHEMA || !exact_fields(&object, &["schema", "outcome"]) {
         return None;
@@ -694,6 +738,9 @@ fn parse_prerequisite_renewal_session_record(
     if schema == PREREQUISITE_RENEWAL_TERMINAL_SCHEMA && exact_fields(&object, &["schema"]) {
         return Some(PrerequisiteRenewalSessionRecord::Terminal);
     }
+    if schema == PREREQUISITE_RENEWAL_ABANDON_SCHEMA {
+        return parse_caller_abandon(&object).map(PrerequisiteRenewalSessionRecord::Abandon);
+    }
     if schema != PREREQUISITE_RENEWAL_PROBE_SCHEMA
         || !exact_fields(&object, &["schema", "lane_prerequisites"])
     {
@@ -710,6 +757,27 @@ fn parse_prerequisite_renewal_session_record(
     Some(PrerequisiteRenewalSessionRecord::Probe(
         evidence["lane_prerequisites"].clone(),
     ))
+}
+
+fn parse_caller_abandon(object: &Map<String, Value>) -> Option<CallerAbandon> {
+    if !exact_fields(object, &["schema", "reason_code"])
+        && !exact_fields(object, &["schema", "reason_code", "diagnostic"])
+    {
+        return None;
+    }
+    let reason_code = object.get("reason_code")?.as_str()?;
+    if reason_code.is_empty() {
+        return None;
+    }
+    let diagnostic = match object.get("diagnostic") {
+        None => Map::new(),
+        Some(Value::Object(diagnostic)) => diagnostic.clone(),
+        Some(_) => return None,
+    };
+    Some(CallerAbandon {
+        reason_code: reason_code.to_owned(),
+        diagnostic,
+    })
 }
 
 fn exact_fields(object: &Map<String, Value>, expected: &[&str]) -> bool {
@@ -746,6 +814,39 @@ fn abandon_refresh(
         })) != ExitCode::SUCCESS
     {
         eprintln!("brain refresh abandonment report failed: stdout I/O error");
+    }
+}
+
+fn abandon_refresh_for_caller(
+    journal_path: &std::path::Path,
+    permit: solstone_core_brain::BrainRefreshPermit,
+    abandon: CallerAbandon,
+) -> ExitCode {
+    let before = read_brain_record_value(journal_path);
+    let reason_code = abandon.reason_code;
+    match solstone_core_brain::abandon_refresh(
+        journal_path,
+        permit,
+        &reason_code,
+        abandon.diagnostic,
+        chrono::Utc::now(),
+    ) {
+        Ok(record) => match changed_evidence_component(&before, &record, &reason_code) {
+            Some(component) => write_session_result(json!({
+                "schema": REFRESH_RESULT_SCHEMA,
+                "kind": "abandoned",
+                "reason_code": reason_code,
+                "component": component,
+            })),
+            None => {
+                eprintln!("brain refresh abandonment failed: could not identify changed component");
+                ExitCode::from(EXIT_UNAVAILABLE)
+            }
+        },
+        Err(error) => {
+            eprintln!("brain refresh abandonment failed: {error}");
+            ExitCode::from(EXIT_UNAVAILABLE)
+        }
     }
 }
 
@@ -787,6 +888,69 @@ fn abandon_prerequisite_renewal(
     {
         eprintln!("brain prerequisite renewal abandonment report failed: stdout I/O error");
     }
+}
+
+fn abandon_prerequisite_renewal_for_caller(
+    journal_path: &std::path::Path,
+    permit: solstone_core_brain::BrainRefreshPermit,
+    abandon: CallerAbandon,
+    bundled_runtime_fingerprint_sha256: Option<String>,
+) -> ExitCode {
+    let before = read_brain_record_value(journal_path);
+    let reason_code = abandon.reason_code;
+    match solstone_core_brain::abandon_prerequisite_renewal(
+        journal_path,
+        permit,
+        &reason_code,
+        abandon.diagnostic,
+        chrono::Utc::now(),
+        bundled_runtime_fingerprint_sha256,
+    ) {
+        Ok(record) => match changed_evidence_component(&before, &record, &reason_code) {
+            Some(component) => write_session_result(json!({
+                "schema": PREREQUISITE_RENEWAL_RESULT_SCHEMA,
+                "kind": "abandoned",
+                "reason_code": reason_code,
+                "component": component,
+            })),
+            None => {
+                eprintln!(
+                    "brain prerequisite renewal abandonment failed: could not identify changed component"
+                );
+                ExitCode::from(EXIT_UNAVAILABLE)
+            }
+        },
+        Err(error) => {
+            eprintln!("brain prerequisite renewal abandonment failed: {error}");
+            ExitCode::from(EXIT_UNAVAILABLE)
+        }
+    }
+}
+
+fn read_brain_record_value(journal_path: &std::path::Path) -> Option<Value> {
+    fs::read(solstone_core_brain::brain_state_path(journal_path))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+}
+
+fn changed_evidence_component(
+    before: &Option<Value>,
+    after: &Value,
+    reason_code: &str,
+) -> Option<String> {
+    let before_evidence = before
+        .as_ref()
+        .and_then(|record| record.get("evidence"))
+        .and_then(Value::as_object);
+    after
+        .get("evidence")
+        .and_then(Value::as_object)?
+        .iter()
+        .find_map(|(component, value)| {
+            (before_evidence.and_then(|evidence| evidence.get(component)) != Some(value)
+                && value.get("reason_code").and_then(Value::as_str) == Some(reason_code))
+            .then(|| component.clone())
+        })
 }
 
 fn write_brain_projection(journal_path: &std::path::Path, result_schema: &str) -> ExitCode {

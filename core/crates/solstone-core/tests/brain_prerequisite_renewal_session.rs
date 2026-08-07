@@ -109,6 +109,13 @@ fn probe(component: Value) -> Value {
     })
 }
 
+fn abandon(reason_code: &str) -> Value {
+    json!({
+        "schema": "solstone.brain.prerequisite_renewal.abandon.v1",
+        "reason_code": reason_code,
+    })
+}
+
 fn terminal() -> Value {
     json!({"schema": "solstone.brain.prerequisite_renewal.terminal.v1"})
 }
@@ -304,6 +311,42 @@ fn duplicate_probe_abandons_with_protocol_exit() {
     let output = finish(
         start(&root),
         &[probe(ready_component()), probe(ready_component())],
+    );
+    assert_abandoned(&output, 76);
+    assert_lease_free(&root);
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn caller_abandon_records_its_reason_and_target_component() {
+    let root = configured_spp_journal("caller-abandon");
+    let output = finish(start(&root), &[abandon("attestation_expired"), terminal()]);
+    assert_eq!(output.status.code(), Some(0));
+    let result = parse_ready_and_result(&output).expect("abandonment result");
+    assert_eq!(result["schema"], RESULT_SCHEMA);
+    assert_eq!(result["kind"], "abandoned");
+    assert_eq!(result["reason_code"], "attestation_expired");
+    assert_eq!(result["component"], "lane_prerequisites");
+    assert_lease_free(&root);
+    let record: Value = serde_json::from_slice(
+        &fs::read(solstone_core_brain::brain_state_path(&root)).expect("read brain record"),
+    )
+    .expect("record JSON");
+    assert!(record["checking"].is_null());
+    assert_eq!(record["reason_code"], "attestation_expired");
+    assert_eq!(
+        record["evidence"]["lane_prerequisites"]["reason_code"],
+        "attestation_expired"
+    );
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn abandon_followed_by_another_request_is_a_protocol_violation() {
+    let root = configured_spp_journal("duplicate-abandon");
+    let output = finish(
+        start(&root),
+        &[abandon("attestation_expired"), probe(ready_component())],
     );
     assert_abandoned(&output, 76);
     assert_lease_free(&root);
