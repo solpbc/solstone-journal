@@ -273,7 +273,25 @@ absent; absence is otherwise invisible in a diff.
 Python integers are arbitrary precision. Rust ports use `i64` for JSON-facing
 integers unless a specific writer documents another width. Overflow is a
 `Result` error at the boundary, never a silent wrap or debug-only assertion.
-JSON integers outside `i64` are rejected at parse.
+JSON integers outside `i64` are rejected at parse **when a port deserializes
+into a typed field**. That rule does not describe the untyped path: measured
+against this workspace's `serde_json` configuration, parsing into
+`serde_json::Value` rejects nothing — `i64::MAX + 1` and `u64::MAX` round-trip
+byte-identically as `u64`, and only a value beyond `u64::MAX` degrades to `f64`,
+silently and still without an error. A port that reads arbitrary journal JSON
+through `Value` therefore gets no overflow boundary for free and must impose one
+where it matters.
+
+Non-finite floats are a one-way incompatibility and are worth stating here
+rather than only under hashing. Python's `json` both emits and accepts bare
+`NaN`, `Infinity` and `-Infinity`; `serde_json` hard-rejects all three. So a
+document the Python writer could have produced is unreadable by its Rust
+replacement. For `config/journal.json` this was measured as unreachable — no
+config writer coerces a float and nothing in the production tree can produce a
+non-finite value — and the reader's response is a strict-load failure that
+leaves the file untouched, which is the correct posture. **A port over any other
+Python-written JSON owes the same reachability check rather than the
+assumption.**
 
 Python `str` maps to UTF-8 `String` or `&str`. Python `bytes` maps to
 `Vec<u8>`. Filesystem paths map to `PathBuf` or `OsStr`; POSIX paths are not
