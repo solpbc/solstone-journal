@@ -242,7 +242,10 @@ fn wait_for_release() {
     let Some(marker) = env::var_os("SOLSTONE_DESCRIBE_SESSION_STUB_RELEASE_PATH") else {
         return;
     };
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // Matches the caller's own hang-prevention ceiling (see cli.rs) so this
+    // stub never self-unblocks while the caller is still legitimately
+    // waiting on it under contention.
+    let deadline = Instant::now() + Duration::from_secs(60);
     while !std::path::Path::new(&marker).exists() && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(10));
     }

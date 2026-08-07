@@ -1177,12 +1177,14 @@ fn tier_one_temp_is_nonempty_before_atomic_promotion_and_is_removed_afterward() 
         .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
         .spawn()
         .expect("spawn describe binary");
-    // Debug-build masking reached this point in at most 1,670ms; this leaves a
-    // 4.2x margin for contended test workers, based on the profile cargo test uses.
-    let deadline = Instant::now() + Duration::from_millis(7_000);
-    let mut saw_nonempty = false;
-    while Instant::now() < deadline {
-        saw_nonempty = fs::read_dir(&root)
+    // The stub holds the child paused indefinitely once it releases its 5th
+    // response (see wait_for_release in session_stub.rs), so this loop never
+    // races against how fast masking runs on this machine: it only needs to
+    // distinguish "still working" from "genuinely stuck or dead", so the cap
+    // is a hang-prevention ceiling, not a performance-calibrated margin.
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let saw_nonempty = loop {
+        let nonempty = fs::read_dir(&root)
             .expect("read root")
             .filter_map(Result::ok)
             .any(|entry| {
@@ -1195,11 +1197,17 @@ fn tier_one_temp_is_nonempty_before_atomic_promotion_and_is_removed_afterward() 
                         .map(|metadata| metadata.len() > 0)
                         .unwrap_or(false)
             });
-        if saw_nonempty {
-            break;
+        if nonempty {
+            break true;
+        }
+        if let Some(status) = child.try_wait().expect("poll describe binary") {
+            panic!("describe binary exited before tier-one temp became nonempty: {status}");
+        }
+        if Instant::now() >= deadline {
+            break false;
         }
         thread::sleep(Duration::from_millis(10));
-    }
+    };
     assert!(
         saw_nonempty,
         "tier-one rows temp became nonempty while the run was active"
