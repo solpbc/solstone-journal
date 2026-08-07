@@ -54,6 +54,23 @@ fn main() {
             }
             continue;
         }
+        if request.context != "observe.describe.frame"
+            && request.context != "observe.extract.selection"
+            && mode.starts_with("extraction_")
+        {
+            extraction_response(&id, &mode, request.attempt_index);
+            continue;
+        }
+        if request.context == "observe.describe.frame"
+            && (mode.starts_with("category_")
+                || matches!(
+                    mode.as_str(),
+                    "extraction_json_retry_then_succeed" | "extraction_json_unparseable"
+                ))
+        {
+            categorization_response(&id, &mode);
+            continue;
+        }
         if mode == "always_retryable" || (mode == "retryable_then_generated" && seen == 1) {
             refused(&id, true, false, Some("chat_timeout"));
         } else if mode == "blocking_retryable" {
@@ -72,12 +89,46 @@ fn main() {
         if let Some(first_id) = held_id.take() {
             generated(&first_id);
         }
-        if mode == "pause_after_first" && seen == 1 {
+        if mode == "pause_after_first"
+            && request.context != "observe.describe.frame"
+            && request.context != "observe.extract.selection"
+            && seen >= 3
+        {
             wait_for_release();
         }
         if let Some(path) = env::var_os("SOLSTONE_DESCRIBE_SESSION_STUB_STATS_PATH") {
             std::fs::write(path, json!({"requests": seen}).to_string()).unwrap();
         }
+    }
+}
+
+fn categorization_response(id: &str, mode: &str) {
+    let (primary, secondary, overlap) = match mode {
+        "category_browsing" => ("browsing", "none", true),
+        "category_messaging" => ("messaging", "none", true),
+        "category_meeting" => ("meeting", "none", true),
+        "category_secondary" => ("code", "messaging", false),
+        "extraction_json_retry_then_succeed" => ("messaging", "none", true),
+        "extraction_json_unparseable" => ("messaging", "none", true),
+        _ => unreachable!("category mode"),
+    };
+    let text = json!({"visual_description":"stub","primary":primary,"secondary":secondary,"overlap":overlap}).to_string();
+    generated_text(id, &text);
+}
+
+fn extraction_response(id: &str, mode: &str, attempt: u64) {
+    match mode {
+        "extraction_markdown_success" => generated_text(id, "# extracted markdown"),
+        "extraction_markdown_unknown" => {
+            generated_text_with_finish(id, "# extracted markdown", "unknown")
+        }
+        "extraction_markdown_length" => generated_text_with_finish(id, "truncated", "length"),
+        "extraction_json_retry_then_succeed" if attempt == 0 => generated_text(id, "not json"),
+        "extraction_json_retry_then_succeed" => generated_text(id, r#"{"ok":true}"#),
+        "extraction_json_unparseable" => generated_text(id, "not json"),
+        "extraction_refusal" => refused(id, true, false, Some("chat_timeout")),
+        "extraction_blocking_refusal" => refused(id, true, true, Some("binary_missing")),
+        _ => generated_text(id, r#"{"ok":true}"#),
     }
 }
 

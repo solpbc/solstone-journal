@@ -1,0 +1,147 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Category derivation and request construction for describe phase three.
+
+use base64::Engine;
+use serde_json::Value;
+use solstone_core_generate::{ContentPart, GenerateRequest};
+
+use crate::bounding::bound_extraction_markdown;
+use crate::categories::{CATEGORIES_META, CategoryMeta, OutputKind};
+use crate::decode::resize_for_vlm_png;
+use crate::request::append_redaction;
+
+pub fn categories_for_analysis(analysis: &Value) -> Vec<&'static CategoryMeta> {
+    let primary = analysis.get("primary").and_then(Value::as_str);
+    let secondary = analysis.get("secondary").and_then(Value::as_str);
+    let overlap = analysis
+        .get("overlap")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let mut categories = Vec::new();
+    if let Some(category) = primary.and_then(category) {
+        categories.push(category);
+    }
+    if !overlap && secondary != Some("none") {
+        if let Some(category) = secondary.and_then(category) {
+            categories.push(category);
+        }
+    }
+    categories
+}
+
+pub fn request(
+    frame_id: u64,
+    category: &CategoryMeta,
+    png: &[u8],
+    attempt: u64,
+    redact_rules: &[String],
+) -> Option<GenerateRequest> {
+    let resized = resize_for_vlm_png(png, None)?;
+    let mut instruction = category.instruction.clone();
+    append_redaction(&mut instruction, redact_rules);
+    let json_output = category.output == OutputKind::Json;
+    Some(GenerateRequest {
+        id: Some(format!(
+            "extract:{frame_id}:{}:attempt:{attempt}",
+            category.name
+        )),
+        context: category.context.clone(),
+        contents: vec![
+            ContentPart::Text {
+                text: format!("Analyze this {} screenshot.", category.name),
+            },
+            ContentPart::Image {
+                mime_type: "image/png".to_owned(),
+                data: base64::engine::general_purpose::STANDARD.encode(resized),
+            },
+        ],
+        system_instruction: Some(instruction),
+        // Python BatchRequest defaults to 0.3 and extraction does not override it.
+        temperature: 0.3,
+        max_output_tokens: category.max_output_tokens,
+        thinking_budget: Some(if json_output { 6144 } else { 4096 }),
+        timeout_s: None,
+        json_output,
+        json_schema: category
+            .schema
+            .map(|schema| serde_json::from_str(schema).expect("category schema is valid JSON")),
+        enforce_responsiveness: true,
+        attempt_index: attempt,
+        exclusive_admission: false,
+        transport_retries: None,
+    })
+}
+
+pub fn parse_response(
+    category: &CategoryMeta,
+    text: &str,
+    finish_reason: &str,
+) -> Result<Value, String> {
+    if category.output == OutputKind::Json {
+        return serde_json::from_str(text)
+            .map_err(|error| format!("Invalid JSON response for {}: {error}", category.name));
+    }
+    // `length` is the native truncation marker; stop/unknown/empty are clean.
+    if !matches!(finish_reason, "" | "stop" | "unknown") {
+        return Err(format!("Truncated markdown response for {}", category.name));
+    }
+    Ok(Value::String(bound_extraction_markdown(text)))
+}
+
+fn category(name: &str) -> Option<&'static CategoryMeta> {
+    CATEGORIES_META
+        .iter()
+        .find(|category| category.name == name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::categories_for_analysis;
+    use serde_json::json;
+
+    #[test]
+    fn category_derivation_obeys_overlap_truth_table() {
+        assert_eq!(
+            categories_for_analysis(
+                &json!({"primary":"code","secondary":"messaging","overlap":true})
+            )
+            .iter()
+            .map(|category| category.name)
+            .collect::<Vec<_>>(),
+            vec!["code"]
+        );
+        assert_eq!(
+            categories_for_analysis(
+                &json!({"primary":"code","secondary":"messaging","overlap":false})
+            )
+            .iter()
+            .map(|category| category.name)
+            .collect::<Vec<_>>(),
+            vec!["code", "messaging"]
+        );
+        assert_eq!(
+            categories_for_analysis(&json!({"primary":"code","secondary":"none","overlap":false}))
+                .iter()
+                .map(|category| category.name)
+                .collect::<Vec<_>>(),
+            vec!["code"]
+        );
+        assert_eq!(
+            categories_for_analysis(
+                &json!({"primary":"code","secondary":"not-a-real-category","overlap":false})
+            )
+            .iter()
+            .map(|category| category.name)
+            .collect::<Vec<_>>(),
+            vec!["code"]
+        );
+        assert!(
+            categories_for_analysis(
+                &json!({"primary":"unknown","secondary":"also-unknown","overlap":false})
+            )
+            .is_empty()
+        );
+    }
+}

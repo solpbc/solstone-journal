@@ -262,7 +262,17 @@ fn receive_frames<T: PreHashTransform>(
 fn encode_png(frame: &RgbFrame) -> Option<Vec<u8>> {
     let image =
         ImageBuffer::<Rgb<u8>, _>::from_raw(frame.width, frame.height, frame.pixels.clone())?;
-    let image = resize_for_categorization(image);
+    encode_image_png(image)
+}
+
+pub fn resize_for_vlm_png(png: &[u8], max_image_tokens: Option<u64>) -> Option<Vec<u8>> {
+    let image = image::load_from_memory_with_format(png, ImageFormat::Png)
+        .ok()?
+        .into_rgb8();
+    encode_image_png(resize_for_vlm(image, max_image_tokens))
+}
+
+fn encode_image_png(image: ImageBuffer<Rgb<u8>, Vec<u8>>) -> Option<Vec<u8>> {
     let mut output = Cursor::new(Vec::new());
     DynamicImage::ImageRgb8(image)
         .write_to(&mut output, ImageFormat::Png)
@@ -270,18 +280,18 @@ fn encode_png(frame: &RgbFrame) -> Option<Vec<u8>> {
     Some(output.into_inner())
 }
 
-/// Keep every categorization image inside the local Qwen token budget. This is
-/// deliberately provider-independent: every generate backend receives the
-/// identical resized image.
-fn resize_for_categorization(
+pub fn resize_for_vlm(
     image: ImageBuffer<Rgb<u8>, Vec<u8>>,
+    max_image_tokens: Option<u64>,
 ) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
     const MAX_DIMENSION: f64 = 1920.0;
-    const MAX_PIXELS: f64 = 1024.0 * 32.0 * 32.0;
     let width = image.width();
     let height = image.height();
     let mut scale = (MAX_DIMENSION / f64::from(width.max(height))).min(1.0);
-    scale = scale.min((MAX_PIXELS / (f64::from(width) * f64::from(height))).sqrt());
+    if let Some(max_image_tokens) = max_image_tokens {
+        let max_pixels = max_image_tokens as f64 * 32.0 * 32.0;
+        scale = scale.min((max_pixels / (f64::from(width) * f64::from(height))).sqrt());
+    }
     if scale >= 1.0 {
         return image;
     }
@@ -294,14 +304,29 @@ fn resize_for_categorization(
 mod image_tests {
     use image::{ImageBuffer, Rgb};
 
-    use super::resize_for_categorization;
+    use super::resize_for_vlm;
 
     #[test]
     fn categorization_images_obey_the_unconditional_pixel_budget() {
         let image = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(4096, 2160);
-        let resized = resize_for_categorization(image);
+        let resized = resize_for_vlm(image, Some(1024));
         assert!(u64::from(resized.width()) * u64::from(resized.height()) <= 1024 * 32 * 32);
         assert!(resized.width() <= 1920 && resized.height() <= 1920);
+    }
+
+    #[test]
+    fn extraction_resize_keeps_more_detail_than_categorization() {
+        let large = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(2000, 1200);
+        let categorization = resize_for_vlm(large.clone(), Some(1024));
+        let extraction = resize_for_vlm(large, None);
+        assert!(
+            u64::from(extraction.width()) * u64::from(extraction.height())
+                > u64::from(categorization.width()) * u64::from(categorization.height())
+        );
+        let small = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(800, 600);
+        let categorization = resize_for_vlm(small.clone(), Some(1024));
+        let extraction = resize_for_vlm(small, None);
+        assert_eq!(categorization.dimensions(), extraction.dimensions());
     }
 }
 

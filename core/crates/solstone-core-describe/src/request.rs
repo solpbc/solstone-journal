@@ -13,16 +13,20 @@ const SCHEMA: &str = include_str!("../../../../solstone/observe/describe.schema.
 pub fn system_instruction(redact_rules: &[String]) -> String {
     let categories = render_categories();
     let mut prompt = PROMPT.replace("$categories", &categories).trim().to_owned();
-    if !redact_rules.is_empty() {
-        prompt
-            .push_str("\n\nRedaction rules (apply these exactly as written, do not generalize):\n");
-        for rule in redact_rules {
-            prompt.push_str("- ");
-            prompt.push_str(rule);
-            prompt.push('\n');
-        }
-    }
+    append_redaction(&mut prompt, redact_rules);
     prompt
+}
+
+pub fn append_redaction(base: &mut String, redact_rules: &[String]) {
+    if redact_rules.is_empty() {
+        return;
+    }
+    base.push_str("\n\nRedaction rules (apply these exactly as written, do not generalize):\n");
+    for rule in redact_rules {
+        base.push_str("- ");
+        base.push_str(rule);
+        base.push('\n');
+    }
 }
 
 pub fn render_categories() -> String {

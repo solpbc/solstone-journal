@@ -13,11 +13,14 @@ use solstone_core_journal_io::{AtomicWriteOptions, install_file};
 use solstone_core_processing_record::vocab;
 
 use crate::WinnowConfig;
-use crate::decode::{IdentityTransform, QualifiedFrame, process_video_with_transform};
+use crate::decode::{
+    IdentityTransform, QualifiedFrame, process_video_with_transform, resize_for_vlm_png,
+};
+use crate::extraction;
 use crate::notify;
 use crate::request;
 use crate::selection::{self, CategorizedFrame, CategoryOverride, SelectionError};
-use crate::session::{DescribeSessionFactory, SystemSessionFactory};
+use crate::session::{DescribeSession, DescribeSessionFactory, SystemSessionFactory};
 
 pub const EXIT_PROVIDER_BLOCKED: i32 = 69;
 const MAX_ATTEMPTS: u64 = 5;
@@ -36,7 +39,11 @@ struct Pending {
 struct CategorizedRow {
     frame_id: u64,
     timestamp: f64,
-    analysis: Value,
+    png: Vec<u8>,
+    analysis: Option<Value>,
+    error: Option<String>,
+    requests: Vec<Value>,
+    finish_reason: String,
 }
 
 struct Promotion<'a> {
@@ -155,12 +162,10 @@ pub fn run_with_factory(
             let Some(pending) = waiting.pop_front() else {
                 break;
             };
-            let req = request::request(
-                pending.frame.frame_id,
-                pending.attempt,
-                &pending.frame.png,
-                &instruction,
-            );
+            let png = resize_for_vlm_png(&pending.frame.png, Some(1024)).ok_or_else(|| {
+                RunError::Internal("failed to resize categorization frame".to_owned())
+            })?;
+            let req = request::request(pending.frame.frame_id, pending.attempt, &png, &instruction);
             let id = req.id.clone().expect("describe request ids are present");
             if session.submit(req).is_err() {
                 return Err(blocked(options.journal, work_key, None, None, None));
@@ -184,15 +189,25 @@ pub fn run_with_factory(
         match response {
             GenerateResponse::Generated(generated) => {
                 model.get_or_insert(generated.model.clone());
-                let analysis = serde_json::from_str::<Value>(&generated.text)
-                    .unwrap_or_else(|_| json!({"error":"Invalid JSON response"}));
-                let error = analysis.get("error").is_some();
-                failures |= error;
-                rows.row(&json!({"frame_id":pending.frame.frame_id,"timestamp":pending.frame.timestamp,"analysis":analysis,"enhanced":false,"finish_reason":generated.finish_reason,"requests":[{"type":"describe","model":generated.model,"attempt":pending.attempt,"retries":pending.attempt}]}))?;
+                let parsed = serde_json::from_str::<Value>(&generated.text).ok();
+                let error = parsed
+                    .as_ref()
+                    .and_then(|value| value.get("error"))
+                    .is_some();
+                let error_message = if error || parsed.is_none() {
+                    Some("Invalid JSON response".to_owned())
+                } else {
+                    None
+                };
+                failures |= error_message.is_some();
                 categorized.push(CategorizedRow {
                     frame_id: pending.frame.frame_id,
                     timestamp: pending.frame.timestamp,
-                    analysis,
+                    png: pending.frame.png,
+                    analysis: (!error).then_some(parsed).flatten(),
+                    error: error_message,
+                    requests: vec![json!({"type":"describe","model":generated.model,"attempt":pending.attempt,"retries":pending.attempt})],
+                    finish_reason: generated.finish_reason,
                 });
             }
             GenerateResponse::Refused(refusal) => {
@@ -214,11 +229,14 @@ pub fn run_with_factory(
                     });
                 } else {
                     failures = true;
-                    rows.row(&json!({"frame_id":pending.frame.frame_id,"timestamp":pending.frame.timestamp,"error":refusal.detail,"enhanced":false,"finish_reason":"unknown","requests":[{"type":"describe","attempt":pending.attempt,"retries":pending.attempt,"reason_code":code}]}))?;
                     categorized.push(CategorizedRow {
                         frame_id: pending.frame.frame_id,
                         timestamp: pending.frame.timestamp,
-                        analysis: json!({"error": refusal.detail}),
+                        png: pending.frame.png,
+                        analysis: None,
+                        error: Some(refusal.detail),
+                        requests: vec![json!({"type":"describe","attempt":pending.attempt,"retries":pending.attempt,"reason_code":code})],
+                        finish_reason: "unknown".to_owned(),
                     });
                 }
             }
@@ -229,17 +247,17 @@ pub fn run_with_factory(
         .map(|row| CategorizedFrame {
             frame_id: row.frame_id,
             timestamp: row.timestamp,
-            analysis: row.analysis.clone(),
+            analysis: row.analysis.clone().unwrap_or(Value::Null),
         })
         .collect::<Vec<_>>();
     selection_frames.sort_unstable_by_key(|frame| frame.frame_id);
-    match selection::select(
+    let selected = match selection::select(
         session.as_ref(),
         &selection_frames,
         options.max_extractions,
         &options.category_overrides,
     ) {
-        Ok(_) => {}
+        Ok(selected) => selected,
         Err(SelectionError::Blocked {
             reason_code,
             provider,
@@ -257,7 +275,77 @@ pub fn run_with_factory(
             let _ = session.close();
             return Err(blocked(options.journal, work_key, None, None, None));
         }
+    };
+    let selected = selected
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
+    categorized.sort_unstable_by_key(|row| row.frame_id);
+    let mut final_rows = Vec::new();
+    for row in categorized {
+        let mut result = json!({"frame_id":row.frame_id,"timestamp":row.timestamp,"requests":row.requests,"finish_reason":row.finish_reason});
+        if let Some(analysis) = &row.analysis {
+            result["analysis"] = analysis.clone();
+        }
+        if let Some(error) = &row.error {
+            result["error"] = json!(error);
+        }
+        let Some(analysis) = row.analysis.as_ref() else {
+            result["enhanced"] = json!(false);
+            rows.row(&result)?;
+            final_rows.push(result);
+            continue;
+        };
+        if !selected.contains(&row.frame_id) {
+            result["enhanced"] = json!(false);
+            rows.row(&result)?;
+            final_rows.push(result);
+            continue;
+        }
+        let categories = extraction::categories_for_analysis(analysis);
+        if categories.is_empty() {
+            result["enhanced"] = json!(false);
+            rows.row(&result)?;
+            final_rows.push(result);
+            continue;
+        }
+        result["enhanced"] = json!(true);
+        result["content"] = json!({});
+        for category in categories {
+            match extract_category(
+                session.as_ref(),
+                row.frame_id,
+                category,
+                &row.png,
+                &options.redact_rules,
+            ) {
+                Ok(value) => result["content"][category.name] = value,
+                Err(ExtractionError::Failed(error)) => {
+                    failures = true;
+                    if result.get("error").is_none() {
+                        result["error"] = json!(error);
+                    }
+                }
+                Err(ExtractionError::Blocked { code, provider }) => {
+                    let _ = session.close();
+                    return Err(blocked(
+                        options.journal,
+                        work_key,
+                        code.as_deref(),
+                        provider.as_deref(),
+                        Some(&category.context),
+                    ));
+                }
+                Err(ExtractionError::Session) => {
+                    let _ = session.close();
+                    return Err(blocked(options.journal, work_key, None, None, None));
+                }
+            }
+        }
+        rows.row(&result)?;
+        final_rows.push(result);
     }
+    let final_rows = finalize_incomplete(final_rows.into_iter().map(|row| (row, 0)).collect());
+    failures |= has_row_failures(&final_rows);
     let _ = session.close();
     let (state, reason) = if decoded.decode_failed {
         (vocab::STATE_FAILED, vocab::REASON_CORRUPT_INPUT)
@@ -276,6 +364,110 @@ pub fn run_with_factory(
         state,
         reason,
     })
+}
+
+enum ExtractionError {
+    Blocked {
+        code: Option<String>,
+        provider: Option<String>,
+    },
+    Failed(String),
+    Session,
+}
+
+fn extract_category(
+    session: &dyn DescribeSession,
+    frame_id: u64,
+    category: &crate::categories::CategoryMeta,
+    png: &[u8],
+    redact_rules: &[String],
+) -> Result<Value, ExtractionError> {
+    let mut attempt = 0;
+    loop {
+        let request = extraction::request(frame_id, category, png, attempt, redact_rules)
+            .ok_or_else(|| {
+                ExtractionError::Failed("failed to resize extraction frame".to_owned())
+            })?;
+        let id = request.id.clone().expect("extraction ids are present");
+        session
+            .submit(request)
+            .map_err(|_| ExtractionError::Session)?;
+        let completion = session
+            .recv_timeout(Duration::from_secs(120))
+            .map_err(|_| ExtractionError::Session)?;
+        let SessionCompletion::Response(response) = completion else {
+            return Err(ExtractionError::Session);
+        };
+        let response_id = match &response {
+            GenerateResponse::Generated(generated) => generated.id.as_deref(),
+            GenerateResponse::Refused(refusal) => refusal.id.as_deref(),
+        };
+        if response_id != Some(id.as_str()) {
+            return Err(ExtractionError::Session);
+        }
+        let failure = match response {
+            GenerateResponse::Generated(generated) => {
+                match extraction::parse_response(
+                    category,
+                    &generated.text,
+                    &generated.finish_reason,
+                ) {
+                    Ok(value) => return Ok(value),
+                    Err(error) => error,
+                }
+            }
+            GenerateResponse::Refused(refusal) => {
+                if refusal.reason == RefusalReason::NoEngineConfigured || refusal.blocking {
+                    return Err(ExtractionError::Blocked {
+                        code: refusal.reason_code.map(|value| value.as_wire().to_owned()),
+                        provider: refusal.provider,
+                    });
+                }
+                if !refusal.retryable {
+                    return Err(ExtractionError::Failed(refusal.detail));
+                }
+                refusal.detail
+            }
+        };
+        if attempt + 1 >= MAX_ATTEMPTS {
+            return Err(ExtractionError::Failed(failure));
+        }
+        attempt += 1;
+    }
+}
+
+fn finalize_incomplete(mut results: Vec<(Value, usize)>) -> Vec<Value> {
+    results
+        .drain(..)
+        .map(|(mut result, pending)| {
+            if pending > 0 {
+                result["error"] = json!("Extraction never completed");
+            }
+            result
+        })
+        .collect()
+}
+
+fn has_row_failures(rows: &[Value]) -> bool {
+    rows.iter().any(|row| row.get("error").is_some())
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{finalize_incomplete, has_row_failures};
+
+    #[test]
+    fn incomplete_extractions_keep_partial_content_and_fail_verdict() {
+        let rows = finalize_incomplete(vec![(
+            json!({"frame_id":1,"enhanced":true,"content":{"code":"partial"}}),
+            1,
+        )]);
+        assert_eq!(rows[0]["content"]["code"], "partial");
+        assert_eq!(rows[0]["error"], "Extraction never completed");
+        assert!(has_row_failures(&rows));
+    }
 }
 
 fn blocked(

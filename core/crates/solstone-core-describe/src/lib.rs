@@ -3,8 +3,10 @@
 
 //! Decode and winnow screencast video frames for `journal describe`.
 
+mod bounding;
 pub mod categories;
 mod decode;
+pub mod extraction;
 mod fiducial;
 mod hash;
 mod notify;
@@ -17,6 +19,7 @@ mod winnow;
 pub use decode::{
     DescribeResult, IdentityTransform, PreHashOutcome, PreHashRejectReason, PreHashTransform,
     QualifiedFrame, RgbFrame, WinnowMetrics, process_video, process_video_with_transform,
+    resize_for_vlm, resize_for_vlm_png,
 };
 pub use fiducial::{
     AREA_RELATIVE_TOLERANCE, ArucoFrame, ArucoMarker, ConveyFiducialMask, MASK_SKIP_THRESHOLD,
