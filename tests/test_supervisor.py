@@ -1929,6 +1929,95 @@ def _cuda_launch_plan(
     )
 
 
+def _requestable_cuda_plan(mod, tmp_path):
+    return _cuda_launch_plan(
+        mod,
+        tmp_path / "llama-server",
+        tmp_path / "model.gguf",
+        tmp_path / "mmproj.gguf",
+        tmp_path / "cuda-lib",
+    )
+
+
+def test_request_local_launch_plan_requires_successful_handshake(tmp_path):
+    mod = importlib.import_module("solstone.think.supervisor")
+    from solstone.think import core_handshake
+
+    with pytest.raises(RuntimeError, match="handshake failure"):
+        mod._request_local_launch_plan(
+            _requestable_cuda_plan(mod, tmp_path),
+            4010,
+            handshake_checker=lambda: core_handshake.CoreHandshakeResult(
+                "fail", "handshake failure"
+            ),
+        )
+
+
+def test_request_local_launch_plan_rejects_nonzero_exit(tmp_path):
+    mod = importlib.import_module("solstone.think.supervisor")
+    from solstone.think import core_handshake
+
+    with pytest.raises(RuntimeError, match="failed: native failure"):
+        mod._request_local_launch_plan(
+            _requestable_cuda_plan(mod, tmp_path),
+            4010,
+            handshake_checker=lambda: core_handshake.CoreHandshakeResult("ok"),
+            helper_locator=lambda: Path("/tmp/solstone-core"),
+            runner=lambda *_args, **_kwargs: SimpleNamespace(
+                stdout="", stderr="native failure", returncode=1
+            ),
+        )
+
+
+def test_request_local_launch_plan_rejects_native_rejection(tmp_path):
+    mod = importlib.import_module("solstone.think.supervisor")
+    from solstone.think import core_handshake
+
+    with pytest.raises(RuntimeError, match="rejected: missing binary"):
+        mod._request_local_launch_plan(
+            _requestable_cuda_plan(mod, tmp_path),
+            4010,
+            handshake_checker=lambda: core_handshake.CoreHandshakeResult("ok"),
+            helper_locator=lambda: Path("/tmp/solstone-core"),
+            runner=lambda *_args, **_kwargs: SimpleNamespace(
+                stdout='{"outcome":"rejected","reason":"missing binary"}',
+                stderr="",
+                returncode=0,
+            ),
+        )
+
+
+def test_request_local_launch_plan_returns_native_launch_outcome(tmp_path):
+    mod = importlib.import_module("solstone.think.supervisor")
+    from solstone.think import core_handshake
+
+    expected = {
+        "outcome": "launch",
+        "argv": ["/tmp/llama-server"],
+        "context_tokens": 32768,
+        "parallel_slots": 2,
+        "prompt_cache_mib": 2048,
+        "extra_env": {"CUDA_VISIBLE_DEVICES": "0"},
+    }
+    calls = []
+
+    def runner(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(stdout=json.dumps(expected), stderr="", returncode=0)
+
+    outcome = mod._request_local_launch_plan(
+        _requestable_cuda_plan(mod, tmp_path),
+        4010,
+        handshake_checker=lambda: core_handshake.CoreHandshakeResult("ok"),
+        helper_locator=lambda: Path("/tmp/solstone-core"),
+        runner=runner,
+    )
+
+    assert outcome == expected
+    assert calls[0][0] == ["/tmp/solstone-core", "local", "plan"]
+    assert json.loads(calls[0][1]["input"])["nvidia_probe"]["vram_mib"] == 20000
+
+
 def test_ensure_venv_bin_on_path_prepends_when_missing(monkeypatch):
     mod = importlib.import_module("solstone.think.supervisor")
     monkeypatch.setenv("PATH", "/usr/bin")

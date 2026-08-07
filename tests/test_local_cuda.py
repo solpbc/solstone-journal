@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 
+from solstone.think import core_handshake
 from solstone.think.providers import local_cuda, local_install
 
 ARCH_SET = frozenset({"sm_86", "sm_89", "sm_120a", "sm_121a"})
@@ -82,6 +84,34 @@ def test_detect_nvidia_unified_memory_non_gb10_name_false(
 
     assert local_cuda.detect_nvidia_unified_memory() is False
     assert calls == [["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]]
+
+
+def test_probe_nvidia_gpu_logs_core_probe_diagnostic(caplog) -> None:
+    payload = {
+        "schema": "solstone-local-nvidia-probe-v1",
+        "detected": True,
+        "gpu_index": 0,
+        "gpu_name": "NVIDIA GB10",
+        "compute_cap": "12.1",
+        "arch": "sm_121a",
+        "driver_cuda_major": None,
+        "vram_mib": None,
+        "unified_memory_mib": 26724,
+        "probe_error": "driver CUDA version unreadable",
+    }
+
+    with caplog.at_level("WARNING"):
+        probe = local_cuda.probe_nvidia_gpu(
+            handshake_checker=lambda: core_handshake.CoreHandshakeResult("ok"),
+            helper_locator=lambda: "/tmp/solstone-core",
+            runner=lambda *_args, **_kwargs: _completed(json.dumps(payload)),
+        )
+
+    assert probe.tiering_memory_mib == 26724
+    assert any(
+        record.message == "NVIDIA GPU probe: driver CUDA version unreadable"
+        for record in caplog.records
+    )
 
 
 def test_select_local_backend_matrix() -> None:

@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::LoopbackAddr;
-use crate::nvidia::{ArtifactTrust, Backend, NvidiaProbe, select_local_backend};
+use crate::nvidia::{
+    ArtifactTrust, Backend, NVIDIA_PROBE_SCHEMA, NvidiaProbe, select_local_backend,
+};
 use crate::tier::{
     CAPABLE_CONTEXT_TOKENS, CAPABLE_MIN_VRAM_MIB, CAPABLE_PARALLEL_SLOTS, CAPABLE_PROMPT_CACHE_MIB,
     FLOOR_CONTEXT_TOKENS, FLOOR_PARALLEL_SLOTS, FLOOR_PROMPT_CACHE_MIB,
@@ -180,6 +182,13 @@ fn plan_mlx(input: PlanInput) -> PlanOutcome {
 }
 
 fn plan_linux(input: PlanInput) -> PlanOutcome {
+    if input
+        .nvidia_probe
+        .as_ref()
+        .is_some_and(|probe| probe.schema != NVIDIA_PROBE_SCHEMA)
+    {
+        return rejected("unsupported NVIDIA probe schema");
+    }
     if let Some(backend) = input.backend_override {
         return match backend {
             PlanBackend::Cuda => {
@@ -453,6 +462,12 @@ mod tests {
             PlanOutcome::Rejected { reason } => panic!("{reason}"),
         }
     }
+    fn assert_rejected(input: PlanInput, expected_reason: &str) {
+        match plan(input) {
+            PlanOutcome::Rejected { reason } => assert_eq!(reason, expected_reason),
+            PlanOutcome::Launch(_) => panic!("expected rejection: {expected_reason}"),
+        }
+    }
     #[test]
     fn tier_boundaries_and_cuda_argv() {
         for (memory, context, slots) in [
@@ -608,6 +623,122 @@ mod tests {
             .collect::<Vec<_>>()
         );
         assert_eq!(plan.context_tokens, None);
+    }
+    #[test]
+    fn mlx_rejects_missing_required_paths() {
+        let mut missing_interpreter = input(1);
+        missing_interpreter.platform = Platform::Darwin;
+        missing_interpreter.runtime_dir = Some("/runtime".into());
+        assert_rejected(missing_interpreter, "MLX interpreter path is required");
+
+        let mut missing_runtime = input(1);
+        missing_runtime.platform = Platform::Darwin;
+        missing_runtime.mlx_interpreter_path = Some("/mlx".into());
+        assert_rejected(missing_runtime, "MLX runtime directory is required");
+    }
+    #[test]
+    fn cuda_override_rejects_missing_probe_memory_and_binary() {
+        let mut missing_probe = input(16_000);
+        missing_probe.backend_override = Some(PlanBackend::Cuda);
+        missing_probe.nvidia_probe = None;
+        assert_rejected(missing_probe, "CUDA override requires NVIDIA probe");
+
+        let mut missing_memory = input(16_000);
+        missing_memory.backend_override = Some(PlanBackend::Cuda);
+        missing_memory.nvidia_probe = Some(probe(None, None));
+        assert_rejected(
+            missing_memory,
+            "CUDA override requires usable NVIDIA memory",
+        );
+
+        let mut missing_binary = input(16_000);
+        missing_binary.backend_override = Some(PlanBackend::Cuda);
+        missing_binary.cuda_binary_path = None;
+        assert_rejected(missing_binary, "cuda binary path is required");
+    }
+    #[test]
+    fn plan_rejects_invalid_or_unknown_nvidia_probe_fields() {
+        let mut invalid_schema = input(16_000);
+        invalid_schema.backend_override = Some(PlanBackend::Cuda);
+        invalid_schema.nvidia_probe.as_mut().expect("probe").schema = "wrong-schema".into();
+        assert_rejected(invalid_schema, "unsupported NVIDIA probe schema");
+
+        let mut value = serde_json::to_value(probe(Some(16_000), None)).expect("probe JSON");
+        value
+            .as_object_mut()
+            .expect("probe object")
+            .insert("unexpected".into(), serde_json::json!(true));
+        assert!(serde_json::from_value::<NvidiaProbe>(value).is_err());
+    }
+    #[test]
+    fn vulkan_override_rejects_invalid_selection_and_missing_binary() {
+        let mut no_devices = input(1);
+        no_devices.backend_override = Some(PlanBackend::Vulkan);
+        no_devices.nvidia_probe = None;
+        assert_rejected(no_devices, "no viable CUDA backend and no Vulkan devices");
+
+        let mut no_selected_index = input(1);
+        no_selected_index.backend_override = Some(PlanBackend::Vulkan);
+        no_selected_index.nvidia_probe = None;
+        no_selected_index.vulkan_devices = Some(vec![VulkanDevice {
+            index: 2,
+            name: "vk".into(),
+            vram_mib: 16_000,
+        }]);
+        assert_rejected(no_selected_index, "Vulkan selected GPU index is required");
+
+        let mut unknown_index = input(1);
+        unknown_index.backend_override = Some(PlanBackend::Vulkan);
+        unknown_index.nvidia_probe = None;
+        unknown_index.vulkan_devices = Some(vec![VulkanDevice {
+            index: 2,
+            name: "vk".into(),
+            vram_mib: 16_000,
+        }]);
+        unknown_index.vulkan_selected_gpu_index = Some(3);
+        assert_rejected(unknown_index, "selected Vulkan GPU is not enumerated");
+
+        let mut mismatched_name = input(1);
+        mismatched_name.backend_override = Some(PlanBackend::Vulkan);
+        mismatched_name.nvidia_probe = None;
+        mismatched_name.vulkan_devices = Some(vec![VulkanDevice {
+            index: 2,
+            name: "vk".into(),
+            vram_mib: 16_000,
+        }]);
+        mismatched_name.vulkan_selected_gpu_index = Some(2);
+        mismatched_name.vulkan_selected_gpu_name = Some("other".into());
+        assert_rejected(
+            mismatched_name,
+            "selected Vulkan GPU does not match enumerated device",
+        );
+
+        let mut mismatched_vram = input(1);
+        mismatched_vram.backend_override = Some(PlanBackend::Vulkan);
+        mismatched_vram.nvidia_probe = None;
+        mismatched_vram.vulkan_devices = Some(vec![VulkanDevice {
+            index: 2,
+            name: "vk".into(),
+            vram_mib: 16_000,
+        }]);
+        mismatched_vram.vulkan_selected_gpu_index = Some(2);
+        mismatched_vram.vulkan_selected_vram_mib = Some(8_000);
+        assert_rejected(
+            mismatched_vram,
+            "selected Vulkan GPU does not match enumerated device",
+        );
+
+        let mut missing_binary = input(1);
+        missing_binary.backend_override = Some(PlanBackend::Vulkan);
+        missing_binary.nvidia_probe = None;
+        missing_binary.vulkan_devices = Some(vec![VulkanDevice {
+            index: 2,
+            name: "vk".into(),
+            vram_mib: 16_000,
+        }]);
+        missing_binary.vulkan_selected_gpu_index = Some(2);
+        missing_binary.vulkan_binary_path = None;
+        assert_rejected(missing_binary, "vulkan binary path is required");
     }
     #[test]
     fn bind_address_drives_argv_and_plan_input_rejects_non_loopback() {

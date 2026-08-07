@@ -238,12 +238,23 @@ mod tests {
 
     fn journal(port: u16, context: Option<&str>) -> PathBuf {
         let root = std::env::temp_dir().join(format!("solstone-local-connect-{port}"));
+        let _ = std::fs::remove_dir_all(&root);
         let health = root.join("health");
         std::fs::create_dir_all(&health).expect("health directory");
         std::fs::write(health.join("local.port"), port.to_string()).expect("port");
         if let Some(context) = context {
             std::fs::write(health.join("local.ctx"), context).expect("context");
         }
+        root
+    }
+
+    fn journal_without_port() -> PathBuf {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("address").port();
+        drop(listener);
+        let root = std::env::temp_dir().join(format!("solstone-local-connect-{port}"));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("health")).expect("health directory");
         root
     }
 
@@ -309,6 +320,75 @@ mod tests {
             ConnectOutcome::NotReady { .. }
         ));
         handle.join().expect("server");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn connect_rejects_non_string_served_model() {
+        let (port, handle) = serve(vec![
+            "HTTP/1.1 200 OK\r\nContent-Length: 18\r\n\r\n{\"loaded_model\":1}",
+        ]);
+        let root = journal(port, None);
+        assert!(matches!(
+            connect(input(&root)),
+            ConnectOutcome::NotReady { .. }
+        ));
+        handle.join().expect("server");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn connect_rejects_unsupported_schema_and_missing_port() {
+        let mut invalid_schema = input(Path::new("/unused"));
+        invalid_schema.schema = "unsupported".into();
+        assert!(matches!(
+            connect(invalid_schema),
+            ConnectOutcome::Failed { ref reason } if reason == "unsupported connect input schema"
+        ));
+
+        let root = journal_without_port();
+        assert!(matches!(
+            connect(input(&root)),
+            ConnectOutcome::NotReady { ref reason } if reason == "no local service port"
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn connect_reports_loading_and_unexpected_http_status() {
+        let (loading_port, loading_handle) = serve(vec![
+            "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 13\r\n\r\nloading model",
+        ]);
+        let loading_root = journal(loading_port, None);
+        assert!(matches!(
+            connect(input(&loading_root)),
+            ConnectOutcome::Loading { ref reason } if reason == "loading model"
+        ));
+        loading_handle.join().expect("loading server");
+        let _ = std::fs::remove_dir_all(loading_root);
+
+        let (failed_port, failed_handle) = serve(vec![
+            "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n",
+        ]);
+        let failed_root = journal(failed_port, None);
+        assert!(matches!(
+            connect(input(&failed_root)),
+            ConnectOutcome::Failed { ref reason } if reason.starts_with("HTTP 500:")
+        ));
+        failed_handle.join().expect("failed server");
+        let _ = std::fs::remove_dir_all(failed_root);
+    }
+
+    #[test]
+    fn connect_reports_transport_failure() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("address").port();
+        drop(listener);
+        let root = journal(port, None);
+        assert!(matches!(
+            connect(input(&root)),
+            ConnectOutcome::Failed { .. }
+        ));
         let _ = std::fs::remove_dir_all(root);
     }
 

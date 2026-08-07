@@ -12,7 +12,7 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 pub const CUDA_EMBEDDED_ARCH_SET: [&str; 4] = ["sm_86", "sm_89", "sm_120a", "sm_121a"];
 pub const CUDA_MIN_DRIVER_VERSION: u32 = 13;
-const NVIDIA_PROBE_SCHEMA: &str = "solstone-local-nvidia-probe-v1";
+pub(crate) const NVIDIA_PROBE_SCHEMA: &str = "solstone-local-nvidia-probe-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -36,6 +36,7 @@ pub struct BackendChoice {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct NvidiaProbe {
     pub schema: String,
     pub detected: bool,

@@ -2883,7 +2883,7 @@ def _observe_linux_local_provider_truth() -> ProviderTruthObservation:
             mmproj_path=mmproj_path,
             lib_dir=lib_dir,
             gpu_index=gpu_index,
-            gpu_vram_mib=probe.vram_mib,
+            gpu_vram_mib=probe.tiering_memory_mib,
             context_tokens=tier.context_tokens,
             parallel_slots=tier.parallel_slots,
             visible_devices_env=local_install.CUDA_SERVER_PIN.visible_devices_env,

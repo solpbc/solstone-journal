@@ -865,6 +865,48 @@ def test_linux_local_observer_preserves_live_install_progress(
     assert forbidden_calls == []
 
 
+def test_linux_local_observer_carries_unified_memory_into_cuda_plan(
+    monkeypatch,
+) -> None:
+    from solstone.think.providers import local_cuda, local_install
+
+    target = {"provider": "local", "runtime": "llama.cpp", "target": "cuda"}
+    readiness = replace(
+        _local_readiness(),
+        host={"backend": "cuda", "backend_reason": "test CUDA"},
+    )
+    probe = local_cuda.NvidiaProbe(
+        index=0,
+        compute_cap="sm_121",
+        driver_cuda_version=13,
+        vram_mib=None,
+        tiering_memory_mib=26_724,
+        memory_source=local_cuda.MEMORY_SOURCE_SYSTEM_AVAILABLE,
+        detected=True,
+    )
+    monkeypatch.setattr(local_install, "target_fingerprint", lambda _model: target)
+    monkeypatch.setattr(local_install, "inspect_readiness", lambda _model: readiness)
+    monkeypatch.setattr(local_install, "cuda_binary_dir", lambda: Path("/tmp/cuda"))
+    monkeypatch.setattr(
+        supervisor, "_local_readiness_block_observation", lambda **_kwargs: None
+    )
+    monkeypatch.setattr(local_cuda, "probe_nvidia_gpu", lambda: probe)
+    monkeypatch.setattr(
+        supervisor, "_local_plan_race_identity", lambda _plan: {"stable": True}
+    )
+
+    observation = supervisor._observe_linux_local_provider_truth()
+
+    assert observation.phase == "starting"
+    assert observation.plan is not None
+    assert observation.plan.backend == "cuda"
+    assert observation.plan.gpu_vram_mib == 26_724
+    assert (observation.plan.context_tokens, observation.plan.parallel_slots) == (
+        32_768,
+        2,
+    )
+
+
 def test_linux_local_observer_missing_lease_does_not_create_or_mutate_status(
     monkeypatch,
 ) -> None:

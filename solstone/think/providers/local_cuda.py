@@ -148,6 +148,8 @@ def probe_nvidia_gpu(
     if completed.returncode != 0:
         raise RuntimeError(f"solstone-core local probe-nvidia failed: {completed.stderr}")
     payload = json.loads(completed.stdout)
+    if probe_error := payload.get("probe_error"):
+        LOG.warning("NVIDIA GPU probe: %s", probe_error)
     if not payload["detected"]:
         return _undetected()
     vram_mib = payload["vram_mib"]

@@ -27,9 +27,9 @@ STATE_STOPPED = "stopped"
 _HOST = "127.0.0.1"
 
 # Minimum/floor context window. This is the OpenHands agent
-# `max_input_tokens` floor, the floor-tier llama-server `-c`, and the sizing
-# function's lower clamp. Capable GPU server launch `-c` comes from
-# select_server_tier().
+# `max_input_tokens` floor and the sizing function's lower clamp.
+# `select_server_tier()` determines the observation-side tier; solstone-core
+# local plan renders the launched llama-server argv, including `-c`.
 LOCAL_MIN_CONTEXT_TOKENS = 16384
 
 
