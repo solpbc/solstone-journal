@@ -54,7 +54,7 @@ impl fmt::Display for CanonicalizeError {
 
 impl std::error::Error for CanonicalizeError {}
 
-/// The closed set of normalized-row projection failure codes.
+/// The closed set of normalized-row construction and projection failure codes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CandidateErrorCode {
     UnsupportedSchema,
@@ -77,7 +77,7 @@ impl CandidateErrorCode {
     }
 }
 
-/// The closed set of normalized-row projection failure locations.
+/// The closed set of normalized-row construction and projection failure locations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CandidateErrorField {
     Row,
@@ -126,7 +126,7 @@ impl CandidateErrorField {
     }
 }
 
-/// A bounded, redacting normalized-row projection failure.
+/// A bounded, redacting normalized-row construction or projection failure.
 #[derive(Clone, PartialEq)]
 pub struct CandidateError {
     pub coordinate: Coordinate,

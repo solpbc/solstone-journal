@@ -40,7 +40,7 @@ impl Coordinate {
         rendered_component(&self.shard)
     }
 
-    /// Returns the row line number.
+    /// Returns the row line number, or None if the supplied line was invalid (zero).
     pub fn line(&self) -> Option<u64> {
         (self.line != 0).then_some(self.line)
     }
