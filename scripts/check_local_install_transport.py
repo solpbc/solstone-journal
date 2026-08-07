@@ -135,11 +135,31 @@ def scan_retired_references(root: Path) -> list[tuple[str, int, str]]:
         "scripts/check_local_install_transport.py",
         "scripts/fixtures/retired_local_install_transport.py",
     }
-    for path in sorted(root.rglob("*.py")):
+    # ⚠ Scope the walk to the trees this repository authors. `root.rglob` reaches
+    # `.venv`, `target`, `build` and `node_modules`, which do not exist in a fresh
+    # lode worktree and do exist in every real checkout — so an unscoped walk
+    # passes where it was written and crashes or false-positives everywhere else.
+    # A vendored copy of anything would also trip a retired-symbol check that has
+    # no business reading it.
+    scan_roots = [root / "solstone", root / "scripts", root / "tests"]
+    candidates = sorted(
+        path
+        for scan_root in scan_roots
+        if scan_root.is_dir()
+        for path in scan_root.rglob("*.py")
+    )
+    for path in candidates:
         relative = path.relative_to(root).as_posix()
         if relative in excluded:
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        try:
+            source = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            # A file this gate cannot decode is a file it cannot judge. Skipping
+            # is the only honest answer; crashing turns "cannot judge" into
+            # "everything failed", which reads as a violation it never found.
+            continue
+        tree = ast.parse(source, filename=str(path))
         local_modules = {"local_install"}
         mlx_modules = {"mlx_install"}
         imported_local: set[str] = set()
