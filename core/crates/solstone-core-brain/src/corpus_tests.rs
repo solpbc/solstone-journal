@@ -515,6 +515,32 @@ fn diagnostics_and_component_reason_rules_are_reason_scoped() {
 }
 
 #[test]
+fn evidence_must_be_a_present_object() {
+    let mut missing = projection_fixture()
+        .records
+        .get("lane_none/ready")
+        .expect("none-lane ready record")
+        .clone();
+    missing
+        .as_object_mut()
+        .expect("record object")
+        .remove("evidence");
+    let missing_error = validate_brain_state_record(&missing, fixture_now()).unwrap_err();
+    assert_eq!(missing_error.path, "evidence");
+    assert_eq!(missing_error.reason, "must be an object");
+
+    let mut null = projection_fixture()
+        .records
+        .get("lane_none/ready")
+        .expect("none-lane ready record")
+        .clone();
+    null["evidence"] = Value::Null;
+    let null_error = validate_brain_state_record(&null, fixture_now()).unwrap_err();
+    assert_eq!(null_error.path, "evidence");
+    assert_eq!(null_error.reason, "must be an object");
+}
+
+#[test]
 fn checking_and_runtime_marker_shapes_match_python_validation() {
     let mut checking = projection_fixture()
         .records

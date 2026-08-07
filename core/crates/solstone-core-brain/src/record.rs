@@ -182,12 +182,9 @@ fn parse_evidence(
     now: DateTime<Utc>,
 ) -> Result<BTreeMap<String, Option<EvidenceComponent>>, ValidationError> {
     let vocabulary = &local_contract().brain_state;
-    let object = match value {
-        None | Some(Value::Null) => return Ok(BTreeMap::new()),
-        Some(value) => value
-            .as_object()
-            .ok_or_else(|| failure("evidence", "must be an object"))?,
-    };
+    let object = value
+        .and_then(Value::as_object)
+        .ok_or_else(|| failure("evidence", "must be an object"))?;
     closed(object, &vocabulary.record_fields.evidence, "evidence.")?;
     let mut result = BTreeMap::new();
     for component in &vocabulary.record_fields.evidence {
