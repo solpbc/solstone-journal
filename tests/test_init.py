@@ -26,17 +26,10 @@ def _read_init_state(client):
     return response.get_json()
 
 
-def _make_empty_client(tmp_path, monkeypatch, *, timezone="America/Denver"):
+def _make_empty_client(tmp_path, monkeypatch):
     journal = tmp_path / "journal"
     journal.mkdir()
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
-    monkeypatch.setattr(
-        "solstone.think.journal_config._resolve_os_identity",
-        lambda: ("OS User", "osuser"),
-    )
-    monkeypatch.setattr(
-        "solstone.think.journal_config._resolve_os_timezone", lambda: timezone
-    )
     app = create_app(str(journal))
     app.config["TESTING"] = True
     return app.test_client(), journal
@@ -293,13 +286,12 @@ class TestInitDetection:
 
         assert resp.status_code == 200
         config = _read_config(journal)
-        assert config["identity"]["name"] == "OS User"
-        assert config["identity"]["preferred"] == "osuser"
-        assert config["identity"]["timezone"] == "America/Denver"
+        for field in ("name", "preferred", "timezone"):
+            assert isinstance(config["identity"][field], str)
         assert "convey" not in config
         state = _read_init_state(client)
-        assert state["identity_name"] == "OS User"
-        assert state["identity_preferred"] == "osuser"
+        assert state["identity_name"] == config["identity"]["name"]
+        assert state["identity_preferred"] == config["identity"]["preferred"]
 
     def test_init_escapes_identity_values(self, journal_copy):
         config = _read_config(journal_copy)
@@ -827,9 +819,7 @@ class TestInitFinalize:
         assert "providers" not in config
 
     def test_finalize_form_timezone_overrides_os_default(self, tmp_path, monkeypatch):
-        client, journal = _make_empty_client(
-            tmp_path, monkeypatch, timezone="America/Denver"
-        )
+        client, journal = _make_empty_client(tmp_path, monkeypatch)
         client.get("/init")
         _commit_journal_identity()
 
@@ -853,10 +843,9 @@ class TestInitFinalize:
     def test_finalize_without_timezone_preserves_os_default(
         self, tmp_path, monkeypatch
     ):
-        client, journal = _make_empty_client(
-            tmp_path, monkeypatch, timezone="America/Denver"
-        )
+        client, journal = _make_empty_client(tmp_path, monkeypatch)
         client.get("/init")
+        initial_timezone = _read_config(journal)["identity"]["timezone"]
         _commit_journal_identity()
 
         resp = client.post(
@@ -869,7 +858,7 @@ class TestInitFinalize:
         config = _read_config(journal)
         assert config["identity"]["name"] == "Form User"
         assert config["identity"]["preferred"] == "Form"
-        assert config["identity"]["timezone"] == "America/Denver"
+        assert config["identity"]["timezone"] == initial_timezone
         assert "completed_at" in config["setup"]
 
     def test_finalize_completes_setup_access(self, fresh_client, journal_copy):

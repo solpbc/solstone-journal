@@ -15,7 +15,14 @@ from unittest.mock import Mock
 
 import pytest
 
-from solstone.think import health_cli, install_guard, service, setup, setup_events
+from solstone.think import (
+    health_cli,
+    install_guard,
+    journal_config,
+    service,
+    setup,
+    setup_events,
+)
 from solstone.think.user_config import write_user_config
 
 _REAL_TOPOLOGY_PROBE = setup.read_sol_already_keeps_journal
@@ -44,6 +51,27 @@ def fast_brain_check(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def neutral_supervisor_topology(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(setup, "read_sol_already_keeps_journal", lambda: False)
+
+
+@pytest.fixture(autouse=True)
+def use_built_core(monkeypatch: pytest.MonkeyPatch) -> None:
+    helper = (
+        Path(__file__).resolve().parents[1]
+        / "core"
+        / "target"
+        / "debug"
+        / "solstone-core"
+    )
+    monkeypatch.setattr(
+        journal_config.core_handshake,
+        "check_solstone_core_handshake",
+        lambda: journal_config.core_handshake.CoreHandshakeResult("ok"),
+    )
+    monkeypatch.setattr(
+        journal_config.core_handshake,
+        "helper_path_for_executable",
+        lambda: helper,
+    )
 
 
 def patch_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
@@ -106,10 +134,17 @@ def patch_subprocess(
     doctor_jsonl_stderr: str = "",
 ) -> list[list[str]]:
     calls: list[list[str]] = []
+    real_run = subprocess.run
+    real_popen = subprocess.Popen
+
+    def is_solstone_core_command(command: list[str]) -> bool:
+        return bool(command) and Path(command[0]).name == "solstone-core"
 
     def fake_run(
         command: list[str], **kwargs: object
     ) -> subprocess.CompletedProcess[str]:
+        if is_solstone_core_command(command):
+            return real_run(command, **kwargs)
         calls.append(command)
         if "doctor" in command:
             if doctor_timeout:
@@ -128,6 +163,11 @@ def patch_subprocess(
         )
 
     class FakePopen:
+        def __new__(cls, command: list[str], **kwargs: object) -> object:
+            if is_solstone_core_command(command):
+                return real_popen(command, **kwargs)
+            return object.__new__(cls)
+
         def __init__(self, command: list[str], **kwargs: object) -> None:
             del kwargs
             self.command = command
@@ -177,17 +217,6 @@ def patch_subprocess(
 def patch_service_health(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(service, "_up", lambda: 0)
     monkeypatch.setattr(health_cli, "health_check", lambda: 0)
-
-
-def patch_journal_os_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "solstone.think.journal_config._resolve_os_identity",
-        lambda: ("Setup User", "setup"),
-    )
-    monkeypatch.setattr(
-        "solstone.think.journal_config._resolve_os_timezone",
-        lambda: "America/Denver",
-    )
 
 
 STEP_NAMES = [
@@ -1286,7 +1315,6 @@ def test_brain_topology_skip_sets_same_lane_as_skip_service(
 
     home = patch_home(monkeypatch, tmp_path)
     patch_source_checkout(monkeypatch, tmp_path)
-    patch_journal_os_defaults(monkeypatch)
     monkeypatch.delenv("SOLSTONE_JOURNAL", raising=False)
     (home / ".claude").mkdir()
     monkeypatch.setattr(
@@ -1642,7 +1670,6 @@ def test_step_journal_materializes_journal_config(
 ) -> None:
     patch_home(monkeypatch, tmp_path)
     patch_source_checkout(monkeypatch, tmp_path)
-    patch_journal_os_defaults(monkeypatch)
     monkeypatch.delenv("SOLSTONE_JOURNAL", raising=False)
     journal = tmp_path / "journal"
     argv = ["--yes", "--journal", str(journal)]
@@ -1653,9 +1680,8 @@ def test_step_journal_materializes_journal_config(
     config_path = journal / "config" / "journal.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     assert result.status == "ok"
-    assert config["identity"]["name"] == "Setup User"
-    assert config["identity"]["preferred"] == "setup"
-    assert config["identity"]["timezone"] == "America/Denver"
+    for field in ("name", "preferred", "timezone"):
+        assert isinstance(config["identity"][field], str)
     assert "convey" not in config
     assert str(config_path.resolve()) in result.paths
 
@@ -1666,7 +1692,6 @@ def test_step_journal_dry_run_does_not_materialize_journal_config(
 ) -> None:
     patch_home(monkeypatch, tmp_path)
     patch_source_checkout(monkeypatch, tmp_path)
-    patch_journal_os_defaults(monkeypatch)
     monkeypatch.delenv("SOLSTONE_JOURNAL", raising=False)
     journal = tmp_path / "journal"
     argv = ["--dry-run", "--journal", str(journal)]
@@ -1684,7 +1709,6 @@ def test_step_journal_is_idempotent(
 ) -> None:
     patch_home(monkeypatch, tmp_path)
     patch_source_checkout(monkeypatch, tmp_path)
-    patch_journal_os_defaults(monkeypatch)
     monkeypatch.delenv("SOLSTONE_JOURNAL", raising=False)
     journal = tmp_path / "journal"
     argv = ["--yes", "--journal", str(journal)]
