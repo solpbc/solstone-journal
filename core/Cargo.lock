@@ -18,6 +18,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "allocation-counter"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "beb9e990c0a33699f1984d85a6abead615ccc72dd8130bf3e15dcabe2ca149c9"
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1973,6 +1979,14 @@ dependencies = [
  "solstone-core-spl",
  "tokio",
  "tokio-tungstenite",
+]
+
+[[package]]
+name = "solstone-core-body-source"
+version = "1.0.22"
+dependencies = [
+ "allocation-counter",
+ "serde_json",
 ]
 
 [[package]]
