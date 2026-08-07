@@ -11,6 +11,31 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PRE_CUTOVER_COMMIT = "dd04f55c8"
 SURVIVING_SOL_CLI = "solstone/think/sol_cli.py"
+SURVIVING_JOURNAL_CALL_ORACLE = "solstone/think/tools/call.py"
+
+# The compatibility bridge was added after the pre-cutover deletion manifest.
+# These are current-tree closure checks rather than historical blob assertions.
+COMPAT_BRIDGE_DELETED_PATHS = (
+    "solstone/think/sol_compat_cli.py",
+    "solstone/think/sol_compat_inventory.py",
+    "solstone/think/call.py",
+    "scripts/check_native_sol_compat.py",
+    "tests/test_sol_compat_cli.py",
+)
+
+RUST_COMPAT_FORBIDDEN_SYMBOLS = (
+    "COMPAT_MODULE",
+    "COMPAT_SENTINEL",
+    "COMPAT_ARGV0_MARKER_PREFIX",
+    "COMPAT_SENTINEL_ARMED",
+    "COMPAT_RECURSION_ERROR",
+    "delegate_to_compat",
+    "exec_compat",
+    "sibling_python_for_executable",
+    "is_compat_public_args",
+    "should_delegate_to_compat_after_native_miss",
+    "CompatPythonError",
+)
 
 # Pre-cutover deletion-owner manifest. `convey_client.py` intentionally
 # survives because the OpenAPI contract tests import `resolve_base_url`.
@@ -96,6 +121,32 @@ def deletion_errors() -> list[str]:
     return errors
 
 
+def compat_bridge_deletion_errors() -> list[str]:
+    errors: list[str] = []
+    for path in COMPAT_BRIDGE_DELETED_PATHS:
+        if (REPO_ROOT / path).exists():
+            errors.append(f"{path} still exists after compat-bridge closure")
+    if not (REPO_ROOT / SURVIVING_JOURNAL_CALL_ORACLE).is_file():
+        errors.append(
+            f"{SURVIVING_JOURNAL_CALL_ORACLE} must survive as the journal call oracle"
+        )
+    return errors
+
+
+def compat_executor_errors() -> list[str]:
+    errors: list[str] = []
+    rust_path = REPO_ROOT / "core/crates/solstone-core-sol/src/lib.rs"
+    rust_text = rust_path.read_text(encoding="utf-8")
+    for symbol in RUST_COMPAT_FORBIDDEN_SYMBOLS:
+        if symbol in rust_text:
+            errors.append(f"{rust_path.relative_to(REPO_ROOT)} still contains {symbol}")
+    makefile_text = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    for symbol in ("check-native-sol-compat", "sol_compat_cli"):
+        if symbol in makefile_text:
+            errors.append(f"Makefile still contains removed compat reference {symbol}")
+    return errors
+
+
 def sol_cli_survivor_errors(path: Path) -> list[str]:
     if not path.is_file():
         return []
@@ -127,6 +178,8 @@ def main() -> int:
     data = manifest_bytes()
     digest = hashlib.sha256(data).hexdigest()
     errors = deletion_errors()
+    errors.extend(compat_bridge_deletion_errors())
+    errors.extend(compat_executor_errors())
     if digest != EXPECTED_SHA256:
         errors.insert(
             0,
