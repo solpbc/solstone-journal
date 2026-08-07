@@ -1,0 +1,23 @@
+[package]
+name = "solstone-core-brain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+# Required, not cosmetic: wildcards = "deny" in deny.toml requires every
+# workspace crate to opt out of publication until it has a reviewed package plan.
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono.workspace = true
+hmac.workspace = true
+nix.workspace = true
+ryu.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+solstone-core-journal-config.workspace = true
+solstone-core-journal-io.workspace = true

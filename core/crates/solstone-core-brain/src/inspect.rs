@@ -1,0 +1,416 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use std::fs::{self, OpenOptions};
+use std::path::{Path, PathBuf};
+
+use chrono::{DateTime, Utc};
+use nix::errno::Errno;
+use nix::fcntl::{Flock, FlockArg};
+use serde_json::{Map, Value};
+
+use crate::fingerprint::{
+    active_brain_config, build_active_brain_fingerprint, derive_active_brain_lane,
+};
+use crate::fixture::local_contract;
+use crate::record::{BrainStateRecord, reduce_evidence_with_runtime, validate_brain_state_record};
+use crate::runtime_health::{RuntimeRecordInspection, inspect_runtime_health};
+
+pub(crate) const FINGERPRINT_KEY_BYTES: usize = 32;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InspectionStatus {
+    Ok,
+    Corrupt,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrainProjection {
+    pub aggregate_state: String,
+    pub reason_code: Option<String>,
+    pub active_lane: Option<String>,
+    pub active_provider: Option<String>,
+    pub active_model: Option<String>,
+    pub fingerprint_sha256: Option<String>,
+    pub runtime_transition_in_progress: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrainInspection {
+    pub status: InspectionStatus,
+    pub projection: BrainProjection,
+    pub error: Option<String>,
+}
+
+pub fn brain_state_path(journal_path: &Path) -> PathBuf {
+    journal_path.join(&local_contract().brain_state.paths.record)
+}
+
+pub fn brain_fingerprint_key_path(journal_path: &Path) -> PathBuf {
+    journal_path.join(&local_contract().brain_state.paths.fingerprint_key)
+}
+
+pub fn brain_refresh_lease_path(journal_path: &Path) -> PathBuf {
+    journal_path.join(&local_contract().brain_state.paths.refresh_lease)
+}
+
+pub fn load_existing_fingerprint_key(journal_path: &Path) -> Option<[u8; FINGERPRINT_KEY_BYTES]> {
+    let bytes = fs::read(brain_fingerprint_key_path(journal_path)).ok()?;
+    bytes.try_into().ok()
+}
+
+pub fn probe_file_lease_held(path: &Path) -> std::io::Result<bool> {
+    let file = match OpenOptions::new().read(true).write(true).open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
+        Ok(lock) => {
+            drop(lock);
+            Ok(false)
+        }
+        Err((_file, error))
+            if error == Errno::EACCES || error == Errno::EAGAIN || error == Errno::EWOULDBLOCK =>
+        {
+            Ok(true)
+        }
+        Err((_file, error)) => Err(std::io::Error::from_raw_os_error(error as i32)),
+    }
+}
+
+pub fn inspect_brain_state(
+    journal_path: &Path,
+    config: &Map<String, Value>,
+    now: DateTime<Utc>,
+) -> BrainInspection {
+    let record = match fs::read(brain_state_path(journal_path)) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return inspection(
+                InspectionStatus::Unavailable,
+                unavailable_projection("brain_record_missing"),
+                None,
+            );
+        }
+        Err(error) => {
+            return inspection(
+                InspectionStatus::Unavailable,
+                unavailable_projection("brain_record_unavailable"),
+                Some(error.to_string()),
+            );
+        }
+        Ok(bytes) => match serde_json::from_slice::<Value>(&bytes)
+            .map_err(|error| error.to_string())
+            .and_then(|value| {
+                if !value.is_object() {
+                    return Err("record: brain state must be an object".to_owned());
+                }
+                validate_brain_state_record(&value, now).map_err(|error| error.to_string())
+            }) {
+            Ok(record) => record,
+            Err(error) => {
+                return inspection(
+                    InspectionStatus::Corrupt,
+                    unavailable_projection("brain_record_invalid"),
+                    Some(error),
+                );
+            }
+        },
+    };
+    let lane = match derive_active_brain_lane(config) {
+        Ok(lane) => lane,
+        Err(error) => {
+            return inspection(
+                InspectionStatus::Ok,
+                unavailable_projection("configuration_invalid"),
+                Some(error.to_string()),
+            );
+        }
+    };
+    if lane == "none" {
+        return inspection(
+            InspectionStatus::Ok,
+            project_brain_state(&record, "none", None, None, false, None, now),
+            None,
+        );
+    }
+    let key = match load_existing_fingerprint_key(journal_path) {
+        Some(key) => key,
+        None => {
+            return inspection(
+                InspectionStatus::Ok,
+                unavailable_projection("fingerprint_key_unavailable"),
+                None,
+            );
+        }
+    };
+    let runtime = if lane == "bundled" {
+        Some(inspect_runtime_health(journal_path))
+    } else {
+        None
+    };
+    let refresh_permit_active = if record.checking.is_some() {
+        probe_file_lease_held(&brain_refresh_lease_path(journal_path)).unwrap_or(false)
+    } else {
+        false
+    };
+    inspection(
+        InspectionStatus::Ok,
+        project_brain_state(
+            &record,
+            &lane,
+            Some(config),
+            runtime.as_ref(),
+            refresh_permit_active,
+            Some(&key),
+            now,
+        ),
+        None,
+    )
+}
+
+pub fn project_brain_state(
+    record: &BrainStateRecord,
+    lane: &str,
+    config: Option<&Map<String, Value>>,
+    runtime_health: Option<&RuntimeRecordInspection>,
+    refresh_permit_active: bool,
+    hmac_key: Option<&[u8; 32]>,
+    now: DateTime<Utc>,
+) -> BrainProjection {
+    let runtime_inputs = (lane == "bundled").then(|| bundled_runtime_inputs(runtime_health));
+    let runtime_reason = runtime_inputs.as_ref().and_then(|inputs| inputs.0.clone());
+    let (mut aggregate_state, mut reason_code) = reduce_evidence_with_runtime(
+        record,
+        now,
+        refresh_permit_active,
+        runtime_reason.as_deref(),
+    );
+    let fingerprint_sha256 = record.fingerprint_sha256.clone();
+    let mut config_changed = false;
+    if lane == "none" && record.active_lane != "none" {
+        let (provider, model) = config.map(active_brain_config).unwrap_or_default();
+        return BrainProjection {
+            aggregate_state: "unknown".to_owned(),
+            reason_code: Some("brain_config_changed".to_owned()),
+            active_lane: Some("none".to_owned()),
+            active_provider: Some(provider),
+            active_model: model,
+            fingerprint_sha256,
+            runtime_transition_in_progress: false,
+        };
+    }
+    if lane != "none" && hmac_key.is_none() {
+        return BrainProjection {
+            aggregate_state: "unknown".to_owned(),
+            reason_code: Some("fingerprint_key_unavailable".to_owned()),
+            active_lane: Some(record.active_lane.clone()),
+            active_provider: record.active_provider.clone(),
+            active_model: record.active_model.clone(),
+            fingerprint_sha256,
+            runtime_transition_in_progress: false,
+        };
+    }
+    if lane != "none" && record_timestamp_invalid(record, now) {
+        return BrainProjection {
+            aggregate_state: "unknown".to_owned(),
+            reason_code: Some("brain_record_invalid".to_owned()),
+            active_lane: Some(record.active_lane.clone()),
+            active_provider: record.active_provider.clone(),
+            active_model: record.active_model.clone(),
+            fingerprint_sha256,
+            runtime_transition_in_progress: false,
+        };
+    }
+    if lane == "bundled" {
+        let desired = runtime_inputs.and_then(|inputs| inputs.1);
+        if desired.is_none() {
+            return BrainProjection {
+                aggregate_state,
+                reason_code,
+                active_lane: Some(record.active_lane.clone()),
+                active_provider: record.active_provider.clone(),
+                active_model: record.active_model.clone(),
+                fingerprint_sha256,
+                runtime_transition_in_progress: runtime_transition_in_progress(
+                    lane,
+                    runtime_health,
+                ),
+            };
+        }
+        if let (Some(config), Some(key), Some(desired)) = (config, hmac_key, desired) {
+            match build_active_brain_fingerprint(config, key, Some(Value::String(desired))) {
+                Ok(fingerprint) if fingerprint == record.fingerprint_sha256 => {}
+                Ok(_) => {
+                    aggregate_state = "unknown".to_owned();
+                    reason_code = Some("brain_config_changed".to_owned());
+                    config_changed = true;
+                }
+                Err(error) => {
+                    aggregate_state = "unknown".to_owned();
+                    reason_code = Some(error.0);
+                }
+            }
+        }
+    } else if lane != "none"
+        && let (Some(config), Some(key)) = (config, hmac_key)
+    {
+        match build_active_brain_fingerprint(config, key, None) {
+            Ok(fingerprint) if fingerprint == record.fingerprint_sha256 => {}
+            Ok(_) => {
+                aggregate_state = "unknown".to_owned();
+                reason_code = Some("brain_config_changed".to_owned());
+                config_changed = true;
+            }
+            Err(error) => {
+                aggregate_state = "unknown".to_owned();
+                reason_code = Some(error.0);
+            }
+        }
+    }
+    let runtime_transition = reason_code.as_deref() != Some("brain_config_changed")
+        && runtime_transition_in_progress(lane, runtime_health);
+    let (active_lane, active_provider, active_model) = if config_changed {
+        let (provider, model) = config.map(active_brain_config).unwrap_or_default();
+        (Some(lane.to_owned()), Some(provider), model)
+    } else {
+        (
+            Some(record.active_lane.clone()),
+            record.active_provider.clone(),
+            record.active_model.clone(),
+        )
+    };
+    BrainProjection {
+        aggregate_state,
+        reason_code,
+        active_lane,
+        active_provider,
+        active_model,
+        fingerprint_sha256,
+        runtime_transition_in_progress: runtime_transition,
+    }
+}
+
+fn bundled_runtime_inputs(
+    runtime: Option<&RuntimeRecordInspection>,
+) -> (Option<String>, Option<String>) {
+    let Some(runtime) = runtime else {
+        return (Some("local_runtime_state_unavailable".to_owned()), None);
+    };
+    if runtime.status == "corrupt" {
+        return (Some("local_runtime_state_invalid".to_owned()), None);
+    }
+    if runtime.status != "ok" {
+        return (Some("local_runtime_state_unavailable".to_owned()), None);
+    }
+    let Some(record) = runtime.record.as_ref().and_then(Value::as_object) else {
+        return (Some("local_runtime_state_unavailable".to_owned()), None);
+    };
+    let Some(phase) = record.get("phase").and_then(Value::as_str) else {
+        return (Some("local_runtime_state_invalid".to_owned()), None);
+    };
+    let vocabulary = &local_contract().brain_state;
+    if !vocabulary
+        .runtime_phases
+        .iter()
+        .any(|candidate| candidate == phase)
+    {
+        return (Some("local_runtime_state_invalid".to_owned()), None);
+    }
+    let runtime_reason = record.get("reason_code").and_then(Value::as_str);
+    if let Some(reason) = runtime_reason
+        && vocabulary
+            .incoherent_runtime_phase_reason_codes
+            .iter()
+            .any(|pair| {
+                pair.first().is_some_and(|candidate| candidate == phase)
+                    && pair.get(1).is_some_and(|candidate| candidate == reason)
+            })
+    {
+        return (Some("local_runtime_state_invalid".to_owned()), None);
+    }
+    let desired = record
+        .get("desired_fingerprint_sha256")
+        .and_then(Value::as_str)
+        .filter(|fingerprint| {
+            fingerprint.len() == 64 && fingerprint.bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
+        .map(str::to_owned);
+    if let Some(reason) = runtime_reason
+        && let Some(mapped) = vocabulary.runtime_reason_to_brain_reason.get(reason)
+    {
+        return (Some(mapped.clone()), desired);
+    }
+    if let Some(mapped) = vocabulary.runtime_phase_to_reason.get(phase)
+        && let Some(mapped) = mapped.as_str()
+    {
+        return (Some(mapped.to_owned()), desired);
+    }
+    if phase == "ready" && desired.is_none() {
+        return (Some("local_runtime_state_invalid".to_owned()), None);
+    }
+    (None, desired)
+}
+
+fn runtime_transition_in_progress(lane: &str, runtime: Option<&RuntimeRecordInspection>) -> bool {
+    if lane != "bundled" || runtime.is_none_or(|runtime| runtime.status != "ok") {
+        return false;
+    }
+    let Some(record) = runtime
+        .and_then(|runtime| runtime.record.as_ref())
+        .and_then(Value::as_object)
+    else {
+        return false;
+    };
+    let phase = record.get("phase").and_then(Value::as_str);
+    let reason = record.get("reason_code").and_then(Value::as_str);
+    phase.is_some_and(|phase| {
+        local_contract()
+            .brain_state
+            .runtime_transition_phases
+            .iter()
+            .any(|candidate| candidate == phase)
+    }) || reason == Some("install-in-progress")
+}
+
+fn record_timestamp_invalid(record: &BrainStateRecord, now: DateTime<Utc>) -> bool {
+    record.updated_at > now
+        || record
+            .checking
+            .as_ref()
+            .is_some_and(|checking| checking.started_at > now)
+        || record
+            .runtime_failure_marker
+            .as_ref()
+            .is_some_and(|marker| marker.recorded_at > now)
+        || record
+            .evidence
+            .values()
+            .flatten()
+            .any(|component| component.observed_at > now)
+}
+
+fn unavailable_projection(reason: &str) -> BrainProjection {
+    BrainProjection {
+        aggregate_state: "unknown".to_owned(),
+        reason_code: Some(reason.to_owned()),
+        active_lane: None,
+        active_provider: None,
+        active_model: None,
+        fingerprint_sha256: None,
+        runtime_transition_in_progress: false,
+    }
+}
+
+fn inspection(
+    status: InspectionStatus,
+    projection: BrainProjection,
+    error: Option<String>,
+) -> BrainInspection {
+    BrainInspection {
+        status,
+        projection,
+        error,
+    }
+}

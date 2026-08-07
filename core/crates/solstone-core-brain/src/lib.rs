@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Read-only projection of journal/health/brain.json.
+
+mod fingerprint;
+mod fixture;
+mod inspect;
+mod record;
+mod runtime_health;
+
+#[cfg(test)]
+mod corpus_tests;
+
+pub use fingerprint::{
+    CanonicalInput, FingerprintError, build_active_brain_fingerprint, canonical_fingerprint,
+    canonical_json, derive_active_brain_lane, fingerprint_sha256,
+};
+pub use inspect::{
+    BrainInspection, BrainProjection, InspectionStatus, brain_fingerprint_key_path,
+    brain_refresh_lease_path, brain_state_path, inspect_brain_state, load_existing_fingerprint_key,
+    probe_file_lease_held, project_brain_state,
+};
+pub use record::{BrainStateRecord, ValidationError, validate_brain_state_record};
+pub use runtime_health::{RuntimeRecordInspection, inspect_runtime_health};
+
+pub use solstone_core_journal_config::read_journal_config;
+pub use solstone_core_journal_io::resolve_configured_journal;

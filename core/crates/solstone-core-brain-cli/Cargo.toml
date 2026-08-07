@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-brain-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "solstone-brain"
+path = "src/main.rs"
+
+[dependencies]
+chrono = { workspace = true }
+serde_json = { workspace = true }
+solstone-core-brain = { workspace = true }
+solstone-core-journal = { workspace = true }
+
+[lints]
+workspace = true
