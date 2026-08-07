@@ -174,11 +174,38 @@ async fn post_with_router(router: &axum::Router, uri: &str) -> (u16, Value) {
 
 fn deferred_delete_action_records(root: &Path) -> Vec<Value> {
     let day = Utc::now().format("%Y%m%d").to_string();
-    fs::read_to_string(root.join("config/actions").join(format!("{day}.jsonl")))
-        .unwrap()
+    let Ok(ledger) = fs::read_to_string(root.join("config/actions").join(format!("{day}.jsonl")))
+    else {
+        return Vec::new();
+    };
+    ledger
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect()
+}
+
+/// Wait for a deferred-delete phase to reach the action ledger, then return the
+/// ledger.
+///
+/// A commit writes its ledger record *after* the removal it describes, so
+/// sleeping past the delete window races that write: the entity is already gone
+/// while the `committed` record is still in flight. Under a loaded suite that
+/// race lands, so wait on the record instead of on the clock.
+async fn await_deferred_delete_phase(root: &Path, pending_id: &str, phase: &str) -> Vec<Value> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let records = deferred_delete_action_records(root);
+        if records.iter().any(|record| {
+            record["params"]["pending_id"] == pending_id && record["params"]["phase"] == phase
+        }) {
+            return records;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "deferred delete {pending_id} never logged its {phase} phase"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 #[derive(Deserialize)]
@@ -2382,19 +2409,16 @@ async fn deferred_delete_lapse_commits_and_logs_both_phases() {
     assert_eq!(pending_id.len(), 32);
     assert!(response["commit_at_ms"].is_u64());
     assert_eq!(response["ttl_seconds"], 0.02);
-    tokio::time::sleep(Duration::from_millis(60)).await;
+
+    let records = await_deferred_delete_phase(j.path(), &pending_id, "committed").await;
 
     let (entity_status, entity) = call(j.path(), "/app/entities/api/journal/entity/target").await;
     assert_eq!(entity_status, 404);
     assert_eq!(entity["reason_code"], "entity_not_found");
     let (_, facet) = call(j.path(), "/app/entities/api/work").await;
     assert_eq!(facet["attached"], json!([]));
-    let records = deferred_delete_action_records(j.path());
     assert!(records.iter().any(|record| {
         record["params"]["pending_id"] == pending_id && record["params"]["phase"] == "pending"
-    }));
-    assert!(records.iter().any(|record| {
-        record["params"]["pending_id"] == pending_id && record["params"]["phase"] == "committed"
     }));
 }
 
