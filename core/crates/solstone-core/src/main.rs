@@ -16,9 +16,9 @@ use solstone_core_cli::{
     BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
     BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, Command,
     IndexerCommand, IndexerCountsOptions, IndexerOptions, IndexerQueryOptions, IndexerReadOptions,
-    IndexerSearchOptions, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
-    JournalConfigReadOptions, JournalPathOptions, LocalCommand, ServiceOptions, SplCommand, USAGE,
-    evaluate_args, version_line,
+    IndexerSearchOptions, InstallCommand, JournalConfigCommand, JournalConfigCommitOptions,
+    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand,
+    ServiceOptions, SplCommand, USAGE, evaluate_args, version_line,
 };
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -119,7 +119,47 @@ fn run_local(command: LocalCommand) -> ExitCode {
         }
         LocalCommand::Plan => run_local_json(solstone_core_local::plan),
         LocalCommand::Connect => run_local_json(solstone_core_local::connect),
+        LocalCommand::Install(command) => run_local_install(command),
     }
+}
+
+fn run_local_install(command: InstallCommand) -> ExitCode {
+    let input = match read_local_stdin() {
+        Ok(input) => input,
+        Err(LocalStdinError::Content) => return ExitCode::from(EXIT_USAGE),
+        Err(LocalStdinError::Io) => return ExitCode::from(EXIT_IOERR),
+    };
+    let verb = match command {
+        InstallCommand::PinsLocal => solstone_core_local::InstallVerb::PinsLocal,
+        InstallCommand::PathsLocal => solstone_core_local::InstallVerb::PathsLocal,
+        InstallCommand::FingerprintLocal => solstone_core_local::InstallVerb::FingerprintLocal,
+        InstallCommand::FingerprintMlx => solstone_core_local::InstallVerb::FingerprintMlx,
+        InstallCommand::VerifySha256 => solstone_core_local::InstallVerb::VerifySha256,
+        InstallCommand::CudaTrust => solstone_core_local::InstallVerb::CudaTrust,
+        InstallCommand::ManifestVulkan => solstone_core_local::InstallVerb::ManifestVulkan,
+        InstallCommand::ManifestCuda => solstone_core_local::InstallVerb::ManifestCuda,
+        InstallCommand::ManifestModel => solstone_core_local::InstallVerb::ManifestModel,
+        InstallCommand::InspectLocal => solstone_core_local::InstallVerb::InspectLocal,
+        InstallCommand::InspectMlx => solstone_core_local::InstallVerb::InspectMlx,
+        InstallCommand::ProbeBinary => solstone_core_local::InstallVerb::ProbeBinary,
+        InstallCommand::RunLocal => solstone_core_local::InstallVerb::RunLocal,
+        InstallCommand::RunMlx => solstone_core_local::InstallVerb::RunMlx,
+    };
+    match solstone_core_local::dispatch_install(verb, input) {
+        Ok(envelope) => write_install_envelope(&envelope, ExitCode::SUCCESS),
+        Err(error) => write_install_envelope(&error.envelope, ExitCode::from(error.exit_code)),
+    }
+}
+
+fn write_install_envelope(
+    envelope: &solstone_core_local::InstallEnvelope,
+    exit: ExitCode,
+) -> ExitCode {
+    let mut stdout = io::stdout().lock();
+    if serde_json::to_writer(&mut stdout, envelope).is_err() || writeln!(stdout).is_err() {
+        return ExitCode::from(EXIT_IOERR);
+    }
+    exit
 }
 
 fn run_local_json<T, O>(operation: impl FnOnce(T) -> O) -> ExitCode

@@ -117,3 +117,5 @@ tower-http = { version = "0.6.11", default-features = false, features = ["limit"
 unicode-normalization = "0.1.25"
 unidecode = "0.3.0"
 ureq = { version = "3.3.0", default-features = false }
+tar = "0.4"
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }

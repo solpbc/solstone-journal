@@ -21,6 +21,25 @@ pub enum LocalCommand {
     ProbeNvidia,
     Plan,
     Connect,
+    Install(InstallCommand),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallCommand {
+    PinsLocal,
+    PathsLocal,
+    FingerprintLocal,
+    FingerprintMlx,
+    VerifySha256,
+    CudaTrust,
+    ManifestVulkan,
+    ManifestCuda,
+    ManifestModel,
+    InspectLocal,
+    InspectMlx,
+    ProbeBinary,
+    RunLocal,
+    RunMlx,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,6 +210,55 @@ fn parse_local(args: &[OsString]) -> Result<LocalCommand, UsageError> {
         [command] if command == OsStr::new("probe-nvidia") => Ok(LocalCommand::ProbeNvidia),
         [command] if command == OsStr::new("plan") => Ok(LocalCommand::Plan),
         [command] if command == OsStr::new("connect") => Ok(LocalCommand::Connect),
+        [command, rest @ ..] if command == OsStr::new("install") => {
+            parse_local_install(rest).map(LocalCommand::Install)
+        }
+        _ => Err(UsageError),
+    }
+}
+
+fn parse_local_install(args: &[OsString]) -> Result<InstallCommand, UsageError> {
+    match args {
+        [one, two] if one == OsStr::new("pins") && two == OsStr::new("local") => {
+            Ok(InstallCommand::PinsLocal)
+        }
+        [one, two] if one == OsStr::new("paths") && two == OsStr::new("local") => {
+            Ok(InstallCommand::PathsLocal)
+        }
+        [one, two] if one == OsStr::new("fingerprint") && two == OsStr::new("local") => {
+            Ok(InstallCommand::FingerprintLocal)
+        }
+        [one, two] if one == OsStr::new("fingerprint") && two == OsStr::new("mlx") => {
+            Ok(InstallCommand::FingerprintMlx)
+        }
+        [one, two] if one == OsStr::new("verify") && two == OsStr::new("sha256") => {
+            Ok(InstallCommand::VerifySha256)
+        }
+        [one, two] if one == OsStr::new("cuda") && two == OsStr::new("trust") => {
+            Ok(InstallCommand::CudaTrust)
+        }
+        [one, two] if one == OsStr::new("manifest") && two == OsStr::new("vulkan") => {
+            Ok(InstallCommand::ManifestVulkan)
+        }
+        [one, two] if one == OsStr::new("manifest") && two == OsStr::new("cuda") => {
+            Ok(InstallCommand::ManifestCuda)
+        }
+        [one, two] if one == OsStr::new("manifest") && two == OsStr::new("model") => {
+            Ok(InstallCommand::ManifestModel)
+        }
+        [one, two] if one == OsStr::new("inspect") && two == OsStr::new("local") => {
+            Ok(InstallCommand::InspectLocal)
+        }
+        [one, two] if one == OsStr::new("inspect") && two == OsStr::new("mlx") => {
+            Ok(InstallCommand::InspectMlx)
+        }
+        [one] if one == OsStr::new("probe-binary") => Ok(InstallCommand::ProbeBinary),
+        [one, two] if one == OsStr::new("run") && two == OsStr::new("local") => {
+            Ok(InstallCommand::RunLocal)
+        }
+        [one, two] if one == OsStr::new("run") && two == OsStr::new("mlx") => {
+            Ok(InstallCommand::RunMlx)
+        }
         _ => Err(UsageError),
     }
 }
