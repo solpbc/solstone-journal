@@ -288,6 +288,7 @@ check-differentials:
 	$(MAKE) install
 	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core --features differential --locked --test journal_config_client --test journal_config_corruption
 	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-generate --features differential --locked --test no_downgrade --test session --test session_real --test wire
+	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-local --features differential --locked --test admission_cross_process
 
 build:
 	@$(REQUIRE_CARGO)
