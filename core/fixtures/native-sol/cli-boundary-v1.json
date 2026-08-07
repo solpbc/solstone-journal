@@ -1,0 +1,104 @@
+{
+  "schema": "solstone-cli-boundary-v1",
+  "source": "P-CLI",
+  "binary_count": 1,
+  "identities": {
+    "sol": {
+      "journal_reach": "api-only",
+      "api_commands": [
+        "call",
+        "chat",
+        "import",
+        "notify",
+        "status"
+      ],
+      "invoking_device_commands": [
+        "link",
+        "root",
+        "skills"
+      ],
+      "forbidden_direct_journal_commands": [
+        "--path",
+        "path",
+        "doctor",
+        "check"
+      ]
+    },
+    "journal": {
+      "journal_reach": "same-device",
+      "may_use": [
+        "direct",
+        "localhost-api",
+        "service-process"
+      ],
+      "root_commands": [
+        "--path",
+        "path",
+        "status",
+        "root",
+        "doctor",
+        "check",
+        "contract",
+        "notify"
+      ],
+      "service_commands": [
+        "backfill-processing-records",
+        "backup",
+        "brain",
+        "config",
+        "convey",
+        "cortex",
+        "depict",
+        "describe",
+        "down",
+        "engage",
+        "export",
+        "facet-candidates",
+        "grab",
+        "health",
+        "heartbeat",
+        "identity",
+        "importer",
+        "indexer",
+        "install-models",
+        "install-provider",
+        "journal-stats",
+        "maint",
+        "maintenance",
+        "navigate",
+        "observer",
+        "reprocess",
+        "restart-convey",
+        "schedule",
+        "segment",
+        "sense",
+        "service",
+        "settings",
+        "setup",
+        "spl",
+        "start",
+        "streams",
+        "supervisor",
+        "talent",
+        "think",
+        "top",
+        "transcribe",
+        "transfer",
+        "up",
+        "warm"
+      ],
+      "forbidden_grammar": [
+        "dotted-module"
+      ]
+    }
+  },
+  "legacy_exceptions": [
+    "sol-help-reads-local-journal",
+    "sol-path-and-status-read-local-journal",
+    "sol-notify-writes-local-socket",
+    "sol-python-doctor-check",
+    "sol-python-call-journal",
+    "journal-python-public-entrypoint",
+    "journal-dotted-module-dispatch"
+  ]
+}

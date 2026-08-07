@@ -126,6 +126,7 @@ CORE_REQUIRED_SDIST_MEMBERS = {
     "core/crates/solstone-core-sol-client-cli/src/help.rs",
     "core/crates/solstone-core-sol-client-cli/src/lib.rs",
     "core/fixtures/native-sol/root-contract-v1.json",
+    "core/fixtures/native-sol/cli-boundary-v1.json",
     "solstone/apps/activities/native/authority.toml",
     "solstone/apps/activities/native/command.rs",
     "solstone/apps/awareness/native/authority.toml",
