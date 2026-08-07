@@ -125,7 +125,10 @@ impl RelayHealth {
 
     /// Records an acknowledged heartbeat for the current listener generation.
     pub fn record_listener_ack(&mut self, timestamp_ms: u64) {
-        self.last_relay_listener_ack_at = Some(timestamp_ms);
+        self.last_relay_listener_ack_at = Some(
+            self.last_relay_listener_ack_at
+                .map_or(timestamp_ms, |previous| previous.max(timestamp_ms)),
+        );
         self.last_relay_listener_ack_generation = Some(self.listen_generation);
     }
 
@@ -239,6 +242,21 @@ mod tests {
                 "last_relay_listener_ack_at": null,
                 "last_relay_listener_ack_generation": null,
             })
+        );
+    }
+
+    #[test]
+    fn listener_ack_timestamp_never_moves_backward() {
+        let mut health = RelayHealth::new();
+        health.begin_listen_attempt();
+        health.record_listener_ack(1_000);
+        health.begin_listen_attempt();
+        health.record_listener_ack(999);
+
+        assert_eq!(health.payload()["last_relay_listener_ack_at"], 1_000);
+        assert_eq!(
+            health.payload()["last_relay_listener_ack_generation"],
+            health.payload()["listen_generation"],
         );
     }
 

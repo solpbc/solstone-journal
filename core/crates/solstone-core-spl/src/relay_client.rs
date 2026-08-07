@@ -183,7 +183,7 @@ impl RelayClient {
         let mut outstanding_nonce = Some(initial_nonce.clone());
         let mut ack_deadline = Instant::now() + self.inner.config.ping_ack_timeout;
         let mut next_ping_at = Instant::now() + self.inner.config.ping_interval;
-        let mut first_ack_at_ms = None;
+        let mut first_ack_at = None;
         let mut generation_acknowledged = false;
 
         if !send_ping_before_deadline(&mut writer, initial_nonce, ack_deadline).await {
@@ -212,19 +212,22 @@ impl RelayClient {
                         }
                     }
                     Ok(ListenEvent::Pong(pong)) => {
-                        if outstanding_nonce.as_ref() == Some(&pong) && Instant::now() <= ack_deadline {
+                        let acknowledged_at = Instant::now();
+                        if outstanding_nonce.as_ref() == Some(&pong) && acknowledged_at <= ack_deadline {
                             outstanding_nonce = None;
                             let acknowledged_at_ms = now_ms();
                             self.record_listener_ack(!generation_acknowledged, acknowledged_at_ms);
                             generation_acknowledged = true;
-                            if let Some(first_ack_at_ms) = first_ack_at_ms {
-                                if acknowledged_at_ms.saturating_sub(first_ack_at_ms)
-                                    >= duration_ms(self.inner.config.ack_stability_window)
-                                {
+                            if let Some(first_ack_at) = first_ack_at {
+                                if stability_window_reached(
+                                    first_ack_at,
+                                    acknowledged_at,
+                                    self.inner.config.ack_stability_window,
+                                ) {
                                     reset_backoff_earned = true;
                                 }
                             } else {
-                                first_ack_at_ms = Some(acknowledged_at_ms);
+                                first_ack_at = Some(acknowledged_at);
                             }
                             next_ping_at = Instant::now() + self.inner.config.ping_interval;
                         }
@@ -451,8 +454,8 @@ fn now_ms() -> u64 {
     u64::try_from(duration.as_millis()).map_or(u64::MAX, std::convert::identity)
 }
 
-fn duration_ms(duration: Duration) -> u64 {
-    u64::try_from(duration.as_millis()).map_or(u64::MAX, std::convert::identity)
+fn stability_window_reached(first_ack: Instant, current_ack: Instant, window: Duration) -> bool {
+    current_ack.saturating_duration_since(first_ack) >= window
 }
 
 async fn send_ping_before_deadline(
@@ -556,7 +559,7 @@ mod tests {
 
     use super::{
         GlobalAdmission, LoopbackConnect, LoopbackDialer, RelayClient, RelayClientConfig,
-        TunnelLifecycle, lock_unpoisoned, prefix_hex,
+        TunnelLifecycle, lock_unpoisoned, prefix_hex, stability_window_reached,
     };
     use bytes::Bytes;
     use futures_util::{SinkExt, StreamExt};
@@ -678,6 +681,23 @@ mod tests {
             prefix_hex(&Bytes::from_static(&[0, 0xff, 0x16, 0x03])),
             "00ff1603"
         );
+    }
+
+    #[test]
+    fn listener_stability_uses_the_exact_monotonic_boundary() {
+        let first_ack = tokio::time::Instant::now();
+        let window = Duration::from_secs(60);
+
+        assert!(!stability_window_reached(
+            first_ack,
+            first_ack + window - Duration::from_nanos(1),
+            window,
+        ));
+        assert!(stability_window_reached(
+            first_ack,
+            first_ack + window,
+            window,
+        ));
     }
 
     #[test]
