@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use solstone_core_journal_io::{LeaseOptions, acquire_file_lease};
 
 const RESULT_SCHEMA: &str = "solstone.brain.prerequisite_renewal.result.v1";
+const READY_SCHEMA: &str = "solstone.brain.prerequisite_renewal.ready.v1";
 
 fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_solstone-core")
@@ -137,6 +138,24 @@ fn parse_output(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout).expect("session should emit JSON")
 }
 
+fn parse_ready_and_result(output: &Output) -> Option<Value> {
+    let mut lines = output
+        .stdout
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty());
+    let ready: Value = serde_json::from_slice(lines.next().expect("ready line"))
+        .expect("ready line should be JSON");
+    assert_eq!(ready["schema"], READY_SCHEMA);
+    let result = lines
+        .next()
+        .map(|line| serde_json::from_slice(line).expect("result line should be JSON"));
+    assert!(
+        lines.next().is_none(),
+        "session should emit at most one result"
+    );
+    result
+}
+
 fn assert_abandoned(output: &Output, status: i32) {
     assert_eq!(
         output.status.code(),
@@ -144,7 +163,7 @@ fn assert_abandoned(output: &Output, status: i32) {
         "stderr: {:?}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let result = parse_output(output);
+    let result = parse_ready_and_result(output).expect("abandonment result");
     assert_eq!(result["schema"], RESULT_SCHEMA);
     assert_eq!(result["kind"], "abandoned");
     assert_eq!(result["reason_code"], "nvattest_unavailable");
@@ -207,7 +226,7 @@ fn clean_terminal_finishes_and_reports_the_fresh_inspection_projection() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(
-        parse_output(&output),
+        parse_ready_and_result(&output).expect("projection result"),
         direct_projection_after_finish(&direct_root, component)
     );
     fs::remove_dir_all(session_root).expect("cleanup session root");
@@ -219,7 +238,7 @@ fn bare_eof_abandons_without_a_report_and_releases_the_lease() {
     let root = configured_spp_journal("bare-eof");
     let output = finish(start(&root), &[]);
     assert_eq!(output.status.code(), Some(69));
-    assert_eq!(output.stdout, b"");
+    assert!(parse_ready_and_result(&output).is_none());
     assert_lease_free(&root);
     let record: Value = serde_json::from_slice(
         &fs::read(solstone_core_brain::brain_state_path(&root)).expect("read brain record"),

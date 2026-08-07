@@ -49,10 +49,12 @@ const SESSION_INPUT_TIMEOUT: Duration = Duration::from_secs(90);
 const REFRESH_PROBE_SCHEMA: &str = "solstone.brain.refresh.probe.v1";
 const REFRESH_TERMINAL_SCHEMA: &str = "solstone.brain.refresh.terminal.v1";
 const REFRESH_RESULT_SCHEMA: &str = "solstone.brain.refresh.result.v1";
+const REFRESH_READY_SCHEMA: &str = "solstone.brain.refresh.ready.v1";
 const PREREQUISITE_RENEWAL_PROBE_SCHEMA: &str = "solstone.brain.prerequisite_renewal.probe.v1";
 const PREREQUISITE_RENEWAL_TERMINAL_SCHEMA: &str =
     "solstone.brain.prerequisite_renewal.terminal.v1";
 const PREREQUISITE_RENEWAL_RESULT_SCHEMA: &str = "solstone.brain.prerequisite_renewal.result.v1";
+const PREREQUISITE_RENEWAL_READY_SCHEMA: &str = "solstone.brain.prerequisite_renewal.ready.v1";
 const ZERO_EDGE_HINT: &str = "Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run journal indexer --rebuild-edges to force full edge re-extraction.";
 const SOL_IDENTITY_TOKEN: &str = "__solstone_identity=sol";
 const SOLSTONE_IDENTITY_TOKEN: &str = "__solstone_identity=solstone";
@@ -349,6 +351,9 @@ async fn run_refresh_session_loop(
     bundled_runtime_fingerprint_sha256: Option<String>,
     timeout: Duration,
 ) -> ExitCode {
+    if write_session_result(json!({"schema": REFRESH_READY_SCHEMA})) != ExitCode::SUCCESS {
+        return ExitCode::from(EXIT_IOERR);
+    }
     let deadline = Instant::now() + timeout;
     let mut stdin = BufReader::new(tokio::io::stdin());
     let outcome = match read_refresh_session_input(&mut stdin, deadline).await {
@@ -388,6 +393,11 @@ async fn run_prerequisite_renewal_session_loop(
     bundled_runtime_fingerprint_sha256: Option<String>,
     timeout: Duration,
 ) -> ExitCode {
+    if write_session_result(json!({"schema": PREREQUISITE_RENEWAL_READY_SCHEMA}))
+        != ExitCode::SUCCESS
+    {
+        return ExitCode::from(EXIT_IOERR);
+    }
     let deadline = Instant::now() + timeout;
     let mut stdin = BufReader::new(tokio::io::stdin());
     let component = match read_prerequisite_renewal_session_input(&mut stdin, deadline).await {

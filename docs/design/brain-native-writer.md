@@ -116,6 +116,17 @@ host runs the existing probes after spawning the child and sends exactly one:
 {"schema":"solstone.brain.refresh.probe.v1","outcome":{"configuration":{},"lane_prerequisites":{},"generate":{},"cogitate":{}}}
 ```
 
+**Implementation addendum (ready handshake):** Immediately after a native
+begin succeeds with a real permit, and before it starts reading NDJSON, the
+child writes and flushes exactly
+`{"schema":"solstone.brain.refresh.ready.v1"}`. A spawning Python caller must
+block-read this first stdout line: `ready` proves the child holds the lease and
+is waiting for the later probe, while a result record proves it already took an
+immediate-exit path. Without this record the caller would need a timeout
+heuristic that either misclassifies a slow immediate exit or delays every
+successful begin. The prerequisite-renewal child has the identical handshake
+with `solstone.brain.prerequisite_renewal.ready.v1`.
+
 `outcome` is the existing four-component `BrainProbeOutcome`, including the
 normal component fields (`status`, `observed_at`, and optional `reason_code`,
 `expires_at`, and `diagnostic`) rather than a new lossy projection
@@ -228,6 +239,9 @@ immediate-exit taxonomy:
   `lane_prerequisites: Value` parameter), not a four-component `outcome`
   wrapper.
 - Terminal: `{"schema":"solstone.brain.prerequisite_renewal.terminal.v1"}`.
+- A successful begin first writes and flushes
+  `{"schema":"solstone.brain.prerequisite_renewal.ready.v1"}` before waiting
+  for the probe, as described in §3's ready-handshake addendum.
 - Result: same `kind:"projection"`/`kind:"abandoned"` shapes, schema renamed
   to `solstone.brain.prerequisite_renewal.result.v1`.
 - Immediate exit on `BeginPrerequisiteRenewal::Busy { reason }`: emit
