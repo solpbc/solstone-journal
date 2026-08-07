@@ -13,7 +13,9 @@ use solstone_core_format::content::{
 };
 use solstone_core_format::paths::{relative_to_journal, resolve_journal_path};
 use solstone_core_format::segment::{day_of, segment_key, time_bucket};
-use solstone_core_indexer::discovery::discover_indexable_files;
+use solstone_core_indexer::discovery::{
+    discover_indexable_files, discover_segment_talent_markdown_files,
+};
 use solstone_core_indexer::edges::candidates::EdgeResolver;
 use solstone_core_indexer::edges::discovery::discover_edge_files;
 use solstone_core_indexer::edges::registry::edge_source_for_rel;
@@ -30,11 +32,14 @@ use solstone_core_journal_config::{ConfigLoadError, plain_defaults, read_journal
 use crate::StoreError;
 use crate::db::{
     EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, mark_index_build_complete, open_index,
-    read_entity_search_watermark, write_entity_search_watermark,
+    read_entity_search_watermark, read_segment_aggregate_migration, write_entity_search_watermark,
+    write_segment_aggregate_migration,
 };
 
 const MERGE_STEP: i64 = 32;
 const MERGE_BUDGET: usize = 2;
+const SEGMENT_AGGREGATE_MIGRATION_STEP: i64 = 32;
+const SEGMENT_AGGREGATE_MIGRATION_BUDGET: usize = 2;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ScanReport {
@@ -244,6 +249,9 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
         removed_count += 1;
     }
     report.removed = removed_count;
+    report
+        .warnings
+        .extend(migrate_segment_aggregates(&mut conn, journal)?);
 
     let tx = conn.transaction()?;
     index_entity_search(&tx, journal, full)?;
@@ -349,12 +357,13 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
             Some(resolved) => (&resolved.labels, resolved.warning.as_deref()),
             None => (&default_chat_labels, None),
         };
-        tx.execute("DELETE FROM chunks WHERE path=?", [&rel])?;
-        match index_file(
+        match ensure_file_current(
             &tx,
             journal,
             &rel,
             &path,
+            mtime,
+            true,
             family,
             chat_labels,
             chat_config_warning,
@@ -366,17 +375,8 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
                     affected_segments.insert(rel_segment);
                     warnings.extend(index_segment_aggregates(&tx, journal, &affected_segments)?);
                 }
-                tx.execute(
-                    "REPLACE INTO files(path, mtime) VALUES (?, ?)",
-                    params![rel, mtime],
-                )?;
             }
-            Err(warning) => {
-                return Err(StoreError::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    warning,
-                )));
-            }
+            Err(error) => return Err(error),
         }
     }
     if edge_source.is_some() {
@@ -389,6 +389,7 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
         replace_edge_file_mtime(&tx, &rel, mtime)?;
     }
     tx.commit()?;
+    warnings.extend(migrate_segment_aggregates(&mut conn, journal)?);
     Ok(RescanFileStatus::Indexed { warnings })
 }
 
@@ -756,6 +757,164 @@ fn index_segment_aggregates(
     Ok(warnings)
 }
 
+enum SegmentMigrationOutcome {
+    Complete(Vec<String>),
+    Blocked(String),
+}
+
+/// Retire legacy aggregate rows without ever making a live segment invisible.
+/// Each segment transitions in its own transaction: current talent children are
+/// ensured first, then its aggregate rows and cursor update commit together.
+fn migrate_segment_aggregates(
+    conn: &mut Connection,
+    journal: &Path,
+) -> Result<Vec<String>, StoreError> {
+    let mut state = read_segment_aggregate_migration(conn)?.unwrap_or_else(|| {
+        crate::db::SegmentAggregateMigration {
+            cursor: String::new(),
+            completed: false,
+        }
+    });
+    let mut warnings = Vec::new();
+
+    if state.completed {
+        if !has_legacy_segment_aggregates(conn)? {
+            return Ok(warnings);
+        }
+        state.cursor.clear();
+        state.completed = false;
+    }
+
+    for _ in 0..SEGMENT_AGGREGATE_MIGRATION_BUDGET {
+        let paths = legacy_segment_aggregate_paths(conn, &state.cursor)?;
+        if paths.is_empty() {
+            if !has_legacy_segment_aggregates(conn)? {
+                write_segment_aggregate_migration(conn, "", true)?;
+                break;
+            }
+            state.cursor.clear();
+            write_segment_aggregate_migration(conn, "", false)?;
+            continue;
+        }
+        for rel_segment in paths {
+            match migrate_segment_aggregate(conn, journal, &rel_segment) {
+                Ok(SegmentMigrationOutcome::Complete(mut segment_warnings)) => {
+                    warnings.append(&mut segment_warnings);
+                    state.cursor = rel_segment;
+                }
+                Ok(SegmentMigrationOutcome::Blocked(warning)) => {
+                    warnings.push(warning);
+                    return Ok(warnings);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+    Ok(warnings)
+}
+
+fn has_legacy_segment_aggregates(conn: &Connection) -> Result<bool, StoreError> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM chunks WHERE agent='segment')",
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|value| value != 0)
+    .map_err(StoreError::from)
+}
+
+fn legacy_segment_aggregate_paths(
+    conn: &Connection,
+    cursor: &str,
+) -> Result<Vec<String>, StoreError> {
+    let mut statement = conn.prepare(
+        "SELECT DISTINCT path FROM chunks WHERE agent='segment' AND path>? ORDER BY path LIMIT ?",
+    )?;
+    statement
+        .query_map(params![cursor, SEGMENT_AGGREGATE_MIGRATION_STEP], |row| {
+            row.get(0)
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::from)
+}
+
+fn migrate_segment_aggregate(
+    conn: &mut Connection,
+    journal: &Path,
+    rel_segment: &str,
+) -> Result<SegmentMigrationOutcome, StoreError> {
+    let tx = conn.transaction()?;
+    let talent_files = match discover_segment_talent_markdown_files(journal, rel_segment) {
+        Ok(files) => files,
+        Err(error) => {
+            tx.rollback()?;
+            return Ok(SegmentMigrationOutcome::Blocked(format!(
+                "segment aggregate migration retained {rel_segment}: talent discovery failed: {error}"
+            )));
+        }
+    };
+    let chat_labels = ChatLabels::default();
+    let mut warnings = Vec::new();
+    for (rel, path) in talent_files {
+        let mtime = match file_mtime_secs(&path) {
+            Ok(mtime) => mtime,
+            Err(error) => {
+                tx.rollback()?;
+                return Ok(SegmentMigrationOutcome::Blocked(format!(
+                    "segment aggregate migration retained {rel_segment}: mtime read failed for {rel}: {error}"
+                )));
+            }
+        };
+        let family = match classify(&rel) {
+            ContentResolution::Indexed(Family::Markdown) => Family::Markdown,
+            _ => {
+                tx.rollback()?;
+                return Ok(SegmentMigrationOutcome::Blocked(format!(
+                    "segment aggregate migration retained {rel_segment}: unclassified talent Markdown {rel}"
+                )));
+            }
+        };
+        match ensure_file_current(
+            &tx,
+            journal,
+            &rel,
+            &path,
+            mtime,
+            false,
+            family,
+            &chat_labels,
+            None,
+        ) {
+            Ok(mut file_warnings) => warnings.append(&mut file_warnings),
+            Err(StoreError::Io(error)) => {
+                tx.rollback()?;
+                return Ok(SegmentMigrationOutcome::Blocked(format!(
+                    "segment aggregate migration retained {rel}: {error}"
+                )));
+            }
+            Err(error) => return Err(error),
+        }
+        let stored_mtime = tx
+            .query_row("SELECT mtime FROM files WHERE path=?", [&rel], |row| {
+                row.get(0)
+            })
+            .optional()?;
+        if stored_mtime != Some(mtime) {
+            tx.rollback()?;
+            return Ok(SegmentMigrationOutcome::Blocked(format!(
+                "segment aggregate migration retained {rel_segment}: child file is not current: {rel}"
+            )));
+        }
+    }
+    tx.execute(
+        "DELETE FROM chunks WHERE path=? AND agent='segment'",
+        [rel_segment],
+    )?;
+    write_segment_aggregate_migration(&tx, rel_segment, false)?;
+    tx.commit()?;
+    Ok(SegmentMigrationOutcome::Complete(warnings))
+}
+
 fn index_entity_search(conn: &Connection, journal: &Path, force: bool) -> Result<(), StoreError> {
     let build = build_entity_search(journal)?;
     let watermark = read_entity_search_watermark(conn)?;
@@ -901,6 +1060,50 @@ fn stored_entity_search_count(conn: &Connection) -> Result<i64, StoreError> {
     Ok(stored.unwrap_or(0))
 }
 
+/// Make one child file current. The main scan and legacy aggregate migration
+/// share this path so an mtime match has one meaning everywhere.
+fn ensure_file_current(
+    conn: &Connection,
+    journal: &Path,
+    rel: &str,
+    path: &Path,
+    mtime: i64,
+    force: bool,
+    family: Family,
+    chat_labels: &ChatLabels,
+    chat_config_warning: Option<&str>,
+) -> Result<Vec<String>, StoreError> {
+    let stored_mtime = conn
+        .query_row("SELECT mtime FROM files WHERE path=?", [rel], |row| {
+            row.get(0)
+        })
+        .optional()?;
+    if !force && stored_mtime == Some(mtime) {
+        return Ok(Vec::new());
+    }
+    conn.execute("DELETE FROM chunks WHERE path=?", [rel])?;
+    let warnings = index_file(
+        conn,
+        journal,
+        rel,
+        path,
+        family,
+        chat_labels,
+        chat_config_warning,
+    )
+    .map_err(|warning| {
+        StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            warning,
+        ))
+    })?;
+    conn.execute(
+        "REPLACE INTO files(path, mtime) VALUES (?, ?)",
+        params![rel, mtime],
+    )?;
+    Ok(warnings)
+}
+
 fn index_file(
     conn: &Connection,
     journal: &Path,
@@ -1028,8 +1231,8 @@ mod tests {
     use super::*;
     use crate::db::{
         EntitySearchWatermark, IndexBuildLifecycle, IndexBuildState, db_path,
-        read_entity_search_watermark, read_index_build_state, reset_index,
-        write_entity_search_watermark,
+        read_entity_search_watermark, read_index_build_state, read_segment_aggregate_migration,
+        reset_index, write_entity_search_watermark, write_segment_aggregate_migration,
     };
     use rusqlite::{Connection, params};
     use solstone_core_format::content::RawPerceptFamily;
@@ -1124,6 +1327,61 @@ mod tests {
             row.get(0)
         })
         .expect("file mtime row")
+    }
+
+    fn seed_legacy_segment_aggregate(conn: &Connection, segment: &str) {
+        conn.execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES (?, ?, ?, '', 'segment', '', 0, '')",
+            params!["legacy segment aggregate", segment, &segment[..8]],
+        )
+        .expect("seed legacy segment aggregate");
+    }
+
+    fn reset_segment_aggregate_migration(conn: &Connection) {
+        write_segment_aggregate_migration(conn, "", false)
+            .expect("reset segment aggregate migration");
+    }
+
+    fn non_aggregate_rows(
+        conn: &Connection,
+    ) -> Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+        i64,
+        String,
+    )> {
+        conn.prepare(
+            "SELECT path, day, facet, agent, content, stream, idx, time_bucket FROM chunks WHERE agent!='segment' ORDER BY path, idx",
+        )
+        .expect("prepare non-aggregate rows")
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+            ))
+        })
+        .expect("query non-aggregate rows")
+        .map(|row| row.expect("non-aggregate row"))
+        .collect()
+    }
+
+    fn file_rows(conn: &Connection) -> Vec<(String, i64)> {
+        conn.prepare("SELECT path, mtime FROM files ORDER BY path")
+            .expect("prepare file rows")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("query file rows")
+            .map(|row| row.expect("file row"))
+            .collect()
     }
 
     fn entity_watermark(conn: &Connection) -> EntitySearchWatermark {
@@ -2644,6 +2902,278 @@ mod tests {
         assert!(file_mtime(&conn, rel) > 0);
         assert_sqlite_and_fts_integrity(&conn);
         fs::remove_dir_all(root).expect("cleanup content removal trigger root");
+    }
+
+    #[test]
+    fn segment_aggregate_migration_preserves_current_children_and_file_markers() {
+        let root = temp_root("segment-migration-preserves-children");
+        let segments = [
+            ("20260711", "090000_300", "unheaded markdown text"),
+            (
+                "20260712",
+                "091000_300",
+                "- bare list body\n- stays searchable",
+            ),
+            ("20260713", "092000_300", "# Nested\n\nnested talent text"),
+            ("20260714", "093000_300", "# Fourth\n\nfourth child text"),
+            ("20260715", "094000_300", "# Fifth\n\nfifth child text"),
+        ];
+        for (index, (day, segment, content)) in segments.iter().enumerate() {
+            let suffix = if index == 2 {
+                "talents/work/nested.md"
+            } else {
+                "talents/audio.md"
+            };
+            write(
+                &root,
+                &format!("chronicle/{day}/default/{segment}/{suffix}"),
+                content,
+            );
+        }
+        scan_journal(&root, true).expect("initial real scan");
+        let conn = open_index(&root).expect("open index");
+        let before_rows = non_aggregate_rows(&conn);
+        let before_files = file_rows(&conn);
+        for (day, segment, _) in segments {
+            seed_legacy_segment_aggregate(&conn, &format!("{day}/default/{segment}"));
+        }
+        reset_segment_aggregate_migration(&conn);
+        drop(conn);
+
+        scan_journal(&root, false).expect("migrate legacy aggregates");
+        let conn = Connection::open(db_path(&root)).expect("open migrated index");
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM chunks WHERE agent='segment'"),
+            0
+        );
+        assert_eq!(non_aggregate_rows(&conn), before_rows);
+        assert_eq!(file_rows(&conn), before_files);
+        fs::remove_dir_all(root).expect("cleanup migration preservation root");
+    }
+
+    #[test]
+    fn segment_aggregate_migration_indexes_children_before_deleting_aggregate() {
+        let root = temp_root("segment-migration-catches-up-children");
+        let segment = "20260717/default/101000_300";
+        let first = "20260717/default/101000_300/talents/audio.md";
+        let nested = "20260717/default/101000_300/talents/work/brief.md";
+        write(
+            &root,
+            &format!("chronicle/{first}"),
+            "# Audio\n\nfirst child",
+        );
+        write(
+            &root,
+            &format!("chronicle/{nested}"),
+            "# Brief\n\nnested child",
+        );
+        scan_journal(&root, true).expect("initial real scan");
+        let conn = open_index(&root).expect("open index");
+        conn.execute(
+            "DELETE FROM chunks WHERE path IN (?, ?)",
+            params![first, nested],
+        )
+        .expect("remove child rows to mimic pre-W1 index");
+        conn.execute(
+            "DELETE FROM files WHERE path IN (?, ?)",
+            params![first, nested],
+        )
+        .expect("remove child markers to mimic pre-W1 index");
+        seed_legacy_segment_aggregate(&conn, segment);
+        reset_segment_aggregate_migration(&conn);
+        create_abort_trigger(
+            &conn,
+            "assert_children_before_aggregate_delete",
+            "BEFORE",
+            "INSERT",
+            "segment_aggregate_migration",
+            Some(&format!(
+                "NEW.cursor='{segment}' AND (NOT EXISTS(SELECT 1 FROM chunks WHERE path='{first}' AND agent!='segment') OR NOT EXISTS(SELECT 1 FROM chunks WHERE path='{nested}' AND agent!='segment'))"
+            )),
+        );
+        drop(conn);
+
+        scan_journal(&root, true).expect("scan catches up children before deleting aggregate");
+        let conn = Connection::open(db_path(&root)).expect("open migrated index");
+        assert!(
+            count(
+                &conn,
+                &format!("SELECT count(*) FROM chunks WHERE path='{first}'")
+            ) > 0
+        );
+        assert!(
+            count(
+                &conn,
+                &format!("SELECT count(*) FROM chunks WHERE path='{nested}'")
+            ) > 0
+        );
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM chunks WHERE agent='segment'"),
+            0
+        );
+        drop_trigger(&conn, "assert_children_before_aggregate_delete");
+        fs::remove_dir_all(root).expect("cleanup migration catch-up root");
+    }
+
+    #[test]
+    fn segment_aggregate_migration_rescan_file_catches_up_unrelated_legacy_segment() {
+        let root = temp_root("segment-migration-rescan-file");
+        let segment = "20260717/default/101500_300";
+        let child = "20260717/default/101500_300/talents/audio.md";
+        let unrelated = "20260717/talents/unrelated.md";
+        write(
+            &root,
+            &format!("chronicle/{child}"),
+            "# Audio\n\nlegacy child content",
+        );
+        write(
+            &root,
+            &format!("chronicle/{unrelated}"),
+            "# Unrelated\n\nrescan target",
+        );
+        scan_journal(&root, true).expect("initial real scan");
+        let conn = open_index(&root).expect("open index");
+        conn.execute("DELETE FROM chunks WHERE path=?", [child])
+            .expect("remove legacy child rows");
+        conn.execute("DELETE FROM files WHERE path=?", [child])
+            .expect("remove legacy child marker");
+        seed_legacy_segment_aggregate(&conn, segment);
+        reset_segment_aggregate_migration(&conn);
+        drop(conn);
+
+        assert_eq!(
+            rescan_file(&root, Path::new(unrelated)).expect("rescan unrelated file"),
+            RescanFileStatus::Indexed {
+                warnings: Vec::new()
+            }
+        );
+        let conn = Connection::open(db_path(&root)).expect("open migrated index");
+        assert_eq!(
+            file_mtime(&conn, child),
+            file_mtime_secs(&root.join(format!("chronicle/{child}"))).expect("legacy child mtime")
+        );
+        assert!(chunk_content(&conn, child).contains("legacy child content"));
+        assert_eq!(
+            count(
+                &conn,
+                &format!("SELECT count(*) FROM chunks WHERE path='{segment}' AND agent='segment'")
+            ),
+            0
+        );
+        fs::remove_dir_all(root).expect("cleanup migration rescan-file root");
+    }
+
+    #[test]
+    fn segment_aggregate_migration_abort_retains_aggregate_until_retry() {
+        let root = temp_root("segment-migration-abort");
+        let segment = "20260717/default/102000_300";
+        let child = "20260717/default/102000_300/talents/audio.md";
+        write(
+            &root,
+            &format!("chronicle/{child}"),
+            "# Audio\n\nabort-safe child",
+        );
+        scan_journal(&root, true).expect("initial real scan");
+        let conn = open_index(&root).expect("open index");
+        conn.execute("DELETE FROM chunks WHERE path=?", [child])
+            .expect("remove child rows to mimic pre-W1 index");
+        conn.execute("DELETE FROM files WHERE path=?", [child])
+            .expect("remove child marker to mimic pre-W1 index");
+        seed_legacy_segment_aggregate(&conn, segment);
+        reset_segment_aggregate_migration(&conn);
+        create_abort_trigger(
+            &conn,
+            "abort_segment_aggregate_migration_delete",
+            "BEFORE",
+            "INSERT",
+            "segment_aggregate_migration",
+            Some(&format!("NEW.cursor='{segment}'")),
+        );
+        drop(conn);
+
+        let error =
+            scan_journal(&root, true).expect_err("aggregate delete trigger aborts migration");
+        assert!(
+            error
+                .to_string()
+                .contains("abort_segment_aggregate_migration_delete")
+        );
+        let conn = Connection::open(db_path(&root)).expect("open aborted index");
+        assert!(
+            count(
+                &conn,
+                &format!("SELECT count(*) FROM chunks WHERE path='{segment}' AND agent='segment'")
+            ) > 0
+        );
+        assert!(
+            count(
+                &conn,
+                &format!("SELECT count(*) FROM chunks WHERE path='{child}' AND agent!='segment'")
+            ) > 0
+        );
+        drop_trigger(&conn, "abort_segment_aggregate_migration_delete");
+        drop(conn);
+
+        scan_journal(&root, true).expect("retry migration");
+        let conn = Connection::open(db_path(&root)).expect("open retried index");
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM chunks WHERE agent='segment'"),
+            0
+        );
+        assert!(
+            count(
+                &conn,
+                &format!("SELECT count(*) FROM chunks WHERE path='{child}'")
+            ) > 0
+        );
+        fs::remove_dir_all(root).expect("cleanup migration abort root");
+    }
+
+    #[test]
+    fn segment_aggregate_migration_resumes_with_bounded_progress() {
+        let root = temp_root("segment-migration-bounded");
+        for index in 0..65 {
+            let segment = format!("20260717/default/{index:06}_300");
+            write(
+                &root,
+                &format!("chronicle/{segment}/talents/audio.md"),
+                "# Audio\n\nbounded migration child",
+            );
+        }
+        scan_journal(&root, true).expect("initial real scan");
+        let conn = open_index(&root).expect("open index");
+        for index in 0..65 {
+            seed_legacy_segment_aggregate(&conn, &format!("20260717/default/{index:06}_300"));
+        }
+        reset_segment_aggregate_migration(&conn);
+        drop(conn);
+
+        scan_journal(&root, false).expect("first bounded migration pass");
+        let conn = Connection::open(db_path(&root)).expect("open partially migrated index");
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM chunks WHERE agent='segment'"),
+            1
+        );
+        let state = read_segment_aggregate_migration(&conn)
+            .expect("read migration marker")
+            .expect("migration marker");
+        assert!(!state.completed);
+        assert_eq!(state.cursor, "20260717/default/000063_300");
+        drop(conn);
+
+        scan_journal(&root, false).expect("resume migration");
+        let conn = Connection::open(db_path(&root)).expect("open completed migration");
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM chunks WHERE agent='segment'"),
+            0
+        );
+        assert!(
+            read_segment_aggregate_migration(&conn)
+                .expect("read completed marker")
+                .expect("completed marker")
+                .completed
+        );
+        fs::remove_dir_all(root).expect("cleanup bounded migration root");
     }
 
     #[test]

@@ -72,6 +72,12 @@ id INTEGER PRIMARY KEY CHECK (id = 1),
 mtime INTEGER NOT NULL,
 count INTEGER NOT NULL
 )";
+const CREATE_SEGMENT_AGGREGATE_MIGRATION: &str = "\
+CREATE TABLE IF NOT EXISTS segment_aggregate_migration(
+id INTEGER PRIMARY KEY CHECK (id = 1),
+cursor TEXT NOT NULL,
+completed INTEGER NOT NULL CHECK (completed IN (0, 1))
+)";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IndexBuildLifecycle {
@@ -91,6 +97,12 @@ pub struct IndexBuildState {
 pub struct EntitySearchWatermark {
     pub mtime: i64,
     pub count: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SegmentAggregateMigration {
+    pub cursor: String,
+    pub completed: bool,
 }
 
 pub fn db_path(journal: &Path) -> PathBuf {
@@ -144,6 +156,7 @@ pub fn reset_index(journal: &Path) -> Result<(), StoreError> {
     tx.execute("DROP TABLE IF EXISTS files", [])?;
     create_schema(&tx)?;
     tx.execute("DELETE FROM entity_search_watermark", [])?;
+    tx.execute("DELETE FROM segment_aggregate_migration", [])?;
     tx.execute(
         "REPLACE INTO index_build_state(id, schema_version, state, files_count, chunks_count) VALUES (1, ?, 'building', 0, 0)",
         [INDEX_BUILD_STATE_SCHEMA_VERSION],
@@ -245,9 +258,45 @@ fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(CREATE_EDGES_DST_INDEX, [])?;
     conn.execute(CREATE_INDEX_BUILD_STATE, [])?;
     conn.execute(CREATE_ENTITY_SEARCH_WATERMARK, [])?;
+    conn.execute(CREATE_SEGMENT_AGGREGATE_MIGRATION, [])?;
     conn.execute(
         "REPLACE INTO edge_files(path, mtime) VALUES (?, ?)",
         params![EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION],
+    )?;
+    Ok(())
+}
+
+/// Read the cursor for the one-shot segment aggregate cleanup.
+///
+/// Absence is normal for a database that has not started the migration yet.
+pub fn read_segment_aggregate_migration(
+    conn: &Connection,
+) -> Result<Option<SegmentAggregateMigration>, StoreError> {
+    if !sqlite_table_exists(conn, "segment_aggregate_migration")? {
+        return Ok(None);
+    }
+    conn.query_row(
+        "SELECT CAST(cursor AS TEXT), CAST(completed AS INTEGER) FROM segment_aggregate_migration WHERE id=1",
+        [],
+        |row| {
+            Ok(SegmentAggregateMigration {
+                cursor: row.get(0)?,
+                completed: row.get::<_, i64>(1)? != 0,
+            })
+        },
+    )
+    .optional()
+    .map_err(StoreError::from)
+}
+
+pub fn write_segment_aggregate_migration(
+    conn: &Connection,
+    cursor: &str,
+    completed: bool,
+) -> Result<(), StoreError> {
+    conn.execute(
+        "REPLACE INTO segment_aggregate_migration(id, cursor, completed) VALUES (1, ?, ?)",
+        params![cursor, i64::from(completed)],
     )?;
     Ok(())
 }

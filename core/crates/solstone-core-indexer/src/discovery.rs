@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use glob::{GlobError, Pattern, PatternError, glob};
 
 use solstone_core_format::content::{PatternRoot, patterns_for_root};
-use solstone_core_format::paths::CHRONICLE_DIR;
+use solstone_core_format::paths::{CHRONICLE_DIR, resolve_journal_path};
 
 #[derive(Debug)]
 pub enum DiscoveryError {
@@ -17,6 +17,7 @@ pub enum DiscoveryError {
     Pattern(PatternError),
     Glob(GlobError),
     StripPrefix { path: PathBuf, root: PathBuf },
+    JournalPath(solstone_core_format::paths::JournalPathError),
 }
 
 impl fmt::Display for DiscoveryError {
@@ -44,7 +45,14 @@ impl fmt::Display for DiscoveryError {
                 path.display(),
                 root.display()
             ),
+            DiscoveryError::JournalPath(error) => write!(formatter, "{error}"),
         }
+    }
+}
+
+impl From<solstone_core_format::paths::JournalPathError> for DiscoveryError {
+    fn from(error: solstone_core_format::paths::JournalPathError) -> Self {
+        Self::JournalPath(error)
     }
 }
 
@@ -79,6 +87,37 @@ pub fn discover_indexable_files(
     for spec in patterns_for_root(PatternRoot::DayRooted) {
         discover_from_root(day_root, day_root, spec.pattern, &mut files)?;
     }
+    Ok(files)
+}
+
+/// Discover exactly the talent Markdown source set formerly folded into one
+/// segment aggregate. Keep these patterns aligned with the DayRooted Markdown
+/// registry: `*/*/*/talents/*.md` and `*/*/*/talents/*/*.md`.
+pub fn discover_segment_talent_markdown_files(
+    journal: &Path,
+    rel_segment: &str,
+) -> Result<Vec<(String, PathBuf)>, DiscoveryError> {
+    let segment_dir = resolve_journal_path(journal, rel_segment)?;
+    let mut files = Vec::new();
+    for suffix in ["talents/*.md", "talents/*/*.md"] {
+        for entry in glob(&rooted_pattern(&segment_dir, suffix)?)? {
+            let path = entry?;
+            if !path.is_file() {
+                continue;
+            }
+            let suffix =
+                path.strip_prefix(&segment_dir)
+                    .map_err(|_error| DiscoveryError::StripPrefix {
+                        path: path.clone(),
+                        root: segment_dir.clone(),
+                    })?;
+            let suffix = path_to_posix(suffix)
+                .ok_or_else(|| DiscoveryError::NonUtf8Relative(path.clone()))?;
+            files.push((format!("{rel_segment}/{suffix}"), path));
+        }
+    }
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    files.dedup_by(|left, right| left.0 == right.0);
     Ok(files)
 }
 
