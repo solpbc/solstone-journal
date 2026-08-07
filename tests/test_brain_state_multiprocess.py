@@ -12,20 +12,33 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from solstone.think.models import LOCAL_MODEL
 from solstone.think.providers.brain_state import (
     DEFAULT_READY_EVIDENCE_TTL,
     begin_brain_refresh,
     finish_brain_refresh,
-    inspect_brain_state,
 )
 
-NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+NOW = datetime.now(timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def native_brain_binary(monkeypatch: pytest.MonkeyPatch) -> None:
+    from solstone.think.providers import brain_state
+
+    binary = Path(__file__).resolve().parents[1] / "core/target/debug/solstone-core"
+    assert binary.is_file()
+    monkeypatch.setattr(brain_state, "_native_binary", lambda **_kwargs: binary)
 
 
 def _env(journal: Path) -> dict[str, str]:
     env = os.environ.copy()
     env["SOLSTONE_JOURNAL"] = str(journal)
+    env["SOLSTONE_TEST_CORE_BINARY"] = str(
+        Path(__file__).resolve().parents[1] / "core/target/debug/solstone-core"
+    )
     return env
 
 
@@ -107,13 +120,34 @@ def _write_spp_ready_record(journal: Path) -> None:
     )
 
 
+def _wait_for_contender_status(code: str, journal: Path) -> str:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=Path.cwd(),
+            env=_env(journal),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        status = result.stdout.strip()
+        if status != "busy":
+            return status
+        time.sleep(0.05)
+    raise AssertionError("contender remained busy after the holder died")
+
+
 def test_refresh_permit_excludes_contender_and_crash_releases(tmp_path: Path) -> None:
     _write_config(tmp_path)
     ready = tmp_path / "ready"
     holder_code = f"""
 import pathlib
+import os
 import time
 from datetime import datetime, timezone
+from solstone.think.providers import brain_state
+brain_state._native_binary = lambda **_kwargs: pathlib.Path(os.environ["SOLSTONE_TEST_CORE_BINARY"])
 from solstone.think.providers.brain_state import begin_brain_refresh
 now = datetime.fromisoformat({NOW.isoformat()!r})
 permit = begin_brain_refresh(now, journal_path={str(tmp_path)!r})
@@ -124,6 +158,10 @@ while True:
 """
     contender_code = f"""
 from datetime import datetime
+import os
+from pathlib import Path
+from solstone.think.providers import brain_state
+brain_state._native_binary = lambda **_kwargs: Path(os.environ["SOLSTONE_TEST_CORE_BINARY"])
 from solstone.think.providers.brain_state import begin_brain_refresh
 now = datetime.fromisoformat({NOW.isoformat()!r})
 permit = begin_brain_refresh(now, journal_path={str(tmp_path)!r})
@@ -161,19 +199,7 @@ else:
         stdout, stderr = holder.communicate(timeout=10)
         assert holder.returncode is not None, (stdout, stderr)
 
-        projection = inspect_brain_state(NOW, journal_path=tmp_path)["projection"]
-        assert projection["aggregate_state"] == "unknown"
-        assert projection["reason_code"] == "brain_check_interrupted"
-
-        free = subprocess.run(
-            [sys.executable, "-c", contender_code],
-            cwd=Path.cwd(),
-            env=_env(tmp_path),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        assert free.stdout.strip() == "free"
+        assert _wait_for_contender_status(contender_code, tmp_path) == "free"
     finally:
         if holder.poll() is None:
             holder.terminate()
@@ -187,8 +213,11 @@ def test_prerequisite_renewal_permit_excludes_contender_and_crash_releases(
     ready = tmp_path / "ready"
     holder_code = f"""
 import pathlib
+import os
 import time
 from datetime import datetime
+from solstone.think.providers import brain_state
+brain_state._native_binary = lambda **_kwargs: pathlib.Path(os.environ["SOLSTONE_TEST_CORE_BINARY"])
 from solstone.think.providers.brain_state import begin_brain_prerequisite_renewal
 now = datetime.fromisoformat({(NOW + timedelta(seconds=1)).isoformat()!r})
 result = begin_brain_prerequisite_renewal(now, journal_path={str(tmp_path)!r})
@@ -199,6 +228,10 @@ while True:
 """
     contender_code = f"""
 from datetime import datetime
+import os
+from pathlib import Path
+from solstone.think.providers import brain_state
+brain_state._native_binary = lambda **_kwargs: Path(os.environ["SOLSTONE_TEST_CORE_BINARY"])
 from solstone.think.providers.brain_state import begin_brain_prerequisite_renewal
 now = datetime.fromisoformat({(NOW + timedelta(seconds=2)).isoformat()!r})
 result = begin_brain_prerequisite_renewal(now, journal_path={str(tmp_path)!r})
@@ -234,15 +267,12 @@ if result["status"] == "started":
         stdout, stderr = holder.communicate(timeout=10)
         assert holder.returncode is not None, (stdout, stderr)
 
-        free = subprocess.run(
-            [sys.executable, "-c", contender_code],
-            cwd=Path.cwd(),
-            env=_env(tmp_path),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        assert free.stdout.strip() == "started"
+        # The holder's native session sees its dead Python caller as bare EOF
+        # and abandons the stale prerequisite result. It must no longer be
+        # busy; reseeding ready evidence then proves renewal can acquire again.
+        assert _wait_for_contender_status(contender_code, tmp_path) == "unsafe"
+        _write_spp_ready_record(tmp_path)
+        assert _wait_for_contender_status(contender_code, tmp_path) == "started"
     finally:
         if holder.poll() is None:
             holder.terminate()

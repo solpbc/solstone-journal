@@ -17,7 +17,7 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -60,14 +60,22 @@ MOCK_RESULT = {
     "usage": {"input_tokens": 100, "output_tokens": 50},
 }
 _NON_RESPONSIVE_REFUSAL = "I cannot describe this screen."
-_BRAIN_NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+_BRAIN_NOW = datetime.now(timezone.utc)
+
+
+def _install_native_brain_binary(monkeypatch) -> None:
+    from solstone.think.providers import brain_state
+
+    binary = Path(__file__).resolve().parents[1] / "core/target/debug/solstone-core"
+    assert binary.is_file()
+    monkeypatch.setattr(brain_state, "_native_binary", lambda **_kwargs: binary)
 
 
 def _brain_component() -> dict:
     return {
         "status": "ok",
         "observed_at": _BRAIN_NOW.isoformat(),
-        "expires_at": datetime(2026, 1, 3, 3, 4, 5, tzinfo=timezone.utc).isoformat(),
+        "expires_at": (_BRAIN_NOW + timedelta(days=1)).isoformat(),
     }
 
 
@@ -223,6 +231,7 @@ def _run_generate_failure(
     side_effect: Exception,
 ) -> list[dict]:
     mod = importlib.import_module("solstone.think.talents")
+    _install_native_brain_binary(monkeypatch)
     copy_day(tmp_path, monkeypatch)
     _write_ready_brain_record(tmp_path)
 
@@ -507,6 +516,7 @@ def test_execute_generate_provider_blank_records_runtime_failure(
     from solstone.think.talents import _execute_generate
 
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    _install_native_brain_binary(monkeypatch)
     _write_ready_brain_record(tmp_path)
     output_path = tmp_path / "out.md"
     output_path.write_text("old output", encoding="utf-8")
@@ -714,6 +724,7 @@ def test_execute_generate_provider_blank_rejected_when_config_switches_in_flight
     from solstone.think.talents import _execute_generate
 
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
+    _install_native_brain_binary(monkeypatch)
     _write_ready_brain_record(tmp_path, model="gemini-3.5-flash")
     f1_record = inspect_brain_state(datetime.now(timezone.utc), journal_path=tmp_path)[
         "record"
