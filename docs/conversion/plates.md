@@ -239,7 +239,11 @@ Consistent formatting of **structured journal data** for its consumers — the i
 
 ⚠ **The runtime preamble is `cogitate`'s, not `generate`'s.** `COGITATE_RUNTIME_PREAMBLE` is prepended by `providers/cli.assemble_prompt`, reached only from `run_cogitate` (`providers/openhands.py:1744`); `run_generate` and `run_agenerate` never touch it. It exists as a **sha256 only** in `core/fixtures/cogitate_contract.json` — 1,989 bytes, not reconstructible. ⚠ **And "cross-language" is a location, not yet a fact: zero Rust files read that fixture**, so today the digest detects only Python-source-versus-fixture drift. It would catch real drift the moment a native `cogitate` exists — and would then be unable to tell it what text to send.
 
-⚠ **Only two provider modules implement `run_generate`** — `providers/local.py` (1,444 lines) and `providers/openhands.py` (2,248). `providers/` totals 21,029 lines; the remainder is install, health and attestation machinery belonging to `P-local` and `P-SPP`, not to this call path.
+⚠ **Only two provider modules implement `run_generate`** — `providers/local.py` (1,293 lines) and `providers/openhands.py` (2,248). `providers/` totals 21,029 lines; the remainder is install, health and attestation machinery belonging to `P-local` and `P-SPP`, not to this call path.
+
+🔴 **Neither module's line count is this contract's size, and the error runs both ways.** Classified by top-level definition, `openhands.py` is **1,506 lines of `cogitate`** against 742 for `generate` — so two thirds of the larger module belongs to the plate's *other* contract. `local.py` splits 1,144 / 149 the other way. And the call path reaches five more modules the two names hide: `local_endpoint` (551), `local_admission` (386), `fanout_policy` (131), `local_budget` (127) and the provider registry. ⚠ **Sizing `generate` work from either module's total is wrong by about a thousand lines in each direction, and the two errors nearly cancel** — which is how a whole-file total survived being quoted as this boundary's size.
+
+✅ **The bundled local arm is already Rust and is already the live path.** `providers/local.py`'s bundled branch delegates to the native `local generate` verb; `solstone-core-local` owns the OpenAI-compatible request builder, schema preparation, response parser, finish-reason normaliser, transport trait and cross-process admission. ⛔ What remains behind this boundary in Python is the wire itself, the dispatch and policy in `think/models.py`, the **endpoint** and **confidential** arms, the cloud arms, and attestation.
 
 ## `P-local`
 
