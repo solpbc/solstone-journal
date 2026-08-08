@@ -2,6 +2,8 @@
 # Protects Rust crates from unreviewed license drift while allowing approved licenses.
 allow = [
     "MIT",
+    # via borrow-or-share (transitive dependency of jsonschema).
+    "MIT-0",
     "Apache-2.0",
     "BSD-2-Clause",
     "BSD-3-Clause",
