@@ -15,6 +15,7 @@ mod candidate;
 mod canonicalize;
 mod coordinate;
 mod digest;
+mod envelope_shard;
 mod error;
 mod health_hash;
 mod integer;
@@ -44,6 +45,7 @@ pub use candidate::{FieldState, LedgerCandidate, LedgerSchema, ValueState, proje
 pub use canonicalize::canonicalize;
 pub use coordinate::Coordinate;
 pub use digest::BodyDigest;
+pub use envelope_shard::EnvelopeShard;
 pub use error::{
     BodyCalendarError, BodyCalendarField, BodyHashError, BodySourceHashError,
     BodySourcePolicyError, BodySourcePolicyField, BodyWireIdentityError, BodyWireIdentityField,

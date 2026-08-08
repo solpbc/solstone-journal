@@ -9,11 +9,12 @@ use solstone_core_body_source::{
     BodyMonth, BodyRawRetention, BodySourceFamily, BodySourceHash, BodySourceHashError,
     BodySourcePolicyError, BodySourcePolicyField, BodyString, BodyValue, BodyWireIdentityError,
     BodyWireIdentityField, BundleClass, BundleId, DAYS_AFFECTED_KEY, DirectoryObservation,
-    ENTRY_COUNT_KEY, IMPORT_ID_KEY, ManifestBindingErrorCode, ManifestBindingErrorField,
-    ManifestKeySignal, ManifestKnownKey, ManifestScanError, NativeAuthority, ParseError,
-    RAW_RETENTION_KEY, SOURCE_HASH_KEY, SOURCE_TYPE_KEY, ScannedBodyManifest,
-    authorize_native_bundle, canonicalize, classify_bundle_directory, decode_body_manifest,
-    inspect_body_manifest_signal, parse, scan_body_manifest,
+    ENTRY_COUNT_KEY, EnvelopeErrorCode, EnvelopeErrorField, EnvelopeShard, IMPORT_ID_KEY,
+    ManifestBindingErrorCode, ManifestBindingErrorField, ManifestKeySignal, ManifestKnownKey,
+    ManifestScanError, NativeAuthority, ParseError, RAW_RETENTION_KEY, SOURCE_HASH_KEY,
+    SOURCE_TYPE_KEY, ScannedBodyManifest, authorize_native_bundle, canonicalize,
+    classify_bundle_directory, decode_body_manifest, inspect_body_manifest_signal, parse,
+    scan_body_manifest,
 };
 
 mod support;
@@ -796,6 +797,68 @@ fn public_manifest_binding_api_checks_and_emits_all_fields() {
     assert_eq!(error.field(), ManifestBindingErrorField::RawRetention);
 
     // `new` returns only `Result<Self, _>`; an error leaves no binding value to observe.
+}
+
+#[test]
+fn public_envelope_shard_api_checks_and_rejects_invalid_descriptors() {
+    fn assert_traits<T: Clone + std::fmt::Debug + PartialEq + Eq>() {}
+
+    let bundle = BundleId::from_bytes(b"body-00000000000000000000000000").expect("bundle is valid");
+    let month = BodyMonth::from_bytes(b"2026-01").expect("month is valid");
+    let digest = BodyDigest::from_bytes(
+        b"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .expect("digest is valid");
+    let shard = EnvelopeShard::new(&bundle, 1, month.clone(), 2, 1, digest.clone())
+        .expect("checked values bind");
+
+    assert_traits::<EnvelopeShard>();
+    assert_eq!(shard.path(), "normalized/2026-01.jsonl");
+    assert_eq!(shard.month(), &month);
+    assert_eq!(shard.bytes(), 2);
+    assert_eq!(shard.rows(), 1);
+    assert_eq!(shard.sha256(), &digest);
+    assert_eq!(shard.clone(), shard);
+
+    let field_different = EnvelopeShard::new(&bundle, 1, month.clone(), 3, 1, digest.clone())
+        .expect("field-different descriptor binds");
+    assert_ne!(shard, field_different);
+
+    let empty_digest = BodyDigest::from_bytes(
+        b"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    )
+    .expect("empty digest is valid");
+    let failures = [
+        (
+            EnvelopeShard::new(&bundle, 1, month.clone(), 0, 1, digest.clone()),
+            EnvelopeErrorCode::InvalidField,
+            EnvelopeErrorField::ShardBytes,
+        ),
+        (
+            EnvelopeShard::new(&bundle, 1, month.clone(), 1, 0, digest.clone()),
+            EnvelopeErrorCode::InvalidField,
+            EnvelopeErrorField::ShardRows,
+        ),
+        (
+            EnvelopeShard::new(&bundle, 1, month.clone(), 1, 2, digest.clone()),
+            EnvelopeErrorCode::IncompatibleField,
+            EnvelopeErrorField::ShardRows,
+        ),
+        (
+            EnvelopeShard::new(&bundle, 1, month, 1, 1, empty_digest),
+            EnvelopeErrorCode::IncompatibleField,
+            EnvelopeErrorField::ShardSha256,
+        ),
+    ];
+    for (result, code, field) in failures {
+        let Err(error) = result else {
+            panic!("invalid descriptor must refuse");
+        };
+        assert_eq!(error.code(), code);
+        assert_eq!(error.field(), field);
+    }
+
+    // `new` returns only `Result<Self, _>`; an error leaves no shard value to observe.
 }
 
 #[test]

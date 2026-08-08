@@ -135,6 +135,18 @@ pub fn native_bundle_fixture() -> Value {
     .expect("fixture should parse")
 }
 
+pub fn envelope_multimonth_fixture_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../core/fixtures/body_source_envelope_multimonth.json")
+}
+
+pub fn envelope_multimonth_fixture() -> Value {
+    serde_json::from_str(
+        &std::fs::read_to_string(envelope_multimonth_fixture_path()).expect("fixture should read"),
+    )
+    .expect("fixture should parse")
+}
+
 pub fn native_bundle_directory_cases() -> Vec<NativeBundleDirectoryCase> {
     native_bundle_fixture()["cases"]
         .as_array()

@@ -411,8 +411,6 @@ pub struct EnvelopeError {
 
 impl EnvelopeError {
     /// Builds a body-envelope failure.
-    // TODO(B1g2): remove this allowance once the first checked leaf wires a real caller.
-    #[allow(dead_code)]
     pub(crate) fn new(
         bundle: Option<BundleId>,
         code: EnvelopeErrorCode,
