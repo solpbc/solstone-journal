@@ -26,7 +26,7 @@
       "owner": "journal-direct",
       "grammar": "journal archive export [--out PATH] [--quiet]",
       "reads_stdin": false,
-      "retired_spellings": ["journal export", "sol call journal export"],
+      "retired_spellings": ["sol call journal export"],
       "capabilities": [
         "export only chronicle, entities, facets, and imports",
         "include explicit chronicle/, entities/, facets/, imports/ members and _export.json",

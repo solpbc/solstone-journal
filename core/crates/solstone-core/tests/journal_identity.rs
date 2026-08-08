@@ -18,7 +18,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const LOCAL_OPS_JSON: &str = include_str!("../../../fixtures/journal-cli/local-ops-v1.json");
-const LOCAL_OPS_SHA256: &str = "e15e208e67ad94caab1bd7dad9bdedc27942600dadf01e838aeaf72c39971cf2";
+const LOCAL_OPS_SHA256: &str = "e4f0ce944711586da3898ccb25ee07a10a2095d49fd94f34bcd1955f5dbacc61";
 const CLI_BOUNDARY_JSON: &str = include_str!("../../../fixtures/native-sol/cli-boundary-v1.json");
 
 struct TempDir {
@@ -406,6 +406,26 @@ fn journal_local_operations_fixture_is_the_boundary_census() {
     assert!(retired.contains(&"call journal facet merge"));
     assert!(retired.contains(&"call journal merge"));
     assert!(retired.contains(&"call journal news --write"));
+
+    let archive_export = fixture["commands"]
+        .as_array()
+        .expect("commands must be an array")
+        .iter()
+        .find(|command| command["path"] == serde_json::json!(["archive", "export"]))
+        .expect("archive export must be in the local-operation census");
+    assert_eq!(
+        archive_export["retired_spellings"],
+        serde_json::json!(["sol call journal export"]),
+        "the retired archive reach must not retire the root observation service"
+    );
+    assert!(
+        boundary["identities"]["journal"]["service_commands"]
+            .as_array()
+            .expect("journal service_commands must be an array")
+            .iter()
+            .any(|command| command == "export"),
+        "root journal export remains the observation-service process"
+    );
 }
 
 #[test]
