@@ -29,7 +29,6 @@ const REQUESTED_ROOT_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_DIRECTORY)
     .union(OFlag::O_CLOEXEC);
 
-#[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AcquisitionPrimitive {
     RequestedRootOpen,
@@ -46,9 +45,30 @@ enum AcquisitionPrimitive {
 }
 
 #[cfg(test)]
+#[derive(Clone, Copy)]
+struct InjectedFault {
+    primitive: AcquisitionPrimitive,
+    ordinal: usize,
+    error: Errno,
+}
+
+#[cfg(test)]
 struct TraceState {
-    recorded: Vec<AcquisitionPrimitive>,
+    successful: Vec<AcquisitionPrimitive>,
+    attempted: Vec<AcquisitionPrimitive>,
     barrier: Option<(usize, Box<dyn FnOnce()>)>,
+    barrier_fired: bool,
+    fault: Option<InjectedFault>,
+    fault_consumed: bool,
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+struct TraceOutcome {
+    successful: Vec<AcquisitionPrimitive>,
+    attempted: Vec<AcquisitionPrimitive>,
+    barrier_fired: bool,
+    fault_consumed: bool,
 }
 
 #[cfg(test)]
@@ -75,41 +95,126 @@ fn trace_acquisition<T>(
     barrier: Option<(usize, Box<dyn FnOnce()>)>,
     operation: impl FnOnce() -> T,
 ) -> (T, Vec<AcquisitionPrimitive>) {
+    let expects_barrier = barrier.is_some();
+    let (result, outcome) = trace_scenario(barrier, None, operation);
+    assert!(
+        !expects_barrier || outcome.barrier_fired,
+        "configured acquisition barrier did not fire"
+    );
+    (result, outcome.successful)
+}
+
+#[cfg(test)]
+fn trace_scenario<T>(
+    barrier: Option<(usize, Box<dyn FnOnce()>)>,
+    fault: Option<InjectedFault>,
+    operation: impl FnOnce() -> T,
+) -> (T, TraceOutcome) {
     ACQUISITION_TRACE.with(|trace| {
         assert!(
             trace.borrow().is_none(),
             "acquisition trace is already active"
         );
         *trace.borrow_mut() = Some(TraceState {
-            recorded: Vec::new(),
+            successful: Vec::new(),
+            attempted: Vec::new(),
             barrier,
+            barrier_fired: false,
+            fault,
+            fault_consumed: false,
         });
     });
     let guard = TraceGuard;
     let result = operation();
-    let recorded = ACQUISITION_TRACE.with(|trace| {
+    let state = ACQUISITION_TRACE.with(|trace| {
         trace
             .borrow_mut()
             .take()
             .expect("acquisition trace remains active")
-            .recorded
     });
     drop(guard);
-    (result, recorded)
+    (
+        result,
+        TraceOutcome {
+            successful: state.successful,
+            attempted: state.attempted,
+            barrier_fired: state.barrier_fired,
+            fault_consumed: state.fault_consumed,
+        },
+    )
 }
 
 #[cfg(test)]
-fn record(primitive: AcquisitionPrimitive) {
+fn attempt_acquisition(primitive: AcquisitionPrimitive) -> Result<(), Errno> {
+    ACQUISITION_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let Some(state) = trace.as_mut() else {
+            return Ok(());
+        };
+        state.attempted.push(primitive);
+        let ordinal = state
+            .attempted
+            .iter()
+            .filter(|attempted| **attempted == primitive)
+            .count();
+        if state
+            .fault
+            .is_some_and(|fault| fault.primitive == primitive && fault.ordinal == ordinal)
+        {
+            let fault = state.fault.take().expect("matching injected fault");
+            state.fault_consumed = true;
+            return Err(fault.error);
+        }
+        Ok(())
+    })
+}
+
+#[cfg(test)]
+fn record_success(primitive: AcquisitionPrimitive) {
     let callback = ACQUISITION_TRACE.with(|trace| {
         let mut trace = trace.borrow_mut();
         let state = trace.as_mut()?;
-        state.recorded.push(primitive);
-        (state.barrier.as_ref().map(|(position, _)| *position) == Some(state.recorded.len()))
-            .then(|| state.barrier.take().expect("pending acquisition barrier").1)
+        state.successful.push(primitive);
+        (state.barrier.as_ref().map(|(position, _)| *position) == Some(state.successful.len()))
+            .then(|| {
+                state.barrier_fired = true;
+                state.barrier.take().expect("pending acquisition barrier").1
+            })
     });
     if let Some(callback) = callback {
         callback();
     }
+}
+
+fn traced_nix<T>(
+    primitive: AcquisitionPrimitive,
+    operation: impl FnOnce() -> Result<T, Errno>,
+) -> Result<T, Errno> {
+    #[cfg(not(test))]
+    let _ = primitive;
+    #[cfg(test)]
+    attempt_acquisition(primitive)?;
+    let result = operation();
+    #[cfg(test)]
+    if result.is_ok() {
+        record_success(primitive);
+    }
+    result
+}
+
+fn traced_canonicalize(root: &Path) -> io::Result<PathBuf> {
+    #[cfg(not(test))]
+    let _ = AcquisitionPrimitive::Canonicalize;
+    #[cfg(test)]
+    if let Err(error) = attempt_acquisition(AcquisitionPrimitive::Canonicalize) {
+        return Err(io::Error::from_raw_os_error(error as i32));
+    }
+    let result = fs::canonicalize(root);
+    #[cfg(test)]
+    if result.is_ok() {
+        record_success(AcquisitionPrimitive::Canonicalize);
+    }
+    result
 }
 
 /// A frozen, capability-rooted portable archive source.
@@ -281,7 +386,10 @@ pub(crate) fn classify_mode(mode: SFlag) -> JournalEntryKind {
 }
 
 fn open_requested_root(root: &Path) -> Result<(OwnedFd, DirectoryProof), ArchiveError> {
-    let opened = open(root, REQUESTED_ROOT_FLAGS, Mode::empty()).map_err(|error| match error {
+    let opened = traced_nix(AcquisitionPrimitive::RequestedRootOpen, || {
+        open(root, REQUESTED_ROOT_FLAGS, Mode::empty())
+    })
+    .map_err(|error| match error {
         Errno::ENOENT => ArchiveError::InvalidJournal {
             root: root.to_path_buf(),
             reason: "journal root does not exist",
@@ -292,12 +400,9 @@ fn open_requested_root(root: &Path) -> Result<(OwnedFd, DirectoryProof), Archive
         },
         other => source_io("open journal root", None, other),
     })?;
-    #[cfg(test)]
-    record(AcquisitionPrimitive::RequestedRootOpen);
 
-    let stat = stat_fd(&opened, None, "stat acquired journal root")?;
-    #[cfg(test)]
-    record(AcquisitionPrimitive::AuthoritativeFstat);
+    let stat = traced_nix(AcquisitionPrimitive::AuthoritativeFstat, || fstat(&opened))
+        .map_err(|error| source_io("stat acquired journal root", None, error))?;
 
     if !is_directory(&stat) {
         return Err(ArchiveError::InvalidJournal {
@@ -313,10 +418,11 @@ fn restat_canonical_root(
     name: &OsStr,
     expected: DirectoryProof,
 ) -> Result<(), ArchiveError> {
-    let stat = stat_entry(parent, name, None, "restat acquired journal root")
-        .map_err(acquisition_error)?;
-    #[cfg(test)]
-    record(AcquisitionPrimitive::FinalRestat);
+    let stat = traced_nix(AcquisitionPrimitive::FinalRestat, || {
+        fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)
+    })
+    .map_err(|error| source_io("restat acquired journal root", None, error))
+    .map_err(acquisition_error)?;
 
     if !is_directory(&stat) || directory_proof(&stat)? != expected {
         return Err(changed(None));
@@ -333,7 +439,7 @@ fn acquire_root(root: &Path) -> Result<(OwnedFd, PathBuf), ArchiveError> {
     }
 
     let (authoritative, expected) = open_requested_root(root)?;
-    let canonical = match fs::canonicalize(root) {
+    let canonical = match traced_canonicalize(root) {
         Ok(path) => path,
         Err(error)
             if error.kind() == io::ErrorKind::NotFound
@@ -351,13 +457,10 @@ fn acquire_root(root: &Path) -> Result<(OwnedFd, PathBuf), ArchiveError> {
             });
         }
     };
-    #[cfg(test)]
-    record(AcquisitionPrimitive::Canonicalize);
-
-    let mut current = open("/", DIRECTORY_FLAGS, Mode::empty())
-        .map_err(|error| acquisition_error(source_io("open filesystem root", None, error)))?;
-    #[cfg(test)]
-    record(AcquisitionPrimitive::FilesystemRootOpen);
+    let mut current = traced_nix(AcquisitionPrimitive::FilesystemRootOpen, || {
+        open("/", DIRECTORY_FLAGS, Mode::empty())
+    })
+    .map_err(|error| acquisition_error(source_io("open filesystem root", None, error)))?;
 
     let components = canonical_components(&canonical, root)?;
     let (final_name, ancestors): (OsString, &[OsString]) = match components.split_last() {
@@ -365,40 +468,74 @@ fn acquire_root(root: &Path) -> Result<(OwnedFd, PathBuf), ArchiveError> {
         None => (OsString::from("."), &[]),
     };
     for component in ancestors {
-        let before = stat_entry(&current, component, None, "stat canonical root component")
-            .map_err(acquisition_error)?;
-        #[cfg(test)]
-        record(AcquisitionPrimitive::ComponentStat);
+        let before = traced_nix(AcquisitionPrimitive::ComponentStat, || {
+            fstatat(
+                &current,
+                component.as_os_str(),
+                AtFlags::AT_SYMLINK_NOFOLLOW,
+            )
+        })
+        .map_err(|error| source_io("stat canonical root component", None, error))
+        .map_err(acquisition_error)?;
         if !is_directory(&before) {
             return Err(changed(None));
         }
-        let opened = open_directory(&current, component, None, true)?;
-        #[cfg(test)]
-        record(AcquisitionPrimitive::ComponentOpen);
-        let after = stat_fd(&opened, None, "stat opened canonical root component")
+        let opened = traced_nix(AcquisitionPrimitive::ComponentOpen, || {
+            openat(
+                &current,
+                component.as_os_str(),
+                DIRECTORY_FLAGS,
+                Mode::empty(),
+            )
+        })
+        .map_err(|error| {
+            if is_race_error(error) {
+                changed(None)
+            } else {
+                source_io("open journal directory", None, error)
+            }
+        })?;
+        let after = traced_nix(AcquisitionPrimitive::ComponentFstat, || fstat(&opened))
+            .map_err(|error| source_io("stat opened canonical root component", None, error))
             .map_err(acquisition_error)?;
-        #[cfg(test)]
-        record(AcquisitionPrimitive::ComponentFstat);
         if directory_proof(&before)? != directory_proof(&after)? {
             return Err(changed(None));
         }
         current = opened;
     }
 
-    let before_final = stat_entry(&current, &final_name, None, "stat canonical root component")
-        .map_err(acquisition_error)?;
-    #[cfg(test)]
-    record(AcquisitionPrimitive::FinalComponentStat);
+    let before_final = traced_nix(AcquisitionPrimitive::FinalComponentStat, || {
+        fstatat(
+            &current,
+            final_name.as_os_str(),
+            AtFlags::AT_SYMLINK_NOFOLLOW,
+        )
+    })
+    .map_err(|error| source_io("stat canonical root component", None, error))
+    .map_err(acquisition_error)?;
     if !is_directory(&before_final) || directory_proof(&before_final)? != expected {
         return Err(changed(None));
     }
-    let opened_final = open_directory(&current, &final_name, None, true)?;
-    #[cfg(test)]
-    record(AcquisitionPrimitive::FinalComponentOpen);
-    let after_final = stat_fd(&opened_final, None, "stat opened canonical root component")
-        .map_err(acquisition_error)?;
-    #[cfg(test)]
-    record(AcquisitionPrimitive::FinalComponentFstat);
+    let opened_final = traced_nix(AcquisitionPrimitive::FinalComponentOpen, || {
+        openat(
+            &current,
+            final_name.as_os_str(),
+            DIRECTORY_FLAGS,
+            Mode::empty(),
+        )
+    })
+    .map_err(|error| {
+        if is_race_error(error) {
+            changed(None)
+        } else {
+            source_io("open journal directory", None, error)
+        }
+    })?;
+    let after_final = traced_nix(AcquisitionPrimitive::FinalComponentFstat, || {
+        fstat(&opened_final)
+    })
+    .map_err(|error| source_io("stat opened canonical root component", None, error))
+    .map_err(acquisition_error)?;
     if directory_proof(&after_final)? != expected {
         return Err(changed(None));
     }
@@ -673,6 +810,403 @@ mod tests {
             .nth(ordinal - 1)
             .map(|(index, _)| index + 1)
             .expect("component fstat position")
+    }
+
+    #[derive(Clone, Copy)]
+    enum ExpectedFault {
+        Invalid(&'static str),
+        SourceIo(&'static str),
+        Changed,
+    }
+
+    #[derive(Clone, Copy)]
+    struct FaultCase {
+        primitive: AcquisitionPrimitive,
+        ordinal: usize,
+        error: Errno,
+        expected: ExpectedFault,
+    }
+
+    fn successful_prefix(
+        primitive: AcquisitionPrimitive,
+        ordinal: usize,
+        ancestor_count: usize,
+    ) -> Vec<AcquisitionPrimitive> {
+        fn extend_ancestors(prefix: &mut Vec<AcquisitionPrimitive>, count: usize) {
+            for _ in 0..count {
+                prefix.extend([
+                    AcquisitionPrimitive::ComponentStat,
+                    AcquisitionPrimitive::ComponentOpen,
+                    AcquisitionPrimitive::ComponentFstat,
+                ]);
+            }
+        }
+
+        let base = [
+            AcquisitionPrimitive::RequestedRootOpen,
+            AcquisitionPrimitive::AuthoritativeFstat,
+            AcquisitionPrimitive::Canonicalize,
+            AcquisitionPrimitive::FilesystemRootOpen,
+        ];
+        let mut prefix = Vec::new();
+        match primitive {
+            AcquisitionPrimitive::RequestedRootOpen => {}
+            AcquisitionPrimitive::AuthoritativeFstat => {
+                prefix.push(AcquisitionPrimitive::RequestedRootOpen);
+            }
+            AcquisitionPrimitive::Canonicalize => {
+                prefix.extend_from_slice(&base[..2]);
+            }
+            AcquisitionPrimitive::FilesystemRootOpen => {
+                prefix.extend_from_slice(&base[..3]);
+            }
+            AcquisitionPrimitive::ComponentStat => {
+                prefix.extend(base);
+                extend_ancestors(&mut prefix, ordinal.saturating_sub(1));
+            }
+            AcquisitionPrimitive::ComponentOpen => {
+                prefix.extend(base);
+                extend_ancestors(&mut prefix, ordinal.saturating_sub(1));
+                prefix.push(AcquisitionPrimitive::ComponentStat);
+            }
+            AcquisitionPrimitive::ComponentFstat => {
+                prefix.extend(base);
+                extend_ancestors(&mut prefix, ordinal.saturating_sub(1));
+                prefix.extend([
+                    AcquisitionPrimitive::ComponentStat,
+                    AcquisitionPrimitive::ComponentOpen,
+                ]);
+            }
+            AcquisitionPrimitive::FinalComponentStat => {
+                prefix.extend(base);
+                extend_ancestors(&mut prefix, ancestor_count);
+            }
+            AcquisitionPrimitive::FinalComponentOpen => {
+                prefix.extend(base);
+                extend_ancestors(&mut prefix, ancestor_count);
+                prefix.push(AcquisitionPrimitive::FinalComponentStat);
+            }
+            AcquisitionPrimitive::FinalComponentFstat => {
+                prefix.extend(base);
+                extend_ancestors(&mut prefix, ancestor_count);
+                prefix.extend([
+                    AcquisitionPrimitive::FinalComponentStat,
+                    AcquisitionPrimitive::FinalComponentOpen,
+                ]);
+            }
+            AcquisitionPrimitive::FinalRestat => {
+                prefix.extend(base);
+                extend_ancestors(&mut prefix, ancestor_count);
+                prefix.extend([
+                    AcquisitionPrimitive::FinalComponentStat,
+                    AcquisitionPrimitive::FinalComponentOpen,
+                    AcquisitionPrimitive::FinalComponentFstat,
+                ]);
+            }
+        }
+        prefix
+    }
+
+    fn assert_fault(error: ArchiveError, expected: ExpectedFault, root: &Path, errno: Errno) {
+        match (error, expected) {
+            (
+                ArchiveError::InvalidJournal {
+                    root: actual_root,
+                    reason: actual_reason,
+                },
+                ExpectedFault::Invalid(expected_reason),
+            ) => {
+                assert_eq!(actual_root, root);
+                assert_eq!(actual_reason, expected_reason);
+            }
+            (
+                ArchiveError::SourceIo {
+                    operation,
+                    member,
+                    source,
+                },
+                ExpectedFault::SourceIo(expected_operation),
+            ) => {
+                assert_eq!(operation, expected_operation);
+                assert!(member.is_none());
+                assert_eq!(source.raw_os_error(), Some(errno as i32));
+            }
+            (ArchiveError::SourceChanged { member: None }, ExpectedFault::Changed) => {}
+            (actual, _) => panic!("unexpected acquisition error: {actual:?}"),
+        }
+    }
+
+    fn post_authority_cases(
+        primitive: AcquisitionPrimitive,
+        operation: &'static str,
+    ) -> Vec<FaultCase> {
+        [Errno::ENOENT, Errno::ENOTDIR, Errno::ELOOP]
+            .into_iter()
+            .map(|error| FaultCase {
+                primitive,
+                ordinal: 1,
+                error,
+                expected: ExpectedFault::Changed,
+            })
+            .chain(
+                [Errno::EACCES, Errno::EIO]
+                    .into_iter()
+                    .map(|error| FaultCase {
+                        primitive,
+                        ordinal: 1,
+                        error,
+                        expected: ExpectedFault::SourceIo(operation),
+                    }),
+            )
+            .collect()
+    }
+
+    #[test]
+    fn acquisition_fault_matrix_uses_real_phase_mappers() {
+        let temporary = TempDir::new("fault-matrix");
+        let root = nested_journal(&temporary, b"source");
+        let canonical = fs::canonicalize(&root).expect("canonical test root");
+        let ancestor_count = canonical_components(&canonical, &root)
+            .expect("canonical components")
+            .len()
+            .saturating_sub(1);
+        let mut cases = vec![
+            FaultCase {
+                primitive: AcquisitionPrimitive::RequestedRootOpen,
+                ordinal: 1,
+                error: Errno::ENOENT,
+                expected: ExpectedFault::Invalid("journal root does not exist"),
+            },
+            FaultCase {
+                primitive: AcquisitionPrimitive::RequestedRootOpen,
+                ordinal: 1,
+                error: Errno::ENOTDIR,
+                expected: ExpectedFault::Invalid("journal root is not a directory"),
+            },
+            FaultCase {
+                primitive: AcquisitionPrimitive::RequestedRootOpen,
+                ordinal: 1,
+                error: Errno::ELOOP,
+                expected: ExpectedFault::Invalid("journal root is not a directory"),
+            },
+            FaultCase {
+                primitive: AcquisitionPrimitive::RequestedRootOpen,
+                ordinal: 1,
+                error: Errno::EACCES,
+                expected: ExpectedFault::SourceIo("open journal root"),
+            },
+            FaultCase {
+                primitive: AcquisitionPrimitive::RequestedRootOpen,
+                ordinal: 1,
+                error: Errno::EIO,
+                expected: ExpectedFault::SourceIo("open journal root"),
+            },
+            FaultCase {
+                primitive: AcquisitionPrimitive::AuthoritativeFstat,
+                ordinal: 1,
+                error: Errno::EACCES,
+                expected: ExpectedFault::SourceIo("stat acquired journal root"),
+            },
+            FaultCase {
+                primitive: AcquisitionPrimitive::AuthoritativeFstat,
+                ordinal: 1,
+                error: Errno::EIO,
+                expected: ExpectedFault::SourceIo("stat acquired journal root"),
+            },
+        ];
+        for (primitive, operation) in [
+            (
+                AcquisitionPrimitive::Canonicalize,
+                "canonicalize journal root",
+            ),
+            (
+                AcquisitionPrimitive::FilesystemRootOpen,
+                "open filesystem root",
+            ),
+            (
+                AcquisitionPrimitive::ComponentStat,
+                "stat canonical root component",
+            ),
+            (
+                AcquisitionPrimitive::ComponentOpen,
+                "open journal directory",
+            ),
+            (
+                AcquisitionPrimitive::ComponentFstat,
+                "stat opened canonical root component",
+            ),
+            (
+                AcquisitionPrimitive::FinalComponentStat,
+                "stat canonical root component",
+            ),
+            (
+                AcquisitionPrimitive::FinalComponentOpen,
+                "open journal directory",
+            ),
+            (
+                AcquisitionPrimitive::FinalComponentFstat,
+                "stat opened canonical root component",
+            ),
+            (
+                AcquisitionPrimitive::FinalRestat,
+                "restat acquired journal root",
+            ),
+        ] {
+            cases.extend(post_authority_cases(primitive, operation));
+        }
+        cases.push(FaultCase {
+            primitive: AcquisitionPrimitive::ComponentStat,
+            ordinal: 2,
+            error: Errno::EIO,
+            expected: ExpectedFault::SourceIo("stat canonical root component"),
+        });
+
+        for case in cases {
+            let prefix = successful_prefix(case.primitive, case.ordinal, ancestor_count);
+            let barrier_callback_fired = std::rc::Rc::new(std::cell::Cell::new(false));
+            let callback_observer = std::rc::Rc::clone(&barrier_callback_fired);
+            let (result, trace) = trace_scenario(
+                Some((
+                    prefix.len() + 1,
+                    Box::new(move || callback_observer.set(true)),
+                )),
+                Some(InjectedFault {
+                    primitive: case.primitive,
+                    ordinal: case.ordinal,
+                    error: case.error,
+                }),
+                || ArchiveSource::open(&root),
+            );
+            assert!(
+                trace.fault_consumed,
+                "fault was not consumed: {:?}",
+                case.primitive
+            );
+            assert!(!trace.barrier_fired);
+            assert!(!barrier_callback_fired.get());
+            assert_eq!(trace.successful, prefix, "wrong completion prefix");
+            let mut attempts = prefix;
+            attempts.push(case.primitive);
+            assert_eq!(trace.attempted, attempts, "wrong attempted phase");
+            let error = match result {
+                Ok(_) => panic!("injected acquisition fault must fail"),
+                Err(error) => error,
+            };
+            assert_fault(error, case.expected, &root, case.error);
+        }
+    }
+
+    #[test]
+    fn acquisition_fault_is_one_shot_and_unreachable_fault_stays_pending() {
+        let (root_result, root_trace) = trace_scenario(
+            None,
+            Some(InjectedFault {
+                primitive: AcquisitionPrimitive::ComponentStat,
+                ordinal: 1,
+                error: Errno::EIO,
+            }),
+            || ArchiveSource::open(Path::new("/")),
+        );
+        assert!(root_result.is_ok());
+        assert!(!root_trace.fault_consumed);
+        assert!(
+            !root_trace
+                .attempted
+                .contains(&AcquisitionPrimitive::ComponentStat)
+        );
+
+        let temporary = TempDir::new("one-shot");
+        let root = nested_journal(&temporary, b"source");
+        let ((first, second), trace) = trace_scenario(
+            None,
+            Some(InjectedFault {
+                primitive: AcquisitionPrimitive::Canonicalize,
+                ordinal: 1,
+                error: Errno::EIO,
+            }),
+            || (ArchiveSource::open(&root), ArchiveSource::open(&root)),
+        );
+        assert!(matches!(first, Err(ArchiveError::SourceIo { .. })));
+        assert!(second.is_ok());
+        assert!(trace.fault_consumed);
+        assert_eq!(
+            trace
+                .attempted
+                .iter()
+                .filter(|primitive| **primitive == AcquisitionPrimitive::Canonicalize)
+                .count(),
+            2
+        );
+        assert_eq!(
+            trace
+                .successful
+                .iter()
+                .filter(|primitive| **primitive == AcquisitionPrimitive::Canonicalize)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn acquisition_faults_are_thread_local() {
+        let rendezvous = std::sync::Arc::new(std::sync::Barrier::new(3));
+        std::thread::scope(|scope| {
+            let first_rendezvous = std::sync::Arc::clone(&rendezvous);
+            scope.spawn(move || {
+                let (result, trace) = trace_scenario(
+                    None,
+                    Some(InjectedFault {
+                        primitive: AcquisitionPrimitive::RequestedRootOpen,
+                        ordinal: 1,
+                        error: Errno::EACCES,
+                    }),
+                    || {
+                        first_rendezvous.wait();
+                        ArchiveSource::open(Path::new("/"))
+                    },
+                );
+                assert!(trace.fault_consumed);
+                let actual = match result {
+                    Ok(_) => panic!("thread-local requested-root fault must fail"),
+                    Err(actual) => actual,
+                };
+                assert_fault(
+                    actual,
+                    ExpectedFault::SourceIo("open journal root"),
+                    Path::new("/"),
+                    Errno::EACCES,
+                );
+            });
+
+            let second_rendezvous = std::sync::Arc::clone(&rendezvous);
+            scope.spawn(move || {
+                let (result, trace) = trace_scenario(
+                    None,
+                    Some(InjectedFault {
+                        primitive: AcquisitionPrimitive::Canonicalize,
+                        ordinal: 1,
+                        error: Errno::EIO,
+                    }),
+                    || {
+                        second_rendezvous.wait();
+                        ArchiveSource::open(Path::new("/"))
+                    },
+                );
+                assert!(trace.fault_consumed);
+                let actual = match result {
+                    Ok(_) => panic!("thread-local canonicalize fault must fail"),
+                    Err(actual) => actual,
+                };
+                assert_fault(
+                    actual,
+                    ExpectedFault::SourceIo("canonicalize journal root"),
+                    Path::new("/"),
+                    Errno::EIO,
+                );
+            });
+
+            rendezvous.wait();
+        });
     }
 
     #[test]

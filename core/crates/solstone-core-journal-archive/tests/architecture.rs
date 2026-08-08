@@ -81,12 +81,57 @@ fn public_descendant_operations_accept_only_inventory_handles() {
         .iter()
         .find_map(|(name, source)| (*name == "source").then_some(*source))
         .expect("source module registered");
-    for signature in public_signatures(source) {
+    let signatures = public_signatures(source);
+    let public_names: Vec<&str> = signatures
+        .iter()
+        .map(|signature| {
+            signature
+                .strip_prefix("pub fn ")
+                .expect("public function prefix")
+                .split_once('(')
+                .expect("public function arguments")
+                .0
+        })
+        .collect();
+    assert_eq!(
+        public_names,
+        [
+            "open",
+            "inventory",
+            "canonical_source",
+            "open_file",
+            "revalidate"
+        ]
+    );
+    let canonical = signatures
+        .iter()
+        .find(|signature| signature.contains("pub fn canonical_source"))
+        .expect("canonical source accessor");
+    assert!(canonical.contains("&self") && canonical.contains("-> &Path"));
+
+    for signature in signatures {
+        assert!(
+            !signature.contains("fault") && !signature.contains("inject"),
+            "public test-control authority: {signature}"
+        );
         if signature.contains("pub fn open_file") || signature.contains("pub fn revalidate") {
             assert!(signature.contains("&InventoryEntry"), "{signature}");
             assert!(
                 !signature.contains("&Path") && !signature.contains("&str"),
                 "{signature}"
+            );
+        }
+        if signature.contains("&Path") {
+            assert!(
+                signature.contains("pub fn open(root: &Path)")
+                    || signature.contains("pub fn canonical_source(&self) -> &Path"),
+                "unexpected public path authority: {signature}"
+            );
+        }
+        for forbidden in ["OwnedFd", "RawFd", "AsFd"] {
+            assert!(
+                !signature.contains(forbidden),
+                "public descriptor authority {forbidden}: {signature}"
             );
         }
     }

@@ -84,27 +84,6 @@ fn rejects_dangling_file_and_loop_symlink_roots() {
 #[cfg(unix)]
 #[test]
 #[allow(clippy::disallowed_methods)]
-fn unreadable_requested_root_returns_source_io() {
-    use nix::unistd::Uid;
-
-    if Uid::effective().is_root() {
-        eprintln!("skipping permission-denied assertion as effective root");
-        return;
-    }
-
-    let temporary = TempDir::new("unreadable-requested-root");
-    let root = journal(&temporary);
-    fs::set_permissions(&root, fs::Permissions::from_mode(0o000)).expect("remove root permissions");
-    let result = ArchiveSource::open(&root);
-    fs::set_permissions(&root, fs::Permissions::from_mode(0o755))
-        .expect("restore root permissions before temporary cleanup");
-
-    assert!(matches!(result, Err(ArchiveError::SourceIo { .. })));
-}
-
-#[cfg(unix)]
-#[test]
-#[allow(clippy::disallowed_methods)]
 fn rejects_symlink_fifo_and_socket_without_opening_special_members() {
     use nix::sys::stat::Mode;
     use nix::unistd::mkfifo;
