@@ -11,12 +11,12 @@ use solstone_core_body_source::{
     BundleId, DAYS_AFFECTED_KEY, ENTRY_COUNT_KEY, IMPORT_ID_KEY, ManifestBindingErrorCode,
     ManifestBindingErrorField, ManifestKeySignal, ManifestKnownKey, ManifestScanError, ParseError,
     RAW_RETENTION_KEY, SOURCE_HASH_KEY, SOURCE_TYPE_KEY, ScannedBodyManifest, canonicalize,
-    inspect_body_manifest_signal, parse, scan_body_manifest,
+    decode_body_manifest, inspect_body_manifest_signal, parse, scan_body_manifest,
 };
 
 mod support;
 
-use support::codec_rows;
+use support::{codec_rows, native_bundle_fixture};
 
 #[test]
 fn public_value_model_and_codec_rows_are_usable() {
@@ -624,4 +624,71 @@ fn public_manifest_binding_api_checks_and_emits_all_fields() {
     assert_eq!(error.field(), ManifestBindingErrorField::RawRetention);
 
     // `new` returns only `Result<Self, _>`; an error leaves no binding value to observe.
+}
+
+#[test]
+fn public_raw_manifest_decoder_is_checked_and_keeps_non_reserved_extensions_permissive() {
+    let fixture = native_bundle_fixture();
+    let manifest = &fixture["cases"][0]["manifest"];
+    let bytes = serde_json::to_vec(manifest).expect("fixture manifest serializes");
+    let bundle = BundleId::from_bytes(
+        manifest["import_id"]
+            .as_str()
+            .expect("fixture import ID")
+            .as_bytes(),
+    )
+    .expect("fixture import ID is valid");
+    let binding = decode_body_manifest(&bytes, &bundle).expect("fixture manifest decodes");
+    assert_eq!(binding.body_source_schema(), "solstone.body.bundle.v1");
+    assert_eq!(binding.body_bundle_ref(), "body-bundle.json");
+    assert_eq!(
+        binding.body_bundle_sha256().as_str(),
+        manifest["body_bundle_sha256"]
+    );
+    assert_eq!(binding.import_id(), &bundle);
+    assert_eq!(binding.source_type().as_str(), manifest["source_type"]);
+    assert_eq!(binding.source_hash().as_str(), manifest["source_hash"]);
+    assert_eq!(
+        binding.entry_count(),
+        manifest["entry_count"].as_u64().unwrap()
+    );
+    assert_eq!(
+        binding.days_affected().len(),
+        manifest["days_affected"].as_array().unwrap().len()
+    );
+    assert_eq!(binding.raw_retention().as_str(), manifest["raw_retention"]);
+
+    let mut permissive = manifest.clone();
+    let object = permissive
+        .as_object_mut()
+        .expect("fixture manifest is an object");
+    object.insert("ordinary".into(), serde_json::json!("body_x"));
+    object.insert(
+        "nested".into(),
+        serde_json::json!({"body_x": true, "body_": false}),
+    );
+    let permissive_bytes = serde_json::to_vec(&permissive).expect("permissive manifest serializes");
+    assert!(decode_body_manifest(&permissive_bytes, &bundle).is_ok());
+
+    let duplicate = br#"{"raw_retention":null,"raw_retention":null,"body_source_schema":null,"body_source_schema":null}"#;
+    let Err(duplicate_error) = decode_body_manifest(duplicate, &bundle) else {
+        panic!("duplicate refuses");
+    };
+    assert_eq!(
+        duplicate_error.code(),
+        ManifestBindingErrorCode::DuplicateField
+    );
+    assert_eq!(
+        duplicate_error.field(),
+        ManifestBindingErrorField::BodySourceSchema
+    );
+
+    let unknown = br#"{"body_x":null}"#;
+    let unknown_result = decode_body_manifest(unknown, &bundle);
+    assert!(unknown_result.is_err());
+    let Err(unknown_error) = unknown_result else {
+        panic!("unknown field refuses as a binding error");
+    };
+    assert_eq!(unknown_error.code(), ManifestBindingErrorCode::UnknownField);
+    assert_eq!(unknown_error.field(), ManifestBindingErrorField::Manifest);
 }

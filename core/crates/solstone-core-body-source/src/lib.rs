@@ -18,7 +18,9 @@ mod error;
 mod health_hash;
 mod integer;
 mod manifest_binding;
+mod manifest_decode;
 mod manifest_known_key;
+mod manifest_projection;
 mod manifest_scan;
 mod manifest_signal;
 mod parser;
@@ -49,6 +51,7 @@ pub use health_hash::{
 };
 pub use integer::BodyInteger;
 pub use manifest_binding::BodyManifestBinding;
+pub use manifest_decode::decode_body_manifest;
 pub use manifest_known_key::{
     BODY_BUNDLE_REF_KEY, BODY_BUNDLE_SHA256_KEY, BODY_SOURCE_SCHEMA_KEY, DAYS_AFFECTED_KEY,
     ENTRY_COUNT_KEY, IMPORT_ID_KEY, ManifestKnownKey, RAW_RETENTION_KEY, SOURCE_HASH_KEY,

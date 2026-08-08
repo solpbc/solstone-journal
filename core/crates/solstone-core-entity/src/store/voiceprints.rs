@@ -966,7 +966,7 @@ fn parse_envelope(bytes: &[u8]) -> VoiceprintEnvelope {
     }
 }
 
-fn write_npy(descr: &str, shape: &str, payload: &[u8]) -> Vec<u8> {
+pub fn write_npy(descr: &str, shape: &str, payload: &[u8]) -> Vec<u8> {
     let mut header = format!("{{'descr': '{descr}', 'fortran_order': False, 'shape': {shape}, }}");
     let padding = (64 - ((10 + header.len() + 1) % 64)) % 64;
     header.push_str(&" ".repeat(padding));

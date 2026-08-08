@@ -44,7 +44,10 @@ pub use paths::{
     ensure_directory, iter_segments, list_dir_entries, path_lexists, resolve_configured_journal,
     resolve_journal_path, segment_path,
 };
-pub use readers::{MalformedPolicy, read_bytes, read_json, read_jsonl, read_text};
+pub use readers::{
+    JsonlReadReport, JsonlRecord, MalformedPolicy, read_bytes, read_json, read_jsonl,
+    read_jsonl_with_report, read_text,
+};
 pub use removal::remove_dir_all;
 pub use snapshot::{
     JournalSnapshot, SnapshotDirectory, SnapshotFile, capture_snapshot, restore_snapshot,

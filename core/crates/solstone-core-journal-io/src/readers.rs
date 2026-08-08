@@ -22,6 +22,20 @@ pub enum MalformedPolicy {
     Raise,
 }
 
+/// A JSONL value with its one-based source line number; `0` marks a caller-supplied default.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JsonlRecord<T> {
+    pub value: T,
+    pub line_number: usize,
+}
+
+/// Tolerant JSONL read results, including omitted malformed-record count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JsonlReadReport<T> {
+    pub records: Vec<JsonlRecord<T>>,
+    pub malformed_line_count: usize,
+}
+
 /// Read JSON, treating missing or empty files as `default` before malformed policy.
 pub fn read_json<T: DeserializeOwned>(
     path: impl AsRef<Path>,
@@ -45,18 +59,44 @@ pub fn read_jsonl<T: DeserializeOwned>(
     default: Vec<T>,
     on_error: MalformedPolicy,
 ) -> Result<Vec<T>, ReadError> {
+    Ok(read_jsonl_with_report(path, default, on_error)?
+        .records
+        .into_iter()
+        .map(|record| record.value)
+        .collect())
+}
+
+/// Read JSONL with source line numbers and malformed-record accounting.
+pub fn read_jsonl_with_report<T: DeserializeOwned>(
+    path: impl AsRef<Path>,
+    default: Vec<T>,
+    on_error: MalformedPolicy,
+) -> Result<JsonlReadReport<T>, ReadError> {
     let path = path.as_ref();
     let contents = read_missing_as_empty(path)?;
     if contents.is_empty() {
-        return Ok(default);
+        return Ok(JsonlReadReport {
+            records: default
+                .into_iter()
+                .map(|value| JsonlRecord {
+                    value,
+                    line_number: 0,
+                })
+                .collect(),
+            malformed_line_count: 0,
+        });
     }
     let mut records = Vec::new();
+    let mut malformed_line_count = 0;
     for (index, line) in contents.split(|byte| *byte == b'\n').enumerate() {
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
         match serde_json::from_slice(line) {
-            Ok(record) => records.push(record),
+            Ok(value) => records.push(JsonlRecord {
+                value,
+                line_number: index + 1,
+            }),
             Err(source) => match on_error {
                 MalformedPolicy::Raise => {
                     return Err(ReadError::Malformed(MalformedDataError {
@@ -65,8 +105,11 @@ pub fn read_jsonl<T: DeserializeOwned>(
                         source,
                     }));
                 }
-                MalformedPolicy::Skip => {}
+                MalformedPolicy::Skip => {
+                    malformed_line_count += 1;
+                }
                 MalformedPolicy::WarnAndSkip => {
+                    malformed_line_count += 1;
                     log::warn!(
                         "malformed JSONL record in {} at line {}: {source}",
                         path.display(),
@@ -76,7 +119,10 @@ pub fn read_jsonl<T: DeserializeOwned>(
             },
         }
     }
-    Ok(records)
+    Ok(JsonlReadReport {
+        records,
+        malformed_line_count,
+    })
 }
 
 /// Read UTF-8 text, treating a missing path as `default`.
@@ -232,6 +278,22 @@ mod tests {
         assert_eq!(
             read_jsonl::<u8>(&path, Vec::new(), MalformedPolicy::Skip).unwrap(),
             vec![1, 2]
+        );
+        let report =
+            read_jsonl_with_report::<u8>(&path, Vec::new(), MalformedPolicy::Skip).unwrap();
+        assert_eq!(report.malformed_line_count, 1);
+        assert_eq!(
+            report.records,
+            vec![
+                JsonlRecord {
+                    value: 1,
+                    line_number: 1,
+                },
+                JsonlRecord {
+                    value: 2,
+                    line_number: 3,
+                },
+            ]
         );
         assert_eq!(
             read_jsonl::<u8>(&path, Vec::new(), MalformedPolicy::WarnAndSkip).unwrap(),
