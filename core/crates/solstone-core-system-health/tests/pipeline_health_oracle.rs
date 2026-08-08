@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
 use solstone_core_system_health::{
-    DETERMINISTIC_FAILURE_REASON_CODES, DataStateMap, FilesystemHealthLogSource, FoldRead,
+    CAP, DETERMINISTIC_FAILURE_REASON_CODES, DataStateMap, FilesystemHealthLogSource, FoldRead,
     HealthLogSource, MIN_SPAN_MS, SEGMENT_FLOOR_TALENTS, SEGMENT_NO_PROCESSING_MODALITIES,
     SEGMENT_NONGATING_TALENTS, SEGMENT_SUPERSEDED_TALENTS, SegmentBlockerDimension,
     SegmentIdentity, SegmentInput, TerminalEvent, ThoughtVerdict, blocked_segment_keys,
@@ -275,7 +275,7 @@ fn synthesized_corpus_matches_python_folds_and_vocabulary() {
         oracle["superseded"],
         json!({"entities":"entities:detection"})
     );
-    assert_eq!(oracle["cap"], 5);
+    assert_eq!(oracle["cap"], json!(CAP));
     assert_eq!(oracle["min_span_ms"], MIN_SPAN_MS);
     let mut deterministic = DETERMINISTIC_FAILURE_REASON_CODES.to_vec();
     deterministic.sort_unstable();
