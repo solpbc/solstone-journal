@@ -303,7 +303,10 @@ fn prepare_endpoint_request(
             max_tokens,
             request.json_output,
             request.json_schema.as_ref(),
-            false,
+            // The reference gates the llama-server sampling controls on
+            // `is_bundled or is_confidential`, not on `is_bundled` alone: the
+            // confidential lane is a Qwen server behind a forwarder.
+            endpoint.is_confidential,
         ),
         input_budget,
         request_budget,
@@ -658,6 +661,37 @@ mod tests {
             credential: None,
             parallel_slots: Some(1),
             is_confidential: false,
+        }
+    }
+
+    const QWEN_SAMPLING_FIELDS: [&str; 5] = [
+        "chat_template_kwargs",
+        "top_p",
+        "top_k",
+        "min_p",
+        "presence_penalty",
+    ];
+
+    #[test]
+    fn qwen_sampling_controls_follow_the_confidential_flag() {
+        // The reference gates these on `is_bundled or is_confidential`. The
+        // confidential lane still refuses before reaching this arm, so this is
+        // the only place the mapping can be asserted today - and it is the
+        // place that will carry it when N5 makes the lane reachable.
+        for is_confidential in [false, true] {
+            let mut endpoint = endpoint("http://127.0.0.1:1");
+            endpoint.is_confidential = is_confidential;
+            let prepared = prepare_endpoint_request(&request(None), &endpoint, 512, None)
+                .expect("prepared endpoint request");
+            let body = prepared.body.as_object().expect("body is an object");
+            for field in QWEN_SAMPLING_FIELDS {
+                assert_eq!(
+                    body.contains_key(field),
+                    is_confidential,
+                    "is_confidential={is_confidential}: {field}"
+                );
+            }
+            assert!(body.contains_key("model"), "model is always present");
         }
     }
 

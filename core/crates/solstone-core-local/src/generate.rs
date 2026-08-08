@@ -1349,20 +1349,20 @@ mod tests {
             assert!(!non_confidential.contains_key(field), "unexpected {field}");
         }
 
-        for case in ["bundled", "BYO confidential"] {
-            let body = build_request_body(
-                "served-model",
-                build_messages(&json!("Hello"), None),
-                0.3,
-                512,
-                false,
-                None,
-                true,
-            );
-            let body = body.as_object().unwrap();
-            for field in qwen_fields {
-                assert!(body.contains_key(field), "{case}: missing {field}");
-            }
+        // Whether a lane sets this flag is the caller's mapping and is asserted
+        // in the endpoint arm, which is where `is_confidential` is in scope.
+        let gated = build_request_body(
+            "served-model",
+            build_messages(&json!("Hello"), None),
+            0.3,
+            512,
+            false,
+            None,
+            true,
+        );
+        let gated = gated.as_object().unwrap();
+        for field in qwen_fields {
+            assert!(gated.contains_key(field), "missing {field}");
         }
     }
 
