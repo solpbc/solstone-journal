@@ -202,6 +202,40 @@ consequence of any one of them getting it wrong is deleted owner data. The bound
 code means; it publishes the decision. Consumers still receive `reason_code` for recording and
 presentation.
 
+### 🔴 `blocking` governs, and `retryable` is read only when `blocking` is false
+
+**A refusal can carry both.** When it does, the caller stops and preserves the owner's source material.
+It does not retry, whatever `retryable` says.
+
+⚠ **This has to be stated because the two fields never disambiguate each other by content.** Of the
+reason codes the fixture carries, **27 are blocking and every one of them is also retryable**; the sole
+non-retryable code is not blocking. A consumer that reads `retryable` first and a consumer that reads
+`blocking` first therefore both produce a defensible-looking answer on the same record, and nothing in
+the pair of booleans tells either one it is wrong.
+
+🔴 **What "stop" means here, precisely.** The caller ends *this* attempt and holds the owner's
+material. ⛔ It does not discard it, and ⛔ it does not mean the work is abandoned — a later
+run picks the held material up. That is the whole distinction `blocking` carries: *preserve rather than
+record a failed attempt*. Reading it as "never try again" throws away the same data that reading it as
+"retry now" burns the provider for.
+
+⚠ **The failure mode is invisible on the codes most likely to be tested.** For a failure that
+persists, both orderings reach the hold once the retry budget is spent, so an assertion on the final
+outcome or exit code passes either way. Only the **transient** blocking codes separate them —
+`attestation_stale`, `local_model_loading`, `provider_quota_exceeded`, `install_busy` — and there
+the wrong order has a consumer calling repeatedly through a provider the boundary has just declared
+unusable, which is the inverse of what `blocking` exists to instruct.
+
+✅ **The unknown member already encodes this rule and is the one place the combination is visible.**
+An unrecognised or absent `reason_code` resolves to `retryable: false, blocking: true` — blocking
+wins, stated as data. The rule above generalises what that default already assumes.
+
+⛔ **The resolution is a rule about reading two true facts, not a contradiction in the facts, so do
+not "fix" it by marking blocking codes non-retryable.** `local_model_loading` genuinely *is* retryable
+later; collapsing it would destroy the information a subsequent run needs, and the retry classification
+is consumed elsewhere on its own terms.
+
+
 🔴 **The readiness taxonomy alone does not deliver this, and the gap is on the egress lane.** The three
 attestation failures — not-verified, failed, stale — carry reason codes that are **absent from that
 taxonomy entirely**, so a lookup returns not-found and the blocking predicate answers `false`. That is
