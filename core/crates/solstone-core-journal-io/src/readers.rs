@@ -22,7 +22,7 @@ pub enum MalformedPolicy {
     Raise,
 }
 
-/// A JSONL value together with its one-based source line number.
+/// A JSONL value with its one-based source line number; `0` marks a caller-supplied default.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JsonlRecord<T> {
     pub value: T,
