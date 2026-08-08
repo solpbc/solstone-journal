@@ -88,13 +88,6 @@ fn public_decoder_matches_a_public_facts_and_constructor_oracle() {
     let oversized = vec![b' '; 1_048_577];
     let cases = [
         (
-            clean.as_bytes(),
-            Some((
-                ManifestBindingErrorCode::MissingField,
-                ManifestBindingErrorField::Manifest,
-            )),
-        ),
-        (
             br#"{"import_id":1,"import_id":2}"#.as_slice(),
             Some((
                 ManifestBindingErrorCode::DuplicateField,
@@ -135,7 +128,7 @@ fn public_decoder_matches_a_public_facts_and_constructor_oracle() {
         &decode_body_manifest(clean.as_bytes(), &bundle()).expect("clean input decodes"),
         &zero_binding(),
     );
-    for (input, expected) in cases.into_iter().skip(1) {
+    for (input, expected) in cases {
         let scanned = scan_body_manifest(input);
         let (code, field) = match scanned {
             Err(ManifestScanError::InputTooLarge) => (
