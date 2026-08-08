@@ -40,13 +40,6 @@ def heartbeat_mocks(monkeypatch):
     return state
 
 
-def test_heartbeat_command_mapping():
-    """heartbeat key in COMMANDS maps to solstone.think.heartbeat module."""
-    from solstone.think.sol_cli import COMMANDS
-
-    assert COMMANDS["heartbeat"].module == "solstone.think.heartbeat"
-
-
 def test_heartbeat_main_is_callable():
     """solstone.think.heartbeat.main is a callable function."""
     from solstone.think.heartbeat import main

@@ -86,10 +86,10 @@ JOURNAL_CASES: tuple[tuple[str, list[str]], ...] = (
 )
 JOURNAL_FAILURE_CASES: tuple[tuple[str, list[str], int, str], ...] = (
     (
-        "journal import access rejection",
+        "journal retired access spelling",
         ["journal", "import"],
-        2,
-        "is a journal-access command",
+        64,
+        "Usage: journal <command> [args...]",
     ),
 )
 NATIVE_FAILURE_CASES: tuple[tuple[str, list[str], int, str], ...] = (

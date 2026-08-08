@@ -104,13 +104,6 @@ def service_run_mock(*, returncodes: list[int] | None = None):
     )
 
 
-def test_config_command_registered():
-    from solstone.think import sol_cli as sol
-
-    assert sol.COMMANDS["config"].module == "solstone.think.config_cli"
-    assert "config" in sol.service_help_group().commands
-
-
 def test_show_reports_wrapper_embedded(home_root, monkeypatch, tmp_path, capsys):
     journal = str((tmp_path / "journal").resolve())
     target = ensure_expected_target(tmp_path / "repo")

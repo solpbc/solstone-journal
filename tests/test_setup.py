@@ -397,7 +397,6 @@ def test_doctor_command_uses_journal_console(
 
     assert command == expected_doctor_command()
     assert command[:1] == setup.journal_console_command()
-    assert command[:3] != [sys.executable, "-m", "solstone.think.sol_cli"]
 
 
 def write_owned_wrapper(home: Path, repo: Path, journal: Path) -> Path:
@@ -3419,12 +3418,8 @@ def test_port_propagates_to_subprocess_argv(
 def test_setup_never_dispatches_access_commands_through_the_journal_surface() -> None:
     """Setup must invoke journal-access commands through `sol`, never the module entry.
 
-    `python -m solstone.think.sol_cli` is `journal_main` — always the *journal*
-    surface — and since the dispatcher gained its access-command rejection it exits 2
-    for every command in the generated inventory. Setup built three of its own steps
-    that way, so `journal setup` failed `skills_user` and `skills_journal`, exited
-    non-zero, and the macOS app's first-run onboarding waited forever on a setup that
-    never reported completion.
+    The retired Python dispatcher represented the journal reach. Setup must use
+    the distinct native sol executable for every generated access command.
 
     Anchored to the generated inventory rather than a literal list, so adding a new
     access command cannot silently reintroduce this.
@@ -3448,9 +3443,6 @@ def test_setup_never_dispatches_access_commands_through_the_journal_surface() ->
         assert command[0] == sol_console, (
             f"{subcommand!r} is a journal-access command and must be invoked via the "
             f"sol console script, got {command[0]!r}"
-        )
-        assert "solstone.think.sol_cli" not in command, (
-            f"{subcommand!r} is dispatched through the journal surface, which rejects it"
         )
 
     # Non-vacuous: all three builders carry an access command today.

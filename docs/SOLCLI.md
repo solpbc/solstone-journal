@@ -8,7 +8,7 @@ The CLI has two tiers with distinct purposes:
 
 | Tier | Pattern | Framework | Purpose |
 |------|---------|-----------|---------|
-| **Top-level** | `sol <cmd>` / `journal <cmd>` | Native `sol` + Python `journal` dispatcher | Native journal access, plus host services and local-only host tools under `journal` |
+| **Top-level** | `sol <cmd>` / `journal <cmd>` | Distinct native Rust executables | API-only journal access under `sol`; same-device services and local authorities under `journal` |
 | **Call** | `sol call <app> <cmd>` | Native authority inventory | Tool-callable functions — what agents and humans invoke for data operations |
 
 ### The boundary
@@ -20,19 +20,20 @@ The CLI has two tiers with distinct purposes:
 **Interactive entry points** (`sol chat`, `sol help`, `journal engage`) are top-level for discoverability even though they're user-facing. Agents don't invoke these.
 
 Console scripts are split across distributions. The base `solstone` package
-ships the public POSIX `sol` and `solstone` launchers. The `solstone-core`
-package ships the native `solstone-core` executable those launchers run. The
-`solstone-journal` / `solstone-journal-cuda` distributions ship the host-only
-`journal` and `mlx-vlm-server` console scripts. The dispatcher, including
-`journal_main()`, still lives in base `solstone.think.sol_cli`, but a thin/bare
-install has no `journal` executable on PATH.
+ships the public POSIX `sol` and `solstone` launchers and depends on
+`solstone-core-sol`, whose binary has API transport but no journal filesystem
+authority. The `solstone-journal` / `solstone-journal-cuda` distributions ship
+the host-only `journal` launcher and depend on `solstone-core-journal`, whose
+separate binary owns same-device journal operations. Installing only the base
+`solstone` distribution does not install the `journal` launcher or
+`solstone-core-journal` binary.
 
 ## Top-Level Commands (`sol <cmd>`)
 
 ### How they work
 
-The public `sol` / `solstone` commands are root-owned launchers that exec the
-sibling native `solstone-core` binary. Their top-level native commands are
+The public `sol` / `solstone` commands are top-level launchers that exec the
+sibling native `solstone-core-sol` binary. Their top-level native commands are
 declared beside their Rust handlers under
 `solstone/think/native/<command>/authority.toml`.
 
@@ -41,20 +42,25 @@ The public API-root commands are `sol call`, `sol chat`, `sol import`, and
 HTTP boundary; it is distinct from `journal status`, which reports local
 journal state.
 
-`solstone/think/sol_cli.py` now contains only the `journal` host dispatcher. It
-has a static `COMMANDS` dict mapping host command names to module paths:
+`journal` is a separate launcher for `solstone-core-journal`. Its command
+grammar and local operations live in `solstone-core-journal-cli`; its closed
+service-process table maps retained service names to owner modules:
 
-```python
-COMMANDS: dict[str, str] = {
-    "think": "solstone.think.thinking",
-    "importer": "solstone.think.importers.cli",
+```rust
+ProcessSpec {
+    token: "think",
+    module: "solstone.think.thinking",
+    preset_argv: &[],
+    kind: ProcessKind::Service,
     ...
 }
 ```
 
-Each module must export a `main()` function. The dispatcher does `importlib.import_module(path)` then calls `module.main()`.
-
-`ALIASES` provide shortcuts (e.g., `journal up` → `journal service up`).
+Retained service modules export `main()`. The compiled process table supplies
+the module name and fixed bootstrap code to a PID-preserving exec; owner
+arguments are forwarded only after those fixed positions. Local writers
+(`archive`, `facet`, and `news`) remain entirely in Rust. Fixed aliases provide
+`journal up` and `journal down`.
 
 ### Adding a top-level public `sol` command
 
@@ -73,9 +79,9 @@ through the native HTTP boundary. For local commands that touch no journal data
 and have no `sol call` oracle path, use a direct match arm in
 `solstone_core_sol::run` alongside `root` and `skills`.
 
-For host-only commands, use the `journal` dispatcher instead: create a Python
-module with `main()` and register it in `solstone/think/sol_cli.py` with the
-appropriate service or universal surface.
+For host-only commands, use the native journal command root. Add retained
+service processes to `processes.rs`; implement direct journal mutations in
+Rust under `local_ops.rs` and the relevant owner crate.
 
 ### Files to maintain
 
@@ -83,7 +89,8 @@ appropriate service or universal surface.
 |------|-----------|
 | `solstone/think/native/<command>/authority.toml` | Declare the public native command |
 | `solstone/think/native/<command>/command.rs` | Implement the native handler |
-| `solstone/think/sol_cli.py` `COMMANDS` dict | Register host-only `journal` commands |
+| `core/crates/solstone-core-journal-cli/src/processes.rs` | Register a retained journal service process |
+| `core/crates/solstone-core-journal-cli/src/local_ops.rs` | Compose a same-device Rust authority |
 
 ## Call Commands (`sol call <app> <cmd>`)
 
@@ -95,7 +102,7 @@ The production aggregate inventory is generated into
 `core/crates/solstone-core-sol-client/src/generated/inventory.rs`.
 
 Local-only service tools such as `journal navigate` and `journal identity` are
-registered in `COMMANDS` instead of mounted under `sol call`.
+registered in the native journal process table instead of mounted under `sol call`.
 
 ### Adding a new native app command
 
@@ -150,8 +157,8 @@ List items for a day.
 Use a top-level `journal <cmd>` entry when the command is meaningful only on
 the journal host and depends heavily on `solstone/think/` internals.
 
-1. **Create `solstone/think/tools/<name>.py`** with `app = typer.Typer()` and a `main()` that calls `app()`.
-2. **Register in `solstone/think/sol_cli.py`** with `surface="service"`.
+1. **Create the owner module** with a `main()` entry when the retained service still runs in Python.
+2. **Register its fixed token and module** in `core/crates/solstone-core-journal-cli/src/processes.rs`.
 3. **Optionally update a router skill reference** if the command needs agent-facing guidance.
 
 ### Files to maintain for a new call command
@@ -352,7 +359,6 @@ proc.wait()
 ```
 solstone/
 ├── think/
-│   ├── sol_cli.py                  # Entry point + COMMANDS registry
 │   ├── tools/
 │   │   ├── native/journal/          # native sol call journal authority/handler
 │   │   ├── navigate.py             # journal navigate (built-in)

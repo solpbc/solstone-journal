@@ -487,7 +487,7 @@ def _candidate_journal(proc: "psutil.Process") -> Path | None:
         return None
 
 
-# The long-lived journal proctitles set by setproctitle at sol_cli.py
+# The long-lived journal proctitles set by the native journal process bootstrap
 # (f"{binary}:{cmd}"). setproctitle is in-process and persists until the
 # process exits, so an orphaned service or task child still reports its title
 # via proc.name() after the supervisor dies, which is what lets the sweep find

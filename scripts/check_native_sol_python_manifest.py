@@ -4,13 +4,12 @@
 from __future__ import annotations
 
 import hashlib
-import re
 import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PRE_CUTOVER_COMMIT = "dd04f55c8"
-SURVIVING_SOL_CLI = "solstone/think/sol_cli.py"
+RETIRED_SOL_CLI = "solstone/think/sol_cli.py"
 SURVIVING_JOURNAL_CALL_ORACLE = "solstone/think/tools/call.py"
 
 # The compatibility bridge was added after the pre-cutover deletion manifest.
@@ -59,7 +58,7 @@ EXPECTED_BLOBS = {
     "solstone/think/tools/profile.py": "96fe4319bdce13029060806aea8523ca680ac2fb",
     "solstone/think/import_client.py": "31a6c12e341e9144b0f9c1567613abf0aabddc3a",
     "solstone/think/chat_cli.py": "f41e0523c6e5574f1d920c5304cdaf96643bdeee",
-    SURVIVING_SOL_CLI: "a20570fc0994f6215a013e8c89ce7776ddec7d17",
+    RETIRED_SOL_CLI: "a20570fc0994f6215a013e8c89ce7776ddec7d17",
 }
 EXPECTED_SHA256 = hashlib.sha256(
     "".join(
@@ -111,13 +110,9 @@ def deletion_errors() -> list[str]:
     errors: list[str] = []
     for path in sorted(EXPECTED_BLOBS):
         current = REPO_ROOT / path
-        if path == SURVIVING_SOL_CLI:
-            if not current.is_file():
-                errors.append(f"{path} must survive as the journal console script")
-            continue
         if current.exists():
             errors.append(f"{path} still exists after native-sol cutover")
-    errors.extend(sol_cli_survivor_errors(REPO_ROOT / SURVIVING_SOL_CLI))
+    errors.extend(active_sol_cli_reference_errors())
     return errors
 
 
@@ -147,30 +142,35 @@ def compat_executor_errors() -> list[str]:
     return errors
 
 
-def sol_cli_survivor_errors(path: Path) -> list[str]:
-    if not path.is_file():
-        return []
-    text = path.read_text(encoding="utf-8")
+def active_sol_cli_reference_errors() -> list[str]:
     errors: list[str] = []
-    for required in ("def journal_main", "_dispatch", "COMMANDS", "ALIASES"):
-        if required not in text:
+    tracked = subprocess.check_output(
+        [
+            "git",
+            "ls-files",
+            "-z",
+            "--",
+            "Makefile",
+            "pyproject.toml",
+            "packages",
+            "solstone",
+        ],
+        cwd=REPO_ROOT,
+    )
+    candidates = [
+        REPO_ROOT / path.decode("utf-8")
+        for path in tracked.split(b"\0")
+        if path
+    ]
+    for path in candidates:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if "solstone.think.sol_cli" in text or "solstone/think/sol_cli.py" in text:
             errors.append(
-                f"{SURVIVING_SOL_CLI} missing required journal symbol {required}"
+                f"{path.relative_to(REPO_ROOT)} still references the retired Python CLI"
             )
-    for forbidden in (
-        "def main",
-        "ACCESS_HELP_GROUPS",
-        "SOL_SERVICE_CMD_REMOVED_ERROR",
-        "def print_help",
-    ):
-        if forbidden in text:
-            errors.append(
-                f"{SURVIVING_SOL_CLI} still contains removed sol surface {forbidden}"
-            )
-    if re.search(r"Command\([^)]*[\"']access[\"']", text, re.DOTALL):
-        errors.append(f"{SURVIVING_SOL_CLI} still registers an access command")
-    if re.search(r"Alias\([^)]*[\"']access[\"']", text, re.DOTALL):
-        errors.append(f"{SURVIVING_SOL_CLI} still registers an access alias")
     return errors
 
 

@@ -17,7 +17,7 @@ import pytest
 
 import solstone.think.journal_config as journal_config
 import solstone.think.utils as think_utils
-from solstone.think import core_handshake, sol_cli
+from solstone.think import core_handshake
 from solstone.think.indexer import cli as indexer_cli
 from solstone.think.indexer import native as indexer_native
 from solstone.think.indexer.journal import ScanReport
@@ -500,7 +500,8 @@ def _run_dispatcher(
     monkeypatch.setattr(indexer_cli, "setup_cli", _setup_cli_for(args))
     monkeypatch.setattr(indexer_cli, "run_native_indexer", run_native_indexer)
     monkeypatch.setattr(sys, "argv", ["journal", "indexer", *args])
-    return sol_cli.run_command("solstone.think.indexer")
+    result = indexer_cli.main()
+    return 0 if result is None else int(result)
 
 
 @pytest.mark.parametrize(

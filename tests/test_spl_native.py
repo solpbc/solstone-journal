@@ -5,15 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from solstone.think import core_handshake, sol_cli, spl_native
-
-
-def test_journal_spl_routes_to_the_native_exec_handoff() -> None:
-    module, preset_args, surface = sol_cli.resolve_command("spl")
-
-    assert module == "solstone.think.spl_native"
-    assert preset_args == []
-    assert surface == "service"
+from solstone.think import core_handshake, spl_native
 
 
 def test_native_service_execs_launcher_sibling_with_preserved_flags() -> None:

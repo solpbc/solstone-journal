@@ -6,7 +6,6 @@
 solstone/
 ├── observe/        # Multimodal capture & AI analysis
 ├── think/          # Data post-processing, AI agents & orchestration
-│   └── sol_cli.py  # Unified CLI entry point (run: sol <command>)
 ├── convey/         # Web app frontend & backend
 ├── solstone/apps/           # Convey app extensions (see docs/APPS.md)
 ├── talent/           # Agent/generator configs + sol/journal router skills
@@ -24,13 +23,13 @@ Each package has a README.md symlink pointing to its documentation in `docs/`.
 - **Python**: Requires Python 3.11+
 - **Modules**: Each top-level folder is a Python package with `__init__.py` unless it is data-only (e.g., `tests/fixtures/`)
 - **Imports**: Prefer absolute imports (e.g., `from solstone.think.utils import setup_cli`) whenever feasible
-- **Entry Points**: Public `sol` / `solstone` commands are root-owned launchers for the sibling `solstone-core` binary; `journal` host commands are registered in `solstone/think/sol_cli.py`'s `COMMANDS` dict
+- **Entry Points**: Public launchers select sibling `solstone-core-sol` (API-only) or `solstone-core-journal` (same-device) executables
 - **Journal**: Data stored under `journal/` at the project root; day content lives under `journal/chronicle/`
 - **Calling**: When calling other modules as a separate process always use the registered CLI surface and never call using `python -m ...` (e.g., use `journal indexer`, NOT `python -m solstone.think.indexer`)
 
 ## CLI Routing
 
-The public `sol` / `solstone` launchers exec `solstone-core`, which routes through native authority entries under `solstone/think/native/`, `solstone/apps/*/native/`, and `solstone/think/tools/native/`. `solstone/think/sol_cli.py` maps `journal` host command names to Python modules.
+The public `sol` / `solstone` launchers exec `solstone-core-sol`, which reaches the journal only through API transport. The `journal` launchers exec `solstone-core-journal`; its Rust parser owns local primitives and a closed process table for journal services.
 
 ## Agent & Skill Organization
 
@@ -38,7 +37,7 @@ The public `sol` / `solstone` launchers exec `solstone-core`, which routes throu
 
 ## File Locations
 
-- **Entry Points**: `solstone/think/sol_cli.py` `COMMANDS` dict
+- **Entry Points**: `core/crates/solstone-core-sol/` and `core/crates/solstone-core-journal-cli/`
 - **Test Fixtures**: `tests/fixtures/journal/` - complete mock journal
 - **Live Logs**: `journal/health/<service>.log`
 - **Agent Personas**: `solstone/talent/*.md` (apps can add their own talent files under `solstone/apps/*/talent/`, see [docs/APPS.md](docs/APPS.md))

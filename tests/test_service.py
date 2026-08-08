@@ -1963,34 +1963,6 @@ class TestLingerCheck:
         assert output == ""
 
 
-class TestRegistry:
-    def test_service_command_registered(self):
-        from solstone.think import sol_cli as sol
-
-        assert "service" in sol.COMMANDS
-        assert sol.COMMANDS["service"].module == "solstone.think.service"
-
-    def test_up_alias(self):
-        from solstone.think import sol_cli as sol
-
-        assert "up" in sol.ALIASES
-        alias = sol.ALIASES["up"]
-        assert (alias.module, alias.preset_args) == ("solstone.think.service", ["up"])
-
-    def test_down_alias(self):
-        from solstone.think import sol_cli as sol
-
-        assert "down" in sol.ALIASES
-        alias = sol.ALIASES["down"]
-        assert (alias.module, alias.preset_args) == ("solstone.think.service", ["down"])
-
-    def test_service_group_exists(self):
-        from solstone.think import sol_cli as sol
-
-        assert sol.service_help_group().heading == "Journal service commands"
-        assert "service" in sol.service_help_group().commands
-
-
 class TestMain:
     def test_no_args_shows_usage(self, monkeypatch, capsys):
         monkeypatch.setattr(sys, "argv", ["journal service"])

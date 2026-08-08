@@ -1663,25 +1663,6 @@ class TestJsonAndExitCodes:
         assert payload["checks"][0]["status"] == "warn"
         assert payload["checks"][0]["execution_error"] is None
 
-    def test_doctor_jsonl_subprocess_e2e(self):
-        result = subprocess.run(
-            [sys.executable, "-m", "solstone.think.sol_cli", "doctor", "--jsonl"],
-            capture_output=True,
-            text=True,
-            cwd=ROOT,
-            timeout=60,
-        )
-
-        assert result.returncode in (
-            0,
-            1,
-        ), f"unexpected exit code {result.returncode}: {result.stderr}"
-        lines = [line for line in result.stdout.splitlines() if line.strip()]
-        assert lines
-        for line in lines:
-            json.loads(line)
-
-
 def test_doctor_import_does_not_pull_numpy_or_observe_layers():
     snippet = (
         "import sys\n"
@@ -1711,7 +1692,6 @@ def test_doctor_import_does_not_pull_numpy_or_observe_layers():
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "LEAKED" not in result.stdout
-
 
 def test_readiness_battery_does_not_import_inference_or_installer_layers():
     # Proves doctor's readiness battery does not import inference/installer layers.
@@ -1779,95 +1759,3 @@ def test_journal_readiness_battery_does_not_import_host_or_inference_modules():
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "LEAKED" not in result.stdout
-
-
-def test_journal_doctor_readiness_subprocess_json_shape():
-    """End-to-end: journal readiness doctor produces valid diagnostic JSON."""
-    repo_root = Path(__file__).resolve().parent.parent
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "solstone.think.sol_cli",
-            "doctor",
-            "--readiness",
-            "--json",
-        ],
-        capture_output=True,
-        text=True,
-        cwd=repo_root,
-        timeout=60,
-    )
-    # Exit code: 0 if all checks pass, 1 if any blocker fails. Either is valid
-    # here; this test asserts CLI routing and payload shape, not machine health.
-    assert result.returncode in (
-        0,
-        1,
-    ), f"unexpected exit code {result.returncode}: {result.stderr}"
-    payload = json.loads(result.stdout)
-    assert "checks" in payload and isinstance(payload["checks"], list)
-    assert "summary" in payload and isinstance(payload["summary"], dict)
-    assert list(payload["summary"]) == [
-        "total",
-        "failed",
-        "warnings",
-        "skipped",
-        "errors",
-    ]
-    assert payload["summary"]["errors"] <= payload["summary"]["failed"]
-    assert all(
-        set(check)
-        == {
-            "name",
-            "severity",
-            "status",
-            "detail",
-            "fix",
-            "execution_error",
-        }
-        for check in payload["checks"]
-    )
-    from solstone.think import doctor as doctor_module
-
-    assert {check["name"] for check in payload["checks"]} == {
-        check.name for check, _runner in doctor_module.JOURNAL_READINESS_CHECKS
-    }
-
-
-def test_doctor_runs_with_minimal_path_env(tmp_path):
-    """Doctor must complete with PATH=/usr/bin:/bin (launchd-style minimal env)."""
-    journal = tmp_path / "journal"
-    journal.mkdir()
-    env = {
-        "PATH": "/usr/bin:/bin",
-        "HOME": str(tmp_path),
-        "SOLSTONE_JOURNAL": str(journal),
-    }
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "solstone.think.sol_cli",
-            "doctor",
-            "--readiness",
-            "--json",
-        ],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert result.returncode in {0, 1}, (
-        f"doctor crashed: rc={result.returncode}\n"
-        f"stdout={result.stdout}\nstderr={result.stderr}"
-    )
-    payload = json.loads(result.stdout)
-    from solstone.think import doctor as doctor_module
-
-    names = {check["name"] for check in payload["checks"]}
-    assert names == {
-        check.name for check, _runner in doctor_module.JOURNAL_READINESS_CHECKS
-    }
-    assert not any(
-        name.startswith("service_") or name == "journal_sync" for name in names
-    )

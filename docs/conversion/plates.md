@@ -581,6 +581,15 @@ Splits almost immediately.
 | `P-CLI-sol` | any device | **API only**, over a link |
 | `P-CLI-journal` | the same journal device only | **modify the journal directly**, or the API over localhost |
 
+The split is enforced by separate installed executables. `solstone-core-sol`
+contains the API client and link transport but has no journal filesystem,
+configuration, socket, status, archive, facet, entity, or Python-process
+authority. `solstone-core-journal` owns local journal resolution and the
+same-device command root. Its archive, facet, and news mutations execute in
+Rust; retained journal services are selected from a closed Rust process table.
+There is no shared identity flag or Python CLI dispatcher that can change one
+reach into the other.
+
 ## `P-system`
 
 Operations for managing asynchronous activity — starting things, running things.

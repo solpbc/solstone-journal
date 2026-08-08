@@ -12,7 +12,7 @@ from unittest.mock import Mock
 import pytest
 from typer.testing import CliRunner
 
-from solstone.think import backup_cli, sol_cli
+from solstone.think import backup_cli
 from solstone.think.backup.destination import Destination, DestinationStatus
 from solstone.think.backup.engine import BackupResult, PruneResult
 from solstone.think.backup.hosted import hosted_binding_path, load_hosted_binding
@@ -78,30 +78,7 @@ def _status(reason_code: str) -> DestinationStatus:
     )
 
 
-def test_registry_and_command_tree(monkeypatch: pytest.MonkeyPatch) -> None:
-    assert sol_cli.COMMANDS["backup"].module == "solstone.think.backup_cli"
-    assert sol_cli.COMMANDS["backup"].surface == "service"
-
-    captured: dict[str, object] = {}
-
-    def fake_run_command(module_path: str) -> int:
-        captured["module"] = module_path
-        captured["argv"] = list(sys.argv)
-        return 0
-
-    monkeypatch.setattr(sol_cli, "run_command", fake_run_command)
-    monkeypatch.setattr(sol_cli.setproctitle, "setproctitle", lambda _title: None)
-    monkeypatch.setattr(sys, "argv", ["journal", "backup", "status"])
-
-    with pytest.raises(SystemExit) as exc_info:
-        sol_cli.journal_main()
-
-    assert exc_info.value.code == 0
-    assert captured == {
-        "module": "solstone.think.backup_cli",
-        "argv": ["journal backup", "status"],
-    }
-
+def test_command_tree() -> None:
     runner = CliRunner()
     root_help = runner.invoke(backup_cli.app, ["--help"])
     assert root_help.exit_code == 0

@@ -7,7 +7,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from solstone.think.sol_cli import ALIASES, COMMANDS
+from scripts.build_native_sol_journal_host_commands import extract_partitions
 
 EXCLUDED_DIRS = {
     ".git",
@@ -115,11 +115,9 @@ def _skip_line(path: Path, line: str) -> bool:
     return False
 
 
+_PARTITIONS = extract_partitions()
 SERVICE_TERMS = sorted(
-    {
-        *(name for name, command in COMMANDS.items() if command.surface == "service"),
-        *(name for name, alias in ALIASES.items() if alias.surface == "service"),
-    },
+    {*_PARTITIONS.service_commands, *_PARTITIONS.service_aliases},
     key=len,
     reverse=True,
 )

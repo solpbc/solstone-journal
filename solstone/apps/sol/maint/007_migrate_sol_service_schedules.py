@@ -12,8 +12,59 @@ from dataclasses import dataclass
 
 from solstone.think.journal_io.errors import LockTimeout, MalformedDataError
 from solstone.think.schedule_config import get_schedules_path, set_schedule_entries
-from solstone.think.sol_cli import COMMANDS
 from solstone.think.utils import setup_cli
+
+# Frozen migration input. Runtime journal command ownership now lives in the
+# Rust `solstone-core-cli-boundary` crate; this one-shot migration must not
+# restore a Python command registry merely to recognize old schedule entries.
+JOURNAL_SERVICE_COMMANDS = frozenset(
+    {
+        "backfill-processing-records",
+        "backup",
+        "brain",
+        "config",
+        "convey",
+        "cortex",
+        "depict",
+        "describe",
+        "down",
+        "engage",
+        "export",
+        "facet-candidates",
+        "grab",
+        "health",
+        "heartbeat",
+        "identity",
+        "importer",
+        "indexer",
+        "install-models",
+        "install-provider",
+        "journal-stats",
+        "maint",
+        "maintenance",
+        "navigate",
+        "observer",
+        "reprocess",
+        "restart-convey",
+        "schedule",
+        "segment",
+        "sense",
+        "service",
+        "settings",
+        "setup",
+        "spl",
+        "start",
+        "streams",
+        "supervisor",
+        "talent",
+        "think",
+        "top",
+        "transcribe",
+        "transfer",
+        "up",
+        "warm",
+    }
+)
 
 
 @dataclass
@@ -39,8 +90,7 @@ def _rewritten_cmd(value: object) -> list | None:
         return ["journal", "importer", *cmd[2:]]
     # General rule: surface-driven. Any verb whose registered surface is
     # "service" is now invoked via `journal <verb>`.
-    command = COMMANDS.get(verb)
-    if command is not None and command.surface == "service":
+    if verb in JOURNAL_SERVICE_COMMANDS:
         new_cmd = cmd[:]
         new_cmd[0] = "journal"
         return new_cmd

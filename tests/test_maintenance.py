@@ -521,16 +521,6 @@ def test_cli_sync_malformed_schedules_prints_path_and_cause(
     assert "Expecting property name" in err
 
 
-def test_cli_registration_is_service_surface():
-    from solstone.think import sol_cli
-
-    module_path, preset_args, surface = sol_cli.resolve_command("maintenance")
-    assert module_path == "solstone.think.maintenance_cli"
-    assert preset_args == []
-    assert surface == "service"
-    assert "maintenance" in sol_cli.service_help_group().commands
-
-
 def test_register_then_scheduler_init_surfaces_runtime_cap(tmp_path, monkeypatch):
     _use_journal(tmp_path, monkeypatch)
     apps_dir = _use_apps(tmp_path, monkeypatch)

@@ -17,7 +17,7 @@ For the journal-side runtime entry point, see `journal/AGENTS.md`.
 Read, in order, when you enter the repo for a coding task:
 
 1. **This file through §8** — the invariants must be in working memory before your first edit.
-2. **`docs/SOLCLI.md`** — the CLI routing map. Public `sol` / `solstone` commands are native Rust authority entries; `solstone/think/sol_cli.py` is now the `journal` host dispatcher.
+2. **`docs/SOLCLI.md`** — the CLI routing map. `sol` and `journal` are separate native Rust executables with different authority.
 3. **`solstone/think/top.py` (first ~100 lines)** — the interactive TUI. Ties callosum + supervisor + service status together in one vantage point. Good "oh, this is how it connects" moment.
 4. **The area you're about to touch:**
    - User-visible feature or `sol call <app> <verb>` → `solstone/apps/<name>/native/{authority.toml,command.rs}` + `solstone/apps/<name>/routes.py` + `solstone/apps/<name>/templates/`.
@@ -33,7 +33,7 @@ Read, in order, when you enter the repo for a coding task:
 
 | Dir | Purpose | Go here when | Depth doc |
 |-----|---------|--------------|-----------|
-| `solstone/think/sol_cli.py` | Journal-host CLI dispatcher — service/universal `COMMANDS` and `ALIASES` for the `journal` script | adding a `journal <cmd>` or host-only Python command | `docs/SOLCLI.md` |
+| `core/crates/solstone-core-journal-cli/` | Owns native journal parsing, local authorities, and the closed service-process table | adding a `journal <cmd>` or same-device authority | `docs/SOLCLI.md` |
 | `solstone/observe/` | Multimodal capture — screen, audio, transcribe, describe, sense, transfer | capture-side bugs, new input modalities | `docs/OBSERVE.md` |
 | `solstone/think/` | Post-processing core — cortex, talent, callosum, indexer, entities, facets, activities, scheduler, heartbeat, supervisor | anything downstream of capture; most coder work lives here | `docs/THINK.md`, `docs/CORTEX.md`, `docs/COGITATE.md`, `docs/CALLOSUM.md` |
 | `solstone/convey/` | Web app framework — app discovery, routing, bridge | layout / framework-level UI changes | `docs/CONVEY.md` |
@@ -71,7 +71,7 @@ Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `t
 Two surfaces:
 
 - **`sol <command>`** — native access commands declared under `solstone/think/native/<command>/authority.toml` and implemented by the matching Rust `command.rs` (e.g., `sol import`, `sol chat`).
-- **`journal <command>`** — host/service commands from `solstone/think/sol_cli.py` (e.g., `journal think`, `journal supervisor`, `journal heartbeat`). `ALIASES` provides shorthand compound commands (`journal start` → `journal supervisor`, `journal up/down` → `journal service up/down`). `journal doctor` checks journal-host health.
+- **`journal <command>`** — same-device commands owned by `solstone-core-journal`. Local writers execute in Rust; service commands use the native closed process table (e.g., `journal think`, `journal supervisor`, `journal heartbeat`). `journal up/down` are fixed aliases for `journal service up/down`.
 - **`sol call <app> <verb>`** — native app commands declared under `solstone/apps/<app>/native/` or `solstone/think/tools/native/` and generated into the native aggregate inventory. `sol call journal` exposes its native 17-leaf journal group through this boundary.
 
 **Adding a top-level `sol` command:** add a native authority under `solstone/think/native/<command>/` and wire the Rust handler into the generated native inventory path. Use `solstone/think/native/chat/` and `solstone/think/native/import/` as the current patterns.

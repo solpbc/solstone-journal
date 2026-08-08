@@ -825,10 +825,9 @@ def sol_console_command() -> list[str]:
     """Resolve the native `sol` console script beside the running interpreter.
 
     Journal-access commands (`skills`, `call`, ...) are owned by the sol surface.
-    `python -m solstone.think.sol_cli` is `journal_main`, i.e. always the *journal*
-    surface, so invoking an access command that way is rejected outright by the
-    dispatcher. Setup must therefore shell out to `sol`, exactly as
-    `journal_console_command` does for journal-service commands.
+    The Python journal dispatcher is retired. Setup shells out to the distinct
+    native `sol` executable, exactly as `journal_console_command` selects the
+    native journal reach for journal-service commands.
     """
     return [str(Path(sys.executable).parent / "sol")]
 
