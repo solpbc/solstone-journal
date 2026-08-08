@@ -109,7 +109,14 @@ class OperationRetiredError(OperationError):
 
 
 class OperationInvalidStateError(OperationError):
-    """A stale generation or illegal lifecycle transition was attempted."""
+    """An illegal lifecycle transition or unreadable ledger record was found."""
+
+    def __init__(self) -> None:
+        super().__init__(SUPPORT_INVALID_STATE.message, reason=SUPPORT_INVALID_STATE)
+
+
+class OperationSupersededError(OperationError):
+    """A later generation of this action has replaced the caller's lease."""
 
     def __init__(self) -> None:
         super().__init__(SUPPORT_INVALID_STATE.message, reason=SUPPORT_INVALID_STATE)
@@ -499,7 +506,11 @@ def _update_current(
     try:
         with hold_lock(path, mode=0o600):
             stored = _read_record(path)
-            if not isinstance(stored, OperationRecord) or stored.generation != record.generation:
+            if isinstance(stored, OperationRecord) and (
+                stored.generation != record.generation
+            ):
+                raise OperationSupersededError()
+            if not isinstance(stored, OperationRecord):
                 raise OperationInvalidStateError()
             updated = update(stored)
             _write_record(path, updated)

@@ -12,9 +12,9 @@ import pytest
 
 from solstone.apps.support.operations import (
     IdempotencyConflictError,
-    OperationInvalidStateError,
     OperationRetiredError,
     OperationStateUnavailableError,
+    OperationSupersededError,
     begin_operation,
     canonicalize_operation,
     compact_expired_terminal_records,
@@ -146,7 +146,7 @@ def test_stale_generation_cannot_overwrite_winning_terminal_result(tmp_path):
         ),
         lambda: mark_acknowledged(first, storage_dir=tmp_path),
     ):
-        with pytest.raises(OperationInvalidStateError):
+        with pytest.raises(OperationSupersededError):
             stale_call()
 
     payload = json.loads(
@@ -155,6 +155,8 @@ def test_stale_generation_cannot_overwrite_winning_terminal_result(tmp_path):
     assert payload["generation"] == 2
     assert payload["state"] == "completed"
     assert payload["remote_operation_id"] == "remote-2"
+    assert payload["terminal_reason"] is None
+    assert payload["ack_state"] == "unacknowledged"
 
 
 def test_old_terminal_record_compacts_and_refuses_resume(tmp_path):

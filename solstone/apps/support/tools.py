@@ -92,6 +92,7 @@ def support_feedback(
     portal_url: str | None = None,
     anonymous: bool = False,
     user_email: str | None = None,
+    user_context: dict | str | None = None,
     action_id: str,
 ) -> dict[str, object]:
     """Submit feedback (lower-friction path).
@@ -105,6 +106,7 @@ def support_feedback(
         body=body,
         product=product,
         user_email=user_email,
+        user_context=user_context,
         action_id=action_id,
     )
 

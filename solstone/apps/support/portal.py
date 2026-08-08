@@ -715,6 +715,7 @@ class PortalClient:
             action_id=action_id,
             verb="close",
             fields={"ticket_id": ticket_id},
+            project_tombstone=False,
         )
         return _project_tombstone(data)
 
@@ -727,6 +728,7 @@ class PortalClient:
             action_id=action_id,
             verb="resolved",
             fields={"ticket_id": ticket_id},
+            project_tombstone=False,
         )
         return _project_tombstone(data)
 

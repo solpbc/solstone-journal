@@ -73,6 +73,14 @@ def test_liveness_and_error_detail_copy_bytes():
     assert chat_copy.CHAT_ERROR_DETAIL_COLLAPSER_LABEL == "hide details"
 
 
+def test_support_lifecycle_copy_is_owner_facing():
+    assert "open list" in chat_copy.CHAT_SUPPORT_CLOSE_SUBMITTED
+    assert "minimal closed record" in chat_copy.CHAT_SUPPORT_RESOLVED_SUBMITTED
+    assert "proposed close was cancelled" in chat_copy.CHAT_SUPPORT_STILL_NEED_HELP_SUBMITTED
+    assert "try again" in chat_copy.CHAT_SUPPORT_IN_PROGRESS
+    assert "terms changed" in chat_copy.CHAT_SUPPORT_RECONSENT_NEEDED
+
+
 def test_jobs_and_dispatch_origin_copy_bytes():
     assert chat_copy.CHAT_TALENT_QUEUED_LABEL == "waiting to start…"
     assert "…" in chat_copy.CHAT_TALENT_QUEUED_LABEL

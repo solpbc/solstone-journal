@@ -567,6 +567,7 @@ def test_support_feedback_uses_feedback_subject_without_auto_context(monkeypatch
         "body": "owner feedback",
         "product": "solstone",
         "user_email": None,
+        "user_context": None,
         "action_id": "feedback-1",
     }
 

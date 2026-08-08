@@ -62,6 +62,11 @@ CHAT_SUPPORT_ATTACH_FILED_FORMAT = "I added that to solstone support ticket #{ti
 CHAT_SUPPORT_SUBMIT_FAILED = "I couldn't finish reaching solstone support, so nothing was sent. Want me to try again?"
 CHAT_SUPPORT_SUBMIT_AMBIGUOUS = "I couldn't confirm whether solstone support received that. Check with solstone support before resending so we don't file it twice."
 CHAT_SUPPORT_DRAFT_CANCELLED = "Okay — nothing was sent to solstone support."
+CHAT_SUPPORT_CLOSE_SUBMITTED = "I closed that support ticket. Closing it removes it from solstone support's open list; only a minimal closed record is kept."
+CHAT_SUPPORT_RESOLVED_SUBMITTED = "I accepted the proposed resolution and closed that support ticket. It is no longer in solstone support's open list; only a minimal closed record is kept."
+CHAT_SUPPORT_STILL_NEED_HELP_SUBMITTED = "I let solstone support know you still need help. The proposed close was cancelled, and the ticket stays open."
+CHAT_SUPPORT_IN_PROGRESS = "I'm still working on the last support request for this — try again in a moment."
+CHAT_SUPPORT_RECONSENT_NEEDED = "solstone support's terms changed; want me to try again?"
 # Deterministic deferred-mode honest-degradation message (backend-emitted; rides
 # the sol_message/finish text when an otherwise-empty answer is really "captured
 # but not yet analyzed"). Backend-only — no chat_copy.js twin. Substance locked

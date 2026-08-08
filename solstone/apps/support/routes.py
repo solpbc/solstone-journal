@@ -15,7 +15,7 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
-from solstone.convey.chat_stream import append_chat_event, day_for_ts
+from solstone.convey.chat_stream import append_chat_event, day_for_ts, record_draft_captured
 from solstone.convey.reasons import (
     FEATURE_UNAVAILABLE,
     IDEMPOTENCY_CONFLICT,
@@ -179,11 +179,13 @@ def capture_draft() -> Any:
             "content_b64": base64.b64encode(data).decode("ascii"),
         }
         # Stored draft intentionally retains base64 for confirm-time re-materialization.
+        captured_day = day_for_ts(ts)
+        record_draft_captured(draft_id, captured_day)
         append_chat_event(
             "support_draft",
             ts=ts,
             draft_id=draft_id,
-            captured_day=day_for_ts(ts),
+            captured_day=captured_day,
             verb="attach",
             payload=draft_payload,
             diagnostics_snapshot=None,
@@ -197,21 +199,31 @@ def capture_draft() -> Any:
         return error_response(
             MISSING_REQUIRED_FIELD, detail="verb and payload are required"
         )
-    if verb not in {"create", "feedback", "reply"} or not isinstance(
-        draft_payload, dict
-    ):
+    if verb not in {
+        "create",
+        "feedback",
+        "reply",
+        "close",
+        "resolved",
+        "still_need_help",
+    } or not isinstance(draft_payload, dict):
         return error_response(
             INVALID_REQUEST_VALUE,
-            detail="verb must be create|feedback|reply and payload must be an object",
+            detail=(
+                "verb must be create|feedback|reply|close|resolved|still_need_help "
+                "and payload must be an object"
+            ),
         )
 
     ts = int(time.time() * 1000)
     draft_id = uuid.uuid4().hex
+    captured_day = day_for_ts(ts)
+    record_draft_captured(draft_id, captured_day)
     append_chat_event(
         "support_draft",
         ts=ts,
         draft_id=draft_id,
-        captured_day=day_for_ts(ts),
+        captured_day=captured_day,
         verb=verb,
         payload=draft_payload,
         diagnostics_snapshot=payload.get("diagnostics_snapshot"),

@@ -34,15 +34,28 @@ from solstone.apps.chat.copy import (
     CHAT_OFFER_SUPPORT_DECLINE,
     CHAT_OFFER_SUPPORT_PROMPT,
     CHAT_SUPPORT_ATTACH_FILED_FORMAT,
+    CHAT_SUPPORT_CLOSE_SUBMITTED,
     CHAT_SUPPORT_DRAFT_CANCELLED,
     CHAT_SUPPORT_DRAFT_READY,
+    CHAT_SUPPORT_IN_PROGRESS,
+    CHAT_SUPPORT_RECONSENT_NEEDED,
+    CHAT_SUPPORT_RESOLVED_SUBMITTED,
+    CHAT_SUPPORT_STILL_NEED_HELP_SUBMITTED,
     CHAT_SUPPORT_SUBMIT_AMBIGUOUS,
     CHAT_SUPPORT_SUBMIT_FAILED,
     CHAT_SUPPORT_SUBMIT_FILED_FORMAT,
     CHAT_THINKING_ENGINE_NOT_CHOSEN,
 )
-from solstone.apps.support.copy import FEEDBACK_SUBJECT
-from solstone.apps.support.tools import support_attach, support_create, support_reply
+from solstone.apps.support import operations
+from solstone.apps.support.tools import (
+    support_attach,
+    support_close,
+    support_create,
+    support_feedback,
+    support_reply,
+    support_resolved,
+    support_still_need_help,
+)
 from solstone.convey.chat_sources import parse_sol_sources
 from solstone.convey.chat_stream import (
     append_chat_event,
@@ -148,6 +161,7 @@ class SupportDraftSubmitResult:
     text: str
     result_fields: dict[str, Any]
     ticket_id: Any = None
+    terminal: bool = True
 
 
 @chat_bp.route("", methods=["POST"])
@@ -321,6 +335,12 @@ def confirm_support_draft() -> Any:
                     {
                         "ts": _next_chat_ts_for_day(captured_day, events),
                         "draft_id": draft_id,
+                        "generation": sum(
+                            event.get("kind") == "support_submit_claim"
+                            and str(event.get("draft_id") or "") == draft_id
+                            for event in events
+                        )
+                        + 1,
                     },
                 )
             ],
@@ -328,15 +348,31 @@ def confirm_support_draft() -> Any:
         )
     chat_stream._finalize_chat_event_appends(stored_claim)
 
-    submit_result = _submit_support_draft(draft_event, draft_id)
-    append_chat_event(
-        "result",
-        ts=_next_chat_ts_for_day(
-            captured_day,
-            chat_stream.read_chat_events(captured_day),
-        ),
-        **submit_result.result_fields,
-    )
+    try:
+        submit_result = _submit_support_draft(draft_event, draft_id)
+    except operations.OperationSupersededError:
+        result = next(
+            (
+                event
+                for event in reversed(chat_stream.read_chat_events(captured_day))
+                if event.get("kind") == "result"
+                and str(event.get("draft_id") or "") == draft_id
+            ),
+            None,
+        )
+        if result is None:
+            raise
+        return jsonify(_support_draft_result_response(result))
+
+    if submit_result.terminal:
+        append_chat_event(
+            "result",
+            ts=_next_chat_ts_for_day(
+                captured_day,
+                chat_stream.read_chat_events(captured_day),
+            ),
+            **submit_result.result_fields,
+        )
     # Lock order: reserve under _state_lock after _CHAT_LOCK is fully released.
     with _state_lock:
         use_id = _reserve_use_id_locked()
@@ -2326,6 +2362,15 @@ def _today_day() -> str:
 
 
 def _resolve_support_draft(draft_id: str) -> tuple[dict[str, Any], str] | None:
+    indexed_day = chat_stream.resolve_draft_day(draft_id)
+    if indexed_day is not None:
+        for event in read_chat_events(indexed_day):
+            if (
+                event.get("kind") == "support_draft"
+                and str(event.get("draft_id") or "") == draft_id
+            ):
+                return event, str(event["captured_day"])
+
     today = _today_day()
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
     for day in (today, yesterday):
@@ -2340,11 +2385,27 @@ def _resolve_support_draft(draft_id: str) -> tuple[dict[str, Any], str] | None:
 
 def _draft_is_terminal(events: list[dict[str, Any]], draft_id: str) -> bool:
     for event in events:
-        if event.get("kind") not in {"result", "support_submit_claim"}:
+        if str(event.get("draft_id") or "") != draft_id:
             continue
-        if str(event.get("draft_id") or "") == draft_id:
+        if event.get("kind") == "result":
+            return True
+        if event.get("kind") == "support_submit_claim" and "generation" not in event:
             return True
     return False
+
+
+def _support_draft_result_response(result: dict[str, Any]) -> dict[str, Any]:
+    """Turn a persisted terminal result event into the confirm response shape."""
+    response: dict[str, Any] = {
+        "ok": bool(result.get("ok")),
+        "outcome": str(
+            result.get("outcome")
+            or ("submitted" if result.get("ok") else "failed")
+        ),
+    }
+    if response["outcome"] == "submitted" and "ticket_id" in result:
+        response["ticket_id"] = result["ticket_id"]
+    return response
 
 
 def _next_chat_ts_for_day(day: str, events: list[dict[str, Any]]) -> int:
@@ -2373,22 +2434,21 @@ def _submit_support_draft(
 
     try:
         if verb == "create":
-            result_obj = support_create(**payload)
-            ticket_id = result_obj.get("id")
+            result_obj = support_create(**payload, action_id=draft_id)
+            ticket_id = result_obj.get("id", result_obj.get("ticket_id"))
         elif verb == "feedback":
-            result_obj = support_create(
-                subject=FEEDBACK_SUBJECT,
-                description=payload["body"],
+            result_obj = support_feedback(
+                body=payload["body"],
                 product=payload["product"],
-                severity="low",
-                category="feedback",
                 anonymous=payload["anonymous"],
-                auto_context=False,
                 user_context=diagnostics_snapshot,
+                action_id=draft_id,
             )
-            ticket_id = result_obj.get("id")
+            ticket_id = result_obj.get("id", result_obj.get("ticket_id"))
         elif verb == "reply":
-            support_reply(payload["ticket_id"], payload["content"])
+            support_reply(
+                payload["ticket_id"], payload["content"], action_id=draft_id
+            )
             ticket_id = payload["ticket_id"]
         elif verb == "attach":
             import base64
@@ -2405,12 +2465,39 @@ def _submit_support_draft(
                     payload["ticket_id"],
                     str(tmp_path),
                     filename=payload["filename"],
+                    action_id=draft_id,
                 )
             finally:
                 tmp_path.unlink(missing_ok=True)
             ticket_id = payload["ticket_id"]
+        elif verb == "close":
+            support_close(payload["ticket_id"], action_id=draft_id)
+            ticket_id = payload["ticket_id"]
+        elif verb == "resolved":
+            support_resolved(payload["ticket_id"], action_id=draft_id)
+            ticket_id = payload["ticket_id"]
+        elif verb == "still_need_help":
+            support_still_need_help(payload["ticket_id"], action_id=draft_id)
+            ticket_id = payload["ticket_id"]
         else:
             raise ValueError(f"unknown draft verb: {verb}")
+    except operations.OperationSupersededError:
+        raise
+    except operations.OperationInProgressError:
+        return _support_submit_status_result(
+            draft_id, "in_progress", CHAT_SUPPORT_IN_PROGRESS
+        )
+    except operations.OperationTosChangedError:
+        return _support_submit_status_result(
+            draft_id, "re_consent_required", CHAT_SUPPORT_RECONSENT_NEEDED
+        )
+    except (
+        operations.IdempotencyConflictError,
+        operations.OperationInvalidStateError,
+        operations.OperationRetiredError,
+        operations.OperationErasedError,
+    ) as exc:
+        return _support_submit_terminal_failure_result(draft_id, exc)
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
         return _support_submit_exception_result(draft_id, exc, ambiguous=False)
     except httpx.HTTPStatusError as exc:
@@ -2426,16 +2513,54 @@ def _submit_support_draft(
     except httpx.HTTPError as exc:
         return _support_submit_exception_result(draft_id, exc, ambiguous=True)
 
+    if verb == "close":
+        text = CHAT_SUPPORT_CLOSE_SUBMITTED
+    elif verb == "resolved":
+        text = CHAT_SUPPORT_RESOLVED_SUBMITTED
+    elif verb == "still_need_help":
+        text = CHAT_SUPPORT_STILL_NEED_HELP_SUBMITTED
+    elif verb == "attach":
+        text = CHAT_SUPPORT_ATTACH_FILED_FORMAT.format(ticket_id=ticket_id)
+    else:
+        text = CHAT_SUPPORT_SUBMIT_FILED_FORMAT.format(ticket_id=ticket_id)
     return SupportDraftSubmitResult(
         ok=True,
         outcome="submitted",
-        text=(
-            CHAT_SUPPORT_ATTACH_FILED_FORMAT.format(ticket_id=ticket_id)
-            if verb == "attach"
-            else CHAT_SUPPORT_SUBMIT_FILED_FORMAT.format(ticket_id=ticket_id)
-        ),
+        text=text,
         ticket_id=ticket_id,
-        result_fields={"draft_id": draft_id, "ok": True, "ticket_id": ticket_id},
+        result_fields={
+            "draft_id": draft_id,
+            "ok": True,
+            "ticket_id": ticket_id,
+        },
+    )
+
+
+def _support_submit_status_result(
+    draft_id: str, outcome: str, text: str
+) -> SupportDraftSubmitResult:
+    return SupportDraftSubmitResult(
+        ok=False,
+        outcome=outcome,
+        text=text,
+        result_fields={"draft_id": draft_id, "ok": False, "outcome": outcome},
+        terminal=False,
+    )
+
+
+def _support_submit_terminal_failure_result(
+    draft_id: str, exc: BaseException
+) -> SupportDraftSubmitResult:
+    logger.warning("Support draft submit failed with %s", exc.__class__.__name__)
+    return SupportDraftSubmitResult(
+        ok=False,
+        outcome="failed",
+        text=CHAT_SUPPORT_SUBMIT_FAILED,
+        result_fields={
+            "draft_id": draft_id,
+            "ok": False,
+            "error": exc.__class__.__name__,
+        },
     )
 
 
@@ -2464,6 +2589,7 @@ def _support_submit_exception_result(
         outcome=outcome,
         text=CHAT_SUPPORT_SUBMIT_AMBIGUOUS if ambiguous else CHAT_SUPPORT_SUBMIT_FAILED,
         result_fields=fields,
+        terminal=False,
     )
 
 

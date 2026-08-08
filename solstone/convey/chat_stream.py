@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from solstone.apps.chat.copy import talent_label_for
+from solstone.think.journal_io.atomic import atomic_replace
 from solstone.think.utils import (
     day_path,
     get_journal,
@@ -436,6 +437,40 @@ def day_for_ts(ts: int) -> str:
     return _day_for_ts(ts)
 
 
+def record_draft_captured(draft_id: str, day: str) -> None:
+    """Record the day containing a support draft for bounded later resolution."""
+    path = _support_draft_index_path(draft_id)
+    atomic_replace(
+        path,
+        json.dumps({"captured_day": day}, separators=(",", ":")) + "\n",
+        mode=0o600,
+    )
+
+
+def resolve_draft_day(draft_id: str) -> str | None:
+    """Return a captured support draft's indexed day without changing state."""
+    try:
+        path = _support_draft_index_path(draft_id)
+    except (FileNotFoundError, ValueError):
+        return None
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    day = payload.get("captured_day") if isinstance(payload, dict) else None
+    return day if isinstance(day, str) else None
+
+
+def _support_draft_index_path(draft_id: str) -> Path:
+    if not draft_id or Path(draft_id).name != draft_id:
+        raise ValueError("invalid support draft id")
+    return _require_journal_root() / "chronicle" / "health" / "support-drafts" / (
+        f"{draft_id}.json"
+    )
+
+
 def _current_segment_key(day: str, ts_ms: int) -> str:
     event_dt = _ts_to_local_datetime(ts_ms)
     existing = _chat_segments(day)
@@ -506,7 +541,5 @@ def _read_events_file(path: Path) -> list[dict[str, Any]]:
 
 
 def _write_events_file(path: Path, events: list[dict[str, Any]]) -> None:
-    from solstone.think.journal_io import atomic_replace
-
     body = "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in events)
     atomic_replace(path, body)
