@@ -308,7 +308,7 @@ fn generate_response_for_request(
     let response = match outcome {
         solstone_core_generate_wire::LaneOutcome::BundledLocal => {
             match solstone_core_generate_wire::bundled_generate(&request, &journal) {
-                Ok(solstone_core_local::GenerateResult::Success(success)) => {
+                Ok(solstone_core_local::GenerateResult::Success(mut success)) => {
                     let usage = success
                         .usage
                         .as_ref()
@@ -342,10 +342,15 @@ fn generate_response_for_request(
                             ),
                         )
                     } else {
-                        let response = match generated_response(&request, success) {
-                            Ok(response) => response,
-                            Err(detail) => return Err(detail),
-                        };
+                        let schema_validation = apply_schema_validation(
+                            &mut success.text,
+                            request.json_schema.as_ref(),
+                        );
+                        let response =
+                            match generated_response(&request, success, schema_validation) {
+                                Ok(response) => response,
+                                Err(detail) => return Err(detail),
+                            };
                         solstone_core_generate::GenerateResponse::Generated(Box::new(response))
                     }
                 }
@@ -373,7 +378,7 @@ fn generate_response_for_request(
                 &config,
                 endpoint_runtime,
             ) {
-                solstone_core_generate_wire::EndpointResult::Generated(success) => {
+                solstone_core_generate_wire::EndpointResult::Generated(mut success) => {
                     let usage = success
                         .usage
                         .as_ref()
@@ -407,7 +412,12 @@ fn generate_response_for_request(
                             ),
                         )
                     } else {
-                        let response = endpoint_generated_response(request, success)?;
+                        let schema_validation = apply_schema_validation(
+                            &mut success.text,
+                            request.json_schema.as_ref(),
+                        );
+                        let response =
+                            endpoint_generated_response(request, success, schema_validation)?;
                         solstone_core_generate::GenerateResponse::Generated(Box::new(response))
                     }
                 }
@@ -738,6 +748,7 @@ fn generate_protocol_exit_and_terminate(id: Option<String>, reason: &str, detail
 fn generated_response(
     request: &solstone_core_generate::GenerateRequest,
     success: solstone_core_local::GenerateSuccess,
+    schema_validation: Option<Value>,
 ) -> Result<solstone_core_generate::GeneratedResponse, String> {
     let usage = success
         .usage
@@ -772,7 +783,7 @@ fn generated_response(
         usage,
         finish_reason: success.finish_reason,
         thinking: None,
-        schema_validation: None,
+        schema_validation,
         input_budget,
         request_budget,
         inference,
@@ -783,6 +794,7 @@ fn generated_response(
 fn endpoint_generated_response(
     request: &solstone_core_generate::GenerateRequest,
     success: solstone_core_generate_wire::EndpointGenerated,
+    schema_validation: Option<Value>,
 ) -> Result<solstone_core_generate::GeneratedResponse, String> {
     let usage = success
         .usage
@@ -814,11 +826,19 @@ fn endpoint_generated_response(
         usage,
         finish_reason: success.finish_reason,
         thinking: None,
-        schema_validation: None,
+        schema_validation,
         input_budget,
         request_budget,
         inference: None,
         hints_applied,
+    })
+}
+
+fn apply_schema_validation(text: &mut String, schema: Option<&Value>) -> Option<Value> {
+    schema.map(|schema| {
+        let result = solstone_core_generate_wire::validate_schema_with_annotations(text, schema);
+        *text = result.text;
+        result.validation
     })
 }
 

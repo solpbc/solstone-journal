@@ -78,6 +78,10 @@ fn serve(completion: &str) -> (u16, thread::JoinHandle<usize>) {
 }
 
 fn serve_endpoint() -> (u16, thread::JoinHandle<usize>) {
+    serve_endpoint_with_completion(generated_body().to_owned())
+}
+
+fn serve_endpoint_with_completion(completion: String) -> (u16, thread::JoinHandle<usize>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind endpoint stub server");
     let port = listener.local_addr().expect("endpoint stub address").port();
     let handle = thread::spawn(move || {
@@ -95,7 +99,7 @@ fn serve_endpoint() -> (u16, thread::JoinHandle<usize>) {
                 "/v1/models" => r#"{"data":[{"id":"served","max_model_len":4096}]}"#,
                 "/v1/chat/completions" => {
                     completions += 1;
-                    generated_body()
+                    &completion
                 }
                 other => panic!("unexpected endpoint HTTP path: {other}"),
             };
@@ -483,6 +487,74 @@ fn n3_boundary_does_not_emit_incomplete_text_or_schema_validation_failed() {
     assert_eq!(server.join().expect("join server"), 6);
     let _ = std::fs::remove_dir_all(journal);
     let _ = std::fs::remove_dir_all(schema_journal);
+}
+
+#[test]
+fn schema_validation_is_advisory_for_bundled_and_byo_lanes() {
+    let schema = json!({
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"],
+    });
+    let cases = [
+        ("invalid", "{}", false),
+        ("valid", r#"{"answer":"OK"}"#, true),
+    ];
+
+    for (name, text, expected_valid) in cases {
+        let journal = root(&format!("schema-bundled-{name}"));
+        write_config(&journal, bundled_config(false));
+        let body = completion_body(text, "stop", Some(json!({"prompt_tokens": 2})));
+        let (port, server) = serve(&body);
+        std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+        let mut request = fixture_vector("generated")["request"].clone();
+        request["json_schema"] = schema.clone();
+        request["json_output"] = json!(true);
+        let response = stdout_json(&one_shot(&journal, &request));
+        assert_eq!(response["outcome"], "generated");
+        assert_eq!(response["schema_validation"]["valid"], expected_valid);
+        if expected_valid {
+            assert_eq!(response["schema_validation"]["errors"], json!([]));
+        } else {
+            assert_eq!(
+                response["schema_validation"]["errors"][0]["constraint"],
+                "required"
+            );
+        }
+        assert_eq!(server.join().expect("join bundled server"), 6);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    for (name, text, expected_valid) in cases {
+        let journal = root(&format!("schema-endpoint-{name}"));
+        let body = completion_body(text, "stop", Some(json!({"prompt_tokens": 2})));
+        let (port, server) = serve_endpoint_with_completion(body);
+        write_config(
+            &journal,
+            json!({
+                "providers": {"active": {"provider": "local"}, "local": {
+                    "endpoint_url": format!("http://127.0.0.1:{port}"),
+                    "served_model_id": "served",
+                }},
+            }),
+        );
+        let mut request = fixture_vector("generated")["request"].clone();
+        request["json_schema"] = schema.clone();
+        request["json_output"] = json!(true);
+        let response = stdout_json(&one_shot(&journal, &request));
+        assert_eq!(response["outcome"], "generated");
+        assert_eq!(response["schema_validation"]["valid"], expected_valid);
+        if expected_valid {
+            assert_eq!(response["schema_validation"]["errors"], json!([]));
+        } else {
+            assert_eq!(
+                response["schema_validation"]["errors"][0]["constraint"],
+                "required"
+            );
+        }
+        assert_eq!(server.join().expect("join endpoint server"), 1);
+        let _ = std::fs::remove_dir_all(journal);
+    }
 }
 
 #[test]
