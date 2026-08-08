@@ -44,7 +44,7 @@ pub use store::{
     record_merge_candidate, refresh_identity_map_cache, remove_entity_ambiguity_references,
     remove_voiceprints_by_key, repair_entity_identities, rescope_facet_ambiguities,
     restore_journal_entity_version, rewrite_voiceprint_metadata, save_entity_identity,
-    save_voiceprints_batch, unblock_journal_entity, undo_entity_merge,
+    save_voiceprints_batch, unblock_journal_entity, undo_entity_merge, write_npy,
 };
 pub use trust_lock::{
     EntityTrustLock, EntityTrustLockError, hold_entity_trust_lock,
