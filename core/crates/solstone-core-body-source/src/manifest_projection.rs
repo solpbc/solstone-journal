@@ -276,7 +276,23 @@ mod tests {
             let actual = project_manifest_binding(&expected, &bundle)
                 .unwrap_or_else(|error| panic!("{name} should project: {error}"));
             assert_eq!(actual.to_body_object(), expected, "{name}");
+            assert_getters_match(&actual, &expected, name);
         }
+
+        assert_eq!(
+            ManifestKnownKey::ALL.map(manifest_binding_error_field),
+            [
+                ManifestBindingErrorField::BodySourceSchema,
+                ManifestBindingErrorField::BodyBundleRef,
+                ManifestBindingErrorField::BodyBundleSha256,
+                ManifestBindingErrorField::ImportId,
+                ManifestBindingErrorField::SourceType,
+                ManifestBindingErrorField::SourceHash,
+                ManifestBindingErrorField::EntryCount,
+                ManifestBindingErrorField::DaysAffected,
+                ManifestBindingErrorField::RawRetention,
+            ]
+        );
     }
 
     #[test]
@@ -362,6 +378,23 @@ mod tests {
                 Some(&BodyValue::Integer(BodyInteger::from_u64(expected_count)))
             );
         }
+
+        let BodyValue::Object(decoded_negative_zero) = parse(
+            br#"{"body_source_schema":"solstone.body.bundle.v1","body_bundle_ref":"body-bundle.json","body_bundle_sha256":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","import_id":"body-00000000000000000000000000","source_type":"apple_health","source_hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","entry_count":-0,"days_affected":[],"raw_retention":"discard"}"#,
+        )
+        .expect("lexical negative zero should decode")
+        else {
+            panic!("decoded manifest should be an object");
+        };
+        let decoded_binding = project_manifest_binding(&decoded_negative_zero, &bundle())
+            .expect("decoded lexical negative zero should project");
+        assert_eq!(decoded_binding.entry_count(), 0);
+        assert_eq!(
+            decoded_binding
+                .to_body_object()
+                .get(&body_string(ENTRY_COUNT_KEY)),
+            Some(&BodyValue::Integer(BodyInteger::from_u64(0)))
+        );
 
         for integer in [
             BodyInteger::new(false, "18446744073709551616").expect("integer is valid"),
@@ -481,27 +514,34 @@ mod tests {
             ManifestBindingErrorField::BodySourceSchema,
         );
 
-        let mut raw_retention_first = valid_object();
-        raw_retention_first.insert(
-            body_string(DAYS_AFFECTED_KEY),
-            BodyValue::Array(vec![
-                BodyValue::String(body_string("20260102")),
-                BodyValue::String(body_string("20260101")),
-            ]),
-        );
-        raw_retention_first.insert(
-            body_string(ENTRY_COUNT_KEY),
-            BodyValue::Integer(BodyInteger::from_u64(2)),
-        );
-        raw_retention_first.insert(
-            body_string(RAW_RETENTION_KEY),
-            BodyValue::String(body_string("invalid")),
-        );
-        assert_error(
-            &raw_retention_first,
-            ManifestBindingErrorCode::InvalidField,
-            ManifestBindingErrorField::RawRetention,
-        );
+        for (days, entry_count) in [
+            (vec!["20260102", "20260101"], 2),
+            (vec!["20260101", "20260101"], 2),
+            (vec!["20260101"], 0),
+        ] {
+            let mut raw_retention_first = valid_object();
+            raw_retention_first.insert(
+                body_string(DAYS_AFFECTED_KEY),
+                BodyValue::Array(
+                    days.into_iter()
+                        .map(|day| BodyValue::String(body_string(day)))
+                        .collect(),
+                ),
+            );
+            raw_retention_first.insert(
+                body_string(ENTRY_COUNT_KEY),
+                BodyValue::Integer(BodyInteger::from_u64(entry_count)),
+            );
+            raw_retention_first.insert(
+                body_string(RAW_RETENTION_KEY),
+                BodyValue::String(body_string("invalid")),
+            );
+            assert_error(
+                &raw_retention_first,
+                ManifestBindingErrorCode::InvalidField,
+                ManifestBindingErrorField::RawRetention,
+            );
+        }
 
         let oura = valid_oura_object(BodyRawRetention::RetainComplete);
         let Err(projected) = project_manifest_binding(&oura, &bundle()) else {
@@ -643,6 +683,60 @@ mod tests {
         object
     }
 
+    fn assert_getters_match(binding: &BodyManifestBinding, expected: &BodyObject, name: &str) {
+        assert_eq!(
+            binding.body_source_schema(),
+            BODY_SOURCE_SCHEMA_VALUE,
+            "{name}"
+        );
+        assert_eq!(binding.body_bundle_ref(), BODY_BUNDLE_REF_VALUE, "{name}");
+        assert_eq!(
+            expected.get(&body_string(BODY_BUNDLE_SHA256_KEY)),
+            Some(&BodyValue::String(
+                binding.body_bundle_sha256().to_body_string()
+            )),
+            "{name}"
+        );
+        assert_eq!(
+            expected.get(&body_string(IMPORT_ID_KEY)),
+            Some(&BodyValue::String(binding.import_id().to_body_string())),
+            "{name}"
+        );
+        assert_eq!(
+            expected.get(&body_string(SOURCE_TYPE_KEY)),
+            Some(&BodyValue::String(binding.source_type().to_body_string())),
+            "{name}"
+        );
+        assert_eq!(
+            expected.get(&body_string(SOURCE_HASH_KEY)),
+            Some(&BodyValue::String(binding.source_hash().to_body_string())),
+            "{name}"
+        );
+        assert_eq!(
+            expected.get(&body_string(ENTRY_COUNT_KEY)),
+            Some(&BodyValue::Integer(BodyInteger::from_u64(
+                binding.entry_count()
+            ))),
+            "{name}"
+        );
+        assert_eq!(
+            expected.get(&body_string(DAYS_AFFECTED_KEY)),
+            Some(&BodyValue::Array(
+                binding
+                    .days_affected()
+                    .iter()
+                    .map(|day| BodyValue::String(day.to_body_string()))
+                    .collect()
+            )),
+            "{name}"
+        );
+        assert_eq!(
+            expected.get(&body_string(RAW_RETENTION_KEY)),
+            Some(&BodyValue::String(binding.raw_retention().to_body_string())),
+            "{name}"
+        );
+    }
+
     fn object(entries: impl IntoIterator<Item = (&'static str, BodyValue)>) -> BodyObject {
         entries
             .into_iter()
@@ -696,13 +790,40 @@ mod tests {
     }
 
     fn assert_sentinel_error(
-        object: BodyObject,
+        mut object: BodyObject,
         code: ManifestBindingErrorCode,
         field: ManifestBindingErrorField,
         marker: &str,
     ) {
+        let maximum_bundle = format!("body-7{}", "Z".repeat(25));
+        let expected = BundleId::from_bytes(maximum_bundle.as_bytes())
+            .expect("maximum bundle ID should be valid");
+        if field != ManifestBindingErrorField::ImportId {
+            object.insert(
+                body_string(IMPORT_ID_KEY),
+                BodyValue::String(expected.to_body_string()),
+            );
+        }
+        object.insert(
+            body_string("adversarial_preserved"),
+            BodyValue::Array(vec![
+                BodyValue::Null,
+                BodyValue::Bool(false),
+                BodyValue::Bool(true),
+                BodyValue::Number(-0.0),
+                BodyValue::Number(f64::from_bits(0x7ff0_0000_0000_0001)),
+                BodyValue::Integer(
+                    BodyInteger::new(true, "18446744073709551616")
+                        .expect("negative exact integer should be valid"),
+                ),
+                BodyValue::String(
+                    BodyString::from_code_points(vec![0xd800])
+                        .expect("lone surrogate should be preserved"),
+                ),
+            ]),
+        );
         let snapshot = object.clone();
-        let Err(error) = project_manifest_binding(&object, &bundle()) else {
+        let Err(error) = project_manifest_binding(&object, &expected) else {
             panic!("projection should refuse");
         };
         let display = error.to_string();
@@ -714,6 +835,37 @@ mod tests {
         assert!(!debug.contains(marker));
         assert_eq!(error.code(), code);
         assert_eq!(error.field(), field);
-        assert_eq!(object, snapshot);
+        assert_eq!(error.bundle(), &expected);
+        assert_body_object_bits_eq(&object, &snapshot);
+    }
+
+    fn assert_body_object_bits_eq(left: &BodyObject, right: &BodyObject) {
+        assert_eq!(left.len(), right.len());
+        for ((left_key, left_value), (right_key, right_value)) in left.iter().zip(right.iter()) {
+            assert_eq!(left_key, right_key);
+            assert_body_value_bits_eq(left_value, right_value);
+        }
+    }
+
+    fn assert_body_value_bits_eq(left: &BodyValue, right: &BodyValue) {
+        match (left, right) {
+            (BodyValue::Null, BodyValue::Null) => {}
+            (BodyValue::Bool(left), BodyValue::Bool(right)) => assert_eq!(left, right),
+            (BodyValue::Integer(left), BodyValue::Integer(right)) => assert_eq!(left, right),
+            (BodyValue::Number(left), BodyValue::Number(right)) => {
+                assert_eq!(left.to_bits(), right.to_bits());
+            }
+            (BodyValue::String(left), BodyValue::String(right)) => assert_eq!(left, right),
+            (BodyValue::Array(left), BodyValue::Array(right)) => {
+                assert_eq!(left.len(), right.len());
+                for (left, right) in left.iter().zip(right.iter()) {
+                    assert_body_value_bits_eq(left, right);
+                }
+            }
+            (BodyValue::Object(left), BodyValue::Object(right)) => {
+                assert_body_object_bits_eq(left, right);
+            }
+            _ => panic!("body values differ by variant: {left:?} != {right:?}"),
+        }
     }
 }
