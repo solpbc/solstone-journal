@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! The archive source is deliberately narrow: its source text is the cheapest
-//! durable guard against a later convenience API widening its authority.
+//! The archive capability surface is deliberately narrow: source and target
+//! acquire filesystem capabilities; the remaining modules only consume them.
 
 const SOURCES: &[(&str, &str)] = &[
     ("encode", include_str!("../src/encode.rs")),
@@ -11,6 +11,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("inventory", include_str!("../src/inventory.rs")),
     ("manifest", include_str!("../src/manifest.rs")),
     ("source", include_str!("../src/source.rs")),
+    ("target", include_str!("../src/target.rs")),
     ("writer", include_str!("../src/writer.rs")),
 ];
 const LIB: &str = include_str!("../src/lib.rs");
@@ -42,9 +43,9 @@ fn scan_covers_every_declared_production_module() {
 }
 
 #[test]
-fn descriptor_acquisition_is_confined_to_source() {
+fn descriptor_acquisition_is_confined_to_source_and_target() {
     for (name, source) in SOURCES {
-        if *name == "source" {
+        if matches!(*name, "source" | "target") {
             continue;
         }
         for primitive in ["openat(", "fstatat(", "O_NOFOLLOW"] {
@@ -54,6 +55,35 @@ fn descriptor_acquisition_is_confined_to_source() {
             );
         }
     }
+}
+
+#[test]
+fn target_is_read_only_and_ambient_free() {
+    let target = SOURCES
+        .iter()
+        .find_map(|(name, source)| (*name == "target").then_some(*source))
+        .expect("target module registered");
+    let production = production_source(target);
+    for forbidden in [
+        "std::env",
+        "current_dir",
+        "Command::new",
+        "std::process",
+        "create_dir",
+        "remove_dir",
+        "remove_file",
+        "rename(",
+        "write(",
+        "AsRawFd",
+        "RawFd",
+    ] {
+        assert!(
+            !production.contains(forbidden),
+            "target reaches forbidden surface {forbidden}"
+        );
+    }
+    assert!(production.contains("open(\"/\", TARGET_DIRECTORY_FLAGS, Mode::empty())"));
+    assert!(production.contains("O_NOFOLLOW"));
 }
 
 #[test]
@@ -219,7 +249,7 @@ fn public_descendant_operations_accept_only_inventory_handles() {
 }
 
 #[test]
-fn manifest_declares_only_nix_as_a_dependency() {
+fn manifest_declares_only_runtime_dependencies() {
     assert_eq!(
         dependency_lines(MANIFEST),
         vec![

@@ -18,6 +18,7 @@ mod error;
 mod inventory;
 mod manifest;
 mod source;
+mod target;
 mod writer;
 
 pub use encode::{
@@ -28,3 +29,7 @@ pub use entry::{
 };
 pub use error::{ArchiveError, JournalEntryKind};
 pub use source::ArchiveSource;
+pub use target::{
+    ArchiveOutputTarget, ExplicitArchiveOutputRequest, ExplicitTargetError,
+    acquire_explicit_output_target,
+};
