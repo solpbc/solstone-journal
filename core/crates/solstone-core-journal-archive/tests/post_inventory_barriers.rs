@@ -21,29 +21,33 @@ fn replacement_file_and_nested_directory_hard_link_are_detected() {
     let root = valid_four_root_journal(&temporary);
     let source = ArchiveSource::open(&root).expect("open source");
 
-    let file_entry = entry(&source, "chronicle/20260101/a.txt");
     fs::remove_file(root.join("chronicle/20260101/a.txt")).expect("remove file");
     write(&root, "chronicle/20260101/a.txt", b"replacement");
     assert!(matches!(
-        source.revalidate(file_entry),
+        source.revalidate(),
         Err(ArchiveError::SourceChanged { .. })
     ));
 
-    let nested_entry = entry(&source, "chronicle/20260101/nested/b.txt");
-    let keeper = temporary.path().join("original-child");
-    fs::hard_link(root.join("chronicle/20260101/nested/b.txt"), &keeper)
+    let nested_temporary = TempDir::new("nested-proof-barrier");
+    let nested_root = valid_four_root_journal(&nested_temporary);
+    let nested_source = ArchiveSource::open(&nested_root).expect("open nested source");
+    let nested_entry = entry(&nested_source, "chronicle/20260101/nested/b.txt");
+    let keeper = nested_temporary.path().join("original-child");
+    fs::hard_link(nested_root.join("chronicle/20260101/nested/b.txt"), &keeper)
         .expect("preserve original child inode");
-    fs::remove_dir_all(root.join("chronicle/20260101/nested")).expect("replace nested directory");
-    fs::create_dir(root.join("chronicle/20260101/nested")).expect("create replacement directory");
-    fs::hard_link(&keeper, root.join("chronicle/20260101/nested/b.txt"))
+    fs::remove_dir_all(nested_root.join("chronicle/20260101/nested"))
+        .expect("replace nested directory");
+    fs::create_dir(nested_root.join("chronicle/20260101/nested"))
+        .expect("create replacement directory");
+    fs::hard_link(&keeper, nested_root.join("chronicle/20260101/nested/b.txt"))
         .expect("hard-link original inode into replacement directory");
 
     assert!(matches!(
-        source.revalidate(nested_entry),
+        nested_source.revalidate(),
         Err(ArchiveError::SourceChanged { .. })
     ));
     assert!(matches!(
-        source.open_file(nested_entry),
+        nested_source.open_file(nested_entry),
         Err(ArchiveError::SourceChanged { .. })
     ));
 }
@@ -63,7 +67,7 @@ fn replacement_symlink_is_detected_without_following_it() {
     symlink(&outside, root.join(member)).expect("replace with symlink");
 
     assert!(matches!(
-        source.revalidate(inventory_entry),
+        source.revalidate(),
         Err(ArchiveError::SourceChanged { .. })
     ));
     assert!(matches!(
@@ -92,7 +96,7 @@ fn in_place_size_changes_keep_inode_but_invalidate_proof() {
         inode
     );
     assert!(matches!(
-        source.revalidate(inventory_entry),
+        source.revalidate(),
         Err(ArchiveError::SourceChanged { .. })
     ));
     assert!(matches!(
@@ -103,7 +107,7 @@ fn in_place_size_changes_keep_inode_but_invalidate_proof() {
     file.set_len(9).expect("grow original in place");
     assert_eq!(fs::metadata(&path).expect("stat grown file").ino(), inode);
     assert!(matches!(
-        source.revalidate(inventory_entry),
+        source.revalidate(),
         Err(ArchiveError::SourceChanged { .. })
     ));
     assert!(matches!(
@@ -114,7 +118,7 @@ fn in_place_size_changes_keep_inode_but_invalidate_proof() {
 
 #[test]
 #[allow(clippy::disallowed_methods)]
-fn removing_empty_counted_day_keeps_unrelated_entry_usable() {
+fn removing_empty_counted_day_invalidates_revalidation_but_open_file_stays_reachable() {
     let temporary = TempDir::new("empty-day-barrier");
     let root = common::journal(&temporary);
     write(&root, "chronicle/20260101/a.txt", b"a");
@@ -125,13 +129,94 @@ fn removing_empty_counted_day_keeps_unrelated_entry_usable() {
 
     fs::remove_dir(root.join("chronicle/20260102")).expect("remove empty counted day");
 
-    source
-        .revalidate(inventory_entry)
-        .expect("validate unrelated entry");
+    assert!(matches!(
+        source.revalidate(),
+        Err(ArchiveError::SourceChanged { .. })
+    ));
     source
         .open_file(inventory_entry)
         .expect("open unrelated entry");
     assert_eq!(source.inventory().day_count(), 2);
+}
+
+#[test]
+#[allow(clippy::disallowed_methods)]
+fn removing_empty_portable_root_invalidates_revalidation() {
+    let temporary = TempDir::new("empty-portable-root-barrier");
+    let root = common::journal(&temporary);
+    common::directory(&root, "imports");
+    let source = ArchiveSource::open(&root).expect("open source");
+
+    fs::remove_dir(root.join("imports")).expect("remove empty portable root");
+
+    assert!(matches!(
+        source.revalidate(),
+        Err(ArchiveError::SourceChanged { .. })
+    ));
+}
+
+#[test]
+#[allow(clippy::disallowed_methods)]
+fn removing_empty_uncounted_nested_directory_invalidates_revalidation() {
+    let temporary = TempDir::new("empty-nested-directory-barrier");
+    let root = common::journal(&temporary);
+    write(&root, "chronicle/20260101/a.txt", b"a");
+    common::directory(&root, "chronicle/20260101/empty");
+    let source = ArchiveSource::open(&root).expect("open source");
+
+    fs::remove_dir(root.join("chronicle/20260101/empty")).expect("remove empty nested directory");
+
+    assert!(matches!(
+        source.revalidate(),
+        Err(ArchiveError::SourceChanged { .. })
+    ));
+}
+
+#[test]
+#[allow(clippy::disallowed_methods)]
+fn removing_nonempty_directory_invalidates_revalidation() {
+    let temporary = TempDir::new("nonempty-directory-barrier");
+    let root = valid_four_root_journal(&temporary);
+    let source = ArchiveSource::open(&root).expect("open source");
+
+    fs::remove_dir_all(root.join("chronicle/20260101/nested")).expect("remove nonempty directory");
+
+    assert!(matches!(
+        source.revalidate(),
+        Err(ArchiveError::SourceChanged { .. })
+    ));
+}
+
+#[test]
+#[allow(clippy::disallowed_methods)]
+fn removing_regular_file_invalidates_revalidation() {
+    let temporary = TempDir::new("removed-file-barrier");
+    let root = valid_four_root_journal(&temporary);
+    let source = ArchiveSource::open(&root).expect("open source");
+
+    fs::remove_file(root.join("imports/import-1/source.bin")).expect("remove regular file");
+
+    assert!(matches!(
+        source.revalidate(),
+        Err(ArchiveError::SourceChanged { .. })
+    ));
+}
+
+#[test]
+#[allow(clippy::disallowed_methods)]
+fn late_added_file_and_directory_are_ignored_by_revalidation() {
+    let temporary = TempDir::new("late-additions-barrier");
+    let root = valid_four_root_journal(&temporary);
+    let source = ArchiveSource::open(&root).expect("open source");
+
+    write(&root, "imports/import-2/later.bin", b"later");
+    common::directory(&root, "chronicle/20260102");
+
+    source.revalidate().expect("revalidate frozen inventory");
+    assert_eq!(source.inventory().entries().len(), 5);
+    assert_eq!(source.inventory().day_count(), 1);
+    assert_eq!(source.inventory().entity_count(), 1);
+    assert_eq!(source.inventory().facet_count(), 1);
 }
 
 #[cfg(unix)]
@@ -145,7 +230,6 @@ fn replacement_fifo_is_rejected_promptly_without_opening_it() {
     let root = valid_four_root_journal(&temporary);
     let source = ArchiveSource::open(&root).expect("open source");
     let member = "imports/import-1/source.bin";
-    let inventory_entry = entry(&source, member);
     fs::remove_file(root.join(member)).expect("remove original");
     mkfifo(&root.join(member), Mode::S_IRUSR | Mode::S_IWUSR).expect("create replacement fifo");
 
@@ -153,7 +237,7 @@ fn replacement_fifo_is_rejected_promptly_without_opening_it() {
     std::thread::scope(|scope| {
         scope.spawn(|| {
             sender
-                .send(source.revalidate(inventory_entry))
+                .send(source.revalidate())
                 .expect("send revalidation result");
         });
         let result = receiver
@@ -182,7 +266,7 @@ fn replacement_socket_is_rejected_promptly_without_opening_it() {
         scope.spawn(|| {
             sender
                 .send((
-                    source.revalidate(inventory_entry),
+                    source.revalidate(),
                     source.open_file(inventory_entry).map(|_| ()),
                 ))
                 .expect("send socket barrier results");

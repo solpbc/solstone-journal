@@ -48,9 +48,7 @@ fn retained_root_descriptor_survives_namespace_rename() {
     fs::create_dir(&root).expect("create replacement root");
     write(&root, "imports/import-1/source.bin", b"replacement");
 
-    source
-        .revalidate(inventory_entry)
-        .expect("validate retained root");
+    source.revalidate().expect("validate retained root");
     let opened = source
         .open_file(inventory_entry)
         .expect("open through retained root");

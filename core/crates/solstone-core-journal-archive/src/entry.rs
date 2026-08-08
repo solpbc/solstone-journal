@@ -59,6 +59,13 @@ pub(crate) struct EntryProof {
     pub(crate) file: FileProof,
 }
 
+/// The descriptor-relative route and identities frozen for a directory.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DirectoryEntryProof {
+    pub(crate) components: Box<[OsString]>,
+    pub(crate) directories: Box<[DirectoryProof]>,
+}
+
 /// One regular file eligible for a portable archive.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InventoryEntry {
@@ -90,6 +97,7 @@ impl InventoryEntry {
 #[derive(Debug, Default)]
 pub struct Inventory {
     pub(crate) entries: Vec<InventoryEntry>,
+    pub(crate) directory_proofs: Vec<DirectoryEntryProof>,
     pub(crate) skipped_root_names: Vec<SkippedRootName>,
     pub(crate) day_count: usize,
     pub(crate) entity_count: usize,

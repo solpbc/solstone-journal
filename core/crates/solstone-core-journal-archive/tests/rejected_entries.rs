@@ -164,6 +164,26 @@ fn rejects_distinct_non_utf8_member_names_without_lossy_normalization() {
 #[cfg(unix)]
 #[test]
 #[allow(clippy::disallowed_methods)]
+fn rejects_distinct_non_utf8_root_names_with_invalid_member_placeholder() {
+    let temporary = TempDir::new("non-utf8-root-names");
+    let root = journal(&temporary);
+    for bytes in [vec![b'a', 0xff], vec![b'a', 0xfe]] {
+        let name = std::ffi::OsString::from_vec(bytes);
+        fs::write(root.join(&name), b"bad").expect("write invalid root name");
+        assert!(matches!(
+            ArchiveSource::open(&root),
+            Err(ArchiveError::UnsafeJournalEntry {
+                member,
+                kind: JournalEntryKind::Other,
+            }) if member.as_str() == "<invalid>"
+        ));
+        fs::remove_file(root.join(&name)).expect("remove invalid root name");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+#[allow(clippy::disallowed_methods)]
 fn rejects_non_utf8_canonical_root_ancestor() {
     let temporary = TempDir::new("non-utf8-ancestor");
     let ancestor = temporary

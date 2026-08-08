@@ -12,7 +12,7 @@ use nix::errno::Errno;
 use nix::fcntl::{AtFlags, OFlag, open, openat};
 use nix::sys::stat::{FileStat, Mode, SFlag, fstat, fstatat};
 
-use crate::entry::{DirectoryProof, EntryProof, FileProof};
+use crate::entry::{DirectoryEntryProof, DirectoryProof, EntryProof, FileProof};
 use crate::{
     ArchiveError, ArchiveMemberName, Inventory, InventoryEntry, JournalEntryKind,
     OpenedInventoryFile,
@@ -24,7 +24,8 @@ const DIRECTORY_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_NOFOLLOW);
 const FILE_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_CLOEXEC)
-    .union(OFlag::O_NOFOLLOW);
+    .union(OFlag::O_NOFOLLOW)
+    .union(OFlag::O_NONBLOCK);
 const REQUESTED_ROOT_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_DIRECTORY)
     .union(OFlag::O_CLOEXEC);
@@ -312,10 +313,14 @@ impl ArchiveSource {
         Ok(OpenedInventoryFile::new(File::from(file), proof.size))
     }
 
-    /// Confirm every recorded directory and leaf identity for an entry.
-    pub fn revalidate(&self, entry: &InventoryEntry) -> Result<(), ArchiveError> {
-        let file = open_verified_file(&self.root, entry.member_name(), entry.proof())?.0;
-        drop(file);
+    /// Confirm every directory and regular-file identity in the frozen inventory.
+    pub fn revalidate(&self) -> Result<(), ArchiveError> {
+        for proof in &self.inventory.directory_proofs {
+            revalidate_directory(&self.root, proof)?;
+        }
+        for entry in &self.inventory.entries {
+            revalidate_file(&self.root, entry)?;
+        }
         Ok(())
     }
 }
@@ -689,9 +694,26 @@ fn open_verified_route(
     if proof.components.len() != proof.directories.len().saturating_add(1) {
         return Err(changed(Some(member)));
     }
+    walk_verified_directories(
+        root,
+        member,
+        &proof.components[..proof.components.len() - 1],
+        &proof.directories,
+    )
+}
+
+fn walk_verified_directories(
+    root: &OwnedFd,
+    member: &ArchiveMemberName,
+    components: &[OsString],
+    directories: &[DirectoryProof],
+) -> Result<OwnedFd, ArchiveError> {
+    if components.len() != directories.len() {
+        return Err(changed(Some(member)));
+    }
     let mut current = openat(root, ".", DIRECTORY_FLAGS, Mode::empty())
         .map_err(|error| source_io("open retained journal root", Some(member), error))?;
-    for (name, expected) in proof.components.iter().zip(proof.directories.iter()) {
+    for (name, expected) in components.iter().zip(directories.iter()) {
         let before = stat_entry(&current, name, Some(member), "stat inventoried directory")
             .map_err(|error| revalidation_error(error, member))?;
         if !is_directory(&before) || directory_proof(&before)? != *expected {
@@ -707,6 +729,38 @@ fn open_verified_route(
         current = opened;
     }
     Ok(current)
+}
+
+fn revalidate_directory(root: &OwnedFd, proof: &DirectoryEntryProof) -> Result<(), ArchiveError> {
+    let member = member_name(&proof.components)?;
+    let directory =
+        walk_verified_directories(root, &member, &proof.components, &proof.directories)?;
+    drop(directory);
+    Ok(())
+}
+
+fn revalidate_file(root: &OwnedFd, entry: &InventoryEntry) -> Result<(), ArchiveError> {
+    let member = entry.member_name();
+    let proof = entry.proof();
+    if proof.components.len() != proof.directories.len().saturating_add(1) {
+        return Err(changed(Some(member)));
+    }
+    let directory = walk_verified_directories(
+        root,
+        member,
+        &proof.components[..proof.components.len() - 1],
+        &proof.directories,
+    )?;
+    let Some(name) = proof.components.last() else {
+        return Err(changed(Some(member)));
+    };
+    let before = stat_entry(&directory, name, Some(member), "stat inventoried file")
+        .map_err(|error| revalidation_error(error, member))?;
+    if !is_regular(&before) || file_proof(&before)? != proof.file {
+        return Err(changed(Some(member)));
+    }
+    drop(directory);
+    Ok(())
 }
 
 fn stat_entry(
@@ -749,7 +803,9 @@ fn open_regular_file(
     changed_on_race: bool,
 ) -> Result<OwnedFd, ArchiveError> {
     openat(parent, name, FILE_FLAGS, Mode::empty()).map_err(|error| {
-        if changed_on_race && is_race_error(error) {
+        if changed_on_race
+            && (is_race_error(error) || matches!(error, Errno::ENXIO | Errno::ENODEV))
+        {
             changed(member)
         } else {
             source_io("open journal file", member, error)

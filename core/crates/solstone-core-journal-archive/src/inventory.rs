@@ -5,7 +5,7 @@ use std::ffi::{OsStr, OsString};
 use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStrExt;
 
-use crate::entry::{DirectoryProof, EntryProof};
+use crate::entry::{DirectoryEntryProof, DirectoryProof, EntryProof};
 use crate::source::{
     classify, list_directory, member_name, open_initial_directory, open_initial_file,
     root_entry_missing, stat_entry_for_count,
@@ -31,6 +31,10 @@ pub(crate) fn build(root: &OwnedFd) -> Result<Inventory, ArchiveError> {
         let root_stat = stat_entry_for_count(root, &root_component, &root_member)?;
         let (directory, root_proof) =
             open_initial_directory(root, &root_component, &root_member, &root_stat)?;
+        inventory.directory_proofs.push(DirectoryEntryProof {
+            components: vec![root_component.clone()].into_boxed_slice(),
+            directories: vec![root_proof].into_boxed_slice(),
+        });
         let mut entries = Vec::new();
         walk_directory(
             &directory,
@@ -54,8 +58,14 @@ pub(crate) fn build(root: &OwnedFd) -> Result<Inventory, ArchiveError> {
 fn skipped_root_names(root: &OwnedFd) -> Result<Vec<SkippedRootName>, ArchiveError> {
     let mut skipped = Vec::new();
     for name in list_directory(root, None)? {
-        let Ok(name) = std::str::from_utf8(name.as_bytes()) else {
-            continue;
+        let name = match std::str::from_utf8(name.as_bytes()) {
+            Ok(name) => name,
+            Err(_) => {
+                return Err(ArchiveError::UnsafeJournalEntry {
+                    member: ArchiveMemberName::new("<invalid>".to_owned()),
+                    kind: JournalEntryKind::Other,
+                });
+            }
         };
         if !ROOTS.contains(&name) {
             skipped.push(SkippedRootName::new(name.to_owned()));
@@ -84,6 +94,10 @@ fn walk_directory(
                 let (child, proof) = open_initial_directory(directory, &name, &member, &stat)?;
                 let mut child_proofs = directory_proofs.clone();
                 child_proofs.push(proof);
+                inventory.directory_proofs.push(DirectoryEntryProof {
+                    components: child_components.clone().into_boxed_slice(),
+                    directories: child_proofs.clone().into_boxed_slice(),
+                });
                 walk_directory(
                     &child,
                     root_name,

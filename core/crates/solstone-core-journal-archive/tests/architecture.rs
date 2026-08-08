@@ -73,6 +73,18 @@ fn filesystem_root_reopens_are_literal_and_argument_free() {
 }
 
 #[test]
+fn regular_file_opens_are_nonblocking_and_nofollow() {
+    let source = SOURCES
+        .iter()
+        .find_map(|(name, source)| (*name == "source").then_some(*source))
+        .expect("source module registered");
+
+    assert!(source.contains(
+        "const FILE_FLAGS: OFlag = OFlag::O_RDONLY\n    .union(OFlag::O_CLOEXEC)\n    .union(OFlag::O_NOFOLLOW)\n    .union(OFlag::O_NONBLOCK);"
+    ));
+}
+
+#[test]
 fn no_module_reaches_deferred_or_forbidden_surfaces() {
     for (name, source) in SOURCES.iter().chain(std::iter::once(&("lib", LIB))) {
         for forbidden in [
@@ -133,10 +145,19 @@ fn public_descendant_operations_accept_only_inventory_handles() {
             !signature.contains("fault") && !signature.contains("inject"),
             "public test-control authority: {signature}"
         );
-        if signature.contains("pub fn open_file") || signature.contains("pub fn revalidate") {
+        if signature.contains("pub fn open_file") {
             assert!(signature.contains("&InventoryEntry"), "{signature}");
             assert!(
                 !signature.contains("&Path") && !signature.contains("&str"),
+                "{signature}"
+            );
+        }
+        if signature.contains("pub fn revalidate") {
+            assert!(signature.contains("&self"), "{signature}");
+            assert!(
+                !signature.contains("&InventoryEntry")
+                    && !signature.contains("&Path")
+                    && !signature.contains("&str"),
                 "{signature}"
             );
         }
