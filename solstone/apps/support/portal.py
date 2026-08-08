@@ -39,6 +39,14 @@ logger = logging.getLogger(__name__)
 # default up on upgrade.
 DEFAULT_PORTAL_URL = "https://support.solstone.app"
 SUPPORT_PORTAL_URL_ENV = "SOLSTONE_SUPPORT_URL"
+_TOMBSTONE_FIELDS = (
+    "ticket_id",
+    "status",
+    "closed_at",
+    "close_scheduled_at",
+    "reason_code",
+)
+_TOMBSTONE_STATUSES = frozenset({"closed", "retired", "erased"})
 
 # ---------------------------------------------------------------------------
 # Base64url helpers
@@ -79,6 +87,18 @@ def _remote_operation_id(data: dict[str, Any]) -> str | None:
         if value is not None:
             return str(value)
     return None
+
+
+def _project_tombstone(data: dict[str, Any]) -> dict[str, Any]:
+    """Keep only the durable owner-facing fields of a closed ticket."""
+    return {field: data[field] for field in _TOMBSTONE_FIELDS if field in data}
+
+
+def _project_ticket(data: dict[str, Any]) -> dict[str, Any]:
+    """Project terminal ticket responses while preserving active ticket detail."""
+    if data.get("status") in _TOMBSTONE_STATUSES:
+        return _project_tombstone(data)
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -506,6 +526,7 @@ class PortalClient:
         index: int = 0,
         json_body: dict | None = None,
         files: dict[str, Any] | None = None,
+        project_tombstone: bool = True,
     ) -> dict[str, Any]:
         """Dispatch one durable mutation through the local outcome matrix.
 
@@ -552,7 +573,7 @@ class PortalClient:
                 remote_operation_id=remote_operation_id,
                 storage_dir=self.storage_dir,
             )
-            return data
+            return _project_ticket(data) if project_tombstone else data
 
         if resp.status_code >= 500:
             operations.release_retryable_lease(record, storage_dir=self.storage_dir)
@@ -660,14 +681,103 @@ class PortalClient:
 
         resp = self._authed_request("GET", "/api/tickets", params=params)
         self._raise_for_status(resp)
-        return resp.json()
+        data = resp.json()
+        return [
+            _project_ticket(ticket) if isinstance(ticket, dict) else ticket
+            for ticket in data
+        ]
 
     def get_ticket(self, ticket_id: int) -> dict[str, Any]:
         """Get a single ticket with message thread."""
         self.ensure_registered()
         resp = self._authed_request("GET", f"/api/tickets/{ticket_id}")
         self._raise_for_status(resp)
-        return resp.json()
+        return _project_ticket(resp.json())
+
+    def list_closed_history(self, *, cursor: str | None = None) -> dict[str, Any]:
+        """List opaque-cursor closed-ticket tombstones."""
+        self.ensure_registered()
+        params = {"cursor": cursor} if cursor is not None else None
+        resp = self._authed_request("GET", "/api/tickets/closed", params=params)
+        self._raise_for_status(resp)
+        data = resp.json()
+        return {
+            "tickets": [_project_tombstone(ticket) for ticket in data["tickets"]],
+            "next_cursor": data["next_cursor"],
+        }
+
+    def close_ticket(self, ticket_id: int, *, action_id: str) -> dict[str, Any]:
+        """Close a ticket and return its tombstone projection."""
+        self.ensure_registered()
+        data = self._dispatch_mutation(
+            "POST",
+            f"/api/tickets/{ticket_id}/close",
+            action_id=action_id,
+            verb="close",
+            fields={"ticket_id": ticket_id},
+        )
+        return _project_tombstone(data)
+
+    def confirm_resolution(self, ticket_id: int, *, action_id: str) -> dict[str, Any]:
+        """Confirm a proposed resolution and return its tombstone."""
+        self.ensure_registered()
+        data = self._dispatch_mutation(
+            "POST",
+            f"/api/tickets/{ticket_id}/resolution/confirm",
+            action_id=action_id,
+            verb="resolved",
+            fields={"ticket_id": ticket_id},
+        )
+        return _project_tombstone(data)
+
+    def still_need_help(self, ticket_id: int, *, action_id: str) -> dict[str, Any]:
+        """Reject a proposed resolution and retain active ticket detail."""
+        self.ensure_registered()
+        return self._dispatch_mutation(
+            "POST",
+            f"/api/tickets/{ticket_id}/resolution/still-need-help",
+            action_id=action_id,
+            verb="still_need_help",
+            fields={"ticket_id": ticket_id},
+            project_tombstone=False,
+        )
+
+    def acknowledge_operation(self, *, remote_operation_id: str) -> bool:
+        """Acknowledge a completed remote operation without an operation key."""
+        self.ensure_registered()
+        resp = self._authed_request(
+            "POST",
+            "/api/idempotency/ack",
+            json_body={"operation_id": remote_operation_id},
+        )
+        if 200 <= resp.status_code < 300:
+            if resp.content:
+                body = resp.json()
+                if not isinstance(body, dict):
+                    raise ValueError("support acknowledgement response must be an object")
+            return True
+        if resp.status_code == 404:
+            return False
+        self._raise_for_status(resp)
+        raise AssertionError("non-success operation acknowledgement was not raised")
+
+    def drain_pending_acknowledgements(self) -> None:
+        """Best-effort foreground drain for completed local operation acks."""
+        records = operations.list_pending_acknowledgements(storage_dir=self.storage_dir)
+        for record in records:
+            if record.remote_operation_id is None:
+                logger.warning("support acknowledgement missing operation id for %s", record.child_action_id)
+                continue
+            try:
+                acknowledged = self.acknowledge_operation(
+                    remote_operation_id=record.remote_operation_id
+                )
+                if acknowledged:
+                    operations.mark_acknowledged(record, storage_dir=self.storage_dir)
+                else:
+                    logger.info("support acknowledgement unavailable for %s", record.child_action_id)
+            except Exception:
+                logger.info("support acknowledgement failed for %s", record.child_action_id)
 
     def reply_to_ticket(
         self, ticket_id: int, content: str, *, action_id: str

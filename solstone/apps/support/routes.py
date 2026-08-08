@@ -41,6 +41,25 @@ support_bp = Blueprint(
 )
 
 
+def _drain_pending_acknowledgements() -> None:
+    """Run the bounded foreground acknowledgement drain without affecting routes."""
+    try:
+        _get_client().drain_pending_acknowledgements()
+    except Exception:
+        logger.info("support acknowledgement drain failed", exc_info=True)
+
+
+@support_bp.before_request
+def _drain_pending_acknowledgements_before_request() -> None:
+    _drain_pending_acknowledgements()
+
+
+@support_bp.after_request
+def _drain_pending_acknowledgements_after_request(response: Any) -> Any:
+    _drain_pending_acknowledgements()
+    return response
+
+
 def _get_client():
     """Lazy-import portal client."""
     from solstone.apps.support.portal import get_client
@@ -389,6 +408,84 @@ def upload_attachment(ticket_id: int) -> Any:
         if response := _operation_error_response(exc):
             return response
         logger.exception("Failed to upload attachment to ticket %d", ticket_id)
+        return error_response(SUPPORT_PORTAL_FAILED, detail=str(exc))
+
+
+# -- Ticket lifecycle --------------------------------------------------------
+
+
+@support_bp.route("/api/tickets/closed", methods=["GET"])
+def list_closed_history() -> Any:
+    """List closed-ticket tombstones using the portal's opaque cursor."""
+    if not _enabled():
+        return error_response(FEATURE_UNAVAILABLE, detail="Support is disabled")
+    try:
+        from solstone.apps.support.tools import support_history
+
+        return jsonify(support_history(cursor=request.args.get("cursor")))
+    except Exception as exc:
+        logger.exception("Failed to list closed support history")
+        return error_response(SUPPORT_PORTAL_FAILED, detail=str(exc))
+
+
+@support_bp.route("/api/tickets/<int:ticket_id>/close", methods=["POST"])
+def close_ticket(ticket_id: int) -> Any:
+    """Close a support ticket."""
+    if not _enabled():
+        return error_response(FEATURE_UNAVAILABLE, detail="Support is disabled")
+    action_id = _action_id_or_error()
+    if not isinstance(action_id, str):
+        return action_id
+    try:
+        from solstone.apps.support.tools import support_close
+
+        return jsonify(support_close(ticket_id, action_id=action_id)), 201
+    except Exception as exc:
+        if response := _operation_error_response(exc):
+            return response
+        logger.exception("Failed to close support ticket %d", ticket_id)
+        return error_response(SUPPORT_PORTAL_FAILED, detail=str(exc))
+
+
+@support_bp.route(
+    "/api/tickets/<int:ticket_id>/resolution/confirm", methods=["POST"]
+)
+def confirm_resolution(ticket_id: int) -> Any:
+    """Confirm a proposed support-ticket resolution."""
+    if not _enabled():
+        return error_response(FEATURE_UNAVAILABLE, detail="Support is disabled")
+    action_id = _action_id_or_error()
+    if not isinstance(action_id, str):
+        return action_id
+    try:
+        from solstone.apps.support.tools import support_resolved
+
+        return jsonify(support_resolved(ticket_id, action_id=action_id)), 201
+    except Exception as exc:
+        if response := _operation_error_response(exc):
+            return response
+        logger.exception("Failed to confirm support resolution for %d", ticket_id)
+        return error_response(SUPPORT_PORTAL_FAILED, detail=str(exc))
+
+
+@support_bp.route(
+    "/api/tickets/<int:ticket_id>/resolution/still-need-help", methods=["POST"]
+)
+def still_need_help(ticket_id: int) -> Any:
+    """Reject a proposed support-ticket resolution."""
+    if not _enabled():
+        return error_response(FEATURE_UNAVAILABLE, detail="Support is disabled")
+    action_id = _action_id_or_error()
+    if not isinstance(action_id, str):
+        return action_id
+    try:
+        from solstone.apps.support.tools import support_still_need_help
+
+        return jsonify(support_still_need_help(ticket_id, action_id=action_id)), 201
+    except Exception as exc:
+        if response := _operation_error_response(exc):
+            return response
+        logger.exception("Failed to reject support resolution for %d", ticket_id)
         return error_response(SUPPORT_PORTAL_FAILED, detail=str(exc))
 
 

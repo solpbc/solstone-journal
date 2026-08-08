@@ -30,6 +30,32 @@ _FREE_OBJECT = {"type": "object", "additionalProperties": True}
 _FREE_ARRAY = {"type": "array", "items": _FREE_OBJECT}
 _JSON_OBJECT_OR_NULL = {"type": ["object", "null"], "additionalProperties": True}
 _TICKET_ID_PARAM = ParamSpec("ticket_id", "path", type="integer")
+_IDEMPOTENCY_KEY_PARAM = (
+    ParamSpec(
+        "Idempotency-Key",
+        "header",
+        required=True,
+        description="Caller-owned parent action id for this mutation.",
+    ),
+)
+_TOMBSTONE_NAMED_FIELDS = (
+    FieldSpec("ticket_id", "integer"),
+    FieldSpec("status", "string"),
+    FieldSpec("closed_at", "string"),
+    FieldSpec("close_scheduled_at", "string"),
+    FieldSpec("reason_code", "string"),
+)
+_TOMBSTONE_OBJECT = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "ticket_id": {"type": "integer"},
+        "status": {"type": "string"},
+        "closed_at": {"type": "string"},
+        "close_scheduled_at": {"type": "string"},
+        "reason_code": {"type": "string"},
+    },
+}
 _SUPPORT_READ_ERRORS = (
     _json_error(
         403,
@@ -41,6 +67,25 @@ _SUPPORT_READ_ERRORS = (
         ("support_portal_failed",),
         "The support portal request failed.",
     ),
+)
+_SUPPORT_MUTATION_ERRORS = (
+    _json_error(
+        400,
+        ("missing_required_field",),
+        "The parent Idempotency-Key header was missing.",
+    ),
+    _json_error(401, ("tos_changed",), "Support terms require re-consent."),
+    _json_error(
+        409,
+        ("idempotency_conflict", "invalid_state", "operation_in_progress"),
+        "The support operation conflicts with its current state.",
+    ),
+    _json_error(
+        410,
+        ("operation_erased", "operation_retired"),
+        "The support operation is no longer available.",
+    ),
+    *_SUPPORT_READ_ERRORS,
 )
 
 
@@ -182,11 +227,84 @@ OPERATIONS: list[OperationSpec] = [
         ),
     ),
     OperationSpec(
+        operation_id="support.history",
+        method="GET",
+        rule="/app/support/api/tickets/closed",
+        summary="List closed support tickets",
+        description="List closed-ticket tombstones with an opaque server cursor.",
+        parameters=(ParamSpec("cursor", "query", description="Opaque server cursor."),),
+        responses=(
+            ResponseSpec(
+                status=200,
+                description="Closed-ticket tombstones and the next opaque cursor.",
+                named_fields=(
+                    FieldSpec(
+                        "tickets",
+                        "array",
+                        required=True,
+                        raw_schema={"type": "array", "items": _TOMBSTONE_OBJECT},
+                    ),
+                    FieldSpec("next_cursor", "string"),
+                ),
+            ),
+            *_SUPPORT_READ_ERRORS,
+        ),
+    ),
+    OperationSpec(
+        operation_id="support.close",
+        method="POST",
+        rule="/app/support/api/tickets/<int:ticket_id>/close",
+        summary="Close a support ticket",
+        description="Close a ticket after the caller supplies a parent action id.",
+        parameters=(_TICKET_ID_PARAM, *_IDEMPOTENCY_KEY_PARAM),
+        responses=(
+            ResponseSpec(
+                status=201,
+                description="Closed-ticket tombstone.",
+                named_fields=_TOMBSTONE_NAMED_FIELDS,
+            ),
+            *_SUPPORT_MUTATION_ERRORS,
+        ),
+    ),
+    OperationSpec(
+        operation_id="support.resolved",
+        method="POST",
+        rule="/app/support/api/tickets/<int:ticket_id>/resolution/confirm",
+        summary="Confirm a support resolution",
+        description="Confirm a proposed resolution and close the ticket.",
+        parameters=(_TICKET_ID_PARAM, *_IDEMPOTENCY_KEY_PARAM),
+        responses=(
+            ResponseSpec(
+                status=201,
+                description="Closed-ticket tombstone.",
+                named_fields=_TOMBSTONE_NAMED_FIELDS,
+            ),
+            *_SUPPORT_MUTATION_ERRORS,
+        ),
+    ),
+    OperationSpec(
+        operation_id="support.still_need_help",
+        method="POST",
+        rule="/app/support/api/tickets/<int:ticket_id>/resolution/still-need-help",
+        summary="Reject a support resolution",
+        description="Keep the ticket open after rejecting a proposed resolution.",
+        parameters=(_TICKET_ID_PARAM, *_IDEMPOTENCY_KEY_PARAM),
+        responses=(
+            ResponseSpec(
+                status=201,
+                description="Active support ticket detail.",
+                raw_schema=_FREE_OBJECT,
+            ),
+            *_SUPPORT_MUTATION_ERRORS,
+        ),
+    ),
+    OperationSpec(
         operation_id="support.create",
         method="POST",
         rule="/app/support/api/tickets",
         summary="Create a support ticket",
         description="Create a support ticket after the CLI consent flow.",
+        parameters=_IDEMPOTENCY_KEY_PARAM,
         request=RequestSpec(
             fields=(
                 FieldSpec("subject", "string", required=True),
@@ -225,7 +343,7 @@ OPERATIONS: list[OperationSpec] = [
         rule="/app/support/api/tickets/<int:ticket_id>/reply",
         summary="Reply to a support ticket",
         description="Append a reply to an existing support ticket.",
-        parameters=(_TICKET_ID_PARAM,),
+        parameters=(_TICKET_ID_PARAM, *_IDEMPOTENCY_KEY_PARAM),
         request=RequestSpec(
             fields=(FieldSpec("content", "string", required=True),),
             example={"content": "I can reproduce this on today's build."},
@@ -250,7 +368,7 @@ OPERATIONS: list[OperationSpec] = [
         rule="/app/support/api/tickets/<int:ticket_id>/attachments",
         summary="Attach a file to a support ticket",
         description="Upload one attachment to an existing support ticket.",
-        parameters=(_TICKET_ID_PARAM,),
+        parameters=(_TICKET_ID_PARAM, *_IDEMPOTENCY_KEY_PARAM),
         request=RequestSpec(
             content_type="multipart/form-data",
             fields=(
@@ -283,6 +401,7 @@ OPERATIONS: list[OperationSpec] = [
         rule="/app/support/api/feedback",
         summary="Submit support feedback",
         description="Submit lower-friction product feedback.",
+        parameters=_IDEMPOTENCY_KEY_PARAM,
         request=RequestSpec(
             fields=(
                 FieldSpec("body", "string", required=True),

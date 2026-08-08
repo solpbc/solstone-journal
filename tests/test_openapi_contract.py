@@ -83,8 +83,20 @@ CONTRACTED_INVENTORY_TRIPLES = {
     ("GET", "/app/support/api/articles/{slug}", "support.article"),
     ("GET", "/app/support/api/tickets", "support.list"),
     ("GET", "/app/support/api/tickets/{ticket_id}", "support.show"),
+    ("GET", "/app/support/api/tickets/closed", "support.history"),
     ("POST", "/app/support/api/tickets", "support.create"),
     ("POST", "/app/support/api/tickets/{ticket_id}/reply", "support.reply"),
+    ("POST", "/app/support/api/tickets/{ticket_id}/close", "support.close"),
+    (
+        "POST",
+        "/app/support/api/tickets/{ticket_id}/resolution/confirm",
+        "support.resolved",
+    ),
+    (
+        "POST",
+        "/app/support/api/tickets/{ticket_id}/resolution/still-need-help",
+        "support.still_need_help",
+    ),
     (
         "POST",
         "/app/support/api/tickets/{ticket_id}/attachments",

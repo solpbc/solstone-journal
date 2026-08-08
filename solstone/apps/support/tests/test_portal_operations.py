@@ -200,3 +200,199 @@ def test_feedback_uses_a_verb_distinct_operation_key(tmp_path, monkeypatch):
     assert requests[0].headers["Idempotency-Key"] != requests[1].headers[
         "Idempotency-Key"
     ]
+
+
+def test_closed_history_forwards_opaque_cursor_and_projects_tombstones(
+    tmp_path, monkeypatch
+):
+    cursor = "opaque+/cursor==not-a-date"
+    requests: list[httpx.Request] = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "tickets": [
+                    {
+                        "ticket_id": 7,
+                        "status": "closed",
+                        "closed_at": "2026-08-01T00:00:00Z",
+                        "reason_code": "owner_closed",
+                        "subject": "poisoned",
+                        "internal_notes": "poisoned",
+                    }
+                ],
+                "next_cursor": cursor,
+            },
+        )
+
+    client = _client(tmp_path, monkeypatch, handler)
+    result = client.list_closed_history(cursor=cursor)
+
+    assert requests[0].url.params["cursor"] == cursor
+    assert result["next_cursor"] == cursor
+    assert result["tickets"] == [
+        {
+            "ticket_id": 7,
+            "status": "closed",
+            "closed_at": "2026-08-01T00:00:00Z",
+            "reason_code": "owner_closed",
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("method_name", "path"),
+    [
+        ("close_ticket", "/api/tickets/7/close"),
+        (
+            "confirm_resolution",
+            "/api/tickets/7/resolution/confirm",
+        ),
+    ],
+)
+def test_closing_actions_project_poisoned_response(tmp_path, monkeypatch, method_name, path):
+    def handler(request):
+        assert request.url.path == path
+        return httpx.Response(
+            201,
+            json={
+                "ticket_id": 7,
+                "status": "closed",
+                "closed_at": "2026-08-01T00:00:00Z",
+                "close_scheduled_at": "2026-09-01T00:00:00Z",
+                "reason_code": "owner_closed",
+                "subject": "secret",
+                "user_context": {"secret": True},
+                "internal_notes": "secret",
+            },
+        )
+
+    client = _client(tmp_path, monkeypatch, handler)
+    result = getattr(client, method_name)(7, action_id="a1")
+
+    assert result == {
+        "ticket_id": 7,
+        "status": "closed",
+        "closed_at": "2026-08-01T00:00:00Z",
+        "close_scheduled_at": "2026-09-01T00:00:00Z",
+        "reason_code": "owner_closed",
+    }
+
+
+def test_still_need_help_preserves_active_ticket_detail(tmp_path, monkeypatch):
+    active = {
+        "ticket_id": 7,
+        "status": "open",
+        "subject": "keep this",
+        "user_context": {"keep": True},
+    }
+    client = _client(
+        tmp_path, monkeypatch, lambda _request: httpx.Response(201, json=active)
+    )
+
+    assert client.still_need_help(7, action_id="a1") == active
+
+
+def test_post_close_reply_is_tombstone_projected(tmp_path, monkeypatch):
+    client = _client(
+        tmp_path,
+        monkeypatch,
+        lambda _request: httpx.Response(
+            200,
+            json={
+                "ticket_id": 7,
+                "status": "closed",
+                "closed_at": "2026-08-01T00:00:00Z",
+                "subject": "poisoned",
+                "messages": [{"content": "poisoned"}],
+            },
+        ),
+    )
+
+    assert client.reply_to_ticket(7, "reply", action_id="a1") == {
+        "ticket_id": 7,
+        "status": "closed",
+        "closed_at": "2026-08-01T00:00:00Z",
+    }
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [(200, True), (404, False)],
+)
+def test_acknowledge_operation_handles_success_and_absence(
+    tmp_path, monkeypatch, status, expected
+):
+    client = _client(
+        tmp_path, monkeypatch, lambda _request: httpx.Response(status, json={})
+    )
+
+    assert client.acknowledge_operation(remote_operation_id="remote-1") is expected
+
+
+def test_acknowledge_operation_propagates_failure(tmp_path, monkeypatch):
+    client = _client(
+        tmp_path, monkeypatch, lambda _request: httpx.Response(503, json={})
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        client.acknowledge_operation(remote_operation_id="remote-1")
+
+
+def test_acknowledge_operation_propagates_malformed_success_body(tmp_path, monkeypatch):
+    client = _client(
+        tmp_path,
+        monkeypatch,
+        lambda _request: httpx.Response(200, content=b"not json"),
+    )
+
+    with pytest.raises(ValueError):
+        client.acknowledge_operation(remote_operation_id="remote-1")
+
+
+def _completed_record(storage):
+    record = operations.begin_operation(
+        "ack-action",
+        "reply",
+        {"ticket_id": 7, "content": "reply"},
+        principal="anonymous",
+        storage_dir=storage,
+    )
+    record = operations.mark_in_progress(record, storage_dir=storage)
+    return operations.mark_completed(
+        record, remote_operation_id="remote-1", storage_dir=storage
+    )
+
+
+def test_ack_drain_does_not_touch_network_when_empty(tmp_path, monkeypatch):
+    def fail_handler(_request):
+        raise AssertionError("empty acknowledgement drain must not use the network")
+
+    client = _client(tmp_path, monkeypatch, fail_handler)
+    client.drain_pending_acknowledgements()
+
+
+def test_ack_drain_marks_successful_acknowledgement(tmp_path, monkeypatch):
+    _completed_record(tmp_path)
+    client = _client(
+        tmp_path, monkeypatch, lambda _request: httpx.Response(200, json={})
+    )
+
+    client.drain_pending_acknowledgements()
+
+    assert operations.list_pending_acknowledgements(storage_dir=tmp_path) == []
+
+
+def test_ack_drain_preserves_record_on_failure(tmp_path, monkeypatch):
+    _completed_record(tmp_path)
+    client = _client(
+        tmp_path, monkeypatch, lambda _request: httpx.Response(503, json={})
+    )
+
+    client.drain_pending_acknowledgements()
+
+    pending = operations.list_pending_acknowledgements(storage_dir=tmp_path)
+    assert len(pending) == 1
+    assert pending[0].ack_state == "unacknowledged"

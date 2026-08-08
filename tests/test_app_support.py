@@ -466,6 +466,83 @@ def test_create_route_maps_local_operation_errors(
     assert response.get_json()["reason_code"] == reason_code
 
 
+def test_lifecycle_routes_forward_calls_and_ignore_drain_failures(
+    support_client, monkeypatch
+):
+    calls: list[tuple] = []
+
+    class BrokenDrainClient:
+        def drain_pending_acknowledgements(self):
+            raise RuntimeError("drain failed")
+
+    monkeypatch.setattr("solstone.apps.support.routes._enabled", lambda: True)
+    monkeypatch.setattr(
+        "solstone.apps.support.routes._get_client", lambda: BrokenDrainClient()
+    )
+    monkeypatch.setattr(
+        "solstone.apps.support.tools.support_history",
+        lambda *, cursor=None: calls.append(("history", cursor))
+        or {"tickets": [], "next_cursor": cursor},
+    )
+    monkeypatch.setattr(
+        "solstone.apps.support.tools.support_close",
+        lambda ticket_id, *, action_id: calls.append(("close", ticket_id, action_id))
+        or {"ticket_id": ticket_id, "status": "closed"},
+    )
+    monkeypatch.setattr(
+        "solstone.apps.support.tools.support_resolved",
+        lambda ticket_id, *, action_id: calls.append(("resolved", ticket_id, action_id))
+        or {"ticket_id": ticket_id, "status": "closed"},
+    )
+    monkeypatch.setattr(
+        "solstone.apps.support.tools.support_still_need_help",
+        lambda ticket_id, *, action_id: calls.append(("still_need_help", ticket_id, action_id))
+        or {"ticket_id": ticket_id, "status": "open", "subject": "keep"},
+    )
+
+    history = support_client.get("/app/support/api/tickets/closed?cursor=opaque+cursor")
+    close = support_client.post(
+        "/app/support/api/tickets/7/close", headers={"Idempotency-Key": "close-1"}
+    )
+    resolved = support_client.post(
+        "/app/support/api/tickets/7/resolution/confirm",
+        headers={"Idempotency-Key": "resolved-1"},
+    )
+    still_needed = support_client.post(
+        "/app/support/api/tickets/7/resolution/still-need-help",
+        headers={"Idempotency-Key": "still-1"},
+    )
+
+    assert history.status_code == 200
+    assert close.status_code == resolved.status_code == still_needed.status_code == 201
+    assert still_needed.get_json()["subject"] == "keep"
+    assert calls == [
+        ("history", "opaque cursor"),
+        ("close", 7, "close-1"),
+        ("resolved", 7, "resolved-1"),
+        ("still_need_help", 7, "still-1"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/app/support/api/tickets/7/close",
+        "/app/support/api/tickets/7/resolution/confirm",
+        "/app/support/api/tickets/7/resolution/still-need-help",
+    ],
+)
+def test_lifecycle_mutation_routes_require_parent_action_id(
+    support_client, monkeypatch, path
+):
+    monkeypatch.setattr("solstone.apps.support.routes._enabled", lambda: True)
+
+    response = support_client.post(path)
+
+    assert response.status_code == 400
+    assert response.get_json()["reason_code"] == "missing_required_field"
+
+
 def test_support_feedback_uses_feedback_subject_without_auto_context(monkeypatch):
     from solstone.apps.support import tools
 

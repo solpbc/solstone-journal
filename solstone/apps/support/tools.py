@@ -132,6 +132,57 @@ def support_check(
     return client.get_ticket(ticket_id)
 
 
+def support_history(
+    *,
+    cursor: str | None = None,
+    portal_url: str | None = None,
+) -> dict[str, Any]:
+    """List closed-ticket history using the server's opaque cursor."""
+    from solstone.apps.support.portal import get_client
+
+    client = get_client(portal_url=portal_url)
+    return client.list_closed_history(cursor=cursor)
+
+
+def support_close(
+    ticket_id: int,
+    *,
+    action_id: str,
+    portal_url: str | None = None,
+) -> dict[str, Any]:
+    """Close a support ticket."""
+    from solstone.apps.support.portal import get_client
+
+    client = get_client(portal_url=portal_url)
+    return client.close_ticket(ticket_id, action_id=action_id)
+
+
+def support_resolved(
+    ticket_id: int,
+    *,
+    action_id: str,
+    portal_url: str | None = None,
+) -> dict[str, Any]:
+    """Confirm a proposed ticket resolution."""
+    from solstone.apps.support.portal import get_client
+
+    client = get_client(portal_url=portal_url)
+    return client.confirm_resolution(ticket_id, action_id=action_id)
+
+
+def support_still_need_help(
+    ticket_id: int,
+    *,
+    action_id: str,
+    portal_url: str | None = None,
+) -> dict[str, Any]:
+    """Reject a proposed ticket resolution."""
+    from solstone.apps.support.portal import get_client
+
+    client = get_client(portal_url=portal_url)
+    return client.still_need_help(ticket_id, action_id=action_id)
+
+
 def support_reply(
     ticket_id: int,
     content: str,
