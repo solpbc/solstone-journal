@@ -350,6 +350,7 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Speaker discovery clusters (`awareness/discovery_clusters.json`, `awareness/discovery_clusters.resolved.json`) | `solstone/apps/speakers/discovery.py` |
 | Speaker candidate pool (`awareness/speaker_candidates.json`) | `solstone/apps/speakers/candidate_tracker.py` |
 | Speaker identify operation ledger (`speakers/identify-operations.jsonl`) | `solstone/think/speaker_identify_operations.py` |
+| Support portal operation ledger and local fingerprint key (`apps/support/portal/operations/*.json`, `apps/support/portal/operation-fingerprint.key`) | `solstone/apps/support/operations.py` |
 | Entity resolution ambiguities (`entities/ambiguities.jsonl`) | `solstone/think/entities/ambiguities.py` |
 | Entity merge candidates (`entities/review-candidates.jsonl`) | `solstone/think/entities/review_candidates.py` |
 | Facet review candidates (`facets/review-candidates.jsonl`) | `solstone/think/facet_review_candidates.py` |

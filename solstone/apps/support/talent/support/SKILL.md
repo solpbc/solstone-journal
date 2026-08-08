@@ -2,9 +2,10 @@
 name: support
 description: >
   Draft support tickets and feedback to solstone support, search the KB, check open
-  tickets, check announcements, and run diagnostics. TRIGGER: file bug, request
-  feature, submit feedback, search KB, announcements, tickets, sol call support
-  create/search/list/reply/diagnose.
+  tickets and closed history, close tickets, confirm resolutions, check announcements,
+  and run diagnostics. TRIGGER: file bug, request feature, submit feedback, search KB,
+  announcements, tickets, close ticket, confirm resolution, still need help, closed
+  history, sol call support create/search/list/reply/diagnose.
 ---
 
 # sol support
@@ -91,6 +92,38 @@ sol call support list --json
 sol call support show 42 --json
 ```
 
+### Closed History
+
+```bash
+# List closed tickets
+sol call support history
+
+# Continue from a previous page's cursor
+sol call support history --cursor "<cursor>"
+```
+
+Closed history lists tickets that are no longer open. Use the returned cursor with
+`--cursor` to continue to the next page.
+
+### Ticket Lifecycle
+
+```bash
+# Prepare a draft to close a ticket
+sol call support close 42
+
+# Prepare a draft to accept a proposed resolution and close the ticket
+sol call support resolved 42
+
+# Prepare a draft to reject a proposed resolution and keep the ticket open
+sol call support still-need-help 42
+```
+
+These commands are dry runs by default and save a local draft for owner review,
+just like `create` and `feedback`. `close` ends the ticket, `resolved` accepts a
+proposed resolution and closes it, and `still-need-help` rejects a proposed
+resolution and keeps the ticket open. The review card decides whether anything
+goes to solstone support.
+
 ### Attachments
 
 ```bash
@@ -172,6 +205,7 @@ Running `create` or `feedback` produces a safe dry-run preview and saves a local
 ## Gotchas
 
 - **`create`/`feedback` are dry-run by default.** They save a local draft for owner review. The `DRY RUN` banner in stdout is the signal that the draft remains local.
+- **`close`/`resolved`/`still-need-help` are dry-run by default.** They also save a local draft for owner review with no flag needed.
 - **`reply` and `attach` need `--no-submit` for drafts.** Always include it when preparing a reply or attachment for owner review.
 - **KB-first is automatic on `create`.** The `create` command always searches the KB and shows matches for owner review before preparing the draft. Pass `--skip-kb` only if the issue is clearly unique.
 - **`--product` defaults to solstone.** Solstone support handles other products too. Confirm with the owner before preparing a non-solstone ticket.
