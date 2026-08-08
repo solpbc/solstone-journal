@@ -91,6 +91,11 @@ fn bundled_config(confidential: bool) -> Value {
 }
 
 fn run(root: &Path, args: &[&str], input: Option<&Value>) -> Output {
+    let input = input.map(Value::to_string);
+    run_bytes(root, args, input.as_deref().map(str::as_bytes))
+}
+
+fn run_bytes(root: &Path, args: &[&str], input: Option<&[u8]>) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
         .args(args)
         .env("SOLSTONE_JOURNAL", root)
@@ -104,7 +109,7 @@ fn run(root: &Path, args: &[&str], input: Option<&Value>) -> Output {
             .stdin
             .as_mut()
             .expect("generate stdin")
-            .write_all(input.to_string().as_bytes())
+            .write_all(input)
             .expect("write generate input");
     }
     child.wait_with_output().expect("wait for generate")
@@ -198,6 +203,24 @@ fn malformed_requests_surface_as_protocol_errors() {
     }
     let error = stderr_protocol_error(&one_shot(&journal, &unknown_top_level));
     assert!(error["detail"].as_str().unwrap().contains("unexpected"));
+    let _ = std::fs::remove_dir_all(journal);
+}
+
+#[test]
+fn invalid_utf8_stdin_is_a_malformed_request() {
+    let journal = root("invalid-utf8");
+    let output = run_bytes(&journal, &["generate", "--one-shot"], Some(&[0xff]));
+    assert_eq!(
+        output.status.code(),
+        Some(
+            contract()["exit_codes"]["malformed_request"]
+                .as_i64()
+                .unwrap() as i32
+        )
+    );
+    let error = stderr_protocol_error(&output);
+    assert_eq!(error["reason"], "malformed-request");
+    assert!(error["id"].is_null());
     let _ = std::fs::remove_dir_all(journal);
 }
 

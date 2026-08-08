@@ -14,6 +14,7 @@ pub const LOCAL_MODEL_ID: &str = "local/qwen3.5-4b";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BundledError {
     UnsupportedPlatform,
+    ValueOutOfRange,
 }
 
 pub fn bundled_generate(
@@ -41,12 +42,14 @@ pub fn bundled_input(
         contents: Value::Array(request.contents.iter().map(content_value).collect()),
         system_instruction: request.system_instruction.clone(),
         temperature: request.temperature,
-        max_output_tokens: u32::try_from(request.max_output_tokens).unwrap_or(u32::MAX),
+        max_output_tokens: u32::try_from(request.max_output_tokens)
+            .map_err(|_| BundledError::ValueOutOfRange)?,
         json_output: request.json_output,
         json_schema: request.json_schema.clone(),
         timeout_s: request.timeout_s,
         exclusive_admission: request.exclusive_admission,
-        attempt_index: u32::try_from(request.attempt_index).unwrap_or(u32::MAX),
+        attempt_index: u32::try_from(request.attempt_index)
+            .map_err(|_| BundledError::ValueOutOfRange)?,
     })
 }
 
@@ -105,5 +108,15 @@ mod tests {
         );
         assert_eq!(input.attempt_index, 2);
         assert!(input.exclusive_admission);
+    }
+
+    #[test]
+    fn rejects_values_outside_the_local_input_range() {
+        let mut request = request();
+        request.max_output_tokens = u64::from(u32::MAX) + 1;
+        assert_eq!(
+            bundled_input(&request, Path::new("/journal")),
+            Err(BundledError::ValueOutOfRange)
+        );
     }
 }

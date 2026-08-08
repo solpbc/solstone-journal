@@ -193,11 +193,27 @@ fn run_generate(command: GenerateCommand) -> ExitCode {
 fn run_generate_one_shot() -> ExitCode {
     let raw = match read_generate_stdin() {
         Ok(raw) => raw,
-        Err(error) => {
+        Err(GenerateStdinError::InvalidUtf8(detail)) => {
+            return generate_protocol_exit(
+                None,
+                "malformed-request",
+                detail,
+                generate_exit_code("malformed_request"),
+            );
+        }
+        Err(GenerateStdinError::Io(detail)) => {
             return generate_protocol_exit(
                 None,
                 "internal-failure",
-                error,
+                detail,
+                generate_exit_code("internal_failure"),
+            );
+        }
+        Err(GenerateStdinError::TooLarge) => {
+            return generate_protocol_exit(
+                None,
+                "internal-failure",
+                "stdin exceeds 64 MiB".to_owned(),
                 generate_exit_code("internal_failure"),
             );
         }
@@ -369,14 +385,20 @@ fn usage_for_log(usage: &Value) -> Value {
     Value::Object(normalized)
 }
 
-fn read_generate_stdin() -> Result<String, String> {
+enum GenerateStdinError {
+    Io(String),
+    TooLarge,
+    InvalidUtf8(String),
+}
+
+fn read_generate_stdin() -> Result<String, GenerateStdinError> {
     let mut stdin = io::stdin().lock();
     let mut bytes = Vec::new();
     let mut chunk = [0_u8; 8192];
     loop {
         let read = stdin
             .read(&mut chunk)
-            .map_err(|error| format!("stdin I/O error: {error}"))?;
+            .map_err(|error| GenerateStdinError::Io(format!("stdin I/O error: {error}")))?;
         if read == 0 {
             break;
         }
@@ -385,11 +407,12 @@ fn read_generate_stdin() -> Result<String, String> {
             .checked_add(read)
             .is_none_or(|next| next > MAX_LOCAL_GENERATE_STDIN_BYTES)
         {
-            return Err("stdin exceeds 64 MiB".to_owned());
+            return Err(GenerateStdinError::TooLarge);
         }
         bytes.extend_from_slice(&chunk[..read]);
     }
-    String::from_utf8(bytes).map_err(|error| format!("stdin is not UTF-8: {error}"))
+    String::from_utf8(bytes)
+        .map_err(|error| GenerateStdinError::InvalidUtf8(format!("stdin is not UTF-8: {error}")))
 }
 
 fn generate_exit_code(name: &str) -> u8 {
