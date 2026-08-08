@@ -4,19 +4,191 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use solstone_core_body_source::{
-    BODY_BUNDLE_REF_KEY, BODY_BUNDLE_SHA256_KEY, BODY_SOURCE_SCHEMA_KEY, BodyCalendarError,
-    BodyCalendarField, BodyDay, BodyDigest, BodyInteger, BodyManifestBinding, BodyMonth,
-    BodyRawRetention, BodySourceFamily, BodySourceHash, BodySourceHashError, BodySourcePolicyError,
-    BodySourcePolicyField, BodyString, BodyValue, BodyWireIdentityError, BodyWireIdentityField,
-    BundleId, DAYS_AFFECTED_KEY, ENTRY_COUNT_KEY, IMPORT_ID_KEY, ManifestBindingErrorCode,
-    ManifestBindingErrorField, ManifestKeySignal, ManifestKnownKey, ManifestScanError, ParseError,
-    RAW_RETENTION_KEY, SOURCE_HASH_KEY, SOURCE_TYPE_KEY, ScannedBodyManifest, canonicalize,
-    decode_body_manifest, inspect_body_manifest_signal, parse, scan_body_manifest,
+    AuthorityError, BODY_BUNDLE_REF_KEY, BODY_BUNDLE_SHA256_KEY, BODY_SOURCE_SCHEMA_KEY,
+    BodyCalendarError, BodyCalendarField, BodyDay, BodyDigest, BodyInteger, BodyManifestBinding,
+    BodyMonth, BodyRawRetention, BodySourceFamily, BodySourceHash, BodySourceHashError,
+    BodySourcePolicyError, BodySourcePolicyField, BodyString, BodyValue, BodyWireIdentityError,
+    BodyWireIdentityField, BundleClass, BundleId, DAYS_AFFECTED_KEY, DirectoryObservation,
+    ENTRY_COUNT_KEY, IMPORT_ID_KEY, ManifestBindingErrorCode, ManifestBindingErrorField,
+    ManifestKeySignal, ManifestKnownKey, ManifestScanError, NativeAuthority, ParseError,
+    RAW_RETENTION_KEY, SOURCE_HASH_KEY, SOURCE_TYPE_KEY, ScannedBodyManifest,
+    authorize_native_bundle, canonicalize, classify_bundle_directory, decode_body_manifest,
+    inspect_body_manifest_signal, parse, scan_body_manifest,
 };
 
 mod support;
 
-use support::{codec_rows, native_bundle_fixture};
+use support::{codec_rows, native_bundle_directory_cases, native_bundle_fixture};
+
+fn assert_authority_error(
+    result: Result<NativeAuthority, AuthorityError>,
+    expected: AuthorityError,
+) {
+    let Err(actual) = result else {
+        panic!("authority should refuse");
+    };
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn public_authority_api_imports_and_covers_fixture_cases() {
+    fn assert_observation_traits<T: Clone + Copy + std::fmt::Debug>() {}
+    fn assert_class_traits<T: Clone + Copy + std::fmt::Debug + PartialEq + Eq>() {}
+    fn assert_error_traits<T: Clone + PartialEq + Eq + std::error::Error>() {}
+    assert_observation_traits::<DirectoryObservation<'static>>();
+    assert_class_traits::<BundleClass>();
+    assert_error_traits::<AuthorityError>();
+
+    let cases = native_bundle_directory_cases();
+    assert_eq!(cases.len(), 4);
+    for case in cases {
+        let authority: NativeAuthority = authorize_native_bundle(DirectoryObservation {
+            name: case.name.as_bytes(),
+            envelope_present: true,
+            ledger_present: true,
+            manifest: Some(&case.manifest_bytes),
+        })
+        .unwrap_or_else(|error| panic!("{} should authorize: {error}", case.name));
+        assert_eq!(authority.id(), &case.expected_import_id);
+        assert_eq!(authority.id(), authority.binding().import_id());
+        assert_eq!(BodyValue::Object(authority.binding().to_body_object()), {
+            let encoded = serde_json::to_vec(&case.expected_manifest_binding).unwrap();
+            parse(&encoded).unwrap()
+        });
+    }
+}
+
+#[test]
+fn public_authority_missing_signal_stays_legacy() {
+    assert_eq!(
+        classify_bundle_directory(DirectoryObservation {
+            name: b"legacy-directory",
+            envelope_present: false,
+            ledger_present: false,
+            manifest: None,
+        }),
+        BundleClass::LegacyCandidate
+    );
+}
+
+#[test]
+fn public_authority_native_to_legacy_downgrade_on_signal_removal() {
+    let native = DirectoryObservation {
+        name: b"legacy-directory",
+        envelope_present: true,
+        ledger_present: false,
+        manifest: None,
+    };
+    let legacy = DirectoryObservation {
+        envelope_present: false,
+        ..native
+    };
+    assert_eq!(
+        classify_bundle_directory(native),
+        BundleClass::NativeCandidate
+    );
+    assert_eq!(
+        classify_bundle_directory(legacy),
+        BundleClass::LegacyCandidate
+    );
+}
+
+#[test]
+fn public_authority_staging_precedence_survives_added_native_signals() {
+    let observation = DirectoryObservation {
+        name: b".body-staging-partial",
+        envelope_present: true,
+        ledger_present: true,
+        manifest: Some(br#"{"body_source_schema":null}"#),
+    };
+    assert_eq!(
+        classify_bundle_directory(observation),
+        BundleClass::StagingExcluded
+    );
+    assert_authority_error(
+        authorize_native_bundle(observation),
+        AuthorityError::NotNativeCandidate,
+    );
+}
+
+#[test]
+fn public_authority_invalid_utf8_does_not_suppress_native_signal() {
+    let observation = DirectoryObservation {
+        name: b"body-\xff",
+        envelope_present: false,
+        ledger_present: false,
+        manifest: None,
+    };
+    assert_eq!(
+        classify_bundle_directory(observation),
+        BundleClass::NativeCandidate
+    );
+    assert_authority_error(
+        authorize_native_bundle(observation),
+        AuthorityError::InvalidDirectory,
+    );
+}
+
+#[test]
+fn public_authority_classification_native_can_still_fail_validation() {
+    let observation = DirectoryObservation {
+        name: b"body-01J9ZK2F5M7Q8R3S4T6V0W1X2Y",
+        envelope_present: false,
+        ledger_present: false,
+        manifest: None,
+    };
+    assert_eq!(
+        classify_bundle_directory(observation),
+        BundleClass::NativeCandidate
+    );
+    assert_authority_error(
+        authorize_native_bundle(observation),
+        AuthorityError::MissingEnvelope,
+    );
+}
+
+#[test]
+fn public_authority_component_precedence_is_stable() {
+    assert_authority_error(
+        authorize_native_bundle(DirectoryObservation {
+            name: b"body-01J9ZK2F5M7Q8R3S4T6V0W1X2Y",
+            envelope_present: false,
+            ledger_present: false,
+            manifest: None,
+        }),
+        AuthorityError::MissingEnvelope,
+    );
+    assert_authority_error(
+        authorize_native_bundle(DirectoryObservation {
+            name: b"body-01J9ZK2F5M7Q8R3S4T6V0W1X2Y",
+            envelope_present: true,
+            ledger_present: false,
+            manifest: None,
+        }),
+        AuthorityError::MissingLedger,
+    );
+}
+
+#[test]
+fn public_authority_errors_never_leak_raw_bytes() {
+    let sentinel = "authority-public-private-sentinel";
+    let name = format!("body-{sentinel}");
+    let Err(error) = authorize_native_bundle(DirectoryObservation {
+        name: name.as_bytes(),
+        envelope_present: false,
+        ledger_present: false,
+        manifest: None,
+    }) else {
+        panic!("invalid directory should refuse");
+    };
+    assert_eq!(error, AuthorityError::InvalidDirectory);
+    assert_eq!(
+        error.to_string(),
+        "body-authority: invalid directory <invalid>"
+    );
+    assert_eq!(error.to_string(), format!("{error:?}"));
+    assert!(!error.to_string().contains(sentinel));
+}
 
 #[test]
 fn public_value_model_and_codec_rows_are_usable() {

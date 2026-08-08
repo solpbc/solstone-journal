@@ -28,6 +28,13 @@ pub struct NativeBundleManifestBindingCase {
     pub expected_manifest_binding: Value,
 }
 
+pub struct NativeBundleDirectoryCase {
+    pub name: String,
+    pub manifest_bytes: Vec<u8>,
+    pub expected_import_id: BundleId,
+    pub expected_manifest_binding: Value,
+}
+
 /// Asserts recursive body-value equality with floating-point bits compared exactly.
 pub fn assert_body_value_bitwise_eq(actual: &BodyValue, expected: &BodyValue) {
     assert_body_value_at_path(actual, expected, "$");
@@ -126,6 +133,30 @@ pub fn native_bundle_fixture() -> Value {
         &std::fs::read_to_string(native_bundle_fixture_path()).expect("fixture should read"),
     )
     .expect("fixture should parse")
+}
+
+pub fn native_bundle_directory_cases() -> Vec<NativeBundleDirectoryCase> {
+    native_bundle_fixture()["cases"]
+        .as_array()
+        .expect("fixture cases")
+        .iter()
+        .map(|case| {
+            let manifest_bytes =
+                serde_json::to_vec(&case["manifest"]).expect("fixture manifest serializes");
+            let name = case["directory"]
+                .as_str()
+                .expect("case directory")
+                .to_owned();
+            let expected_import_id = BundleId::from_bytes(name.as_bytes())
+                .expect("fixture directory is a valid bundle id");
+            NativeBundleDirectoryCase {
+                name,
+                manifest_bytes,
+                expected_import_id,
+                expected_manifest_binding: case["expected_manifest_binding"].clone(),
+            }
+        })
+        .collect()
 }
 
 pub fn native_bundle_manifest_binding_cases() -> Vec<NativeBundleManifestBindingCase> {
