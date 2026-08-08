@@ -141,6 +141,10 @@ fn rejects_symlink_fifo_and_socket_without_opening_special_members() {
 
 #[cfg(unix)]
 #[test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "APFS rejects non-UTF-8 path components before the product boundary"
+)]
 #[allow(clippy::disallowed_methods)]
 fn rejects_distinct_non_utf8_member_names_without_lossy_normalization() {
     let temporary = TempDir::new("non-utf8-members");
@@ -163,6 +167,10 @@ fn rejects_distinct_non_utf8_member_names_without_lossy_normalization() {
 
 #[cfg(unix)]
 #[test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "APFS rejects non-UTF-8 path components before the product boundary"
+)]
 #[allow(clippy::disallowed_methods)]
 fn rejects_distinct_non_utf8_root_names_with_invalid_member_placeholder() {
     let temporary = TempDir::new("non-utf8-root-names");
@@ -183,6 +191,10 @@ fn rejects_distinct_non_utf8_root_names_with_invalid_member_placeholder() {
 
 #[cfg(unix)]
 #[test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "APFS rejects non-UTF-8 path components before the product boundary"
+)]
 #[allow(clippy::disallowed_methods)]
 fn rejects_non_utf8_canonical_root_ancestor() {
     let temporary = TempDir::new("non-utf8-ancestor");

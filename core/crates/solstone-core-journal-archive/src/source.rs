@@ -1069,7 +1069,8 @@ fn open_regular_file(
     })
     .map_err(|error| {
         if changed_on_race
-            && (is_race_error(error) || matches!(error, Errno::ENXIO | Errno::ENODEV))
+            && (is_race_error(error)
+                || matches!(error, Errno::ENXIO | Errno::ENODEV | Errno::EOPNOTSUPP))
         {
             changed(member)
         } else {
@@ -1287,11 +1288,14 @@ mod tests {
             };
 
         assert!(trace.barrier_fired, "stat/open barrier did not fire");
-        assert!(matches!(
-            result,
-            Err(ArchiveError::SourceChanged { member: Some(member) })
-                if member.as_str() == DESCENDANT_MEMBER
-        ));
+        assert!(
+            matches!(
+                result,
+                Err(ArchiveError::SourceChanged { member: Some(ref member) })
+                    if member.as_str() == DESCENDANT_MEMBER
+            ),
+            "unexpected stat/open replacement result: {result:?}"
+        );
     }
 
     #[test]
@@ -1404,6 +1408,12 @@ mod tests {
                 primitive: DescendantPrimitive::LeafOpen,
                 member: Some(DESCENDANT_MEMBER),
                 error: Errno::ENODEV,
+                operation: None,
+            },
+            Case {
+                primitive: DescendantPrimitive::LeafOpen,
+                member: Some(DESCENDANT_MEMBER),
+                error: Errno::EOPNOTSUPP,
                 operation: None,
             },
         ];
