@@ -6,6 +6,7 @@
 mod anthropic;
 mod bundled;
 mod endpoint;
+mod google;
 mod lane;
 mod openai;
 mod refusal;
@@ -26,6 +27,10 @@ pub use endpoint::{
     ENDPOINT_SERVED_WINDOW_CACHE_TTL, EndpointFailure, EndpointGenerated, EndpointResult,
     EndpointRuntime, EndpointTransport, EndpointTransportError, OverflowDecision,
     UreqEndpointTransport, endpoint_generate, endpoint_overflow_decision,
+};
+pub use google::{
+    GoogleFailure, GoogleGenerated, GoogleResult, GoogleTransport, UreqGoogleTransport,
+    google_generate,
 };
 pub use lane::{LaneOutcome, resolve_lane};
 pub use openai::{
@@ -85,6 +90,7 @@ mod vocabulary_tests {
             ("anthropic", include_str!("anthropic.rs")),
             ("bundled", include_str!("bundled.rs")),
             ("endpoint", include_str!("endpoint.rs")),
+            ("google", include_str!("google.rs")),
             ("lane", include_str!("lane.rs")),
             ("lib", include_str!("lib.rs")),
             ("openai", include_str!("openai.rs")),

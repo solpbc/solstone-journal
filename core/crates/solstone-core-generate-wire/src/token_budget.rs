@@ -38,6 +38,8 @@ mod tests {
     #[test]
     fn google_budget_sums_thinking_and_clamps_to_limit() {
         assert_eq!(generate_token_budget("google", 4_000, Some(500)), 4_500);
+        assert_eq!(generate_token_budget("google", 65_000, Some(535)), 65_535);
+        assert_eq!(generate_token_budget("google", 65_000, Some(536)), 65_535);
         assert_eq!(generate_token_budget("google", 65_000, Some(1_000)), 65_535);
     }
 }

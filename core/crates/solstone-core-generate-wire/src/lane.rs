@@ -9,6 +9,7 @@ use solstone_core_local::{
 use crate::ValidationFailure;
 use crate::anthropic::AnthropicFailure;
 use crate::endpoint::EndpointFailure;
+use crate::google::GoogleFailure;
 use crate::openai::OpenAiFailure;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -24,6 +25,8 @@ pub enum LaneOutcome {
     AnthropicFailure(AnthropicFailure),
     OpenAi,
     OpenAiFailure(OpenAiFailure),
+    Google,
+    GoogleFailure(GoogleFailure),
     ValidationFailure(ValidationFailure),
 }
 
@@ -40,6 +43,9 @@ pub fn resolve_lane(config: &Map<String, Value>) -> (String, LaneOutcome) {
     }
     if provider == "openai" {
         return (provider, LaneOutcome::OpenAi);
+    }
+    if provider == "google" {
+        return (provider, LaneOutcome::Google);
     }
     if provider != "local" {
         return (provider, LaneOutcome::UnimplementedLane);
@@ -114,7 +120,7 @@ mod tests {
             (
                 json!({"providers": {"active": {"provider": "google"}}}),
                 "google",
-                LaneOutcome::UnimplementedLane,
+                LaneOutcome::Google,
             ),
         ];
         for (value, provider, expected) in cases {

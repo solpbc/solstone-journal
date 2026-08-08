@@ -291,7 +291,7 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
             true,
         ),
         (
-            "google-unimplemented",
+            "google-missing-key",
             json!({"providers": {"active": {"provider": "google"}}}),
             "refused-provider-response-invalid",
             false,
@@ -299,6 +299,12 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
         (
             "openai-missing-key",
             json!({"providers": {"active": {"provider": "openai"}}}),
+            "refused-provider-response-invalid",
+            false,
+        ),
+        (
+            "unimplemented-provider",
+            json!({"providers": {"active": {"provider": "not-a-real-provider"}}}),
             "refused-provider-response-invalid",
             false,
         ),
@@ -316,13 +322,18 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
         for name in ["reason", "detail"] {
             assert_eq!(response[name], expected[name], "{vector_id} {name}");
         }
-        if name == "google-unimplemented" {
+        if name == "google-missing-key" {
             assert_eq!(response["provider"], "google");
+            assert_eq!(response["reason_code"], "provider_key_missing");
+            assert_eq!(response["retryable"], true);
+            assert_eq!(response["blocking"], true);
         } else if name == "openai-missing-key" {
             assert_eq!(response["provider"], "openai");
             assert_eq!(response["reason_code"], "provider_key_missing");
             assert_eq!(response["retryable"], true);
             assert_eq!(response["blocking"], true);
+        } else if name == "unimplemented-provider" {
+            assert_eq!(response["provider"], "not-a-real-provider");
         } else {
             assert_eq!(
                 response["provider"], expected["provider"],
