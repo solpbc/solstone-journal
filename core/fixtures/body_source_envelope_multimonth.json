@@ -1,0 +1,72 @@
+{
+  "schema": "solstone.body_source.envelope_multimonth_fixture.v1",
+  "cases": [
+    {
+      "name": "apple_three_days_two_months_two_shards",
+      "directory": "body-01J9ZK2F5M7Q8R3S4T6V0W1X32",
+      "digest_basis": {
+        "note": "Synthetic byte strings pin descriptor counts and digests only; they are not normalized-row or ledger-event codec fixtures.",
+        "shards": [
+          {
+            "path": "normalized/2026-01.jsonl",
+            "exact_bytes": "synthetic-shard-2026-01-line-1\nsynthetic-shard-2026-01-line-2\n"
+          },
+          {
+            "path": "normalized/2026-02.jsonl",
+            "exact_bytes": "synthetic-shard-2026-02-line-1\n"
+          }
+        ],
+        "ledger": {
+          "path": "body-ledger.jsonl",
+          "exact_bytes": "synthetic-ledger-event-1\nsynthetic-ledger-event-2\nsynthetic-ledger-event-3\n"
+        }
+      },
+      "expected_envelope": {
+        "source_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee#window:20260102:20260201",
+        "row_count": 3,
+        "bundle_id": "body-01J9ZK2F5M7Q8R3S4T6V0W1X32",
+        "summary_plan": {
+          "schema": "solstone.body.apple_day_summaries.v1",
+          "days": ["20260102", "20260103", "20260201"]
+        },
+        "raw_retention": "retain_parsed",
+        "shards": [
+          {
+            "rows": 2,
+            "sha256": "sha256:1d9964c8896214915223fc1c7730e41a4e759ad9f84271c6df8cf449c6a72ccf",
+            "path": "normalized/2026-01.jsonl",
+            "bytes": 62
+          },
+          {
+            "rows": 1,
+            "sha256": "sha256:6eda3b0e6121bd3952de3871bb0ffd7ad6e4da93f02cf1bb1490118d7f37b655",
+            "path": "normalized/2026-02.jsonl",
+            "bytes": 31
+          }
+        ],
+        "schema": "solstone.body.bundle.v1",
+        "days": ["20260102", "20260103", "20260201"],
+        "source_family": "apple_health",
+        "ledger": {
+          "events": 3,
+          "sha256": "sha256:d978d42c1e07100cf49101235df58ac46231767aa176440d5029cd17547f21c8",
+          "path": "body-ledger.jsonl",
+          "bytes": 75
+        }
+      },
+      "expected_envelope_jsonl": "{\"bundle_id\":\"body-01J9ZK2F5M7Q8R3S4T6V0W1X32\",\"days\":[\"20260102\",\"20260103\",\"20260201\"],\"ledger\":{\"bytes\":75,\"events\":3,\"path\":\"body-ledger.jsonl\",\"sha256\":\"sha256:d978d42c1e07100cf49101235df58ac46231767aa176440d5029cd17547f21c8\"},\"raw_retention\":\"retain_parsed\",\"row_count\":3,\"schema\":\"solstone.body.bundle.v1\",\"shards\":[{\"bytes\":62,\"path\":\"normalized/2026-01.jsonl\",\"rows\":2,\"sha256\":\"sha256:1d9964c8896214915223fc1c7730e41a4e759ad9f84271c6df8cf449c6a72ccf\"},{\"bytes\":31,\"path\":\"normalized/2026-02.jsonl\",\"rows\":1,\"sha256\":\"sha256:6eda3b0e6121bd3952de3871bb0ffd7ad6e4da93f02cf1bb1490118d7f37b655\"}],\"source_family\":\"apple_health\",\"source_hash\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee#window:20260102:20260201\",\"summary_plan\":{\"days\":[\"20260102\",\"20260103\",\"20260201\"],\"schema\":\"solstone.body.apple_day_summaries.v1\"}}\n",
+      "expected_envelope_sha256": "sha256:22ffa6c4302aa227826e768fa876d9b0f7a1ce752ed30404266537db9f02bd8b",
+      "expected_manifest_binding": {
+        "body_source_schema": "solstone.body.bundle.v1",
+        "body_bundle_ref": "body-bundle.json",
+        "body_bundle_sha256": "sha256:22ffa6c4302aa227826e768fa876d9b0f7a1ce752ed30404266537db9f02bd8b",
+        "import_id": "body-01J9ZK2F5M7Q8R3S4T6V0W1X32",
+        "source_type": "apple_health",
+        "source_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee#window:20260102:20260201",
+        "entry_count": 3,
+        "days_affected": ["20260102", "20260103", "20260201"],
+        "raw_retention": "retain_parsed"
+      }
+    }
+  ]
+}
