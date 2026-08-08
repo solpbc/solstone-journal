@@ -245,6 +245,21 @@ fn exactly_one_dead_code_allowance_exists_on_the_new_engine() {
     assert!(writer.contains("#[allow(dead_code)]\npub(crate) fn write_archive"));
 }
 
+#[test]
+fn private_archive_engine_has_no_production_caller() {
+    let occurrences = SOURCES
+        .iter()
+        .map(|(_, source)| production_source(source).matches("write_archive").count())
+        .sum::<usize>()
+        + production_source(LIB).matches("write_archive").count();
+    assert_eq!(occurrences, 1, "definition must be the only occurrence");
+    let writer = SOURCES
+        .iter()
+        .find_map(|(name, source)| (*name == "writer").then_some(*source))
+        .expect("writer module registered");
+    assert!(production_source(writer).contains("pub(crate) fn write_archive"));
+}
+
 fn production_source(source: &str) -> &str {
     [
         "\n#[cfg(test)]\nmod tests",

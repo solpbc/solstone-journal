@@ -79,7 +79,13 @@ fn parse_exported_at(value: &str) -> Result<DateTime, ArchiveEncodingError> {
             "year must be in 1980..=2107",
         ));
     }
-
+    if second > 59 {
+        return Err(invalid_metadata(
+            "exported_at",
+            value,
+            "second must be in 0..=59",
+        ));
+    }
     DateTime::from_date_and_time(
         year,
         u8::try_from(month).map_err(|_| invalid_metadata("exported_at", value, "invalid month"))?,
@@ -183,8 +189,12 @@ mod tests {
 
     #[test]
     fn odd_seconds_truncate_in_dos_time() {
-        let manifest = build(fields("2026-08-07T21:22:23Z", "/journal")).expect("build manifest");
-        assert_eq!(manifest.timestamp.second(), 22);
+        for (exported_at, expected_second) in
+            [("2026-08-07T21:22:23Z", 22), ("2026-08-07T21:22:59Z", 58)]
+        {
+            let manifest = build(fields(exported_at, "/journal")).expect("build manifest");
+            assert_eq!(manifest.timestamp.second(), expected_second);
+        }
     }
 
     #[test]
@@ -204,6 +214,7 @@ mod tests {
             "2026-08-07T21:22:23X",
             "2026-02-29T00:00:00Z",
             "2026-08-07T24:00:00Z",
+            "2026-08-07T21:22:60Z",
             "2026/08/07T21:22:23Z",
         ] {
             assert!(matches!(

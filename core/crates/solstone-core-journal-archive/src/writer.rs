@@ -162,7 +162,6 @@ fn emit<W: Write + Seek>(
 fn directory_options(timestamp: DateTime) -> SimpleFileOptions {
     SimpleFileOptions::default()
         .last_modified_time(timestamp)
-        .large_file(true)
         .unix_permissions(0o700)
 }
 
@@ -302,10 +301,42 @@ mod tests {
         fs::write(path, bytes).expect("write member");
     }
 
-    fn archive_bytes(source: &ArchiveSource) -> Vec<u8> {
+    fn archive_bytes_with(
+        source: &ArchiveSource,
+        solstone_version: &str,
+        exported_at: &str,
+    ) -> Vec<u8> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        write_archive(&mut writer, source, "0.9.0", "2026-08-07T21:22:23Z").expect("write archive");
+        write_archive(&mut writer, source, solstone_version, exported_at).expect("write archive");
         writer.finish().expect("finish archive").into_inner()
+    }
+
+    fn archive_bytes(source: &ArchiveSource) -> Vec<u8> {
+        archive_bytes_with(source, "0.9.0", "2026-08-07T21:22:23Z")
+    }
+
+    fn expected_manifest_with(
+        source: &ArchiveSource,
+        solstone_version: &str,
+        exported_at: &str,
+    ) -> Vec<u8> {
+        crate::manifest::build(crate::manifest::ManifestFields {
+            solstone_version,
+            exported_at,
+            source_journal: source
+                .canonical_source()
+                .to_str()
+                .expect("UTF-8 canonical source"),
+            day_count: source.inventory().day_count(),
+            entity_count: source.inventory().entity_count(),
+            facet_count: source.inventory().facet_count(),
+        })
+        .expect("build expected manifest")
+        .json
+    }
+
+    fn expected_manifest(source: &ArchiveSource) -> Vec<u8> {
+        expected_manifest_with(source, "0.9.0", "2026-08-07T21:22:23Z")
     }
 
     #[test]
@@ -314,7 +345,11 @@ mod tests {
         let root = temporary.journal();
         write(&root, "chronicle/20260101/z.txt", b"z");
         write(&root, "chronicle/20260101/a.txt", b"a");
-        write(&root, "entities/alice/entity.json", b"{}");
+        write(&root, "entities/alice/entity.json", b"alice");
+        write(&root, "entities/bob/entity.json", b"bob");
+        write(&root, "facets/blue/facet.json", b"blue");
+        write(&root, "facets/green/facet.json", b"green");
+        write(&root, "facets/red/facet.json", b"red");
         write(&root, "imports/import-1/source.bin", b"source");
         let source = ArchiveSource::open(&root).expect("open source");
         let bytes = archive_bytes(&source);
@@ -327,6 +362,10 @@ mod tests {
             "chronicle/20260101/a.txt",
             "chronicle/20260101/z.txt",
             "entities/alice/entity.json",
+            "entities/bob/entity.json",
+            "facets/blue/facet.json",
+            "facets/green/facet.json",
+            "facets/red/facet.json",
             "imports/import-1/source.bin",
             "_export.json",
         ];
@@ -346,26 +385,121 @@ mod tests {
             assert!(member.is_dir());
             assert_eq!(member.compression(), CompressionMethod::Stored);
             assert_eq!(member.unix_mode(), Some(0o40700));
+            let timestamp = member.last_modified().expect("directory timestamp");
             assert_eq!(
-                member
-                    .last_modified()
-                    .expect("directory timestamp")
-                    .second(),
-                22
+                (
+                    timestamp.year(),
+                    timestamp.month(),
+                    timestamp.day(),
+                    timestamp.hour(),
+                    timestamp.minute(),
+                    timestamp.second(),
+                ),
+                (2026, 8, 7, 21, 22, 22)
             );
         }
+        let expected_manifest = expected_manifest(&source);
         for index in 4..archive.len() {
             let mut member = archive.by_index(index).expect("file member");
             assert!(!member.is_dir());
             assert_eq!(member.compression(), CompressionMethod::Deflated);
             assert_eq!(member.unix_mode(), Some(0o100600));
-            assert_eq!(member.last_modified().expect("file timestamp").second(), 22);
-            if member.name() == "imports/import-1/source.bin" {
-                let mut contents = Vec::new();
-                member.read_to_end(&mut contents).expect("read file member");
-                assert_eq!(contents, b"source");
-            }
+            let timestamp = member.last_modified().expect("file timestamp");
+            assert_eq!(
+                (
+                    timestamp.year(),
+                    timestamp.month(),
+                    timestamp.day(),
+                    timestamp.hour(),
+                    timestamp.minute(),
+                    timestamp.second(),
+                ),
+                (2026, 8, 7, 21, 22, 22)
+            );
+            let name = member.name().to_owned();
+            let mut contents = Vec::new();
+            member.read_to_end(&mut contents).expect("read file member");
+            let expected = match name.as_str() {
+                "chronicle/20260101/a.txt" => b"a".as_slice(),
+                "chronicle/20260101/z.txt" => b"z".as_slice(),
+                "entities/alice/entity.json" => b"alice".as_slice(),
+                "entities/bob/entity.json" => b"bob".as_slice(),
+                "facets/blue/facet.json" => b"blue".as_slice(),
+                "facets/green/facet.json" => b"green".as_slice(),
+                "facets/red/facet.json" => b"red".as_slice(),
+                "imports/import-1/source.bin" => b"source".as_slice(),
+                "_export.json" => expected_manifest.as_slice(),
+                _ => panic!("unexpected archive file {name}"),
+            };
+            assert_eq!(contents, expected, "wrong contents for {name}");
         }
+    }
+
+    #[test]
+    fn empty_journal_contains_only_fixed_roots_and_exact_manifest() {
+        let temporary = TempDir::new("empty-format");
+        let root = temporary.journal();
+        let source = ArchiveSource::open(&root).expect("open empty source");
+        let expected_manifest = expected_manifest(&source);
+        let bytes = archive_bytes(&source);
+        let mut archive = ZipArchive::new(Cursor::new(bytes)).expect("open archive");
+
+        assert_eq!(archive.len(), 5);
+        for (index, expected) in ROOTS.iter().map(|root| format!("{root}/")).enumerate() {
+            let member = archive.by_index(index).expect("empty root member");
+            assert_eq!(member.name(), expected);
+            assert!(member.is_dir());
+        }
+        let mut manifest = archive.by_index(4).expect("empty manifest");
+        assert_eq!(manifest.name(), EXPORT_MANIFEST);
+        let mut contents = Vec::new();
+        manifest
+            .read_to_end(&mut contents)
+            .expect("read empty manifest");
+        assert_eq!(contents, expected_manifest);
+    }
+
+    #[test]
+    fn forwards_selected_version_and_timestamp_into_archive_metadata() {
+        let temporary = TempDir::new("alternate-metadata");
+        let root = temporary.journal();
+        let source = ArchiveSource::open(&root).expect("open empty source");
+        let bytes = archive_bytes_with(&source, "2.3.4", "2040-01-02T03:04:59Z");
+        let mut archive = ZipArchive::new(Cursor::new(bytes)).expect("open archive");
+
+        for index in 0..archive.len() {
+            let member = archive.by_index(index).expect("archive member");
+            let timestamp = member.last_modified().expect("member timestamp");
+            assert_eq!(
+                (
+                    timestamp.year(),
+                    timestamp.month(),
+                    timestamp.day(),
+                    timestamp.hour(),
+                    timestamp.minute(),
+                    timestamp.second(),
+                ),
+                (2040, 1, 2, 3, 4, 58),
+                "wrong timestamp for {}",
+                member.name()
+            );
+        }
+
+        let mut manifest = archive.by_name(EXPORT_MANIFEST).expect("manifest member");
+        let mut contents = Vec::new();
+        manifest
+            .read_to_end(&mut contents)
+            .expect("read alternate manifest");
+        let source_journal = source
+            .canonical_source()
+            .to_str()
+            .expect("UTF-8 canonical source");
+        assert!(!source_journal.contains('"'));
+        assert!(!source_journal.contains('\\'));
+        let expected = format!(
+            "{{\n  \"solstone_version\": \"2.3.4\",\n  \"exported_at\": \"2040-01-02T03:04:59Z\",\n  \"source_journal\": \"{source_journal}\",\n  \"day_count\": 0,\n  \"entity_count\": 0,\n  \"facet_count\": 0\n}}"
+        );
+        assert_eq!(contents, expected.as_bytes());
     }
 
     #[test]
@@ -391,19 +525,17 @@ mod tests {
             b"PK\x01\x02"
         ));
         assert!(has_zip64_extra(&bytes, b"_export.json", b"PK\x01\x02"));
+        for root in [
+            b"chronicle/".as_slice(),
+            b"entities/",
+            b"facets/",
+            b"imports/",
+        ] {
+            assert!(!has_zip64_extra(&bytes, root, b"PK\x03\x04"));
+            assert!(!has_zip64_extra(&bytes, root, b"PK\x01\x02"));
+        }
 
-        let expected_manifest = crate::manifest::build(crate::manifest::ManifestFields {
-            solstone_version: "0.9.0",
-            exported_at: "2026-08-07T21:22:23Z",
-            source_journal: source
-                .canonical_source()
-                .to_str()
-                .expect("UTF-8 canonical source"),
-            day_count: source.inventory().day_count(),
-            entity_count: source.inventory().entity_count(),
-            facet_count: source.inventory().facet_count(),
-        })
-        .expect("build expected manifest");
+        let expected_manifest = expected_manifest(&source);
         let mut archive = ZipArchive::new(Cursor::new(bytes)).expect("open archive");
         let mut source_member = archive
             .by_name("imports/import-1/source.bin")
@@ -419,7 +551,7 @@ mod tests {
         manifest_member
             .read_to_end(&mut manifest_bytes)
             .expect("read manifest member");
-        assert_eq!(manifest_bytes, expected_manifest.json);
+        assert_eq!(manifest_bytes, expected_manifest);
     }
 
     #[test]
