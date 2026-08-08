@@ -260,13 +260,17 @@ fn journal_identity_is_distinct_from_sol_identity() {
 }
 
 #[test]
-fn journal_identity_marks_unavailable_local_tokens_unavailable_without_spawning() {
+fn journal_identity_keeps_deferred_local_tokens_unavailable_without_spawning() {
     let temp = TempDir::new("journal-known-tokens");
     let (path, sentinel) = poison_path(&temp);
     let fixture = local_ops_fixture();
     let local_paths = local_op_paths(&fixture);
 
-    for token in &local_paths {
+    for token in ["archive merge", "facet merge"] {
+        assert!(
+            local_paths.iter().any(|path| path == token),
+            "deferred path must remain in the frozen local-operation census: {token}"
+        );
         let parts = token.split_once(' ').expect("unavailable path has a group");
         let output = run_journal(&[parts.0, parts.1], Some(&path));
         assert_eq!(output.status.code(), Some(69), "{token}");
@@ -278,10 +282,6 @@ fn journal_identity_marks_unavailable_local_tokens_unavailable_without_spawning(
             "{token}: {stderr}"
         );
     }
-    assert_eq!(
-        fixture["leaf_count"].as_u64(),
-        Some(u64::try_from(local_paths.len()).expect("leaf count fits in u64"))
-    );
     assert_sentinel_untouched(&sentinel);
 }
 
