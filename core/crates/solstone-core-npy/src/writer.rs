@@ -31,16 +31,15 @@ mod tests {
 
     #[test]
     fn metadata_npy_bytes_match_the_literal_legacy_fixture() {
-        const FIXTURE_HEX: &str = "934e554d5059010076007b276465736372273a20273c5532272c2027666f727472616e5f6f72646572273a2046616c73652c20277368617065273a2028312c292c207d2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020200a7b0000007d000000";
+        const FIXTURE_HEX: &str = "934e554d5059010076007b276465736372273a20273c5532272c2027666f727472616e5f6f72646572273a2046616c73652c20277368617065273a2028312c292c207d2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020200a7b0000007d000000";
         let payload = "{}"
             .chars()
             .flat_map(|character| (character as u32).to_le_bytes())
             .collect::<Vec<_>>();
         assert_eq!(
             write_npy("<U2", "(1,)", &payload),
-            crate::write_npy("<U2", "(1,)", &payload)
+            bytes_from_hex(FIXTURE_HEX)
         );
-        assert!(!bytes_from_hex(FIXTURE_HEX).is_empty());
     }
 
     #[test]

@@ -20,7 +20,7 @@ impl TempDir {
     fn new() -> Self {
         let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
-            "solstone-speaker-id-owner-centroid-{}-{sequence}",
+            "solstone-speaker-resolve-owner-centroid-{}-{sequence}",
             std::process::id()
         ));
         fs::create_dir(&path).expect("create temporary journal");

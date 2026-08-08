@@ -879,14 +879,26 @@ mod tests {
     }
 
     #[test]
-    fn transcript_reader_preserves_ordinals_and_filters_text() {
+    fn transcript_reader_preserves_ordinals_after_blank_and_malformed_lines() {
         let (texts, warnings) = transcript_result(
-            b"header\n\n{bad}\n{\"text\":null}\n{\"text\":\"four\"}\n{\"text\":\"five\"}",
+            b"header\n{\"text\":\"one\"}\n\n{bad}\n{\"text\":\"four\"}\n{\"text\":\"five\"}",
         );
         assert_eq!(
             texts,
-            BTreeMap::from([(4, "four".to_owned()), (5, "five".to_owned())])
+            BTreeMap::from([
+                (1, "one".to_owned()),
+                (4, "four".to_owned()),
+                (5, "five".to_owned()),
+            ])
         );
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn transcript_reader_filters_absent_empty_and_non_string_text() {
+        let (texts, warnings) =
+            transcript_result(b"header\n{}\n{\"text\":\"\"}\n{\"text\":null}\n{\"text\":\"four\"}");
+        assert_eq!(texts, BTreeMap::from([(4, "four".to_owned())]));
         assert!(warnings.is_empty());
     }
 
@@ -916,5 +928,37 @@ mod tests {
             warnings,
             vec!["speaker edge transcript duplicate sentence_id 3 for 20260808/default/120000_300"]
         );
+    }
+
+    #[test]
+    fn duplicate_transcript_warning_reaches_speaker_extraction() {
+        let root = temp_root("duplicate-transcript-warning");
+        let composite_id = "20260808/default/120000_300";
+        let segment_dir = root.join("chronicle").join(composite_id);
+        fs::create_dir_all(&segment_dir).unwrap();
+        fs::write(
+            segment_dir.join("audio.jsonl"),
+            "header\n{\"sentence_id\":3,\"text\":\"first\"}\n{\"sentence_id\":3,\"text\":\"last\"}\n",
+        )
+        .unwrap();
+        let payload = json!({
+            "labels": [{"speaker": "speaker_one", "sentence_id": 3}]
+        });
+        let context = EdgeContext {
+            path: format!("{composite_id}/talents/speaker_labels.json"),
+            day: "20260808".to_owned(),
+            facet: String::new(),
+        };
+        let mut resolver = EdgeResolver::new(&root);
+
+        let extracted =
+            extract_speaker_edges(payload.as_object().unwrap(), &context, &root, &mut resolver)
+                .unwrap();
+
+        assert_eq!(
+            extracted.warnings,
+            vec!["speaker edge transcript duplicate sentence_id 3 for 20260808/default/120000_300"]
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 }
