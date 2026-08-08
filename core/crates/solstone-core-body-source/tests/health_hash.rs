@@ -6,8 +6,8 @@ use std::error::Error;
 
 use solstone_core_body_source::{
     BodyHashError, BodyObject, BodyString, BodyValue, Coordinate, FieldState, HealthRecordIdentity,
-    IdentityField, PresentationRow, ValueState, health_record_dedupe_key, health_value_hash, parse,
-    project,
+    IdentityField, PresentationRow, ValueState, health_hash, health_record_dedupe_key,
+    health_value_hash, parse, project,
 };
 
 mod support;
@@ -137,6 +137,30 @@ fn base_identity() -> HealthRecordIdentity {
 
 fn nested_arrays(depth: usize) -> BodyValue {
     (0..depth).fold(BodyValue::Null, |value, _| BodyValue::Array(vec![value]))
+}
+
+#[test]
+fn health_hash_matches_pinned_constants() {
+    assert_eq!(
+        health_hash(&[]),
+        "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    assert_eq!(
+        health_hash(&[""]),
+        "sha256:ffe679bb831c95b67dc17819c63c5090d221aac6f4c7bf530f594ab43d21fa1e"
+    );
+    assert_eq!(
+        health_hash(&["a", "b"]),
+        "sha256:023b8059a924f728a2155e4cc8b907389b6468b5ffba4905e3588ebe872d62d2"
+    );
+    assert_eq!(
+        health_hash(&["a", "", "b"]),
+        "sha256:33673b9f5b609f4b8719ebb8848b598cd0f9bb831e18eb892701c8349335325c"
+    );
+    assert_eq!(
+        health_hash(&["é"]),
+        "sha256:3eae9d57bd79c2fa323421e7a265c291b710aca7d0680280d9fdd5b6d834c9b4"
+    );
 }
 
 #[test]
@@ -337,6 +361,7 @@ fn invalid_identity_precedence_is_bounded_and_redacting() {
             let display = error.to_string();
             let debug = format!("{error:?}");
             assert!(display.len() <= 64 && debug.len() <= 64);
+            assert_eq!(display, format!("body-identity invalid_identity: {field}"));
             assert_eq!(display, debug);
             assert!(Error::source(&error).is_none());
             assert!(!display.contains("sentinel") && !debug.contains("sentinel"));

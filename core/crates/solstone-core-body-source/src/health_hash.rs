@@ -110,7 +110,8 @@ fn canonical_hash(namespace: &str, value: BodyValue) -> Result<String, BodyHashE
     Ok(health_hash(&[namespace, &canonical]))
 }
 
-fn health_hash(parts: &[&str]) -> String {
+/// Hashes a sequence of parts into a stable `sha256:` digest string.
+pub fn health_hash(parts: &[&str]) -> String {
     let mut digest = Sha256::new();
     for part in parts {
         digest.update(part.as_bytes());

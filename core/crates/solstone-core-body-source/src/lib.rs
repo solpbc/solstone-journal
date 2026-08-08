@@ -22,7 +22,9 @@ pub use error::{
     BodyHashError, CandidateError, CandidateErrorCode, CandidateErrorField, CanonicalizeError,
     IdentityField, ParseError,
 };
-pub use health_hash::{HealthRecordIdentity, health_record_dedupe_key, health_value_hash};
+pub use health_hash::{
+    HealthRecordIdentity, health_hash, health_record_dedupe_key, health_value_hash,
+};
 pub use integer::BodyInteger;
 pub use parser::parse;
 pub use presentation::PresentationRow;

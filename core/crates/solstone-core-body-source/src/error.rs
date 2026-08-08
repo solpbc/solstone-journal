@@ -84,7 +84,11 @@ impl fmt::Display for BodyHashError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidIdentity(field) => {
-                write!(formatter, "body-hash invalid_identity: {}", field.as_str())
+                write!(
+                    formatter,
+                    "body-identity invalid_identity: {}",
+                    field.as_str()
+                )
             }
             Self::ValueTooDeep => write!(formatter, "body-hash value_too_deep"),
         }
