@@ -2846,9 +2846,11 @@ dependencies = [
 name = "solstone-core-speaker-id"
 version = "1.0.22"
 dependencies = [
+ "regex",
  "serde",
  "serde_json",
  "solstone-core-entity",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "zip",
 ]
