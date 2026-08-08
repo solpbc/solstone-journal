@@ -119,6 +119,34 @@ impl fmt::Debug for BodySourceHashError {
 
 impl std::error::Error for BodySourceHashError {}
 
+/// A bounded body-manifest scan failure.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ManifestScanError {
+    InputTooLarge,
+    MalformedManifest,
+}
+
+impl fmt::Display for ManifestScanError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InputTooLarge => {
+                write!(formatter, "body-manifest-scan input_too_large: manifest")
+            }
+            Self::MalformedManifest => {
+                write!(formatter, "body-manifest-scan malformed_manifest: manifest")
+            }
+        }
+    }
+}
+
+impl fmt::Debug for ManifestScanError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
+}
+
+impl std::error::Error for ManifestScanError {}
+
 /// The closed set of native body-source policy fields.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BodySourcePolicyField {

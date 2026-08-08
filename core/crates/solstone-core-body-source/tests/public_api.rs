@@ -4,10 +4,14 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use solstone_core_body_source::{
-    BodyCalendarError, BodyCalendarField, BodyDay, BodyDigest, BodyInteger, BodyMonth,
-    BodyRawRetention, BodySourceFamily, BodySourceHash, BodySourceHashError, BodySourcePolicyError,
+    BODY_BUNDLE_REF_KEY, BODY_BUNDLE_SHA256_KEY, BODY_SOURCE_SCHEMA_KEY, BodyCalendarError,
+    BodyCalendarField, BodyDay, BodyDigest, BodyInteger, BodyMonth, BodyRawRetention,
+    BodySourceFamily, BodySourceHash, BodySourceHashError, BodySourcePolicyError,
     BodySourcePolicyField, BodyString, BodyValue, BodyWireIdentityError, BodyWireIdentityField,
-    BundleId, ParseError, canonicalize, parse,
+    BundleId, DAYS_AFFECTED_KEY, ENTRY_COUNT_KEY, IMPORT_ID_KEY, ManifestKeySignal,
+    ManifestKnownKey, ManifestScanError, ParseError, RAW_RETENTION_KEY, SOURCE_HASH_KEY,
+    SOURCE_TYPE_KEY, ScannedBodyManifest, canonicalize, inspect_body_manifest_signal, parse,
+    scan_body_manifest,
 };
 
 mod support;
@@ -394,4 +398,88 @@ fn public_source_hash_is_checked_family_bound_ordered_and_hashable() {
         BodySourceHash::from_bytes_for_family(window_text.as_bytes(), &BodySourceFamily::OuraApi),
         Err(BodySourceHashError::InvalidFormat)
     );
+}
+
+#[test]
+fn public_manifest_scan_api_is_lossless_and_redacting() {
+    let known_keys = [
+        (ManifestKnownKey::BodySourceSchema, BODY_SOURCE_SCHEMA_KEY),
+        (ManifestKnownKey::BodyBundleRef, BODY_BUNDLE_REF_KEY),
+        (ManifestKnownKey::BodyBundleSha256, BODY_BUNDLE_SHA256_KEY),
+        (ManifestKnownKey::ImportId, IMPORT_ID_KEY),
+        (ManifestKnownKey::SourceType, SOURCE_TYPE_KEY),
+        (ManifestKnownKey::SourceHash, SOURCE_HASH_KEY),
+        (ManifestKnownKey::EntryCount, ENTRY_COUNT_KEY),
+        (ManifestKnownKey::DaysAffected, DAYS_AFFECTED_KEY),
+        (ManifestKnownKey::RawRetention, RAW_RETENTION_KEY),
+    ];
+    for (known, spelling) in known_keys {
+        let string = BodyString::from_code_points(spelling.bytes().map(u32::from).collect())
+            .expect("known key is ASCII");
+        assert_eq!(known.as_str(), spelling);
+        assert_eq!(ManifestKnownKey::from_body_string(&string), Some(known));
+    }
+    let unknown = BodyString::from_code_points("other".bytes().map(u32::from).collect()).unwrap();
+    assert_eq!(ManifestKnownKey::from_body_string(&unknown), None);
+
+    let input = br#"{
+        "body_source_schema": null,
+        "body_bundle_ref": null,
+        "body_bundle_sha256": null,
+        "import_id": 1,
+        "import_id": 2,
+        "source_type": null,
+        "source_hash": null,
+        "entry_count": null,
+        "days_affected": null,
+        "raw_retention": null,
+        "body_future_field": true
+    }"#;
+    let scanned: ScannedBodyManifest = scan_body_manifest(input).expect("manifest scans");
+    assert!(scanned.has_body_prefixed_key());
+    assert!(scanned.has_unknown_body_prefixed_key());
+    assert_eq!(
+        scanned.duplicated_known_keys(),
+        &[ManifestKnownKey::ImportId]
+    );
+    let future_key =
+        BodyString::from_code_points("body_future_field".bytes().map(u32::from).collect())
+            .expect("future key is ASCII");
+    assert_eq!(
+        scanned.object().get(&future_key),
+        Some(&BodyValue::Bool(true))
+    );
+
+    assert_eq!(
+        inspect_body_manifest_signal(Some(input)),
+        ManifestKeySignal::BodyKeyPresent {
+            unknown_body_key: true,
+        }
+    );
+    assert_eq!(
+        inspect_body_manifest_signal(Some(br#"{"import_id":null}"#)),
+        ManifestKeySignal::NoBodyKey
+    );
+    assert_eq!(
+        inspect_body_manifest_signal(None),
+        ManifestKeySignal::Unreadable
+    );
+
+    let spelling = "body_future_field";
+    assert!(!format!("{:?}", scanned.duplicated_known_keys()).contains(spelling));
+    assert!(
+        !format!(
+            "{:?}",
+            ManifestKeySignal::BodyKeyPresent {
+                unknown_body_key: true
+            }
+        )
+        .contains(spelling)
+    );
+    for error in [
+        ManifestScanError::InputTooLarge,
+        ManifestScanError::MalformedManifest,
+    ] {
+        assert!(!error.to_string().contains(spelling));
+    }
 }

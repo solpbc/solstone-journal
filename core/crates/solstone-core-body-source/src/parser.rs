@@ -12,7 +12,6 @@ pub fn parse(input: &[u8]) -> Result<BodyValue, ParseError> {
     parse_core(input, false).map(|(value, _keys)| value)
 }
 
-#[allow(dead_code)]
 pub(crate) fn parse_with_top_level_keys(
     input: &[u8],
 ) -> Result<(BodyValue, Vec<BodyString>), ParseError> {
@@ -364,32 +363,32 @@ fn hex_value(byte: u8) -> Option<u8> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod test_corpus {
     use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::path::{Path, PathBuf};
 
     use serde_json::Value;
 
-    use super::{parse, parse_core, parse_with_top_level_keys};
+    use super::{parse, parse_with_top_level_keys};
     use crate::{BodyString, BodyValue, ParseError, canonicalize};
 
-    fn fixture_path(name: &str) -> PathBuf {
+    pub(crate) fn fixture_path(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../../core/fixtures")
             .join(name)
     }
 
-    fn fixture(name: &str) -> Value {
+    pub(crate) fn fixture(name: &str) -> Value {
         let text = std::fs::read_to_string(fixture_path(name)).expect("fixture should read");
         serde_json::from_str(&text).unwrap_or_else(|error| panic!("{name} should parse: {error}"))
     }
 
-    fn body_fixture(name: &str) -> BodyValue {
+    pub(crate) fn body_fixture(name: &str) -> BodyValue {
         parse(&std::fs::read(fixture_path(name)).expect("fixture should read"))
             .expect("fixture should parse")
     }
 
-    fn object_field<'a>(value: &'a BodyValue, field: &str) -> &'a BodyValue {
+    pub(crate) fn object_field<'a>(value: &'a BodyValue, field: &str) -> &'a BodyValue {
         let BodyValue::Object(object) = value else {
             panic!("fixture value should be an object");
         };
@@ -398,28 +397,31 @@ mod tests {
             .unwrap_or_else(|| panic!("fixture object should contain {field}"))
     }
 
-    fn optional_object_field<'a>(value: &'a BodyValue, field: &str) -> Option<&'a BodyValue> {
+    pub(crate) fn optional_object_field<'a>(
+        value: &'a BodyValue,
+        field: &str,
+    ) -> Option<&'a BodyValue> {
         let BodyValue::Object(object) = value else {
             panic!("fixture value should be an object");
         };
         object.get(&body_string(field))
     }
 
-    fn array_field<'a>(value: &'a BodyValue, field: &str) -> &'a [BodyValue] {
+    pub(crate) fn array_field<'a>(value: &'a BodyValue, field: &str) -> &'a [BodyValue] {
         let BodyValue::Array(array) = object_field(value, field) else {
             panic!("fixture field {field} should be an array");
         };
         array
     }
 
-    fn body_string_field(value: &BodyValue, field: &str) -> String {
+    pub(crate) fn body_string_field(value: &BodyValue, field: &str) -> String {
         let BodyValue::String(string) = object_field(value, field) else {
             panic!("fixture field {field} should be a string");
         };
         body_string_to_string(string)
     }
 
-    fn body_string_to_string(string: &BodyString) -> String {
+    pub(crate) fn body_string_to_string(string: &BodyString) -> String {
         string
             .code_points()
             .iter()
@@ -427,7 +429,7 @@ mod tests {
             .collect()
     }
 
-    fn body_u64_field(value: &BodyValue, field: &str) -> u64 {
+    pub(crate) fn body_u64_field(value: &BodyValue, field: &str) -> u64 {
         let BodyValue::Integer(integer) = object_field(value, field) else {
             panic!("fixture field {field} should be an integer");
         };
@@ -437,11 +439,11 @@ mod tests {
             .expect("fixture integer should fit in u64")
     }
 
-    fn string_field<'a>(value: &'a Value, field: &str) -> &'a str {
+    pub(crate) fn string_field<'a>(value: &'a Value, field: &str) -> &'a str {
         value[field].as_str().expect("fixture string field")
     }
 
-    fn expand_body_pattern(pattern: &BodyValue) -> String {
+    pub(crate) fn expand_body_pattern(pattern: &BodyValue) -> String {
         if let Some(BodyValue::String(prefix)) = optional_object_field(pattern, "prefix_repeat") {
             let count = body_u64_field(pattern, "repeat_count") as usize;
             return format!(
@@ -468,7 +470,7 @@ mod tests {
         format!("{prefix}{}{suffix}", repeat.repeat(count))
     }
 
-    fn decode_hex(raw: &str) -> Vec<u8> {
+    pub(crate) fn decode_hex(raw: &str) -> Vec<u8> {
         assert_eq!(raw.len() % 2, 0, "hex input must have even length");
         (0..raw.len())
             .step_by(2)
@@ -476,11 +478,14 @@ mod tests {
             .collect()
     }
 
-    fn named_input(name: impl Into<String>, input: impl Into<Vec<u8>>) -> (String, Vec<u8>) {
+    pub(crate) fn named_input(
+        name: impl Into<String>,
+        input: impl Into<Vec<u8>>,
+    ) -> (String, Vec<u8>) {
         (name.into(), input.into())
     }
 
-    fn fixture_inputs() -> Vec<(String, Vec<u8>)> {
+    pub(crate) fn fixture_inputs() -> Vec<(String, Vec<u8>)> {
         let mut inputs = Vec::new();
 
         let python_vectors = body_fixture("body_source_python_json_vectors.json");
@@ -606,7 +611,7 @@ mod tests {
         inputs
     }
 
-    fn generated_corpus() -> Vec<(String, Vec<u8>)> {
+    pub(crate) fn generated_corpus() -> Vec<(String, Vec<u8>)> {
         vec![
             named_input(
                 "insignificant whitespace",
@@ -657,20 +662,20 @@ mod tests {
         ]
     }
 
-    fn body_string(value: &str) -> BodyString {
+    pub(crate) fn body_string(value: &str) -> BodyString {
         BodyString::from_code_points(value.chars().map(u32::from).collect())
             .expect("valid code points")
     }
 
-    fn body_string_from_code_points(code_points: Vec<u32>) -> BodyString {
+    pub(crate) fn body_string_from_code_points(code_points: Vec<u32>) -> BodyString {
         BodyString::from_code_points(code_points).expect("valid code points")
     }
 
-    fn assert_body_value_bitwise_eq(actual: &BodyValue, expected: &BodyValue) {
+    pub(crate) fn assert_body_value_bitwise_eq(actual: &BodyValue, expected: &BodyValue) {
         assert_body_value_at_path(actual, expected, "$");
     }
 
-    fn assert_body_value_at_path(actual: &BodyValue, expected: &BodyValue, path: &str) {
+    pub(crate) fn assert_body_value_at_path(actual: &BodyValue, expected: &BodyValue, path: &str) {
         match (actual, expected) {
             (BodyValue::Number(actual), BodyValue::Number(expected)) => {
                 assert_eq!(
@@ -710,7 +715,7 @@ mod tests {
         }
     }
 
-    fn assert_entry_points_agree(input: &[u8]) {
+    pub(crate) fn assert_entry_points_agree(input: &[u8]) {
         let public = catch_unwind(AssertUnwindSafe(|| parse(input)));
         assert!(public.is_ok(), "public parse panicked for {input:?}");
         let observed = catch_unwind(AssertUnwindSafe(|| parse_with_top_level_keys(input)));
@@ -731,7 +736,7 @@ mod tests {
         }
     }
 
-    fn repeated_objects(depth: usize) -> (Vec<u8>, usize) {
+    pub(crate) fn repeated_objects(depth: usize) -> (Vec<u8>, usize) {
         let mut text = String::new();
         let mut last_opener = 0;
         for _ in 0..depth {
@@ -743,7 +748,7 @@ mod tests {
         (text.into_bytes(), last_opener)
     }
 
-    fn alternating_containers(depth: usize) -> (Vec<u8>, usize) {
+    pub(crate) fn alternating_containers(depth: usize) -> (Vec<u8>, usize) {
         let mut text = String::new();
         let mut last_opener = 0;
         for index in 0..depth {
@@ -761,10 +766,17 @@ mod tests {
         (text.into_bytes(), last_opener)
     }
 
-    fn assert_exact_error(input: &[u8], expected: ParseError) {
+    pub(crate) fn assert_exact_error(input: &[u8], expected: ParseError) {
         assert_eq!(parse(input), Err(expected));
         assert_eq!(parse_with_top_level_keys(input), Err(expected));
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_corpus::*;
+    use super::{parse, parse_core, parse_with_top_level_keys};
+    use crate::ParseError;
 
     #[test]
     fn fixture_inputs_match_both_entry_points() {
