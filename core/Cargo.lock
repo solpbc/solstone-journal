@@ -2482,6 +2482,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-system"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "nix",
+ "serde",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "spin"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"

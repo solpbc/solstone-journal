@@ -1,0 +1,270 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+#![cfg(unix)]
+
+use std::fs;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use solstone_core_system::process::{
+    CAP_TERMINATION_TIMEOUT, KILL_REAP_GRACE, ManagedProcess, OutputStream, ProcessEvent,
+    ProcessEventSink, RestartPolicy, SERVICE_SHUTDOWN_TIMEOUT, SpawnOptions,
+    TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome, describe_exit,
+    exit_status_for_code,
+};
+
+const FIXTURE: &str = env!("CARGO_BIN_EXE_solstone-system-test-child");
+
+struct Bed {
+    root: PathBuf,
+}
+
+impl Bed {
+    fn new(name: &str) -> Self {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("solstone-system-{name}-{stamp}"));
+        fs::create_dir_all(&root).expect("temporary journal");
+        Self { root }
+    }
+
+    fn spawn(&self, reference: &str, args: &[&str]) -> ManagedProcess {
+        let mut cmd = vec![FIXTURE.to_owned()];
+        cmd.extend(args.iter().map(|value| (*value).to_owned()));
+        ManagedProcess::spawn(
+            cmd,
+            SpawnOptions {
+                journal_root: self.root.clone(),
+                reference: reference.to_owned(),
+                day: Some("20260807".to_owned()),
+                sink: None,
+            },
+        )
+        .expect("spawn fixture")
+    }
+}
+
+impl Drop for Bed {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+fn wait_for_ready(path: &std::path::Path) {
+    for _ in 0..200 {
+        if path.exists() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("fixture did not signal readiness");
+}
+
+fn process_is_gone(pid: u32) -> bool {
+    let pid = i32::try_from(pid).expect("fixture pid fits i32");
+    matches!(
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None),
+        Err(nix::errno::Errno::ESRCH)
+    )
+}
+
+#[derive(Default)]
+struct Collector(Mutex<Vec<ProcessEvent>>);
+
+impl ProcessEventSink for Collector {
+    fn emit(&self, event: ProcessEvent) {
+        self.0.lock().expect("collector lock").push(event);
+    }
+}
+
+#[test]
+fn ac13_escaped_setsid_descendant_is_reaped_by_its_snapshotted_pid() {
+    let bed = Bed::new("escaped");
+    let ready = bed.root.join("escaped-ready");
+    let mut process = bed.spawn(
+        "escaped",
+        &["setsid-grandchild", ready.to_str().expect("utf8")],
+    );
+    wait_for_ready(&ready);
+    let result = process.terminate(Duration::from_secs(1));
+    assert!(
+        matches!(
+            result,
+            Ok(TerminationOutcome::Graceful { .. })
+                | Ok(TerminationOutcome::EscalatedAndReaped { .. })
+        ),
+        "termination result: {result:?}"
+    );
+    process.cleanup();
+}
+
+#[test]
+fn ac12_spawned_child_is_the_leader_of_its_own_process_group() {
+    let bed = Bed::new("process-group");
+    let mut process = bed.spawn("process-group", &["sleep"]);
+    assert_eq!(
+        process.pgid().expect("child process group"),
+        process.pid() as i32
+    );
+    let _ = process.terminate(Duration::from_secs(1));
+    process.cleanup();
+}
+
+#[test]
+fn ac14_cap_and_service_windows_allow_graceful_termination() {
+    let bed = Bed::new("graceful-windows");
+    for (reference, timeout) in [
+        ("cap-window", CAP_TERMINATION_TIMEOUT),
+        ("queue-shutdown-window", TASK_QUEUE_SHUTDOWN_TIMEOUT),
+        ("service-window", SERVICE_SHUTDOWN_TIMEOUT),
+    ] {
+        let mut process = bed.spawn(reference, &["sleep"]);
+        assert!(matches!(
+            process.terminate(timeout),
+            Ok(TerminationOutcome::Graceful { .. })
+        ));
+        process.cleanup();
+    }
+}
+
+#[test]
+fn ac14_escalated_descendant_is_reaped_with_the_named_kill_grace() {
+    let bed = Bed::new("escalated-descendant");
+    let ready = bed.root.join("resistant-ready");
+    let mut process = bed.spawn(
+        "escalated-descendant",
+        &["term-resistant-descendant", ready.to_str().expect("utf8")],
+    );
+    wait_for_ready(&ready);
+    let pid = process.pid();
+    assert_eq!(KILL_REAP_GRACE, Duration::from_millis(500));
+    assert!(matches!(
+        process.terminate(Duration::from_millis(50)),
+        Ok(TerminationOutcome::EscalatedAndReaped { .. })
+    ));
+    assert!(process_is_gone(pid));
+    process.cleanup();
+}
+
+#[test]
+fn ac14_parent_grace_timeout_is_distinct_from_proven_escalation() {
+    let bed = Bed::new("timeout");
+    let ready = bed.root.join("blocked-ready");
+    let mut process = bed.spawn(
+        "timeout",
+        &["block-term-sleep", ready.to_str().expect("utf8")],
+    );
+    wait_for_ready(&ready);
+    let pid = process.pid();
+    assert!(matches!(
+        process.terminate(Duration::ZERO),
+        Err(TerminationError::ParentGraceTimeout)
+    ));
+    assert!(process_is_gone(pid));
+    process.cleanup();
+}
+
+#[test]
+fn ac18_daily_writer_creates_the_two_relative_operational_log_symlinks() {
+    let bed = Bed::new("links");
+    let mut process = bed.spawn("links", &["lines"]);
+    assert_eq!(process.wait().expect("fixture exits"), 0);
+    process.cleanup();
+    let day = bed.root.join("chronicle/20260807/health");
+    assert_eq!(
+        fs::read_link(day.join("solstone-system-test-child.log")).expect("day link"),
+        PathBuf::from("links_solstone-system-test-child.log")
+    );
+    assert_eq!(
+        fs::read_link(bed.root.join("health/solstone-system-test-child.log"))
+            .expect("journal link"),
+        PathBuf::from("../chronicle/20260807/health/links_solstone-system-test-child.log")
+    );
+}
+
+#[test]
+fn ac16_exit_descriptions_and_catchup_status_are_exact() {
+    assert_eq!(describe_exit(0), "exit 0");
+    assert_eq!(describe_exit(-15), "exit -15 / SIGTERM");
+    assert_eq!(describe_exit(-10), "exit -10 / SIGUSR1");
+    assert_eq!(describe_exit(-999), "exit -999 / signal 999");
+    assert_eq!(exit_status_for_code(0), "ok");
+    assert_eq!(exit_status_for_code(66), "empty");
+    assert_eq!(exit_status_for_code(1), "error");
+}
+
+#[test]
+fn ac17_restart_policy_clamps_and_tempfail_does_not_consume_attempt() {
+    let mut policy = RestartPolicy::default();
+    assert_eq!(
+        policy.delay_after_exit(75, Duration::ZERO),
+        Duration::from_secs(15)
+    );
+    assert_eq!(policy.attempts(), 0);
+    assert_eq!(policy.next_delay(), Duration::ZERO);
+    assert_eq!(policy.next_delay(), Duration::from_secs(1));
+    assert_eq!(policy.next_delay(), Duration::from_secs(5));
+    assert_eq!(policy.next_delay(), Duration::from_secs(5));
+    assert_eq!(
+        policy.delay_after_exit(1, Duration::from_secs(60)),
+        Duration::ZERO
+    );
+}
+
+#[test]
+fn ac20_spawn_line_and_exit_events_are_emitted_by_a_caller_owned_sink() {
+    let bed = Bed::new("events");
+    let collector = Arc::new(Collector::default());
+    let mut process = ManagedProcess::spawn(
+        vec![FIXTURE.to_owned(), "lines".to_owned()],
+        SpawnOptions {
+            journal_root: bed.root.clone(),
+            reference: "events".to_owned(),
+            day: Some("20260807".to_owned()),
+            sink: Some(collector.clone()),
+        },
+    )
+    .expect("spawn fixture");
+    let _ = process.wait().expect("fixture exits");
+    process.cleanup();
+    let events = collector.0.lock().expect("collector lock");
+    assert!(matches!(events.first(), Some(ProcessEvent::Spawned { .. })));
+    assert!(events.iter().any(|event| matches!(event, ProcessEvent::Line { stream: OutputStream::Stdout, line, .. } if line == "stdout-line")));
+    assert!(events.iter().any(|event| matches!(event, ProcessEvent::Line { stream: OutputStream::Stderr, line, .. } if line == "stderr-line")));
+    assert!(matches!(events.last(), Some(ProcessEvent::Exited { .. })));
+}
+
+#[test]
+fn ac20_absent_sink_still_drains_child_output_and_writes_operational_log() {
+    let bed = Bed::new("no-sink");
+    let mut process = bed.spawn("no-sink", &["lines"]);
+    let _ = process.wait().expect("fixture exits");
+    let path = process.log_path();
+    process.cleanup();
+    let content = fs::read_to_string(path).expect("operational log");
+    assert!(content.contains("stdout-line"));
+    assert!(content.contains("stderr-line"));
+}
+
+#[test]
+fn ac22_independent_managed_processes_run_concurrently_without_cross_talk() {
+    let bed = Bed::new("concurrent");
+    let mut first = bed.spawn("one", &["sleep"]);
+    let mut second = bed.spawn("two", &["sleep"]);
+    assert_ne!(first.pid(), second.pid());
+    assert!(matches!(
+        first.terminate(Duration::from_secs(1)),
+        Ok(_) | Err(TerminationError::ParentGraceTimeout)
+    ));
+    assert_eq!(second.poll().expect("second child liveness"), None);
+    assert!(matches!(
+        second.terminate(Duration::from_secs(1)),
+        Ok(_) | Err(TerminationError::ParentGraceTimeout)
+    ));
+    first.cleanup();
+    second.cleanup();
+}

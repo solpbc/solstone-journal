@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-system"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+autobins = false
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono = { workspace = true }
+nix = { workspace = true, features = ["process", "signal"] }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+
+[[bin]]
+name = "solstone-system-test-child"
+path = "src/bin/solstone_system_test_child.rs"
+test = false
+bench = false
