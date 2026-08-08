@@ -13,7 +13,9 @@ use std::process::ExitStatus;
 pub use descendants::{Descendant, ProcessTreeSnapshot};
 pub use events::{OutputStream, ProcessEvent, ProcessEventSink};
 pub use log::DailyLogWriter;
-pub use restart::{RestartPolicy, TEMPFAIL_DELAY, describe_exit, exit_status_for_code};
+pub use restart::{
+    EXIT_TEMPFAIL, RestartPolicy, TEMPFAIL_DELAY, describe_exit, exit_status_for_code,
+};
 pub use spawn::{ManagedProcess, SpawnError, SpawnOptions};
 pub use terminate::{
     CAP_TERMINATION_TIMEOUT, KILL_REAP_GRACE, SERVICE_SHUTDOWN_TIMEOUT,

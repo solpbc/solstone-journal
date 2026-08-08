@@ -44,7 +44,10 @@ fn main() {
             let ready_path = args.next().expect("ready path");
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             nix::unistd::setsid().expect("escape parent process group");
-            std::fs::write(ready_path, "ready").expect("signal readiness");
+            // Publish the pid, not a literal: the escaped-descendant test has to
+            // assert this process is *gone*, and "the parent exited cleanly" is
+            // equally true of an implementation that never looked for it.
+            std::fs::write(ready_path, std::process::id().to_string()).expect("signal readiness");
             std::thread::sleep(Duration::from_secs(30));
         }
         _ => std::process::exit(64),

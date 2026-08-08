@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use solstone_core_system::process::{
-    CAP_TERMINATION_TIMEOUT, KILL_REAP_GRACE, ManagedProcess, OutputStream, ProcessEvent,
-    ProcessEventSink, RestartPolicy, SERVICE_SHUTDOWN_TIMEOUT, SpawnOptions,
+    CAP_TERMINATION_TIMEOUT, EXIT_TEMPFAIL, KILL_REAP_GRACE, ManagedProcess, OutputStream,
+    ProcessEvent, ProcessEventSink, RestartPolicy, SERVICE_SHUTDOWN_TIMEOUT, SpawnOptions,
     TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome, describe_exit,
     exit_status_for_code,
 };
@@ -90,6 +90,16 @@ fn ac13_escaped_setsid_descendant_is_reaped_by_its_snapshotted_pid() {
         &["setsid-grandchild", ready.to_str().expect("utf8")],
     );
     wait_for_ready(&ready);
+    let grandchild_pid: u32 = fs::read_to_string(&ready)
+        .expect("read escaped grandchild pid")
+        .trim()
+        .parse()
+        .expect("escaped grandchild published its pid");
+    assert!(
+        !process_is_gone(grandchild_pid),
+        "fixture precondition: the escaped grandchild must be alive before termination"
+    );
+
     let result = process.terminate(Duration::from_secs(1));
     assert!(
         matches!(
@@ -98,6 +108,16 @@ fn ac13_escaped_setsid_descendant_is_reaped_by_its_snapshotted_pid() {
                 | Ok(TerminationOutcome::EscalatedAndReaped { .. })
         ),
         "termination result: {result:?}"
+    );
+
+    // The load-bearing half. A group-signal-only implementation never snapshots
+    // descendants, so its survivor set is empty, so it also returns Graceful --
+    // with this setsid'd grandchild still running. Asserting the outcome variant
+    // alone does not discriminate between the two implementations; asserting the
+    // pid does.
+    assert!(
+        process_is_gone(grandchild_pid),
+        "escaped setsid descendant {grandchild_pid} survived termination"
     );
     process.cleanup();
 }
@@ -195,6 +215,12 @@ fn ac16_exit_descriptions_and_catchup_status_are_exact() {
     assert_eq!(exit_status_for_code(0), "ok");
     assert_eq!(exit_status_for_code(66), "empty");
     assert_eq!(exit_status_for_code(1), "error");
+
+    // Tempfail is a RESTART delay, never a status label. The catchup outcome
+    // ledger's consumer branches on these exact strings and knows only
+    // {ok, empty, error, timeout}, so minting a "tempfail" label here would
+    // change that ledger silently. Named against the constant, not the integer.
+    assert_eq!(exit_status_for_code(EXIT_TEMPFAIL), "error");
 }
 
 #[test]
