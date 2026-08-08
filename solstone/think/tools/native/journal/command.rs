@@ -358,6 +358,9 @@ pub fn search(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn storage_summary(ctx: CommandContext<'_>) -> CommandOutput {
+    if let Err(error) = parse(ctx.args, &[], &["--json", "--check"]) {
+        return stderr(error);
+    }
     get(ctx, "/app/settings/api/storage", vec![])
 }
 

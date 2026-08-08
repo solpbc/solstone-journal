@@ -37,6 +37,7 @@ const FACETS_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/f
 const HEALTH_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/health.jsonl");
 const HEALTH_COVERAGE_VECTORS: &str =
     include_str!("../../../fixtures/native-sol/parity/health_coverage.jsonl");
+const JOURNAL_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/journal.jsonl");
 const IMPORT_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/import.jsonl");
 const LEDGER_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/ledger.jsonl");
 const LINK_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/link.jsonl");
@@ -70,6 +71,7 @@ fn native_matches_sol_call_parity_vectors() {
         .chain(load_vectors(FACETS_VECTORS))
         .chain(load_vectors(HEALTH_VECTORS))
         .chain(load_vectors(HEALTH_COVERAGE_VECTORS))
+        .chain(load_vectors(JOURNAL_VECTORS))
         .chain(load_vectors(IMPORT_VECTORS))
         .chain(load_vectors(LEDGER_VECTORS))
         .chain(load_vectors(LINK_VECTORS))
