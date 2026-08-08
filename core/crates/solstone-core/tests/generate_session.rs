@@ -854,7 +854,7 @@ fn bare_eof_exits_immediately_without_response_or_usage() {
     stub.wait_for_observed();
     let token_lines = journal.token_lines();
     drop(stdin);
-    assert_eq!(wait_for_exit(&mut child).code(), Some(1));
+    assert_eq!(wait_for_exit(&mut child).code(), Some(0));
     let first_length = fs::metadata(&stdout_path.0).expect("stdout metadata").len();
     stub.release();
     thread::sleep(Duration::from_millis(200));

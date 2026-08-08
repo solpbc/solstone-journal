@@ -458,9 +458,13 @@ fn spawn_generate_session_reader(
                 Ok(Some(line)) => line,
                 Ok(None) => {
                     aborting.store(true, Ordering::Release);
-                    // Bare EOF means the caller disappeared. Exit 1 is intentionally distinct from
-                    // normal completion (0), protocol errors (64), internal failures (70), and 69.
-                    std::process::exit(1);
+                    // Bare EOF means the caller disappeared: answer nothing further, write no
+                    // further usage, exit. The contract declares 0, 64 and 70 only, and the
+                    // reference implementation returns from its session loop here, so this exits 0.
+                    // Whether the abort deserves a distinct declared code is a contract question,
+                    // not one a port settles: 1 would collide with crash, kill and OOM, which is
+                    // the same collision the absent 69 exists to avoid.
+                    std::process::exit(0);
                 }
                 Err(detail) => {
                     generate_protocol_exit_and_terminate(None, "malformed-request", detail)
