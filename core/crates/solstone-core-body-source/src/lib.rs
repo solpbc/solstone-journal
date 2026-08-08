@@ -47,9 +47,9 @@ pub use digest::BodyDigest;
 pub use error::{
     BodyCalendarError, BodyCalendarField, BodyHashError, BodySourceHashError,
     BodySourcePolicyError, BodySourcePolicyField, BodyWireIdentityError, BodyWireIdentityField,
-    CandidateError, CandidateErrorCode, CandidateErrorField, CanonicalizeError, IdentityField,
-    ManifestBindingError, ManifestBindingErrorCode, ManifestBindingErrorField, ManifestScanError,
-    ParseError,
+    CandidateError, CandidateErrorCode, CandidateErrorField, CanonicalizeError, EnvelopeError,
+    EnvelopeErrorCode, EnvelopeErrorField, IdentityField, ManifestBindingError,
+    ManifestBindingErrorCode, ManifestBindingErrorField, ManifestScanError, ParseError,
 };
 pub use health_hash::{
     HealthRecordIdentity, health_hash, health_record_dedupe_key, health_value_hash,

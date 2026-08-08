@@ -5,12 +5,14 @@ use std::fmt;
 
 use crate::Coordinate;
 use crate::bundle_id::BundleId;
+use crate::manifest_binding::BODY_BUNDLE_REF_VALUE;
 use crate::manifest_known_key::{
     BODY_BUNDLE_REF_KEY, BODY_BUNDLE_SHA256_KEY, BODY_SOURCE_SCHEMA_KEY, DAYS_AFFECTED_KEY,
     ENTRY_COUNT_KEY, IMPORT_ID_KEY, RAW_RETENTION_KEY, SOURCE_HASH_KEY, SOURCE_TYPE_KEY,
 };
 
 const MANIFEST_FIELD_KEY: &str = "manifest";
+const INVALID_BUNDLE_PLACEHOLDER: &str = "<invalid>";
 
 /// A token-free body-source parse failure with a raw UTF-8 byte offset.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -269,6 +271,214 @@ impl fmt::Debug for ManifestBindingError {
 }
 
 impl std::error::Error for ManifestBindingError {}
+
+/// The closed set of body-envelope failure codes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EnvelopeErrorCode {
+    InputTooLarge,
+    MalformedJson,
+    NoncanonicalJson,
+    MissingField,
+    UnknownField,
+    WrongType,
+    InvalidField,
+    IncompatibleField,
+    CountMismatch,
+    ManifestMismatch,
+}
+
+impl EnvelopeErrorCode {
+    /// Returns this code's stable wire spelling.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::InputTooLarge => "input_too_large",
+            Self::MalformedJson => "malformed_json",
+            Self::NoncanonicalJson => "noncanonical_json",
+            Self::MissingField => "missing_field",
+            Self::UnknownField => "unknown_field",
+            Self::WrongType => "wrong_type",
+            Self::InvalidField => "invalid_field",
+            Self::IncompatibleField => "incompatible_field",
+            Self::CountMismatch => "count_mismatch",
+            Self::ManifestMismatch => "manifest_mismatch",
+        }
+    }
+
+    pub const ALL: [Self; 10] = [
+        Self::InputTooLarge,
+        Self::MalformedJson,
+        Self::NoncanonicalJson,
+        Self::MissingField,
+        Self::UnknownField,
+        Self::WrongType,
+        Self::InvalidField,
+        Self::IncompatibleField,
+        Self::CountMismatch,
+        Self::ManifestMismatch,
+    ];
+}
+
+/// The closed set of body-envelope failure fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EnvelopeErrorField {
+    Envelope,
+    Schema,
+    BundleId,
+    SourceFamily,
+    SourceHash,
+    RawRetention,
+    RowCount,
+    Days,
+    Shards,
+    ShardPath,
+    ShardBytes,
+    ShardRows,
+    ShardSha256,
+    Ledger,
+    LedgerPath,
+    LedgerBytes,
+    LedgerEvents,
+    LedgerSha256,
+    SummaryPlan,
+    SummarySchema,
+    SummaryDays,
+    ManifestBinding,
+}
+
+impl EnvelopeErrorField {
+    /// Returns this field's stable wire spelling.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Envelope => "envelope",
+            Self::Schema => "schema",
+            Self::BundleId => "bundle_id",
+            Self::SourceFamily => "source_family",
+            Self::SourceHash => "source_hash",
+            Self::RawRetention => "raw_retention",
+            Self::RowCount => "row_count",
+            Self::Days => "days",
+            Self::Shards => "shards",
+            Self::ShardPath => "shard_path",
+            Self::ShardBytes => "shard_bytes",
+            Self::ShardRows => "shard_rows",
+            Self::ShardSha256 => "shard_sha256",
+            Self::Ledger => "ledger",
+            Self::LedgerPath => "ledger_path",
+            Self::LedgerBytes => "ledger_bytes",
+            Self::LedgerEvents => "ledger_events",
+            Self::LedgerSha256 => "ledger_sha256",
+            Self::SummaryPlan => "summary_plan",
+            Self::SummarySchema => "summary_schema",
+            Self::SummaryDays => "summary_days",
+            Self::ManifestBinding => "manifest_binding",
+        }
+    }
+
+    pub const ALL: [Self; 22] = [
+        Self::Envelope,
+        Self::Schema,
+        Self::BundleId,
+        Self::SourceFamily,
+        Self::SourceHash,
+        Self::RawRetention,
+        Self::RowCount,
+        Self::Days,
+        Self::Shards,
+        Self::ShardPath,
+        Self::ShardBytes,
+        Self::ShardRows,
+        Self::ShardSha256,
+        Self::Ledger,
+        Self::LedgerPath,
+        Self::LedgerBytes,
+        Self::LedgerEvents,
+        Self::LedgerSha256,
+        Self::SummaryPlan,
+        Self::SummarySchema,
+        Self::SummaryDays,
+        Self::ManifestBinding,
+    ];
+}
+
+/// A bounded body-envelope failure.
+#[derive(Clone, PartialEq, Eq)]
+pub struct EnvelopeError {
+    bundle: Option<BundleId>,
+    code: EnvelopeErrorCode,
+    field: EnvelopeErrorField,
+    index: Option<u64>,
+}
+
+impl EnvelopeError {
+    /// Builds a body-envelope failure.
+    // TODO(B1g2): remove this allowance once the first checked leaf wires a real caller.
+    #[allow(dead_code)]
+    pub(crate) fn new(
+        bundle: Option<BundleId>,
+        code: EnvelopeErrorCode,
+        field: EnvelopeErrorField,
+        index: Option<u64>,
+    ) -> Self {
+        Self {
+            bundle,
+            code,
+            field,
+            index,
+        }
+    }
+
+    /// Returns the checked bundle identifier this error is bound to, if available.
+    pub fn bundle(&self) -> Option<&BundleId> {
+        self.bundle.as_ref()
+    }
+
+    /// Returns this error's failure code.
+    pub fn code(&self) -> EnvelopeErrorCode {
+        self.code
+    }
+
+    /// Returns the envelope field this error concerns.
+    pub fn field(&self) -> EnvelopeErrorField {
+        self.field
+    }
+
+    /// Returns the envelope index this error concerns, if available.
+    pub fn index(&self) -> Option<u64> {
+        self.index
+    }
+}
+
+impl fmt::Display for EnvelopeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let bundle = self
+            .bundle
+            .as_ref()
+            .map(BundleId::as_str)
+            .unwrap_or(INVALID_BUNDLE_PLACEHOLDER);
+        match self.index {
+            Some(index) => write!(
+                formatter,
+                "body-envelope[{bundle}]/{BODY_BUNDLE_REF_VALUE}[{index}] {}: {}",
+                self.code.as_str(),
+                self.field.as_str()
+            ),
+            None => write!(
+                formatter,
+                "body-envelope[{bundle}]/{BODY_BUNDLE_REF_VALUE} {}: {}",
+                self.code.as_str(),
+                self.field.as_str()
+            ),
+        }
+    }
+}
+
+impl fmt::Debug for EnvelopeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
+}
+
+impl std::error::Error for EnvelopeError {}
 
 /// A bounded body-manifest scan failure.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -556,3 +766,229 @@ impl fmt::Debug for CandidateError {
 }
 
 impl std::error::Error for CandidateError {}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use super::*;
+
+    const MIN_BUNDLE: &str = "body-00000000000000000000000000";
+    const MAX_BUNDLE: &str = "body-7ZZZZZZZZZZZZZZZZZZZZZZZZZ";
+
+    fn bundles() -> [BundleId; 2] {
+        [
+            BundleId::from_bytes(MIN_BUNDLE.as_bytes()).expect("minimum bundle ID is valid"),
+            BundleId::from_bytes(MAX_BUNDLE.as_bytes()).expect("maximum bundle ID is valid"),
+        ]
+    }
+
+    fn expected_rendering(
+        bundle: Option<&BundleId>,
+        code: EnvelopeErrorCode,
+        field: EnvelopeErrorField,
+        index: Option<u64>,
+    ) -> String {
+        let bundle = bundle
+            .map(BundleId::as_str)
+            .unwrap_or(INVALID_BUNDLE_PLACEHOLDER);
+        match index {
+            Some(index) => format!(
+                "body-envelope[{bundle}]/{BODY_BUNDLE_REF_VALUE}[{index}] {}: {}",
+                code.as_str(),
+                field.as_str()
+            ),
+            None => format!(
+                "body-envelope[{bundle}]/{BODY_BUNDLE_REF_VALUE} {}: {}",
+                code.as_str(),
+                field.as_str()
+            ),
+        }
+    }
+
+    #[test]
+    fn envelope_error_constructs_and_clones_every_combination() {
+        let [minimum, maximum] = bundles();
+        let bundle_options = [None, Some(minimum), Some(maximum)];
+        let indexes = [None, Some(0), Some(1), Some(u64::MAX)];
+
+        for bundle in bundle_options {
+            for code in EnvelopeErrorCode::ALL {
+                for field in EnvelopeErrorField::ALL {
+                    for index in indexes {
+                        let expected_bundle = bundle.as_ref().map(BundleId::as_str);
+                        let error = EnvelopeError::new(bundle.clone(), code, field, index);
+                        assert_eq!(error.bundle().map(BundleId::as_str), expected_bundle);
+                        assert_eq!(error.code(), code);
+                        assert_eq!(error.field(), field);
+                        assert_eq!(error.index(), index);
+                        assert_eq!(error.clone(), error);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn envelope_error_renders_bounded_checked_output() {
+        let [_, maximum] = bundles();
+        let bundle_options = [None, Some(maximum)];
+        let indexes = [None, Some(0), Some(1), Some(u64::MAX)];
+
+        for bundle in bundle_options {
+            for code in EnvelopeErrorCode::ALL {
+                for field in EnvelopeErrorField::ALL {
+                    for index in indexes {
+                        let error = EnvelopeError::new(bundle.clone(), code, field, index);
+                        let expected = expected_rendering(bundle.as_ref(), code, field, index);
+                        let display = error.to_string();
+                        assert_eq!(display, expected);
+                        assert_eq!(format!("{error:?}"), expected);
+                        assert!(Error::source(&error).is_none());
+                        assert!(display.len() <= 122);
+                        assert!(display.len() <= 256);
+                        assert!(
+                            display.contains(
+                                bundle
+                                    .as_ref()
+                                    .map(BundleId::as_str)
+                                    .unwrap_or(INVALID_BUNDLE_PLACEHOLDER)
+                            )
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn envelope_error_resists_vocabulary_rendering_and_equality_drift() {
+        assert_eq!(
+            EnvelopeErrorCode::ALL
+                .iter()
+                .map(EnvelopeErrorCode::as_str)
+                .collect::<Vec<_>>(),
+            vec![
+                "input_too_large",
+                "malformed_json",
+                "noncanonical_json",
+                "missing_field",
+                "unknown_field",
+                "wrong_type",
+                "invalid_field",
+                "incompatible_field",
+                "count_mismatch",
+                "manifest_mismatch",
+            ]
+        );
+        assert_eq!(
+            EnvelopeErrorField::ALL
+                .iter()
+                .map(EnvelopeErrorField::as_str)
+                .collect::<Vec<_>>(),
+            vec![
+                "envelope",
+                "schema",
+                "bundle_id",
+                "source_family",
+                "source_hash",
+                "raw_retention",
+                "row_count",
+                "days",
+                "shards",
+                "shard_path",
+                "shard_bytes",
+                "shard_rows",
+                "shard_sha256",
+                "ledger",
+                "ledger_path",
+                "ledger_bytes",
+                "ledger_events",
+                "ledger_sha256",
+                "summary_plan",
+                "summary_schema",
+                "summary_days",
+                "manifest_binding",
+            ]
+        );
+
+        let [minimum, maximum] = bundles();
+        let baseline = EnvelopeError::new(
+            Some(minimum.clone()),
+            EnvelopeErrorCode::MissingField,
+            EnvelopeErrorField::BundleId,
+            Some(1),
+        );
+        assert_ne!(
+            baseline,
+            EnvelopeError::new(
+                Some(maximum.clone()),
+                EnvelopeErrorCode::MissingField,
+                EnvelopeErrorField::BundleId,
+                Some(1),
+            )
+        );
+        assert_ne!(
+            baseline,
+            EnvelopeError::new(
+                Some(minimum.clone()),
+                EnvelopeErrorCode::WrongType,
+                EnvelopeErrorField::BundleId,
+                Some(1),
+            )
+        );
+        assert_ne!(
+            baseline,
+            EnvelopeError::new(
+                Some(minimum.clone()),
+                EnvelopeErrorCode::MissingField,
+                EnvelopeErrorField::Schema,
+                Some(1),
+            )
+        );
+        assert_ne!(
+            baseline,
+            EnvelopeError::new(
+                Some(minimum),
+                EnvelopeErrorCode::MissingField,
+                EnvelopeErrorField::BundleId,
+                None,
+            )
+        );
+        assert_eq!(
+            baseline.to_string(),
+            "body-envelope[body-00000000000000000000000000]/body-bundle.json[1] missing_field: bundle_id"
+        );
+        assert_eq!(
+            format!("{baseline:?}"),
+            "body-envelope[body-00000000000000000000000000]/body-bundle.json[1] missing_field: bundle_id"
+        );
+
+        let absent = EnvelopeError::new(
+            None,
+            EnvelopeErrorCode::MissingField,
+            EnvelopeErrorField::BundleId,
+            None,
+        );
+        assert_eq!(
+            absent.to_string(),
+            "body-envelope[<invalid>]/body-bundle.json missing_field: bundle_id"
+        );
+        assert!(!absent.to_string().contains(MIN_BUNDLE));
+        assert!(!absent.to_string().contains(MAX_BUNDLE));
+
+        let maximum = EnvelopeError::new(
+            Some(maximum),
+            EnvelopeErrorCode::IncompatibleField,
+            EnvelopeErrorField::ManifestBinding,
+            Some(u64::MAX),
+        );
+        let maximum_display = maximum.to_string();
+        assert_eq!(
+            maximum_display,
+            "body-envelope[body-7ZZZZZZZZZZZZZZZZZZZZZZZZZ]/body-bundle.json[18446744073709551615] incompatible_field: manifest_binding"
+        );
+        assert_eq!(maximum_display.len(), 122);
+        assert!(maximum_display.len() <= 256);
+    }
+}
