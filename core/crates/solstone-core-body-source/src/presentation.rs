@@ -6,6 +6,50 @@ use crate::{
 };
 
 /// A lossless presentation row over a decoded object value.
+///
+/// The tuple field is private, so external callers cannot construct a row directly:
+///
+/// ```compile_fail,E0423
+/// use solstone_core_body_source::{BodyValue, PresentationRow};
+///
+/// let _ = PresentationRow(BodyValue::Null);
+/// ```
+///
+/// There is no `From<BodyValue>` conversion into a row:
+///
+/// ```compile_fail,E0277
+/// use solstone_core_body_source::{BodyValue, PresentationRow};
+///
+/// let _: PresentationRow = BodyValue::Null.into();
+/// ```
+///
+/// There is no `Default` impl for a row:
+///
+/// ```compile_fail,E0277
+/// use solstone_core_body_source::PresentationRow;
+///
+/// fn assert_default<T: Default>() {}
+/// assert_default::<PresentationRow>();
+/// ```
+///
+/// There is no `Deserialize` impl for a row:
+///
+/// ```compile_fail,E0277
+/// use solstone_core_body_source::PresentationRow;
+///
+/// serde_json::from_str::<PresentationRow>("null");
+/// ```
+///
+/// The only construction route is the checked constructor, and it losslessly recovers the original value:
+///
+/// ```
+/// use solstone_core_body_source::{Coordinate, PresentationRow, parse};
+///
+/// let value = parse(br#"{"key":"value"}"#).unwrap();
+/// let coordinate = Coordinate::new("bundle", "shard", 1);
+/// let row = PresentationRow::new(&value, &coordinate).unwrap();
+/// assert_eq!(row.into_value(), value);
+/// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct PresentationRow(BodyValue);
 
