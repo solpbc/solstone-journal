@@ -40,7 +40,6 @@ from solstone.think.journal_io.atomic import atomic_replace
 from solstone.think.journal_io.errors import LockTimeout
 from solstone.think.journal_io.locking import hold_lock
 
-
 CANONICAL_NAMESPACE = "solstone.support.operation-key.v1"
 SCHEMA_VERSION = 1
 KEY_BYTES = 32
@@ -361,9 +360,7 @@ def mark_acknowledged(
     storage_dir: Path | None = None,
 ) -> OperationRecord:
     """Mark a completed remote operation as acknowledged locally only."""
-    return _update_current(
-        record, storage_dir=storage_dir, update=_mark_acknowledged
-    )
+    return _update_current(record, storage_dir=storage_dir, update=_mark_acknowledged)
 
 
 def list_pending_acknowledgements(
@@ -469,8 +466,12 @@ def _release_retryable_lease(
     return _replace(record, lease_expires_at=_iso(current))
 
 
-def _mark_failed(record: OperationRecord, reason: str, current: datetime) -> OperationRecord:
-    if record.state not in {"pending", "in_progress"} or not _lease_is_live(record, current):
+def _mark_failed(
+    record: OperationRecord, reason: str, current: datetime
+) -> OperationRecord:
+    if record.state not in {"pending", "in_progress"} or not _lease_is_live(
+        record, current
+    ):
         raise OperationInvalidStateError()
     if not isinstance(reason, str) or not _TERMINAL_REASON_RE.fullmatch(reason):
         raise ValueError("operation failure reason must be an opaque reason code")
@@ -543,15 +544,21 @@ def _load_or_create_fingerprint_key(storage: Path) -> bytes:
                         "operation fingerprint key is unreadable"
                     ) from exc
                 if len(key) != KEY_BYTES:
-                    raise OperationStateUnavailableError("operation fingerprint key is invalid")
+                    raise OperationStateUnavailableError(
+                        "operation fingerprint key is invalid"
+                    )
                 return key
             if _has_operation_artifacts(storage / "operations"):
-                raise OperationStateUnavailableError("operation fingerprint key is unavailable")
+                raise OperationStateUnavailableError(
+                    "operation fingerprint key is unavailable"
+                )
             key = os.urandom(KEY_BYTES)
             atomic_replace(key_path, key, mode=0o600)
             return key
     except LockTimeout as exc:
-        raise OperationStateUnavailableError("operation fingerprint key is busy") from exc
+        raise OperationStateUnavailableError(
+            "operation fingerprint key is busy"
+        ) from exc
 
 
 def _has_operation_artifacts(operations: Path) -> bool:
@@ -570,7 +577,9 @@ def _read_record(path: Path) -> OperationRecord | _RetiredRecord | None:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise OperationStateUnavailableError("operation ledger record is unreadable") from exc
+        raise OperationStateUnavailableError(
+            "operation ledger record is unreadable"
+        ) from exc
     if not isinstance(value, dict) or value.get("schema_version") != SCHEMA_VERSION:
         raise OperationStateUnavailableError("operation ledger record is invalid")
     if set(value) == {"schema_version", "child_action_id", "terminal_reason"}:
@@ -599,7 +608,9 @@ def _read_record(path: Path) -> OperationRecord | _RetiredRecord | None:
             **{name: value[name] for name in required if name != "schema_version"}
         )
     except TypeError as exc:
-        raise OperationStateUnavailableError("operation ledger record is invalid") from exc
+        raise OperationStateUnavailableError(
+            "operation ledger record is invalid"
+        ) from exc
 
 
 def _write_record(path: Path, record: OperationRecord) -> None:
@@ -650,7 +661,10 @@ def _canonical_value(value: Any) -> Any:
                 raise ValueError("operation map keys collide after normalization")
             seen.add(key_bytes)
             normalized.append((normalized_key, _canonical_value(item)))
-        return {key: item for key, item in sorted(normalized, key=lambda pair: _utf8(pair[0]))}
+        return {
+            key: item
+            for key, item in sorted(normalized, key=lambda pair: _utf8(pair[0]))
+        }
     if isinstance(value, list):
         return [_canonical_value(item) for item in value]
     raise TypeError(f"unsupported operation value type: {type(value).__name__}")

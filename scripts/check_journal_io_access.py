@@ -110,6 +110,8 @@ MODULE_PRIMITIVES: dict[str, frozenset[str]] = {
 OWNER_FILES: frozenset[str] = frozenset(
     {
         "solstone/apps/chat/config.py",
+        # Support portal operation ledger and local fingerprint key.
+        "solstone/apps/support/operations.py",
         "solstone/convey/config.py",
         "solstone/apps/speakers/attribution.py",
         "solstone/apps/speakers/candidate_tracker.py",

@@ -466,8 +466,12 @@ def resolve_draft_day(draft_id: str) -> str | None:
 def _support_draft_index_path(draft_id: str) -> Path:
     if not draft_id or Path(draft_id).name != draft_id:
         raise ValueError("invalid support draft id")
-    return _require_journal_root() / "chronicle" / "health" / "support-drafts" / (
-        f"{draft_id}.json"
+    return (
+        _require_journal_root()
+        / "chronicle"
+        / "health"
+        / "support-drafts"
+        / (f"{draft_id}.json")
     )
 
 

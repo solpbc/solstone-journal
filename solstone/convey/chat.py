@@ -2399,8 +2399,7 @@ def _support_draft_result_response(result: dict[str, Any]) -> dict[str, Any]:
     response: dict[str, Any] = {
         "ok": bool(result.get("ok")),
         "outcome": str(
-            result.get("outcome")
-            or ("submitted" if result.get("ok") else "failed")
+            result.get("outcome") or ("submitted" if result.get("ok") else "failed")
         ),
     }
     if response["outcome"] == "submitted" and "ticket_id" in result:
@@ -2446,9 +2445,7 @@ def _submit_support_draft(
             )
             ticket_id = result_obj.get("id", result_obj.get("ticket_id"))
         elif verb == "reply":
-            support_reply(
-                payload["ticket_id"], payload["content"], action_id=draft_id
-            )
+            support_reply(payload["ticket_id"], payload["content"], action_id=draft_id)
             ticket_id = payload["ticket_id"]
         elif verb == "attach":
             import base64

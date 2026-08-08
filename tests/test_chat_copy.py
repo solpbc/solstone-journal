@@ -76,7 +76,10 @@ def test_liveness_and_error_detail_copy_bytes():
 def test_support_lifecycle_copy_is_owner_facing():
     assert "open list" in chat_copy.CHAT_SUPPORT_CLOSE_SUBMITTED
     assert "minimal closed record" in chat_copy.CHAT_SUPPORT_RESOLVED_SUBMITTED
-    assert "proposed close was cancelled" in chat_copy.CHAT_SUPPORT_STILL_NEED_HELP_SUBMITTED
+    assert (
+        "proposed close was cancelled"
+        in chat_copy.CHAT_SUPPORT_STILL_NEED_HELP_SUBMITTED
+    )
     assert "try again" in chat_copy.CHAT_SUPPORT_IN_PROGRESS
     assert "terms changed" in chat_copy.CHAT_SUPPORT_RECONSENT_NEEDED
 
@@ -297,7 +300,9 @@ def test_support_lifecycle_draft_card_branches_present():
     assert '"support draft in_progress"' in text
     assert '"support draft re_consent_required"' in text
     assert "function reenableSupportDraft()" in text
-    assert "postChatMessage(window.solChatCopy.CHAT_RESULT_TRY_AGAIN_MESSAGE)" not in text
+    assert (
+        "postChatMessage(window.solChatCopy.CHAT_RESULT_TRY_AGAIN_MESSAGE)" not in text
+    )
 
 
 def test_chat_placeholder_css_present():

@@ -155,7 +155,10 @@ def test_support_draft_card_structure_and_result_helper(chat_html):
     assert "if (!renderSupportOutcome(msg))" in chat_html
     assert "function hideSupportResult()" in chat_html
     assert "function reenableSupportDraft()" in chat_html
-    assert "postChatMessage(window.solChatCopy.CHAT_RESULT_TRY_AGAIN_MESSAGE)" not in chat_html
+    assert (
+        "postChatMessage(window.solChatCopy.CHAT_RESULT_TRY_AGAIN_MESSAGE)"
+        not in chat_html
+    )
     assert chat_html.count("setStatus(msg.text || '', statusTitleFor(msg));") == 2
 
 

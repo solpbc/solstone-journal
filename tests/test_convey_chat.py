@@ -3030,9 +3030,10 @@ def test_support_draft_lifecycle_verbs_submit(
         "ticket_id": 77,
     }
     assert calls == [(77, draft_id)]
-    assert _events_of_kind(date.today().strftime("%Y%m%d"), "sol_message")[-1][
-        "text"
-    ] == copy_text
+    assert (
+        _events_of_kind(date.today().strftime("%Y%m%d"), "sol_message")[-1]["text"]
+        == copy_text
+    )
 
 
 @pytest.mark.parametrize(
@@ -3125,7 +3126,9 @@ def test_support_draft_index_resolves_old_drafts_and_preserves_legacy_boundary(
         indexed_id,
         captured_day=old_day,
         diagnostics_snapshot={},
-        ts=int(old.replace(hour=12, minute=0, second=0, microsecond=0).timestamp() * 1000),
+        ts=int(
+            old.replace(hour=12, minute=0, second=0, microsecond=0).timestamp() * 1000
+        ),
     )
     chat_stream.record_draft_captured(indexed_id, old_day)
     chat_stream.record_draft_captured(indexed_id, old_day)
@@ -3138,7 +3141,9 @@ def test_support_draft_index_resolves_old_drafts_and_preserves_legacy_boundary(
         legacy_id,
         captured_day=old_day,
         diagnostics_snapshot={},
-        ts=int(old.replace(hour=13, minute=0, second=0, microsecond=0).timestamp() * 1000),
+        ts=int(
+            old.replace(hour=13, minute=0, second=0, microsecond=0).timestamp() * 1000
+        ),
     )
     assert chat_stream.resolve_draft_day(legacy_id) is None
     assert chat._resolve_support_draft(legacy_id) is None

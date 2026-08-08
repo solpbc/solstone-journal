@@ -15,7 +15,11 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
-from solstone.convey.chat_stream import append_chat_event, day_for_ts, record_draft_captured
+from solstone.convey.chat_stream import (
+    append_chat_event,
+    day_for_ts,
+    record_draft_captured,
+)
 from solstone.convey.reasons import (
     FEATURE_UNAVAILABLE,
     IDEMPOTENCY_CONFLICT,
@@ -378,7 +382,9 @@ def upload_attachment(ticket_id: int) -> Any:
     except ValueError:
         return error_response(INVALID_REQUEST_VALUE, detail="index must be an integer")
     if index < 0:
-        return error_response(INVALID_REQUEST_VALUE, detail="index must be non-negative")
+        return error_response(
+            INVALID_REQUEST_VALUE, detail="index must be non-negative"
+        )
 
     try:
         import tempfile
@@ -461,9 +467,7 @@ def close_ticket(ticket_id: int) -> Any:
         return error_response(SUPPORT_PORTAL_FAILED, detail=str(exc))
 
 
-@support_bp.route(
-    "/api/tickets/<int:ticket_id>/resolution/confirm", methods=["POST"]
-)
+@support_bp.route("/api/tickets/<int:ticket_id>/resolution/confirm", methods=["POST"])
 def confirm_resolution(ticket_id: int) -> Any:
     """Confirm a proposed support-ticket resolution."""
     if not _enabled():

@@ -3,8 +3,8 @@
 
 """Tests for support app routes."""
 
-import json
 import io
+import json
 import os
 import re
 from datetime import datetime, timedelta
@@ -428,7 +428,9 @@ def test_create_ticket_accepts_error_report_contract(support_client, monkeypatch
         ("/app/support/api/feedback", {"json": {"body": "feedback"}}),
     ],
 )
-def test_mutation_routes_require_parent_action_id(support_client, monkeypatch, path, kwargs):
+def test_mutation_routes_require_parent_action_id(
+    support_client, monkeypatch, path, kwargs
+):
     monkeypatch.setattr("solstone.apps.support.routes._enabled", lambda: True)
 
     response = support_client.post(path, **kwargs)
@@ -452,9 +454,7 @@ def test_create_route_maps_local_operation_errors(
         raise exception
 
     monkeypatch.setattr("solstone.apps.support.routes._enabled", lambda: True)
-    monkeypatch.setattr(
-        "solstone.apps.support.tools.support_create", raise_local_error
-    )
+    monkeypatch.setattr("solstone.apps.support.tools.support_create", raise_local_error)
 
     response = support_client.post(
         "/app/support/api/tickets",
@@ -481,23 +481,30 @@ def test_lifecycle_routes_forward_calls_and_ignore_drain_failures(
     )
     monkeypatch.setattr(
         "solstone.apps.support.tools.support_history",
-        lambda *, cursor=None: calls.append(("history", cursor))
-        or {"tickets": [], "next_cursor": cursor},
+        lambda *, cursor=None: (
+            calls.append(("history", cursor)) or {"tickets": [], "next_cursor": cursor}
+        ),
     )
     monkeypatch.setattr(
         "solstone.apps.support.tools.support_close",
-        lambda ticket_id, *, action_id: calls.append(("close", ticket_id, action_id))
-        or {"ticket_id": ticket_id, "status": "closed"},
+        lambda ticket_id, *, action_id: (
+            calls.append(("close", ticket_id, action_id))
+            or {"ticket_id": ticket_id, "status": "closed"}
+        ),
     )
     monkeypatch.setattr(
         "solstone.apps.support.tools.support_resolved",
-        lambda ticket_id, *, action_id: calls.append(("resolved", ticket_id, action_id))
-        or {"ticket_id": ticket_id, "status": "closed"},
+        lambda ticket_id, *, action_id: (
+            calls.append(("resolved", ticket_id, action_id))
+            or {"ticket_id": ticket_id, "status": "closed"}
+        ),
     )
     monkeypatch.setattr(
         "solstone.apps.support.tools.support_still_need_help",
-        lambda ticket_id, *, action_id: calls.append(("still_need_help", ticket_id, action_id))
-        or {"ticket_id": ticket_id, "status": "open", "subject": "keep"},
+        lambda ticket_id, *, action_id: (
+            calls.append(("still_need_help", ticket_id, action_id))
+            or {"ticket_id": ticket_id, "status": "open", "subject": "keep"}
+        ),
     )
 
     history = support_client.get("/app/support/api/tickets/closed?cursor=opaque+cursor")

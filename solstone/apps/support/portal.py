@@ -756,7 +756,9 @@ class PortalClient:
             if resp.content:
                 body = resp.json()
                 if not isinstance(body, dict):
-                    raise ValueError("support acknowledgement response must be an object")
+                    raise ValueError(
+                        "support acknowledgement response must be an object"
+                    )
             return True
         if resp.status_code == 404:
             return False
@@ -768,7 +770,10 @@ class PortalClient:
         records = operations.list_pending_acknowledgements(storage_dir=self.storage_dir)
         for record in records:
             if record.remote_operation_id is None:
-                logger.warning("support acknowledgement missing operation id for %s", record.child_action_id)
+                logger.warning(
+                    "support acknowledgement missing operation id for %s",
+                    record.child_action_id,
+                )
                 continue
             try:
                 acknowledged = self.acknowledge_operation(
@@ -777,9 +782,14 @@ class PortalClient:
                 if acknowledged:
                     operations.mark_acknowledged(record, storage_dir=self.storage_dir)
                 else:
-                    logger.info("support acknowledgement unavailable for %s", record.child_action_id)
+                    logger.info(
+                        "support acknowledgement unavailable for %s",
+                        record.child_action_id,
+                    )
             except Exception:
-                logger.info("support acknowledgement failed for %s", record.child_action_id)
+                logger.info(
+                    "support acknowledgement failed for %s", record.child_action_id
+                )
 
     def reply_to_ticket(
         self, ticket_id: int, content: str, *, action_id: str

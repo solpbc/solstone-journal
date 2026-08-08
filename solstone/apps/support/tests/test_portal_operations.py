@@ -30,7 +30,9 @@ def _client(tmp_path, monkeypatch, handler):
 
 def _operation_payload(client, action_id, verb="create"):
     child_id = operations.derive_child_action_id(action_id, verb)
-    return json.loads((client.storage_dir / "operations" / f"{child_id}.json").read_text())
+    return json.loads(
+        (client.storage_dir / "operations" / f"{child_id}.json").read_text()
+    )
 
 
 def test_retryable_5xx_reuses_the_same_outbound_key(tmp_path, monkeypatch):
@@ -51,9 +53,9 @@ def test_retryable_5xx_reuses_the_same_outbound_key(tmp_path, monkeypatch):
 
     assert result == {"ticket_id": "ticket-1"}
     assert len(requests) == 2
-    assert requests[0].headers["Idempotency-Key"] == requests[1].headers[
-        "Idempotency-Key"
-    ]
+    assert (
+        requests[0].headers["Idempotency-Key"] == requests[1].headers["Idempotency-Key"]
+    )
     assert _operation_payload(client, "a1")["state"] == "completed"
 
 
@@ -79,7 +81,9 @@ def test_remote_operation_in_progress_keeps_lease_live(tmp_path, monkeypatch):
 
     client = _client(tmp_path, monkeypatch, handler)
     with pytest.raises(operations.OperationInProgressError):
-        client.create_ticket(subject="Subject", description="Description", action_id="a1")
+        client.create_ticket(
+            subject="Subject", description="Description", action_id="a1"
+        )
 
     with pytest.raises(operations.OperationInProgressError):
         operations.begin_operation(
@@ -97,7 +101,9 @@ def test_remote_operation_in_progress_keeps_lease_live(tmp_path, monkeypatch):
         )
 
 
-def test_repeated_tos_change_marks_terminal_after_one_same_key_retry(tmp_path, monkeypatch):
+def test_repeated_tos_change_marks_terminal_after_one_same_key_retry(
+    tmp_path, monkeypatch
+):
     requests: list[httpx.Request] = []
 
     def handler(request):
@@ -114,9 +120,9 @@ def test_repeated_tos_change_marks_terminal_after_one_same_key_retry(tmp_path, m
         client.create_ticket(**kwargs)
 
     assert len(requests) == 2
-    assert requests[0].headers["Idempotency-Key"] == requests[1].headers[
-        "Idempotency-Key"
-    ]
+    assert (
+        requests[0].headers["Idempotency-Key"] == requests[1].headers["Idempotency-Key"]
+    )
     assert _operation_payload(client, "a1")["terminal_reason"] == "tos_changed"
 
 
@@ -193,13 +199,17 @@ def test_feedback_uses_a_verb_distinct_operation_key(tmp_path, monkeypatch):
 
     client = _client(tmp_path, monkeypatch, handler)
     client.create_ticket(
-        subject="feedback", description="Same body", action_id="a1", severity="low", category="feedback"
+        subject="feedback",
+        description="Same body",
+        action_id="a1",
+        severity="low",
+        category="feedback",
     )
     client.submit_feedback(body="Same body", action_id="a1")
 
-    assert requests[0].headers["Idempotency-Key"] != requests[1].headers[
-        "Idempotency-Key"
-    ]
+    assert (
+        requests[0].headers["Idempotency-Key"] != requests[1].headers["Idempotency-Key"]
+    )
 
 
 def test_closed_history_forwards_opaque_cursor_and_projects_tombstones(
@@ -252,7 +262,9 @@ def test_closed_history_forwards_opaque_cursor_and_projects_tombstones(
         ),
     ],
 )
-def test_closing_actions_project_poisoned_response(tmp_path, monkeypatch, method_name, path):
+def test_closing_actions_project_poisoned_response(
+    tmp_path, monkeypatch, method_name, path
+):
     def handler(request):
         assert request.url.path == path
         return httpx.Response(

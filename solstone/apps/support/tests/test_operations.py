@@ -25,7 +25,6 @@ from solstone.apps.support.operations import (
     mark_in_progress,
 )
 
-
 NOW = datetime(2026, 8, 7, 12, 0, tzinfo=UTC)
 PRINCIPAL = "jkt:thumbprint"
 
@@ -75,7 +74,10 @@ def test_fingerprint_and_key_are_keyed_not_raw_sha256(tmp_path):
         child_action_id=record.child_action_id,
     )
 
-    assert bytes.fromhex(record.canonical_fingerprint) != hashlib.sha256(canonical).digest()
+    assert (
+        bytes.fromhex(record.canonical_fingerprint)
+        != hashlib.sha256(canonical).digest()
+    )
     assert record.operation_key != "spk1_" + hashlib.sha256(canonical).hexdigest()
 
 
@@ -91,7 +93,9 @@ def test_serialized_ledger_never_contains_source_payload_or_operation_key(tmp_pa
         "anonymous": False,
     }
     record = _begin(tmp_path, verb="create", fields=fields)
-    serialized = (tmp_path / "operations" / f"{record.child_action_id}.json").read_text()
+    serialized = (
+        tmp_path / "operations" / f"{record.child_action_id}.json"
+    ).read_text()
 
     for forbidden in (
         "subject-secret",
@@ -116,7 +120,9 @@ def test_missing_key_with_existing_record_fails_closed_without_new_record(tmp_pa
         _begin(tmp_path, parent="another-draft")
 
     assert not key_path.exists()
-    assert sorted(path.name for path in (tmp_path / "operations").glob("*.json")) == before
+    assert (
+        sorted(path.name for path in (tmp_path / "operations").glob("*.json")) == before
+    )
     assert (tmp_path / "operations" / f"{record.child_action_id}.json").exists()
 
 
@@ -208,9 +214,7 @@ def test_attachment_batch_has_one_action_and_key_per_file(tmp_path):
     assert first.child_action_id != second.child_action_id
     assert first.operation_key != second.operation_key
     assert len(list((tmp_path / "operations").glob("*.json"))) == 2
-    serialized = (
-        tmp_path / "operations" / f"{first.child_action_id}.json"
-    ).read_text()
+    serialized = (tmp_path / "operations" / f"{first.child_action_id}.json").read_text()
     assert "private-one.txt" not in serialized
     assert "attachment-bytes-secret" not in serialized
 

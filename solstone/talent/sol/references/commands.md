@@ -50,13 +50,13 @@ Guidance: `solstone/apps/speakers/talent/speakers/SKILL.md`
 
 ## support — `sol call support`
 
-Triggers: `file bug`, `request feature`, `submit feedback`, `search KB`, `announcements`, `tickets`
+Triggers: `file bug`, `request feature`, `submit feedback`, `search KB`, `announcements`, `tickets`, `close ticket`, `confirm resolution`, `still need help`, `closed history`
 
 Read: `list`, `search`, `show`
 
 Write: `attach`, `create`
 
-Other: `announcements`, `article`, `diagnose`, `feedback`, `register`, `reply`
+Other: `announcements`, `article`, `close`, `diagnose`, `feedback`, `history`, `register`, `reply`, `resolved`, `still-need-help`
 
 Guidance: `solstone/apps/support/talent/support/SKILL.md`
 
