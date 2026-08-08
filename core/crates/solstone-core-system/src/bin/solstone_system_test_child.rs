@@ -5,6 +5,8 @@ use std::io::Write;
 use std::process::Command;
 use std::time::Duration;
 
+use solstone_core_system::lifecycle::SupervisorLifecycle;
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let mode = args.next().unwrap_or_default();
@@ -14,6 +16,53 @@ fn main() {
             let _ = std::io::stderr().write_all(b"stderr-line\n");
         }
         "sleep" => std::thread::sleep(Duration::from_secs(30)),
+        "hold-supervisor-lock" => {
+            let journal = args.next().expect("journal path");
+            let ready_path = args.next().expect("ready path");
+            let _lifecycle = SupervisorLifecycle::boot(&journal).expect("acquire supervisor lock");
+            std::fs::write(ready_path, "ready").expect("signal readiness");
+            std::thread::sleep(Duration::from_secs(30));
+        }
+        "try-supervisor-lock" => {
+            let journal = args.next().expect("journal path");
+            let result_path = args.next().expect("result path");
+            let value = match SupervisorLifecycle::boot(&journal) {
+                Ok(_lifecycle) => "acquired",
+                Err(error) if error.to_string() == "supervisor already running" => {
+                    "already-running"
+                }
+                Err(error) => panic!("unexpected lifecycle error: {error}"),
+            };
+            std::fs::write(result_path, value).expect("write acquisition outcome");
+        }
+        "orphan-sweep-spawner" => {
+            let journal = args.next().expect("journal path");
+            let ready_path = args.next().expect("ready path");
+            let holder_mode = args
+                .next()
+                .unwrap_or_else(|| "orphan-sweep-holder".to_owned());
+            let executable = std::env::current_exe().expect("fixture executable");
+            let child = Command::new(executable)
+                .args([&holder_mode, &journal, &ready_path])
+                .env("SOLSTONE_JOURNAL", &journal)
+                .spawn()
+                .expect("spawn orphan holder");
+            // This fixture's purpose is to orphan the holder on this process's exit.
+            std::mem::forget(child);
+        }
+        "orphan-sweep-holder" | "orphan-sweep-holder-resists-term" => {
+            let _journal = args.next().expect("journal path");
+            let ready_path = args.next().expect("ready path");
+            if mode == "orphan-sweep-holder-resists-term" {
+                let mut signals = nix::sys::signal::SigSet::empty();
+                signals.add(nix::sys::signal::Signal::SIGTERM);
+                signals.thread_block().expect("block SIGTERM");
+            }
+            #[cfg(target_os = "linux")]
+            std::fs::write("/proc/self/comm", "journal:holder\n").expect("set proc title");
+            std::fs::write(ready_path, std::process::id().to_string()).expect("signal readiness");
+            std::thread::sleep(Duration::from_secs(30));
+        }
         "ready-sleep" => {
             let ready_path = args.next().expect("ready path");
             let millis: u64 = args

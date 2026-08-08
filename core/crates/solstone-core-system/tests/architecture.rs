@@ -21,6 +21,14 @@ const LOG: &str = include_str!("../src/process/log.rs");
 const SPAWN: &str = include_str!("../src/process/spawn.rs");
 const TERMINATE: &str = include_str!("../src/process/terminate.rs");
 const DESCENDANTS: &str = include_str!("../src/process/descendants.rs");
+const LIFECYCLE: &str = include_str!("../src/lifecycle/mod.rs");
+const LIFECYCLE_ADMISSION: &str = include_str!("../src/lifecycle/admission.rs");
+const LIFECYCLE_READINESS: &str = include_str!("../src/lifecycle/readiness.rs");
+const LIFECYCLE_SHUTDOWN: &str = include_str!("../src/lifecycle/shutdown.rs");
+const LIFECYCLE_STATE: &str = include_str!("../src/lifecycle/state.rs");
+const LIFECYCLE_SWEEP: &str = include_str!("../src/lifecycle/sweep.rs");
+const LIFECYCLE_SYNC: &str = include_str!("../src/lifecycle/sync.rs");
+const LIFECYCLE_WATCHER: &str = include_str!("../src/lifecycle/watcher.rs");
 
 fn declared_modules(source: &str) -> BTreeSet<&str> {
     source
@@ -77,6 +85,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
     let root_modules = [
         ("cap", CAP),
         ("error", ERROR),
+        ("lifecycle", LIFECYCLE),
         ("partition", PARTITION),
         ("process", PROCESS_MOD),
         ("queue", QUEUE),
@@ -90,9 +99,22 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("spawn", SPAWN),
         ("terminate", TERMINATE),
     ];
+    let lifecycle_modules = [
+        ("admission", LIFECYCLE_ADMISSION),
+        ("readiness", LIFECYCLE_READINESS),
+        ("shutdown", LIFECYCLE_SHUTDOWN),
+        ("state", LIFECYCLE_STATE),
+        ("sweep", LIFECYCLE_SWEEP),
+        ("sync", LIFECYCLE_SYNC),
+        ("watcher", LIFECYCLE_WATCHER),
+    ];
     assert_eq!(
         declared_modules(LIB),
         root_modules.iter().map(|(name, _)| *name).collect()
+    );
+    assert_eq!(
+        declared_modules(LIFECYCLE),
+        lifecycle_modules.iter().map(|(name, _)| *name).collect()
     );
     assert_eq!(
         declared_modules(PROCESS_MOD),
@@ -102,7 +124,8 @@ fn ac21_only_operational_log_module_names_write_primitives() {
     for (name, source) in root_modules
         .into_iter()
         .chain(process_modules)
-        .filter(|(name, _)| *name != "log")
+        .chain(lifecycle_modules)
+        .filter(|(name, _)| *name != "log" && *name != "state")
     {
         for primitive in [
             "File::",
@@ -121,6 +144,9 @@ fn ac21_only_operational_log_module_names_write_primitives() {
     assert!(LOG.contains("create_dir_all"));
     assert!(LOG.contains("join(\"health\")"));
     assert!(LOG.contains("CHRONICLE_DIR"));
+    assert!(LIFECYCLE_STATE.contains("OpenOptions"));
+    assert!(LIFECYCLE_STATE.contains("create_dir_all"));
+    assert!(LIFECYCLE_STATE.contains("join(\"health\")"));
 }
 
 #[test]
@@ -138,4 +164,13 @@ fn ac25_ios_process_state_probe_is_explicit_and_returns_unknown() {
     assert!(QUEUE.contains(
         "fn system_process_state(_pid: u32) -> ProcessState {\n    ProcessState::Unknown"
     ));
+}
+
+#[test]
+fn ac26_lifecycle_sweep_and_identity_have_explicit_platform_absence() {
+    assert!(LIFECYCLE_SWEEP.contains("#[cfg(target_os = \"linux\")]"));
+    assert!(LIFECYCLE_SWEEP.contains("UnsupportedPlatform"));
+    assert!(LIFECYCLE_SWEEP.contains("Other targets refuse"));
+    assert!(LIFECYCLE_STATE.contains("#[cfg(target_os = \"linux\")]"));
+    assert!(LIFECYCLE_STATE.contains("no non-Linux creation-time implementation"));
 }

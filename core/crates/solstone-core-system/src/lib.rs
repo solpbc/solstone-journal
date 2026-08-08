@@ -5,6 +5,7 @@
 
 pub mod cap;
 pub mod error;
+pub mod lifecycle;
 pub mod partition;
 pub mod process;
 pub mod queue;

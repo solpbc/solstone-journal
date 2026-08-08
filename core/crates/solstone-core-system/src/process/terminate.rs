@@ -217,7 +217,7 @@ impl SignalGuard {
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn signal_tree(tree: &ProcessTreeSnapshot, kind: SignalKind, guard: &SignalGuard) {
-    signal_pid(tree.parent_pid, kind, guard);
+    signal_pid_guarded(tree.parent_pid, kind, guard);
     if let Some(pgid) = tree.parent_pgid {
         signal_pgid(pgid, kind, guard);
     }
@@ -227,7 +227,7 @@ fn signal_tree(tree: &ProcessTreeSnapshot, kind: SignalKind, guard: &SignalGuard
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn signal_descendants(descendants: &[Descendant], kind: SignalKind, guard: &SignalGuard) {
     for descendant in descendants {
-        signal_pid(descendant.pid, kind, guard);
+        signal_pid_guarded(descendant.pid, kind, guard);
     }
     let mut pgids = BTreeSet::new();
     for descendant in descendants {
@@ -241,7 +241,7 @@ fn signal_descendants(descendants: &[Descendant], kind: SignalKind, guard: &Sign
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn signal_pid(pid: i32, kind: SignalKind, guard: &SignalGuard) {
+fn signal_pid_guarded(pid: i32, kind: SignalKind, guard: &SignalGuard) {
     if !guard.permits_pid(pid) {
         return;
     }
@@ -262,6 +262,15 @@ fn nix_signal(kind: SignalKind) -> nix::sys::signal::Signal {
         SignalKind::Terminate => nix::sys::signal::Signal::SIGTERM,
         SignalKind::Kill => nix::sys::signal::Signal::SIGKILL,
     }
+}
+
+/// Signal one already-identified process without taking ownership of a child.
+///
+/// Lifecycle orphan cleanup owns candidate selection and deliberately uses this
+/// narrow crate-private seam rather than widening the public process API.
+#[cfg(target_os = "linux")]
+pub(crate) fn signal_pid(pid: i32, signal: nix::sys::signal::Signal) -> nix::Result<()> {
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), signal)
 }
 
 #[cfg(test)]

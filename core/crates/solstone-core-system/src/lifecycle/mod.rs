@@ -1,0 +1,241 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Supervisor lifecycle primitives.  This module owns `health/` operational
+//! state but deliberately does not provide a supervisor binary or CLI.
+
+mod admission;
+mod readiness;
+mod shutdown;
+mod state;
+mod sweep;
+mod sync;
+mod watcher;
+
+use std::path::{Path, PathBuf};
+
+use thiserror::Error;
+
+pub use admission::SupervisorLease;
+pub use readiness::{ReadinessMarker, START_TIME_TOLERANCE_SECONDS};
+#[cfg(target_os = "linux")]
+pub use readiness::{readiness_is_valid, wait_ready, wait_ready_with};
+pub use shutdown::{ShutdownDriver, ShutdownPhase, ShutdownRegime, ShutdownReport, shutdown};
+pub use state::{
+    append_supervisor_log, clear_self_heartbeat, compact_log_if_oversized, recorded_supervisor_pid,
+    write_sync_heartbeat,
+};
+pub use sweep::{OrphanSweepOutcome, OrphanSweepReport, sweep_orphans};
+pub use sync::{
+    DEFAULT_INTERVAL_SECONDS, FRESH_WINDOW_MULTIPLIER, ForeignWriter, Heartbeat, SyncCheckResult,
+    SyncConflictEvent, SyncSnapshot, check as check_sync, format_conflict_message, machine_id,
+    sanitize_hostname, sync_conflict_event,
+};
+pub use watcher::{ParentDeathBackstop, ParentDeathReason, wait_until_parent_gone};
+
+/// Lifecycle failures that are meaningful to a supervisor host.
+#[derive(Debug, Error)]
+pub enum LifecycleError {
+    #[error("supervisor already running")]
+    AlreadyRunning,
+    #[error("lifecycle I/O failed: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("lifecycle system call failed: {0}")]
+    Nix(#[from] nix::errno::Errno),
+    #[error("lifecycle JSON failed: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("invalid supervisor identity: {0}")]
+    Identity(&'static str),
+    #[error("invalid heartbeat filename")]
+    InvalidHeartbeatFilename,
+    #[error("another solstone writer is active on this journal")]
+    SyncConflict(Box<SyncCheckResult>),
+}
+
+/// Held singleton admission and its journal root.
+pub struct SupervisorLifecycle {
+    journal: PathBuf,
+    heartbeat_filename: String,
+    last_orphan_sweep: OrphanSweepOutcome,
+    _lease: SupervisorLease,
+}
+
+/// Enter supervisor lifecycle ownership and retain the singleton lease.
+pub fn boot(journal: impl AsRef<Path>) -> Result<SupervisorLifecycle, LifecycleError> {
+    SupervisorLifecycle::boot(journal)
+}
+
+impl SupervisorLifecycle {
+    pub fn journal(&self) -> &Path {
+        &self.journal
+    }
+
+    /// Acquire admission, reject live foreign writers, record identity, sweep
+    /// matching orphans, and publish this process's self-heartbeat.
+    #[cfg(target_os = "linux")]
+    pub fn boot(journal: impl AsRef<Path>) -> Result<Self, LifecycleError> {
+        let journal = journal.as_ref().to_path_buf();
+        let lock = state::open_supervisor_lock(&journal)?;
+        let lease = admission::acquire(lock)?;
+        let heartbeat_filename = self_heartbeat_filename();
+        let current_machine_id = sync::machine_id();
+        let now = epoch_seconds();
+        let sync_result = sync::check(
+            &journal,
+            &heartbeat_filename,
+            &current_machine_id,
+            None,
+            now,
+        )?;
+        if sync_result.is_boot_conflict() {
+            return Err(LifecycleError::SyncConflict(Box::new(sync_result)));
+        }
+        state::write_supervisor_identity(&journal, std::process::id())?;
+        let last_orphan_sweep = sweep::sweep_orphans(&journal, std::time::Duration::from_secs(1));
+        let heartbeat = sync::Heartbeat {
+            schema: 1,
+            machine_id: current_machine_id,
+            hostname: hostname(),
+            pid: std::process::id(),
+            wall_time: now.to_string(),
+            solstone_version: env!("CARGO_PKG_VERSION").to_owned(),
+            interval_seconds: sync::DEFAULT_INTERVAL_SECONDS as u32,
+            journal_path: journal.display().to_string(),
+        };
+        state::write_sync_heartbeat(
+            &journal,
+            &heartbeat_filename,
+            &serde_json::to_vec(&heartbeat)?,
+        )?;
+        Ok(Self {
+            journal,
+            heartbeat_filename,
+            last_orphan_sweep,
+            _lease: lease,
+        })
+    }
+
+    /// The native start-time identity reader is intentionally Linux-only.
+    /// macOS requires `proc_pidinfo`, for which this dependency set has no safe
+    /// wrapper; iOS has no supported equivalent.
+    #[cfg(not(target_os = "linux"))]
+    pub fn boot(_journal: impl AsRef<Path>) -> Result<Self, LifecycleError> {
+        Err(LifecycleError::Identity(
+            "supervisor lifecycle is Linux-only",
+        ))
+    }
+
+    pub fn signal_ready(
+        &self,
+        ready_at: f64,
+        extra: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<(), LifecycleError> {
+        state::write_readiness(&self.journal, ready_at, extra)
+    }
+
+    pub fn clear_ready(&self) -> Result<(), LifecycleError> {
+        state::clear_ready(&self.journal)
+    }
+
+    pub fn last_orphan_sweep(&self) -> &OrphanSweepOutcome {
+        &self.last_orphan_sweep
+    }
+
+    pub fn shutdown(
+        &self,
+        driver: &mut dyn ShutdownDriver,
+        regime: ShutdownRegime,
+        sync_conflict: bool,
+    ) -> Result<ShutdownReport, LifecycleError> {
+        state::clear_ready(&self.journal)?;
+        if !sync_conflict {
+            state::clear_self_heartbeat(&self.journal, &self.heartbeat_filename)?;
+        }
+        Ok(shutdown::shutdown(driver, regime))
+    }
+}
+
+fn hostname() -> String {
+    #[cfg(target_os = "linux")]
+    let raw = std::fs::read_to_string("/proc/sys/kernel/hostname").unwrap_or_default();
+    #[cfg(target_os = "macos")]
+    let raw = std::process::Command::new("hostname")
+        .output()
+        .ok()
+        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+        .unwrap_or_default();
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let raw = String::new();
+    sync::sanitize_hostname(raw.trim())
+}
+
+#[cfg(target_os = "linux")]
+fn self_heartbeat_filename() -> String {
+    format!("{}.check", hostname())
+}
+
+#[cfg(target_os = "linux")]
+fn epoch_seconds() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |value| value.as_secs_f64())
+}
+
+/// Preserve Python's conservative pid-file status contract.
+#[cfg(target_os = "linux")]
+pub fn is_supervisor_up(journal: impl AsRef<Path>) -> bool {
+    let health = journal.as_ref().join("health");
+    let Ok(pid) = std::fs::read_to_string(health.join("supervisor.pid")).and_then(|text| {
+        text.trim()
+            .parse::<u32>()
+            .map_err(|_| std::io::Error::other("invalid pid"))
+    }) else {
+        return false;
+    };
+    // Treat EPERM as not up because a caller unable to inspect or signal the
+    // recorded PID cannot use that PID as evidence of a live supervisor here.
+    if nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), None).is_err() {
+        return false;
+    }
+    let Ok(recorded) =
+        std::fs::read_to_string(health.join("supervisor.start_time")).and_then(|text| {
+            text.trim()
+                .parse::<f64>()
+                .map_err(|_| std::io::Error::other("invalid start time"))
+        })
+    else {
+        return false;
+    };
+    let Ok(actual) = state::process_start_time_epoch_seconds(pid) else {
+        return false;
+    };
+    (recorded - actual).abs() <= START_TIME_TOLERANCE_SECONDS
+}
+
+/// Best-effort systemd readiness notification.
+pub fn sd_notify(state_value: &str) {
+    let Ok(address) = std::env::var("NOTIFY_SOCKET") else {
+        return;
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::net::UnixDatagram;
+        let result = (|| -> std::io::Result<()> {
+            let socket = UnixDatagram::unbound()?;
+            #[cfg(target_os = "linux")]
+            if let Some(name) = address.strip_prefix('@') {
+                use std::os::linux::net::SocketAddrExt;
+                let target = std::os::unix::net::SocketAddr::from_abstract_name(name)?;
+                socket.send_to_addr(state_value.as_bytes(), &target)?;
+                return Ok(());
+            }
+            socket.send_to(state_value.as_bytes(), address)?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            eprintln!("sd_notify failed: {error}");
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = state_value;
+}
