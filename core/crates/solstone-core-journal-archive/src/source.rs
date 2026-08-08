@@ -35,6 +35,7 @@ enum AcquisitionPrimitive {
     AuthoritativeFstat,
     Canonicalize,
     FilesystemRootOpen,
+    FilesystemRootFstat,
     ComponentStat,
     ComponentOpen,
     ComponentFstat,
@@ -413,6 +414,18 @@ fn open_requested_root(root: &Path) -> Result<(OwnedFd, DirectoryProof), Archive
     Ok((opened, directory_proof(&stat)?))
 }
 
+fn open_absolute_filesystem_root() -> Result<OwnedFd, ArchiveError> {
+    traced_nix(AcquisitionPrimitive::FilesystemRootOpen, || {
+        open("/", DIRECTORY_FLAGS, Mode::empty())
+    })
+    .map_err(|error| acquisition_error(source_io("open filesystem root", None, error)))
+}
+
+fn stat_filesystem_root(fd: &impl AsFd) -> Result<FileStat, ArchiveError> {
+    traced_nix(AcquisitionPrimitive::FilesystemRootFstat, || fstat(fd))
+        .map_err(|error| acquisition_error(source_io("stat filesystem root", None, error)))
+}
+
 fn restat_canonical_root(
     parent: &impl AsFd,
     name: &OsStr,
@@ -457,12 +470,21 @@ fn acquire_root(root: &Path) -> Result<(OwnedFd, PathBuf), ArchiveError> {
             });
         }
     };
-    let mut current = traced_nix(AcquisitionPrimitive::FilesystemRootOpen, || {
-        open("/", DIRECTORY_FLAGS, Mode::empty())
-    })
-    .map_err(|error| acquisition_error(source_io("open filesystem root", None, error)))?;
-
     let components = canonical_components(&canonical, root)?;
+    if components.is_empty() {
+        let first = open_absolute_filesystem_root()?;
+        let first_stat = stat_filesystem_root(&first)?;
+        verify_directory_identity(&first_stat, expected)?;
+
+        let second = open_absolute_filesystem_root()?;
+        let second_stat = stat_filesystem_root(&second)?;
+        verify_directory_identity(&second_stat, directory_proof(&first_stat)?)?;
+        verify_directory_identity(&second_stat, expected)?;
+
+        return Ok((authoritative, canonical));
+    }
+
+    let mut current = open_absolute_filesystem_root()?;
     let (final_name, ancestors): (OsString, &[OsString]) = match components.split_last() {
         Some((last, ancestors)) => (last.clone(), ancestors),
         None => (OsString::from("."), &[]),
@@ -676,6 +698,16 @@ fn directory_proof(stat: &FileStat) -> Result<DirectoryProof, ArchiveError> {
     })
 }
 
+fn verify_directory_identity(
+    observed: &FileStat,
+    expected: DirectoryProof,
+) -> Result<(), ArchiveError> {
+    if !is_directory(observed) || directory_proof(observed)? != expected {
+        return Err(changed(None));
+    }
+    Ok(())
+}
+
 fn file_proof(stat: &FileStat) -> Result<FileProof, ArchiveError> {
     let size = u64::try_from(stat.st_size).map_err(|_| ArchiveError::SourceIo {
         operation: "read regular-file size",
@@ -859,6 +891,9 @@ mod tests {
             }
             AcquisitionPrimitive::FilesystemRootOpen => {
                 prefix.extend_from_slice(&base[..3]);
+            }
+            AcquisitionPrimitive::FilesystemRootFstat => {
+                prefix.extend(base);
             }
             AcquisitionPrimitive::ComponentStat => {
                 prefix.extend(base);
@@ -1330,31 +1365,46 @@ mod tests {
     }
 
     #[test]
-    fn root_self_uses_final_segment_path_with_no_special_case() {
+    fn root_self_uses_two_independent_filesystem_root_opens() {
         let (result, trace) = trace_acquisition(None, || acquire_root(Path::new("/")));
         let (_root, canonical) = result.expect("acquire filesystem root");
 
         assert_eq!(canonical, PathBuf::from("/"));
         assert_eq!(
-            trace
-                .iter()
-                .filter(|primitive| **primitive == AcquisitionPrimitive::FinalRestat)
-                .count(),
-            1
+            trace.as_slice(),
+            [
+                AcquisitionPrimitive::RequestedRootOpen,
+                AcquisitionPrimitive::AuthoritativeFstat,
+                AcquisitionPrimitive::Canonicalize,
+                AcquisitionPrimitive::FilesystemRootOpen,
+                AcquisitionPrimitive::FilesystemRootFstat,
+                AcquisitionPrimitive::FilesystemRootOpen,
+                AcquisitionPrimitive::FilesystemRootFstat,
+            ]
         );
-        assert!(!trace.iter().any(|primitive| {
-            matches!(
-                primitive,
-                AcquisitionPrimitive::ComponentStat
-                    | AcquisitionPrimitive::ComponentOpen
-                    | AcquisitionPrimitive::ComponentFstat
-            )
-        }));
-        assert!(trace.ends_with(&[
-            AcquisitionPrimitive::FinalComponentStat,
-            AcquisitionPrimitive::FinalComponentOpen,
-            AcquisitionPrimitive::FinalComponentFstat,
-            AcquisitionPrimitive::FinalRestat,
-        ]));
+    }
+
+    #[test]
+    fn root_symlink_to_filesystem_root_uses_two_independent_filesystem_root_opens() {
+        let temporary = TempDir::new("root-symlink");
+        let root = temporary.path().join("root");
+        std::os::unix::fs::symlink("/", &root).expect("create root symlink");
+
+        let (result, trace) = trace_acquisition(None, || acquire_root(&root));
+        let (_root, canonical) = result.expect("acquire filesystem root symlink");
+
+        assert_eq!(canonical, PathBuf::from("/"));
+        assert_eq!(
+            trace.as_slice(),
+            [
+                AcquisitionPrimitive::RequestedRootOpen,
+                AcquisitionPrimitive::AuthoritativeFstat,
+                AcquisitionPrimitive::Canonicalize,
+                AcquisitionPrimitive::FilesystemRootOpen,
+                AcquisitionPrimitive::FilesystemRootFstat,
+                AcquisitionPrimitive::FilesystemRootOpen,
+                AcquisitionPrimitive::FilesystemRootFstat,
+            ]
+        );
     }
 }
