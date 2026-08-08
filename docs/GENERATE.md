@@ -294,6 +294,25 @@ something must send the signal, and a killed caller cannot. A parent-death signa
 this tree builds for Apple targets. A supervising reaper is a third process with the same problem one
 level up. **One JSON line settles it portably.**
 
+⚠ **The Python shim does not meet this guarantee today, and that is measured rather than suspected.**
+On bare end-of-file it does set its abort flag and cancel the in-flight request, but the cancellation
+cannot reach the work: the bundled local lane runs the provider call on a worker thread wrapping a
+blocking subprocess call that takes no timeout of its own, so interpreter shutdown then joins that
+thread. The child exits only when the provider call returns by itself — measured at 30.1 s for a
+request carrying `timeout_s: 30` — and the helper process it spawned lives exactly as long. A caller
+that sends no `timeout_s` inherits the 120 s default, so the same bound there is two minutes. Two
+processes hold a provider slot for that window after their caller is already gone.
+
+✅ **The usage half of the guarantee does hold.** A request whose provider answered after the caller
+died wrote no token-log line, against a control that writes one for an ordinary completion. Nothing is
+recorded against work nobody will receive.
+
+🔴 **It stays live until the wire is native.** The shim is the last part of this boundary still in
+Python and it is not being fixed there. The native implementation must make the abort reach the
+in-flight work rather than only marking it — a cancellable provider call, or exiting outright, which
+the contract permits because nothing further is to be answered anyway. `criterion_8` in the session
+differential is the test that holds this, and it fails today for exactly this reason.
+
 🔴 **One child per consumer process, never a shared daemon.** The child is launched by the consumer,
 lives as long as the consumer, and dies with it. The pipeline's failure containment — one process per
 input file, so a crash, a leak or a watchdog kill reaches exactly one file — is a property worth more
