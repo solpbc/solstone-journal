@@ -147,6 +147,50 @@ impl fmt::Debug for BodySourcePolicyError {
 
 impl std::error::Error for BodySourcePolicyError {}
 
+/// The closed set of native body-calendar fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BodyCalendarField {
+    Day,
+    Month,
+}
+
+impl BodyCalendarField {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Day => "day",
+            Self::Month => "month",
+        }
+    }
+}
+
+/// A bounded native body-calendar failure.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BodyCalendarError {
+    InvalidFormat(BodyCalendarField),
+}
+
+impl fmt::Display for BodyCalendarError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidFormat(field) => {
+                write!(
+                    formatter,
+                    "body-calendar invalid_format: {}",
+                    field.as_str()
+                )
+            }
+        }
+    }
+}
+
+impl fmt::Debug for BodyCalendarError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
+}
+
+impl std::error::Error for BodyCalendarError {}
+
 /// The closed set of required source identity fields.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IdentityField {

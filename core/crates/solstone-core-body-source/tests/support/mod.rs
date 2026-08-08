@@ -143,6 +143,43 @@ pub fn native_bundle_source_policies() -> Vec<(String, String)> {
         .collect()
 }
 
+pub fn native_bundle_days_affected() -> BTreeSet<String> {
+    native_bundle_fixture()["cases"]
+        .as_array()
+        .expect("fixture cases")
+        .iter()
+        .flat_map(|case| {
+            case["manifest"]["days_affected"]
+                .as_array()
+                .expect("manifest days affected")
+                .iter()
+                .map(|day| day.as_str().expect("affected day").to_owned())
+        })
+        .collect()
+}
+
+pub fn native_bundle_shard_months() -> BTreeSet<String> {
+    let fixture = native_bundle_fixture();
+    let mut months = BTreeSet::new();
+    for case in fixture["cases"].as_array().expect("fixture cases") {
+        let envelope: Value = serde_json::from_str(
+            case["expected_envelope_jsonl"]
+                .as_str()
+                .expect("expected envelope JSONL"),
+        )
+        .expect("envelope JSONL should parse");
+        for shard in envelope["shards"].as_array().expect("envelope shards") {
+            let path = shard["path"].as_str().expect("shard path");
+            let month = path
+                .strip_prefix("normalized/")
+                .and_then(|path| path.strip_suffix(".jsonl"))
+                .expect("normalized shard path");
+            months.insert(month.to_owned());
+        }
+    }
+    months
+}
+
 pub fn native_bundle_digests() -> BTreeSet<String> {
     let fixture = native_bundle_fixture();
     let mut digests = BTreeSet::new();

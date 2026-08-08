@@ -4,9 +4,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use solstone_core_body_source::{
-    BodyDigest, BodyInteger, BodyRawRetention, BodySourceFamily, BodySourcePolicyError,
-    BodySourcePolicyField, BodyString, BodyValue, BodyWireIdentityError, BodyWireIdentityField,
-    BundleId, ParseError, canonicalize, parse,
+    BodyCalendarError, BodyCalendarField, BodyDay, BodyDigest, BodyInteger, BodyMonth,
+    BodyRawRetention, BodySourceFamily, BodySourcePolicyError, BodySourcePolicyField, BodyString,
+    BodyValue, BodyWireIdentityError, BodyWireIdentityField, BundleId, ParseError, canonicalize,
+    parse,
 };
 
 mod support;
@@ -288,5 +289,43 @@ fn public_source_policy_types_are_checked_ordered_and_hashable() {
         Err(BodySourcePolicyError::InvalidFormat(
             BodySourcePolicyField::SourceFamily
         ))
+    );
+}
+
+#[test]
+fn public_calendar_types_are_checked_ordered_and_hashable() {
+    let day_text = "20240229";
+    let month_text = "2024-02";
+    let day_body_string =
+        BodyString::from_code_points(day_text.bytes().map(u32::from).collect()).unwrap();
+    let month_body_string =
+        BodyString::from_code_points(month_text.bytes().map(u32::from).collect()).unwrap();
+
+    let day_from_bytes = BodyDay::from_bytes(day_text.as_bytes()).unwrap();
+    let day_from_body_string = BodyDay::from_body_string(&day_body_string).unwrap();
+    let month_from_bytes = BodyMonth::from_bytes(month_text.as_bytes()).unwrap();
+    let month_from_body_string = BodyMonth::from_body_string(&month_body_string).unwrap();
+    assert_eq!(day_from_bytes, day_from_body_string);
+    assert_eq!(day_from_bytes.as_str(), day_text);
+    assert_eq!(day_from_bytes.month(), month_from_bytes);
+    assert_eq!(month_from_bytes, month_from_body_string);
+    assert_eq!(month_from_bytes.as_str(), month_text);
+
+    let mut hashes = HashSet::new();
+    hashes.insert((day_from_bytes.clone(), month_from_bytes.clone()));
+    hashes.insert((day_from_body_string.clone(), month_from_body_string.clone()));
+    assert_eq!(hashes.len(), 1);
+    let mut ordered = BTreeSet::new();
+    ordered.insert((day_from_bytes, month_from_bytes));
+    ordered.insert((day_from_body_string, month_from_body_string));
+    assert_eq!(ordered.len(), 1);
+
+    assert_eq!(
+        BodyDay::from_bytes(b"20230229"),
+        Err(BodyCalendarError::InvalidFormat(BodyCalendarField::Day))
+    );
+    assert_eq!(
+        BodyMonth::from_bytes(b"2024-13"),
+        Err(BodyCalendarError::InvalidFormat(BodyCalendarField::Month))
     );
 }
