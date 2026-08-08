@@ -579,6 +579,15 @@ mod tests {
     }
 
     #[test]
+    fn json_output_without_schema_uses_only_response_mime_type() {
+        let mut request = request();
+        request.json_output = true;
+        let config = &request_body(&request, DEFAULT_MODEL)["generationConfig"];
+        assert_eq!(config["responseMimeType"], "application/json");
+        assert!(config.get("responseJsonSchema").is_none());
+    }
+
+    #[test]
     fn request_posts_to_literal_generate_content_path() {
         let mut transport = StubTransport {
             responses: vec![Ok(response(successful_body()))],
@@ -601,7 +610,7 @@ mod tests {
     }
 
     #[test]
-    fn request_uses_gemini_content_and_system_shapes() {
+    fn request_uses_google_content_and_system_shapes() {
         let mut request = request();
         request.contents.push(ContentPart::Image {
             mime_type: "image/png".into(),
@@ -631,6 +640,23 @@ mod tests {
     }
 
     #[test]
+    fn empty_candidates_is_provider_response_invalid() {
+        let result = parse_response(
+            &json!({
+                "candidates": [],
+                "promptFeedback": {"blockReason": "SAFETY"},
+            })
+            .to_string(),
+        );
+        assert_eq!(
+            result,
+            GoogleResult::Failed(GoogleFailure {
+                reason_code: Some("provider_response_invalid".into()),
+            })
+        );
+    }
+
+    #[test]
     fn finish_reasons_are_normalized() {
         for (reason, expected) in [
             (Some("STOP"), "stop"),
@@ -652,7 +678,7 @@ mod tests {
     }
 
     #[test]
-    fn usage_metadata_uses_gemini_field_names() {
+    fn usage_metadata_uses_google_field_names() {
         let mut body = successful_body();
         body["usageMetadata"] = json!({
             "promptTokenCount": 2,
