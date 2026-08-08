@@ -8,7 +8,7 @@ use std::io::{Read, Seek, Write};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, DateTime, ZipWriter};
 
-use crate::manifest::{self, Manifest, ManifestFields};
+use crate::manifest::Manifest;
 use crate::{ArchiveError, ArchiveMemberName, ArchiveSource};
 
 // Mirrors inventory.rs's private ROOTS. This module needs the unconditional
@@ -102,34 +102,7 @@ impl Error for WriteFailure {
 }
 
 /// Write one frozen source into a caller-owned portable archive writer.
-#[allow(dead_code)]
 pub(crate) fn write_archive<W: Write + Seek>(
-    zip: &mut ZipWriter<W>,
-    source: &ArchiveSource,
-    solstone_version: &str,
-    exported_at: &str,
-) -> Result<(), ArchiveEncodingError> {
-    let source_journal = source.canonical_source().to_str().ok_or_else(|| {
-        ArchiveEncodingError::InvalidMetadata {
-            field: "source_journal",
-            value: source.canonical_source().to_string_lossy().into_owned(),
-            reason: "must be valid UTF-8",
-        }
-    })?;
-    let inventory = source.inventory();
-    let manifest = manifest::build(ManifestFields {
-        solstone_version,
-        exported_at,
-        source_journal,
-        day_count: inventory.day_count(),
-        entity_count: inventory.entity_count(),
-        facet_count: inventory.facet_count(),
-    })?;
-
-    emit(zip, source, &manifest)
-}
-
-fn emit<W: Write + Seek>(
     zip: &mut ZipWriter<W>,
     source: &ArchiveSource,
     manifest: &Manifest,
@@ -307,7 +280,8 @@ mod tests {
         exported_at: &str,
     ) -> Vec<u8> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        write_archive(&mut writer, source, solstone_version, exported_at).expect("write archive");
+        let manifest = manifest_for(source, solstone_version, exported_at);
+        write_archive(&mut writer, source, &manifest).expect("write archive");
         writer.finish().expect("finish archive").into_inner()
     }
 
@@ -320,6 +294,10 @@ mod tests {
         solstone_version: &str,
         exported_at: &str,
     ) -> Vec<u8> {
+        manifest_for(source, solstone_version, exported_at).json
+    }
+
+    fn manifest_for(source: &ArchiveSource, solstone_version: &str, exported_at: &str) -> Manifest {
         crate::manifest::build(crate::manifest::ManifestFields {
             solstone_version,
             exported_at,
@@ -331,8 +309,7 @@ mod tests {
             entity_count: source.inventory().entity_count(),
             facet_count: source.inventory().facet_count(),
         })
-        .expect("build expected manifest")
-        .json
+        .expect("build manifest")
     }
 
     fn expected_manifest(source: &ArchiveSource) -> Vec<u8> {
@@ -563,8 +540,9 @@ mod tests {
         let source = ArchiveSource::open(&root).expect("open source");
         fs::remove_file(root.join(member)).expect("remove inventoried member");
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let error = write_archive(&mut writer, &source, "0.9.0", "2026-08-07T21:22:22Z")
-            .expect_err("stale source must fail");
+        let manifest = manifest_for(&source, "0.9.0", "2026-08-07T21:22:22Z");
+        let error =
+            write_archive(&mut writer, &source, &manifest).expect_err("stale source must fail");
         assert!(matches!(
             error,
             ArchiveEncodingError::Source {
@@ -583,8 +561,9 @@ mod tests {
         let source = ArchiveSource::open(&root).expect("open source");
         fs::write(root.join(member), b"x").expect("truncate inventoried member");
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-        let error = write_archive(&mut writer, &source, "0.9.0", "2026-08-07T21:22:22Z")
-            .expect_err("truncated source must fail");
+        let manifest = manifest_for(&source, "0.9.0", "2026-08-07T21:22:22Z");
+        let error =
+            write_archive(&mut writer, &source, &manifest).expect_err("truncated source must fail");
         assert!(matches!(
             error,
             ArchiveEncodingError::Source {

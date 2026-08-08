@@ -5,6 +5,7 @@
 //! durable guard against a later convenience API widening its authority.
 
 const SOURCES: &[(&str, &str)] = &[
+    ("encode", include_str!("../src/encode.rs")),
     ("entry", include_str!("../src/entry.rs")),
     ("error", include_str!("../src/error.rs")),
     ("inventory", include_str!("../src/inventory.rs")),
@@ -95,7 +96,7 @@ fn regular_file_opens_are_nonblocking_and_nofollow() {
 fn no_module_reaches_deferred_or_forbidden_surfaces() {
     for (name, source) in SOURCES
         .iter()
-        .filter(|(name, _)| !matches!(*name, "manifest" | "writer"))
+        .filter(|(name, _)| !matches!(*name, "encode" | "manifest" | "writer"))
         .chain(std::iter::once(&("lib", LIB)))
     {
         let production = production_source(source);
@@ -122,7 +123,7 @@ fn no_module_reaches_deferred_or_forbidden_surfaces() {
 fn format_modules_reach_no_non_zip_forbidden_surfaces() {
     for (name, source) in SOURCES
         .iter()
-        .filter(|(name, _)| matches!(*name, "manifest" | "writer"))
+        .filter(|(name, _)| matches!(*name, "encode" | "manifest" | "writer"))
     {
         let production = production_source(source);
         for forbidden in [
@@ -229,35 +230,41 @@ fn manifest_declares_only_nix_as_a_dependency() {
 }
 
 #[test]
-fn exactly_one_dead_code_allowance_exists_on_the_new_engine() {
+fn no_dead_code_allowance_remains_in_the_crate() {
     let allowance = "#[allow(dead_code)]";
     let total = SOURCES
         .iter()
         .map(|(_, source)| source.matches(allowance).count())
         .sum::<usize>()
         + LIB.matches(allowance).count();
-    assert_eq!(total, 1);
-    let writer = SOURCES
-        .iter()
-        .find_map(|(name, source)| (*name == "writer").then_some(*source))
-        .expect("writer module registered");
-    assert_eq!(writer.matches(allowance).count(), 1);
-    assert!(writer.contains("#[allow(dead_code)]\npub(crate) fn write_archive"));
+    assert_eq!(total, 0);
 }
 
 #[test]
-fn private_archive_engine_has_no_production_caller() {
+fn write_archive_has_exactly_one_production_caller() {
     let occurrences = SOURCES
         .iter()
         .map(|(_, source)| production_source(source).matches("write_archive").count())
         .sum::<usize>()
         + production_source(LIB).matches("write_archive").count();
-    assert_eq!(occurrences, 1, "definition must be the only occurrence");
+    assert_eq!(
+        occurrences, 2,
+        "definition and controlled call must be the only occurrences"
+    );
     let writer = SOURCES
         .iter()
         .find_map(|(name, source)| (*name == "writer").then_some(*source))
         .expect("writer module registered");
     assert!(production_source(writer).contains("pub(crate) fn write_archive"));
+
+    let encode = SOURCES
+        .iter()
+        .find_map(|(name, source)| (*name == "encode").then_some(*source))
+        .expect("encode module registered");
+    assert_eq!(
+        production_source(encode).matches("write_archive(").count(),
+        1
+    );
 }
 
 fn production_source(source: &str) -> &str {

@@ -6,10 +6,13 @@
 //! This crate deliberately owns no archive publication, command-line surface,
 //! or generic filesystem traversal API. [`ArchiveSource`] retains a descriptor
 //! for one acquired journal root and exposes only its frozen, verified archive
-//! inventory to the crate-private archive encoder.
+//! inventory plus a checked encoder for a caller-owned output file. It owns no
+//! output-path selection, publication, command-line, HTTP, or generic
+//! filesystem traversal API.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
+mod encode;
 mod entry;
 mod error;
 mod inventory;
@@ -17,6 +20,7 @@ mod manifest;
 mod source;
 mod writer;
 
+pub use encode::{EncodeArchiveError, EncodeArchiveRequest, EncodingPhase, encode_archive};
 pub use entry::{
     ArchiveMemberName, Inventory, InventoryEntry, OpenedInventoryFile, SkippedRootName,
 };
