@@ -307,11 +307,14 @@ processes hold a provider slot for that window after their caller is already gon
 died wrote no token-log line, against a control that writes one for an ordinary completion. Nothing is
 recorded against work nobody will receive.
 
-🔴 **It stays live until the wire is native.** The shim is the last part of this boundary still in
-Python and it is not being fixed there. The native implementation must make the abort reach the
-in-flight work rather than only marking it — a cancellable provider call, or exiting outright, which
-the contract permits because nothing further is to be answered anyway. `criterion_8` in the session
-differential is the test that holds this, and it fails today for exactly this reason.
+🔴 **It is a regression, not a property of the shim.** Before the bundled lane was cut over to the
+native `local generate` verb the same request aborted **0.2 s** after end-of-file; after the cutover it
+takes 30.2 s. The cutover replaced an awaited in-process call with a worker thread wrapping a blocking
+subprocess call, and an abort cannot reach work parked there. Whatever implements this lane must keep
+the provider call cancellable, or exit outright — which the contract permits, because nothing further is
+to be answered anyway. `criterion_8` in the session differential is the test that holds it. It fails
+today for exactly this reason, and it runs from the cross-language differential target rather than the
+native gate, which is how the cutover landed green.
 
 🔴 **One child per consumer process, never a shared daemon.** The child is launched by the consumer,
 lives as long as the consumer, and dies with it. The pipeline's failure containment — one process per
