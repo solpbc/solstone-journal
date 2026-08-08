@@ -36,6 +36,14 @@ const ANTHROPIC_UNSUPPORTED: &[&str] = &[
 // maxItems <= 27 and fails at 28; entities=27 plus speakers=16 fails though each
 // passes alone. Seven of the eight shipped schemas carrying maxItems are rejected
 // outright, and all eight pass with it stripped.
+//
+// The mechanism, which is why those numbers look arbitrary: responseJsonSchema
+// compiles maxItems into a bounded decoding grammar whose expansion has an
+// undocumented WHOLE-SCHEMA budget, additive across every bounded array and
+// scaling with N x item complexity. Over budget, the API returns a bare
+// 400 INVALID_ARGUMENT naming no keyword, no path and no limit. That silence is
+// the whole reason this strip exists: without it the failure is undiagnosable,
+// and a reader who removes the strip gets a 400 they cannot trace back to here.
 
 pub fn unsupported_keyword_hits(schema: Option<&Value>, provider: &str) -> Vec<String> {
     let mut hits = Vec::new();
@@ -60,9 +68,40 @@ pub fn prepare_provider_schema(schema: Option<&Value>, provider: &str) -> Option
 
 fn provider_keywords(provider: &str) -> &'static [&'static str] {
     match provider {
+        "openai" => OPENAI_UNSUPPORTED,
         "google" => GOOGLE_UNSUPPORTED,
         "anthropic" => ANTHROPIC_UNSUPPORTED,
-        _ => OPENAI_UNSUPPORTED,
+        // A provider with no declared reduction strips NOTHING, matching the
+        // reference's `STRICT_UNSUPPORTED_KEYWORDS.get(provider, frozenset())`.
+        // Defaulting to another provider's set would silently drop bounds this
+        // one can honour.
+        _ => &[],
+    }
+}
+
+#[cfg(test)]
+mod fallback_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn an_unknown_provider_strips_nothing() {
+        let schema = json!({
+            "type": "object",
+            "properties": {"note": {"type": "string", "minLength": 1, "maxLength": 8}},
+            "maxItems": 4,
+        });
+        let reduced = prepare_provider_schema(Some(&schema), "some-future-provider")
+            .expect("schema is present");
+        assert_eq!(
+            reduced, schema,
+            "an undeclared provider must not be reduced"
+        );
+        assert!(unsupported_keyword_hits(Some(&schema), "some-future-provider").is_empty());
+
+        // ... while a declared one still is.
+        let openai = prepare_provider_schema(Some(&schema), "openai").expect("schema is present");
+        assert_ne!(openai, schema, "a declared provider is still reduced");
     }
 }
 
