@@ -309,19 +309,45 @@ fn generate_response_for_request(
         solstone_core_generate_wire::LaneOutcome::BundledLocal => {
             match solstone_core_generate_wire::bundled_generate(&request, &journal) {
                 Ok(solstone_core_local::GenerateResult::Success(success)) => {
-                    let response = match generated_response(&request, success) {
-                        Ok(response) => response,
-                        Err(detail) => return Err(detail),
-                    };
-                    if let Err(error) = solstone_core_generate_wire::record_generate_usage(
-                        &journal,
-                        &response.model,
-                        &request.context,
-                        &usage_for_log(&response.usage),
-                    ) {
+                    let usage = success
+                        .usage
+                        .as_ref()
+                        .map(serde_json::to_value)
+                        .transpose()
+                        .map_err(|error| error.to_string())?
+                        .unwrap_or_else(|| json!({}));
+                    let assessment = solstone_core_generate_wire::assess_provider_result(
+                        solstone_core_generate_wire::ProviderResultView {
+                            journal_path: &journal,
+                            context: &request.context,
+                            model: &success.model,
+                            text: &success.text,
+                            finish_reason: &success.finish_reason,
+                            usage: &usage,
+                            json_output: request.json_output,
+                            enforce_responsiveness: request.enforce_responsiveness,
+                        },
+                    );
+                    if let Some(error) = assessment.token_log_error {
                         eprintln!("generate token usage log failed: {error}");
                     }
-                    solstone_core_generate::GenerateResponse::Generated(Box::new(response))
+                    if let Some(failure) = assessment.failure {
+                        solstone_core_generate::GenerateResponse::Refused(
+                            solstone_core_generate_wire::refusal_for(
+                                &solstone_core_generate_wire::LaneOutcome::ValidationFailure(
+                                    failure,
+                                ),
+                                &provider,
+                                request_id.clone(),
+                            ),
+                        )
+                    } else {
+                        let response = match generated_response(&request, success) {
+                            Ok(response) => response,
+                            Err(detail) => return Err(detail),
+                        };
+                        solstone_core_generate::GenerateResponse::Generated(Box::new(response))
+                    }
                 }
                 Ok(solstone_core_local::GenerateResult::Failure(failure)) => {
                     solstone_core_generate::GenerateResponse::Refused(
@@ -348,16 +374,42 @@ fn generate_response_for_request(
                 endpoint_runtime,
             ) {
                 solstone_core_generate_wire::EndpointResult::Generated(success) => {
-                    let response = endpoint_generated_response(request, success)?;
-                    if let Err(error) = solstone_core_generate_wire::record_generate_usage(
-                        &journal,
-                        &response.model,
-                        &request.context,
-                        &usage_for_log(&response.usage),
-                    ) {
+                    let usage = success
+                        .usage
+                        .as_ref()
+                        .map(serde_json::to_value)
+                        .transpose()
+                        .map_err(|error| error.to_string())?
+                        .unwrap_or_else(|| json!({}));
+                    let assessment = solstone_core_generate_wire::assess_provider_result(
+                        solstone_core_generate_wire::ProviderResultView {
+                            journal_path: &journal,
+                            context: &request.context,
+                            model: &success.model,
+                            text: &success.text,
+                            finish_reason: &success.finish_reason,
+                            usage: &usage,
+                            json_output: request.json_output,
+                            enforce_responsiveness: request.enforce_responsiveness,
+                        },
+                    );
+                    if let Some(error) = assessment.token_log_error {
                         eprintln!("generate token usage log failed: {error}");
                     }
-                    solstone_core_generate::GenerateResponse::Generated(Box::new(response))
+                    if let Some(failure) = assessment.failure {
+                        solstone_core_generate::GenerateResponse::Refused(
+                            solstone_core_generate_wire::refusal_for(
+                                &solstone_core_generate_wire::LaneOutcome::ValidationFailure(
+                                    failure,
+                                ),
+                                &provider,
+                                request_id.clone(),
+                            ),
+                        )
+                    } else {
+                        let response = endpoint_generated_response(request, success)?;
+                        solstone_core_generate::GenerateResponse::Generated(Box::new(response))
+                    }
                 }
                 solstone_core_generate_wire::EndpointResult::Failed(failure) => {
                     solstone_core_generate::GenerateResponse::Refused(
@@ -378,7 +430,8 @@ fn generate_response_for_request(
             )
         }
         solstone_core_generate_wire::LaneOutcome::BundledFailure(_)
-        | solstone_core_generate_wire::LaneOutcome::EndpointFailure(_) => {
+        | solstone_core_generate_wire::LaneOutcome::EndpointFailure(_)
+        | solstone_core_generate_wire::LaneOutcome::ValidationFailure(_) => {
             unreachable!("lane resolution cannot return an arm failure")
         }
     };
@@ -767,25 +820,6 @@ fn endpoint_generated_response(
         inference: None,
         hints_applied,
     })
-}
-
-fn usage_for_log(usage: &Value) -> Value {
-    let mut normalized = Map::new();
-    for name in [
-        "input_tokens",
-        "output_tokens",
-        "total_tokens",
-        "cached_tokens",
-    ] {
-        if usage
-            .get(name)
-            .and_then(Value::as_u64)
-            .is_some_and(|value| value != 0)
-        {
-            normalized.insert(name.to_owned(), usage[name].clone());
-        }
-    }
-    Value::Object(normalized)
 }
 
 enum GenerateStdinError {

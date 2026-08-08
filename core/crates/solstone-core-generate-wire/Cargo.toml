@@ -20,13 +20,23 @@ ureq.workspace = true
 regex = "1.13.1"
 
 [features]
-# Cross-language differentials — tests that drive the real Python endpoint
-# overflow decision. They need a populated `.venv` (`make install`).
+# Cross-language differentials against the Python reference implementation.
+# They need a populated `.venv` (`make install`).
 differential = []
 
 [[test]]
 name = "endpoint_overflow_differential"
 path = "tests/endpoint_overflow_differential.rs"
+required-features = ["differential"]
+
+[[test]]
+name = "responsiveness_differential"
+path = "tests/responsiveness_differential.rs"
+required-features = ["differential"]
+
+[[test]]
+name = "token_log_differential"
+path = "tests/token_log_differential.rs"
 required-features = ["differential"]
 
 [lints]

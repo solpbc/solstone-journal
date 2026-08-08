@@ -8,7 +8,9 @@ mod endpoint;
 mod lane;
 mod refusal;
 mod request;
+mod responsiveness;
 mod token_log;
+mod validation;
 
 pub use bundled::{BundledError, LOCAL_MODEL_ID, bundled_generate, bundled_input};
 pub use endpoint::{
@@ -19,7 +21,15 @@ pub use endpoint::{
 pub use lane::{LaneOutcome, resolve_lane};
 pub use refusal::refusal_for;
 pub use request::parse_one_shot_request;
-pub use token_log::record_generate_usage;
+pub use responsiveness::{
+    NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS, ResponsivenessSignal, ResponsivenessVerdict,
+    classify_output_responsiveness,
+};
+pub use token_log::{GenerateUsageMetadata, record_generate_usage};
+pub use validation::{
+    ProviderResultAssessment, ProviderResultView, SanitizedFinishReason, ValidationFailure,
+    assess_provider_result, usage_for_log,
+};
 
 #[cfg(test)]
 mod vocabulary_tests {

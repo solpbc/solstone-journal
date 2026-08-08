@@ -323,6 +323,14 @@ fn generated_usage(content: &str) -> Value {
 }
 
 fn chat_response_body(content: &str) -> String {
+    if content == "json-truncated" {
+        return json!({
+            "model": "stub-json-truncated",
+            "choices": [{"message": {"content": "I cannot complete that request."}, "finish_reason": "length"}],
+            "usage": stub_usage(content),
+        })
+        .to_string();
+    }
     json!({
         "model": format!("stub-{content}"),
         "choices": [{"message": {"content": stub_text(content)}, "finish_reason": "stop"}],
@@ -772,6 +780,35 @@ fn concurrent_requests_keep_their_own_usage_and_hints() {
     assert_eq!(retried.usage, generated_usage("retried"));
     assert_eq!(retried.hints_applied, ["attempt_index"]);
     assert!(responses.is_empty());
+    assert!(wait_for_exit(&mut session.child).success());
+    stub.finish();
+}
+
+#[test]
+fn session_uses_the_same_validation_and_logging_order_as_one_shot() {
+    let stub = LocalStub::start(false);
+    let journal = Journal::bundled_local(false);
+    journal.set_port(stub.port);
+    let mut session = raw_session(&journal, 1);
+    let mut truncated = request("json-truncated");
+    truncated.json_output = true;
+    write_request(&mut session.stdin, &truncated);
+    write_terminal(&mut session.stdin);
+    drop(session.stdin);
+
+    let GenerateResponse::Refused(refusal) = read_response(&mut session.stdout) else {
+        panic!("JSON truncation must refuse in session framing");
+    };
+    assert_eq!(
+        refusal.reason,
+        solstone_core_generate::RefusalReason::IncompleteJson
+    );
+    assert_eq!(
+        refusal.reason_code.as_ref().map(|reason| reason.as_wire()),
+        Some("incomplete_json_length")
+    );
+    let token: Value = serde_json::from_str(&journal.token_log_lines()[0]).expect("token JSON");
+    assert_eq!(token["non_responsive_matched_signal"], "i cannot");
     assert!(wait_for_exit(&mut session.child).success());
     stub.finish();
 }

@@ -163,6 +163,27 @@ fn generated_body() -> &'static str {
     r#"{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}"#
 }
 
+fn completion_body(text: &str, finish_reason: &str, usage: Option<Value>) -> String {
+    let mut body = json!({
+        "choices": [{"message": {"content": text}, "finish_reason": finish_reason}],
+    });
+    if let Some(usage) = usage {
+        body["usage"] = usage;
+    }
+    body.to_string()
+}
+
+fn token_entries(journal: &Path) -> Vec<Value> {
+    let path = journal
+        .join("tokens")
+        .join(format!("{}.jsonl", Local::now().format("%Y%m%d")));
+    std::fs::read_to_string(path)
+        .expect("usage log")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("usage JSON"))
+        .collect()
+}
+
 #[test]
 fn contract_is_the_compiled_fixture_bytes() {
     let journal = root("contract");
@@ -265,6 +286,12 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
             "refused-attestation-not-verified",
             true,
         ),
+        (
+            "unimplemented",
+            json!({"providers": {"active": {"provider": "openai"}}}),
+            "refused-provider-response-invalid",
+            false,
+        ),
     ];
     for (name, config, vector_id, exact_reason_code) in cases {
         let journal = root(name);
@@ -276,14 +303,23 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
         assert_eq!(output.stderr, b"");
         let response = stdout_json(&output);
         let expected = &fixture_vector(vector_id)["response"];
-        for name in ["reason", "provider", "detail"] {
+        for name in ["reason", "detail"] {
             assert_eq!(response[name], expected[name], "{vector_id} {name}");
+        }
+        if name == "unimplemented" {
+            assert_eq!(response["provider"], "openai");
+        } else {
+            assert_eq!(
+                response["provider"], expected["provider"],
+                "{vector_id} provider"
+            );
         }
         if exact_reason_code {
             for name in ["reason_code", "retryable", "blocking"] {
                 assert_eq!(response[name], expected[name], "{vector_id} {name}");
             }
         }
+        assert!(!journal.join("tokens").exists());
         let _ = std::fs::remove_dir_all(journal);
     }
 }
@@ -410,8 +446,144 @@ fn malformed_generate_arguments_use_protocol_errors() {
 }
 
 #[test]
-#[ignore = "N3: responsiveness and schema-classification vectors land with broader local output handling"]
-fn n3_only_refusal_vectors_are_deferred() {}
+fn n3_boundary_does_not_emit_incomplete_text_or_schema_validation_failed() {
+    let journal = root("truncated-text");
+    write_config(&journal, bundled_config(false));
+    let body = completion_body(
+        "partial answer",
+        "length",
+        Some(json!({"prompt_tokens": 2, "completion_tokens": 1})),
+    );
+    let (port, server) = serve(&body);
+    std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+    let output = one_shot(&journal, &fixture_vector("generated")["request"]);
+    let response = stdout_json(&output);
+    assert_eq!(response["outcome"], "generated");
+    assert_eq!(response["finish_reason"], "max_tokens");
+    assert_ne!(
+        response.get("reason").and_then(Value::as_str),
+        Some("incomplete-text")
+    );
+    assert_eq!(server.join().expect("join server"), 6);
+
+    let schema_journal = root("schema-advisory");
+    write_config(&schema_journal, bundled_config(false));
+    let body = completion_body("{}", "stop", Some(json!({"prompt_tokens": 2})));
+    let (port, server) = serve(&body);
+    std::fs::write(schema_journal.join("health/local.port"), port.to_string()).expect("write port");
+    let mut request = fixture_vector("generated")["request"].clone();
+    request["json_schema"] = json!({"type": "object", "required": ["answer"]});
+    request["json_output"] = json!(true);
+    let response = stdout_json(&one_shot(&schema_journal, &request));
+    assert_eq!(response["outcome"], "generated");
+    assert_ne!(
+        response.get("reason").and_then(Value::as_str),
+        Some("schema-validation-failed")
+    );
+    assert_eq!(server.join().expect("join server"), 6);
+    let _ = std::fs::remove_dir_all(journal);
+    let _ = std::fs::remove_dir_all(schema_journal);
+}
+
+#[test]
+fn completed_provider_results_log_before_strict_validation() {
+    let cases = [
+        (
+            "blank-with-usage",
+            "",
+            "stop",
+            Some(json!({"prompt_tokens": 2, "completion_tokens": 1})),
+            true,
+            "provider-response-invalid",
+        ),
+        (
+            "blank-without-usage",
+            "",
+            "stop",
+            None,
+            false,
+            "provider-response-invalid",
+        ),
+        (
+            "json-truncated",
+            "partial JSON",
+            "length",
+            Some(json!({"prompt_tokens": 2, "completion_tokens": 1})),
+            true,
+            "incomplete-json",
+        ),
+    ];
+    for (name, text, finish_reason, usage, writes_usage, reason) in cases {
+        let journal = root(name);
+        write_config(&journal, bundled_config(false));
+        let body = completion_body(text, finish_reason, usage);
+        let (port, server) = serve(&body);
+        std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+        let mut request = fixture_vector("generated")["request"].clone();
+        if reason == "incomplete-json" {
+            request["json_output"] = json!(true);
+        }
+        let response = stdout_json(&one_shot(&journal, &request));
+        assert_eq!(response["outcome"], "refused");
+        assert_eq!(response["reason"], reason);
+        if reason == "incomplete-json" {
+            assert_eq!(response["reason_code"], "incomplete_json_length");
+        } else {
+            assert_eq!(response["reason_code"], "provider_response_invalid");
+        }
+        assert_eq!(journal.join("tokens").exists(), writes_usage);
+        if writes_usage {
+            assert_eq!(token_entries(&journal).len(), 1);
+        }
+        assert_eq!(server.join().expect("join server"), 6);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+}
+
+#[test]
+fn non_responsive_empty_usage_logs_diagnostics_and_json_truncation_wins() {
+    let journal = root("non-responsive-empty-usage");
+    write_config(&journal, bundled_config(false));
+    let body = completion_body("I cannot complete that request.", "stop", None);
+    let (port, server) = serve(&body);
+    std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+    let response = stdout_json(&one_shot(&journal, &fixture_vector("generated")["request"]));
+    assert_eq!(response["reason"], "non-responsive-output");
+    let entry = token_entries(&journal).pop().expect("one usage entry");
+    assert_eq!(entry["usage"], json!({}));
+    assert_eq!(entry["non_responsive_matched_signal"], "i cannot");
+    assert_eq!(
+        entry["non_responsive_output"],
+        "I cannot complete that request."
+    );
+    assert_eq!(server.join().expect("join server"), 6);
+
+    let precedence_journal = root("strict-before-responsiveness");
+    write_config(&precedence_journal, bundled_config(false));
+    let body = completion_body(
+        "I cannot complete that request.",
+        "length",
+        Some(json!({"prompt_tokens": 2})),
+    );
+    let (port, server) = serve(&body);
+    std::fs::write(
+        precedence_journal.join("health/local.port"),
+        port.to_string(),
+    )
+    .expect("write port");
+    let mut request = fixture_vector("generated")["request"].clone();
+    request["json_output"] = json!(true);
+    request["json_schema"] = json!({"type": "object", "required": ["answer"]});
+    let response = stdout_json(&one_shot(&precedence_journal, &request));
+    assert_eq!(response["reason"], "incomplete-json");
+    let entry = token_entries(&precedence_journal)
+        .pop()
+        .expect("one usage entry");
+    assert_eq!(entry["non_responsive_matched_signal"], "i cannot");
+    assert_eq!(server.join().expect("join server"), 6);
+    let _ = std::fs::remove_dir_all(journal);
+    let _ = std::fs::remove_dir_all(precedence_journal);
+}
 
 #[test]
 #[ignore = "N5: attestation failed and stale vectors require real attestation verification"]

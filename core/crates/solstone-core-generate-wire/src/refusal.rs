@@ -5,7 +5,7 @@ use solstone_core_generate::{
     ReasonCode, ReasonCodeValue, RefusalReason, RefusedResponse, UnknownReasonCode, contract,
 };
 
-use crate::LaneOutcome;
+use crate::{LaneOutcome, SanitizedFinishReason, ValidationFailure};
 
 pub fn refusal_for(
     outcome: &LaneOutcome,
@@ -32,6 +32,22 @@ pub fn refusal_for(
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
+        ),
+        LaneOutcome::ValidationFailure(ValidationFailure::ProviderResponseInvalid) => (
+            "refused-provider-response-invalid",
+            RefusalReason::ProviderResponseInvalid,
+            Some("provider_response_invalid".to_owned()),
+        ),
+        LaneOutcome::ValidationFailure(ValidationFailure::IncompleteJson { finish_reason }) => (
+            "refused-incomplete-json",
+            RefusalReason::IncompleteJson,
+            matches!(finish_reason, SanitizedFinishReason::MaxTokens)
+                .then(|| "incomplete_json_length".to_owned()),
+        ),
+        LaneOutcome::ValidationFailure(ValidationFailure::NonResponsiveOutput) => (
+            "refused-non-responsive-output",
+            RefusalReason::NonResponsiveOutput,
+            Some("non_responsive".to_owned()),
         ),
         LaneOutcome::UnimplementedLane => (
             "refused-provider-response-invalid",
@@ -211,6 +227,54 @@ mod tests {
             assert_eq!(refusal.retryable, retryable);
             assert_eq!(refusal.blocking, blocking);
             assert_eq!(refusal.detail, "fixture provider-response-invalid");
+        }
+    }
+
+    #[test]
+    fn validation_failures_use_fixture_reason_classifications() {
+        let cases = [
+            (
+                ValidationFailure::ProviderResponseInvalid,
+                RefusalReason::ProviderResponseInvalid,
+                Some("provider_response_invalid"),
+                true,
+                false,
+            ),
+            (
+                ValidationFailure::IncompleteJson {
+                    finish_reason: SanitizedFinishReason::MaxTokens,
+                },
+                RefusalReason::IncompleteJson,
+                Some("incomplete_json_length"),
+                true,
+                false,
+            ),
+            (
+                ValidationFailure::IncompleteJson {
+                    finish_reason: SanitizedFinishReason::ContentFilter,
+                },
+                RefusalReason::IncompleteJson,
+                None,
+                false,
+                true,
+            ),
+            (
+                ValidationFailure::NonResponsiveOutput,
+                RefusalReason::NonResponsiveOutput,
+                Some("non_responsive"),
+                false,
+                false,
+            ),
+        ];
+        for (failure, reason, reason_code, retryable, blocking) in cases {
+            let refusal = refusal_for(&LaneOutcome::ValidationFailure(failure), "local", None);
+            assert_eq!(refusal.reason, reason);
+            assert_eq!(
+                refusal.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+                reason_code
+            );
+            assert_eq!(refusal.retryable, retryable);
+            assert_eq!(refusal.blocking, blocking);
         }
     }
 }
