@@ -55,16 +55,6 @@ mod vocabulary_tests {
         {
             members.push(value.as_str().expect("fixture refusal reason is a string"));
         }
-        for value in contract()["reason_codes"]
-            .as_array()
-            .expect("fixture reason codes are an array")
-        {
-            members.push(
-                value["code"]
-                    .as_str()
-                    .expect("fixture reason code is a string"),
-            );
-        }
         for value in contract()["conformance_vectors"]
             .as_array()
             .expect("fixture vectors are an array")
@@ -81,21 +71,63 @@ mod vocabulary_tests {
                 .expect("fixture unknown-member entry is present"),
         );
 
-        let sources = [
-            include_str!("bundled.rs"),
-            include_str!("lane.rs"),
-            include_str!("request.rs"),
-            include_str!("token_log.rs"),
-            include_str!("lib.rs"),
+        // Every module in the crate, checked against lib.rs's own `mod`
+        // declarations below so a new module cannot escape the scan by being
+        // forgotten. The list was frozen at five files for six waves while the
+        // crate grew to thirteen modules, and both provider arms were outside
+        // it the whole time.
+        let sources: &[(&str, &str)] = &[
+            ("anthropic", include_str!("anthropic.rs")),
+            ("bundled", include_str!("bundled.rs")),
+            ("endpoint", include_str!("endpoint.rs")),
+            ("lane", include_str!("lane.rs")),
+            ("lib", include_str!("lib.rs")),
+            ("refusal", include_str!("refusal.rs")),
+            ("request", include_str!("request.rs")),
+            ("responsiveness", include_str!("responsiveness.rs")),
+            ("schema_prep", include_str!("schema_prep.rs")),
+            ("schema_validation", include_str!("schema_validation.rs")),
+            ("token_budget", include_str!("token_budget.rs")),
+            ("token_log", include_str!("token_log.rs")),
+            ("validation", include_str!("validation.rs")),
         ];
+
+        // Self-check: the scan covers every module this crate declares.
+        for line in include_str!("lib.rs").lines() {
+            let line = line.trim();
+            let Some(rest) = line
+                .strip_prefix("pub mod ")
+                .or_else(|| line.strip_prefix("mod "))
+            else {
+                continue;
+            };
+            let Some(name) = rest.strip_suffix(';') else {
+                continue;
+            };
+            assert!(
+                sources.iter().any(|(module, _)| *module == name),
+                "module {name:?} is declared but not scanned by the vocabulary guard"
+            );
+        }
+
+        // Reason codes are deliberately NOT in this set. Each provider arm
+        // classifies its own failures - the reference's classifier is built
+        // around Python exception types and does not port - so an arm naming
+        // the code it classifies to is correct. What must not escape refusal.rs
+        // is the boundary's own refusal vocabulary: the reason strings, the
+        // conformance-vector ids, and the unknown-member key.
         for member in members {
             let quoted_member = format!("\"{member}\"");
-            assert!(
-                sources
-                    .iter()
-                    .all(|source| !source.contains(&quoted_member)),
-                "closed generate vocabulary member {member:?} must stay in refusal.rs"
-            );
+            for (module, source) in sources {
+                if *module == "refusal" {
+                    continue;
+                }
+                assert!(
+                    !source.contains(&quoted_member),
+                    "closed generate vocabulary member {member:?} must stay in \
+                     refusal.rs, found in {module}.rs"
+                );
+            }
         }
     }
 }
