@@ -20,6 +20,10 @@ pub struct DailyLogWriter {
 }
 
 impl DailyLogWriter {
+    /// Open an operational writer rooted under `health/`.
+    ///
+    /// A supplied day pins historical/batch work to that day and disables
+    /// midnight rollover; `None` follows the local day and rolls at midnight.
     pub fn new(
         journal_root: impl Into<PathBuf>,
         reference: impl Into<String>,
@@ -29,6 +33,11 @@ impl DailyLogWriter {
         let journal_root = journal_root.into();
         let reference = reference.into();
         let name = name.into();
+        validate_component("reference", &reference)?;
+        validate_component("name", &name)?;
+        if let Some(day) = day.as_deref() {
+            validate_component("day", day)?;
+        }
         let pinned = day.is_some();
         let current_day = day.unwrap_or_else(current_day);
         let file = open_log(&journal_root, &current_day, &reference, &name)?;
@@ -96,6 +105,16 @@ fn current_day() -> String {
     Local::now().format("%Y%m%d").to_string()
 }
 
+fn validate_component(kind: &str, value: &str) -> io::Result<()> {
+    if value.contains('/') || value.contains('\\') || value == ".." {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid operational log {kind}: path separators and '..' are not allowed"),
+        ));
+    }
+    Ok(())
+}
+
 fn log_path(root: &Path, day: &str, reference: &str, name: &str) -> PathBuf {
     root.join(CHRONICLE_DIR)
         .join(day)
@@ -137,6 +156,26 @@ fn atomic_symlink(_link: &Path, _target: &str) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_path_components_before_opening_operational_logs() {
+        for (reference, name, day) in [
+            ("../reference", "process", None),
+            ("reference", "../process", None),
+            ("reference", "process", Some("../day")),
+        ] {
+            let error = match DailyLogWriter::new(
+                std::env::temp_dir(),
+                reference,
+                name,
+                day.map(str::to_owned),
+            ) {
+                Ok(_) => panic!("unsafe component must be rejected"),
+                Err(error) => error,
+            };
+            assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        }
+    }
 
     #[test]
     fn ac19_rollover_open_failure_retains_old_handle_for_retry() {

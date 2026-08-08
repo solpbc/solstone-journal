@@ -13,7 +13,10 @@ use thiserror::Error;
 
 use super::descendants::Descendant;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-use super::descendants::{ProcessTreeSnapshot, own_pgid, snapshot};
+use super::{
+    descendants::{ProcessTreeSnapshot, own_pgid, snapshot},
+    signal_aware_exit_code,
+};
 
 /// Task cap enforcement's bounded graceful window.
 pub const CAP_TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
@@ -23,12 +26,6 @@ pub const TASK_QUEUE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 pub const SERVICE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
 /// Unconditional bounded reap window after SIGKILL escalation.
 pub const KILL_REAP_GRACE: Duration = Duration::from_millis(500);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DescendantCoverage {
-    Proven,
-    Unavailable,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TerminationOutcome {
@@ -93,7 +90,7 @@ fn terminate_unix(
         // Preserve Python: a missed graceful parent deadline remains distinct.
         return Err(TerminationError::ParentGraceTimeout);
     };
-    let parent_exit_code = parent_exit.code();
+    let parent_exit_code = Some(signal_aware_exit_code(&parent_exit));
 
     if snapshot_uncertain {
         return Err(TerminationError::ProcessTreeNotReaped {

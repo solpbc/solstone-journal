@@ -155,6 +155,7 @@ pub struct ScheduledRequest {
 }
 
 impl ScheduledRequest {
+    /// Construct scheduler-originated work with no day context.
     pub fn new(
         cmd: ScheduledArgv,
         reference: impl Into<String>,

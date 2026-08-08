@@ -115,7 +115,7 @@ fn ac12_spawned_child_is_the_leader_of_its_own_process_group() {
 }
 
 #[test]
-fn ac14_cap_and_service_windows_allow_graceful_termination() {
+fn ac14_all_named_graceful_windows_allow_graceful_termination() {
     let bed = Bed::new("graceful-windows");
     for (reference, timeout) in [
         ("cap-window", CAP_TERMINATION_TIMEOUT),
@@ -195,6 +195,28 @@ fn ac16_exit_descriptions_and_catchup_status_are_exact() {
     assert_eq!(exit_status_for_code(0), "ok");
     assert_eq!(exit_status_for_code(66), "empty");
     assert_eq!(exit_status_for_code(1), "error");
+}
+
+#[test]
+fn ac16_managed_process_preserves_signal_exit_codes() {
+    let bed = Bed::new("signal-exit");
+    let mut process = bed.spawn("signal-exit", &["sleep"]);
+    let pid = i32::try_from(process.pid()).expect("fixture pid fits i32");
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(pid),
+        nix::sys::signal::Signal::SIGTERM,
+    )
+    .expect("signal fixture");
+
+    let exit_code = loop {
+        if let Some(exit_code) = process.poll().expect("poll fixture") {
+            break exit_code;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert_eq!(exit_code, -15);
+    assert_eq!(describe_exit(exit_code), "exit -15 / SIGTERM");
+    process.cleanup();
 }
 
 #[test]

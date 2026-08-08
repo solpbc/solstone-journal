@@ -15,6 +15,7 @@ use crate::partition::partition_for;
 
 use super::events::{OutputStream, ProcessEvent, ProcessEventSink};
 use super::log::DailyLogWriter;
+use super::signal_aware_exit_code;
 use super::terminate::{TerminationError, TerminationOutcome, terminate};
 
 #[derive(Debug, Error)]
@@ -163,11 +164,13 @@ impl ManagedProcess {
     pub fn poll(&mut self) -> io::Result<Option<i32>> {
         self.child
             .try_wait()
-            .map(|status| status.and_then(|value| value.code()))
+            .map(|status| status.map(|value| signal_aware_exit_code(&value)))
     }
 
     pub fn wait(&mut self) -> io::Result<i32> {
-        Ok(self.child.wait()?.code().unwrap_or(-1))
+        self.child
+            .wait()
+            .map(|status| signal_aware_exit_code(&status))
     }
 
     pub fn terminate(&mut self, timeout: Duration) -> Result<TerminationOutcome, TerminationError> {
@@ -181,10 +184,11 @@ impl ManagedProcess {
             .path()
     }
 
+    /// Join drains and emit the exit event after a child exits.
+    ///
+    /// This is a no-op while the child is alive; call it again after `wait` or
+    /// `poll` observes the exit so joining an open pipe cannot block forever.
     pub fn cleanup(&mut self) {
-        // Joining a drain before its child has exited can block forever on an
-        // open pipe. Cleanup is therefore an exited-child operation; callers
-        // can call it again after wait/poll observes the exit.
         if self.child.try_wait().ok().flatten().is_none() {
             return;
         }
@@ -199,7 +203,7 @@ impl ManagedProcess {
             .try_wait()
             .ok()
             .flatten()
-            .and_then(|status| status.code());
+            .map(|status| signal_aware_exit_code(&status));
         let log_path = self.log_path();
         emit(
             &self.sink,

@@ -2,8 +2,10 @@
 // Copyright (c) 2026 sol pbc
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-use std::collections::{BTreeMap, BTreeSet};
-use std::io;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    io,
+};
 
 /// A descendant PID together with the process group observed before signaling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -86,22 +88,6 @@ pub fn snapshot(pid: i32) -> io::Result<ProcessTreeSnapshot> {
     tree_from_rows(pid, &rows)
 }
 
-#[cfg(target_os = "ios")]
-pub fn snapshot(_pid: i32) -> io::Result<ProcessTreeSnapshot> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "descendant enumeration is unavailable on iOS",
-    ))
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
-pub fn snapshot(_pid: i32) -> io::Result<ProcessTreeSnapshot> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "descendant enumeration is unsupported on this platform",
-    ))
-}
-
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn tree_from_rows(parent_pid: i32, rows: &[ProcessRow]) -> io::Result<ProcessTreeSnapshot> {
     let by_parent = rows
@@ -150,9 +136,4 @@ pub fn own_pgid() -> Option<i32> {
         .output()
         .ok()?;
     String::from_utf8_lossy(&output.stdout).trim().parse().ok()
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-pub fn own_pgid() -> Option<i32> {
-    None
 }

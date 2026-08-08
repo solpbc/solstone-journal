@@ -51,7 +51,8 @@ fn ac1_every_declared_task_verb_is_in_the_native_journal_census_with_empty_prese
 
 #[test]
 fn ac4_ios_descendant_coverage_is_explicitly_cfg_gated() {
-    assert!(DESCENDANTS.contains("#[cfg(target_os = \"ios\")]"));
+    assert!(DESCENDANTS.contains("#[cfg(any(target_os = \"linux\", target_os = \"macos\"))]"));
+    assert!(TERMINATE.contains("#[cfg(not(any(target_os = \"linux\", target_os = \"macos\")))]"));
     assert!(TERMINATE.contains("DescendantCoverageUnavailable"));
 }
 
