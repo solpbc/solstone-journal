@@ -229,15 +229,26 @@ def test_policy_denies_wrapped_or_nonliteral_sol_invocations(tmp_path, command):
 
 
 @pytest.mark.parametrize("access_tier", ["normal", "system-read"])
-@pytest.mark.parametrize("verb", ["create", "reply", "attach", "feedback"])
+@pytest.mark.parametrize(
+    ("verb", "arguments"),
+    [
+        ("create", "--subject x --description y"),
+        ("reply", "--subject x --description y"),
+        ("attach", "--subject x --description y"),
+        ("feedback", "--subject x --description y"),
+        ("close", "7"),
+        ("resolved", "7"),
+        ("still-need-help", "7"),
+    ],
+)
 def test_policy_denies_support_send_verbs_without_submit_tier(
-    tmp_path, access_tier, verb
+    tmp_path, access_tier, verb, arguments
 ):
     policy = _policy(tmp_path, access_tier)
 
     allowed, reason = policy.check(
         "run_shell_command",
-        {"command": f"sol call support {verb} --subject x --description y"},
+        {"command": f"sol call support {verb} {arguments}"},
     )
 
     assert allowed is False
@@ -246,16 +257,27 @@ def test_policy_denies_support_send_verbs_without_submit_tier(
     assert access_tier in reason
 
 
-@pytest.mark.parametrize("verb", ["create", "reply", "attach", "feedback"])
+@pytest.mark.parametrize(
+    ("verb", "arguments"),
+    [
+        ("create", "--subject x --description y"),
+        ("reply", "--subject x --description y"),
+        ("attach", "--subject x --description y"),
+        ("feedback", "--subject x --description y"),
+        ("close", "7"),
+        ("resolved", "7"),
+        ("still-need-help", "7"),
+    ],
+)
 @pytest.mark.parametrize("outbound_approval", [None, ""])
 def test_policy_denies_support_send_verbs_for_outbound_without_approval(
-    tmp_path, verb, outbound_approval
+    tmp_path, verb, arguments, outbound_approval
 ):
     policy = _policy(tmp_path, "outbound", outbound_approval=outbound_approval)
 
     allowed, reason = policy.check(
         "run_shell_command",
-        {"command": f"sol call support {verb} --subject x --description y"},
+        {"command": f"sol call support {verb} {arguments}"},
     )
 
     assert allowed is False
@@ -274,13 +296,26 @@ def test_policy_denies_outbound_support_send_with_yes_without_approval(tmp_path)
     assert "per-send owner approval" in reason
 
 
-@pytest.mark.parametrize("verb", ["create", "reply", "attach", "feedback"])
-def test_policy_allows_support_send_verbs_for_outbound_with_approval(tmp_path, verb):
+@pytest.mark.parametrize(
+    ("verb", "arguments"),
+    [
+        ("create", "--subject x --description y"),
+        ("reply", "--subject x --description y"),
+        ("attach", "--subject x --description y"),
+        ("feedback", "--subject x --description y"),
+        ("close", "7"),
+        ("resolved", "7"),
+        ("still-need-help", "7"),
+    ],
+)
+def test_policy_allows_support_send_verbs_for_outbound_with_approval(
+    tmp_path, verb, arguments
+):
     policy = _policy(tmp_path, "outbound", outbound_approval="approval-token")
 
     allowed, reason = policy.check(
         "run_shell_command",
-        {"command": f"sol call support {verb} --subject x --description y"},
+        {"command": f"sol call support {verb} {arguments}"},
     )
 
     assert allowed is True
@@ -296,6 +331,7 @@ def test_policy_allows_support_send_verbs_for_outbound_with_approval(tmp_path, v
         "sol call support article getting-started",
         "sol call support list",
         "sol call support show 42",
+        "sol call support history",
         "sol call support announcements",
         "sol call support diagnose",
     ],

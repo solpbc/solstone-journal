@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
 
@@ -18,6 +19,24 @@ const SUPPORT_FALLBACK_2: &str = "To file a support ticket, visit https://suppor
 const DRAFT_NOTICE: &str =
     "(Draft not captured — solstone wasn't reachable to save it for review.)";
 const FEEDBACK_SUBJECT: &str = "feedback";
+const CLOSE_PREVIEW: &str = "Closing this removes the ticket from solstone support's open list; only a minimal closed record is kept.";
+const RESOLVED_PREVIEW: &str = "Accepting this resolution removes the ticket from solstone support's open list; only a minimal closed record is kept.";
+const STILL_NEED_HELP_PREVIEW: &str = "This tells solstone support the proposed resolution did not work, cancels the pending close, and keeps the ticket open.";
+
+fn generate_action_id() -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let entropy = now ^ u128::from(std::process::id());
+    format!("cact1_{entropy:x}")
+}
+
+fn resolve_action_id(resume: Option<&str>) -> String {
+    resume
+        .map(str::to_string)
+        .unwrap_or_else(generate_action_id)
+}
 
 #[must_use]
 pub fn register(ctx: CommandContext<'_>) -> CommandOutput {
@@ -118,6 +137,7 @@ pub fn create(ctx: CommandContext<'_>) -> CommandOutput {
             ("--product", Some("-p")),
             ("--severity", None),
             ("--category", None),
+            ("--resume", None),
         ],
         &["--skip-kb", "--submit", "--yes", "-y", "--anonymous"],
         &[],
@@ -131,6 +151,9 @@ pub fn create(ctx: CommandContext<'_>) -> CommandOutput {
     let Some(description) = parsed.value("--description") else {
         return stderr("Error: option --description is required.");
     };
+    if parsed.value("--resume").is_some() && !parsed.has_flag("--submit") {
+        return stderr("Error: --resume requires --submit.");
+    }
     let product = parsed.value("--product").unwrap_or("solstone");
     let severity = parsed.value("--severity").unwrap_or("medium");
     let category = parsed.value("--category");
@@ -254,6 +277,8 @@ pub fn create(ctx: CommandContext<'_>) -> CommandOutput {
             Err(()) => return out.finish(1),
         }
     }
+    let action_id = resolve_action_id(parsed.value("--resume"));
+    out.stdout.push(format!("Action: {action_id}"));
     let payload = ticket_payload(
         subject,
         description,
@@ -263,11 +288,12 @@ pub fn create(ctx: CommandContext<'_>) -> CommandOutput {
         &diagnostics,
         anonymous,
     );
-    let result = match client.request(
+    let result = match client.request_mutation(
         HttpMethod::Post,
         "/app/support/api/tickets",
         vec![],
         Some(Value::Object(payload)),
+        &action_id,
     ) {
         Ok(value) => value,
         Err(error) => return out.finish_support_error(error),
@@ -390,7 +416,7 @@ pub fn show(ctx: CommandContext<'_>) -> CommandOutput {
 pub fn reply(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
-        &[("--body", Some("-b"))],
+        &[("--body", Some("-b")), ("--resume", None)],
         &["--submit", "--yes", "-y"],
         &["--no-submit"],
     ) {
@@ -403,6 +429,9 @@ pub fn reply(ctx: CommandContext<'_>) -> CommandOutput {
     let Some(body) = parsed.value("--body") else {
         return stderr("Error: option --body is required.");
     };
+    if parsed.value("--resume").is_some() && !parsed.has_flag("--submit") {
+        return stderr("Error: --resume requires --submit.");
+    }
     let client = SupportClient::new(ctx);
     if let Err(output) = client.check_enabled() {
         return output;
@@ -435,11 +464,14 @@ pub fn reply(ctx: CommandContext<'_>) -> CommandOutput {
             Err(()) => return out.finish(1),
         }
     }
-    if let Err(error) = client.request(
+    let action_id = resolve_action_id(parsed.value("--resume"));
+    out.stdout.push(format!("Action: {action_id}"));
+    if let Err(error) = client.request_mutation(
         HttpMethod::Post,
         &format!("/app/support/api/tickets/{ticket_id}/reply"),
         vec![],
         Some(json!({"content": body})),
+        &action_id,
     ) {
         return out.finish_support_error(error);
     }
@@ -452,7 +484,7 @@ pub fn reply(ctx: CommandContext<'_>) -> CommandOutput {
 pub fn attach(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
-        &[],
+        &[("--resume", None)],
         &["--submit", "--yes", "-y"],
         &["--no-submit"],
     ) {
@@ -470,6 +502,9 @@ pub fn attach(ctx: CommandContext<'_>) -> CommandOutput {
         .collect::<Vec<_>>();
     if files.is_empty() {
         return stderr("Error: missing argument 'FILES'.");
+    }
+    if parsed.value("--resume").is_some() && !parsed.has_flag("--submit") {
+        return stderr("Error: --resume requires --submit.");
     }
     if let Some(file) = first_unreadable_file(ctx, &files) {
         return CommandOutput::failure(format!("Error: file is not readable: {file}\n"), 2);
@@ -557,10 +592,22 @@ pub fn attach(ctx: CommandContext<'_>) -> CommandOutput {
             Err(()) => return out.finish(1),
         }
     }
+    let action_id = resolve_action_id(parsed.value("--resume"));
+    out.stdout.push(format!("Action: {action_id}"));
     let path = format!("/app/support/api/tickets/{ticket_id}/attachments");
-    for (file, body) in file_bodies {
+    let multiple_files = file_bodies.len() > 1;
+    let mut failed = false;
+    for (index, (file, body)) in file_bodies.into_iter().enumerate() {
         let filename = file_name(&file);
-        match client.upload(
+        let data = if multiple_files {
+            vec![FormField {
+                name: "index".to_string(),
+                value: index.to_string(),
+            }]
+        } else {
+            vec![]
+        };
+        match client.upload_mutation(
             &path,
             vec![MultipartFile {
                 field_name: "file".to_string(),
@@ -568,28 +615,32 @@ pub fn attach(ctx: CommandContext<'_>) -> CommandOutput {
                 content_type: None,
                 body,
             }],
-            vec![],
+            data,
+            &action_id,
         ) {
             Ok(result) => out.stdout.push(format!(
                 "Attached: {filename} (id: {})",
                 display_or(&result["id"], "?")
             )),
-            Err(error @ ClientError::Unreachable { .. }) => {
-                return out.finish_support_error(error);
+            Err(error) => {
+                failed = true;
+                out.stderr
+                    .push(format!("Failed {filename}: {}", error.message()));
             }
-            Err(error) => out
-                .stderr
-                .push(format!("Skipped {filename}: {}", error.message())),
         }
     }
-    out.finish(0)
+    out.finish(if failed { 1 } else { 0 })
 }
 
 #[must_use]
 pub fn feedback(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
-        &[("--body", Some("-b")), ("--product", Some("-p"))],
+        &[
+            ("--body", Some("-b")),
+            ("--product", Some("-p")),
+            ("--resume", None),
+        ],
         &["--anonymous", "--submit", "--yes", "-y"],
         &[],
     ) {
@@ -599,6 +650,9 @@ pub fn feedback(ctx: CommandContext<'_>) -> CommandOutput {
     let Some(body) = parsed.value("--body") else {
         return stderr("Error: option --body is required.");
     };
+    if parsed.value("--resume").is_some() && !parsed.has_flag("--submit") {
+        return stderr("Error: --resume requires --submit.");
+    }
     let product = parsed.value("--product").unwrap_or("solstone");
     let anonymous = parsed.has_flag("--anonymous");
     let client = SupportClient::new(ctx);
@@ -654,11 +708,14 @@ pub fn feedback(ctx: CommandContext<'_>) -> CommandOutput {
             Err(()) => return out.finish(1),
         }
     }
-    let result = match client.request(
+    let action_id = resolve_action_id(parsed.value("--resume"));
+    out.stdout.push(format!("Action: {action_id}"));
+    let result = match client.request_mutation(
         HttpMethod::Post,
         "/app/support/api/feedback",
         vec![],
         Some(json!({"body": body, "product": product, "anonymous": anonymous})),
+        &action_id,
     ) {
         Ok(value) => value,
         Err(error) => return out.finish_support_error(error),
@@ -668,6 +725,161 @@ pub fn feedback(ctx: CommandContext<'_>) -> CommandOutput {
         display_or(&result["id"], "?")
     ));
     out.finish(0)
+}
+
+#[must_use]
+pub fn close(ctx: CommandContext<'_>) -> CommandOutput {
+    lifecycle_mutation(
+        ctx,
+        "close",
+        "Close ticket",
+        CLOSE_PREVIEW,
+        "/close",
+        "Close ticket #{ticket_id}? This can't be undone from here.",
+        true,
+    )
+}
+
+#[must_use]
+pub fn resolved(ctx: CommandContext<'_>) -> CommandOutput {
+    lifecycle_mutation(
+        ctx,
+        "resolved",
+        "Accept the proposed resolution and close ticket",
+        RESOLVED_PREVIEW,
+        "/resolution/confirm",
+        "Accept the proposed resolution and close ticket #{ticket_id}? This can't be undone from here.",
+        true,
+    )
+}
+
+#[must_use]
+pub fn still_need_help(ctx: CommandContext<'_>) -> CommandOutput {
+    lifecycle_mutation(
+        ctx,
+        "still_need_help",
+        "Keep ticket open",
+        STILL_NEED_HELP_PREVIEW,
+        "/resolution/still-need-help",
+        "Let solstone support know you still need help with ticket #{ticket_id}? This cancels the pending close.",
+        false,
+    )
+}
+
+fn lifecycle_mutation(
+    ctx: CommandContext<'_>,
+    verb: &str,
+    preview_title: &str,
+    preview: &str,
+    route_suffix: &str,
+    prompt_template: &str,
+    tombstone: bool,
+) -> CommandOutput {
+    let parsed = match parse_args(
+        ctx.args,
+        &[("--resume", None)],
+        &["--submit", "--yes", "-y"],
+        &[],
+    ) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    let Some(ticket_id) = parsed.positionals.first() else {
+        return stderr("Error: missing argument 'TICKET_ID'.");
+    };
+    if parsed.value("--resume").is_some() && !parsed.has_flag("--submit") {
+        return stderr("Error: --resume requires --submit.");
+    }
+    let client = SupportClient::new(ctx);
+    if let Err(output) = client.check_enabled() {
+        return output;
+    }
+    if !parsed.has_flag("--submit") {
+        let mut out = Output::default();
+        out.stdout.push(
+            "DRY RUN — nothing was sent. Re-run with --submit to actually send this.".to_string(),
+        );
+        out.stdout.push(format!("{preview_title} #{ticket_id}."));
+        out.stdout.push(preview.to_string());
+        let mut payload = Map::new();
+        payload.insert("ticket_id".to_string(), int_or_string(ticket_id));
+        capture_draft(&client, &mut out, verb, payload, None);
+        return out.finish(0);
+    }
+
+    let mut out = Output::default();
+    let mut confirm_lines = ctx.stdin.lines();
+    if !parsed.has_flag("--yes") {
+        let prompt = prompt_template.replace("{ticket_id}", ticket_id);
+        match confirm(&mut out, &mut confirm_lines, &prompt) {
+            Ok(true) => {}
+            Ok(false) => {
+                out.stdout.push("Cancelled — nothing was sent.".to_string());
+                return out.finish(0);
+            }
+            Err(()) => return out.finish(1),
+        }
+    }
+    let action_id = resolve_action_id(parsed.value("--resume"));
+    out.stdout.push(format!("Action: {action_id}"));
+    let result = match client.request_mutation(
+        HttpMethod::Post,
+        &format!("/app/support/api/tickets/{ticket_id}{route_suffix}"),
+        vec![],
+        None,
+        &action_id,
+    ) {
+        Ok(value) => value,
+        Err(error) => return out.finish_support_error(error),
+    };
+    if tombstone {
+        out.stdout.extend(render_tombstone(&result));
+    } else {
+        out.stdout.extend(render_ticket_summary(&result));
+    }
+    out.finish(0)
+}
+
+#[must_use]
+pub fn history(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(ctx.args, &[("--cursor", None)], &["--json"], &[]) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    let client = SupportClient::new(ctx);
+    if let Err(output) = client.check_enabled() {
+        return output;
+    }
+    let params = parsed
+        .value("--cursor")
+        .map(|cursor| vec![QueryParam::single("cursor", cursor)])
+        .unwrap_or_default();
+    let data = match client.request(
+        HttpMethod::Get,
+        "/app/support/api/tickets/closed",
+        params,
+        None,
+    ) {
+        Ok(value) => value,
+        Err(error) => return support_error(error),
+    };
+    if parsed.has_flag("--json") {
+        return stdout_json(&data);
+    }
+    let tickets = data["tickets"].as_array().cloned().unwrap_or_default();
+    let mut lines = Vec::new();
+    for ticket in &tickets {
+        lines.extend(render_tombstone(ticket));
+        lines.push(String::new());
+    }
+    if let Some(cursor) = data["next_cursor"].as_str() {
+        lines.push(format!(
+            "Run `sol call support history --cursor {cursor}` for more."
+        ));
+    } else {
+        lines.push("No more closed tickets.".to_string());
+    }
+    stdout(lines)
 }
 
 #[must_use]
@@ -797,6 +1009,25 @@ impl<'a> SupportClient<'a> {
         decode_response(&response)
     }
 
+    fn request_mutation(
+        &self,
+        method: HttpMethod,
+        path: &str,
+        params: Vec<QueryParam>,
+        json: Option<Value>,
+        action_id: &str,
+    ) -> Result<Value, ClientError> {
+        let response = self.ctx.transport.request(ApiRequest {
+            method,
+            path: path.to_string(),
+            params,
+            json,
+            headers: vec![("Idempotency-Key".to_string(), action_id.to_string())],
+            policy: TimeoutPolicy::Api,
+        })?;
+        decode_response(&response)
+    }
+
     fn upload(
         &self,
         path: &str,
@@ -808,6 +1039,24 @@ impl<'a> SupportClient<'a> {
             files,
             data,
             headers: vec![],
+            boundary: None,
+            policy: TimeoutPolicy::Upload,
+        })?;
+        decode_response(&response)
+    }
+
+    fn upload_mutation(
+        &self,
+        path: &str,
+        files: Vec<MultipartFile>,
+        data: Vec<FormField>,
+        action_id: &str,
+    ) -> Result<Value, ClientError> {
+        let response = self.ctx.transport.upload(UploadRequest {
+            path: path.to_string(),
+            files,
+            data,
+            headers: vec![("Idempotency-Key".to_string(), action_id.to_string())],
             boundary: None,
             policy: TimeoutPolicy::Upload,
         })?;
@@ -1042,6 +1291,48 @@ fn size_string(size: u64) -> String {
     } else {
         format!("{size} bytes")
     }
+}
+
+fn render_tombstone(data: &Value) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (label, key) in [
+        ("Ticket", "ticket_id"),
+        ("Status", "status"),
+        ("Closed", "closed_at"),
+        ("Close scheduled", "close_scheduled_at"),
+        ("Reason", "reason_code"),
+    ] {
+        if !data[key].is_null() {
+            lines.push(format!("{label}: {}", display_value(&data[key])));
+        }
+    }
+    if lines.is_empty() {
+        lines.push("Ticket lifecycle update completed.".to_string());
+    }
+    lines
+}
+
+fn render_ticket_summary(data: &Value) -> Vec<String> {
+    let ticket_id = if data["id"].is_null() {
+        display_or(&data["ticket_id"], "?")
+    } else {
+        display_or(&data["id"], "?")
+    };
+    vec![
+        format!(
+            "# Ticket #{}: {}",
+            ticket_id,
+            display_or(&data["subject"], "")
+        ),
+        format!(
+            "Status: {}  |  Severity: {}",
+            display_or(&data["status"], "?"),
+            display_or(&data["severity"], "?")
+        ),
+        format!("Created: {}", display_or(&data["created_at"], "?")),
+        String::new(),
+        display_or(&data["description"], ""),
+    ]
 }
 
 fn render_diagnostics(data: &Value) -> Vec<String> {

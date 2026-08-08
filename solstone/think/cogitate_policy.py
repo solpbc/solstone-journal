@@ -87,7 +87,15 @@ _READ_TOOLS = frozenset(COGITATE_READ_TOOL_NAMES)
 _SUBMIT_TIERS = tuple(
     tier for tier in COGITATE_ACCESS_TIERS if capabilities_for_access_tier(tier).submit
 )
-_SUPPORT_SEND_VERBS = {"create", "reply", "attach", "feedback"}
+_SUPPORT_SEND_VERBS = {
+    "create",
+    "reply",
+    "attach",
+    "feedback",
+    "close",
+    "resolved",
+    "still-need-help",
+}
 
 SHELL_COMPOSITION_DENY = (
     "policy_deny: shell composition is not available; run one `sol` or approved "
