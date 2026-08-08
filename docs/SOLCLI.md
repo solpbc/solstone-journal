@@ -36,6 +36,11 @@ sibling native `solstone-core` binary. Their top-level native commands are
 declared beside their Rust handlers under
 `solstone/think/native/<command>/authority.toml`.
 
+The public API-root commands are `sol call`, `sol chat`, `sol import`, and
+`sol status`. `sol status` queries journal network status through the native
+HTTP boundary; it is distinct from `journal status`, which reports local
+journal state.
+
 `solstone/think/sol_cli.py` now contains only the `journal` host dispatcher. It
 has a static `COMMANDS` dict mapping host command names to module paths:
 
@@ -88,15 +93,6 @@ Native `sol call` commands are declared by `authority.toml` files beside Rust
 handlers under `solstone/apps/*/native/` and `solstone/think/tools/native/`.
 The production aggregate inventory is generated into
 `core/crates/solstone-core-sol-client/src/generated/inventory.rs`.
-
-The only remaining Python Typer mount is the finite private compatibility path
-for `sol call journal`:
-```python
-# think/call.py
-from solstone.think.tools.call import app as journal_app
-
-call_app.add_typer(journal_app, name="journal")
-```
 
 Local-only service tools such as `journal navigate` and `journal identity` are
 registered in `COMMANDS` instead of mounted under `sol call`.
@@ -371,9 +367,8 @@ proc.wait()
 solstone/
 ├── think/
 │   ├── sol_cli.py                  # Entry point + COMMANDS registry
-│   ├── call.py                     # sol call journal compatibility mount
 │   ├── tools/
-│   │   ├── call.py                 # sol call journal (built-in)
+│   │   ├── native/journal/          # native sol call journal authority/handler
 │   │   ├── navigate.py             # journal navigate (built-in)
 │   │   └── sol.py                  # journal identity (built-in)
 │   └── *.py                        # Top-level command modules
@@ -408,7 +403,7 @@ CLI commands, a native `native/authority.toml` plus `native/command.rs`.
 
 | Group | Commands |
 |-------|----------|
-| Think (processing) | `import`, `think`, `planner`, `indexer`, `supervisor`, `schedule`, `maintenance`, `top`, `health`, `notify` (`sol notify`, native), `heartbeat` |
+| Think (processing) | `import`, `think`, `planner`, `indexer`, `supervisor`, `schedule`, `maintenance`, `top`, `health`, `status`, `notify`, `heartbeat` |
 | Service | `service` (+ aliases `up`, `down`, `start`), `navigate`, `identity`, `settings`, `install-provider` |
 | Observe (capture) | `transcribe`, `describe`, `sense`, `transfer`, `observer` |
 | Talent (AI agents) | `agents`, `cortex`, `talent`, `call`, `engage`, `providers` |
@@ -433,7 +428,7 @@ CLI commands, a native `native/authority.toml` plus `native/command.rs`.
 | `sol` | `solstone/apps/sol/native/authority.toml` | set-name, reset, set-owner, sol-init |
 | `settings` | `solstone/apps/settings/native/authority.toml` | personal service keys (show/set/delete). Thinking provider selection lives in the Thinking app; local provider install lives at `journal install-provider local`. |
 | `awareness` | `solstone/apps/awareness/native/authority.toml` | status, imports, log, log-read |
-| `journal` | `solstone/think/tools/call.py` | search, events, facets, facet (show/create/update/rename/mute/unmute/delete/merge), news, agents, read, imports, import, retention purge, storage-summary |
+| `journal` | `solstone/think/tools/native/journal/authority.toml` | agents, facet (create/delete/mute/rename/show/unmute/update), facets, import, imports, news, read, retention (config/list), search, storage-summary |
 
 `sol skills` manages coding-agent skill installation with `install`, `uninstall`, and `list`. The former `build` verb is gone; `make skills` runs `scripts/build_skill_references.py` directly before invoking `sol skills install`.
 
