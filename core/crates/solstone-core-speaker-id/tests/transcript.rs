@@ -214,3 +214,39 @@ fn ac19_u0085_in_text_is_not_a_line_boundary() {
     assert_eq!(ids(&read), [1, 2]);
     assert_eq!(read.rows[0].value["text"].as_str(), Some("one\u{0085}two"));
 }
+
+#[test]
+fn ac20_a_persisted_id_above_the_sampled_maximum_is_still_honoured() {
+    // The highest sentence_id observed on a reference journal is an
+    // OBSERVATION, not a contract: a segment may hold any number of
+    // statements. Bounding the resolver on a sampled maximum silently replaces
+    // the persisted identity of every row above it with a positional guess,
+    // which is the exact re-attribution this resolver exists to prevent.
+    for persisted in [1_i64, 209, 210, 211, 250, 10_000] {
+        let body = format!(
+            "{}\n{{\"start\":\"00:00:01\",\"text\":\"one\",\"sentence_id\":{persisted}}}\n",
+            r#"{"raw":"audio.flac"}"#
+        );
+        let read = read_transcript_rows(body.as_bytes()).expect("read");
+        assert_eq!(
+            (read.rows[0].sentence_id, read.rows[0].source),
+            (persisted, SentenceIdSource::Persisted),
+            "persisted sentence_id {persisted} must be honoured"
+        );
+    }
+
+    // The negative twin: non-positive ids remain out of band.
+    for persisted in [0_i64, -1, -250] {
+        let body = format!(
+            "{}\n{{\"start\":\"00:00:01\",\"text\":\"one\",\"sentence_id\":{persisted}}}\n",
+            r#"{"raw":"audio.flac"}"#
+        );
+        let read = read_transcript_rows(body.as_bytes()).expect("read");
+        assert_eq!(
+            (read.rows[0].sentence_id, read.rows[0].source),
+            (1, SentenceIdSource::PositionalAfterIgnoredId),
+            "persisted sentence_id {persisted} must be ignored"
+        );
+        assert_eq!(read.ignored_ids, 1);
+    }
+}

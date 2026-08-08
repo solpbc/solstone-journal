@@ -61,7 +61,11 @@ pub fn sentence_id_for(ordinal_after_header: i64, row: &Value) -> (i64, Sentence
             SentenceIdSource::PositionalAfterIgnoredId,
         );
     };
-    if (1..210).contains(&sentence_id) {
+    // Only a non-positive id is out of band. There is deliberately NO upper
+    // bound: a segment may hold any number of statements, and the highest id
+    // seen on a reference journal is an observation, not a contract. Bounding
+    // on it silently discards the identity of every row above the sample.
+    if sentence_id > 0 {
         (sentence_id, SentenceIdSource::Persisted)
     } else {
         (
