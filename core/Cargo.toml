@@ -118,6 +118,13 @@ rustix = { version = "1.1.4", features = ["fs"] }
 rusqlite = { version = "0.40.1", features = ["bundled", "trace"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde_json = { version = "1.0.150", features = ["preserve_order", "float_roundtrip"] }
+# Draft 2020-12 response schema validation. Release-rail lenses: pure-Rust
+# dependency graph, no build.rs/cc/cmake native step (musl x86_64/aarch64
+# unaffected); package MSRV 1.85 holds under the pinned 1.97.1 toolchain
+# (make check-rust-msrv passes); iOS/macOS cross-target eligibility holds
+# (make check-rust-ios passes); cargo-deny bans/licenses/sources all pass
+# except a pre-existing, unrelated bans failure on solstone-core-journal-io's
+# wrapper list (present at 883a67394, before this dependency existed).
 jsonschema = { version = "0.49.8", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 sha2 = "0.10.9"
