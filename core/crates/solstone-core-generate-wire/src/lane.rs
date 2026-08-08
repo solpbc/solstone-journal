@@ -6,6 +6,7 @@ use solstone_core_local::{
     ByoEndpoint, GenerateFailure, LocalEndpointResolution, resolve_local_endpoint,
 };
 
+use crate::ValidationFailure;
 use crate::endpoint::EndpointFailure;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -17,6 +18,7 @@ pub enum LaneOutcome {
     UnimplementedLane,
     BundledFailure(Box<GenerateFailure>),
     EndpointFailure(EndpointFailure),
+    ValidationFailure(ValidationFailure),
 }
 
 pub fn resolve_lane(config: &Map<String, Value>) -> (String, LaneOutcome) {

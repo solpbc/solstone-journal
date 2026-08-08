@@ -29,5 +29,15 @@ name = "endpoint_overflow_differential"
 path = "tests/endpoint_overflow_differential.rs"
 required-features = ["differential"]
 
+[[test]]
+name = "responsiveness_differential"
+path = "tests/responsiveness_differential.rs"
+required-features = ["differential"]
+
+[[test]]
+name = "token_log_differential"
+path = "tests/token_log_differential.rs"
+required-features = ["differential"]
+
 [lints]
 workspace = true
