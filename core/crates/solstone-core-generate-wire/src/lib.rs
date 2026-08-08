@@ -4,12 +4,18 @@
 //! Pure request, lane, response, and usage-log logic for the generate wire.
 
 mod bundled;
+mod endpoint;
 mod lane;
 mod refusal;
 mod request;
 mod token_log;
 
 pub use bundled::{BundledError, LOCAL_MODEL_ID, bundled_generate, bundled_input};
+pub use endpoint::{
+    ENDPOINT_SERVED_WINDOW_CACHE_TTL, EndpointFailure, EndpointGenerated, EndpointResult,
+    EndpointRuntime, EndpointTransport, EndpointTransportError, OverflowDecision,
+    UreqEndpointTransport, endpoint_generate, endpoint_overflow_decision,
+};
 pub use lane::{LaneOutcome, resolve_lane};
 pub use refusal::refusal_for;
 pub use request::parse_one_shot_request;

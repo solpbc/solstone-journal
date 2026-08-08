@@ -28,12 +28,17 @@ pub fn refusal_for(
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
         ),
+        LaneOutcome::EndpointFailure(failure) => (
+            "refused-provider-response-invalid",
+            RefusalReason::ProviderResponseInvalid,
+            failure.reason_code.clone(),
+        ),
         LaneOutcome::UnimplementedLane => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             None,
         ),
-        LaneOutcome::BundledLocal => {
+        LaneOutcome::BundledLocal | LaneOutcome::ByoEndpoint(_) => {
             panic!("bundled local lane must be invoked before refusal mapping")
         }
     };
@@ -102,6 +107,7 @@ mod tests {
     use solstone_core_local::GenerateFailure;
 
     use super::*;
+    use crate::EndpointFailure;
 
     #[test]
     fn lane_outcomes_use_fixture_vectors_and_provider() {
@@ -164,6 +170,36 @@ mod tests {
                     detail: "specific failure detail must not escape the fixture fallback".into(),
                     inference: None,
                 })),
+                "local",
+                None,
+            );
+            assert_eq!(refusal.reason, RefusalReason::ProviderResponseInvalid);
+            assert_eq!(
+                refusal.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+                expected_wire
+            );
+            assert_eq!(refusal.retryable, retryable);
+            assert_eq!(refusal.blocking, blocking);
+            assert_eq!(refusal.detail, "fixture provider-response-invalid");
+        }
+    }
+
+    #[test]
+    fn endpoint_failure_preserves_known_unknown_and_absent_codes() {
+        for (reason_code, expected_wire, retryable, blocking) in [
+            (
+                Some("provider_response_invalid"),
+                Some("provider_response_invalid"),
+                true,
+                false,
+            ),
+            (Some("future_code"), Some("future_code"), false, true),
+            (None, None, false, true),
+        ] {
+            let refusal = refusal_for(
+                &LaneOutcome::EndpointFailure(EndpointFailure {
+                    reason_code: reason_code.map(str::to_owned),
+                }),
                 "local",
                 None,
             );

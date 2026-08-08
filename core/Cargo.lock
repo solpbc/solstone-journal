@@ -2172,9 +2172,11 @@ dependencies = [
  "base64",
  "chrono",
  "image",
+ "regex",
  "serde_json",
  "solstone-core-generate",
  "solstone-core-local",
+ "ureq",
 ]
 
 [[package]]

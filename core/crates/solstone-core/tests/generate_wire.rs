@@ -77,6 +77,37 @@ fn serve(completion: &str) -> (u16, thread::JoinHandle<usize>) {
     (port, handle)
 }
 
+fn serve_endpoint() -> (u16, thread::JoinHandle<usize>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind endpoint stub server");
+    let port = listener.local_addr().expect("endpoint stub address").port();
+    let handle = thread::spawn(move || {
+        let mut completions = 0;
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().expect("accept endpoint request");
+            let mut bytes = [0_u8; 8192];
+            let read = stream.read(&mut bytes).expect("read endpoint request");
+            let path = String::from_utf8_lossy(&bytes[..read])
+                .split_whitespace()
+                .nth(1)
+                .expect("endpoint HTTP request path")
+                .to_owned();
+            let body = match path.as_str() {
+                "/v1/models" => r#"{"data":[{"id":"served","max_model_len":4096}]}"#,
+                "/v1/chat/completions" => {
+                    completions += 1;
+                    generated_body()
+                }
+                other => panic!("unexpected endpoint HTTP path: {other}"),
+            };
+            stream
+                .write_all(http_response(200, body).as_bytes())
+                .expect("write endpoint response");
+        }
+        completions
+    });
+    (port, handle)
+}
+
 fn write_config(root: &Path, config: Value) {
     std::fs::create_dir_all(root.join("config")).expect("create config directory");
     std::fs::write(root.join("config/journal.json"), config.to_string()).expect("write config");
@@ -234,12 +265,6 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
             "refused-attestation-not-verified",
             true,
         ),
-        (
-            "unimplemented",
-            json!({"providers": {"active": {"provider": "local"}, "local": {"endpoint_url": "https://endpoint", "served_model_id": "served"}}}),
-            "refused-provider-response-invalid",
-            false,
-        ),
     ];
     for (name, config, vector_id, exact_reason_code) in cases {
         let journal = root(name);
@@ -258,19 +283,36 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
             for name in ["reason_code", "retryable", "blocking"] {
                 assert_eq!(response[name], expected[name], "{vector_id} {name}");
             }
-        } else {
-            assert!(response["reason_code"].is_null());
-            assert_eq!(response["retryable"], false);
-            assert_eq!(response["blocking"], true);
-            assert!(
-                !response["reason"]
-                    .as_str()
-                    .unwrap()
-                    .starts_with("attestation-")
-            );
         }
         let _ = std::fs::remove_dir_all(journal);
     }
+}
+
+#[test]
+fn unreachable_byo_endpoint_uses_the_endpoint_unreachable_code() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("reserve endpoint port");
+    let port = listener.local_addr().expect("endpoint address").port();
+    drop(listener);
+    let journal = root("endpoint-unreachable");
+    write_config(
+        &journal,
+        json!({"providers": {"active": {"provider": "local"}, "local": {
+            "endpoint_url": format!("http://127.0.0.1:{port}"),
+            "served_model_id": "served",
+        }}}),
+    );
+    let output = one_shot(&journal, &fixture_vector("generated")["request"]);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stderr, b"");
+    let response = stdout_json(&output);
+    let expected = &fixture_vector("refused-provider-response-invalid")["response"];
+    for name in ["reason", "provider", "detail"] {
+        assert_eq!(response[name], expected[name], "{name}");
+    }
+    assert_eq!(response["reason_code"], "local_endpoint_unreachable");
+    assert_eq!(response["retryable"], true);
+    assert_eq!(response["blocking"], true);
+    let _ = std::fs::remove_dir_all(journal);
 }
 
 #[test]
@@ -376,5 +418,63 @@ fn n3_only_refusal_vectors_are_deferred() {}
 fn n5_only_refusal_vectors_are_deferred() {}
 
 #[test]
-#[ignore = "N2: no configuration in N1a reaches a real attested endpoint, so zero-inference would be vacuous"]
-fn n2_attestation_guard_zero_inference_is_deferred() {}
+fn byo_endpoint_generates_without_confidential_downgrade() {
+    let (port, server) = serve_endpoint();
+    let endpoint_url = format!("http://127.0.0.1:{port}");
+    let config = json!({
+        "providers": {"active": {"provider": "local"}, "local": {
+            "endpoint_url": endpoint_url,
+            "served_model_id": "served",
+        }},
+    });
+    let journal = root("byo-endpoint");
+    write_config(&journal, config.clone());
+    let output = one_shot(&journal, &fixture_vector("generated")["request"]);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(stdout_json(&output)["outcome"], "generated");
+    assert_eq!(server.join().expect("join endpoint server"), 1);
+
+    let confidential_journal = root("byo-confidential");
+    let mut confidential = config;
+    confidential["services"] = json!({"confidential": {}});
+    write_config(&confidential_journal, confidential);
+    let output = one_shot(
+        &confidential_journal,
+        &fixture_vector("generated")["request"],
+    );
+    assert_eq!(output.status.code(), Some(0));
+    let response = stdout_json(&output);
+    assert_eq!(response["outcome"], "refused");
+    assert_eq!(response["reason"], "attestation-not-verified");
+    let _ = std::fs::remove_dir_all(journal);
+    let _ = std::fs::remove_dir_all(confidential_journal);
+}
+
+#[test]
+fn byo_endpoint_reports_only_honored_exclusive_admission_hint() {
+    for exclusive_admission in [false, true] {
+        let (port, server) = serve_endpoint();
+        let journal = root("endpoint-hints");
+        write_config(
+            &journal,
+            json!({
+                "providers": {"active": {"provider": "local"}, "local": {
+                    "endpoint_url": format!("http://127.0.0.1:{port}"),
+                    "served_model_id": "served",
+                }},
+            }),
+        );
+        let mut request = fixture_vector("generated")["request"].clone();
+        request["exclusive_admission"] = json!(exclusive_admission);
+        let output = one_shot(&journal, &request);
+        assert_eq!(output.status.code(), Some(0));
+        let response = stdout_json(&output);
+        if exclusive_admission {
+            assert_eq!(response["hints_applied"], json!(["exclusive_admission"]));
+        } else {
+            assert!(response.get("hints_applied").is_none());
+        }
+        assert_eq!(server.join().expect("join endpoint server"), 1);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+}

@@ -698,7 +698,7 @@ pub fn split_entries(block: &str) -> Vec<String> {
     entries
 }
 
-fn fit_contents<F>(
+pub fn fit_contents<F>(
     contents: &Value,
     system_instruction: Option<&str>,
     max_output_tokens: u32,
@@ -835,7 +835,7 @@ fn count_tokens<T: GenerateTransport>(transport: &mut T, base_url: &str, text: &
         .unwrap_or_else(|| estimate_tokens(text))
 }
 
-fn estimate_tokens(text: &str) -> u32 {
+pub fn estimate_tokens(text: &str) -> u32 {
     u32::try_from(text.chars().count().div_ceil(3)).unwrap_or(u32::MAX)
 }
 
@@ -954,7 +954,7 @@ fn image_part(value: &Value) -> Option<(&str, &str)> {
     ))
 }
 
-fn count_image_parts(value: &Value) -> u32 {
+pub fn count_image_parts(value: &Value) -> u32 {
     u32::from(image_part(value).is_some())
         + match value {
             Value::Object(object) => object.values().map(count_image_parts).sum(),
@@ -963,7 +963,7 @@ fn count_image_parts(value: &Value) -> u32 {
         }
 }
 
-fn serialized_message_text(messages: &[Value]) -> String {
+pub fn serialized_message_text(messages: &[Value]) -> String {
     let mut text = Vec::new();
     for message in messages {
         match message.get("content") {

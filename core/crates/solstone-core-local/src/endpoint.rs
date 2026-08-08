@@ -65,6 +65,22 @@ pub fn resolve_local_endpoint(config: &Map<String, Value>) -> LocalEndpointResol
     })
 }
 
+pub fn served_window_from_models_response(data: &Value, served_model_id: &str) -> Option<u32> {
+    let models = data.get("data")?.as_array()?;
+    let model = models.iter().find(|model| {
+        model
+            .as_object()
+            .and_then(|model| model.get("id"))
+            .and_then(Value::as_str)
+            == Some(served_model_id)
+    })?;
+    model
+        .as_object()?
+        .get("max_model_len")
+        .and_then(Value::as_u64)
+        .and_then(|window| u32::try_from(window).ok())
+}
+
 fn configured_byo_parallel_slots(local: Option<&Map<String, Value>>) -> u32 {
     let Some(value) = local.and_then(|local| local.get("parallel_slots")) else {
         return DEFAULT_BYO_PARALLEL_SLOTS;
@@ -158,6 +174,37 @@ mod tests {
         };
         assert!(endpoint.is_confidential);
         assert_eq!(endpoint.parallel_slots, None);
+    }
+
+    #[test]
+    fn served_window_requires_a_matching_model_and_integer_window() {
+        for (data, expected) in [
+            (
+                json!({"data": [{"id": "served", "max_model_len": 4096}]}),
+                Some(4096),
+            ),
+            (
+                json!({"data": [{"id": "other", "max_model_len": 4096}]}),
+                None,
+            ),
+            (
+                json!({"data": [{"id": "served", "max_model_len": true}]}),
+                None,
+            ),
+            (
+                json!({"data": [{"id": "served", "max_model_len": "4096"}]}),
+                None,
+            ),
+            (
+                json!({"data": {"id": "served", "max_model_len": 4096}}),
+                None,
+            ),
+        ] {
+            assert_eq!(
+                served_window_from_models_response(&data, "served"),
+                expected
+            );
+        }
     }
 
     #[test]
