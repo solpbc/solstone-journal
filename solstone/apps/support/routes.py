@@ -18,9 +18,15 @@ from flask import Blueprint, jsonify, request
 from solstone.convey.chat_stream import append_chat_event, day_for_ts
 from solstone.convey.reasons import (
     FEATURE_UNAVAILABLE,
+    IDEMPOTENCY_CONFLICT,
     INVALID_REQUEST_VALUE,
     MISSING_REQUIRED_FIELD,
+    OPERATION_ERASED,
+    OPERATION_IN_PROGRESS,
+    OPERATION_RETIRED,
+    SUPPORT_INVALID_STATE,
     SUPPORT_PORTAL_FAILED,
+    SUPPORT_TOS_CHANGED,
 )
 from solstone.convey.utils import error_response
 
@@ -46,6 +52,35 @@ def _enabled() -> bool:
     from solstone.apps.support.portal import is_enabled
 
     return is_enabled()
+
+
+def _action_id_or_error() -> str | tuple[Any, int]:
+    """Return the required caller-owned parent action id."""
+    action_id = request.headers.get("Idempotency-Key")
+    if action_id:
+        return action_id
+    return error_response(
+        MISSING_REQUIRED_FIELD, detail="Idempotency-Key header is required"
+    )
+
+
+def _operation_error_response(exc: Exception) -> tuple[Any, int] | None:
+    """Map local ledger outcomes before a route falls back to portal failure."""
+    from solstone.apps.support import operations
+
+    mappings = (
+        (operations.IdempotencyConflictError, IDEMPOTENCY_CONFLICT),
+        (operations.OperationInProgressError, OPERATION_IN_PROGRESS),
+        (operations.OperationRetiredError, OPERATION_RETIRED),
+        (operations.OperationErasedError, OPERATION_ERASED),
+        (operations.OperationTosChangedError, SUPPORT_TOS_CHANGED),
+        (operations.OperationInvalidStateError, SUPPORT_INVALID_STATE),
+        (operations.OperationStateUnavailableError, SUPPORT_PORTAL_FAILED),
+    )
+    for error_type, reason in mappings:
+        if isinstance(exc, error_type):
+            return error_response(reason, detail=str(exc))
+    return None
 
 
 # -- Config & Registration ---------------------------------------------------
@@ -222,6 +257,10 @@ def create_ticket() -> Any:
     if not _enabled():
         return error_response(FEATURE_UNAVAILABLE, detail="Support is disabled")
 
+    action_id = _action_id_or_error()
+    if not isinstance(action_id, str):
+        return action_id
+
     payload = request.get_json(force=True)
     subject = payload.get("subject")
     description = payload.get("description")
@@ -244,9 +283,12 @@ def create_ticket() -> Any:
             user_context=payload.get("user_context"),
             auto_context=payload.get("auto_context", True),
             anonymous=payload.get("anonymous", False),
+            action_id=action_id,
         )
         return jsonify(result), 201
     except Exception as exc:
+        if response := _operation_error_response(exc):
+            return response
         logger.exception("Failed to create ticket")
         return error_response(SUPPORT_PORTAL_FAILED, detail=str(exc))
 
@@ -257,16 +299,23 @@ def reply_to_ticket(ticket_id: int) -> Any:
     if not _enabled():
         return error_response(FEATURE_UNAVAILABLE, detail="Support is disabled")
 
+    action_id = _action_id_or_error()
+    if not isinstance(action_id, str):
+        return action_id
+
     payload = request.get_json(force=True)
     content = payload.get("content", "")
     if not content:
         return error_response(MISSING_REQUIRED_FIELD, detail="content is required")
 
     try:
-        client = _get_client()
-        result = client.reply_to_ticket(ticket_id, content)
+        from solstone.apps.support.tools import support_reply
+
+        result = support_reply(ticket_id, content, action_id=action_id)
         return jsonify(result), 201
     except Exception as exc:
+        if response := _operation_error_response(exc):
+            return response
         logger.exception("Failed to reply to ticket %d", ticket_id)
         return error_response(SUPPORT_PORTAL_FAILED, detail=str(exc))
 
@@ -280,12 +329,23 @@ def upload_attachment(ticket_id: int) -> Any:
     if not _enabled():
         return error_response(FEATURE_UNAVAILABLE, detail="Support is disabled")
 
+    action_id = _action_id_or_error()
+    if not isinstance(action_id, str):
+        return action_id
+
     if "file" not in request.files:
         return error_response(MISSING_REQUIRED_FIELD, detail="No file provided")
 
     uploaded = request.files["file"]
     if not uploaded.filename:
         return error_response(MISSING_REQUIRED_FIELD, detail="No filename")
+
+    try:
+        index = int(request.form.get("index", "0"))
+    except ValueError:
+        return error_response(INVALID_REQUEST_VALUE, detail="index must be an integer")
+    if index < 0:
+        return error_response(INVALID_REQUEST_VALUE, detail="index must be non-negative")
 
     try:
         import tempfile
@@ -315,6 +375,8 @@ def upload_attachment(ticket_id: int) -> Any:
             result = support_attach(
                 ticket_id,
                 str(tmp_path),
+                action_id=action_id,
+                index=index,
                 filename=uploaded.filename,
             )
             return jsonify(result), 201
@@ -324,6 +386,8 @@ def upload_attachment(ticket_id: int) -> Any:
     except ValueError as exc:
         return error_response(INVALID_REQUEST_VALUE, detail=str(exc))
     except Exception as exc:
+        if response := _operation_error_response(exc):
+            return response
         logger.exception("Failed to upload attachment to ticket %d", ticket_id)
         return error_response(SUPPORT_PORTAL_FAILED, detail=str(exc))
 
@@ -336,6 +400,10 @@ def submit_feedback() -> Any:
     """Submit feedback."""
     if not _enabled():
         return error_response(FEATURE_UNAVAILABLE, detail="Support is disabled")
+
+    action_id = _action_id_or_error()
+    if not isinstance(action_id, str):
+        return action_id
 
     payload = request.get_json(force=True)
     body = payload.get("body", "")
@@ -351,6 +419,7 @@ def submit_feedback() -> Any:
             "body": body,
             "product": product,
             "anonymous": anonymous,
+            "action_id": action_id,
         }
         if not anonymous:
             raw_email = (payload.get("user_email") or "").strip()
@@ -360,6 +429,8 @@ def submit_feedback() -> Any:
         result = support_feedback(**feedback_kwargs)
         return jsonify(result), 201
     except Exception as exc:
+        if response := _operation_error_response(exc):
+            return response
         logger.exception("Failed to submit feedback")
         return error_response(SUPPORT_PORTAL_FAILED, detail=str(exc))
 

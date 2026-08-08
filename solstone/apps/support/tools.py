@@ -14,8 +14,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from solstone.apps.support.copy import FEEDBACK_SUBJECT
-
 logger = logging.getLogger(__name__)
 
 
@@ -57,6 +55,7 @@ def support_create(
     auto_context: bool = True,
     portal_url: str | None = None,
     anonymous: bool = False,
+    action_id: str,
 ) -> dict[str, Any]:
     """Create a support ticket.
 
@@ -82,6 +81,7 @@ def support_create(
         category=category,
         user_email=user_email,
         user_context=user_context,
+        action_id=action_id,
     )
 
 
@@ -92,21 +92,20 @@ def support_feedback(
     portal_url: str | None = None,
     anonymous: bool = False,
     user_email: str | None = None,
+    action_id: str,
 ) -> dict[str, object]:
     """Submit feedback (lower-friction path).
 
     Feedback is a ticket with ``category="feedback"`` and low severity.
     """
-    return support_create(
-        subject=FEEDBACK_SUBJECT,
-        description=body,
+    from solstone.apps.support.portal import get_client
+
+    client = get_client(portal_url=portal_url, anonymous=anonymous)
+    return client.submit_feedback(
+        body=body,
         product=product,
-        severity="low",
-        category="feedback",
         user_email=user_email,
-        auto_context=False,
-        portal_url=portal_url,
-        anonymous=anonymous,
+        action_id=action_id,
     )
 
 
@@ -137,18 +136,22 @@ def support_reply(
     ticket_id: int,
     content: str,
     portal_url: str | None = None,
+    *,
+    action_id: str,
 ) -> dict[str, Any]:
     """Reply to a ticket."""
     from solstone.apps.support.portal import get_client
 
     client = get_client(portal_url=portal_url)
-    return client.reply_to_ticket(ticket_id, content)
+    return client.reply_to_ticket(ticket_id, content, action_id=action_id)
 
 
 def support_attach(
     ticket_id: int,
     file_path: str,
     *,
+    action_id: str,
+    index: int = 0,
     filename: str | None = None,
     portal_url: str | None = None,
 ) -> dict[str, Any]:
@@ -161,7 +164,13 @@ def support_attach(
     from solstone.apps.support.portal import get_client
 
     client = get_client(portal_url=portal_url)
-    return client.attach_file(ticket_id, Path(file_path), filename=filename)
+    return client.attach_file(
+        ticket_id,
+        Path(file_path),
+        action_id=action_id,
+        index=index,
+        filename=filename,
+    )
 
 
 def support_announcements(

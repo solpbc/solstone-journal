@@ -29,9 +29,11 @@ from typing import Any
 from solstone.apps.utils import get_app_storage_path
 from solstone.convey.reasons import (
     IDEMPOTENCY_CONFLICT,
+    OPERATION_ERASED,
     OPERATION_IN_PROGRESS,
     OPERATION_RETIRED,
     SUPPORT_INVALID_STATE,
+    SUPPORT_TOS_CHANGED,
     Reason,
 )
 from solstone.think.journal_io.atomic import atomic_replace
@@ -111,6 +113,20 @@ class OperationInvalidStateError(OperationError):
 
     def __init__(self) -> None:
         super().__init__(SUPPORT_INVALID_STATE.message, reason=SUPPORT_INVALID_STATE)
+
+
+class OperationErasedError(OperationError):
+    """The portal tombstoned this operation without accepting it."""
+
+    def __init__(self) -> None:
+        super().__init__(OPERATION_ERASED.message, reason=OPERATION_ERASED)
+
+
+class OperationTosChangedError(OperationError):
+    """The portal changed terms again after the bounded retry."""
+
+    def __init__(self) -> None:
+        super().__init__(SUPPORT_TOS_CHANGED.message, reason=SUPPORT_TOS_CHANGED)
 
 
 @dataclass(frozen=True)
@@ -247,6 +263,8 @@ def begin_operation(
                 raise OperationRetiredError()
             if not hmac.compare_digest(stored.canonical_fingerprint, fingerprint):
                 raise IdempotencyConflictError()
+            if stored.state == "failed":
+                raise _terminal_failure_error(stored.terminal_reason)
             if stored.state == "in_progress" and _lease_is_live(stored, current):
                 raise OperationInProgressError()
             if stored.state in {"pending", "in_progress"} and not _lease_is_live(
@@ -276,6 +294,25 @@ def mark_in_progress(
         record,
         storage_dir=storage_dir,
         update=lambda stored: _mark_in_progress(stored, current),
+    )
+
+
+def release_retryable_lease(
+    record: OperationRecord,
+    *,
+    now: datetime | None = None,
+    storage_dir: Path | None = None,
+) -> OperationRecord:
+    """Release an in-progress lease after a nonterminal portal outcome.
+
+    The record deliberately remains ``in_progress``.  A later begin claims a
+    new generation and reuses the immutable operation key.
+    """
+    current = _coerce_now(now)
+    return _update_current(
+        record,
+        storage_dir=storage_dir,
+        update=lambda stored: _release_retryable_lease(stored, current),
     )
 
 
@@ -387,6 +424,19 @@ def _mark_in_progress(record: OperationRecord, current: datetime) -> OperationRe
     return _replace(record, state="in_progress")
 
 
+def _terminal_failure_error(reason: str | None) -> OperationError:
+    """Refuse a terminally failed action without attempting a new generation."""
+    if reason == "idempotency_conflict":
+        return IdempotencyConflictError()
+    if reason == "operation_retired":
+        return OperationRetiredError()
+    if reason == "operation_erased":
+        return OperationErasedError()
+    if reason == "tos_changed":
+        return OperationTosChangedError()
+    return OperationInvalidStateError()
+
+
 def _mark_completed(
     record: OperationRecord, remote_operation_id: str | None, current: datetime
 ) -> OperationRecord:
@@ -402,6 +452,14 @@ def _mark_completed(
         lease_expires_at=None,
         terminal_reason=None,
     )
+
+
+def _release_retryable_lease(
+    record: OperationRecord, current: datetime
+) -> OperationRecord:
+    if record.state != "in_progress":
+        raise OperationInvalidStateError()
+    return _replace(record, lease_expires_at=_iso(current))
 
 
 def _mark_failed(record: OperationRecord, reason: str, current: datetime) -> OperationRecord:

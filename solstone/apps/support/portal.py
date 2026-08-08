@@ -27,6 +27,9 @@ import httpx
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
+from solstone.apps.support import operations
+from solstone.apps.support.copy import FEEDBACK_SUBJECT
+
 logger = logging.getLogger(__name__)
 
 # Owner-product brand tier. The portal moved from support.solpbc.org to
@@ -49,6 +52,33 @@ def _b64url_encode(data: bytes) -> str:
 def _b64url_decode(s: str) -> bytes:
     s += "=" * (4 - len(s) % 4)
     return base64.urlsafe_b64decode(s)
+
+
+def _rewind_files(files: dict[str, Any]) -> None:
+    """Rewind file-like multipart values before a bounded TOS retry."""
+    for value in files.values():
+        file_value = value[1] if isinstance(value, tuple) and len(value) > 1 else value
+        seek = getattr(file_value, "seek", None)
+        if seek is not None:
+            seek(0)
+
+
+def _response_json_object(resp: httpx.Response) -> dict[str, Any] | None:
+    """Return a response JSON object when it is safe to classify a status."""
+    try:
+        data = resp.json()
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _remote_operation_id(data: dict[str, Any]) -> str | None:
+    """Select the remote id for later acknowledgement bookkeeping."""
+    for field in ("ticket_id", "message_id", "attachment_id", "id"):
+        value = data.get(field)
+        if value is not None:
+            return str(value)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +356,14 @@ class PortalClient:
             "DPoP": self._create_dpop_proof(method, url, self._access_token),
         }
 
+    def _principal(self) -> str:
+        """Return the stable ledger principal for this portal client."""
+        if self.anonymous:
+            return "anonymous"
+        self._ensure_keypair()
+        assert self._thumbprint is not None
+        return f"jkt:{self._thumbprint}"
+
     def _authed_request(
         self,
         method: str,
@@ -333,16 +371,26 @@ class PortalClient:
         *,
         json_body: dict | None = None,
         params: dict | None = None,
+        files: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
         retry_on_tos: bool = True,
     ) -> httpx.Response:
         """Make an authenticated request, handling TOS re-consent."""
         url = f"{self.portal_url}{path}"
         headers = self._authed_headers(method, url)
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
 
         with self._http() as client:
-            resp = client.request(
-                method, url, headers=headers, json=json_body, params=params
-            )
+            if files is not None:
+                _rewind_files(files)
+                resp = client.request(
+                    method, url, headers=headers, files=files, params=params
+                )
+            else:
+                resp = client.request(
+                    method, url, headers=headers, json=json_body, params=params
+                )
 
         if resp.status_code == 401 and retry_on_tos:
             try:
@@ -353,7 +401,13 @@ class PortalClient:
                 logger.info("TOS changed — re-registering")
                 self.register()
                 return self._authed_request(
-                    method, path, json_body=json_body, params=params, retry_on_tos=False
+                    method,
+                    path,
+                    json_body=json_body,
+                    params=params,
+                    files=files,
+                    idempotency_key=idempotency_key,
+                    retry_on_tos=False,
                 )
 
         return resp
@@ -441,6 +495,113 @@ class PortalClient:
         if not self.is_registered:
             self.register()
 
+    def _dispatch_mutation(
+        self,
+        method: str,
+        path: str,
+        *,
+        action_id: str,
+        verb: str,
+        fields: dict[str, Any],
+        index: int = 0,
+        json_body: dict | None = None,
+        files: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Dispatch one durable mutation through the local outcome matrix.
+
+        Transport failures, 5xx responses, malformed successful JSON, and a
+        remote in-progress response remain locally in progress for an exact-key
+        retry.  Well-formed success completes the record; the portal's terminal
+        conflict, state, retirement, erasure, and repeated-TOS responses mark it
+        failed before raising their typed local error.
+        """
+        record = operations.begin_operation(
+            action_id,
+            verb,
+            fields,
+            principal=self._principal(),
+            index=index,
+            storage_dir=self.storage_dir,
+        )
+        if record.state == "pending":
+            record = operations.mark_in_progress(record, storage_dir=self.storage_dir)
+        try:
+            resp = self._authed_request(
+                method,
+                path,
+                json_body=json_body,
+                files=files,
+                idempotency_key=record.operation_key,
+            )
+        except httpx.TransportError:
+            operations.release_retryable_lease(record, storage_dir=self.storage_dir)
+            raise
+
+        if 200 <= resp.status_code < 300:
+            try:
+                data = resp.json()
+            except ValueError:
+                operations.release_retryable_lease(record, storage_dir=self.storage_dir)
+                raise
+            if not isinstance(data, dict):
+                operations.release_retryable_lease(record, storage_dir=self.storage_dir)
+                raise ValueError("support portal mutation response must be an object")
+            remote_operation_id = _remote_operation_id(data)
+            operations.mark_completed(
+                record,
+                remote_operation_id=remote_operation_id,
+                storage_dir=self.storage_dir,
+            )
+            return data
+
+        if resp.status_code >= 500:
+            operations.release_retryable_lease(record, storage_dir=self.storage_dir)
+            self._raise_for_status(resp)
+
+        body = _response_json_object(resp)
+        error = body.get("error") if body is not None else None
+        if resp.status_code == 409 and error == "operation_in_progress":
+            raise operations.OperationInProgressError()
+        if resp.status_code == 409 and error == "idempotency_conflict":
+            operations.mark_failed(
+                record,
+                reason="idempotency_conflict",
+                storage_dir=self.storage_dir,
+            )
+            raise operations.IdempotencyConflictError()
+        if resp.status_code == 409 and error == "invalid_state":
+            operations.mark_failed(
+                record,
+                reason="invalid_state",
+                storage_dir=self.storage_dir,
+            )
+            raise operations.OperationInvalidStateError()
+        if resp.status_code == 410 and error == "operation_retired":
+            operations.mark_failed(
+                record,
+                reason="operation_retired",
+                storage_dir=self.storage_dir,
+            )
+            raise operations.OperationRetiredError()
+        if error == "operation_erased":
+            operations.mark_failed(
+                record,
+                reason="operation_erased",
+                storage_dir=self.storage_dir,
+            )
+            raise operations.OperationErasedError()
+        if resp.status_code == 401 and error == "tos_changed":
+            operations.mark_failed(
+                record,
+                reason="tos_changed",
+                storage_dir=self.storage_dir,
+            )
+            raise operations.OperationTosChangedError()
+
+        operations.release_retryable_lease(record, storage_dir=self.storage_dir)
+        self._raise_for_status(resp)
+        raise AssertionError("non-success support mutation response was not raised")
+
     # -- Tickets -------------------------------------------------------------
 
     def create_ticket(
@@ -453,6 +614,7 @@ class PortalClient:
         category: str | None = None,
         user_email: str | None = None,
         user_context: dict | str | None = None,
+        action_id: str,
     ) -> dict[str, Any]:
         """Create a support ticket."""
         self.ensure_registered()
@@ -462,16 +624,22 @@ class PortalClient:
             "description": description,
             "severity": severity,
         }
-        if category:
+        if category is not None:
             body["category"] = category
-        if user_email:
+        if user_email is not None:
             body["user_email"] = user_email
-        if user_context:
+        if user_context is not None:
             body["user_context"] = user_context
-
-        resp = self._authed_request("POST", "/api/tickets", json_body=body)
-        self._raise_for_status(resp)
-        return resp.json()
+        fields = dict(body)
+        fields["anonymous"] = self.anonymous
+        return self._dispatch_mutation(
+            "POST",
+            "/api/tickets",
+            action_id=action_id,
+            verb="create",
+            fields=fields,
+            json_body=body,
+        )
 
     def list_tickets(
         self,
@@ -501,14 +669,60 @@ class PortalClient:
         self._raise_for_status(resp)
         return resp.json()
 
-    def reply_to_ticket(self, ticket_id: int, content: str) -> dict[str, Any]:
+    def reply_to_ticket(
+        self, ticket_id: int, content: str, *, action_id: str
+    ) -> dict[str, Any]:
         """Add a message to a ticket."""
         self.ensure_registered()
-        resp = self._authed_request(
-            "POST", f"/api/tickets/{ticket_id}/messages", json_body={"content": content}
+        body = {"content": content}
+        return self._dispatch_mutation(
+            "POST",
+            f"/api/tickets/{ticket_id}/messages",
+            action_id=action_id,
+            verb="reply",
+            fields={"ticket_id": ticket_id, "content": content},
+            json_body=body,
         )
-        self._raise_for_status(resp)
-        return resp.json()
+
+    def submit_feedback(
+        self,
+        *,
+        body: str,
+        product: str = "solstone",
+        user_email: str | None = None,
+        user_context: dict | str | None = None,
+        action_id: str,
+    ) -> dict[str, Any]:
+        """Submit lower-friction feedback through its own ledger verb."""
+        self.ensure_registered()
+        payload: dict[str, Any] = {
+            "product": product,
+            "subject": FEEDBACK_SUBJECT,
+            "description": body,
+            "severity": "low",
+            "category": "feedback",
+        }
+        if user_email is not None:
+            payload["user_email"] = user_email
+        if user_context is not None:
+            payload["user_context"] = user_context
+        fields: dict[str, Any] = {
+            "product": product,
+            "body": body,
+            "anonymous": self.anonymous,
+        }
+        if user_email is not None:
+            fields["user_email"] = user_email
+        if user_context is not None:
+            fields["user_context"] = user_context
+        return self._dispatch_mutation(
+            "POST",
+            "/api/tickets",
+            action_id=action_id,
+            verb="feedback",
+            fields=fields,
+            json_body=payload,
+        )
 
     # -- Attachments ---------------------------------------------------------
 
@@ -536,6 +750,8 @@ class PortalClient:
         ticket_id: int,
         file_path: Path,
         *,
+        action_id: str,
+        index: int = 0,
         filename: str | None = None,
         content_type: str | None = None,
     ) -> dict[str, Any]:
@@ -582,31 +798,33 @@ class PortalClient:
                 )
 
         fname = filename or file_path.name
-        url = f"{self.portal_url}/api/tickets/{ticket_id}/attachments"
-        headers = self._authed_headers("POST", url)
-
-        with self._http() as client:
-            with open(file_path, "rb") as f:
-                resp = client.post(
-                    url,
-                    headers=headers,
-                    files={"file": (fname, f, content_type)},
-                )
-
-        if resp.status_code == 401:
-            try:
-                body = resp.json()
-            except Exception:
-                body = {}
-            if body.get("error") == "tos_changed":
-                logger.info("TOS changed — re-registering")
-                self.register()
-                return self.attach_file(
-                    ticket_id, file_path, filename=fname, content_type=content_type
-                )
-
-        self._raise_for_status(resp)
-        return resp.json()
+        with file_path.open("rb") as file_handle:
+            digest = hashlib.sha256()
+            snapshot_size = 0
+            while chunk := file_handle.read(1024 * 1024):
+                snapshot_size += len(chunk)
+                if snapshot_size > self.MAX_ATTACHMENT_SIZE:
+                    raise ValueError(
+                        f"File too large: {snapshot_size / 1024 / 1024:.1f} MB "
+                        f"(max {self.MAX_ATTACHMENT_SIZE / 1024 / 1024:.0f} MB)"
+                    )
+                digest.update(chunk)
+            file_handle.seek(0)
+            return self._dispatch_mutation(
+                "POST",
+                f"/api/tickets/{ticket_id}/attachments",
+                action_id=action_id,
+                verb="attach",
+                fields={
+                    "ticket_id": ticket_id,
+                    "filename": fname,
+                    "content_type": content_type,
+                    "byte_size": snapshot_size,
+                    "content_sha256": digest.hexdigest(),
+                },
+                index=index,
+                files={"file": (fname, file_handle, content_type)},
+            )
 
     # -- Knowledge Base ------------------------------------------------------
 

@@ -4,6 +4,7 @@
 """Tests for support app routes."""
 
 import json
+import io
 import os
 import re
 from datetime import datetime, timedelta
@@ -11,6 +12,11 @@ from datetime import datetime, timedelta
 import pytest
 
 from solstone.apps.support.diagnostics import collect_recent_errors
+from solstone.apps.support.operations import (
+    IdempotencyConflictError,
+    OperationInProgressError,
+    OperationInvalidStateError,
+)
 from solstone.think.brain_health import HEADLINES
 
 _LEAK_NEEDLES = ("private_key", "keypair", "access_token")
@@ -373,6 +379,7 @@ def test_create_ticket_accepts_error_report_contract(support_client, monkeypatch
 
     resp = support_client.post(
         "/app/support/api/tickets",
+        headers={"Idempotency-Key": "test-create-error-report"},
         json={
             "subject": "I couldn't refresh vitals",
             "description": "owner-visible report body",
@@ -404,8 +411,59 @@ def test_create_ticket_accepts_error_report_contract(support_client, monkeypatch
             },
             "auto_context": True,
             "anonymous": False,
+            "action_id": "test-create-error-report",
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("path", "kwargs"),
+    [
+        ("/app/support/api/tickets", {"json": {"subject": "S", "description": "D"}}),
+        ("/app/support/api/tickets/1/reply", {"json": {"content": "reply"}}),
+        (
+            "/app/support/api/tickets/1/attachments",
+            {"data": {"file": (io.BytesIO(b"x"), "file.txt")}},
+        ),
+        ("/app/support/api/feedback", {"json": {"body": "feedback"}}),
+    ],
+)
+def test_mutation_routes_require_parent_action_id(support_client, monkeypatch, path, kwargs):
+    monkeypatch.setattr("solstone.apps.support.routes._enabled", lambda: True)
+
+    response = support_client.post(path, **kwargs)
+
+    assert response.status_code == 400
+    assert response.get_json()["reason_code"] == "missing_required_field"
+
+
+@pytest.mark.parametrize(
+    ("exception", "reason_code", "status"),
+    [
+        (IdempotencyConflictError(), "idempotency_conflict", 409),
+        (OperationInProgressError(), "operation_in_progress", 409),
+        (OperationInvalidStateError(), "invalid_state", 409),
+    ],
+)
+def test_create_route_maps_local_operation_errors(
+    support_client, monkeypatch, exception, reason_code, status
+):
+    def raise_local_error(**_kwargs):
+        raise exception
+
+    monkeypatch.setattr("solstone.apps.support.routes._enabled", lambda: True)
+    monkeypatch.setattr(
+        "solstone.apps.support.tools.support_create", raise_local_error
+    )
+
+    response = support_client.post(
+        "/app/support/api/tickets",
+        headers={"Idempotency-Key": "route-error"},
+        json={"subject": "S", "description": "D"},
+    )
+
+    assert response.status_code == status
+    assert response.get_json()["reason_code"] == reason_code
 
 
 def test_support_feedback_uses_feedback_subject_without_auto_context(monkeypatch):
@@ -413,31 +471,36 @@ def test_support_feedback_uses_feedback_subject_without_auto_context(monkeypatch
 
     captured: list[dict] = []
 
-    def recorder(**kwargs):
-        captured.append(kwargs)
-        return {"id": 123}
+    class FakePortalClient:
+        def submit_feedback(self, **kwargs):
+            captured.append(kwargs)
+            return {"id": 123}
 
-    monkeypatch.setattr(tools, "support_create", recorder)
+    monkeypatch.setattr(
+        "solstone.apps.support.portal.get_client", lambda **_kwargs: FakePortalClient()
+    )
 
-    result = tools.support_feedback(body="owner feedback", anonymous=True)
+    result = tools.support_feedback(
+        body="owner feedback", anonymous=True, action_id="feedback-1"
+    )
 
     assert result == {"id": 123}
     assert len(captured) == 1
-    assert captured[0]["subject"] == "feedback"
-    assert captured[0]["description"] == "owner feedback"
-    assert captured[0]["severity"] == "low"
-    assert captured[0]["category"] == "feedback"
-    assert captured[0]["auto_context"] is False
-    assert "user_context" not in captured[0]
+    assert captured[0] == {
+        "body": "owner feedback",
+        "product": "solstone",
+        "user_email": None,
+        "action_id": "feedback-1",
+    }
 
 
 def test_feedback_route_submits_without_auto_context(support_client, monkeypatch):
     captured: list[dict] = []
 
     class FakePortalClient:
-        def create_ticket(self, **kwargs):
+        def submit_feedback(self, **kwargs):
             captured.append(kwargs)
-            return {"id": 124, "subject": kwargs["subject"]}
+            return {"id": 124}
 
     def fail_collect_all():
         raise AssertionError("feedback must not collect automatic diagnostics")
@@ -459,15 +522,15 @@ def test_feedback_route_submits_without_auto_context(support_client, monkeypatch
     )
 
     resp = support_client.post(
-        "/app/support/api/feedback", json={"body": "hi", "anonymous": True}
+        "/app/support/api/feedback",
+        headers={"Idempotency-Key": "feedback-without-context"},
+        json={"body": "hi", "anonymous": True},
     )
 
     assert resp.status_code == 201
     assert len(captured) == 1
-    assert captured[0]["subject"] == "feedback"
-    assert captured[0]["category"] == "feedback"
-    assert captured[0]["severity"] == "low"
-    assert captured[0]["user_context"] is None
+    assert captured[0]["body"] == "hi"
+    assert captured[0]["action_id"] == "feedback-without-context"
 
 
 def test_create_ticket_route_still_collects_auto_context(support_client, monkeypatch):
@@ -492,6 +555,7 @@ def test_create_ticket_route_still_collects_auto_context(support_client, monkeyp
 
     resp = support_client.post(
         "/app/support/api/tickets",
+        headers={"Idempotency-Key": "create-with-context"},
         json={"subject": "S", "description": "D"},
     )
 
@@ -516,7 +580,9 @@ def test_feedback_anonymous_no_email_kwarg(support_client, monkeypatch):
     monkeypatch.setattr("solstone.apps.support.tools.support_feedback", recorder)
 
     resp = support_client.post(
-        "/app/support/api/feedback", json={"body": "hi", "anonymous": True}
+        "/app/support/api/feedback",
+        headers={"Idempotency-Key": "feedback-anonymous"},
+        json={"body": "hi", "anonymous": True},
     )
 
     assert resp.status_code == 201
@@ -536,6 +602,7 @@ def test_feedback_identified_forwards_email(support_client, monkeypatch):
 
     resp = support_client.post(
         "/app/support/api/feedback",
+        headers={"Idempotency-Key": "feedback-email"},
         json={"body": "hi", "anonymous": False, "user_email": "a@b.com"},
     )
 
@@ -556,6 +623,7 @@ def test_feedback_anonymous_drops_smuggled_email(support_client, monkeypatch):
 
     resp = support_client.post(
         "/app/support/api/feedback",
+        headers={"Idempotency-Key": "feedback-smuggled"},
         json={"body": "hi", "anonymous": True, "user_email": "smug@x.com"},
     )
 
@@ -576,6 +644,7 @@ def test_feedback_identified_empty_email_omits_kwarg(support_client, monkeypatch
 
     resp = support_client.post(
         "/app/support/api/feedback",
+        headers={"Idempotency-Key": "feedback-empty"},
         json={"body": "hi", "anonymous": False, "user_email": "   "},
     )
 
