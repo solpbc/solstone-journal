@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -69,6 +70,79 @@ impl CapResolver for FixedCap {
     }
 }
 
+struct PartitionCaps(BTreeMap<String, Duration>);
+
+impl CapResolver for PartitionCaps {
+    fn cap_for(&self, partition: &Partition) -> Duration {
+        self.0
+            .get(partition.as_str())
+            .copied()
+            .expect("partition cap")
+    }
+}
+
+enum PanicTarget {
+    QueueChanged,
+    Started,
+    Stopped(String),
+}
+
+struct PanicOnceSink {
+    target: PanicTarget,
+    panicked: AtomicBool,
+    events: Mutex<Vec<TaskQueueEvent>>,
+}
+
+impl PanicOnceSink {
+    fn new(target: PanicTarget) -> Self {
+        Self {
+            target,
+            panicked: AtomicBool::new(false),
+            events: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn should_panic(&self, event: &TaskQueueEvent) -> bool {
+        match (&self.target, event) {
+            (PanicTarget::QueueChanged, TaskQueueEvent::QueueChanged { .. })
+            | (PanicTarget::Started, TaskQueueEvent::Started { .. }) => true,
+            (
+                PanicTarget::Stopped(reference),
+                TaskQueueEvent::Stopped {
+                    reference: event_ref,
+                    ..
+                },
+            ) => reference == event_ref,
+            _ => false,
+        }
+    }
+}
+
+impl TaskQueueEventSink for PanicOnceSink {
+    fn emit(&self, event: TaskQueueEvent) {
+        if self.should_panic(&event) && !self.panicked.swap(true, Ordering::SeqCst) {
+            panic!("intentional sink panic");
+        }
+        self.events.lock().expect("panic sink events").push(event);
+    }
+}
+
+struct NotifyingProbe {
+    calls: AtomicUsize,
+    sender: Mutex<Option<mpsc::Sender<()>>>,
+}
+
+impl ProcessStateProbe for NotifyingProbe {
+    fn state(&self, _pid: u32) -> ProcessState {
+        if self.calls.fetch_add(1, Ordering::SeqCst) > 0
+            && let Some(sender) = self.sender.lock().expect("probe notification lock").take()
+        {
+            sender.send(()).expect("notify probe");
+        }
+        ProcessState::Other
+    }
+}
+
 fn queue(
     bed: &Bed,
     cap: Duration,
@@ -101,6 +175,18 @@ fn queue_with_probe(
         process_sink: None,
         ready: true,
         before_deadline_commit: hook,
+    })
+}
+
+fn queue_with_event_sink(bed: &Bed, cap: Duration, sink: Arc<dyn TaskQueueEventSink>) -> TaskQueue {
+    TaskQueue::new(TaskQueueOptions {
+        journal_root: bed.root.clone(),
+        cap_resolver: Arc::new(FixedCap(cap)),
+        process_state_probe: Arc::new(SystemProcessStateProbe),
+        queue_sink: Some(sink),
+        process_sink: None,
+        ready: true,
+        before_deadline_commit: None,
     })
 }
 
@@ -364,6 +450,82 @@ fn ac14_pre_ready_identical_requests_deterministically_make_two_runs() {
 }
 
 #[test]
+fn set_ready_after_shutdown_keeps_pending_work_inert() {
+    let bed = Bed::new("ready-after-shutdown");
+    let queue = queue(&bed, Duration::from_secs(5), false, None, None);
+    queue.submit(request("pending", &command(&["lines"]), None, None));
+    assert_eq!(queue.shutdown(), 0);
+    queue.set_ready();
+    assert!(queue.active_process_handles().is_empty());
+    assert_eq!(queue.collect_queue_counts().get("pending"), Some(&1));
+    assert!(queue.history().is_empty());
+}
+
+#[test]
+fn submit_after_shutdown_is_rejected_without_queueing() {
+    let bed = Bed::new("submit-after-shutdown");
+    let queue = queue(&bed, Duration::from_secs(5), true, None, None);
+    assert_eq!(queue.shutdown(), 0);
+    assert_eq!(
+        queue.submit(request("rejected", &command(&["lines"]), None, None)),
+        solstone_core_system::queue::SubmitOutcome::Rejected
+    );
+    assert!(queue.collect_queue_counts().is_empty());
+}
+
+#[test]
+fn panicking_queue_changed_or_started_sink_does_not_wedge_partition() {
+    for (name, target) in [
+        ("queue-changed", PanicTarget::QueueChanged),
+        ("started", PanicTarget::Started),
+    ] {
+        let bed = Bed::new(name);
+        let sink = Arc::new(PanicOnceSink::new(target));
+        let queue = queue_with_event_sink(&bed, Duration::from_secs(5), sink);
+        let ready = bed.root.join("ready");
+        queue.submit(request(
+            "first",
+            &command(&["ready-sleep", ready.to_str().expect("utf8"), "100"]),
+            None,
+            None,
+        ));
+        wait_for_ready(&ready);
+        queue.submit(request("second", &command(&["lines"]), None, None));
+        wait_for_history(&queue, 2);
+        assert_eq!(
+            queue
+                .history()
+                .iter()
+                .map(|entry| entry.reference.as_str())
+                .collect::<Vec<_>>(),
+            vec!["first", "second"]
+        );
+    }
+}
+
+#[test]
+fn panicking_stopped_sink_does_not_skip_later_coalesced_ref() {
+    let bed = Bed::new("stopped-fanout");
+    let sink = Arc::new(PanicOnceSink::new(PanicTarget::Stopped(
+        "queued-a".to_owned(),
+    )));
+    let queue = queue_with_event_sink(&bed, Duration::from_secs(5), sink.clone());
+    let ready = bed.root.join("ready");
+    queue.submit(request(
+        "running",
+        &command(&["ready-sleep", ready.to_str().expect("utf8"), "100"]),
+        None,
+        None,
+    ));
+    wait_for_ready(&ready);
+    let queued = command(&["lines"]);
+    queue.submit(request("queued-a", &queued, None, None));
+    queue.submit(request("queued-b", &queued, None, None));
+    wait_for_history(&queue, 2);
+    assert!(sink.events.lock().expect("panic sink events").iter().any(|event| matches!(event, TaskQueueEvent::Stopped { reference, .. } if reference == "queued-b")));
+}
+
+#[test]
 fn ac16_first_queued_submitter_owns_history_metadata_but_all_refs_stop() {
     let bed = Bed::new("ac16");
     let sink = Arc::new(QueueCollector::default());
@@ -448,6 +610,7 @@ fn ac19_two_stopped_ticks_terminate_with_the_same_timeout_label() {
         nix::sys::signal::Signal::SIGSTOP,
     )
     .expect("stop child");
+    wait_until(|| SystemProcessStateProbe.state(pid as u32) == ProcessState::Stopped);
     queue.enforce_deadlines(Instant::now());
     queue.enforce_deadlines(Instant::now());
     wait_for_history(&queue, 1);
@@ -485,11 +648,13 @@ fn ac21_stopped_ticks_reset_after_resume() {
     let pid = i32::try_from(queue.active_process_handles()[0].pid()).expect("pid");
     let process = nix::unistd::Pid::from_raw(pid);
     nix::sys::signal::kill(process, nix::sys::signal::Signal::SIGSTOP).expect("stop child");
+    wait_until(|| SystemProcessStateProbe.state(pid as u32) == ProcessState::Stopped);
     queue.enforce_deadlines(Instant::now());
     assert_eq!(queue.active_process_handles().len(), 1);
     nix::sys::signal::kill(process, nix::sys::signal::Signal::SIGCONT).expect("resume child");
     queue.enforce_deadlines(Instant::now());
     nix::sys::signal::kill(process, nix::sys::signal::Signal::SIGSTOP).expect("stop child again");
+    wait_until(|| SystemProcessStateProbe.state(pid as u32) == ProcessState::Stopped);
     queue.enforce_deadlines(Instant::now());
     assert_eq!(queue.active_process_handles().len(), 1);
     nix::sys::signal::kill(process, nix::sys::signal::Signal::SIGCONT).expect("resume cleanup");
@@ -660,12 +825,99 @@ fn ac27_status_truncates_while_enforcement_uses_fractional_duration() {
     wait_for_ready(&ready);
     let now = Instant::now();
     let status = queue.collect_task_status(now + Duration::from_millis(3_900));
+    assert_eq!(status[0].cap_seconds, 4);
     assert!(status[0].slow, "3 truncated seconds is >= 75% of 4");
     let status = queue.collect_task_status(now + Duration::from_millis(4_100));
     assert!(!status[0].stuck, "4 truncated seconds is not > 4");
     queue.enforce_deadlines(now + Duration::from_millis(4_100));
     wait_for_history(&queue, 1);
     assert_eq!(queue.history()[0].exit_status, TIMEOUT_EXIT_STATUS);
+}
+
+#[test]
+fn shutdown_waits_for_an_already_running_deadline_termination() {
+    let bed = Bed::new("shutdown-in-flight");
+    let queue = queue(&bed, Duration::from_millis(10), true, None, None);
+    let ready = bed.root.join("ready");
+    let count = bed.root.join("count");
+    queue.submit(request(
+        "blocked",
+        &command(&[
+            "block-term-count",
+            ready.to_str().expect("utf8"),
+            count.to_str().expect("utf8"),
+        ]),
+        None,
+        None,
+    ));
+    wait_for_ready(&ready);
+    queue.enforce_deadlines(Instant::now() + Duration::from_secs(1));
+    wait_until(|| count.exists());
+    assert_eq!(queue.shutdown(), 1);
+    assert!(queue.active_process_handles().is_empty());
+}
+
+#[test]
+fn phase_a_snapshot_does_not_wait_for_a_terminating_process_mutex() {
+    let bed = Bed::new("phase-a-process-lock");
+    let blocker = bed.root.join("blocker-child");
+    let probe_child = bed.root.join("probe-child");
+    std::os::unix::fs::symlink(FIXTURE, &blocker).expect("blocker fixture link");
+    std::os::unix::fs::symlink(FIXTURE, &probe_child).expect("probe fixture link");
+    let mut caps = BTreeMap::new();
+    caps.insert("blocker-child".to_owned(), Duration::from_millis(10));
+    caps.insert("probe-child".to_owned(), Duration::from_secs(5));
+    let (probe_tx, probe_rx) = mpsc::channel();
+    let queue = TaskQueue::new(TaskQueueOptions {
+        journal_root: bed.root.clone(),
+        cap_resolver: Arc::new(PartitionCaps(caps)),
+        process_state_probe: Arc::new(NotifyingProbe {
+            calls: AtomicUsize::new(0),
+            sender: Mutex::new(Some(probe_tx)),
+        }),
+        queue_sink: None,
+        process_sink: None,
+        ready: true,
+        before_deadline_commit: None,
+    });
+    let blocked_ready = bed.root.join("blocked-ready");
+    let count = bed.root.join("count");
+    let probe_ready = bed.root.join("probe-ready");
+    queue.submit(request(
+        "a-blocker",
+        &[
+            blocker.to_string_lossy().into_owned(),
+            "block-term-count".into(),
+            blocked_ready.to_string_lossy().into_owned(),
+            count.to_string_lossy().into_owned(),
+        ],
+        None,
+        None,
+    ));
+    queue.submit(request(
+        "z-probe",
+        &[
+            probe_child.to_string_lossy().into_owned(),
+            "ready-sleep".into(),
+            probe_ready.to_string_lossy().into_owned(),
+            "5000".into(),
+        ],
+        None,
+        None,
+    ));
+    wait_for_ready(&blocked_ready);
+    wait_for_ready(&probe_ready);
+    queue.enforce_deadlines(Instant::now() + Duration::from_secs(1));
+    wait_until(|| count.exists());
+    let enforcing = {
+        let queue = queue.clone();
+        std::thread::spawn(move || queue.enforce_deadlines(Instant::now()))
+    };
+    probe_rx
+        .recv_timeout(Duration::from_millis(200))
+        .expect("Phase A did not reach unlocked probe promptly");
+    enforcing.join().expect("enforcement thread");
+    let _ = queue.shutdown();
 }
 
 #[test]

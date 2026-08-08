@@ -4,8 +4,9 @@
 //! Per-partition task admission, lifecycle, and deadline enforcement.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -17,7 +18,7 @@ use crate::process::{
 };
 use crate::request::{ActiveTaskSnapshot, ExecutionRequest};
 
-/// The status label used when deadline enforcement terminated a task.
+/// The byte-identical Python status label consumed downstream for deadline termination.
 pub const TIMEOUT_EXIT_STATUS: &str = "timeout";
 const HISTORY_LIMIT: usize = 100;
 const STOPPED_TICKS_THRESHOLD: u8 = 2;
@@ -31,7 +32,8 @@ pub enum ProcessState {
     Unknown,
 }
 
-/// Best-effort process-state source. Failures are deliberately `Unknown`.
+/// Best-effort process-state source. Injection makes lock-discipline tests deterministic;
+/// failures are deliberately `Unknown`.
 pub trait ProcessStateProbe: Send + Sync {
     fn state(&self, pid: u32) -> ProcessState;
 }
@@ -99,6 +101,9 @@ fn system_process_state(_pid: u32) -> ProcessState {
 }
 
 /// Queue lifecycle events for a caller-owned transport adapter.
+///
+/// Started is primary-reference-only, while Stopped fans out to coalesced references,
+/// preserving the supervisor's per-reference completion contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskQueueEvent {
     QueueChanged {
@@ -152,6 +157,7 @@ pub struct TaskStatus {
     pub reference: String,
     pub command: Vec<String>,
     pub duration_seconds: u64,
+    pub cap_seconds: u64,
     pub slow: bool,
     pub stuck: bool,
 }
@@ -180,6 +186,7 @@ pub enum SubmitOutcome {
     Queued,
     Coalesced,
     DuplicateQueuedReference,
+    Rejected,
 }
 
 /// Construction inputs owned by the queue rather than process-global state.
@@ -195,6 +202,9 @@ pub struct TaskQueueOptions {
 }
 
 /// A synchronous, per-partition task queue.
+///
+/// This stays on `std::thread` because ManagedProcess is synchronous and this crate
+/// has no async-I/O need; one flat module keeps its tightly coupled state transitions visible.
 #[derive(Clone)]
 pub struct TaskQueue {
     inner: Arc<QueueInner>,
@@ -203,6 +213,7 @@ pub struct TaskQueue {
 struct QueueInner {
     options: QueueOptions,
     state: Mutex<QueueState>,
+    reaped: Condvar,
 }
 
 struct QueueOptions {
@@ -259,14 +270,16 @@ struct ActiveEntry {
     command: Vec<String>,
     started_at: Instant,
     started_at_unix: u64,
+    pid: u32,
     process: Arc<Mutex<ManagedProcess>>,
 }
 
 type TerminationAttempt = (String, u64, Arc<Mutex<ManagedProcess>>);
+type ShutdownSnapshot = (String, Arc<Mutex<ManagedProcess>>);
 
+// This guard is separate from deadline detection so repeated enforcement ticks start
+// only one termination attempt per ref. A future service-restart port should share it.
 #[derive(Default)]
-// A future service-restart port should share this ref-keyed registry rather
-// than create a separate keyspace, matching Python's shared guard.
 struct TerminationAttemptRegistry {
     next_token: u64,
     by_reference: BTreeMap<String, u64>,
@@ -331,6 +344,7 @@ impl TaskQueue {
                     stopped_ticks: BTreeMap::new(),
                     termination_attempts: TerminationAttemptRegistry::default(),
                 }),
+                reaped: Condvar::new(),
             }),
         }
     }
@@ -346,17 +360,17 @@ impl TaskQueue {
                 state.pending.push(submission);
                 (SubmitOutcome::Pending, None, None)
             } else if state.shutdown {
-                (SubmitOutcome::Queued, None, None)
+                (SubmitOutcome::Rejected, None, None)
             } else {
                 let (outcome, dispatch) = admit_locked(&mut state, submission);
                 let event = Some(queue_changed_event(&state, &partition));
                 (outcome, dispatch, event)
             }
         };
-        emit_queue_event(&self.inner.options.queue_sink, event);
         if let Some(dispatch) = dispatch {
             start_dispatch(Arc::clone(&self.inner), dispatch);
         }
+        emit_queue_event(&self.inner.options.queue_sink, event);
         outcome
     }
 
@@ -367,6 +381,10 @@ impl TaskQueue {
                 return;
             }
             state.ready = true;
+            // Shutdown leaves accepted pre-ready entries inert: readiness must not revive them.
+            if state.shutdown {
+                return;
+            }
             let pending = std::mem::take(&mut state.pending);
             let mut dispatches = Vec::new();
             let mut changed = BTreeSet::new();
@@ -393,6 +411,11 @@ impl TaskQueue {
 
     /// Enforce effective caps. `CapResolver::cap_for` preserves zero-cap fallback
     /// to the default cap; see `cap.rs:43-50`.
+    ///
+    /// Phase A snapshots under the queue lock, Phase B decides cap-first then stopped
+    /// outcomes without it, Phase C commits guarded additions/unconditional removals,
+    /// and Phase D starts termination threads unlocked. Phase C marks timeout before
+    /// Phase D can terminate, preserving the timeout history label for a fast exit.
     pub fn enforce_deadlines(&self, now: Instant) {
         let snapshots = {
             let state = self.inner.state.lock().expect("queue state lock poisoned");
@@ -401,11 +424,7 @@ impl TaskQueue {
                 .iter()
                 .map(|(reference, active)| DeadlineSnapshot {
                     reference: reference.clone(),
-                    pid: active
-                        .process
-                        .lock()
-                        .expect("managed process lock poisoned")
-                        .pid(),
+                    pid: active.pid,
                     started_at: active.started_at,
                     cap: self.inner.options.cap_resolver.cap_for(&active.partition),
                     timeout_marked: state.timeout_marked.contains(reference),
@@ -487,7 +506,7 @@ impl TaskQueue {
     /// Stops dispatch advancement, leaves queued/pending entries inert, and
     /// returns the active-process snapshot size from shutdown start.
     pub fn shutdown(&self) -> usize {
-        let (active_count, attempts): (usize, Vec<TerminationAttempt>) = {
+        let (active_count, snapshot): (usize, Vec<ShutdownSnapshot>) = {
             let mut state = self.inner.state.lock().expect("queue state lock poisoned");
             state.shutdown = true;
             let active = state
@@ -496,32 +515,45 @@ impl TaskQueue {
                 .map(|(reference, active)| (reference.clone(), Arc::clone(&active.process)))
                 .collect::<Vec<_>>();
             let active_count = active.len();
-            let attempts = active
-                .into_iter()
-                .filter_map(|(reference, process)| {
-                    let token = state.termination_attempts.begin(&reference)?;
-                    Some((reference, token, process))
-                })
-                .collect();
-            (active_count, attempts)
+            (active_count, active)
         };
         let mut threads = Vec::new();
-        for (reference, token, process) in attempts {
-            let inner = Arc::clone(&self.inner);
+        let references = snapshot
+            .iter()
+            .map(|(reference, _)| reference.clone())
+            .collect::<Vec<_>>();
+        for (_, process) in snapshot {
             if let Ok(handle) = thread::Builder::new().spawn(move || {
-                terminate_process(
-                    &inner,
-                    &reference,
-                    token,
-                    process,
-                    TASK_QUEUE_SHUTDOWN_TIMEOUT,
-                );
+                let _ = process
+                    .lock()
+                    .expect("managed process lock poisoned")
+                    .terminate(TASK_QUEUE_SHUTDOWN_TIMEOUT);
             }) {
                 threads.push(handle);
             }
         }
         for thread in threads {
             let _ = thread.join();
+        }
+        let deadline = Instant::now() + TASK_QUEUE_SHUTDOWN_TIMEOUT;
+        let mut state = self.inner.state.lock().expect("queue state lock poisoned");
+        while references
+            .iter()
+            .any(|reference| state.active.contains_key(reference))
+        {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            let (next, timeout) = self
+                .inner
+                .reaped
+                .wait_timeout(state, remaining)
+                .expect("queue state lock poisoned");
+            state = next;
+            if timeout.timed_out() {
+                break;
+            }
         }
         active_count
     }
@@ -544,6 +576,9 @@ impl TaskQueue {
                     reference: reference.clone(),
                     command: active.command.clone(),
                     duration_seconds,
+                    // Status deliberately truncates before comparisons; enforcement uses
+                    // untruncated Duration. Preserve Python's >= slow and > stuck split.
+                    cap_seconds,
                     slow: duration_seconds.saturating_mul(4) >= cap_seconds.saturating_mul(3),
                     stuck: duration_seconds > cap_seconds,
                 }
@@ -590,6 +625,7 @@ impl TaskQueue {
             .collect()
     }
 
+    /// Return the bounded, read-only completion projection for status consumers.
     pub fn history(&self) -> Vec<TaskHistoryRecord> {
         self.inner
             .state
@@ -602,6 +638,7 @@ impl TaskQueue {
     }
 }
 
+// Normalize at this one consumer instead of widening request.rs with a trait used nowhere else.
 fn normalize_request(request: ExecutionRequest) -> Submission {
     match request {
         ExecutionRequest::Bus(request) => Submission {
@@ -640,6 +677,7 @@ fn admit_locked(
             entry.references.push(submission.reference);
             return (SubmitOutcome::Coalesced, None);
         }
+        // Coalesced callers add only refs: the first queued submitter owns day/scheduler metadata.
         queue.push_back(QueuedEntry {
             references: vec![submission.reference.clone()],
             command: submission.command.clone(),
@@ -703,6 +741,7 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
         record_completion(&inner, &dispatch, -1, "error".to_owned());
         return;
     };
+    let pid = process.pid();
     let process = Arc::new(Mutex::new(process));
     let started_at = Instant::now();
     let started_at_unix = unix_seconds();
@@ -715,6 +754,7 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
                 command: dispatch.submission.command.clone(),
                 started_at,
                 started_at_unix,
+                pid,
                 process: Arc::clone(&process),
             },
         );
@@ -735,7 +775,13 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
         match result {
             Ok(Some(code)) => break code,
             Ok(None) => thread::sleep(POLL_INTERVAL),
-            Err(_) => break -1,
+            Err(_) => {
+                let _ = process
+                    .lock()
+                    .expect("managed process lock poisoned")
+                    .terminate(CAP_TERMINATION_TIMEOUT);
+                break -1;
+            }
         }
     };
     process
@@ -780,6 +826,7 @@ fn record_completion(
             exit_status: status.clone(),
             scheduler_name: dispatch.submission.scheduler_name.clone(),
         });
+        inner.reaped.notify_all();
         status
     };
     let _ = status;
@@ -873,7 +920,8 @@ fn queue_changed_event(state: &QueueState, partition: &Partition) -> TaskQueueEv
 
 fn emit_queue_event(sink: &Option<Arc<dyn TaskQueueEventSink>>, event: Option<TaskQueueEvent>) {
     if let (Some(sink), Some(event)) = (sink, event) {
-        sink.emit(event);
+        // Sinks are best-effort; a caller bug must not interrupt queue state transitions.
+        let _ = catch_unwind(AssertUnwindSafe(|| sink.emit(event)));
     }
 }
 
