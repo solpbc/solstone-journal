@@ -85,7 +85,7 @@ from solstone.think.cogitate_contract import (
     TALENT_FINALIZATION_MODES,
     capabilities_for_access_tier,
 )
-from solstone.think.generate_wire import _IMAGE_MIME_TYPES
+from solstone.think.generate_wire import _IMAGE_MIME_TYPES, _SESSION_LINE_LIMIT
 from solstone.think.indexer.edges import EDGES_SCHEMA_VERSION, _ensure_edges_schema
 from solstone.think.providers.shared import is_non_retryable_generate_reason
 from tests.speaker_oracle.diarize import (
@@ -408,7 +408,7 @@ def build_generate_contract_fixture() -> dict[str, Any]:
     )
     return {
         "fixture": "solstone-generate-contract",
-        "fixture_version": 3,
+        "fixture_version": 4,
         "generated_by": "make core-fixtures",
         "schema_identifiers": schemas,
         "request": {
@@ -450,6 +450,7 @@ def build_generate_contract_fixture() -> dict[str, Any]:
                 "selector": "--session",
                 "stdin": "ndjson",
                 "id": "required",
+                "line_limit_bytes": _SESSION_LINE_LIMIT,
                 "concurrency": {"flag": "--max-in-flight", "minimum": 1},
                 "terminal": {
                     "schema": schemas["session_terminal"],

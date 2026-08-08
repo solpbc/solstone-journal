@@ -4,9 +4,12 @@
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
+use std::sync::Mutex;
 
 use chrono::Local;
 use serde_json::{Value, json};
+
+static TOKEN_LOG_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn record_generate_usage(
     journal_path: &Path,
@@ -24,6 +27,7 @@ fn record_generate_usage_at(
     usage: &Value,
     now: chrono::DateTime<Local>,
 ) -> io::Result<()> {
+    let _lock = TOKEN_LOG_LOCK.lock().expect("token log lock poisoned");
     let mut line = serde_json::to_vec(&json!({
         "timestamp": now.timestamp() as f64 + f64::from(now.timestamp_subsec_nanos()) / 1_000_000_000.0,
         "model": model,
@@ -37,7 +41,18 @@ fn record_generate_usage_at(
     fs::create_dir_all(&directory)?;
     let path = directory.join(now.format("%Y%m%d").to_string() + ".jsonl");
     let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-    file.write_all(&line)
+    let written = file.write(&line)?;
+    if written == line.len() {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::WriteZero,
+            format!(
+                "token log short write: wrote {written} of {} bytes",
+                line.len()
+            ),
+        ))
+    }
 }
 
 #[cfg(test)]

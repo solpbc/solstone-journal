@@ -338,9 +338,16 @@ fn bundled_confidential_is_generated_and_logs_usage_while_refusals_do_not_log() 
 #[test]
 fn malformed_generate_arguments_use_protocol_errors() {
     let journal = root("arguments");
+    let minimum = contract()["framing"]["session"]["concurrency"]["minimum"]
+        .as_u64()
+        .unwrap();
+    let below_minimum = minimum.saturating_sub(1).to_string();
     for args in [
         &["generate", "--session"][..],
-        &["generate", "--session", "--max-in-flight", "3"][..],
+        &["generate", "--session", "--max-in-flight", &below_minimum][..],
+        &["generate", "--session", "--max-in-flight", "-1"][..],
+        &["generate", "--session", "--max-in-flight", "not-an-integer"][..],
+        &["generate", "--session", "wrong-flag", "3"][..],
         &["generate"][..],
         &["generate", "--bogus"][..],
         &["generate", "--contract", "extra-arg"][..],

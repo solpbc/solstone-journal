@@ -178,6 +178,7 @@ impl InFlightGate {
 /// until one submitted request completes, in response-arrival order.
 pub struct SessionClient {
     executable: PathBuf,
+    prefix_arguments: Vec<std::ffi::OsString>,
     environment: BTreeMap<String, String>,
     runtime: Option<SessionRuntime>,
 }
@@ -186,9 +187,18 @@ impl SessionClient {
     pub fn at_path(path: impl Into<PathBuf>) -> Self {
         Self {
             executable: path.into(),
+            prefix_arguments: Vec::new(),
             environment: BTreeMap::new(),
             runtime: None,
         }
+    }
+
+    pub fn with_prefix_arguments(
+        mut self,
+        arguments: impl IntoIterator<Item = std::ffi::OsString>,
+    ) -> Self {
+        self.prefix_arguments.extend(arguments);
+        self
     }
 
     pub fn with_env(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
@@ -244,6 +254,7 @@ impl SessionClient {
         }
 
         let mut child = Command::new(&self.executable)
+            .args(&self.prefix_arguments)
             .arg(selector)
             .arg(flag)
             .arg(max_in_flight.to_string())

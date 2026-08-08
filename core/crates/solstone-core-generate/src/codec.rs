@@ -339,6 +339,17 @@ pub fn decode_session_response_line(line: &str) -> Result<GenerateResponse, Stri
     Ok(response)
 }
 
+pub fn encode_session_response_line(response: &GenerateResponse) -> Result<String, String> {
+    let id = match response {
+        GenerateResponse::Generated(value) => &value.id,
+        GenerateResponse::Refused(value) => &value.id,
+    };
+    if id.is_none() {
+        return Err("session response id is required".to_owned());
+    }
+    Ok(format!("{}\n", encode_one_shot_response(response)?))
+}
+
 pub fn encode_session_terminal_line(_: SessionTerminal) -> Result<String, String> {
     serde_json::to_string(&json!({"schema": schema("session_terminal")}))
         .map(|line| format!("{line}\n"))
@@ -709,6 +720,34 @@ mod tests {
         assert!(line.ends_with('\n'));
         assert_eq!(decode_session_terminal_line(&line), Ok(SessionTerminal));
         assert!(decode_session_request_line(&line).is_err());
+    }
+
+    #[test]
+    fn session_response_codec_requires_id_and_round_trips() {
+        let response =
+            decode_one_shot_response(&contract()["conformance_vectors"][0]["response"].to_string())
+                .unwrap();
+        let line = encode_session_response_line(&response).unwrap();
+        assert!(line.ends_with('\n'));
+        assert_eq!(decode_session_response_line(&line).unwrap(), response);
+
+        let missing_id = decode_one_shot_response(
+            &json!({
+                "schema": schema("response"),
+                "id": null,
+                "outcome": "refused",
+                "reason": "unknown",
+                "reason_code": null,
+                "retryable": false,
+                "blocking": true,
+                "reset_at_ms": null,
+                "provider": null,
+                "detail": "missing id",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(encode_session_response_line(&missing_id).is_err());
     }
 
     #[test]

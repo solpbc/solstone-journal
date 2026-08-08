@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::VecDeque;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::{env, ffi::OsStr, path::PathBuf};
@@ -15,11 +18,11 @@ use serde_json::{Map, Value, json};
 use solstone_core_cli::{
     BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
     BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, Command,
-    GenerateCommand, IndexerCommand, IndexerCountsOptions, IndexerOptions, IndexerQueryOptions,
-    IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalConfigCommand,
-    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
-    JournalPathOptions, LocalCommand, ServiceOptions, SplCommand, USAGE, evaluate_args,
-    version_line,
+    GenerateCommand, GenerateSessionOptions, IndexerCommand, IndexerCountsOptions, IndexerOptions,
+    IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions, InstallCommand,
+    JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
+    JournalConfigReadOptions, JournalPathOptions, LocalCommand, ServiceOptions, SplCommand, USAGE,
+    evaluate_args, version_line,
 };
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -183,11 +186,19 @@ fn run_generate(command: GenerateCommand) -> ExitCode {
         GenerateCommand::Malformed => generate_protocol_exit(
             None,
             "malformed-request",
-            "expected --contract or --one-shot".to_owned(),
+            generate_selector_detail(),
             generate_exit_code("malformed_request"),
         ),
         GenerateCommand::OneShot => run_generate_one_shot(),
+        GenerateCommand::Session(options) => run_generate_session(options),
     }
+}
+
+fn generate_selector_detail() -> String {
+    let session_selector = solstone_core_generate::contract()["framing"]["session"]["selector"]
+        .as_str()
+        .expect("session selector is a fixture string");
+    format!("expected --contract, --one-shot, or {session_selector}")
 }
 
 fn run_generate_one_shot() -> ExitCode {
@@ -230,27 +241,39 @@ fn run_generate_one_shot() -> ExitCode {
         }
     };
     let request_id = request.id.clone();
-    let journal = match resolve_process_journal_path() {
-        Ok(journal) => journal.path,
-        Err(error) => {
+    let response = match generate_response_for_request(&request) {
+        Ok(response) => response,
+        Err(detail) => {
             return generate_protocol_exit(
                 request_id,
                 "internal-failure",
-                journal_path_error_detail(error),
+                detail,
                 generate_exit_code("internal_failure"),
             );
         }
     };
+    match write_generate_response(&response) {
+        Ok(()) => ExitCode::from(generate_exit_code("response")),
+        Err(detail) => generate_protocol_exit(
+            request_id,
+            "internal-failure",
+            detail,
+            generate_exit_code("internal_failure"),
+        ),
+    }
+}
+
+fn generate_response_for_request(
+    request: &solstone_core_generate::GenerateRequest,
+) -> Result<solstone_core_generate::GenerateResponse, String> {
+    let request_id = request.id.clone();
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal.path,
+        Err(error) => return Err(journal_path_error_detail(error)),
+    };
     let config = match read_journal_config(&journal) {
         Ok(read) => read.config.unwrap_or_default(),
-        Err(error) => {
-            return generate_protocol_exit(
-                request_id,
-                "internal-failure",
-                format!("could not read journal config: {error}"),
-                generate_exit_code("internal_failure"),
-            );
-        }
+        Err(error) => return Err(format!("could not read journal config: {error}")),
     };
     let (provider, outcome) = solstone_core_generate_wire::resolve_lane(&config);
     let response = match outcome {
@@ -259,14 +282,7 @@ fn run_generate_one_shot() -> ExitCode {
                 Ok(solstone_core_local::GenerateResult::Success(success)) => {
                     let response = match generated_response(&request, success) {
                         Ok(response) => response,
-                        Err(detail) => {
-                            return generate_protocol_exit(
-                                request_id,
-                                "internal-failure",
-                                detail,
-                                generate_exit_code("internal_failure"),
-                            );
-                        }
+                        Err(detail) => return Err(detail),
                     };
                     if let Err(error) = solstone_core_generate_wire::record_generate_usage(
                         &journal,
@@ -290,12 +306,7 @@ fn run_generate_one_shot() -> ExitCode {
                     )
                 }
                 Err(error) => {
-                    return generate_protocol_exit(
-                        request_id,
-                        "internal-failure",
-                        format!("bundled local generate is unavailable: {error:?}"),
-                        generate_exit_code("internal_failure"),
-                    );
+                    return Err(format!("bundled local generate is unavailable: {error:?}"));
                 }
             }
         }
@@ -310,15 +321,297 @@ fn run_generate_one_shot() -> ExitCode {
             unreachable!("lane resolution cannot return a bundled failure")
         }
     };
-    match write_generate_response(&response) {
-        Ok(()) => ExitCode::from(generate_exit_code("response")),
-        Err(detail) => generate_protocol_exit(
-            request_id,
-            "internal-failure",
-            detail,
-            generate_exit_code("internal_failure"),
-        ),
+    Ok(response)
+}
+
+struct GenerateSessionConfig {
+    max_in_flight: usize,
+    line_limit_bytes: usize,
+    terminal_schema: String,
+}
+
+enum SessionInput {
+    Request(solstone_core_generate::GenerateRequest),
+    Terminal,
+}
+
+fn run_generate_session(options: GenerateSessionOptions) -> ExitCode {
+    let config = match generate_session_config(&options) {
+        Ok(config) => config,
+        Err(detail) => {
+            return generate_protocol_exit(
+                None,
+                "malformed-request",
+                detail,
+                generate_exit_code("malformed_request"),
+            );
+        }
+    };
+    let aborting = Arc::new(AtomicBool::new(false));
+    let (input_tx, input_rx) = mpsc::channel();
+    spawn_generate_session_reader(
+        input_tx,
+        config.terminal_schema,
+        config.line_limit_bytes,
+        Arc::clone(&aborting),
+    );
+
+    let stdout = Arc::new(Mutex::new(io::stdout()));
+    let mut pending = VecDeque::new();
+    let mut workers = Vec::new();
+    let mut terminal_received = false;
+
+    loop {
+        reap_generate_session_workers(&mut workers);
+        while workers.len() < config.max_in_flight {
+            let Some(request) = pending.pop_front() else {
+                break;
+            };
+            workers.push(spawn_generate_session_worker(
+                request,
+                Arc::clone(&stdout),
+                Arc::clone(&aborting),
+            ));
+        }
+        if terminal_received && pending.is_empty() && workers.is_empty() {
+            return ExitCode::from(generate_exit_code("response"));
+        }
+        if terminal_received {
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+        match input_rx.recv_timeout(Duration::from_millis(10)) {
+            Ok(SessionInput::Request(request)) => pending.push_back(request),
+            Ok(SessionInput::Terminal) => terminal_received = true,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return generate_protocol_exit(
+                    None,
+                    "internal-failure",
+                    "session stdin reader disconnected".to_owned(),
+                    generate_exit_code("internal_failure"),
+                );
+            }
+        }
     }
+}
+
+fn generate_session_config(
+    options: &GenerateSessionOptions,
+) -> Result<GenerateSessionConfig, String> {
+    let session = &solstone_core_generate::contract()["framing"]["session"];
+    let selector = session["selector"]
+        .as_str()
+        .ok_or_else(|| "session selector is not a string".to_owned())?;
+    let concurrency = &session["concurrency"];
+    let flag = concurrency["flag"]
+        .as_str()
+        .ok_or_else(|| "session concurrency flag is not a string".to_owned())?;
+    let minimum = concurrency["minimum"]
+        .as_u64()
+        .ok_or_else(|| "session concurrency minimum is not an integer".to_owned())?;
+    let line_limit_bytes = session["line_limit_bytes"]
+        .as_u64()
+        .and_then(|value| usize::try_from(value).ok())
+        .ok_or_else(|| "session line limit is not a supported integer".to_owned())?;
+    let terminal_schema = session["terminal"]["schema"]
+        .as_str()
+        .ok_or_else(|| "session terminal schema is not a string".to_owned())?
+        .to_owned();
+    let [actual_flag, value] = options.arguments.as_slice() else {
+        return Err(format!("expected {selector} {flag} <positive integer>"));
+    };
+    if actual_flag != std::ffi::OsStr::new(flag) {
+        return Err(format!("expected {selector} {flag} <positive integer>"));
+    }
+    let value = value
+        .to_str()
+        .ok_or_else(|| format!("expected {selector} {flag} <positive integer>"))?;
+    let max_in_flight = value
+        .parse::<usize>()
+        .map_err(|_| format!("expected {selector} {flag} <positive integer>"))?;
+    let minimum = usize::try_from(minimum)
+        .map_err(|_| "session concurrency minimum is not a supported integer".to_owned())?;
+    if max_in_flight < minimum {
+        return Err(format!(
+            "{flag} is below the fixture minimum of {minimum} for {selector}"
+        ));
+    }
+    Ok(GenerateSessionConfig {
+        max_in_flight,
+        line_limit_bytes,
+        terminal_schema,
+    })
+}
+
+fn spawn_generate_session_reader(
+    input: mpsc::Sender<SessionInput>,
+    terminal_schema: String,
+    line_limit_bytes: usize,
+    aborting: Arc<AtomicBool>,
+) {
+    thread::spawn(move || {
+        let stdin = io::stdin();
+        let mut reader = stdin.lock();
+        loop {
+            let line = match read_generate_session_line(&mut reader, line_limit_bytes) {
+                Ok(Some(line)) => line,
+                Ok(None) => {
+                    aborting.store(true, Ordering::Release);
+                    // Bare EOF means the caller disappeared. Exit 1 is intentionally distinct from
+                    // normal completion (0), protocol errors (64), internal failures (70), and 69.
+                    std::process::exit(1);
+                }
+                Err(detail) => {
+                    generate_protocol_exit_and_terminate(None, "malformed-request", detail)
+                }
+            };
+            let value = match serde_json::from_str::<Value>(line.trim_end()) {
+                Ok(Value::Object(value)) => value,
+                Ok(_) => generate_protocol_exit_and_terminate(
+                    None,
+                    "malformed-request",
+                    "request must be a JSON object".to_owned(),
+                ),
+                Err(_) => generate_protocol_exit_and_terminate(
+                    None,
+                    "malformed-request",
+                    "stdin is not valid JSON".to_owned(),
+                ),
+            };
+            if value.get("schema").and_then(Value::as_str) == Some(terminal_schema.as_str()) {
+                if let Err(detail) = solstone_core_generate::decode_session_terminal_line(&line) {
+                    generate_protocol_exit_and_terminate(None, "malformed-request", detail);
+                }
+                let _ = input.send(SessionInput::Terminal);
+                return;
+            }
+            let request = match solstone_core_generate::decode_session_request_line(&line) {
+                Ok(request) => request,
+                Err(detail) => {
+                    generate_protocol_exit_and_terminate(None, "malformed-request", detail)
+                }
+            };
+            if input.send(SessionInput::Request(request)).is_err() {
+                return;
+            }
+        }
+    });
+}
+
+fn read_generate_session_line(
+    reader: &mut impl BufRead,
+    line_limit_bytes: usize,
+) -> Result<Option<String>, String> {
+    let mut line = Vec::new();
+    loop {
+        let buffer = reader
+            .fill_buf()
+            .map_err(|error| format!("stdin I/O error: {error}"))?;
+        if buffer.is_empty() {
+            if line.is_empty() {
+                return Ok(None);
+            }
+            break;
+        }
+        if let Some(newline) = buffer.iter().position(|byte| *byte == b'\n') {
+            if line
+                .len()
+                .checked_add(newline)
+                .is_none_or(|length| length > line_limit_bytes)
+            {
+                return Err(format!(
+                    "stdin line exceeds fixture limit of {line_limit_bytes} bytes"
+                ));
+            }
+            line.extend_from_slice(&buffer[..newline + 1]);
+            reader.consume(newline + 1);
+            break;
+        }
+        if line
+            .len()
+            .checked_add(buffer.len())
+            .is_none_or(|length| length > line_limit_bytes)
+        {
+            return Err(format!(
+                "stdin line exceeds fixture limit of {line_limit_bytes} bytes"
+            ));
+        }
+        line.extend_from_slice(buffer);
+        let consumed = buffer.len();
+        reader.consume(consumed);
+    }
+    String::from_utf8(line)
+        .map(Some)
+        .map_err(|error| format!("stdin is not UTF-8: {error}"))
+}
+
+fn spawn_generate_session_worker(
+    request: solstone_core_generate::GenerateRequest,
+    stdout: Arc<Mutex<io::Stdout>>,
+    aborting: Arc<AtomicBool>,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let request_id = request.id.clone();
+        let response = match generate_response_for_request(&request) {
+            Ok(response) => response,
+            Err(detail) => {
+                generate_protocol_exit_and_terminate(request_id, "internal-failure", detail)
+            }
+        };
+        if aborting.load(Ordering::Acquire) {
+            return;
+        }
+        let line = match solstone_core_generate::encode_session_response_line(&response) {
+            Ok(line) => line,
+            Err(detail) => {
+                generate_protocol_exit_and_terminate(request_id, "internal-failure", detail)
+            }
+        };
+        if aborting.load(Ordering::Acquire) {
+            return;
+        }
+        let stdout = stdout.lock().expect("session stdout lock poisoned");
+        if aborting.load(Ordering::Acquire) {
+            return;
+        }
+        let result = stdout
+            .lock()
+            .write_all(line.as_bytes())
+            .and_then(|()| stdout.lock().flush())
+            .map_err(|error| format!("stdout I/O error: {error}"));
+        if let Err(detail) = result {
+            generate_protocol_exit_and_terminate(request_id, "internal-failure", detail);
+        }
+    })
+}
+
+fn reap_generate_session_workers(workers: &mut Vec<thread::JoinHandle<()>>) {
+    let mut index = 0;
+    while index < workers.len() {
+        if workers[index].is_finished() {
+            let worker = workers.swap_remove(index);
+            if worker.join().is_err() {
+                generate_protocol_exit_and_terminate(
+                    None,
+                    "internal-failure",
+                    "session request worker panicked".to_owned(),
+                );
+            }
+        } else {
+            index += 1;
+        }
+    }
+}
+
+fn generate_protocol_exit_and_terminate(id: Option<String>, reason: &str, detail: String) -> ! {
+    let exit = generate_exit_code(if reason == "malformed-request" {
+        "malformed_request"
+    } else {
+        "internal_failure"
+    });
+    let _ = generate_protocol_exit(id, reason, detail, exit);
+    std::process::exit(i32::from(exit));
 }
 
 fn generated_response(
@@ -432,6 +725,7 @@ fn generate_protocol_exit(id: Option<String>, reason: &str, detail: String, exit
             let mut stderr = io::stderr().lock();
             let _ = stderr.write_all(encoded.as_bytes());
             let _ = stderr.write_all(b"\n");
+            let _ = stderr.flush();
         }
         Err(error) => eprintln!("generate protocol error encoding failed: {error}"),
     }
