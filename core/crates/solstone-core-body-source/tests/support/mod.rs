@@ -7,7 +7,24 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use solstone_core_body_source::BodyValue;
+use solstone_core_body_source::{
+    BodyDay, BodyDigest, BodyRawRetention, BodySourceFamily, BodySourceHash, BodyValue, BundleId,
+};
+
+pub const MIN_BUNDLE: &str = "body-00000000000000000000000000";
+pub const MAX_BUNDLE: &str = "body-7ZZZZZZZZZZZZZZZZZZZZZZZZZ";
+
+pub struct NativeBundleManifestBindingCase {
+    pub name: String,
+    pub body_bundle_sha256: BodyDigest,
+    pub import_id: BundleId,
+    pub source_type: BodySourceFamily,
+    pub source_hash: BodySourceHash,
+    pub entry_count: u64,
+    pub days_affected: Vec<BodyDay>,
+    pub raw_retention: BodyRawRetention,
+    pub expected_manifest_binding: Value,
+}
 
 /// Asserts recursive body-value equality with floating-point bits compared exactly.
 pub fn assert_body_value_bitwise_eq(actual: &BodyValue, expected: &BodyValue) {
@@ -107,6 +124,70 @@ pub fn native_bundle_fixture() -> Value {
         &std::fs::read_to_string(native_bundle_fixture_path()).expect("fixture should read"),
     )
     .expect("fixture should parse")
+}
+
+pub fn native_bundle_manifest_binding_cases() -> Vec<NativeBundleManifestBindingCase> {
+    native_bundle_fixture()["cases"]
+        .as_array()
+        .expect("fixture cases")
+        .iter()
+        .map(|case| {
+            let manifest = &case["manifest"];
+            let source_type = BodySourceFamily::from_bytes(
+                manifest["source_type"]
+                    .as_str()
+                    .expect("manifest source type")
+                    .as_bytes(),
+            )
+            .expect("fixture source type is valid");
+            NativeBundleManifestBindingCase {
+                name: case["name"].as_str().expect("case name").to_owned(),
+                body_bundle_sha256: BodyDigest::from_bytes(
+                    manifest["body_bundle_sha256"]
+                        .as_str()
+                        .expect("manifest digest")
+                        .as_bytes(),
+                )
+                .expect("fixture digest is valid"),
+                import_id: BundleId::from_bytes(
+                    manifest["import_id"]
+                        .as_str()
+                        .expect("manifest import ID")
+                        .as_bytes(),
+                )
+                .expect("fixture import ID is valid"),
+                source_type,
+                source_hash: BodySourceHash::from_bytes_for_family(
+                    manifest["source_hash"]
+                        .as_str()
+                        .expect("manifest source hash")
+                        .as_bytes(),
+                    &source_type,
+                )
+                .expect("fixture source hash is valid"),
+                entry_count: manifest["entry_count"]
+                    .as_u64()
+                    .expect("manifest entry count"),
+                days_affected: manifest["days_affected"]
+                    .as_array()
+                    .expect("manifest days affected")
+                    .iter()
+                    .map(|day| {
+                        BodyDay::from_bytes(day.as_str().expect("affected day").as_bytes())
+                            .expect("fixture affected day is valid")
+                    })
+                    .collect(),
+                raw_retention: BodyRawRetention::from_bytes(
+                    manifest["raw_retention"]
+                        .as_str()
+                        .expect("manifest raw retention")
+                        .as_bytes(),
+                )
+                .expect("fixture raw retention is valid"),
+                expected_manifest_binding: case["expected_manifest_binding"].clone(),
+            }
+        })
+        .collect()
 }
 
 pub fn native_bundle_import_ids() -> Vec<String> {

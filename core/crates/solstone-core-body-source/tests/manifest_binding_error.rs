@@ -8,8 +8,9 @@ use solstone_core_body_source::{
     BundleId, ManifestBindingError, ManifestBindingErrorCode, ManifestBindingErrorField,
 };
 
-const MIN_BUNDLE: &str = concat!("body-", "0000000000", "0000000000", "000000");
-const MAX_BUNDLE: &str = concat!("body-7", "ZZZZZZZZZZ", "ZZZZZZZZZZ", "ZZZZZ");
+mod support;
+
+use support::{MAX_BUNDLE, MIN_BUNDLE};
 
 fn bundles() -> [BundleId; 2] {
     assert_eq!(MIN_BUNDLE.len(), 31);
