@@ -3,6 +3,7 @@
 
 //! Python-compatible JSON source decoding and canonicalization for body import data.
 
+mod authority;
 mod body_day;
 mod body_month;
 mod body_raw_retention;
@@ -29,6 +30,10 @@ mod string;
 mod value;
 mod whitespace;
 
+pub use authority::{
+    AuthorityError, BundleClass, DirectoryObservation, NativeAuthority, authorize_native_bundle,
+    classify_bundle_directory,
+};
 pub use body_day::BodyDay;
 pub use body_month::BodyMonth;
 pub use body_raw_retention::BodyRawRetention;
