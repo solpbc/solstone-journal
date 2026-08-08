@@ -566,13 +566,13 @@ fn ensure_mutation_allowed(
             max_supported: CURRENT_ENVELOPE_VERSION,
         });
     }
-    if let Some(stored) = &archive.envelope.encoder {
-        if stored != running_encoder {
-            return Err(VoiceprintOperationError::EncoderIdentityMismatch {
-                stored_encoder_id: stored.id.clone(),
-                caller_encoder_id: running_encoder.id.clone(),
-            });
-        }
+    if let Some(stored) = &archive.envelope.encoder
+        && stored != running_encoder
+    {
+        return Err(VoiceprintOperationError::EncoderIdentityMismatch {
+            stored_encoder_id: stored.id.clone(),
+            caller_encoder_id: running_encoder.id.clone(),
+        });
     }
     Ok(())
 }

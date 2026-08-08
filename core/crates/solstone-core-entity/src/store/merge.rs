@@ -1025,15 +1025,14 @@ fn ensure_voiceprint_merge_compatible(
         target
             .as_ref()
             .and_then(|archive| archive.envelope.encoder.as_ref()),
-    ) {
-        if source_encoder != target_encoder {
-            return Err(EntityMergeError::VoiceprintEncoderMismatch {
-                source_entity_id: source_id.to_owned(),
-                target_entity_id: target_id.to_owned(),
-                source_encoder_id: source_encoder.id.clone(),
-                target_encoder_id: target_encoder.id.clone(),
-            });
-        }
+    ) && source_encoder != target_encoder
+    {
+        return Err(EntityMergeError::VoiceprintEncoderMismatch {
+            source_entity_id: source_id.to_owned(),
+            target_entity_id: target_id.to_owned(),
+            source_encoder_id: source_encoder.id.clone(),
+            target_encoder_id: target_encoder.id.clone(),
+        });
     }
     Ok((source, target))
 }
