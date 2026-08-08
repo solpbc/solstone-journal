@@ -391,6 +391,35 @@ mod tests {
             b"PK\x01\x02"
         ));
         assert!(has_zip64_extra(&bytes, b"_export.json", b"PK\x01\x02"));
+
+        let expected_manifest = crate::manifest::build(crate::manifest::ManifestFields {
+            solstone_version: "0.9.0",
+            exported_at: "2026-08-07T21:22:23Z",
+            source_journal: source
+                .canonical_source()
+                .to_str()
+                .expect("UTF-8 canonical source"),
+            day_count: source.inventory().day_count(),
+            entity_count: source.inventory().entity_count(),
+            facet_count: source.inventory().facet_count(),
+        })
+        .expect("build expected manifest");
+        let mut archive = ZipArchive::new(Cursor::new(bytes)).expect("open archive");
+        let mut source_member = archive
+            .by_name("imports/import-1/source.bin")
+            .expect("source member");
+        let mut source_bytes = Vec::new();
+        source_member
+            .read_to_end(&mut source_bytes)
+            .expect("read source member");
+        assert_eq!(source_bytes, b"source");
+        drop(source_member);
+        let mut manifest_member = archive.by_name("_export.json").expect("manifest member");
+        let mut manifest_bytes = Vec::new();
+        manifest_member
+            .read_to_end(&mut manifest_bytes)
+            .expect("read manifest member");
+        assert_eq!(manifest_bytes, expected_manifest.json);
     }
 
     #[test]

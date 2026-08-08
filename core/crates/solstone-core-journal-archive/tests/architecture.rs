@@ -128,6 +128,10 @@ fn format_modules_reach_no_non_zip_forbidden_surfaces() {
         for forbidden in [
             "Command::new",
             "std::process",
+            "std::env",
+            "SystemTime::now",
+            "Instant::now",
+            "current_dir",
             "reqwest",
             "ureq",
             "pyo3",
