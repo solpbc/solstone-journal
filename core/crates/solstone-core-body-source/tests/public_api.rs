@@ -824,6 +824,29 @@ fn public_envelope_shard_api_checks_and_rejects_invalid_descriptors() {
         .expect("field-different descriptor binds");
     assert_ne!(shard, field_different);
 
+    let rows_different = EnvelopeShard::new(&bundle, 1, month.clone(), 2, 2, digest.clone())
+        .expect("rows-different descriptor binds");
+    assert_ne!(shard, rows_different);
+
+    let other_digest = BodyDigest::from_bytes(
+        b"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    .expect("other digest is valid");
+    let digest_different =
+        EnvelopeShard::new(&bundle, 1, month.clone(), 2, 1, other_digest)
+            .expect("digest-different descriptor binds");
+    assert_ne!(shard, digest_different);
+
+    let other_month = BodyMonth::from_bytes(b"2026-02").expect("other month is valid");
+    let month_and_path_different =
+        EnvelopeShard::new(&bundle, 1, other_month, 2, 1, digest.clone())
+            .expect("month-different descriptor binds");
+    assert_eq!(
+        month_and_path_different.path(),
+        "normalized/2026-02.jsonl"
+    );
+    assert_ne!(shard, month_and_path_different);
+
     let empty_digest = BodyDigest::from_bytes(
         b"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     )
