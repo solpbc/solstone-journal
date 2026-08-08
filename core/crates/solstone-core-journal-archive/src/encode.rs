@@ -12,7 +12,7 @@ use nix::sys::stat::{SFlag, fstat};
 use nix::unistd::{Whence, lseek};
 use zip::ZipWriter;
 
-use crate::manifest::{self, ManifestFields};
+use crate::manifest::{self, ManifestError, ManifestFields};
 use crate::writer::{ArchiveEncodingError, WriteFailure};
 use crate::{ArchiveError, ArchiveMemberName, ArchiveSource};
 
@@ -28,6 +28,16 @@ pub struct EncodeArchiveRequest<'a> {
 pub enum EncodingPhase {
     Body,
     Finalize,
+}
+
+/// A later body failure retained behind the first output-file fault.
+#[derive(Debug)]
+pub enum EncodeArchiveFollowOn {
+    Source(ArchiveError),
+    ArchiveWrite {
+        member: Option<ArchiveMemberName>,
+        source: io::Error,
+    },
 }
 
 impl fmt::Display for EncodingPhase {
@@ -54,10 +64,12 @@ pub enum EncodeArchiveError {
     ArchiveWrite {
         member: Option<ArchiveMemberName>,
         source: io::Error,
+        followed: Option<EncodeArchiveFollowOn>,
     },
     ArchiveFinish {
         phase: EncodingPhase,
         source: io::Error,
+        followed: Option<EncodeArchiveFollowOn>,
     },
 }
 
@@ -77,12 +89,14 @@ impl fmt::Display for EncodeArchiveError {
             Self::ArchiveWrite {
                 member: Some(member),
                 source,
+                ..
             } => write!(formatter, "archive write {}: {source}", member.as_str()),
             Self::ArchiveWrite {
                 member: None,
                 source,
+                ..
             } => write!(formatter, "archive write: {source}"),
-            Self::ArchiveFinish { phase, source } => {
+            Self::ArchiveFinish { phase, source, .. } => {
                 write!(formatter, "archive finish {phase}: {source}")
             }
         }
@@ -117,7 +131,287 @@ enum Poison {
         error: io::Error,
         phase: EncodingPhase,
     },
-    Abandoned,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TestBoundary {
+    Body,
+    RootDirectory,
+    SourceStart,
+    MemberTransition,
+    SourcePayload,
+    ManifestStart,
+    ManifestPayload,
+    FinalRevalidate,
+    Abort,
+    Finish,
+    CentralDirectory,
+    Footer,
+    TerminalSeek,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TestSinkOperation {
+    Write,
+    Seek,
+    Flush,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TestFaultKind {
+    Error,
+    WriteZero,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TestFault {
+    boundary: TestBoundary,
+    operation: TestSinkOperation,
+    ordinal: usize,
+    kind: TestFaultKind,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct TestTraceEvent {
+    boundary: TestBoundary,
+    operation: TestSinkOperation,
+    ordinal: usize,
+    faulted: bool,
+}
+
+#[cfg(test)]
+enum TestSourceAction {
+    RemoveBeforeOpen {
+        member: String,
+        path: std::path::PathBuf,
+    },
+    TruncateBeforeRead {
+        member: String,
+        copied: u64,
+        path: std::path::PathBuf,
+        length: u64,
+    },
+    AppendBeforeFinalRevalidate {
+        path: std::path::PathBuf,
+        bytes: Vec<u8>,
+    },
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TestPreflightOperation {
+    Stat,
+    Flags,
+    Position,
+}
+
+#[cfg(test)]
+struct TestControl {
+    boundary: TestBoundary,
+    fault: Option<TestFault>,
+    trace: Vec<TestTraceEvent>,
+    action: Option<TestSourceAction>,
+    preflight_fault: Option<TestPreflightOperation>,
+    body_write_failure: Option<String>,
+    finish_calls: usize,
+    abort_calls: usize,
+}
+
+#[cfg(test)]
+impl TestControl {
+    const fn new() -> Self {
+        Self {
+            boundary: TestBoundary::Body,
+            fault: None,
+            trace: Vec::new(),
+            action: None,
+            preflight_fault: None,
+            body_write_failure: None,
+            finish_calls: 0,
+            abort_calls: 0,
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_CONTROL: RefCell<TestControl> = const { RefCell::new(TestControl::new()) };
+}
+
+#[cfg(test)]
+pub(crate) fn test_set_boundary(boundary: TestBoundary) {
+    TEST_CONTROL.with(|control| control.borrow_mut().boundary = boundary);
+}
+
+#[cfg(test)]
+fn test_sink_result(
+    operation: TestSinkOperation,
+    requested: usize,
+    buffer: Option<&[u8]>,
+) -> Option<io::Result<usize>> {
+    TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        if operation == TestSinkOperation::Write {
+            if buffer.is_some_and(|bytes| bytes.starts_with(b"PK\x01\x02")) {
+                control.boundary = TestBoundary::CentralDirectory;
+            } else if buffer.is_some_and(|bytes| bytes.starts_with(b"PK\x05\x06")) {
+                control.boundary = TestBoundary::Footer;
+            }
+        } else if operation == TestSinkOperation::Seek && control.boundary == TestBoundary::Footer {
+            control.boundary = TestBoundary::TerminalSeek;
+        }
+        let boundary = control.boundary;
+        let ordinal = control
+            .trace
+            .iter()
+            .filter(|event| event.boundary == boundary && event.operation == operation)
+            .count()
+            + 1;
+        let kind = control.fault.and_then(|fault| {
+            (fault.boundary == boundary && fault.operation == operation && fault.ordinal == ordinal)
+                .then_some(fault.kind)
+        });
+        control.trace.push(TestTraceEvent {
+            boundary,
+            operation,
+            ordinal,
+            faulted: kind.is_some(),
+        });
+        if kind.is_some() {
+            control.fault = None;
+        }
+        match kind {
+            Some(TestFaultKind::Error) => Some(Err(io::Error::other("injected sink fault"))),
+            Some(TestFaultKind::WriteZero) => Some(Ok(0)),
+            None => {
+                let _ = requested;
+                None
+            }
+        }
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn test_before_source_open(member: &ArchiveMemberName) {
+    test_run_source_action(member, None);
+}
+
+#[cfg(test)]
+pub(crate) fn test_before_source_read(member: &ArchiveMemberName, copied: u64) {
+    test_run_source_action(member, Some(copied));
+}
+
+#[cfg(test)]
+pub(crate) fn test_take_body_write_failure(member: &ArchiveMemberName) -> bool {
+    TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        if control.body_write_failure.as_deref() == Some(member.as_str()) {
+            control.body_write_failure = None;
+            true
+        } else {
+            false
+        }
+    })
+}
+
+#[cfg(test)]
+#[allow(clippy::disallowed_methods, clippy::disallowed_types)]
+fn test_run_source_action(member: &ArchiveMemberName, copied: Option<u64>) {
+    TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        let should_run = match control.action.as_ref() {
+            Some(TestSourceAction::RemoveBeforeOpen { member: target, .. }) => {
+                copied.is_none() && target == member.as_str()
+            }
+            Some(TestSourceAction::TruncateBeforeRead {
+                member: target,
+                copied: target_copied,
+                ..
+            }) => copied == Some(*target_copied) && target == member.as_str(),
+            Some(TestSourceAction::AppendBeforeFinalRevalidate { .. }) | None => false,
+        };
+        if !should_run {
+            return;
+        }
+        match control.action.take().expect("matched source action") {
+            TestSourceAction::RemoveBeforeOpen { path, .. } => {
+                std::fs::remove_file(path).expect("remove source before open");
+            }
+            TestSourceAction::TruncateBeforeRead { path, length, .. } => {
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(path)
+                    .expect("open source for truncation")
+                    .set_len(length)
+                    .expect("truncate source before read");
+            }
+            TestSourceAction::AppendBeforeFinalRevalidate { .. } => unreachable!(),
+        }
+    });
+}
+
+#[cfg(test)]
+#[allow(clippy::disallowed_methods, clippy::disallowed_types)]
+fn test_before_final_revalidate() {
+    test_set_boundary(TestBoundary::FinalRevalidate);
+    TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        if !matches!(
+            control.action,
+            Some(TestSourceAction::AppendBeforeFinalRevalidate { .. })
+        ) {
+            return;
+        }
+        if let Some(TestSourceAction::AppendBeforeFinalRevalidate { path, bytes }) =
+            control.action.take()
+        {
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open(path)
+                .expect("open source for final-revalidation mutation");
+            file.write_all(&bytes)
+                .expect("append before final revalidation");
+        }
+    });
+}
+
+#[cfg(not(test))]
+fn test_before_final_revalidate() {}
+
+#[cfg(test)]
+fn test_before_abort() {
+    test_set_boundary(TestBoundary::Abort);
+    TEST_CONTROL.with(|control| control.borrow_mut().abort_calls += 1);
+}
+
+#[cfg(not(test))]
+fn test_before_abort() {}
+
+#[cfg(test)]
+fn test_before_finish() {
+    test_set_boundary(TestBoundary::Finish);
+    TEST_CONTROL.with(|control| control.borrow_mut().finish_calls += 1);
+}
+
+#[cfg(not(test))]
+fn test_before_finish() {}
+
+#[cfg(test)]
+fn test_take_preflight_fault(operation: TestPreflightOperation) -> bool {
+    TEST_CONTROL.with(|control| {
+        let mut control = control.borrow_mut();
+        if control.preflight_fault == Some(operation) {
+            control.preflight_fault = None;
+            true
+        } else {
+            false
+        }
+    })
 }
 
 impl SinkState {
@@ -140,12 +434,6 @@ impl SinkState {
                 error,
                 phase: self.phase,
             };
-        }
-    }
-
-    fn abandon(&mut self) {
-        if matches!(&self.poison, Poison::Live) {
-            self.poison = Poison::Abandoned;
         }
     }
 
@@ -211,6 +499,14 @@ impl Write for FileSink<'_> {
         if !self.is_live() {
             return Ok(self.state.borrow_mut().virtual_write(buffer.len()));
         }
+        #[cfg(test)]
+        if let Some(result) = test_sink_result(TestSinkOperation::Write, buffer.len(), Some(buffer))
+        {
+            return self
+                .state
+                .borrow_mut()
+                .handle_live_write(buffer.len(), result);
+        }
         let result = self.file.write(buffer);
         self.state
             .borrow_mut()
@@ -220,6 +516,16 @@ impl Write for FileSink<'_> {
     fn flush(&mut self) -> io::Result<()> {
         if !self.is_live() {
             return Ok(());
+        }
+        #[cfg(test)]
+        if let Some(result) = test_sink_result(TestSinkOperation::Flush, 0, None) {
+            return match result {
+                Ok(_) => Ok(()),
+                Err(error) => {
+                    self.state.borrow_mut().record_fault(error);
+                    Ok(())
+                }
+            };
         }
         match self.file.flush() {
             Ok(()) => Ok(()),
@@ -236,6 +542,17 @@ impl Seek for FileSink<'_> {
         if !self.is_live() {
             return Ok(self.state.borrow_mut().virtual_seek(from));
         }
+        #[cfg(test)]
+        if let Some(result) = test_sink_result(TestSinkOperation::Seek, 0, None) {
+            return match result {
+                Ok(_) => unreachable!("seek injection cannot return success"),
+                Err(error) => {
+                    let mut state = self.state.borrow_mut();
+                    state.record_fault(error);
+                    Ok(state.virtual_seek(from))
+                }
+            };
+        }
         match self.file.seek(from) {
             Ok(position) => {
                 self.state.borrow_mut().record_live_seek(position);
@@ -251,6 +568,13 @@ impl Seek for FileSink<'_> {
 }
 
 /// Encode one frozen archive source into an already-open checked output file.
+///
+/// The caller retains `file` on every result. `InvalidWriter`,
+/// `InvalidMetadata`, and a source failure detected before ZIP construction
+/// leave an initially empty file at offset zero. After ZIP construction starts,
+/// bytes and cursor position on `Err` are unspecified: the caller must discard
+/// the file based solely on the `Result`, even if those bytes parse as a ZIP.
+/// This function deliberately does not truncate, rewind, unlink, or publish.
 pub fn encode_archive(
     request: &EncodeArchiveRequest<'_>,
     file: &mut File,
@@ -280,7 +604,7 @@ pub fn encode_archive(
         entity_count: inventory.entity_count(),
         facet_count: inventory.facet_count(),
     })
-    .map_err(from_encoding_error)?;
+    .map_err(from_manifest_error)?;
     request
         .source
         .revalidate()
@@ -292,47 +616,122 @@ pub fn encode_archive(
         state: &state,
     };
     let mut zip = ZipWriter::new(sink);
-    if let Err(error) = crate::writer::write_archive(&mut zip, request.source, &manifest) {
-        state.borrow_mut().abandon();
-        drop(zip);
-        return resolve(state, Err(from_encoding_error(error)));
-    }
-    if let Err(error) = request.source.revalidate() {
-        state.borrow_mut().abandon();
-        drop(zip);
-        return resolve(state, Err(EncodeArchiveError::Source(error)));
+    #[cfg(test)]
+    test_set_boundary(TestBoundary::Body);
+    let mut pending = crate::writer::write_archive(&mut zip, request.source, &manifest)
+        .err()
+        .map(PendingFailure::from_encoding_error);
+    if pending.is_none() {
+        test_before_final_revalidate();
+        pending = request
+            .source
+            .revalidate()
+            .err()
+            .map(PendingFailure::Source);
     }
 
     state.borrow_mut().phase = EncodingPhase::Finalize;
-    let finished = zip.finish();
-    match finished {
-        Ok(_) => resolve(state, Ok(())),
-        Err(error) => resolve(
-            state,
-            Err(EncodeArchiveError::ArchiveWrite {
-                member: None,
-                source: io::Error::other(error),
-            }),
-        ),
-    }
+    let abort_error = if pending.is_some() {
+        test_before_abort();
+        zip.abort_file().err().map(io::Error::other)
+    } else {
+        None
+    };
+    test_before_finish();
+    let finish_error = zip.finish().err().map(io::Error::other);
+
+    resolve(state, pending, abort_error.or(finish_error))
 }
 
 fn resolve(
     state: RefCell<SinkState>,
-    fallback: Result<(), EncodeArchiveError>,
+    pending: Option<PendingFailure>,
+    cleanup_error: Option<io::Error>,
 ) -> Result<(), EncodeArchiveError> {
     let state = state.into_inner();
     match state.poison {
-        // A real output fault always wins because the file's contents are no longer trustworthy.
-        Poison::Faulted { error, phase } => Err(EncodeArchiveError::ArchiveFinish {
-            phase,
+        Poison::Faulted {
+            error,
+            phase: EncodingPhase::Body,
+        } => Err(EncodeArchiveError::ArchiveWrite {
+            member: None,
             source: error,
+            followed: pending.map(PendingFailure::into_follow_on),
         }),
-        Poison::Live | Poison::Abandoned => fallback,
+        Poison::Faulted {
+            error,
+            phase: EncodingPhase::Finalize,
+        } => Err(EncodeArchiveError::ArchiveFinish {
+            phase: EncodingPhase::Finalize,
+            source: error,
+            followed: pending.map(PendingFailure::into_follow_on),
+        }),
+        Poison::Live => {
+            if let Some(source) = cleanup_error {
+                Err(EncodeArchiveError::ArchiveFinish {
+                    phase: EncodingPhase::Finalize,
+                    source,
+                    followed: pending.map(PendingFailure::into_follow_on),
+                })
+            } else if let Some(pending) = pending {
+                Err(pending.into_error())
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+enum PendingFailure {
+    Source(ArchiveError),
+    ArchiveWrite {
+        member: Option<ArchiveMemberName>,
+        source: io::Error,
+    },
+}
+
+impl PendingFailure {
+    fn from_encoding_error(error: ArchiveEncodingError) -> Self {
+        match error {
+            ArchiveEncodingError::Source { source, .. } => Self::Source(source),
+            ArchiveEncodingError::Write { member, source } => Self::ArchiveWrite {
+                member,
+                source: match source {
+                    WriteFailure::Io(error) => error,
+                    WriteFailure::Zip(error) => io::Error::other(error),
+                },
+            },
+        }
+    }
+
+    fn into_error(self) -> EncodeArchiveError {
+        match self {
+            Self::Source(source) => EncodeArchiveError::Source(source),
+            Self::ArchiveWrite { member, source } => EncodeArchiveError::ArchiveWrite {
+                member,
+                source,
+                followed: None,
+            },
+        }
+    }
+
+    fn into_follow_on(self) -> EncodeArchiveFollowOn {
+        match self {
+            Self::Source(source) => EncodeArchiveFollowOn::Source(source),
+            Self::ArchiveWrite { member, source } => {
+                EncodeArchiveFollowOn::ArchiveWrite { member, source }
+            }
+        }
     }
 }
 
 fn preflight_writer(file: &File) -> Result<(), EncodeArchiveError> {
+    #[cfg(test)]
+    if test_take_preflight_fault(TestPreflightOperation::Stat) {
+        return Err(EncodeArchiveError::InvalidWriter {
+            reason: "could not stat writer",
+        });
+    }
     let stat = fstat(file).map_err(|_| EncodeArchiveError::InvalidWriter {
         reason: "could not stat writer",
     })?;
@@ -343,6 +742,12 @@ fn preflight_writer(file: &File) -> Result<(), EncodeArchiveError> {
         });
     }
 
+    #[cfg(test)]
+    if test_take_preflight_fault(TestPreflightOperation::Flags) {
+        return Err(EncodeArchiveError::InvalidWriter {
+            reason: "could not read writer flags",
+        });
+    }
     let raw_flags =
         fcntl(file, FcntlArg::F_GETFL).map_err(|_| EncodeArchiveError::InvalidWriter {
             reason: "could not read writer flags",
@@ -364,6 +769,12 @@ fn preflight_writer(file: &File) -> Result<(), EncodeArchiveError> {
             reason: "must be empty",
         });
     }
+    #[cfg(test)]
+    if test_take_preflight_fault(TestPreflightOperation::Position) {
+        return Err(EncodeArchiveError::InvalidWriter {
+            reason: "could not determine writer position",
+        });
+    }
     let position =
         lseek(file, 0, Whence::SeekCur).map_err(|_| EncodeArchiveError::InvalidWriter {
             reason: "could not determine writer position",
@@ -381,26 +792,15 @@ fn validate_member_name_length(name: &ArchiveMemberName) -> Result<(), EncodeArc
         return Err(EncodeArchiveError::InvalidMetadata {
             field: "member_name",
             value: name.as_str().to_owned(),
-            reason: "must be at most 65535 bytes",
+            reason: "UTF-8 member path exceeds ZIP u16 byte limit",
         });
     }
     Ok(())
 }
 
-fn from_encoding_error(error: ArchiveEncodingError) -> EncodeArchiveError {
+fn from_manifest_error(error: ManifestError) -> EncodeArchiveError {
     match error {
-        ArchiveEncodingError::Source { source, .. } => EncodeArchiveError::Source(source),
-        ArchiveEncodingError::Write { member, source } => match source {
-            WriteFailure::Io(error) => EncodeArchiveError::ArchiveWrite {
-                member,
-                source: error,
-            },
-            WriteFailure::Zip(error) => EncodeArchiveError::ArchiveWrite {
-                member,
-                source: io::Error::other(error),
-            },
-        },
-        ArchiveEncodingError::InvalidMetadata {
+        ManifestError::InvalidMetadata {
             field,
             value,
             reason,
@@ -416,9 +816,11 @@ fn from_encoding_error(error: ArchiveEncodingError) -> EncodeArchiveError {
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::fs::{self, File, OpenOptions};
-    use std::io::{Seek, SeekFrom};
+    use std::io::{Cursor, Seek, SeekFrom, Write};
     use std::path::{Path, PathBuf};
+    use std::process::{Command, Stdio};
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{Duration, Instant};
 
     use super::*;
 
@@ -446,6 +848,82 @@ mod tests {
     impl Drop for TempDir {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn write_member(root: &Path, member: &str, bytes: &[u8]) -> PathBuf {
+        let path = root.join(member);
+        fs::create_dir_all(path.parent().expect("member parent")).expect("create member parents");
+        fs::write(&path, bytes).expect("write member");
+        path
+    }
+
+    fn noisy_bytes(length: usize) -> Vec<u8> {
+        let mut state = 0x1234_5678_u32;
+        (0..length)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                state as u8
+            })
+            .collect()
+    }
+
+    fn source_fixture(name: &str) -> (TempDir, ArchiveSource, PathBuf, PathBuf) {
+        let temporary = TempDir::new(name);
+        let root = temporary.path().join("journal");
+        fs::create_dir(&root).expect("create journal root");
+        let first = write_member(&root, "imports/first/source.bin", &noisy_bytes(192 * 1024));
+        let second = write_member(&root, "imports/second/source.bin", &noisy_bytes(96 * 1024));
+        let source = ArchiveSource::open(&root).expect("open source fixture");
+        (temporary, source, first, second)
+    }
+
+    fn request(source: &ArchiveSource) -> EncodeArchiveRequest<'_> {
+        EncodeArchiveRequest {
+            source,
+            solstone_version: "1.2.3",
+            exported_at: "2040-01-02T03:04:59Z",
+        }
+    }
+
+    fn install_control(
+        fault: Option<TestFault>,
+        action: Option<TestSourceAction>,
+        preflight_fault: Option<TestPreflightOperation>,
+    ) {
+        TEST_CONTROL.with(|control| {
+            let mut replacement = TestControl::new();
+            replacement.fault = fault;
+            replacement.action = action;
+            replacement.preflight_fault = preflight_fault;
+            *control.borrow_mut() = replacement;
+        });
+    }
+
+    fn take_control() -> TestControl {
+        TEST_CONTROL
+            .with(|control| std::mem::replace(&mut *control.borrow_mut(), TestControl::new()))
+    }
+
+    fn install_body_write_failure(member: &str) {
+        TEST_CONTROL.with(|control| {
+            control.borrow_mut().body_write_failure = Some(member.to_owned());
+        });
+    }
+
+    fn fault(
+        boundary: TestBoundary,
+        operation: TestSinkOperation,
+        ordinal: usize,
+        kind: TestFaultKind,
+    ) -> TestFault {
+        TestFault {
+            boundary,
+            operation,
+            ordinal,
+            kind,
         }
     }
 
@@ -526,23 +1004,15 @@ mod tests {
     }
 
     #[test]
-    fn first_fault_wins_over_later_faults_and_abandonment() {
+    fn first_fault_wins_over_later_faults() {
         let mut state = SinkState::live();
         state.record_fault(io::Error::other("first"));
         state.record_fault(io::Error::other("second"));
-        state.abandon();
 
         assert!(matches!(
             state.poison,
             Poison::Faulted { error, phase: EncodingPhase::Body } if error.to_string() == "first"
         ));
-    }
-
-    #[test]
-    fn abandonment_only_changes_live_state() {
-        let mut state = SinkState::live();
-        state.abandon();
-        assert!(matches!(state.poison, Poison::Abandoned));
     }
 
     #[test]
@@ -573,8 +1043,534 @@ mod tests {
             Err(EncodeArchiveError::InvalidMetadata {
                 field: "member_name",
                 value,
-                reason: "must be at most 65535 bytes",
+                reason: "UTF-8 member path exceeds ZIP u16 byte limit",
             }) if value.len() == usize::from(u16::MAX) + 1
         ));
+    }
+
+    #[test]
+    fn injected_preflight_failures_are_typed_and_leave_zero_bytes() {
+        for (operation, reason) in [
+            (TestPreflightOperation::Stat, "could not stat writer"),
+            (TestPreflightOperation::Flags, "could not read writer flags"),
+            (
+                TestPreflightOperation::Position,
+                "could not determine writer position",
+            ),
+        ] {
+            let (_temporary, source, _, _) = source_fixture("preflight-fault");
+            let output = TempDir::new("preflight-fault-output");
+            let path = output.path().join("archive.zip");
+            let mut file = File::create(&path).expect("create output");
+            install_control(None, None, Some(operation));
+
+            assert!(matches!(
+                encode_archive(&request(&source), &mut file),
+                Err(EncodeArchiveError::InvalidWriter { reason: actual }) if actual == reason
+            ));
+            assert_eq!(file.metadata().expect("output metadata").len(), 0);
+            assert_eq!(file.stream_position().expect("output position"), 0);
+            assert!(take_control().preflight_fault.is_none());
+        }
+    }
+
+    #[test]
+    fn sink_fault_matrix_is_latched_before_zip_can_lose_the_writer() {
+        let rows = [
+            (
+                TestBoundary::RootDirectory,
+                TestSinkOperation::Write,
+                TestFaultKind::Error,
+                EncodingPhase::Body,
+            ),
+            (
+                TestBoundary::RootDirectory,
+                TestSinkOperation::Write,
+                TestFaultKind::WriteZero,
+                EncodingPhase::Body,
+            ),
+            (
+                TestBoundary::SourcePayload,
+                TestSinkOperation::Write,
+                TestFaultKind::Error,
+                EncodingPhase::Body,
+            ),
+            (
+                TestBoundary::SourcePayload,
+                TestSinkOperation::Write,
+                TestFaultKind::WriteZero,
+                EncodingPhase::Body,
+            ),
+            (
+                TestBoundary::MemberTransition,
+                TestSinkOperation::Write,
+                TestFaultKind::Error,
+                EncodingPhase::Body,
+            ),
+            (
+                TestBoundary::MemberTransition,
+                TestSinkOperation::Write,
+                TestFaultKind::WriteZero,
+                EncodingPhase::Body,
+            ),
+            (
+                TestBoundary::MemberTransition,
+                TestSinkOperation::Seek,
+                TestFaultKind::Error,
+                EncodingPhase::Body,
+            ),
+            (
+                TestBoundary::ManifestStart,
+                TestSinkOperation::Seek,
+                TestFaultKind::Error,
+                EncodingPhase::Body,
+            ),
+            (
+                TestBoundary::Finish,
+                TestSinkOperation::Write,
+                TestFaultKind::Error,
+                EncodingPhase::Finalize,
+            ),
+            (
+                TestBoundary::CentralDirectory,
+                TestSinkOperation::Write,
+                TestFaultKind::Error,
+                EncodingPhase::Finalize,
+            ),
+            (
+                TestBoundary::Footer,
+                TestSinkOperation::Write,
+                TestFaultKind::Error,
+                EncodingPhase::Finalize,
+            ),
+            (
+                TestBoundary::TerminalSeek,
+                TestSinkOperation::Seek,
+                TestFaultKind::Error,
+                EncodingPhase::Finalize,
+            ),
+        ];
+
+        for (boundary, operation, kind, phase) in rows {
+            let (_temporary, source, _, _) = source_fixture("sink-fault-matrix");
+            let output = TempDir::new("sink-fault-output");
+            let path = output.path().join("archive.zip");
+            let mut file = File::create(&path).expect("create output");
+            install_control(Some(fault(boundary, operation, 1, kind)), None, None);
+
+            let result = encode_archive(&request(&source), &mut file);
+            match (phase, result) {
+                (
+                    EncodingPhase::Body,
+                    Err(EncodeArchiveError::ArchiveWrite {
+                        followed: None,
+                        source,
+                        ..
+                    }),
+                ) => {
+                    if kind == TestFaultKind::WriteZero {
+                        assert_eq!(source.kind(), io::ErrorKind::WriteZero);
+                    } else {
+                        assert_eq!(source.to_string(), "injected sink fault");
+                    }
+                }
+                (
+                    EncodingPhase::Finalize,
+                    Err(EncodeArchiveError::ArchiveFinish {
+                        phase: EncodingPhase::Finalize,
+                        followed: None,
+                        source,
+                    }),
+                ) => assert_eq!(source.to_string(), "injected sink fault"),
+                (_, other) => panic!("wrong result for {boundary:?}/{operation:?}: {other:?}"),
+            }
+
+            let control = take_control();
+            assert!(control.fault.is_none(), "fault was not consumed");
+            assert_eq!(control.finish_calls, 1, "finish count for {boundary:?}");
+            assert_eq!(control.abort_calls, 0, "abort count for {boundary:?}");
+            assert!(control.trace.iter().any(|event| event.faulted));
+            assert!(
+                !control
+                    .trace
+                    .iter()
+                    .any(|event| event.operation == TestSinkOperation::Flush),
+                "locked zip path unexpectedly flushed"
+            );
+            if boundary != TestBoundary::RootDirectory {
+                assert_ne!(file.metadata().expect("output metadata").len(), 0);
+                assert_ne!(file.stream_position().expect("output position"), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn source_failures_abort_then_finish_once_with_exact_provenance() {
+        let cases = [
+            ("open", "imports/first/source.bin"),
+            ("early-eof", "imports/first/source.bin"),
+            ("mid-read", "imports/first/source.bin"),
+            ("final-revalidate", "imports/second/source.bin"),
+        ];
+        for (case, expected_member) in cases {
+            let (_temporary, source, first, second) = source_fixture("source-fault");
+            let action = match case {
+                "open" => TestSourceAction::RemoveBeforeOpen {
+                    member: "imports/first/source.bin".to_owned(),
+                    path: first,
+                },
+                "early-eof" => TestSourceAction::TruncateBeforeRead {
+                    member: "imports/first/source.bin".to_owned(),
+                    copied: 0,
+                    path: first,
+                    length: 0,
+                },
+                "mid-read" => TestSourceAction::TruncateBeforeRead {
+                    member: "imports/first/source.bin".to_owned(),
+                    copied: 64 * 1024,
+                    path: first,
+                    length: 64 * 1024,
+                },
+                "final-revalidate" => TestSourceAction::AppendBeforeFinalRevalidate {
+                    path: second,
+                    bytes: vec![0x42],
+                },
+                _ => unreachable!(),
+            };
+            let output = TempDir::new("source-fault-output");
+            let path = output.path().join("archive.zip");
+            let mut file = File::create(&path).expect("create output");
+            install_control(None, Some(action), None);
+
+            assert!(matches!(
+                encode_archive(&request(&source), &mut file),
+                Err(EncodeArchiveError::Source(ArchiveError::SourceChanged {
+                    member: Some(actual)
+                })) if actual.as_str() == expected_member
+            ));
+            let control = take_control();
+            assert!(control.action.is_none(), "source action was not consumed");
+            assert_eq!(control.abort_calls, 1, "abort count for {case}");
+            assert_eq!(control.finish_calls, 1, "finish count for {case}");
+        }
+    }
+
+    #[test]
+    fn output_and_source_failure_order_is_preserved() {
+        let (_temporary, source, _, second) = source_fixture("ordered-faults");
+        let output = TempDir::new("ordered-fault-output");
+        let path = output.path().join("archive.zip");
+        let mut file = File::create(&path).expect("create output");
+        install_control(
+            Some(fault(
+                TestBoundary::SourcePayload,
+                TestSinkOperation::Write,
+                1,
+                TestFaultKind::Error,
+            )),
+            Some(TestSourceAction::AppendBeforeFinalRevalidate {
+                path: second,
+                bytes: vec![0x42],
+            }),
+            None,
+        );
+
+        assert!(matches!(
+            encode_archive(&request(&source), &mut file),
+            Err(EncodeArchiveError::ArchiveWrite {
+                followed: Some(EncodeArchiveFollowOn::Source(ArchiveError::SourceChanged {
+                    member: Some(actual)
+                })),
+                ..
+            }) if actual.as_str() == "imports/second/source.bin"
+        ));
+        let control = take_control();
+        assert_eq!(control.abort_calls, 1);
+        assert_eq!(control.finish_calls, 1);
+    }
+
+    #[test]
+    fn abort_fault_retains_the_body_source_failure() {
+        let (_temporary, source, first, _) = source_fixture("abort-fault");
+        let output = TempDir::new("abort-fault-output");
+        let path = output.path().join("archive.zip");
+        let mut file = File::create(&path).expect("create output");
+        install_control(
+            Some(fault(
+                TestBoundary::Abort,
+                TestSinkOperation::Write,
+                1,
+                TestFaultKind::Error,
+            )),
+            Some(TestSourceAction::TruncateBeforeRead {
+                member: "imports/first/source.bin".to_owned(),
+                copied: 0,
+                path: first,
+                length: 0,
+            }),
+            None,
+        );
+
+        assert!(matches!(
+            encode_archive(&request(&source), &mut file),
+            Err(EncodeArchiveError::ArchiveFinish {
+                phase: EncodingPhase::Finalize,
+                followed: Some(EncodeArchiveFollowOn::Source(ArchiveError::SourceChanged {
+                    member: Some(actual)
+                })),
+                ..
+            }) if actual.as_str() == "imports/first/source.bin"
+        ));
+        let control = take_control();
+        assert!(control.fault.is_none());
+        assert_eq!(control.abort_calls, 1);
+        assert_eq!(control.finish_calls, 1);
+    }
+
+    #[test]
+    fn abort_fault_retains_the_body_write_failure() {
+        let (_temporary, source, _, _) = source_fixture("abort-write-follow-on");
+        let output = TempDir::new("abort-write-follow-on-output");
+        let path = output.path().join("archive.zip");
+        let mut file = File::create(&path).expect("create output");
+        install_control(
+            Some(fault(
+                TestBoundary::Abort,
+                TestSinkOperation::Write,
+                1,
+                TestFaultKind::Error,
+            )),
+            None,
+            None,
+        );
+        install_body_write_failure("imports/first/source.bin");
+
+        assert!(matches!(
+            encode_archive(&request(&source), &mut file),
+            Err(EncodeArchiveError::ArchiveFinish {
+                phase: EncodingPhase::Finalize,
+                followed: Some(EncodeArchiveFollowOn::ArchiveWrite {
+                    member: Some(actual),
+                    source,
+                }),
+                ..
+            }) if actual.as_str() == "imports/first/source.bin"
+                && source.to_string() == "injected body write failure"
+        ));
+        let control = take_control();
+        assert!(control.fault.is_none());
+        assert!(control.body_write_failure.is_none());
+        assert_eq!(control.abort_calls, 1);
+        assert_eq!(control.finish_calls, 1);
+    }
+
+    #[test]
+    fn flush_fault_is_virtualized_at_the_adapter_boundary() {
+        let temporary = TempDir::new("flush-fault");
+        let path = temporary.path().join("output");
+        let mut file = File::create(path).expect("create output");
+        let state = RefCell::new(SinkState::live());
+        install_control(
+            Some(fault(
+                TestBoundary::Body,
+                TestSinkOperation::Flush,
+                1,
+                TestFaultKind::Error,
+            )),
+            None,
+            None,
+        );
+        let mut sink = FileSink {
+            file: &mut file,
+            state: &state,
+        };
+
+        sink.flush().expect("flush fault is virtualized");
+        assert!(matches!(
+            &state.borrow().poison,
+            Poison::Faulted {
+                phase: EncodingPhase::Body,
+                error,
+            } if error.to_string() == "injected sink fault"
+        ));
+        assert!(take_control().fault.is_none());
+    }
+
+    struct DropFailWriter(Cursor<Vec<u8>>);
+
+    impl Write for DropFailWriter {
+        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+            Err(io::Error::other("uncontrolled drop failure"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Seek for DropFailWriter {
+        fn seek(&mut self, from: SeekFrom) -> io::Result<u64> {
+            self.0.seek(from)
+        }
+    }
+
+    #[test]
+    fn stderr_oracle_child() {
+        match std::env::var("SOLSTONE_ARCHIVE_STDERR_CHILD").as_deref() {
+            Ok("uncontrolled") => {
+                drop(ZipWriter::new(DropFailWriter(Cursor::new(Vec::new()))));
+            }
+            Ok(scenario) if scenario.starts_with("controlled-") => {
+                let (_temporary, source, first, _) = source_fixture("stderr-child");
+                let output = TempDir::new("stderr-child-output");
+                let mut file = File::create(output.path().join("archive.zip"))
+                    .expect("create controlled output");
+                let (fault, action, body_phase) = match scenario {
+                    "controlled-body" => (
+                        fault(
+                            TestBoundary::RootDirectory,
+                            TestSinkOperation::Write,
+                            1,
+                            TestFaultKind::Error,
+                        ),
+                        None,
+                        true,
+                    ),
+                    "controlled-zero" => (
+                        fault(
+                            TestBoundary::RootDirectory,
+                            TestSinkOperation::Write,
+                            1,
+                            TestFaultKind::WriteZero,
+                        ),
+                        None,
+                        true,
+                    ),
+                    "controlled-transition" => (
+                        fault(
+                            TestBoundary::MemberTransition,
+                            TestSinkOperation::Write,
+                            1,
+                            TestFaultKind::Error,
+                        ),
+                        None,
+                        true,
+                    ),
+                    "controlled-abort" => (
+                        fault(
+                            TestBoundary::Abort,
+                            TestSinkOperation::Write,
+                            1,
+                            TestFaultKind::Error,
+                        ),
+                        Some(TestSourceAction::TruncateBeforeRead {
+                            member: "imports/first/source.bin".to_owned(),
+                            copied: 0,
+                            path: first,
+                            length: 0,
+                        }),
+                        false,
+                    ),
+                    "controlled-central" => (
+                        fault(
+                            TestBoundary::CentralDirectory,
+                            TestSinkOperation::Write,
+                            1,
+                            TestFaultKind::Error,
+                        ),
+                        None,
+                        false,
+                    ),
+                    "controlled-footer" => (
+                        fault(
+                            TestBoundary::Footer,
+                            TestSinkOperation::Write,
+                            1,
+                            TestFaultKind::Error,
+                        ),
+                        None,
+                        false,
+                    ),
+                    "controlled-terminal" => (
+                        fault(
+                            TestBoundary::TerminalSeek,
+                            TestSinkOperation::Seek,
+                            1,
+                            TestFaultKind::Error,
+                        ),
+                        None,
+                        false,
+                    ),
+                    _ => panic!("unknown stderr child scenario {scenario}"),
+                };
+                install_control(Some(fault), action, None);
+                let result = encode_archive(&request(&source), &mut file);
+                if body_phase {
+                    assert!(matches!(
+                        result,
+                        Err(EncodeArchiveError::ArchiveWrite { .. })
+                    ));
+                } else {
+                    assert!(matches!(
+                        result,
+                        Err(EncodeArchiveError::ArchiveFinish { .. })
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn run_stderr_child(scenario: &str) -> std::process::Output {
+        let mut child = Command::new(std::env::current_exe().expect("current test executable"))
+            .args([
+                "--exact",
+                "encode::tests::stderr_oracle_child",
+                "--nocapture",
+            ])
+            .env("SOLSTONE_ARCHIVE_STDERR_CHILD", scenario)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn stderr oracle child");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if child.try_wait().expect("wait for stderr child").is_some() {
+                return child.wait_with_output().expect("collect stderr child");
+            }
+            if Instant::now() >= deadline {
+                child.kill().expect("kill stuck stderr child");
+                let output = child.wait_with_output().expect("collect killed child");
+                panic!("stderr child timed out: {output:?}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn controlled_failures_never_reach_zip_drop_stderr() {
+        let uncontrolled = run_stderr_child("uncontrolled");
+        assert!(uncontrolled.status.success());
+        assert!(
+            String::from_utf8_lossy(&uncontrolled.stderr).contains("ZipWriter drop failed"),
+            "negative control did not observe zip Drop stderr: {uncontrolled:?}"
+        );
+
+        for scenario in [
+            "controlled-body",
+            "controlled-zero",
+            "controlled-transition",
+            "controlled-abort",
+            "controlled-central",
+            "controlled-footer",
+            "controlled-terminal",
+        ] {
+            let controlled = run_stderr_child(scenario);
+            assert!(
+                controlled.status.success(),
+                "controlled stderr child failed for {scenario}: {controlled:?}"
+            );
+            assert_eq!(controlled.stderr, b"", "stderr for {scenario}");
+        }
     }
 }

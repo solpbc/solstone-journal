@@ -3,7 +3,15 @@
 
 use zip::DateTime;
 
-use crate::writer::ArchiveEncodingError;
+/// Invalid caller-owned metadata detected before ZIP construction.
+#[derive(Debug)]
+pub(crate) enum ManifestError {
+    InvalidMetadata {
+        field: &'static str,
+        value: String,
+        reason: &'static str,
+    },
+}
 
 /// Plain values rendered into a portable archive manifest.
 pub(crate) struct ManifestFields<'a> {
@@ -22,7 +30,7 @@ pub(crate) struct Manifest {
 }
 
 /// Validate plain manifest fields and render their fixed JSON representation.
-pub(crate) fn build(fields: ManifestFields<'_>) -> Result<Manifest, ArchiveEncodingError> {
+pub(crate) fn build(fields: ManifestFields<'_>) -> Result<Manifest, ManifestError> {
     validate_version(fields.solstone_version)?;
     let timestamp = parse_exported_at(fields.exported_at)?;
     Ok(Manifest {
@@ -31,7 +39,7 @@ pub(crate) fn build(fields: ManifestFields<'_>) -> Result<Manifest, ArchiveEncod
     })
 }
 
-fn validate_version(value: &str) -> Result<(), ArchiveEncodingError> {
+fn validate_version(value: &str) -> Result<(), ManifestError> {
     if value.is_empty() {
         return Err(invalid_metadata(
             "solstone_version",
@@ -49,7 +57,7 @@ fn validate_version(value: &str) -> Result<(), ArchiveEncodingError> {
     Ok(())
 }
 
-fn parse_exported_at(value: &str) -> Result<DateTime, ArchiveEncodingError> {
+fn parse_exported_at(value: &str) -> Result<DateTime, ManifestError> {
     let bytes = value.as_bytes();
     if bytes.len() != 20
         || bytes[4] != b'-'
@@ -99,7 +107,7 @@ fn parse_exported_at(value: &str) -> Result<DateTime, ArchiveEncodingError> {
     .map_err(|_| invalid_metadata("exported_at", value, "invalid calendar date or time"))
 }
 
-fn parse_digits(bytes: &[u8], value: &str) -> Result<u16, ArchiveEncodingError> {
+fn parse_digits(bytes: &[u8], value: &str) -> Result<u16, ManifestError> {
     let mut parsed = 0_u16;
     for byte in bytes {
         if !byte.is_ascii_digit() {
@@ -114,12 +122,8 @@ fn parse_digits(bytes: &[u8], value: &str) -> Result<u16, ArchiveEncodingError> 
     Ok(parsed)
 }
 
-fn invalid_metadata(
-    field: &'static str,
-    value: &str,
-    reason: &'static str,
-) -> ArchiveEncodingError {
-    ArchiveEncodingError::InvalidMetadata {
+fn invalid_metadata(field: &'static str, value: &str, reason: &'static str) -> ManifestError {
+    ManifestError::InvalidMetadata {
         field,
         value: value.to_owned(),
         reason,
@@ -219,7 +223,7 @@ mod tests {
         ] {
             assert!(matches!(
                 build(fields(timestamp, "/journal")),
-                Err(ArchiveEncodingError::InvalidMetadata {
+                Err(ManifestError::InvalidMetadata {
                     field: "exported_at",
                     ..
                 })
@@ -234,7 +238,7 @@ mod tests {
             values.solstone_version = version;
             assert!(matches!(
                 build(values),
-                Err(ArchiveEncodingError::InvalidMetadata {
+                Err(ManifestError::InvalidMetadata {
                     field: "solstone_version",
                     ..
                 })

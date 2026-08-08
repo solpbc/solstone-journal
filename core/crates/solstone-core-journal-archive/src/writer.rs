@@ -28,11 +28,6 @@ pub(crate) enum ArchiveEncodingError {
         member: Option<ArchiveMemberName>,
         source: WriteFailure,
     },
-    InvalidMetadata {
-        field: &'static str,
-        value: String,
-        reason: &'static str,
-    },
 }
 
 /// The underlying failure from the ZIP writer or its byte sink.
@@ -61,14 +56,6 @@ impl fmt::Display for ArchiveEncodingError {
                 member: None,
                 source,
             } => write!(formatter, "archive write: {source}"),
-            Self::InvalidMetadata {
-                field,
-                value,
-                reason,
-            } => write!(
-                formatter,
-                "invalid archive metadata {field} {value:?}: {reason}"
-            ),
         }
     }
 }
@@ -78,7 +65,6 @@ impl Error for ArchiveEncodingError {
         match self {
             Self::Source { source, .. } => Some(source),
             Self::Write { source, .. } => Some(source),
-            Self::InvalidMetadata { .. } => None,
         }
     }
 }
@@ -108,25 +94,52 @@ pub(crate) fn write_archive<W: Write + Seek>(
     manifest: &Manifest,
 ) -> Result<(), ArchiveEncodingError> {
     for root in ROOTS {
+        #[cfg(test)]
+        crate::encode::test_set_boundary(crate::encode::TestBoundary::RootDirectory);
         zip.add_directory(root, directory_options(manifest.timestamp))
             .map_err(|source| zip_error(None, source))?;
     }
 
+    #[cfg(test)]
+    let mut test_first_entry = true;
     for entry in source.inventory().entries() {
         let member = entry.member_name();
+        #[cfg(test)]
+        crate::encode::test_before_source_open(member);
         let opened = source
             .open_file(entry)
             .map_err(|source| source_error(Some(member), source))?;
         let expected_size = opened.inventoried_size();
         let mut file = opened.into_file();
+        #[cfg(test)]
+        crate::encode::test_set_boundary(if test_first_entry {
+            crate::encode::TestBoundary::SourceStart
+        } else {
+            crate::encode::TestBoundary::MemberTransition
+        });
+        #[cfg(test)]
+        {
+            test_first_entry = false;
+        }
         zip.start_file(member.as_str(), file_options(manifest.timestamp))
             .map_err(|source| zip_error(Some(member), source))?;
         copy_inventoried(&mut file, zip, expected_size, member)?;
+        #[cfg(test)]
+        if crate::encode::test_take_body_write_failure(member) {
+            return Err(io_error(
+                Some(member),
+                std::io::Error::other("injected body write failure"),
+            ));
+        }
     }
 
     let manifest_member = ArchiveMemberName::new(EXPORT_MANIFEST.to_owned());
+    #[cfg(test)]
+    crate::encode::test_set_boundary(crate::encode::TestBoundary::ManifestStart);
     zip.start_file(manifest_member.as_str(), file_options(manifest.timestamp))
         .map_err(|source| zip_error(Some(&manifest_member), source))?;
+    #[cfg(test)]
+    crate::encode::test_set_boundary(crate::encode::TestBoundary::ManifestPayload);
     zip.write_all(&manifest.json)
         .map_err(|source| io_error(Some(&manifest_member), source))?;
     Ok(())
@@ -155,6 +168,8 @@ fn copy_inventoried<R: Read, W: Write>(
     let mut copied = 0_u64;
     let mut buffer = [0_u8; COPY_BUFFER_SIZE];
     while copied < expected_size {
+        #[cfg(test)]
+        crate::encode::test_before_source_read(member, copied);
         let remaining = expected_size - copied;
         let request = if remaining > COPY_BUFFER_SIZE as u64 {
             COPY_BUFFER_SIZE
@@ -167,6 +182,8 @@ fn copy_inventoried<R: Read, W: Write>(
         if count == 0 {
             return Err(changed_error(member));
         }
+        #[cfg(test)]
+        crate::encode::test_set_boundary(crate::encode::TestBoundary::SourcePayload);
         writer
             .write_all(&buffer[..count])
             .map_err(|source| io_error(Some(member), source))?;
@@ -174,6 +191,8 @@ fn copy_inventoried<R: Read, W: Write>(
     }
 
     let mut probe = [0_u8; 1];
+    #[cfg(test)]
+    crate::encode::test_before_source_read(member, copied);
     let count = reader
         .read(&mut probe)
         .map_err(|source| read_error(member, source))?;

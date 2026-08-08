@@ -267,6 +267,31 @@ fn write_archive_has_exactly_one_production_caller() {
     );
 }
 
+#[test]
+fn every_frozen_member_is_length_checked_before_zip_construction() {
+    let encode = SOURCES
+        .iter()
+        .find_map(|(name, source)| (*name == "encode").then_some(*source))
+        .expect("encode module registered");
+    let production = production_source(encode);
+    let iteration = production
+        .find("for entry in request.source.inventory().entries()")
+        .expect("frozen inventory validation loop");
+    let validation = production[iteration..]
+        .find("validate_member_name_length(entry.member_name())")
+        .map(|offset| iteration + offset)
+        .expect("member-length validation call");
+    let construction = production
+        .find("ZipWriter::new(sink)")
+        .expect("ZIP construction");
+
+    assert!(iteration < validation && validation < construction);
+    assert_eq!(
+        production.matches("validate_member_name_length(").count(),
+        2
+    );
+}
+
 fn production_source(source: &str) -> &str {
     [
         "\n#[cfg(test)]\nmod tests",

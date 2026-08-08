@@ -20,7 +20,9 @@ mod manifest;
 mod source;
 mod writer;
 
-pub use encode::{EncodeArchiveError, EncodeArchiveRequest, EncodingPhase, encode_archive};
+pub use encode::{
+    EncodeArchiveError, EncodeArchiveFollowOn, EncodeArchiveRequest, EncodingPhase, encode_archive,
+};
 pub use entry::{
     ArchiveMemberName, Inventory, InventoryEntry, OpenedInventoryFile, SkippedRootName,
 };
