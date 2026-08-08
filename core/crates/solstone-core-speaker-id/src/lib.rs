@@ -28,6 +28,5 @@ pub mod voiceprint_centroid;
 pub mod writer;
 
 mod ascii_json;
-mod npy_read;
 mod npz;
 mod person_guard;

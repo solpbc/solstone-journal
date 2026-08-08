@@ -37,6 +37,7 @@ members = [
     "crates/solstone-core-ingest-resolve",
     "crates/solstone-core-spl",
     "crates/solstone-core-speaker-id",
+    "crates/solstone-core-npy",
     "crates/solstone-core-speakers",
     "crates/solstone-core-speakers-analyze",
     "crates/solstone-core-describe",
@@ -96,6 +97,7 @@ hyper-util = { version = "0.1.20", default-features = false, features = ["tokio"
 solstone-core-speakers = { path = "crates/solstone-core-speakers" }
 solstone-core-speakers-analyze = { path = "crates/solstone-core-speakers-analyze" }
 solstone-core-speaker-id = { path = "crates/solstone-core-speaker-id" }
+solstone-core-npy = { path = "crates/solstone-core-npy" }
 solstone-core-depict = { path = "crates/solstone-core-depict" }
 solstone-core-generate = { path = "crates/solstone-core-generate" }
 solstone-core-generate-wire = { path = "crates/solstone-core-generate-wire" }

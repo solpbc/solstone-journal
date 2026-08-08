@@ -65,7 +65,6 @@ pub use review_candidates::{
     load_merge_candidates, record_merge_candidate,
 };
 pub use undo::{EntityUndoError, EntityUndoReport, undo_entity_merge};
-pub use voiceprints::write_npy;
 pub use voiceprints::{
     CanonicalKeyField, EncoderIdentity, VoiceprintArchive, VoiceprintEnvelope, VoiceprintItem,
     VoiceprintKey, VoiceprintNpzError, VoiceprintOperationError, VoiceprintRemoval,

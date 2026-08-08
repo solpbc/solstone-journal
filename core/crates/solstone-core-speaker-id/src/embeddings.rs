@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use zip::ZipArchive;
 
-use crate::npy_read::{NpyBlob, parse_npy};
+use solstone_core_npy::{NpyBlob, parse_npy};
 
 /// Embeddings paired with their statement IDs in on-disk order.
 #[derive(Debug, Clone, PartialEq)]

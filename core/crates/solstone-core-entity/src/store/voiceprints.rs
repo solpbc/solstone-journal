@@ -20,6 +20,7 @@ use solstone_core_journal_io::hold_lock;
 use solstone_core_journal_io::path_lexists;
 use solstone_core_journal_io::read_bytes;
 use solstone_core_journal_io::remove_file;
+use solstone_core_npy::{NpyBlob, parse_npy, write_npy};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
@@ -768,29 +769,21 @@ fn read_member(
 }
 
 fn parse_embeddings(bytes: &[u8]) -> Result<(usize, Vec<f32>), VoiceprintNpzError> {
-    let (header, payload) = parse_npy(bytes)?;
-    if header.shape.len() == 2 && header.shape[1] != EMBEDDING_WIDTH {
-        return Err(VoiceprintNpzError::EmbeddingWidth {
-            found: header.shape[1],
-        });
+    let NpyBlob {
+        descr,
+        fortran_order,
+        shape,
+        payload,
+    } = parse_npy(bytes).map_err(|error| VoiceprintNpzError::Invalid(error.to_string()))?;
+    if shape.len() == 2 && shape[1] != EMBEDDING_WIDTH {
+        return Err(VoiceprintNpzError::EmbeddingWidth { found: shape[1] });
     }
-    if header.descr != "<f4" || header.fortran_order || header.shape.len() != 2 {
+    if descr != "<f4" || fortran_order || shape.len() != 2 {
         return Err(VoiceprintNpzError::Invalid(
             "embeddings.npy must be a little-endian float32 C-order (N, 256) array".to_owned(),
         ));
     }
-    let rows = header.shape[0];
-    let expected = rows
-        .checked_mul(EMBEDDING_WIDTH)
-        .and_then(|count| count.checked_mul(4))
-        .ok_or_else(|| {
-            VoiceprintNpzError::Invalid("embeddings.npy shape is too large".to_owned())
-        })?;
-    if payload.len() != expected {
-        return Err(VoiceprintNpzError::Invalid(
-            "embeddings.npy payload length does not match its shape".to_owned(),
-        ));
-    }
+    let rows = shape[0];
     let values = payload
         .chunks_exact(4)
         .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("exact chunk length")))
@@ -839,14 +832,18 @@ fn write_unicode_npy(values: &[String]) -> Vec<u8> {
 }
 
 fn parse_unicode_npy(bytes: &[u8], name: &str) -> Result<Vec<String>, VoiceprintNpzError> {
-    let (header, payload) = parse_npy(bytes)?;
-    if header.fortran_order || header.shape.len() != 1 {
+    let NpyBlob {
+        descr,
+        fortran_order,
+        shape,
+        payload,
+    } = parse_npy(bytes).map_err(|error| VoiceprintNpzError::Invalid(error.to_string()))?;
+    if fortran_order || shape.len() != 1 {
         return Err(VoiceprintNpzError::Invalid(format!(
             "{name} must be a C-order one-dimensional unicode array"
         )));
     }
-    let width = header
-        .descr
+    let width = descr
         .strip_prefix("<U")
         .ok_or_else(|| {
             VoiceprintNpzError::Invalid(format!(
@@ -855,7 +852,7 @@ fn parse_unicode_npy(bytes: &[u8], name: &str) -> Result<Vec<String>, Voiceprint
         })?
         .parse::<usize>()
         .map_err(|_| VoiceprintNpzError::Invalid(format!("{name} has an invalid unicode dtype")))?;
-    let rows = header.shape[0];
+    let rows = shape[0];
     if width == 0 {
         if rows == 0 && payload.is_empty() {
             return Ok(Vec::new());
@@ -867,14 +864,6 @@ fn parse_unicode_npy(bytes: &[u8], name: &str) -> Result<Vec<String>, Voiceprint
     let row_width = width
         .checked_mul(4)
         .ok_or_else(|| VoiceprintNpzError::Invalid(format!("{name} unicode dtype is too large")))?;
-    let expected = rows
-        .checked_mul(row_width)
-        .ok_or_else(|| VoiceprintNpzError::Invalid(format!("{name} shape is too large")))?;
-    if payload.len() != expected {
-        return Err(VoiceprintNpzError::Invalid(format!(
-            "{name} payload length does not match its shape"
-        )));
-    }
     payload
         .chunks_exact(row_width)
         .map(|row| {
@@ -972,123 +961,6 @@ fn parse_envelope(bytes: &[u8]) -> VoiceprintEnvelope {
     }
 }
 
-pub fn write_npy(descr: &str, shape: &str, payload: &[u8]) -> Vec<u8> {
-    let mut header = format!("{{'descr': '{descr}', 'fortran_order': False, 'shape': {shape}, }}");
-    let padding = (64 - ((10 + header.len() + 1) % 64)) % 64;
-    header.push_str(&" ".repeat(padding));
-    header.push('\n');
-    let mut bytes = Vec::with_capacity(10 + header.len() + payload.len());
-    bytes.extend_from_slice(b"\x93NUMPY");
-    bytes.extend_from_slice(&[1, 0]);
-    bytes.extend_from_slice(&(header.len() as u16).to_le_bytes());
-    bytes.extend_from_slice(header.as_bytes());
-    bytes.extend_from_slice(payload);
-    bytes
-}
-
-struct NpyHeader {
-    descr: String,
-    fortran_order: bool,
-    shape: Vec<usize>,
-}
-
-fn parse_npy(bytes: &[u8]) -> Result<(NpyHeader, &[u8]), VoiceprintNpzError> {
-    if bytes.len() < 10 || &bytes[..6] != b"\x93NUMPY" {
-        return Err(VoiceprintNpzError::Invalid(
-            "invalid NPY magic bytes".to_owned(),
-        ));
-    }
-    let version = (bytes[6], bytes[7]);
-    let (header_start, header_len): (usize, usize) = match version {
-        (1, 0) => (10, u16::from_le_bytes([bytes[8], bytes[9]]) as usize),
-        (2, 0) | (3, 0) if bytes.len() >= 12 => (
-            12,
-            u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]) as usize,
-        ),
-        _ => {
-            return Err(VoiceprintNpzError::Invalid(
-                "unsupported NPY version".to_owned(),
-            ));
-        }
-    };
-    let header_end = header_start
-        .checked_add(header_len)
-        .ok_or_else(|| VoiceprintNpzError::Invalid("NPY header is too large".to_owned()))?;
-    let header = bytes
-        .get(header_start..header_end)
-        .ok_or_else(|| VoiceprintNpzError::Invalid("truncated NPY header".to_owned()))?;
-    let header = std::str::from_utf8(header)
-        .map_err(|_| VoiceprintNpzError::Invalid("NPY header is not UTF-8".to_owned()))?;
-    let descr = header_string_value(header, "descr")?;
-    let fortran_order = match header_value(header, "fortran_order")? {
-        "False" => false,
-        "True" => true,
-        _ => {
-            return Err(VoiceprintNpzError::Invalid(
-                "NPY header has an invalid fortran_order value".to_owned(),
-            ));
-        }
-    };
-    let shape_text = header_value(header, "shape")?;
-    let shape = shape_text
-        .strip_prefix('(')
-        .and_then(|value| value.strip_suffix(')'))
-        .ok_or_else(|| VoiceprintNpzError::Invalid("NPY header has an invalid shape".to_owned()))?
-        .split(',')
-        .filter_map(|part| {
-            let part = part.trim();
-            (!part.is_empty()).then_some(part)
-        })
-        .map(|part| {
-            part.parse::<usize>().map_err(|_| {
-                VoiceprintNpzError::Invalid("NPY header has an invalid shape dimension".to_owned())
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    if shape.is_empty() {
-        return Err(VoiceprintNpzError::Invalid(
-            "NPY header must describe an array".to_owned(),
-        ));
-    }
-    Ok((
-        NpyHeader {
-            descr,
-            fortran_order,
-            shape,
-        },
-        &bytes[header_end..],
-    ))
-}
-
-fn header_string_value(header: &str, key: &str) -> Result<String, VoiceprintNpzError> {
-    let value = header_value(header, key)?;
-    let value = value
-        .strip_prefix('\'')
-        .and_then(|value| value.strip_suffix('\''))
-        .ok_or_else(|| VoiceprintNpzError::Invalid(format!("NPY header has an invalid {key}")))?;
-    Ok(value.to_owned())
-}
-
-fn header_value<'a>(header: &'a str, key: &str) -> Result<&'a str, VoiceprintNpzError> {
-    let prefix = format!("'{key}':");
-    let value = header
-        .split(&prefix)
-        .nth(1)
-        .ok_or_else(|| VoiceprintNpzError::Invalid(format!("NPY header is missing {key}")))?
-        .trim_start();
-    if value.starts_with('(') {
-        let end = value.find(')').ok_or_else(|| {
-            VoiceprintNpzError::Invalid(format!("NPY header has an invalid {key}"))
-        })?;
-        return Ok(&value[..=end]);
-    }
-    Ok(value
-        .split(',')
-        .next()
-        .ok_or_else(|| VoiceprintNpzError::Invalid(format!("NPY header has an invalid {key}")))?
-        .trim())
-}
-
 fn validate_metadata(values: &[String]) -> Result<(), VoiceprintNpzError> {
     for value in values {
         serde_json::from_str::<serde_json::Value>(value).map_err(|error| {
@@ -1167,7 +1039,27 @@ mod tests {
         let bytes = write_npy("|O", "(1,)", &[0; 8]);
         assert!(matches!(
             parse_metadata(&bytes),
-            Err(VoiceprintNpzError::Invalid(message)) if message.contains("never pickle")
+            Err(VoiceprintNpzError::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn voiceprint_embeddings_reject_exact_length_mismatches() {
+        let mut payload = vec![0_u8; EMBEDDING_WIDTH * 4];
+        payload.push(0);
+        let overlong = write_npy("<f4", "(1, 256)", &payload);
+        assert!(parse_embeddings(&overlong).is_err());
+
+        let short = write_npy("<f4", "(1, 256)", &payload[..payload.len() - 2]);
+        assert!(parse_embeddings(&short).is_err());
+    }
+
+    #[test]
+    fn voiceprint_embeddings_reject_scalar_shape_at_the_domain_layer() {
+        let scalar = write_npy("<f4", "()", &0_f32.to_le_bytes());
+        assert!(matches!(
+            parse_embeddings(&scalar),
+            Err(VoiceprintNpzError::Invalid(message)) if message.contains("(N, 256)")
         ));
     }
 

@@ -2489,6 +2489,7 @@ dependencies = [
  "solstone-core-entity-matching",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
+ "solstone-core-npy",
  "unicode-normalization",
  "zip",
 ]
@@ -2719,6 +2720,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-npy"
+version = "1.0.22"
+
+[[package]]
 name = "solstone-core-processing-record"
 version = "1.0.22"
 dependencies = [
@@ -2852,6 +2857,7 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-npy",
  "zip",
 ]
 

@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
 
-use solstone_core_entity::write_npy;
+use solstone_core_npy::write_npy;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 

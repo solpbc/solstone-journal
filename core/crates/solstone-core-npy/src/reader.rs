@@ -8,16 +8,16 @@ use std::fmt;
 
 /// Decoded NPY header and its exact raw payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct NpyBlob<'a> {
-    pub(crate) descr: String,
-    pub(crate) fortran_order: bool,
-    pub(crate) shape: Vec<usize>,
-    pub(crate) payload: &'a [u8],
+pub struct NpyBlob<'a> {
+    pub descr: String,
+    pub fortran_order: bool,
+    pub shape: Vec<usize>,
+    pub payload: &'a [u8],
 }
 
 /// Failure while decoding an NPY blob.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct NpyReadError(String);
+pub struct NpyReadError(String);
 
 impl NpyReadError {
     fn invalid(message: impl Into<String>) -> Self {
@@ -34,7 +34,7 @@ impl fmt::Display for NpyReadError {
 impl Error for NpyReadError {}
 
 /// Parse a self-contained NPY blob and validate its payload length.
-pub(crate) fn parse_npy(bytes: &[u8]) -> Result<NpyBlob<'_>, NpyReadError> {
+pub fn parse_npy(bytes: &[u8]) -> Result<NpyBlob<'_>, NpyReadError> {
     if bytes.len() < 10 || &bytes[..6] != b"\x93NUMPY" {
         return Err(NpyReadError::invalid("invalid NPY magic bytes"));
     }
@@ -180,14 +180,42 @@ fn dtype_item_size(descr: &str) -> Result<usize, NpyReadError> {
         .as_str()
         .parse::<usize>()
         .map_err(|_| NpyReadError::invalid("NPY dtype has invalid width"))?;
-    if width == 0 {
-        return Err(NpyReadError::invalid("NPY dtype has zero width"));
-    }
     if kind == 'U' {
         width
             .checked_mul(4)
             .ok_or_else(|| NpyReadError::invalid("NPY unicode dtype width overflow"))
     } else {
+        if width == 0 {
+            return Err(NpyReadError::invalid("NPY dtype has zero width"));
+        }
         Ok(width)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_npy;
+    use crate::write_npy;
+
+    #[test]
+    fn accepts_zero_dimensional_arrays() {
+        let bytes = write_npy("<i4", "()", &7_i32.to_le_bytes());
+        let blob = parse_npy(&bytes).unwrap();
+        assert!(blob.shape.is_empty());
+        assert_eq!(blob.payload, 7_i32.to_le_bytes());
+    }
+
+    #[test]
+    fn rejects_overlong_payloads() {
+        let mut bytes = write_npy("<i4", "()", &7_i32.to_le_bytes());
+        bytes.push(0);
+        assert!(parse_npy(&bytes).is_err());
+    }
+
+    #[test]
+    fn rejects_short_payloads() {
+        let mut bytes = write_npy("<i4", "()", &7_i32.to_le_bytes());
+        bytes.pop();
+        assert!(parse_npy(&bytes).is_err());
     }
 }
