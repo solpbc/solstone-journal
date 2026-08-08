@@ -2921,6 +2921,7 @@ dependencies = [
  "nix",
  "serde",
  "serde_json",
+ "solstone-core-journal-io",
  "thiserror 2.0.19",
 ]
 

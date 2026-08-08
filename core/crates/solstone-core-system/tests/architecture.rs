@@ -29,6 +29,14 @@ const LIFECYCLE_STATE: &str = include_str!("../src/lifecycle/state.rs");
 const LIFECYCLE_SWEEP: &str = include_str!("../src/lifecycle/sweep.rs");
 const LIFECYCLE_SYNC: &str = include_str!("../src/lifecycle/sync.rs");
 const LIFECYCLE_WATCHER: &str = include_str!("../src/lifecycle/watcher.rs");
+const SCHEDULE: &str = include_str!("../src/schedule/mod.rs");
+const SCHEDULE_CAPS: &str = include_str!("../src/schedule/caps.rs");
+const SCHEDULE_COMPLETION: &str = include_str!("../src/schedule/completion.rs");
+const SCHEDULE_CONFIG: &str = include_str!("../src/schedule/config.rs");
+const SCHEDULE_DUE: &str = include_str!("../src/schedule/due.rs");
+const SCHEDULE_ENGINE: &str = include_str!("../src/schedule/engine.rs");
+const SCHEDULE_STATUS: &str = include_str!("../src/schedule/status.rs");
+const SCHEDULE_SUBMISSION: &str = include_str!("../src/schedule/submission.rs");
 
 fn declared_modules(source: &str) -> BTreeSet<&str> {
     source
@@ -90,6 +98,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("process", PROCESS_MOD),
         ("queue", QUEUE),
         ("request", REQUEST),
+        ("schedule", SCHEDULE),
     ];
     let process_modules = [
         ("descendants", DESCENDANTS),
@@ -108,6 +117,15 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("sync", LIFECYCLE_SYNC),
         ("watcher", LIFECYCLE_WATCHER),
     ];
+    let schedule_modules = [
+        ("caps", SCHEDULE_CAPS),
+        ("completion", SCHEDULE_COMPLETION),
+        ("config", SCHEDULE_CONFIG),
+        ("due", SCHEDULE_DUE),
+        ("engine", SCHEDULE_ENGINE),
+        ("status", SCHEDULE_STATUS),
+        ("submission", SCHEDULE_SUBMISSION),
+    ];
     assert_eq!(
         declared_modules(LIB),
         root_modules.iter().map(|(name, _)| *name).collect()
@@ -120,12 +138,17 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         declared_modules(PROCESS_MOD),
         process_modules.iter().map(|(name, _)| *name).collect()
     );
+    assert_eq!(
+        declared_modules(SCHEDULE),
+        schedule_modules.iter().map(|(name, _)| *name).collect()
+    );
 
     for (name, source) in root_modules
         .into_iter()
         .chain(process_modules)
         .chain(lifecycle_modules)
-        .filter(|(name, _)| *name != "log" && *name != "state")
+        .chain(schedule_modules)
+        .filter(|(name, _)| *name != "log" && *name != "state" && *name != "completion")
     {
         for primitive in [
             "File::",
@@ -147,6 +170,8 @@ fn ac21_only_operational_log_module_names_write_primitives() {
     assert!(LIFECYCLE_STATE.contains("OpenOptions"));
     assert!(LIFECYCLE_STATE.contains("create_dir_all"));
     assert!(LIFECYCLE_STATE.contains("join(\"health\")"));
+    assert!(SCHEDULE_COMPLETION.contains("record_completion"));
+    assert!(SCHEDULE_COMPLETION.contains("atomic_replace"));
 }
 
 #[test]

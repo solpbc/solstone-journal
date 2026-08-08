@@ -10,6 +10,7 @@ pub mod partition;
 pub mod process;
 pub mod queue;
 pub mod request;
+pub mod schedule;
 
 /// Task-service tokens shared with the native journal process census.
 pub const TASK_VERB_TOKENS: [&str; 7] = [
