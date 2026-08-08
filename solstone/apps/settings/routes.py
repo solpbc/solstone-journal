@@ -1313,6 +1313,8 @@ def create_facet() -> Any:
         title: Display title (required)
         emoji: Icon emoji (optional, default: "📦")
         color: Hex color (optional, default: "#667eea")
+        description: Facet description (optional)
+        consent: Whether the caller has explicit user consent (optional)
 
     The facet name (slug) is auto-generated from the title.
     """
@@ -1328,7 +1330,9 @@ def create_facet() -> Any:
         # Optional fields with defaults
         emoji = data.get("emoji", "📦")
         color = data.get("color", "#667eea")
+        description = (data.get("description") or "").strip()
         icon = (data.get("icon") or "").strip()
+        consent = bool(data.get("consent", False))
 
         # Generate slug from title: lowercase, replace spaces/special chars with hyphens
         slug = re.sub(r"[^a-z0-9]+", "-", title.lower())
@@ -1348,11 +1352,18 @@ def create_facet() -> Any:
                 detail=f"Facet '{slug}' already exists",
             )
 
-        facets.create_facet(title, emoji=emoji, color=color, icon=icon)
+        facets.create_facet(
+            title,
+            emoji=emoji,
+            color=color,
+            description=description,
+            icon=icon,
+            consent=consent,
+        )
 
         config = {
             "title": title,
-            "description": "",
+            "description": description,
             "color": color,
             "emoji": emoji,
         }

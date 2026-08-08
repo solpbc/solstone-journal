@@ -298,7 +298,7 @@ pub fn retention_list(ctx: CommandContext<'_>) -> CommandOutput {
         ctx,
         HttpMethod::Post,
         "/app/settings/api/storage/purge",
-        Some(json!({"stream": parsed.value("--stream")})),
+        Some(json!({"stream_filter": parsed.value("--stream")})),
     )
 }
 
