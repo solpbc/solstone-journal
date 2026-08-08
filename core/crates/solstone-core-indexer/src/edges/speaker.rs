@@ -79,7 +79,9 @@ pub(crate) fn extract_speaker_edges(
     else {
         return Ok(SpeakerExtraction { rows, warnings });
     };
-    let Some(transcript_texts) = load_transcript_texts(&segment_dir, &transcript_stem)? else {
+    let Some(transcript_texts) =
+        load_transcript_texts(&segment_dir, &transcript_stem, &composite_id, &mut warnings)?
+    else {
         warnings.push(format!(
             "speaker edge transcript missing for {composite_id}"
         ));
@@ -323,30 +325,40 @@ fn select_transcript_stem(
 fn load_transcript_texts(
     segment_dir: &Path,
     stem: &str,
+    composite_id: &str,
+    warnings: &mut Vec<String>,
 ) -> Result<Option<BTreeMap<i64, String>>, EdgeError> {
     let transcript_path = segment_dir.join(format!("{stem}.jsonl"));
     if !transcript_path.exists() {
         return Ok(None);
     }
-    let text = fs::read_to_string(&transcript_path).map_err(|error| {
+    let bytes = fs::read(&transcript_path).map_err(|error| {
         EdgeError::Io(format!(
             "speaker transcript read failed for {}: {error}",
             transcript_path.display()
         ))
     })?;
+    let read =
+        solstone_core_speaker_id::transcript::read_transcript_rows(&bytes).map_err(|error| {
+            EdgeError::Io(format!(
+                "speaker transcript decode failed for {}: {error}",
+                transcript_path.display()
+            ))
+        })?;
     let mut texts = BTreeMap::new();
-    for (line_no, line) in text.lines().enumerate() {
-        if line_no == 0 || line.trim().is_empty() {
-            continue;
-        }
-        let Ok(Value::Object(entry)) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        let Some(Value::String(text)) = entry.get("text") else {
+    for row in read.rows {
+        let Some(Value::String(text)) = row.value.get("text") else {
             continue;
         };
         if !text.is_empty() {
-            texts.insert(line_no as i64, text.clone());
+            // Persisted sentence IDs can collide; preserve document order by keeping the last.
+            if texts.contains_key(&row.sentence_id) {
+                warnings.push(format!(
+                    "speaker edge transcript duplicate sentence_id {} for {composite_id}",
+                    row.sentence_id
+                ));
+            }
+            texts.insert(row.sentence_id, text.clone());
         }
     }
     Ok(Some(texts))
@@ -810,6 +822,99 @@ mod tests {
                 .map(|candidate| candidate.entity_id.as_str())
                 .collect::<Vec<_>>(),
             vec!["ann_lee", "ann"]
+        );
+    }
+
+    // AC12 oracle for comparing the pre-switch line-number behavior on safe fixtures.
+    fn legacy_load_transcript_texts_for_oracle(path: &Path) -> BTreeMap<i64, String> {
+        let text = fs::read_to_string(path).unwrap();
+        let mut texts = BTreeMap::new();
+        for (line_no, line) in text.lines().enumerate() {
+            if line_no == 0 || line.trim().is_empty() {
+                continue;
+            }
+            let Ok(Value::Object(entry)) = serde_json::from_str::<Value>(line) else {
+                continue;
+            };
+            let Some(Value::String(text)) = entry.get("text") else {
+                continue;
+            };
+            if !text.is_empty() {
+                texts.insert(line_no as i64, text.clone());
+            }
+        }
+        texts
+    }
+
+    fn transcript_result(body: &[u8]) -> (BTreeMap<i64, String>, Vec<String>) {
+        let root = temp_root("transcript-reader");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("audio.jsonl"), body).unwrap();
+        let mut warnings = Vec::new();
+        let texts =
+            load_transcript_texts(&root, "audio", "20260808/default/120000_300", &mut warnings)
+                .unwrap()
+                .unwrap();
+        fs::remove_dir_all(root).unwrap();
+        (texts, warnings)
+    }
+
+    #[test]
+    fn transcript_reader_matches_legacy_without_persisted_ids() {
+        let root = temp_root("legacy-oracle");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("audio.jsonl");
+        fs::write(&path, "header\n{\"text\":\"one\"}\n{\"text\":\"two\"}\n").unwrap();
+        let mut warnings = Vec::new();
+        let actual = load_transcript_texts(&root, "audio", "fixture", &mut warnings)
+            .unwrap()
+            .unwrap();
+        assert_eq!(actual, legacy_load_transcript_texts_for_oracle(&path));
+        assert_eq!(
+            actual,
+            BTreeMap::from([(1, "one".to_owned()), (2, "two".to_owned())])
+        );
+        assert!(warnings.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn transcript_reader_preserves_ordinals_and_filters_text() {
+        let (texts, warnings) = transcript_result(
+            b"header\n\n{bad}\n{\"text\":null}\n{\"text\":\"four\"}\n{\"text\":\"five\"}",
+        );
+        assert_eq!(
+            texts,
+            BTreeMap::from([(4, "four".to_owned()), (5, "five".to_owned())])
+        );
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn transcript_reader_handles_empty_header_cr_and_persisted_ids() {
+        for body in [b"".as_slice(), b"header".as_slice()] {
+            let (texts, warnings) = transcript_result(body);
+            assert!(texts.is_empty());
+            assert!(warnings.is_empty());
+        }
+        let (texts, _) = transcript_result(b"header\r{\"text\":\"one\"}\r{\"text\":\"two\"}");
+        assert_eq!(
+            texts,
+            BTreeMap::from([(1, "one".to_owned()), (2, "two".to_owned())])
+        );
+        let (texts, _) = transcript_result(b"header\n{\"sentence_id\":9,\"text\":\"persisted\"}");
+        assert_eq!(texts, BTreeMap::from([(9, "persisted".to_owned())]));
+    }
+
+    #[test]
+    fn transcript_reader_warns_and_keeps_last_duplicate() {
+        let (texts, warnings) = transcript_result(
+            b"header\n{\"sentence_id\":3,\"text\":\"first\"}\n{\"sentence_id\":3,\"text\":\"last\"}\n",
+        );
+        assert_eq!(texts, BTreeMap::from([(3, "last".to_owned())]));
+        assert_eq!(
+            warnings,
+            vec!["speaker edge transcript duplicate sentence_id 3 for 20260808/default/120000_300"]
         );
     }
 }

@@ -18,3 +18,4 @@ solstone-core-entity-matching.workspace = true
 solstone-core-format.workspace = true
 solstone-core-journal.workspace = true
 solstone-core-journal-config.workspace = true
+solstone-core-speaker-id.workspace = true
