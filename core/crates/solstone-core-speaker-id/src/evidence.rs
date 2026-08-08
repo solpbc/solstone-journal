@@ -18,9 +18,9 @@ use solstone_core_entity::{
 use solstone_core_journal_config::{ConfigLoadError, materialized_defaults, read_journal_config};
 use solstone_core_journal_io::{PathError, segment_path};
 
-const CHANNEL_ORDER: [&str; 4] = ["screen", "meeting_day", "setting", "speakers"];
-const RESOLUTION_FUZZY_THRESHOLD: f64 = 90.0;
+use crate::calibration::RESOLUTION_FUZZY_THRESHOLD;
 
+const CHANNEL_ORDER: [&str; 4] = ["screen", "meeting_day", "setting", "speakers"];
 static LEADING_SETTING_CONTEXT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?i)^(meeting|call|lunch|coffee|dinner|chat|conversation|zoom|hangout)\s+(with\s+)?",
@@ -426,7 +426,7 @@ fn derive_owner_name_variants(names: Vec<String>) -> HashSet<String> {
     variants
 }
 
-fn ordered_dedup<'a>(names: impl Iterator<Item = &'a String>) -> Vec<String> {
+pub(crate) fn ordered_dedup<'a>(names: impl Iterator<Item = &'a String>) -> Vec<String> {
     let mut seen = HashSet::new();
     names
         .filter(|name| seen.insert((*name).clone()))

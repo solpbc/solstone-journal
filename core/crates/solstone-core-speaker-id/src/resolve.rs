@@ -45,7 +45,11 @@ pub struct ResolveMetadata {
     pub owner_centroid_last_refreshed_at: Option<String>,
     pub voiceprint_versions: HashMap<String, usize>,
     pub candidate_evidence: Vec<CandidateEvidence>,
+    /// Evidence-loader and resolution gaps. Voiceprint failures stay separate
+    /// because they use a distinct type and Python has no unified gap output.
     pub candidate_evidence_gaps: Option<Vec<EvidenceGap>>,
+    /// Native-only unreadable-voiceprint diagnostics, intentionally distinct
+    /// from evidence gaps because Python never exposes them as evidence gaps.
     pub voiceprint_gaps: Option<Vec<VoiceprintLoadGap>>,
 }
 

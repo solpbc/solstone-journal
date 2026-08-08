@@ -13,3 +13,7 @@ pub const ACOUSTIC_MARGIN_MIN: f32 = 0.05;
 pub const CC_COVERAGE_GATE: f32 = 0.45;
 pub const CC_CONFIDENCE_GATE: f32 = 0.28;
 pub const VP_DECAY_LAMBDA: f64 = std::f64::consts::LN_2 / 120.0;
+
+/// Name-resolution threshold from `solstone/think/entities/matching.py`.
+/// This is not one of the encoder-config values pinned by AC25.
+pub const RESOLUTION_FUZZY_THRESHOLD: f64 = 90.0;

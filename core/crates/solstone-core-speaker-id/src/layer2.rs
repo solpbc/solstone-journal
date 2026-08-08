@@ -12,11 +12,12 @@ use solstone_core_entity::{
     record_entity_resolution,
 };
 
-use crate::evidence::{CandidateEvidence, assemble_candidate_evidence, candidate_name_channels};
+use crate::calibration::RESOLUTION_FUZZY_THRESHOLD;
+use crate::evidence::{
+    CandidateEvidence, assemble_candidate_evidence, candidate_name_channels, ordered_dedup,
+};
 use crate::layer1::Label;
 use crate::person_guard::is_admissible_person;
-
-const RESOLUTION_FUZZY_THRESHOLD: f64 = 90.0;
 
 /// Inputs loaded once by the attribution orchestrator for structural attribution.
 pub struct Layer2Inputs<'a> {
@@ -184,12 +185,4 @@ fn apply_replacement_labels(
             label.owner_margin_declined = Some(true);
         }
     }
-}
-
-fn ordered_dedup<'a>(names: impl Iterator<Item = &'a String>) -> Vec<String> {
-    let mut seen = HashSet::new();
-    names
-        .filter(|name| seen.insert((*name).clone()))
-        .cloned()
-        .collect()
 }
