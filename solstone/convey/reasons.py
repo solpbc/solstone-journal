@@ -330,6 +330,36 @@ SUPPORT_PORTAL_FAILED = Reason(
     "I couldn't reach support right now.",
     500,
 )
+OPERATION_IN_PROGRESS = Reason(
+    "operation_in_progress",
+    "That operation is already in progress.",
+    409,
+)
+IDEMPOTENCY_CONFLICT = Reason(
+    "idempotency_conflict",
+    "That operation conflicts with an earlier attempt.",
+    409,
+)
+SUPPORT_INVALID_STATE = Reason(
+    "invalid_state",
+    "That operation isn't available in the current state.",
+    409,
+)
+SUPPORT_TOS_CHANGED = Reason(
+    "tos_changed",
+    "Support terms changed and require re-consent.",
+    401,
+)
+OPERATION_RETIRED = Reason(
+    "operation_retired",
+    "That operation is no longer available.",
+    410,
+)
+OPERATION_ERASED = Reason(
+    "operation_erased",
+    "That operation was erased.",
+    410,
+)
 
 # import / ingest
 IMPORT_NOT_FOUND = Reason("import_not_found", "I couldn't find that import.", 404)
