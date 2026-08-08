@@ -246,6 +246,7 @@ pub(crate) fn commit_entity_merge_with_injector(
 ) -> Result<EntityMergeReport, EntityMergeError> {
     let _trust = hold_entity_trust_lock(journal).map_err(EntityWriteError::TrustLock)?;
     let plan = plan_merge(journal, source_id, target_id, options)?;
+    ensure_voiceprint_merge_compatible(journal, source_id, target_id)?;
     let merge_id = format!(
         "em_{:x}",
         SystemTime::now()
@@ -924,43 +925,23 @@ pub(crate) fn merge_voiceprints(
     target_id: &str,
     fallback_encoder: &EncoderIdentity,
 ) -> Result<VoiceprintMergeStats, EntityMergeError> {
-    let source_path = contained_path(journal, &format!("entities/{source_id}/voiceprints.npz"))
-        .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+    let (source, target) = ensure_voiceprint_merge_compatible(journal, source_id, target_id)?;
     let target_path = contained_path(journal, &format!("entities/{target_id}/voiceprints.npz"))
         .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-    if !path_lexists(&source_path).map_err(|error| EntityMergeError::Refused(error.to_string()))? {
-        let target = load_voiceprints(&target_path)?;
-        if let Some(archive) = &target {
-            ensure_merge_archive_allowed(archive)?;
-        }
+    let Some(source) = source else {
         let target_total = target.map_or(0, |archive| archive.rows);
         return Ok(VoiceprintMergeStats {
             target_total,
             ..VoiceprintMergeStats::default()
         });
-    }
-    let source = load_voiceprints(&source_path)?.expect("existing source voiceprints");
-    let mut target = load_voiceprints(&target_path)?.unwrap_or(VoiceprintArchive {
+    };
+    let mut target = target.unwrap_or(VoiceprintArchive {
         embeddings: Vec::new(),
         rows: 0,
         metadata: Vec::new(),
         envelope: VoiceprintEnvelope::default(),
         unrecognized_members: Vec::new(),
     });
-    ensure_merge_archive_allowed(&source)?;
-    ensure_merge_archive_allowed(&target)?;
-    if let (Some(source_encoder), Some(target_encoder)) =
-        (&source.envelope.encoder, &target.envelope.encoder)
-    {
-        if source_encoder != target_encoder {
-            return Err(EntityMergeError::VoiceprintEncoderMismatch {
-                source_entity_id: source_id.to_owned(),
-                target_entity_id: target_id.to_owned(),
-                source_encoder_id: source_encoder.id.clone(),
-                target_encoder_id: target_encoder.id.clone(),
-            });
-        }
-    }
     let selected_encoder = target
         .envelope
         .encoder
@@ -1018,6 +999,43 @@ pub(crate) fn merge_voiceprints(
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
     }
     Ok(stats)
+}
+
+fn ensure_voiceprint_merge_compatible(
+    journal: &Path,
+    source_id: &str,
+    target_id: &str,
+) -> Result<(Option<VoiceprintArchive>, Option<VoiceprintArchive>), EntityMergeError> {
+    let source_path = contained_path(journal, &format!("entities/{source_id}/voiceprints.npz"))
+        .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+    let target_path = contained_path(journal, &format!("entities/{target_id}/voiceprints.npz"))
+        .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+    let source = load_voiceprints(&source_path)?;
+    let target = load_voiceprints(&target_path)?;
+    if let Some(archive) = &source {
+        ensure_merge_archive_allowed(archive)?;
+    }
+    if let Some(archive) = &target {
+        ensure_merge_archive_allowed(archive)?;
+    }
+    if let (Some(source_encoder), Some(target_encoder)) = (
+        source
+            .as_ref()
+            .and_then(|archive| archive.envelope.encoder.as_ref()),
+        target
+            .as_ref()
+            .and_then(|archive| archive.envelope.encoder.as_ref()),
+    ) {
+        if source_encoder != target_encoder {
+            return Err(EntityMergeError::VoiceprintEncoderMismatch {
+                source_entity_id: source_id.to_owned(),
+                target_entity_id: target_id.to_owned(),
+                source_encoder_id: source_encoder.id.clone(),
+                target_encoder_id: target_encoder.id.clone(),
+            });
+        }
+    }
+    Ok((source, target))
 }
 
 fn ensure_merge_archive_allowed(archive: &VoiceprintArchive) -> Result<(), EntityMergeError> {

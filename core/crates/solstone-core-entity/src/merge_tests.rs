@@ -264,6 +264,63 @@ fn voiceprint_merge_carries_matching_known_identity_and_refuses_mismatch() {
 }
 
 #[test]
+fn commit_preflights_voiceprint_encoder_mismatch() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    let source = EncoderIdentity {
+        id: "source".to_owned(),
+        sha256: "1111111111111111111111111111111111111111111111111111111111111111".to_owned(),
+        width: 256,
+    };
+    let target = EncoderIdentity {
+        id: "target".to_owned(),
+        sha256: "2222222222222222222222222222222222222222222222222222222222222222".to_owned(),
+        width: 256,
+    };
+    write_voiceprints_with_identity(
+        &journal,
+        "source",
+        vec![row(2.0)],
+        vec![metadata("1")],
+        &source,
+        false,
+    );
+    write_voiceprints_with_identity(
+        &journal,
+        "target",
+        vec![row(3.0)],
+        vec![metadata("2")],
+        &target,
+        false,
+    );
+
+    let error = commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        EntityMergeError::VoiceprintEncoderMismatch {
+            source_entity_id,
+            target_entity_id,
+            source_encoder_id,
+            target_encoder_id,
+        } if source_entity_id == "source"
+            && target_entity_id == "target"
+            && source_encoder_id == "source"
+            && target_encoder_id == "target"
+    ));
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
 fn voiceprint_merge_refuses_unknown_or_future_members_and_merges_negative_twin() {
     let journal = voiceprint_journal();
     write_voiceprints(&journal, "source", vec![row(2.0)], vec![metadata("1")]);
