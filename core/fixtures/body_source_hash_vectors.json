@@ -76,6 +76,42 @@
         "value": 1
       },
       "name": "python_only_strip_characters"
+    },
+    {
+      "expected_dedupe_key": "sha256:d489a4c85d49f053e4768e0bc0de26da00c823a5362d1a07953de06498046037",
+      "expected_value_hash": "sha256:319f062fc27f1395467a3e282172e11ba153ce013359671e53c74761425c5039",
+      "identity": {
+        "end_time": null,
+        "metadata": {
+          "key-\ud800": "meta-\udc00"
+        },
+        "record_type": "\ud800SyntheticType",
+        "source_family": " Synthetic_Family ",
+        "source_name": "ignored-\ud800",
+        "source_record_id": " id-\udc00 ",
+        "start_time": "2026-01-02",
+        "unit": "unit-\udc00",
+        "value": "value-\ud800"
+      },
+      "name": "arbitrary_ascii_family_source_id_lone_surrogates"
+    },
+    {
+      "expected_dedupe_key": "sha256:51d79f1a442e25148aebbbb8c4de803b523972381fe09941ad34471ade7945aa",
+      "expected_value_hash": "sha256:93c52699d88ff2816fbf4edaceb0e1748357156f324c41b133cc3a07a972f956",
+      "identity": {
+        "end_time": null,
+        "metadata": {
+          "key-\ud800": "meta-\udc00"
+        },
+        "record_type": "Type-\ud800",
+        "source_family": " Custom_Source ",
+        "source_name": "Device-\udc00",
+        "source_record_id": null,
+        "start_time": " 2026-01-03T04:05:06Z ",
+        "unit": "unit-\ud800",
+        "value": "value-\udc00"
+      },
+      "name": "arbitrary_ascii_family_composite_lone_surrogates"
     }
   ],
   "schema": "solstone.body_source.hash_vectors.v1",
