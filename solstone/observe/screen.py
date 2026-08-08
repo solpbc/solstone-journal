@@ -19,9 +19,9 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any, Callable
 
-from solstone.observe.describe import CATEGORIES
 from solstone.observe.detect import qualified_objects
 from solstone.observe.utils import load_analysis_frames, parse_screen_filename
+from solstone.think.describe_categories import CATEGORIES
 
 logger = logging.getLogger(__name__)
 

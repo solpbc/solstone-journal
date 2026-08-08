@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 
 from solstone.think.probe import (  # noqa: E402
     SOLSTONE_CORE_UNSUPPORTED_PLATFORM_MARKER,
+    solstone_core_describe_marker_pins,
     solstone_core_marker_pins,
     solstone_core_speakers_analyze_marker_pins,
     solstone_core_unsupported_platform_pin,
@@ -38,6 +39,9 @@ CORE_UNSUPPORTED_PIN_RE = re.compile(
 )
 SPEAKERS_ANALYZE_PIN_RE = re.compile(
     r'(?P<quote>")solstone-core-speakers-analyze==[^";]+; (?P<marker>[^"]+)(?P=quote)'
+)
+DESCRIBE_PIN_RE = re.compile(
+    r'(?P<quote>")solstone-core-describe==[^";]+; (?P<marker>[^"]+)(?P=quote)'
 )
 VERSION_RE = re.compile(r'(?m)^version = "[^"]+"')
 TOMBSTONE_VERSION_RE = re.compile(r'(?m)^TOMBSTONE_VERSION = "[^"]+"')
@@ -86,6 +90,10 @@ def _speakers_analyze_leaf_path(root: Path) -> Path:
     return root / "packages" / "solstone-core-speakers-analyze" / "pyproject.toml"
 
 
+def _describe_leaf_path(root: Path) -> Path:
+    return root / "packages" / "solstone-core-describe" / "pyproject.toml"
+
+
 def _core_unsupported_tombstone_path(root: Path) -> Path:
     return (
         root / "scripts" / "solstone-core-unsupported-platform-tombstone" / "setup.py"
@@ -108,6 +116,12 @@ def _rewrite_leaf(text: str, version: str) -> str:
         text,
         version,
         set(solstone_core_speakers_analyze_marker_pins(version)),
+        "leaf pyproject",
+    )
+    text = _rewrite_describe_pins(
+        text,
+        version,
+        set(solstone_core_describe_marker_pins(version)),
         "leaf pyproject",
     )
     return text
@@ -137,6 +151,20 @@ def _rewrite_speakers_analyze_leaf(text: str, version: str) -> str:
         raise PackagingRenderError(
             "speakers analyze leaf pyproject must not contain a "
             "solstone[journal-host]== pin"
+        )
+    return text
+
+
+def _rewrite_describe_leaf(text: str, version: str) -> str:
+    text, version_count = VERSION_RE.subn(f'version = "{version}"', text)
+    if version_count != 1:
+        raise PackagingRenderError(
+            "describe leaf pyproject must contain exactly one "
+            f"[project].version line; found {version_count}"
+        )
+    if "solstone[journal-host]==" in text:
+        raise PackagingRenderError(
+            "describe leaf pyproject must not contain a solstone[journal-host]== pin"
         )
     return text
 
@@ -233,6 +261,39 @@ def _rewrite_speakers_analyze_pins(
     if actual != expected:
         raise PackagingRenderError(
             f"{context} solstone-core-speakers-analyze marker pins must be exactly "
+            + ", ".join(sorted(expected))
+        )
+    return rewritten
+
+
+def _rewrite_describe_pins(
+    text: str,
+    version: str,
+    expected: set[str],
+    context: str,
+) -> str:
+    seen_markers: list[str] = []
+
+    def replacement(match: re.Match[str]) -> str:
+        marker = match.group("marker")
+        seen_markers.append(marker)
+        return (
+            f"{match.group('quote')}solstone-core-describe=={version}; "
+            f"{marker}{match.group('quote')}"
+        )
+
+    rewritten, pin_count = DESCRIBE_PIN_RE.subn(replacement, text)
+    if pin_count != len(expected):
+        raise PackagingRenderError(
+            f"{context} must contain exactly {len(expected)} marker-gated "
+            f"solstone-core-describe== pin(s); found {pin_count}"
+        )
+    actual = {
+        f"solstone-core-describe=={version}; {marker}" for marker in seen_markers
+    }
+    if actual != expected:
+        raise PackagingRenderError(
+            f"{context} solstone-core-describe marker pins must be exactly "
             + ", ".join(sorted(expected))
         )
     return rewritten
@@ -431,6 +492,9 @@ def render(root: Path = ROOT) -> dict[Path, str]:
         ),
         _speakers_analyze_leaf_path(root): _rewrite_speakers_analyze_leaf(
             _speakers_analyze_leaf_path(root).read_text(encoding="utf-8"), version
+        ),
+        _describe_leaf_path(root): _rewrite_describe_leaf(
+            _describe_leaf_path(root).read_text(encoding="utf-8"), version
         ),
         _core_unsupported_tombstone_path(root): _rewrite_tombstone_setup(
             _core_unsupported_tombstone_path(root).read_text(encoding="utf-8"),

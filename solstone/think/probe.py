@@ -150,6 +150,17 @@ SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_MARKERS: tuple[str, ...] = tuple(
     for platform_tuple in SOLSTONE_CORE_SPEAKERS_ANALYZE_COVERED_PLATFORMS
 )
 
+# Describe is Linux-only for now. macOS notarization of its statically linked
+# FFmpeg binary is separately scoped release work.
+SOLSTONE_CORE_DESCRIBE_COVERED_PLATFORMS: tuple[CorePlatform, ...] = (
+    ("linux", "x86_64"),
+    ("linux", "aarch64"),
+)
+SOLSTONE_CORE_DESCRIBE_PLATFORM_MARKERS: tuple[str, ...] = tuple(
+    _solstone_core_platform_marker(platform_tuple)
+    for platform_tuple in SOLSTONE_CORE_DESCRIBE_COVERED_PLATFORMS
+)
+
 
 def platform_tag() -> Platform:
     if sys.platform == "darwin":
@@ -191,6 +202,13 @@ def solstone_core_speakers_analyze_marker_pins(version: str) -> tuple[str, ...]:
     return tuple(
         f"solstone-core-speakers-analyze=={version}; {marker}"
         for marker in SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_MARKERS
+    )
+
+
+def solstone_core_describe_marker_pins(version: str) -> tuple[str, ...]:
+    return tuple(
+        f"solstone-core-describe=={version}; {marker}"
+        for marker in SOLSTONE_CORE_DESCRIBE_PLATFORM_MARKERS
     )
 
 

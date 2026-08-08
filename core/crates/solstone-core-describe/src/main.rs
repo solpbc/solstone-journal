@@ -8,7 +8,8 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use serde_json::Value;
+use serde_json::{Map, Value, json};
+use solstone_core_describe::categories::{CATEGORIES_META, OutputKind};
 use solstone_core_describe::selection::{CategoryOverride, Importance};
 use solstone_core_describe::{
     ConveyFiducialMask, WinnowConfig, pipeline, process_video_with_transform,
@@ -19,6 +20,7 @@ const EXIT_DECODE_FAILURE: u8 = 2;
 const EXIT_USAGE: u8 = 64;
 const EXIT_CONFIG: u8 = 78;
 const EXIT_PROVIDER_BLOCKED: u8 = 69;
+const DEFAULT_MAX_EXTRACTIONS: u32 = 20;
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1)) {
@@ -54,6 +56,73 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
                 version & 0xff
             );
             Ok(())
+        }
+        Command::Categories => {
+            let categories = CATEGORIES_META
+                .iter()
+                .map(|category| {
+                    let mut metadata = Map::new();
+                    metadata.insert("description".to_owned(), json!(category.description));
+                    metadata.insert(
+                        "output".to_owned(),
+                        json!(match category.output {
+                            OutputKind::Json => "json",
+                            OutputKind::Markdown => "markdown",
+                        }),
+                    );
+                    metadata.insert(
+                        "max_output_tokens".to_owned(),
+                        json!(category.max_output_tokens),
+                    );
+                    metadata.insert("context".to_owned(), json!(category.context));
+                    metadata.insert(
+                        "label".to_owned(),
+                        json!(
+                            category
+                                .name
+                                .split('_')
+                                .map(|word| {
+                                    let mut characters = word.chars();
+                                    let Some(first) = characters.next() else {
+                                        return String::new();
+                                    };
+                                    first.to_uppercase().collect::<String>() + characters.as_str()
+                                })
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        ),
+                    );
+                    metadata.insert("group".to_owned(), json!("Screen Analysis"));
+                    if let Some(extraction) = &category.extraction {
+                        metadata.insert("extraction".to_owned(), json!(extraction));
+                    }
+                    if let Some(importance) = &category.importance {
+                        metadata.insert("importance".to_owned(), json!(importance));
+                    }
+                    if category.extractable {
+                        metadata.insert("prompt".to_owned(), json!(category.instruction));
+                    }
+                    if let Some(schema) = category.schema {
+                        let schema = serde_json::from_str::<Value>(schema).map_err(|error| {
+                            CliError::Internal(format!(
+                                "embedded category schema is invalid: {error}"
+                            ))
+                        })?;
+                        metadata.insert("json_schema".to_owned(), schema);
+                    }
+                    Ok::<_, CliError>((category.name.to_owned(), Value::Object(metadata)))
+                })
+                .collect::<Result<std::collections::BTreeMap<_, _>, _>>()?;
+            let output = json!({
+                "schema": "solstone-describe-categories-v1",
+                "default_max_extractions": DEFAULT_MAX_EXTRACTIONS,
+                "categories": categories,
+            });
+            let rendered = serde_json::to_string_pretty(&output)
+                .map_err(|error| CliError::Internal(format!("failed to encode output: {error}")))?;
+            io::stdout()
+                .write_all(format!("{rendered}\n").as_bytes())
+                .map_err(|error| CliError::Internal(format!("failed to write output: {error}")))
         }
         Command::FramesOnly(arguments) => {
             let config = read_config(arguments.journal.as_deref())?;
@@ -123,6 +192,7 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
 
 enum Command {
     Version,
+    Categories,
     FramesOnly(FramesOnlyArguments),
     Describe(DescribeArguments),
 }
@@ -149,7 +219,7 @@ enum CliError {
 fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Command, CliError> {
     let mut values = arguments.into_iter();
     let Some(first) = values.next() else {
-        return Err(usage("missing required --frames-only and video path"));
+        return Err(usage("missing video path"));
     };
     if first == "--version" {
         if values.next().is_some() {
@@ -160,6 +230,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
 
     let mut frames_only = false;
     let mut describe = false;
+    let mut categories = false;
     let mut redo = false;
     let mut jobs = None;
     let mut journal = None;
@@ -176,6 +247,17 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
                 return Err(usage("--describe was provided more than once"));
             }
             describe = true;
+        } else if argument == "--categories" {
+            if categories {
+                return Err(usage("--categories was provided more than once"));
+            }
+            categories = true;
+        } else if argument == "-d"
+            || argument == "--debug"
+            || argument == "-v"
+            || argument == "--verbose"
+        {
+            // Accepted for the journal dispatcher; this CLI has no verbosity subsystem yet.
         } else if argument == "--redo" {
             if redo {
                 return Err(usage("--redo was provided more than once"));
@@ -211,10 +293,22 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
         }
     }
 
-    if frames_only == describe {
-        return Err(usage(
-            "exactly one of --frames-only or --describe is required",
-        ));
+    if categories {
+        if frames_only
+            || describe
+            || video_path.is_some()
+            || redo
+            || jobs.is_some()
+            || journal.is_some()
+        {
+            return Err(usage(
+                "--categories does not accept video or processing arguments",
+            ));
+        }
+        return Ok(Command::Categories);
+    }
+    if frames_only && describe {
+        return Err(usage("--frames-only and --describe are mutually exclusive"));
     }
     let Some(video_path) = video_path else {
         return Err(usage("missing video path"));
@@ -249,7 +343,7 @@ fn read_config(journal_path: Option<&Path>) -> Result<DescribeConfig, CliError> 
         return Ok(DescribeConfig {
             winnow: WinnowConfig::default(),
             redact_rules: Vec::new(),
-            max_extractions: 20,
+            max_extractions: DEFAULT_MAX_EXTRACTIONS,
             category_overrides: BTreeMap::new(),
         });
     };
@@ -264,7 +358,7 @@ fn read_config(journal_path: Option<&Path>) -> Result<DescribeConfig, CliError> 
         return Ok(DescribeConfig {
             winnow: WinnowConfig::default(),
             redact_rules: Vec::new(),
-            max_extractions: 20,
+            max_extractions: DEFAULT_MAX_EXTRACTIONS,
             category_overrides: BTreeMap::new(),
         });
     };
@@ -303,7 +397,7 @@ fn read_config(journal_path: Option<&Path>) -> Result<DescribeConfig, CliError> 
         }
     };
     let max_extractions = match describe.get("max_extractions") {
-        None => 20,
+        None => DEFAULT_MAX_EXTRACTIONS,
         Some(value) => value
             .as_u64()
             .and_then(|value| u32::try_from(value).ok())

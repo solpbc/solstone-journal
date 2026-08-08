@@ -23,4 +23,10 @@ cache-keys = [
   {file = "../../core/crates/**/Cargo.toml"},
   {file = "../../core/crates/**/*.rs"},
   {file = "../../core/fixtures/**"},
+  {file = "../../solstone/observe/describe.md"},
+  {file = "../../solstone/observe/describe.schema.json"},
+  {file = "../../solstone/observe/extract.md"},
+  {file = "../../solstone/observe/extract.schema.json"},
+  {file = "../../solstone/observe/categories/*.md"},
+  {file = "../../solstone/observe/categories/*.schema.json"},
 ]

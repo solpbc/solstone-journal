@@ -52,6 +52,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
 from solstone.think.features import FEATURES
 from solstone.think.probe import (
     solstone_core_marker_pins,
+    solstone_core_describe_marker_pins,
     solstone_core_speakers_analyze_marker_pins,
     solstone_core_unsupported_platform_pin,
 )
@@ -134,6 +135,12 @@ DESCRIBE_CACHE_KEYS = [
     {"file": "../../core/crates/**/Cargo.toml"},
     {"file": "../../core/crates/**/*.rs"},
     {"file": "../../core/fixtures/**"},
+    {"file": "../../solstone/observe/describe.md"},
+    {"file": "../../solstone/observe/describe.schema.json"},
+    {"file": "../../solstone/observe/extract.md"},
+    {"file": "../../solstone/observe/extract.schema.json"},
+    {"file": "../../solstone/observe/categories/*.md"},
+    {"file": "../../solstone/observe/categories/*.schema.json"},
 ]
 
 
@@ -223,6 +230,25 @@ def _check_speakers_analyze_pins(
     if root_version is not None and pins != expected:
         return [
             f"{label} solstone-core-speakers-analyze marker pins must be exactly "
+            f"{expected}; found {pins}"
+        ]
+    return []
+
+
+def _check_describe_pins(
+    *, label: str, deps: list[str], root_version: str | None
+) -> list[str]:
+    pins = sorted(dep for dep in deps if dep.startswith("solstone-core-describe=="))
+    expected = sorted(solstone_core_describe_marker_pins(root_version or ""))
+    if len(pins) != len(expected):
+        return [
+            f"{label} must contain exactly {len(expected)} marker-gated "
+            "solstone-core-describe== pins; found "
+            f"{len(pins)}"
+        ]
+    if root_version is not None and pins != expected:
+        return [
+            f"{label} solstone-core-describe marker pins must be exactly "
             f"{expected}; found {pins}"
         ]
     return []
@@ -623,6 +649,16 @@ def main(root: Path | None = None) -> int:
     )
     errors.extend(
         _check_speakers_analyze_pins(
+            label="CUDA leaf", deps=cuda_deps, root_version=root_version
+        )
+    )
+    errors.extend(
+        _check_describe_pins(
+            label="CPU leaf", deps=cpu_deps, root_version=root_version
+        )
+    )
+    errors.extend(
+        _check_describe_pins(
             label="CUDA leaf", deps=cuda_deps, root_version=root_version
         )
     )

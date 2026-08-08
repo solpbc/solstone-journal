@@ -16,6 +16,7 @@ import os
 import sys
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
+from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
 import setproctitle
@@ -26,6 +27,7 @@ from solstone.think.generated.access_rejections import JOURNAL_ACCESS_ONLY_COMMA
 class Command(NamedTuple):
     module: str
     surface: Literal["service", "universal"]
+    native: bool = False
 
 
 class Alias(NamedTuple):
@@ -67,6 +69,27 @@ JOURNAL_ACCESS_CMD_ERROR = (
     "'{cmd}' is a journal-access command — run it with 'sol {cmd}' instead.\n"
     "('journal' surfaces only journal-service commands; see 'journal --help'.)"
 )
+_DESCRIBE_BINARY_NAME = "solstone-core-describe"
+_DESCRIBE_BINARY_ENV = "SOLSTONE_DESCRIBE_BIN"
+
+
+def describe_path_for_executable(executable: str | None = None) -> Path:
+    """Return the installed describe sibling for an executable path."""
+    return Path(executable or sys.executable).with_name(_DESCRIBE_BINARY_NAME)
+
+
+def resolve_describe_binary(executable: str | None = None) -> Path | None:
+    """Resolve installed describe first, then the explicit development override."""
+    sibling = describe_path_for_executable(executable)
+    if sibling.is_file() and os.access(sibling, os.X_OK):
+        return sibling
+    override = os.environ.get(_DESCRIBE_BINARY_ENV)
+    if not override:
+        return None
+    candidate = Path(override)
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return candidate
+    return None
 
 
 def _installed_packaging_versions() -> dict[str, str | None]:
@@ -346,6 +369,18 @@ def _dispatch(binary: str) -> None:
         _guard_journal_coherence()
 
     setproctitle.setproctitle(f"{binary}:{cmd}")
+    command = COMMANDS.get(cmd)
+    if command is not None and command.native:
+        native_binary = resolve_describe_binary()
+        if native_binary is None:
+            print(
+                f"Error: native {_DESCRIBE_BINARY_NAME} binary was not found beside "
+                f"{sys.executable}; set {_DESCRIBE_BINARY_ENV} to an executable path.",
+                file=sys.stderr,
+            )
+            sys.exit(127)
+        os.execv(str(native_binary), [str(native_binary), *rest])
+
     sys.argv = [f"{binary} {cmd}"] + preset_args + rest
     exit_code = run_command(module_path)
     sys.exit(exit_code)

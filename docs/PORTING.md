@@ -94,6 +94,11 @@ and macOS lanes, carrying the pinned CPU ONNX Runtime shared library that the
 helper dynamically links. Do not design toward linking
 `solstone-core-speakers-onnx` into the `solstone-core` bin.
 
+`solstone-core-describe` ships only Linux x86_64 and aarch64 wheels in this
+wave. Adding macOS support requires a separate build, signing, and notarization
+lane for its statically linked FFmpeg binary; that work is deliberately not
+silently implied by the journal dependency marker.
+
 The musl-to-glibc substitution is local to that helper wheel. The `solstone-core`
 wheel stays on the existing static-musl Linux lanes and must remain byte-identical
 to the core wheel that would be produced without the speaker analyzer helper.

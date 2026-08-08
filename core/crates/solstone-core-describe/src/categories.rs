@@ -23,6 +23,7 @@ pub struct CategoryMeta {
     pub max_output_tokens: u64,
     pub context: String,
     pub extraction: Option<String>,
+    pub importance: Option<String>,
     pub extractable: bool,
     pub instruction: String,
     pub schema: Option<&'static str>,
@@ -40,6 +41,7 @@ struct Frontmatter {
     output: Option<String>,
     max_output_tokens: Option<u64>,
     extraction: Option<String>,
+    importance: Option<String>,
 }
 
 const SOURCES: [CategorySource; 11] = [
@@ -128,6 +130,7 @@ fn parse(source: &CategorySource) -> CategoryMeta {
             .unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS),
         context: format!("observe.describe.{}", source.name),
         extraction: frontmatter.extraction,
+        importance: frontmatter.importance,
         extractable: !instruction.is_empty(),
         instruction,
         schema: source.schema,
@@ -157,5 +160,17 @@ mod tests {
         assert_eq!(gaming.max_output_tokens, 4096);
         assert!(gaming.instruction.starts_with("# Game Text Extraction"));
         assert!(gaming.extraction.is_none());
+
+        let calendar = CATEGORIES_META
+            .iter()
+            .find(|category| category.name == "calendar")
+            .expect("calendar category");
+        assert_eq!(calendar.importance.as_deref(), Some("high"));
+        assert_eq!(gaming.importance.as_deref(), Some("ignore"));
+        let browsing = CATEGORIES_META
+            .iter()
+            .find(|category| category.name == "browsing")
+            .expect("browsing category");
+        assert_eq!(browsing.importance, None);
     }
 }

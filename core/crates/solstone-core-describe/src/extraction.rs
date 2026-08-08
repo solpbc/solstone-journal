@@ -160,6 +160,7 @@ mod tests {
             max_output_tokens: 4096,
             context: "observe.describe.empty".to_owned(),
             extraction: None,
+            importance: None,
             extractable: false,
             instruction: String::new(),
             schema: None,

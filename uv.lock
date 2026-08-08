@@ -4424,6 +4424,7 @@ source = { editable = "packages/solstone-journal" }
 dependencies = [
     { name = "onnxruntime" },
     { name = "solstone", extra = ["journal-host"] },
+    { name = "solstone-core-describe", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 
 [package.metadata]
@@ -4431,6 +4432,8 @@ requires-dist = [
     { name = "onnxruntime", specifier = ">=1.20.0,!=1.24.1" },
     { name = "onnxruntime", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", specifier = "!=1.24.1,>=1.25.0" },
     { name = "solstone", extras = ["journal-host"], editable = "." },
+    { name = "solstone-core-describe", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-describe" },
+    { name = "solstone-core-describe", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-describe" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-speakers-analyze" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-speakers-analyze" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-speakers-analyze" },
@@ -4450,6 +4453,7 @@ dependencies = [
     { name = "nvidia-nvjitlink-cu12" },
     { name = "onnxruntime-gpu" },
     { name = "solstone", extra = ["journal-host"] },
+    { name = "solstone-core-describe", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 
 [package.metadata]
@@ -4463,6 +4467,8 @@ requires-dist = [
     { name = "nvidia-nvjitlink-cu12" },
     { name = "onnxruntime-gpu", specifier = ">=1.25.0" },
     { name = "solstone", extras = ["journal-host"], editable = "." },
+    { name = "solstone-core-describe", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-describe" },
+    { name = "solstone-core-describe", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-describe" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-speakers-analyze" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-speakers-analyze" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-speakers-analyze" },

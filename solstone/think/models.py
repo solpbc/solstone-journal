@@ -448,7 +448,7 @@ def _build_context_registry() -> Dict[str, Dict[str, Any]]:
 
     Merges:
     1. Prompt contexts from _discover_prompt_contexts()
-    2. Category contexts from observe/describe.py CATEGORIES
+    2. Category contexts from native describe category metadata
     3. Talent contexts from _discover_talent_contexts()
 
     Returns
@@ -461,7 +461,7 @@ def _build_context_registry() -> Dict[str, Dict[str, Any]]:
 
     # Merge category contexts (lazy import to avoid circular dependency)
     try:
-        from solstone.observe.describe import CATEGORIES
+        from solstone.think.describe_categories import CATEGORIES
 
         for category, metadata in CATEGORIES.items():
             context = metadata.get("context", f"observe.describe.{category}")

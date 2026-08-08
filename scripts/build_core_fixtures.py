@@ -14,11 +14,14 @@ import importlib.metadata
 import json
 import logging
 import math
+import os
 import platform
 import sqlite3
+import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -157,6 +160,10 @@ ENTITY_RESOLUTION_MAP_DIVERGENCES_ARTIFACT_PATH = (
 ENTITY_STORE_ARTIFACT_PATH = FIXTURE_DIR / "entity_store.json"
 ENTITY_LIFECYCLE_ARTIFACT_PATH = FIXTURE_DIR / "entity_lifecycle.json"
 VOICEPRINT_OPERATIONS_ARTIFACT_PATH = FIXTURE_DIR / "voiceprint_operations.json"
+DESCRIBE_CATEGORIES_ARTIFACT_PATH = FIXTURE_DIR / "describe_categories.json"
+DESCRIBE_CATEGORIES_RUNTIME_PATH = (
+    ROOT / "solstone" / "think" / "describe_categories.json"
+)
 OVERSIZED_SIZE_NORMALIZATION = "oversized_size"
 OVERSIZED_SIZE_TOKEN = "normalizedsize"
 # Filterbank rows are a scale/regime oracle for the production fbank stage. The
@@ -219,6 +226,53 @@ def build_callosum_registry_fixture() -> dict[str, Any]:
             tract: list(CALLOSUM_REGISTRY[tract]) for tract in sorted(CALLOSUM_REGISTRY)
         },
     }
+
+
+@lru_cache(maxsize=1)
+def build_describe_categories_fixture() -> dict[str, Any]:
+    """Build category metadata through the native describe CLI authority."""
+    cargo_env = os.environ.copy()
+    clang_includes = sorted(Path("/usr/lib/clang").glob("*/include"))
+    if clang_includes:
+        cargo_env["BINDGEN_EXTRA_CLANG_ARGS"] = f"-I{clang_includes[0]}"
+    subprocess.run(
+        [
+            "cargo",
+            "build",
+            "--manifest-path",
+            str(ROOT / "core" / "Cargo.toml"),
+            "--locked",
+            "-p",
+            "solstone-core-describe",
+            "--bin",
+            "solstone-core-describe",
+        ],
+        cwd=ROOT,
+        check=True,
+        env=cargo_env,
+    )
+    binary = ROOT / "core" / "target" / "debug" / "solstone-core-describe"
+    result = subprocess.run(
+        [str(binary), "--categories"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise ValueError("native describe categories output was not valid JSON") from error
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"schema", "default_max_extractions", "categories"}
+        or payload["schema"] != "solstone-describe-categories-v1"
+        or not isinstance(payload["default_max_extractions"], int)
+        or isinstance(payload["default_max_extractions"], bool)
+        or not isinstance(payload["categories"], dict)
+    ):
+        raise ValueError("native describe categories output has an invalid envelope")
+    return payload
 
 
 def build_cogitate_contract_fixture() -> dict[str, Any]:
@@ -1542,6 +1596,12 @@ def compare_artifact(
 
 def expected_outputs() -> dict[Path, ArtifactDescriptor]:
     return {
+        DESCRIBE_CATEGORIES_ARTIFACT_PATH: ArtifactDescriptor(
+            build_describe_categories_fixture,
+        ),
+        DESCRIBE_CATEGORIES_RUNTIME_PATH: ArtifactDescriptor(
+            build_describe_categories_fixture,
+        ),
         CALLOSUM_ARTIFACT_PATH: ArtifactDescriptor(
             build_callosum_registry_fixture,
         ),

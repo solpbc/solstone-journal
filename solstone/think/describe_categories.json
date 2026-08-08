@@ -1,0 +1,431 @@
+{
+  "categories": {
+    "browsing": {
+      "context": "observe.describe.browsing",
+      "description": "General web browsing, news, shopping, or reference pages without a dominant social feed or media viewer",
+      "extraction": "Extract when visiting distinctly different websites or search results",
+      "group": "Screen Analysis",
+      "label": "Browsing",
+      "max_output_tokens": 2048,
+      "output": "markdown",
+      "prompt": "# Web Browsing Text Extraction\n\nExtract text from this web browsing screenshot (news, blogs, social media, shopping, general websites).\n\n## Header\n\n`# [Site Name - Page Title]`\n\n## Content Focus\n\nExtract the primary page content. Skip navigation menus, sidebars, ads, cookie banners, and footers.\n\nFor articles: use `##` for headlines, preserve paragraph structure.\n\nFor social feeds: include username, post content, and engagement counts if visible.\n\nFor product pages: include product name, price, and key details.\n\n## Quality\n\n- Preserve reading order (main content first)\n- Mark unclear text with `[unclear]`\n- Mark cut-off text with `...`\n\nReturn ONLY the formatted markdown."
+    },
+    "calendar": {
+      "context": "observe.describe.calendar",
+      "description": "Calendar and scheduling interfaces: day/week/month views, agenda lists, event details, event creation forms, booking pages, availability grids, and RSVP/scheduling workflows",
+      "extraction": "Extract when the visible date range, event detail, availability grid, booking page, or scheduling workflow changes",
+      "group": "Screen Analysis",
+      "importance": "high",
+      "json_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "app": {
+            "maxLength": 64,
+            "type": "string"
+          },
+          "availability": {
+            "items": {
+              "maxLength": 96,
+              "type": "string"
+            },
+            "maxItems": 40,
+            "type": "array"
+          },
+          "events": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "calendar": {
+                  "maxLength": 96,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "conferencing": {
+                  "maxLength": 128,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "description": {
+                  "maxLength": 1000,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "end": {
+                  "maxLength": 64,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "guests": {
+                  "items": {
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "location": {
+                  "maxLength": 200,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "recurrence": {
+                  "maxLength": 128,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "start": {
+                  "maxLength": 64,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "accepted",
+                    "declined",
+                    "tentative",
+                    "needs_action",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "title": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "title",
+                "start",
+                "end",
+                "location",
+                "conferencing",
+                "guests",
+                "status",
+                "recurrence",
+                "calendar",
+                "description"
+              ],
+              "type": "object"
+            },
+            "maxItems": 40,
+            "type": "array"
+          },
+          "notes": {
+            "maxLength": 1000,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "range": {
+            "maxLength": 128,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "view": {
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "agenda",
+              "event_detail",
+              "availability",
+              "unknown"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "app",
+          "view",
+          "range",
+          "events",
+          "availability",
+          "notes"
+        ],
+        "type": "object"
+      },
+      "label": "Calendar",
+      "max_output_tokens": 8192,
+      "output": "json",
+      "prompt": "# Calendar Extraction\n\nExtract structured scheduling information from this calendar or scheduling screenshot.\n\nReturn JSON matching this shape:\n\n```json\n{\n  \"app\": \"Google Calendar\",\n  \"view\": \"week\",\n  \"range\": \"Apr 13 - Apr 19, 2026\",\n  \"events\": [\n    {\n      \"title\": \"Planning review\",\n      \"start\": \"Tue 10:00 AM\",\n      \"end\": \"11:00 AM\",\n      \"location\": \"Conference Room A\",\n      \"conferencing\": \"Google Meet\",\n      \"guests\": [\"Alice\", \"Bob\"],\n      \"status\": \"accepted\",\n      \"recurrence\": null,\n      \"calendar\": \"Work\",\n      \"description\": \"Visible event notes\"\n    }\n  ],\n  \"availability\": [\"Tue 2:00 PM\", \"Wed 10:30 AM\"],\n  \"notes\": \"Timezone, booking state, host/service, or visible form fields\"\n}\n```\n\n## Field Notes\n\n- Set `app` to the visible calendar, scheduling, or booking app.\n- Set `view` to `day`, `week`, `month`, `agenda`, `event_detail`, `availability`, or `unknown`.\n- Use `range` for the visible date range when present; otherwise use null.\n- Preserve chronological order in `events`.\n- Include event title, start/end, location, conferencing, guests, status, recurrence, calendar name, and description when visible.\n- Put booking slots or availability labels in `availability`.\n- Use `notes` for host/service names, timezone, booking state, form fields, selected duration, or other visible scheduling context that does not belong to an event.\n- Mark unclear text with `[unclear]`.\n- Mark cut-off text with `...`.\n- Skip unrelated app chrome unless it identifies the calendar account, date range, or scheduling state.\n\nReturn ONLY the JSON object."
+    },
+    "code": {
+      "context": "observe.describe.code",
+      "description": "Code editors and IDEs",
+      "extraction": "Extract when viewing different repositories, files, or switching between editor and browser",
+      "group": "Screen Analysis",
+      "importance": "low",
+      "label": "Code",
+      "max_output_tokens": 4096,
+      "output": "markdown",
+      "prompt": "# Code Editor Text Extraction\n\nExtract text from this code editor screenshot (VS Code, JetBrains, Vim, Emacs, Sublime, etc.).\n\n## Header\n\n`# [Editor - File Path]`\n\n## Content Focus\n\n- Extract visible code using fenced code blocks with language tags\n- Include file path/name from title bar or tabs\n- Note open tabs/files if visible\n- Include visible diagnostics, errors, or warnings from the editor\n- Include project/repo name if visible in sidebar or title\n\n## Quality\n\n- Preserve code indentation and structure\n- Include line numbers only if prominently visible\n- Mark unclear text with `[unclear]`\n- Mark cut-off text with `...`\n\nReturn ONLY the formatted markdown."
+    },
+    "gaming": {
+      "context": "observe.describe.gaming",
+      "description": "Video games, puzzles, idle games",
+      "group": "Screen Analysis",
+      "importance": "ignore",
+      "label": "Gaming",
+      "max_output_tokens": 4096,
+      "output": "markdown",
+      "prompt": "# Game Text Extraction\n\nExtract text from this gaming screenshot (video games, puzzles, browser games).\n\n## Header\n\n`# [Game Title]`\n\n## Content Focus\n\n- Extract game title or name if visible\n- Include visible UI text: menus, dialogs, tooltips, HUD elements\n- Include scores, stats, levels, or progress indicators\n- Include any overlay or notification text\n\n## Quality\n\n- Focus on readable text, skip decorative elements\n- Mark unclear text with `[unclear]`\n- Mark cut-off text with `...`\n\nReturn ONLY the formatted markdown."
+    },
+    "media": {
+      "context": "observe.describe.media",
+      "description": "Photos, video players, image galleries, or visual media dominating the view, even when displayed inside a browser tab",
+      "extraction": "Extract 1 frame only - video playback content does not benefit from text extraction",
+      "group": "Screen Analysis",
+      "importance": "low",
+      "label": "Media",
+      "max_output_tokens": 4096,
+      "output": "markdown",
+      "prompt": "# Media Player Text Extraction\n\nExtract text from this media player screenshot (YouTube, streaming services, video players, image galleries).\n\n## Header\n\n`# [Platform - Video/Content Title]`\n\n## Content Focus\n\n- Extract video/content title\n- Include creator, channel, or artist name\n- Include platform name if identifiable\n- Include playback position and duration if visible (e.g., `3:42 / 12:15`)\n- Include visible captions or subtitles\n- Include playlist or queue context if visible\n- Do NOT describe the visual content of the video/image itself\n\n## Quality\n\n- Focus on metadata and text overlays, not visual content\n- Mark unclear text with `[unclear]`\n- Mark cut-off text with `...`\n\nReturn ONLY the formatted markdown."
+    },
+    "meeting": {
+      "context": "observe.describe.meeting",
+      "description": "Video calls/conferencing (Zoom, Meet, Teams, Webex, etc.)",
+      "extraction": "Extract when shared content type changes (screen share vs participant grid) or meeting platform differs",
+      "group": "Screen Analysis",
+      "importance": "high",
+      "json_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "participants": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "box_2d": {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "speaking",
+                    "muted",
+                    "active",
+                    "presenting",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "video": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "status",
+                "video",
+                "box_2d"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "platform": {
+            "enum": [
+              "zoom",
+              "meet",
+              "teams",
+              "slack",
+              "discord",
+              "webex",
+              "other"
+            ],
+            "type": "string"
+          },
+          "screen_share": {
+            "additionalProperties": false,
+            "properties": {
+              "box_2d": {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "description": {
+                "type": "string"
+              },
+              "formatted_text": {
+                "type": "string"
+              },
+              "presenter": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "box_2d",
+              "presenter",
+              "description",
+              "formatted_text"
+            ],
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "platform",
+          "participants",
+          "screen_share"
+        ],
+        "type": "object"
+      },
+      "label": "Meeting",
+      "max_output_tokens": 4096,
+      "output": "json",
+      "prompt": "# Meeting State Analysis\n\nYou are analyzing a screenshot to capture detailed meeting information. You receive a full screenshot showing an active video call or meeting.\n\nRespond with JSON describing the meeting state:\n\n```json\n{\n  \"platform\": \"<meeting platform: zoom|meet|teams|slack|discord|webex|other>\",\n  \"participants\": [\n    {\n      \"name\": \"<participant name if visible>\",\n      \"status\": \"<speaking|muted|active|presenting|unknown>\",\n      \"video\": <true|false>,\n      \"box_2d\": [ymin, xmin, ymax, xmax]\n    }\n  ],\n  \"screen_share\": {\n    \"box_2d\": [ymin, xmin, ymax, xmax],\n    \"presenter\": \"<name of person presenting, or null>\",\n    \"description\": \"<brief description of shared content>\",\n    \"formatted_text\": \"<full text extraction in markdown>\"\n  }\n}\n```\n\n## Field Notes\n\n- **platform**: Identify the video conferencing platform being used\n- **participants**: List all visible participants with their current state\n  - **name**: Extract name from display label if visible, otherwise use \"Unknown\"\n  - **status**: Determine from visual cues (speaking indicators, muted icons, etc.)\n  - **video**: Is their video feed visible?\n  - **box_2d**: Bounding box in [ymin, xmin, ymax, xmax] format. Only include when video is true. The box should tightly bound the participant's video feed area (including their name label if overlaid on the video).\n- **screen_share**: Set to null if no screen sharing is active, otherwise an object containing:\n  - **box_2d**: Bounding box for the shared screen content area in [ymin, xmin, ymax, xmax] format. The box should bound the actual shared content area, excluding meeting controls and participant thumbnails.\n  - **presenter**: Name of person presenting if identifiable, otherwise null\n  - **description**: Brief 1-2 sentence description of what's being shared\n  - **formatted_text**: Complete text extraction from the presented screen/slide, formatted in markdown. Preserve structure with headings, bullets, code blocks, etc.\n\nFocus on accuracy. If information isn't visible or is unclear, use \"unknown\" or null.\n\nReturn the JSON object with dict participants; do not use bare name strings."
+    },
+    "messaging": {
+      "context": "observe.describe.messaging",
+      "description": "Chat or email apps (Slack, Discord, Messages/iMessage, Gmail, etc.)",
+      "extraction": "Extract when conversation partner, channel, or messaging app changes",
+      "group": "Screen Analysis",
+      "importance": "high",
+      "json_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "app": {
+            "maxLength": 64,
+            "type": "string"
+          },
+          "messages": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "sender": {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                "subject": {
+                  "maxLength": 256,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "text": {
+                  "maxLength": 4000,
+                  "type": "string"
+                },
+                "timestamp": {
+                  "maxLength": 96,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "sender",
+                "timestamp",
+                "subject",
+                "text"
+              ],
+              "type": "object"
+            },
+            "maxItems": 60,
+            "type": "array"
+          },
+          "thread": {
+            "maxLength": 192,
+            "type": "string"
+          },
+          "view": {
+            "enum": [
+              "conversation",
+              "inbox",
+              "unknown"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "app",
+          "thread",
+          "view",
+          "messages"
+        ],
+        "type": "object"
+      },
+      "label": "Messaging",
+      "max_output_tokens": 8192,
+      "output": "json",
+      "prompt": "# Messaging Extraction\n\nExtract structured text from this messaging or email screenshot (Slack, Discord, Messages, Gmail, Teams, etc.).\n\nReturn JSON matching this shape:\n\n```json\n{\n  \"app\": \"Gmail\",\n  \"thread\": \"Inbox\",\n  \"view\": \"inbox\",\n  \"messages\": [\n    {\n      \"sender\": \"Alice\",\n      \"timestamp\": \"2:34 PM\",\n      \"subject\": \"Project update\",\n      \"text\": \"Latest visible message or email snippet\"\n    }\n  ]\n}\n```\n\n## Field Notes\n\n- Set `app` to the visible app or service name.\n- Set `thread` to the visible channel, conversation, inbox, or list name.\n- Set `view` to `inbox` for email/message list views, `conversation` for threaded chats, and `unknown` only when the surface is ambiguous.\n- Preserve conversation order and flow in `messages`.\n- For inbox rows, put the email subject line in `subject` and the snippet/body preview in `text`.\n- For conversations, set `subject` to null.\n- Put timestamps in `timestamp` when visible; otherwise use null.\n- `text` may contain markdown. Use `>` blockquotes for quoted/forwarded content and code fences for code snippets.\n- Mark unclear text with `[unclear]` inside `text`.\n- Mark cut-off text with `...` inside `text`.\n- Focus on message content and skip unrelated UI chrome.\n\nReturn ONLY the JSON object."
+    },
+    "productivity": {
+      "context": "observe.describe.productivity",
+      "description": "Spreadsheets, slides, document editors, task and issue tracking tools, dashboards, other workplace desktop or web apps and professional tools that are not primarily calendar/scheduling views",
+      "extraction": "Extract when different application or service is shown (e.g. ChatGPT vs Docs vs issue tracker)",
+      "group": "Screen Analysis",
+      "importance": "high",
+      "label": "Productivity",
+      "max_output_tokens": 4096,
+      "output": "markdown",
+      "prompt": "# Productivity App Text Extraction\n\nExtract text from this productivity screenshot (spreadsheets, slides, document editors, task managers, issue trackers, dashboards, project management tools).\n\n## Header\n\n`# [App Name - Document/View Title]`\n\n## Content Focus\n\nExtract all visible data with appropriate structure:\n\n- **Tables/Spreadsheets**: Use markdown tables, include headers\n- **Tasks/Issues**: Include title, status, assignee, and due date if visible\n- **Slides**: Use `##` for slide titles, bullets for content\n- **Dashboards/Apps**: Preserve labels, values, statuses, and visible hierarchy\n\n## Quality\n\n- Preserve data relationships and hierarchy\n- Include key metadata (dates, statuses, assignees)\n- Mark unclear text with `[unclear]`\n- Mark cut-off text with `...`\n\nReturn ONLY the formatted markdown."
+    },
+    "reading": {
+      "context": "observe.describe.reading",
+      "description": "Documents, articles, PDFs, documentation",
+      "extraction": "Extract when viewing a different document, article, or PDF",
+      "group": "Screen Analysis",
+      "importance": "high",
+      "label": "Reading",
+      "max_output_tokens": 4096,
+      "output": "markdown",
+      "prompt": "# Document Reading Text Extraction\n\nExtract text from this document screenshot (PDFs, documentation, articles, ebooks, manuals).\n\n## Header\n\n`# [Document Title or Type]`\n\n## Content Focus\n\nExtract all visible text, preserving document structure:\n\n- Use `##`, `###` for section headings\n- Preserve numbered sections (e.g., \"2.3 Configuration\")\n- Use markdown tables for tabular data\n- Use code fences with language tags for code examples\n\n## Quality\n\n- Maintain logical reading flow\n- Preserve paragraph breaks\n- Skip page headers/footers unless meaningful\n- Mark unclear text with `[unclear]`\n- Mark cut-off text with `...`\n\nReturn ONLY the formatted markdown."
+    },
+    "social": {
+      "context": "observe.describe.social",
+      "description": "Social platforms with feeds, threads, profiles, posts, comments, or timelines (X, Bluesky, Reddit, Instagram, TikTok, LinkedIn, Mastodon, HN)",
+      "extraction": "Extract when platform, feed context, or visible thread changes",
+      "group": "Screen Analysis",
+      "label": "Social",
+      "max_output_tokens": 4096,
+      "output": "markdown",
+      "prompt": "# Social Feed Text Extraction\n\nExtract text from this social platform screenshot (X, Bluesky, Reddit, Instagram, TikTok, LinkedIn, Mastodon, Hacker News, etc.).\n\n## Header\n\n`# [Platform - Feed/Thread/Profile context]`\n\n## Post Format\n\nExtract visible posts with author attribution:\n\n```markdown\n**@author**: post text\n```\n\nPreserve reply and thread structure when visible (nest replies under their parent).\n\nNote focal media briefly in brackets: `[photo: sunset over water]`, `[video: 0:45 clip]`.\n\n## Quality\n\n- Skip navigation, trends/sidebars, ads, cookie banners, and suggested-follow modules\n- Preserve post order (top of feed/thread first)\n- Mark unclear text with `[unclear]`\n- Mark cut-off text with `...`\n\nReturn ONLY the formatted markdown."
+    },
+    "terminal": {
+      "context": "observe.describe.terminal",
+      "description": "Command line interfaces, logs, shell",
+      "extraction": "Extract when showing distinctly different content (code diffs vs logs vs documentation)",
+      "group": "Screen Analysis",
+      "importance": "low",
+      "label": "Terminal",
+      "max_output_tokens": 4096,
+      "output": "markdown",
+      "prompt": "# Terminal Text Extraction\n\nExtract text from this terminal screenshot (shell sessions, command output, log viewers).\n\n## Header\n\n`# [Shell/App - Working Directory or Context]`\n\n## Content Focus\n\n- Extract commands and their output using fenced code blocks\n- Include the shell prompt and working directory if visible\n- Include error messages and stack traces in full\n- For structured output (tables, JSON, logs), preserve formatting\n- Note the terminal application or multiplexer if identifiable (e.g., iTerm2, Alacritty)\n\n## Quality\n\n- Preserve exact command syntax and output formatting\n- Use fenced code blocks for all terminal content\n- Mark unclear text with `[unclear]`\n- Mark cut-off text with `...`\n\nReturn ONLY the formatted markdown."
+    }
+  },
+  "default_max_extractions": 20,
+  "schema": "solstone-describe-categories-v1"
+}

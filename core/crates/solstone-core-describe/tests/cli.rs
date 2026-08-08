@@ -284,6 +284,96 @@ fn malformed_invocation_is_a_usage_error() {
 }
 
 #[test]
+fn bare_video_path_defaults_to_describe_and_accepts_dispatcher_verbosity_flags() {
+    let root = temporary_root("bare-describe");
+    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    let output = Command::new(BINARY)
+        .arg(&video)
+        .arg("--journal")
+        .arg(&root)
+        .arg("-j")
+        .arg("2")
+        .arg("-d")
+        .arg("-v")
+        .env("SOLSTONE_DESCRIBE_GENERATE_WIRE", SESSION_STUB)
+        .env("SOLSTONE_DESCRIBE_SESSION_STUB_MODE", "generated")
+        .output()
+        .expect("run describe binary");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(video.with_extension("jsonl").exists());
+    fs::remove_dir_all(root).expect("remove root");
+}
+
+#[test]
+fn categories_mode_prints_the_native_category_registry() {
+    let output = Command::new(BINARY)
+        .arg("--categories")
+        .output()
+        .expect("run describe binary");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    let registry: Value =
+        serde_json::from_slice(&output.stdout).expect("categories output is valid JSON");
+    assert_eq!(registry["schema"], json!("solstone-describe-categories-v1"));
+    assert_eq!(registry["default_max_extractions"], json!(20));
+    let categories = registry["categories"]
+        .as_object()
+        .expect("categories object");
+    assert_eq!(categories.len(), 11);
+    let names: Vec<_> = categories.keys().collect();
+    assert!(names.windows(2).all(|pair| pair[0] < pair[1]));
+    for (name, metadata) in categories {
+        let metadata = metadata.as_object().expect("category metadata object");
+        for field in [
+            "description",
+            "output",
+            "max_output_tokens",
+            "context",
+            "label",
+            "group",
+        ] {
+            assert!(metadata.contains_key(field), "{name} missing {field}");
+        }
+        assert_eq!(
+            metadata["context"],
+            json!(format!("observe.describe.{name}"))
+        );
+        assert_eq!(metadata["group"], json!("Screen Analysis"));
+        assert_eq!(
+            metadata["label"],
+            json!(
+                name.split('_')
+                    .map(|word| {
+                        let mut chars = word.chars();
+                        let first = chars.next().expect("nonempty category word");
+                        first.to_uppercase().collect::<String>() + chars.as_str()
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            )
+        );
+    }
+    assert_eq!(categories["calendar"]["importance"], json!("high"));
+    assert!(categories["browsing"].get("importance").is_none());
+    for name in ["calendar", "meeting", "messaging"] {
+        assert!(categories[name].get("json_schema").is_some(), "{name}");
+    }
+    for (name, metadata) in categories {
+        if !["calendar", "meeting", "messaging"].contains(&name.as_str()) {
+            assert!(metadata.get("json_schema").is_none(), "{name}");
+        }
+    }
+}
+
+#[test]
 fn version_names_libavcodec() {
     let output = Command::new(BINARY)
         .arg("--version")
