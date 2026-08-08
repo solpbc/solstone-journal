@@ -73,20 +73,45 @@ def keyword_values(call):
     }
 
 
+def bridge_forwarding_call_ids(parsed_files):
+    path = ROOT / "solstone/convey/bridge.py"
+    tree = parsed_files.get(path)
+    if tree is None:
+        return set()
+    for function in tree.body:
+        if not isinstance(function, ast.FunctionDef) or function.name != "emit":
+            continue
+        parameter_names = {argument.arg for argument in function.args.args}
+        if not {"tract", "event"}.issubset(parameter_names):
+            continue
+        calls = set()
+        for node in ast.walk(function):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "_CALLOSUM_CONNECTION"
+                and node.func.attr == "emit"
+                and len(node.args) >= 2
+                and isinstance(node.args[0], ast.Name)
+                and node.args[0].id == "tract"
+                and isinstance(node.args[1], ast.Name)
+                and node.args[1].id == "event"
+            ):
+                calls.add(id(node))
+        return calls
+    return set()
+
+
 def direct_emitters(parsed_files, produced, unresolved):
+    bridge_forwarding_calls = bridge_forwarding_call_ids(parsed_files)
     for path, tree in parsed_files.items():
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call) or call_name(node.func) not in EMITTER_NAMES:
                 continue
             # The shared Convey bridge forwards its public emit() API to its connection.
             # Its callers are scanned separately, so this internal handoff is not a new site.
-            if (
-                relative(path) == "solstone/convey/bridge.py"
-                and isinstance(node.func, ast.Attribute)
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "_CALLOSUM_CONNECTION"
-                and node.func.attr == "emit"
-            ):
+            if id(node) in bridge_forwarding_calls:
                 continue
             keywords = keyword_values(node)
             tract_node = node.args[0] if len(node.args) >= 1 else keywords.get("tract")
@@ -143,7 +168,39 @@ def resolve_chat_vocabulary(parsed_files, produced):
 
 
 # Resolve cortex's verbatim stdout relay and chat's explicit cortex helper.
+def cortex_durable_info_dict_ids(parsed_files):
+    path = ROOT / "solstone/think/cortex.py"
+    tree = parsed_files.get(path)
+    if tree is None:
+        return set()
+    info_dicts = set()
+    for handler in ast.walk(tree):
+        if not isinstance(handler, ast.ExceptHandler):
+            continue
+        error_type = handler.type
+        is_json_decode_error = (
+            isinstance(error_type, ast.Name) and error_type.id == "JSONDecodeError"
+        ) or (
+            isinstance(error_type, ast.Attribute)
+            and isinstance(error_type.value, ast.Name)
+            and error_type.value.id == "json"
+            and error_type.attr == "JSONDecodeError"
+        )
+        if not is_json_decode_error:
+            continue
+        for node in ast.walk(handler):
+            if not isinstance(node, ast.Dict):
+                continue
+            if any(
+                literal_string(key) == "event" and literal_string(value) == "info"
+                for key, value in zip(node.keys, node.values)
+            ):
+                info_dicts.add(id(node))
+    return info_dicts
+
+
 def resolve_cortex_relay(parsed_files, produced):
+    cortex_durable_info_dicts = cortex_durable_info_dict_ids(parsed_files)
     targets = [
         ROOT / "solstone/think/cortex.py",
         ROOT / "solstone/think/talents.py",
@@ -162,10 +219,7 @@ def resolve_cortex_relay(parsed_files, produced):
                         if event is not None:
                             # Cortex's non-JSON stdout fallback writes info only to the
                             # durable use-log; it does not pass through the bus relay.
-                            if (
-                                relative(path) == "solstone/think/cortex.py"
-                                and event == "info"
-                            ):
+                            if id(node) in cortex_durable_info_dicts:
                                 continue
                             produced.setdefault(("cortex", event), site(path, value))
             elif isinstance(node, ast.Call):
