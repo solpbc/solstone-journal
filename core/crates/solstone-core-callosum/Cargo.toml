@@ -28,5 +28,10 @@ name = "callosum_cross_process"
 path = "tests/callosum_cross_process.rs"
 required-features = ["differential"]
 
+[[test]]
+name = "registry_conformance"
+path = "tests/registry_conformance.rs"
+required-features = ["differential"]
+
 [lints]
 workspace = true

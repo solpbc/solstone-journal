@@ -35,13 +35,26 @@
       "error",
       "talent_updated",
       "info",
-      "status"
+      "status",
+      "cancel",
+      "dry_run",
+      "progress",
+      "text_delta",
+      "tool_budget_exhausted",
+      "warning"
     ],
     "importer": [
       "started",
       "status",
       "completed",
-      "error"
+      "error",
+      "file_imported",
+      "enrichment_ready"
+    ],
+    "link": [
+      "pair_complete",
+      "last_seen",
+      "stream_reset"
     ],
     "logs": [
       "exec",
@@ -60,14 +73,27 @@
       "detected",
       "described",
       "transcribed",
-      "observed"
+      "observed",
+      "memory_throttle_started",
+      "memory_throttle_completed"
+    ],
+    "storage": [
+      "warning"
     ],
     "supervisor": [
       "started",
       "stopped",
       "restarting",
       "status",
-      "queue"
+      "queue",
+      "request",
+      "restart",
+      "drain",
+      "skipped",
+      "sync_conflict"
+    ],
+    "support": [
+      "proactive_suggestion"
     ],
     "sync": [
       "status"
@@ -81,7 +107,10 @@
       "talent_completed",
       "completed",
       "segments_started",
-      "segments_completed"
+      "segments_completed",
+      "memory_throttle_started",
+      "memory_throttle_completed",
+      "daily_complete"
     ]
   }
 }

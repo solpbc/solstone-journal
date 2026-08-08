@@ -302,7 +302,7 @@ check-differentials:
 		"-p solstone-core-generate --test no_downgrade --test session --test session_real --test wire" \
 		"-p solstone-core-generate-wire --test endpoint_overflow_differential --test responsiveness_differential --test token_log_differential --test schema_validation_differential" \
 		"-p solstone-core-local --test admission_cross_process" \
-		"-p solstone-core-callosum --test callosum_cross_process" \
+		"-p solstone-core-callosum --test callosum_cross_process --test registry_conformance" \
 		"-p solstone-core-system-health --test pipeline_health_oracle" ; do \
 		echo "==> cargo test --features differential --no-fail-fast $$leg"; \
 		cargo test --manifest-path $(RUST_MANIFEST) --features differential --locked --no-fail-fast $$leg \
