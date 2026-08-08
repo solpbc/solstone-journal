@@ -2444,6 +2444,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-speaker-id"
+version = "1.0.22"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "solstone-core-speakers"
 version = "1.0.22"
 dependencies = [
