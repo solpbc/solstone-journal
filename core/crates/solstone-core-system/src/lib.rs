@@ -7,6 +7,7 @@ pub mod cap;
 pub mod error;
 pub mod partition;
 pub mod process;
+pub mod queue;
 pub mod request;
 
 /// Task-service tokens shared with the native journal process census.

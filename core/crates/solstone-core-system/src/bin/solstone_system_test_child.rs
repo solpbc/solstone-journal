@@ -14,6 +14,45 @@ fn main() {
             let _ = std::io::stderr().write_all(b"stderr-line\n");
         }
         "sleep" => std::thread::sleep(Duration::from_secs(30)),
+        "ready-sleep" => {
+            let ready_path = args.next().expect("ready path");
+            let millis: u64 = args
+                .next()
+                .expect("milliseconds")
+                .parse()
+                .expect("milliseconds integer");
+            std::fs::write(ready_path, "ready").expect("signal readiness");
+            std::thread::sleep(Duration::from_millis(millis));
+        }
+        "continuous-lines" => {
+            let ready_path = args.next().expect("ready path");
+            std::fs::write(ready_path, "ready").expect("signal readiness");
+            for index in 0_u64.. {
+                println!("line-{index}");
+                std::io::stdout().flush().expect("flush stdout");
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }
+        "block-term-count" => {
+            let ready_path = args.next().expect("ready path");
+            let count_path = args.next().expect("count path");
+            let mut signals = nix::sys::signal::SigSet::empty();
+            signals.add(nix::sys::signal::Signal::SIGTERM);
+            signals.thread_block().expect("block SIGTERM");
+            std::fs::write(ready_path, "ready").expect("signal readiness");
+            loop {
+                let signal = signals.wait().expect("wait SIGTERM");
+                if signal == nix::sys::signal::Signal::SIGTERM {
+                    let mut file = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&count_path)
+                        .expect("open count file");
+                    writeln!(file, "term").expect("record SIGTERM");
+                    file.flush().expect("flush count");
+                }
+            }
+        }
         "block-term-sleep" => {
             let ready_path = args.next().expect("ready path");
             let mut signals = nix::sys::signal::SigSet::empty();

@@ -12,6 +12,7 @@ const LIB: &str = include_str!("../src/lib.rs");
 const CAP: &str = include_str!("../src/cap.rs");
 const ERROR: &str = include_str!("../src/error.rs");
 const PARTITION: &str = include_str!("../src/partition.rs");
+const QUEUE: &str = include_str!("../src/queue.rs");
 const REQUEST: &str = include_str!("../src/request.rs");
 const PROCESS_MOD: &str = include_str!("../src/process/mod.rs");
 const EVENTS: &str = include_str!("../src/process/events.rs");
@@ -78,6 +79,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("error", ERROR),
         ("partition", PARTITION),
         ("process", PROCESS_MOD),
+        ("queue", QUEUE),
         ("request", REQUEST),
     ];
     let process_modules = [
@@ -119,4 +121,21 @@ fn ac21_only_operational_log_module_names_write_primitives() {
     assert!(LOG.contains("create_dir_all"));
     assert!(LOG.contains("join(\"health\")"));
     assert!(LOG.contains("CHRONICLE_DIR"));
+}
+
+#[test]
+fn ac17_running_slots_are_released_by_the_worker_lease_drop_path() {
+    assert!(QUEUE.contains("struct WorkerLease"));
+    assert!(QUEUE.contains("impl Drop for WorkerLease"));
+    assert!(QUEUE.contains("finish_worker(&self.inner, &self.partition, &self.reference)"));
+    assert!(QUEUE.contains("let _lease = WorkerLease"));
+}
+
+#[test]
+fn ac25_ios_process_state_probe_is_explicit_and_returns_unknown() {
+    assert!(QUEUE.contains("#[cfg(target_os = \"ios\")]"));
+    assert!(QUEUE.contains("iOS has neither Linux procfs"));
+    assert!(QUEUE.contains(
+        "fn system_process_state(_pid: u32) -> ProcessState {\n    ProcessState::Unknown"
+    ));
 }
