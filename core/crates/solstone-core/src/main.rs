@@ -106,6 +106,7 @@ fn main() -> ExitCode {
         },
         Ok(Command::Indexer(command)) => run_indexer(*command),
         Ok(Command::JournalConfig(command)) => run_journal_config(command),
+        Ok(Command::SpeakerTranscriptWrite) => run_speaker_transcript_write(),
         Ok(Command::Local(command)) => run_local(command),
         Ok(Command::Generate(command)) => run_generate(command),
         Ok(Command::Brain(command)) => run_brain(command),
@@ -115,6 +116,86 @@ fn main() -> ExitCode {
             ExitCode::from(EXIT_USAGE)
         }
     }
+}
+
+fn run_speaker_transcript_write() -> ExitCode {
+    let mut input = Vec::new();
+    let read_result = io::stdin()
+        .lock()
+        .take((MAX_JSON_STDIN_BYTES + 1) as u64)
+        .read_to_end(&mut input);
+    if let Err(error) = read_result {
+        eprint_speaker_transcript_write_error("internal-error", &error.to_string());
+        return ExitCode::from(EXIT_TEMPFAIL);
+    }
+    if input.len() > MAX_JSON_STDIN_BYTES {
+        eprint_speaker_transcript_write_error(
+            "malformed-request",
+            "stdin request exceeds the JSON input limit",
+        );
+        return ExitCode::from(EXIT_USAGE);
+    }
+    match solstone_core_speaker_id::writer::write_request(&input) {
+        Ok(response) => {
+            let output = json!({
+                "schema": solstone_core_speaker_id::writer::RESPONSE_SCHEMA,
+                "jsonl_path": response.jsonl_path,
+                "npz_path": response.npz_path,
+                "statement_count": response.statement_count,
+                "embedding_row_count": response.embedding_row_count,
+            });
+            match serde_json::to_string(&output) {
+                Ok(output) => {
+                    println!("{output}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprint_speaker_transcript_write_error("internal-error", &error.to_string());
+                    ExitCode::from(EXIT_TEMPFAIL)
+                }
+            }
+        }
+        Err(error) => {
+            let exit = speaker_transcript_write_exit_code(&error);
+            eprint_speaker_transcript_write_error(error.reason(), &error.detail());
+            ExitCode::from(exit)
+        }
+    }
+}
+
+fn speaker_transcript_write_exit_code(
+    error: &solstone_core_speaker_id::writer::SpeakerTranscriptWriteError,
+) -> u8 {
+    use solstone_core_speaker_id::writer::SpeakerTranscriptWriteError;
+
+    match error {
+        SpeakerTranscriptWriteError::MalformedRequest { .. }
+        | SpeakerTranscriptWriteError::UnknownSchema { .. }
+        | SpeakerTranscriptWriteError::MissingStatementId { .. }
+        | SpeakerTranscriptWriteError::InvalidStatementId { .. }
+        | SpeakerTranscriptWriteError::DuplicateStatementId { .. }
+        | SpeakerTranscriptWriteError::InvalidStatement { .. }
+        | SpeakerTranscriptWriteError::InvalidHeader { .. }
+        | SpeakerTranscriptWriteError::InvalidOutputPath { .. }
+        | SpeakerTranscriptWriteError::DestinationExists { .. } => EXIT_USAGE,
+        SpeakerTranscriptWriteError::PayloadUnreadable { .. }
+        | SpeakerTranscriptWriteError::PayloadInvalid { .. }
+        | SpeakerTranscriptWriteError::PayloadNonFinite { .. } => EXIT_UNAVAILABLE,
+        SpeakerTranscriptWriteError::OutputUnwritable { .. }
+        | SpeakerTranscriptWriteError::NpzVerificationFailed { .. }
+        | SpeakerTranscriptWriteError::Internal { .. } => EXIT_TEMPFAIL,
+    }
+}
+
+fn eprint_speaker_transcript_write_error(reason: &str, detail: &str) {
+    eprintln!(
+        "{}",
+        json!({
+            "schema": "solstone-speaker-transcript-write-error-v1",
+            "reason": reason,
+            "detail": detail,
+        })
+    );
 }
 
 fn run_journal_identity(args: Vec<std::ffi::OsString>) -> ExitCode {

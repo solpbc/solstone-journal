@@ -47,6 +47,7 @@ solstone-core-generate.workspace = true
 solstone-core-generate-wire.workspace = true
 solstone-core-sol.workspace = true
 solstone-core-spl.workspace = true
+solstone-core-speaker-id.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["io-std", "io-util", "rt", "time"] }
 

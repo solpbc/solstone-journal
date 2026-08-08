@@ -89,6 +89,7 @@ hyper = { version = "1.11.0", default-features = false, features = ["server", "h
 hyper-util = { version = "0.1.20", default-features = false, features = ["tokio", "service"] }
 solstone-core-speakers = { path = "crates/solstone-core-speakers" }
 solstone-core-speakers-analyze = { path = "crates/solstone-core-speakers-analyze" }
+solstone-core-speaker-id = { path = "crates/solstone-core-speaker-id" }
 solstone-core-depict = { path = "crates/solstone-core-depict" }
 solstone-core-generate = { path = "crates/solstone-core-generate" }
 solstone-core-generate-wire = { path = "crates/solstone-core-generate-wire" }

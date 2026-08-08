@@ -6,8 +6,13 @@
 //!
 //! A persisted integer sentence ID wins over a positional ID. This crate has no
 //! callers yet; lode P3 wires it into the six positional-derivation sites it
-//! will eventually replace.
+//! will eventually replace. P2 also provides a durable transcript and
+//! embedding-sidecar writer for the native CLI boundary.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 pub mod transcript;
+pub mod writer;
+
+mod ascii_json;
+mod npz;
