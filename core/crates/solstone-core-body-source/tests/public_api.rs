@@ -352,6 +352,9 @@ fn public_source_hash_is_checked_family_bound_ordered_and_hashable() {
     let oura_from_bytes =
         BodySourceHash::from_bytes_for_family(plain_text.as_bytes(), &BodySourceFamily::OuraApi)
             .unwrap();
+    let oura_from_body_string =
+        BodySourceHash::from_body_string_for_family(&plain_body_string, &BodySourceFamily::OuraApi)
+            .unwrap();
     let window_from_body_string = BodySourceHash::from_body_string_for_family(
         &window_body_string,
         &BodySourceFamily::AppleHealth,
@@ -360,8 +363,11 @@ fn public_source_hash_is_checked_family_bound_ordered_and_hashable() {
     assert_eq!(apple_from_bytes, apple_from_body_string);
     assert_eq!(apple_from_bytes.as_str(), plain_text);
     assert_eq!(apple_from_bytes.family(), BodySourceFamily::AppleHealth);
+    assert_eq!(oura_from_bytes, oura_from_body_string);
     assert_eq!(oura_from_bytes.as_str(), plain_text);
     assert_eq!(oura_from_bytes.family(), BodySourceFamily::OuraApi);
+    assert_eq!(oura_from_body_string.as_str(), plain_text);
+    assert_eq!(oura_from_body_string.family(), BodySourceFamily::OuraApi);
     assert_eq!(window_from_body_string.as_str(), window_text);
     assert_eq!(
         window_from_body_string.family(),
@@ -373,12 +379,14 @@ fn public_source_hash_is_checked_family_bound_ordered_and_hashable() {
     hashes.insert(apple_from_bytes.clone());
     hashes.insert(apple_from_body_string.clone());
     hashes.insert(oura_from_bytes.clone());
+    hashes.insert(oura_from_body_string.clone());
     hashes.insert(window_from_body_string.clone());
     assert_eq!(hashes.len(), 3);
     let mut ordered = BTreeSet::new();
     ordered.insert(apple_from_bytes);
     ordered.insert(apple_from_body_string);
     ordered.insert(oura_from_bytes);
+    ordered.insert(oura_from_body_string);
     ordered.insert(window_from_body_string);
     assert_eq!(ordered.len(), 3);
 
