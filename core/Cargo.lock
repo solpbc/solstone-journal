@@ -2389,7 +2389,6 @@ dependencies = [
  "chrono",
  "nix",
  "serde_json",
- "solstone-core-journal",
  "solstone-core-sol-client",
  "solstone-core-sol-client-cli",
  "solstone-core-sol-link",
@@ -2401,9 +2400,8 @@ version = "1.0.22"
 dependencies = [
  "chrono",
  "nix",
+ "rustix",
  "serde_json",
- "solstone-core-journal",
- "solstone-core-journal-io",
  "spl-core",
  "ureq",
 ]

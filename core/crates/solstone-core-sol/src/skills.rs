@@ -7,10 +7,9 @@ use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use solstone_core_journal::HomeError;
 use solstone_core_sol_client::command::CommandOutput;
 
-use super::{EXIT_CONFIG, discover_binary_home, resolve_project_root};
+use super::{EXIT_CONFIG, resolve_project_root};
 
 const EXIT_ARGPARSE_USAGE: i32 = 2;
 const USAGE: &str = "Usage: sol skills <install|uninstall|list> [args...]\n";
@@ -246,10 +245,13 @@ fn execute(command: SkillsCommand, context: &RuntimeContext) -> Result<CommandOu
 }
 
 fn real_context() -> Result<RuntimeContext, String> {
-    let home = discover_binary_home().map_err(|HomeError::Unavailable| {
-        "sol: native skills home is unavailable. Reinstall solstone and solstone-core.\n"
-            .to_string()
-    })?;
+    let home = std::env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            "sol: native skills home is unavailable. Reinstall solstone and solstone-core.\n"
+                .to_string()
+        })?;
     let cwd = std::env::current_dir().map_err(|error| {
         format!("sol: native skills cwd is unavailable: {error}. Reinstall solstone and solstone-core.\n")
     })?;

@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
-use std::path::Path;
-
 use crate::seam::{
     BuildIdentityProvider, ChatEventSource, ClientItemIdProvider, Clock, FileProvider,
     HttpTransport, LinkJoinPairingSeam, LinkServeRunner, NotificationSink,
 };
+use std::collections::BTreeMap;
 
 #[derive(Clone, Copy)]
 pub struct CommandContext<'a> {
@@ -24,7 +22,6 @@ pub struct CommandContext<'a> {
     pub notification_sink: Option<&'a dyn NotificationSink>,
     pub link_pairing: Option<&'a dyn LinkJoinPairingSeam>,
     pub link_serve: Option<&'a dyn LinkServeRunner>,
-    pub journal_root: Option<&'a Path>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

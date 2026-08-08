@@ -2,17 +2,16 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeMap;
-use std::fs;
-use std::io;
+use std::fs::{self, DirBuilder, File, OpenOptions};
+use std::io::{self, Write};
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
-use solstone_core_journal_io::{
-    AtomicWriteOptions, StagedDirOptions, StagedWriteError, publish_staged_dir,
-    write_bytes_exclusive,
-};
 use spl_core::pairlink::{PairLinkError, ParsedPairLink};
 
 use crate::command::{CommandContext, CommandOutput};
@@ -34,7 +33,9 @@ const DEFAULT_SERVE_PORT: u16 = 5015;
 const DEFAULT_RELAY_URL: &str = "https://link.solstone.app";
 const PAIR_LINK_PREFIX: &str = "https://go.solstone.app/p#";
 const LOCAL_ENDPOINTS_MAX_BYTES: usize = 16 * 1024;
-const PEER_STATE_GUIDANCE: &str = "Peer join requires an initialized link identity. Run 'sol call link pair' on this journal first, then retry.\n";
+static BUNDLE_STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+const PEER_JOIN_MOVED: &str =
+    "Peer joins require journal-device authority and are not available through 'sol'.\n";
 const BUNDLE_FILES: &[&str] = &[
     "private.pem",
     "cert.pem",
@@ -60,8 +61,11 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
     }
 
     let as_role = parsed.as_role.unwrap_or_default();
-    if !matches!(as_role.as_str(), "" | "phone" | "observer" | "peer") {
-        return CommandOutput::failure("invalid role; expected one of: phone, observer, peer\n", 2);
+    if as_role == "peer" {
+        return CommandOutput::failure(PEER_JOIN_MOVED, 2);
+    }
+    if !matches!(as_role.as_str(), "" | "phone" | "observer") {
+        return CommandOutput::failure("invalid role; expected one of: phone, observer\n", 2);
     }
 
     let label = match parsed.label {
@@ -90,33 +94,18 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) => return CommandOutput::failure(format!("{error}\n"), 1),
     };
 
-    let mut additional_fields = Map::new();
-    let is_peer = as_role == "peer";
-    if is_peer {
-        let Some(journal_root) = ctx.journal_root else {
-            return CommandOutput::failure(PEER_STATE_GUIDANCE, 1);
-        };
-        let Some(instance_id) = load_peer_sender_instance_id(journal_root) else {
-            return CommandOutput::failure(PEER_STATE_GUIDANCE, 1);
-        };
-        additional_fields.insert("sender_instance_id".to_string(), Value::String(instance_id));
-    }
-
-    let prechecked_bundle_dir = if is_peer {
-        None
-    } else {
-        match observer_bundle_dir(&label, ctx.env) {
-            Ok(bundle_dir) => {
-                if path_lexists(&bundle_dir) {
-                    return CommandOutput::failure(
-                        format!("{}\n", existing_path_message(&bundle_dir)),
-                        1,
-                    );
-                }
-                Some(bundle_dir)
+    let additional_fields = Map::new();
+    let bundle_dir = match observer_bundle_dir(&label, ctx.env) {
+        Ok(bundle_dir) => {
+            if path_lexists(&bundle_dir) {
+                return CommandOutput::failure(
+                    format!("{}\n", existing_path_message(&bundle_dir)),
+                    1,
+                );
             }
-            Err(error) => return CommandOutput::failure(format!("{error}\n"), 1),
+            bundle_dir
         }
+        Err(error) => return CommandOutput::failure(format!("{error}\n"), 1),
     };
 
     let credential = match pair_request {
@@ -157,25 +146,13 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
         return CommandOutput::failure("Pair response local_endpoints is too large.\n", 1);
     }
 
-    let bundle_dir = if is_peer {
-        let Some(journal_root) = ctx.journal_root else {
-            return CommandOutput::failure(PEER_STATE_GUIDANCE, 1);
-        };
-        if let Some(error) = validate_instance_id(&credential.instance_id) {
-            return CommandOutput::failure(format!("{error}\n"), 1);
-        }
-        journal_root.join("peers").join(&credential.instance_id)
-    } else {
-        prechecked_bundle_dir.expect("observer bundle dir was resolved before pairing")
-    };
-
     let chain_pem = join_chain(&credential.ca_chain_pem);
     let peer_json = peer_json(
         &label,
         now_utc(ctx.clock),
         &credential,
         local_endpoints,
-        is_peer,
+        false,
     );
     let mut files = BTreeMap::new();
     files.insert(
@@ -207,9 +184,8 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
         return CommandOutput::failure(format!("{message}\n"), 1);
     }
 
-    let suffix = if is_peer { " as peer" } else { "" };
     CommandOutput::success(format!(
-        "Linked {label}{suffix}.\nCredentials: {}\n",
+        "Linked {label}.\nCredentials: {}\n",
         bundle_dir.display()
     ))
 }
@@ -813,34 +789,8 @@ impl IfEmpty for String {
     }
 }
 
-fn load_peer_sender_instance_id(journal_root: &Path) -> Option<String> {
-    let text = fs::read_to_string(journal_root.join("link").join("state.json")).ok()?;
-    let value: Value = serde_json::from_str(&text).ok()?;
-    value
-        .get("instance_id")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
 fn observer_bundle_dir(label: &str, env: &BTreeMap<String, String>) -> Result<PathBuf, String> {
     Ok(observer_spl_root(env)?.join(label))
-}
-
-fn validate_instance_id(value: &str) -> Option<String> {
-    let valid = !value.is_empty()
-        && value.len() <= 256
-        && value
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-');
-    if valid {
-        None
-    } else {
-        Some(format!(
-            "bad instance_id from receiver: '{}'",
-            value.replace('\\', "\\\\").replace('\'', "\\'")
-        ))
-    }
 }
 
 fn validate_credential(credential: &LinkJoinCredential) -> Result<(), &'static str> {
@@ -1154,10 +1104,7 @@ fn spent_existing_path_message(path: &Path) -> String {
 }
 
 fn publish_bundle_atomic(bundle_dir: &Path, files: &BTreeMap<String, Vec<u8>>) -> io::Result<()> {
-    publish_bundle_atomic_with_writer(bundle_dir, files, |path, content| {
-        write_bytes_exclusive(path, content, AtomicWriteOptions { mode: Some(0o600) })
-            .map_err(io::Error::other)
-    })
+    publish_bundle_atomic_with_writer(bundle_dir, files, write_private_file)
 }
 
 fn publish_bundle_atomic_with_writer<W>(
@@ -1173,32 +1120,106 @@ where
     {
         return Err(io::Error::other("credential bundle file set is incomplete"));
     }
-    publish_staged_dir(
-        bundle_dir,
-        StagedDirOptions {
-            directory_mode: Some(0o700),
-        },
-        |staging| {
-            for (name, content) in files {
-                write_file(&staging.join(name), content)?;
-            }
-            Ok::<_, io::Error>(())
-        },
-    )
-    .map_err(|error| match &error {
-        StagedWriteError::Io { source, .. } if source.kind() == io::ErrorKind::AlreadyExists => {
-            io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                existing_path_message(bundle_dir),
-            )
-        }
-        _ => io::Error::other(error),
-    })
+    let parent = bundle_dir.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    if path_lexists(bundle_dir) {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            existing_path_message(bundle_dir),
+        ));
+    }
+
+    let staging = PrivateStagingDir::create(parent, bundle_dir)?;
+    for (name, content) in files {
+        write_file(&staging.path.join(name), content)?;
+    }
+    File::open(&staging.path)?.sync_all()?;
+    publish_staging_dir(&staging.path, bundle_dir)?;
+    staging.disarm();
+    if let Ok(directory) = File::open(parent) {
+        let _ = directory.sync_all();
+    }
+    Ok(())
 }
 
-// The writer parameter above remains a test seam for injected populate
-// failures. The staging, syncing, rename, cleanup, and permissions are owned
-// by solstone-core-journal-io.
+#[cfg(any(target_vendor = "apple", target_os = "linux"))]
+fn publish_staging_dir(staging: &Path, destination: &Path) -> io::Result<()> {
+    rustix::fs::renameat_with(
+        rustix::fs::CWD,
+        staging,
+        rustix::fs::CWD,
+        destination,
+        rustix::fs::RenameFlags::NOREPLACE,
+    )?;
+    Ok(())
+}
+
+#[cfg(not(any(target_vendor = "apple", target_os = "linux")))]
+fn publish_staging_dir(staging: &Path, destination: &Path) -> io::Result<()> {
+    if path_lexists(destination) {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            existing_path_message(destination),
+        ));
+    }
+    fs::rename(staging, destination)
+}
+
+fn write_private_file(path: &Path, content: &[u8]) -> io::Result<()> {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(path)?;
+    file.write_all(content)?;
+    file.sync_all()
+}
+
+struct PrivateStagingDir {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl PrivateStagingDir {
+    fn create(parent: &Path, destination: &Path) -> io::Result<Self> {
+        let stem = destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("credentials");
+        for _ in 0..100 {
+            let sequence = BUNDLE_STAGING_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let path = parent.join(format!(
+                ".{stem}.staging.{}_{}.tmp",
+                std::process::id(),
+                sequence
+            ));
+            let mut builder = DirBuilder::new();
+            #[cfg(unix)]
+            builder.mode(0o700);
+            match builder.create(&path) {
+                Ok(()) => return Ok(Self { path, armed: true }),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "could not allocate credential staging directory",
+        ))
+    }
+
+    fn disarm(mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for PrivateStagingDir {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1299,7 +1320,7 @@ mod tests {
     fn run(
         args: &[&str],
         env: &BTreeMap<String, String>,
-        journal_root: &Path,
+        _journal_root: &Path,
         seam: &ScriptedLinkJoinPairingSeam,
         clock: &FakeClock,
     ) -> CommandOutput {
@@ -1319,7 +1340,6 @@ mod tests {
             notification_sink: None,
             link_pairing: Some(seam),
             link_serve: None,
-            journal_root: Some(journal_root),
         })
     }
 
@@ -1344,7 +1364,6 @@ mod tests {
             notification_sink: None,
             link_pairing: None,
             link_serve: Some(runner),
-            journal_root: None,
         })
     }
 
@@ -1823,7 +1842,7 @@ mod tests {
         );
         assert_eq!(
             role.stderr,
-            "invalid role; expected one of: phone, observer, peer\n"
+            "invalid role; expected one of: phone, observer\n"
         );
         assert_eq!(role.exit, 2);
         let label = run(
@@ -1933,55 +1952,6 @@ mod tests {
         seam.assert_done();
     }
 
-    #[test]
-    fn peer_success_writes_peer_bundle_only() {
-        let temp = temp_dir("peer-success");
-        let config = temp.join("config");
-        let env = base_env(&config, &temp.join("home"));
-        let root = temp.join("journal");
-        fs::create_dir_all(root.join("link")).expect("link dir");
-        fs::write(
-            root.join("link").join("state.json"),
-            "{\"instance_id\": \"sender-instance\"}",
-        )
-        .expect("state");
-        let mut additional_fields = Map::new();
-        additional_fields.insert(
-            "sender_instance_id".to_string(),
-            Value::String("sender-instance".to_string()),
-        );
-        let expected = LinkJoinDirectRequest {
-            additional_fields,
-            ..expected_direct_request("Test-Host")
-        };
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![ExpectedLinkJoinPairingCall::Direct {
-            expected,
-            result: Ok(credential(Value::Null)),
-        }]);
-        let clock = FakeClock::at_unix(0);
-
-        let output = run(
-            &["--code", &direct_pair_link(), "--as", "peer"],
-            &env,
-            &root,
-            &seam,
-            &clock,
-        );
-
-        let bundle = root.join("peers").join("receiver-instance");
-        assert_eq!(
-            output.stdout,
-            format!(
-                "Linked Test-Host as peer.\nCredentials: {}\n",
-                bundle.display()
-            )
-        );
-        assert_eq!(output.exit, 0);
-        assert_bundle_files_exist(&bundle);
-        assert!(!path_lexists(&config.join("solstone-observer").join("spl")));
-        seam.assert_done();
-    }
-
     #[cfg(unix)]
     #[test]
     fn bundle_permissions_are_explicit_under_permissive_umask() {
@@ -2003,13 +1973,36 @@ mod tests {
                     return Err(io::Error::other("injected mid-write failure"));
                 }
                 writes.set(writes.get() + 1);
-                write_bytes_exclusive(path, content, AtomicWriteOptions { mode: Some(0o600) })
-                    .map_err(io::Error::other)
+                write_private_file(path, content)
             });
 
         assert_eq!(writes.get(), 1);
         assert!(result.is_err());
         assert!(!path_lexists(&bundle));
+        assert_no_dot_residue(parent);
+    }
+
+    #[test]
+    fn publication_never_replaces_a_racing_empty_destination() {
+        let temp = temp_dir("publish-race");
+        let bundle = temp.join("spl").join("laptop");
+        let parent = bundle.parent().expect("bundle parent");
+        let created = Cell::new(false);
+
+        let result =
+            publish_bundle_atomic_with_writer(&bundle, &bundle_files(), |path, content| {
+                if !created.replace(true) {
+                    fs::create_dir(&bundle)?;
+                }
+                write_private_file(path, content)
+            });
+
+        assert_eq!(
+            result.expect_err("racing destination must win").kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert!(bundle.is_dir());
+        assert_eq!(fs::read_dir(&bundle).expect("winner directory").count(), 0);
         assert_no_dot_residue(parent);
     }
 
@@ -2030,8 +2023,8 @@ mod tests {
             &clock,
         );
 
-        assert_eq!(output.stderr, PEER_STATE_GUIDANCE);
-        assert_eq!(output.exit, 1);
+        assert_eq!(output.stderr, PEER_JOIN_MOVED);
+        assert_eq!(output.exit, 2);
         seam.assert_done();
     }
 
@@ -2072,51 +2065,6 @@ mod tests {
         assert_ne!(second.exit, 0);
         assert_eq!(bundle_hashes(&bundle), before);
         second_seam.assert_done();
-    }
-
-    #[test]
-    fn peer_existing_path_is_checked_after_pairing_with_spent_message() {
-        let temp = temp_dir("peer-existing");
-        let config = temp.join("config");
-        let env = base_env(&config, &temp.join("home"));
-        let root = temp.join("journal");
-        fs::create_dir_all(root.join("link")).expect("link dir");
-        fs::write(
-            root.join("link").join("state.json"),
-            "{\"instance_id\": \"sender-instance\"}",
-        )
-        .expect("state");
-        let bundle = root.join("peers").join("receiver-instance");
-        fs::create_dir_all(&bundle).expect("existing peer");
-        let mut additional_fields = Map::new();
-        additional_fields.insert(
-            "sender_instance_id".to_string(),
-            Value::String("sender-instance".to_string()),
-        );
-        let expected = LinkJoinDirectRequest {
-            additional_fields,
-            ..expected_direct_request("Test-Host")
-        };
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![ExpectedLinkJoinPairingCall::Direct {
-            expected,
-            result: Ok(credential(Value::Array(Vec::new()))),
-        }]);
-        let clock = FakeClock::at_unix(0);
-
-        let output = run(
-            &["--code", &direct_pair_link(), "--as", "peer"],
-            &env,
-            &root,
-            &seam,
-            &clock,
-        );
-
-        assert_eq!(
-            output.stderr,
-            format!("{}\n", spent_existing_path_message(&bundle))
-        );
-        assert_eq!(output.exit, 1);
-        seam.assert_done();
     }
 
     #[test]

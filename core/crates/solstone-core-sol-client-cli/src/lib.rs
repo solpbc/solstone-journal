@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
-use std::ffi::{OsStr, OsString};
-use std::path::Path;
-
 use solstone_core_sol_client::aggregate;
 use solstone_core_sol_client::command::{CommandContext, CommandOutput};
 use solstone_core_sol_client::resident::ResidentHandler;
@@ -12,6 +8,8 @@ use solstone_core_sol_client::seam::{
     BuildIdentityProvider, ChatEventSource, ClientItemIdProvider, Clock, FileProvider,
     HttpTransport, LinkJoinPairingSeam, LinkServeRunner, NotificationSink,
 };
+use std::collections::BTreeMap;
+use std::ffi::{OsStr, OsString};
 
 pub mod help;
 
@@ -41,7 +39,6 @@ pub struct LinkDispatchSeams<'a> {
     pub files: Option<&'a dyn FileProvider>,
     pub link_pairing: Option<&'a dyn LinkJoinPairingSeam>,
     pub link_serve: Option<&'a dyn LinkServeRunner>,
-    pub journal_root: Option<&'a Path>,
 }
 
 pub enum LinkDispatch {
@@ -118,7 +115,6 @@ pub fn dispatch_sol_chat_with_seams(
         notification_sink: None,
         link_pairing: None,
         link_serve: None,
-        journal_root: None,
     })
 }
 
@@ -148,7 +144,6 @@ pub fn dispatch_sol_import_with_seams(
         notification_sink: None,
         link_pairing: None,
         link_serve: None,
-        journal_root: None,
     })
 }
 
@@ -178,7 +173,6 @@ pub fn dispatch_sol_status_with_seams(
         notification_sink: None,
         link_pairing: None,
         link_serve: None,
-        journal_root: None,
     })
 }
 
@@ -222,7 +216,6 @@ pub fn dispatch_sol_link_with_seams(
         notification_sink: None,
         link_pairing: seams.link_pairing,
         link_serve: seams.link_serve,
-        journal_root: seams.journal_root,
     }))
 }
 
@@ -296,7 +289,6 @@ pub fn dispatch_sol_call_with_seams(
         notification_sink: None,
         link_pairing: None,
         link_serve: None,
-        journal_root: None,
     })
 }
 
@@ -465,7 +457,6 @@ mod tests {
             files: None,
             link_pairing: Some(&pairing),
             link_serve: Some(&serve),
-            journal_root: None,
         };
 
         let join_args = string_args(&["link", "join"]);

@@ -79,7 +79,7 @@ solstone-core-segment = { path = "crates/solstone-core-segment" }
 solstone-core-sol = { path = "crates/solstone-core-sol" }
 solstone-core-sol-client = { path = "crates/solstone-core-sol-client" }
 solstone-core-sol-client-cli = { path = "crates/solstone-core-sol-client-cli" }
-solstone-core-sol-link = { path = "crates/solstone-core-sol-link" }
+solstone-core-sol-link = { path = "crates/solstone-core-sol-link", default-features = false }
 solstone-core-convey-http = { path = "crates/solstone-core-convey-http" }
 solstone-core-entities = { path = "crates/solstone-core-entities" }
 solstone-core-spl = { path = "crates/solstone-core-spl" }
@@ -107,6 +107,7 @@ ort = { version = "=2.0.0-rc.12", default-features = false }
 pulldown-cmark = { version = "0.13.4", default-features = false }
 rapidfuzz = "0.5.0"
 rcgen = { version = "0.13", default-features = false, features = ["ring", "pem", "x509-parser"] }
+rustix = { version = "1.1.4", features = ["fs"] }
 rusqlite = { version = "0.40.1", features = ["bundled", "trace"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde_json = { version = "1.0.150", features = ["preserve_order", "float_roundtrip"] }

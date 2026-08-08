@@ -450,7 +450,6 @@ mod tests {
             notification_sink: None,
             link_pairing: None,
             link_serve: None,
-            journal_root: None,
         });
 
         assert_eq!(
@@ -556,7 +555,6 @@ mod tests {
             notification_sink: None,
             link_pairing: None,
             link_serve: None,
-            journal_root: None,
         });
 
         assert_eq!(

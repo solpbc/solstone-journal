@@ -12,28 +12,42 @@ use solstone_core_sol_client::seam::{
 use spl_transport::credential::Credential;
 use spl_transport::{RelayControlEndpoint, RelayError, TransportError, tls};
 
+#[cfg(feature = "host")]
 pub mod acceptor;
+#[cfg(feature = "host")]
 pub mod ca;
+#[cfg(feature = "client")]
 mod direct_seam;
+#[cfg(feature = "host")]
 pub mod door;
+#[cfg(feature = "host")]
 pub mod establish;
+#[cfg(feature = "host")]
 pub mod http;
+#[cfg(feature = "host")]
 pub mod ledger;
+#[cfg(feature = "host")]
 pub mod mark;
+#[cfg(feature = "client")]
 mod pairing_entry;
+#[cfg(feature = "client")]
 mod serve;
 
+#[cfg(feature = "host")]
 pub use acceptor::{
     DEVICE_DOOR_AUTHORIZATION_REFRESH_INTERVAL, build_device_door_acceptor,
     serve_device_door_connection,
 };
+#[cfg(feature = "host")]
 pub use door::{
     DeviceDoorAuthorization, DeviceDoorConfigError, DeviceDoorVerifier,
     build_device_door_server_config, refresh_once, spawn_authorization_refresh,
 };
+#[cfg(feature = "client")]
 pub use serve::SplLinkServeRunner;
 
 /// Test-only certificate fixtures shared by this package's unit and integration tests.
+#[cfg(any(test, feature = "host"))]
 #[doc(hidden)]
 pub mod test_support {
     use rcgen::{
@@ -83,12 +97,14 @@ pub mod test_support {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "host"))]
 mod http_tests;
 
+#[cfg(feature = "client")]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SplLinkJoinPairingSeam;
 
+#[cfg(feature = "client")]
 impl LinkJoinPairingSeam for SplLinkJoinPairingSeam {
     fn pair_direct(
         &self,
@@ -106,6 +122,7 @@ impl LinkJoinPairingSeam for SplLinkJoinPairingSeam {
     }
 }
 
+#[cfg(feature = "client")]
 fn pair_direct_with_spl_seam(
     request: LinkJoinDirectRequest,
     seam: Arc<dyn spl_transport::pairing::DirectPairingSeam>,
@@ -114,6 +131,7 @@ fn pair_direct_with_spl_seam(
     link_credential_from_spl(credential)
 }
 
+#[cfg(feature = "client")]
 fn block_on_transport<F, T>(future: F) -> Result<T, LinkJoinPairingError>
 where
     F: Future<Output = Result<T, TransportError>>,
@@ -125,6 +143,7 @@ where
     runtime.block_on(future).map_err(map_transport_error)
 }
 
+#[cfg(feature = "client")]
 fn link_credential_from_spl(
     credential: Credential,
 ) -> Result<LinkJoinCredential, LinkJoinPairingError> {
@@ -145,6 +164,7 @@ fn link_credential_from_spl(
     })
 }
 
+#[cfg(feature = "client")]
 fn ca_fingerprint(ca_chain_pem: &[String]) -> Result<String, LinkJoinPairingError> {
     let chain_pem = ca_chain_pem
         .iter()
@@ -166,6 +186,7 @@ fn ca_fingerprint(ca_chain_pem: &[String]) -> Result<String, LinkJoinPairingErro
     ))
 }
 
+#[cfg(feature = "client")]
 fn map_transport_error(error: TransportError) -> LinkJoinPairingError {
     LinkJoinPairingError::new(match error {
         TransportError::Io(error) => {
@@ -220,6 +241,7 @@ fn map_transport_error(error: TransportError) -> LinkJoinPairingError {
     })
 }
 
+#[cfg(feature = "client")]
 fn map_relay_error(error: RelayError) -> LinkJoinRelayErrorKind {
     match error {
         RelayError::HomeOffline => LinkJoinRelayErrorKind::HomeOffline,
@@ -234,6 +256,7 @@ fn map_relay_error(error: RelayError) -> LinkJoinRelayErrorKind {
     }
 }
 
+#[cfg(feature = "client")]
 fn map_relay_control_endpoint(endpoint: RelayControlEndpoint) -> LinkJoinRelayControlEndpoint {
     match endpoint {
         RelayControlEndpoint::EnrollDevice => LinkJoinRelayControlEndpoint::EnrollDevice,

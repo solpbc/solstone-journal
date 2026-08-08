@@ -181,7 +181,6 @@ fn run_vector(vector: &Value) {
                 files: Some(&files),
                 link_pairing: Some(&link_pairing),
                 link_serve: Some(&link_serve),
-                journal_root: Some(std::path::Path::new("/native-sol-parity-journal")),
             },
         );
         match dispatch {
@@ -201,7 +200,6 @@ fn run_vector(vector: &Value) {
                     notification_sink: None,
                     link_pairing: Some(&link_pairing),
                     link_serve: Some(&link_serve),
-                    journal_root: Some(std::path::Path::new("/native-sol-parity-journal")),
                 });
                 match output {
                     Err(output) => output,

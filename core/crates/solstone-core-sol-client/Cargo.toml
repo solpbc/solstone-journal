@@ -8,9 +8,8 @@ publish = false
 
 [dependencies]
 chrono = { workspace = true }
+rustix = { workspace = true }
 serde_json = { workspace = true }
-solstone-core-journal = { workspace = true }
-solstone-core-journal-io = { workspace = true }
 spl-core = { workspace = true }
 ureq = { workspace = true }
 

@@ -13,12 +13,7 @@ use std::{env, fs};
 
 use chrono::Local;
 use serde_json::json;
-use solstone_core_journal::{
-    ConfigError, HomeError, detect_checkout_root, discover_home, read_config_journal,
-    resolve_journal_path,
-};
 use solstone_core_sol_client::command::{CommandContext, CommandOutput};
-use solstone_core_sol_client::port::{DEFAULT_CONVEY_PORT, read_convey_port};
 use solstone_core_sol_client::resident::{ResidentHandler, ShutdownSignal};
 use solstone_core_sol_client::seam::{
     BuildIdentityProvider, ChatEventSource, ChatInput, ClientItemIdProvider, Clock, FileProvider,
@@ -47,6 +42,7 @@ pub use generated::journal_host_commands::{JOURNAL_HOST_COMMAND_COUNT, JOURNAL_H
 const EXIT_USAGE: u8 = 64;
 const EXIT_CONFIG: u8 = 78;
 const EXIT_TEMPFAIL: u8 = 75;
+const DEFAULT_CONVEY_PORT: i64 = 5015;
 const USAGE: &str = "Usage: sol <command> [args...]\n";
 const SERVICE_MOVED_EXIT: i32 = 2;
 const SOL_SERVICE_CMD_REMOVED_ERROR_TAIL: &str = "('sol' is the journal-access surface; 'journal' surfaces journal-service commands; see 'journal --help'.)";
@@ -301,11 +297,7 @@ fn run_top_level_link(
         None => return render_output(usage_error_output()),
     };
     let today = Local::now().format("%Y%m%d").to_string();
-    let journal_root = resolve_process_journal_path().ok();
-    let port = journal_root
-        .as_ref()
-        .map_or(DEFAULT_CONVEY_PORT, read_convey_port);
-    let transport = UreqHttpTransport::new(port);
+    let transport = UreqHttpTransport::new(DEFAULT_CONVEY_PORT);
     let env = env::vars().collect::<BTreeMap<_, _>>();
     let stdin = match stdin_provider.read_if_piped() {
         Ok(Some(value)) => value,
@@ -326,7 +318,6 @@ fn run_top_level_link(
             transport: &transport,
             clock: &clock,
             files: &files,
-            journal_root: journal_root.as_deref(),
         },
     );
     match dispatch {
@@ -349,7 +340,6 @@ fn run_top_level_link(
                 notification_sink: None,
                 link_pairing: Some(link_join_pairing_seam()),
                 link_serve: Some(link_serve_runner()),
-                journal_root: journal_root.as_deref(),
             };
             run_resident_command(handler, context)
         }
@@ -363,7 +353,6 @@ struct TopLevelLinkRuntime<'a> {
     transport: &'a dyn HttpTransport,
     clock: &'a dyn Clock,
     files: &'a dyn FileProvider,
-    journal_root: Option<&'a Path>,
 }
 
 fn dispatch_top_level_link_with_runtime_seams(
@@ -381,7 +370,6 @@ fn dispatch_top_level_link_with_runtime_seams(
             files: Some(runtime.files),
             link_pairing: Some(link_join_pairing_seam()),
             link_serve: Some(link_serve_runner()),
-            journal_root: runtime.journal_root,
         },
     )
 }
@@ -403,15 +391,7 @@ fn run_dispatched(
             return ExitCode::from(EXIT_USAGE);
         }
     };
-    let journal = match resolve_process_journal_path() {
-        Ok(line) => line,
-        Err(error) => {
-            eprintln!("native sol journal resolution failed: {error}");
-            return ExitCode::from(EXIT_TEMPFAIL);
-        }
-    };
-    let port = read_convey_port(&journal);
-    let transport = UreqHttpTransport::new(port);
+    let transport = UreqHttpTransport::new(DEFAULT_CONVEY_PORT);
     let env = env::vars().collect::<BTreeMap<_, _>>();
     let stdin = match stdin_provider.read_if_piped() {
         Ok(Some(value)) => value,
@@ -647,63 +627,6 @@ fn os_strings_to_strings(args: &[OsString]) -> Option<Vec<String>> {
     args.iter()
         .map(|arg| arg.to_str().map(str::to_string))
         .collect()
-}
-
-#[derive(Debug)]
-enum JournalPathError {
-    Config,
-    Home,
-}
-
-impl std::fmt::Display for JournalPathError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            JournalPathError::Config => formatter.write_str("config decode failed"),
-            JournalPathError::Home => formatter.write_str("home unavailable"),
-        }
-    }
-}
-
-impl std::error::Error for JournalPathError {}
-
-fn resolve_process_journal_path() -> Result<PathBuf, JournalPathError> {
-    let env_journal = env::var_os("SOLSTONE_JOURNAL");
-    if let Some(path) = env_journal
-        .as_deref()
-        .filter(|value| *value != OsStr::new(""))
-    {
-        return Ok(PathBuf::from(path));
-    }
-
-    let home = discover_binary_home().map_err(|HomeError::Unavailable| JournalPathError::Home)?;
-    let config_journal =
-        read_config_journal(&home).map_err(|ConfigError::Decode| JournalPathError::Config)?;
-    let checkout_root = detect_process_checkout_root();
-    let resolved = resolve_journal_path(
-        env_journal.as_deref(),
-        config_journal.as_deref(),
-        checkout_root.as_deref(),
-        &home,
-    );
-    Ok(resolved.path)
-}
-
-fn detect_process_checkout_root() -> Option<PathBuf> {
-    let executable = env::current_exe().ok()?;
-    let executable_dir = executable.parent()?;
-    if installed_site_packages_from_executable_dir(executable_dir).is_some() {
-        return None;
-    }
-    executable_dir.ancestors().find_map(detect_checkout_root)
-}
-
-fn discover_binary_home() -> Result<PathBuf, HomeError> {
-    let home_env = env::var_os("HOME");
-    if let Some(home) = home_env.as_deref() {
-        return discover_home(Some(home), None);
-    }
-    let fallback = env::home_dir();
-    discover_home(None, fallback.as_deref())
 }
 
 #[derive(Debug)]
@@ -1341,7 +1264,6 @@ mod tests {
                 transport: &transport,
                 clock: &clock,
                 files: &files,
-                journal_root: None,
             },
         ) {
             LinkDispatch::Buffered(output) => {
