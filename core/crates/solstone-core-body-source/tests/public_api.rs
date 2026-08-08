@@ -898,9 +898,19 @@ fn public_envelope_ledger_api_checks_and_rejects_invalid_descriptors() {
     assert_eq!(ledger.sha256(), &digest);
     assert_eq!(ledger.clone(), ledger);
 
+    let bytes_different =
+        EnvelopeLedger::new(&bundle, 2, 1, digest.clone()).expect("bytes-different ledger binds");
+    assert_ne!(ledger, bytes_different);
+
     let events_different =
-        EnvelopeLedger::new(&bundle, 2, 2, digest.clone()).expect("field-different ledger binds");
-    assert_ne!(ledger, events_different);
+        EnvelopeLedger::new(&bundle, 2, 2, digest.clone()).expect("events-different ledger binds");
+    assert_ne!(bytes_different, events_different);
+
+    let other_bundle =
+        BundleId::from_bytes(b"body-7ZZZZZZZZZZZZZZZZZZZZZZZZZ").expect("other bundle is valid");
+    let same_ledger_other_bundle = EnvelopeLedger::new(&other_bundle, 1, 1, digest.clone())
+        .expect("same ledger under another diagnostic bundle binds");
+    assert_eq!(ledger, same_ledger_other_bundle);
 
     let other_digest = BodyDigest::from_bytes(
         b"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -949,6 +959,16 @@ fn public_apple_summary_plan_api_checks_and_rejects_unordered_days() {
     assert_eq!(plan.schema(), "solstone.body.apple_day_summaries.v1");
     assert_eq!(plan.days(), sorted.as_slice());
     assert_eq!(plan.clone(), plan);
+
+    let days_different = AppleSummaryPlan::new(&bundle, sorted[..2].to_vec())
+        .expect("different ordered days bind");
+    assert_ne!(plan, days_different);
+
+    let other_bundle =
+        BundleId::from_bytes(b"body-7ZZZZZZZZZZZZZZZZZZZZZZZZZ").expect("other bundle is valid");
+    let same_plan_other_bundle = AppleSummaryPlan::new(&other_bundle, sorted.clone())
+        .expect("same plan under another diagnostic bundle binds");
+    assert_eq!(plan, same_plan_other_bundle);
 
     let reverse = AppleSummaryPlan::new(
         &bundle,
