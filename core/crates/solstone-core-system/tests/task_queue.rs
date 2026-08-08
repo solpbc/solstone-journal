@@ -913,9 +913,17 @@ fn phase_a_snapshot_does_not_wait_for_a_terminating_process_mutex() {
         let queue = queue.clone();
         std::thread::spawn(move || queue.enforce_deadlines(Instant::now()))
     };
+    // The budget is deliberately generous, and that costs no discrimination.
+    // The blocker child blocks SIGTERM and never exits, so if Phase A did wait
+    // on its process mutex the probe would never be reached AT ALL -- the two
+    // outcomes here are "fires in milliseconds" and "never fires", not "fast"
+    // and "slow". A tight budget therefore measures machine load rather than
+    // the property: at 200ms this passed in isolation and failed under the rest
+    // of this suite. A violated property still fails, it just takes the full
+    // timeout to say so.
     probe_rx
-        .recv_timeout(Duration::from_millis(200))
-        .expect("Phase A did not reach unlocked probe promptly");
+        .recv_timeout(Duration::from_secs(30))
+        .expect("Phase A blocked on the terminating process mutex: unlocked probe never reached");
     enforcing.join().expect("enforcement thread");
     let _ = queue.shutdown();
 }
