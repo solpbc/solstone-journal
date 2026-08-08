@@ -291,7 +291,13 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
             true,
         ),
         (
-            "unimplemented",
+            "google-unimplemented",
+            json!({"providers": {"active": {"provider": "google"}}}),
+            "refused-provider-response-invalid",
+            false,
+        ),
+        (
+            "openai-missing-key",
             json!({"providers": {"active": {"provider": "openai"}}}),
             "refused-provider-response-invalid",
             false,
@@ -310,8 +316,13 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
         for name in ["reason", "detail"] {
             assert_eq!(response[name], expected[name], "{vector_id} {name}");
         }
-        if name == "unimplemented" {
+        if name == "google-unimplemented" {
+            assert_eq!(response["provider"], "google");
+        } else if name == "openai-missing-key" {
             assert_eq!(response["provider"], "openai");
+            assert_eq!(response["reason_code"], "provider_key_missing");
+            assert_eq!(response["retryable"], true);
+            assert_eq!(response["blocking"], true);
         } else {
             assert_eq!(
                 response["provider"], expected["provider"],

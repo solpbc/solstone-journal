@@ -38,6 +38,11 @@ pub fn refusal_for(
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
         ),
+        LaneOutcome::OpenAiFailure(failure) => (
+            "refused-provider-response-invalid",
+            RefusalReason::ProviderResponseInvalid,
+            failure.reason_code.clone(),
+        ),
         LaneOutcome::ValidationFailure(ValidationFailure::ProviderResponseInvalid) => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
@@ -59,7 +64,10 @@ pub fn refusal_for(
             RefusalReason::ProviderResponseInvalid,
             None,
         ),
-        LaneOutcome::BundledLocal | LaneOutcome::ByoEndpoint(_) | LaneOutcome::Anthropic => {
+        LaneOutcome::BundledLocal
+        | LaneOutcome::ByoEndpoint(_)
+        | LaneOutcome::Anthropic
+        | LaneOutcome::OpenAi => {
             panic!("bundled local lane must be invoked before refusal mapping")
         }
     };
@@ -128,7 +136,7 @@ mod tests {
     use solstone_core_local::GenerateFailure;
 
     use super::*;
-    use crate::{AnthropicFailure, EndpointFailure};
+    use crate::{AnthropicFailure, EndpointFailure, OpenAiFailure};
 
     #[test]
     fn lane_outcomes_use_fixture_vectors_and_provider() {
@@ -252,6 +260,36 @@ mod tests {
                     reason_code: reason_code.map(str::to_owned),
                 }),
                 "anthropic",
+                None,
+            );
+            assert_eq!(refusal.reason, RefusalReason::ProviderResponseInvalid);
+            assert_eq!(
+                refusal.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+                expected_wire
+            );
+            assert_eq!(refusal.retryable, retryable);
+            assert_eq!(refusal.blocking, blocking);
+            assert_eq!(refusal.detail, "fixture provider-response-invalid");
+        }
+    }
+
+    #[test]
+    fn openai_failure_preserves_known_unknown_and_absent_codes() {
+        for (reason_code, expected_wire, retryable, blocking) in [
+            (
+                Some("provider_response_invalid"),
+                Some("provider_response_invalid"),
+                true,
+                false,
+            ),
+            (Some("future_code"), Some("future_code"), false, true),
+            (None, None, false, true),
+        ] {
+            let refusal = refusal_for(
+                &LaneOutcome::OpenAiFailure(OpenAiFailure {
+                    reason_code: reason_code.map(str::to_owned),
+                }),
+                "openai",
                 None,
             );
             assert_eq!(refusal.reason, RefusalReason::ProviderResponseInvalid);

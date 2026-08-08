@@ -7,6 +7,7 @@ mod anthropic;
 mod bundled;
 mod endpoint;
 mod lane;
+mod openai;
 mod refusal;
 mod request;
 mod responsiveness;
@@ -27,6 +28,10 @@ pub use endpoint::{
     UreqEndpointTransport, endpoint_generate, endpoint_overflow_decision,
 };
 pub use lane::{LaneOutcome, resolve_lane};
+pub use openai::{
+    OpenAiFailure, OpenAiGenerated, OpenAiResult, OpenAiTransport, UreqOpenAiTransport,
+    openai_generate,
+};
 pub use refusal::refusal_for;
 pub use request::parse_one_shot_request;
 pub use responsiveness::{
@@ -82,6 +87,7 @@ mod vocabulary_tests {
             ("endpoint", include_str!("endpoint.rs")),
             ("lane", include_str!("lane.rs")),
             ("lib", include_str!("lib.rs")),
+            ("openai", include_str!("openai.rs")),
             ("refusal", include_str!("refusal.rs")),
             ("request", include_str!("request.rs")),
             ("responsiveness", include_str!("responsiveness.rs")),

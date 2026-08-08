@@ -481,6 +481,55 @@ fn generate_response_for_request(
                 }
             }
         }
+        solstone_core_generate_wire::LaneOutcome::OpenAi => {
+            match solstone_core_generate_wire::openai_generate(request, &config) {
+                solstone_core_generate_wire::OpenAiResult::Generated(mut success) => {
+                    let assessment = solstone_core_generate_wire::assess_provider_result(
+                        solstone_core_generate_wire::ProviderResultView {
+                            journal_path: &journal,
+                            context: &request.context,
+                            model: &success.model,
+                            text: &success.text,
+                            finish_reason: &success.finish_reason,
+                            usage: &success.usage,
+                            json_output: request.json_output,
+                            enforce_responsiveness: request.enforce_responsiveness,
+                        },
+                    );
+                    if let Some(error) = assessment.token_log_error {
+                        eprintln!("generate token usage log failed: {error}");
+                    }
+                    if let Some(failure) = assessment.failure {
+                        solstone_core_generate::GenerateResponse::Refused(
+                            solstone_core_generate_wire::refusal_for(
+                                &solstone_core_generate_wire::LaneOutcome::ValidationFailure(
+                                    failure,
+                                ),
+                                &provider,
+                                request_id.clone(),
+                            ),
+                        )
+                    } else {
+                        let schema_validation = apply_schema_validation(
+                            &mut success.text,
+                            request.json_schema.as_ref(),
+                        );
+                        let response =
+                            openai_generated_response(request, success, schema_validation)?;
+                        solstone_core_generate::GenerateResponse::Generated(Box::new(response))
+                    }
+                }
+                solstone_core_generate_wire::OpenAiResult::Failed(failure) => {
+                    solstone_core_generate::GenerateResponse::Refused(
+                        solstone_core_generate_wire::refusal_for(
+                            &solstone_core_generate_wire::LaneOutcome::OpenAiFailure(failure),
+                            &provider,
+                            request_id.clone(),
+                        ),
+                    )
+                }
+            }
+        }
         solstone_core_generate_wire::LaneOutcome::NoEngine
         | solstone_core_generate_wire::LaneOutcome::AttestationNotVerified
         | solstone_core_generate_wire::LaneOutcome::UnimplementedLane => {
@@ -491,6 +540,7 @@ fn generate_response_for_request(
         solstone_core_generate_wire::LaneOutcome::BundledFailure(_)
         | solstone_core_generate_wire::LaneOutcome::EndpointFailure(_)
         | solstone_core_generate_wire::LaneOutcome::AnthropicFailure(_)
+        | solstone_core_generate_wire::LaneOutcome::OpenAiFailure(_)
         | solstone_core_generate_wire::LaneOutcome::ValidationFailure(_) => {
             unreachable!("lane resolution cannot return an arm failure")
         }
@@ -887,6 +937,30 @@ fn endpoint_generated_response(
 fn anthropic_generated_response(
     request: &solstone_core_generate::GenerateRequest,
     success: solstone_core_generate_wire::AnthropicGenerated,
+    schema_validation: Option<Value>,
+) -> Result<solstone_core_generate::GeneratedResponse, String> {
+    let mut hints_applied = Vec::new();
+    if request.exclusive_admission {
+        hints_applied.push("exclusive_admission".to_owned());
+    }
+    Ok(solstone_core_generate::GeneratedResponse {
+        id: request.id.clone(),
+        text: success.text,
+        model: success.model,
+        usage: success.usage,
+        finish_reason: success.finish_reason,
+        thinking: success.thinking,
+        schema_validation,
+        input_budget: None,
+        request_budget: None,
+        inference: None,
+        hints_applied,
+    })
+}
+
+fn openai_generated_response(
+    request: &solstone_core_generate::GenerateRequest,
+    success: solstone_core_generate_wire::OpenAiGenerated,
     schema_validation: Option<Value>,
 ) -> Result<solstone_core_generate::GeneratedResponse, String> {
     let mut hints_applied = Vec::new();
