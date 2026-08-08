@@ -1969,6 +1969,8 @@ dependencies = [
  "sha2",
  "solstone-core-brain",
  "solstone-core-cli",
+ "solstone-core-generate",
+ "solstone-core-generate-wire",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal",
@@ -2027,6 +2029,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-journal-io",
+ "tokio",
 ]
 
 [[package]]
@@ -2163,6 +2166,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-generate-wire"
+version = "1.0.22"
+dependencies = [
+ "base64",
+ "chrono",
+ "image",
+ "serde_json",
+ "solstone-core-generate",
+ "solstone-core-local",
+]
+
+[[package]]
 name = "solstone-core-indexer"
 version = "1.0.22"
 dependencies = [
@@ -2254,6 +2269,7 @@ version = "1.0.22"
 dependencies = [
  "serde_json",
  "sha2",
+ "solstone-core-callosum",
  "solstone-core-journal",
  "solstone-core-sol",
  "solstone-core-sol-client",

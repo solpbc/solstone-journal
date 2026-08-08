@@ -37,6 +37,7 @@ members = [
     "crates/solstone-core-describe",
     "crates/solstone-core-depict",
     "crates/solstone-core-generate",
+    "crates/solstone-core-generate-wire",
     "crates/solstone-core-speakers-onnx",
     "crates/solstone-core-local",
     "crates/solstone-core-body-source",
@@ -88,6 +89,7 @@ solstone-core-speakers = { path = "crates/solstone-core-speakers" }
 solstone-core-speakers-analyze = { path = "crates/solstone-core-speakers-analyze" }
 solstone-core-depict = { path = "crates/solstone-core-depict" }
 solstone-core-generate = { path = "crates/solstone-core-generate" }
+solstone-core-generate-wire = { path = "crates/solstone-core-generate-wire" }
 solstone-core-speakers-onnx = { path = "crates/solstone-core-speakers-onnx" }
 solstone-core-local = { path = "crates/solstone-core-local" }
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }

@@ -6,14 +6,20 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 mod model;
+mod oneshot;
 mod reader;
 mod registry;
+#[cfg(feature = "wire")]
+mod wire;
 mod writer;
 
 pub use model::{CallosumEnvelope, DeviceIngestEvent, DurableEvent, FileDescriptor};
+pub use oneshot::{CallosumOneShotError, CallosumOneShotSender};
 pub use reader::{
     CallosumReadError, DeviceIngestReport, DurableEventsReport, read_device_ingest_events,
     read_durable_events,
 };
 pub use registry::callosum_registry;
+#[cfg(feature = "wire")]
+pub use wire::{CallosumSocketConnection, CallosumSocketServer, CallosumSocketServerError};
 pub use writer::{CallosumWriteError, append_durable_event};

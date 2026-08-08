@@ -15,6 +15,7 @@ pub(crate) mod tier;
 
 pub use bind::LoopbackAddr;
 pub use connect::{ConnectInput, ConnectOutcome, connect};
+pub use fixture::local_generate_input_schema;
 pub use generate::{
     ContextWindow, GenerateError, GenerateFailure, GenerateInput, GenerateResult, GenerateSuccess,
     GenerateTransport, HttpResponse, Inference, InputBudget, PreparedRequest, RequestBudget,

@@ -15,10 +15,11 @@ use serde_json::{Map, Value, json};
 use solstone_core_cli::{
     BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
     BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, Command,
-    IndexerCommand, IndexerCountsOptions, IndexerOptions, IndexerQueryOptions, IndexerReadOptions,
-    IndexerSearchOptions, InstallCommand, JournalConfigCommand, JournalConfigCommitOptions,
-    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand,
-    ServiceOptions, SplCommand, USAGE, evaluate_args, version_line,
+    GenerateCommand, IndexerCommand, IndexerCountsOptions, IndexerOptions, IndexerQueryOptions,
+    IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalConfigCommand,
+    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
+    JournalPathOptions, LocalCommand, ServiceOptions, SplCommand, USAGE, evaluate_args,
+    version_line,
 };
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -103,6 +104,7 @@ fn main() -> ExitCode {
         Ok(Command::Indexer(command)) => run_indexer(*command),
         Ok(Command::JournalConfig(command)) => run_journal_config(command),
         Ok(Command::Local(command)) => run_local(command),
+        Ok(Command::Generate(command)) => run_generate(command),
         Ok(Command::Brain(command)) => run_brain(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
         Err(_) => {
@@ -169,6 +171,293 @@ fn run_local(command: LocalCommand) -> ExitCode {
         LocalCommand::Connect => run_local_json(solstone_core_local::connect),
         LocalCommand::Install(command) => run_local_install(command),
         LocalCommand::Generate => run_local_generate_json(solstone_core_local::generate),
+    }
+}
+
+fn run_generate(command: GenerateCommand) -> ExitCode {
+    match command {
+        GenerateCommand::Contract => {
+            print!("{}", solstone_core_generate::contract_source());
+            ExitCode::SUCCESS
+        }
+        GenerateCommand::Malformed => generate_protocol_exit(
+            None,
+            "malformed-request",
+            "expected --contract or --one-shot".to_owned(),
+            generate_exit_code("malformed_request"),
+        ),
+        GenerateCommand::OneShot => run_generate_one_shot(),
+    }
+}
+
+fn run_generate_one_shot() -> ExitCode {
+    let raw = match read_generate_stdin() {
+        Ok(raw) => raw,
+        Err(GenerateStdinError::InvalidUtf8(detail)) => {
+            return generate_protocol_exit(
+                None,
+                "malformed-request",
+                detail,
+                generate_exit_code("malformed_request"),
+            );
+        }
+        Err(GenerateStdinError::Io(detail)) => {
+            return generate_protocol_exit(
+                None,
+                "internal-failure",
+                detail,
+                generate_exit_code("internal_failure"),
+            );
+        }
+        Err(GenerateStdinError::TooLarge) => {
+            return generate_protocol_exit(
+                None,
+                "internal-failure",
+                "stdin exceeds 64 MiB".to_owned(),
+                generate_exit_code("internal_failure"),
+            );
+        }
+    };
+    let request = match solstone_core_generate_wire::parse_one_shot_request(&raw) {
+        Ok(request) => request,
+        Err(detail) => {
+            return generate_protocol_exit(
+                None,
+                "malformed-request",
+                detail,
+                generate_exit_code("malformed_request"),
+            );
+        }
+    };
+    let request_id = request.id.clone();
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal.path,
+        Err(error) => {
+            return generate_protocol_exit(
+                request_id,
+                "internal-failure",
+                journal_path_error_detail(error),
+                generate_exit_code("internal_failure"),
+            );
+        }
+    };
+    let config = match read_journal_config(&journal) {
+        Ok(read) => read.config.unwrap_or_default(),
+        Err(error) => {
+            return generate_protocol_exit(
+                request_id,
+                "internal-failure",
+                format!("could not read journal config: {error}"),
+                generate_exit_code("internal_failure"),
+            );
+        }
+    };
+    let (provider, outcome) = solstone_core_generate_wire::resolve_lane(&config);
+    let response = match outcome {
+        solstone_core_generate_wire::LaneOutcome::BundledLocal => {
+            match solstone_core_generate_wire::bundled_generate(&request, &journal) {
+                Ok(solstone_core_local::GenerateResult::Success(success)) => {
+                    let response = match generated_response(&request, success) {
+                        Ok(response) => response,
+                        Err(detail) => {
+                            return generate_protocol_exit(
+                                request_id,
+                                "internal-failure",
+                                detail,
+                                generate_exit_code("internal_failure"),
+                            );
+                        }
+                    };
+                    if let Err(error) = solstone_core_generate_wire::record_generate_usage(
+                        &journal,
+                        &response.model,
+                        &request.context,
+                        &usage_for_log(&response.usage),
+                    ) {
+                        eprintln!("generate token usage log failed: {error}");
+                    }
+                    solstone_core_generate::GenerateResponse::Generated(Box::new(response))
+                }
+                Ok(solstone_core_local::GenerateResult::Failure(failure)) => {
+                    solstone_core_generate::GenerateResponse::Refused(
+                        solstone_core_generate_wire::refusal_for(
+                            &solstone_core_generate_wire::LaneOutcome::BundledFailure(Box::new(
+                                failure,
+                            )),
+                            &provider,
+                            request_id.clone(),
+                        ),
+                    )
+                }
+                Err(error) => {
+                    return generate_protocol_exit(
+                        request_id,
+                        "internal-failure",
+                        format!("bundled local generate is unavailable: {error:?}"),
+                        generate_exit_code("internal_failure"),
+                    );
+                }
+            }
+        }
+        solstone_core_generate_wire::LaneOutcome::NoEngine
+        | solstone_core_generate_wire::LaneOutcome::AttestationNotVerified
+        | solstone_core_generate_wire::LaneOutcome::UnimplementedLane => {
+            solstone_core_generate::GenerateResponse::Refused(
+                solstone_core_generate_wire::refusal_for(&outcome, &provider, request_id.clone()),
+            )
+        }
+        solstone_core_generate_wire::LaneOutcome::BundledFailure(_) => {
+            unreachable!("lane resolution cannot return a bundled failure")
+        }
+    };
+    match write_generate_response(&response) {
+        Ok(()) => ExitCode::from(generate_exit_code("response")),
+        Err(detail) => generate_protocol_exit(
+            request_id,
+            "internal-failure",
+            detail,
+            generate_exit_code("internal_failure"),
+        ),
+    }
+}
+
+fn generated_response(
+    request: &solstone_core_generate::GenerateRequest,
+    success: solstone_core_local::GenerateSuccess,
+) -> Result<solstone_core_generate::GeneratedResponse, String> {
+    let usage = success
+        .usage
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|error| error.to_string())?
+        .unwrap_or_else(|| json!({}));
+    let input_budget = success
+        .input_budget
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|error| error.to_string())?;
+    let request_budget = serde_json::to_value(&success.request_budget)
+        .map(Some)
+        .map_err(|error| error.to_string())?;
+    let inference = serde_json::to_value(&success.inference)
+        .map(Some)
+        .map_err(|error| error.to_string())?;
+    let mut hints_applied = Vec::new();
+    if request.attempt_index != 0 {
+        hints_applied.push("attempt_index".to_owned());
+    }
+    if request.exclusive_admission {
+        hints_applied.push("exclusive_admission".to_owned());
+    }
+    Ok(solstone_core_generate::GeneratedResponse {
+        id: request.id.clone(),
+        text: success.text,
+        model: success.model,
+        usage,
+        finish_reason: success.finish_reason,
+        thinking: None,
+        schema_validation: None,
+        input_budget,
+        request_budget,
+        inference,
+        hints_applied,
+    })
+}
+
+fn usage_for_log(usage: &Value) -> Value {
+    let mut normalized = Map::new();
+    for name in [
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "cached_tokens",
+    ] {
+        if usage
+            .get(name)
+            .and_then(Value::as_u64)
+            .is_some_and(|value| value != 0)
+        {
+            normalized.insert(name.to_owned(), usage[name].clone());
+        }
+    }
+    Value::Object(normalized)
+}
+
+enum GenerateStdinError {
+    Io(String),
+    TooLarge,
+    InvalidUtf8(String),
+}
+
+fn read_generate_stdin() -> Result<String, GenerateStdinError> {
+    let mut stdin = io::stdin().lock();
+    let mut bytes = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let read = stdin
+            .read(&mut chunk)
+            .map_err(|error| GenerateStdinError::Io(format!("stdin I/O error: {error}")))?;
+        if read == 0 {
+            break;
+        }
+        if bytes
+            .len()
+            .checked_add(read)
+            .is_none_or(|next| next > MAX_LOCAL_GENERATE_STDIN_BYTES)
+        {
+            return Err(GenerateStdinError::TooLarge);
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+    String::from_utf8(bytes)
+        .map_err(|error| GenerateStdinError::InvalidUtf8(format!("stdin is not UTF-8: {error}")))
+}
+
+fn generate_exit_code(name: &str) -> u8 {
+    solstone_core_generate::contract()["exit_codes"][name]
+        .as_u64()
+        .expect("generate contract exit code is an unsigned integer") as u8
+}
+
+fn generate_protocol_exit(id: Option<String>, reason: &str, detail: String, exit: u8) -> ExitCode {
+    let error = solstone_core_generate::ProtocolError {
+        id,
+        reason: reason.to_owned(),
+        detail,
+    };
+    match solstone_core_generate::encode_protocol_error(&error) {
+        Ok(encoded) => {
+            let mut stderr = io::stderr().lock();
+            let _ = stderr.write_all(encoded.as_bytes());
+            let _ = stderr.write_all(b"\n");
+        }
+        Err(error) => eprintln!("generate protocol error encoding failed: {error}"),
+    }
+    ExitCode::from(exit)
+}
+
+fn write_generate_response(
+    response: &solstone_core_generate::GenerateResponse,
+) -> Result<(), String> {
+    let encoded = solstone_core_generate::encode_one_shot_response(response)?;
+    write_generate_response_to(&mut io::stdout().lock(), &encoded)
+}
+
+fn write_generate_response_to(writer: &mut impl Write, encoded: &str) -> Result<(), String> {
+    writer
+        .write_all(encoded.as_bytes())
+        .and_then(|()| writer.write_all(b"\n"))
+        .and_then(|()| writer.flush())
+        .map_err(|error| format!("stdout I/O error: {error}"))
+}
+
+fn journal_path_error_detail(error: JournalPathError) -> String {
+    match error {
+        JournalPathError::Config(error) => format!("could not resolve journal path: {error:?}"),
+        JournalPathError::Home(error) => format!("could not resolve journal path: {error:?}"),
+        JournalPathError::Create(error) => format!("could not resolve journal path: {error}"),
     }
 }
 
@@ -1804,6 +2093,18 @@ mod tests {
 
     use super::*;
 
+    struct FailingWriter;
+
+    impl Write for FailingWriter {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::BrokenPipe, "closed"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
     fn test_path() -> PathBuf {
         PathBuf::from("/tmp/journal-config-test")
     }
@@ -1817,6 +2118,12 @@ mod tests {
         assert_eq!(EXIT_IOERR, 74);
         assert_eq!(EXIT_TEMPFAIL, 75);
         assert_eq!(EXIT_PROTOCOL, 76);
+    }
+
+    #[test]
+    fn generate_response_write_failure_is_reportable_as_internal_failure() {
+        let mut writer = FailingWriter;
+        assert!(write_generate_response_to(&mut writer, "{}").is_err());
     }
 
     #[test]

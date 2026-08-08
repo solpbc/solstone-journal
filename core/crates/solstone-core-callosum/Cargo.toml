@@ -9,10 +9,24 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = []
+# W1 live-wire behavioral tests (AC7-18):
+# cargo test --manifest-path core/Cargo.toml -p solstone-core-callosum --features wire --locked --lib wire::tests::
+wire = ["dep:tokio"]
+# Cross-language Callosum differentials (AC19-22), run by `make check-differentials`.
+differential = ["wire"]
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
 solstone-core-journal-io = { workspace = true }
+tokio = { workspace = true, optional = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+
+[[test]]
+name = "callosum_cross_process"
+path = "tests/callosum_cross_process.rs"
+required-features = ["differential"]
 
 [lints]
 workspace = true
