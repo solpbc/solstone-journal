@@ -15,6 +15,7 @@ members = [
     "crates/solstone-core-journal-config-write",
     "crates/solstone-core-journal-archive",
     "crates/solstone-core-journal-io",
+    "crates/solstone-core-system-health",
     "crates/solstone-core-brain",
     "crates/solstone-core-brain-cli",
     "crates/solstone-core-callosum",
