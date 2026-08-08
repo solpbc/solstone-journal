@@ -272,6 +272,24 @@ mod tests {
     }
 
     #[test]
+    fn reasoning_tokens_usage_reaches_token_log_file() {
+        let journal = temp_journal();
+        let usage = json!({"input_tokens": 2, "output_tokens": 3, "reasoning_tokens": 5});
+        let assessment = assess_provider_result(view(&journal, "useful output", "stop", &usage));
+        assert!(assessment.token_log_error.is_none());
+        let token_file = fs::read_dir(journal.join("tokens"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let line: Value =
+            serde_json::from_str(fs::read_to_string(token_file).unwrap().trim()).unwrap();
+        assert_eq!(line["usage"]["reasoning_tokens"], 5);
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
     fn blank_stop_is_provider_response_invalid_but_blank_max_tokens_is_generated() {
         let journal = temp_journal();
         let usage = json!({});

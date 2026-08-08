@@ -3,16 +3,23 @@
 
 //! Pure request, lane, response, and usage-log logic for the generate wire.
 
+mod anthropic;
 mod bundled;
 mod endpoint;
 mod lane;
 mod refusal;
 mod request;
 mod responsiveness;
+mod schema_prep;
 mod schema_validation;
+mod token_budget;
 mod token_log;
 mod validation;
 
+pub use anthropic::{
+    AnthropicFailure, AnthropicGenerated, AnthropicResult, AnthropicTransport,
+    UreqAnthropicTransport, anthropic_generate,
+};
 pub use bundled::{BundledError, LOCAL_MODEL_ID, bundled_generate, bundled_input};
 pub use endpoint::{
     ENDPOINT_SERVED_WINDOW_CACHE_TTL, EndpointFailure, EndpointGenerated, EndpointResult,
@@ -26,7 +33,9 @@ pub use responsiveness::{
     NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS, ResponsivenessSignal, ResponsivenessVerdict,
     classify_output_responsiveness,
 };
+pub use schema_prep::{prepare_provider_schema, unsupported_keyword_hits};
 pub use schema_validation::{SchemaValidationResult, validate_schema_with_annotations};
+pub use token_budget::generate_token_budget;
 pub use token_log::{GenerateUsageMetadata, record_generate_usage};
 pub use validation::{
     ProviderResultAssessment, ProviderResultView, SanitizedFinishReason, ValidationFailure,

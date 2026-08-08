@@ -432,6 +432,55 @@ fn generate_response_for_request(
                 }
             }
         }
+        solstone_core_generate_wire::LaneOutcome::Anthropic => {
+            match solstone_core_generate_wire::anthropic_generate(request, &config) {
+                solstone_core_generate_wire::AnthropicResult::Generated(mut success) => {
+                    let assessment = solstone_core_generate_wire::assess_provider_result(
+                        solstone_core_generate_wire::ProviderResultView {
+                            journal_path: &journal,
+                            context: &request.context,
+                            model: &success.model,
+                            text: &success.text,
+                            finish_reason: &success.finish_reason,
+                            usage: &success.usage,
+                            json_output: request.json_output,
+                            enforce_responsiveness: request.enforce_responsiveness,
+                        },
+                    );
+                    if let Some(error) = assessment.token_log_error {
+                        eprintln!("generate token usage log failed: {error}");
+                    }
+                    if let Some(failure) = assessment.failure {
+                        solstone_core_generate::GenerateResponse::Refused(
+                            solstone_core_generate_wire::refusal_for(
+                                &solstone_core_generate_wire::LaneOutcome::ValidationFailure(
+                                    failure,
+                                ),
+                                &provider,
+                                request_id.clone(),
+                            ),
+                        )
+                    } else {
+                        let schema_validation = apply_schema_validation(
+                            &mut success.text,
+                            request.json_schema.as_ref(),
+                        );
+                        let response =
+                            anthropic_generated_response(request, success, schema_validation)?;
+                        solstone_core_generate::GenerateResponse::Generated(Box::new(response))
+                    }
+                }
+                solstone_core_generate_wire::AnthropicResult::Failed(failure) => {
+                    solstone_core_generate::GenerateResponse::Refused(
+                        solstone_core_generate_wire::refusal_for(
+                            &solstone_core_generate_wire::LaneOutcome::AnthropicFailure(failure),
+                            &provider,
+                            request_id.clone(),
+                        ),
+                    )
+                }
+            }
+        }
         solstone_core_generate_wire::LaneOutcome::NoEngine
         | solstone_core_generate_wire::LaneOutcome::AttestationNotVerified
         | solstone_core_generate_wire::LaneOutcome::UnimplementedLane => {
@@ -441,6 +490,7 @@ fn generate_response_for_request(
         }
         solstone_core_generate_wire::LaneOutcome::BundledFailure(_)
         | solstone_core_generate_wire::LaneOutcome::EndpointFailure(_)
+        | solstone_core_generate_wire::LaneOutcome::AnthropicFailure(_)
         | solstone_core_generate_wire::LaneOutcome::ValidationFailure(_) => {
             unreachable!("lane resolution cannot return an arm failure")
         }
@@ -829,6 +879,30 @@ fn endpoint_generated_response(
         schema_validation,
         input_budget,
         request_budget,
+        inference: None,
+        hints_applied,
+    })
+}
+
+fn anthropic_generated_response(
+    request: &solstone_core_generate::GenerateRequest,
+    success: solstone_core_generate_wire::AnthropicGenerated,
+    schema_validation: Option<Value>,
+) -> Result<solstone_core_generate::GeneratedResponse, String> {
+    let mut hints_applied = Vec::new();
+    if request.exclusive_admission {
+        hints_applied.push("exclusive_admission".to_owned());
+    }
+    Ok(solstone_core_generate::GeneratedResponse {
+        id: request.id.clone(),
+        text: success.text,
+        model: success.model,
+        usage: success.usage,
+        finish_reason: success.finish_reason,
+        thinking: success.thinking,
+        schema_validation,
+        input_budget: None,
+        request_budget: None,
         inference: None,
         hints_applied,
     })
@@ -2621,6 +2695,42 @@ mod tests {
                 timeout: Duration::from_millis(1),
             },))),
             EXIT_TEMPFAIL
+        );
+    }
+
+    #[test]
+    fn anthropic_generated_response_preserves_thinking_blocks() {
+        let request = solstone_core_generate::GenerateRequest {
+            id: Some("request".into()),
+            context: "context".into(),
+            contents: Vec::new(),
+            system_instruction: None,
+            temperature: 0.0,
+            max_output_tokens: 1,
+            thinking_budget: None,
+            timeout_s: None,
+            json_output: false,
+            json_schema: None,
+            enforce_responsiveness: false,
+            attempt_index: 0,
+            exclusive_admission: false,
+            transport_retries: None,
+        };
+        let response = anthropic_generated_response(
+            &request,
+            solstone_core_generate_wire::AnthropicGenerated {
+                text: "text".into(),
+                model: "model".into(),
+                usage: json!({"input_tokens": 1}),
+                finish_reason: "stop".into(),
+                thinking: Some(json!({"type": "thinking", "thinking": "work"})),
+            },
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            response.thinking,
+            Some(json!({"type": "thinking", "thinking": "work"}))
         );
     }
 }
