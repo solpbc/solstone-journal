@@ -138,6 +138,14 @@ There **is** a published machine-readable registry — `CALLOSUM_REGISTRY` (`con
 - **emitted and prose-documented but absent — 6 pairs.** ⚠ The prose drifts the other way too: `docs/CALLOSUM.md` documents 10 tracts and **omits `chat` entirely**, the registry's largest (16 events) and the one the root SSE operation names.
 - **declared with no producer — 2, not 42.** A literal diff says 42; resolving the three module-level wrappers (`convey/chat_stream.py:403`, `think/thinking.py:895-898`, `think/cortex.py:1220`) collapses all but **`sync.status`** — no producer anywhere, and `docs/CALLOSUM.md:126-130` names a source file, `observe/sync.py`, **that does not exist** — and **`cortex.info`**, which is only ever written to the talent run log (`cortex.py:1291-1297`), never to the bus. 📌 That second one is a contract-shape finding, not bookkeeping: the registry declares a bus event that exists only in the durable half.
 
+✅ **RE-MEASURED INDEPENDENTLY 2026-08-07 and the three numbers above hold exactly** — 21 undeclared, 2 declared-with-no-bus-producer, 3 absent tracts — by an AST scan of the production tree (`build/lib/` and `tests/` excluded) with all three dynamic wrappers resolved by hand. `cortex.info`'s durable-only status re-confirmed on the tree: it is written from the `JSONDecodeError` branch, which never reaches the bus emit. Three facts the earlier count did not carry:
+
+- 🔴 **Six of the 21 undeclared pairs are the `supervisor` tract itself** — `request`, `restart`, `drain`, `skipped`, `sync_conflict`, and the registry declares only `started`/`stopped`/`restarting`/`status`/`queue`. **The journal's most-used control surface is absent from the contract that documents it**, and it is `P-system`'s own.
+- ✅ **The `chat` tract IS enumerable, unlike the rest.** `chat_stream.py`'s `_VALID_KINDS` is a closed dict that **raises** on an unknown kind, so every declared `chat` event has a producer by construction. ⛔ That is the one tract where a rewrite may rely on a closed set — and it is a property of the *producer*, never of the registry.
+- ⚠ **Part of the `cortex` overhang comes from the provider layer, not from cortex.** `think/providers/` writes `text_delta`, `tool_budget_exhausted` and `warning` into the talent run log, which `cortex.py` re-emits verbatim. A scan that stops at `cortex.py` and `talents.py` under-counts.
+
+⚠ **And the published schema requires a field the envelope makes optional.** `CallosumEvent` declares `"required": ["tract", "event", "ts"]`, while the server stamps `ts` only when absent. Today that is consistent because a Python peer always reaches the server first — but a producer that emits without a stamping server in front of it puts a document on the wire that the published schema rejects.
+
 📌 **`P-segment-sense` produces on three tracts only** — `observe` (`detected`, `observed`, `status`, `described`, `transcribed`, `memory_throttle_started`, `memory_throttle_completed`), `notification` (`show`), and `supervisor` (`request`, from `observe/transfer.py:437`). ⛔ **`observe.observing` is NOT this plate's** — it is the ingest side's trigger *into* it (`apps/observer/routes.py:1289`, `think/importers/cli.py:1243`).
 
 ### `S:segment-sense:journal-segment-events`
@@ -304,7 +312,11 @@ The primary owner-facing use of the model. `convey/chat.py` (2,532 lines) + `cha
 ### `S:*:system` — the command channel
 **Owner** `P-system` · **Tier** schema
 
-`_handle_task_request` takes `message["cmd"]` off the unix socket and hands the argv to the task queue. **This is how the scheduler, importers, backup, and the sense/think pipeline all cause work to run** — six production producers. ⚠ Distinct from liveness/status.
+`_handle_task_request` takes `message["cmd"]` off the unix socket and hands the argv to the task queue. **This is how the scheduler, importers, backup, and the sense/think pipeline all cause work to run.** ⚠ Distinct from liveness/status.
+
+⚠ **CORRECTED 2026-08-07 by an AST scan of the production tree with `build/lib/` excluded — it is not six producers. There are 14 bus emit sites across 11 modules, and the bus is not the only way in:** eight direct `_task_queue.submit` call sites live inside the supervisor itself and **six of those never touch the bus at all.** The *verb* vocabulary is seven — `indexer` · `think` · `brain` · `importer` · `heartbeat` · `maintenance` · `facet-candidates` — and that number survives either count. The *argument* vocabulary does not: three argument forms appear only on the in-process path. 📌 **A census taken from the bus alone reports the right verbs and the wrong grammar**, which is the shape that matters for a typed rewrite.
+
+**Carry forward:** the channel is modelled as unbounded argv and used as a bounded vocabulary; every production argv has head `journal` or `sol`. The single open door is the schedule config, whose `cmd` array is executed verbatim. ⛔ A rewrite that types the channel keeps that door as one explicitly-named variant reachable only from that config — closing it stops work the owner has configured, and generalizing it puts every caller back on unbounded argv.
 
 ### `S:journal:establish`
 **Owner** `P-device-link` · **Tier** fixture

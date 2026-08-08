@@ -565,13 +565,23 @@ Splits almost immediately.
 
 Operations for managing asynchronous activity — starting things, running things.
 
-**Carry forward:** the task-request refusal **classifies rather than guesses** — it distinguishes `"wedged"` (runtime > 2× cap) from `"still_running"` and emits a skip event with both refs and the reason. A refusal that says *which* refusal it is.
+**Carry forward:** the task-request refusal **classifies rather than guesses** — it distinguishes `"wedged"` (runtime past a multiple of the partition's cap) from `"still_running"` and emits a skip event carrying **both** refs, the command, the scheduler name and the reason. A refusal that says *which* refusal it is.
+
+⚠ **But the busy-partition branch is four-way, not two.** Before that predicate runs there is a bypass: a request carrying `queue_if_active_cmd_differs` whose command differs from the active one is **queued anyway** — no refusal, no event, no classification. It is the branch that decides whether work runs at all. And two further paths answer **nothing**: a request with no command, and a request arriving with no queue. A caller waiting on the skip event cannot distinguish *refused* from *never arrived*.
+
+🔴 **The queue partition is an ordered resolver, not a lookup, and it is this plate's identity function** — it decides what serializes against what, which cap applies, and what a refusal collides with. `think` resolves by scanning a fixed flag order and taking the **first** hit; a production command carries two of those flags at once, so a set-membership port silently routes it to a different lane. `maintenance` sub-partitions only in one argv shape. Most partitions carry no registered cap and fall to the default.
+
+⚠ **The command channel is modelled as unbounded argv and used as a seven-verb vocabulary.** Every production argv has head `journal` or `sol`. The one genuinely open door is the schedule config, whose `cmd` array is executed verbatim — an owner-editable file on the owner's own machine.
 
 ## `P-system-health`
 
 Health of running things — current status, in-memory. ⛔ **System** health, never owner body data.
 
 🔴 The per-day health JSONL grammar is **entirely Python string literals**. The callosum envelope likewise — two constants and a docstring carrying the whole control plane.
+
+🔴 **And the per-day run log derives identity from its filename** — `{ref}_{mode}.jsonl`, read back by matching the filename suffix at three separate sites. That is the derived-identity rule: persist `ref` and `mode` **in the record** and let the filename be a label.
+
+⚠ **The current-status snapshot publishes a field it never populates** — `stale_heartbeats` is hardcoded empty. Either it means something or it goes; shipping it empty is a claim the code does not back.
 
 ## `P-body-source`
 
