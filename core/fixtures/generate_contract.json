@@ -506,7 +506,7 @@
     "response": 0
   },
   "fixture": "solstone-generate-contract",
-  "fixture_version": 4,
+  "fixture_version": 5,
   "framing": {
     "one_shot": {
       "id": "optional",
@@ -906,6 +906,7 @@
     ]
   },
   "response": {
+    "finish_reason_unknown": "unknown",
     "outcome_field": "outcome",
     "outcomes": {
       "generated": {

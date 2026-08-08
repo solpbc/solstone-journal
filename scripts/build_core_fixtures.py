@@ -87,7 +87,10 @@ from solstone.think.cogitate_contract import (
 )
 from solstone.think.generate_wire import _IMAGE_MIME_TYPES, _SESSION_LINE_LIMIT
 from solstone.think.indexer.edges import EDGES_SCHEMA_VERSION, _ensure_edges_schema
-from solstone.think.providers.shared import is_non_retryable_generate_reason
+from solstone.think.providers.shared import (
+    _UNKNOWN_FINISH_REASON,
+    is_non_retryable_generate_reason,
+)
 from tests.speaker_oracle.diarize import (
     AHC_LINKAGE,
     AHC_METRIC,
@@ -408,7 +411,7 @@ def build_generate_contract_fixture() -> dict[str, Any]:
     )
     return {
         "fixture": "solstone-generate-contract",
-        "fixture_version": 4,
+        "fixture_version": 5,
         "generated_by": "make core-fixtures",
         "schema_identifiers": schemas,
         "request": {
@@ -428,6 +431,10 @@ def build_generate_contract_fixture() -> dict[str, Any]:
         },
         "response": {
             "outcome_field": "outcome",
+            # shared._UNKNOWN_FINISH_REASON: the value a generated response
+            # carries when the provider reported no usable finish reason.
+            # Distinct from the `unknown` REFUSAL reason despite the collision.
+            "finish_reason_unknown": _UNKNOWN_FINISH_REASON,
             "outcomes": {
                 "generated": {"fields": [*generated, "hints_applied"]},
                 "refused": {"fields": ["schema", "id", "outcome", "reason", "reason_code", "retryable", "blocking", "reset_at_ms", "provider", "detail"]},

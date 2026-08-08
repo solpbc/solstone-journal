@@ -20,7 +20,6 @@ const OPENAI_BASE_URL: &str = "https://api.openai.com";
 const OPENAI_RESPONSES_PATH: &str = "/v1/responses";
 const DEFAULT_MODEL: &str = "gpt-5.4-mini";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
-const UNKNOWN_STATUS: &str = concat!("un", "known");
 const OPENAI_EFFORT_SUFFIXES: &[&str] = &["-none", "-low", "-medium", "-high", "-xhigh"];
 const CONTEXT_WINDOW_PATTERNS: &[&str] = &[
     "prompt is too long",
@@ -356,7 +355,10 @@ fn normalize_finish_reason(body: &Value) -> String {
             .to_owned(),
         Some("failed") => "error".to_owned(),
         Some(status) if !status.is_empty() => status.to_owned(),
-        _ => UNKNOWN_STATUS.to_owned(),
+        // Read from the contract rather than held as a literal: the value
+        // collides with the `unknown` refusal reason, and holding a copy is
+        // what the vocabulary guard exists to prevent.
+        _ => unknown_finish_reason().to_owned(),
     };
     match raw.trim().to_ascii_lowercase().as_str() {
         "end_turn" | "stop_sequence" => "stop".to_owned(),
@@ -555,11 +557,11 @@ mod tests {
     fn missing_or_blank_status_becomes_unknown() {
         let mut missing = successful_body();
         missing.as_object_mut().unwrap().remove("status");
-        assert_eq!(parsed(missing).finish_reason, UNKNOWN_STATUS);
+        assert_eq!(parsed(missing).finish_reason, unknown_finish_reason());
 
         let mut blank = successful_body();
         blank["status"] = json!("  ");
-        assert_eq!(parsed(blank).finish_reason, UNKNOWN_STATUS);
+        assert_eq!(parsed(blank).finish_reason, unknown_finish_reason());
     }
 
     #[test]
@@ -892,4 +894,10 @@ mod vocabulary_tests {
             );
         }
     }
+}
+
+fn unknown_finish_reason() -> &'static str {
+    solstone_core_generate::contract()["response"]["finish_reason_unknown"]
+        .as_str()
+        .expect("generate contract carries the unknown finish reason")
 }
