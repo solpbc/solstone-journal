@@ -161,10 +161,17 @@ fn ac5_boot_conflict_does_not_write_identity_and_shutdown_retains_only_conflicts
         &serde_json::to_vec(&heartbeat(&conflicting.root, "foreign")).expect("json"),
     )
     .expect("heartbeat");
-    assert!(matches!(
-        SupervisorLifecycle::boot(&conflicting.root),
-        Err(LifecycleError::SyncConflict)
-    ));
+    let Err(conflict) = SupervisorLifecycle::boot(&conflicting.root) else {
+        panic!("expected sync conflict");
+    };
+    let LifecycleError::SyncConflict(result) = conflict else {
+        panic!("expected sync conflict");
+    };
+    assert!(format_conflict_message(&result).contains("Refusing to start"));
+    assert_eq!(
+        sync_conflict_event(&result).expect("tick event").hostname,
+        "foreign-host"
+    );
     assert!(recorded_supervisor_pid(&conflicting.root).is_none());
 
     struct Driver;
@@ -176,6 +183,10 @@ fn ac5_boot_conflict_does_not_write_identity_and_shutdown_retains_only_conflicts
     }
     let ordinary = Bed::new("ordinary-shutdown");
     let lifecycle = SupervisorLifecycle::boot(&ordinary.root).expect("boot");
+    assert!(matches!(
+        lifecycle.last_orphan_sweep(),
+        OrphanSweepOutcome::Completed(report) if report.targeted == 0
+    ));
     let heartbeat_path = fs::read_dir(ordinary.root.join("health/sync"))
         .expect("sync")
         .next()
@@ -448,6 +459,17 @@ fn ac18_ac25_sync_preserves_foreign_writer_rules() {
     assert!(message.contains("Refusing to start"));
     assert_eq!(event.machine_id_prefix, "foreign");
     assert_eq!(event.hostname, "foreign-host");
+}
+
+#[test]
+fn heartbeat_filename_rejects_path_traversal() {
+    let bed = Bed::new("heartbeat-path");
+    let escaped = bed.root.join("escape.check");
+    assert!(matches!(
+        write_sync_heartbeat(&bed.root, "../escape.check", b"heartbeat"),
+        Err(LifecycleError::InvalidHeartbeatFilename)
+    ));
+    assert!(!escaped.exists());
 }
 
 #[test]

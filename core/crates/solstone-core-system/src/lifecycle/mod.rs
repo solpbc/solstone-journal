@@ -46,14 +46,17 @@ pub enum LifecycleError {
     Json(#[from] serde_json::Error),
     #[error("invalid supervisor identity: {0}")]
     Identity(&'static str),
+    #[error("invalid heartbeat filename")]
+    InvalidHeartbeatFilename,
     #[error("another solstone writer is active on this journal")]
-    SyncConflict,
+    SyncConflict(Box<SyncCheckResult>),
 }
 
 /// Held singleton admission and its journal root.
 pub struct SupervisorLifecycle {
     journal: PathBuf,
     heartbeat_filename: String,
+    last_orphan_sweep: OrphanSweepOutcome,
     _lease: SupervisorLease,
 }
 
@@ -67,7 +70,8 @@ impl SupervisorLifecycle {
         &self.journal
     }
 
-    /// Record this process's identity after singleton admission succeeds.
+    /// Acquire admission, reject live foreign writers, record identity, sweep
+    /// matching orphans, and publish this process's self-heartbeat.
     #[cfg(target_os = "linux")]
     pub fn boot(journal: impl AsRef<Path>) -> Result<Self, LifecycleError> {
         let journal = journal.as_ref().to_path_buf();
@@ -76,19 +80,18 @@ impl SupervisorLifecycle {
         let heartbeat_filename = self_heartbeat_filename();
         let current_machine_id = sync::machine_id();
         let now = epoch_seconds();
-        if sync::check(
+        let sync_result = sync::check(
             &journal,
             &heartbeat_filename,
             &current_machine_id,
             None,
             now,
-        )?
-        .is_boot_conflict()
-        {
-            return Err(LifecycleError::SyncConflict);
+        )?;
+        if sync_result.is_boot_conflict() {
+            return Err(LifecycleError::SyncConflict(Box::new(sync_result)));
         }
         state::write_supervisor_identity(&journal, std::process::id())?;
-        let _ = sweep::sweep_orphans(&journal, std::time::Duration::from_secs(1));
+        let last_orphan_sweep = sweep::sweep_orphans(&journal, std::time::Duration::from_secs(1));
         let heartbeat = sync::Heartbeat {
             schema: 1,
             machine_id: current_machine_id,
@@ -107,6 +110,7 @@ impl SupervisorLifecycle {
         Ok(Self {
             journal,
             heartbeat_filename,
+            last_orphan_sweep,
             _lease: lease,
         })
     }
@@ -131,6 +135,10 @@ impl SupervisorLifecycle {
 
     pub fn clear_ready(&self) -> Result<(), LifecycleError> {
         state::clear_ready(&self.journal)
+    }
+
+    pub fn last_orphan_sweep(&self) -> &OrphanSweepOutcome {
+        &self.last_orphan_sweep
     }
 
     pub fn shutdown(

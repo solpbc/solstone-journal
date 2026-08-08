@@ -34,14 +34,17 @@ pub trait ShutdownDriver {
     fn join_bus(&mut self, cap: Duration);
 }
 
-const APP_REAP: Duration = Duration::from_secs(3);
-const APP_DRAIN: Duration = Duration::from_secs(2);
-const APP_CHILDREN: Duration = Duration::from_secs(2);
-const APP_BUS: Duration = Duration::from_secs(2);
-const APP_CEILING: Duration = Duration::from_secs(10);
+const APP_SUPERVISED_REAP_TIMEOUT: Duration = Duration::from_secs(3);
+const APP_SUPERVISED_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
+const APP_SUPERVISED_CHILD_STOP_TIMEOUT: Duration = Duration::from_secs(2);
+const APP_SUPERVISED_BUS_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
+const APP_SUPERVISED_SHUTDOWN_CEILING: Duration = Duration::from_secs(10);
 const _: () = assert!(
-    APP_REAP.as_secs() + APP_DRAIN.as_secs() + APP_CHILDREN.as_secs() + APP_BUS.as_secs()
-        < APP_CEILING.as_secs()
+    APP_SUPERVISED_REAP_TIMEOUT.as_secs()
+        + APP_SUPERVISED_DRAIN_TIMEOUT.as_secs()
+        + APP_SUPERVISED_CHILD_STOP_TIMEOUT.as_secs()
+        + APP_SUPERVISED_BUS_JOIN_TIMEOUT.as_secs()
+        < APP_SUPERVISED_SHUTDOWN_CEILING.as_secs()
 );
 
 pub fn shutdown(driver: &mut dyn ShutdownDriver, regime: ShutdownRegime) -> ShutdownReport {
@@ -52,7 +55,13 @@ pub fn shutdown(driver: &mut dyn ShutdownDriver, regime: ShutdownRegime) -> Shut
 }
 
 fn shutdown_app_supervised(driver: &mut dyn ShutdownDriver) -> ShutdownReport {
-    run_shutdown(driver, APP_REAP, APP_DRAIN, Some(APP_CHILDREN), APP_BUS)
+    run_shutdown(
+        driver,
+        APP_SUPERVISED_REAP_TIMEOUT,
+        APP_SUPERVISED_DRAIN_TIMEOUT,
+        Some(APP_SUPERVISED_CHILD_STOP_TIMEOUT),
+        APP_SUPERVISED_BUS_JOIN_TIMEOUT,
+    )
 }
 
 fn shutdown_standard(driver: &mut dyn ShutdownDriver) -> ShutdownReport {

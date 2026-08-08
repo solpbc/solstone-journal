@@ -3,6 +3,7 @@
 
 //! The sole lifecycle leaf permitted to create, replace, or remove `health/` files.
 
+use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -60,7 +61,7 @@ pub fn clear_ready(journal: &Path) -> Result<(), LifecycleError> {
 }
 
 pub fn clear_self_heartbeat(journal: &Path, filename: &str) -> Result<(), LifecycleError> {
-    match fs::remove_file(health(journal).join("sync").join(filename)) {
+    match fs::remove_file(heartbeat_path(journal, filename)?) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.into()),
@@ -72,7 +73,20 @@ pub fn write_sync_heartbeat(
     filename: &str,
     body: &[u8],
 ) -> Result<(), LifecycleError> {
-    atomic_write(&health(journal).join("sync").join(filename), body)
+    atomic_write(&heartbeat_path(journal, filename)?, body)
+}
+
+fn heartbeat_path(journal: &Path, filename: &str) -> Result<PathBuf, LifecycleError> {
+    let candidate = Path::new(filename);
+    if filename.is_empty()
+        || filename.starts_with('.')
+        || !filename.ends_with(".check")
+        || filename.contains(['/', '\\'])
+        || candidate.file_name() != Some(OsStr::new(filename))
+    {
+        return Err(LifecycleError::InvalidHeartbeatFilename);
+    }
+    Ok(health(journal).join("sync").join(filename))
 }
 
 pub fn compact_log_if_oversized(log_path: &Path, max_bytes: u64) -> Result<(), LifecycleError> {
