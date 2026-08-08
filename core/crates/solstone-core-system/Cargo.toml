@@ -15,8 +15,11 @@ workspace = true
 
 [dependencies]
 chrono = { workspace = true }
-nix = { workspace = true, features = ["process", "signal"] }
+# `feature` enables sysconf/SysconfVar for Linux process start-time identity.
+# `fs` is already unified from the workspace; name it here for lifecycle fd APIs.
+nix = { workspace = true, features = ["feature", "fs", "process", "signal"] }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [[bin]]
