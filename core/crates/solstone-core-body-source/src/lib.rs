@@ -7,6 +7,7 @@ mod body_day;
 mod body_month;
 mod body_raw_retention;
 mod body_source_family;
+mod body_source_hash;
 mod bundle_id;
 mod calendar;
 mod candidate;
@@ -26,15 +27,17 @@ pub use body_day::BodyDay;
 pub use body_month::BodyMonth;
 pub use body_raw_retention::BodyRawRetention;
 pub use body_source_family::BodySourceFamily;
+pub use body_source_hash::BodySourceHash;
 pub use bundle_id::BundleId;
 pub use candidate::{FieldState, LedgerCandidate, LedgerSchema, ValueState, project};
 pub use canonicalize::canonicalize;
 pub use coordinate::Coordinate;
 pub use digest::BodyDigest;
 pub use error::{
-    BodyCalendarError, BodyCalendarField, BodyHashError, BodySourcePolicyError,
-    BodySourcePolicyField, BodyWireIdentityError, BodyWireIdentityField, CandidateError,
-    CandidateErrorCode, CandidateErrorField, CanonicalizeError, IdentityField, ParseError,
+    BodyCalendarError, BodyCalendarField, BodyHashError, BodySourceHashError,
+    BodySourcePolicyError, BodySourcePolicyField, BodyWireIdentityError, BodyWireIdentityField,
+    CandidateError, CandidateErrorCode, CandidateErrorField, CanonicalizeError, IdentityField,
+    ParseError,
 };
 pub use health_hash::{
     HealthRecordIdentity, health_hash, health_record_dedupe_key, health_value_hash,

@@ -239,7 +239,11 @@ Consistent formatting of **structured journal data** for its consumers — the i
 
 ⚠ **The runtime preamble is `cogitate`'s, not `generate`'s.** `COGITATE_RUNTIME_PREAMBLE` is prepended by `providers/cli.assemble_prompt`, reached only from `run_cogitate` (`providers/openhands.py:1744`); `run_generate` and `run_agenerate` never touch it. It exists as a **sha256 only** in `core/fixtures/cogitate_contract.json` — 1,989 bytes, not reconstructible. ⚠ **And "cross-language" is a location, not yet a fact: zero Rust files read that fixture**, so today the digest detects only Python-source-versus-fixture drift. It would catch real drift the moment a native `cogitate` exists — and would then be unable to tell it what text to send.
 
-⚠ **Only two provider modules implement `run_generate`** — `providers/local.py` (1,444 lines) and `providers/openhands.py` (2,248). `providers/` totals 21,029 lines; the remainder is install, health and attestation machinery belonging to `P-local` and `P-SPP`, not to this call path.
+⚠ **Only two provider modules implement `run_generate`** — `providers/local.py` (1,293 lines) and `providers/openhands.py` (2,248). `providers/` totals 21,029 lines; the remainder is install, health and attestation machinery belonging to `P-local` and `P-SPP`, not to this call path.
+
+🔴 **Neither module's line count is this contract's size, and the error runs both ways.** Classified by top-level definition, `openhands.py` is **1,506 lines of `cogitate`** against 742 for `generate` — so two thirds of the larger module belongs to the plate's *other* contract. `local.py` splits 1,144 / 149 the other way. And the call path reaches five more modules the two names hide: `local_endpoint` (551), `local_admission` (386), `fanout_policy` (131), `local_budget` (127) and the provider registry. ⚠ **Sizing `generate` work from either module's total is wrong by about a thousand lines in each direction, and the two errors nearly cancel** — which is how a whole-file total survived being quoted as this boundary's size.
+
+✅ **The bundled local arm is already Rust and is already the live path.** `providers/local.py`'s bundled branch delegates to the native `local generate` verb; `solstone-core-local` owns the OpenAI-compatible request builder, schema preparation, response parser, finish-reason normaliser, transport trait and cross-process admission. ⛔ What remains behind this boundary in Python is the wire itself, the dispatch and policy in `think/models.py`, the **endpoint** and **confidential** arms, the cloud arms, and attestation.
 
 ## `P-local`
 
@@ -561,13 +565,23 @@ Splits almost immediately.
 
 Operations for managing asynchronous activity — starting things, running things.
 
-**Carry forward:** the task-request refusal **classifies rather than guesses** — it distinguishes `"wedged"` (runtime > 2× cap) from `"still_running"` and emits a skip event with both refs and the reason. A refusal that says *which* refusal it is.
+**Carry forward:** the task-request refusal **classifies rather than guesses** — it distinguishes `"wedged"` (runtime past a multiple of the partition's cap) from `"still_running"` and emits a skip event carrying **both** refs, the command, the scheduler name and the reason. A refusal that says *which* refusal it is.
+
+⚠ **But the busy-partition branch is four-way, not two.** Before that predicate runs there is a bypass: a request carrying `queue_if_active_cmd_differs` whose command differs from the active one is **queued anyway** — no refusal, no event, no classification. It is the branch that decides whether work runs at all. And two further paths answer **nothing**: a request with no command, and a request arriving with no queue. A caller waiting on the skip event cannot distinguish *refused* from *never arrived*.
+
+🔴 **The queue partition is an ordered resolver, not a lookup, and it is this plate's identity function** — it decides what serializes against what, which cap applies, and what a refusal collides with. `think` resolves by scanning a fixed flag order and taking the **first** hit; a production command carries two of those flags at once, so a set-membership port silently routes it to a different lane. `maintenance` sub-partitions only in one argv shape. Most partitions carry no registered cap and fall to the default.
+
+⚠ **The command channel is modelled as unbounded argv and used as a seven-verb vocabulary.** Every production argv has head `journal` or `sol`. The one genuinely open door is the schedule config, whose `cmd` array is executed verbatim — an owner-editable file on the owner's own machine.
 
 ## `P-system-health`
 
 Health of running things — current status, in-memory. ⛔ **System** health, never owner body data.
 
 🔴 The per-day health JSONL grammar is **entirely Python string literals**. The callosum envelope likewise — two constants and a docstring carrying the whole control plane.
+
+🔴 **And the per-day run log derives identity from its filename** — `{ref}_{mode}.jsonl`, read back by matching the filename suffix at three separate sites. That is the derived-identity rule: persist `ref` and `mode` **in the record** and let the filename be a label.
+
+⚠ **The current-status snapshot publishes a field it never populates** — `stale_heartbeats` is hardcoded empty. Either it means something or it goes; shipping it empty is a claim the code does not back.
 
 ## `P-body-source`
 

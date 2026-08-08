@@ -143,6 +143,26 @@ pub fn native_bundle_source_policies() -> Vec<(String, String)> {
         .collect()
 }
 
+pub fn native_bundle_source_hashes() -> Vec<(String, String)> {
+    native_bundle_fixture()["cases"]
+        .as_array()
+        .expect("fixture cases")
+        .iter()
+        .map(|case| {
+            (
+                case["manifest"]["source_type"]
+                    .as_str()
+                    .expect("manifest source_type")
+                    .to_owned(),
+                case["manifest"]["source_hash"]
+                    .as_str()
+                    .expect("manifest source_hash")
+                    .to_owned(),
+            )
+        })
+        .collect()
+}
+
 pub fn native_bundle_days_affected() -> BTreeSet<String> {
     native_bundle_fixture()["cases"]
         .as_array()

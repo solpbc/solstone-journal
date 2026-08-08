@@ -3,10 +3,10 @@
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::io::Write;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use solstone_core_callosum::CallosumOneShotSender;
 use solstone_core_sol_client::command::{CommandContext, CommandOutput};
 use solstone_core_sol_client::error::ClientError;
 use solstone_core_sol_client::seam::{HttpTransport, NotificationSink, NotificationSinkError};
@@ -90,25 +90,9 @@ impl UnixNotificationSink {
 
 impl NotificationSink for UnixNotificationSink {
     fn send_line(&self, line: &str) -> Result<(), NotificationSinkError> {
-        #[cfg(unix)]
-        {
-            let mut stream = std::os::unix::net::UnixStream::connect(&self.socket_path)
-                .map_err(|_| NotificationSinkError::Unavailable)?;
-            stream
-                .set_write_timeout(Some(SOCKET_TIMEOUT))
-                .map_err(|_| NotificationSinkError::Unavailable)?;
-            stream
-                .set_read_timeout(Some(SOCKET_TIMEOUT))
-                .map_err(|_| NotificationSinkError::Unavailable)?;
-            stream
-                .write_all(line.as_bytes())
-                .map_err(|_| NotificationSinkError::Unavailable)
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = line;
-            Err(NotificationSinkError::Unavailable)
-        }
+        CallosumOneShotSender::new(&self.socket_path, SOCKET_TIMEOUT)
+            .send_line(line)
+            .map_err(|_| NotificationSinkError::Unavailable)
     }
 }
 
