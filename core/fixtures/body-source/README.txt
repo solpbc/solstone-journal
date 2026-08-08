@@ -52,3 +52,13 @@ no reconstructible value_hash, and one Oura row was revised so first_import_id
 and latest-seen fields exercise the current upsert contract. Audit timestamps
 record fixture-generation time and are not parity inputs. The file contains
 only synthetic identifiers and values.
+
+body_source_native_bundle_v1.json is the independently authored wire-format
+oracle for native body bundles. It pins four synthetic cases: one Apple row,
+one Oura row, and a zero-row bundle for each family. Manifest body bindings,
+canonical envelope/event/normalized JSONL bytes, byte counts, row/value hashes,
+and SHA-256 digests were computed before the Rust native-bundle codecs exist.
+The Apple workout event deliberately retains the pre-enrichment value hash,
+while its stored normalized row includes flattened workout statistics. The
+fixture is a contract input; future implementations must consume rather than
+regenerate its expected strings and digests.
