@@ -234,14 +234,17 @@ impl ManifestBindingError {
         }
     }
 
+    /// Returns the checked bundle identifier this error is bound to.
     pub fn bundle(&self) -> &BundleId {
         &self.bundle
     }
 
+    /// Returns this error's failure code.
     pub fn code(&self) -> ManifestBindingErrorCode {
         self.code
     }
 
+    /// Returns the manifest field this error concerns.
     pub fn field(&self) -> ManifestBindingErrorField {
         self.field
     }
