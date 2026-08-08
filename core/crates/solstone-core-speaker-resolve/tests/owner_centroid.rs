@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::json;
-use solstone_core_entity::write_npy;
-use solstone_core_speaker_id::owner_centroid::load_owner_centroid;
+use solstone_core_npy::write_npy;
+use solstone_core_speaker_resolve::owner_centroid::load_owner_centroid;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -68,6 +68,18 @@ fn unicode_scalar_bytes(value: &str) -> Vec<u8> {
 }
 
 fn owner_archive(centroid: &[f32], margin: Option<f32>) -> Vec<u8> {
+    owner_archive_with_threshold(
+        centroid,
+        margin,
+        write_npy("<f4", "()", &f32_bytes(&[0.43])),
+    )
+}
+
+fn owner_archive_with_threshold(
+    centroid: &[f32],
+    margin: Option<f32>,
+    threshold: Vec<u8>,
+) -> Vec<u8> {
     let cursor = Cursor::new(Vec::new());
     let mut writer = ZipWriter::new(cursor);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -80,7 +92,7 @@ fn owner_archive(centroid: &[f32], margin: Option<f32>) -> Vec<u8> {
                 &f32_bytes(centroid),
             ),
         ),
-        ("threshold.npy", write_npy("<f4", "()", &f32_bytes(&[0.43]))),
+        ("threshold.npy", threshold),
         ("cluster_size.npy", write_npy("<i4", "()", &i32_bytes(12))),
         (
             "last_refreshed_at.npy",
@@ -157,5 +169,19 @@ fn ac5_corrupt_centroid_is_reported_as_an_error() {
     let temporary = TempDir::new();
     let path = seed_principal(&temporary);
     fs::write(path, b"not an npz archive").expect("write corrupt centroid");
+    assert!(load_owner_centroid(temporary.path(), "principal").is_err());
+}
+
+#[test]
+fn owner_centroid_rejects_well_formed_npy_with_overlong_payload() {
+    let temporary = TempDir::new();
+    let path = seed_principal(&temporary);
+    let mut threshold = write_npy("<f4", "()", &f32_bytes(&[0.43]));
+    threshold.push(0);
+    fs::write(
+        path,
+        owner_archive_with_threshold(&[1.0, 0.0], None, threshold),
+    )
+    .expect("write malformed threshold");
     assert!(load_owner_centroid(temporary.path(), "principal").is_err());
 }

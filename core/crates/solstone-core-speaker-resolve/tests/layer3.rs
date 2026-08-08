@@ -11,9 +11,9 @@ use solstone_core_entity::{
     EncoderIdentity, JournalEntity, VoiceprintItem, load_all_journal_entities,
     save_voiceprints_batch,
 };
-use solstone_core_speaker_id::layer1::Label;
-use solstone_core_speaker_id::layer3::{Layer3Inputs, apply_acoustic_matching};
-use solstone_core_speaker_id::voiceprint_centroid::VoiceprintCentroidCache;
+use solstone_core_speaker_resolve::layer1::Label;
+use solstone_core_speaker_resolve::layer3::{Layer3Inputs, apply_acoustic_matching};
+use solstone_core_speaker_resolve::voiceprint_centroid::VoiceprintCentroidCache;
 
 static TEMP_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
@@ -111,7 +111,7 @@ fn run(
     entities: &[JournalEntity],
     statements: &[(i64, Vec<f32>)],
     integer_speakers: &HashMap<i64, i64>,
-) -> solstone_core_speaker_id::layer3::Layer3Result {
+) -> solstone_core_speaker_resolve::layer3::Layer3Result {
     apply_acoustic_matching(
         Layer3Inputs {
             labels,

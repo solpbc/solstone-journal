@@ -15,7 +15,6 @@ use solstone_core_entity::{
 };
 use solstone_core_journal_io::PathError;
 
-use crate::embeddings::load_embeddings_file;
 use crate::evidence::{
     CandidateEvidence, EvidenceError, EvidenceGap, extract_meeting_participants_with_gaps,
     extract_screen_participants_with_gaps, load_segment_speakers_with_gaps,
@@ -25,8 +24,9 @@ use crate::layer1::{OwnerSeparationContext, separate_owner_statements};
 use crate::layer2::{Layer2Inputs, apply_structural_heuristics};
 use crate::layer3::{Layer3Inputs, apply_acoustic_matching};
 use crate::owner_centroid::load_owner_centroid;
-use crate::transcript::{TranscriptError, read_transcript_rows};
 use crate::voiceprint_centroid::{VoiceprintCentroidCache, VoiceprintLoadGap};
+use solstone_core_speaker_id::embeddings::load_embeddings_file;
+use solstone_core_speaker_id::transcript::{TranscriptError, read_transcript_rows};
 
 /// Completed attribution output in the same statement order as the embedding sidecar.
 #[derive(Debug, Clone, PartialEq)]

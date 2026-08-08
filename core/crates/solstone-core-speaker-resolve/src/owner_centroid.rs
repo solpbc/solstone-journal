@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use solstone_core_entity::entity_memory_path;
 use zip::ZipArchive;
 
-use crate::npy_read::{NpyBlob, parse_npy};
+use solstone_core_npy::{NpyBlob, parse_npy};
 
 /// One normalized owner centroid and the calibration stored beside it.
 #[derive(Debug, Clone, PartialEq)]

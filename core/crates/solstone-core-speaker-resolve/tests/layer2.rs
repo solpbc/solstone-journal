@@ -8,8 +8,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
 use solstone_core_entity::{EntityResolutionError, JournalEntity, load_all_journal_entities};
-use solstone_core_speaker_id::layer1::Label;
-use solstone_core_speaker_id::layer2::{Layer2Inputs, Layer2Result, apply_structural_heuristics};
+use solstone_core_speaker_resolve::layer1::Label;
+use solstone_core_speaker_resolve::layer2::{
+    Layer2Inputs, Layer2Result, apply_structural_heuristics,
+};
 
 static TEMP_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
@@ -169,7 +171,7 @@ fn ac6_setting_person_has_label_and_candidate_evidence() {
     assert_eq!(result.labels[&1].speaker.as_deref(), Some("alice"));
     assert_eq!(
         result.candidate_evidence,
-        [solstone_core_speaker_id::evidence::CandidateEvidence {
+        [solstone_core_speaker_resolve::evidence::CandidateEvidence {
             entity_id: "alice".to_owned(),
             sources: vec!["setting".to_owned()],
         }]

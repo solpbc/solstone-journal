@@ -15,18 +15,10 @@
 pub mod calibration;
 pub mod corrections;
 pub mod embeddings;
-pub mod evidence;
 pub mod json;
 pub mod labels;
-pub mod layer1;
-pub mod layer2;
-pub mod layer3;
-pub mod owner_centroid;
-pub mod resolve;
 pub mod transcript;
-pub mod voiceprint_centroid;
 pub mod writer;
 
 mod ascii_json;
 mod npz;
-mod person_guard;

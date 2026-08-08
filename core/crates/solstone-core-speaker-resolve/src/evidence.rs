@@ -18,7 +18,7 @@ use solstone_core_entity::{
 use solstone_core_journal_config::{ConfigLoadError, materialized_defaults, read_journal_config};
 use solstone_core_journal_io::{PathError, segment_path};
 
-use crate::calibration::RESOLUTION_FUZZY_THRESHOLD;
+use solstone_core_speaker_id::calibration::RESOLUTION_FUZZY_THRESHOLD;
 
 const CHANNEL_ORDER: [&str; 4] = ["screen", "meeting_day", "setting", "speakers"];
 static LEADING_SETTING_CONTEXT: LazyLock<Regex> = LazyLock::new(|| {

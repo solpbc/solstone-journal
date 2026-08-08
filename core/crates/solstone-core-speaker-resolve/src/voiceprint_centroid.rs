@@ -9,7 +9,7 @@ use std::path::Path;
 use serde_json::Value;
 use solstone_core_entity::{normalize_embedding, try_load_entity_voiceprints_file};
 
-use crate::calibration::VP_DECAY_LAMBDA;
+use solstone_core_speaker_id::calibration::VP_DECAY_LAMBDA;
 
 const SAME_STREAM_MIN_ROWS: usize = 5;
 const MILLIS_PER_DAY: f64 = 86_400_000.0;

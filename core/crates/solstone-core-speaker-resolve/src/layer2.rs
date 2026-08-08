@@ -12,12 +12,12 @@ use solstone_core_entity::{
     record_entity_resolution,
 };
 
-use crate::calibration::RESOLUTION_FUZZY_THRESHOLD;
 use crate::evidence::{
     CandidateEvidence, assemble_candidate_evidence, candidate_name_channels, ordered_dedup,
 };
 use crate::layer1::Label;
 use crate::person_guard::is_admissible_person;
+use solstone_core_speaker_id::calibration::RESOLUTION_FUZZY_THRESHOLD;
 
 /// Inputs loaded once by the attribution orchestrator for structural attribution.
 pub struct Layer2Inputs<'a> {

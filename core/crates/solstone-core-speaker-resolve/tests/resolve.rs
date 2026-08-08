@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::json;
-use solstone_core_entity::write_npy;
-use solstone_core_speaker_id::resolve::{ResolveOutcome, resolve};
+use solstone_core_npy::write_npy;
+use solstone_core_speaker_resolve::resolve::{ResolveOutcome, resolve};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 

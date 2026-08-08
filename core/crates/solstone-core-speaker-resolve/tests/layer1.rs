@@ -7,9 +7,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::json;
 use solstone_core_entity::{EncoderIdentity, VoiceprintItem, save_voiceprints_batch};
-use solstone_core_speaker_id::layer1::{OwnerSeparationContext, separate_owner_statements};
-use solstone_core_speaker_id::owner_centroid::OwnerCentroid;
-use solstone_core_speaker_id::voiceprint_centroid::VoiceprintCentroidCache;
+use solstone_core_speaker_resolve::layer1::{OwnerSeparationContext, separate_owner_statements};
+use solstone_core_speaker_resolve::owner_centroid::OwnerCentroid;
+use solstone_core_speaker_resolve::voiceprint_centroid::VoiceprintCentroidCache;
 
 static TEMP_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
@@ -52,7 +52,7 @@ fn run(
     statements: &[(i64, Vec<f32>)],
     owner: &OwnerCentroid,
     ids: &[String],
-) -> solstone_core_speaker_id::layer1::Layer1Result {
+) -> solstone_core_speaker_resolve::layer1::Layer1Result {
     separate_owner_statements(
         statements,
         OwnerSeparationContext {

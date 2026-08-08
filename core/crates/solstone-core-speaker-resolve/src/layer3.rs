@@ -8,12 +8,12 @@ use std::path::Path;
 
 use solstone_core_entity::{JournalEntity, normalize_embedding};
 
-use crate::calibration::{
-    ACOUSTIC_HIGH, ACOUSTIC_MARGIN_MIN, ACOUSTIC_MEDIUM, CC_CONFIDENCE_GATE, CC_COVERAGE_GATE,
-};
 use crate::layer1::Label;
 use crate::person_guard::is_admissible_person;
 use crate::voiceprint_centroid::{VoiceprintCentroidCache, VoiceprintLoadGap};
+use solstone_core_speaker_id::calibration::{
+    ACOUSTIC_HIGH, ACOUSTIC_MARGIN_MIN, ACOUSTIC_MEDIUM, CC_CONFIDENCE_GATE, CC_COVERAGE_GATE,
+};
 
 /// Inputs loaded once by the attribution orchestrator for acoustic attribution.
 pub struct Layer3Inputs<'a> {
@@ -372,7 +372,7 @@ fn passes_acoustic_margin(matched_score: f32, other_scores: &[f32]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::passes_acoustic_margin;
-    use crate::calibration::ACOUSTIC_MARGIN_MIN;
+    use solstone_core_speaker_id::calibration::ACOUSTIC_MARGIN_MIN;
 
     #[test]
     fn ac15_acoustic_margin_uses_zero_floor() {

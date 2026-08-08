@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
-use solstone_core_speaker_id::voiceprint_centroid::{
+use solstone_core_speaker_resolve::voiceprint_centroid::{
     VoiceprintCentroidCache, decay_weighted_centroid,
 };
 

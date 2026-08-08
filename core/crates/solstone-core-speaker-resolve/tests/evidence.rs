@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::json;
-use solstone_core_speaker_id::evidence::{
+use solstone_core_speaker_resolve::evidence::{
     compute_segment_candidate_evidence_readonly, extract_meeting_participants_with_gaps,
     extract_screen_participants_with_gaps, load_segment_speakers_with_gaps,
     load_setting_field_with_gaps, parse_setting_names,
