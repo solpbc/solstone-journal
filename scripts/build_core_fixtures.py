@@ -85,6 +85,7 @@ from solstone.think.cogitate_contract import (
     TALENT_FINALIZATION_MODES,
     capabilities_for_access_tier,
 )
+from solstone.think.generate_wire import _IMAGE_MIME_TYPES
 from solstone.think.indexer.edges import EDGES_SCHEMA_VERSION, _ensure_edges_schema
 from solstone.think.providers.shared import is_non_retryable_generate_reason
 from tests.speaker_oracle.diarize import (
@@ -407,7 +408,7 @@ def build_generate_contract_fixture() -> dict[str, Any]:
     )
     return {
         "fixture": "solstone-generate-contract",
-        "fixture_version": 2,
+        "fixture_version": 3,
         "generated_by": "make core-fixtures",
         "schema_identifiers": schemas,
         "request": {
@@ -419,7 +420,10 @@ def build_generate_contract_fixture() -> dict[str, Any]:
             "defaults": {key: value for key, value in request.items() if key not in {"schema", "id", "context", "contents"}},
             "content_parts": {
                 "text": {"fields": ["type", "text"]},
-                "image": {"fields": ["type", "mime_type", "data"]},
+                "image": {
+                    "fields": ["type", "mime_type", "data"],
+                    "mime_types": sorted(_IMAGE_MIME_TYPES),
+                },
             },
         },
         "response": {
@@ -429,7 +433,12 @@ def build_generate_contract_fixture() -> dict[str, Any]:
                 "refused": {"fields": ["schema", "id", "outcome", "reason", "reason_code", "retryable", "blocking", "reset_at_ms", "provider", "detail"]},
             },
         },
-        "protocol_error": {"fields": ["schema", "id", "reason", "detail"]},
+        # Mirrors solstone/think/generate_wire.py:_v2_protocol_error and
+        # :_v2_internal_error, whose literals are not named constants.
+        "protocol_error": {
+            "fields": ["schema", "id", "reason", "detail"],
+            "reasons": ["malformed-request", "internal-failure"],
+        },
         "outcomes": ["generated", "refused"],
         "refusal_reasons": [reason for reason, _, _ in typed_refusals] + ["unknown"],
         "unknown_member": {"refusal_reason": "unknown", "retryable": False, "blocking": True},

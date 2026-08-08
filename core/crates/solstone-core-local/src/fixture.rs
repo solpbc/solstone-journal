@@ -19,6 +19,10 @@ pub(crate) fn local_generate() -> &'static LocalGenerateContract {
         .local_generate
 }
 
+pub fn local_generate_input_schema() -> &'static str {
+    &local_generate().schema_identifiers.input
+}
+
 #[derive(Debug, Deserialize)]
 struct LocalContract {
     local_generate: LocalGenerateContract,

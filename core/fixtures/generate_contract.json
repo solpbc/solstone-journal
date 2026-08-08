@@ -506,7 +506,7 @@
     "response": 0
   },
   "fixture": "solstone-generate-contract",
-  "fixture_version": 2,
+  "fixture_version": 3,
   "framing": {
     "one_shot": {
       "id": "optional",
@@ -540,6 +540,10 @@
       "id",
       "reason",
       "detail"
+    ],
+    "reasons": [
+      "malformed-request",
+      "internal-failure"
     ]
   },
   "reason_codes": [
@@ -839,6 +843,12 @@
           "type",
           "mime_type",
           "data"
+        ],
+        "mime_types": [
+          "image/gif",
+          "image/jpeg",
+          "image/png",
+          "image/webp"
         ]
       },
       "text": {

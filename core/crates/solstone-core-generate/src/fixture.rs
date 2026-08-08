@@ -8,6 +8,10 @@ use serde_json::Value;
 const CONTRACT_FIXTURE: &str = include_str!("../../../fixtures/generate_contract.json");
 static CONTRACT: OnceLock<Value> = OnceLock::new();
 
+pub fn contract_source() -> &'static str {
+    CONTRACT_FIXTURE
+}
+
 pub fn contract() -> &'static Value {
     CONTRACT.get_or_init(|| {
         serde_json::from_str(CONTRACT_FIXTURE).expect("generate contract fixture is valid JSON")

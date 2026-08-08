@@ -254,6 +254,44 @@ pub fn decode_one_shot_response(input: &str) -> Result<GenerateResponse, String>
     }
 }
 
+pub fn encode_one_shot_response(response: &GenerateResponse) -> Result<String, String> {
+    let value = match response {
+        GenerateResponse::Generated(response) => {
+            let mut value = json!({
+                "schema": schema("response"),
+                "id": response.id,
+                "outcome": "generated",
+                "text": response.text,
+                "model": response.model,
+                "usage": response.usage,
+                "finish_reason": response.finish_reason,
+                "thinking": response.thinking,
+                "schema_validation": response.schema_validation,
+                "input_budget": response.input_budget,
+                "request_budget": response.request_budget,
+                "inference": response.inference,
+            });
+            if !response.hints_applied.is_empty() {
+                value["hints_applied"] = json!(response.hints_applied);
+            }
+            value
+        }
+        GenerateResponse::Refused(response) => json!({
+            "schema": schema("response"),
+            "id": response.id,
+            "outcome": "refused",
+            "reason": response.reason.as_str(),
+            "reason_code": response.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+            "retryable": response.retryable,
+            "blocking": response.blocking,
+            "reset_at_ms": response.reset_at_ms,
+            "provider": response.provider,
+            "detail": response.detail,
+        }),
+    };
+    serde_json::to_string(&value).map_err(|error| error.to_string())
+}
+
 pub fn decode_protocol_error(input: &str) -> Result<ProtocolError, String> {
     let object = object(serde_json::from_str(input).map_err(|error| error.to_string())?)?;
     require_schema(&object, schema("error"))?;
@@ -262,6 +300,16 @@ pub fn decode_protocol_error(input: &str) -> Result<ProtocolError, String> {
         reason: string(&object, "reason")?,
         detail: string(&object, "detail")?,
     })
+}
+
+pub fn encode_protocol_error(error: &ProtocolError) -> Result<String, String> {
+    serde_json::to_string(&json!({
+        "schema": schema("error"),
+        "id": error.id,
+        "reason": error.reason,
+        "detail": error.detail,
+    }))
+    .map_err(|encode_error| encode_error.to_string())
 }
 
 pub fn encode_session_request_line(request: &GenerateRequest) -> Result<String, String> {
@@ -559,6 +607,34 @@ mod tests {
         assert_eq!(
             value.hints_applied,
             ["attempt_index", "exclusive_admission"]
+        );
+    }
+
+    #[test]
+    fn response_encoder_round_trips_fixture_variants() {
+        for vector in &contract()["conformance_vectors"].as_array().unwrap()[..2] {
+            let response = decode_one_shot_response(&vector["response"].to_string()).unwrap();
+            let encoded = encode_one_shot_response(&response).unwrap();
+            assert_eq!(
+                serde_json::from_str::<Value>(&encoded).unwrap(),
+                vector["response"]
+            );
+        }
+    }
+
+    #[test]
+    fn protocol_error_encoder_round_trips_fixture_vector() {
+        let vector = contract()["conformance_vectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|vector| vector["id"] == "malformed-request")
+            .unwrap();
+        let error = decode_protocol_error(&vector["protocol_error"].to_string()).unwrap();
+        let encoded = encode_protocol_error(&error).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&encoded).unwrap(),
+            vector["protocol_error"]
         );
     }
 

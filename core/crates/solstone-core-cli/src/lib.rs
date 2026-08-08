@@ -3,7 +3,7 @@
 
 use std::ffi::{OsStr, OsString};
 
-pub const USAGE: &str = "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n";
+pub const USAGE: &str = "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -12,6 +12,7 @@ pub enum Command {
     Indexer(Box<IndexerCommand>),
     JournalConfig(JournalConfigCommand),
     Local(LocalCommand),
+    Generate(GenerateCommand),
     Brain(BrainCommand),
     Spl(SplCommand),
 }
@@ -23,6 +24,13 @@ pub enum LocalCommand {
     Connect,
     Install(InstallCommand),
     Generate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GenerateCommand {
+    Contract,
+    OneShot,
+    Malformed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -198,11 +206,22 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("local") => {
             parse_local(rest).map(Command::Local)
         }
+        [command, rest @ ..] if command == OsStr::new("generate") => {
+            Ok(Command::Generate(parse_generate(rest)))
+        }
         [command, rest @ ..] if command == OsStr::new("brain") => {
             parse_brain(rest).map(Command::Brain)
         }
         [command, rest @ ..] if command == OsStr::new("spl") => parse_spl(rest).map(Command::Spl),
         _ => Err(UsageError),
+    }
+}
+
+fn parse_generate(args: &[OsString]) -> GenerateCommand {
+    match args {
+        [arg] if arg == OsStr::new("--contract") => GenerateCommand::Contract,
+        [arg] if arg == OsStr::new("--one-shot") => GenerateCommand::OneShot,
+        _ => GenerateCommand::Malformed,
     }
 }
 
@@ -1080,6 +1099,26 @@ mod tests {
     }
 
     #[test]
+    fn classifies_generate_arguments_without_usage_errors() {
+        for (values, expected) in [
+            (&["generate", "--contract"][..], GenerateCommand::Contract),
+            (&["generate", "--one-shot"][..], GenerateCommand::OneShot),
+            (
+                &["generate", "--session", "--max-in-flight", "3"][..],
+                GenerateCommand::Malformed,
+            ),
+            (&["generate"][..], GenerateCommand::Malformed),
+            (&["generate", "--bogus"][..], GenerateCommand::Malformed),
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::Generate(expected)),
+                "{values:?}"
+            );
+        }
+    }
+
+    #[test]
     fn rejects_unimplemented_or_extra_local_args() {
         for values in [&["local"][..], &["local", "probe-nvidia", "extra"][..]] {
             assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
@@ -1793,7 +1832,7 @@ mod tests {
     fn usage_lists_supported_commands() {
         assert_eq!(
             USAGE,
-            "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
+            "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
         );
     }
 }
