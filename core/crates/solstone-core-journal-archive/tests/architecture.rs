@@ -54,6 +54,25 @@ fn descriptor_acquisition_is_confined_to_source() {
 }
 
 #[test]
+fn filesystem_root_reopens_are_literal_and_argument_free() {
+    let source = SOURCES
+        .iter()
+        .find_map(|(name, source)| (*name == "source").then_some(*source))
+        .expect("source module registered");
+
+    assert!(source.contains("fn open_absolute_filesystem_root() -> Result<OwnedFd, ArchiveError>"));
+    assert!(source.contains("open(\"/\", DIRECTORY_FLAGS, Mode::empty())"));
+    assert_eq!(
+        source.matches("open_absolute_filesystem_root()?").count(),
+        3,
+        "two root-self reopens plus the non-root traversal open"
+    );
+    assert!(!source.contains("OsString::from(\".\")"));
+    assert!(!source.contains("openat(&authoritative"));
+    assert!(!source.contains("openat(&first"));
+}
+
+#[test]
 fn no_module_reaches_deferred_or_forbidden_surfaces() {
     for (name, source) in SOURCES.iter().chain(std::iter::once(&("lib", LIB))) {
         for forbidden in [

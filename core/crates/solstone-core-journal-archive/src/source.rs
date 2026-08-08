@@ -77,6 +77,16 @@ thread_local! {
     static ACQUISITION_TRACE: std::cell::RefCell<Option<TraceState>> = const {
         std::cell::RefCell::new(None)
     };
+    static ROOT_STAT_SUBSTITUTION: std::cell::RefCell<Option<RootStatSubstitution>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+#[cfg(test)]
+struct RootStatSubstitution {
+    ordinal: usize,
+    seen: usize,
+    consumed: bool,
 }
 
 #[cfg(test)]
@@ -216,6 +226,55 @@ fn traced_canonicalize(root: &Path) -> io::Result<PathBuf> {
         record_success(AcquisitionPrimitive::Canonicalize);
     }
     result
+}
+
+#[cfg(test)]
+fn with_root_stat_identity_mismatch<T>(ordinal: usize, operation: impl FnOnce() -> T) -> (T, bool) {
+    ROOT_STAT_SUBSTITUTION.with(|substitution| {
+        assert!(
+            substitution.borrow().is_none(),
+            "root-stat substitution is already active"
+        );
+        *substitution.borrow_mut() = Some(RootStatSubstitution {
+            ordinal,
+            seen: 0,
+            consumed: false,
+        });
+    });
+    struct SubstitutionGuard;
+    impl Drop for SubstitutionGuard {
+        fn drop(&mut self) {
+            ROOT_STAT_SUBSTITUTION.with(|substitution| {
+                substitution.borrow_mut().take();
+            });
+        }
+    }
+    let guard = SubstitutionGuard;
+    let result = operation();
+    let state = ROOT_STAT_SUBSTITUTION.with(|substitution| {
+        substitution
+            .borrow_mut()
+            .take()
+            .expect("root-stat substitution remains active")
+    });
+    drop(guard);
+    (result, state.consumed)
+}
+
+#[cfg(test)]
+fn substitute_root_stat_identity(mut stat: FileStat) -> FileStat {
+    ROOT_STAT_SUBSTITUTION.with(|substitution| {
+        let mut substitution = substitution.borrow_mut();
+        let Some(state) = substitution.as_mut() else {
+            return;
+        };
+        state.seen += 1;
+        if state.seen == state.ordinal {
+            stat.st_ino ^= 1;
+            state.consumed = true;
+        }
+    });
+    stat
 }
 
 /// A frozen, capability-rooted portable archive source.
@@ -422,8 +481,11 @@ fn open_absolute_filesystem_root() -> Result<OwnedFd, ArchiveError> {
 }
 
 fn stat_filesystem_root(fd: &impl AsFd) -> Result<FileStat, ArchiveError> {
-    traced_nix(AcquisitionPrimitive::FilesystemRootFstat, || fstat(fd))
-        .map_err(|error| acquisition_error(source_io("stat filesystem root", None, error)))
+    let stat = traced_nix(AcquisitionPrimitive::FilesystemRootFstat, || fstat(fd))
+        .map_err(|error| source_io("stat opened filesystem root", None, error))?;
+    #[cfg(test)]
+    let stat = substitute_root_stat_identity(stat);
+    Ok(stat)
 }
 
 fn restat_canonical_root(
@@ -474,21 +536,25 @@ fn acquire_root(root: &Path) -> Result<(OwnedFd, PathBuf), ArchiveError> {
     if components.is_empty() {
         let first = open_absolute_filesystem_root()?;
         let first_stat = stat_filesystem_root(&first)?;
-        verify_directory_identity(&first_stat, expected)?;
+        require_same_root_identity(&first_stat, expected)?;
 
         let second = open_absolute_filesystem_root()?;
         let second_stat = stat_filesystem_root(&second)?;
-        verify_directory_identity(&second_stat, directory_proof(&first_stat)?)?;
-        verify_directory_identity(&second_stat, expected)?;
+        require_same_root_identity(&second_stat, directory_proof(&first_stat)?)?;
+        require_same_root_identity(&second_stat, expected)?;
 
         return Ok((authoritative, canonical));
     }
 
     let mut current = open_absolute_filesystem_root()?;
-    let (final_name, ancestors): (OsString, &[OsString]) = match components.split_last() {
-        Some((last, ancestors)) => (last.clone(), ancestors),
-        None => (OsString::from("."), &[]),
-    };
+    let (final_name, ancestors) =
+        components
+            .split_last()
+            .ok_or_else(|| ArchiveError::InvalidJournal {
+                root: root.to_path_buf(),
+                reason: "canonical journal root has no final component",
+            })?;
+    let final_name = final_name.clone();
     for component in ancestors {
         let before = traced_nix(AcquisitionPrimitive::ComponentStat, || {
             fstatat(
@@ -698,7 +764,7 @@ fn directory_proof(stat: &FileStat) -> Result<DirectoryProof, ArchiveError> {
     })
 }
 
-fn verify_directory_identity(
+fn require_same_root_identity(
     observed: &FileStat,
     expected: DirectoryProof,
 ) -> Result<(), ArchiveError> {
@@ -971,6 +1037,29 @@ mod tests {
         }
     }
 
+    fn root_self_prefix(
+        primitive: AcquisitionPrimitive,
+        ordinal: usize,
+    ) -> Vec<AcquisitionPrimitive> {
+        let sequence = [
+            AcquisitionPrimitive::RequestedRootOpen,
+            AcquisitionPrimitive::AuthoritativeFstat,
+            AcquisitionPrimitive::Canonicalize,
+            AcquisitionPrimitive::FilesystemRootOpen,
+            AcquisitionPrimitive::FilesystemRootFstat,
+            AcquisitionPrimitive::FilesystemRootOpen,
+            AcquisitionPrimitive::FilesystemRootFstat,
+        ];
+        let position = sequence
+            .iter()
+            .enumerate()
+            .filter(|(_, candidate)| **candidate == primitive)
+            .nth(ordinal - 1)
+            .map(|(position, _)| position)
+            .expect("root-self primitive ordinal");
+        sequence[..position].to_vec()
+    }
+
     fn post_authority_cases(
         primitive: AcquisitionPrimitive,
         operation: &'static str,
@@ -1128,6 +1217,101 @@ mod tests {
                 Err(error) => error,
             };
             assert_fault(error, case.expected, &root, case.error);
+        }
+    }
+
+    #[test]
+    fn root_self_fault_matrix_pins_both_open_and_fstat_ordinals() {
+        let mut cases = Vec::new();
+        for ordinal in 1..=2 {
+            for error in [
+                Errno::ENOENT,
+                Errno::ENOTDIR,
+                Errno::ELOOP,
+                Errno::EACCES,
+                Errno::EIO,
+            ] {
+                cases.push(FaultCase {
+                    primitive: AcquisitionPrimitive::FilesystemRootOpen,
+                    ordinal,
+                    error,
+                    expected: if is_race_error(error) {
+                        ExpectedFault::Changed
+                    } else {
+                        ExpectedFault::SourceIo("open filesystem root")
+                    },
+                });
+                cases.push(FaultCase {
+                    primitive: AcquisitionPrimitive::FilesystemRootFstat,
+                    ordinal,
+                    error,
+                    expected: ExpectedFault::SourceIo("stat opened filesystem root"),
+                });
+            }
+        }
+
+        for case in cases {
+            let prefix = root_self_prefix(case.primitive, case.ordinal);
+            let barrier_callback_fired = std::rc::Rc::new(std::cell::Cell::new(false));
+            let callback_observer = std::rc::Rc::clone(&barrier_callback_fired);
+            let (result, trace) = trace_scenario(
+                Some((
+                    prefix.len() + 1,
+                    Box::new(move || callback_observer.set(true)),
+                )),
+                Some(InjectedFault {
+                    primitive: case.primitive,
+                    ordinal: case.ordinal,
+                    error: case.error,
+                }),
+                || acquire_root(Path::new("/")),
+            );
+            assert!(trace.fault_consumed);
+            assert!(!trace.barrier_fired);
+            assert!(!barrier_callback_fired.get());
+            assert_eq!(trace.successful, prefix, "wrong completion prefix");
+            let mut attempts = prefix;
+            attempts.push(case.primitive);
+            assert_eq!(trace.attempted, attempts, "wrong attempted phase");
+            let error = match result {
+                Ok(_) => panic!("injected root-self acquisition fault must fail"),
+                Err(error) => error,
+            };
+            assert_fault(error, case.expected, Path::new("/"), case.error);
+        }
+    }
+
+    #[test]
+    fn root_self_identity_checks_reject_each_substituted_fstat() {
+        let root =
+            open_absolute_filesystem_root().expect("open root for pure identity helper test");
+        let mut observed = fstat(&root).expect("stat root for pure identity helper test");
+        let expected = directory_proof(&observed).expect("root directory proof");
+        observed.st_ino ^= 1;
+        assert!(matches!(
+            require_same_root_identity(&observed, expected),
+            Err(ArchiveError::SourceChanged { member: None })
+        ));
+
+        for ordinal in 1..=2 {
+            let ((result, trace), consumed) = with_root_stat_identity_mismatch(ordinal, || {
+                trace_acquisition(None, || acquire_root(Path::new("/")))
+            });
+            assert!(
+                consumed,
+                "root fstat substitution {ordinal} was not consumed"
+            );
+            assert!(matches!(
+                result,
+                Err(ArchiveError::SourceChanged { member: None })
+            ));
+            let mut expected_trace =
+                root_self_prefix(AcquisitionPrimitive::FilesystemRootFstat, ordinal);
+            expected_trace.push(AcquisitionPrimitive::FilesystemRootFstat);
+            assert_eq!(
+                trace, expected_trace,
+                "wrong successful prefix after substituted root fstat"
+            );
         }
     }
 
