@@ -20,7 +20,7 @@ const TARGET_DIRECTORY_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_CLOEXEC)
     .union(OFlag::O_NOFOLLOW);
 
-struct NormalComponent(OsString);
+pub(crate) struct NormalComponent(OsString);
 
 impl NormalComponent {
     fn parse(value: &OsStr) -> Option<Self> {
@@ -33,7 +33,7 @@ impl NormalComponent {
         }
     }
 
-    fn as_os_str(&self) -> &OsStr {
+    pub(crate) fn as_os_str(&self) -> &OsStr {
         &self.0
     }
 }
@@ -99,10 +99,10 @@ impl ExplicitArchiveOutputRequest {
 /// A retained, revalidatable existing-parent archive output target.
 pub struct ArchiveOutputTarget {
     final_path: PathBuf,
-    final_name: NormalComponent,
+    pub(crate) final_name: NormalComponent,
     output: PathBuf,
     cwd: PathBuf,
-    parent: OwnedFd,
+    pub(crate) parent: OwnedFd,
     proofs: Vec<RouteProof>,
 }
 

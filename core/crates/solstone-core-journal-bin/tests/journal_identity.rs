@@ -5,12 +5,12 @@
 
 use std::env;
 use std::fs;
-use std::io::{ErrorKind, Read};
+use std::io::{ErrorKind, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::thread::{self, sleep};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -111,6 +111,31 @@ fn run_journal_with_journal(args: &[&str], path: Option<&Path>, journal: &Path) 
         }
     }
     panic!("solstone-core stayed busy after retries")
+}
+
+fn run_journal_with_input(args: &[&str], path: &Path, journal: &Path, input: &[u8]) -> Output {
+    let mut child = Command::new(bin())
+        .args(args)
+        .env("SOLSTONE_JOURNAL", journal)
+        .env("PATH", path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn journal binary");
+    child
+        .stdin
+        .take()
+        .expect("child stdin")
+        .write_all(input)
+        .expect("write child stdin");
+    child.wait_with_output().expect("wait for journal binary")
+}
+
+fn seed_journal(root: &Path) {
+    for directory in ["chronicle", "entities", "facets", "imports"] {
+        fs::create_dir_all(root.join(directory)).expect("seed journal directory");
+    }
 }
 
 fn write_forbidden_shim(path: &Path, sentinel: &Path) {
@@ -253,28 +278,161 @@ fn journal_binary_cannot_switch_to_the_sol_identity() {
 }
 
 #[test]
-fn journal_identity_keeps_deferred_local_tokens_unavailable_without_spawning() {
+fn journal_identity_runs_every_local_leaf_natively_without_spawning() {
     let temp = TempDir::new("journal-known-tokens");
     let (path, sentinel) = poison_path(&temp);
     let fixture = local_ops_fixture();
     let local_paths = local_op_paths(&fixture);
 
-    for token in ["archive merge", "facet merge"] {
+    for token in [
+        "archive export",
+        "archive merge",
+        "facet doctor",
+        "facet merge",
+        "news write",
+    ] {
         assert!(
             local_paths.iter().any(|path| path == token),
-            "deferred path must remain in the frozen local-operation census: {token}"
+            "local path must remain in the frozen local-operation census: {token}"
         );
         let parts = token.split_once(' ').expect("unavailable path has a group");
-        let output = run_journal(&[parts.0, parts.1], Some(&path));
-        assert_eq!(output.status.code(), Some(69), "{token}");
-        assert_eq!(output.stdout, b"", "{token}");
-        let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
-        assert!(stderr.contains(token), "{token}: {stderr}");
+        let output = run_journal(&[parts.0, parts.1, "--help"], Some(&path));
+        assert_eq!(output.status.code(), Some(0), "{token}");
         assert!(
-            stderr.contains("journal_command_unavailable"),
-            "{token}: {stderr}"
+            String::from_utf8(output.stdout)
+                .expect("stdout should be utf-8")
+                .starts_with("Usage: journal "),
+            "{token}"
         );
+        assert_eq!(output.stderr, b"", "{token}");
     }
+    assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
+    let temp = TempDir::new("journal-local-authorities");
+    let (path, sentinel) = poison_path(&temp);
+    let journal = temp.path.join("journal");
+    seed_journal(&journal);
+
+    let inside_exported_tree = journal.join("chronicle/archive.zip");
+    let rejected_export = run_journal_with_journal(
+        &[
+            "archive",
+            "export",
+            "--out",
+            inside_exported_tree.to_str().unwrap(),
+        ],
+        Some(&path),
+        &journal,
+    );
+    assert_eq!(rejected_export.status.code(), Some(65));
+    assert!(!inside_exported_tree.exists());
+
+    let export = temp.path.join("journal.zip");
+    let export_output = run_journal_with_journal(
+        &["archive", "export", "--out", export.to_str().unwrap()],
+        Some(&path),
+        &journal,
+    );
+    assert_eq!(export_output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8(export_output.stdout).expect("export stdout"),
+        format!("{}\n", export.display())
+    );
+    assert_eq!(export_output.stderr, b"");
+    assert_eq!(&fs::read(&export).expect("read archive")[..2], b"PK");
+
+    let source = temp.path.join("source");
+    seed_journal(&source);
+    fs::create_dir_all(source.join("chronicle/20260807")).expect("seed merge day");
+    fs::write(source.join("chronicle/20260807/segment.jsonl"), b"{}\n").expect("seed merge item");
+    let dry_run = run_journal_with_journal(
+        &[
+            "archive",
+            "merge",
+            source.to_str().unwrap(),
+            "--dry-run",
+            "--json",
+        ],
+        Some(&path),
+        &journal,
+    );
+    assert_eq!(dry_run.status.code(), Some(0));
+    let dry_run_json: Value = serde_json::from_slice(&dry_run.stdout).expect("dry-run JSON");
+    assert_eq!(dry_run_json["ok"], true);
+    assert_eq!(dry_run_json["dry_run"], true);
+    assert_eq!(dry_run_json["index_rebuild"], "not-requested");
+    assert!(!journal.with_extension("merge").exists());
+
+    let orphan = journal.join("facets/field-notes");
+    fs::create_dir_all(orphan.join("news")).expect("seed orphan facet");
+    fs::write(orphan.join("news/20260807.md"), b"existing\n").expect("seed orphan content");
+    let doctor = run_journal_with_journal(&["facet", "doctor"], Some(&path), &journal);
+    assert_eq!(doctor.status.code(), Some(0));
+    assert_eq!(
+        doctor.stdout,
+        b"Orphan facets:\n- field-notes\n1 orphan facet(s) found. Run with --fix to register them.\n"
+    );
+    assert!(!orphan.join("facet.json").exists());
+
+    fs::write(orphan.join("facet.json"), b"{\"title\":\"Field Notes\"}\n")
+        .expect("declare news facet");
+    let markdown = b"# Today\n\nKept byte-for-byte.\n";
+    let news = run_journal_with_input(
+        &["news", "write", "field-notes", "--day", "20260808"],
+        &path,
+        &journal,
+        markdown,
+    );
+    assert_eq!(news.status.code(), Some(0));
+    assert_eq!(news.stdout, b"News for 20260808 saved to field-notes.\n");
+    assert_eq!(
+        fs::read(orphan.join("news/20260808.md")).expect("read written news"),
+        markdown
+    );
+
+    for (slug, title) in [("source", "Source"), ("dest", "Destination")] {
+        let facet = journal.join("facets").join(slug);
+        fs::create_dir_all(facet.join("news")).expect("seed merge facet");
+        fs::write(
+            facet.join("facet.json"),
+            format!("{{\"title\":\"{title}\"}}\n"),
+        )
+        .expect("write facet declaration");
+    }
+    fs::write(
+        journal.join("facets/source/news/20260807.md"),
+        b"source-only\n",
+    )
+    .expect("seed source facet content");
+    fs::create_dir_all(journal.join("config")).expect("seed journal config directory");
+    fs::write(
+        journal.join("config/convey.json"),
+        b"{\"facets\":{\"selected\":\"source\",\"order\":[\"dest\",\"source\"]}}\n",
+    )
+    .expect("seed convey config");
+    let merge = run_journal_with_journal(
+        &["facet", "merge", "source", "--into", "dest", "--consent"],
+        Some(&path),
+        &journal,
+    );
+    assert_eq!(
+        merge.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&merge.stderr)
+    );
+    assert!(!journal.join("facets/source").exists());
+    assert_eq!(
+        fs::read(journal.join("facets/dest/news/20260807.md")).unwrap(),
+        b"source-only\n"
+    );
+    let convey: Value =
+        serde_json::from_slice(&fs::read(journal.join("config/convey.json")).unwrap()).unwrap();
+    assert_eq!(convey["facets"]["selected"], Value::Null);
+    assert_eq!(convey["facets"]["order"], serde_json::json!(["dest"]));
     assert_sentinel_untouched(&sentinel);
 }
 

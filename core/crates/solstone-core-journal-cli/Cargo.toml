@@ -7,9 +7,15 @@ license.workspace = true
 publish = false
 
 [dependencies]
+chrono = { workspace = true }
+serde_json = { workspace = true }
 solstone-core-journal = { workspace = true }
+solstone-core-journal-archive = { workspace = true }
+solstone-core-journal-io = { workspace = true }
 solstone-core-callosum = { workspace = true }
 solstone-core-cli-boundary = { workspace = true }
+solstone-core-facets = { workspace = true }
+solstone-core-indexer-store = { workspace = true }
 solstone-core-sol-client = { workspace = true }
 
 [dev-dependencies]

@@ -8,6 +8,7 @@ mod coherence;
 pub mod help;
 mod host;
 mod layout;
+mod local_ops;
 pub mod manifest;
 mod notify;
 mod notify_handler;
@@ -23,7 +24,7 @@ pub enum JournalCommand {
         rest: Vec<OsString>,
         verbose: bool,
     },
-    UnavailableLocal {
+    Local {
         token: &'static str,
         rest: Vec<OsString>,
         verbose: bool,
@@ -36,9 +37,6 @@ pub enum JournalCommand {
 pub enum Outcome {
     Help(String),
     Version(String),
-    Unavailable {
-        token: &'static str,
-    },
     Rejected,
     LocalSuccess {
         stdout: String,
@@ -75,10 +73,6 @@ pub fn run(args: Vec<OsString>) -> ExitCode {
         Outcome::Help(text) | Outcome::Version(text) => {
             print!("{text}");
             ExitCode::SUCCESS
-        }
-        Outcome::Unavailable { token } => {
-            eprint!("{}", unavailable_message(token));
-            ExitCode::from(69)
         }
         Outcome::LocalSuccess { stdout, stderr } => {
             print!("{stdout}");
@@ -159,14 +153,13 @@ pub fn evaluate_args(args: &[OsString]) -> JournalCommand {
         let Some(leaf) = rest.first().and_then(|leaf| leaf.to_str()) else {
             return JournalCommand::Unknown;
         };
-        return manifest::unavailable_local_for(value, leaf).map_or(
-            JournalCommand::Unknown,
-            |token| JournalCommand::UnavailableLocal {
+        return manifest::local_for(value, leaf).map_or(JournalCommand::Unknown, |token| {
+            JournalCommand::Local {
                 token,
                 rest: rest[1..].to_vec(),
                 verbose,
-            },
-        );
+            }
+        });
     }
     if value.contains('.') {
         JournalCommand::DottedModule
@@ -191,12 +184,12 @@ pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcom
             Some(manifest::Primitive::Notify) => notify::notify(&rest),
             None => dispatch_process(token, &rest, verbose, spawner),
         },
-        JournalCommand::UnavailableLocal { token, .. } => Outcome::Unavailable { token },
+        JournalCommand::Local { token, rest, .. } => local_ops::dispatch(token, &rest),
         JournalCommand::DottedModule | JournalCommand::Unknown => Outcome::Rejected,
     }
 }
 
-pub use help::{JOURNAL_USAGE, unavailable_message};
+pub use help::JOURNAL_USAGE;
 
 /// Cross-language differential contract for the fixed Python process bootstrap.
 #[must_use]
@@ -336,7 +329,7 @@ mod tests {
         );
         assert_eq!(
             evaluate_args(&args(&["archive", "export", "--help"])),
-            JournalCommand::UnavailableLocal {
+            JournalCommand::Local {
                 token: "archive export",
                 rest: args(&["--help"]),
                 verbose: false,
@@ -504,15 +497,16 @@ mod tests {
         }
         assert_eq!(
             dispatch(
-                JournalCommand::UnavailableLocal {
+                JournalCommand::Local {
                     token: "archive export",
-                    rest: vec![],
+                    rest: args(&["--help"]),
                     verbose: false,
                 },
                 &spawner,
             ),
-            Outcome::Unavailable {
-                token: "archive export"
+            Outcome::LocalSuccess {
+                stdout: "Usage: journal archive export [--out PATH] [--quiet]\n".to_owned(),
+                stderr: String::new(),
             }
         );
     }

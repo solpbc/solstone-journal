@@ -6,41 +6,41 @@ use crate::processes::{process_spec_for, process_tokens};
 pub use solstone_core_cli_boundary::{JOURNAL_HOST_COMMAND_COUNT, JOURNAL_HOST_COMMANDS};
 
 pub const ROOT_COMMANDS: &[&str] = &["--path", "path", "status", "root", "notify"];
-pub(crate) struct UnavailableLocal {
+pub(crate) struct LocalPath {
     pub(crate) group: &'static str,
     pub(crate) leaf: &'static str,
     pub(crate) token: &'static str,
 }
 
-pub(crate) const UNAVAILABLE_LOCAL_PATHS: &[UnavailableLocal] = &[
-    UnavailableLocal {
+pub(crate) const LOCAL_PATHS: &[LocalPath] = &[
+    LocalPath {
         group: "archive",
         leaf: "export",
         token: "archive export",
     },
-    UnavailableLocal {
+    LocalPath {
         group: "archive",
         leaf: "merge",
         token: "archive merge",
     },
-    UnavailableLocal {
+    LocalPath {
         group: "facet",
         leaf: "doctor",
         token: "facet doctor",
     },
-    UnavailableLocal {
+    LocalPath {
         group: "facet",
         leaf: "merge",
         token: "facet merge",
     },
-    UnavailableLocal {
+    LocalPath {
         group: "news",
         leaf: "write",
         token: "news write",
     },
 ];
 pub const JOURNAL_COMMAND_COUNT: usize =
-    ROOT_COMMANDS.len() + crate::processes::PROCESS_SPECS.len() + UNAVAILABLE_LOCAL_PATHS.len();
+    ROOT_COMMANDS.len() + crate::processes::PROCESS_SPECS.len() + LOCAL_PATHS.len();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Primitive {
@@ -68,8 +68,8 @@ pub(crate) fn known_token(value: &str) -> Option<&'static str> {
         .or_else(|| process_spec_for(value).map(|spec| spec.token))
 }
 
-pub(crate) fn unavailable_local_for(group: &str, leaf: &str) -> Option<&'static str> {
-    UNAVAILABLE_LOCAL_PATHS
+pub(crate) fn local_for(group: &str, leaf: &str) -> Option<&'static str> {
+    LOCAL_PATHS
         .iter()
         .find(|candidate| candidate.group == group && candidate.leaf == leaf)
         .map(|candidate| candidate.token)
@@ -86,10 +86,6 @@ pub(crate) fn all_leaf_paths() -> Vec<Vec<&'static str>> {
         .map(|token| vec![*token])
         .collect::<Vec<_>>();
     paths.extend(process_tokens().map(|token| vec![token]));
-    paths.extend(
-        UNAVAILABLE_LOCAL_PATHS
-            .iter()
-            .map(|path| vec![path.group, path.leaf]),
-    );
+    paths.extend(LOCAL_PATHS.iter().map(|path| vec![path.group, path.leaf]));
     paths
 }

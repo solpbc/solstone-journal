@@ -17,6 +17,7 @@ mod entry;
 mod error;
 mod inventory;
 mod manifest;
+mod publish;
 mod source;
 mod target;
 mod writer;
@@ -28,6 +29,7 @@ pub use entry::{
     ArchiveMemberName, Inventory, InventoryEntry, OpenedInventoryFile, SkippedRootName,
 };
 pub use error::{ArchiveError, JournalEntryKind};
+pub use publish::{ArchivePublicationError, publish_archive};
 pub use source::ArchiveSource;
 pub use target::{
     ArchiveOutputTarget, ExplicitArchiveOutputRequest, ExplicitTargetError,

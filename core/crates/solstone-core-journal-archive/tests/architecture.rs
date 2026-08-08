@@ -10,6 +10,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("error", include_str!("../src/error.rs")),
     ("inventory", include_str!("../src/inventory.rs")),
     ("manifest", include_str!("../src/manifest.rs")),
+    ("publish", include_str!("../src/publish.rs")),
     ("source", include_str!("../src/source.rs")),
     ("target", include_str!("../src/target.rs")),
     ("writer", include_str!("../src/writer.rs")),
@@ -45,7 +46,7 @@ fn scan_covers_every_declared_production_module() {
 #[test]
 fn descriptor_acquisition_is_confined_to_source_and_target() {
     for (name, source) in SOURCES {
-        if matches!(*name, "source" | "target") {
+        if matches!(*name, "source" | "target" | "publish") {
             continue;
         }
         for primitive in ["openat(", "fstatat(", "O_NOFOLLOW"] {
@@ -84,6 +85,30 @@ fn target_is_read_only_and_ambient_free() {
     }
     assert!(production.contains("open(\"/\", TARGET_DIRECTORY_FLAGS, Mode::empty())"));
     assert!(production.contains("O_NOFOLLOW"));
+}
+
+#[test]
+fn publication_is_descriptor_relative_and_has_no_ambient_or_process_reach() {
+    let publish = SOURCES
+        .iter()
+        .find_map(|(name, source)| (*name == "publish").then_some(*source))
+        .expect("publish module registered");
+    let production = production_source(publish);
+    for required in ["openat(", "linkat(", "unlinkat(", "fsync(", "O_NOFOLLOW"] {
+        assert!(
+            production.contains(required),
+            "publication missing {required}"
+        );
+    }
+    assert!(
+        production.contains("this isolated module is the archive crate's publication authority")
+    );
+    for forbidden in ["std::env", "current_dir", "Command::new", "std::process"] {
+        assert!(
+            !production.contains(forbidden),
+            "publication reaches forbidden surface {forbidden}"
+        );
+    }
 }
 
 #[test]
@@ -126,7 +151,7 @@ fn regular_file_opens_are_nonblocking_and_nofollow() {
 fn no_module_reaches_deferred_or_forbidden_surfaces() {
     for (name, source) in SOURCES
         .iter()
-        .filter(|(name, _)| !matches!(*name, "encode" | "manifest" | "writer"))
+        .filter(|(name, _)| !matches!(*name, "encode" | "manifest" | "writer" | "publish"))
         .chain(std::iter::once(&("lib", LIB)))
     {
         let production = production_source(source);

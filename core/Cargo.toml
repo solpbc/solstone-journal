@@ -69,6 +69,7 @@ solstone-core-indexer-store = { path = "crates/solstone-core-indexer-store" }
 solstone-core-indexer-query = { path = "crates/solstone-core-indexer-query" }
 solstone-core-ingest-resolve = { path = "crates/solstone-core-ingest-resolve" }
 solstone-core-journal = { path = "crates/solstone-core-journal" }
+solstone-core-journal-archive = { path = "crates/solstone-core-journal-archive" }
 solstone-core-journal-cli = { path = "crates/solstone-core-journal-cli" }
 solstone-core-cli-boundary = { path = "crates/solstone-core-cli-boundary" }
 solstone-core-journal-config = { path = "crates/solstone-core-journal-config" }

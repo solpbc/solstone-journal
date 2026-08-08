@@ -1,0 +1,1230 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use std::collections::BTreeSet;
+use std::ffi::{OsStr, OsString};
+use std::fs::{self, DirBuilder};
+use std::io::{self, Read};
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+use std::path::{Path, PathBuf};
+
+use chrono::{NaiveDate, SecondsFormat, Utc};
+use serde_json::{Value, json};
+use solstone_core_facets::{append_journal_action_log, hold_facet_trust_lock, write_news_file};
+use solstone_core_indexer_store::scan::scan_journal;
+use solstone_core_journal_archive::{
+    ArchiveSource, EncodeArchiveRequest, ExplicitArchiveOutputRequest,
+    acquire_explicit_output_target, publish_archive,
+};
+use solstone_core_journal_io::{
+    AtomicWriteOptions, LockOptions, append_jsonl, atomic_replace, hold_lock, write_bytes_exclusive,
+};
+
+use crate::Outcome;
+use crate::layout::resolve_current_journal;
+
+const EXIT_FAILED: u8 = 1;
+const EXIT_USAGE: u8 = 64;
+const EXIT_DATA: u8 = 65;
+const EXIT_IO: u8 = 74;
+
+pub(crate) fn dispatch(token: &str, args: &[OsString]) -> Outcome {
+    match token {
+        "archive export" => archive_export(args),
+        "archive merge" => archive_merge(args),
+        "facet doctor" => facet_doctor(args),
+        "facet merge" => facet_merge(args),
+        "news write" => news_write(args),
+        _ => failure(token, "unknown local operation", EXIT_USAGE),
+    }
+}
+
+fn archive_export(args: &[OsString]) -> Outcome {
+    let mut output: Option<PathBuf> = None;
+    let mut quiet = false;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].to_str() {
+            Some("--out") if output.is_none() => {
+                let Some(value) = args.get(index + 1) else {
+                    return usage("archive export", "--out requires PATH");
+                };
+                output = Some(PathBuf::from(value));
+                index += 2;
+            }
+            Some("--quiet") if !quiet => {
+                quiet = true;
+                index += 1;
+            }
+            Some("--help" | "-h") if args.len() == 1 => {
+                return success(
+                    "Usage: journal archive export [--out PATH] [--quiet]\n".to_owned(),
+                );
+            }
+            _ => return usage("archive export", "unexpected argument"),
+        }
+    }
+
+    let journal = match journal_root("archive export") {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    let source = match ArchiveSource::open(&journal) {
+        Ok(source) => source,
+        Err(error) => return archive_error("archive export", &error.to_string()),
+    };
+    let exported_at = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let output = match output {
+        Some(path) => path,
+        None => match default_export_path(source.canonical_source(), &exported_at) {
+            Ok(path) => path,
+            Err(error) => return failure("archive export", &error, EXIT_IO),
+        },
+    };
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(error) => return failure("archive export", &error.to_string(), EXIT_IO),
+    };
+    if let Err(error) = reject_export_tree_output(source.canonical_source(), &output, &cwd) {
+        return failure("archive export", &error, EXIT_DATA);
+    }
+    let target =
+        match acquire_explicit_output_target(&ExplicitArchiveOutputRequest::new(output, cwd)) {
+            Ok(target) => target,
+            Err(error) => {
+                return failure("archive export", &error.to_string(), target_exit(&error));
+            }
+        };
+    let final_path = target.final_path().to_owned();
+    let request = EncodeArchiveRequest {
+        source: &source,
+        solstone_version: env!("CARGO_PKG_VERSION"),
+        exported_at: &exported_at,
+    };
+    if let Err(error) = publish_archive(&target, &request) {
+        return archive_error("archive export", &error.to_string());
+    }
+    let mut stderr = String::new();
+    if !quiet && !source.inventory().skipped_root_names().is_empty() {
+        let skipped = source
+            .inventory()
+            .skipped_root_names()
+            .iter()
+            .map(|name| name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        stderr = format!("journal archive export: skipped top-level entries: {skipped}\n");
+    }
+    Outcome::LocalSuccess {
+        stdout: if quiet {
+            String::new()
+        } else {
+            format!("{}\n", final_path.display())
+        },
+        stderr,
+    }
+}
+
+fn archive_merge(args: &[OsString]) -> Outcome {
+    let Some(source_arg) = args.first() else {
+        return usage("archive merge", "SOURCE is required");
+    };
+    if source_arg == OsStr::new("--help") || source_arg == OsStr::new("-h") {
+        return if args.len() == 1 {
+            success("Usage: journal archive merge SOURCE [--dry-run] [--json]\n".to_owned())
+        } else {
+            usage("archive merge", "unexpected argument")
+        };
+    }
+    let source = PathBuf::from(source_arg);
+    let mut dry_run = false;
+    let mut json_output = false;
+    for arg in &args[1..] {
+        match arg.to_str() {
+            Some("--dry-run") if !dry_run => dry_run = true,
+            Some("--json") if !json_output => json_output = true,
+            _ => return usage("archive merge", "unexpected argument"),
+        }
+    }
+    let journal = match journal_root("archive merge") {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    let source = match canonical_directory(&source) {
+        Ok(path) => path,
+        Err(error) => return failure("archive merge", &error, EXIT_DATA),
+    };
+    if source == journal || source.starts_with(&journal) || journal.starts_with(&source) {
+        return failure(
+            "archive merge",
+            "SOURCE and target journal must be disjoint",
+            EXIT_DATA,
+        );
+    }
+    let plan = match merge_plan(&source, &journal) {
+        Ok(plan) => plan,
+        Err(error) => return failure("archive merge", &error, EXIT_DATA),
+    };
+    if dry_run {
+        return merge_result(MergeReport {
+            ok: true,
+            code: "ok",
+            source: &source,
+            dry_run: true,
+            committed: 0,
+            skipped: plan.len(),
+            failed: 0,
+            decision_log: None,
+            index_rebuild: "not-requested",
+            json_output,
+            to_stderr: false,
+        });
+    }
+    let lock_path = journal.join("health/locks/archive-merge");
+    let _lock = match hold_lock(&lock_path, LockOptions::default()) {
+        Ok(lock) => lock,
+        Err(error) => return failure("archive merge", &error.to_string(), EXIT_IO),
+    };
+    let transaction = transaction_id();
+    let artifact_dir = sibling_path(&journal, &format!(".merge/{transaction}"));
+    if let Err(error) = create_private_dir(&artifact_dir) {
+        return failure("archive merge", &error.to_string(), EXIT_IO);
+    }
+    let decision_log = artifact_dir.join("decisions.jsonl");
+    let mut committed = 0;
+    let mut skipped = 0;
+    for item in &plan {
+        match existing_path_kind(&item.destination) {
+            Ok(Some(ExistingPathKind::RegularFile)) => {
+                skipped += 1;
+                if let Err(error) = append_jsonl(
+                    &decision_log,
+                    &json!({"path": item.relative, "decision": "destination-wins"}),
+                ) {
+                    return merge_result(MergeReport {
+                        ok: false,
+                        code: "item-failed",
+                        source: &source,
+                        dry_run: false,
+                        committed,
+                        skipped,
+                        failed: 1,
+                        decision_log: Some(&decision_log),
+                        index_rebuild: "not-requested",
+                        json_output,
+                        to_stderr: true,
+                    })
+                    .with_stderr_suffix(&format!("journal archive merge: {error}\n"));
+                }
+                continue;
+            }
+            Ok(None) => {}
+            Ok(Some(_)) => {
+                return failure(
+                    "archive merge",
+                    &format!("unsafe destination entry: {}", item.destination.display()),
+                    EXIT_DATA,
+                );
+            }
+            Err(error) => return failure("archive merge", &error, EXIT_IO),
+        }
+        let bytes = match fs::read(&item.source) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                return merge_result(MergeReport {
+                    ok: false,
+                    code: "item-failed",
+                    source: &source,
+                    dry_run: false,
+                    committed,
+                    skipped,
+                    failed: 1,
+                    decision_log: Some(&decision_log),
+                    index_rebuild: "not-requested",
+                    json_output,
+                    to_stderr: true,
+                })
+                .with_stderr_suffix(&format!("journal archive merge: {error}\n"));
+            }
+        };
+        if let Err(error) = write_bytes_exclusive(
+            &item.destination,
+            &bytes,
+            AtomicWriteOptions { mode: Some(0o600) },
+        ) {
+            return merge_result(MergeReport {
+                ok: false,
+                code: "item-failed",
+                source: &source,
+                dry_run: false,
+                committed,
+                skipped,
+                failed: 1,
+                decision_log: Some(&decision_log),
+                index_rebuild: "not-requested",
+                json_output,
+                to_stderr: true,
+            })
+            .with_stderr_suffix(&format!("journal archive merge: {error}\n"));
+        }
+        committed += 1;
+        if let Err(error) = append_jsonl(
+            &decision_log,
+            &json!({"path": item.relative, "decision": "copied"}),
+        ) {
+            return failure("archive merge", &error.to_string(), EXIT_IO);
+        }
+    }
+    let index_rebuild = match scan_journal(&journal, true) {
+        Ok(_) => "completed",
+        Err(_) => "failed",
+    };
+    merge_result(MergeReport {
+        ok: index_rebuild == "completed",
+        code: if index_rebuild == "completed" {
+            "ok"
+        } else {
+            "index-rebuild-failed"
+        },
+        source: &source,
+        dry_run: false,
+        committed,
+        skipped,
+        failed: 0,
+        decision_log: Some(&decision_log),
+        index_rebuild,
+        json_output,
+        to_stderr: index_rebuild != "completed",
+    })
+}
+
+fn facet_doctor(args: &[OsString]) -> Outcome {
+    let fix = match args {
+        [] => false,
+        [arg] if arg == OsStr::new("--fix") => true,
+        [arg] if arg == OsStr::new("--help") || arg == OsStr::new("-h") => {
+            return success("Usage: journal facet doctor [--fix]\n".to_owned());
+        }
+        _ => return usage("facet doctor", "unexpected argument"),
+    };
+    let journal = match journal_root("facet doctor") {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    let mut orphans = match orphan_facets(&journal) {
+        Ok(orphans) => orphans,
+        Err(error) => return failure("facet doctor", &error, EXIT_DATA),
+    };
+    if orphans.is_empty() {
+        return success("No orphan facets found.\n".to_owned());
+    }
+    if !fix {
+        let mut stdout = String::from("Orphan facets:\n");
+        for slug in &orphans {
+            stdout.push_str(&format!("- {slug}\n"));
+        }
+        stdout.push_str(&format!(
+            "{} orphan facet(s) found. Run with --fix to register them.\n",
+            orphans.len()
+        ));
+        return success(stdout);
+    }
+    let _lock = match hold_facet_trust_lock(&journal) {
+        Ok(lock) => lock,
+        Err(error) => return failure("facet doctor", &error.to_string(), EXIT_IO),
+    };
+    orphans = match orphan_facets(&journal) {
+        Ok(orphans) => orphans,
+        Err(error) => return failure("facet doctor", &error, EXIT_DATA),
+    };
+    if orphans.is_empty() {
+        return success("No orphan facets found.\n".to_owned());
+    }
+    let transaction = transaction_id();
+    let audit = journal.join("logs/facet-heals.jsonl");
+    let mut repaired = Vec::new();
+    for slug in &orphans {
+        let title = title_case_slug(slug);
+        let declaration = journal.join("facets").join(slug).join("facet.json");
+        let body = match serde_json::to_vec_pretty(&json!({
+            "title": title,
+            "description": "",
+            "color": "#667eea",
+            "emoji": "📦"
+        })) {
+            Ok(mut body) => {
+                body.push(b'\n');
+                body
+            }
+            Err(error) => return failure("facet doctor", &error.to_string(), EXIT_IO),
+        };
+        if let Err(error) = write_bytes_exclusive(
+            &declaration,
+            &body,
+            AtomicWriteOptions { mode: Some(0o600) },
+        ) {
+            return failure("facet doctor", &error.to_string(), EXIT_IO);
+        }
+        if let Err(error) = append_jsonl(
+            &audit,
+            &json!({
+                "transaction_id": transaction,
+                "facet": slug,
+                "action": "facet_heal",
+                "params": {"title": title}
+            }),
+        ) {
+            let _ = fs::remove_file(&declaration);
+            return failure("facet doctor", &error.to_string(), EXIT_IO);
+        }
+        repaired.push(slug);
+    }
+    let mut stdout = String::from("Repaired orphan facets:\n");
+    for slug in repaired {
+        stdout.push_str(&format!("- {slug}\n"));
+    }
+    stdout.push_str(&format!(
+        "{} orphan facet(s) repaired. Run 'journal indexer --rescan-full' to refresh the index.\n",
+        orphans.len()
+    ));
+    success(stdout)
+}
+
+fn facet_merge(args: &[OsString]) -> Outcome {
+    let Some(source) = args.first().and_then(|arg| arg.to_str()) else {
+        return usage("facet merge", "SOURCE is required");
+    };
+    if source == "--help" || source == "-h" {
+        return if args.len() == 1 {
+            success("Usage: journal facet merge SOURCE --into DEST [--consent]\n".to_owned())
+        } else {
+            usage("facet merge", "unexpected argument")
+        };
+    }
+    let mut destination: Option<&str> = None;
+    let mut consent = false;
+    let mut index = 1;
+    while index < args.len() {
+        match args[index].to_str() {
+            Some("--into") if destination.is_none() => {
+                destination = args.get(index + 1).and_then(|arg| arg.to_str());
+                if destination.is_none() {
+                    return usage("facet merge", "--into requires DEST");
+                }
+                index += 2;
+            }
+            Some("--consent") if !consent => {
+                consent = true;
+                index += 1;
+            }
+            _ => return usage("facet merge", "unexpected argument"),
+        }
+    }
+    let Some(destination) = destination else {
+        return usage("facet merge", "--into DEST is required");
+    };
+    if !safe_component(source) || !safe_component(destination) || source == destination {
+        return failure("facet merge", "invalid SOURCE or DEST", EXIT_DATA);
+    }
+    let journal = match journal_root("facet merge") {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    let source_path = journal.join("facets").join(source);
+    let destination_path = journal.join("facets").join(destination);
+    if let Err(error) = require_real_directory(&source_path) {
+        return failure("facet merge", &error, EXIT_DATA);
+    }
+    if let Err(error) = require_real_directory(&destination_path) {
+        return failure("facet merge", &error, EXIT_DATA);
+    }
+    let _lock = match hold_facet_trust_lock(&journal) {
+        Ok(lock) => lock,
+        Err(error) => return failure("facet merge", &error.to_string(), EXIT_IO),
+    };
+    if let Err(error) = require_real_directory(&source_path) {
+        return failure("facet merge", &error, EXIT_DATA);
+    }
+    if let Err(error) = require_real_directory(&destination_path) {
+        return failure("facet merge", &error, EXIT_DATA);
+    }
+    let transaction = transaction_id();
+    let facets = journal.join("facets");
+    let stage = facets.join(format!(".facet-merge-{transaction}.stage"));
+    let backup = facets.join(format!(".facet-merge-{transaction}.dest"));
+    let source_backup = facets.join(format!(".facet-merge-{transaction}.source"));
+    if let Err(error) = require_missing(&backup).and_then(|()| require_missing(&source_backup)) {
+        return failure("facet merge", &error, EXIT_IO);
+    }
+    if let Err(error) = create_private_dir_exclusive(&stage) {
+        return failure("facet merge", &error.to_string(), EXIT_IO);
+    }
+    if let Err(error) = copy_tree(&destination_path, &stage, true) {
+        let _ = fs::remove_dir_all(&stage);
+        return failure("facet merge", &error, EXIT_IO);
+    }
+    if let Err(error) = merge_tree(&source_path, &stage) {
+        let _ = fs::remove_dir_all(&stage);
+        return failure("facet merge", &error, EXIT_IO);
+    }
+    let convey_update = match prepare_convey_update(&journal, source) {
+        Ok(update) => update,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&stage);
+            return failure("facet merge", &error, EXIT_DATA);
+        }
+    };
+    if let Err(error) = fs::rename(&destination_path, &backup) {
+        let _ = fs::remove_dir_all(&stage);
+        return failure("facet merge", &error.to_string(), EXIT_IO);
+    }
+    if let Err(error) = fs::rename(&stage, &destination_path) {
+        let _ = fs::rename(&backup, &destination_path);
+        return failure("facet merge", &error.to_string(), EXIT_IO);
+    }
+    if let Err(error) = fs::rename(&source_path, &source_backup) {
+        let _ = fs::rename(&destination_path, &stage);
+        let _ = fs::rename(&backup, &destination_path);
+        let _ = fs::remove_dir_all(&stage);
+        return failure("facet merge", &error.to_string(), EXIT_IO);
+    }
+    if let Some(update) = &convey_update
+        && let Err(error) = atomic_replace(
+            &update.path,
+            &update.replacement,
+            AtomicWriteOptions { mode: Some(0o600) },
+        )
+    {
+        let rollback =
+            rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup);
+        return transaction_failure("facet merge", &error.to_string(), rollback);
+    }
+    let mut params = json!({"source": source, "dest": destination});
+    if consent {
+        params["consent"] = Value::Bool(true);
+    }
+    if let Err(error) = append_journal_action_log(&journal, "cli", "user", "facet_merge", params) {
+        let config_rollback = convey_update.as_ref().map(|update| {
+            atomic_replace(
+                &update.path,
+                &update.original,
+                AtomicWriteOptions { mode: Some(0o600) },
+            )
+            .map_err(|rollback_error| rollback_error.to_string())
+        });
+        let tree_rollback =
+            rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup);
+        let rollback = config_rollback.transpose().and(tree_rollback);
+        return transaction_failure("facet merge", &error.to_string(), rollback);
+    }
+    if let Err(error) = remove_tree_pair(&backup, &source_backup) {
+        return failure(
+            "facet merge",
+            &format!("merge committed but backup cleanup failed: {error}"),
+            EXIT_IO,
+        );
+    }
+    match scan_journal(&journal, true) {
+        Ok(_) => success(format!(
+            "Merged '{source}' into '{destination}'. Index rebuild completed.\n"
+        )),
+        Err(error) => failure(
+            "facet merge",
+            &format!("merge committed but index rebuild failed: {error}"),
+            EXIT_FAILED,
+        ),
+    }
+}
+
+fn news_write(args: &[OsString]) -> Outcome {
+    if args.len() == 1 && matches!(args[0].to_str(), Some("--help" | "-h")) {
+        return success("Usage: journal news write FACET --day YYYYMMDD\n".to_owned());
+    }
+    let Some(facet) = args.first().and_then(|arg| arg.to_str()) else {
+        return usage("news write", "FACET is required");
+    };
+    if args.len() != 3 || args[1] != OsStr::new("--day") {
+        return usage("news write", "expected FACET --day YYYYMMDD");
+    }
+    let Some(day) = args[2].to_str() else {
+        return usage("news write", "DAY must be UTF-8");
+    };
+    if !safe_component(facet) {
+        return failure("news write", "FACET is invalid", EXIT_DATA);
+    }
+    if !valid_day(day) {
+        return failure("news write", "DAY must be a real YYYYMMDD date", EXIT_DATA);
+    }
+    let journal = match journal_root("news write") {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    if let Err(error) = require_real_directory(&journal.join("facets").join(facet)) {
+        return failure("news write", &error, EXIT_DATA);
+    }
+    let mut bytes = Vec::new();
+    if let Err(error) = io::stdin().read_to_end(&mut bytes) {
+        return failure("news write", &error.to_string(), EXIT_IO);
+    }
+    let markdown = match String::from_utf8(bytes) {
+        Ok(markdown) if !markdown.trim().is_empty() => markdown,
+        Ok(_) => return failure("news write", "no content provided on stdin", EXIT_DATA),
+        Err(_) => return failure("news write", "stdin must be UTF-8", EXIT_DATA),
+    };
+    if let Err(error) = write_news_file(&journal, facet, &format!("{day}.md"), &markdown) {
+        return failure("news write", &error.to_string(), EXIT_IO);
+    }
+    success(format!("News for {day} saved to {facet}.\n"))
+}
+
+struct MergeItem {
+    source: PathBuf,
+    destination: PathBuf,
+    relative: String,
+}
+
+enum ExistingPathKind {
+    RegularFile,
+    Directory,
+    Unsafe,
+}
+
+fn existing_path_kind(path: &Path) -> Result<Option<ExistingPathKind>, String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_file() => Ok(Some(ExistingPathKind::RegularFile)),
+        Ok(metadata) if metadata.file_type().is_dir() => Ok(Some(ExistingPathKind::Directory)),
+        Ok(_) => Ok(Some(ExistingPathKind::Unsafe)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+struct ConveyUpdate {
+    path: PathBuf,
+    original: Vec<u8>,
+    replacement: Vec<u8>,
+}
+
+fn prepare_convey_update(journal: &Path, source: &str) -> Result<Option<ConveyUpdate>, String> {
+    let path = journal.join("config/convey.json");
+    let metadata = match fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.file_type().is_file() => metadata,
+        Ok(_) => return Err(format!("unsafe convey config: {}", path.display())),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    if metadata.len() > 4 * 1024 * 1024 {
+        return Err("convey config is unexpectedly large".to_owned());
+    }
+    let original = fs::read(&path).map_err(|error| error.to_string())?;
+    let mut value: Value = serde_json::from_slice(&original).map_err(|error| error.to_string())?;
+    let Some(root) = value.as_object_mut() else {
+        return Err("convey config must be a JSON object".to_owned());
+    };
+    let Some(facets) = root.get_mut("facets").and_then(Value::as_object_mut) else {
+        return Ok(None);
+    };
+    let mut changed = false;
+    if facets.get("selected").and_then(Value::as_str) == Some(source) {
+        facets.insert("selected".to_owned(), Value::Null);
+        changed = true;
+    }
+    if let Some(order) = facets.get_mut("order") {
+        let Some(items) = order.as_array_mut() else {
+            return Err("convey facets.order must be an array".to_owned());
+        };
+        let before = items.len();
+        items.retain(|item| item.as_str() != Some(source));
+        changed |= items.len() != before;
+    }
+    if !changed {
+        return Ok(None);
+    }
+    let mut replacement = serde_json::to_vec_pretty(&value).map_err(|error| error.to_string())?;
+    replacement.push(b'\n');
+    Ok(Some(ConveyUpdate {
+        path,
+        original,
+        replacement,
+    }))
+}
+
+fn rollback_facet_trees(
+    destination: &Path,
+    destination_backup: &Path,
+    source: &Path,
+    source_backup: &Path,
+) -> Result<(), String> {
+    if destination.exists() {
+        fs::remove_dir_all(destination).map_err(|error| error.to_string())?;
+    }
+    fs::rename(destination_backup, destination).map_err(|error| error.to_string())?;
+    fs::rename(source_backup, source).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn remove_tree_pair(first: &Path, second: &Path) -> Result<(), String> {
+    fs::remove_dir_all(first).map_err(|error| error.to_string())?;
+    fs::remove_dir_all(second).map_err(|error| error.to_string())
+}
+
+fn transaction_failure(token: &str, primary: &str, rollback: Result<(), String>) -> Outcome {
+    match rollback {
+        Ok(()) => failure(
+            token,
+            &format!("transaction failed and was rolled back: {primary}"),
+            EXIT_IO,
+        ),
+        Err(rollback_error) => failure(
+            token,
+            &format!("transaction failed ({primary}); rollback also failed ({rollback_error})"),
+            EXIT_IO,
+        ),
+    }
+}
+
+fn merge_plan(source: &Path, journal: &Path) -> Result<Vec<MergeItem>, String> {
+    let mut items = Vec::new();
+    for family in ["chronicle", "entities", "facets", "imports"] {
+        collect_merge_files(
+            &source.join(family),
+            &source.join(family),
+            &journal.join(family),
+            family,
+            &mut items,
+        )?;
+    }
+    let entries = fs::read_dir(source).map_err(|error| error.to_string())?;
+    for entry in entries {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let name = entry.file_name();
+        if name.to_str().is_some_and(valid_day)
+            && entry
+                .file_type()
+                .map_err(|error| error.to_string())?
+                .is_dir()
+        {
+            let day = name.to_string_lossy();
+            collect_merge_files(
+                &entry.path(),
+                &entry.path(),
+                &journal.join("chronicle").join(day.as_ref()),
+                &format!("chronicle/{day}"),
+                &mut items,
+            )?;
+        }
+    }
+    items.sort_by(|left, right| left.relative.cmp(&right.relative));
+    Ok(items)
+}
+
+fn collect_merge_files(
+    current: &Path,
+    root: &Path,
+    destination_root: &Path,
+    display_root: &str,
+    output: &mut Vec<MergeItem>,
+) -> Result<(), String> {
+    let entries = match fs::read_dir(current) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    let mut entries = entries
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    entries.sort_by_key(fs::DirEntry::file_name);
+    for entry in entries {
+        let kind = entry.file_type().map_err(|error| error.to_string())?;
+        let relative = entry
+            .path()
+            .strip_prefix(root)
+            .map_err(|error| error.to_string())?
+            .to_owned();
+        if kind.is_dir() {
+            collect_merge_files(&entry.path(), root, destination_root, display_root, output)?;
+        } else if kind.is_file() {
+            let display = if relative.as_os_str().is_empty() {
+                display_root.to_owned()
+            } else {
+                format!("{display_root}/{}", relative.to_string_lossy())
+            };
+            output.push(MergeItem {
+                source: entry.path(),
+                destination: destination_root.join(&relative),
+                relative: display,
+            });
+        } else {
+            return Err(format!("unsafe source entry: {}", entry.path().display()));
+        }
+    }
+    Ok(())
+}
+
+fn orphan_facets(journal: &Path) -> Result<Vec<String>, String> {
+    let facets = journal.join("facets");
+    let entries = match fs::read_dir(&facets) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error.to_string()),
+    };
+    let mut orphans = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let kind = entry.file_type().map_err(|error| error.to_string())?;
+        if !kind.is_dir() {
+            continue;
+        }
+        let Some(slug) = entry.file_name().to_str().map(str::to_owned) else {
+            return Err("facet name is not UTF-8".to_owned());
+        };
+        if !safe_component(&slug) {
+            continue;
+        }
+        match fs::symlink_metadata(entry.path().join("facet.json")) {
+            Ok(metadata) if metadata.file_type().is_file() => continue,
+            Ok(_) => return Err(format!("unsafe facet declaration for {slug}")),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
+        }
+        for content in ["entities", "todos", "activities", "news", "logs"] {
+            if contains_content(&entry.path().join(content))? {
+                orphans.push(slug.to_owned());
+                break;
+            }
+        }
+    }
+    orphans.sort();
+    Ok(orphans)
+}
+
+fn contains_content(path: &Path) -> Result<bool, String> {
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.to_string()),
+    };
+    for entry in entries {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let kind = entry.file_type().map_err(|error| error.to_string())?;
+        if kind.is_dir() {
+            if contains_content(&entry.path())? {
+                return Ok(true);
+            }
+        } else if kind.is_file() {
+            let name = entry.file_name();
+            if name != OsStr::new(".gitkeep") && !name.to_string_lossy().ends_with(".lock") {
+                return Ok(true);
+            }
+        } else {
+            return Err(format!("unsafe facet content: {}", entry.path().display()));
+        }
+    }
+    Ok(false)
+}
+
+fn copy_tree(source: &Path, destination: &Path, include_declaration: bool) -> Result<(), String> {
+    create_private_dir(destination).map_err(|error| error.to_string())?;
+    let mut entries = fs::read_dir(source)
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    entries.sort_by_key(fs::DirEntry::file_name);
+    for entry in entries {
+        if !include_declaration && entry.file_name() == OsStr::new("facet.json") {
+            continue;
+        }
+        let kind = entry.file_type().map_err(|error| error.to_string())?;
+        let target = destination.join(entry.file_name());
+        if kind.is_dir() {
+            copy_tree(&entry.path(), &target, include_declaration)?;
+        } else if kind.is_file() {
+            let bytes = fs::read(entry.path()).map_err(|error| error.to_string())?;
+            write_bytes_exclusive(&target, &bytes, AtomicWriteOptions { mode: Some(0o600) })
+                .map_err(|error| error.to_string())?;
+        } else {
+            return Err(format!("unsafe facet entry: {}", entry.path().display()));
+        }
+    }
+    Ok(())
+}
+
+fn merge_tree(source: &Path, destination: &Path) -> Result<(), String> {
+    let mut entries = fs::read_dir(source)
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    entries.sort_by_key(fs::DirEntry::file_name);
+    for entry in entries {
+        if entry.file_name() == OsStr::new("facet.json") {
+            continue;
+        }
+        let kind = entry.file_type().map_err(|error| error.to_string())?;
+        let target = destination.join(entry.file_name());
+        if kind.is_dir() {
+            match existing_path_kind(&target)? {
+                Some(ExistingPathKind::Directory) => merge_tree(&entry.path(), &target)?,
+                None => copy_tree(&entry.path(), &target, true)?,
+                Some(_) => return Err(format!("unsafe facet entry: {}", target.display())),
+            }
+        } else if kind.is_file() {
+            match existing_path_kind(&target)? {
+                None => {
+                    let bytes = fs::read(entry.path()).map_err(|error| error.to_string())?;
+                    write_bytes_exclusive(
+                        &target,
+                        &bytes,
+                        AtomicWriteOptions { mode: Some(0o600) },
+                    )
+                    .map_err(|error| error.to_string())?;
+                }
+                Some(ExistingPathKind::RegularFile)
+                    if entry.path().extension() == Some(OsStr::new("jsonl")) =>
+                {
+                    merge_jsonl(&target, &entry.path())?;
+                }
+                Some(ExistingPathKind::RegularFile)
+                    if entry.file_name() == OsStr::new("entity.json") =>
+                {
+                    merge_json_object(&target, &entry.path())?;
+                }
+                Some(ExistingPathKind::RegularFile) => {}
+                Some(_) => return Err(format!("unsafe facet entry: {}", target.display())),
+            }
+        } else {
+            return Err(format!("unsafe facet entry: {}", entry.path().display()));
+        }
+    }
+    Ok(())
+}
+
+fn merge_jsonl(destination: &Path, source: &Path) -> Result<(), String> {
+    let destination_text = fs::read_to_string(destination).map_err(|error| error.to_string())?;
+    let source_text = fs::read_to_string(source).map_err(|error| error.to_string())?;
+    let mut seen_ids = BTreeSet::new();
+    let mut seen_lines = BTreeSet::new();
+    let mut lines = Vec::new();
+    for line in destination_text.lines().chain(source_text.lines()) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let id = serde_json::from_str::<Value>(line)
+            .ok()
+            .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_owned));
+        let keep = match id {
+            Some(id) if !id.is_empty() => seen_ids.insert(id),
+            _ => seen_lines.insert(line.to_owned()),
+        };
+        if keep {
+            lines.push(line);
+        }
+    }
+    let mut merged = lines.join("\n");
+    if !merged.is_empty() {
+        merged.push('\n');
+    }
+    atomic_replace(
+        destination,
+        merged.as_bytes(),
+        AtomicWriteOptions { mode: Some(0o600) },
+    )
+    .map_err(|error| error.to_string())
+}
+
+fn merge_json_object(destination: &Path, source: &Path) -> Result<(), String> {
+    let source_value: Value =
+        serde_json::from_slice(&fs::read(source).map_err(|error| error.to_string())?)
+            .map_err(|error| error.to_string())?;
+    let destination_value: Value =
+        serde_json::from_slice(&fs::read(destination).map_err(|error| error.to_string())?)
+            .map_err(|error| error.to_string())?;
+    let mut merged = match source_value {
+        Value::Object(map) => map,
+        _ => return Err(format!("{} is not a JSON object", source.display())),
+    };
+    let Value::Object(destination_map) = destination_value else {
+        return Err(format!("{} is not a JSON object", destination.display()));
+    };
+    merged.extend(destination_map);
+    let mut bytes =
+        serde_json::to_vec_pretty(&Value::Object(merged)).map_err(|error| error.to_string())?;
+    bytes.push(b'\n');
+    atomic_replace(
+        destination,
+        &bytes,
+        AtomicWriteOptions { mode: Some(0o600) },
+    )
+    .map_err(|error| error.to_string())
+}
+
+fn default_export_path(journal: &Path, exported_at: &str) -> Result<PathBuf, String> {
+    let parent = journal
+        .parent()
+        .ok_or_else(|| "journal root has no parent".to_owned())?;
+    let name = journal
+        .file_name()
+        .ok_or_else(|| "journal root has no file name".to_owned())?;
+    let mut exports_name = name.to_os_string();
+    exports_name.push(".exports");
+    let exports = parent.join(exports_name);
+    match fs::symlink_metadata(&exports) {
+        Ok(metadata) if metadata.file_type().is_dir() => {
+            #[cfg(unix)]
+            fs::set_permissions(&exports, fs::Permissions::from_mode(0o700))
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(_) => return Err(format!("unsafe exports directory: {}", exports.display())),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            create_private_dir(&exports).map_err(|error| error.to_string())?;
+        }
+        Err(error) => return Err(error.to_string()),
+    }
+    let filename = exported_at.replace(['-', ':'], "");
+    Ok(exports.join(format!("{filename}.zip")))
+}
+
+fn reject_export_tree_output(journal: &Path, output: &Path, cwd: &Path) -> Result<(), String> {
+    let absolute = if output.is_absolute() {
+        output.to_owned()
+    } else {
+        cwd.join(output)
+    };
+    let parent = absolute
+        .parent()
+        .ok_or_else(|| "archive output has no parent".to_owned())?;
+    let canonical_parent = fs::canonicalize(parent).map_err(|error| error.to_string())?;
+    for family in ["chronicle", "entities", "facets", "imports"] {
+        let root = journal.join(family);
+        if let Ok(root) = fs::canonicalize(root)
+            && canonical_parent.starts_with(root)
+        {
+            return Err(format!("output is inside exported {family} tree"));
+        }
+    }
+    Ok(())
+}
+
+fn title_case_slug(slug: &str) -> String {
+    slug.split(['-', '_'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn safe_component(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    !bytes.is_empty()
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+        && !matches!(value, "." | "..")
+}
+
+fn valid_day(value: &str) -> bool {
+    value.len() == 8
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+        && NaiveDate::parse_from_str(value, "%Y%m%d").is_ok()
+}
+
+fn journal_root(token: &str) -> Result<PathBuf, Outcome> {
+    let resolved = resolve_current_journal().map_err(|error| {
+        failure(
+            token,
+            &format!("journal resolution failed: {error}"),
+            EXIT_IO,
+        )
+    })?;
+    canonical_directory(&resolved.path).map_err(|error| failure(token, &error, EXIT_IO))
+}
+
+fn canonical_directory(path: &Path) -> Result<PathBuf, String> {
+    let canonical = fs::canonicalize(path).map_err(|error| error.to_string())?;
+    require_real_directory(&canonical)?;
+    Ok(canonical)
+}
+
+fn require_real_directory(path: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if metadata.file_type().is_dir() {
+        Ok(())
+    } else {
+        Err(format!("not a real directory: {}", path.display()))
+    }
+}
+
+fn require_missing(path: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Ok(_) => Err(format!(
+            "transaction path already exists: {}",
+            path.display()
+        )),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+fn create_private_dir_exclusive(path: &Path) -> io::Result<()> {
+    let mut builder = DirBuilder::new();
+    #[cfg(unix)]
+    builder.mode(0o700);
+    builder.create(path)?;
+    #[cfg(unix)]
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    Ok(())
+}
+
+fn create_private_dir(path: &Path) -> io::Result<()> {
+    let mut builder = DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    builder.mode(0o700);
+    builder.create(path)?;
+    #[cfg(unix)]
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    Ok(())
+}
+
+fn sibling_path(path: &Path, suffix: &str) -> PathBuf {
+    let mut value = path.as_os_str().to_os_string();
+    value.push(suffix);
+    PathBuf::from(value)
+}
+
+fn transaction_id() -> String {
+    format!(
+        "{}-{}",
+        std::process::id(),
+        Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    )
+}
+
+fn target_exit(error: &solstone_core_journal_archive::ExplicitTargetError) -> u8 {
+    use solstone_core_journal_archive::ExplicitTargetError;
+    match error {
+        ExplicitTargetError::InvalidTarget { .. } | ExplicitTargetError::UnsafeTarget { .. } => {
+            EXIT_DATA
+        }
+        ExplicitTargetError::Collision { .. } => EXIT_FAILED,
+        ExplicitTargetError::TargetIo { .. } | ExplicitTargetError::TargetChanged { .. } => EXIT_IO,
+    }
+}
+
+fn archive_error(token: &str, message: &str) -> Outcome {
+    let exit = if message.contains("unsafe") || message.contains("invalid archive") {
+        EXIT_DATA
+    } else {
+        EXIT_IO
+    };
+    failure(token, message, exit)
+}
+
+struct MergeReport<'a> {
+    ok: bool,
+    code: &'a str,
+    source: &'a Path,
+    dry_run: bool,
+    committed: usize,
+    skipped: usize,
+    failed: usize,
+    decision_log: Option<&'a Path>,
+    index_rebuild: &'a str,
+    json_output: bool,
+    to_stderr: bool,
+}
+
+fn merge_result(report: MergeReport<'_>) -> Outcome {
+    let MergeReport {
+        ok,
+        code,
+        source,
+        dry_run,
+        committed,
+        skipped,
+        failed,
+        decision_log,
+        index_rebuild,
+        json_output,
+        to_stderr,
+    } = report;
+    if json_output {
+        let line = json!({
+            "ok": ok,
+            "code": code,
+            "source": source,
+            "dry_run": dry_run,
+            "committed": committed,
+            "skipped": skipped,
+            "failed": failed,
+            "decision_log": decision_log,
+            "staging_dir": Value::Null,
+            "index_rebuild": index_rebuild,
+            "summary": {"committed": committed, "skipped": skipped, "failed": failed}
+        })
+        .to_string()
+            + "\n";
+        if ok {
+            return success(line);
+        }
+        return Outcome::LocalFailure {
+            stdout: if to_stderr {
+                String::new()
+            } else {
+                line.to_owned()
+            },
+            stderr: if to_stderr { line } else { String::new() },
+            exit: EXIT_FAILED,
+        };
+    }
+    if ok {
+        success(format!(
+            "Archive merge: {committed} committed, {skipped} skipped, {failed} failed.\n"
+        ))
+    } else {
+        failure(
+            "archive merge",
+            &format!("{committed} committed, {skipped} skipped, {failed} failed"),
+            EXIT_FAILED,
+        )
+    }
+}
+
+trait OutcomeExt {
+    fn with_stderr_suffix(self, suffix: &str) -> Self;
+}
+
+impl OutcomeExt for Outcome {
+    fn with_stderr_suffix(mut self, suffix: &str) -> Self {
+        if let Outcome::LocalFailure { stderr, .. } = &mut self {
+            stderr.push_str(suffix);
+        }
+        self
+    }
+}
+
+fn success(stdout: String) -> Outcome {
+    Outcome::LocalSuccess {
+        stdout,
+        stderr: String::new(),
+    }
+}
+
+fn usage(token: &str, message: &str) -> Outcome {
+    failure(token, message, EXIT_USAGE)
+}
+
+fn failure(token: &str, message: &str, exit: u8) -> Outcome {
+    Outcome::LocalFailure {
+        stdout: String::new(),
+        stderr: format!("journal {token}: {message}\n"),
+        exit,
+    }
+}
