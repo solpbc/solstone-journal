@@ -3,6 +3,7 @@
 
 #![allow(dead_code)]
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -94,4 +95,67 @@ pub fn codec_rows() -> Value {
 pub fn hash_vectors_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../core/fixtures/body_source_hash_vectors.json")
+}
+
+pub fn native_bundle_fixture_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../core/fixtures/body_source_native_bundle_v1.json")
+}
+
+pub fn native_bundle_fixture() -> Value {
+    serde_json::from_str(
+        &std::fs::read_to_string(native_bundle_fixture_path()).expect("fixture should read"),
+    )
+    .expect("fixture should parse")
+}
+
+pub fn native_bundle_import_ids() -> Vec<String> {
+    native_bundle_fixture()["cases"]
+        .as_array()
+        .expect("fixture cases")
+        .iter()
+        .map(|case| {
+            case["manifest"]["import_id"]
+                .as_str()
+                .expect("manifest import ID")
+                .to_owned()
+        })
+        .collect()
+}
+
+pub fn native_bundle_digests() -> BTreeSet<String> {
+    let fixture = native_bundle_fixture();
+    let mut digests = BTreeSet::new();
+    for case in fixture["cases"].as_array().expect("fixture cases") {
+        for field in [
+            "body_bundle_sha256",
+            "expected_envelope_sha256",
+            "expected_normalized_sha256",
+            "expected_ledger_sha256",
+        ] {
+            let value = if field == "body_bundle_sha256" {
+                case["manifest"][field].as_str()
+            } else {
+                case[field].as_str()
+            };
+            digests.insert(value.expect("bundle-level digest").to_owned());
+        }
+
+        let envelope: Value = serde_json::from_str(
+            case["expected_envelope_jsonl"]
+                .as_str()
+                .expect("expected envelope JSONL"),
+        )
+        .expect("envelope JSONL should parse");
+        digests.insert(
+            envelope["ledger"]["sha256"]
+                .as_str()
+                .expect("ledger digest")
+                .to_owned(),
+        );
+        for shard in envelope["shards"].as_array().expect("envelope shards") {
+            digests.insert(shard["sha256"].as_str().expect("shard digest").to_owned());
+        }
+    }
+    digests
 }

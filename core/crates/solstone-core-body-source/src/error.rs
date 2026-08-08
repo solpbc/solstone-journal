@@ -54,6 +54,47 @@ impl fmt::Display for CanonicalizeError {
 
 impl std::error::Error for CanonicalizeError {}
 
+/// The closed set of native body-wire identity fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BodyWireIdentityField {
+    BundleId,
+    Digest,
+}
+
+impl BodyWireIdentityField {
+    /// Returns this field's stable wire spelling.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::BundleId => "bundle_id",
+            Self::Digest => "digest",
+        }
+    }
+}
+
+/// A bounded native body-wire identity failure.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BodyWireIdentityError {
+    InvalidFormat(BodyWireIdentityField),
+}
+
+impl fmt::Display for BodyWireIdentityError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidFormat(field) => {
+                write!(formatter, "body-wire invalid_format: {}", field.as_str())
+            }
+        }
+    }
+}
+
+impl fmt::Debug for BodyWireIdentityError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
+}
+
+impl std::error::Error for BodyWireIdentityError {}
+
 /// The closed set of required source identity fields.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IdentityField {

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use solstone_core_body_source::{
-    BodyInteger, BodyString, BodyValue, ParseError, canonicalize, parse,
+    BodyDigest, BodyInteger, BodyString, BodyValue, BodyWireIdentityError, BodyWireIdentityField,
+    BundleId, ParseError, canonicalize, parse,
 };
 
 mod support;
@@ -192,5 +193,43 @@ fn codec_object_keys_sort_but_arrays_keep_stored_order() {
     assert_ne!(
         original_canonical,
         canonicalize(&parse(array_swapped.as_bytes()).unwrap()).unwrap()
+    );
+}
+
+#[test]
+fn public_wire_identity_types_are_checked_ordered_and_hashable() {
+    let bundle_text = "body-01J9ZK2F5M7Q8R3S4T6V0W1X2Y";
+    let digest_text = "sha256:dc9b29d0ee818f2ae3cdd600a15066f4404002171a4eb99a39118b88303bd71b";
+    let bundle_body_string =
+        BodyString::from_code_points(bundle_text.bytes().map(u32::from).collect()).unwrap();
+    let digest_body_string =
+        BodyString::from_code_points(digest_text.bytes().map(u32::from).collect()).unwrap();
+
+    let bundle_from_bytes = BundleId::from_bytes(bundle_text.as_bytes()).unwrap();
+    let bundle_from_body_string = BundleId::from_body_string(&bundle_body_string).unwrap();
+    let digest_from_bytes = BodyDigest::from_bytes(digest_text.as_bytes()).unwrap();
+    let digest_from_body_string = BodyDigest::from_body_string(&digest_body_string).unwrap();
+    assert_eq!(bundle_from_bytes, bundle_from_body_string);
+    assert_eq!(bundle_from_bytes.as_str(), bundle_text);
+    assert_eq!(digest_from_bytes, digest_from_body_string);
+    assert_eq!(digest_from_bytes.as_str(), digest_text);
+
+    let mut hashes = HashSet::new();
+    hashes.insert((bundle_from_bytes.clone(), digest_from_bytes.clone()));
+    hashes.insert((
+        bundle_from_body_string.clone(),
+        digest_from_body_string.clone(),
+    ));
+    assert_eq!(hashes.len(), 1);
+    let mut ordered = BTreeSet::new();
+    ordered.insert((bundle_from_bytes, digest_from_bytes));
+    ordered.insert((bundle_from_body_string, digest_from_body_string));
+    assert_eq!(ordered.len(), 1);
+
+    assert_eq!(
+        BundleId::from_bytes(b"body-81J9ZK2F5M7Q8R3S4T6V0W1X2Y"),
+        Err(BodyWireIdentityError::InvalidFormat(
+            BodyWireIdentityField::BundleId
+        ))
     );
 }
