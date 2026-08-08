@@ -20,6 +20,7 @@ try:
         FINAL_TOP_LEVEL_CHAT_TOTAL,
         FINAL_TOP_LEVEL_IMPORT_TOTAL,
         FINAL_TOP_LEVEL_LINK_TOTAL,
+        FINAL_TOP_LEVEL_SPEAKER_ID_TOTAL,
         FINAL_TOP_LEVEL_STATUS_TOTAL,
         REPO_ROOT,
         discover,
@@ -31,6 +32,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
         FINAL_TOP_LEVEL_CHAT_TOTAL,
         FINAL_TOP_LEVEL_IMPORT_TOTAL,
         FINAL_TOP_LEVEL_LINK_TOTAL,
+        FINAL_TOP_LEVEL_SPEAKER_ID_TOTAL,
         FINAL_TOP_LEVEL_STATUS_TOTAL,
         REPO_ROOT,
         discover,
@@ -84,6 +86,12 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
         entry.operation_id
         for entry in entries
         if entry.surface == "sol-link" and entry.entry_type == "top-level-link"
+    }
+    required_top_level_speaker_id = {
+        entry.operation_id
+        for entry in entries
+        if entry.surface == "sol-speaker-id"
+        and entry.entry_type == "top-level-speaker-id"
     }
     required_dispatch = (
         required
@@ -180,6 +188,12 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
         errors.append(
             f"current top-level link authority count {len(required_top_level_link)} "
             f"!= {FINAL_TOP_LEVEL_LINK_TOTAL}"
+        )
+    if len(required_top_level_speaker_id) != FINAL_TOP_LEVEL_SPEAKER_ID_TOTAL:
+        errors.append(
+            "current top-level speaker-id authority count "
+            f"{len(required_top_level_speaker_id)} "
+            f"!= {FINAL_TOP_LEVEL_SPEAKER_ID_TOTAL}"
         )
     if not required_dispatch:
         errors.append("native dispatch authority set is empty")

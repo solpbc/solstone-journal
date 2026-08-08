@@ -40,6 +40,8 @@ mod solstone_think_native_import_command_rs;
 mod solstone_think_native_link_command_rs;
 #[path = "../../../../../solstone/think/native/moved/command.rs"]
 mod solstone_think_native_moved_command_rs;
+#[path = "../../../../../solstone/think/native/speaker-id/command.rs"]
+mod solstone_think_native_speaker_id_command_rs;
 #[path = "../../../../../solstone/think/native/status/command.rs"]
 mod solstone_think_native_status_command_rs;
 #[path = "../../../../../solstone/think/tools/native/health/command.rs"]
@@ -2243,6 +2245,21 @@ pub const ENTRIES: &[InventoryEntry] = &[
         resident: false,
     },
     InventoryEntry {
+        surface: "sol-speaker-id",
+        path: &["speaker-id"],
+        kind: "top-level",
+        help: "Exercise native speaker-label and speaker-correction read/write against a segment directory.",
+        authority_path: "solstone/think/native/speaker-id/authority.toml",
+        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"action\",\"nargs\":1,\"options\":[\"action\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"segment_dir\",\"nargs\":1,\"options\":[\"segment_dir\"],\"required\":true,\"secondary\":[],\"type\":\"text\"}]",
+        entry_type: "top-level-speaker-id",
+        operation_id: "speaker_id.top_level",
+        method: None,
+        route: None,
+        contract_operation_id: None,
+        handler: "speaker_id",
+        resident: false,
+    },
+    InventoryEntry {
         surface: "sol-status",
         path: &["status"],
         kind: "top-level",
@@ -2840,6 +2857,7 @@ pub const HANDLERS: &[Handler] = &[
     solstone_think_native_link_command_rs::link_join,
     solstone_think_native_moved_command_rs::identity,
     solstone_think_native_moved_command_rs::navigate,
+    solstone_think_native_speaker_id_command_rs::speaker_id,
     solstone_think_native_status_command_rs::status,
     solstone_think_tools_native_health_command_rs::summary,
     solstone_think_tools_native_health_command_rs::full,

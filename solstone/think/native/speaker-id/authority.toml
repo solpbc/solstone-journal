@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+schema = "native-sol-authority-v1"
+source = "command.rs"
+
+[[entries]]
+surface = "sol-speaker-id"
+path = ["speaker-id"]
+kind = "top-level"
+help = "Exercise native speaker-label and speaker-correction read/write against a segment directory."
+operation_id = "speaker_id.top_level"
+entry_type = "top-level-speaker-id"
+handler = "speaker_id"
+backing_contract_operation_ids = []
+params = [
+  { name = "action", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["action"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "segment_dir", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["segment_dir"], secondary = [], hidden = false, is_flag = false, count = false },
+]

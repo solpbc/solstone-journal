@@ -43,6 +43,7 @@ ENTRY_TYPES = {
     "top-level-chat",
     "top-level-import",
     "top-level-link",
+    "top-level-speaker-id",
     "top-level-status",
     "local",
 }
@@ -54,6 +55,7 @@ FINAL_JOURNAL_PYTHON_COMPAT_TOTAL = 2
 FINAL_TOP_LEVEL_CHAT_TOTAL = 1
 FINAL_TOP_LEVEL_IMPORT_TOTAL = 1
 FINAL_TOP_LEVEL_LINK_TOTAL = 2
+FINAL_TOP_LEVEL_SPEAKER_ID_TOTAL = 1
 FINAL_TOP_LEVEL_STATUS_TOTAL = 1
 FINAL_STUB_COUNTS = {"moved-stub": 2, "local": 1}
 FINAL_HTTP_GROUP_COUNTS = {
@@ -192,6 +194,7 @@ def parse_entry(
         "sol-chat",
         "sol-import",
         "sol-link",
+        "sol-speaker-id",
         "sol-status",
     }:
         raise ValueError(f"{label}: unsupported surface {surface!r}")
@@ -569,6 +572,7 @@ def check_top_level_partition(entries: list[AuthorityEntry]) -> list[str]:
         ("sol-chat", "top-level-chat"): FINAL_TOP_LEVEL_CHAT_TOTAL,
         ("sol-import", "top-level-import"): FINAL_TOP_LEVEL_IMPORT_TOTAL,
         ("sol-link", "top-level-link"): FINAL_TOP_LEVEL_LINK_TOTAL,
+        ("sol-speaker-id", "top-level-speaker-id"): FINAL_TOP_LEVEL_SPEAKER_ID_TOTAL,
         ("sol-status", "top-level-status"): FINAL_TOP_LEVEL_STATUS_TOTAL,
     }
     actual: dict[tuple[str, str], int] = {}

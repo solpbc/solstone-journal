@@ -20,6 +20,7 @@ pub enum Outcome {
     Migrated { path: Vec<OsString> },
     Chat { args: Vec<OsString> },
     Import { args: Vec<OsString> },
+    SpeakerId { args: Vec<OsString> },
     Status { args: Vec<OsString> },
     MovedStub { name: OsString },
     Unsupported { args: Vec<OsString> },
@@ -75,6 +76,17 @@ pub fn evaluate_args(args: &[OsString]) -> Outcome {
                     args: rest.to_vec(),
                 },
             )
+        }
+        [command, rest @ ..] if command == OsStr::new("speaker-id") => {
+            match_generated_surface_path("sol-speaker-id", &[String::from("speaker-id")])
+                .map_or_else(
+                    || Outcome::Unsupported {
+                        args: args.to_vec(),
+                    },
+                    |_entry| Outcome::SpeakerId {
+                        args: rest.to_vec(),
+                    },
+                )
         }
         [command, rest @ ..] if command == OsStr::new("status") => {
             match_generated_surface_path("sol-status", &[String::from("status")]).map_or_else(
@@ -161,6 +173,37 @@ pub fn dispatch_sol_status_with_seams(
     seams: DispatchSeams<'_>,
 ) -> CommandOutput {
     let Some((_, handler)) = match_generated_surface_path("sol-status", &[String::from("status")])
+    else {
+        return CommandOutput::failure("Unsupported native sol command.\n", 64);
+    };
+    handler(CommandContext {
+        args,
+        env,
+        stdin,
+        today,
+        transport: seams.transport,
+        clock: seams.clock,
+        chat_events: None,
+        files: seams.files,
+        build_identity: seams.build_identity,
+        client_item_ids: seams.client_item_ids,
+        notification_sink: None,
+        link_pairing: None,
+        link_serve: None,
+        journal_root: None,
+    })
+}
+
+#[must_use]
+pub fn dispatch_sol_speaker_id_with_seams(
+    args: &[String],
+    env: &BTreeMap<String, String>,
+    stdin: &str,
+    today: &str,
+    seams: DispatchSeams<'_>,
+) -> CommandOutput {
+    let Some((_, handler)) =
+        match_generated_surface_path("sol-speaker-id", &[String::from("speaker-id")])
     else {
         return CommandOutput::failure("Unsupported native sol command.\n", 64);
     };
@@ -441,6 +484,16 @@ mod tests {
             evaluate_args(&args(&["import", "sample.txt"])),
             Outcome::Import {
                 args: args(&["sample.txt"])
+            }
+        );
+    }
+
+    #[test]
+    fn routes_top_level_speaker_id_to_speaker_id_shell() {
+        assert_eq!(
+            evaluate_args(&args(&["speaker-id", "full", "/some/dir"])),
+            Outcome::SpeakerId {
+                args: args(&["full", "/some/dir"])
             }
         );
     }

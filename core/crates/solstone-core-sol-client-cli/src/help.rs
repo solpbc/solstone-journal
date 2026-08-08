@@ -95,6 +95,7 @@ pub fn render_top_level_help(command: &str, args: &[String]) -> Option<CommandOu
     let surface = match command {
         "chat" => "sol-chat",
         "import" => "sol-import",
+        "speaker-id" => "sol-speaker-id",
         "status" => "sol-status",
         _ => return None,
     };

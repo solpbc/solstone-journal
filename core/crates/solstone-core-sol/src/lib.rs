@@ -34,7 +34,7 @@ use solstone_core_sol_client::transport::UreqHttpTransport;
 use solstone_core_sol_client_cli::{
     DispatchSeams, LinkDispatch, LinkDispatchSeams, Outcome, dispatch_sol_call_with_seams,
     dispatch_sol_chat_with_seams, dispatch_sol_import_with_seams, dispatch_sol_link_with_seams,
-    dispatch_sol_status_with_seams, evaluate_args, help,
+    dispatch_sol_speaker_id_with_seams, dispatch_sol_status_with_seams, evaluate_args, help,
 };
 #[cfg(not(target_os = "ios"))]
 use solstone_core_sol_link::{SplLinkJoinPairingSeam, SplLinkServeRunner};
@@ -88,6 +88,9 @@ fn run_with_stdin_provider(
         }
         [command, rest @ ..] if command == OsStr::new("import") => {
             run_top_level_native(&args, "import", rest, stdin_provider)
+        }
+        [command, rest @ ..] if command == OsStr::new("speaker-id") => {
+            run_top_level_native(&args, "speaker-id", rest, stdin_provider)
         }
         [command, rest @ ..] if command == OsStr::new("link") => {
             run_top_level_link(&args, rest, stdin_provider)
@@ -458,6 +461,21 @@ fn run_dispatched(
             },
         ),
         Outcome::Import { .. } => dispatch_sol_import_with_seams(
+            &args,
+            &env,
+            &stdin,
+            &today,
+            DispatchSeams {
+                transport: &transport,
+                clock: None,
+                chat_events: None,
+                files: Some(&files),
+                build_identity: Some(&build_identity),
+                client_item_ids: Some(&client_item_ids),
+                notification_sink: None,
+            },
+        ),
+        Outcome::SpeakerId { .. } => dispatch_sol_speaker_id_with_seams(
             &args,
             &env,
             &stdin,

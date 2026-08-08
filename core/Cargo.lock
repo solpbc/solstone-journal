@@ -2405,6 +2405,7 @@ dependencies = [
  "serde_json",
  "solstone-core-journal",
  "solstone-core-journal-io",
+ "solstone-core-speaker-id",
  "spl-core",
  "ureq",
 ]

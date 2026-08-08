@@ -147,7 +147,7 @@ def check_conformance(
                     "status",
                 )
             )
-        elif authority.entry_type == "top-level-link":
+        elif authority.entry_type in {"top-level-link", "top-level-speaker-id"}:
             errors.extend(check_non_http_entry(authority, contract_by_operation))
         else:
             errors.append(
