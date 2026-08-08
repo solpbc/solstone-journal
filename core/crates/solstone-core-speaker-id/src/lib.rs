@@ -11,6 +11,9 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
+pub mod corrections;
+pub mod json;
+pub mod labels;
 pub mod transcript;
 pub mod writer;
 
