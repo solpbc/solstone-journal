@@ -283,12 +283,34 @@ check-rust-deny:
 # ci_gate_purity::every_differential_test_is_named_in_its_own_gate asserts that
 # every differential target in the workspace is named here, so a differential
 # cannot be gated off `make ci` and then run nowhere.
+# A red leg must never hide a leg that never ran. Two mechanisms did exactly
+# that here, and closing either one alone leaves the other: `make` halts a
+# recipe at its first failing line, so a red package hid every later package;
+# and `cargo` halts after the first failing test *target* within one
+# invocation, so `wire` -- 14 tests, the one-shot conformance suite -- stopped
+# running the moment `session_real` went red. Every leg therefore runs with
+# --no-fail-fast, every leg runs regardless of its predecessors, and the target
+# exits non-zero if any of them did. A gate that could not judge must never
+# read as a gate that said yes.
+.PHONY: check-differentials
 check-differentials:
 	@$(REQUIRE_CARGO)
 	$(MAKE) install
-	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core --features differential --locked --test journal_config_client --test journal_config_corruption --test journal_process_bootstrap
-	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-generate --features differential --locked --test no_downgrade --test session --test session_real --test wire
-	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-local --features differential --locked --test admission_cross_process
+	@status=0; \
+	for leg in \
+		"-p solstone-core --test journal_config_client --test journal_config_corruption --test journal_process_bootstrap" \
+		"-p solstone-core-generate --test no_downgrade --test session --test session_real --test wire" \
+		"-p solstone-core-local --test admission_cross_process" ; do \
+		echo "==> cargo test --features differential --no-fail-fast $$leg"; \
+		cargo test --manifest-path $(RUST_MANIFEST) --features differential --locked --no-fail-fast $$leg \
+			|| status=$$?; \
+	done; \
+	if [ $$status -eq 0 ]; then \
+		echo "check-differentials: every leg ran and passed"; \
+	else \
+		echo "check-differentials: FAILED (status $$status) -- every leg above still ran; read each leg's own result line"; \
+	fi; \
+	exit $$status
 
 build:
 	@$(REQUIRE_CARGO)
