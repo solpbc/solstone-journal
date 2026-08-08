@@ -14,13 +14,12 @@ use std::process::{Command, Output};
 use std::thread::{self, sleep};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const UNAVAILABLE_LOCAL_PATHS: &[&str] = &[
-    "archive export",
-    "archive merge",
-    "facet doctor",
-    "facet merge",
-    "news write",
-];
+use serde_json::Value;
+use sha2::{Digest, Sha256};
+
+const LOCAL_OPS_JSON: &str = include_str!("../../../fixtures/journal-cli/local-ops-v1.json");
+const LOCAL_OPS_SHA256: &str = "e15e208e67ad94caab1bd7dad9bdedc27942600dadf01e838aeaf72c39971cf2";
+const CLI_BOUNDARY_JSON: &str = include_str!("../../../fixtures/native-sol/cli-boundary-v1.json");
 
 struct TempDir {
     path: PathBuf,
@@ -53,6 +52,27 @@ fn bin() -> &'static str {
 
 fn identity_arg(public_argv0: &str) -> String {
     format!("__solstone_identity={public_argv0}")
+}
+
+fn local_ops_fixture() -> Value {
+    serde_json::from_str(LOCAL_OPS_JSON).expect("parse journal local operations fixture")
+}
+
+fn local_op_paths(fixture: &Value) -> Vec<String> {
+    fixture["commands"]
+        .as_array()
+        .expect("commands must be an array")
+        .iter()
+        .map(|command| {
+            command["path"]
+                .as_array()
+                .expect("command path must be an array")
+                .iter()
+                .map(|token| token.as_str().expect("path token must be a string"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect()
 }
 
 fn output_with_retry(args: &[String], path: Option<&Path>) -> Output {
@@ -243,8 +263,10 @@ fn journal_identity_is_distinct_from_sol_identity() {
 fn journal_identity_marks_unavailable_local_tokens_unavailable_without_spawning() {
     let temp = TempDir::new("journal-known-tokens");
     let (path, sentinel) = poison_path(&temp);
+    let fixture = local_ops_fixture();
+    let local_paths = local_op_paths(&fixture);
 
-    for token in UNAVAILABLE_LOCAL_PATHS {
+    for token in &local_paths {
         let parts = token.split_once(' ').expect("unavailable path has a group");
         let output = run_journal(&[parts.0, parts.1], Some(&path));
         assert_eq!(output.status.code(), Some(69), "{token}");
@@ -256,8 +278,134 @@ fn journal_identity_marks_unavailable_local_tokens_unavailable_without_spawning(
             "{token}: {stderr}"
         );
     }
-    assert_eq!(UNAVAILABLE_LOCAL_PATHS.len(), 5);
+    assert_eq!(
+        fixture["leaf_count"].as_u64(),
+        Some(u64::try_from(local_paths.len()).expect("leaf count fits in u64"))
+    );
     assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn journal_local_operations_fixture_is_the_boundary_census() {
+    assert_eq!(
+        format!("{:x}", Sha256::digest(LOCAL_OPS_JSON.as_bytes())),
+        LOCAL_OPS_SHA256,
+        "journal local behavior corpus changed without an independent contract review"
+    );
+    let fixture = local_ops_fixture();
+    assert_eq!(fixture["schema"], "journal-local-ops-v1");
+    assert_eq!(fixture["source"], "P-CLI");
+    assert_eq!(fixture["exit_codes"]["success"], 0);
+    assert_eq!(fixture["exit_codes"]["operation_failed"], 1);
+    assert_eq!(fixture["exit_codes"]["usage"], 64);
+    assert_eq!(fixture["exit_codes"]["unsafe_or_malformed_input"], 65);
+    assert_eq!(fixture["exit_codes"]["io_or_lock_failure"], 74);
+    assert_eq!(
+        fixture["shared_invariants"]
+            .as_array()
+            .expect("shared_invariants must be an array")
+            .len(),
+        8
+    );
+    let local_paths = local_op_paths(&fixture);
+    assert_eq!(local_paths.len(), 5);
+    let unique = local_paths
+        .iter()
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        unique.len(),
+        local_paths.len(),
+        "local operation paths repeat"
+    );
+
+    for command in fixture["commands"]
+        .as_array()
+        .expect("commands must be an array")
+    {
+        assert_eq!(command["owner"], "journal-direct");
+        assert!(
+            command["grammar"]
+                .as_str()
+                .is_some_and(|grammar| grammar.starts_with("journal "))
+        );
+        assert!(
+            command["cases"]
+                .as_array()
+                .is_some_and(|cases| cases.len() >= 2),
+            "each local operation needs executable success/failure cases"
+        );
+        assert!(
+            command["capabilities"]
+                .as_array()
+                .is_some_and(|capabilities| !capabilities.is_empty()),
+            "each local operation needs pinned capabilities"
+        );
+        assert!(
+            command["retired_spellings"]
+                .as_array()
+                .is_some_and(|spellings| !spellings.is_empty()),
+            "each intentional break needs an explicit retired spelling"
+        );
+        for case in command["cases"].as_array().expect("cases must be an array") {
+            assert!(case["name"].is_string(), "case name must be a string");
+            assert!(case["argv"].is_array(), "case argv must be an array");
+            assert!(case["stdin"].is_string(), "case stdin must be a string");
+            assert!(case["fixture"].is_string(), "case fixture must be a string");
+            assert!(
+                case["expected_exit"].is_number() || case["expected_recovery_exit"].is_number(),
+                "case must pin a direct or recovery exit"
+            );
+        }
+    }
+
+    let boundary: Value =
+        serde_json::from_str(CLI_BOUNDARY_JSON).expect("parse CLI boundary fixture");
+    let planned = boundary["identities"]["journal"]["planned_local_paths"]
+        .as_array()
+        .expect("planned_local_paths must be an array")
+        .iter()
+        .map(|path| path.as_str().expect("planned local path must be a string"))
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        planned,
+        local_paths.iter().map(String::as_str).collect(),
+        "journal local behavior corpus drifted from the identity boundary"
+    );
+
+    let retired = boundary["identities"]["sol"]["retired_invocations"]
+        .as_array()
+        .expect("retired_invocations must be an array")
+        .iter()
+        .map(|path| path.as_str().expect("retired invocation must be a string"))
+        .collect::<Vec<_>>();
+    for path in [
+        "archive export",
+        "archive merge",
+        "facet doctor",
+        "facet merge",
+        "news write",
+    ] {
+        assert!(
+            fixture["commands"]
+                .as_array()
+                .expect("commands must be an array")
+                .iter()
+                .any(|command| command["path"]
+                    .as_array()
+                    .expect("command path must be an array")
+                    .iter()
+                    .map(|token| token.as_str().expect("path token must be a string"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    == path),
+            "missing journal-owned path {path}"
+        );
+    }
+    assert!(retired.contains(&"call journal export"));
+    assert!(retired.contains(&"call journal facet doctor"));
+    assert!(retired.contains(&"call journal facet merge"));
+    assert!(retired.contains(&"call journal merge"));
+    assert!(retired.contains(&"call journal news --write"));
 }
 
 #[test]

@@ -1,0 +1,249 @@
+{
+  "schema": "journal-local-ops-v1",
+  "source": "P-CLI",
+  "founder_break_approval": "records/decisions/260807-vpe-p-cli-clean-command-cut.md",
+  "leaf_count": 5,
+  "exit_codes": {
+    "success": 0,
+    "operation_failed": 1,
+    "usage": 64,
+    "unsafe_or_malformed_input": 65,
+    "io_or_lock_failure": 74
+  },
+  "shared_invariants": [
+    "the configured journal root is canonicalized once; descendant traversal and mutation use descriptor-relative operations with no-follow on every component, or an equivalent capability-safe primitive that cannot be defeated by a symlink swap",
+    "every structured identifier used as one path component (facet slug, entity id, import id, day, stream, or segment key) must match ^[A-Za-z0-9][A-Za-z0-9._-]*$, and dot or dot-dot components are always rejected",
+    "SOURCE and --out are whole paths, not structured identifiers: canonicalize an existing SOURCE without following descendants; open an existing --out parent no-follow; never apply the component regex to the whole path",
+    "symlinks, sockets, devices, fifos, and other special files are rejected anywhere an operation reads, copies, replaces, renames, or removes a tree",
+    "mutation uses the native journal or facet exclusive lock; an existence check and its create-only publish occur under the same lock",
+    "temporary files are unique create-new no-follow siblings, files are mode 0600, private artifact directories are mode 0700, and both file and containing directory are synced before success",
+    "no command starts a Python interpreter or resolves a dotted module",
+    "usage errors write one diagnostic to stderr and exit 64 before journal resolution or mutation"
+  ],
+  "commands": [
+    {
+      "path": ["archive", "export"],
+      "owner": "journal-direct",
+      "grammar": "journal archive export [--out PATH] [--quiet]",
+      "reads_stdin": false,
+      "retired_spellings": ["journal export", "sol call journal export"],
+      "capabilities": [
+        "export only chronicle, entities, facets, and imports",
+        "include explicit chronicle/, entities/, facets/, imports/ members and _export.json",
+        "manifest keys are solstone_version, exported_at, source_journal, day_count, entity_count, and facet_count",
+        "default output is JOURNAL.exports/YYYYMMDDTHHMMSSZ.zip beside the journal",
+        "publish from a unique mode-0600 create-new no-follow sibling and leave no temporary residue on failure",
+        "reject symlinks and special files rather than dereferencing them",
+        "reject an output path inside the journal's chronicle, entities, facets, or imports trees so the archive cannot traverse its own temporary or final file",
+        "--quiet suppresses the success path and skipped-entry advisory but never suppresses errors or the live-supervisor warning"
+      ],
+      "cases": [
+        {
+          "name": "minimal_success",
+          "argv": ["archive", "export", "--out", "${OUT}"],
+          "stdin": "",
+          "fixture": "minimal_journal",
+          "clock": "2026-08-07T21:22:23Z",
+          "expected_exit": 0,
+          "expected_stdout": "${OUT_CANONICAL}\n",
+          "expected_stderr": "",
+          "expected_archive_members": ["chronicle/", "entities/", "facets/", "imports/", "_export.json"]
+        },
+        {
+          "name": "symlink_member_rejected",
+          "argv": ["archive", "export", "--out", "${OUT}"],
+          "stdin": "",
+          "fixture": "journal_with_symlinked_member",
+          "expected_exit": 65,
+          "expected_stdout": "",
+          "expected_stderr": "journal archive export: unsafe journal entry\n",
+          "expected_absent": ["${OUT}", "${OUT_TEMP_GLOB}"]
+        }
+      ]
+    },
+    {
+      "path": ["archive", "merge"],
+      "owner": "journal-direct",
+      "grammar": "journal archive merge SOURCE [--dry-run] [--json]",
+      "reads_stdin": false,
+      "retired_spellings": ["journal merge", "sol call journal merge"],
+      "capabilities": [
+        "accept a source with chronicle day directories or legacy flat day directories",
+        "reject a source that is equal to, inside, or contains the target journal",
+        "merge segments, entities, facets, and imports while ignoring identity and config",
+        "never overwrite an existing segment or import",
+        "deduplicate entity aliases, emails, and observations; destination scalar fields win; a second principal is demoted",
+        "stage ambiguous entity identity collisions instead of guessing",
+        "the source journal is immutable: all accepted source data is copied, never renamed, moved, removed, or rewritten",
+        "overlapping facets preserve destination facet.json; entity relationship and observation data merge by their domain rules; detected-entity and activity JSONL records deduplicate by nonempty id with destination winning; activity output directories and news files use destination-wins by relative path; facet logs append source records in stable order",
+        "each new item is staged and create-only published; each update item is staged with an item transaction manifest, original backup, replacement, and recovery phase so interruption resolves to the original or replacement item before the next merge",
+        "write a mode-0600 append-only decision log in a mode-0700 per-run artifact directory beside the target",
+        "any failed item exits nonzero and reports committed, skipped, and failed items; a failed merge never starts the indexer",
+        "--dry-run creates no file or directory anywhere, including logs, artifacts, staging, ambiguity records, and locks, and never invokes the indexer",
+        "after a wholly successful write merge, request the native in-process full index rebuild; a rebuild failure exits nonzero and reports that merge items were already committed",
+        "--json writes exactly one UTF-8 JSON line to stdout on success and to stderr on failure, with keys ok, code, source, dry_run, committed, skipped, failed, decision_log, staging_dir, index_rebuild, and summary"
+      ],
+      "cases": [
+        {
+          "name": "dry_run_is_zero_write",
+          "argv": ["archive", "merge", "${SOURCE}", "--dry-run", "--json"],
+          "stdin": "",
+          "fixture": "merge_mixed_source",
+          "expected_exit": 0,
+          "expected_json_stream": "stdout",
+          "expected_json_subset": {"ok": true, "code": "ok", "dry_run": true, "decision_log": null, "staging_dir": null, "index_rebuild": "not-requested"},
+          "expected_tree_unchanged": ["${SOURCE}", "${JOURNAL}", "${JOURNAL}.merge"]
+        },
+        {
+          "name": "later_item_failure_is_honest",
+          "argv": ["archive", "merge", "${SOURCE}", "--json"],
+          "stdin": "",
+          "fixture": "merge_two_items",
+          "fault": "fail-second-item-before-publish",
+          "expected_exit": 1,
+          "expected_json_stream": "stderr",
+          "expected_json_subset": {"ok": false, "code": "item-failed", "index_rebuild": "not-requested"},
+          "expected_committed_count": 1,
+          "expected_failed_count": 1
+        },
+        {
+          "name": "update_item_crash_recovers",
+          "argv": ["archive", "merge", "${SOURCE}", "--json"],
+          "stdin": "",
+          "fixture": "merge_overlapping_entity",
+          "fault": "kill-process-after-update-publish-before-item-commit-mark",
+          "recovery_argv": ["archive", "merge", "${SOURCE}", "--dry-run", "--json"],
+          "expected_recovery_exit": 0,
+          "expected_recovery_state": "original-or-replacement-item",
+          "expected_source_unchanged": true,
+          "expected_temporary_residue_count": 0
+        }
+      ]
+    },
+    {
+      "path": ["facet", "doctor"],
+      "owner": "journal-direct",
+      "grammar": "journal facet doctor [--fix]",
+      "reads_stdin": false,
+      "retired_spellings": ["sol call journal facet doctor"],
+      "default_declaration": {"title": "${TITLE_CASE_SLUG}", "description": "", "color": "#667eea", "emoji": "📦"},
+      "capabilities": [
+        "find sorted content-bearing facet directories that lack facet.json",
+        "content-bearing means a regular non-symlink file below entities, todos, activities, news, or logs excluding .gitkeep and *.lock",
+        "report without writing by default",
+        "with --fix publish the default declaration and its facet_heal audit entry as one recoverable transaction under the facet mutation lock",
+        "the repair transaction uses a synced manifest with staged declaration, audit payload, transaction id, and phase; the next facet mutation rolls back a pre-commit crash or finishes an idempotent post-commit audit append before doing new work",
+        "after repairs print the exact follow-up: Run 'journal indexer --rescan-full' to refresh the index."
+      ],
+      "cases": [
+        {
+          "name": "report_only",
+          "argv": ["facet", "doctor"],
+          "stdin": "",
+          "fixture": "one_orphan_facet",
+          "expected_exit": 0,
+          "expected_stdout": "Orphan facets:\n- field-notes\n1 orphan facet(s) found. Run with --fix to register them.\n",
+          "expected_stderr": "",
+          "expected_tree_unchanged": ["${JOURNAL}"]
+        },
+        {
+          "name": "fix_transaction_rolls_back",
+          "argv": ["facet", "doctor", "--fix"],
+          "stdin": "",
+          "fixture": "one_orphan_facet",
+          "fault": "fail-audit-before-commit",
+          "expected_exit": 74,
+          "expected_stdout": "",
+          "expected_stderr": "journal facet doctor: repair transaction failed\n",
+          "expected_absent": ["${JOURNAL}/facets/field-notes/facet.json"]
+        }
+      ]
+    },
+    {
+      "path": ["facet", "merge"],
+      "owner": "journal-direct",
+      "grammar": "journal facet merge SOURCE --into DEST [--consent]",
+      "reads_stdin": false,
+      "retired_spellings": ["sol call journal facet merge"],
+      "capabilities": [
+        "validate SOURCE and DEST as safe facet slugs and reject identical or missing facets before writing",
+        "hold one exclusive facet mutation lock across planning, staging, publishes, source removal, convey cleanup, and one facet_merge audit entry",
+        "before publishing, durably write a mode-0600 transaction manifest containing transaction id, source, destination, original-tree backups, staged destination, staged convey config, audit payload, and phase",
+        "each phase transition is file-and-directory synced; a caught failure rolls back before returning; after process death the next facet mutation recovers the manifest before accepting owner arguments, choosing rollback before commit-mark and roll-forward after commit-mark",
+        "lock-aware readers observe original SOURCE plus original DEST or final DEST; unlocked readers during the bounded rename window are outside this command's atomicity guarantee",
+        "the audit record carries the transaction id and recovery checks it before append, giving exactly-once audit emission across replay",
+        "destination facet.json wins unchanged",
+        "entity relationships merge with destination fields winning; observations deduplicate by content and observed_at in destination-first stable order",
+        "detected-entity JSONL and activity config/day JSONL deduplicate by nonempty id with destination winning; activity output directories and news files use destination-wins by relative path; facet logs append source records in stable order",
+        "source-only regular facet files are copied into the staged destination; an unrecognized conflicting regular file aborts before commit",
+        "remove SOURCE from config/convey.json selected and order fields in the same transaction",
+        "include consent in the audit params only when --consent is supplied",
+        "after commit request the native in-process full index rebuild; a rebuild failure exits nonzero and reports that the facet transaction committed"
+      ],
+      "cases": [
+        {
+          "name": "successful_transaction",
+          "argv": ["facet", "merge", "source", "--into", "dest", "--consent"],
+          "stdin": "",
+          "fixture": "overlapping_facets",
+          "expected_exit": 0,
+          "expected_stdout": "Merged 'source' into 'dest'. Index rebuild completed.\n",
+          "expected_stderr": "",
+          "expected_absent": ["${JOURNAL}/facets/source"],
+          "expected_audit_count": 1,
+          "expected_index_rebuild_count": 1
+        },
+        {
+          "name": "mid_commit_fault_recovers_original",
+          "argv": ["facet", "merge", "source", "--into", "dest"],
+          "stdin": "",
+          "fixture": "overlapping_facets",
+          "fault": "kill-process-after-destination-publish-before-commit-mark",
+          "recovery_argv": ["facet", "doctor"],
+          "expected_recovery_exit": 0,
+          "expected_recovery_state": "original",
+          "expected_tree_unchanged_after_recovery": ["${JOURNAL}/facets/source", "${JOURNAL}/facets/dest"],
+          "expected_audit_count_after_recovery": 0,
+          "expected_index_rebuild_count_after_recovery": 0
+        }
+      ]
+    },
+    {
+      "path": ["news", "write"],
+      "owner": "journal-direct",
+      "grammar": "journal news write FACET --day YYYYMMDD",
+      "reads_stdin": true,
+      "retired_spellings": ["journal news --write", "journal news -w", "--facet", "-f", "-d", "SOL_FACET", "SOL_DAY", "sol call journal news --write"],
+      "day_pattern": "^[0-9]{8}$ with a real Gregorian calendar date",
+      "capabilities": [
+        "require non-whitespace UTF-8 markdown on stdin",
+        "validate FACET as one safe component and reject a missing facet before reading or writing the news path",
+        "atomically replace facets/FACET/news/YYYYMMDD.md under the facet mutation lock",
+        "preserve stdin bytes exactly and print News for YYYYMMDD saved to FACET."
+      ],
+      "cases": [
+        {
+          "name": "write_exact_bytes",
+          "argv": ["news", "write", "field-notes", "--day", "20260807"],
+          "stdin": "# Today\n\nKept byte-for-byte.\n",
+          "fixture": "existing_field_notes_facet",
+          "expected_exit": 0,
+          "expected_stdout": "News for 20260807 saved to field-notes.\n",
+          "expected_stderr": "",
+          "expected_file": "facets/field-notes/news/20260807.md",
+          "expected_file_bytes": "# Today\n\nKept byte-for-byte.\n"
+        },
+        {
+          "name": "invalid_calendar_day",
+          "argv": ["news", "write", "field-notes", "--day", "20260230"],
+          "stdin": "content\n",
+          "fixture": "existing_field_notes_facet",
+          "expected_exit": 65,
+          "expected_stdout": "",
+          "expected_stderr": "journal news write: DAY must be a real YYYYMMDD date\n",
+          "expected_absent": ["${JOURNAL}/facets/field-notes/news/20260230.md"]
+        }
+      ]
+    }
+  ]
+}
