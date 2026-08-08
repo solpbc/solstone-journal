@@ -82,11 +82,24 @@ fn regular_file_opens_are_nonblocking_and_nofollow() {
     assert!(source.contains(
         "const FILE_FLAGS: OFlag = OFlag::O_RDONLY\n    .union(OFlag::O_CLOEXEC)\n    .union(OFlag::O_NOFOLLOW)\n    .union(OFlag::O_NONBLOCK);"
     ));
+    assert_eq!(
+        source.matches("FILE_FLAGS").count(),
+        2,
+        "one declaration and one shared regular-leaf open path"
+    );
 }
 
 #[test]
 fn no_module_reaches_deferred_or_forbidden_surfaces() {
     for (name, source) in SOURCES.iter().chain(std::iter::once(&("lib", LIB))) {
+        let production = if *name == "source" {
+            source
+                .split_once("#[cfg(test)]\n#[allow(clippy::disallowed_methods, clippy::disallowed_types)]\nmod tests")
+                .map(|(production, _)| production)
+                .expect("source test-module boundary")
+        } else {
+            *source
+        };
         for forbidden in [
             "ZipArchive",
             "ZipWriter",
@@ -99,7 +112,7 @@ fn no_module_reaches_deferred_or_forbidden_surfaces() {
             "Python",
         ] {
             assert!(
-                !source.contains(forbidden),
+                !production.contains(forbidden),
                 "module {name} reaches forbidden surface {forbidden}"
             );
         }

@@ -46,6 +46,15 @@ enum AcquisitionPrimitive {
     FinalRestat,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DescendantPrimitive {
+    ListDirectoryOpen,
+    Metadata,
+    DirectoryOpen,
+    LeafOpen,
+    Fstat,
+}
+
 #[cfg(test)]
 #[derive(Clone, Copy)]
 struct InjectedFault {
@@ -81,10 +90,66 @@ thread_local! {
     static ROOT_STAT_SUBSTITUTION: std::cell::RefCell<Option<RootStatSubstitution>> = const {
         std::cell::RefCell::new(None)
     };
+    static DESCENDANT_TRACE: std::cell::RefCell<Option<DescendantTraceState>> = const {
+        std::cell::RefCell::new(None)
+    };
+    static DESCENDANT_STAT_SUBSTITUTION: std::cell::RefCell<Option<DescendantStatSubstitution>> = const {
+        std::cell::RefCell::new(None)
+    };
 }
 
 #[cfg(test)]
 struct RootStatSubstitution {
+    ordinal: usize,
+    seen: usize,
+    consumed: bool,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DescendantEvent {
+    primitive: DescendantPrimitive,
+    member: Option<String>,
+}
+
+#[cfg(test)]
+struct DescendantFault {
+    primitive: DescendantPrimitive,
+    member: Option<String>,
+    ordinal: usize,
+    error: Errno,
+}
+
+#[cfg(test)]
+struct DescendantBarrier {
+    primitive: DescendantPrimitive,
+    member: Option<String>,
+    ordinal: usize,
+    callback: Box<dyn FnOnce()>,
+}
+
+#[cfg(test)]
+struct DescendantTraceState {
+    attempted: Vec<DescendantEvent>,
+    successful: Vec<DescendantEvent>,
+    fault: Option<DescendantFault>,
+    fault_consumed: bool,
+    barrier: Option<DescendantBarrier>,
+    barrier_fired: bool,
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+struct DescendantTraceOutcome {
+    attempted: Vec<DescendantEvent>,
+    successful: Vec<DescendantEvent>,
+    fault_consumed: bool,
+    barrier_fired: bool,
+}
+
+#[cfg(test)]
+struct DescendantStatSubstitution {
+    member: String,
     ordinal: usize,
     seen: usize,
     consumed: bool,
@@ -196,6 +261,204 @@ fn record_success(primitive: AcquisitionPrimitive) {
     if let Some(callback) = callback {
         callback();
     }
+}
+
+#[cfg(test)]
+struct DescendantTraceGuard;
+
+#[cfg(test)]
+impl Drop for DescendantTraceGuard {
+    fn drop(&mut self) {
+        DESCENDANT_TRACE.with(|trace| {
+            trace.borrow_mut().take();
+        });
+    }
+}
+
+#[cfg(test)]
+fn trace_descendants<T>(
+    fault: Option<DescendantFault>,
+    barrier: Option<DescendantBarrier>,
+    operation: impl FnOnce() -> T,
+) -> (T, DescendantTraceOutcome) {
+    DESCENDANT_TRACE.with(|trace| {
+        assert!(
+            trace.borrow().is_none(),
+            "descendant trace is already active"
+        );
+        *trace.borrow_mut() = Some(DescendantTraceState {
+            attempted: Vec::new(),
+            successful: Vec::new(),
+            fault,
+            fault_consumed: false,
+            barrier,
+            barrier_fired: false,
+        });
+    });
+    let guard = DescendantTraceGuard;
+    let result = operation();
+    let state = DESCENDANT_TRACE.with(|trace| {
+        trace
+            .borrow_mut()
+            .take()
+            .expect("descendant trace remains active")
+    });
+    drop(guard);
+    (
+        result,
+        DescendantTraceOutcome {
+            attempted: state.attempted,
+            successful: state.successful,
+            fault_consumed: state.fault_consumed,
+            barrier_fired: state.barrier_fired,
+        },
+    )
+}
+
+#[cfg(test)]
+fn descendant_event(
+    primitive: DescendantPrimitive,
+    member: Option<&ArchiveMemberName>,
+) -> DescendantEvent {
+    DescendantEvent {
+        primitive,
+        member: member.map(|member| member.as_str().to_owned()),
+    }
+}
+
+#[cfg(test)]
+fn matching_ordinal(events: &[DescendantEvent], candidate: &DescendantEvent) -> usize {
+    events.iter().filter(|event| *event == candidate).count()
+}
+
+#[cfg(test)]
+fn attempt_descendant(event: &DescendantEvent) -> Result<(), Errno> {
+    DESCENDANT_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let Some(state) = trace.as_mut() else {
+            return Ok(());
+        };
+        state.attempted.push(event.clone());
+        let ordinal = matching_ordinal(&state.attempted, event);
+        if state.fault.as_ref().is_some_and(|fault| {
+            fault.primitive == event.primitive
+                && fault.member == event.member
+                && fault.ordinal == ordinal
+        }) {
+            let fault = state.fault.take().expect("matching descendant fault");
+            state.fault_consumed = true;
+            return Err(fault.error);
+        }
+        Ok(())
+    })
+}
+
+#[cfg(test)]
+fn record_descendant_success(event: DescendantEvent) {
+    let callback = DESCENDANT_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let state = trace.as_mut()?;
+        state.successful.push(event.clone());
+        let ordinal = matching_ordinal(&state.successful, &event);
+        let should_fire = state.barrier.as_ref().is_some_and(|barrier| {
+            barrier.primitive == event.primitive
+                && barrier.member == event.member
+                && barrier.ordinal == ordinal
+        });
+        should_fire.then(|| {
+            state.barrier_fired = true;
+            state
+                .barrier
+                .take()
+                .expect("matching descendant barrier")
+                .callback
+        })
+    });
+    if let Some(callback) = callback {
+        callback();
+    }
+}
+
+fn traced_descendant_nix<T>(
+    primitive: DescendantPrimitive,
+    member: Option<&ArchiveMemberName>,
+    operation: impl FnOnce() -> Result<T, Errno>,
+) -> Result<T, Errno> {
+    #[cfg(not(test))]
+    let _ = (primitive, member);
+    #[cfg(test)]
+    let event = descendant_event(primitive, member);
+    #[cfg(test)]
+    attempt_descendant(&event)?;
+    let result = operation();
+    #[cfg(test)]
+    if result.is_ok() {
+        record_descendant_success(event);
+    }
+    result
+}
+
+#[cfg(test)]
+fn with_descendant_fstat_special_type<T>(
+    member: &str,
+    ordinal: usize,
+    operation: impl FnOnce() -> T,
+) -> (T, bool) {
+    DESCENDANT_STAT_SUBSTITUTION.with(|substitution| {
+        assert!(
+            substitution.borrow().is_none(),
+            "descendant-stat substitution is already active"
+        );
+        *substitution.borrow_mut() = Some(DescendantStatSubstitution {
+            member: member.to_owned(),
+            ordinal,
+            seen: 0,
+            consumed: false,
+        });
+    });
+    struct SubstitutionGuard;
+    impl Drop for SubstitutionGuard {
+        fn drop(&mut self) {
+            DESCENDANT_STAT_SUBSTITUTION.with(|substitution| {
+                substitution.borrow_mut().take();
+            });
+        }
+    }
+    let guard = SubstitutionGuard;
+    let result = operation();
+    let state = DESCENDANT_STAT_SUBSTITUTION.with(|substitution| {
+        substitution
+            .borrow_mut()
+            .take()
+            .expect("descendant-stat substitution remains active")
+    });
+    drop(guard);
+    (result, state.consumed)
+}
+
+#[cfg(test)]
+fn substitute_descendant_fstat_type(
+    mut stat: FileStat,
+    member: Option<&ArchiveMemberName>,
+) -> FileStat {
+    DESCENDANT_STAT_SUBSTITUTION.with(|substitution| {
+        let mut substitution = substitution.borrow_mut();
+        let Some(state) = substitution.as_mut() else {
+            return;
+        };
+        if member.map(ArchiveMemberName::as_str) != Some(state.member.as_str()) {
+            return;
+        }
+        state.seen += 1;
+        if state.seen == state.ordinal {
+            let mut mode = SFlag::from_bits_truncate(stat.st_mode);
+            mode.remove(SFlag::S_IFMT);
+            mode.insert(SFlag::S_IFIFO);
+            stat.st_mode = mode.bits();
+            state.consumed = true;
+        }
+    });
+    stat
 }
 
 fn traced_nix<T>(
@@ -341,7 +604,7 @@ pub(crate) fn open_initial_directory(
     let opened = open_directory(parent, name, Some(member), true)?;
     let after = stat_fd(&opened, Some(member), "stat opened journal directory")?;
     let before_proof = directory_proof(before)?;
-    if directory_proof(&after)? != before_proof {
+    if !is_directory(&after) || directory_proof(&after)? != before_proof {
         return Err(changed(Some(member)));
     }
     Ok((opened, before_proof))
@@ -363,7 +626,7 @@ pub(crate) fn open_initial_file(
     let opened = open_regular_file(parent, name, Some(member), true)?;
     let after = stat_fd(&opened, Some(member), "stat opened journal file")?;
     let before_proof = file_proof(before)?;
-    if file_proof(&after)? != before_proof {
+    if !is_regular(&after) || file_proof(&after)? != before_proof {
         return Err(changed(Some(member)));
     }
     Ok(before_proof)
@@ -373,7 +636,10 @@ pub(crate) fn list_directory(
     directory: &impl AsFd,
     member: Option<&ArchiveMemberName>,
 ) -> Result<Vec<OsString>, ArchiveError> {
-    let mut directory = nix::dir::Dir::openat(directory, ".", DIRECTORY_FLAGS, Mode::empty())
+    let mut directory =
+        traced_descendant_nix(DescendantPrimitive::ListDirectoryOpen, member, || {
+            nix::dir::Dir::openat(directory, ".", DIRECTORY_FLAGS, Mode::empty())
+        })
         .map_err(|error| source_io("open journal directory for listing", member, error))?;
     let mut names = Vec::new();
     for entry in directory.iter() {
@@ -431,6 +697,7 @@ pub(crate) fn stat_entry_for_count(
     member: &ArchiveMemberName,
 ) -> Result<FileStat, ArchiveError> {
     stat_entry(parent, name, Some(member), "stat journal entry")
+        .map_err(|error| revalidation_error(error, member))
 }
 
 pub(crate) fn classify(stat: &FileStat) -> JournalEntryKind {
@@ -679,7 +946,10 @@ fn open_verified_file(
     }
     let opened = open_regular_file(&current, name, Some(member), true)?;
     let after = stat_fd(&opened, Some(member), "stat opened inventoried file")?;
-    if file_proof(&after)? != proof.file || file_proof(&after)? != file_proof(&before)? {
+    if !is_regular(&after)
+        || file_proof(&after)? != proof.file
+        || file_proof(&after)? != file_proof(&before)?
+    {
         return Err(changed(Some(member)));
     }
     current = opened;
@@ -721,7 +991,8 @@ fn walk_verified_directories(
         }
         let opened = open_directory(&current, name, Some(member), true)?;
         let after = stat_fd(&opened, Some(member), "stat opened inventoried directory")?;
-        if directory_proof(&after)? != *expected
+        if !is_directory(&after)
+            || directory_proof(&after)? != *expected
             || directory_proof(&after)? != directory_proof(&before)?
         {
             return Err(changed(Some(member)));
@@ -740,26 +1011,8 @@ fn revalidate_directory(root: &OwnedFd, proof: &DirectoryEntryProof) -> Result<(
 }
 
 fn revalidate_file(root: &OwnedFd, entry: &InventoryEntry) -> Result<(), ArchiveError> {
-    let member = entry.member_name();
-    let proof = entry.proof();
-    if proof.components.len() != proof.directories.len().saturating_add(1) {
-        return Err(changed(Some(member)));
-    }
-    let directory = walk_verified_directories(
-        root,
-        member,
-        &proof.components[..proof.components.len() - 1],
-        &proof.directories,
-    )?;
-    let Some(name) = proof.components.last() else {
-        return Err(changed(Some(member)));
-    };
-    let before = stat_entry(&directory, name, Some(member), "stat inventoried file")
-        .map_err(|error| revalidation_error(error, member))?;
-    if !is_regular(&before) || file_proof(&before)? != proof.file {
-        return Err(changed(Some(member)));
-    }
-    drop(directory);
+    let file = open_verified_file(root, entry.member_name(), entry.proof())?.0;
+    drop(file);
     Ok(())
 }
 
@@ -769,8 +1022,10 @@ fn stat_entry(
     member: Option<&ArchiveMemberName>,
     operation: &'static str,
 ) -> Result<FileStat, ArchiveError> {
-    fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)
-        .map_err(|error| source_io(operation, member, error))
+    traced_descendant_nix(DescendantPrimitive::Metadata, member, || {
+        fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)
+    })
+    .map_err(|error| source_io(operation, member, error))
 }
 
 fn stat_fd(
@@ -778,7 +1033,11 @@ fn stat_fd(
     member: Option<&ArchiveMemberName>,
     operation: &'static str,
 ) -> Result<FileStat, ArchiveError> {
-    fstat(fd).map_err(|error| source_io(operation, member, error))
+    let stat = traced_descendant_nix(DescendantPrimitive::Fstat, member, || fstat(fd))
+        .map_err(|error| source_io(operation, member, error))?;
+    #[cfg(test)]
+    let stat = substitute_descendant_fstat_type(stat, member);
+    Ok(stat)
 }
 
 fn open_directory(
@@ -787,7 +1046,10 @@ fn open_directory(
     member: Option<&ArchiveMemberName>,
     changed_on_race: bool,
 ) -> Result<OwnedFd, ArchiveError> {
-    openat(parent, name, DIRECTORY_FLAGS, Mode::empty()).map_err(|error| {
+    traced_descendant_nix(DescendantPrimitive::DirectoryOpen, member, || {
+        openat(parent, name, DIRECTORY_FLAGS, Mode::empty())
+    })
+    .map_err(|error| {
         if changed_on_race && is_race_error(error) {
             changed(member)
         } else {
@@ -802,7 +1064,10 @@ fn open_regular_file(
     member: Option<&ArchiveMemberName>,
     changed_on_race: bool,
 ) -> Result<OwnedFd, ArchiveError> {
-    openat(parent, name, FILE_FLAGS, Mode::empty()).map_err(|error| {
+    traced_descendant_nix(DescendantPrimitive::LeafOpen, member, || {
+        openat(parent, name, FILE_FLAGS, Mode::empty())
+    })
+    .map_err(|error| {
         if changed_on_race
             && (is_race_error(error) || matches!(error, Errno::ENXIO | Errno::ENODEV))
         {
@@ -908,7 +1173,12 @@ fn revalidation_error(error: ArchiveError, member: &ArchiveMemberName) -> Archiv
 mod tests {
     use std::fs;
     use std::io::Read;
+    use std::os::unix::net::UnixListener;
+    use std::process::{Command, Stdio};
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{Duration, Instant};
+
+    use nix::unistd::mkfifo;
 
     use super::*;
 
@@ -945,6 +1215,340 @@ mod tests {
             .expect("create journal parents");
         fs::write(source, bytes).expect("write journal source");
         root
+    }
+
+    fn short_temp_dir() -> TempDir {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "sja-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&path).expect("create short temporary directory");
+        TempDir { path }
+    }
+
+    const DESCENDANT_BARRIER_ROOT: &str = "SOLSTONE_ARCHIVE_DESCENDANT_BARRIER_ROOT";
+    const DESCENDANT_BARRIER_MODE: &str = "SOLSTONE_ARCHIVE_DESCENDANT_BARRIER_MODE";
+    const DESCENDANT_BARRIER_KIND: &str = "SOLSTONE_ARCHIVE_DESCENDANT_BARRIER_KIND";
+    const DESCENDANT_MEMBER: &str = "imports/import-1/source.bin";
+
+    fn replacement_barrier(root: &Path, kind: &str) -> DescendantBarrier {
+        let target = root.join(DESCENDANT_MEMBER);
+        let kind = kind.to_owned();
+        DescendantBarrier {
+            primitive: DescendantPrimitive::Metadata,
+            member: Some(DESCENDANT_MEMBER.to_owned()),
+            ordinal: 1,
+            callback: Box::new(move || {
+                fs::remove_file(&target).expect("remove inventoried file at stat/open barrier");
+                match kind.as_str() {
+                    "fifo" => {
+                        mkfifo(&target, Mode::S_IRUSR | Mode::S_IWUSR).expect("create barrier fifo")
+                    }
+                    "socket" => {
+                        let listener = UnixListener::bind(&target).expect("create barrier socket");
+                        drop(listener);
+                    }
+                    _ => panic!("unknown barrier replacement kind"),
+                }
+            }),
+        }
+    }
+
+    #[test]
+    fn descendant_barrier_child() {
+        let Some(root) = std::env::var_os(DESCENDANT_BARRIER_ROOT).map(PathBuf::from) else {
+            return;
+        };
+        let mode = std::env::var(DESCENDANT_BARRIER_MODE).expect("barrier child mode");
+        let kind = std::env::var(DESCENDANT_BARRIER_KIND).expect("barrier child kind");
+
+        let (result, trace) =
+            if mode == "initial" {
+                trace_descendants(None, Some(replacement_barrier(&root, &kind)), || {
+                    ArchiveSource::open(&root).map(|_| ())
+                })
+            } else {
+                let source = ArchiveSource::open(&root).expect("open source before barrier");
+                let entry = source
+                    .inventory()
+                    .entries()
+                    .iter()
+                    .find(|entry| entry.member_name().as_str() == DESCENDANT_MEMBER)
+                    .expect("barrier inventory entry");
+                trace_descendants(None, Some(replacement_barrier(&root, &kind)), || match mode
+                    .as_str()
+                {
+                    "open-file" => source.open_file(entry).map(|_| ()),
+                    "revalidate" => source.revalidate(),
+                    _ => panic!("unknown barrier child mode"),
+                })
+            };
+
+        assert!(trace.barrier_fired, "stat/open barrier did not fire");
+        assert!(matches!(
+            result,
+            Err(ArchiveError::SourceChanged { member: Some(member) })
+                if member.as_str() == DESCENDANT_MEMBER
+        ));
+    }
+
+    #[test]
+    fn descendant_stat_to_open_swaps_are_bounded_and_changed() {
+        for mode in ["initial", "open-file", "revalidate"] {
+            for kind in ["fifo", "socket"] {
+                let temporary = short_temp_dir();
+                let root = nested_journal(&temporary, b"source");
+                let mut child = Command::new(std::env::current_exe().expect("current test binary"))
+                    .args(["--exact", "source::tests::descendant_barrier_child"])
+                    .env(DESCENDANT_BARRIER_ROOT, &root)
+                    .env(DESCENDANT_BARRIER_MODE, mode)
+                    .env(DESCENDANT_BARRIER_KIND, kind)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .expect("spawn bounded barrier child");
+                let deadline = Instant::now() + Duration::from_secs(3);
+                let status = loop {
+                    if let Some(status) = child.try_wait().expect("wait for barrier child") {
+                        break status;
+                    }
+                    if Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        panic!("{mode}/{kind} barrier child exceeded bounded deadline");
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                };
+                let mut stdout = String::new();
+                let mut stderr = String::new();
+                child
+                    .stdout
+                    .take()
+                    .expect("barrier child stdout")
+                    .read_to_string(&mut stdout)
+                    .expect("read barrier child stdout");
+                child
+                    .stderr
+                    .take()
+                    .expect("barrier child stderr")
+                    .read_to_string(&mut stderr)
+                    .expect("read barrier child stderr");
+                assert!(
+                    status.success(),
+                    "{mode}/{kind} barrier child failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn descendant_fault_matrix_preserves_phase_member_and_errno() {
+        struct Case {
+            primitive: DescendantPrimitive,
+            member: Option<&'static str>,
+            error: Errno,
+            operation: Option<&'static str>,
+        }
+        let cases = [
+            Case {
+                primitive: DescendantPrimitive::ListDirectoryOpen,
+                member: None,
+                error: Errno::EIO,
+                operation: Some("open journal directory for listing"),
+            },
+            Case {
+                primitive: DescendantPrimitive::Metadata,
+                member: Some("imports"),
+                error: Errno::EIO,
+                operation: Some("stat journal entry"),
+            },
+            Case {
+                primitive: DescendantPrimitive::DirectoryOpen,
+                member: Some("imports"),
+                error: Errno::EACCES,
+                operation: Some("open journal directory"),
+            },
+            Case {
+                primitive: DescendantPrimitive::LeafOpen,
+                member: Some(DESCENDANT_MEMBER),
+                error: Errno::EACCES,
+                operation: Some("open journal file"),
+            },
+            Case {
+                primitive: DescendantPrimitive::Fstat,
+                member: Some(DESCENDANT_MEMBER),
+                error: Errno::EIO,
+                operation: Some("stat opened journal file"),
+            },
+            Case {
+                primitive: DescendantPrimitive::Metadata,
+                member: Some(DESCENDANT_MEMBER),
+                error: Errno::ENOENT,
+                operation: None,
+            },
+            Case {
+                primitive: DescendantPrimitive::DirectoryOpen,
+                member: Some("imports"),
+                error: Errno::ELOOP,
+                operation: None,
+            },
+            Case {
+                primitive: DescendantPrimitive::LeafOpen,
+                member: Some(DESCENDANT_MEMBER),
+                error: Errno::ENXIO,
+                operation: None,
+            },
+            Case {
+                primitive: DescendantPrimitive::LeafOpen,
+                member: Some(DESCENDANT_MEMBER),
+                error: Errno::ENODEV,
+                operation: None,
+            },
+        ];
+
+        for case in cases {
+            let temporary = TempDir::new("descendant-fault");
+            let root = nested_journal(&temporary, b"source");
+            let event = DescendantEvent {
+                primitive: case.primitive,
+                member: case.member.map(str::to_owned),
+            };
+            let (result, trace) = trace_descendants(
+                Some(DescendantFault {
+                    primitive: case.primitive,
+                    member: event.member.clone(),
+                    ordinal: 1,
+                    error: case.error,
+                }),
+                None,
+                || ArchiveSource::open(&root),
+            );
+            assert!(trace.fault_consumed, "fault was not consumed: {event:?}");
+            assert!(!trace.barrier_fired);
+            assert_eq!(trace.attempted.last(), Some(&event));
+            assert_eq!(
+                trace
+                    .successful
+                    .iter()
+                    .filter(|actual| **actual == event)
+                    .count(),
+                0,
+                "faulted operation completed successfully"
+            );
+            let error = match result {
+                Ok(_) => panic!("descendant fault must fail: {event:?}"),
+                Err(error) => error,
+            };
+            match (error, case.operation) {
+                (
+                    ArchiveError::SourceIo {
+                        operation,
+                        member,
+                        source,
+                    },
+                    Some(expected_operation),
+                ) => {
+                    assert_eq!(operation, expected_operation);
+                    assert_eq!(member.as_ref().map(ArchiveMemberName::as_str), case.member);
+                    assert_eq!(source.raw_os_error(), Some(case.error as i32));
+                }
+                (ArchiveError::SourceChanged { member }, None) => {
+                    assert_eq!(member.as_ref().map(ArchiveMemberName::as_str), case.member);
+                }
+                (actual, _) => panic!("unexpected descendant fault: {actual:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn proof_preserving_post_open_special_type_is_rejected() {
+        for mode in ["initial", "open-file", "revalidate"] {
+            let temporary = TempDir::new("post-open-special-type");
+            let root = nested_journal(&temporary, b"");
+            let leaf_fstat_ordinal = if mode == "initial" { 1 } else { 3 };
+            let (result, consumed) = if mode == "initial" {
+                with_descendant_fstat_special_type(DESCENDANT_MEMBER, leaf_fstat_ordinal, || {
+                    ArchiveSource::open(&root).map(|_| ())
+                })
+            } else {
+                let source = ArchiveSource::open(&root).expect("open source before substitution");
+                let entry = source
+                    .inventory()
+                    .entries()
+                    .iter()
+                    .find(|entry| entry.member_name().as_str() == DESCENDANT_MEMBER)
+                    .expect("substitution inventory entry");
+                with_descendant_fstat_special_type(DESCENDANT_MEMBER, leaf_fstat_ordinal, || {
+                    match mode {
+                        "open-file" => source.open_file(entry).map(|_| ()),
+                        "revalidate" => source.revalidate(),
+                        _ => panic!("unknown substitution mode"),
+                    }
+                })
+            };
+            assert!(consumed, "{mode} fstat substitution was not consumed");
+            let error = match result {
+                Ok(()) => panic!("{mode} accepted a substituted special-file type"),
+                Err(error) => error,
+            };
+            assert!(
+                matches!(
+                    &error,
+                    ArchiveError::SourceChanged { member: Some(member) }
+                        if member.as_str() == DESCENDANT_MEMBER
+                ),
+                "{mode} returned the wrong error: {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn proof_preserving_post_open_directory_type_is_rejected() {
+        for mode in ["initial", "open-file", "revalidate"] {
+            let temporary = TempDir::new("post-open-special-directory");
+            let root = nested_journal(&temporary, b"source");
+            let substituted_member = if mode == "initial" {
+                "imports"
+            } else {
+                DESCENDANT_MEMBER
+            };
+            let (result, consumed) = if mode == "initial" {
+                with_descendant_fstat_special_type(substituted_member, 1, || {
+                    ArchiveSource::open(&root).map(|_| ())
+                })
+            } else {
+                let source = ArchiveSource::open(&root).expect("open source before substitution");
+                let entry = source
+                    .inventory()
+                    .entries()
+                    .iter()
+                    .find(|entry| entry.member_name().as_str() == DESCENDANT_MEMBER)
+                    .expect("substitution inventory entry");
+                with_descendant_fstat_special_type(substituted_member, 1, || match mode {
+                    "open-file" => source.open_file(entry).map(|_| ()),
+                    "revalidate" => source.revalidate(),
+                    _ => panic!("unknown substitution mode"),
+                })
+            };
+            assert!(
+                consumed,
+                "{mode} directory fstat substitution was not consumed"
+            );
+            let error = match result {
+                Ok(()) => panic!("{mode} accepted a substituted special-directory type"),
+                Err(error) => error,
+            };
+            assert!(
+                matches!(
+                    &error,
+                    ArchiveError::SourceChanged { member: Some(member) }
+                        if member.as_str() == substituted_member
+                ),
+                "{mode} returned the wrong error: {error:?}"
+            );
+        }
     }
 
     fn component_count(root: &Path) -> usize {
