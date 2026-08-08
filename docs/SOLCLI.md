@@ -9,7 +9,7 @@ The CLI has two tiers with distinct purposes:
 | Tier | Pattern | Framework | Purpose |
 |------|---------|-----------|---------|
 | **Top-level** | `sol <cmd>` / `journal <cmd>` | Native `sol` + Python `journal` dispatcher | Native journal access, plus host services and local-only host tools under `journal` |
-| **Call** | `sol call <app> <cmd>` | Native authority inventory, plus finite journal compatibility | Tool-callable functions — what agents and humans invoke for data operations |
+| **Call** | `sol call <app> <cmd>` | Native authority inventory | Tool-callable functions — what agents and humans invoke for data operations |
 
 ### The boundary
 
@@ -71,7 +71,7 @@ Each module must export a `main()` function. The dispatcher does `importlib.impo
 Use this authority route for top-level commands that read or write journal data
 through the native HTTP boundary. For local commands that touch no journal data
 and have no `sol call` oracle path, use a direct match arm in
-`solstone_core_sol::run` alongside `root`, `path`, `status`, and `skills`.
+`solstone_core_sol::run` alongside `root` and `skills`.
 
 For host-only commands, use the `journal` dispatcher instead: create a Python
 module with `main()` and register it in `solstone/think/sol_cli.py` with the
@@ -226,21 +226,7 @@ This is for audit trail — it records that the agent confirmed user consent bef
 
 Use lowercase, single-word names. Hyphenated names for multi-word (`list-nudges-due`, `set-name`).
 
-## Doctor Commands
-
-`doctor` is a universal command surface: both `sol doctor` and `journal doctor`
-dispatch to `solstone.think.doctor`, with the battery selected by the active
-binary.
-
-`sol doctor` checks universal CLI usability and is designed to run cleanly on a
-journal-less or repo-less machine. Its default battery has four checks:
-
-- `python_version` — blocker; light package-metadata Requires-Python floor, no
-  `pyproject.toml` required.
-- `sol_importable` — blocker.
-- `local_bin_sol_reachable` — advisory.
-- `stale_alias_symlink` — blocker; checks only the `sol` wrapper. Stale
-  aliases warn, never block, and `journal setup` repairs them.
+## Journal Doctor
 
 `journal doctor` diagnoses journal-host health. It is role-aware: on a machine
 without a local journal directory or installed journal service, folder and
@@ -271,11 +257,11 @@ instead of false failures. Its battery is:
 Journal-host blocker failures include invalid service config, service identity
 mismatch, crash loops, systemd failed state, and journal-sync conflicts. An
 installed service with no supervisor socket is a warning when the OS unit is not
-failed. `--feature <name>` runs a single feature advisory on either surface.
+failed. `--feature <name>` runs a single feature advisory.
 
-Use `sol doctor` for “can this CLI run?”, `journal doctor` for “why is this
-journal host unhealthy?”, `make preflight` for the stdlib-only fresh-clone check
-before `.venv`/`uv` exist, and `journal health` for the live supervisor status view.
+Use `journal doctor` for “why is this journal host unhealthy?”, `make preflight`
+for the stdlib-only fresh-clone check before `.venv`/`uv` exist, and `journal
+health` for the live supervisor status view.
 
 ## Structured output: `journal setup --jsonl` and doctor `--jsonl`
 

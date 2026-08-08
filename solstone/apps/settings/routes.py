@@ -1256,14 +1256,15 @@ def update_observe() -> Any:
 
 @settings_bp.route("/api/facets")
 def list_facets() -> Any:
-    """List all facets."""
+    """List enabled facets, or all facets when requested."""
     try:
-        from solstone.think.facets import get_facets
+        from solstone.think.facets import get_enabled_facets, get_facets
 
+        include_all = request.args.get("all", "").lower() in {"true", "1"}
         facets = [
             _public_facet_record(name, data)
             for name, data in sorted(
-                get_facets().items(),
+                (get_facets() if include_all else get_enabled_facets()).items(),
                 key=lambda item: str(item[1].get("title") or item[0]).lower(),
             )
         ]

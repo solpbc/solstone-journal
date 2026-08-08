@@ -1080,9 +1080,6 @@ mod tests {
             != string_values(&[
                 "journal-dotted-module-dispatch",
                 "journal-python-public-entrypoint",
-                "sol-help-reads-local-journal",
-                "sol-python-call-journal",
-                "sol-python-doctor-check",
             ])
         {
             errors.push("legacy exception census drifted".to_owned());

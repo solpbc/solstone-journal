@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Diagnostics for solstone CLI and journal hosts.
+"""Diagnostics for journal hosts.
 
-`sol doctor` runs universal CLI-usability checks that must be meaningful on a
-journal-less machine. `journal doctor` runs journal-host service, folder, and
-processing-health checks. `--readiness` runs the setup step-1 battery.
+`journal doctor` runs journal-host service, folder, and processing-health
+checks. `--readiness` runs the setup step-1 battery.
 
 Exit code `0` means no blocker failed and no check raised during execution;
 exit code `1` means at least one blocker-severity check failed or any check
@@ -1550,7 +1549,7 @@ def parse_args(argv: Sequence[str] | None = None) -> Args:
     parser = argparse.ArgumentParser(
         description="Run solstone diagnostics.",
         epilog=(
-            "If 'sol doctor' is unavailable (e.g. before 'make install' completes), "
+            "If 'journal doctor' is unavailable (e.g. before 'make install' completes), "
             "run 'python3 scripts/doctor.py' from the repo root for the same diagnostic."
         ),
     )

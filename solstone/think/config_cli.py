@@ -32,9 +32,8 @@ from solstone.think.utils import (
 
 MERGE_INSTRUCTIONS = "\n".join(
     [
-        "journal config: --merge is not handled here.",
-        "use 'sol call journal merge <source> --dry-run' to preview the merge.",
-        "use 'sol call journal merge <source>' to perform the merge.",
+        "journal config: --merge is temporarily unavailable.",
+        "Keep both journal copies until archive merge support is migrated.",
     ]
 )
 
@@ -146,7 +145,7 @@ def _move_cross_filesystem_message(change: JournalChange) -> str:
     return (
         "journal config: refused: cannot move across filesystems "
         f"(current device={change.current_device}, target parent device={change.target_parent_device}); "
-        "use 'sol call journal merge <source>' instead"
+        "archive merge is temporarily unavailable, so keep both journal copies"
     )
 
 

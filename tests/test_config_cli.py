@@ -623,7 +623,7 @@ def test_journal_move_cross_filesystem_refuses(
     assert "cannot move across filesystems" in captured.err
     assert "device=1" in captured.err
     assert "device=2" in captured.err
-    assert "sol call journal merge" in captured.err
+    assert "archive merge is temporarily unavailable" in captured.err
 
 
 def test_journal_move_target_exists_refuses(home_root, monkeypatch, tmp_path, capsys):

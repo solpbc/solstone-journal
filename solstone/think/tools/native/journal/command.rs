@@ -180,19 +180,19 @@ pub fn imports(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(value) => value,
         Err(error) => return stderr(error),
     };
-    get(
-        ctx,
-        "/app/import/api/list",
-        query_values(
-            &parsed,
-            &[
-                ("--limit", "per_page"),
-                ("-n", "per_page"),
-                ("--source", "source"),
-                ("-s", "source"),
-            ],
-        ),
-    )
+    let mut query = query_values(
+        &parsed,
+        &[
+            ("--limit", "per_page"),
+            ("-n", "per_page"),
+            ("--source", "source"),
+            ("-s", "source"),
+        ],
+    );
+    if !query.iter().any(|item| item.key == "per_page") {
+        query.insert(0, QueryParam::single("per_page", "20"));
+    }
+    get(ctx, "/app/import/api/list", query)
 }
 
 #[must_use]
@@ -396,6 +396,9 @@ pub fn search(ctx: CommandContext<'_>) -> CommandOutput {
             ("--time-bucket", "time_bucket"),
         ],
     );
+    if !query.iter().any(|item| item.key == "limit") {
+        query.push(QueryParam::single("limit", "10"));
+    }
     if !query.iter().any(|item| item.key == "q")
         && let Some(value) = parsed.positionals.first()
     {

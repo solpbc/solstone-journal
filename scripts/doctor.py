@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
-"""Entry shim for `sol doctor`.
+"""Entry shim for `journal doctor`.
 
 Delegates to `solstone.think.doctor.main`, the canonical diagnostic. This
 requires the installed package; for the stdlib-only pre-`.venv` readiness

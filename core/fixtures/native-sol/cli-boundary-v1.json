@@ -243,9 +243,6 @@
     }
   },
   "legacy_exceptions": [
-    "sol-help-reads-local-journal",
-    "sol-python-doctor-check",
-    "sol-python-call-journal",
     "journal-python-public-entrypoint",
     "journal-dotted-module-dispatch"
   ]

@@ -24,7 +24,7 @@ Read, in order, when you enter the repo for a coding task:
    - Think pipeline → `solstone/think/<module>.py` + its tests.
    - AI talent prompt or behavior → `solstone/talent/<name>.md` (+ optional `.py` post-hook).
    - Capture / observe → `solstone/observe/<module>.py`.
-5. **Run `sol`** (no args) — prints current journal status + grouped command list. Orients you to live state.
+5. **Run `sol`** (no args) — prints the static grouped command list. Orients you to the public CLI surface.
 6. **`make dev`** or **`make sandbox`** when you need a running stack to iterate against.
 
 > If you cannot state in one sentence **which module owns the data your change touches**, stop and re-read §7 L2 (the domain ownership table). Writing to a domain from the wrong module is how we got the 14 layer violations the April 2026 audit catalogued.
@@ -71,15 +71,15 @@ Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `t
 Two surfaces:
 
 - **`sol <command>`** — native access commands declared under `solstone/think/native/<command>/authority.toml` and implemented by the matching Rust `command.rs` (e.g., `sol import`, `sol chat`).
-- **`journal <command>`** — host/service commands from `solstone/think/sol_cli.py` (e.g., `journal think`, `journal supervisor`, `journal heartbeat`). `ALIASES` provides shorthand compound commands (`journal start` → `journal supervisor`, `journal up/down` → `journal service up/down`). `doctor` is universal: `sol doctor` checks CLI usability; `journal doctor` checks journal-host health.
-- **`sol call <app> <verb>`** — native app commands declared under `solstone/apps/<app>/native/` and generated into the native aggregate inventory. The only remaining Python subtree is the finite private compatibility path for `sol call journal`; see `docs/PORTING.md` for the inventory and removal criterion.
+- **`journal <command>`** — host/service commands from `solstone/think/sol_cli.py` (e.g., `journal think`, `journal supervisor`, `journal heartbeat`). `ALIASES` provides shorthand compound commands (`journal start` → `journal supervisor`, `journal up/down` → `journal service up/down`). `journal doctor` checks journal-host health.
+- **`sol call <app> <verb>`** — native app commands declared under `solstone/apps/<app>/native/` or `solstone/think/tools/native/` and generated into the native aggregate inventory. `sol call journal` exposes its native 17-leaf journal group through this boundary.
 
 **Adding a top-level `sol` command:** add a native authority under `solstone/think/native/<command>/` and wire the Rust handler into the generated native inventory path. Use `solstone/think/native/chat/` and `solstone/think/native/import/` as the current patterns.
 
 **Adding a `sol call` sub-verb:** update `solstone/apps/<app>/native/authority.toml`, implement the handler in `command.rs`, and regenerate the native inventory.
-`sol call journal export` is the CLI entry for portable journal ZIPs; read-only archive validation lives in `solstone/think/importers/journal_archive.py`.
+Portable journal archive export is temporarily unavailable while archive support migrates; read-only archive validation lives in `solstone/think/importers/journal_archive.py`.
 
-Run `sol` (no args) for live status plus the full grouped command list.
+Run `sol` (no args) for the static grouped command list.
 
 ## 5. Make commands
 
@@ -404,8 +404,8 @@ If you're about to write to a domain from a module not in this table, stop and r
 journal-data command is declared by an app-local native authority and reaches the
 journal through the generated native HTTP client. The positive native-sol
 inventory, coverage, architecture, and conformance gates enforce that boundary.
-The only Python `sol call` subtree is the finite `sol call journal`
-compatibility path documented in `docs/PORTING.md`.
+The `sol call journal` group is a native HTTP surface declared under
+`solstone/think/tools/native/journal/`.
 
 ### L3 — Naming is a contract
 

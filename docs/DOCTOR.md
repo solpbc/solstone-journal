@@ -27,8 +27,6 @@ ls journal/talents/*/*_active.jsonl 2>/dev/null
 
 Use the diagnostic command that matches the question:
 
-- `sol doctor` — is the CLI usable on this machine? This universal battery is
-  safe on a journal-less or repo-less box.
 - `journal doctor` — is this journal host healthy, and what should be fixed?
   This is the health diagnosis view.
 - `make preflight` — can a fresh source checkout get ready before `.venv` or
@@ -43,15 +41,6 @@ uses status `fail`, and the aggregate fails independently of that check's
 severity. The public result includes the exception type and a truncated message,
 not a traceback. Summary `errors` are a subset of `failed`; consumers that want
 completed health failures should compute `failed - errors`.
-
-`sol doctor` runs four checks:
-
-| Check | Severity | Notes |
-|-------|----------|-------|
-| `python_version` | blocker | Light package-metadata Requires-Python floor; does not require `pyproject.toml`. |
-| `sol_importable` | blocker | Verifies the installed/source CLI import path. |
-| `local_bin_sol_reachable` | advisory | Checks the expected `~/.local/bin/sol` PATH shape. |
-| `stale_alias_symlink` | blocker | Checks only the `sol` wrapper; stale aliases warn, never block, and `journal setup` repairs them. Recognized legacy aliases can still migrate automatically. |
 
 `journal doctor` runs the journal-host battery:
 

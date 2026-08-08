@@ -30,7 +30,7 @@ Each package has a README.md symlink pointing to its documentation in `docs/`.
 
 ## CLI Routing
 
-The public `sol` / `solstone` launchers exec `solstone-core`, which routes through native authority entries under `solstone/think/native/`, `solstone/apps/*/native/`, and `solstone/think/tools/native/`. `solstone/think/sol_cli.py` maps `journal` host command names to Python modules. The only Python `sol call` subtree is the finite `sol call journal` compatibility path documented in `docs/PORTING.md`.
+The public `sol` / `solstone` launchers exec `solstone-core`, which routes through native authority entries under `solstone/think/native/`, `solstone/apps/*/native/`, and `solstone/think/tools/native/`. `solstone/think/sol_cli.py` maps `journal` host command names to Python modules.
 
 ## Agent & Skill Organization
 

@@ -118,7 +118,7 @@ def test_facet_detail_steady_state(settings_env):
     assert first.get_data(as_text=True) == second.get_data(as_text=True)
 
 
-def test_settings_facets_api_returns_all_facets(settings_env):
+def test_settings_facets_api_returns_enabled_facets_by_default(settings_env):
     journal, client = _settings_client(settings_env)
     _write_facet(journal, "active-facet", title="Active Facet")
     _write_facet(journal, "muted-facet", title="Muted Facet", muted=True)
@@ -128,7 +128,7 @@ def test_settings_facets_api_returns_all_facets(settings_env):
     assert response.status_code == 200
     facets = response.get_json()["facets"]
     by_name = {facet["name"]: facet for facet in facets}
-    assert set(by_name) == {"active-facet", "muted-facet"}
+    assert set(by_name) == {"active-facet"}
     assert by_name["active-facet"] == {
         "name": "active-facet",
         "title": "Active Facet",
@@ -138,7 +138,13 @@ def test_settings_facets_api_returns_all_facets(settings_env):
         "icon_svg": None,
         "muted": False,
     }
-    assert by_name["muted-facet"]["muted"] is True
+
+    all_response = client.get("/app/settings/api/facets?all=true")
+
+    assert all_response.status_code == 200
+    all_by_name = {facet["name"]: facet for facet in all_response.get_json()["facets"]}
+    assert set(all_by_name) == {"active-facet", "muted-facet"}
+    assert all_by_name["muted-facet"]["muted"] is True
 
 
 def test_settings_facets_api_returns_icon_override_svg(settings_env):
