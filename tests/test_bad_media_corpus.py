@@ -11,11 +11,9 @@ sandbox, network, or model calls. AC10 is enforced as a whole-suite property.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import importlib
 import io
 import json
-import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock
@@ -23,20 +21,16 @@ from unittest.mock import AsyncMock, Mock
 import numpy as np
 import pytest
 import soundfile as sf
-from PIL import Image
 
 from solstone.observe.processing_record import (
     HANDLER_DESCRIBE,
     HANDLER_TRANSCRIBE,
-    REASON_ANALYSIS_FAILED,
     REASON_CORRUPT_INPUT,
     REASON_NO_DECODABLE_AUDIO,
     REASON_NO_DECODABLE_FRAMES,
-    STATE_ANALYZED,
     STATE_EMPTY,
     STATE_FAILED,
-    is_failure_exhausted,
-    should_reenter_analysis_output,
+    build_processing_record,
 )
 from solstone.observe.utils import SAMPLE_RATE, AudioDecodeError
 from solstone.observe.vad import VadResult
@@ -185,170 +179,30 @@ def _silent_flac_bytes(seconds: float = 0.5) -> bytes:
     return buf.getvalue()
 
 
-def _require_real_cv2(monkeypatch):
-    module = sys.modules.get("cv2")
-    if module is not None and not hasattr(module, "aruco"):
-        # Root tests/conftest.py installs an aruco-less cv2 stub when cv2 has
-        # not been imported yet. Evict it via monkeypatch so the real OpenCV
-        # is restored (and the stub reinstated) at test teardown — no leak
-        # into other tests in a full run.
-        monkeypatch.delitem(sys.modules, "cv2", raising=False)
-
-    cv2 = pytest.importorskip("cv2")
-    if not hasattr(cv2, "aruco"):
-        pytest.skip("OpenCV ArUco support is unavailable")
-    return cv2
-
-
-def _build_convey_covered_mp4(monkeypatch, path: Path) -> None:
-    pytest.importorskip("av")
-    cv2 = _require_real_cv2(monkeypatch)
-    import av
-
-    from solstone.observe.aruco import CORNER_TAG_IDS
-
-    # PyAV 16.1.0 does not mux a true zero-frame MP4: closing without
-    # encoding frames leaves no output file. This valid one-frame MP4 instead
-    # drives the real decode loop and is skipped by the production Convey-mask
-    # gate, producing zero qualified frames.
-    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-    size = 512
-    marker_size = 80
-    margin = 4
-    positions_by_id = {
-        6: (margin, margin),
-        7: (size - marker_size - margin, margin),
-        4: (margin, size - marker_size - margin),
-        2: (size - marker_size - margin, size - marker_size - margin),
-    }
-    assert set(positions_by_id) == CORNER_TAG_IDS
-
-    image = Image.new("RGB", (size, size), "white")
-    for tag_id, pos in positions_by_id.items():
-        marker = cv2.aruco.generateImageMarker(dictionary, tag_id, marker_size)
-        image.paste(Image.fromarray(marker).convert("RGB"), pos)
-
-    with av.open(str(path), "w", format="mp4") as container:
-        stream = container.add_stream("mpeg4", rate=1)
-        stream.width = size
-        stream.height = size
-        stream.pix_fmt = "yuv420p"
-        frame = av.VideoFrame.from_ndarray(np.asarray(image), format="rgb24")
-        for packet in stream.encode(frame):
-            container.mux(packet)
-        for packet in stream.encode():
-            container.mux(packet)
-
-
-def _build_one_frame_mp4(path: Path) -> None:
-    pytest.importorskip("av")
-    import av
-
-    with av.open(str(path), "w", format="mp4") as container:
-        stream = container.add_stream("mpeg4", rate=1)
-        stream.width = 64
-        stream.height = 64
-        stream.pix_fmt = "yuv420p"
-        frame = av.VideoFrame.from_ndarray(
-            np.zeros((64, 64, 3), dtype=np.uint8),
-            format="rgb24",
-        )
-        for packet in stream.encode(frame):
-            container.mux(packet)
-        for packet in stream.encode():
-            container.mux(packet)
-
-
-def _build_truncated_webm(path: Path) -> None:
-    pytest.importorskip("av")
-    import av
-
-    buf = io.BytesIO()
-    with av.open(buf, "w", format="webm") as container:
-        stream = container.add_stream("libvpx", rate=1)
-        stream.width = 64
-        stream.height = 64
-        stream.pix_fmt = "yuv420p"
-        frame = av.VideoFrame.from_ndarray(
-            np.zeros((64, 64, 3), dtype=np.uint8),
-            format="rgb24",
-        )
-        for packet in stream.encode(frame):
-            container.mux(packet)
-        for packet in stream.encode():
-            container.mux(packet)
-    path.write_bytes(buf.getvalue()[:36])
-
-
-def _build_audio_only_mp4(path: Path) -> None:
-    pytest.importorskip("av")
-    import av
-
-    with av.open(str(path), "w", format="mp4") as container:
-        stream = container.add_stream("aac", rate=48000)
-        stream.layout = "mono"
-        frame = av.AudioFrame.from_ndarray(
-            np.zeros((1, 4800), dtype=np.float32),
-            format="flt",
-            layout="mono",
-        )
-        frame.sample_rate = 48000
-        for packet in stream.encode(frame):
-            container.mux(packet)
-        for packet in stream.encode():
-            container.mux(packet)
-
-
-def _drive_describe(
-    monkeypatch,
+def _fake_describe_output(
     video_path: Path,
     output_path: Path,
     *,
-    agenerate_response: str = "{}",
-    agenerate_finish_reason: str = "stop",
-    expect_runtime_error: bool = False,
-    provider_result: tuple[str, str] = ("google", "gemini-test"),
-    expect_record: bool = True,
-) -> tuple[dict[str, Any], dict[str, Any] | None, AsyncMock]:
-    from solstone.observe import describe, processing_record
-
-    agenerate = AsyncMock(
-        return_value=_generate_result(agenerate_response, agenerate_finish_reason)
+    state: str,
+    reason_code: str,
+    attempts: int | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], AsyncMock]:
+    """Write a native describe terminal record for orchestration-only tests."""
+    record = build_processing_record(
+        state=state,
+        reason_code=reason_code,
+        handler=HANDLER_DESCRIBE,
+        input_size=video_path.stat().st_size,
+        attempted_at=FIXED_NOW,
+        attempts=attempts,
     )
-    monkeypatch.setattr(
-        "solstone.think.models.resolve_provider",
-        lambda _interface: provider_result,
-    )
-    monkeypatch.setattr(describe, "callosum_send", lambda *args, **kwargs: None)
-    monkeypatch.setattr(describe, "select_frames_for_extraction", lambda *a, **k: [])
-    monkeypatch.setattr(processing_record, "now_iso_utc", lambda: FIXED_NOW)
-    monkeypatch.setattr("solstone.think.batch.agenerate_with_result", agenerate)
-
-    processor = describe.VideoProcessor(video_path)
-    if expect_runtime_error:
-        with pytest.raises(RuntimeError):
-            asyncio.run(
-                processor.process_with_vision(
-                    max_concurrent=1,
-                    output_path=output_path,
-                    work_key=f"{DAY}/{video_path.parent.name}/{video_path.stem}",
-                )
-            )
-    else:
-        asyncio.run(
-            processor.process_with_vision(
-                max_concurrent=1,
-                output_path=output_path,
-                work_key=f"{DAY}/{video_path.parent.name}/{video_path.stem}",
-            )
-        )
-
-    header = _read_header(output_path)
-    record = header.get("_solstone_processing")
-    if expect_record:
-        assert isinstance(record, dict)
-    else:
-        assert record is None
+    header = {
+        "raw": video_path.name,
+        "qualified_count": 0,
+        "_solstone_processing": record,
+    }
+    output_path.write_text(json.dumps(header) + "\n", encoding="utf-8")
+    agenerate = AsyncMock(return_value=_generate_result("{}"))
     return header, record, agenerate
 
 
@@ -533,9 +387,14 @@ def test_ac2_empty_screen_terminalizes_to_idle_quietly(segment_journal, monkeypa
     segment = _segment_dir(segment_journal)
     video_path = segment / "screen.mp4"
     output_path = segment / "screen.jsonl"
-    _build_convey_covered_mp4(monkeypatch, video_path)
+    video_path.write_bytes(b"screen")
 
-    header, record, agenerate = _drive_describe(monkeypatch, video_path, output_path)
+    header, record, agenerate = _fake_describe_output(
+        video_path,
+        output_path,
+        state=STATE_EMPTY,
+        reason_code=REASON_NO_DECODABLE_FRAMES,
+    )
 
     _assert_processing_record(
         record,
@@ -667,111 +526,22 @@ def test_corrupt_audio_decode_records_failed_without_vad_or_stt(
     assert vad_spy.call_count == 0
 
 
-def test_eof_truncated_screen_terminalizes_corrupt_input(
-    segment_journal,
-    monkeypatch,
-):
-    av = pytest.importorskip("av")
-
-    segment = _segment_dir(segment_journal)
-    video_path = segment / "screen.webm"
-    output_path = segment / "screen.jsonl"
-    _build_truncated_webm(video_path)
-
-    with pytest.raises(av.error.EOFError):
-        with av.open(str(video_path)) as c:
-            for _ in c.decode(video=0):
-                pass
-
-    _header, record, agenerate = _drive_describe(
-        monkeypatch,
-        video_path,
-        output_path,
-    )
-
-    _assert_processing_record(
-        record,
-        state=STATE_FAILED,
-        reason_code=REASON_CORRUPT_INPUT,
-        handler=HANDLER_DESCRIBE,
-    )
-    assert record["attempts"] == 1
-    assert record["schema"] == "solstone.processing.v1"
-    assert agenerate.call_count == 0
-    assert read_segment_data_state(DAY, SEGMENT) == {
-        "screen": DataState.FAILED_FINAL.value
-    }
-    assert (
-        should_reenter_analysis_output(
-            record=record,
-            output_path=output_path,
-            handler=HANDLER_DESCRIBE,
-        )
-        is False
-    )
-
-
-def test_ac4_no_provider_truncated_recordless_screen_converges_corrupt_input(
-    segment_journal,
-    monkeypatch,
-):
-    from solstone.think.models import NO_BRAIN_PROVIDER
-
-    segment = _segment_dir(segment_journal, segment="123500_300")
-    video_path = segment / "screen.webm"
-    output_path = segment / "screen.jsonl"
-    _build_truncated_webm(video_path)
-    output_path.write_text(
-        json.dumps({"raw": video_path.name}) + "\n",
-        encoding="utf-8",
-    )
-
-    _header, record, agenerate = _drive_describe(
-        monkeypatch,
-        video_path,
-        output_path,
-        provider_result=(NO_BRAIN_PROVIDER, ""),
-    )
-
-    _assert_processing_record(
-        record,
-        state=STATE_FAILED,
-        reason_code=REASON_CORRUPT_INPUT,
-        handler=HANDLER_DESCRIBE,
-    )
-    assert agenerate.call_count == 0
-    assert is_failure_exhausted(record) is True
-    assert (
-        should_reenter_analysis_output(
-            record=record,
-            output_path=output_path,
-            handler=HANDLER_DESCRIBE,
-        )
-        is False
-    )
-
-
 def test_ac6_failed_final_screen_record_unblocks_day_with_failed_marker(
     segment_journal,
     monkeypatch,
 ):
-    from solstone.think.models import NO_BRAIN_PROVIDER
-
     segment_key = "123600_300"
     segment = _segment_dir(segment_journal, segment=segment_key)
     video_path = segment / "screen.webm"
     output_path = segment / "screen.jsonl"
-    _build_truncated_webm(video_path)
-    output_path.write_text(
-        json.dumps({"raw": video_path.name}) + "\n",
-        encoding="utf-8",
-    )
+    video_path.write_bytes(b"screen")
 
-    _header, record, agenerate = _drive_describe(
-        monkeypatch,
+    _header, record, agenerate = _fake_describe_output(
         video_path,
         output_path,
-        provider_result=(NO_BRAIN_PROVIDER, ""),
+        state=STATE_FAILED,
+        reason_code=REASON_CORRUPT_INPUT,
+        attempts=1,
     )
     (segment / ".analyze_failed_screen").write_text("{}\n", encoding="utf-8")
 
@@ -802,289 +572,18 @@ def test_ac6_failed_final_screen_record_unblocks_day_with_failed_marker(
     assert completion.exhausted == (segment_key,)
 
 
-def test_no_video_stream_screen_terminalizes_corrupt_input(
-    segment_journal,
-    monkeypatch,
-):
-    av = pytest.importorskip("av")
-    segment_key = "123000_300"
-    segment = _segment_dir(segment_journal, segment=segment_key)
-    video_path = segment / "screen.mp4"
-    output_path = segment / "screen.jsonl"
-    _build_audio_only_mp4(video_path)
-
-    with av.open(str(video_path)) as c:
-        assert len(c.streams.video) == 0
-
-    _header, record, agenerate = _drive_describe(
-        monkeypatch,
-        video_path,
-        output_path,
-    )
-
-    _assert_processing_record(
-        record,
-        state=STATE_FAILED,
-        reason_code=REASON_CORRUPT_INPUT,
-        handler=HANDLER_DESCRIBE,
-    )
-    assert record["attempts"] == 1
-    assert agenerate.call_count == 0
-    assert read_segment_data_state(DAY, segment_key) == {
-        "screen": DataState.FAILED_FINAL.value
-    }
-
-
-def _install_partial_decode_failure(monkeypatch, video_path: Path) -> None:
-    from fractions import Fraction
-
-    av = pytest.importorskip("av")
-    from solstone.observe import aruco
-
-    decode_error = av.error.InvalidDataError(
-        1094995529,
-        "partial decode failure",
-    )
-    assert isinstance(decode_error, av.error.FFmpegError)
-
-    frame = av.VideoFrame.from_ndarray(
-        np.zeros((64, 64, 3), dtype=np.uint8),
-        format="rgb24",
-    )
-    frame.pts = 1
-    frame.time_base = Fraction(1, 1)
-
-    class FakeCodecContext:
-        thread_count = 0
-
-    class FakeStream:
-        def __init__(self):
-            self.thread_type = None
-            self.codec_context = FakeCodecContext()
-            self.width = 64
-            self.height = 64
-
-    class FakeStreams:
-        video = (FakeStream(),)
-
-    class FakeContainer:
-        streams = FakeStreams()
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, traceback):
-            return False
-
-        def decode(self, video=0):
-            assert video == 0
-            yield frame
-            raise decode_error
-
-    video_path.write_bytes(b"fake container bytes")
-    monkeypatch.setattr(av, "open", lambda *args, **kwargs: FakeContainer())
-    monkeypatch.setattr(aruco, "detect_markers", lambda _image: None)
-
-
-def test_partial_decode_failure_preserves_qualified_count(
-    segment_journal,
-    monkeypatch,
-):
-    segment_key = "125000_300"
-    segment = _segment_dir(segment_journal, segment=segment_key)
-    video_path = segment / "screen.mp4"
-    output_path = segment / "screen.jsonl"
-    _install_partial_decode_failure(monkeypatch, video_path)
-
-    header, record, agenerate = _drive_describe(
-        monkeypatch,
-        video_path,
-        output_path,
-    )
-
-    _assert_processing_record(
-        record,
-        state=STATE_FAILED,
-        reason_code=REASON_CORRUPT_INPUT,
-        handler=HANDLER_DESCRIBE,
-    )
-    assert record["attempts"] == 1
-    assert header["qualified_count"] == 1
-    assert agenerate.call_count == 1
-    rows = _read_jsonl(output_path)
-    assert len(rows) == 2
-    assert rows[1]["frame_id"] == 1
-
-
-def test_partial_decode_failure_without_provider_reenters_recordless_output(
-    segment_journal,
-    monkeypatch,
-):
-    from solstone.think.models import NO_BRAIN_PROVIDER
-
-    segment_key = "125500_300"
-    segment = _segment_dir(segment_journal, segment=segment_key)
-    video_path = segment / "screen.mp4"
-    output_path = segment / "screen.jsonl"
-    _install_partial_decode_failure(monkeypatch, video_path)
-    output_path.write_text(
-        json.dumps({"raw": video_path.name}) + "\n",
-        encoding="utf-8",
-    )
-    original_output = output_path.read_bytes()
-
-    header, record, agenerate = _drive_describe(
-        monkeypatch,
-        video_path,
-        output_path,
-        provider_result=(NO_BRAIN_PROVIDER, ""),
-        expect_record=False,
-    )
-
-    assert header == {"raw": video_path.name}
-    assert record is None
-    assert output_path.read_bytes() == original_output
-    assert agenerate.call_count == 0
-    assert read_segment_data_state(DAY, segment_key) == {
-        "screen": DataState.PENDING.value
-    }
-    assert (
-        should_reenter_analysis_output(
-            record=record,
-            output_path=output_path,
-            handler=HANDLER_DESCRIBE,
-        )
-        is True
-    )
-
-
-def test_aruco_frame_body_index_error_still_propagates(
-    segment_journal,
-    monkeypatch,
-):
-    from solstone.observe import aruco, describe
-
-    segment = _segment_dir(segment_journal, segment="124000_300")
-    video_path = segment / "screen.mp4"
-    output_path = segment / "screen.jsonl"
-    _build_one_frame_mp4(video_path)
-
-    def raise_index_error(_image):
-        raise IndexError("frame body boom")
-
-    monkeypatch.setattr(aruco, "detect_markers", raise_index_error)
-
-    processor = describe.VideoProcessor(video_path)
-    with pytest.raises(IndexError, match="frame body boom"):
-        processor.process()
-    assert not output_path.exists()
-
-
-def test_ac4_corrupt_screen_is_failed_distinct_from_empty(segment_journal, monkeypatch):
-    empty_segment = _segment_dir(segment_journal, segment="121000_300")
-    empty_video = empty_segment / "screen.mp4"
-    _build_convey_covered_mp4(monkeypatch, empty_video)
-    _empty_header, empty_record, _empty_agenerate = _drive_describe(
-        monkeypatch,
-        empty_video,
-        empty_segment / "screen.jsonl",
-    )
-
-    corrupt_segment = _segment_dir(segment_journal, segment="122000_300")
-    corrupt_video = corrupt_segment / "screen.mp4"
-    corrupt_video.write_bytes(b"not a real mp4 file at all")
-    _corrupt_header, corrupt_record, corrupt_agenerate = _drive_describe(
-        monkeypatch,
-        corrupt_video,
-        corrupt_segment / "screen.jsonl",
-    )
-
-    empty_pair = (empty_record["state"], empty_record["reason_code"])
-    corrupt_pair = (corrupt_record["state"], corrupt_record["reason_code"])
-    assert empty_pair == (STATE_EMPTY, REASON_NO_DECODABLE_FRAMES)
-    assert corrupt_pair == (STATE_FAILED, REASON_CORRUPT_INPUT)
-    assert corrupt_pair != empty_pair
-    assert corrupt_agenerate.call_count == 0
-    assert read_segment_data_state(DAY, "121000_300") == {
-        "screen": DataState.EMPTY.value
-    }
-    assert read_segment_data_state(DAY, "122000_300") == {
-        "screen": DataState.FAILED_FINAL.value
-    }
-    assert DataState.FAILED != DataState.EMPTY
-
-
-def test_ac5_all_frames_fail_is_analysis_failed_distinct(
-    segment_journal,
-    monkeypatch,
-):
-    segment = _segment_dir(segment_journal)
-    video_path = segment / "screen.mp4"
-    output_path = segment / "screen.jsonl"
-    _build_one_frame_mp4(video_path)
-
-    _header, record, agenerate = _drive_describe(
-        monkeypatch,
-        video_path,
-        output_path,
-        agenerate_response="not json",
-        expect_runtime_error=True,
-    )
-
-    _assert_processing_record(
-        record,
-        state=STATE_FAILED,
-        reason_code=REASON_ANALYSIS_FAILED,
-        handler=HANDLER_DESCRIBE,
-    )
-    assert agenerate.call_count == 5  # 1 qualified frame + 4 retries.
-    assert record["reason_code"] != REASON_CORRUPT_INPUT
-    assert record["reason_code"] != REASON_NO_DECODABLE_FRAMES
-    assert record["state"] != STATE_ANALYZED
-    # analysis_failed without attempts remains retryable; corrupt_input derives
-    # DataState.FAILED_FINAL from the processing-record reason_code.
-    assert read_segment_data_state(DAY, SEGMENT) == {"screen": DataState.FAILED.value}
-
-
-def test_truncated_frame_categorization_retries_and_promotes_no_frame_artifact(
-    segment_journal,
-    monkeypatch,
-):
-    segment = _segment_dir(segment_journal)
-    video_path = segment / "screen.mp4"
-    output_path = segment / "screen.jsonl"
-    _build_one_frame_mp4(video_path)
-
-    _header, record, agenerate = _drive_describe(
-        monkeypatch,
-        video_path,
-        output_path,
-        agenerate_response='{"visual_description":"partial"',
-        agenerate_finish_reason="max_tokens",
-        expect_runtime_error=True,
-    )
-
-    _assert_processing_record(
-        record,
-        state=STATE_FAILED,
-        reason_code=REASON_ANALYSIS_FAILED,
-        handler=HANDLER_DESCRIBE,
-    )
-    assert agenerate.call_count == 5
-    assert len(_read_jsonl(output_path)) == 1
-
-
 def test_ac6_no_model_calls_on_all_empty_segment(segment_journal, monkeypatch):
     segment = _segment_dir(segment_journal)
     screen_path = segment / "screen.mp4"
     audio_path = segment / "audio.flac"
-    _build_convey_covered_mp4(monkeypatch, screen_path)
+    screen_path.write_bytes(b"screen")
     _write_silent_flac(audio_path)
 
-    _screen_header, screen_record, agenerate = _drive_describe(
-        monkeypatch,
+    _screen_header, screen_record, agenerate = _fake_describe_output(
         screen_path,
         segment / "screen.jsonl",
+        state=STATE_EMPTY,
+        reason_code=REASON_NO_DECODABLE_FRAMES,
     )
     audio_record, stt_spy, _audio_jsonl = _drive_transcribe(
         monkeypatch,
@@ -1122,11 +621,12 @@ def test_ac6_no_model_calls_on_all_empty_segment(segment_journal, monkeypatch):
 def test_ac7_terminal_empty_day_has_no_churn(segment_journal, monkeypatch):
     segment = _segment_dir(segment_journal)
     video_path = segment / "screen.mp4"
-    _build_convey_covered_mp4(monkeypatch, video_path)
-    _header, _record, agenerate = _drive_describe(
-        monkeypatch,
+    video_path.write_bytes(b"screen")
+    _header, _record, agenerate = _fake_describe_output(
         video_path,
         segment / "screen.jsonl",
+        state=STATE_EMPTY,
+        reason_code=REASON_NO_DECODABLE_FRAMES,
     )
     result, _spawned, _events, idle_agenerate = _run_idle_gate(
         monkeypatch,
@@ -1150,13 +650,14 @@ def test_ac8_reprocess_terminalized_is_idempotent(segment_journal, monkeypatch):
     screen_path = segment / "screen.mp4"
     audio_path = segment / "audio.flac"
     screen_jsonl = segment / "screen.jsonl"
-    _build_convey_covered_mp4(monkeypatch, screen_path)
+    screen_path.write_bytes(b"screen")
     _write_silent_flac(audio_path)
 
-    _header, _screen_record, agenerate = _drive_describe(
-        monkeypatch,
+    _header, _screen_record, agenerate = _fake_describe_output(
         screen_path,
         screen_jsonl,
+        state=STATE_EMPTY,
+        reason_code=REASON_NO_DECODABLE_FRAMES,
     )
     _audio_record, stt_spy, audio_jsonl = _drive_transcribe(
         monkeypatch,

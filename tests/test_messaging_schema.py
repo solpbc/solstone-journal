@@ -3,23 +3,18 @@
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
-import pytest
 from jsonschema import Draft202012Validator
 
-from solstone.observe import describe as describe_mod
 from solstone.observe.categories import messaging as messaging_mod
-from solstone.think.batch import Batch
+from solstone.think.describe_categories import CATEGORIES
 from solstone.think.schema_bounds import unbounded_nodes
 
 
 def _load_schema() -> dict:
     return json.loads(
         (
-            Path(describe_mod.__file__).resolve().parent
-            / "categories"
-            / "messaging.schema.json"
+            Path(messaging_mod.__file__).resolve().parent / "messaging.schema.json"
         ).read_text(encoding="utf-8")
     )
 
@@ -69,33 +64,8 @@ def test_messaging_schema_accepts_and_rejects_expected_values():
 def test_discover_categories_attaches_messaging_schema():
     expected = _load_schema()
 
-    assert describe_mod.CATEGORIES["messaging"]["json_schema"] == expected
-    assert describe_mod.CATEGORIES["messaging"]["output"] == "json"
-
-
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_messaging_extract_batch_call_passes_schema(mock_agenerate):
-    mock_agenerate.return_value = {
-        "text": json.dumps(_valid_payload()),
-        "finish_reason": "stop",
-    }
-
-    cat_meta = describe_mod.CATEGORIES["messaging"]
-    batch = Batch(max_concurrent=1)
-    req = batch.create(
-        contents="Analyze this messaging screenshot.",
-        context=cat_meta["context"],
-        json_schema=cat_meta["json_schema"],
-    )
-    batch.add(req)
-
-    results = []
-    async for completed_req in batch.drain_batch():
-        results.append(completed_req)
-
-    assert len(results) == 1
-    assert mock_agenerate.call_args.kwargs["json_schema"] == _load_schema()
+    assert CATEGORIES["messaging"]["json_schema"] == expected
+    assert CATEGORIES["messaging"]["output"] == "json"
 
 
 def test_messaging_schema_has_no_unbounded_nodes():

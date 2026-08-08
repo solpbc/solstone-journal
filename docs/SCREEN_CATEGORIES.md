@@ -71,7 +71,7 @@ def format(content: Any, context: dict) -> str:
 
 ## How It Works
 
-1. `solstone/observe/describe.py` discovers all `.md` files and builds the categorization prompt dynamically
+1. `core/crates/solstone-core-describe/src/categories.rs` embeds category markdown at compile time with `include_str!`; Python consumers load its generated fixture through `solstone/think/describe_categories.py`
 2. **Phase 1 (Categorization)**: All frames get initial category analysis (primary/secondary)
 3. **Phase 2 (Selection)**: AI or fallback logic selects which frames get detailed extraction (configurable via `describe.max_extractions`)
 4. **Phase 3 (Extraction)**: Selected frames with extractable categories (those with extraction prompts in their `.md` files) get detailed content extraction

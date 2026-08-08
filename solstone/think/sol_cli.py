@@ -170,7 +170,7 @@ COMMANDS: dict[str, Command] = {
     ),
     "warm": Command("solstone.think.warm", "service"),
     "transcribe": Command("solstone.observe.transcribe", "service"),
-    "describe": Command("solstone.observe.describe", "service"),
+    "describe": Command("solstone-core-describe", "service", native=True),
     "depict": Command("solstone.observe.depict", "service"),
     "sense": Command("solstone.observe.sense", "service"),
     "transfer": Command("solstone.observe.transfer", "service"),

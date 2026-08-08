@@ -3,22 +3,17 @@
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
-import pytest
 from jsonschema import Draft202012Validator
 
-from solstone.observe import describe as describe_mod
 from solstone.observe.categories import meeting as meeting_mod
-from solstone.think.batch import Batch
+from solstone.think.describe_categories import CATEGORIES
 
 
 def _load_schema() -> dict:
     return json.loads(
         (
-            Path(describe_mod.__file__).resolve().parent
-            / "categories"
-            / "meeting.schema.json"
+            Path(meeting_mod.__file__).resolve().parent / "meeting.schema.json"
         ).read_text(encoding="utf-8")
     )
 
@@ -116,42 +111,14 @@ def test_meeting_schema_accepts_and_rejects_expected_values():
 def test_discover_categories_attaches_meeting_schema():
     expected = _load_schema()
 
-    assert describe_mod.CATEGORIES["meeting"]["json_schema"] == expected
+    assert CATEGORIES["meeting"]["json_schema"] == expected
     assert {
-        name for name, meta in describe_mod.CATEGORIES.items() if "json_schema" in meta
+        name for name, meta in CATEGORIES.items() if "json_schema" in meta
     } == {
         name
-        for name, meta in describe_mod.CATEGORIES.items()
+        for name, meta in CATEGORIES.items()
         if meta["output"] == "json"
     }
-
-
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_meeting_extract_batch_call_passes_schema(mock_agenerate):
-    mock_agenerate.return_value = {
-        "text": (
-            '{"platform":"zoom","participants":[{"name":"Alice","status":"active",'
-            '"video":true}],"screen_share":null}'
-        ),
-        "finish_reason": "stop",
-    }
-
-    cat_meta = describe_mod.CATEGORIES["meeting"]
-    batch = Batch(max_concurrent=1)
-    req = batch.create(
-        contents="Analyze this meeting screenshot.",
-        context=cat_meta["context"],
-        json_schema=cat_meta["json_schema"],
-    )
-    batch.add(req)
-
-    results = []
-    async for completed_req in batch.drain_batch():
-        results.append(completed_req)
-
-    assert len(results) == 1
-    assert mock_agenerate.call_args.kwargs["json_schema"] == _load_schema()
 
 
 def test_meeting_formatter_skips_non_dict_participant(caplog):

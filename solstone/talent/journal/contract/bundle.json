@@ -611,7 +611,7 @@
           "producer_write_paths": [
             "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/screen.jsonl"
           ],
-          "reference_writer": "solstone.observe.describe.VideoProcessor",
+          "reference_writer": "solstone-core-describe",
           "schema_owner": "observe.describe",
           "write_discipline": "headered_jsonl temp line-write plus atomic promote"
         }

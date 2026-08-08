@@ -10,7 +10,7 @@ prove audio or screen analysis rows exist. The screen (``describe``) and audio
 the JSONL they produce, while row-key detection gives bounded evidence for
 legacy or record-less outputs.
 
-``FileSensor.scan_unprocessed``, ``describe.async_main``, and
+``FileSensor.scan_unprocessed``, the native ``solstone-core-describe`` binary, and
 ``derive_modality_state`` consume this vocabulary so capture re-entry,
 describe-side skipping, and downstream state derivation share the same reading
 of whether an output is useful, terminal, retryable, or indeterminate.

@@ -7,8 +7,8 @@ Floor model
 -----------
 Each schema's ``$defs.header`` and ``$defs.record`` ``required`` arrays define
 the universal at-rest floor every producer of that format must meet. ``raw`` is
-not part of that floor. It is a producer-owned invariant emitted by the screen
-describer (``solstone.observe.describe.VideoProcessor``) and the audio
+not part of that floor. It is a producer-owned invariant emitted by the native
+screen describer (``solstone-core-describe``) and the audio
 transcriber (``solstone.observe.transcribe.main``), pinned by producer tests
 rather than the shared floor.
 

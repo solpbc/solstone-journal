@@ -16,6 +16,22 @@ content_exclusions = [
 ]
 
 [[waves]]
+id = "H6-describe-native-cutover"
+status = "done"
+distribution = "solstone-observe-describe"
+python_roots = [
+  "solstone/observe/describe.py",
+  "solstone/observe/extract.py",
+  "solstone/observe/aruco.py",
+]
+import_roots = [
+  "solstone.observe.describe",
+  "solstone.observe.extract",
+  "solstone.observe.aruco",
+]
+test_only_dependency_locations = []
+
+[[waves]]
 id = "W1b-discovery-kernel"
 status = "done"
 distribution = "scikit-learn"
