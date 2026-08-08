@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use solstone_core_body_source::{
-    BodyDigest, BodyInteger, BodyString, BodyValue, BodyWireIdentityError, BodyWireIdentityField,
+    BodyDigest, BodyInteger, BodyRawRetention, BodySourceFamily, BodySourcePolicyError,
+    BodySourcePolicyField, BodyString, BodyValue, BodyWireIdentityError, BodyWireIdentityField,
     BundleId, ParseError, canonicalize, parse,
 };
 
@@ -230,6 +231,62 @@ fn public_wire_identity_types_are_checked_ordered_and_hashable() {
         BundleId::from_bytes(b"body-81J9ZK2F5M7Q8R3S4T6V0W1X2Y"),
         Err(BodyWireIdentityError::InvalidFormat(
             BodyWireIdentityField::BundleId
+        ))
+    );
+}
+
+#[test]
+fn public_source_policy_types_are_checked_ordered_and_hashable() {
+    let family_text = "oura_api";
+    let retention_text = "retain_complete";
+    let family_body_string =
+        BodyString::from_code_points(family_text.bytes().map(u32::from).collect()).unwrap();
+    let retention_body_string =
+        BodyString::from_code_points(retention_text.bytes().map(u32::from).collect()).unwrap();
+
+    let family_from_bytes = BodySourceFamily::from_bytes(family_text.as_bytes()).unwrap();
+    let family_from_body_string = BodySourceFamily::from_body_string(&family_body_string).unwrap();
+    let retention_from_bytes = BodyRawRetention::from_bytes(retention_text.as_bytes()).unwrap();
+    let retention_from_body_string =
+        BodyRawRetention::from_body_string(&retention_body_string).unwrap();
+    assert_eq!(family_from_bytes, family_from_body_string);
+    assert_eq!(family_from_bytes.as_str(), family_text);
+    assert_eq!(retention_from_bytes, retention_from_body_string);
+    assert_eq!(retention_from_bytes.as_str(), retention_text);
+
+    let mut hashes = HashSet::new();
+    hashes.insert((family_from_bytes, retention_from_bytes));
+    hashes.insert((family_from_body_string, retention_from_body_string));
+    assert_eq!(hashes.len(), 1);
+    let mut ordered = BTreeSet::new();
+    ordered.insert((family_from_bytes, retention_from_bytes));
+    ordered.insert((family_from_body_string, retention_from_body_string));
+    assert_eq!(ordered.len(), 1);
+
+    assert!(BodyRawRetention::RetainComplete < BodyRawRetention::RetainParsed);
+    for family in [BodySourceFamily::AppleHealth, BodySourceFamily::OuraApi] {
+        for retention in [
+            BodyRawRetention::Discard,
+            BodyRawRetention::RetainComplete,
+            BodyRawRetention::RetainParsed,
+        ] {
+            let expected = if family == BodySourceFamily::OuraApi
+                && retention == BodyRawRetention::RetainComplete
+            {
+                Err(BodySourcePolicyError::Incompatible(
+                    BodySourcePolicyField::RawRetention,
+                ))
+            } else {
+                Ok(())
+            };
+            assert_eq!(retention.check_compatible(&family), expected);
+        }
+    }
+
+    assert_eq!(
+        BodySourceFamily::from_bytes(b"oura"),
+        Err(BodySourcePolicyError::InvalidFormat(
+            BodySourcePolicyField::SourceFamily
         ))
     );
 }

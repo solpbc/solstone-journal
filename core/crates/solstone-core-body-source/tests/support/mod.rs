@@ -123,6 +123,26 @@ pub fn native_bundle_import_ids() -> Vec<String> {
         .collect()
 }
 
+pub fn native_bundle_source_policies() -> Vec<(String, String)> {
+    native_bundle_fixture()["cases"]
+        .as_array()
+        .expect("fixture cases")
+        .iter()
+        .map(|case| {
+            (
+                case["manifest"]["source_type"]
+                    .as_str()
+                    .expect("manifest source_type")
+                    .to_owned(),
+                case["manifest"]["raw_retention"]
+                    .as_str()
+                    .expect("manifest raw_retention")
+                    .to_owned(),
+            )
+        })
+        .collect()
+}
+
 pub fn native_bundle_digests() -> BTreeSet<String> {
     let fixture = native_bundle_fixture();
     let mut digests = BTreeSet::new();

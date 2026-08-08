@@ -95,6 +95,58 @@ impl fmt::Debug for BodyWireIdentityError {
 
 impl std::error::Error for BodyWireIdentityError {}
 
+/// The closed set of native body-source policy fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BodySourcePolicyField {
+    SourceFamily,
+    RawRetention,
+}
+
+impl BodySourcePolicyField {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::SourceFamily => "source_family",
+            Self::RawRetention => "raw_retention",
+        }
+    }
+}
+
+/// A bounded native body-source policy failure.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BodySourcePolicyError {
+    InvalidFormat(BodySourcePolicyField),
+    Incompatible(BodySourcePolicyField),
+}
+
+impl fmt::Display for BodySourcePolicyError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidFormat(field) => {
+                write!(
+                    formatter,
+                    "body-source-policy invalid_format: {}",
+                    field.as_str()
+                )
+            }
+            Self::Incompatible(field) => {
+                write!(
+                    formatter,
+                    "body-source-policy incompatible: {}",
+                    field.as_str()
+                )
+            }
+        }
+    }
+}
+
+impl fmt::Debug for BodySourcePolicyError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
+}
+
+impl std::error::Error for BodySourcePolicyError {}
+
 /// The closed set of required source identity fields.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IdentityField {

@@ -3,6 +3,8 @@
 
 //! Python-compatible JSON source decoding and canonicalization for body import data.
 
+mod body_raw_retention;
+mod body_source_family;
 mod bundle_id;
 mod candidate;
 mod canonicalize;
@@ -17,14 +19,17 @@ mod string;
 mod value;
 mod whitespace;
 
+pub use body_raw_retention::BodyRawRetention;
+pub use body_source_family::BodySourceFamily;
 pub use bundle_id::BundleId;
 pub use candidate::{FieldState, LedgerCandidate, LedgerSchema, ValueState, project};
 pub use canonicalize::canonicalize;
 pub use coordinate::Coordinate;
 pub use digest::BodyDigest;
 pub use error::{
-    BodyHashError, BodyWireIdentityError, BodyWireIdentityField, CandidateError,
-    CandidateErrorCode, CandidateErrorField, CanonicalizeError, IdentityField, ParseError,
+    BodyHashError, BodySourcePolicyError, BodySourcePolicyField, BodyWireIdentityError,
+    BodyWireIdentityField, CandidateError, CandidateErrorCode, CandidateErrorField,
+    CanonicalizeError, IdentityField, ParseError,
 };
 pub use health_hash::{
     HealthRecordIdentity, health_hash, health_record_dedupe_key, health_value_hash,
