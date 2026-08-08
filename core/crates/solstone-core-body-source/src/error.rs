@@ -54,6 +54,51 @@ impl fmt::Display for CanonicalizeError {
 
 impl std::error::Error for CanonicalizeError {}
 
+/// The closed set of required source identity fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IdentityField {
+    SourceFamily,
+    RecordType,
+    StartTime,
+}
+
+impl IdentityField {
+    /// Returns this field's stable wire spelling.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::SourceFamily => "source_family",
+            Self::RecordType => "record_type",
+            Self::StartTime => "start_time",
+        }
+    }
+}
+
+/// A bounded health-record identity or value-hash failure.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BodyHashError {
+    InvalidIdentity(IdentityField),
+    ValueTooDeep,
+}
+
+impl fmt::Display for BodyHashError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidIdentity(field) => {
+                write!(formatter, "body-hash invalid_identity: {}", field.as_str())
+            }
+            Self::ValueTooDeep => write!(formatter, "body-hash value_too_deep"),
+        }
+    }
+}
+
+impl fmt::Debug for BodyHashError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
+}
+
+impl std::error::Error for BodyHashError {}
+
 /// The closed set of normalized-row construction and projection failure codes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CandidateErrorCode {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::whitespace::is_python_whitespace;
 use crate::{
     BodyObject, BodyString, BodyValue, CandidateError, CandidateErrorCode, CandidateErrorField,
     Coordinate, PresentationRow,
@@ -320,22 +321,4 @@ fn is_blank(value: &BodyString) -> bool {
         .iter()
         .copied()
         .all(is_python_whitespace)
-}
-
-const fn is_python_whitespace(code_point: u32) -> bool {
-    matches!(
-        code_point,
-        0x0009..=0x000d
-            | 0x001c..=0x001f
-            | 0x0020
-            | 0x0085
-            | 0x00a0
-            | 0x1680
-            | 0x2000..=0x200a
-            | 0x2028
-            | 0x2029
-            | 0x202f
-            | 0x205f
-            | 0x3000
-    )
 }

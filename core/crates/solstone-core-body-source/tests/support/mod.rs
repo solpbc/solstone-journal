@@ -90,3 +90,15 @@ pub fn codec_rows() -> Value {
     )
     .expect("codec fixture should parse")
 }
+
+pub fn hash_vectors_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../core/fixtures/body_source_hash_vectors.json")
+}
+
+pub fn hash_vectors() -> Value {
+    serde_json::from_str(
+        &std::fs::read_to_string(hash_vectors_path()).expect("hash fixture should read"),
+    )
+    .expect("hash fixture should parse")
+}
