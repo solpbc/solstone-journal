@@ -12,6 +12,7 @@ import pytest
 
 from solstone.apps.support.operations import (
     IdempotencyConflictError,
+    OperationInvalidStateError,
     OperationRetiredError,
     OperationStateUnavailableError,
     OperationSupersededError,
@@ -23,6 +24,7 @@ from solstone.apps.support.operations import (
     mark_completed,
     mark_failed,
     mark_in_progress,
+    release_retryable_lease,
 )
 
 NOW = datetime(2026, 8, 7, 12, 0, tzinfo=UTC)
@@ -163,6 +165,49 @@ def test_stale_generation_cannot_overwrite_winning_terminal_result(tmp_path):
     assert payload["remote_operation_id"] == "remote-2"
     assert payload["terminal_reason"] is None
     assert payload["ack_state"] == "unacknowledged"
+
+
+def test_completed_replay_keeps_terminal_state_unchanged(tmp_path):
+    first = mark_in_progress(_begin(tmp_path), now=NOW, storage_dir=tmp_path)
+    completed = mark_completed(
+        first, remote_operation_id="remote-first", now=NOW, storage_dir=tmp_path
+    )
+
+    replay = _begin(tmp_path, now=NOW + timedelta(seconds=1))
+    assert replay.state == "completed"
+    assert replay.operation_key == completed.operation_key
+
+    reconfirmed = mark_completed(
+        replay,
+        remote_operation_id="remote-replay",
+        now=NOW + timedelta(seconds=2),
+        storage_dir=tmp_path,
+    )
+    assert reconfirmed.state == "completed"
+    assert reconfirmed.completed_at == completed.completed_at
+    assert reconfirmed.remote_operation_id == completed.remote_operation_id
+
+    released = release_retryable_lease(
+        replay, now=NOW + timedelta(seconds=3), storage_dir=tmp_path
+    )
+    assert released.state == "completed"
+    assert released.completed_at == completed.completed_at
+    assert released.remote_operation_id == completed.remote_operation_id
+
+    with pytest.raises(OperationInvalidStateError):
+        mark_failed(
+            replay,
+            reason="replay_failure",
+            now=NOW + timedelta(seconds=4),
+            storage_dir=tmp_path,
+        )
+
+    payload = json.loads(
+        (tmp_path / "operations" / f"{completed.child_action_id}.json").read_text()
+    )
+    assert payload["state"] == "completed"
+    assert payload["completed_at"] == completed.completed_at
+    assert payload["remote_operation_id"] == completed.remote_operation_id
 
 
 def test_old_terminal_record_compacts_and_refuses_resume(tmp_path):

@@ -444,6 +444,8 @@ def _terminal_failure_error(reason: str | None) -> OperationError:
 def _mark_completed(
     record: OperationRecord, remote_operation_id: str | None, current: datetime
 ) -> OperationRecord:
+    if record.state == "completed":
+        return record
     if record.state != "in_progress" or not _lease_is_live(record, current):
         raise OperationInvalidStateError()
     return _replace(
@@ -461,6 +463,8 @@ def _mark_completed(
 def _release_retryable_lease(
     record: OperationRecord, current: datetime
 ) -> OperationRecord:
+    if record.state == "completed":
+        return record
     if record.state != "in_progress":
         raise OperationInvalidStateError()
     return _replace(record, lease_expires_at=_iso(current))
@@ -469,6 +473,7 @@ def _release_retryable_lease(
 def _mark_failed(
     record: OperationRecord, reason: str, current: datetime
 ) -> OperationRecord:
+    # A completed action must never be downgraded by a replayed failure.
     if record.state not in {"pending", "in_progress"} or not _lease_is_live(
         record, current
     ):

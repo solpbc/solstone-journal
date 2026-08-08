@@ -59,6 +59,25 @@ def test_retryable_5xx_reuses_the_same_outbound_key(tmp_path, monkeypatch):
     assert _operation_payload(client, "a1")["state"] == "completed"
 
 
+def test_completed_create_replay_returns_success(tmp_path, monkeypatch):
+    requests: list[httpx.Request] = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(201, json={"ticket_id": f"ticket-{len(requests)}"})
+
+    client = _client(tmp_path, monkeypatch, handler)
+    kwargs = {"subject": "Subject", "description": "Description", "action_id": "a1"}
+
+    assert client.create_ticket(**kwargs) == {"ticket_id": "ticket-1"}
+    assert client.create_ticket(**kwargs) == {"ticket_id": "ticket-2"}
+    assert len(requests) == 2
+    assert (
+        requests[0].headers["Idempotency-Key"] == requests[1].headers["Idempotency-Key"]
+    )
+    assert _operation_payload(client, "a1")["state"] == "completed"
+
+
 def test_changed_retry_is_refused_before_transport(tmp_path, monkeypatch):
     requests: list[httpx.Request] = []
 

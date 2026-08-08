@@ -369,21 +369,8 @@ pub fn show(ctx: CommandContext<'_>) -> CommandOutput {
     if parsed.has_flag("--json") {
         return stdout_json(&data);
     }
-    let mut lines = vec![
-        format!(
-            "# Ticket #{}: {}",
-            display_or(&data["id"], "?"),
-            display_or(&data["subject"], "")
-        ),
-        format!(
-            "Status: {}  |  Severity: {}",
-            display_or(&data["status"], "?"),
-            display_or(&data["severity"], "?")
-        ),
-        format!("Created: {}", display_or(&data["created_at"], "?")),
-        String::new(),
-        display_or(&data["description"], ""),
-    ];
+    let display_ticket_id = display_or(&data["id"], "?");
+    let mut lines = render_ticket_summary(&data, &display_ticket_id);
     if let Some(messages) = data["messages"].as_array()
         && !messages.is_empty()
     {
@@ -835,7 +822,13 @@ fn lifecycle_mutation(
     if tombstone {
         out.stdout.extend(render_tombstone(&result));
     } else {
-        out.stdout.extend(render_ticket_summary(&result));
+        let display_ticket_id = if result["id"].is_null() {
+            display_or(&result["ticket_id"], "?")
+        } else {
+            display_or(&result["id"], "?")
+        };
+        out.stdout
+            .extend(render_ticket_summary(&result, &display_ticket_id));
     }
     out.finish(0)
 }
@@ -1312,12 +1305,7 @@ fn render_tombstone(data: &Value) -> Vec<String> {
     lines
 }
 
-fn render_ticket_summary(data: &Value) -> Vec<String> {
-    let ticket_id = if data["id"].is_null() {
-        display_or(&data["ticket_id"], "?")
-    } else {
-        display_or(&data["id"], "?")
-    };
+fn render_ticket_summary(data: &Value, ticket_id: &str) -> Vec<String> {
     vec![
         format!(
             "# Ticket #{}: {}",
