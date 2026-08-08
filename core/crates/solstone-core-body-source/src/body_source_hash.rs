@@ -77,6 +77,32 @@ impl BodySourceHash {
         self.family
     }
 
+    /// Returns whether this source identity's validated selection window includes a day.
+    ///
+    /// Plain hashes have no day bound. Apple window bounds are inclusive, and an open
+    /// side is unbounded.
+    pub fn includes_day(&self, day: &BodyDay) -> bool {
+        let suffix = &self.spelling.as_bytes()[HASH_LENGTH..];
+        if suffix.is_empty() {
+            return true;
+        }
+
+        let window = suffix
+            .strip_prefix(WINDOW_PREFIX)
+            .expect("validated windowed BodySourceHash has the window prefix");
+        let (start, end) =
+            parse_window_bounds(window).expect("validated BodySourceHash has valid window bounds");
+        let starts_before_or_on = match start {
+            WindowBound::Open => true,
+            WindowBound::Day(start) => start <= *day,
+        };
+        let ends_after_or_on = match end {
+            WindowBound::Open => true,
+            WindowBound::Day(end) => *day <= end,
+        };
+        starts_before_or_on && ends_after_or_on
+    }
+
     fn from_validated_bytes(
         bytes: &[u8],
         family: &BodySourceFamily,
