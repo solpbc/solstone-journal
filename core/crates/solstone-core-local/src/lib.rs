@@ -6,6 +6,7 @@
 pub mod admission;
 pub mod bind;
 pub mod connect;
+pub mod endpoint;
 mod fixture;
 pub mod generate;
 pub mod install;
@@ -15,6 +16,7 @@ pub(crate) mod tier;
 
 pub use bind::LoopbackAddr;
 pub use connect::{ConnectInput, ConnectOutcome, connect};
+pub use endpoint::{ByoEndpoint, LocalEndpointResolution, resolve_local_endpoint};
 pub use fixture::local_generate_input_schema;
 pub use generate::{
     ContextWindow, GenerateError, GenerateFailure, GenerateInput, GenerateResult, GenerateSuccess,
