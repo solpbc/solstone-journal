@@ -97,8 +97,8 @@ impl Harness {
             .expect("write recording process module");
         }
 
-        let binary = bin.join("solstone-core");
-        fs::copy(env!("CARGO_BIN_EXE_solstone-core"), &binary).expect("copy native binary");
+        let binary = bin.join("solstone-core-journal");
+        fs::copy(env!("CARGO_BIN_EXE_solstone-core-journal"), &binary).expect("copy native binary");
         fs::set_permissions(&binary, fs::Permissions::from_mode(0o755))
             .expect("make native binary executable");
 
@@ -134,7 +134,6 @@ impl Harness {
             .expect("test prefix")
             .join(format!("{name}.json"));
         let mut command = Command::new(&self.binary);
-        command.arg("__solstone_identity=journal");
         if verbose {
             command.arg("--verbose");
         }

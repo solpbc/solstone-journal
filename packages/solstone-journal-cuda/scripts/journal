@@ -1,0 +1,19 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+p=$0
+while [ -L "$p" ]; do
+    t=$(readlink -- "$p") || exit 78
+    case $t in
+        /*) p=$t ;;
+        *) p=$(dirname -- "$p")/$t ;;
+    esac
+done
+d=$(cd -P -- "$(dirname -- "$p")" && pwd) || exit 78
+core=$d/solstone-core-journal
+if [ ! -f "$core" ] || [ ! -x "$core" ]; then
+    printf 'journal: native solstone-core-journal sibling is missing or not executable: %s. Reinstall solstone-journal-cuda.\n' "$core" >&2
+    exit 78
+fi
+exec "$core" "$@"

@@ -1974,12 +1974,10 @@ dependencies = [
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal",
- "solstone-core-journal-cli",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-local",
- "solstone-core-sol",
  "solstone-core-spl",
  "tokio",
  "tokio-tungstenite",
@@ -2034,6 +2032,10 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-cli"
+version = "1.0.22"
+
+[[package]]
+name = "solstone-core-cli-boundary"
 version = "1.0.22"
 
 [[package]]
@@ -2267,14 +2269,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-journal-bin"
+version = "1.0.22"
+dependencies = [
+ "nix",
+ "serde_json",
+ "sha2",
+ "solstone-core-journal-cli",
+]
+
+[[package]]
 name = "solstone-core-journal-cli"
 version = "1.0.22"
 dependencies = [
  "serde_json",
  "sha2",
  "solstone-core-callosum",
+ "solstone-core-cli-boundary",
  "solstone-core-journal",
- "solstone-core-sol",
  "solstone-core-sol-client",
 ]
 
@@ -2389,9 +2401,18 @@ dependencies = [
  "chrono",
  "nix",
  "serde_json",
+ "solstone-core-cli-boundary",
  "solstone-core-sol-client",
  "solstone-core-sol-client-cli",
  "solstone-core-sol-link",
+]
+
+[[package]]
+name = "solstone-core-sol-bin"
+version = "1.0.22"
+dependencies = [
+ "serde_json",
+ "solstone-core-sol",
 ]
 
 [[package]]

@@ -1,0 +1,20 @@
+[package]
+name = "solstone-core-sol-bin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "solstone-core-sol"
+path = "src/main.rs"
+
+[dependencies]
+solstone-core-sol = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

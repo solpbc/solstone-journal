@@ -5,14 +5,18 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SOURCE = REPO_ROOT / "solstone/think/sol_cli.py"
+ORACLE_COMMIT = "d8200fdf34e4af31f106c7f28fb73cd439d0081b"
+ORACLE_PATH = "solstone/think/sol_cli.py"
+ORACLE_BLOB = "ea62371d5c320329724d051032efbe20f165b25f"
 OUTPUT = (
-    REPO_ROOT / "core/crates/solstone-core-sol/src/generated/journal_host_commands.rs"
+    REPO_ROOT / "core/crates/solstone-core-cli-boundary/src/generated.rs"
 )
 EXPECTED_SERVICE_COMMANDS_COUNT = 42
 EXPECTED_UNIVERSAL_COMMANDS = frozenset({"doctor", "check", "contract"})
@@ -64,7 +68,7 @@ def literal_key(key: ast.expr | None) -> str | None:
 
 
 def extract_partitions(source_text: str | None = None) -> JournalHostCommandPartitions:
-    tree = ast.parse(source_text if source_text is not None else SOURCE.read_text())
+    tree = ast.parse(source_text if source_text is not None else oracle_text())
     registry_literals = scan_registry_literals(tree)
     validate_no_duplicate_registry_keys(registry_literals)
     commands: dict[str, list[str]] = {"service": [], "universal": []}
@@ -86,6 +90,24 @@ def extract_partitions(source_text: str | None = None) -> JournalHostCommandPart
     )
     validate_partitions(partitions)
     return partitions
+
+
+def oracle_text() -> str:
+    blob = subprocess.check_output(
+        ["git", "rev-parse", f"{ORACLE_COMMIT}:{ORACLE_PATH}"], cwd=REPO_ROOT
+    ).decode().strip()
+    if blob != ORACLE_BLOB:
+        raise RuntimeError(
+            f"{ORACLE_COMMIT}:{ORACLE_PATH} is {blob}, expected {ORACLE_BLOB}"
+        )
+    data = subprocess.check_output(
+        ["git", "show", f"{ORACLE_COMMIT}:{ORACLE_PATH}"], cwd=REPO_ROOT
+    )
+    header = f"blob {len(data)}\0".encode()
+    digest = hashlib.sha1(header + data, usedforsecurity=False).hexdigest()
+    if digest != ORACLE_BLOB:
+        raise RuntimeError(f"extracted oracle blob is {digest}, expected {ORACLE_BLOB}")
+    return data.decode()
 
 
 def scan_registry_literals(tree: ast.Module) -> tuple[RegistryLiteral, ...]:

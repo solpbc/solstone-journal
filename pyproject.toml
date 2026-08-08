@@ -43,9 +43,9 @@ dependencies = [
     "requests",
     "psutil",
     "userpath>=1.9.2,<2",
-    "solstone-core==1.0.22; sys_platform == 'linux' and platform_machine == 'x86_64'",
-    "solstone-core==1.0.22; sys_platform == 'linux' and platform_machine == 'aarch64'",
-    "solstone-core==1.0.22; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "solstone-core-sol==1.0.22; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "solstone-core-sol==1.0.22; sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "solstone-core-sol==1.0.22; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "solstone-core-unsupported-platform==1.0.22; (sys_platform != 'linux' and sys_platform != 'darwin') or (sys_platform == 'linux' and platform_machine != 'x86_64' and platform_machine != 'aarch64') or (sys_platform == 'darwin' and platform_machine != 'arm64')",
 ]
 
@@ -219,13 +219,15 @@ override-dependencies = [
 ]
 
 [tool.uv.workspace]
-members = ["packages/solstone-journal", "packages/solstone-journal-cuda", "packages/solstone-journal-models", "packages/solstone-core", "packages/solstone-core-speakers-analyze", "packages/solstone-core-describe"]
+members = ["packages/solstone-journal", "packages/solstone-journal-cuda", "packages/solstone-journal-models", "packages/solstone-core", "packages/solstone-core-sol", "packages/solstone-core-journal", "packages/solstone-core-speakers-analyze", "packages/solstone-core-describe"]
 
 [tool.uv.sources]
 solstone-journal = {workspace = true}
 solstone-journal-cuda = {workspace = true}
 solstone-journal-models = {workspace = true}
 solstone-core = {workspace = true}
+solstone-core-sol = {workspace = true}
+solstone-core-journal = {workspace = true}
 solstone-core-speakers-analyze = {workspace = true}
 solstone-core-describe = {workspace = true}
 

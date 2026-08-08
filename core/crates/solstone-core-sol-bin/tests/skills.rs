@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{env, fs};
 
 fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_solstone-core")
+    env!("CARGO_BIN_EXE_solstone-core-sol")
 }
 
 fn temp_path(name: &str) -> PathBuf {
@@ -29,14 +29,9 @@ fn source_checkout_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn identity_arg(public_argv0: &str) -> String {
-    format!("__solstone_identity={public_argv0}")
-}
-
 fn run_sol(program: &Path, cwd: &Path, home: &Path, args: &[&str]) -> Output {
     for _ in 0..100 {
         match Command::new(program)
-            .arg(identity_arg("sol"))
             .args(args)
             .current_dir(cwd)
             .env("HOME", home)

@@ -277,7 +277,6 @@ mod tests {
             notification_sink: sink.map(|sink| sink as &dyn NotificationSink),
             link_pairing: None,
             link_serve: None,
-            journal_root: None,
         })
     }
 

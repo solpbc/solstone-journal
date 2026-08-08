@@ -1,0 +1,26 @@
+[build-system]
+requires = ["maturin==1.14.1"]
+build-backend = "maturin"
+
+[project]
+name = "solstone-core-sol"
+version = "1.0.22"
+description = "Native API-only sol command surface."
+requires-python = ">=3.12"
+license = {text = "AGPL-3.0-only"}
+
+[tool.maturin]
+bindings = "bin"
+manifest-path = "../../core/crates/solstone-core-sol-bin/Cargo.toml"
+profile = "release"
+strip = true
+
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "../../core/Cargo.toml" },
+    { file = "../../core/Cargo.lock" },
+    { file = "../../core/crates/**/Cargo.toml" },
+    { file = "../../core/crates/**/*.rs" },
+    { file = "../../core/fixtures/**" },
+]

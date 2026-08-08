@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 solstone-core-journal = { workspace = true }
 solstone-core-callosum = { workspace = true }
-solstone-core-sol = { workspace = true }
+solstone-core-cli-boundary = { workspace = true }
 solstone-core-sol-client = { workspace = true }
 
 [dev-dependencies]

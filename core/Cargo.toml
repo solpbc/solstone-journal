@@ -11,6 +11,7 @@ members = [
     "crates/solstone-core-facets",
     "crates/solstone-core-journal",
     "crates/solstone-core-journal-cli",
+    "crates/solstone-core-journal-bin",
     "crates/solstone-core-journal-config",
     "crates/solstone-core-journal-config-write",
     "crates/solstone-core-journal-archive",
@@ -23,6 +24,8 @@ members = [
     "crates/solstone-core-retention-cli",
     "crates/solstone-core-segment",
     "crates/solstone-core-sol",
+    "crates/solstone-core-sol-bin",
+    "crates/solstone-core-cli-boundary",
     "crates/solstone-core-sol-client",
     "crates/solstone-core-sol-client-cli",
     "crates/solstone-core-sol-link",
@@ -67,6 +70,7 @@ solstone-core-indexer-query = { path = "crates/solstone-core-indexer-query" }
 solstone-core-ingest-resolve = { path = "crates/solstone-core-ingest-resolve" }
 solstone-core-journal = { path = "crates/solstone-core-journal" }
 solstone-core-journal-cli = { path = "crates/solstone-core-journal-cli" }
+solstone-core-cli-boundary = { path = "crates/solstone-core-cli-boundary" }
 solstone-core-journal-config = { path = "crates/solstone-core-journal-config" }
 solstone-core-journal-config-write = { path = "crates/solstone-core-journal-config-write" }
 solstone-core-journal-io = { path = "crates/solstone-core-journal-io" }

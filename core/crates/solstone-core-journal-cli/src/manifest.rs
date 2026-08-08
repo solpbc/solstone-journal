@@ -3,7 +3,7 @@
 
 use crate::processes::{process_spec_for, process_tokens};
 
-pub use solstone_core_sol::{JOURNAL_HOST_COMMAND_COUNT, JOURNAL_HOST_COMMANDS};
+pub use solstone_core_cli_boundary::{JOURNAL_HOST_COMMAND_COUNT, JOURNAL_HOST_COMMANDS};
 
 pub const ROOT_COMMANDS: &[&str] = &["--path", "path", "status", "root", "notify"];
 pub(crate) struct UnavailableLocal {

@@ -134,7 +134,10 @@ ROUTING_CASES: tuple[tuple[str, list[str], str], ...] = (
 EXPECTED_SCRIPT_OWNERS = {
     **{name: ["solstone"] for name in ROOT_LAUNCHER_NAMES},
     **{name: ["solstone-core"] for name in CORE_SCRIPT_NAMES},
+    "solstone-core-sol": ["solstone-core-sol"],
+    "solstone-core-journal": ["solstone-core-journal"],
 }
+JOURNAL_SCRIPT_OWNER_OPTIONS = (["solstone-journal"], ["solstone-journal-cuda"])
 _SOURCE_NATIVE_BIN_DIR: Path | None = None
 
 def _source_native_bin_dir() -> Path:
@@ -149,9 +152,9 @@ def _source_native_bin_dir() -> Path:
             "--manifest-path",
             str(RUST_MANIFEST),
             "-p",
-            "solstone-core",
-            "--bin",
-            "solstone-core",
+            "solstone-core-sol-bin",
+            "-p",
+            "solstone-core-journal-bin",
             "--locked",
         ],
         cwd=ROOT,
@@ -164,6 +167,10 @@ def _source_native_bin_dir() -> Path:
         target = _SOURCE_NATIVE_BIN_DIR / name
         shutil.copy2(launcher, target)
         target.chmod(0o755)
+    journal_launcher = ROOT / "packages" / "solstone-journal" / "scripts" / "journal"
+    journal_target = _SOURCE_NATIVE_BIN_DIR / "journal"
+    shutil.copy2(journal_launcher, journal_target)
+    journal_target.chmod(0o755)
     return _SOURCE_NATIVE_BIN_DIR
 
 
@@ -464,7 +471,8 @@ def _check_heavy_absent(python: str) -> list[str]:
 
 def _check_script_owners(python: str) -> list[str]:
     bin_dir = Path(python).parent
-    for script in EXPECTED_SCRIPT_OWNERS:
+    scripts = (*EXPECTED_SCRIPT_OWNERS, "journal")
+    for script in scripts:
         path = bin_dir / script
         if not path.exists() or not os.access(path, os.X_OK):
             return [
@@ -491,7 +499,7 @@ def _check_script_owners(python: str) -> list[str]:
             python,
             "-c",
             probe,
-            *(str(bin_dir / name) for name in EXPECTED_SCRIPT_OWNERS),
+            *(str(bin_dir / name) for name in scripts),
         ],
         capture_output=True,
         text=True,
@@ -510,6 +518,12 @@ def _check_script_owners(python: str) -> list[str]:
             failures.append(
                 f"access-imports-clean: FAIL {script} owners {actual!r} != {expected!r}"
             )
+    journal_owners = owners.get("journal", [])
+    if journal_owners not in JOURNAL_SCRIPT_OWNER_OPTIONS:
+        failures.append(
+            "access-imports-clean: FAIL journal owners "
+            f"{journal_owners!r} not in {JOURNAL_SCRIPT_OWNER_OPTIONS!r}"
+        )
     return failures
 
 

@@ -4,15 +4,15 @@
 """Lint: the thin-base / journal leaf package menu stays internally consistent.
 
 After the package split, the root solstone distribution owns the public POSIX
-`sol` / `solstone` launchers and solstone-core owns their native sibling binary.
+`sol` / `solstone` launchers and solstone-core-sol owns their native sibling binary.
 `solstone-journal` and `solstone-journal-cuda` are leaf packages that own the
-host-only `journal` and `mlx-vlm-server` console scripts and compose the root
+host-only `journal` launcher and Python service scripts and compose the root
 `[journal-host]` building block with exactly one ONNX runtime.
 
 The invariants are:
 
   1. Base `[project.dependencies]` is exactly the thin access partition plus
-     marker-gated solstone-core pins for covered platforms and the unsupported
+     marker-gated solstone-core-sol pins for covered platforms and the unsupported
      platform tombstone for the complement. No heavy host dependency may leak
      into base.
   2. There is no `[all]` extra.
@@ -27,14 +27,15 @@ The invariants are:
      `onnxruntime-gpu` plus the seven NVIDIA CUDA wheels, and does not pull CPU
      `onnxruntime`.
   7. The two leaves never depend on each other.
-  8. Both leaves own exactly the host-only console scripts.
+  8. Both leaves own exactly the Python service scripts plus a native `journal`
+     script-file launcher.
   9. Root `[project.scripts]` stays absent and root script-files stay exactly the
      public POSIX launchers.
  10. Each leaf has metadata-only setuptools config, a workspace source for
      `solstone`, the expected package name, and the root version.
  11. uv workspace members/sources are exactly the two journal leaves plus
-     models plus core plus the speakers analyze helper; `solstone-journal-host`
-     is absent.
+     models, the host helper, the two command binaries, and native helpers;
+     `solstone-journal-host` is absent.
  12. `[tool.uv].override-dependencies` contains both tombstone pins.
  13. The Makefile no longer uses root journal extra spellings.
  14. The speakers analyze helper is a workspace-only maturin bin leaf with
@@ -70,7 +71,6 @@ ROOT_SCRIPT_FILES = tuple(
     f"scripts/root-launchers/{name}" for name in ROOT_LAUNCHER_NAMES
 )
 HOST_SCRIPTS = {
-    "journal": "solstone.think.sol_cli:journal_main",
     "mlx-vlm-server": "solstone.think.providers.mlx_server:main",
     "solstone-generate-wire": "solstone.think.generate_wire:main",
 }
@@ -102,6 +102,8 @@ WORKSPACE_MEMBERS = [
     "packages/solstone-journal-cuda",
     "packages/solstone-journal-models",
     "packages/solstone-core",
+    "packages/solstone-core-sol",
+    "packages/solstone-core-journal",
     "packages/solstone-core-speakers-analyze",
     "packages/solstone-core-describe",
 ]
@@ -110,6 +112,8 @@ WORKSPACE_SOURCES = {
     "solstone-journal-cuda",
     "solstone-journal-models",
     "solstone-core",
+    "solstone-core-sol",
+    "solstone-core-journal",
     "solstone-core-speakers-analyze",
     "solstone-core-describe",
 }
@@ -172,17 +176,24 @@ def _check_models_pin(extras: dict, member_version: str | None) -> list[str]:
     return []
 
 
-def _check_core_pins(base: list[str], root_version: str | None) -> list[str]:
-    pins = sorted(dep for dep in base if dep.startswith("solstone-core=="))
-    expected = sorted(solstone_core_marker_pins(root_version or ""))
+def _native_marker_pins(distribution: str, version: str) -> list[str]:
+    return [
+        dep.replace("solstone-core==", f"{distribution}==", 1)
+        for dep in solstone_core_marker_pins(version)
+    ]
+
+
+def _check_sol_core_pins(base: list[str], root_version: str | None) -> list[str]:
+    pins = sorted(dep for dep in base if dep.startswith("solstone-core-sol=="))
+    expected = sorted(_native_marker_pins("solstone-core-sol", root_version or ""))
     if len(pins) != len(expected):
         return [
             "base [project.dependencies] must contain exactly "
-            f"{len(expected)} marker-gated solstone-core== pins; found {len(pins)}"
+            f"{len(expected)} marker-gated solstone-core-sol== pins; found {len(pins)}"
         ]
     if root_version is not None and pins != expected:
         return [
-            "base [project.dependencies] solstone-core marker pins must be exactly "
+            "base [project.dependencies] solstone-core-sol marker pins must be exactly "
             f"{expected}; found {pins}"
         ]
     return []
@@ -245,6 +256,7 @@ def _leaf_dependencies(
     expected_name: str,
     root_version: str | None,
     errors: list[str],
+    root: Path,
 ) -> list[str]:
     project = data.get("project", {})
     tool = data.get("tool", {})
@@ -273,6 +285,13 @@ def _leaf_dependencies(
             f"{label} [project.scripts] must be exactly {HOST_SCRIPTS}; "
             f"found {project.get('scripts', {})}"
         )
+    if setuptools.get("script-files") != ["scripts/journal"]:
+        errors.append(
+            f"{label} [tool.setuptools].script-files must be ['scripts/journal']"
+        )
+    launcher = root / "packages" / expected_name / "scripts" / "journal"
+    if not launcher.is_file() or launcher.stat().st_mode & 0o111 == 0:
+        errors.append(f"{label} native journal launcher must exist and be executable")
     if setuptools.get("packages") != []:
         errors.append(f"{label} [tool.setuptools].packages must be []")
     if setuptools.get("py-modules") != []:
@@ -281,6 +300,19 @@ def _leaf_dependencies(
         errors.append(
             f"{label} [tool.uv.sources].solstone must be {{workspace = true}}"
         )
+    for native_name in ("solstone-core", "solstone-core-journal"):
+        expected = sorted(_native_marker_pins(native_name, root_version or ""))
+        pins = sorted(dep for dep in deps if dep.startswith(f"{native_name}=="))
+        if pins != expected:
+            errors.append(
+                f"{label} {native_name} marker pins must be exactly {expected}; "
+                f"found {pins}"
+            )
+        if uv.get("sources", {}).get(native_name) != {"workspace": True}:
+            errors.append(
+                f"{label} [tool.uv.sources].{native_name} must be "
+                "{workspace = true}"
+            )
     return deps
 
 
@@ -327,6 +359,44 @@ def _check_core_leaf(
         errors.append("core leaf [tool.maturin].profile must be 'release'")
     if maturin.get("strip") is not True:
         errors.append("core leaf [tool.maturin].strip must be true")
+
+
+def _check_command_leaf(
+    *,
+    data: dict,
+    root_version: str | None,
+    distribution: str,
+    crate: str,
+    errors: list[str],
+) -> None:
+    project = data.get("project", {})
+    build_system = data.get("build-system", {})
+    maturin = data.get("tool", {}).get("maturin", {})
+
+    if project.get("name") != distribution:
+        errors.append(f"{distribution} leaf [project].name mismatch")
+    if project.get("version") != root_version:
+        errors.append(
+            f"{distribution} leaf version must match root version {root_version}; "
+            f"found {project.get('version')!r}"
+        )
+    if project.get("dependencies", []) != []:
+        errors.append(f"{distribution} leaf must not define dependencies")
+    if project.get("scripts", {}) != {}:
+        errors.append(f"{distribution} leaf must not define [project.scripts]")
+    if build_system.get("requires") != ["maturin==1.14.1"]:
+        errors.append(f"{distribution} leaf must pin maturin==1.14.1")
+    if build_system.get("build-backend") != "maturin":
+        errors.append(f"{distribution} leaf build backend must be maturin")
+    if maturin.get("bindings") != "bin":
+        errors.append(f"{distribution} leaf bindings must be bin")
+    expected_manifest = f"../../core/crates/{crate}/Cargo.toml"
+    if maturin.get("manifest-path") != expected_manifest:
+        errors.append(
+            f"{distribution} leaf manifest-path must be {expected_manifest!r}"
+        )
+    if maturin.get("profile") != "release" or maturin.get("strip") is not True:
+        errors.append(f"{distribution} leaf must use stripped release builds")
 
 
 def _check_speakers_analyze_leaf(
@@ -460,6 +530,10 @@ def main(root: Path | None = None) -> int:
     cuda_pyproject = root / "packages" / "solstone-journal-cuda" / "pyproject.toml"
     models_pyproject = root / "packages" / "solstone-journal-models" / "pyproject.toml"
     core_pyproject = root / "packages" / "solstone-core" / "pyproject.toml"
+    sol_core_pyproject = root / "packages" / "solstone-core-sol" / "pyproject.toml"
+    journal_core_pyproject = (
+        root / "packages" / "solstone-core-journal" / "pyproject.toml"
+    )
     speakers_analyze_pyproject = (
         root / "packages" / "solstone-core-speakers-analyze" / "pyproject.toml"
     )
@@ -472,6 +546,8 @@ def main(root: Path | None = None) -> int:
     cuda_data = _read_toml(cuda_pyproject, root, errors)
     models_data = _read_toml(models_pyproject, root, errors)
     core_data = _read_toml(core_pyproject, root, errors)
+    sol_core_data = _read_toml(sol_core_pyproject, root, errors)
+    journal_core_data = _read_toml(journal_core_pyproject, root, errors)
     speakers_analyze_data = _read_toml(speakers_analyze_pyproject, root, errors)
     describe_data = _read_toml(describe_pyproject, root, errors)
 
@@ -495,7 +571,7 @@ def main(root: Path | None = None) -> int:
 
     expected_base = (
         THIN_BASE
-        | set(solstone_core_marker_pins(root_version or ""))
+        | set(_native_marker_pins("solstone-core-sol", root_version or ""))
         | {solstone_core_unsupported_platform_pin(root_version or "")}
     )
 
@@ -553,13 +629,13 @@ def main(root: Path | None = None) -> int:
         if "solstone[pdf]" not in host:
             errors.append("[journal-host] must fold in solstone[pdf]")
         errors.extend(_check_models_pin(extras, models_version))
-        errors.extend(_check_core_pins(base, root_version))
+        errors.extend(_check_sol_core_pins(base, root_version))
         errors.extend(_check_core_unsupported_pin(base, root_version))
         host_core_pins = [
             dep
             for dep in host
             if dep.startswith(
-                ("solstone-core==", "solstone-core-unsupported-platform==")
+                ("solstone-core-sol==", "solstone-core-unsupported-platform==")
             )
         ]
         if host_core_pins:
@@ -597,6 +673,7 @@ def main(root: Path | None = None) -> int:
         expected_name="solstone-journal",
         root_version=root_version,
         errors=errors,
+        root=root,
     )
     cuda_deps = _leaf_dependencies(
         label="CUDA leaf",
@@ -604,8 +681,23 @@ def main(root: Path | None = None) -> int:
         expected_name="solstone-journal-cuda",
         root_version=root_version,
         errors=errors,
+        root=root,
     )
     _check_core_leaf(data=core_data, root_version=root_version, errors=errors)
+    _check_command_leaf(
+        data=sol_core_data,
+        root_version=root_version,
+        distribution="solstone-core-sol",
+        crate="solstone-core-sol-bin",
+        errors=errors,
+    )
+    _check_command_leaf(
+        data=journal_core_data,
+        root_version=root_version,
+        distribution="solstone-core-journal",
+        crate="solstone-core-journal-bin",
+        errors=errors,
+    )
     _check_speakers_analyze_leaf(
         data=speakers_analyze_data,
         root_version=root_version,

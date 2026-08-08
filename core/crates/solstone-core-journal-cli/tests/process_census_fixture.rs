@@ -142,7 +142,7 @@ fn validate_fixture(fixture: &Value) -> Result<(), String> {
         .chain(alias_tokens.iter().copied())
         .collect();
     if service_tokens
-        != solstone_core_sol::JOURNAL_HOST_COMMANDS
+        != solstone_core_cli_boundary::JOURNAL_HOST_COMMANDS
             .iter()
             .copied()
             .collect()

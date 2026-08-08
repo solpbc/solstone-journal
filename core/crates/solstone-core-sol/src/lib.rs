@@ -34,10 +34,9 @@ use solstone_core_sol_client_cli::{
 #[cfg(not(target_os = "ios"))]
 use solstone_core_sol_link::{SplLinkJoinPairingSeam, SplLinkServeRunner};
 
-mod generated;
 mod skills;
 
-pub use generated::journal_host_commands::{JOURNAL_HOST_COMMAND_COUNT, JOURNAL_HOST_COMMANDS};
+pub use solstone_core_cli_boundary::{JOURNAL_HOST_COMMAND_COUNT, JOURNAL_HOST_COMMANDS};
 
 const EXIT_USAGE: u8 = 64;
 const EXIT_CONFIG: u8 = 78;

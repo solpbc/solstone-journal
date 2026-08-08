@@ -64,10 +64,6 @@ const PREREQUISITE_RENEWAL_RESULT_SCHEMA: &str = "solstone.brain.prerequisite_re
 const PREREQUISITE_RENEWAL_READY_SCHEMA: &str = "solstone.brain.prerequisite_renewal.ready.v1";
 const MAX_LOCAL_GENERATE_STDIN_BYTES: usize = 64 * 1024 * 1024;
 const ZERO_EDGE_HINT: &str = "Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run journal indexer --rebuild-edges to force full edge re-extraction.";
-const SOL_IDENTITY_TOKEN: &str = "__solstone_identity=sol";
-const SOLSTONE_IDENTITY_TOKEN: &str = "__solstone_identity=solstone";
-const JOURNAL_IDENTITY_TOKEN: &str = "__solstone_identity=journal";
-
 struct JournalPathLine {
     label: &'static str,
     path: PathBuf,
@@ -80,15 +76,7 @@ enum JournalPathError {
 }
 
 fn main() -> ExitCode {
-    let mut args: Vec<_> = env::args_os().skip(1).collect();
-    if let Some(identity) = sol_identity_from_first_arg(&args) {
-        args.remove(0);
-        return if identity == "journal" {
-            run_journal_identity(args)
-        } else {
-            solstone_core_sol::run(identity, args)
-        };
-    }
+    let args: Vec<_> = env::args_os().skip(1).collect();
     match evaluate_args(&args) {
         Ok(Command::Version) => {
             print!("{}", version_line(env!("CARGO_PKG_VERSION")));
@@ -112,48 +100,6 @@ fn main() -> ExitCode {
         Ok(Command::Spl(command)) => run_spl_process(command),
         Err(_) => {
             eprint!("{USAGE}");
-            ExitCode::from(EXIT_USAGE)
-        }
-    }
-}
-
-fn run_journal_identity(args: Vec<std::ffi::OsString>) -> ExitCode {
-    let command = solstone_core_journal_cli::evaluate_args(&args);
-    match solstone_core_journal_cli::dispatch(
-        command,
-        &solstone_core_journal_cli::RealProcessSpawner,
-    ) {
-        solstone_core_journal_cli::Outcome::Help(text)
-        | solstone_core_journal_cli::Outcome::Version(text) => {
-            print!("{text}");
-            ExitCode::SUCCESS
-        }
-        solstone_core_journal_cli::Outcome::Unavailable { token } => {
-            eprint!("{}", solstone_core_journal_cli::unavailable_message(token));
-            ExitCode::from(EXIT_UNAVAILABLE)
-        }
-        solstone_core_journal_cli::Outcome::LocalSuccess { stdout, stderr } => {
-            print!("{stdout}");
-            eprint!("{stderr}");
-            ExitCode::SUCCESS
-        }
-        solstone_core_journal_cli::Outcome::LocalFailure {
-            stdout,
-            stderr,
-            exit,
-        } => {
-            print!("{stdout}");
-            eprint!("{stderr}");
-            ExitCode::from(exit)
-        }
-        // A real Unix process launch replaces this process and never returns.
-        solstone_core_journal_cli::Outcome::ProcessLaunched => ExitCode::SUCCESS,
-        solstone_core_journal_cli::Outcome::ProcessFailure { stderr, exit } => {
-            eprint!("{stderr}");
-            ExitCode::from(exit)
-        }
-        solstone_core_journal_cli::Outcome::Rejected => {
-            eprint!("{}", solstone_core_journal_cli::JOURNAL_USAGE);
             ExitCode::from(EXIT_USAGE)
         }
     }
@@ -2110,15 +2056,6 @@ fn run_spl_service(options: ServiceOptions) -> ExitCode {
             eprintln!("spl service failed: {}", error.class());
             ExitCode::from(EXIT_TEMPFAIL)
         }
-    }
-}
-
-fn sol_identity_from_first_arg(args: &[std::ffi::OsString]) -> Option<&'static str> {
-    match args.first().and_then(|arg| arg.to_str()) {
-        Some(SOL_IDENTITY_TOKEN) => Some("sol"),
-        Some(SOLSTONE_IDENTITY_TOKEN) => Some("solstone"),
-        Some(JOURNAL_IDENTITY_TOKEN) => Some("journal"),
-        _ => None,
     }
 }
 

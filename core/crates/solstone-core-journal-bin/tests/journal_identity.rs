@@ -47,11 +47,7 @@ impl Drop for TempDir {
 }
 
 fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_solstone-core")
-}
-
-fn identity_arg(public_argv0: &str) -> String {
-    format!("__solstone_identity={public_argv0}")
+    env!("CARGO_BIN_EXE_solstone-core-journal")
 }
 
 fn local_ops_fixture() -> Value {
@@ -94,14 +90,12 @@ fn output_with_retry(args: &[String], path: Option<&Path>) -> Output {
 }
 
 fn run_journal(args: &[&str], path: Option<&Path>) -> Output {
-    let mut full = vec![identity_arg("journal")];
-    full.extend(args.iter().map(|arg| (*arg).to_owned()));
+    let full = args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>();
     output_with_retry(&full, path)
 }
 
 fn run_journal_with_journal(args: &[&str], path: Option<&Path>, journal: &Path) -> Output {
-    let mut full = vec![identity_arg("journal")];
-    full.extend(args.iter().map(|arg| (*arg).to_owned()));
+    let full = args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>();
     for _ in 0..100 {
         let mut command = Command::new(bin());
         command.args(&full).env("SOLSTONE_JOURNAL", journal);
@@ -168,8 +162,8 @@ fn installed_layout(temp: &TempDir) -> InstalledLayout {
     fs::create_dir_all(site_packages.join("solstone")).expect("create installed package fixture");
     fs::write(site_packages.join("solstone/__init__.py"), "").expect("write package marker");
     fs::create_dir_all(&bin_dir).expect("create installed binary directory");
-    let binary = bin_dir.join("solstone-core");
-    fs::copy(bin(), &binary).expect("copy solstone-core binary");
+    let binary = bin_dir.join("solstone-core-journal");
+    fs::copy(bin(), &binary).expect("copy solstone-core-journal binary");
     fs::set_permissions(&binary, fs::Permissions::from_mode(0o755))
         .expect("make copied binary executable");
     for (directory, name) in [
@@ -204,7 +198,7 @@ fn write_recording_interpreter(path: &Path) {
 fn installed_output(layout: &InstalledLayout, args: &[&str]) -> Output {
     for _ in 0..100 {
         let mut command = Command::new(&layout.binary);
-        command.arg(identity_arg("journal")).args(args);
+        command.args(args);
         match command.output() {
             Ok(output) => return output,
             Err(error) if error.kind() == ErrorKind::ExecutableFileBusy => {
@@ -231,26 +225,25 @@ fn wait_for_record(path: &Path) -> Vec<Vec<u8>> {
 }
 
 #[test]
-fn journal_identity_is_distinct_from_sol_identity() {
-    let sol = output_with_retry(&[identity_arg("sol"), "--version".to_owned()], None);
+fn journal_binary_cannot_switch_to_the_sol_identity() {
     let journal = run_journal(&["--version"], None);
 
-    assert_eq!(sol.status.code(), Some(0));
     assert_eq!(journal.status.code(), Some(0));
-    let sol_stdout = String::from_utf8(sol.stdout).expect("sol stdout should be utf-8");
     let journal_stdout = String::from_utf8(journal.stdout).expect("journal stdout should be utf-8");
-    assert!(sol_stdout.starts_with("sol (solstone) "));
     assert!(journal_stdout.starts_with("journal (solstone) "));
-    assert_ne!(sol_stdout, journal_stdout);
 
-    let sol_think = output_with_retry(&[identity_arg("sol"), "think".to_owned()], None);
-    let journal_think = run_journal(&["think"], None);
-    assert_eq!(sol_think.status.code(), Some(2));
-    assert!(
-        String::from_utf8(sol_think.stderr)
-            .expect("sol stderr should be utf-8")
-            .contains("'think' moved to 'journal think' — run that instead.")
+    let sol_marker = output_with_retry(
+        &["__solstone_identity=sol".to_owned(), "--version".to_owned()],
+        None,
     );
+    assert_eq!(sol_marker.status.code(), Some(64));
+    assert_eq!(sol_marker.stdout, b"");
+    assert_eq!(
+        String::from_utf8(sol_marker.stderr).expect("stderr should be utf-8"),
+        solstone_core_journal_cli::JOURNAL_USAGE
+    );
+
+    let journal_think = run_journal(&["think"], None);
     assert_eq!(journal_think.status.code(), Some(69));
     assert!(
         String::from_utf8(journal_think.stderr)
@@ -581,7 +574,6 @@ fn journal_identity_exec_replaces_itself_and_forwards_process_argv() {
     ];
     let mut command = Command::new(&layout.binary);
     command
-        .arg(identity_arg("journal"))
         .arg("-v")
         .arg("up")
         .args(owner)
@@ -697,10 +689,7 @@ fn journal_identity_universal_command_bypasses_coherence_mismatch() {
     .expect("write mismatched metadata");
 
     let mut command = Command::new(&layout.binary);
-    command
-        .arg(identity_arg("journal"))
-        .arg("doctor")
-        .env("RECORD_FILE", &record);
+    command.arg("doctor").env("RECORD_FILE", &record);
     let mut child = command.spawn().expect("universal command should start");
     let pid = child.id();
     let recorded = wait_for_record(&record);
@@ -777,48 +766,21 @@ fn journal_identity_rejects_dotted_modules_and_unknown_without_spawning() {
 }
 
 #[test]
-fn journal_identity_marker_is_exact_and_first_only() {
-    let malformed = output_with_retry(&["__solstone_identity=journal-typo".to_owned()], None);
-    assert_eq!(malformed.status.code(), Some(64));
-    assert_eq!(malformed.stdout, b"");
-    assert_eq!(
-        String::from_utf8(malformed.stderr).expect("stderr should be utf-8"),
-        solstone_core_cli::USAGE
-    );
-
-    let later_marker = output_with_retry(
-        &[
-            "journal-path".to_owned(),
-            "__solstone_identity=journal".to_owned(),
-        ],
-        None,
-    );
-    assert_eq!(later_marker.status.code(), Some(64));
-    assert_eq!(later_marker.stdout, b"");
-    assert_eq!(
-        String::from_utf8(later_marker.stderr).expect("stderr should be utf-8"),
-        solstone_core_cli::USAGE
-    );
-
-    let journal_path = env::temp_dir().join(format!(
-        "solstone-core-journal-identity-path-{}",
-        std::process::id()
-    ));
-    let raw_journal_path = output_with_retry(
-        &[
-            "journal-path".to_owned(),
-            "--journal".to_owned(),
-            journal_path.display().to_string(),
-        ],
-        None,
-    );
-    assert_eq!(raw_journal_path.status.code(), Some(0));
-    assert_eq!(
-        String::from_utf8(raw_journal_path.stdout).expect("stdout should be utf-8"),
-        format!("cli\t{}\n", journal_path.display())
-    );
-    assert_eq!(raw_journal_path.stderr, b"");
-    assert!(!journal_path.exists());
+fn journal_binary_rejects_internal_core_and_legacy_identity_tokens() {
+    for args in [
+        vec!["__solstone_identity=journal".to_owned()],
+        vec!["journal-path".to_owned()],
+        vec!["local".to_owned(), "plan".to_owned()],
+    ] {
+        let output = output_with_retry(&args, None);
+        assert_eq!(output.status.code(), Some(64), "{args:?}");
+        assert_eq!(output.stdout, b"", "{args:?}");
+        assert_eq!(
+            String::from_utf8(output.stderr).expect("stderr should be utf-8"),
+            solstone_core_journal_cli::JOURNAL_USAGE,
+            "{args:?}"
+        );
+    }
 }
 
 fn repo_root() -> PathBuf {
@@ -842,7 +804,7 @@ fn is_binary_target(target: &serde_json::Value) -> bool {
 }
 
 #[test]
-fn cargo_metadata_confirms_single_public_identity_binary() {
+fn cargo_metadata_confirms_distinct_public_identity_binaries() {
     let root = repo_root();
     let output = Command::new("cargo")
         .args([
@@ -893,22 +855,18 @@ fn cargo_metadata_confirms_single_public_identity_binary() {
             .all(|(_package, target)| { !matches!(*target, "sol" | "solstone" | "journal") })
     );
 
-    let solstone_core = binaries
+    let sol = binaries
         .iter()
-        .filter(|(_package, target)| *target == "solstone-core")
+        .filter(|(_package, target)| *target == "solstone-core-sol")
         .collect::<Vec<_>>();
-    assert_eq!(solstone_core.len(), 1);
-    assert_eq!(solstone_core[0].0, "solstone-core");
+    assert_eq!(sol, vec![&("solstone-core-sol-bin", "solstone-core-sol")]);
 
-    let journal_cli = packages
+    let journal = binaries
         .iter()
-        .find(|package| package["name"] == "solstone-core-journal-cli")
-        .expect("solstone-core-journal-cli package must be present");
-    assert!(
-        journal_cli["targets"]
-            .as_array()
-            .expect("journal CLI targets must be an array")
-            .iter()
-            .all(|target| !is_binary_target(target))
+        .filter(|(_package, target)| *target == "solstone-core-journal")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        journal,
+        vec![&("solstone-core-journal-bin", "solstone-core-journal")]
     );
 }

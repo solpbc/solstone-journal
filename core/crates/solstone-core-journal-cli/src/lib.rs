@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::ffi::{OsStr, OsString};
+use std::process::ExitCode;
 
 mod coherence;
 pub mod help;
@@ -64,6 +65,45 @@ pub struct RealProcessSpawner;
 impl ProcessSpawner for RealProcessSpawner {
     fn spawn(&self, program: &OsStr, args: &[OsString]) -> std::io::Result<()> {
         runner::exec_process(program, args)
+    }
+}
+
+/// Run the same-device journal command surface as its own process identity.
+#[must_use]
+pub fn run(args: Vec<OsString>) -> ExitCode {
+    match dispatch(evaluate_args(&args), &RealProcessSpawner) {
+        Outcome::Help(text) | Outcome::Version(text) => {
+            print!("{text}");
+            ExitCode::SUCCESS
+        }
+        Outcome::Unavailable { token } => {
+            eprint!("{}", unavailable_message(token));
+            ExitCode::from(69)
+        }
+        Outcome::LocalSuccess { stdout, stderr } => {
+            print!("{stdout}");
+            eprint!("{stderr}");
+            ExitCode::SUCCESS
+        }
+        Outcome::LocalFailure {
+            stdout,
+            stderr,
+            exit,
+        } => {
+            print!("{stdout}");
+            eprint!("{stderr}");
+            ExitCode::from(exit)
+        }
+        // On Unix a real process launch replaces this process and never returns.
+        Outcome::ProcessLaunched => ExitCode::SUCCESS,
+        Outcome::ProcessFailure { stderr, exit } => {
+            eprint!("{stderr}");
+            ExitCode::from(exit)
+        }
+        Outcome::Rejected => {
+            eprint!("{JOURNAL_USAGE}");
+            ExitCode::from(64)
+        }
     }
 }
 

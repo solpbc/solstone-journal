@@ -15,7 +15,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 
 const CLI_BOUNDARY_JSON: &str = include_str!("../../../fixtures/native-sol/cli-boundary-v1.json");
-const SERVICE_DOWN: &str = "sol: solstone isn't running. Start it with 'journal up' and retry.\n";
 
 struct TempDir {
     path: PathBuf,
@@ -43,11 +42,7 @@ impl Drop for TempDir {
 }
 
 fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_solstone-core")
-}
-
-fn identity_arg() -> &'static str {
-    "__solstone_identity=sol"
+    env!("CARGO_BIN_EXE_solstone-core-sol")
 }
 
 fn write_forbidden_shim(path: &Path, sentinel: &Path) {
@@ -84,7 +79,6 @@ fn assert_sentinel_untouched(sentinel: &Path) {
 fn run_sol(args: &[&str], path: &Path, journal: Option<&Path>) -> Output {
     let mut command = Command::new(bin());
     command
-        .arg(identity_arg())
         .args(args)
         .env("PATH", path)
         .env_remove("HOME")
@@ -111,6 +105,25 @@ fn strings<'a>(value: &'a Value, field: &str) -> Vec<&'a str> {
 fn assert_unique(values: &[&str], field: &str) {
     let unique = values.iter().copied().collect::<BTreeSet<_>>();
     assert_eq!(unique.len(), values.len(), "{field} contains duplicates");
+}
+
+#[test]
+fn sol_binary_owns_only_the_sol_identity() {
+    let temp = TempDir::new("sol-process-identity");
+    let (path, sentinel) = poison_path(&temp);
+
+    let version = run_sol(&["--version"], &path, None);
+    assert_eq!(version.status.code(), Some(0));
+    assert!(
+        String::from_utf8(version.stdout)
+            .expect("version stdout should be utf-8")
+            .starts_with("sol (solstone) ")
+    );
+
+    let journal_marker = run_sol(&["__solstone_identity=journal", "--version"], &path, None);
+    assert_ne!(journal_marker.status.code(), Some(0));
+    assert!(!String::from_utf8_lossy(&journal_marker.stdout).starts_with("journal (solstone) "));
+    assert_sentinel_untouched(&sentinel);
 }
 
 #[test]
@@ -187,21 +200,27 @@ fn fixture_retired_sol_invocations_are_unsupported_without_spawning() {
 }
 
 #[test]
-fn status_reaches_native_http_dispatch() {
+fn status_never_reads_the_journal_local_port_file() {
     let temp = TempDir::new("sol-status");
     let (path, sentinel) = poison_path(&temp);
     let journal = temp.path.join("journal");
     fs::create_dir_all(journal.join("health")).expect("create journal health directory");
-    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("reserve unavailable port");
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind journal-local decoy port");
+    listener
+        .set_nonblocking(true)
+        .expect("make decoy listener nonblocking");
     let port = listener.local_addr().expect("read reserved port").port();
-    drop(listener);
     fs::write(journal.join("health/convey.port"), port.to_string())
-        .expect("write unavailable convey port");
+        .expect("write decoy convey port");
 
-    let output = run_sol(&["status"], &path, Some(&journal));
-    assert_eq!(output.status.code(), Some(1));
-    assert_eq!(output.stdout, b"");
-    assert_eq!(output.stderr, SERVICE_DOWN.as_bytes());
+    let _output = run_sol(&["status"], &path, Some(&journal));
+    assert_eq!(
+        listener
+            .accept()
+            .expect_err("sol must not dial journal-local decoy")
+            .kind(),
+        std::io::ErrorKind::WouldBlock
+    );
     assert_sentinel_untouched(&sentinel);
 }
 
