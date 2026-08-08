@@ -93,7 +93,7 @@ pub fn is_due(
 }
 
 /// Compute the next due epoch milliseconds independently from the due predicate.
-pub fn compute_next_run(
+pub(crate) fn compute_next_run(
     entry: &ScheduleEntry,
     state_entry: Option<&Value>,
     config: &ScheduleConfig,

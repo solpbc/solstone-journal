@@ -372,6 +372,51 @@ fn ac20_ac23_completion_recovers_and_is_mutex_serialized() {
 }
 
 #[test]
+fn ac20_completion_preserves_other_state_and_recovers_missing_file() {
+    let bed = Bed::new("completion-existing");
+    let untouched = json!({
+        "last_run": 42.0,
+        "last_status": "old-status",
+        "last_ref": "old-ref",
+        "other": "preserved"
+    });
+    fs::write(
+        bed.state(),
+        serde_json::to_vec(&json!({
+            "target": {"last_run": 1.0, "last_status": "old", "last_ref": "old-ref"},
+            "untouched": untouched
+        }))
+        .expect("state"),
+    )
+    .expect("state write");
+    let (engine, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 10, 0)).expect("init");
+    engine
+        .record_completion("target", 100.0, "ok", "target-ref")
+        .expect("target write");
+    let state: Value =
+        serde_json::from_slice(&fs::read(bed.state()).expect("state")).expect("json");
+    assert_eq!(state["untouched"], untouched);
+    assert_eq!(state["target"]["last_run"], 100.0);
+
+    let missing = Bed::new("completion-missing");
+    let (engine, _) =
+        ScheduleEngine::init(missing.config(), missing.state(), now(2026, 3, 22, 10, 0))
+            .expect("init");
+    engine
+        .record_completion("fresh", 200.0, "ok", "fresh-ref")
+        .expect("missing-state write");
+    let state: Value =
+        serde_json::from_slice(&fs::read(missing.state()).expect("state")).expect("json");
+    assert_eq!(
+        state,
+        json!({
+            "fresh": {"last_run": 200.0, "last_status": "ok", "last_ref": "fresh-ref"}
+        })
+    );
+}
+
+#[test]
 fn ac20_non_object_runtime_state_is_loud_from_init_and_check() {
     let bed = Bed::new("state-shape");
     fs::write(bed.state(), b"[]").expect("state shape");

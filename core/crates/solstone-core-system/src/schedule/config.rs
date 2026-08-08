@@ -39,7 +39,7 @@ pub struct ConfigDiagnostic {
 
 /// Tolerant runtime-load result. Whole-file defects remain observable here.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ConfigLoad {
+pub(crate) struct ConfigLoad {
     pub config: ScheduleConfig,
     pub diagnostics: Vec<ConfigDiagnostic>,
 }
