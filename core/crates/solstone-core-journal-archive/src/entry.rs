@@ -1,0 +1,149 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use std::ffi::OsString;
+use std::fs::File;
+
+/// One portable archive member name, always a UTF-8 relative name.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ArchiveMemberName(String);
+
+impl ArchiveMemberName {
+    pub(crate) fn new(value: String) -> Self {
+        Self(value)
+    }
+
+    /// Return the portable archive-member spelling, never a host filesystem path.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// A top-level journal name omitted because it is outside the portable roots.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct SkippedRootName(String);
+
+impl SkippedRootName {
+    pub(crate) fn new(value: String) -> Self {
+        Self(value)
+    }
+
+    /// Return the omitted top-level name.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct DirectoryProof {
+    pub(crate) device: u64,
+    pub(crate) inode: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct FileProof {
+    pub(crate) device: u64,
+    pub(crate) inode: u64,
+    pub(crate) size: u64,
+}
+
+/// The descriptor-relative route and identities frozen during inventory.
+///
+/// Every directory between the retained journal root and the leaf has an
+/// identity proof. A leaf-only proof would permit a replaced directory to
+/// hard-link the original file and evade revalidation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EntryProof {
+    pub(crate) components: Box<[OsString]>,
+    pub(crate) directories: Box<[DirectoryProof]>,
+    pub(crate) file: FileProof,
+}
+
+/// One regular file eligible for a portable archive.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InventoryEntry {
+    member_name: ArchiveMemberName,
+    proof: EntryProof,
+}
+
+impl InventoryEntry {
+    pub(crate) fn new(member_name: ArchiveMemberName, proof: EntryProof) -> Self {
+        Self { member_name, proof }
+    }
+
+    /// Return the portable archive member name.
+    pub fn member_name(&self) -> &ArchiveMemberName {
+        &self.member_name
+    }
+
+    /// Return the size captured when this entry was inventoried.
+    pub fn size(&self) -> u64 {
+        self.proof.file.size
+    }
+
+    pub(crate) fn proof(&self) -> &EntryProof {
+        &self.proof
+    }
+}
+
+/// A frozen archive-source inventory.
+#[derive(Debug, Default)]
+pub struct Inventory {
+    pub(crate) entries: Vec<InventoryEntry>,
+    pub(crate) skipped_root_names: Vec<SkippedRootName>,
+    pub(crate) day_count: usize,
+    pub(crate) entity_count: usize,
+    pub(crate) facet_count: usize,
+}
+
+impl Inventory {
+    /// Return regular archive entries in fixed-root, lexical member order.
+    pub fn entries(&self) -> &[InventoryEntry] {
+        &self.entries
+    }
+
+    /// Return sorted direct journal-root names outside the portable roots.
+    pub fn skipped_root_names(&self) -> &[SkippedRootName] {
+        &self.skipped_root_names
+    }
+
+    /// Return the frozen number of immediate eight-digit chronicle directories.
+    pub fn day_count(&self) -> usize {
+        self.day_count
+    }
+
+    /// Return the frozen number of immediate entity declarations.
+    pub fn entity_count(&self) -> usize {
+        self.entity_count
+    }
+
+    /// Return the frozen number of immediate facet declarations.
+    pub fn facet_count(&self) -> usize {
+        self.facet_count
+    }
+}
+
+/// A verified regular file opened from an inventory entry.
+pub struct OpenedInventoryFile {
+    file: File,
+    inventoried_size: u64,
+}
+
+impl OpenedInventoryFile {
+    pub(crate) fn new(file: File, inventoried_size: u64) -> Self {
+        Self {
+            file,
+            inventoried_size,
+        }
+    }
+
+    /// Return the entry size captured at inventory time.
+    pub fn inventoried_size(&self) -> u64 {
+        self.inventoried_size
+    }
+
+    /// Consume this wrapper and return its already-verified file descriptor.
+    pub fn into_file(self) -> File {
+        self.file
+    }
+}
