@@ -1,7 +1,7 @@
 {
   "schema": "native-sol-applicability-v1",
   "note": "Applicability case IDs are requirements-first: each dispatch declares required adversarial behavior here before adding vectors. The coverage gate structurally enforces later multi-request boundaries, upload missing/unreadable/later-file/rejection cases, env explicit/absent or valid-absent cases, and dry-run preview/commit coverage.",
-  "http_count": 164,
+  "http_count": 168,
   "top_level_entries": {
     "import.top_level": {
       "surface": "sol-import",
@@ -213,6 +213,54 @@
       "consent": {"enabled": true, "flags": ["--yes", "--anonymous"], "default": "named_with_prompt", "case_ids": {"yes": ["support-feedback-submit-yes"], "anonymous": ["support-feedback-decline-anonymous"]}},
       "dry_run": {"enabled": true, "flags": ["--submit"], "default": "preview", "case_ids": {"preview": ["support-feedback-dry-run-capture-failure"], "commit": ["support-feedback-submit-yes"]}},
       "multi_request": {"enabled": true, "request_count": "2..3", "case_ids": {"draft": ["support-feedback-dry-run-capture-failure"], "submit": ["support-feedback-submit-yes"], "submit_boundary_failure": ["support-feedback-submit-consent-portal-error"]}}
+    },
+    "support.history": {
+      "path": ["support", "history"],
+      "group": "support",
+      "pagination": {"enabled": false, "case_ids": {}},
+      "mutation": {"enabled": false, "methods": []},
+      "upload": {"enabled": false, "file_count": "none", "case_ids": {}},
+      "env_default": {"enabled": false, "vars": [], "case_ids": {}},
+      "confirmation": {"enabled": false, "prompts": [], "case_ids": {}},
+      "consent": {"enabled": false, "flags": [], "default": "none", "case_ids": {}},
+      "dry_run": {"enabled": false, "flags": [], "default": "none", "case_ids": {}},
+      "multi_request": {"enabled": true, "request_count": "2", "case_ids": {"with_cursor": ["support-history-cursor"], "end_of_results": ["support-history-end"], "later_boundary_failure": ["support-history-portal-error"]}}
+    },
+    "support.close": {
+      "path": ["support", "close"],
+      "group": "support",
+      "pagination": {"enabled": false, "case_ids": {}},
+      "mutation": {"enabled": true, "methods": ["POST"]},
+      "upload": {"enabled": false, "file_count": "none", "case_ids": {}},
+      "env_default": {"enabled": false, "vars": [], "case_ids": {}},
+      "confirmation": {"enabled": true, "prompts": ["Close ticket #{ticket_id}? This can't be undone from here."], "case_ids": {"accept": ["support-close-submit-yes"]}},
+      "consent": {"enabled": true, "flags": ["--yes"], "default": "prompt", "case_ids": {"yes": ["support-close-submit-yes"]}},
+      "dry_run": {"enabled": true, "flags": ["--submit"], "default": "preview", "case_ids": {"preview": ["support-close-dry-run-capture"], "commit": ["support-close-submit-yes"]}},
+      "multi_request": {"enabled": true, "request_count": "2", "case_ids": {"draft": ["support-close-dry-run-capture"], "submit": ["support-close-submit-yes"], "submit_boundary_failure": ["support-close-portal-error"]}}
+    },
+    "support.resolved": {
+      "path": ["support", "resolved"],
+      "group": "support",
+      "pagination": {"enabled": false, "case_ids": {}},
+      "mutation": {"enabled": true, "methods": ["POST"]},
+      "upload": {"enabled": false, "file_count": "none", "case_ids": {}},
+      "env_default": {"enabled": false, "vars": [], "case_ids": {}},
+      "confirmation": {"enabled": true, "prompts": ["Accept the proposed resolution and close ticket #{ticket_id}? This can't be undone from here."], "case_ids": {"accept": ["support-resolved-submit-yes"]}},
+      "consent": {"enabled": true, "flags": ["--yes"], "default": "prompt", "case_ids": {"yes": ["support-resolved-submit-yes"]}},
+      "dry_run": {"enabled": true, "flags": ["--submit"], "default": "preview", "case_ids": {"preview": ["support-resolved-dry-run-capture"], "commit": ["support-resolved-submit-yes"]}},
+      "multi_request": {"enabled": true, "request_count": "2", "case_ids": {"draft": ["support-resolved-dry-run-capture"], "submit": ["support-resolved-submit-yes"], "submit_boundary_failure": ["support-resolved-portal-error"]}}
+    },
+    "support.still_need_help": {
+      "path": ["support", "still-need-help"],
+      "group": "support",
+      "pagination": {"enabled": false, "case_ids": {}},
+      "mutation": {"enabled": true, "methods": ["POST"]},
+      "upload": {"enabled": false, "file_count": "none", "case_ids": {}},
+      "env_default": {"enabled": false, "vars": [], "case_ids": {}},
+      "confirmation": {"enabled": true, "prompts": ["Let solstone support know you still need help with ticket #{ticket_id}? This cancels the pending close."], "case_ids": {"accept": ["support-still-need-help-submit-yes"]}},
+      "consent": {"enabled": true, "flags": ["--yes"], "default": "prompt", "case_ids": {"yes": ["support-still-need-help-submit-yes"]}},
+      "dry_run": {"enabled": true, "flags": ["--submit"], "default": "preview", "case_ids": {"preview": ["support-still-need-help-dry-run-capture"], "commit": ["support-still-need-help-submit-yes"]}},
+      "multi_request": {"enabled": true, "request_count": "2", "case_ids": {"draft": ["support-still-need-help-dry-run-capture"], "submit": ["support-still-need-help-submit-yes"], "submit_boundary_failure": ["support-still-need-help-portal-error"]}}
     },
     "support.announcements": {
       "path": ["support", "announcements"],

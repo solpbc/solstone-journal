@@ -87,18 +87,20 @@ def _operation_error_response(exc: Exception) -> tuple[Any, int] | None:
     """Map local ledger outcomes before a route falls back to portal failure."""
     from solstone.apps.support import operations
 
-    mappings = (
-        (operations.IdempotencyConflictError, IDEMPOTENCY_CONFLICT),
-        (operations.OperationInProgressError, OPERATION_IN_PROGRESS),
-        (operations.OperationRetiredError, OPERATION_RETIRED),
-        (operations.OperationErasedError, OPERATION_ERASED),
-        (operations.OperationTosChangedError, SUPPORT_TOS_CHANGED),
-        (operations.OperationInvalidStateError, SUPPORT_INVALID_STATE),
-        (operations.OperationStateUnavailableError, SUPPORT_PORTAL_FAILED),
-    )
-    for error_type, reason in mappings:
-        if isinstance(exc, error_type):
-            return error_response(reason, detail=str(exc))
+    if isinstance(exc, operations.IdempotencyConflictError):
+        return error_response(IDEMPOTENCY_CONFLICT, detail=str(exc))
+    if isinstance(exc, operations.OperationInProgressError):
+        return error_response(OPERATION_IN_PROGRESS, detail=str(exc))
+    if isinstance(exc, operations.OperationRetiredError):
+        return error_response(OPERATION_RETIRED, detail=str(exc))
+    if isinstance(exc, operations.OperationErasedError):
+        return error_response(OPERATION_ERASED, detail=str(exc))
+    if isinstance(exc, operations.OperationTosChangedError):
+        return error_response(SUPPORT_TOS_CHANGED, detail=str(exc))
+    if isinstance(exc, operations.OperationInvalidStateError):
+        return error_response(SUPPORT_INVALID_STATE, detail=str(exc))
+    if isinstance(exc, operations.OperationStateUnavailableError):
+        return error_response(SUPPORT_PORTAL_FAILED, detail=str(exc))
     return None
 
 

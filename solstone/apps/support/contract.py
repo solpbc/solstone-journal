@@ -334,7 +334,7 @@ OPERATIONS: list[OperationSpec] = [
                 ("missing_required_field",),
                 "subject or description was missing.",
             ),
-            *_SUPPORT_READ_ERRORS,
+            *_SUPPORT_MUTATION_ERRORS,
         ),
     ),
     OperationSpec(
@@ -359,7 +359,7 @@ OPERATIONS: list[OperationSpec] = [
                 ("missing_required_field",),
                 "content was missing.",
             ),
-            *_SUPPORT_READ_ERRORS,
+            *_SUPPORT_MUTATION_ERRORS,
         ),
     ),
     OperationSpec(
@@ -387,12 +387,12 @@ OPERATIONS: list[OperationSpec] = [
                 description="Portal attachment response.",
                 raw_schema=_FREE_OBJECT,
             ),
+            *_SUPPORT_MUTATION_ERRORS,
             _json_error(
                 400,
                 ("invalid_request_value", "missing_required_field"),
                 "The upload was missing a file or had an invalid attachment value.",
             ),
-            *_SUPPORT_READ_ERRORS,
         ),
     ),
     OperationSpec(
@@ -422,7 +422,7 @@ OPERATIONS: list[OperationSpec] = [
                 ("missing_required_field",),
                 "body was missing.",
             ),
-            *_SUPPORT_READ_ERRORS,
+            *_SUPPORT_MUTATION_ERRORS,
         ),
     ),
     OperationSpec(
