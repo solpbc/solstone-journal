@@ -40,7 +40,10 @@ use super::merge_payload::{
     record_entity_merge_payload, snapshot_payload,
 };
 use super::merge_rollback::MergeRollback;
-use super::voiceprints::{VoiceprintArchive, read_voiceprints_npz, write_voiceprints_npz};
+use super::voiceprints::{
+    EncoderIdentity, VoiceprintArchive, VoiceprintEnvelope, read_voiceprints_npz,
+    write_voiceprints_npz,
+};
 
 const PHASES: [&str; 11] = [
     "private_payload",
@@ -128,6 +131,12 @@ fn audit_counts(
 #[derive(Debug)]
 pub enum EntityMergeError {
     Refused(String),
+    VoiceprintEncoderMismatch {
+        source_entity_id: String,
+        target_entity_id: String,
+        source_encoder_id: String,
+        target_encoder_id: String,
+    },
     Read(EntityStoreError),
     Write(EntityWriteError),
     Payload(MergePayloadError),
@@ -144,6 +153,15 @@ impl fmt::Display for EntityMergeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Refused(message) => f.write_str(message),
+            Self::VoiceprintEncoderMismatch {
+                source_entity_id,
+                target_entity_id,
+                source_encoder_id,
+                target_encoder_id,
+            } => write!(
+                f,
+                "voiceprint encoders differ for {source_entity_id} ({source_encoder_id}) and {target_entity_id} ({target_encoder_id})"
+            ),
             Self::Read(error) => error.fmt(f),
             Self::Write(error) => error.fmt(f),
             Self::Payload(error) => error.fmt(f),
@@ -206,8 +224,16 @@ pub fn commit_entity_merge(
     source_id: &str,
     target_id: &str,
     options: EntityMergeOptions,
+    fallback_encoder: &EncoderIdentity,
 ) -> Result<EntityMergeReport, EntityMergeError> {
-    commit_entity_merge_with_injector(journal, source_id, target_id, options, None)
+    commit_entity_merge_with_injector(
+        journal,
+        source_id,
+        target_id,
+        options,
+        fallback_encoder,
+        None,
+    )
 }
 
 pub(crate) fn commit_entity_merge_with_injector(
@@ -215,6 +241,7 @@ pub(crate) fn commit_entity_merge_with_injector(
     source_id: &str,
     target_id: &str,
     options: EntityMergeOptions,
+    fallback_encoder: &EncoderIdentity,
     injector: Option<&FailureInjector>,
 ) -> Result<EntityMergeReport, EntityMergeError> {
     let _trust = hold_entity_trust_lock(journal).map_err(EntityWriteError::TrustLock)?;
@@ -249,7 +276,7 @@ pub(crate) fn commit_entity_merge_with_injector(
     for phase in PHASES {
         let result = match phase {
             "private_payload" => record_entity_merge_payload(journal, target_id, &merge_id, &payload).map(|_| ()).map_err(Into::into),
-            "voiceprints" => merge_voiceprints(journal, source_id, target_id).map(|result| { stats.voiceprints_added=result.added; stats.voiceprints_skipped_duplicate=result.skipped_duplicate; stats.voiceprints_target_total=result.target_total; payload["manifest"]["voiceprints"]["support"] = Value::Array(result.support); }),
+            "voiceprints" => merge_voiceprints(journal, source_id, target_id, fallback_encoder).map(|result| { stats.voiceprints_added=result.added; stats.voiceprints_skipped_duplicate=result.skipped_duplicate; stats.voiceprints_target_total=result.target_total; payload["manifest"]["voiceprints"]["support"] = Value::Array(result.support); }),
             "facets" => merge_facets(journal, source_id, target_id, Some(&mut rollback), injector).map(|result| { stats.facets_moved=result.moved_count; stats.facets_merged=result.merged_count; stats.facets_observations_appended=result.observations_appended; touched_facets = result.touched_facets; payload["manifest"]["facets"]["entries"] = Value::Array(result.entries); }),
             "history" => save_entity_identity(journal, target_id, &plan.target_after, Some(&EntityOperationContext { kind: EntityOperationKind::Merge, caller: Value::Null, actor: Value::Null, metadata: json!({"merge_id": merge_id, "source_id": source_id, "target_id": target_id}) })).map_err(EntityMergeError::Write).and_then(|saved| { let sequence = saved.event.and_then(|event| event.get("seq").cloned()).ok_or_else(|| EntityMergeError::Refused("merge history event was not written".to_owned()))?; payload["commit_seq"] = sequence; record_entity_merge_payload(journal, target_id, &merge_id, &payload)?; Ok(()) }),
             "cleanup" => cleanup_merge(journal, source_id, &touched_facets, Some(&mut rollback)),
@@ -895,13 +922,18 @@ pub(crate) fn merge_voiceprints(
     journal: &Path,
     source_id: &str,
     target_id: &str,
+    fallback_encoder: &EncoderIdentity,
 ) -> Result<VoiceprintMergeStats, EntityMergeError> {
     let source_path = contained_path(journal, &format!("entities/{source_id}/voiceprints.npz"))
         .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
     let target_path = contained_path(journal, &format!("entities/{target_id}/voiceprints.npz"))
         .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
     if !path_lexists(&source_path).map_err(|error| EntityMergeError::Refused(error.to_string()))? {
-        let target_total = load_voiceprints(&target_path)?.map_or(0, |archive| archive.rows);
+        let target = load_voiceprints(&target_path)?;
+        if let Some(archive) = &target {
+            ensure_merge_archive_allowed(archive)?;
+        }
+        let target_total = target.map_or(0, |archive| archive.rows);
         return Ok(VoiceprintMergeStats {
             target_total,
             ..VoiceprintMergeStats::default()
@@ -912,7 +944,29 @@ pub(crate) fn merge_voiceprints(
         embeddings: Vec::new(),
         rows: 0,
         metadata: Vec::new(),
+        envelope: VoiceprintEnvelope::default(),
+        unrecognized_members: Vec::new(),
     });
+    ensure_merge_archive_allowed(&source)?;
+    ensure_merge_archive_allowed(&target)?;
+    if let (Some(source_encoder), Some(target_encoder)) =
+        (&source.envelope.encoder, &target.envelope.encoder)
+    {
+        if source_encoder != target_encoder {
+            return Err(EntityMergeError::VoiceprintEncoderMismatch {
+                source_entity_id: source_id.to_owned(),
+                target_entity_id: target_id.to_owned(),
+                source_encoder_id: source_encoder.id.clone(),
+                target_encoder_id: target_encoder.id.clone(),
+            });
+        }
+    }
+    let selected_encoder = target
+        .envelope
+        .encoder
+        .as_ref()
+        .or(source.envelope.encoder.as_ref())
+        .unwrap_or(fallback_encoder);
     let mut existing = target
         .metadata
         .iter()
@@ -953,12 +1007,32 @@ pub(crate) fn merge_voiceprints(
     target.rows = target.metadata.len();
     stats.target_total = target.rows;
     if stats.added > 0 {
-        let bytes = write_voiceprints_npz(&target.embeddings, &target.metadata)
-            .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+        let bytes = write_voiceprints_npz(
+            &target.embeddings,
+            &target.metadata,
+            &target.envelope,
+            selected_encoder,
+        )
+        .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
         atomic_replace(&target_path, &bytes, AtomicWriteOptions::default())
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
     }
     Ok(stats)
+}
+
+fn ensure_merge_archive_allowed(archive: &VoiceprintArchive) -> Result<(), EntityMergeError> {
+    if let Some(member) = archive.unrecognized_members.first() {
+        return Err(EntityMergeError::Refused(format!(
+            "voiceprint archive has unrecognized member {member}"
+        )));
+    }
+    if archive.envelope.version > 1 {
+        return Err(EntityMergeError::Refused(format!(
+            "voiceprint envelope version {} exceeds supported version 1",
+            archive.envelope.version
+        )));
+    }
+    Ok(())
 }
 
 fn voiceprint_support_entry(key: &VoiceprintKey, target_preexisting: bool, added: bool) -> Value {
