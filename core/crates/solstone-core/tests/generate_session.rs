@@ -32,6 +32,14 @@ fn temp_path(label: &str) -> PathBuf {
     ))
 }
 
+struct TempFile(PathBuf);
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
 struct Journal {
     path: PathBuf,
 }
@@ -93,7 +101,6 @@ impl Drop for Journal {
 struct StubState {
     release_path: PathBuf,
     observed_path: PathBuf,
-    depth_path: PathBuf,
     hold: bool,
     stopping: AtomicBool,
     active: AtomicUsize,
@@ -123,7 +130,6 @@ impl LocalStub {
         let state = Arc::new(StubState {
             release_path: temp_path("release"),
             observed_path: temp_path("observed"),
-            depth_path: temp_path("depth"),
             hold,
             stopping: AtomicBool::new(false),
             active: AtomicUsize::new(0),
@@ -199,10 +205,7 @@ impl LocalStub {
     }
 
     fn maximum_depth(&self) -> usize {
-        fs::read_to_string(&self.state.depth_path)
-            .expect("read depth record")
-            .parse()
-            .expect("parse depth record")
+        self.state.maximum.load(Ordering::Acquire)
     }
 
     fn finish(mut self) {
@@ -228,11 +231,7 @@ impl Drop for LocalStub {
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
-        for path in [
-            &self.state.release_path,
-            &self.state.observed_path,
-            &self.state.depth_path,
-        ] {
+        for path in [&self.state.release_path, &self.state.observed_path] {
             let _ = fs::remove_file(path);
         }
     }
@@ -252,11 +251,6 @@ fn handle_local_request(mut stream: TcpStream, state: Arc<StubState>) {
         let active = state.active.fetch_add(1, Ordering::AcqRel) + 1;
         state.maximum.fetch_max(active, Ordering::AcqRel);
         fs::write(&state.observed_path, b"observed").expect("write observed trigger");
-        fs::write(
-            &state.depth_path,
-            state.maximum.load(Ordering::Acquire).to_string(),
-        )
-        .expect("write depth record");
         let mut gates = state.gates.lock().expect("stub gates");
         gates.observed_ids.insert(content.clone());
         state.release.notify_all();
@@ -845,8 +839,8 @@ fn bare_eof_exits_immediately_without_response_or_usage() {
     let stub = LocalStub::start(true);
     let journal = Journal::bundled_local(true);
     journal.set_port(stub.port);
-    let stdout_path = temp_path("stdout");
-    let stdout_file = File::create(&stdout_path).expect("create stdout file");
+    let stdout_path = TempFile(temp_path("stdout"));
+    let stdout_file = File::create(&stdout_path.0).expect("create stdout file");
     let mut child = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
         .args(["generate", "--session", "--max-in-flight", "1"])
         .env("SOLSTONE_JOURNAL", &journal.path)
@@ -861,16 +855,15 @@ fn bare_eof_exits_immediately_without_response_or_usage() {
     let token_lines = journal.token_lines();
     drop(stdin);
     assert_eq!(wait_for_exit(&mut child).code(), Some(1));
-    let first_length = fs::metadata(&stdout_path).expect("stdout metadata").len();
+    let first_length = fs::metadata(&stdout_path.0).expect("stdout metadata").len();
     stub.release();
     thread::sleep(Duration::from_millis(200));
     assert_eq!(
-        fs::metadata(&stdout_path)
+        fs::metadata(&stdout_path.0)
             .expect("settled stdout metadata")
             .len(),
         first_length
     );
     assert_eq!(journal.token_lines(), token_lines);
-    let _ = fs::remove_file(stdout_path);
     stub.finish();
 }
