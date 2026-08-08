@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 nix = { workspace = true, features = ["dir", "user"] }
+zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
 [lints]
 workspace = true

@@ -8,7 +8,9 @@ const SOURCES: &[(&str, &str)] = &[
     ("entry", include_str!("../src/entry.rs")),
     ("error", include_str!("../src/error.rs")),
     ("inventory", include_str!("../src/inventory.rs")),
+    ("manifest", include_str!("../src/manifest.rs")),
     ("source", include_str!("../src/source.rs")),
+    ("writer", include_str!("../src/writer.rs")),
 ];
 const LIB: &str = include_str!("../src/lib.rs");
 const MANIFEST: &str = include_str!("../Cargo.toml");
@@ -91,15 +93,12 @@ fn regular_file_opens_are_nonblocking_and_nofollow() {
 
 #[test]
 fn no_module_reaches_deferred_or_forbidden_surfaces() {
-    for (name, source) in SOURCES.iter().chain(std::iter::once(&("lib", LIB))) {
-        let production = if *name == "source" {
-            source
-                .split_once("#[cfg(test)]\n#[allow(clippy::disallowed_methods, clippy::disallowed_types)]\nmod tests")
-                .map(|(production, _)| production)
-                .expect("source test-module boundary")
-        } else {
-            *source
-        };
+    for (name, source) in SOURCES
+        .iter()
+        .filter(|(name, _)| !matches!(*name, "manifest" | "writer"))
+        .chain(std::iter::once(&("lib", LIB)))
+    {
+        let production = production_source(source);
         for forbidden in [
             "ZipArchive",
             "ZipWriter",
@@ -114,6 +113,29 @@ fn no_module_reaches_deferred_or_forbidden_surfaces() {
             assert!(
                 !production.contains(forbidden),
                 "module {name} reaches forbidden surface {forbidden}"
+            );
+        }
+    }
+}
+
+#[test]
+fn format_modules_reach_no_non_zip_forbidden_surfaces() {
+    for (name, source) in SOURCES
+        .iter()
+        .filter(|(name, _)| matches!(*name, "manifest" | "writer"))
+    {
+        let production = production_source(source);
+        for forbidden in [
+            "Command::new",
+            "std::process",
+            "reqwest",
+            "ureq",
+            "pyo3",
+            "Python",
+        ] {
+            assert!(
+                !production.contains(forbidden),
+                "format module {name} reaches forbidden surface {forbidden}"
             );
         }
     }
@@ -195,8 +217,39 @@ fn public_descendant_operations_accept_only_inventory_handles() {
 fn manifest_declares_only_nix_as_a_dependency() {
     assert_eq!(
         dependency_lines(MANIFEST),
-        vec!["nix = { workspace = true, features = [\"dir\", \"user\"] }"],
+        vec![
+            "nix = { workspace = true, features = [\"dir\", \"user\"] }",
+            "zip = { version = \"=2.4.2\", default-features = false, features = [\"deflate\"] }",
+        ],
     );
+}
+
+#[test]
+fn exactly_one_dead_code_allowance_exists_on_the_new_engine() {
+    let allowance = "#[allow(dead_code)]";
+    let total = SOURCES
+        .iter()
+        .map(|(_, source)| source.matches(allowance).count())
+        .sum::<usize>()
+        + LIB.matches(allowance).count();
+    assert_eq!(total, 1);
+    let writer = SOURCES
+        .iter()
+        .find_map(|(name, source)| (*name == "writer").then_some(*source))
+        .expect("writer module registered");
+    assert_eq!(writer.matches(allowance).count(), 1);
+    assert!(writer.contains("#[allow(dead_code)]\npub(crate) fn write_archive"));
+}
+
+fn production_source(source: &str) -> &str {
+    [
+        "\n#[cfg(test)]\nmod tests",
+        "\n#[cfg(test)]\n#[allow(clippy::disallowed_methods, clippy::disallowed_types)]\nmod tests",
+    ]
+    .into_iter()
+    .filter_map(|boundary| source.find(boundary))
+    .min()
+    .map_or(source, |boundary| &source[..boundary])
 }
 
 fn public_signatures(source: &str) -> Vec<&str> {

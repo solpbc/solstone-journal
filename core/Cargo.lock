@@ -2261,6 +2261,7 @@ name = "solstone-core-journal-archive"
 version = "1.0.22"
 dependencies = [
  "nix",
+ "zip",
 ]
 
 [[package]]
