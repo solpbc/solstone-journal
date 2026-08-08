@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 use solstone_core_body_source::{
     BodyDay, BodyDigest, BodyRawRetention, BodySourceFamily, BodySourceHash, BodyValue, BundleId,
+    parse,
 };
 
 pub const MIN_BUNDLE: &str = "body-00000000000000000000000000";
@@ -23,6 +24,7 @@ pub struct NativeBundleManifestBindingCase {
     pub entry_count: u64,
     pub days_affected: Vec<BodyDay>,
     pub raw_retention: BodyRawRetention,
+    pub source_manifest: BodyValue,
     pub expected_manifest_binding: Value,
 }
 
@@ -133,6 +135,11 @@ pub fn native_bundle_manifest_binding_cases() -> Vec<NativeBundleManifestBinding
         .iter()
         .map(|case| {
             let manifest = &case["manifest"];
+            let encoded_manifest =
+                serde_json::to_string(manifest).expect("fixture manifest serializes");
+            let source_manifest =
+                parse(encoded_manifest.as_bytes()).expect("fixture manifest parses");
+            assert!(matches!(&source_manifest, BodyValue::Object(_)));
             let source_type = BodySourceFamily::from_bytes(
                 manifest["source_type"]
                     .as_str()
@@ -184,6 +191,7 @@ pub fn native_bundle_manifest_binding_cases() -> Vec<NativeBundleManifestBinding
                         .as_bytes(),
                 )
                 .expect("fixture raw retention is valid"),
+                source_manifest,
                 expected_manifest_binding: case["expected_manifest_binding"].clone(),
             }
         })

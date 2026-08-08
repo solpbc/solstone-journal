@@ -1,16 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use crate::{BodyObject, BodyString, BodyValue, ManifestKnownKey, ManifestScanError};
+use crate::manifest_known_key::starts_with_body_prefix;
+use crate::{BodyObject, BodyValue, ManifestKnownKey, ManifestScanError};
 
 const MAX_MANIFEST_BYTES: usize = 1_048_576;
-const BODY_PREFIX: [u32; 5] = [
-    b'b' as u32,
-    b'o' as u32,
-    b'd' as u32,
-    b'y' as u32,
-    b'_' as u32,
-];
 
 /// A parsed body manifest with facts derived from its top-level key occurrences.
 #[derive(Clone, Debug, PartialEq)]
@@ -83,10 +77,6 @@ pub fn scan_body_manifest(input: &[u8]) -> Result<ScannedBodyManifest, ManifestS
         has_body_prefixed_key,
         has_unknown_body_prefixed_key,
     })
-}
-
-fn starts_with_body_prefix(key: &BodyString) -> bool {
-    key.code_points().starts_with(&BODY_PREFIX)
 }
 
 #[cfg(test)]

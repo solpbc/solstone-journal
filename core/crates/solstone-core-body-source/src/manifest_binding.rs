@@ -3,12 +3,13 @@
 
 use std::collections::BTreeMap;
 
+use crate::manifest_known_key::starts_with_body_prefix;
 use crate::{
     BODY_BUNDLE_REF_KEY, BODY_BUNDLE_SHA256_KEY, BODY_SOURCE_SCHEMA_KEY, BodyDay, BodyDigest,
     BodyInteger, BodyObject, BodyRawRetention, BodySourceFamily, BodySourceHash, BodyString,
     BodyValue, BundleId, DAYS_AFFECTED_KEY, ENTRY_COUNT_KEY, IMPORT_ID_KEY, ManifestBindingError,
-    ManifestBindingErrorCode, ManifestBindingErrorField, RAW_RETENTION_KEY, SOURCE_HASH_KEY,
-    SOURCE_TYPE_KEY,
+    ManifestBindingErrorCode, ManifestBindingErrorField, ManifestKnownKey, RAW_RETENTION_KEY,
+    SOURCE_HASH_KEY, SOURCE_TYPE_KEY,
 };
 
 pub(crate) const BODY_SOURCE_SCHEMA_VALUE: &str = "solstone.body.bundle.v1";
@@ -124,6 +125,30 @@ impl BodyManifestBinding {
     /// Returns the checked raw-retention policy.
     pub fn raw_retention(&self) -> BodyRawRetention {
         self.raw_retention
+    }
+
+    /// Applies checked values to a decoded body-manifest object.
+    pub fn apply_to(&self, source: &BodyValue) -> Result<BodyObject, ManifestBindingError> {
+        let BodyValue::Object(object) = source else {
+            return Err(ManifestBindingError::new(
+                self.import_id.clone(),
+                ManifestBindingErrorCode::WrongType,
+                ManifestBindingErrorField::Manifest,
+            ));
+        };
+        if object.keys().any(|key| {
+            starts_with_body_prefix(key) && ManifestKnownKey::from_body_string(key).is_none()
+        }) {
+            return Err(ManifestBindingError::new(
+                self.import_id.clone(),
+                ManifestBindingErrorCode::UnknownField,
+                ManifestBindingErrorField::Manifest,
+            ));
+        }
+
+        let mut result = object.clone();
+        result.extend(self.to_body_object());
+        Ok(result)
     }
 
     /// Emits the checked values as a native body-manifest object.
