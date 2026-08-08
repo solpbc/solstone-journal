@@ -519,10 +519,18 @@ def _talent_output_records(directory: Path) -> list[dict[str, int | str]]:
     return records
 
 
+def _validate_segment_key(segment: str) -> str:
+    """Return a bare segment key or reject an unsafe path-like value."""
+    if segment_key(segment) != segment:
+        raise ValueError("segment must be a bare HHMMSS_LEN key")
+    return segment
+
+
 def list_talent_outputs(day: str, *, segment: str | None = None) -> dict[str, Any]:
     """List daily or segment talent output files for a chronicle day."""
     day_dir = day_path(day, create=False)
     if segment is not None:
+        segment = _validate_segment_key(segment)
         return {
             "day": day,
             "segment": segment,
@@ -547,6 +555,8 @@ def find_talent_output_path(
 ) -> str:
     """Return the journal-relative path for an agent output, if it exists."""
     day_dir = Path(journal) / CHRONICLE_DIR / day
+    if segment is not None:
+        segment = _validate_segment_key(segment)
     talents_dir = day_dir / segment / "talents" if segment else day_dir / "talents"
     for extension in (".md", ".json", ".jsonl"):
         candidate = talents_dir / f"{agent}{extension}"

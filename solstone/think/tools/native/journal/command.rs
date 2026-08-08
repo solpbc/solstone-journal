@@ -261,22 +261,70 @@ pub fn retention_config(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(value) => value,
         Err(error) => return stderr(error),
     };
-    if parsed.values.is_empty() && !parsed.flag("--clear") {
-        return get(ctx, "/app/settings/api/storage", vec![]);
-    }
-    let mut body = Map::new();
-    if parsed.flag("--clear") {
-        body.insert("per_stream".to_string(), json!({}));
-    }
+    let clear = parsed.flag("--clear");
     let mode = parsed.value("--mode");
     let days = parsed.value("--days");
-    if let Some(stream) = parsed.value("--stream") {
-        body.insert("per_stream".to_string(), json!({stream: {"raw_media": mode, "raw_media_days": days.and_then(|value| value.parse::<i64>().ok())}}));
+    let stream = parsed.value("--stream");
+    if clear && stream.is_none() {
+        return stderr("Error: --clear requires --stream");
+    }
+    if clear && (mode.is_some() || days.is_some()) {
+        return stderr("Error: --clear cannot be combined with --mode or --days");
+    }
+    if mode.is_none() && days.is_none() && !clear {
+        return get(ctx, "/app/settings/api/storage", vec![]);
+    }
+    if let Some(mode) = mode
+        && !matches!(mode, "keep" | "days" | "processed")
+    {
+        return stderr(format!(
+            "Error: invalid mode: {mode}. Must be keep, days, or processed."
+        ));
+    }
+    if mode == Some("days") && days.is_none() {
+        return stderr("Error: --days is required when mode is 'days'.");
+    }
+    let days = match days {
+        Some(value) => match value.parse::<i64>() {
+            Ok(value) if value >= 1 => Some(value),
+            _ => return stderr("Error: --days must be a positive integer."),
+        },
+        None => None,
+    };
+    let mut body = Map::new();
+    if let Some(stream) = stream {
+        let storage = match get_json(&ctx, "/app/settings/api/storage") {
+            Ok(value) => value,
+            Err(output) => return output,
+        };
+        let mut per_stream = storage
+            .pointer("/retention/per_stream")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        if clear {
+            per_stream.remove(stream);
+        } else {
+            let entry = per_stream
+                .entry(stream.to_string())
+                .or_insert_with(|| Value::Object(Map::new()));
+            if !entry.is_object() {
+                *entry = Value::Object(Map::new());
+            }
+            let entry = entry.as_object_mut().expect("entry is an object");
+            if let Some(mode) = mode {
+                entry.insert("raw_media".to_string(), Value::String(mode.to_string()));
+            }
+            if let Some(days) = days {
+                entry.insert("raw_media_days".to_string(), Value::from(days));
+            }
+        }
+        body.insert("per_stream".to_string(), Value::Object(per_stream));
     } else {
         if let Some(value) = mode {
             body.insert("raw_media".to_string(), Value::String(value.to_string()));
         }
-        if let Some(value) = days.and_then(|value| value.parse::<i64>().ok()) {
+        if let Some(value) = days {
             body.insert("raw_media_days".to_string(), Value::from(value));
         }
     }
@@ -437,6 +485,9 @@ fn query_values(parsed: &Parsed, values: &[(&str, &str)]) -> Vec<QueryParam> {
 fn get(ctx: CommandContext<'_>, path: &str, params: Vec<QueryParam>) -> CommandOutput {
     request(ctx, HttpMethod::Get, path, params, None)
 }
+fn get_json(ctx: &CommandContext<'_>, path: &str) -> Result<Value, CommandOutput> {
+    send_request(ctx, HttpMethod::Get, path, vec![], None)
+}
 fn post(
     ctx: CommandContext<'_>,
     method: HttpMethod,
@@ -452,6 +503,18 @@ fn request(
     params: Vec<QueryParam>,
     json: Option<Value>,
 ) -> CommandOutput {
+    match send_request(&ctx, method, path, params, json) {
+        Ok(value) => CommandOutput::success(format!("{}\n", json_pretty_ascii(&value))),
+        Err(output) => output,
+    }
+}
+fn send_request(
+    ctx: &CommandContext<'_>,
+    method: HttpMethod,
+    path: &str,
+    params: Vec<QueryParam>,
+    json: Option<Value>,
+) -> Result<Value, CommandOutput> {
     match ctx
         .transport
         .request(ApiRequest {
@@ -464,9 +527,9 @@ fn request(
         })
         .and_then(|response| decode_response(&response))
     {
-        Ok(value) => CommandOutput::success(format!("{}\n", json_pretty_ascii(&value))),
-        Err(ClientError::Unreachable { .. }) => stderr(SERVICE_DOWN_MESSAGE),
-        Err(error) => stderr(error.message()),
+        Ok(value) => Ok(value),
+        Err(ClientError::Unreachable { .. }) => Err(stderr(SERVICE_DOWN_MESSAGE)),
+        Err(error) => Err(stderr(error.message())),
     }
 }
 fn stderr(value: impl AsRef<str>) -> CommandOutput {

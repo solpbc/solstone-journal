@@ -390,7 +390,10 @@ def list_agents_api() -> Any:
     if not DAY_RE.fullmatch(day):
         return error_response(INVALID_DAY, detail="day must be YYYYMMDD")
     segment = request.args.get("segment", "").strip() or None
-    return jsonify(list_talent_outputs(day, segment=segment))
+    try:
+        return jsonify(list_talent_outputs(day, segment=segment))
+    except ValueError as exc:
+        return error_response(INVALID_REQUEST_VALUE, detail=str(exc))
 
 
 @search_bp.route("/api/read")
@@ -437,6 +440,8 @@ def read_journal_api() -> Any:
             rel = find_talent_output_path(
                 get_journal(), agent, resolved_day, segment=segment or None
             )
+        except ValueError as exc:
+            return error_response(INVALID_REQUEST_VALUE, detail=str(exc))
         except FileNotFoundError:
             return error_response(FILE_NOT_FOUND, detail="talent output not found")
 
