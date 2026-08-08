@@ -44,6 +44,8 @@
     const resultEl = document.getElementById('chatBarResult');
     const draftCardEl = draftEl.querySelector('.chat-bar-draft-card');
     const draftBodyEl = draftEl.querySelector('.chat-bar-draft-body');
+    const draftSubmitBtn = document.getElementById('chatBarDraftSubmit');
+    const draftCancelBtn = document.getElementById('chatBarDraftCancel');
     const postedMessages = [];
     let failures = 0;
     let currentDraft = null;
@@ -73,6 +75,8 @@
       "support draft submitted": { state: 'submitted', icon: '✓' },
       "support draft failed": { state: 'failed', icon: '!' },
       "support draft ambiguous": { state: 'ambiguous', icon: '?' },
+      "support draft in_progress": { state: 'in_progress', icon: '…' },
+      "support draft re_consent_required": { state: 're_consent_required', icon: '!' },
       "support draft cancelled": { state: 'cancelled', icon: '–' }
     };
 
@@ -295,11 +299,29 @@
         note.className = 'chat-bar-draft-attach-note';
         note.textContent = window.solChatCopy.CHAT_DRAFT_ATTACH_NOTE;
         parent.appendChild(note);
+      } else if (draft.verb === 'close') {
+        renderLifecycleDraftBody(parent, payload, window.solChatCopy.CHAT_DRAFT_KIND_CLOSE, window.solChatCopy.CHAT_DRAFT_CLOSE_NOTE);
+      } else if (draft.verb === 'resolved') {
+        renderLifecycleDraftBody(parent, payload, window.solChatCopy.CHAT_DRAFT_KIND_RESOLVED, window.solChatCopy.CHAT_DRAFT_RESOLVED_NOTE);
+      } else if (draft.verb === 'still_need_help') {
+        renderLifecycleDraftBody(parent, payload, window.solChatCopy.CHAT_DRAFT_KIND_STILL_NEED_HELP, window.solChatCopy.CHAT_DRAFT_STILL_NEED_HELP_NOTE);
       }
+    }
+    function renderLifecycleDraftBody(parent, payload, kind, noteText) {
+      appendDraftKind(parent, kind, payload.ticket_id);
+      const note = document.createElement('div');
+      note.className = 'chat-bar-draft-attach-note';
+      note.textContent = noteText;
+      parent.appendChild(note);
+    }
+    function reenableSupportDraft() {
+      draftSubmitBtn.disabled = false;
+      draftCancelBtn.disabled = false;
     }
     function hideSupportDraft() {
       draftEl.hidden = true;
       currentDraft = null;
+      reenableSupportDraft();
     }
     function hideSupportResult() {
       resultEl.replaceChildren();
@@ -307,6 +329,7 @@
     }
     function showSupportDraft(draft) {
       currentDraft = draft;
+      reenableSupportDraft();
       hideSupportResult();
       draftBodyEl.replaceChildren();
       renderDraftBody(draftBodyEl, draft);
@@ -333,18 +356,14 @@
         link.href = '/app/support/';
         link.textContent = window.solChatCopy.CHAT_RESULT_VIEW_IN_SUPPORT;
         strip.appendChild(link);
-      } else if (outcome.state === 'failed') {
-        const retry = document.createElement('button');
-        retry.type = 'button';
-        retry.textContent = window.solChatCopy.CHAT_RESULT_TRY_AGAIN;
-        retry.addEventListener('click', function() {
-          postChatMessage(window.solChatCopy.CHAT_RESULT_TRY_AGAIN_MESSAGE);
-        });
-        strip.appendChild(retry);
       }
       resultEl.appendChild(strip);
       resultEl.hidden = false;
-      hideSupportDraft();
+      if (outcome.state === 'submitted' || outcome.state === 'cancelled') {
+        hideSupportDraft();
+      } else {
+        reenableSupportDraft();
+      }
       setStatus('', '');
       return true;
     }
@@ -445,20 +464,42 @@
       assertText('attach trust note', window.solChatCopy.CHAT_DRAFT_ATTACH_NOTE);
       assert('attach has no diagnostics', !text().includes(window.solChatCopy.CHAT_DRAFT_DIAGNOSTICS_TITLE));
 
+      [
+        ['close', window.solChatCopy.CHAT_DRAFT_KIND_CLOSE, window.solChatCopy.CHAT_DRAFT_CLOSE_NOTE],
+        ['resolved', window.solChatCopy.CHAT_DRAFT_KIND_RESOLVED, window.solChatCopy.CHAT_DRAFT_RESOLVED_NOTE],
+        ['still_need_help', window.solChatCopy.CHAT_DRAFT_KIND_STILL_NEED_HELP, window.solChatCopy.CHAT_DRAFT_STILL_NEED_HELP_NOTE]
+      ].forEach(function(row) {
+        showSupportDraft({ verb: row[0], payload: { ticket_id: 42 }, diagnostics_snapshot: null });
+        assert(row[0] + ' kind', text().includes(row[1]), row[1]);
+        assert(row[0] + ' ticket', text().includes('ticket #42'), 'ticket #42');
+        assert(row[0] + ' disclosure', text().includes(row[2]), row[2]);
+      });
+
       showSupportDraft({ verb: 'create', payload: {}, diagnostics_snapshot: {} });
       assert('submitted outcome matches', renderSupportOutcome({ notes: 'support draft submitted', text: 'Filed.' }));
       assert('submitted clears draft', draftEl.hidden && !resultEl.hidden);
       assert('submitted link', resultEl.querySelector('a').getAttribute('href') === '/app/support/');
       assertText('submitted copy', 'Filed.');
 
-      showSupportDraft({ verb: 'create', payload: {}, diagnostics_snapshot: {} });
-      assert('failed outcome matches', renderSupportOutcome({ notes: 'support draft failed', text: 'Failed.' }));
-      resultEl.querySelector('button').click();
-      assert('failed retry posts', postedMessages[0] === window.solChatCopy.CHAT_RESULT_TRY_AGAIN_MESSAGE);
+      [
+        ['failed', 'support draft failed'],
+        ['ambiguous', 'support draft ambiguous'],
+        ['in_progress', 'support draft in_progress'],
+        ['re_consent_required', 'support draft re_consent_required']
+      ].forEach(function(row) {
+        const retryDraft = { draft_id: 'retry-' + row[0], verb: 'create', payload: {}, diagnostics_snapshot: {} };
+        showSupportDraft(retryDraft);
+        draftSubmitBtn.disabled = true;
+        draftCancelBtn.disabled = true;
+        assert(row[0] + ' outcome matches', renderSupportOutcome({ notes: row[1], text: row[0] }));
+        assert(row[0] + ' keeps draft visible', !draftEl.hidden && !draftSubmitBtn.disabled && !draftCancelBtn.disabled);
+        assert(row[0] + ' keeps draft id', currentDraft && currentDraft.draft_id === retryDraft.draft_id);
+        assert(row[0] + ' has no retry button', !resultEl.querySelector('button'));
+      });
 
-      assert('ambiguous outcome matches', renderSupportOutcome({ notes: 'support draft ambiguous', text: 'Check support.' }));
-      assert('ambiguous no retry', !resultEl.querySelector('button'));
+      showSupportDraft({ verb: 'create', payload: {}, diagnostics_snapshot: {} });
       assert('cancelled outcome matches', renderSupportOutcome({ notes: 'support draft cancelled', text: 'Cancelled.' }));
+      assert('cancelled clears draft', draftEl.hidden && currentDraft === null);
       assert('near miss falls through', !renderSupportOutcome({ notes: 'support draft queued', text: 'Queued.' }));
 
       summary.className = failures ? 'fail' : 'pass';

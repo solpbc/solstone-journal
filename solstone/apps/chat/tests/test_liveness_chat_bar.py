@@ -149,10 +149,13 @@ def test_support_draft_card_structure_and_result_helper(chat_html):
     assert '"support draft submitted"' in chat_html
     assert '"support draft failed"' in chat_html
     assert '"support draft ambiguous"' in chat_html
+    assert '"support draft in_progress"' in chat_html
+    assert '"support draft re_consent_required"' in chat_html
     assert '"support draft cancelled"' in chat_html
     assert "if (!renderSupportOutcome(msg))" in chat_html
     assert "function hideSupportResult()" in chat_html
-    assert "window.solChatCopy.CHAT_RESULT_TRY_AGAIN_MESSAGE" in chat_html
+    assert "function reenableSupportDraft()" in chat_html
+    assert "postChatMessage(window.solChatCopy.CHAT_RESULT_TRY_AGAIN_MESSAGE)" not in chat_html
     assert chat_html.count("setStatus(msg.text || '', statusTitleFor(msg));") == 2
 
 

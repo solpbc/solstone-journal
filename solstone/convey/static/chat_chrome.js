@@ -268,6 +268,8 @@
     "support draft submitted": { state: 'submitted', icon: '✓' },
     "support draft failed": { state: 'failed', icon: '!' },
     "support draft ambiguous": { state: 'ambiguous', icon: '?' },
+    "support draft in_progress": { state: 'in_progress', icon: '…' },
+    "support draft re_consent_required": { state: 're_consent_required', icon: '!' },
     "support draft cancelled": { state: 'cancelled', icon: '–' }
   };
 
@@ -373,6 +375,14 @@
     parent.appendChild(note);
   }
 
+  function renderLifecycleDraftBody(parent, payload, kind, noteText) {
+    appendDraftKind(parent, kind, payload.ticket_id);
+    const note = document.createElement('div');
+    note.className = 'chat-bar-draft-attach-note';
+    note.textContent = noteText;
+    parent.appendChild(note);
+  }
+
   function renderDraftBody(parent, draft) {
     const payload = draft.payload || {};
     if (draft.verb === 'create') {
@@ -383,6 +393,12 @@
       renderReplyDraftBody(parent, payload);
     } else if (draft.verb === 'attach') {
       renderAttachDraftBody(parent, payload);
+    } else if (draft.verb === 'close') {
+      renderLifecycleDraftBody(parent, payload, window.solChatCopy.CHAT_DRAFT_KIND_CLOSE, window.solChatCopy.CHAT_DRAFT_CLOSE_NOTE);
+    } else if (draft.verb === 'resolved') {
+      renderLifecycleDraftBody(parent, payload, window.solChatCopy.CHAT_DRAFT_KIND_RESOLVED, window.solChatCopy.CHAT_DRAFT_RESOLVED_NOTE);
+    } else if (draft.verb === 'still_need_help') {
+      renderLifecycleDraftBody(parent, payload, window.solChatCopy.CHAT_DRAFT_KIND_STILL_NEED_HELP, window.solChatCopy.CHAT_DRAFT_STILL_NEED_HELP_NOTE);
     }
   }
 
@@ -523,19 +539,14 @@
       link.href = '/app/support/';
       link.textContent = window.solChatCopy.CHAT_RESULT_VIEW_IN_SUPPORT;
       strip.appendChild(link);
-    } else if (outcome.state === 'failed') {
-      const retry = document.createElement('button');
-      retry.type = 'button';
-      retry.className = 'chat-bar-result-action chat-bar-result-action--button';
-      retry.textContent = window.solChatCopy.CHAT_RESULT_TRY_AGAIN;
-      retry.addEventListener('click', function() {
-        postChatMessage(window.solChatCopy.CHAT_RESULT_TRY_AGAIN_MESSAGE);
-      });
-      strip.appendChild(retry);
     }
     resultEl.appendChild(strip);
     resultEl.hidden = false;
-    hideSupportDraft();
+    if (outcome.state === 'submitted' || outcome.state === 'cancelled') {
+      hideSupportDraft();
+    } else {
+      reenableSupportDraft();
+    }
     setStatus('', '');
     return true;
   }
@@ -549,8 +560,7 @@
   function showSupportDraft(draft) {
     if (!draftEl || !draft) return;
     currentDraft = draft;
-    if (draftSubmitBtn) draftSubmitBtn.disabled = false;
-    if (draftCancelBtn) draftCancelBtn.disabled = false;
+    reenableSupportDraft();
     hideSupportResult();
     if (draftBodyEl) {
       draftBodyEl.replaceChildren();
@@ -564,6 +574,10 @@
     if (!draftEl) return;
     draftEl.hidden = true;
     currentDraft = null;
+    reenableSupportDraft();
+  }
+
+  function reenableSupportDraft() {
     if (draftSubmitBtn) draftSubmitBtn.disabled = false;
     if (draftCancelBtn) draftCancelBtn.disabled = false;
   }

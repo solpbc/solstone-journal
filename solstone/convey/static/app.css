@@ -1555,6 +1555,10 @@ body.menu-all .menu-bar {
 .chat-bar-result-strip--failed .chat-bar-result-icon { background:#c0392b; }
 .chat-bar-result-strip--ambiguous { background:#fbecd9; border-color:#f0dcbf; color:#7c4a10; }
 .chat-bar-result-strip--ambiguous .chat-bar-result-icon { background:#985b14; }
+.chat-bar-result-strip--in_progress { background:#fbecd9; border-color:#f0dcbf; color:#7c4a10; }
+.chat-bar-result-strip--in_progress .chat-bar-result-icon { background:#985b14; }
+.chat-bar-result-strip--re_consent_required { background:#fbecd9; border-color:#f0dcbf; color:#7c4a10; }
+.chat-bar-result-strip--re_consent_required .chat-bar-result-icon { background:#985b14; }
 .chat-bar-result-strip--cancelled { background:#f3efe7; border-color:#e6dfd2; color:#6b6258; }
 .chat-bar-result-strip--cancelled .chat-bar-result-icon { background:#8a8175; }
 

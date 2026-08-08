@@ -236,6 +236,9 @@ def test_draft_card_copy_present():
         'CHAT_DRAFT_KIND_FEEDBACK: "send feedback"',
         'CHAT_DRAFT_KIND_REPLY: "reply"',
         'CHAT_DRAFT_KIND_ATTACH: "attach a file"',
+        'CHAT_DRAFT_KIND_CLOSE: "close this ticket"',
+        'CHAT_DRAFT_KIND_RESOLVED: "confirm this is resolved"',
+        'CHAT_DRAFT_KIND_STILL_NEED_HELP: "still need help"',
         'CHAT_DRAFT_TICKET_FORMAT: "ticket #{ticket_id}"',
         'CHAT_DRAFT_DIAGNOSTICS_TITLE: "what\'s included with this request"',
         (
@@ -246,15 +249,13 @@ def test_draft_card_copy_present():
             'CHAT_DRAFT_ATTACH_NOTE: "the contents of this file go to solstone '
             'support. nothing else leaves this machine."'
         ),
+        'CHAT_DRAFT_CLOSE_NOTE: "confirming closes this ticket.',
+        'CHAT_DRAFT_RESOLVED_NOTE: "confirming accepts the proposed resolution',
+        'CHAT_DRAFT_STILL_NEED_HELP_NOTE: "confirming tells solstone support',
         'CHAT_DRAFT_FLOOR: "nothing is sent until you choose"',
         'CHAT_DRAFT_NAME_ATTACHED_YES: "name attached: yes"',
         'CHAT_DRAFT_NAME_ATTACHED_NO: "name attached: no"',
         'CHAT_RESULT_VIEW_IN_SUPPORT: "view in support →"',
-        'CHAT_RESULT_TRY_AGAIN: "try again"',
-        (
-            'CHAT_RESULT_TRY_AGAIN_MESSAGE: "please try sending that to '
-            'solstone support again"'
-        ),
     )
     for needle in expected:
         assert needle in text
@@ -275,6 +276,28 @@ def test_support_attach_draft_card_branch_present():
     assert "['ticket_id', 'ticket', payload.ticket_id]" not in text
     assert "['filename', 'file', payload.filename]" not in text
     assert "['byte_size', 'size', formatAttachmentSize(payload.byte_size)]" not in text
+
+
+def test_support_lifecycle_draft_card_branches_present():
+    text = Path("solstone/convey/static/chat_chrome.js").read_text(encoding="utf-8")
+
+    for verb, kind, note in (
+        ("close", "CHAT_DRAFT_KIND_CLOSE", "CHAT_DRAFT_CLOSE_NOTE"),
+        ("resolved", "CHAT_DRAFT_KIND_RESOLVED", "CHAT_DRAFT_RESOLVED_NOTE"),
+        (
+            "still_need_help",
+            "CHAT_DRAFT_KIND_STILL_NEED_HELP",
+            "CHAT_DRAFT_STILL_NEED_HELP_NOTE",
+        ),
+    ):
+        assert f"draft.verb === '{verb}'" in text
+        assert f"window.solChatCopy.{kind}" in text
+        assert f"window.solChatCopy.{note}" in text
+
+    assert '"support draft in_progress"' in text
+    assert '"support draft re_consent_required"' in text
+    assert "function reenableSupportDraft()" in text
+    assert "postChatMessage(window.solChatCopy.CHAT_RESULT_TRY_AGAIN_MESSAGE)" not in text
 
 
 def test_chat_placeholder_css_present():

@@ -75,8 +75,10 @@
       assert('draft name attached yes', window.solChatCopy.CHAT_DRAFT_NAME_ATTACHED_YES === 'name attached: yes');
       assert('draft name attached no', window.solChatCopy.CHAT_DRAFT_NAME_ATTACHED_NO === 'name attached: no');
       assert('result view support', window.solChatCopy.CHAT_RESULT_VIEW_IN_SUPPORT === 'view in support →');
-      assert('result try again', window.solChatCopy.CHAT_RESULT_TRY_AGAIN === 'try again');
-      assert('result try again message', window.solChatCopy.CHAT_RESULT_TRY_AGAIN_MESSAGE === 'please try sending that to solstone support again');
+      const removedResultTryAgain = 'CHAT_RESULT_' + 'TRY_AGAIN';
+      const removedResultTryAgainMessage = 'CHAT_RESULT_' + 'TRY_AGAIN_MESSAGE';
+      assert('result try again removed', !(removedResultTryAgain in window.solChatCopy));
+      assert('result try again message removed', !(removedResultTryAgainMessage in window.solChatCopy));
       const removedDiagnosticsLabel = 'CHAT_DRAFT_' + 'DIAGNOSTICS_LABEL';
       assert('old diagnostics label removed', !(removedDiagnosticsLabel in window.solChatCopy));
       assert('error detail expander copy', window.solChatCopy.CHAT_ERROR_DETAIL_EXPANDER_LABEL === 'show details');
