@@ -288,10 +288,7 @@ pub fn load_entity_voiceprints_file(
     journal_root: &Path,
     entity_id: &str,
 ) -> Option<VoiceprintArchive> {
-    let Ok((_directory, path)) = resolve_voiceprint_path(journal_root, entity_id, false) else {
-        return None;
-    };
-    match load_voiceprints(&path) {
+    match try_load_entity_voiceprints_file(journal_root, entity_id) {
         Ok(archive) => archive,
         Err(error) => {
             log::warn!(
@@ -302,6 +299,15 @@ pub fn load_entity_voiceprints_file(
             None
         }
     }
+}
+
+/// Load an entity voiceprint archive while preserving read and parse failures.
+pub fn try_load_entity_voiceprints_file(
+    journal_root: &Path,
+    entity_id: &str,
+) -> Result<Option<VoiceprintArchive>, VoiceprintOperationError> {
+    let (_directory, path) = resolve_voiceprint_path(journal_root, entity_id, false)?;
+    load_voiceprints(&path)
 }
 
 /// Return saved voiceprint identity keys for idempotency checks.

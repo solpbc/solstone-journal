@@ -327,7 +327,7 @@ fn now_iso() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
-fn value_is_truthy(value: &Value) -> bool {
+pub(crate) fn value_is_truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(value) => *value,

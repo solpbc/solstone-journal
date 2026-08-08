@@ -20,7 +20,7 @@ use crate::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityIdentityRepairError,
     EntityIdentityRepairGuard, EntityIdentityRepairSkipReason, EntityWriteError,
     IdentityMapLoserReason, PreparedHistoryOutcome, ambiguity_id, classify_prepared_history,
-    guard_restore_does_not_cross_merge, guard_visible_event_collision,
+    guard_restore_does_not_cross_merge, guard_visible_event_collision, load_all_journal_entities,
     load_resolved_ambiguity_choice, read_ambiguities, read_entity_identity, read_identity_map,
     read_prepared_history, read_visible_history, record_ambiguity_choice,
     record_ambiguity_observation, refresh_identity_map_cache, repair_entity_identities,
@@ -2402,4 +2402,69 @@ fn assert_prepared_outcome(root: &Path, entity_dir: &str, expected: PreparedHist
         classify_prepared_history(entity_dir, &prepared[0].event, current.as_ref()).unwrap(),
         expected
     );
+}
+
+#[test]
+fn direct_journal_entity_scan_is_empty_when_entities_are_absent() {
+    let temporary = TempDir::new();
+    assert!(
+        load_all_journal_entities(temporary.path())
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn direct_journal_entity_scan_preserves_identity_fields_and_sorts_ids() {
+    let temporary = TempDir::new();
+    for (directory, value) in [
+        (
+            "zeta",
+            json!({"id": "zeta", "name": "Zeta", "type": "Person", "blocked": true}),
+        ),
+        (
+            "alpha",
+            json!({"id": "alpha", "name": "Alpha", "type": "Person", "is_principal": "yes", "aka": ["A"], "emails": ["a@example.test"]}),
+        ),
+        ("middle", json!({"id": "middle", "name": "Middle"})),
+    ] {
+        let path = temporary
+            .path()
+            .join("entities")
+            .join(directory)
+            .join("entity.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, value.to_string()).unwrap();
+    }
+
+    let entities = load_all_journal_entities(temporary.path()).unwrap();
+    assert_eq!(
+        entities
+            .iter()
+            .map(|entity| entity.id.as_str())
+            .collect::<Vec<_>>(),
+        ["alpha", "middle", "zeta"]
+    );
+    assert_eq!(entities[0].entity_type(), Some("Person"));
+    assert!(entities[0].is_principal());
+    assert!(!entities[0].is_blocked());
+    assert_eq!(entities[0].resolution_entity().aka, ["A"]);
+    assert_eq!(entities[0].resolution_entity().emails, ["a@example.test"]);
+    assert_eq!(entities[1].entity_type(), None);
+    assert!(entities[2].is_blocked());
+}
+
+#[test]
+fn direct_journal_entity_scan_skips_one_corrupt_identity() {
+    let temporary = TempDir::new();
+    let valid = temporary.path().join("entities/valid/entity.json");
+    fs::create_dir_all(valid.parent().unwrap()).unwrap();
+    fs::write(valid, json!({"id": "valid", "name": "Valid"}).to_string()).unwrap();
+    let corrupt = temporary.path().join("entities/corrupt/entity.json");
+    fs::create_dir_all(corrupt.parent().unwrap()).unwrap();
+    fs::write(corrupt, b"{").unwrap();
+
+    let entities = load_all_journal_entities(temporary.path()).unwrap();
+    assert_eq!(entities.len(), 1);
+    assert_eq!(entities[0].id, "valid");
 }

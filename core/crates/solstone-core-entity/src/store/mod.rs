@@ -10,6 +10,7 @@ mod entity_paths;
 mod error;
 mod history;
 mod identity;
+mod journal_entities;
 mod lifecycle;
 mod map;
 pub(crate) mod merge;
@@ -40,6 +41,7 @@ pub use history::{
     guard_visible_event_collision, read_prepared_history, read_visible_history,
 };
 pub use identity::{IdentitySnapshot, read_entity_identity};
+pub use journal_entities::{JournalEntity, load_all_journal_entities};
 pub use lifecycle::{
     EntityLifecycleError, delete_entity_directory, has_journal_principal, read_journal_principal,
     restore_journal_entity_version, unblock_journal_entity,
@@ -69,7 +71,7 @@ pub use voiceprints::{
     VoiceprintKey, VoiceprintNpzError, VoiceprintOperationError, VoiceprintRemoval,
     VoiceprintRemovalReport, VoiceprintSkipReasons, load_entity_voiceprints_file,
     load_existing_voiceprint_keys, normalize_embedding, remove_voiceprints_by_key,
-    rewrite_voiceprint_metadata, save_voiceprints_batch,
+    rewrite_voiceprint_metadata, save_voiceprints_batch, try_load_entity_voiceprints_file,
 };
 pub use write::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,

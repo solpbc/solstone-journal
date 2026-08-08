@@ -22,6 +22,7 @@ use crate::{
     remove_voiceprints_by_key as remove_voiceprints_by_key_with_encoder,
     rewrite_voiceprint_metadata as rewrite_voiceprint_metadata_with_encoder,
     save_voiceprints_batch as save_voiceprints_batch_with_encoder,
+    try_load_entity_voiceprints_file,
 };
 
 static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
@@ -218,6 +219,26 @@ fn empty_inputs_return_before_entity_resolution() {
         remove_voiceprints_by_key(temporary.path(), "missing", &[]).unwrap(),
         Default::default()
     );
+}
+
+#[test]
+fn fallible_voiceprint_loader_distinguishes_absence_success_and_corruption() {
+    let temporary = fixture_journal();
+    let loaded = try_load_entity_voiceprints_file(temporary.path(), fixture_entity_id())
+        .expect("load valid voiceprints")
+        .expect("valid archive");
+    assert!(!loaded.embeddings.is_empty());
+
+    fs::remove_file(voiceprint_path(temporary.path())).expect("remove voiceprints");
+    assert!(
+        try_load_entity_voiceprints_file(temporary.path(), fixture_entity_id())
+            .expect("absent voiceprints")
+            .is_none()
+    );
+
+    fs::write(voiceprint_path(temporary.path()), b"not an npz archive")
+        .expect("write corrupt voiceprints");
+    assert!(try_load_entity_voiceprints_file(temporary.path(), fixture_entity_id()).is_err());
 }
 
 #[test]
