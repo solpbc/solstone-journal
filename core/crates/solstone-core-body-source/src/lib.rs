@@ -19,6 +19,7 @@ mod health_hash;
 mod integer;
 mod manifest_binding;
 mod manifest_known_key;
+mod manifest_projection;
 mod manifest_scan;
 mod manifest_signal;
 mod parser;
