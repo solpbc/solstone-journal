@@ -1219,7 +1219,7 @@ mod tests {
 
     fn short_temp_dir() -> TempDir {
         static NEXT: AtomicU64 = AtomicU64::new(0);
-        let path = std::env::temp_dir().join(format!(
+        let path = PathBuf::from("/tmp").join(format!(
             "sja-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
