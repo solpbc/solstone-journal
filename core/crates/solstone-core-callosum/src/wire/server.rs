@@ -205,6 +205,10 @@ impl Drop for CallosumSocketServer {
     fn drop(&mut self) {
         if !self.inner.stopped.swap(true, Ordering::AcqRel) {
             let _ = self.inner.shutdown.send(true);
+            let clients = std::mem::take(&mut *lock(&self.inner.clients));
+            for entry in clients.into_values() {
+                let _ = entry.shutdown.send(true);
+            }
             let _ = fs::remove_file(&self.inner.socket_path);
         }
     }
@@ -291,7 +295,6 @@ async fn run_client(
     let mut buffer = Vec::new();
     loop {
         tokio::select! {
-            biased;
             changed = shutdown.changed() => {
                 let _ = changed;
                 break;

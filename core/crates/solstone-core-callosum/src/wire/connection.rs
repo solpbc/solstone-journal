@@ -135,6 +135,13 @@ impl CallosumSocketConnection {
     }
 }
 
+impl Drop for CallosumSocketConnection {
+    fn drop(&mut self) {
+        self.running.store(false, Ordering::Release);
+        let _ = self.shutdown.send(true);
+    }
+}
+
 struct ConnectedStream {
     reader: tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
     writer: tokio::net::unix::OwnedWriteHalf,
