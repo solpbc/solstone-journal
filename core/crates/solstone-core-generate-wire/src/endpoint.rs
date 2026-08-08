@@ -997,6 +997,29 @@ mod tests {
     }
 
     #[test]
+    fn other_post_failure_is_provider_response_invalid() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let mut transport = StubTransport {
+            post_result: Some(Err(EndpointTransportError::Other)),
+            ..Default::default()
+        };
+        assert_eq!(
+            endpoint_generate_with(
+                &request(None),
+                &journal,
+                &endpoint("http://endpoint"),
+                &served_window_config(),
+                &runtime,
+                &mut transport,
+                Instant::now(),
+            ),
+            failure("provider_response_invalid")
+        );
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
     fn response_timeout_after_connection_is_capacity_exhausted() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
