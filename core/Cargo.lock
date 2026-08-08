@@ -2027,6 +2027,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-journal-io",
+ "tokio",
 ]
 
 [[package]]
@@ -2254,6 +2255,7 @@ version = "1.0.22"
 dependencies = [
  "serde_json",
  "sha2",
+ "solstone-core-callosum",
  "solstone-core-journal",
  "solstone-core-sol",
  "solstone-core-sol-client",
