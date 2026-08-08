@@ -80,6 +80,14 @@ fn overflow_decisions_match_python() {
             Some(1000),
             0,
         ),
+        // Same body, no configured window: the reference cannot compute a clamp,
+        // falls through to the context-pattern check, misses that too, and
+        // classifies it `contract` rather than a context error.
+        (
+            "600 tokens from the input messages and 400 tokens for the completion",
+            None,
+            0,
+        ),
         ("request exceeds the context window", None, 0),
         ("unexpected endpoint response", None, 0),
     ] {
