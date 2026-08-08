@@ -5,13 +5,13 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use solstone_core_body_source::{
     BODY_BUNDLE_REF_KEY, BODY_BUNDLE_SHA256_KEY, BODY_SOURCE_SCHEMA_KEY, BodyCalendarError,
-    BodyCalendarField, BodyDay, BodyDigest, BodyInteger, BodyMonth, BodyRawRetention,
-    BodySourceFamily, BodySourceHash, BodySourceHashError, BodySourcePolicyError,
+    BodyCalendarField, BodyDay, BodyDigest, BodyInteger, BodyManifestBinding, BodyMonth,
+    BodyRawRetention, BodySourceFamily, BodySourceHash, BodySourceHashError, BodySourcePolicyError,
     BodySourcePolicyField, BodyString, BodyValue, BodyWireIdentityError, BodyWireIdentityField,
-    BundleId, DAYS_AFFECTED_KEY, ENTRY_COUNT_KEY, IMPORT_ID_KEY, ManifestKeySignal,
-    ManifestKnownKey, ManifestScanError, ParseError, RAW_RETENTION_KEY, SOURCE_HASH_KEY,
-    SOURCE_TYPE_KEY, ScannedBodyManifest, canonicalize, inspect_body_manifest_signal, parse,
-    scan_body_manifest,
+    BundleId, DAYS_AFFECTED_KEY, ENTRY_COUNT_KEY, IMPORT_ID_KEY, ManifestBindingErrorCode,
+    ManifestBindingErrorField, ManifestKeySignal, ManifestKnownKey, ManifestScanError, ParseError,
+    RAW_RETENTION_KEY, SOURCE_HASH_KEY, SOURCE_TYPE_KEY, ScannedBodyManifest, canonicalize,
+    inspect_body_manifest_signal, parse, scan_body_manifest,
 };
 
 mod support;
@@ -482,4 +482,146 @@ fn public_manifest_scan_api_is_lossless_and_redacting() {
     ] {
         assert!(!error.to_string().contains(spelling));
     }
+}
+
+#[test]
+fn public_manifest_binding_api_checks_and_emits_all_fields() {
+    let digest_text = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+    let bundle_text = "body-00000000000000000000000000";
+    let hash_text = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let digest = BodyDigest::from_bytes(digest_text.as_bytes()).expect("digest is valid");
+    let import_id = BundleId::from_bytes(bundle_text.as_bytes()).expect("bundle is valid");
+    let source_hash =
+        BodySourceHash::from_bytes_for_family(hash_text.as_bytes(), &BodySourceFamily::AppleHealth)
+            .expect("hash is valid");
+    let days = vec![
+        BodyDay::from_bytes(b"20240228").expect("day is valid"),
+        BodyDay::from_bytes(b"20240229").expect("leap day is valid"),
+    ];
+    let binding = BodyManifestBinding::new(
+        digest.clone(),
+        import_id.clone(),
+        BodySourceFamily::AppleHealth,
+        source_hash.clone(),
+        2,
+        days.clone(),
+        BodyRawRetention::RetainParsed,
+    )
+    .expect("checked values bind");
+
+    assert_eq!(binding.body_source_schema(), "solstone.body.bundle.v1");
+    assert_eq!(binding.body_bundle_ref(), "body-bundle.json");
+    assert_eq!(binding.body_bundle_sha256(), &digest);
+    assert_eq!(binding.import_id(), &import_id);
+    assert_eq!(binding.source_type(), BodySourceFamily::AppleHealth);
+    assert_eq!(binding.source_hash(), &source_hash);
+    assert_eq!(binding.entry_count(), 2);
+    assert_eq!(binding.days_affected(), days.as_slice());
+    assert_eq!(binding.raw_retention(), BodyRawRetention::RetainParsed);
+
+    let object = binding.to_body_object();
+    let expected_keys: BTreeSet<_> = [
+        BODY_SOURCE_SCHEMA_KEY,
+        BODY_BUNDLE_REF_KEY,
+        BODY_BUNDLE_SHA256_KEY,
+        IMPORT_ID_KEY,
+        SOURCE_TYPE_KEY,
+        SOURCE_HASH_KEY,
+        ENTRY_COUNT_KEY,
+        DAYS_AFFECTED_KEY,
+        RAW_RETENTION_KEY,
+    ]
+    .into_iter()
+    .map(|key| BodyString::from_code_points(key.bytes().map(u32::from).collect()).unwrap())
+    .collect();
+    assert_eq!(object.len(), 9);
+    assert_eq!(
+        object.keys().cloned().collect::<BTreeSet<_>>(),
+        expected_keys
+    );
+    assert_eq!(
+        object.get(
+            &BodyString::from_code_points(ENTRY_COUNT_KEY.bytes().map(u32::from).collect())
+                .unwrap()
+        ),
+        Some(&BodyValue::Integer(BodyInteger::from_u64(2)))
+    );
+
+    let family_relabel = BodyManifestBinding::new(
+        digest.clone(),
+        import_id.clone(),
+        BodySourceFamily::OuraApi,
+        source_hash.clone(),
+        0,
+        vec![],
+        BodyRawRetention::Discard,
+    );
+    let Err(error) = family_relabel else {
+        panic!("family relabeling must refuse");
+    };
+    assert_eq!(error.code(), ManifestBindingErrorCode::IncompatibleField);
+    assert_eq!(error.field(), ManifestBindingErrorField::SourceHash);
+
+    for invalid_days in [
+        vec![
+            BodyDay::from_bytes(b"20240229").unwrap(),
+            BodyDay::from_bytes(b"20240228").unwrap(),
+        ],
+        vec![
+            BodyDay::from_bytes(b"20240228").unwrap(),
+            BodyDay::from_bytes(b"20240228").unwrap(),
+        ],
+    ] {
+        let result = BodyManifestBinding::new(
+            digest.clone(),
+            import_id.clone(),
+            BodySourceFamily::AppleHealth,
+            source_hash.clone(),
+            2,
+            invalid_days,
+            BodyRawRetention::Discard,
+        );
+        let Err(error) = result else {
+            panic!("unordered days must refuse");
+        };
+        assert_eq!(error.code(), ManifestBindingErrorCode::InvalidField);
+        assert_eq!(error.field(), ManifestBindingErrorField::DaysAffected);
+    }
+
+    let count_mismatch = BodyManifestBinding::new(
+        digest.clone(),
+        import_id.clone(),
+        BodySourceFamily::AppleHealth,
+        source_hash.clone(),
+        0,
+        vec![BodyDay::from_bytes(b"20240228").unwrap()],
+        BodyRawRetention::Discard,
+    );
+    let Err(error) = count_mismatch else {
+        panic!("count mismatch must refuse");
+    };
+    assert_eq!(error.code(), ManifestBindingErrorCode::IncompatibleField);
+    assert_eq!(error.field(), ManifestBindingErrorField::DaysAffected);
+
+    let oura_hash = BodySourceHash::from_bytes_for_family(
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".as_bytes(),
+        &BodySourceFamily::OuraApi,
+    )
+    .expect("Oura hash is valid");
+    let retention_mismatch = BodyManifestBinding::new(
+        digest,
+        import_id,
+        BodySourceFamily::OuraApi,
+        oura_hash,
+        1,
+        vec![BodyDay::from_bytes(b"20240228").unwrap()],
+        BodyRawRetention::RetainComplete,
+    );
+    let Err(error) = retention_mismatch else {
+        panic!("incompatible retention must refuse");
+    };
+    assert_eq!(error.code(), ManifestBindingErrorCode::IncompatibleField);
+    assert_eq!(error.field(), ManifestBindingErrorField::RawRetention);
+
+    // `new` returns only `Result<Self, _>`; an error leaves no binding value to observe.
 }

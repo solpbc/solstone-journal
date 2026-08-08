@@ -488,6 +488,7 @@ where
             clamped_max_tokens,
             input.json_output,
             input.json_schema.as_ref(),
+            true,
         ),
         input_budget,
         request_budget,
@@ -501,6 +502,7 @@ pub fn build_request_body(
     max_tokens: u32,
     json_output: bool,
     json_schema: Option<&Value>,
+    include_qwen_sampling_controls: bool,
 ) -> Value {
     let mut body = Map::new();
     body.insert("model".into(), Value::String(model.into()));
@@ -508,14 +510,16 @@ pub fn build_request_body(
     body.insert("temperature".into(), json!(temperature));
     body.insert("max_tokens".into(), json!(max_tokens));
     body.insert("stream".into(), Value::Bool(false));
-    body.insert(
-        "chat_template_kwargs".into(),
-        json!({"enable_thinking": false}),
-    );
-    body.insert("top_p".into(), json!(0.8));
-    body.insert("top_k".into(), json!(20));
-    body.insert("min_p".into(), json!(0.0));
-    body.insert("presence_penalty".into(), json!(1.5));
+    if include_qwen_sampling_controls {
+        body.insert(
+            "chat_template_kwargs".into(),
+            json!({"enable_thinking": false}),
+        );
+        body.insert("top_p".into(), json!(0.8));
+        body.insert("top_k".into(), json!(20));
+        body.insert("min_p".into(), json!(0.0));
+        body.insert("presence_penalty".into(), json!(1.5));
+    }
     if let Some(schema) = json_schema {
         body.insert(
             "response_format".into(),
@@ -694,7 +698,7 @@ pub fn split_entries(block: &str) -> Vec<String> {
     entries
 }
 
-fn fit_contents<F>(
+pub fn fit_contents<F>(
     contents: &Value,
     system_instruction: Option<&str>,
     max_output_tokens: u32,
@@ -831,7 +835,7 @@ fn count_tokens<T: GenerateTransport>(transport: &mut T, base_url: &str, text: &
         .unwrap_or_else(|| estimate_tokens(text))
 }
 
-fn estimate_tokens(text: &str) -> u32 {
+pub fn estimate_tokens(text: &str) -> u32 {
     u32::try_from(text.chars().count().div_ceil(3)).unwrap_or(u32::MAX)
 }
 
@@ -950,7 +954,7 @@ fn image_part(value: &Value) -> Option<(&str, &str)> {
     ))
 }
 
-fn count_image_parts(value: &Value) -> u32 {
+pub fn count_image_parts(value: &Value) -> u32 {
     u32::from(image_part(value).is_some())
         + match value {
             Value::Object(object) => object.values().map(count_image_parts).sum(),
@@ -959,7 +963,7 @@ fn count_image_parts(value: &Value) -> u32 {
         }
 }
 
-fn serialized_message_text(messages: &[Value]) -> String {
+pub fn serialized_message_text(messages: &[Value]) -> String {
     let mut text = Vec::new();
     for message in messages {
         match message.get("content") {
@@ -1274,6 +1278,7 @@ mod tests {
             512,
             false,
             None,
+            true,
         );
         assert_eq!(
             serde_json::to_string(&text).unwrap(),
@@ -1288,6 +1293,7 @@ mod tests {
             256,
             false,
             None,
+            true,
         );
         assert_eq!(
             serde_json::to_string(&image_body).unwrap(),
@@ -1302,11 +1308,62 @@ mod tests {
             128,
             true,
             Some(&schema),
+            true,
         );
         assert_eq!(
             serde_json::to_string(&schema_body).unwrap(),
             r#"{"model":"served-model","messages":[{"role":"user","content":"schema"}],"temperature":0.5,"max_tokens":128,"stream":false,"chat_template_kwargs":{"enable_thinking":false},"top_p":0.8,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"response_format":{"type":"json_schema","json_schema":{"name":"local_schema","schema":{"type":"object","properties":{"tags":{"type":"array","items":{"type":"string"},"maxItems":192},"literal":{"const":{"pattern":"must-stay"}}}},"strict":true}}}"#
         );
+    }
+
+    #[test]
+    fn request_body_qwen_controls_require_bundled_or_confidential() {
+        let qwen_fields = [
+            "chat_template_kwargs",
+            "top_p",
+            "top_k",
+            "min_p",
+            "presence_penalty",
+        ];
+        let non_confidential = build_request_body(
+            "served-model",
+            build_messages(&json!("Hello"), None),
+            0.3,
+            512,
+            false,
+            Some(&json!({"type": "object"})),
+            false,
+        );
+        let non_confidential = non_confidential.as_object().unwrap();
+        for field in [
+            "model",
+            "messages",
+            "temperature",
+            "max_tokens",
+            "stream",
+            "response_format",
+        ] {
+            assert!(non_confidential.contains_key(field), "missing {field}");
+        }
+        for field in qwen_fields {
+            assert!(!non_confidential.contains_key(field), "unexpected {field}");
+        }
+
+        // Whether a lane sets this flag is the caller's mapping and is asserted
+        // in the endpoint arm, which is where `is_confidential` is in scope.
+        let gated = build_request_body(
+            "served-model",
+            build_messages(&json!("Hello"), None),
+            0.3,
+            512,
+            false,
+            None,
+            true,
+        );
+        let gated = gated.as_object().unwrap();
+        for field in qwen_fields {
+            assert!(gated.contains_key(field), "missing {field}");
+        }
     }
 
     #[test]

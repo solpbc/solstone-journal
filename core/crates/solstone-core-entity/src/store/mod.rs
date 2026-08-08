@@ -64,10 +64,11 @@ pub use review_candidates::{
 };
 pub use undo::{EntityUndoError, EntityUndoReport, undo_entity_merge};
 pub use voiceprints::{
-    CanonicalKeyField, VoiceprintArchive, VoiceprintItem, VoiceprintKey, VoiceprintNpzError,
-    VoiceprintOperationError, VoiceprintRemoval, VoiceprintRemovalReport, VoiceprintSkipReasons,
-    load_entity_voiceprints_file, load_existing_voiceprint_keys, normalize_embedding,
-    remove_voiceprints_by_key, rewrite_voiceprint_metadata, save_voiceprints_batch,
+    CanonicalKeyField, EncoderIdentity, VoiceprintArchive, VoiceprintEnvelope, VoiceprintItem,
+    VoiceprintKey, VoiceprintNpzError, VoiceprintOperationError, VoiceprintRemoval,
+    VoiceprintRemovalReport, VoiceprintSkipReasons, load_entity_voiceprints_file,
+    load_existing_voiceprint_keys, normalize_embedding, remove_voiceprints_by_key,
+    rewrite_voiceprint_metadata, save_voiceprints_batch,
 };
 pub use write::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,

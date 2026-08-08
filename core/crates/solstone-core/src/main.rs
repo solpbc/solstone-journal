@@ -241,7 +241,8 @@ fn run_generate_one_shot() -> ExitCode {
         }
     };
     let request_id = request.id.clone();
-    let response = match generate_response_for_request(&request) {
+    let endpoint_runtime = solstone_core_generate_wire::EndpointRuntime::default();
+    let response = match generate_response_for_request(&request, &endpoint_runtime) {
         Ok(response) => response,
         Err(detail) => {
             return generate_protocol_exit(
@@ -265,6 +266,7 @@ fn run_generate_one_shot() -> ExitCode {
 
 fn generate_response_for_request(
     request: &solstone_core_generate::GenerateRequest,
+    endpoint_runtime: &solstone_core_generate_wire::EndpointRuntime,
 ) -> Result<solstone_core_generate::GenerateResponse, String> {
     let request_id = request.id.clone();
     let journal = match resolve_process_journal_path() {
@@ -310,6 +312,37 @@ fn generate_response_for_request(
                 }
             }
         }
+        solstone_core_generate_wire::LaneOutcome::ByoEndpoint(endpoint) => {
+            match solstone_core_generate_wire::endpoint_generate(
+                request,
+                &journal,
+                &endpoint,
+                &config,
+                endpoint_runtime,
+            ) {
+                solstone_core_generate_wire::EndpointResult::Generated(success) => {
+                    let response = endpoint_generated_response(request, success)?;
+                    if let Err(error) = solstone_core_generate_wire::record_generate_usage(
+                        &journal,
+                        &response.model,
+                        &request.context,
+                        &usage_for_log(&response.usage),
+                    ) {
+                        eprintln!("generate token usage log failed: {error}");
+                    }
+                    solstone_core_generate::GenerateResponse::Generated(Box::new(response))
+                }
+                solstone_core_generate_wire::EndpointResult::Failed(failure) => {
+                    solstone_core_generate::GenerateResponse::Refused(
+                        solstone_core_generate_wire::refusal_for(
+                            &solstone_core_generate_wire::LaneOutcome::EndpointFailure(failure),
+                            &provider,
+                            request_id.clone(),
+                        ),
+                    )
+                }
+            }
+        }
         solstone_core_generate_wire::LaneOutcome::NoEngine
         | solstone_core_generate_wire::LaneOutcome::AttestationNotVerified
         | solstone_core_generate_wire::LaneOutcome::UnimplementedLane => {
@@ -317,8 +350,9 @@ fn generate_response_for_request(
                 solstone_core_generate_wire::refusal_for(&outcome, &provider, request_id.clone()),
             )
         }
-        solstone_core_generate_wire::LaneOutcome::BundledFailure(_) => {
-            unreachable!("lane resolution cannot return a bundled failure")
+        solstone_core_generate_wire::LaneOutcome::BundledFailure(_)
+        | solstone_core_generate_wire::LaneOutcome::EndpointFailure(_) => {
+            unreachable!("lane resolution cannot return an arm failure")
         }
     };
     Ok(response)
@@ -348,6 +382,7 @@ fn run_generate_session(options: GenerateSessionOptions) -> ExitCode {
         }
     };
     let aborting = Arc::new(AtomicBool::new(false));
+    let endpoint_runtime = Arc::new(solstone_core_generate_wire::EndpointRuntime::default());
     let (input_tx, input_rx) = mpsc::channel();
     spawn_generate_session_reader(
         input_tx,
@@ -371,6 +406,7 @@ fn run_generate_session(options: GenerateSessionOptions) -> ExitCode {
                 request,
                 Arc::clone(&stdout),
                 Arc::clone(&aborting),
+                Arc::clone(&endpoint_runtime),
             ));
         }
         if terminal_received && pending.is_empty() && workers.is_empty() {
@@ -554,10 +590,11 @@ fn spawn_generate_session_worker(
     request: solstone_core_generate::GenerateRequest,
     stdout: Arc<Mutex<io::Stdout>>,
     aborting: Arc<AtomicBool>,
+    endpoint_runtime: Arc<solstone_core_generate_wire::EndpointRuntime>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let request_id = request.id.clone();
-        let response = match generate_response_for_request(&request) {
+        let response = match generate_response_for_request(&request, &endpoint_runtime) {
             Ok(response) => response,
             Err(detail) => {
                 generate_protocol_exit_and_terminate(request_id, "internal-failure", detail)
@@ -659,6 +696,48 @@ fn generated_response(
         input_budget,
         request_budget,
         inference,
+        hints_applied,
+    })
+}
+
+fn endpoint_generated_response(
+    request: &solstone_core_generate::GenerateRequest,
+    success: solstone_core_generate_wire::EndpointGenerated,
+) -> Result<solstone_core_generate::GeneratedResponse, String> {
+    let usage = success
+        .usage
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|error| error.to_string())?
+        .unwrap_or_else(|| json!({}));
+    let input_budget = success
+        .input_budget
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|error| error.to_string())?;
+    let request_budget = success
+        .request_budget
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|error| error.to_string())?;
+    let mut hints_applied = Vec::new();
+    if request.exclusive_admission {
+        hints_applied.push("exclusive_admission".to_owned());
+    }
+    Ok(solstone_core_generate::GeneratedResponse {
+        id: request.id.clone(),
+        text: success.text,
+        model: success.model,
+        usage,
+        finish_reason: success.finish_reason,
+        thinking: None,
+        schema_validation: None,
+        input_budget,
+        request_budget,
+        inference: None,
         hints_applied,
     })
 }

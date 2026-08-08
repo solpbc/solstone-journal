@@ -3,6 +3,14 @@
 
 use crate::BodyString;
 
+const BODY_PREFIX: [u32; 5] = [
+    b'b' as u32,
+    b'o' as u32,
+    b'd' as u32,
+    b'y' as u32,
+    b'_' as u32,
+];
+
 pub const BODY_SOURCE_SCHEMA_KEY: &str = "body_source_schema";
 pub const BODY_BUNDLE_REF_KEY: &str = "body_bundle_ref";
 pub const BODY_BUNDLE_SHA256_KEY: &str = "body_bundle_sha256";
@@ -61,6 +69,10 @@ impl ManifestKnownKey {
             .into_iter()
             .find(|known| body_string_matches(value, known.as_str()))
     }
+}
+
+pub(crate) fn starts_with_body_prefix(key: &BodyString) -> bool {
+    key.code_points().starts_with(&BODY_PREFIX)
 }
 
 fn body_string_matches(value: &BodyString, literal: &str) -> bool {

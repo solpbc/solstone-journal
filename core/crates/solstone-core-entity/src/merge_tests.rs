@@ -3,23 +3,69 @@
 
 #![allow(clippy::disallowed_methods, clippy::disallowed_types)]
 
-use super::store::merge::commit_entity_merge_with_injector;
+use super::store::merge::commit_entity_merge_with_injector as commit_entity_merge_with_injector_with_encoder;
 use super::store::merge::merge_facets;
-use super::store::merge::merge_voiceprints;
+use super::store::merge::merge_voiceprints as merge_voiceprints_with_encoder;
 use super::store::merge::{dedupe_akas, dedupe_emails, dedupe_observations};
 use super::store::merge_payload::{list_entity_merge_payload_ids, load_entity_merge_payload};
 use super::store::voiceprints::{read_voiceprints_npz, write_voiceprints_npz};
 use crate::{
-    EntityMergeOptions, commit_entity_merge, guard_restore_does_not_cross_merge,
+    EncoderIdentity, EntityMergeError, EntityMergeOptions,
+    commit_entity_merge as commit_entity_merge_with_encoder, guard_restore_does_not_cross_merge,
     hold_entity_trust_lock, preview_entity_merge, read_entity_identity, read_visible_history,
     save_entity_identity,
 };
 use serde_json::json;
 use std::fs;
+use std::io::{Cursor, Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 static NEXT_VOICEPRINT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+fn test_encoder() -> EncoderIdentity {
+    EncoderIdentity {
+        id: "test-encoder".to_owned(),
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+        width: 256,
+    }
+}
+
+fn merge_voiceprints(
+    journal: &std::path::Path,
+    source_id: &str,
+    target_id: &str,
+) -> Result<super::store::merge::VoiceprintMergeStats, EntityMergeError> {
+    merge_voiceprints_with_encoder(journal, source_id, target_id, &test_encoder())
+}
+
+fn commit_entity_merge(
+    journal: &std::path::Path,
+    source_id: &str,
+    target_id: &str,
+    options: EntityMergeOptions,
+) -> Result<crate::EntityMergeReport, EntityMergeError> {
+    commit_entity_merge_with_encoder(journal, source_id, target_id, options, &test_encoder())
+}
+
+fn commit_entity_merge_with_injector(
+    journal: &std::path::Path,
+    source_id: &str,
+    target_id: &str,
+    options: EntityMergeOptions,
+    injector: Option<&(dyn Fn(&str, usize) -> bool + 'static)>,
+) -> Result<crate::EntityMergeReport, EntityMergeError> {
+    commit_entity_merge_with_injector_with_encoder(
+        journal,
+        source_id,
+        target_id,
+        options,
+        &test_encoder(),
+        injector,
+    )
+}
 
 fn voiceprint_journal() -> PathBuf {
     let path = std::env::temp_dir().join(format!(
@@ -42,10 +88,93 @@ fn write_voiceprints(
     rows: Vec<Vec<f32>>,
     metadata: Vec<String>,
 ) {
+    write_voiceprints_with_identity(journal, id, rows, metadata, &test_encoder(), true);
+}
+
+fn write_voiceprints_with_identity(
+    journal: &std::path::Path,
+    id: &str,
+    rows: Vec<Vec<f32>>,
+    metadata: Vec<String>,
+    identity: &EncoderIdentity,
+    legacy: bool,
+) {
     let path = journal.join(format!("entities/{id}/voiceprints.npz"));
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     let embeddings = rows.into_iter().flatten().collect::<Vec<_>>();
-    fs::write(path, write_voiceprints_npz(&embeddings, &metadata).unwrap()).unwrap();
+    let bytes = write_voiceprints_npz(
+        &embeddings,
+        &metadata,
+        &super::store::voiceprints::VoiceprintEnvelope::default(),
+        identity,
+    )
+    .unwrap();
+    fs::write(
+        path,
+        if legacy {
+            rewrite_member(&bytes, "envelope.npy", None)
+        } else {
+            bytes
+        },
+    )
+    .unwrap();
+}
+
+fn rewrite_member(archive: &[u8], name: &str, replacement: Option<&[u8]>) -> Vec<u8> {
+    let mut source = ZipArchive::new(Cursor::new(archive)).unwrap();
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    let mut found = false;
+    for index in 0..source.len() {
+        let mut member = source.by_index(index).unwrap();
+        let member_name = member.name().to_owned();
+        let mut bytes = Vec::new();
+        member.read_to_end(&mut bytes).unwrap();
+        if member_name == name {
+            found = true;
+            if let Some(replacement) = replacement {
+                writer.start_file(member_name, options).unwrap();
+                writer.write_all(replacement).unwrap();
+            }
+        } else {
+            writer.start_file(member_name, options).unwrap();
+            writer.write_all(&bytes).unwrap();
+        }
+    }
+    if !found {
+        if let Some(replacement) = replacement {
+            writer.start_file(name, options).unwrap();
+            writer.write_all(replacement).unwrap();
+        }
+    }
+    writer.finish().unwrap().into_inner()
+}
+
+fn envelope_npy(identity: &EncoderIdentity, version: u32) -> Vec<u8> {
+    let serialized = json!({
+        "format": "solstone-voiceprint-envelope",
+        "version": version,
+        "encoder": identity.id,
+        "encoder_sha256": identity.sha256,
+        "width": identity.width,
+    })
+    .to_string();
+    let width = serialized.chars().count();
+    let mut payload = Vec::new();
+    for character in serialized.chars() {
+        payload.extend_from_slice(&(character as u32).to_le_bytes());
+    }
+    let mut header = format!("{{'descr': '<U{width}', 'fortran_order': False, 'shape': (1,), }}");
+    let padding = (64 - ((10 + header.len() + 1) % 64)) % 64;
+    header.push_str(&" ".repeat(padding));
+    header.push('\n');
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"\x93NUMPY");
+    bytes.extend_from_slice(&[1, 0]);
+    bytes.extend_from_slice(&(header.len() as u16).to_le_bytes());
+    bytes.extend_from_slice(header.as_bytes());
+    bytes.extend_from_slice(&payload);
+    bytes
 }
 fn read_rows(journal: &std::path::Path, id: &str) -> super::store::voiceprints::VoiceprintArchive {
     read_voiceprints_npz(&fs::read(journal.join(format!("entities/{id}/voiceprints.npz"))).unwrap())
@@ -62,7 +191,171 @@ fn voiceprints_copy_source_when_target_is_missing() {
             .added,
         1
     );
-    assert_eq!(read_rows(&journal, "target").metadata, vec![metadata("1")]);
+    let target = read_rows(&journal, "target");
+    assert_eq!(target.metadata, vec![metadata("1")]);
+    assert_eq!(target.envelope.encoder, Some(test_encoder()));
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn voiceprint_merge_carries_matching_known_identity_and_refuses_mismatch() {
+    let journal = voiceprint_journal();
+    let source = EncoderIdentity {
+        id: "source".to_owned(),
+        sha256: "1111111111111111111111111111111111111111111111111111111111111111".to_owned(),
+        width: 256,
+    };
+    let target = EncoderIdentity {
+        id: "target".to_owned(),
+        sha256: "2222222222222222222222222222222222222222222222222222222222222222".to_owned(),
+        width: 256,
+    };
+    write_voiceprints_with_identity(
+        &journal,
+        "source",
+        vec![row(2.0)],
+        vec![metadata("1")],
+        &source,
+        false,
+    );
+    write_voiceprints_with_identity(
+        &journal,
+        "target",
+        vec![row(3.0)],
+        vec![metadata("2")],
+        &target,
+        false,
+    );
+    let error = merge_voiceprints(&journal, "source", "target").unwrap_err();
+    assert!(matches!(
+        error,
+        EntityMergeError::VoiceprintEncoderMismatch {
+            source_entity_id,
+            target_entity_id,
+            source_encoder_id,
+            target_encoder_id,
+        } if source_entity_id == "source"
+            && target_entity_id == "target"
+            && source_encoder_id == "source"
+            && target_encoder_id == "target"
+    ));
+    fs::remove_dir_all(&journal).unwrap();
+
+    let journal = voiceprint_journal();
+    write_voiceprints_with_identity(
+        &journal,
+        "source",
+        vec![row(2.0)],
+        vec![metadata("1")],
+        &source,
+        false,
+    );
+    write_voiceprints_with_identity(
+        &journal,
+        "target",
+        vec![row(3.0)],
+        vec![metadata("2")],
+        &source,
+        false,
+    );
+    merge_voiceprints(&journal, "source", "target").unwrap();
+    assert_eq!(read_rows(&journal, "target").envelope.encoder, Some(source));
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn commit_preflights_voiceprint_encoder_mismatch() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    let source = EncoderIdentity {
+        id: "source".to_owned(),
+        sha256: "1111111111111111111111111111111111111111111111111111111111111111".to_owned(),
+        width: 256,
+    };
+    let target = EncoderIdentity {
+        id: "target".to_owned(),
+        sha256: "2222222222222222222222222222222222222222222222222222222222222222".to_owned(),
+        width: 256,
+    };
+    write_voiceprints_with_identity(
+        &journal,
+        "source",
+        vec![row(2.0)],
+        vec![metadata("1")],
+        &source,
+        false,
+    );
+    write_voiceprints_with_identity(
+        &journal,
+        "target",
+        vec![row(3.0)],
+        vec![metadata("2")],
+        &target,
+        false,
+    );
+
+    let error = commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        EntityMergeError::VoiceprintEncoderMismatch {
+            source_entity_id,
+            target_entity_id,
+            source_encoder_id,
+            target_encoder_id,
+        } if source_entity_id == "source"
+            && target_entity_id == "target"
+            && source_encoder_id == "source"
+            && target_encoder_id == "target"
+    ));
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn voiceprint_merge_refuses_unknown_or_future_members_and_merges_negative_twin() {
+    let journal = voiceprint_journal();
+    write_voiceprints(&journal, "source", vec![row(2.0)], vec![metadata("1")]);
+    let source_path = journal.join("entities/source/voiceprints.npz");
+    let unknown = rewrite_member(&fs::read(&source_path).unwrap(), "future.npy", Some(b"x"));
+    fs::write(&source_path, unknown).unwrap();
+    assert!(matches!(
+        merge_voiceprints(&journal, "source", "target"),
+        Err(EntityMergeError::Refused(message)) if message.contains("unrecognized member")
+    ));
+    fs::remove_dir_all(&journal).unwrap();
+
+    let journal = voiceprint_journal();
+    write_voiceprints(&journal, "source", vec![row(2.0)], vec![metadata("1")]);
+    let source_path = journal.join("entities/source/voiceprints.npz");
+    let future = rewrite_member(
+        &fs::read(&source_path).unwrap(),
+        "envelope.npy",
+        Some(&envelope_npy(&test_encoder(), 2)),
+    );
+    fs::write(&source_path, future).unwrap();
+    assert!(matches!(
+        merge_voiceprints(&journal, "source", "target"),
+        Err(EntityMergeError::Refused(message)) if message.contains("version 2")
+    ));
+    fs::remove_dir_all(&journal).unwrap();
+
+    let journal = voiceprint_journal();
+    write_voiceprints(&journal, "source", vec![row(2.0)], vec![metadata("1")]);
+    assert_eq!(
+        merge_voiceprints(&journal, "source", "target")
+            .unwrap()
+            .added,
+        1
+    );
     fs::remove_dir_all(journal).unwrap();
 }
 

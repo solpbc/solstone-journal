@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 use std::io::{Cursor, Read, Write};
@@ -30,24 +30,67 @@ use super::reconcile::{float_to_integer, integer_value, python_optional_json_equ
 const EMBEDDING_WIDTH: usize = 256;
 const EMBEDDINGS_MEMBER: &str = "embeddings.npy";
 const METADATA_MEMBER: &str = "metadata.npy";
+const ENVELOPE_MEMBER: &str = "envelope.npy";
+const ENVELOPE_FORMAT: &str = "solstone-voiceprint-envelope";
+const CURRENT_ENVELOPE_VERSION: u32 = 1;
+
+/// The encoder which produced a voiceprint embedding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncoderIdentity {
+    pub id: String,
+    pub sha256: String,
+    pub width: usize,
+}
+
+/// Self-describing metadata for a voiceprint archive.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VoiceprintEnvelope {
+    pub version: u32,
+    pub encoder: Option<EncoderIdentity>,
+    pub extra: serde_json::Map<String, Value>,
+}
+
+impl Default for VoiceprintEnvelope {
+    fn default() -> Self {
+        Self {
+            version: 0,
+            encoder: None,
+            extra: serde_json::Map::new(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct VoiceprintArchive {
     pub embeddings: Vec<f32>,
     pub rows: usize,
     pub metadata: Vec<String>,
+    pub envelope: VoiceprintEnvelope,
+    pub unrecognized_members: Vec<String>,
+}
+
+impl VoiceprintArchive {
+    /// Whether this archive positively identifies the supplied running encoder.
+    pub fn matches_running_encoder(&self, running_encoder: &EncoderIdentity) -> bool {
+        self.envelope.encoder.as_ref() == Some(running_encoder)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VoiceprintNpzError {
     Archive(String),
     Invalid(String),
+    EmbeddingWidth { found: usize },
 }
 
 impl fmt::Display for VoiceprintNpzError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Archive(message) | Self::Invalid(message) => formatter.write_str(message),
+            Self::EmbeddingWidth { found } => write!(
+                formatter,
+                "embeddings.npy width {found} does not match {EMBEDDING_WIDTH}"
+            ),
         }
     }
 }
@@ -110,8 +153,21 @@ pub enum VoiceprintOperationError {
     MetadataJson(String),
     MetadataNotObject,
     InvalidRemovalKey,
-    UnsupportedKeyField { field: &'static str },
+    UnsupportedKeyField {
+        field: &'static str,
+    },
     DuplicateExactMatch,
+    UnrecognizedNpzMember {
+        member: String,
+    },
+    EncoderIdentityMismatch {
+        stored_encoder_id: String,
+        caller_encoder_id: String,
+    },
+    UnsupportedEnvelopeVersion {
+        found: u32,
+        max_supported: u32,
+    },
 }
 
 impl fmt::Display for VoiceprintOperationError {
@@ -136,6 +192,26 @@ impl fmt::Display for VoiceprintOperationError {
             Self::DuplicateExactMatch => {
                 formatter.write_str("voiceprint removal locator matched multiple rows")
             }
+            Self::UnrecognizedNpzMember { member } => {
+                write!(
+                    formatter,
+                    "voiceprint archive has unrecognized member {member}"
+                )
+            }
+            Self::EncoderIdentityMismatch {
+                stored_encoder_id,
+                caller_encoder_id,
+            } => write!(
+                formatter,
+                "voiceprint encoder {stored_encoder_id} does not match {caller_encoder_id}"
+            ),
+            Self::UnsupportedEnvelopeVersion {
+                found,
+                max_supported,
+            } => write!(
+                formatter,
+                "voiceprint envelope version {found} exceeds supported version {max_supported}"
+            ),
         }
     }
 }
@@ -153,7 +229,10 @@ impl Error for VoiceprintOperationError {
             | Self::MetadataNotObject
             | Self::InvalidRemovalKey
             | Self::UnsupportedKeyField { .. }
-            | Self::DuplicateExactMatch => None,
+            | Self::DuplicateExactMatch
+            | Self::UnrecognizedNpzMember { .. }
+            | Self::EncoderIdentityMismatch { .. }
+            | Self::UnsupportedEnvelopeVersion { .. } => None,
         }
     }
 }
@@ -257,6 +336,7 @@ pub fn save_voiceprints_batch(
     journal_root: &Path,
     entity_id: &str,
     new_items: &[VoiceprintItem],
+    running_encoder: &EncoderIdentity,
 ) -> Result<usize, VoiceprintOperationError> {
     if new_items.is_empty() {
         return Ok(0);
@@ -264,12 +344,13 @@ pub fn save_voiceprints_batch(
     let (_directory, path) = resolve_voiceprint_path(journal_root, entity_id, true)?;
     let _lock = hold_lock(&path, LockOptions::default())?;
     let mut archive = load_voiceprints(&path)?.unwrap_or_else(empty_archive);
+    ensure_mutation_allowed(&archive, running_encoder)?;
     for item in new_items {
         archive.embeddings.extend_from_slice(&item.embedding);
         archive.metadata.push(serialize_metadata(&item.metadata)?);
     }
     archive.rows = archive.metadata.len();
-    write_and_verify_voiceprints(&path, &archive)?;
+    write_and_verify_voiceprints(&path, &archive, running_encoder)?;
     Ok(new_items.len())
 }
 
@@ -277,6 +358,7 @@ pub fn save_voiceprints_batch(
 pub fn rewrite_voiceprint_metadata<F>(
     journal_root: &Path,
     entity_id: &str,
+    running_encoder: &EncoderIdentity,
     mutator: F,
 ) -> Result<usize, VoiceprintOperationError>
 where
@@ -292,6 +374,7 @@ where
     let Some(mut archive) = load_voiceprints(&path)? else {
         return Ok(0);
     };
+    ensure_mutation_allowed(&archive, running_encoder)?;
     let mut metadata = parse_metadata_values(&archive.metadata)?;
     let updates = mutator(&mut metadata);
     if updates == 0 {
@@ -301,7 +384,7 @@ where
         .iter()
         .map(serialize_metadata)
         .collect::<Result<_, _>>()?;
-    write_and_verify_voiceprints(&path, &archive)?;
+    write_and_verify_voiceprints(&path, &archive, running_encoder)?;
     Ok(updates)
 }
 
@@ -310,6 +393,7 @@ pub fn remove_voiceprints_by_key(
     journal_root: &Path,
     entity_id: &str,
     removals: &[VoiceprintRemoval],
+    running_encoder: &EncoderIdentity,
 ) -> Result<VoiceprintRemovalReport, VoiceprintOperationError> {
     let mut report = VoiceprintRemovalReport::default();
     if removals.is_empty() {
@@ -333,6 +417,7 @@ pub fn remove_voiceprints_by_key(
         mark_all_missing(&mut report, removals.len());
         return Ok(report);
     };
+    ensure_mutation_allowed(&archive, running_encoder)?;
     let metadata = parse_metadata_values(&archive.metadata)?;
     let keys = archive
         .metadata
@@ -387,7 +472,7 @@ pub fn remove_voiceprints_by_key(
         }
     }
     kept.rows = kept.metadata.len();
-    write_and_verify_voiceprints(&path, &kept)?;
+    write_and_verify_voiceprints(&path, &kept, running_encoder)?;
     Ok(report)
 }
 
@@ -414,6 +499,8 @@ fn empty_archive() -> VoiceprintArchive {
         embeddings: Vec::new(),
         rows: 0,
         metadata: Vec::new(),
+        envelope: VoiceprintEnvelope::default(),
+        unrecognized_members: Vec::new(),
     }
 }
 
@@ -428,18 +515,57 @@ fn load_voiceprints(path: &Path) -> Result<Option<VoiceprintArchive>, Voiceprint
 fn write_and_verify_voiceprints(
     path: &Path,
     archive: &VoiceprintArchive,
+    selected_encoder: &EncoderIdentity,
 ) -> Result<(), VoiceprintOperationError> {
-    let bytes = write_voiceprints_npz(&archive.embeddings, &archive.metadata)?;
+    let expected_written_archive = VoiceprintArchive {
+        embeddings: archive.embeddings.clone(),
+        rows: archive.rows,
+        metadata: archive.metadata.clone(),
+        envelope: stamped_envelope(&archive.envelope, selected_encoder),
+        unrecognized_members: Vec::new(),
+    };
+    let bytes = write_voiceprints_npz(
+        &archive.embeddings,
+        &archive.metadata,
+        &archive.envelope,
+        selected_encoder,
+    )?;
     atomic_replace(path, &bytes, AtomicWriteOptions::default())?;
     let verified = load_voiceprints(path)?.ok_or_else(|| {
         VoiceprintOperationError::Npz(VoiceprintNpzError::Invalid(
             "voiceprint archive disappeared after write".to_owned(),
         ))
     })?;
-    if verified != *archive {
+    if verified != expected_written_archive {
         return Err(VoiceprintOperationError::Npz(VoiceprintNpzError::Invalid(
             "voiceprint archive changed after write".to_owned(),
         )));
+    }
+    Ok(())
+}
+
+fn ensure_mutation_allowed(
+    archive: &VoiceprintArchive,
+    running_encoder: &EncoderIdentity,
+) -> Result<(), VoiceprintOperationError> {
+    if let Some(member) = archive.unrecognized_members.first() {
+        return Err(VoiceprintOperationError::UnrecognizedNpzMember {
+            member: member.clone(),
+        });
+    }
+    if archive.envelope.version > CURRENT_ENVELOPE_VERSION {
+        return Err(VoiceprintOperationError::UnsupportedEnvelopeVersion {
+            found: archive.envelope.version,
+            max_supported: CURRENT_ENVELOPE_VERSION,
+        });
+    }
+    if let Some(stored) = &archive.envelope.encoder {
+        if stored != running_encoder {
+            return Err(VoiceprintOperationError::EncoderIdentityMismatch {
+                stored_encoder_id: stored.id.clone(),
+                caller_encoder_id: running_encoder.id.clone(),
+            });
+        }
     }
     Ok(())
 }
@@ -522,7 +648,7 @@ pub(crate) fn read_voiceprints_npz(bytes: &[u8]) -> Result<VoiceprintArchive, Vo
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|error| {
         VoiceprintNpzError::Archive(format!("invalid voiceprint archive: {error}"))
     })?;
-    let names = (0..archive.len())
+    let mut names = (0..archive.len())
         .map(|index| {
             archive
                 .by_index(index)
@@ -531,11 +657,22 @@ pub(crate) fn read_voiceprints_npz(bytes: &[u8]) -> Result<VoiceprintArchive, Vo
                     VoiceprintNpzError::Archive(format!("invalid voiceprint archive: {error}"))
                 })
         })
-        .collect::<Result<BTreeSet<_>, _>>()?;
-    let expected = BTreeSet::from([EMBEDDINGS_MEMBER.to_owned(), METADATA_MEMBER.to_owned()]);
-    if names != expected || archive.len() != expected.len() {
+        .collect::<Result<Vec<_>, _>>()?;
+    names.sort();
+    if names
+        .iter()
+        .filter(|name| name.as_str() == EMBEDDINGS_MEMBER)
+        .count()
+        != 1
+        || names
+            .iter()
+            .filter(|name| name.as_str() == METADATA_MEMBER)
+            .count()
+            != 1
+    {
         return Err(VoiceprintNpzError::Invalid(
-            "voiceprint archive must contain exactly embeddings.npy and metadata.npy".to_owned(),
+            "voiceprint archive must contain exactly one embeddings.npy and metadata.npy"
+                .to_owned(),
         ));
     }
     let embeddings = read_member(&mut archive, EMBEDDINGS_MEMBER)?;
@@ -547,16 +684,37 @@ pub(crate) fn read_voiceprints_npz(bytes: &[u8]) -> Result<VoiceprintArchive, Vo
             "voiceprint embedding and metadata row counts differ".to_owned(),
         ));
     }
+    let envelope_count = names
+        .iter()
+        .filter(|name| name.as_str() == ENVELOPE_MEMBER)
+        .count();
+    let envelope = if envelope_count == 1 {
+        read_member(&mut archive, ENVELOPE_MEMBER)
+            .ok()
+            .map_or_else(VoiceprintEnvelope::default, |bytes| parse_envelope(&bytes))
+    } else {
+        VoiceprintEnvelope::default()
+    };
+    let unrecognized_members = names
+        .into_iter()
+        .filter(|name| {
+            name != EMBEDDINGS_MEMBER && name != METADATA_MEMBER && name != ENVELOPE_MEMBER
+        })
+        .collect();
     Ok(VoiceprintArchive {
         embeddings: values,
         rows: embedding_rows,
         metadata,
+        envelope,
+        unrecognized_members,
     })
 }
 
 pub(crate) fn write_voiceprints_npz(
     embeddings: &[f32],
     metadata: &[String],
+    prior_envelope: &VoiceprintEnvelope,
+    selected_encoder: &EncoderIdentity,
 ) -> Result<Vec<u8>, VoiceprintNpzError> {
     let expected_embeddings = metadata.len().checked_mul(EMBEDDING_WIDTH).ok_or_else(|| {
         VoiceprintNpzError::Invalid("voiceprint row count is too large".to_owned())
@@ -571,6 +729,7 @@ pub(crate) fn write_voiceprints_npz(
     validate_metadata(metadata)?;
     let embeddings = write_embeddings_npy(embeddings, metadata.len());
     let metadata = write_metadata_npy(metadata)?;
+    let envelope = write_envelope_npy(&stamped_envelope(prior_envelope, selected_encoder))?;
     let cursor = Cursor::new(Vec::new());
     let mut writer = ZipWriter::new(cursor);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -582,6 +741,10 @@ pub(crate) fn write_voiceprints_npz(
         .start_file(METADATA_MEMBER, options)
         .map_err(zip_error)?;
     writer.write_all(&metadata).map_err(io_error)?;
+    writer
+        .start_file(ENVELOPE_MEMBER, options)
+        .map_err(zip_error)?;
+    writer.write_all(&envelope).map_err(io_error)?;
     writer
         .finish()
         .map_err(zip_error)
@@ -600,11 +763,12 @@ fn read_member(
 
 fn parse_embeddings(bytes: &[u8]) -> Result<(usize, Vec<f32>), VoiceprintNpzError> {
     let (header, payload) = parse_npy(bytes)?;
-    if header.descr != "<f4"
-        || header.fortran_order
-        || header.shape.len() != 2
-        || header.shape[1] != EMBEDDING_WIDTH
-    {
+    if header.shape.len() == 2 && header.shape[1] != EMBEDDING_WIDTH {
+        return Err(VoiceprintNpzError::EmbeddingWidth {
+            found: header.shape[1],
+        });
+    }
+    if header.descr != "<f4" || header.fortran_order || header.shape.len() != 2 {
         return Err(VoiceprintNpzError::Invalid(
             "embeddings.npy must be a little-endian float32 C-order (N, 256) array".to_owned(),
         ));
@@ -629,63 +793,9 @@ fn parse_embeddings(bytes: &[u8]) -> Result<(usize, Vec<f32>), VoiceprintNpzErro
 }
 
 fn parse_metadata(bytes: &[u8]) -> Result<(usize, Vec<String>), VoiceprintNpzError> {
-    let (header, payload) = parse_npy(bytes)?;
-    if header.fortran_order || header.shape.len() != 1 {
-        return Err(VoiceprintNpzError::Invalid(
-            "metadata.npy must be a C-order one-dimensional unicode array".to_owned(),
-        ));
-    }
-    let width = header
-        .descr
-        .strip_prefix("<U")
-        .ok_or_else(|| {
-            VoiceprintNpzError::Invalid(
-                "metadata.npy must use a little-endian unicode dtype, never pickle or object values"
-                    .to_owned(),
-            )
-        })?
-        .parse::<usize>()
-        .map_err(|_| {
-            VoiceprintNpzError::Invalid("metadata.npy has an invalid unicode dtype".to_owned())
-        })?;
-    let rows = header.shape[0];
-    if width == 0 {
-        if rows == 0 && payload.is_empty() {
-            return Ok((0, Vec::new()));
-        }
-        return Err(VoiceprintNpzError::Invalid(
-            "metadata.npy has an invalid zero-width unicode dtype".to_owned(),
-        ));
-    }
-    let row_width = width.checked_mul(4).ok_or_else(|| {
-        VoiceprintNpzError::Invalid("metadata.npy unicode dtype is too large".to_owned())
-    })?;
-    let expected = rows
-        .checked_mul(row_width)
-        .ok_or_else(|| VoiceprintNpzError::Invalid("metadata.npy shape is too large".to_owned()))?;
-    if payload.len() != expected {
-        return Err(VoiceprintNpzError::Invalid(
-            "metadata.npy payload length does not match its shape".to_owned(),
-        ));
-    }
-    let mut values = Vec::with_capacity(rows);
-    for row in payload.chunks_exact(row_width) {
-        let value = row
-            .chunks_exact(4)
-            .map(|bytes| u32::from_le_bytes(bytes.try_into().expect("exact chunk length")))
-            .take_while(|codepoint| *codepoint != 0)
-            .map(|codepoint| {
-                char::from_u32(codepoint).ok_or_else(|| {
-                    VoiceprintNpzError::Invalid(
-                        "metadata.npy contains an invalid unicode code point".to_owned(),
-                    )
-                })
-            })
-            .collect::<Result<String, _>>()?;
-        values.push(value);
-    }
+    let values = parse_unicode_npy(bytes, METADATA_MEMBER)?;
     validate_metadata(&values)?;
-    Ok((rows, values))
+    Ok((values.len(), values))
 }
 
 fn write_embeddings_npy(values: &[f32], rows: usize) -> Vec<u8> {
@@ -697,6 +807,10 @@ fn write_embeddings_npy(values: &[f32], rows: usize) -> Vec<u8> {
 }
 
 fn write_metadata_npy(values: &[String]) -> Result<Vec<u8>, VoiceprintNpzError> {
+    Ok(write_unicode_npy(values))
+}
+
+fn write_unicode_npy(values: &[String]) -> Vec<u8> {
     let width = values
         .iter()
         .map(|value| value.chars().count())
@@ -711,11 +825,145 @@ fn write_metadata_npy(values: &[String]) -> Result<Vec<u8>, VoiceprintNpzError> 
             payload.extend_from_slice(&0_u32.to_le_bytes());
         }
     }
-    Ok(write_npy(
+    write_npy(
         &format!("<U{width}"),
         &format!("({},)", values.len()),
         &payload,
-    ))
+    )
+}
+
+fn parse_unicode_npy(bytes: &[u8], name: &str) -> Result<Vec<String>, VoiceprintNpzError> {
+    let (header, payload) = parse_npy(bytes)?;
+    if header.fortran_order || header.shape.len() != 1 {
+        return Err(VoiceprintNpzError::Invalid(format!(
+            "{name} must be a C-order one-dimensional unicode array"
+        )));
+    }
+    let width = header
+        .descr
+        .strip_prefix("<U")
+        .ok_or_else(|| {
+            VoiceprintNpzError::Invalid(format!(
+                "{name} must use a little-endian unicode dtype, never pickle or object values"
+            ))
+        })?
+        .parse::<usize>()
+        .map_err(|_| VoiceprintNpzError::Invalid(format!("{name} has an invalid unicode dtype")))?;
+    let rows = header.shape[0];
+    if width == 0 {
+        if rows == 0 && payload.is_empty() {
+            return Ok(Vec::new());
+        }
+        return Err(VoiceprintNpzError::Invalid(format!(
+            "{name} has an invalid zero-width unicode dtype"
+        )));
+    }
+    let row_width = width
+        .checked_mul(4)
+        .ok_or_else(|| VoiceprintNpzError::Invalid(format!("{name} unicode dtype is too large")))?;
+    let expected = rows
+        .checked_mul(row_width)
+        .ok_or_else(|| VoiceprintNpzError::Invalid(format!("{name} shape is too large")))?;
+    if payload.len() != expected {
+        return Err(VoiceprintNpzError::Invalid(format!(
+            "{name} payload length does not match its shape"
+        )));
+    }
+    payload
+        .chunks_exact(row_width)
+        .map(|row| {
+            row.chunks_exact(4)
+                .map(|bytes| u32::from_le_bytes(bytes.try_into().expect("exact chunk length")))
+                .take_while(|codepoint| *codepoint != 0)
+                .map(|codepoint| {
+                    char::from_u32(codepoint).ok_or_else(|| {
+                        VoiceprintNpzError::Invalid(format!(
+                            "{name} contains an invalid unicode code point"
+                        ))
+                    })
+                })
+                .collect::<Result<String, _>>()
+        })
+        .collect()
+}
+
+fn stamped_envelope(
+    prior_envelope: &VoiceprintEnvelope,
+    selected_encoder: &EncoderIdentity,
+) -> VoiceprintEnvelope {
+    VoiceprintEnvelope {
+        version: CURRENT_ENVELOPE_VERSION,
+        encoder: Some(selected_encoder.clone()),
+        extra: prior_envelope.extra.clone(),
+    }
+}
+
+fn write_envelope_npy(envelope: &VoiceprintEnvelope) -> Result<Vec<u8>, VoiceprintNpzError> {
+    let encoder = envelope.encoder.as_ref().ok_or_else(|| {
+        VoiceprintNpzError::Invalid("voiceprint envelope writer requires an encoder".to_owned())
+    })?;
+    let mut value = envelope.extra.clone();
+    value.insert(
+        "format".to_owned(),
+        Value::String(ENVELOPE_FORMAT.to_owned()),
+    );
+    value.insert("version".to_owned(), Value::from(envelope.version));
+    value.insert("encoder".to_owned(), Value::String(encoder.id.clone()));
+    value.insert(
+        "encoder_sha256".to_owned(),
+        Value::String(encoder.sha256.clone()),
+    );
+    value.insert("width".to_owned(), Value::from(encoder.width));
+    let serialized = serde_json::to_string(&Value::Object(value)).map_err(|error| {
+        VoiceprintNpzError::Invalid(format!("voiceprint envelope cannot be serialized: {error}"))
+    })?;
+    Ok(write_unicode_npy(&[serialized]))
+}
+
+fn parse_envelope(bytes: &[u8]) -> VoiceprintEnvelope {
+    let Ok(values) = parse_unicode_npy(bytes, ENVELOPE_MEMBER) else {
+        return VoiceprintEnvelope::default();
+    };
+    let [serialized] = values.as_slice() else {
+        return VoiceprintEnvelope::default();
+    };
+    let Ok(Value::Object(mut value)) = serde_json::from_str(serialized) else {
+        return VoiceprintEnvelope::default();
+    };
+    let Some(Value::String(format)) = value.remove("format") else {
+        return VoiceprintEnvelope::default();
+    };
+    if format != ENVELOPE_FORMAT {
+        return VoiceprintEnvelope::default();
+    }
+    let Some(version) = value
+        .remove("version")
+        .and_then(|value| value.as_u64())
+        .and_then(|value| u32::try_from(value).ok())
+    else {
+        return VoiceprintEnvelope::default();
+    };
+    let Some(Value::String(id)) = value.remove("encoder") else {
+        return VoiceprintEnvelope::default();
+    };
+    let Some(Value::String(sha256)) = value.remove("encoder_sha256") else {
+        return VoiceprintEnvelope::default();
+    };
+    let Some(width) = value
+        .remove("width")
+        .and_then(|value| value.as_u64())
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return VoiceprintEnvelope::default();
+    };
+    if id.is_empty() || sha256.len() != 64 || !sha256.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return VoiceprintEnvelope::default();
+    }
+    VoiceprintEnvelope {
+        version,
+        encoder: Some(EncoderIdentity { id, sha256, width }),
+        extra: value,
+    }
 }
 
 fn write_npy(descr: &str, shape: &str, payload: &[u8]) -> Vec<u8> {
@@ -856,6 +1104,14 @@ fn io_error(error: std::io::Error) -> VoiceprintNpzError {
 mod tests {
     use super::*;
 
+    fn test_encoder() -> EncoderIdentity {
+        EncoderIdentity {
+            id: "test-encoder".to_owned(),
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+            width: EMBEDDING_WIDTH,
+        }
+    }
+
     #[test]
     fn round_trips_embeddings_and_unicode_json_metadata() {
         let embeddings = (0..EMBEDDING_WIDTH * 2)
@@ -866,12 +1122,38 @@ mod tests {
             r#"{"day":"20260102","label":"José"}"#.to_owned(),
         ];
 
-        let bytes = write_voiceprints_npz(&embeddings, &metadata).unwrap();
+        let bytes = write_voiceprints_npz(
+            &embeddings,
+            &metadata,
+            &VoiceprintEnvelope::default(),
+            &test_encoder(),
+        )
+        .unwrap();
         let actual = read_voiceprints_npz(&bytes).unwrap();
 
-        assert_eq!(actual.embeddings, embeddings);
+        assert_eq!(
+            actual
+                .embeddings
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+            embeddings
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>()
+        );
         assert_eq!(actual.rows, 2);
         assert_eq!(actual.metadata, metadata);
+    }
+
+    #[test]
+    fn metadata_npy_bytes_match_the_literal_legacy_fixture() {
+        const FIXTURE_HEX: &str = "934e554d5059010076007b276465736372273a20273c5532272c2027666f727472616e5f6f72646572273a2046616c73652c20277368617065273a2028312c292c207d2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020200a7b0000007d000000";
+        let expected = (0..FIXTURE_HEX.len())
+            .step_by(2)
+            .map(|index| u8::from_str_radix(&FIXTURE_HEX[index..index + 2], 16).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(write_metadata_npy(&["{}".to_owned()]).unwrap(), expected);
     }
 
     #[test]
@@ -885,13 +1167,17 @@ mod tests {
 
     #[test]
     fn round_trips_empty_voiceprints() {
-        let bytes = write_voiceprints_npz(&[], &[]).unwrap();
+        let bytes =
+            write_voiceprints_npz(&[], &[], &VoiceprintEnvelope::default(), &test_encoder())
+                .unwrap();
         assert_eq!(
             read_voiceprints_npz(&bytes).unwrap(),
             VoiceprintArchive {
                 embeddings: Vec::new(),
                 rows: 0,
                 metadata: Vec::new(),
+                envelope: stamped_envelope(&VoiceprintEnvelope::default(), &test_encoder()),
+                unrecognized_members: Vec::new(),
             }
         );
     }

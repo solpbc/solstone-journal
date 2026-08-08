@@ -315,7 +315,7 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
             Some(resolved) => (&resolved.labels, resolved.warning.as_deref()),
             None => (&default_chat_labels, None),
         };
-        match ensure_file_current(
+        warnings.extend(ensure_file_current(
             &tx,
             journal,
             &rel,
@@ -325,12 +325,7 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
             family,
             chat_labels,
             chat_config_warning,
-        ) {
-            Ok(content_warnings) => {
-                warnings.extend(content_warnings);
-            }
-            Err(error) => return Err(error),
-        }
+        )?);
     }
     if edge_source.is_some() {
         delete_edges_for_path(&tx, &rel)?;
@@ -950,6 +945,10 @@ fn stored_entity_search_count(conn: &Connection) -> Result<i64, StoreError> {
 
 /// Make one child file current. The main scan and legacy aggregate migration
 /// share this path so an mtime match has one meaning everywhere.
+// The parameter list is the shared state both callers must agree on; grouping it
+// into a struct would move the same fields behind a name without reducing what a
+// caller has to get right. Accepted deliberately and scoped to this item.
+#[allow(clippy::too_many_arguments)]
 fn ensure_file_current(
     conn: &Connection,
     journal: &Path,
@@ -1220,9 +1219,8 @@ mod tests {
             .expect("reset segment aggregate migration");
     }
 
-    fn non_aggregate_rows(
-        conn: &Connection,
-    ) -> Vec<(
+    /// path, day, facet, agent, content, stream, idx, time_bucket
+    type NonAggregateRow = (
         String,
         String,
         String,
@@ -1231,7 +1229,9 @@ mod tests {
         Option<String>,
         i64,
         String,
-    )> {
+    );
+
+    fn non_aggregate_rows(conn: &Connection) -> Vec<NonAggregateRow> {
         conn.prepare(
             "SELECT path, day, facet, agent, content, stream, idx, time_bucket FROM chunks WHERE agent!='segment' ORDER BY path, idx",
         )

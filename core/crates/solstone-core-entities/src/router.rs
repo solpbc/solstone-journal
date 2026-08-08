@@ -32,6 +32,14 @@ struct RouterState {
     delete_window: Duration,
 }
 
+fn unresolved_voiceprint_encoder() -> solstone_core_entity::EncoderIdentity {
+    solstone_core_entity::EncoderIdentity {
+        id: "unresolved".to_owned(),
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+        width: 256,
+    }
+}
+
 impl Deref for RouterState {
     type Target = PathBuf;
 
@@ -1080,7 +1088,14 @@ async fn merge_route(
         };
     }
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_entity::commit_entity_merge(&root, &source_slug, &target_slug, options)
+        let fallback_encoder = unresolved_voiceprint_encoder();
+        solstone_core_entity::commit_entity_merge(
+            &root,
+            &source_slug,
+            &target_slug,
+            options,
+            &fallback_encoder,
+        )
     })
     .await
     {
@@ -1265,11 +1280,13 @@ async fn accept_merge_candidate_route(
         let source_slug = source_slug.clone();
         let target_slug = target_slug.clone();
         move || {
+            let fallback_encoder = unresolved_voiceprint_encoder();
             solstone_core_entity::commit_entity_merge(
                 &root,
                 &source_slug,
                 &target_slug,
                 solstone_core_entity::EntityMergeOptions::default(),
+                &fallback_encoder,
             )
         }
     })

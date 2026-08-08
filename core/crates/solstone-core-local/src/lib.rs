@@ -6,6 +6,7 @@
 pub mod admission;
 pub mod bind;
 pub mod connect;
+pub mod endpoint;
 mod fixture;
 pub mod generate;
 pub mod install;
@@ -15,13 +16,17 @@ pub(crate) mod tier;
 
 pub use bind::LoopbackAddr;
 pub use connect::{ConnectInput, ConnectOutcome, connect};
+pub use endpoint::{
+    ByoEndpoint, LocalEndpointResolution, resolve_local_endpoint,
+    served_window_from_models_response,
+};
 pub use fixture::local_generate_input_schema;
 pub use generate::{
     ContextWindow, GenerateError, GenerateFailure, GenerateInput, GenerateResult, GenerateSuccess,
     GenerateTransport, HttpResponse, Inference, InputBudget, PreparedRequest, RequestBudget,
-    ServerInference, UreqTransport, Usage, build_messages, build_request_body, generate,
-    generate_with, normalize_finish_reason, parse_response, prepare_bundled_request,
-    prepare_local_schema,
+    ServerInference, UreqTransport, Usage, build_messages, build_request_body, count_image_parts,
+    estimate_tokens, fit_contents, generate, generate_with, normalize_finish_reason,
+    parse_response, prepare_bundled_request, prepare_local_schema, serialized_message_text,
 };
 pub use install::{
     DispatchError as InstallDispatchError, InstallEnvelope, InstallVerb,

@@ -4,6 +4,13 @@
 use std::fmt;
 
 use crate::Coordinate;
+use crate::bundle_id::BundleId;
+use crate::manifest_known_key::{
+    BODY_BUNDLE_REF_KEY, BODY_BUNDLE_SHA256_KEY, BODY_SOURCE_SCHEMA_KEY, DAYS_AFFECTED_KEY,
+    ENTRY_COUNT_KEY, IMPORT_ID_KEY, RAW_RETENTION_KEY, SOURCE_HASH_KEY, SOURCE_TYPE_KEY,
+};
+
+const MANIFEST_FIELD_KEY: &str = "manifest";
 
 /// A token-free body-source parse failure with a raw UTF-8 byte offset.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,6 +125,150 @@ impl fmt::Debug for BodySourceHashError {
 }
 
 impl std::error::Error for BodySourceHashError {}
+
+/// The closed set of body-manifest binding failure codes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ManifestBindingErrorCode {
+    InputTooLarge,
+    MalformedManifest,
+    DuplicateField,
+    UnknownField,
+    MissingField,
+    WrongType,
+    InvalidField,
+    IncompatibleField,
+}
+
+impl ManifestBindingErrorCode {
+    /// Returns this code's stable wire spelling.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::InputTooLarge => "input_too_large",
+            Self::MalformedManifest => "malformed_manifest",
+            Self::DuplicateField => "duplicate_field",
+            Self::UnknownField => "unknown_field",
+            Self::MissingField => "missing_field",
+            Self::WrongType => "wrong_type",
+            Self::InvalidField => "invalid_field",
+            Self::IncompatibleField => "incompatible_field",
+        }
+    }
+
+    pub const ALL: [Self; 8] = [
+        Self::InputTooLarge,
+        Self::MalformedManifest,
+        Self::DuplicateField,
+        Self::UnknownField,
+        Self::MissingField,
+        Self::WrongType,
+        Self::InvalidField,
+        Self::IncompatibleField,
+    ];
+}
+
+/// The closed set of body-manifest binding failure fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ManifestBindingErrorField {
+    Manifest,
+    BodySourceSchema,
+    BodyBundleRef,
+    BodyBundleSha256,
+    ImportId,
+    SourceType,
+    SourceHash,
+    EntryCount,
+    DaysAffected,
+    RawRetention,
+}
+
+impl ManifestBindingErrorField {
+    /// Returns this field's stable wire spelling.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Manifest => MANIFEST_FIELD_KEY,
+            Self::BodySourceSchema => BODY_SOURCE_SCHEMA_KEY,
+            Self::BodyBundleRef => BODY_BUNDLE_REF_KEY,
+            Self::BodyBundleSha256 => BODY_BUNDLE_SHA256_KEY,
+            Self::ImportId => IMPORT_ID_KEY,
+            Self::SourceType => SOURCE_TYPE_KEY,
+            Self::SourceHash => SOURCE_HASH_KEY,
+            Self::EntryCount => ENTRY_COUNT_KEY,
+            Self::DaysAffected => DAYS_AFFECTED_KEY,
+            Self::RawRetention => RAW_RETENTION_KEY,
+        }
+    }
+
+    pub const ALL: [Self; 10] = [
+        Self::Manifest,
+        Self::BodySourceSchema,
+        Self::BodyBundleRef,
+        Self::BodyBundleSha256,
+        Self::ImportId,
+        Self::SourceType,
+        Self::SourceHash,
+        Self::EntryCount,
+        Self::DaysAffected,
+        Self::RawRetention,
+    ];
+}
+
+/// A bounded body-manifest binding failure.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ManifestBindingError {
+    bundle: BundleId,
+    code: ManifestBindingErrorCode,
+    field: ManifestBindingErrorField,
+}
+
+impl ManifestBindingError {
+    /// Builds a body-manifest binding failure.
+    pub fn new(
+        bundle: BundleId,
+        code: ManifestBindingErrorCode,
+        field: ManifestBindingErrorField,
+    ) -> Self {
+        Self {
+            bundle,
+            code,
+            field,
+        }
+    }
+
+    /// Returns the checked bundle identifier this error is bound to.
+    pub fn bundle(&self) -> &BundleId {
+        &self.bundle
+    }
+
+    /// Returns this error's failure code.
+    pub fn code(&self) -> ManifestBindingErrorCode {
+        self.code
+    }
+
+    /// Returns the manifest field this error concerns.
+    pub fn field(&self) -> ManifestBindingErrorField {
+        self.field
+    }
+}
+
+impl fmt::Display for ManifestBindingError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "body-manifest[{}] {}: {}",
+            self.bundle.as_str(),
+            self.code.as_str(),
+            self.field.as_str()
+        )
+    }
+}
+
+impl fmt::Debug for ManifestBindingError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
+}
+
+impl std::error::Error for ManifestBindingError {}
 
 /// A bounded body-manifest scan failure.
 #[derive(Clone, Copy, PartialEq, Eq)]

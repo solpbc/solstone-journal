@@ -13,13 +13,43 @@ use serde_json::{Value, json};
 use solstone_core_journal_io::{AtomicWriteOptions, JsonWriteOptions, write_json, write_jsonl};
 
 use super::store::undo_entity_merge_with_injector;
-use super::store::voiceprints::write_voiceprints_npz;
+use super::store::voiceprints::write_voiceprints_npz as write_voiceprints_npz_with_envelope;
 use crate::{
-    EntityMergeOptions, commit_entity_merge, guard_restore_does_not_cross_merge,
+    EncoderIdentity, EntityMergeError, EntityMergeOptions,
+    commit_entity_merge as commit_entity_merge_with_encoder, guard_restore_does_not_cross_merge,
     read_entity_identity, read_visible_history, save_entity_identity, undo_entity_merge,
 };
 
 static NEXT_UNDO_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+fn test_encoder() -> EncoderIdentity {
+    EncoderIdentity {
+        id: "test-encoder".to_owned(),
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+        width: 256,
+    }
+}
+
+fn commit_entity_merge(
+    journal: &std::path::Path,
+    source_id: &str,
+    target_id: &str,
+    options: EntityMergeOptions,
+) -> Result<crate::EntityMergeReport, EntityMergeError> {
+    commit_entity_merge_with_encoder(journal, source_id, target_id, options, &test_encoder())
+}
+
+fn write_voiceprints_npz(
+    embeddings: &[f32],
+    metadata: &[String],
+) -> Result<Vec<u8>, crate::VoiceprintNpzError> {
+    write_voiceprints_npz_with_envelope(
+        embeddings,
+        metadata,
+        &crate::VoiceprintEnvelope::default(),
+        &test_encoder(),
+    )
+}
 
 fn undo_journal() -> PathBuf {
     let path = std::env::temp_dir().join(format!(

@@ -9,6 +9,11 @@ pub struct BodyInteger {
 }
 
 impl BodyInteger {
+    /// Builds a non-negative integer from a `u64` value.
+    pub fn from_u64(value: u64) -> Self {
+        Self::new(false, value.to_string()).expect("u64 decimal digits are always valid")
+    }
+
     /// Builds an integer from a normalized ASCII decimal digit sequence.
     pub fn new(negative: bool, digits: impl Into<Box<str>>) -> Option<Self> {
         let digits = digits.into();

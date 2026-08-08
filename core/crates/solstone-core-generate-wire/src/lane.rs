@@ -2,15 +2,21 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Map, Value};
-use solstone_core_local::GenerateFailure;
+use solstone_core_local::{
+    ByoEndpoint, GenerateFailure, LocalEndpointResolution, resolve_local_endpoint,
+};
+
+use crate::endpoint::EndpointFailure;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LaneOutcome {
     NoEngine,
     BundledLocal,
     AttestationNotVerified,
+    ByoEndpoint(ByoEndpoint),
     UnimplementedLane,
     BundledFailure(Box<GenerateFailure>),
+    EndpointFailure(EndpointFailure),
 }
 
 pub fn resolve_lane(config: &Map<String, Value>) -> (String, LaneOutcome) {
@@ -25,23 +31,14 @@ pub fn resolve_lane(config: &Map<String, Value>) -> (String, LaneOutcome) {
         return (provider, LaneOutcome::UnimplementedLane);
     }
 
-    let endpoint_url = string_at(config, &["providers", "local", "endpoint_url"]).unwrap_or("");
-    let served_model_id =
-        string_at(config, &["providers", "local", "served_model_id"]).unwrap_or("");
-    if endpoint_url.is_empty() || served_model_id.is_empty() {
-        return (provider, LaneOutcome::BundledLocal);
-    }
-    let confidential = config
-        .get("services")
-        .and_then(Value::as_object)
-        .and_then(|services| services.get("confidential"))
-        .is_some_and(Value::is_object);
     (
         provider,
-        if confidential {
-            LaneOutcome::AttestationNotVerified
-        } else {
-            LaneOutcome::UnimplementedLane
+        match resolve_local_endpoint(config) {
+            LocalEndpointResolution::Bundled => LaneOutcome::BundledLocal,
+            LocalEndpointResolution::Byo(endpoint) if endpoint.is_confidential => {
+                LaneOutcome::AttestationNotVerified
+            }
+            LocalEndpointResolution::Byo(endpoint) => LaneOutcome::ByoEndpoint(endpoint),
         },
     )
 }
@@ -82,7 +79,13 @@ mod tests {
             (
                 json!({"providers": {"active": {"provider": "local"}, "local": {"endpoint_url": "https://endpoint", "served_model_id": "served"}}}),
                 "local",
-                LaneOutcome::UnimplementedLane,
+                LaneOutcome::ByoEndpoint(ByoEndpoint {
+                    base_url: "https://endpoint".into(),
+                    served_model_id: "served".into(),
+                    credential: None,
+                    parallel_slots: Some(2),
+                    is_confidential: false,
+                }),
             ),
             (
                 json!({"providers": {"active": {"provider": "openai"}}}),

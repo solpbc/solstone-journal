@@ -300,6 +300,7 @@ check-differentials:
 	for leg in \
 		"-p solstone-core --test journal_config_client --test journal_config_corruption --test journal_process_bootstrap" \
 		"-p solstone-core-generate --test no_downgrade --test session --test session_real --test wire" \
+		"-p solstone-core-generate-wire --test endpoint_overflow_differential" \
 		"-p solstone-core-local --test admission_cross_process" \
 		"-p solstone-core-callosum --test callosum_cross_process" ; do \
 		echo "==> cargo test --features differential --no-fail-fast $$leg"; \
