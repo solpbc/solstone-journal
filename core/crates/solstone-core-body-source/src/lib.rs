@@ -3,6 +3,7 @@
 
 //! Python-compatible JSON source decoding and canonicalization for body import data.
 
+mod apple_summary_plan;
 mod authority;
 mod body_day;
 mod body_month;
@@ -15,6 +16,7 @@ mod candidate;
 mod canonicalize;
 mod coordinate;
 mod digest;
+mod envelope_ledger;
 mod envelope_shard;
 mod error;
 mod health_hash;
@@ -31,6 +33,7 @@ mod string;
 mod value;
 mod whitespace;
 
+pub use apple_summary_plan::AppleSummaryPlan;
 pub use authority::{
     AuthorityError, BundleClass, DirectoryObservation, NativeAuthority, authorize_native_bundle,
     classify_bundle_directory,
@@ -45,6 +48,7 @@ pub use candidate::{FieldState, LedgerCandidate, LedgerSchema, ValueState, proje
 pub use canonicalize::canonicalize;
 pub use coordinate::Coordinate;
 pub use digest::BodyDigest;
+pub use envelope_ledger::EnvelopeLedger;
 pub use envelope_shard::EnvelopeShard;
 pub use error::{
     BodyCalendarError, BodyCalendarField, BodyHashError, BodySourceHashError,

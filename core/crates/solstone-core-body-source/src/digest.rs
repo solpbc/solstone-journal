@@ -5,6 +5,8 @@ use crate::{BodyString, BodyWireIdentityError, BodyWireIdentityField};
 
 const DIGEST_LENGTH: usize = 71;
 const PREFIX: &[u8] = b"sha256:";
+pub(crate) const EMPTY_CONTENT_SHA256: &str =
+    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 /// A validated native body-bundle SHA-256 digest.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

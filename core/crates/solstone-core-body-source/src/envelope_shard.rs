@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::digest::EMPTY_CONTENT_SHA256;
 use crate::{
     BodyDigest, BodyMonth, BundleId, EnvelopeError, EnvelopeErrorCode, EnvelopeErrorField,
 };
-
-const EMPTY_CONTENT_SHA256: &str =
-    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 /// Checked native body-envelope values for one normalized shard.
 #[derive(Clone, Debug, PartialEq, Eq)]

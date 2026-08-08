@@ -4,17 +4,17 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use solstone_core_body_source::{
-    AuthorityError, BODY_BUNDLE_REF_KEY, BODY_BUNDLE_SHA256_KEY, BODY_SOURCE_SCHEMA_KEY,
-    BodyCalendarError, BodyCalendarField, BodyDay, BodyDigest, BodyInteger, BodyManifestBinding,
-    BodyMonth, BodyRawRetention, BodySourceFamily, BodySourceHash, BodySourceHashError,
-    BodySourcePolicyError, BodySourcePolicyField, BodyString, BodyValue, BodyWireIdentityError,
-    BodyWireIdentityField, BundleClass, BundleId, DAYS_AFFECTED_KEY, DirectoryObservation,
-    ENTRY_COUNT_KEY, EnvelopeErrorCode, EnvelopeErrorField, EnvelopeShard, IMPORT_ID_KEY,
-    ManifestBindingErrorCode, ManifestBindingErrorField, ManifestKeySignal, ManifestKnownKey,
-    ManifestScanError, NativeAuthority, ParseError, RAW_RETENTION_KEY, SOURCE_HASH_KEY,
-    SOURCE_TYPE_KEY, ScannedBodyManifest, authorize_native_bundle, canonicalize,
-    classify_bundle_directory, decode_body_manifest, inspect_body_manifest_signal, parse,
-    scan_body_manifest,
+    AppleSummaryPlan, AuthorityError, BODY_BUNDLE_REF_KEY, BODY_BUNDLE_SHA256_KEY,
+    BODY_SOURCE_SCHEMA_KEY, BodyCalendarError, BodyCalendarField, BodyDay, BodyDigest, BodyInteger,
+    BodyManifestBinding, BodyMonth, BodyRawRetention, BodySourceFamily, BodySourceHash,
+    BodySourceHashError, BodySourcePolicyError, BodySourcePolicyField, BodyString, BodyValue,
+    BodyWireIdentityError, BodyWireIdentityField, BundleClass, BundleId, DAYS_AFFECTED_KEY,
+    DirectoryObservation, ENTRY_COUNT_KEY, EnvelopeErrorCode, EnvelopeErrorField, EnvelopeLedger,
+    EnvelopeShard, IMPORT_ID_KEY, ManifestBindingErrorCode, ManifestBindingErrorField,
+    ManifestKeySignal, ManifestKnownKey, ManifestScanError, NativeAuthority, ParseError,
+    RAW_RETENTION_KEY, SOURCE_HASH_KEY, SOURCE_TYPE_KEY, ScannedBodyManifest,
+    authorize_native_bundle, canonicalize, classify_bundle_directory, decode_body_manifest,
+    inspect_body_manifest_signal, parse, scan_body_manifest,
 };
 
 mod support;
@@ -832,19 +832,15 @@ fn public_envelope_shard_api_checks_and_rejects_invalid_descriptors() {
         b"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     )
     .expect("other digest is valid");
-    let digest_different =
-        EnvelopeShard::new(&bundle, 1, month.clone(), 2, 1, other_digest)
-            .expect("digest-different descriptor binds");
+    let digest_different = EnvelopeShard::new(&bundle, 1, month.clone(), 2, 1, other_digest)
+        .expect("digest-different descriptor binds");
     assert_ne!(shard, digest_different);
 
     let other_month = BodyMonth::from_bytes(b"2026-02").expect("other month is valid");
     let month_and_path_different =
         EnvelopeShard::new(&bundle, 1, other_month, 2, 1, digest.clone())
             .expect("month-different descriptor binds");
-    assert_eq!(
-        month_and_path_different.path(),
-        "normalized/2026-02.jsonl"
-    );
+    assert_eq!(month_and_path_different.path(), "normalized/2026-02.jsonl");
     assert_ne!(shard, month_and_path_different);
 
     let empty_digest = BodyDigest::from_bytes(
@@ -882,6 +878,95 @@ fn public_envelope_shard_api_checks_and_rejects_invalid_descriptors() {
     }
 
     // `new` returns only `Result<Self, _>`; an error leaves no shard value to observe.
+}
+
+#[test]
+fn public_envelope_ledger_api_checks_and_rejects_invalid_descriptors() {
+    fn assert_traits<T: Clone + std::fmt::Debug + PartialEq + Eq>() {}
+
+    let bundle = BundleId::from_bytes(b"body-00000000000000000000000000").expect("bundle is valid");
+    let digest = BodyDigest::from_bytes(
+        b"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .expect("digest is valid");
+    let ledger = EnvelopeLedger::new(&bundle, 1, 1, digest.clone()).expect("checked values bind");
+
+    assert_traits::<EnvelopeLedger>();
+    assert_eq!(ledger.path(), "body-ledger.jsonl");
+    assert_eq!(ledger.bytes(), 1);
+    assert_eq!(ledger.events(), 1);
+    assert_eq!(ledger.sha256(), &digest);
+    assert_eq!(ledger.clone(), ledger);
+
+    let events_different =
+        EnvelopeLedger::new(&bundle, 2, 2, digest.clone()).expect("field-different ledger binds");
+    assert_ne!(ledger, events_different);
+
+    let other_digest = BodyDigest::from_bytes(
+        b"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    .expect("other digest is valid");
+    let digest_different =
+        EnvelopeLedger::new(&bundle, 1, 1, other_digest).expect("digest-different ledger binds");
+    assert_ne!(ledger, digest_different);
+
+    let failures = [
+        (
+            EnvelopeLedger::new(&bundle, 0, 0, digest.clone()),
+            EnvelopeErrorCode::IncompatibleField,
+            EnvelopeErrorField::LedgerSha256,
+        ),
+        (
+            EnvelopeLedger::new(&bundle, 1, 2, digest),
+            EnvelopeErrorCode::IncompatibleField,
+            EnvelopeErrorField::LedgerEvents,
+        ),
+    ];
+    for (result, code, field) in failures {
+        let Err(error) = result else {
+            panic!("invalid descriptor must refuse");
+        };
+        assert_eq!(error.code(), code);
+        assert_eq!(error.field(), field);
+    }
+
+    // `new` returns only `Result<Self, _>`; an error leaves no ledger value to observe.
+}
+
+#[test]
+fn public_apple_summary_plan_api_checks_and_rejects_unordered_days() {
+    fn assert_traits<T: Clone + std::fmt::Debug + PartialEq + Eq>() {}
+
+    let bundle = BundleId::from_bytes(b"body-00000000000000000000000000").expect("bundle is valid");
+    let sorted = vec![
+        BodyDay::from_bytes(b"20260102").expect("day is valid"),
+        BodyDay::from_bytes(b"20260103").expect("day is valid"),
+        BodyDay::from_bytes(b"20260201").expect("day is valid"),
+    ];
+    let plan = AppleSummaryPlan::new(&bundle, sorted.clone()).expect("ordered days bind");
+
+    assert_traits::<AppleSummaryPlan>();
+    assert_eq!(plan.schema(), "solstone.body.apple_day_summaries.v1");
+    assert_eq!(plan.days(), sorted.as_slice());
+    assert_eq!(plan.clone(), plan);
+
+    let reverse = AppleSummaryPlan::new(
+        &bundle,
+        vec![sorted[2].clone(), sorted[1].clone(), sorted[0].clone()],
+    );
+    let duplicate = AppleSummaryPlan::new(
+        &bundle,
+        vec![sorted[0].clone(), sorted[1].clone(), sorted[1].clone()],
+    );
+    for result in [reverse, duplicate] {
+        let Err(error) = result else {
+            panic!("unordered days must refuse");
+        };
+        assert_eq!(error.code(), EnvelopeErrorCode::InvalidField);
+        assert_eq!(error.field(), EnvelopeErrorField::SummaryDays);
+    }
+
+    // `new` returns only `Result<Self, _>`; an error leaves no summary plan value to observe.
 }
 
 #[test]
