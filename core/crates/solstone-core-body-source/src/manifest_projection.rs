@@ -26,7 +26,6 @@ pub(crate) const fn manifest_binding_error_field(
 }
 
 /// Projects decoded manifest fields into a checked binding for an expected bundle.
-#[allow(dead_code)]
 pub(crate) fn project_manifest_binding(
     object: &BodyObject,
     expected: &BundleId,
