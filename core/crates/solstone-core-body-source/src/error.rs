@@ -95,6 +95,30 @@ impl fmt::Debug for BodyWireIdentityError {
 
 impl std::error::Error for BodyWireIdentityError {}
 
+/// A bounded native body-source hash failure.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BodySourceHashError {
+    InvalidFormat,
+}
+
+impl fmt::Display for BodySourceHashError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidFormat => {
+                write!(formatter, "body-source-hash invalid_format: source_hash")
+            }
+        }
+    }
+}
+
+impl fmt::Debug for BodySourceHashError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
+}
+
+impl std::error::Error for BodySourceHashError {}
+
 /// The closed set of native body-source policy fields.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BodySourcePolicyField {
