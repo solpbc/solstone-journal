@@ -9,6 +9,7 @@ mod lane;
 mod refusal;
 mod request;
 mod responsiveness;
+mod schema_validation;
 mod token_log;
 mod validation;
 
@@ -25,6 +26,7 @@ pub use responsiveness::{
     NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS, ResponsivenessSignal, ResponsivenessVerdict,
     classify_output_responsiveness,
 };
+pub use schema_validation::{SchemaValidationResult, validate_schema_with_annotations};
 pub use token_log::{GenerateUsageMetadata, record_generate_usage};
 pub use validation::{
     ProviderResultAssessment, ProviderResultView, SanitizedFinishReason, ValidationFailure,
