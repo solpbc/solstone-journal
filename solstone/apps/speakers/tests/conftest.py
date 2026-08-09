@@ -42,6 +42,28 @@ def _skip_supervisor_check(monkeypatch):
     monkeypatch.setenv("SOL_SKIP_SUPERVISOR_CHECK", "1")
 
 
+@pytest.fixture(autouse=True)
+def _native_speaker_write_bridge(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use the checked-out native writer for speaker app integration tests."""
+    from solstone.apps.speakers import native
+    from solstone.think import core_handshake
+
+    helper = ROOT / "core" / "target" / "debug" / "solstone-core"
+    if not helper.is_file():
+        return
+    real_run = native._run_speaker_resolve
+
+    def run(verb, request, **kwargs):
+        kwargs.setdefault(
+            "handshake_checker", lambda: core_handshake.CoreHandshakeResult("ok")
+        )
+        kwargs.setdefault("helper_locator", lambda: helper)
+        kwargs.setdefault("platform_covered", lambda: True)
+        return real_run(verb, request, **kwargs)
+
+    monkeypatch.setattr(native, "_run_speaker_resolve", run)
+
+
 @pytest.fixture
 def speakers_env(tmp_path, monkeypatch):
     """Create a temporary journal environment for speaker tests.
