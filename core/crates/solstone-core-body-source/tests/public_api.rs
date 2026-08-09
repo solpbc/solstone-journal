@@ -14,14 +14,15 @@ use solstone_core_body_source::{
     ManifestBindingErrorField, ManifestKeySignal, ManifestKnownKey, ManifestScanError,
     NativeAuthority, ParseError, RAW_RETENTION_KEY, SOURCE_HASH_KEY, SOURCE_TYPE_KEY,
     ScannedBodyManifest, authorize_native_bundle, canonicalize, classify_bundle_directory,
-    decode_body_envelope, decode_body_manifest, encode_body_envelope, inspect_body_manifest_signal,
-    parse, scan_body_manifest,
+    decode_body_envelope, decode_body_envelope_with_manifest, decode_body_manifest,
+    encode_body_envelope, inspect_body_manifest_signal, parse, scan_body_manifest,
 };
 
 mod support;
 
 use support::{
     codec_rows, envelope_multimonth_fixture, native_bundle_directory_cases, native_bundle_fixture,
+    native_bundle_manifest_binding_cases,
 };
 
 fn assert_authority_error(
@@ -1383,4 +1384,57 @@ fn public_body_envelope_decoder_exposes_checked_values_and_structured_errors() {
     assert_eq!(error.field(), EnvelopeErrorField::Envelope);
     assert_eq!(error.bundle(), None);
     assert_eq!(error.index(), None);
+}
+
+#[test]
+fn public_bound_body_envelope_decoder_owns_its_result() {
+    let case = &native_bundle_fixture()["cases"][0];
+    let expected = case["expected_envelope_jsonl"]
+        .as_str()
+        .expect("fixture envelope JSONL")
+        .as_bytes()
+        .to_vec();
+    let binding_case = native_bundle_manifest_binding_cases()
+        .into_iter()
+        .find(|case| case.name == "apple_retain_complete_one_row")
+        .expect("fixture binding case");
+
+    let envelope = {
+        let mut input = expected.clone();
+        let binding = BodyManifestBinding::new(
+            binding_case.body_bundle_sha256.clone(),
+            binding_case.import_id.clone(),
+            binding_case.source_type,
+            binding_case.source_hash.clone(),
+            binding_case.entry_count,
+            binding_case.days_affected.clone(),
+            binding_case.raw_retention,
+        )
+        .expect("fixture binding is valid");
+        let envelope = decode_body_envelope_with_manifest(&input, &binding)
+            .expect("fixture envelope binds publicly");
+        input.fill(b'x');
+        envelope
+    };
+    assert_eq!(envelope.bundle_id(), &binding_case.import_id);
+    assert_eq!(encode_body_envelope(&envelope).unwrap(), expected);
+
+    let different_digest = BodyDigest::from_bytes(
+        b"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    )
+    .expect("digest is valid");
+    let mismatch = BodyManifestBinding::new(
+        different_digest,
+        binding_case.import_id.clone(),
+        binding_case.source_type,
+        binding_case.source_hash.clone(),
+        binding_case.entry_count,
+        binding_case.days_affected.clone(),
+        binding_case.raw_retention,
+    )
+    .expect("mismatched binding remains valid");
+    let error = decode_body_envelope_with_manifest(&expected, &mismatch)
+        .expect_err("digest mismatch refuses publicly");
+    assert_eq!(error.code(), EnvelopeErrorCode::ManifestMismatch);
+    assert_eq!(error.field(), EnvelopeErrorField::ManifestBinding);
 }

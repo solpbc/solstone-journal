@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use solstone_core_body_source::{
-    BodyDay, BodyDigest, BodyRawRetention, BodySourceFamily, BodySourceHash, BodyValue, BundleId,
-    parse,
+    BodyDay, BodyDigest, BodyManifestBinding, BodyRawRetention, BodySourceFamily, BodySourceHash,
+    BodyValue, BundleId, parse,
 };
 
 pub const MIN_BUNDLE: &str = "body-00000000000000000000000000";
@@ -145,6 +145,62 @@ pub fn envelope_multimonth_fixture() -> Value {
         &std::fs::read_to_string(envelope_multimonth_fixture_path()).expect("fixture should read"),
     )
     .expect("fixture should parse")
+}
+
+pub fn envelope_multimonth_manifest_binding() -> BodyManifestBinding {
+    let binding = &envelope_multimonth_fixture()["cases"][0]["expected_manifest_binding"];
+    let source_type = BodySourceFamily::from_bytes(
+        binding["source_type"]
+            .as_str()
+            .expect("manifest source type")
+            .as_bytes(),
+    )
+    .expect("fixture source type is valid");
+    BodyManifestBinding::new(
+        BodyDigest::from_bytes(
+            binding["body_bundle_sha256"]
+                .as_str()
+                .expect("manifest digest")
+                .as_bytes(),
+        )
+        .expect("fixture digest is valid"),
+        BundleId::from_bytes(
+            binding["import_id"]
+                .as_str()
+                .expect("manifest import ID")
+                .as_bytes(),
+        )
+        .expect("fixture import ID is valid"),
+        source_type,
+        BodySourceHash::from_bytes_for_family(
+            binding["source_hash"]
+                .as_str()
+                .expect("manifest source hash")
+                .as_bytes(),
+            &source_type,
+        )
+        .expect("fixture source hash is valid"),
+        binding["entry_count"]
+            .as_u64()
+            .expect("manifest entry count"),
+        binding["days_affected"]
+            .as_array()
+            .expect("manifest days affected")
+            .iter()
+            .map(|day| {
+                BodyDay::from_bytes(day.as_str().expect("affected day").as_bytes())
+                    .expect("fixture affected day is valid")
+            })
+            .collect(),
+        BodyRawRetention::from_bytes(
+            binding["raw_retention"]
+                .as_str()
+                .expect("manifest raw retention")
+                .as_bytes(),
+        )
+        .expect("fixture raw retention is valid"),
+    )
+    .expect("fixture manifest binding is valid")
 }
 
 pub fn native_bundle_directory_cases() -> Vec<NativeBundleDirectoryCase> {
