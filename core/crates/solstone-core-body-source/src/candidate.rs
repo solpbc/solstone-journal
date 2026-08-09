@@ -35,6 +35,19 @@ impl LedgerSchema {
         }
     }
 
+    /// Resolves an exact schema value stored in a decoded body string.
+    pub(crate) fn from_body_string(value: &BodyString) -> Option<Self> {
+        let bytes = value
+            .code_points()
+            .iter()
+            .copied()
+            .map(u8::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
+        let value = std::str::from_utf8(&bytes).ok()?;
+        Self::from_exact(value)
+    }
+
     /// Returns the sole source family compatible with this schema.
     pub const fn expected_family(&self) -> &'static str {
         match self {
