@@ -1,37 +1,37 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use solstone_core_body_source::{BodyDigest, BodySourceFamily, BundleId};
+use solstone_core_body_source::{BodyDigest, BodySourceFamily};
 
 /// One replayed body-dedupe row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BodyDedupeRow {
-    dedupe_key: BodyDigest,
+    dedupe_key: String,
     source_family: BodySourceFamily,
     source_record_id: Option<String>,
     record_type: String,
     start_time: String,
     end_time: Option<String>,
-    value_hash: BodyDigest,
-    first_import_id: BundleId,
-    latest_import_id: BundleId,
-    normalized_ref: String,
+    value_hash: Option<BodyDigest>,
+    first_import_id: Option<String>,
+    latest_import_id: Option<String>,
+    normalized_ref: Option<String>,
     raw_ref: Option<String>,
 }
 
 impl BodyDedupeRow {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        dedupe_key: BodyDigest,
+        dedupe_key: String,
         source_family: BodySourceFamily,
         source_record_id: Option<String>,
         record_type: String,
         start_time: String,
         end_time: Option<String>,
-        value_hash: BodyDigest,
-        first_import_id: BundleId,
-        latest_import_id: BundleId,
-        normalized_ref: String,
+        value_hash: Option<BodyDigest>,
+        first_import_id: Option<String>,
+        latest_import_id: Option<String>,
+        normalized_ref: Option<String>,
         raw_ref: Option<String>,
     ) -> Self {
         Self {
@@ -55,15 +55,19 @@ impl BodyDedupeRow {
         }
         self.start_time = incoming.start_time;
         self.end_time = incoming.end_time;
-        self.value_hash = incoming.value_hash;
+        if incoming.value_hash.is_some() {
+            self.value_hash = incoming.value_hash;
+        }
         self.latest_import_id = incoming.latest_import_id;
-        self.normalized_ref = incoming.normalized_ref;
+        if incoming.normalized_ref.is_some() {
+            self.normalized_ref = incoming.normalized_ref;
+        }
         if incoming.raw_ref.is_some() {
             self.raw_ref = incoming.raw_ref;
         }
     }
 
-    pub fn dedupe_key(&self) -> &BodyDigest {
+    pub fn dedupe_key(&self) -> &str {
         &self.dedupe_key
     }
 
@@ -87,20 +91,20 @@ impl BodyDedupeRow {
         self.end_time.as_deref()
     }
 
-    pub fn value_hash(&self) -> &BodyDigest {
-        &self.value_hash
+    pub fn value_hash(&self) -> Option<&BodyDigest> {
+        self.value_hash.as_ref()
     }
 
-    pub fn first_import_id(&self) -> &BundleId {
-        &self.first_import_id
+    pub fn first_import_id(&self) -> Option<&str> {
+        self.first_import_id.as_deref()
     }
 
-    pub fn latest_import_id(&self) -> &BundleId {
-        &self.latest_import_id
+    pub fn latest_import_id(&self) -> Option<&str> {
+        self.latest_import_id.as_deref()
     }
 
-    pub fn normalized_ref(&self) -> &str {
-        &self.normalized_ref
+    pub fn normalized_ref(&self) -> Option<&str> {
+        self.normalized_ref.as_deref()
     }
 
     pub fn raw_ref(&self) -> Option<&str> {

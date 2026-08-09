@@ -38,18 +38,18 @@ fn fixture_events_replay_through_the_complete_public_api() {
     drop(oura);
 
     let apple_row = state.get(&apple_key).expect("Apple row exists");
-    assert_eq!(apple_row.dedupe_key(), &apple_key);
+    assert_eq!(apple_row.dedupe_key(), apple_key.as_str());
     assert_eq!(apple_row.source_family().as_str(), "apple_health");
     assert_eq!(apple_row.source_record_id(), None);
     assert_eq!(apple_row.record_type(), "HKWorkoutActivityTypeRunning");
     assert_eq!(apple_row.start_time(), "2026-01-02 06:30:00 -0700");
     assert_eq!(apple_row.end_time(), Some("2026-01-02 07:15:00 -0700"));
-    assert_eq!(apple_row.value_hash(), &apple_value_hash);
-    assert_eq!(apple_row.first_import_id(), &apple_bundle);
-    assert_eq!(apple_row.latest_import_id(), &apple_bundle);
+    assert_eq!(apple_row.value_hash(), Some(&apple_value_hash));
+    assert_eq!(apple_row.first_import_id(), Some(apple_bundle.as_str()));
+    assert_eq!(apple_row.latest_import_id(), Some(apple_bundle.as_str()));
     assert_eq!(
         apple_row.normalized_ref(),
-        "imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X2Y/normalized/2026-01.jsonl#L1"
+        Some("imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X2Y/normalized/2026-01.jsonl#L1")
     );
     assert_eq!(
         apple_row.raw_ref(),
@@ -57,26 +57,26 @@ fn fixture_events_replay_through_the_complete_public_api() {
     );
 
     let oura_row = state.get(&oura_key).expect("Oura row exists");
-    assert_eq!(oura_row.dedupe_key(), &oura_key);
+    assert_eq!(oura_row.dedupe_key(), oura_key.as_str());
     assert_eq!(oura_row.source_family().as_str(), "oura_api");
     assert_eq!(oura_row.source_record_id(), Some("synthetic-readiness-1"));
     assert_eq!(oura_row.record_type(), "oura.daily_readiness");
     assert_eq!(oura_row.start_time(), "2026-01-02");
     assert_eq!(oura_row.end_time(), Some("2026-01-03"));
-    assert_eq!(oura_row.value_hash(), &oura_value_hash);
-    assert_eq!(oura_row.first_import_id(), &oura_bundle);
-    assert_eq!(oura_row.latest_import_id(), &oura_bundle);
+    assert_eq!(oura_row.value_hash(), Some(&oura_value_hash));
+    assert_eq!(oura_row.first_import_id(), Some(oura_bundle.as_str()));
+    assert_eq!(oura_row.latest_import_id(), Some(oura_bundle.as_str()));
     assert_eq!(
         oura_row.normalized_ref(),
-        "imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X2Z/normalized/2026-01.jsonl#L1"
+        Some("imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X2Z/normalized/2026-01.jsonl#L1")
     );
     assert_eq!(
         oura_row.raw_ref(),
         Some("imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X2Z/raw/oura/daily_readiness-0001.json#item-0")
     );
 
-    let keys: Vec<_> = state.iter().map(|row| row.dedupe_key().clone()).collect();
-    assert_eq!(keys, vec![apple_key, oura_key]);
+    let keys: Vec<_> = state.iter().map(|row| row.dedupe_key()).collect();
+    assert_eq!(keys, vec![apple_key.as_str(), oura_key.as_str()]);
 }
 
 #[test]

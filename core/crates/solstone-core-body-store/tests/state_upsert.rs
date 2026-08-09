@@ -66,7 +66,7 @@ fn applies_ordered_upsert_rules_with_distinct_bundle_observations() {
     let row = state.get(&second_key).expect("dedupe row exists");
     assert_eq!(row.source_family().as_str(), "apple_health");
     assert_eq!(row.record_type(), "first-type");
-    assert_eq!(row.first_import_id().as_str(), APPLE_BUNDLE);
+    assert_eq!(row.first_import_id(), Some(APPLE_BUNDLE));
     assert_eq!(row.source_record_id(), Some("first-source"));
     assert_eq!(
         row.raw_ref(),
@@ -74,10 +74,11 @@ fn applies_ordered_upsert_rules_with_distinct_bundle_observations() {
     );
     assert_eq!(row.start_time(), "second-start");
     assert_eq!(row.end_time(), None);
-    assert_eq!(row.latest_import_id().as_str(), OURA_BUNDLE);
-    assert_eq!(row.value_hash(), &second_value_hash);
+    assert_eq!(row.latest_import_id(), Some(OURA_BUNDLE));
+    assert_eq!(row.value_hash(), Some(&second_value_hash));
     assert_eq!(
         row.normalized_ref()
+            .expect("native row has normalized ref")
             .chars()
             .map(u32::from)
             .collect::<Vec<_>>(),
@@ -101,9 +102,9 @@ fn replay_order_not_bundle_identity_determines_the_sticky_observation() {
         .expect("dedupe row exists");
     assert_eq!(row.source_family().as_str(), "oura_api");
     assert_eq!(row.record_type(), "second-type");
-    assert_eq!(row.first_import_id().as_str(), OURA_BUNDLE);
+    assert_eq!(row.first_import_id(), Some(OURA_BUNDLE));
     assert_eq!(row.start_time(), "first-start");
     assert_eq!(row.end_time(), Some("first-end"));
-    assert_eq!(row.latest_import_id().as_str(), APPLE_BUNDLE);
-    assert_eq!(row.value_hash(), &first_value_hash);
+    assert_eq!(row.latest_import_id(), Some(APPLE_BUNDLE));
+    assert_eq!(row.value_hash(), Some(&first_value_hash));
 }

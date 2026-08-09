@@ -187,11 +187,8 @@ fn multiple_keys_iterate_in_digest_order_and_count_revisions() {
     updated += usize::from(replay == BodyDedupeDisposition::Updated);
     assert_eq!(replay, BodyDedupeDisposition::Updated);
 
-    let expected: BTreeSet<_> = keys
-        .iter()
-        .map(|key| solstone_core_body_source::BodyDigest::from_bytes(key.as_bytes()).unwrap())
-        .collect();
-    let actual: Vec<_> = state.iter().map(|row| row.dedupe_key().clone()).collect();
+    let expected: BTreeSet<_> = keys.iter().map(String::as_str).collect();
+    let actual: Vec<_> = state.iter().map(|row| row.dedupe_key()).collect();
     assert_eq!(actual, expected.into_iter().collect::<Vec<_>>());
     assert_eq!(state.len(), actual.len());
     assert_eq!(inserted + updated, 4);
