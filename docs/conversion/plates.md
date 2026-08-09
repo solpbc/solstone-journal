@@ -239,7 +239,13 @@ Consistent formatting of **structured journal data** for its consumers — the i
 
 ⚠ **Four near-identical entry points, three error semantics.** `generate` / `generate_with_result` / `agenerate` / `agenerate_with_result` each repeat the same nine-step policy sequence; the two `_with_result` forms make schema validation advisory while the two plain forms raise on it. Only `generate_with_result` accepts `num_retries`, `inference_retry_index`, `local_exclusive_admission` and `enforce_responsiveness`. One boundary, four doors, differing on what a schema failure means.
 
-⚠ **The runtime preamble is `cogitate`'s, not `generate`'s.** `COGITATE_RUNTIME_PREAMBLE` is prepended by `providers/cli.assemble_prompt`, reached only from `run_cogitate` (`providers/openhands.py:1744`); `run_generate` and `run_agenerate` never touch it. It exists as a **sha256 only** in `core/fixtures/cogitate_contract.json` — 1,989 bytes, not reconstructible. ⚠ **And "cross-language" is a location, not yet a fact: zero Rust files read that fixture**, so today the digest detects only Python-source-versus-fixture drift. It would catch real drift the moment a native `cogitate` exists — and would then be unable to tell it what text to send.
+⚠ **The runtime preamble is `cogitate`'s, not `generate`'s.** `COGITATE_RUNTIME_PREAMBLE` is prepended by `providers/cli.assemble_prompt`, reached only from `run_cogitate`; `run_generate` and `run_agenerate` never touch it. It is a **sha256 only** in `core/fixtures/cogitate_contract.json` — 1,989 bytes. ⚠ **And "cross-language" is a location, not yet a fact: zero Rust files read that fixture** (re-verified 2026-08-09), so today the digest detects only Python-source-versus-fixture drift.
+
+🆕 ⛔ **CORRECTED 2026-08-09 — "not reconstructible" was FALSE, and the correction changes what the fixture is for.** The text *is* recoverable from the repo: `docs/COGITATE.md` carries a **byte-identical** copy — extracted from its fence and hashed, 1,989 bytes, `6614e3fd…`, identical to the constant and to the fixture. 🔴 **But nothing checks that copy.** Grepping every `.py`, `.rs` and `Makefile` for `COGITATE.md` finds one reader, and it reads the doc for an unrelated assertion. So the text is reproducible **by luck of maintenance**, and the doc copy is a live drift hazard rather than a mitigation. ✅ **Disposition: the text goes INTO the fixture beside the digest**, the house style `core/fixtures/local_contract.json` already uses so a divergence *"fails on the string rather than on a hex value that says only 'different'."* 📌 **A digest is the right instrument for one implementation and the wrong one for two** — it can tell the second implementation that it is wrong while being structurally unable to tell it what right is. ⚠ **`COGITATE_DIAGNOSTIC_PREAMBLE` — the second runtime contract, the one the brain readiness probe runs against — is in NEITHER the fixture nor `COGITATE.md`**, and gets the same treatment.
+
+🔒 **AND THE TEXT IS ABOUT TO CHANGE — operator ruling 2026-08-09.** The preamble tells every talent the raw-read tier is *"bounded to the journal root"* and `COGITATE.md` says it *"defaults to broad journal-root read-only."* 🔴 **Both are wrong for half the tools:** `glob` and `grep_search` are inherently recursive and default to `root="."`, which `_broad_recursive_refusal` refuses along with `chronicle/` and `facets/` — **so every default-argument call to either tool refuses.** Measured by execution in both directions: they succeed rooted at `talents/`, at `chronicle/<day>`, or at a single file path; `list_directory` hits the rule only with `recursive=True`. The ruling **keeps the refusal** (the caps bound what comes *back*, not what gets *touched*, and the largest journal measured holds 538,647 formatted files), **makes it actionable** — naming the offending root and a narrowing, the way the *command* gate's two repair denials already hand back a corrected command line — and **corrects the preamble to state the rule.** ⛔ Declined: relaxing the rule under the existing caps, and porting faithfully with the contract text left wrong. 📌 It is the mechanism behind an already-measured symptom, not a new suspicion.
+
+⚠ **Consequence for anyone reading the fixture: a frozen oracle plus an authorized behaviour change is where a conversion starts drifting silently.** The native crates therefore carry a **divergence ledger** — the pattern `P-format` proved — where each intentional difference from the reference names the vectors it overrides and the ruling that authorized it, and ⛔ an unrecorded divergence fails the gate.
 
 ⚠ **Only two provider modules implement `run_generate`** — `providers/local.py` (1,293 lines) and `providers/openhands.py` (2,248). `providers/` totals 21,029 lines; the remainder is install, health and attestation machinery belonging to `P-local` and `P-SPP`, not to this call path.
 
@@ -248,6 +254,82 @@ Consistent formatting of **structured journal data** for its consumers — the i
 ✅ **The bundled local arm is already Rust and is already the live path.** `providers/local.py`'s bundled branch delegates to the native `local generate` verb; `solstone-core-local` owns the OpenAI-compatible request builder, schema preparation, response parser, finish-reason normaliser, transport trait and cross-process admission. 🔴 **CONVERTED 2026-08-09 — that list is now empty.** The wire, the dispatch and policy, the endpoint and confidential arms, the cloud arms and attestation are all Rust. `think/generate_wire.py` and `think/schema_prep.py` do not exist; `providers/local.py` fell 1,293 → 350 lines, `providers/openhands.py` 2,248 → 1,760, `models.py` 1,689 → 1,187. `models.generate*` survive as a **thin client** — they delegate to `think/generate_client.py` (442 lines), which encodes a request record and spawns `solstone-core generate`. ⛔ The Python resolves no provider, builds no provider body, classifies no transport error and writes no token log.
 
 ⚠ **"No Python writer stands beside them" is true of the `generate` seam and is NOT true of the plate.** `cogitate` is still Python and reaches directly into `models.py` and `providers/shared.py`, so a Python copy of the plate's shared classification and validation stays alive for it — unavoidable until `cogitate` converts, and ⛔ not a leftover to tidy.
+
+### `cogitate` — the plate's other contract, measured 2026-08-09
+
+🔴 **Size it from here, not from a module total.** The surface is **4,513 lines across nine
+modules**, plus the cogitate halves of two shared ones. ⛔ **`think/thinking.py` is NOT part of it** —
+it is the daily-pipeline orchestrator, and its entire cogitate reach is one import of
+`failure_capped` and two call sites. 📌 That is the third time in this document's life that a
+whole-file line count has been quoted as a boundary's size.
+
+| lines | module | |
+|---:|---|---|
+| 1,760 | `providers/openhands.py` | the runtime — LLM build, agent build, the `sol` tool and its executor, the SDK event translator, budgets and monitors, `run_cogitate`. **100% cogitate** post-cut: no `run_generate`/`run_agenerate` remains |
+| 823 | `cogitate_read_tools.py` | the raw-read tier: `read_file` · `list_directory` · `glob` · `grep_search`, denylist, caps, traversal and symlink refusal |
+| 671 | `providers/cli.py` | `assemble_prompt` (preamble injection), `ThinkingAggregator`, `CLIRunner` |
+| 346 | `providers/read_tools.py` | the SDK **binding** for the four read tools |
+| 316 | `cogitate_policy.py` | the command gate, budgets, the deterministic-failure vocabulary |
+| 240 | `responsiveness.py` | **shared** — the module the `generate` cut preserved entirely for this contract |
+| 132 | `cogitate_contract.py` | the two preambles, tiers, capabilities, finalization modes |
+| 113 | `providers/emit_final_tool.py` | the `emit_final` finalization tool |
+| 112 | `engage.py` | `journal engage <name>`, the owner-facing delegation CLI |
+
+**Six cogitate talents, not nine** — `exec` (`normal`) · `read` and `entity_assist` (tier absent →
+`normal`) · `support` (`outbound`) · `partner` and `weekly_reflection` (`synthesis`, weekly,
+`emit_final`). The other twenty talents are `generate`. ⚠ `system-read` is claimed by no talent, and
+`diagnostic` is not a talent tier at all — it is set by the brain readiness probe.
+
+🔴 **`PROVIDER_REGISTRY` is now a cogitate-only registry**, and `providers/__init__.py` says so in
+its own docstring. ✅ **So `openhands-sdk==1.27.*` and `litellm==1.86.1` — hard `pyproject.toml`
+runtime dependencies — exist for this contract alone and leave the wheel when it converts.**
+
+🔴 **The Rust `generate` arms cannot carry a tool call, measured not assumed.** All five arms in
+`solstone-core-generate-wire` are single-shot: `openai.rs` emits exactly `[system, user]`, and
+`tools` / `tool_calls` / `tool_use` appear **zero** times across `anthropic.rs`, `google.rs`,
+`endpoint.rs` and `confidential.rs`. ⛔ A multi-turn tool-calling layer is new work, not a
+re-wiring.
+
+✅ **The tool surface, by contrast, is already native.** The `sol` tool executor resolves `argv[0]`
+next to the interpreter or on `PATH` and **spawns it**, capping stdout/stderr at 6,000 chars with a
+30 s timeout — and since the CLI cut, `sol` and `journal` are Rust executables. The whole of "what a
+talent can do to the journal" is already on the far side of a process boundary.
+
+⚠ **Two tool-call protocols behind one contract.** `native_tool_calling=True` for the three cloud
+providers; **`False` for every local/BYO-endpoint lane**, so those tool calls are prompt-synthesised
+by the SDK and parsed by it. ⚠ **And the condenser is local-only** —
+`LLMSummarizingCondenser(keep_first=4)`, whose `max_tokens` divides by a `1.125` factor its own
+docstring sources to **one production observation** (12,437 served vs 11,237 estimated tokens).
+📌 A measurement written down as a constant; carry the provenance, not just the number.
+
+🔴 **A THIRD of `cogitate_policy.py` is dead, and the dead part is the one that reads like the write
+guard.** Traced caller-by-caller: `CogitatePolicy` is constructed once and only `classify_command`
+is ever called on it; **`check()` has zero production callers** (`_WRITE_TOOLS` and `_READ_TOOLS`
+are referenced nowhere else); **`allowed_roots` is stored and never read**; and
+**`resolve_read_scope`'s only caller discards its result**, so a talent's `read_scope` has exactly
+one live effect anywhere — a prose hint appended to the system instruction. ⛔ **So the
+`write_file`/`replace` denial never fires.** The real guarantee behind *"there is no
+general-purpose write tool"* is **structural**: the runtime binds `sol`, the four read tools and one
+finalization tool, and never registers a write tool. ⚠ A rebuild that ports `check()` faithfully
+carries a dead gate; one that *relies* on it relies on something that has never run. ⚠ Of the three
+capabilities, only `submit` is enforced in `classify_command` — **`sol` and `reads` are enforced at
+tool-registration time**, which is where their native equivalents belong.
+
+✅ **An invariant that is currently true only by the shape of a table, and is worth making
+explicit: no access tier holds both `reads` and `submit`.** The only tier that can send anything off
+the machine (`outbound`, which `support` uses) has **no raw-read tier at all**. ⚠ That matters
+because the credential denylist is seven `fnmatch` globs, so `credentials.json`, `.env.local`,
+`api_secret.txt`, `token.txt`, `passwords.md` and `secrets.yaml` are all **readable** while the
+preamble says the denylist covers "credentials" — a contract-accuracy gap, ⛔ not an exfiltration
+path, and only because of the separation above.
+
+✅ **The deterministic contract is frozen against execution** — `core/fixtures/cogitate_oracle.json`
+(generator `scripts/cogitate_oracle_corpus.py`): **249 vectors, each produced by running the
+reference**, each citing the `file:line` that decides it. ⚠ **It is a FROZEN RECORD with the same
+clock as the config oracle** — unproducible once the Python tree goes — and is deliberately outside
+`make check-core-fixtures`. ⛔ Do not "fix" a vector that disagrees with this document; two
+corrections above came from vectors that contradicted the contract *documentation*, and the
+documentation was what was wrong.
 
 ## `P-local`
 

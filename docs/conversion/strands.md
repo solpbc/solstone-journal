@@ -186,6 +186,8 @@ The **durable** half of the callosum contract, split from the wire half above. B
 
 ⚠ **Every event name on this wire becomes a `cortex.*` bus event by variable** — `cortex.py:1216-1224` pops `event` from the parsed line and relays it. So this strand's vocabulary is the hidden source of `S:segment-sense:system`'s largest grep-invisible drift class, and `cortex.unknown` is reachable from any talent line lacking an `event` key (`:1219`). ⚠ Terminal detection is by name — `finish`, or `error` whose `terminal` **defaults to `True` when absent** (`:1241-1244`), so a provider omitting an optional field kills the run.
 
+🆕 **The conversion's shape here, decided 2026-08-09.** ✅ **This strand does not need a new seam — it IS the seam.** The producing side is a subprocess emitting NDJSON on stdout today, so converting `cogitate` **replaces the producer** rather than inventing a boundary; the Python that survives is a thin client that spawns `solstone-core cogitate` and relays, the same shape `models.generate*` took. **What the conversion owes this strand:** a published schema with per-kind required fields and **a producer-side validator** — it has the strictest static types in the tree and no runtime enforcement, while its sibling on the same bus validates — plus entries for the three events with no TypedDict at all (`warning`, `tool_budget_exhausted`, `info`). ⛔ **The run log stays a separate, declared format** and is not merged with the wire. ⚠ **Two consumer-side defaults are contract decisions rather than implementation details and get written down rather than inherited:** `terminal` defaulting to `True` when absent, and a line lacking `event` becoming `cortex.unknown`. The native producer always sets both; the *consumer's* posture is the part nothing states.
+
 ### `S:thinking:journal-thinking`
 **Connects** `P-thinking` → `P-journal` · **Owner** `P-journal` · **Tier** fixture
 
@@ -233,6 +235,23 @@ consumer matching the endpoint's own spelling sees nothing wrong.
 ⚠ **The inference telemetry is part of this strand's durable surface, not a log.** One row per call —
 success and every error path — carrying the queue wait, the admission slot, the serving capacity and its
 source, the prompt-cache state, the server timings, the retry index, the outcome and the reason code.
+
+🆕 🔴 **CORRECTED 2026-08-09 — "one row per call" is FALSE on the `generate` path, and has been since
+the cut.** Measured three ways. **(1)** The only writer of `health/local-inference/YYYYMMDD.jsonl`
+anywhere in the tree is `record_local_inference` (`providers/local_admission.py:365`), called from
+**exactly one site** — inside `run_cogitate`'s `finally`. **(2)** No Rust crate writes it: grepping
+all of `core/crates/` finds `health/local-inference` in `solstone-core-local/src/admission.rs` (the
+*admission* directory, a different path) and in `solstone-core-retention/src/logs.rs` (a **pruner**).
+**(3)** Git bears out how: the bundled-generate cutover said in its own commit message that it
+*"retains Python ownership of local-inference telemetry through
+`local_admission.record_local_inference`"*, and the commit that cut the Python generate
+implementation removed that call with nothing replacing it. **So the file records `cogitate` runs
+only, while the overwhelming majority of local inference is `generate`.** ✅ **Not owner-visible —
+the file has zero readers**, in either language; only retention touches it. ⚠ **But `cogitate` is
+its LAST writer**, so the disposition — restore it on the `generate` path, carry it into the native
+`cogitate` runtime, or retire the artifact family — has to be made rather than inherited. 📌 The
+honest reading is that its function already moved: this strand carries the inference block **inside
+the result record**, which is where the boundary above reads it from.
 🔴 And it is load-bearing for the boundary above in a way nothing states: the wire reports a hint applied
 **only if the result carries an inference block**, so an implementation that drops the block makes the
 applied-hints set empty forever, and an assertion that a hint is reported as not-applied is satisfied by
