@@ -30,6 +30,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -62,7 +63,7 @@ from solstone.think.cogitate_policy import (  # noqa: E402
 )
 
 FIXTURE_NAME = "solstone-cogitate-oracle"
-FIXTURE_VERSION = 2
+FIXTURE_VERSION = 3
 
 # Spelled out so the corpus below never depends on how a shell or an editor
 # treats a backslash. Several vectors exist specifically to pin backslash
@@ -964,20 +965,42 @@ def build_bed(root: Path) -> None:
     # a binary file and a special file
     (root / "blob.bin").write_bytes(bytes(range(256)) * 4)
     (root / "empty.txt").write_text("", encoding="utf-8")
-    try:
-        os.mkfifo(root / "fifo")
-    except (OSError, AttributeError):
-        pass
+    # FAIL LOUDLY, do not skip. A silently-skipped FIFO makes the fixture encode
+    # "a host where mkfifo happened to work", and vectors depend on it existing.
+    os.mkfifo(root / "fifo")
 
-    # symlink escape + in-tree symlink
+    # symlink escape + in-tree symlink. Same rule: loud, never skipped.
     outside = root.parent / "outside"
     outside.mkdir(exist_ok=True)
     (outside / "leak.txt").write_text("LEAKED\n", encoding="utf-8")
-    try:
-        (root / "escape").symlink_to(outside / "leak.txt")
-        (root / "inside_link").symlink_to(root / "facets" / "work.md")
-    except OSError:
-        pass
+    (root / "escape").symlink_to(outside / "leak.txt")
+    (root / "inside_link").symlink_to(root / "facets" / "work.md")
+
+    # --- v3: a non-broad subtree, so glob and grep can be exercised for real.
+    # Everything else sits at the journal root, chronicle/ or facets/, which the
+    # broad-root rule refuses -- which left most of glob's and grep_search's
+    # parameter surface pinned by nothing at all.
+    probe = root / "probe"
+    probe.mkdir()
+    (probe / "alpha.md").write_text(
+        "Sunlight on the water\nsunlight again\nplain line\n", encoding="utf-8"
+    )
+    (probe / "beta.txt").write_text(
+        "before line\nSUNLIGHT shouting\nafter line\n", encoding="utf-8"
+    )
+    (probe / "gamma.log").write_text("no match here\n", encoding="utf-8")
+    (probe / ".hidden_probe.md").write_text("sunlight hidden\n", encoding="utf-8")
+    (probe / "binary.dat").write_bytes(bytes(range(256)) * 8)
+    bulk = probe / "bulk"
+    bulk.mkdir()
+    for i in range(40):
+        (bulk / f"row{i:03d}.txt").write_text(f"needle {i}\nfiller\n", encoding="utf-8")
+    (probe / "long.txt").write_text(
+        "".join(f"needle line {i}\n" for i in range(2000)), encoding="utf-8"
+    )
+    unreadable = probe / "locked.md"
+    unreadable.write_text("cannot read me\n", encoding="utf-8")
+    os.chmod(unreadable, 0o000)
 
     # a hidden file, and a large file for truncation
     (root / ".hidden.md").write_text("hidden\n", encoding="utf-8")
@@ -990,6 +1013,50 @@ def build_bed(root: Path) -> None:
     many.mkdir()
     for i in range(250):
         (many / f"f{i:03d}.txt").write_text("x\n", encoding="utf-8")
+
+
+def build_bed_manifest(root: Path) -> list[dict[str, Any]]:
+    """A sorted census of the bed, so a reimplementation can prove its own bed
+    matches BEFORE it asserts a single vector.
+
+    Without this, a bed mismatch presents as a vector mismatch -- indistinguishable
+    from an implementation bug, and the cheapest escape is to tweak the bed until
+    the vectors go green, which silently fits the bed to the implementation and
+    destroys the oracle's value.
+    """
+    rows: list[dict[str, Any]] = []
+    for path in sorted(root.rglob("*"), key=lambda p: p.relative_to(root).as_posix()):
+        rel = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            rows.append(
+                {
+                    "path": rel,
+                    "type": "symlink",
+                    "target": os.readlink(path),
+                    "escapes_root": not str(Path(os.path.realpath(path))).startswith(
+                        str(Path(os.path.realpath(root))) + os.sep
+                    ),
+                }
+            )
+            continue
+        mode = path.lstat().st_mode
+        if stat.S_ISFIFO(mode):
+            rows.append({"path": rel, "type": "fifo"})
+        elif path.is_dir():
+            rows.append({"path": rel, "type": "dir"})
+        elif path.is_file():
+            row: dict[str, Any] = {"path": rel, "type": "file"}
+            readable = os.access(path, os.R_OK)
+            row["mode"] = oct(stat.S_IMODE(mode))
+            row["readable"] = readable
+            if readable:
+                data = path.read_bytes()
+                row["byte_length"] = len(data)
+                row["sha256"] = hashlib.sha256(data).hexdigest()
+            rows.append(row)
+        else:
+            rows.append({"path": rel, "type": "other"})
+    return rows
 
 
 def _serialize(value: Any) -> Any:
@@ -1286,6 +1353,143 @@ def build_read_tool_vectors(bed: Path) -> list[dict[str, Any]]:
         max_bytes_per_file=64,
     )
 
+    # --- v3: glob and grep, rooted below the broad-root rule so they actually RUN.
+    # 22 of v2's 85 vectors were the same `broad_root` refusal, which meant an
+    # implementation ignoring case_sensitive, regex, context_lines, file_glob,
+    # include_hidden and every truncation cap passed all of them.
+    gl("gl_probe_md", "cogitate_read_tools.py:586", pattern="*.md", root="probe")
+    gl(
+        "gl_probe_hidden_excluded",
+        "cogitate_read_tools.py:335-337 - hidden excluded by default",
+        pattern="*.md",
+        root="probe",
+    )
+    gl(
+        "gl_probe_hidden_included",
+        "cogitate_read_tools.py:335-337 - include_hidden admits the dotfile",
+        pattern="*.md",
+        root="probe",
+        include_hidden=True,
+    )
+    # The pattern is matched against the JOURNAL-relative path, not the root-relative
+    # one, so `root=` narrows the walk while the pattern must still carry the prefix.
+    # Both directions pinned, because a rebuild will plausibly get this backwards.
+    gl(
+        "gl_probe_pattern_is_journal_relative",
+        "cogitate_read_tools.py:596-598 - `probe/bulk/*.txt` MATCHES under root=probe",
+        pattern="probe/bulk/*.txt",
+        root="probe",
+    )
+    gl(
+        "gl_probe_pattern_not_root_relative",
+        "cogitate_read_tools.py:596-598 - the same pattern WITHOUT the root prefix matches nothing",
+        pattern="bulk/*.txt",
+        root="probe",
+    )
+    gl(
+        "gl_probe_star_crosses_dir",
+        "cogitate_read_tools.py:596-598 - a bare `*.txt` reaches INTO bulk/",
+        pattern="*.txt",
+        root="probe",
+    )
+    gl(
+        "gl_probe_truncated",
+        "cogitate_read_tools.py:126-128 - NOTICE_GLOB_TRUNCATED",
+        pattern="probe/bulk/*.txt",
+        root="probe",
+        max_matches=5,
+    )
+    gl(
+        "gl_probe_on_a_file",
+        "cogitate_read_tools.py:586 - a file as root",
+        pattern="*",
+        root="probe/alpha.md",
+    )
+
+    gs(
+        "gs_probe_case_insensitive_default",
+        "cogitate_read_tools.py:719 - default folds case, proven where it can run",
+        pattern="sunlight",
+        path="probe",
+    )
+    gs(
+        "gs_probe_case_sensitive",
+        "cogitate_read_tools.py:719 - case_sensitive=True must miss the other spellings",
+        pattern="sunlight",
+        path="probe",
+        case_sensitive=True,
+    )
+    gs(
+        "gs_probe_regex",
+        "cogitate_read_tools.py:720-723 - regex=True compiles the pattern",
+        pattern=r"needle \d+",
+        regex=True,
+        path="probe/bulk",
+    )
+    gs(
+        "gs_probe_regex_off_is_literal",
+        "cogitate_read_tools.py:720-723 - regex=False escapes, so the same pattern MISSES",
+        pattern=r"needle \d+",
+        path="probe/bulk",
+    )
+    gs(
+        "gs_probe_context",
+        "cogitate_read_tools.py:698 - context_lines fills before/after",
+        pattern="SUNLIGHT shouting",
+        path="probe",
+        context_lines=1,
+        case_sensitive=True,
+    )
+    gs(
+        "gs_probe_file_glob",
+        "cogitate_read_tools.py:698 - file_glob narrows the file set",
+        pattern="sunlight",
+        path="probe",
+        file_glob="*.md",
+    )
+    gs(
+        "gs_probe_max_matches",
+        "cogitate_read_tools.py:129-132 - NOTICE_GREP_TRUNCATED",
+        pattern="needle",
+        path="probe/bulk",
+        max_matches=4,
+    )
+    gs(
+        "gs_probe_max_files",
+        "cogitate_read_tools.py:698 - max_files bounds the walk",
+        pattern="needle",
+        path="probe/bulk",
+        max_files=3,
+    )
+    gs(
+        "gs_probe_max_bytes_per_file",
+        "cogitate_read_tools.py:698 - only the first max_bytes_per_file of each file is searched",
+        pattern="needle line 1999",
+        path="probe",
+        max_bytes_per_file=64,
+    )
+    gs(
+        "gs_probe_binary_is_skipped",
+        "cogitate_read_tools.py:650-697 - a non-UTF-8 file is skipped, not refused",
+        pattern="needle",
+        path="probe",
+        file_glob="binary.dat",
+    )
+    gs(
+        "gs_probe_hidden_excluded",
+        "cogitate_read_tools.py:335-337",
+        pattern="sunlight",
+        path="probe",
+        file_glob="*.md",
+        include_hidden=True,
+    )
+    rf(
+        "rf_permission_denied",
+        "cogitate_read_tools.py:96-99 - REFUSAL_PERMISSION_DENIED",
+        path="probe/locked.md",
+    )
+    ld("ld_probe", "cogitate_read_tools.py:509 - a non-broad directory", path="probe")
+
     # --- the shared budget
     budget = crt.ReadBudget(cap=2)
     rows.append(
@@ -1346,8 +1550,16 @@ def main() -> int:
         bed = tmp / "journal"
         bed.mkdir()
         build_bed(bed)
+        bed_manifest = build_bed_manifest(bed)
         read_tool_rows = build_read_tool_vectors(bed)
     finally:
+        # the 0o000 probe file would otherwise defeat rmtree
+        for path in tmp.rglob("*"):
+            try:
+                if path.is_file() and not path.is_symlink():
+                    os.chmod(path, 0o600)
+            except OSError:
+                pass
         shutil.rmtree(tmp, ignore_errors=True)
 
     runtime = COGITATE_RUNTIME_PREAMBLE.encode("utf-8")
@@ -1402,6 +1614,17 @@ def main() -> int:
         "read_scope": build_read_scope_vectors(),
         "expects_emit_final": build_emit_final_vectors(),
         "failure_caps": build_failure_cap_vectors(),
+        "bed_manifest": {
+            "note": (
+                "A sorted census of the filesystem bed every read_tools vector was "
+                "measured against. A reimplementation reconstructs the bed and "
+                "asserts this manifest BEFORE asserting any vector -- otherwise a "
+                "bed mismatch is indistinguishable from an implementation bug, and "
+                "the cheapest escape is to fit the bed to the implementation."
+            ),
+            "root_relative": True,
+            "entries": bed_manifest,
+        },
         "read_tools": read_tool_rows,
         "read_tool_limits": {
             "read_file_max_lines": crt.READ_FILE_MAX_LINES,

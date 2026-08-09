@@ -1,8 +1,8 @@
 {
   "fixture": "solstone-cogitate-oracle",
-  "fixture_version": 2,
+  "fixture_version": 3,
   "generated_by": "scripts/cogitate_oracle_corpus.py",
-  "reference_commit": "b339536c1a10929e17fd6551ad387d1847f34fd8",
+  "reference_commit": "28f3973cb012ef444f0767f6a6c81f254a32ef40",
   "provenance": "Every vector below was produced by EXECUTING the Python reference, one call per case. Nothing here was written by hand from reading the source. CLOCK: this file is a FROZEN RECORD - it can only be regenerated while the Python reference is still importable, and it stops being reproducible when Python is cut. Tests read it; they never execute Python.",
   "preambles": {
     "runtime": {
@@ -1913,6 +1913,2670 @@
       "expect": false
     }
   ],
+  "bed_manifest": {
+    "note": "A sorted census of the filesystem bed every read_tools vector was measured against. A reimplementation reconstructs the bed and asserts this manifest BEFORE asserting any vector -- otherwise a bed mismatch is indistinguishable from an implementation bug, and the cheapest escape is to fit the bed to the implementation.",
+    "root_relative": true,
+    "entries": [
+      {
+        "path": ".cache",
+        "type": "dir"
+      },
+      {
+        "path": ".cache/x.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "03d53903b575994945fe078f21bbecffec69898b85c61d895dd7e3f87118c626"
+      },
+      {
+        "path": ".git",
+        "type": "dir"
+      },
+      {
+        "path": ".git/config",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "74d92d2fc80fb8afce7245419a61659ed64df231439f1d37fe2c3449dd2c4625"
+      },
+      {
+        "path": ".hidden.md",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "e084a3683ef795d1cdbf5e9b253f2ca1f783ae0d0d6e47e419acbbc4fc80bbfa"
+      },
+      {
+        "path": ".venv",
+        "type": "dir"
+      },
+      {
+        "path": ".venv/pyvenv.cfg",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 10,
+        "sha256": "8f4670dbddef09b1c48b486e790e9053c10afd43a8bd4399f6b254d5a693be04"
+      },
+      {
+        "path": "big.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 25890,
+        "sha256": "2e28bfd26b7858138aa834a9ad54c046692e3eaa9f229f4b6b2217c36fcdad6b"
+      },
+      {
+        "path": "blob.bin",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 1024,
+        "sha256": "785b0751fc2c53dc14a4ce3d800e69ef9ce1009eb327ccf458afe09c242c26c9"
+      },
+      {
+        "path": "chronicle",
+        "type": "dir"
+      },
+      {
+        "path": "chronicle/20260809",
+        "type": "dir"
+      },
+      {
+        "path": "chronicle/20260809/default",
+        "type": "dir"
+      },
+      {
+        "path": "chronicle/20260809/default/120000_60",
+        "type": "dir"
+      },
+      {
+        "path": "chronicle/20260809/default/120000_60/audio.jsonl",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 54,
+        "sha256": "7dccfa0c09f293ab5842e23ac37d9d80f8288b54efcaa17a4dea464eab96fb05"
+      },
+      {
+        "path": "chronicle/20260809/default/120000_60/notes.md",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 29,
+        "sha256": "bce2aeea9e6fc31f09b164dbaf832b013ee75fbd323262cbee9d42b8b51077b1"
+      },
+      {
+        "path": "empty.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "escape",
+        "type": "symlink",
+        "target": "/tmp/cogitate-oracle-28l0_e85/outside/leak.txt",
+        "escapes_root": true
+      },
+      {
+        "path": "facets",
+        "type": "dir"
+      },
+      {
+        "path": "facets/work.md",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 25,
+        "sha256": "f93b8ac89093ba4860f1bc74f50c5eeafc2b73ce48689d8328cd4cd36078a884"
+      },
+      {
+        "path": "fifo",
+        "type": "fifo"
+      },
+      {
+        "path": "inside_link",
+        "type": "symlink",
+        "target": "/tmp/cogitate-oracle-28l0_e85/journal/facets/work.md",
+        "escapes_root": false
+      },
+      {
+        "path": "many",
+        "type": "dir"
+      },
+      {
+        "path": "many/f000.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f001.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f002.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f003.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f004.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f005.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f006.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f007.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f008.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f009.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f010.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f011.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f012.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f013.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f014.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f015.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f016.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f017.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f018.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f019.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f020.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f021.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f022.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f023.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f024.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f025.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f026.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f027.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f028.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f029.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f030.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f031.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f032.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f033.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f034.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f035.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f036.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f037.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f038.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f039.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f040.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f041.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f042.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f043.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f044.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f045.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f046.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f047.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f048.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f049.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f050.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f051.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f052.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f053.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f054.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f055.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f056.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f057.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f058.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f059.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f060.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f061.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f062.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f063.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f064.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f065.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f066.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f067.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f068.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f069.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f070.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f071.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f072.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f073.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f074.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f075.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f076.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f077.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f078.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f079.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f080.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f081.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f082.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f083.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f084.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f085.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f086.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f087.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f088.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f089.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f090.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f091.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f092.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f093.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f094.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f095.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f096.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f097.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f098.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f099.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f100.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f101.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f102.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f103.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f104.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f105.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f106.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f107.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f108.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f109.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f110.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f111.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f112.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f113.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f114.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f115.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f116.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f117.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f118.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f119.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f120.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f121.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f122.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f123.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f124.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f125.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f126.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f127.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f128.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f129.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f130.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f131.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f132.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f133.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f134.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f135.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f136.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f137.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f138.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f139.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f140.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f141.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f142.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f143.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f144.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f145.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f146.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f147.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f148.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f149.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f150.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f151.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f152.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f153.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f154.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f155.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f156.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f157.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f158.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f159.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f160.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f161.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f162.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f163.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f164.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f165.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f166.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f167.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f168.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f169.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f170.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f171.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f172.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f173.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f174.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f175.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f176.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f177.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f178.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f179.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f180.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f181.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f182.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f183.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f184.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f185.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f186.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f187.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f188.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f189.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f190.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f191.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f192.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f193.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f194.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f195.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f196.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f197.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f198.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f199.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f200.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f201.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f202.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f203.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f204.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f205.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f206.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f207.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f208.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f209.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f210.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f211.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f212.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f213.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f214.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f215.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f216.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f217.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f218.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f219.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f220.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f221.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f222.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f223.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f224.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f225.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f226.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f227.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f228.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f229.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f230.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f231.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f232.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f233.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f234.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f235.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f236.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f237.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f238.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f239.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f240.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f241.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f242.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f243.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f244.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f245.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f246.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f247.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f248.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "many/f249.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2,
+        "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac"
+      },
+      {
+        "path": "node_modules",
+        "type": "dir"
+      },
+      {
+        "path": "node_modules/pkg.json",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 3,
+        "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+      },
+      {
+        "path": "probe",
+        "type": "dir"
+      },
+      {
+        "path": "probe/.hidden_probe.md",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 16,
+        "sha256": "d111de6a6566e11d973074ebd2c6030846ee3f55bfc7381549ebf74bc42a5233"
+      },
+      {
+        "path": "probe/alpha.md",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 48,
+        "sha256": "e58d783f0d8b78f28f0dd5339a44b3b54018b5436f23a888e8947903fb35eaec"
+      },
+      {
+        "path": "probe/beta.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 41,
+        "sha256": "e13dc5bf6d54813699f9bc4f2e375d4dcdb41b4eab69c84a6e30e3c526bf9071"
+      },
+      {
+        "path": "probe/binary.dat",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 2048,
+        "sha256": "10fc3c51a152e90e5b90319b601d92ccf37290ef53c35ff92507687d8a911a08"
+      },
+      {
+        "path": "probe/bulk",
+        "type": "dir"
+      },
+      {
+        "path": "probe/bulk/row000.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 16,
+        "sha256": "4912130e25217579168b60027fb7d6a8be8b35a14fd2740e641afe2c9ab6208c"
+      },
+      {
+        "path": "probe/bulk/row001.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 16,
+        "sha256": "fde6b7aeeefabe0b4ae4cb0863f868e7d332269e2934b463ccb1201ebf98bf9d"
+      },
+      {
+        "path": "probe/bulk/row002.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 16,
+        "sha256": "6d685fde7c46ad80872e3afc7d54301d928b82f9dfbd56d7d4a9e09796352fcd"
+      },
+      {
+        "path": "probe/bulk/row003.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 16,
+        "sha256": "d1ece9d44366471e0566b75479fc669046269af73696b425e2a2c484e3b4c199"
+      },
+      {
+        "path": "probe/bulk/row004.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 16,
+        "sha256": "03d4d1d902de3f6e9747412c589c94317575bbf4c3c55895980361c5d02dec82"
+      },
+      {
+        "path": "probe/bulk/row005.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 16,
+        "sha256": "26721ad0debc78005af7561c5bc9d5ee65f2133dd14d55ef0f0b67d6ec972a3e"
+      },
+      {
+        "path": "probe/bulk/row006.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 16,
+        "sha256": "7dec0e16829980c6d1ed89011f114cd89b3637e82d6f35f22a1a5add65970ae0"
+      },
+      {
+        "path": "probe/bulk/row007.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 16,
+        "sha256": "315730c8e3b99c8ff038336470b9e3be6ee41ab1521e3832997fff75190ec319"
+      },
+      {
+        "path": "probe/bulk/row008.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 16,
+        "sha256": "a6b1bc00df9486fff950362f7d1fb0d6f73b1b7fd58f9f1e9c17669585be231f"
+      },
+      {
+        "path": "probe/bulk/row009.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 16,
+        "sha256": "473d03932df6021c3ee5a0b41c33f4c8c1401e68566c1e2b29d15c674d502810"
+      },
+      {
+        "path": "probe/bulk/row010.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "f8d623725d209ac03d71666246a1306092c632f9847ad55045f9eb2459433cb4"
+      },
+      {
+        "path": "probe/bulk/row011.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "97df3d2582f791a1b5403e7a411b9a7edb9ad67aec3961f305a7fa166a160534"
+      },
+      {
+        "path": "probe/bulk/row012.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "71d83b8534e52823734a2eb96affd77566a4868bad5d761652168ea95d74f303"
+      },
+      {
+        "path": "probe/bulk/row013.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "f7b31650a789e3839a8dca6a3aaa4dfa2e5fe61a6bf6d8eeeef0b1d4330db867"
+      },
+      {
+        "path": "probe/bulk/row014.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "a8fee489dde568a33fdc7c4360bfb30ddc86ffa31c000f1469604a0d4370735e"
+      },
+      {
+        "path": "probe/bulk/row015.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "8595f7381041b5b0c377c946bd10622982012c01b934cd4e432e527ec9f0c496"
+      },
+      {
+        "path": "probe/bulk/row016.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "c6a30c8c38b0043d7facc234bcccd530d8ce83937668c464fd44c57aba567586"
+      },
+      {
+        "path": "probe/bulk/row017.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "8055c154cae63cce90c981a0f47c729ef67aada9fada3189e6d53b33ea97b6a7"
+      },
+      {
+        "path": "probe/bulk/row018.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "94c153357b69a8d02b23a6a42e740bab54d441f84bf8c8fd5c6d231f6a3fef44"
+      },
+      {
+        "path": "probe/bulk/row019.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "773165f38a619c5b964f17769316e2e39b146ab40bb9b411f6dd4f6225b1e698"
+      },
+      {
+        "path": "probe/bulk/row020.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "68dc6c04f67c8724f4dfdac16b973435d177d2a1034c2719ca65e1636bb660f4"
+      },
+      {
+        "path": "probe/bulk/row021.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "fe6e3912aaa822258979a1f0e35f15822eca1627d143ea4a4eefb1fda345c833"
+      },
+      {
+        "path": "probe/bulk/row022.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "3b204827ecb45b6c10bf7890c53952a250d7e84e3e91021801cd09719101e3e6"
+      },
+      {
+        "path": "probe/bulk/row023.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "b18c49bda518f7c567cb7688252f4aa22de5001bf27b5d3341fb563ddf959c65"
+      },
+      {
+        "path": "probe/bulk/row024.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "ce3d707ef8d1950fb8f686112275fae03b3ee7e00b9beefed531d6403a477f43"
+      },
+      {
+        "path": "probe/bulk/row025.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "30d8a1a36564513678bbc33509969d9034cf5c1327f03666ae147856ff4dcbef"
+      },
+      {
+        "path": "probe/bulk/row026.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "71b9b4e704cca5bb51d5d142a19ab3a36b2cf583eb3c1075573a030231a39e17"
+      },
+      {
+        "path": "probe/bulk/row027.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "ad5b448065bf40f622e17d1e8cbf28b43c0a522f0fec8e7856e62942953090f1"
+      },
+      {
+        "path": "probe/bulk/row028.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "40384cece870a8bf4d2d22a851703d6dd1b24b71cc930d10b8e77826ed3bffd8"
+      },
+      {
+        "path": "probe/bulk/row029.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "c00db125e28d8dc112bd3e7a96a1f30a305aacf4290c176dd7872a6e250d82f1"
+      },
+      {
+        "path": "probe/bulk/row030.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "4dae8ba5898f3328f1249b5f49547a49ce21075deba9bc94546450ce49780b8f"
+      },
+      {
+        "path": "probe/bulk/row031.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "dd8c775da063def2fb69ae954ade2763986b292b998e40186da3df7f99b3d0f6"
+      },
+      {
+        "path": "probe/bulk/row032.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "743c72e37f4caba194f83b8038bd34a1442acddba3b186e6e58a97a5dd28a95a"
+      },
+      {
+        "path": "probe/bulk/row033.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "b95689cdbb8d99bb88b711f8fa3979b35b1ec4fed61065188dde7d40ce3d1e18"
+      },
+      {
+        "path": "probe/bulk/row034.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "fcd9b39365add5b326f46c10c0041226038bc7c95bd0ae529dff58ff23e85471"
+      },
+      {
+        "path": "probe/bulk/row035.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "bed6b287d9b23e63eb6d07fe169d1c99c972665896564632a9fc281d6572f7a4"
+      },
+      {
+        "path": "probe/bulk/row036.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "43778276d1f24cf6056903e50981cee43413a80c1cf86590759c845c04ffb3c9"
+      },
+      {
+        "path": "probe/bulk/row037.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "ca1cdcdaf83e1950ef1acbc71612d3ff3d9c2398cde8d2192b0412d75cc596bd"
+      },
+      {
+        "path": "probe/bulk/row038.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "9eab8b50ca8bb0447d6ecf3beac7a03b407c166ccf689714e7be48df98bde7c2"
+      },
+      {
+        "path": "probe/bulk/row039.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 17,
+        "sha256": "3c442a611524145f6b1e4e687460dcd4d2a0cdb7bd1b66081099a3dda58c57a2"
+      },
+      {
+        "path": "probe/gamma.log",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 14,
+        "sha256": "dc129191df558de562ab1b302a84bd04443544a354bc7d27c897af0d6821f456"
+      },
+      {
+        "path": "probe/locked.md",
+        "type": "file",
+        "mode": "0o0",
+        "readable": false
+      },
+      {
+        "path": "probe/long.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 32890,
+        "sha256": "b7d7185822fc516a703365213cba87a8880b1308bb41d443e5145828c7e7708f"
+      },
+      {
+        "path": "secrets",
+        "type": "dir"
+      },
+      {
+        "path": "secrets/.env",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "b5758cb6fead016da791d69b85532f7d77f07b6a6ff621e111baffd029aeefc5"
+      },
+      {
+        "path": "secrets/.env.local",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "b5758cb6fead016da791d69b85532f7d77f07b6a6ff621e111baffd029aeefc5"
+      },
+      {
+        "path": "secrets/api_secret.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "b5758cb6fead016da791d69b85532f7d77f07b6a6ff621e111baffd029aeefc5"
+      },
+      {
+        "path": "secrets/credentials",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "b5758cb6fead016da791d69b85532f7d77f07b6a6ff621e111baffd029aeefc5"
+      },
+      {
+        "path": "secrets/credentials.json",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "b5758cb6fead016da791d69b85532f7d77f07b6a6ff621e111baffd029aeefc5"
+      },
+      {
+        "path": "secrets/id_rsa",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "b5758cb6fead016da791d69b85532f7d77f07b6a6ff621e111baffd029aeefc5"
+      },
+      {
+        "path": "secrets/id_rsa.pub",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "b5758cb6fead016da791d69b85532f7d77f07b6a6ff621e111baffd029aeefc5"
+      },
+      {
+        "path": "secrets/key.pem",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "b5758cb6fead016da791d69b85532f7d77f07b6a6ff621e111baffd029aeefc5"
+      },
+      {
+        "path": "secrets/my.credentials",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "b5758cb6fead016da791d69b85532f7d77f07b6a6ff621e111baffd029aeefc5"
+      },
+      {
+        "path": "secrets/passwords.md",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "b5758cb6fead016da791d69b85532f7d77f07b6a6ff621e111baffd029aeefc5"
+      },
+      {
+        "path": "secrets/secrets.yaml",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "b5758cb6fead016da791d69b85532f7d77f07b6a6ff621e111baffd029aeefc5"
+      },
+      {
+        "path": "secrets/server.key",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "b5758cb6fead016da791d69b85532f7d77f07b6a6ff621e111baffd029aeefc5"
+      },
+      {
+        "path": "secrets/token.key",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "b5758cb6fead016da791d69b85532f7d77f07b6a6ff621e111baffd029aeefc5"
+      },
+      {
+        "path": "secrets/token.txt",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 7,
+        "sha256": "b5758cb6fead016da791d69b85532f7d77f07b6a6ff621e111baffd029aeefc5"
+      },
+      {
+        "path": "talents",
+        "type": "dir"
+      },
+      {
+        "path": "talents/partner",
+        "type": "dir"
+      },
+      {
+        "path": "talents/partner/abc.jsonl",
+        "type": "file",
+        "mode": "0o644",
+        "readable": true,
+        "byte_length": 19,
+        "sha256": "0f8a011b66bc6a9fa51ecf7d67049d9236e61db8df81cf7c99813e2809bbc8d4"
+      }
+    ]
+  },
   "read_tools": [
     {
       "id": "rf_ok",
@@ -2540,6 +5204,10 @@
             "is_dir": true
           },
           {
+            "path": "probe",
+            "is_dir": true
+          },
+          {
             "path": "secrets",
             "is_dir": true
           },
@@ -2598,6 +5266,10 @@
           },
           {
             "path": "many",
+            "is_dir": true
+          },
+          {
+            "path": "probe",
             "is_dir": true
           },
           {
@@ -3449,6 +6121,639 @@
         "truncated": false,
         "notice": null,
         "payload": []
+      }
+    },
+    {
+      "id": "gl_probe_md",
+      "tool": "glob",
+      "args": {
+        "pattern": "*.md",
+        "root": "probe"
+      },
+      "citation": "cogitate_read_tools.py:586",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": false,
+        "notice": null,
+        "payload": [
+          "probe/alpha.md",
+          "probe/locked.md"
+        ]
+      }
+    },
+    {
+      "id": "gl_probe_hidden_excluded",
+      "tool": "glob",
+      "args": {
+        "pattern": "*.md",
+        "root": "probe"
+      },
+      "citation": "cogitate_read_tools.py:335-337 - hidden excluded by default",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": false,
+        "notice": null,
+        "payload": [
+          "probe/alpha.md",
+          "probe/locked.md"
+        ]
+      }
+    },
+    {
+      "id": "gl_probe_hidden_included",
+      "tool": "glob",
+      "args": {
+        "pattern": "*.md",
+        "root": "probe",
+        "include_hidden": true
+      },
+      "citation": "cogitate_read_tools.py:335-337 - include_hidden admits the dotfile",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": false,
+        "notice": null,
+        "payload": [
+          "probe/.hidden_probe.md",
+          "probe/alpha.md",
+          "probe/locked.md"
+        ]
+      }
+    },
+    {
+      "id": "gl_probe_pattern_is_journal_relative",
+      "tool": "glob",
+      "args": {
+        "pattern": "probe/bulk/*.txt",
+        "root": "probe"
+      },
+      "citation": "cogitate_read_tools.py:596-598 - `probe/bulk/*.txt` MATCHES under root=probe",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": false,
+        "notice": null,
+        "payload": {
+          "kind": "list_summary",
+          "count": 40,
+          "head": [
+            "probe/bulk/row000.txt",
+            "probe/bulk/row001.txt",
+            "probe/bulk/row002.txt",
+            "probe/bulk/row003.txt",
+            "probe/bulk/row004.txt"
+          ],
+          "tail": [
+            "probe/bulk/row035.txt",
+            "probe/bulk/row036.txt",
+            "probe/bulk/row037.txt",
+            "probe/bulk/row038.txt",
+            "probe/bulk/row039.txt"
+          ]
+        }
+      }
+    },
+    {
+      "id": "gl_probe_pattern_not_root_relative",
+      "tool": "glob",
+      "args": {
+        "pattern": "bulk/*.txt",
+        "root": "probe"
+      },
+      "citation": "cogitate_read_tools.py:596-598 - the same pattern WITHOUT the root prefix matches nothing",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": false,
+        "notice": null,
+        "payload": []
+      }
+    },
+    {
+      "id": "gl_probe_star_crosses_dir",
+      "tool": "glob",
+      "args": {
+        "pattern": "*.txt",
+        "root": "probe"
+      },
+      "citation": "cogitate_read_tools.py:596-598 - a bare `*.txt` reaches INTO bulk/",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": false,
+        "notice": null,
+        "payload": {
+          "kind": "list_summary",
+          "count": 42,
+          "head": [
+            "probe/beta.txt",
+            "probe/long.txt",
+            "probe/bulk/row000.txt",
+            "probe/bulk/row001.txt",
+            "probe/bulk/row002.txt"
+          ],
+          "tail": [
+            "probe/bulk/row035.txt",
+            "probe/bulk/row036.txt",
+            "probe/bulk/row037.txt",
+            "probe/bulk/row038.txt",
+            "probe/bulk/row039.txt"
+          ]
+        }
+      }
+    },
+    {
+      "id": "gl_probe_truncated",
+      "tool": "glob",
+      "args": {
+        "pattern": "probe/bulk/*.txt",
+        "root": "probe",
+        "max_matches": 5
+      },
+      "citation": "cogitate_read_tools.py:126-128 - NOTICE_GLOB_TRUNCATED",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": true,
+        "notice": "glob_truncated: hit max_matches; use a more specific pattern or root.",
+        "payload": [
+          "probe/bulk/row000.txt",
+          "probe/bulk/row001.txt",
+          "probe/bulk/row002.txt",
+          "probe/bulk/row003.txt",
+          "probe/bulk/row004.txt"
+        ]
+      }
+    },
+    {
+      "id": "gl_probe_on_a_file",
+      "tool": "glob",
+      "args": {
+        "pattern": "*",
+        "root": "probe/alpha.md"
+      },
+      "citation": "cogitate_read_tools.py:586 - a file as root",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": false,
+        "notice": null,
+        "payload": []
+      }
+    },
+    {
+      "id": "gs_probe_case_insensitive_default",
+      "tool": "grep_search",
+      "args": {
+        "pattern": "sunlight",
+        "path": "probe"
+      },
+      "citation": "cogitate_read_tools.py:719 - default folds case, proven where it can run",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": true,
+        "notice": "grep_search_truncated: hit match, file, or byte cap; narrow pattern, path, or file_glob.",
+        "payload": [
+          {
+            "path": "probe/alpha.md",
+            "lineno": 1,
+            "line": "Sunlight on the water",
+            "before": [],
+            "after": []
+          },
+          {
+            "path": "probe/alpha.md",
+            "lineno": 2,
+            "line": "sunlight again",
+            "before": [],
+            "after": []
+          },
+          {
+            "path": "probe/beta.txt",
+            "lineno": 2,
+            "line": "SUNLIGHT shouting",
+            "before": [],
+            "after": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "gs_probe_case_sensitive",
+      "tool": "grep_search",
+      "args": {
+        "pattern": "sunlight",
+        "path": "probe",
+        "case_sensitive": true
+      },
+      "citation": "cogitate_read_tools.py:719 - case_sensitive=True must miss the other spellings",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": true,
+        "notice": "grep_search_truncated: hit match, file, or byte cap; narrow pattern, path, or file_glob.",
+        "payload": [
+          {
+            "path": "probe/alpha.md",
+            "lineno": 2,
+            "line": "sunlight again",
+            "before": [],
+            "after": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "gs_probe_regex",
+      "tool": "grep_search",
+      "args": {
+        "pattern": "needle \\d+",
+        "regex": true,
+        "path": "probe/bulk"
+      },
+      "citation": "cogitate_read_tools.py:720-723 - regex=True compiles the pattern",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": false,
+        "notice": null,
+        "payload": {
+          "kind": "list_summary",
+          "count": 40,
+          "head": [
+            {
+              "path": "probe/bulk/row000.txt",
+              "lineno": 1,
+              "line": "needle 0",
+              "before": [],
+              "after": []
+            },
+            {
+              "path": "probe/bulk/row001.txt",
+              "lineno": 1,
+              "line": "needle 1",
+              "before": [],
+              "after": []
+            },
+            {
+              "path": "probe/bulk/row002.txt",
+              "lineno": 1,
+              "line": "needle 2",
+              "before": [],
+              "after": []
+            },
+            {
+              "path": "probe/bulk/row003.txt",
+              "lineno": 1,
+              "line": "needle 3",
+              "before": [],
+              "after": []
+            },
+            {
+              "path": "probe/bulk/row004.txt",
+              "lineno": 1,
+              "line": "needle 4",
+              "before": [],
+              "after": []
+            }
+          ],
+          "tail": [
+            {
+              "path": "probe/bulk/row035.txt",
+              "lineno": 1,
+              "line": "needle 35",
+              "before": [],
+              "after": []
+            },
+            {
+              "path": "probe/bulk/row036.txt",
+              "lineno": 1,
+              "line": "needle 36",
+              "before": [],
+              "after": []
+            },
+            {
+              "path": "probe/bulk/row037.txt",
+              "lineno": 1,
+              "line": "needle 37",
+              "before": [],
+              "after": []
+            },
+            {
+              "path": "probe/bulk/row038.txt",
+              "lineno": 1,
+              "line": "needle 38",
+              "before": [],
+              "after": []
+            },
+            {
+              "path": "probe/bulk/row039.txt",
+              "lineno": 1,
+              "line": "needle 39",
+              "before": [],
+              "after": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "gs_probe_regex_off_is_literal",
+      "tool": "grep_search",
+      "args": {
+        "pattern": "needle \\d+",
+        "path": "probe/bulk"
+      },
+      "citation": "cogitate_read_tools.py:720-723 - regex=False escapes, so the same pattern MISSES",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": false,
+        "notice": null,
+        "payload": []
+      }
+    },
+    {
+      "id": "gs_probe_context",
+      "tool": "grep_search",
+      "args": {
+        "pattern": "SUNLIGHT shouting",
+        "path": "probe",
+        "context_lines": 1,
+        "case_sensitive": true
+      },
+      "citation": "cogitate_read_tools.py:698 - context_lines fills before/after",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": true,
+        "notice": "grep_search_truncated: hit match, file, or byte cap; narrow pattern, path, or file_glob.",
+        "payload": [
+          {
+            "path": "probe/beta.txt",
+            "lineno": 2,
+            "line": "SUNLIGHT shouting",
+            "before": [
+              "before line"
+            ],
+            "after": [
+              "after line"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "gs_probe_file_glob",
+      "tool": "grep_search",
+      "args": {
+        "pattern": "sunlight",
+        "path": "probe",
+        "file_glob": "*.md"
+      },
+      "citation": "cogitate_read_tools.py:698 - file_glob narrows the file set",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": false,
+        "notice": null,
+        "payload": [
+          {
+            "path": "probe/alpha.md",
+            "lineno": 1,
+            "line": "Sunlight on the water",
+            "before": [],
+            "after": []
+          },
+          {
+            "path": "probe/alpha.md",
+            "lineno": 2,
+            "line": "sunlight again",
+            "before": [],
+            "after": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "gs_probe_max_matches",
+      "tool": "grep_search",
+      "args": {
+        "pattern": "needle",
+        "path": "probe/bulk",
+        "max_matches": 4
+      },
+      "citation": "cogitate_read_tools.py:129-132 - NOTICE_GREP_TRUNCATED",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": false,
+        "notice": null,
+        "payload": [
+          {
+            "path": "probe/bulk/row000.txt",
+            "lineno": 1,
+            "line": "needle 0",
+            "before": [],
+            "after": []
+          },
+          {
+            "path": "probe/bulk/row001.txt",
+            "lineno": 1,
+            "line": "needle 1",
+            "before": [],
+            "after": []
+          },
+          {
+            "path": "probe/bulk/row002.txt",
+            "lineno": 1,
+            "line": "needle 2",
+            "before": [],
+            "after": []
+          },
+          {
+            "path": "probe/bulk/row003.txt",
+            "lineno": 1,
+            "line": "needle 3",
+            "before": [],
+            "after": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "gs_probe_max_files",
+      "tool": "grep_search",
+      "args": {
+        "pattern": "needle",
+        "path": "probe/bulk",
+        "max_files": 3
+      },
+      "citation": "cogitate_read_tools.py:698 - max_files bounds the walk",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": true,
+        "notice": "grep_search_truncated: hit match, file, or byte cap; narrow pattern, path, or file_glob.",
+        "payload": [
+          {
+            "path": "probe/bulk/row000.txt",
+            "lineno": 1,
+            "line": "needle 0",
+            "before": [],
+            "after": []
+          },
+          {
+            "path": "probe/bulk/row001.txt",
+            "lineno": 1,
+            "line": "needle 1",
+            "before": [],
+            "after": []
+          },
+          {
+            "path": "probe/bulk/row002.txt",
+            "lineno": 1,
+            "line": "needle 2",
+            "before": [],
+            "after": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "gs_probe_max_bytes_per_file",
+      "tool": "grep_search",
+      "args": {
+        "pattern": "needle line 1999",
+        "path": "probe",
+        "max_bytes_per_file": 64
+      },
+      "citation": "cogitate_read_tools.py:698 - only the first max_bytes_per_file of each file is searched",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": true,
+        "notice": "grep_search_truncated: hit match, file, or byte cap; narrow pattern, path, or file_glob.",
+        "payload": []
+      }
+    },
+    {
+      "id": "gs_probe_binary_is_skipped",
+      "tool": "grep_search",
+      "args": {
+        "pattern": "needle",
+        "path": "probe",
+        "file_glob": "binary.dat"
+      },
+      "citation": "cogitate_read_tools.py:650-697 - a non-UTF-8 file is skipped, not refused",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": false,
+        "notice": null,
+        "payload": []
+      }
+    },
+    {
+      "id": "gs_probe_hidden_excluded",
+      "tool": "grep_search",
+      "args": {
+        "pattern": "sunlight",
+        "path": "probe",
+        "file_glob": "*.md",
+        "include_hidden": true
+      },
+      "citation": "cogitate_read_tools.py:335-337",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": false,
+        "notice": null,
+        "payload": [
+          {
+            "path": "probe/.hidden_probe.md",
+            "lineno": 1,
+            "line": "sunlight hidden",
+            "before": [],
+            "after": []
+          },
+          {
+            "path": "probe/alpha.md",
+            "lineno": 1,
+            "line": "Sunlight on the water",
+            "before": [],
+            "after": []
+          },
+          {
+            "path": "probe/alpha.md",
+            "lineno": 2,
+            "line": "sunlight again",
+            "before": [],
+            "after": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "rf_permission_denied",
+      "tool": "read_file",
+      "args": {
+        "path": "probe/locked.md"
+      },
+      "citation": "cogitate_read_tools.py:96-99 - REFUSAL_PERMISSION_DENIED",
+      "expect": {
+        "ok": false,
+        "refusal": "permission_denied: refused a path the process cannot read; choose a readable journal file or use a domain command.",
+        "truncated": false,
+        "notice": null,
+        "payload": ""
+      }
+    },
+    {
+      "id": "ld_probe",
+      "tool": "list_directory",
+      "args": {
+        "path": "probe"
+      },
+      "citation": "cogitate_read_tools.py:509 - a non-broad directory",
+      "expect": {
+        "ok": true,
+        "refusal": null,
+        "truncated": false,
+        "notice": null,
+        "payload": [
+          {
+            "path": "probe/alpha.md",
+            "is_dir": false
+          },
+          {
+            "path": "probe/beta.txt",
+            "is_dir": false
+          },
+          {
+            "path": "probe/binary.dat",
+            "is_dir": false
+          },
+          {
+            "path": "probe/bulk",
+            "is_dir": true
+          },
+          {
+            "path": "probe/gamma.log",
+            "is_dir": false
+          },
+          {
+            "path": "probe/locked.md",
+            "is_dir": false
+          },
+          {
+            "path": "probe/long.txt",
+            "is_dir": false
+          }
+        ]
       }
     },
     {
