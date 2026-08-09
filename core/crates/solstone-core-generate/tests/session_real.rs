@@ -4,10 +4,10 @@
 mod support;
 
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
@@ -19,7 +19,6 @@ use solstone_core_generate::{
 };
 
 const RECEIVE_BOUND: Duration = Duration::from_secs(10);
-const KILL_BOUND: Duration = Duration::from_secs(3);
 const LARGE_TEXT_BYTES: usize = 1024 * 1024;
 
 struct Journal {
@@ -62,17 +61,6 @@ impl Journal {
 
     fn set_no_engine(&self) {
         self.write_config(r#"{"providers":{"active":{"provider":"none"}}}"#);
-    }
-
-    fn token_lines(&self) -> usize {
-        fs::read_dir(self.path.join("tokens"))
-            .map(|entries| {
-                entries
-                    .map(|entry| fs::read_to_string(entry.unwrap().path()).unwrap())
-                    .map(|contents| contents.lines().count())
-                    .sum()
-            })
-            .unwrap_or(0)
     }
 }
 
@@ -286,61 +274,6 @@ fn generated(client: &SessionClient) -> Box<GeneratedResponse> {
         panic!("expected generated response")
     };
     response
-}
-
-fn wait_for_process_exit(pid: u32) {
-    let deadline = Instant::now() + KILL_BOUND;
-    while Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
-    {
-        assert!(
-            Instant::now() < deadline,
-            "wire child {pid} remained alive after its caller died"
-        );
-        thread::sleep(Duration::from_millis(10));
-    }
-}
-
-fn assert_token_count_stable(journal: &Journal, expected: usize) {
-    let deadline = Instant::now() + KILL_BOUND;
-    while Instant::now() < deadline {
-        assert_eq!(
-            journal.token_lines(),
-            expected,
-            "a cancelled session wrote a usage record"
-        );
-        thread::sleep(Duration::from_millis(10));
-    }
-}
-
-#[test]
-fn criterion_8_killing_session_owner_aborts_wire_without_usage() {
-    let stub = LocalStub::holding();
-    let journal = Journal::bundled_local(stub.port);
-    let mut helper = Command::new(env!("CARGO_BIN_EXE_solstone-generate-session-kill-helper"))
-        .env("SOLSTONE_GENERATE_WIRE", support::generate_wire())
-        .env("SOLSTONE_JOURNAL", &journal.path)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut pid_line = String::new();
-    BufReader::new(helper.stdout.take().unwrap())
-        .read_line(&mut pid_line)
-        .unwrap();
-    let wire_pid = pid_line.trim().parse::<u32>().unwrap();
-    stub.wait_for_inferences(1);
-    let token_lines = journal.token_lines();
-
-    helper.kill().unwrap();
-    helper.wait().unwrap();
-    wait_for_process_exit(wire_pid);
-    assert_token_count_stable(&journal, token_lines);
-    stub.finish();
 }
 
 #[test]

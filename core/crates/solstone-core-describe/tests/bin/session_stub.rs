@@ -15,7 +15,8 @@ use solstone_core_generate::{
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
-    assert_eq!(args.get(1).map(String::as_str), Some("--session"));
+    assert_eq!(args.get(1).map(String::as_str), Some("generate"));
+    assert_eq!(args.get(2).map(String::as_str), Some("--session"));
     let mode =
         env::var("SOLSTONE_DESCRIBE_SESSION_STUB_MODE").unwrap_or_else(|_| "generated".to_owned());
     if let Some(path) = env::var_os("SOLSTONE_DESCRIBE_SESSION_STUB_PID_PATH") {

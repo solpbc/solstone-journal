@@ -215,7 +215,7 @@ impl SessionClient {
                 "current executable has no parent".to_owned(),
             ))
         })?;
-        let path = parent.join("solstone-generate-wire");
+        let path = parent.join("solstone-core");
         if Path::new(&path).is_file() {
             Ok(Self::at_path(path))
         } else {

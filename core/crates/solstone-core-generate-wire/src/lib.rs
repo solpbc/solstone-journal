@@ -10,6 +10,7 @@ mod endpoint;
 mod google;
 mod lane;
 mod openai;
+mod overrides;
 mod refusal;
 mod request;
 mod responsiveness;
@@ -97,6 +98,7 @@ mod vocabulary_tests {
             ("lane", include_str!("lane.rs")),
             ("lib", include_str!("lib.rs")),
             ("openai", include_str!("openai.rs")),
+            ("overrides", include_str!("overrides.rs")),
             ("refusal", include_str!("refusal.rs")),
             ("request", include_str!("request.rs")),
             ("responsiveness", include_str!("responsiveness.rs")),

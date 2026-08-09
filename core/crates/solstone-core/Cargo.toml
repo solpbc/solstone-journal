@@ -26,6 +26,11 @@ name = "journal_config_corruption"
 path = "tests/journal_config_corruption.rs"
 required-features = ["differential"]
 
+[[bin]]
+name = "solstone-core-generate-session-kill-helper"
+path = "tests/bin/generate_session_kill_helper.rs"
+test = false
+
 [dependencies]
 chrono.workspace = true
 serde.workspace = true

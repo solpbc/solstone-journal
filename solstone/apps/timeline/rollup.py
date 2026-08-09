@@ -106,34 +106,37 @@ async def pick_top_events_async(
         max_output_tokens=2048,
         timeout_s=60.0,
     )
-    batch.add(req)
+    try:
+        batch.add(req)
 
-    async for done in batch.drain_batch():
-        if done.error:
-            raise RuntimeError(f"rollup model call failed: {done.error}")
-        try:
-            payload = json.loads(done.response)
-        except (json.JSONDecodeError, TypeError) as e:
-            raise RuntimeError(
-                f"rollup payload parse error: {e}; response={done.response!r}"
-            )
-        raw_indices = payload.get("picks", [])
-        # Sanitize: dedupe, in-range, cap at N.
-        seen = set()
-        indices = []
-        for i in raw_indices:
-            if isinstance(i, int) and 0 <= i < len(events) and i not in seen:
-                seen.add(i)
-                indices.append(i)
-            if len(indices) == n:
-                break
-        return {
-            "picks": [events[i] for i in indices],
-            "indices": indices,
-            "rationale": payload.get("rationale", ""),
-        }
+        async for done in batch.drain_batch():
+            if done.error:
+                raise RuntimeError(f"rollup model call failed: {done.error}")
+            try:
+                payload = json.loads(done.response)
+            except (json.JSONDecodeError, TypeError) as e:
+                raise RuntimeError(
+                    f"rollup payload parse error: {e}; response={done.response!r}"
+                )
+            raw_indices = payload.get("picks", [])
+            # Sanitize: dedupe, in-range, cap at N.
+            seen = set()
+            indices = []
+            for i in raw_indices:
+                if isinstance(i, int) and 0 <= i < len(events) and i not in seen:
+                    seen.add(i)
+                    indices.append(i)
+                if len(indices) == n:
+                    break
+            return {
+                "picks": [events[i] for i in indices],
+                "indices": indices,
+                "rationale": payload.get("rationale", ""),
+            }
 
-    raise RuntimeError("rollup batch drained empty")
+        raise RuntimeError("rollup batch drained empty")
+    finally:
+        await batch.aclose()
 
 
 async def pick_top_events_batch(
@@ -157,54 +160,57 @@ async def pick_top_events_batch(
     handle_to_job: dict[int, dict] = {}
     out: list[dict] = []
 
-    for i, job in enumerate(jobs):
-        events = job["events"]
-        rec = {"key": job.get("key"), "events": events, "result": None}
-        out.append(rec)
-        if len(events) <= n:
+    try:
+        for i, job in enumerate(jobs):
+            events = job["events"]
+            rec = {"key": job.get("key"), "events": events, "result": None}
+            out.append(rec)
+            if len(events) <= n:
+                rec["result"] = {
+                    "picks": list(events),
+                    "indices": list(range(len(events))),
+                    "rationale": "fewer than N candidates; returning all",
+                }
+                continue
+            req = batch.create(
+                contents=build_user_prompt(events),
+                context="timeline.scratch.rollup",
+                system_instruction=build_system_instruction(scope_label, n),
+                json_output=True,
+                json_schema=build_rollup_schema(n),
+                temperature=0.3,
+                max_output_tokens=2048,
+                timeout_s=60.0,
+            )
+            req.job_index = i
+            handle_to_job[i] = rec
+            batch.add(req)
+
+        async for done in batch.drain_batch():
+            rec = handle_to_job[done.job_index]
+            if done.error:
+                rec["result"] = {"error": done.error}
+                continue
+            try:
+                payload = json.loads(done.response)
+            except (json.JSONDecodeError, TypeError) as e:
+                rec["result"] = {"error": f"parse: {e}; response={done.response!r}"}
+                continue
+            events = rec["events"]
+            seen = set()
+            indices = []
+            for idx in payload.get("picks", []):
+                if isinstance(idx, int) and 0 <= idx < len(events) and idx not in seen:
+                    seen.add(idx)
+                    indices.append(idx)
+                if len(indices) == n:
+                    break
             rec["result"] = {
-                "picks": list(events),
-                "indices": list(range(len(events))),
-                "rationale": "fewer than N candidates; returning all",
+                "picks": [events[i] for i in indices],
+                "indices": indices,
+                "rationale": payload.get("rationale", ""),
             }
-            continue
-        req = batch.create(
-            contents=build_user_prompt(events),
-            context="timeline.scratch.rollup",
-            system_instruction=build_system_instruction(scope_label, n),
-            json_output=True,
-            json_schema=build_rollup_schema(n),
-            temperature=0.3,
-            max_output_tokens=2048,
-            timeout_s=60.0,
-        )
-        req.job_index = i
-        handle_to_job[i] = rec
-        batch.add(req)
 
-    async for done in batch.drain_batch():
-        rec = handle_to_job[done.job_index]
-        if done.error:
-            rec["result"] = {"error": done.error}
-            continue
-        try:
-            payload = json.loads(done.response)
-        except (json.JSONDecodeError, TypeError) as e:
-            rec["result"] = {"error": f"parse: {e}; response={done.response!r}"}
-            continue
-        events = rec["events"]
-        seen = set()
-        indices = []
-        for idx in payload.get("picks", []):
-            if isinstance(idx, int) and 0 <= idx < len(events) and idx not in seen:
-                seen.add(idx)
-                indices.append(idx)
-            if len(indices) == n:
-                break
-        rec["result"] = {
-            "picks": [events[i] for i in indices],
-            "indices": indices,
-            "rationale": payload.get("rationale", ""),
-        }
-
-    return out
+        return out
+    finally:
+        await batch.aclose()

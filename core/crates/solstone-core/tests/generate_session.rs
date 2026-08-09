@@ -532,6 +532,35 @@ fn wait_for_exit(child: &mut Child) -> ExitStatus {
     }
 }
 
+fn wait_for_process_exit(pid: u32) {
+    let deadline = Instant::now() + BOUND;
+    while Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+    {
+        assert!(
+            Instant::now() < deadline,
+            "core generate session child {pid} remained alive after its caller died"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn assert_token_count_stable(journal: &Journal, expected: usize) {
+    let deadline = Instant::now() + BOUND;
+    while Instant::now() < deadline {
+        assert_eq!(
+            journal.token_lines(),
+            expected,
+            "a cancelled session wrote a usage record"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
 fn direct_output(args: &[&str], input: &[u8]) -> std::process::Output {
     let journal = Journal::bundled_local(false);
     let mut child = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
@@ -573,6 +602,38 @@ fn session_client_prefix_constructor_runs_core_subcommand() {
         panic!("expected generated prefix response");
     };
     assert_eq!(response.id.as_deref(), Some("prefix"));
+    stub.finish();
+}
+
+#[test]
+fn criterion_8_killing_session_owner_aborts_wire_without_usage() {
+    let stub = LocalStub::start(true);
+    let journal = Journal::bundled_local(false);
+    journal.set_port(stub.port);
+    let mut helper = Command::new(env!(
+        "CARGO_BIN_EXE_solstone-core-generate-session-kill-helper"
+    ))
+    .env("SOLSTONE_CORE", env!("CARGO_BIN_EXE_solstone-core"))
+    .env("SOLSTONE_JOURNAL", &journal.path)
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("spawn session-owner helper");
+    let mut pid_line = String::new();
+    BufReader::new(helper.stdout.take().expect("helper stdout"))
+        .read_line(&mut pid_line)
+        .expect("read core session PID");
+    let wire_pid = pid_line
+        .trim()
+        .parse::<u32>()
+        .expect("core session PID is an integer");
+    stub.wait_for_observed();
+    let token_lines = journal.token_lines();
+
+    helper.kill().expect("kill session owner helper");
+    helper.wait().expect("wait for session owner helper");
+    wait_for_process_exit(wire_pid);
+    assert_token_count_stable(&journal, token_lines);
     stub.finish();
 }
 

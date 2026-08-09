@@ -359,10 +359,6 @@ def _abort_for_blocking_request(
     if not reason_code or not is_blocking_reason(reason_code):
         return
 
-    if batch is not None:
-        for task in list(batch.pending_tasks):
-            task.cancel()
-
     if output_file and not output_file.closed:
         output_file.close()
     if temp_path:
@@ -1480,6 +1476,8 @@ class VideoProcessor:
 
             _promote(state, reason_code)
         finally:
+            await batch.aclose()
+
             # Close output and discard the transient row temp.
             if output_file is not None and not output_file.closed:
                 output_file.close()

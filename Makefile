@@ -301,7 +301,7 @@ check-differentials:
 		"-p solstone-core --test journal_config_client --test journal_config_corruption" \
 		"-p solstone-core-journal-bin --test journal_process_bootstrap" \
 		"-p solstone-core-generate --test no_downgrade --test session --test session_real --test wire" \
-		"-p solstone-core-generate-wire --test endpoint_overflow_differential --test responsiveness_differential --test token_log_differential --test schema_validation_differential" \
+		"-p solstone-core-generate-wire --test responsiveness_differential --test token_log_differential" \
 		"-p solstone-core-spp-attest --test spp_attest_differential" \
 		"-p solstone-core-spp-ratls --test composite_differential" \
 		"-p solstone-core-local --test admission_cross_process" \
@@ -1046,26 +1046,9 @@ check-contract: .installed
 
 core-fixtures:
 	$(VENV_BIN)/python scripts/build_core_fixtures.py
-	$(VENV_BIN)/python scripts/generate_seam_oracles.py
 
-# The seam oracles are frozen recordings of a Python reference the generate
-# conversion deletes. Checking them here catches a corpus edited without
-# regenerating -- which the recording's consumers cannot see, because they read
-# the fixture and not the script that wrote it.
-#
-# Both legs run and each reports its own status. Chaining them would put the
-# second behind the first, and a check that never executes is a check that
-# reports green by never having an opinion.
 check-core-fixtures: .installed
-	@status=0; \
-	echo "==> build_core_fixtures --check"; \
-	$(VENV_BIN)/python scripts/build_core_fixtures.py --check || status=$$?; \
-	echo "==> generate_seam_oracles --check"; \
-	$(VENV_BIN)/python scripts/generate_seam_oracles.py --check || status=$$?; \
-	if [ $$status -ne 0 ]; then \
-		echo "check-core-fixtures: FAILED (status $$status) -- both legs above ran; read each leg's own result"; \
-	fi; \
-	exit $$status
+	$(VENV_BIN)/python scripts/build_core_fixtures.py --check
 
 check-release-advisory-liveness: .installed
 	$(VENV_BIN)/python scripts/check_release_advisory_liveness.py

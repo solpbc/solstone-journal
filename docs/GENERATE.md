@@ -387,7 +387,7 @@ whatever its own dispatcher expects; the `blocking` field is what that translati
 
 ## The handshake
 
-`solstone-generate-wire --contract` writes the contract fixture to stdout and exits `0`. A consumer
+`solstone-core generate --contract` writes the contract fixture to stdout and exits `0`. A consumer
 can discover the schema identifiers, the closed vocabularies and the exit-code table rather than
 assume them.
 

@@ -13,28 +13,14 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Union
 
 import frontmatter
-from jsonschema import Draft202012Validator
 
 from solstone.think.providers.local_endpoint import (
     confidential_provenance_block,
     resolve_local_endpoint_from_config,
 )
-from solstone.think.providers.shared import validate_generate_result_strict
-from solstone.think.responsiveness import (
-    NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS,
-    NonResponsiveOutputError,
-    classify_output_responsiveness,
-)
-from solstone.think.schema_prep import SCHEMA_TRUNCATE_KEY, prepare_provider_schema
 from solstone.think.utils import get_config, get_journal
 
 logger = logging.getLogger(__name__)
-
-
-class _GenerateResponsivenessRecord(NamedTuple):
-    non_responsive: bool
-    non_responsive_output: str | None
-    non_responsive_matched_signal: str | None
 
 
 # ---------------------------------------------------------------------------
@@ -52,9 +38,6 @@ class _GenerateResponsivenessRecord(NamedTuple):
 # Valid OpenAI reasoning effort suffixes appended to model names.
 # E.g., "gpt-5.2-high" → reasoning_effort="high", "gpt-5.2" → omitted.
 OPENAI_EFFORT_SUFFIXES = ("-none", "-low", "-medium", "-high", "-xhigh")
-
-# Finite default HTTP timeout for network model calls; explicit timeout_s wins.
-DEFAULT_PROVIDER_TIMEOUT_S = 120
 
 
 class _Family(NamedTuple):
@@ -247,7 +230,7 @@ class SchemaValidationError(ValueError):
     """Raised when JSON response text fails local schema validation.
 
     Attributes:
-        errors: The schema validation errors returned by _validate_schema.
+        errors: The schema validation errors returned by the native wire.
         text: The full offending response text.
         preview: A short preview of the offending response text for error messages.
     """
@@ -594,7 +577,7 @@ def log_token_usage(
     """Log token usage to journal with unified schema.
 
     Providers normalize usage into the unified schema (see USAGE_KEYS in
-    shared.py) before returning GenerateResult.  This function passes
+    the native generate boundary) before returning a result. This function passes
     through those known keys, computes total_tokens when missing, and
     handles a few legacy field aliases from CLI backends.
 
@@ -696,63 +679,6 @@ def log_token_usage(
 
     except Exception:
         logger.warning("failed to log token usage", exc_info=True)
-
-
-def _record_generate_usage_and_responsiveness(
-    result: object,
-    *,
-    model: str,
-    context: str,
-    enforce_responsiveness: bool = True,
-) -> _GenerateResponsivenessRecord:
-    non_responsive_output: str | None = None
-    non_responsive_matched_signal: str | None = None
-
-    is_result_mapping = isinstance(result, Mapping)
-    if enforce_responsiveness and is_result_mapping:
-        text = result.get("text")
-        if isinstance(text, str) and text.strip():
-            verdict = classify_output_responsiveness(text)
-            if verdict.non_responsive:
-                non_responsive_output = text[:NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS]
-                non_responsive_matched_signal = verdict.matched_signal
-
-    has_usage = is_result_mapping and bool(result.get("usage"))
-    non_responsive = non_responsive_output is not None
-    if has_usage or non_responsive:
-        usage = result["usage"] if has_usage else {}
-        resolved_model = (result.get("model") or model) if is_result_mapping else model
-        log_kwargs: dict[str, Any] = {}
-        if non_responsive:
-            log_kwargs["non_responsive_output"] = non_responsive_output
-            log_kwargs["non_responsive_matched_signal"] = non_responsive_matched_signal
-        log_token_usage(
-            model=resolved_model,
-            usage=usage,
-            context=context,
-            type="generate",
-            **log_kwargs,
-        )
-
-    return _GenerateResponsivenessRecord(
-        non_responsive=non_responsive,
-        non_responsive_output=non_responsive_output,
-        non_responsive_matched_signal=non_responsive_matched_signal,
-    )
-
-
-def _raise_non_responsive_output(
-    responsiveness: _GenerateResponsivenessRecord,
-) -> None:
-    exc = NonResponsiveOutputError()
-    exc.non_responsive_output = responsiveness.non_responsive_output
-    exc.non_responsive_matched_signal = responsiveness.non_responsive_matched_signal
-    raise exc
-
-
-def _raise_if_no_brain(provider: str) -> None:
-    if provider == NO_BRAIN_PROVIDER:
-        raise NoBrainConfiguredError()
 
 
 def derive_provider_lane(config: Mapping[str, Any], provider: object) -> str:
@@ -1063,7 +989,7 @@ def finish_reason_error(
     *,
     json_output: bool,
 ) -> Exception | None:
-    """Map a finish reason to the error it should raise, or None if acceptable."""
+    """Map the native wire's normalized finish reason to an existing exception."""
     finish_reason = result.get("finish_reason")
     if not finish_reason or finish_reason == "stop":
         return None
@@ -1081,157 +1007,12 @@ def finish_reason_error(
             reason=finish_reason,
             partial_text=partial_text,
         )
-    from solstone.think.providers.shared import (
-        _UNKNOWN_FINISH_REASON,
-        _safe_finish_reason,
-        _safe_token_counts,
-    )
-
-    safe_finish_reason = _safe_finish_reason(finish_reason)
     result_model = result.get("model")
     return ProviderResponseInvalidError(
-        reason=safe_finish_reason or _UNKNOWN_FINISH_REASON,
-        finish_reason=safe_finish_reason,
+        reason=str(finish_reason),
+        finish_reason=finish_reason if isinstance(finish_reason, str) else None,
         model=result_model if isinstance(result_model, str) and result_model else None,
-        token_counts=_safe_token_counts(result.get("usage")),
     )
-
-
-def _build_json_pointer(path: Any) -> str:
-    segments = list(path)
-    if not segments:
-        return ""
-    escaped_segments = []
-    for segment in segments:
-        escaped = str(segment).replace("~", "~0").replace("/", "~1")
-        escaped_segments.append(escaped)
-    return "/" + "/".join(escaped_segments)
-
-
-def _validate_schema(text: str, schema: dict) -> dict:
-    """Validate JSON text against a JSON Schema and log any violations."""
-
-    def truncate_repr(value: Any) -> str:
-        value_repr = repr(value)
-        if len(value_repr) <= 80:
-            return value_repr
-        return value_repr[:77] + "..."
-
-    try:
-        parsed = json.loads(text)
-    except ValueError as exc:
-        error = {
-            "path": "",
-            "constraint": "json_parse",
-            "message": str(exc),
-        }
-        logger.warning(
-            "schema_validation: %s: %s: %s (value=%s)",
-            "",
-            "json_parse",
-            str(exc),
-            truncate_repr(text),
-        )
-        return {"valid": False, "errors": [error]}
-
-    errors = []
-    try:
-        validator = Draft202012Validator(schema)
-        validation_errors = list(validator.iter_errors(parsed))
-    except Exception as exc:
-        error = {
-            "path": "",
-            "constraint": "schema_validation",
-            "message": str(exc),
-        }
-        logger.warning(
-            "schema_validation: %s: %s: %s (value=%s)",
-            "",
-            "schema_validation",
-            str(exc),
-            truncate_repr(parsed),
-        )
-        return {"valid": False, "errors": [error]}
-
-    for error in validation_errors:
-        path = _build_json_pointer(error.absolute_path)
-        constraint = str(error.validator)
-        message = error.message
-        errors.append(
-            {
-                "path": path,
-                "constraint": constraint,
-                "message": message,
-            }
-        )
-        logger.warning(
-            "schema_validation: %s: %s: %s (value=%s)",
-            path,
-            constraint,
-            message,
-            truncate_repr(error.instance),
-        )
-
-    return {"valid": len(errors) == 0, "errors": errors}
-
-
-def _validate_schema_with_annotations(text: str, schema: dict) -> tuple[str, dict]:
-    """Honor supported schema annotations, then validate canonical JSON text.
-
-    The annotation walk traverses only ``properties`` and dict-form ``items``.
-    Annotations behind ``$ref``, ``$defs``, ``allOf``, ``patternProperties``,
-    schema-valued ``additionalProperties``, ``prefixItems``, and tuple-form
-    ``items`` are not honored. ``truncated`` is omitted from the returned
-    validation dict when no annotation fired. Non-string instance values are
-    never coerced; strict validation handles them exactly as before.
-    """
-    try:
-        parsed = json.loads(text)
-    except ValueError:
-        return text, _validate_schema(text, schema)
-
-    truncated: list[str] = []
-
-    def walk(schema_node: Any, instance: Any, path: list[Any]) -> Any:
-        if not isinstance(schema_node, dict):
-            return instance
-
-        max_length = schema_node.get("maxLength")
-        if (
-            schema_node.get(SCHEMA_TRUNCATE_KEY) is True
-            and isinstance(max_length, int)
-            and not isinstance(max_length, bool)
-            and max_length >= 0
-            and isinstance(instance, str)
-            and len(instance) > max_length
-        ):
-            truncated.append(_build_json_pointer(path))
-            return instance[:max_length]
-
-        properties = schema_node.get("properties")
-        if isinstance(properties, dict) and isinstance(instance, dict):
-            for key, child_schema in properties.items():
-                if key not in instance:
-                    continue
-                instance[key] = walk(
-                    child_schema,
-                    instance[key],
-                    [*path, key],
-                )
-
-        items = schema_node.get("items")
-        if isinstance(items, dict) and isinstance(instance, list):
-            for index, item in enumerate(instance):
-                instance[index] = walk(items, item, [*path, index])
-
-        return instance
-
-    parsed = walk(schema, parsed, [])
-    text_to_validate = json.dumps(parsed, ensure_ascii=False) if truncated else text
-    validation = _validate_schema(text_to_validate, schema)
-    if truncated:
-        validation["truncated"] = truncated
-    return text_to_validate, validation
 
 
 def generate(
@@ -1246,98 +1027,20 @@ def generate(
     thinking_budget: Optional[int] = None,
     timeout_s: Optional[float] = None,
 ) -> str:
-    """Generate text using the configured generate provider.
+    """Generate text through the native generate boundary."""
+    from solstone.think import generate_client
 
-    Parameters
-    ----------
-    contents : str or List
-        The content to send to the model.
-    context : str
-        Context string for token logging and telemetry.
-    temperature : float
-        Temperature for generation (default: 0.3).
-    max_output_tokens : int
-        Maximum tokens for the model's response output.
-    system_instruction : str, optional
-        System instruction for the model.
-    json_output : bool
-        Whether to request JSON response format.
-    json_schema : dict, optional
-        JSON Schema to request structured output from the provider. When supplied,
-        this forces json_output=True and runs advisory local validation on the
-        returned text after truncation checks.
-    thinking_budget : int, optional
-        Token budget for model thinking (ignored by providers that don't support it).
-    timeout_s : float, optional
-        Request timeout in seconds.
-    Returns
-    -------
-    str
-        Response text from the model.
-
-    Raises
-    ------
-    ValueError
-        If the resolved provider is not supported.
-    IncompleteJSONError
-        If json_output=True and response was truncated.
-    """
-    from solstone.think.providers import get_provider_module
-
-    if json_schema is not None:
-        json_output = True
-
-    provider, model = resolve_provider("generate")
-
-    _raise_if_no_brain(provider)
-    _raise_if_confidential_unverified(provider)
-
-    # Get provider module via registry (raises ValueError for unknown providers)
-    provider_mod = get_provider_module(provider)
-    provider_schema = prepare_provider_schema(json_schema, provider)
-
-    timeout_s = DEFAULT_PROVIDER_TIMEOUT_S if timeout_s is None else timeout_s
-
-    # Call provider's run_generate (returns GenerateResult)
-    provider_options = {} if provider == "local" else {"provider": provider}
-    result = provider_mod.run_generate(
-        contents=contents,
-        model=model,
-        temperature=temperature,
-        max_output_tokens=max_output_tokens,
-        system_instruction=system_instruction,
-        json_output=json_output,
-        json_schema=provider_schema,
+    return generate_client.generate(
+        contents,
+        context,
+        temperature,
+        max_output_tokens,
+        system_instruction,
+        json_output,
+        json_schema=json_schema,
         thinking_budget=thinking_budget,
         timeout_s=timeout_s,
-        **provider_options,
     )
-
-    # Log token usage centrally before validation so truncated responses
-    # still get their usage recorded.
-    responsiveness = _record_generate_usage_and_responsiveness(
-        result,
-        model=(result.get("model") or model) if isinstance(result, Mapping) else model,
-        context=context,
-    )
-
-    validate_generate_result_strict(
-        result,
-        json_output=json_output,
-        model=(result.get("model") or model) if isinstance(result, dict) else model,
-    )
-    if responsiveness.non_responsive:
-        _raise_non_responsive_output(responsiveness)
-
-    if json_schema is not None:
-        text, validation = _validate_schema_with_annotations(
-            result["text"], json_schema
-        )
-        if validation["valid"] is False:
-            raise SchemaValidationError(validation["errors"], text)
-        return text
-
-    return result["text"]
 
 
 def generate_with_result(
@@ -1356,107 +1059,24 @@ def generate_with_result(
     local_exclusive_admission: bool = False,
     enforce_responsiveness: bool = True,
 ) -> dict:
-    """Generate text and return full result with usage data.
+    """Generate a full result through the native generate boundary."""
+    from solstone.think import generate_client
 
-    Same as generate() but returns the full GenerateResult dict instead of
-    just the text. Used by cortex-managed generators that need usage data
-    for event emission.
-
-    Parameters
-    ----------
-    contents : str or List
-        The content to send to the model.
-    context : str
-        Context string for token logging and telemetry.
-    temperature : float
-        Temperature for generation (default: 0.3).
-    max_output_tokens : int
-        Maximum tokens for the model's response output.
-    system_instruction : str, optional
-        System instruction for the model.
-    json_output : bool
-        Whether to request JSON response format.
-    json_schema : dict, optional
-        JSON Schema to request structured output from the provider. When supplied,
-        this forces json_output=True and runs advisory local validation on the
-        returned text after truncation checks.
-    thinking_budget : int, optional
-        Token budget for model thinking (ignored by providers that don't support it).
-    timeout_s : float, optional
-        Request timeout in seconds.
-    num_retries : int, optional
-        Provider transport retry count for backends that expose one.
-    Returns
-    -------
-    dict
-        GenerateResult with: text, usage, finish_reason, thinking, and
-        schema_validation when json_schema is supplied. Validation is advisory
-        and runs after truncation checks succeed.
-    """
-    from solstone.think.providers import get_provider_module
-
-    if json_schema is not None:
-        json_output = True
-
-    provider, model = resolve_provider("generate")
-
-    _raise_if_no_brain(provider)
-    _raise_if_confidential_unverified(provider)
-
-    provider_mod = get_provider_module(provider)
-    provider_schema = prepare_provider_schema(json_schema, provider)
-
-    timeout_s = DEFAULT_PROVIDER_TIMEOUT_S if timeout_s is None else timeout_s
-
-    provider_options: dict[str, Any]
-    if provider == "local":
-        provider_options = {}
-        if inference_retry_index:
-            provider_options["inference_retry_index"] = inference_retry_index
-        if local_exclusive_admission:
-            provider_options["local_exclusive_admission"] = True
-    else:
-        provider_options = {"provider": provider}
-        if num_retries is not None:
-            provider_options["num_retries"] = num_retries
-    result = provider_mod.run_generate(
-        contents=contents,
-        model=model,
-        temperature=temperature,
-        max_output_tokens=max_output_tokens,
-        system_instruction=system_instruction,
-        json_output=json_output,
-        json_schema=provider_schema,
+    return generate_client.generate_with_result(
+        contents,
+        context,
+        temperature,
+        max_output_tokens,
+        system_instruction,
+        json_output,
+        json_schema=json_schema,
         thinking_budget=thinking_budget,
         timeout_s=timeout_s,
-        **provider_options,
-    )
-
-    # Log token usage centrally before validation so truncated responses
-    # still get their usage recorded.
-    responsiveness = _record_generate_usage_and_responsiveness(
-        result,
-        model=(result.get("model") or model) if isinstance(result, Mapping) else model,
-        context=context,
+        num_retries=num_retries,
+        inference_retry_index=inference_retry_index,
+        local_exclusive_admission=local_exclusive_admission,
         enforce_responsiveness=enforce_responsiveness,
     )
-
-    validate_generate_result_strict(
-        result,
-        json_output=json_output,
-        model=(result.get("model") or model) if isinstance(result, dict) else model,
-    )
-    if responsiveness.non_responsive:
-        _raise_non_responsive_output(responsiveness)
-
-    if json_schema is not None:
-        text, validation = _validate_schema_with_annotations(
-            result["text"], json_schema
-        )
-        result["text"] = text
-        result["schema_validation"] = validation
-
-    return result
 
 
 async def agenerate_with_result(
@@ -1475,67 +1095,24 @@ async def agenerate_with_result(
     local_exclusive_admission: bool = False,
     enforce_responsiveness: bool = True,
 ) -> dict:
-    """Async generate text and return the full GenerateResult dict."""
-    from solstone.think.providers import get_provider_module
+    """Asynchronously generate a full result through native core."""
+    from solstone.think import generate_client
 
-    if json_schema is not None:
-        json_output = True
-
-    provider, model = resolve_provider("generate")
-
-    _raise_if_no_brain(provider)
-    _raise_if_confidential_unverified(provider)
-
-    provider_mod = get_provider_module(provider)
-    provider_schema = prepare_provider_schema(json_schema, provider)
-
-    timeout_s = DEFAULT_PROVIDER_TIMEOUT_S if timeout_s is None else timeout_s
-
-    provider_options: dict[str, Any]
-    if provider == "local":
-        provider_options = {}
-        if inference_retry_index:
-            provider_options["inference_retry_index"] = inference_retry_index
-        if local_exclusive_admission:
-            provider_options["local_exclusive_admission"] = True
-    else:
-        provider_options = {"provider": provider}
-    result = await provider_mod.run_agenerate(
-        contents=contents,
-        model=model,
-        temperature=temperature,
-        max_output_tokens=max_output_tokens,
-        system_instruction=system_instruction,
-        json_output=json_output,
-        json_schema=provider_schema,
+    return await generate_client.agenerate_with_result(
+        contents,
+        context,
+        temperature,
+        max_output_tokens,
+        system_instruction,
+        json_output,
+        json_schema=json_schema,
         thinking_budget=thinking_budget,
         timeout_s=timeout_s,
-        **provider_options,
-    )
-
-    responsiveness = _record_generate_usage_and_responsiveness(
-        result,
-        model=(result.get("model") or model) if isinstance(result, Mapping) else model,
-        context=context,
+        num_retries=num_retries,
+        inference_retry_index=inference_retry_index,
+        local_exclusive_admission=local_exclusive_admission,
         enforce_responsiveness=enforce_responsiveness,
     )
-
-    validate_generate_result_strict(
-        result,
-        json_output=json_output,
-        model=(result.get("model") or model) if isinstance(result, dict) else model,
-    )
-    if responsiveness.non_responsive:
-        _raise_non_responsive_output(responsiveness)
-
-    if json_schema is not None:
-        text, validation = _validate_schema_with_annotations(
-            result["text"], json_schema
-        )
-        result["text"] = text
-        result["schema_validation"] = validation
-
-    return result
 
 
 async def agenerate(
@@ -1550,98 +1127,20 @@ async def agenerate(
     thinking_budget: Optional[int] = None,
     timeout_s: Optional[float] = None,
 ) -> str:
-    """Async generate text using the configured generate provider.
+    """Asynchronously generate text through the native generate boundary."""
+    from solstone.think import generate_client
 
-    Parameters
-    ----------
-    contents : str or List
-        The content to send to the model.
-    context : str
-        Context string for token logging and telemetry.
-    temperature : float
-        Temperature for generation (default: 0.3).
-    max_output_tokens : int
-        Maximum tokens for the model's response output.
-    system_instruction : str, optional
-        System instruction for the model.
-    json_output : bool
-        Whether to request JSON response format.
-    json_schema : dict, optional
-        JSON Schema to request structured output from the provider. When supplied,
-        this forces json_output=True and runs advisory local validation on the
-        returned text after truncation checks.
-    thinking_budget : int, optional
-        Token budget for model thinking (ignored by providers that don't support it).
-    timeout_s : float, optional
-        Request timeout in seconds.
-    Returns
-    -------
-    str
-        Response text from the model.
-
-    Raises
-    ------
-    ValueError
-        If the resolved provider is not supported.
-    IncompleteJSONError
-        If json_output=True and response was truncated.
-    """
-    from solstone.think.providers import get_provider_module
-
-    if json_schema is not None:
-        json_output = True
-
-    provider, model = resolve_provider("generate")
-
-    _raise_if_no_brain(provider)
-    _raise_if_confidential_unverified(provider)
-
-    # Get provider module via registry (raises ValueError for unknown providers)
-    provider_mod = get_provider_module(provider)
-    provider_schema = prepare_provider_schema(json_schema, provider)
-
-    timeout_s = DEFAULT_PROVIDER_TIMEOUT_S if timeout_s is None else timeout_s
-
-    # Call provider's run_agenerate (returns GenerateResult)
-    provider_options = {} if provider == "local" else {"provider": provider}
-    result = await provider_mod.run_agenerate(
-        contents=contents,
-        model=model,
-        temperature=temperature,
-        max_output_tokens=max_output_tokens,
-        system_instruction=system_instruction,
-        json_output=json_output,
-        json_schema=provider_schema,
+    return await generate_client.agenerate(
+        contents,
+        context,
+        temperature,
+        max_output_tokens,
+        system_instruction,
+        json_output,
+        json_schema=json_schema,
         thinking_budget=thinking_budget,
         timeout_s=timeout_s,
-        **provider_options,
     )
-
-    # Log token usage centrally before validation so truncated responses
-    # still get their usage recorded.
-    responsiveness = _record_generate_usage_and_responsiveness(
-        result,
-        model=(result.get("model") or model) if isinstance(result, Mapping) else model,
-        context=context,
-    )
-
-    validate_generate_result_strict(
-        result,
-        json_output=json_output,
-        model=(result.get("model") or model) if isinstance(result, dict) else model,
-    )
-    if responsiveness.non_responsive:
-        _raise_non_responsive_output(responsiveness)
-
-    if json_schema is not None:
-        text, validation = _validate_schema_with_annotations(
-            result["text"], json_schema
-        )
-        if validation["valid"] is False:
-            raise SchemaValidationError(validation["errors"], text)
-        return text
-
-    return result["text"]
 
 
 __all__ = [
@@ -1659,7 +1158,6 @@ __all__ = [
     "GEMINI_FLASH",
     "GPT_5_MINI",
     "CLAUDE_SONNET_4",
-    "DEFAULT_PROVIDER_TIMEOUT_S",
     "QWEN_35_9B",
     "GEMMA4_26B_A4B_4BIT",
     "LOCAL_MODEL",

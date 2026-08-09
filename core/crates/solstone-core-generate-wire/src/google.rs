@@ -114,7 +114,7 @@ fn google_generate_with<T: GoogleTransport>(
         GOOGLE_BASE_URL,
         &path,
         &body,
-        api_key,
+        &api_key,
         request_timeout(request.timeout_s),
     ) {
         Ok(response) => response,
@@ -128,28 +128,12 @@ fn google_generate_with<T: GoogleTransport>(
     parse_response(&response.body)
 }
 
-fn configured_api_key(config: &Map<String, Value>) -> Option<&str> {
-    config
-        .get("env")
-        .and_then(Value::as_object)
-        .and_then(|env| env.get(GOOGLE_API_KEY_ENV))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|key| !key.is_empty())
+fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
+    crate::overrides::configured_api_key(config, GOOGLE_API_KEY_ENV)
 }
 
 fn configured_model(config: &Map<String, Value>) -> String {
-    config
-        .get("providers")
-        .and_then(Value::as_object)
-        .and_then(|providers| providers.get("active"))
-        .and_then(Value::as_object)
-        .and_then(|active| active.get("model"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|model| !model.is_empty())
-        .unwrap_or(DEFAULT_MODEL)
-        .to_owned()
+    crate::overrides::configured_model(config, DEFAULT_MODEL)
 }
 
 fn request_body(request: &GenerateRequest, _model: &str) -> Value {

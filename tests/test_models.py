@@ -6,10 +6,8 @@
 import asyncio
 import json
 import logging
-import time
+import os
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -18,7 +16,6 @@ from solstone.think.models import (
     CLAUDE_OPUS_4,
     CLAUDE_SONNET_4,
     DEFAULT_MODEL_BY_PROVIDER,
-    DEFAULT_PROVIDER_TIMEOUT_S,
     GEMINI_FLASH,
     GEMMA4_26B_A4B_4BIT,
     GPT_5_MINI,
@@ -27,22 +24,18 @@ from solstone.think.models import (
     PROMPT_PATHS,
     QWEN_35_9B,
     IncompleteJSONError,
-    IncompleteTextError,
     NoBrainConfiguredError,
     ProviderResponseInvalidError,
-    SchemaValidationError,
     _Family,
     _find_pricing_fallback,
     _parse_family_anthropic,
     _parse_family_gemini,
     _parse_family_openai,
-    _validate_schema,
     agenerate,
     agenerate_with_result,
     calc_agent_cost,
     calc_token_cost,
     default_model_for_provider,
-    finish_reason_error,
     generate,
     generate_with_result,
     get_context_registry,
@@ -53,70 +46,6 @@ from solstone.think.models import (
     model_supports,
     resolve_provider,
 )
-from solstone.think.responsiveness import (
-    NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS,
-    NON_RESPONSIVE_REASON_CODE,
-    NonResponsiveOutputError,
-)
-from solstone.think.schema_prep import SCHEMA_TRUNCATE_KEY
-
-_FINISH_METADATA_MARKER = "zq7marker9x"
-_NON_RESPONSIVE_REFUSAL = "I cannot describe this screen."
-_RESPONSIVE_CHAT_FIXTURE = {
-    "message": "The release check passed and Noah owns the follow-up.",
-    "notes": "The owner asked about the release, so I summarized the check result.",
-    "talent_request": None,
-}
-_REFUSAL_CHAT_FIXTURE = {
-    "message": _NON_RESPONSIVE_REFUSAL,
-    "notes": "The owner asked about the release, so I summarized the check result.",
-    "talent_request": None,
-}
-_GENERATE_USAGE = {
-    "input_tokens": 11,
-    "output_tokens": 3,
-    "reasoning_tokens": 2,
-    "total_tokens": 16,
-}
-
-
-def _fresh_generate_result(text: str):
-    def make_result(*_args, **_kwargs):
-        return {"text": text, "finish_reason": "stop"}
-
-    return make_result
-
-
-def _generate_result(
-    text: str,
-    *,
-    usage: dict | None = None,
-    finish_reason: str = "stop",
-    model: str = "provider-model",
-) -> dict:
-    result = {"text": text, "model": model, "finish_reason": finish_reason}
-    if usage is not None:
-        result["usage"] = usage
-    return result
-
-
-def _provider_module_for_result(result: dict) -> SimpleNamespace:
-    return SimpleNamespace(
-        run_generate=MagicMock(return_value=result),
-        run_agenerate=AsyncMock(return_value=result),
-    )
-
-
-def _call_generate_entrypoint(entrypoint: str, **kwargs):
-    if entrypoint == "generate":
-        return generate("hello", "test.context", **kwargs)
-    if entrypoint == "generate_with_result":
-        return generate_with_result("hello", "test.context", **kwargs)
-    if entrypoint == "agenerate_with_result":
-        return asyncio.run(agenerate_with_result("hello", "test.context", **kwargs))
-    if entrypoint == "agenerate":
-        return asyncio.run(agenerate("hello", "test.context", **kwargs))
-    raise AssertionError(entrypoint)
 
 
 def test_calc_token_cost_basic():
@@ -643,87 +572,6 @@ def test_generate_and_cogitate_share_one_active_profile(
 
     assert resolve_provider("generate") == ("openai", GPT_5_MINI)
     assert resolve_provider("cogitate") == ("openai", GPT_5_MINI)
-
-
-@pytest.mark.parametrize(
-    "call",
-    [
-        lambda: generate("hello", "test.context", model="gpt-5.5"),
-        lambda: generate_with_result("hello", "test.context", model="gpt-5.5"),
-        lambda: asyncio.run(agenerate("hello", "test.context", model="gpt-5.5")),
-    ],
-)
-def test_generate_entry_points_reject_request_model_overrides(call):
-    """Provider/model selection belongs exclusively to the active profile."""
-    with pytest.raises(TypeError, match="unexpected keyword argument 'model'"):
-        call()
-
-
-def test_local_generate_entry_points_do_not_pass_cloud_transport_options():
-    provider_module = SimpleNamespace(
-        run_generate=MagicMock(return_value={"text": "ok", "finish_reason": "stop"}),
-        run_agenerate=AsyncMock(return_value={"text": "ok", "finish_reason": "stop"}),
-    )
-    with (
-        patch(
-            "solstone.think.models.resolve_provider",
-            return_value=("local", LOCAL_MODEL),
-        ),
-        patch(
-            "solstone.think.providers.get_provider_module",
-            return_value=provider_module,
-        ),
-    ):
-        assert generate("hello", "test.context") == "ok"
-        assert asyncio.run(agenerate("hello", "test.context")) == "ok"
-
-    assert "provider" not in provider_module.run_generate.call_args.kwargs
-    assert "provider" not in provider_module.run_agenerate.call_args.kwargs
-
-
-def test_generate_stops_before_provider_module_when_no_brain():
-    with (
-        patch(
-            "solstone.think.models.resolve_provider",
-            return_value=(NO_BRAIN_PROVIDER, ""),
-        ),
-        patch(
-            "solstone.think.providers.get_provider_module",
-            side_effect=AssertionError("provider module should not be invoked"),
-        ),
-    ):
-        with pytest.raises(NoBrainConfiguredError):
-            generate("hello", "test.context")
-
-
-def test_generate_with_result_stops_before_provider_module_when_no_brain():
-    with (
-        patch(
-            "solstone.think.models.resolve_provider",
-            return_value=(NO_BRAIN_PROVIDER, ""),
-        ),
-        patch(
-            "solstone.think.providers.get_provider_module",
-            side_effect=AssertionError("provider module should not be invoked"),
-        ),
-    ):
-        with pytest.raises(NoBrainConfiguredError):
-            generate_with_result("hello", "test.context")
-
-
-def test_agenerate_stops_before_provider_module_when_no_brain():
-    with (
-        patch(
-            "solstone.think.models.resolve_provider",
-            return_value=(NO_BRAIN_PROVIDER, ""),
-        ),
-        patch(
-            "solstone.think.providers.get_provider_module",
-            side_effect=AssertionError("provider module should not be invoked"),
-        ),
-    ):
-        with pytest.raises(NoBrainConfiguredError):
-            asyncio.run(agenerate("hello", "test.context"))
 
 
 # ---------------------------------------------------------------------------
@@ -1284,1591 +1132,210 @@ class TestModelSupports:
         assert model_supports("gpt-5.5", "temperature") is True
 
 
-class TestValidateSchema:
-    def test_valid_instance(self):
-        schema = {
-            "type": "object",
-            "properties": {"field": {"type": "string"}},
-            "required": ["field"],
-        }
+def _native_generated_response(
+    *, text: str = "native OK", finish_reason: str = "stop"
+) -> dict:
+    return {
+        "schema": "solstone-generate-response-v2",
+        "id": None,
+        "outcome": "generated",
+        "text": text,
+        "model": "native-model",
+        "usage": {"input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
+        "finish_reason": finish_reason,
+        "thinking": None,
+        "schema_validation": None,
+        "input_budget": None,
+        "request_budget": None,
+        "inference": None,
+    }
 
-        result = _validate_schema('{"field": "ok"}', schema)
 
-        assert result == {"valid": True, "errors": []}
+class _NativeOneShotProcess:
+    def __init__(self, response: dict, captured: dict):
+        self._response = response
+        self._captured = captured
+        self.returncode = 0
 
-    def test_schema_violation_type(self):
-        schema = {
-            "type": "object",
-            "properties": {"field": {"type": "integer"}},
-            "required": ["field"],
-        }
+    def communicate(self, input_text: str) -> tuple[str, str]:
+        self._captured["request"] = json.loads(input_text)
+        return json.dumps(self._response), ""
 
-        result = _validate_schema('{"field": "ok"}', schema)
 
-        assert result["valid"] is False
-        assert len(result["errors"]) == 1
-        assert result["errors"][0]["path"] == "/field"
-        assert result["errors"][0]["constraint"] == "type"
-        assert result["errors"][0]["message"]
+def test_native_generate_sync_round_trip_never_resolves_provider(monkeypatch):
+    from solstone.think import generate_client
 
-    def test_schema_violation_required(self):
-        schema = {"type": "object", "required": ["field"]}
+    captured: dict = {}
 
-        result = _validate_schema("{}", schema)
-
-        assert result["valid"] is False
-        assert len(result["errors"]) == 1
-        assert result["errors"][0]["path"] == ""
-        assert result["errors"][0]["constraint"] == "required"
-
-    def test_multiple_violations(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "field": {"type": "integer"},
-                "other": {"type": "string"},
-            },
-            "required": ["field", "other"],
-        }
-
-        result = _validate_schema('{"field": "bad"}', schema)
-
-        assert result["valid"] is False
-        assert len(result["errors"]) == 2
-        assert {error["constraint"] for error in result["errors"]} == {
-            "required",
-            "type",
-        }
-
-    def test_parse_failure(self):
-        schema = {"type": "object"}
-
-        result = _validate_schema("{", schema)
-
-        assert result["valid"] is False
-        assert result["errors"] == [
-            {
-                "path": "",
-                "constraint": "json_parse",
-                "message": result["errors"][0]["message"],
-            }
-        ]
-
-    def test_json_pointer_escape(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "a/b": {
-                    "type": "object",
-                    "properties": {"c~d": {"type": "integer"}},
-                }
-            },
-        }
-
-        result = _validate_schema('{"a/b": {"c~d": "bad"}}', schema)
-
-        assert result["valid"] is False
-        assert result["errors"][0]["path"] == "/a~1b/c~0d"
-
-    def test_warning_logged_for_violations(self, caplog):
-        schema = {
-            "type": "object",
-            "properties": {"field": {"type": "integer"}},
-        }
-
-        with caplog.at_level(logging.WARNING):
-            _validate_schema('{"field": "bad"}', schema)
-
-        assert any(
-            record.levelno == logging.WARNING
-            and "schema_validation:" in record.getMessage()
-            for record in caplog.records
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError(
+            "native generate client must not use Python generate internals"
         )
 
-    def test_invalid_schema_does_not_raise(self):
-        result = _validate_schema('{"field": "ok"}', {"type": "not-a-real-type"})
+    def fake_popen(args, **_kwargs):
+        captured["args"] = args
+        return _NativeOneShotProcess(_native_generated_response(), captured)
 
-        assert result["valid"] is False
-        assert len(result["errors"]) == 1
-        assert result["errors"][0]["constraint"] == "schema_validation"
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(generate_client.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(models_module, "resolve_provider", fail_if_called)
+    monkeypatch.setattr(models_module, "log_token_usage", fail_if_called)
+
+    result = generate_with_result("hello", "test.context")
+    assert result["text"] == "native OK"
+    assert generate("hello", "test.context") == "native OK"
+    assert captured["args"] == ["/native/core", "generate", "--one-shot"]
+    assert captured["request"]["context"] == "test.context"
+    assert captured["request"]["contents"] == [{"type": "text", "text": "hello"}]
+    assert "provider" not in captured["request"]
+    assert "model" not in captured["request"]
 
 
-def _assert_exception_metadata_omits_marker(exc: BaseException, marker: str) -> None:
-    assert marker not in str(exc)
-    for value in vars(exc).values():
-        assert marker not in str(value)
-    for value in exc.args:
-        assert marker not in str(value)
+def test_native_generate_child_environment_does_not_mutate_parent(monkeypatch):
+    from solstone.think import generate_client
 
+    captured: dict = {}
 
-class TestGenerateJsonSchemaPlumbing:
-    def test_finish_reason_predicate_json_rejects_any_non_stop(self):
-        error = finish_reason_error(
-            {"text": "{}", "finish_reason": "content_filter"},
-            json_output=True,
-        )
+    def fake_popen(args, **kwargs):
+        captured["args"] = args
+        captured["environment"] = kwargs["env"]
+        return _NativeOneShotProcess(_native_generated_response(), captured)
 
-        assert isinstance(error, IncompleteJSONError)
+    monkeypatch.delenv("SOLSTONE_GENERATE_API_KEY_OVERRIDE", raising=False)
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(generate_client.subprocess, "Popen", fake_popen)
 
-    def test_finish_reason_predicate_plain_text_rejects_length(self):
-        error = finish_reason_error(
-            {"text": "partial", "finish_reason": "max_tokens"},
-            json_output=False,
-        )
-
-        assert isinstance(error, IncompleteTextError)
-        assert error.reason_code == "incomplete_text_length"
-
-    def test_finish_reason_predicate_plain_text_rejects_non_length(self):
-        error = finish_reason_error(
-            {
-                "text": "",
-                "model": "provider-model",
-                "usage": {
-                    "input_tokens": 1,
-                    "output_tokens": 2,
-                    "raw": object(),
-                },
-                "finish_reason": "content_filter",
-            },
-            json_output=False,
-        )
-
-        assert isinstance(error, ProviderResponseInvalidError)
-        assert error.reason_code == "provider_response_invalid"
-        assert error.finish_reason == "content_filter"
-        assert error.model == "provider-model"
-        assert error.token_counts == {"input_tokens": 1, "output_tokens": 2}
-
-    def test_strict_validation_plain_text_finish_leniency_is_unchanged(self):
-        models_module.validate_generate_result_strict(
-            {"text": "partial", "finish_reason": "max_tokens"},
-            json_output=False,
-        )
-
-    @pytest.mark.parametrize("json_output", [True, False])
-    @pytest.mark.parametrize(
-        ("text_case", "expect_blank"),
-        [
-            ("nonblank", False),
-            ("empty", True),
-            ("spaces", True),
-            ("missing", True),
-            ("non_string", True),
-        ],
+    generate_client.generate_with_result(
+        "hello",
+        "test.context",
+        child_environment={"SOLSTONE_GENERATE_API_KEY_OVERRIDE": "candidate-secret"},
     )
-    @pytest.mark.parametrize("finish_reason", ["stop", "STOP", " stop ", " STOP "])
-    def test_strict_validation_stop_finish_variants_blank_output_matrix(
-        self,
-        finish_reason,
-        text_case,
-        expect_blank,
-        json_output,
-    ):
-        result = {"finish_reason": finish_reason}
-        if text_case == "nonblank":
-            result["text"] = "complete text"
-        elif text_case == "empty":
-            result["text"] = ""
-        elif text_case == "spaces":
-            result["text"] = "   "
-        elif text_case == "non_string":
-            result["text"] = 123
 
-        if not expect_blank:
-            models_module.validate_generate_result_strict(
-                result,
-                json_output=json_output,
-            )
-            return
-
-        with pytest.raises(ProviderResponseInvalidError) as exc_info:
-            models_module.validate_generate_result_strict(
-                result,
-                json_output=json_output,
-            )
-
-        exc = exc_info.value
-        assert exc.reason == "blank_visible_output"
-        assert exc.finish_reason == "stop"
-
-    @pytest.mark.parametrize(
-        ("finish_reason", "expected_reason"),
-        [
-            ("length", "length"),
-            ("LENGTH", "length"),
-            (" length ", "length"),
-            ("max_tokens", "max_tokens"),
-            ("MAX_TOKENS", "max_tokens"),
-            (" max_tokens ", "max_tokens"),
-        ],
+    assert captured["environment"]["SOLSTONE_GENERATE_API_KEY_OVERRIDE"] == (
+        "candidate-secret"
     )
-    def test_strict_validation_json_length_finish_variants_use_safe_reason(
-        self,
-        finish_reason,
-        expected_reason,
-    ):
-        with pytest.raises(IncompleteJSONError) as exc_info:
-            models_module.validate_generate_result_strict(
-                {"text": "partial", "finish_reason": finish_reason},
-                json_output=True,
-            )
+    assert "SOLSTONE_GENERATE_API_KEY_OVERRIDE" not in os.environ
 
-        exc = exc_info.value
-        assert exc.reason == expected_reason
-        assert exc.reason_code == "incomplete_json_length"
 
-    def test_strict_validation_json_empty_finish_reason_is_unknown_non_stop(self):
-        # Empty finish strings are reduced to the fixed safe token before JSON
-        # or text classification; this intentionally replaces the old falsy
-        # short-circuit.
-        with pytest.raises(IncompleteJSONError) as exc_info:
-            models_module.validate_generate_result_strict(
-                {"text": "partial", "finish_reason": ""},
-                json_output=True,
-            )
+def test_native_generate_async_round_trip_uses_async_subprocess(monkeypatch):
+    from solstone.think import generate_client
 
-        assert exc_info.value.reason == "unknown"
+    captured: dict = {}
 
-    @pytest.mark.parametrize(
-        "finish_reason",
-        [
-            str({"secret": _FINISH_METADATA_MARKER}).strip().lower(),
-            "a" * 65 + _FINISH_METADATA_MARKER,
-        ],
+    class AsyncNativeOneShotProcess:
+        returncode = 0
+
+        async def communicate(self, input_bytes: bytes) -> tuple[bytes, bytes]:
+            captured["request"] = json.loads(input_bytes)
+            return json.dumps(_native_generated_response()).encode(), b""
+
+    async def fake_create_subprocess_exec(*args, **_kwargs):
+        captured["args"] = args
+        return AsyncNativeOneShotProcess()
+
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(
+        generate_client.asyncio,
+        "create_subprocess_exec",
+        fake_create_subprocess_exec,
     )
-    def test_strict_validation_json_unsafe_finish_reason_uses_unknown_without_raw_metadata(
-        self,
-        finish_reason,
-    ):
-        marker = _FINISH_METADATA_MARKER
 
-        with pytest.raises(IncompleteJSONError) as exc_info:
-            models_module.validate_generate_result_strict(
-                {"text": "partial", "finish_reason": finish_reason},
-                json_output=True,
-            )
+    result = asyncio.run(agenerate_with_result("hello", "test.context"))
+    assert result["text"] == "native OK"
+    assert asyncio.run(agenerate("hello", "test.context")) == "native OK"
+    assert captured["args"] == ("/native/core", "generate", "--one-shot")
+    assert captured["request"]["contents"] == [{"type": "text", "text": "hello"}]
 
-        exc = exc_info.value
-        assert exc.reason == "unknown"
-        _assert_exception_metadata_omits_marker(exc, marker)
 
-    @pytest.mark.parametrize(
-        "entrypoint",
-        ["generate", "generate_with_result", "agenerate_with_result", "agenerate"],
+def test_native_generate_refusal_preserves_native_classification(monkeypatch):
+    from solstone.think import generate_client
+
+    contract = generate_client._generate_contract()
+    refusal = dict(
+        next(
+            vector["response"]
+            for vector in contract["conformance_vectors"]
+            if vector.get("source", {}).get("exception") == "NoBrainConfiguredError"
+        )
     )
-    def test_all_generate_entrypoints_reject_bare_non_responsive_output(
-        self,
-        entrypoint,
-    ):
-        result = _generate_result(_NON_RESPONSIVE_REFUSAL, usage=_GENERATE_USAGE)
-        provider_module = _provider_module_for_result(result)
+    refusal["id"] = None
+    captured: dict = {}
 
-        with (
-            patch(
-                "solstone.think.models.resolve_provider",
-                return_value=("fake", "requested-model"),
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch("solstone.think.models.log_token_usage") as mock_log_usage,
-        ):
-            with pytest.raises(NonResponsiveOutputError) as exc_info:
-                _call_generate_entrypoint(entrypoint)
-
-        exc = exc_info.value
-        assert exc.reason_code == NON_RESPONSIVE_REASON_CODE
-        assert exc.non_responsive_output == _NON_RESPONSIVE_REFUSAL
-        assert exc.non_responsive_matched_signal == "i cannot"
-        mock_log_usage.assert_called_once_with(
-            model="provider-model",
-            usage=_GENERATE_USAGE,
-            context="test.context",
-            type="generate",
-            non_responsive_output=_NON_RESPONSIVE_REFUSAL,
-            non_responsive_matched_signal="i cannot",
-        )
-
-    @pytest.mark.parametrize(
-        "entrypoint",
-        ["generate", "generate_with_result", "agenerate_with_result", "agenerate"],
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(
+        generate_client.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: _NativeOneShotProcess(refusal, captured),
     )
-    def test_all_generate_entrypoints_reject_chat_schema_message_refusal(
-        self,
-        entrypoint,
-    ):
-        provider_module = _provider_module_for_result(
-            _generate_result(json.dumps(_REFUSAL_CHAT_FIXTURE), usage=_GENERATE_USAGE)
-        )
 
-        with (
-            patch(
-                "solstone.think.models.resolve_provider",
-                return_value=("fake", "requested-model"),
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch("solstone.think.models.log_token_usage"),
-        ):
-            with pytest.raises(NonResponsiveOutputError) as exc_info:
-                _call_generate_entrypoint(entrypoint)
+    with pytest.raises(NoBrainConfiguredError) as raised:
+        generate("hello", "test.context")
 
-        assert exc_info.value.non_responsive_output == json.dumps(_REFUSAL_CHAT_FIXTURE)
+    assert raised.value.reason == refusal["reason"]
+    assert raised.value.blocking is refusal["blocking"]
+    assert raised.value.retryable is refusal["retryable"]
 
-    @pytest.mark.parametrize(
-        "entrypoint",
-        ["generate", "generate_with_result", "agenerate_with_result", "agenerate"],
+
+def test_native_generate_non_json_truncation_returns_text(monkeypatch):
+    from solstone.think import generate_client
+
+    captured: dict = {}
+    response = _native_generated_response(
+        text="truncated but usable", finish_reason="length"
     )
-    def test_all_generate_entrypoints_accept_responsive_chat_schema_fixture(
-        self,
-        entrypoint,
-    ):
-        provider_module = _provider_module_for_result(
-            _generate_result(
-                json.dumps(_RESPONSIVE_CHAT_FIXTURE), usage=_GENERATE_USAGE
-            )
-        )
 
-        with (
-            patch(
-                "solstone.think.models.resolve_provider",
-                return_value=("fake", "requested-model"),
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch("solstone.think.models.log_token_usage") as mock_log_usage,
-        ):
-            result = _call_generate_entrypoint(entrypoint)
-
-        text = result["text"] if isinstance(result, dict) else result
-        assert json.loads(text) == _RESPONSIVE_CHAT_FIXTURE
-        mock_log_usage.assert_called_once_with(
-            model="provider-model",
-            usage=_GENERATE_USAGE,
-            context="test.context",
-            type="generate",
-        )
-
-    def test_non_responsive_usage_log_carries_capped_raw_output(
-        self,
-        tmp_path,
-        monkeypatch,
-    ):
-        monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-        raw_output = _NON_RESPONSIVE_REFUSAL + " " + ("overflow " * 200)
-        provider_module = _provider_module_for_result(
-            _generate_result(raw_output, usage=_GENERATE_USAGE)
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider",
-                return_value=("fake", "requested-model"),
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            pytest.raises(NonResponsiveOutputError),
-        ):
-            generate_with_result("hello", "test.context")
-
-        [entry] = list(iter_token_log(time.strftime("%Y%m%d")))
-        assert (
-            entry["non_responsive_output"]
-            == raw_output[:NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS]
-        )
-        assert (
-            len(entry["non_responsive_output"]) == NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS
-        )
-        assert raw_output not in json.dumps(entry)
-
-    def test_non_responsive_token_log_append_preserves_existing_bytes(
-        self,
-        tmp_path,
-        monkeypatch,
-    ):
-        monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-        token_dir = tmp_path / "tokens"
-        token_dir.mkdir()
-        log_file = token_dir / f"{time.strftime('%Y%m%d')}.jsonl"
-        prior_lines = [
-            b'{"old":1,"payload":"kept exactly"}\n',
-            b'{"old":2,"payload":"also kept"}\n',
-        ]
-        log_file.write_bytes(b"".join(prior_lines))
-        provider_module = _provider_module_for_result(
-            _generate_result(_NON_RESPONSIVE_REFUSAL, usage=_GENERATE_USAGE)
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider",
-                return_value=("fake", "requested-model"),
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            pytest.raises(NonResponsiveOutputError),
-        ):
-            generate_with_result("hello", "test.context")
-
-        lines = log_file.read_bytes().splitlines(keepends=True)
-        assert lines[: len(prior_lines)] == prior_lines
-        assert len(lines) == len(prior_lines) + 1
-        appended = json.loads(lines[-1])
-        assert appended["non_responsive_output"] == _NON_RESPONSIVE_REFUSAL
-
-    def test_non_responsive_without_usage_logs_empty_usage_and_raw_output(
-        self,
-        tmp_path,
-        monkeypatch,
-    ):
-        monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-        provider_module = _provider_module_for_result(
-            _generate_result(_NON_RESPONSIVE_REFUSAL)
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider",
-                return_value=("fake", "requested-model"),
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            pytest.raises(NonResponsiveOutputError),
-        ):
-            generate_with_result("hello", "test.context")
-
-        [entry] = list(iter_token_log(time.strftime("%Y%m%d")))
-        assert entry["usage"] == {}
-        assert entry["non_responsive_output"] == _NON_RESPONSIVE_REFUSAL
-
-    def test_non_responsive_token_log_survives_lone_surrogate_roundtrip(
-        self,
-        tmp_path,
-        monkeypatch,
-    ):
-        monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-        raw_output = f"{_NON_RESPONSIVE_REFUSAL}\ud800"
-
-        models_module.log_token_usage(
-            model="provider-model",
-            usage={},
-            context="test.context",
-            type="generate",
-            non_responsive_output=raw_output,
-        )
-
-        entries = list(iter_token_log(time.strftime("%Y%m%d")))
-        assert len(entries) == 1
-        assert entries[0]["non_responsive_output"] == raw_output
-
-    def test_truncation_wins_over_non_responsive_output(self):
-        provider_module = _provider_module_for_result(
-            _generate_result(
-                _NON_RESPONSIVE_REFUSAL,
-                usage=_GENERATE_USAGE,
-                finish_reason="length",
-            )
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider",
-                return_value=("fake", "requested-model"),
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch("solstone.think.models.log_token_usage"),
-        ):
-            with pytest.raises(IncompleteJSONError):
-                generate_with_result("hello", "test.context", json_output=True)
-
-    def test_responsiveness_classifier_exception_surfaces_outside_token_logging(
-        self,
-        caplog,
-    ):
-        class ClassifierFailure(RuntimeError):
-            pass
-
-        provider_module = _provider_module_for_result(
-            _generate_result("ordinary visible text", usage=_GENERATE_USAGE)
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider",
-                return_value=("fake", "requested-model"),
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch(
-                "solstone.think.models.classify_output_responsiveness",
-                side_effect=ClassifierFailure("classifier down"),
-            ),
-            caplog.at_level(logging.WARNING, logger="solstone.think.models"),
-        ):
-            with pytest.raises(ClassifierFailure):
-                generate_with_result("hello", "test.context")
-
-        assert "failed to log token usage" not in caplog.text
-
-    @pytest.mark.parametrize(
-        "entrypoint",
-        ["generate", "generate_with_result", "agenerate_with_result", "agenerate"],
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(
+        generate_client.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: _NativeOneShotProcess(response, captured),
     )
-    def test_generate_entrypoints_keep_existing_log_call_for_responsive_outputs(
-        self,
-        entrypoint,
-    ):
-        provider_module = _provider_module_for_result(
-            _generate_result("The release check passed.", usage=_GENERATE_USAGE)
-        )
 
-        with (
-            patch(
-                "solstone.think.models.resolve_provider",
-                return_value=("fake", "requested-model"),
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch("solstone.think.models.log_token_usage") as mock_log_usage,
-        ):
-            _call_generate_entrypoint(entrypoint)
-
-        mock_log_usage.assert_called_once_with(
-            model="provider-model",
-            usage=_GENERATE_USAGE,
-            context="test.context",
-            type="generate",
-        )
-
-    def test_non_responsive_usage_log_omits_additive_keys_when_responsive(self):
-        result = _generate_result("The release check passed.", usage=_GENERATE_USAGE)
-        result["notes"] = _NON_RESPONSIVE_REFUSAL
-        provider_module = _provider_module_for_result(result)
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider",
-                return_value=("fake", "requested-model"),
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch("solstone.think.models.log_token_usage") as mock_log_usage,
-        ):
-            assert generate_with_result("hello", "test.context") is result
-
-        kwargs = mock_log_usage.call_args.kwargs
-        assert "non_responsive_output" not in kwargs
-        assert "non_responsive_matched_signal" not in kwargs
-
-    def test_generate_with_result_can_disable_responsiveness_gate_for_brain_probe(self):
-        provider_module = _provider_module_for_result(
-            _generate_result(_NON_RESPONSIVE_REFUSAL, usage=_GENERATE_USAGE)
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider",
-                return_value=("fake", "requested-model"),
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch("solstone.think.models.log_token_usage") as mock_log_usage,
-        ):
-            result = generate_with_result(
-                "hello",
-                "test.context",
-                enforce_responsiveness=False,
-            )
-
-        assert result["text"] == _NON_RESPONSIVE_REFUSAL
-        mock_log_usage.assert_called_once_with(
-            model="provider-model",
-            usage=_GENERATE_USAGE,
-            context="test.context",
-            type="generate",
-        )
-
-    @pytest.mark.parametrize("text", ["", "   ", None, 123])
-    @pytest.mark.parametrize(
-        "entrypoint",
-        ["generate", "generate_with_result", "agenerate_with_result", "agenerate"],
+    assert (
+        generate("hello", "test.context", json_output=False) == "truncated but usable"
     )
-    def test_all_generate_entrypoints_reject_blank_clean_visible_output(
-        self,
-        entrypoint,
-        text,
-    ):
-        result = {
-            "text": text,
-            "model": "provider-model",
-            "finish_reason": "stop",
-            "usage": {
-                "input_tokens": 11,
-                "output_tokens": 0,
-                "reasoning_tokens": 3,
-                "total_tokens": 14,
-                "raw_usage": object(),
-            },
-        }
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(return_value=result),
-            run_agenerate=AsyncMock(return_value=result),
+
+
+def test_native_generate_provider_invalid_refusals_preserve_wire_classification(
+    monkeypatch,
+):
+    from solstone.think import generate_client
+
+    contract = generate_client._generate_contract()
+    blank_stop_refusal = dict(
+        next(
+            vector["response"]
+            for vector in contract["conformance_vectors"]
+            if vector.get("source", {}).get("exception")
+            == "ProviderResponseInvalidError"
         )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider",
-                return_value=("fake", "requested-model"),
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch("solstone.think.models.log_token_usage") as mock_log_usage,
-            patch("solstone.think.models._validate_schema") as mock_validate_schema,
-        ):
-            with pytest.raises(ProviderResponseInvalidError) as exc_info:
-                if entrypoint == "generate":
-                    generate("hello", "test.context", json_schema={"type": "object"})
-                elif entrypoint == "generate_with_result":
-                    generate_with_result(
-                        "hello", "test.context", json_schema={"type": "object"}
-                    )
-                elif entrypoint == "agenerate_with_result":
-                    asyncio.run(
-                        agenerate_with_result(
-                            "hello",
-                            "test.context",
-                            json_schema={"type": "object"},
-                        )
-                    )
-                else:
-                    asyncio.run(
-                        agenerate(
-                            "hello", "test.context", json_schema={"type": "object"}
-                        )
-                    )
-
-        exc = exc_info.value
-        assert exc.reason == "blank_visible_output"
-        assert exc.finish_reason == "stop"
-        assert exc.model == "provider-model"
-        assert exc.token_counts == {
-            "input_tokens": 11,
-            "output_tokens": 0,
-            "reasoning_tokens": 3,
-            "total_tokens": 14,
-        }
-        assert not hasattr(exc, "usage")
-        assert not hasattr(exc, "text")
-        assert not hasattr(exc, "prompt")
-        assert not hasattr(exc, "response")
-        assert not hasattr(exc, "body")
-        mock_log_usage.assert_called_once_with(
-            model="provider-model",
-            usage=result["usage"],
-            context="test.context",
-            type="generate",
-        )
-        mock_validate_schema.assert_not_called()
-
-    def test_strict_validation_omits_non_finite_token_counts(self):
-        result = {
-            "text": "   ",
-            "model": "provider-model",
-            "finish_reason": "stop",
-            "usage": {
-                "input_tokens": float("nan"),
-                "output_tokens": float("inf"),
-                "reasoning_tokens": 3,
-                "total_tokens": 14,
-            },
-        }
-
-        with pytest.raises(ProviderResponseInvalidError) as exc_info:
-            models_module.validate_generate_result_strict(result, json_output=False)
-
-        exc = exc_info.value
-        assert exc.reason == "blank_visible_output"
-        assert exc.model == "provider-model"
-        assert exc.token_counts == {
-            "reasoning_tokens": 3,
-            "total_tokens": 14,
-        }
-
-    def test_missing_text_and_missing_finish_are_typed_provider_invalid(self):
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(return_value={"finish_reason": None})
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            with pytest.raises(ProviderResponseInvalidError) as exc_info:
-                generate("hello", "test.context")
-
-        assert exc_info.value.reason == "blank_visible_output"
-
-    def test_non_string_finish_metadata_is_typed_provider_invalid(self):
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(
-                return_value={"text": "ok", "finish_reason": {"bad": "shape"}}
-            )
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            with pytest.raises(ProviderResponseInvalidError) as exc_info:
-                generate("hello", "test.context")
-
-        assert exc_info.value.reason == "malformed_finish_reason"
-
-    def test_strict_validation_bounds_non_string_finish_metadata(self):
-        marker = _FINISH_METADATA_MARKER
-
-        with pytest.raises(ProviderResponseInvalidError) as exc_info:
-            models_module.validate_generate_result_strict(
-                {
-                    "text": "ok",
-                    "finish_reason": {"secret": {"nested": marker}},
-                },
-                json_output=False,
-            )
-
-        exc = exc_info.value
-        assert exc.reason == "malformed_finish_reason"
-        assert exc.finish_reason is None
-        _assert_exception_metadata_omits_marker(exc, marker)
-
-    @pytest.mark.parametrize(
-        "finish_reason",
-        [
-            str({"secret": _FINISH_METADATA_MARKER}).strip().lower(),
-            "a" * 65 + _FINISH_METADATA_MARKER,
-        ],
     )
-    def test_finish_reason_error_bounds_unsafe_finish_tokens(self, finish_reason):
-        marker = _FINISH_METADATA_MARKER
+    blank_stop_refusal["id"] = None
+    unrelated_provider_failure = {
+        **blank_stop_refusal,
+        "detail": "mocked malformed provider response",
+    }
+    captured: dict = {}
+    refusals = iter((blank_stop_refusal, unrelated_provider_failure))
 
-        error = finish_reason_error(
-            {"text": "partial", "finish_reason": finish_reason},
-            json_output=False,
-        )
-
-        assert isinstance(error, ProviderResponseInvalidError)
-        assert error.reason == "unknown"
-        assert error.finish_reason == "unknown"
-        _assert_exception_metadata_omits_marker(error, marker)
-
-    @pytest.mark.parametrize(
-        "finish_reason",
-        ["content_filter", "CONTENT_FILTER", " content_filter "],
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(
+        generate_client.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: _NativeOneShotProcess(next(refusals), captured),
     )
-    def test_finish_reason_error_preserves_safe_finish_tokens(self, finish_reason):
-        result = {
-            "text": "partial",
-            "model": "provider-model",
-            "finish_reason": finish_reason,
-            "usage": {
-                "input_tokens": 11,
-                "output_tokens": 2,
-                "reasoning_tokens": 3,
-                "total_tokens": 16,
-            },
-        }
 
-        error = finish_reason_error(result, json_output=False)
+    with pytest.raises(ProviderResponseInvalidError) as blank_stop:
+        generate("hello", "test.context")
+    with pytest.raises(ProviderResponseInvalidError) as provider_failure:
+        generate("hello", "test.context")
 
-        assert isinstance(error, ProviderResponseInvalidError)
-        assert error.reason == "content_filter"
-        assert error.finish_reason == "content_filter"
-        assert error.model == "provider-model"
-        assert error.token_counts == {
-            "input_tokens": 11,
-            "output_tokens": 2,
-            "reasoning_tokens": 3,
-            "total_tokens": 16,
-        }
-
-    def test_length_finish_classification_keeps_incomplete_text(self):
-        error = finish_reason_error(
-            {"text": "partial", "finish_reason": "max_tokens"},
-            json_output=False,
-        )
-
-        assert isinstance(error, IncompleteTextError)
-        assert error.reason == "max_tokens"
-        assert error.reason_code == "incomplete_text_length"
-        assert str(error) == "Text response incomplete (reason: max_tokens)"
-
-    def test_json_length_finish_stays_incomplete_json_not_provider_invalid(self):
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(
-                return_value={"text": "", "finish_reason": "max_tokens"}
-            )
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            with pytest.raises(IncompleteJSONError):
-                generate("hello", "test.context", json_output=True)
-
-    def test_generate_forces_json_output_with_schema(self):
-        schema = {"type": "object"}
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(return_value={"text": "{}", "finish_reason": "stop"})
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            result = generate("hello", "test.context", json_schema=schema)
-
-        assert result == "{}"
-        call_kwargs = provider_module.run_generate.call_args.kwargs
-        assert call_kwargs["json_output"] is True
-        assert call_kwargs["json_schema"] == schema
-
-    def test_agenerate_forces_json_output_with_schema(self):
-        schema = {"type": "object"}
-        provider_module = SimpleNamespace(
-            run_agenerate=AsyncMock(
-                return_value={"text": "{}", "finish_reason": "stop"}
-            )
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            result = asyncio.run(agenerate("hello", "test.context", json_schema=schema))
-
-        assert result == "{}"
-        call_kwargs = provider_module.run_agenerate.call_args.kwargs
-        assert call_kwargs["json_output"] is True
-        assert call_kwargs["json_schema"] == schema
-
-    def test_generate_with_result_truncates_annotated_overrun(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "field": {
-                    "type": "string",
-                    "maxLength": 3,
-                    SCHEMA_TRUNCATE_KEY: True,
-                }
-            },
-            "required": ["field"],
-            "additionalProperties": False,
-        }
-        response_text = json.dumps({"field": "abcdef"})
-        expected_text = json.dumps({"field": "abc"}, ensure_ascii=False)
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(side_effect=_fresh_generate_result(response_text))
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            result = generate_with_result(
-                "hello",
-                "test.context",
-                json_schema=schema,
-            )
-
-        assert result["text"] == expected_text
-        assert result["schema_validation"] == {
-            "valid": True,
-            "errors": [],
-            "truncated": ["/field"],
-        }
-
-    def test_generate_returns_truncated_annotated_overrun(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "field": {
-                    "type": "string",
-                    "maxLength": 3,
-                    SCHEMA_TRUNCATE_KEY: True,
-                }
-            },
-            "required": ["field"],
-            "additionalProperties": False,
-        }
-        response_text = json.dumps({"field": "abcdef"})
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(side_effect=_fresh_generate_result(response_text))
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            result = generate("hello", "test.context", json_schema=schema)
-
-        assert result == json.dumps({"field": "abc"}, ensure_ascii=False)
-
-    def test_non_annotated_overrun_still_fails_advisory_and_raising_paths(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "content": {
-                    "type": ["string", "null"],
-                    "maxLength": 600,
-                }
-            },
-            "required": ["content"],
-            "additionalProperties": False,
-        }
-        response_text = json.dumps({"content": "c" * 700})
-        advisory_provider = SimpleNamespace(
-            run_generate=MagicMock(side_effect=_fresh_generate_result(response_text))
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=advisory_provider,
-            ),
-        ):
-            result = generate_with_result(
-                "hello",
-                "test.context",
-                json_schema=schema,
-            )
-
-        assert result["text"] == response_text
-        assert "truncated" not in result["schema_validation"]
-        assert result["schema_validation"]["valid"] is False
-        assert result["schema_validation"]["errors"][0]["path"] == "/content"
-        assert result["schema_validation"]["errors"][0]["constraint"] == "maxLength"
-
-        raising_provider = SimpleNamespace(
-            run_generate=MagicMock(side_effect=_fresh_generate_result(response_text))
-        )
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=raising_provider,
-            ),
-        ):
-            with pytest.raises(SchemaValidationError) as exc_info:
-                generate("hello", "test.context", json_schema=schema)
-
-        assert exc_info.value.text == response_text
-        assert exc_info.value.errors[0]["path"] == "/content"
-        assert exc_info.value.errors[0]["constraint"] == "maxLength"
-
-    def test_multiple_array_item_truncations_record_instance_pointers(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "entities": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "operations": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "reasoning": {
-                                            "type": ["string", "null"],
-                                            "maxLength": 300,
-                                            SCHEMA_TRUNCATE_KEY: True,
-                                        }
-                                    },
-                                    "required": ["reasoning"],
-                                    "additionalProperties": False,
-                                },
-                            }
-                        },
-                        "required": ["operations"],
-                        "additionalProperties": False,
-                    },
-                }
-            },
-            "required": ["entities"],
-            "additionalProperties": False,
-        }
-        response = {
-            "entities": [
-                {
-                    "operations": [
-                        {"reasoning": "r" * 350},
-                        {"reasoning": "s" * 350},
-                        {"reasoning": "t" * 350},
-                    ]
-                }
-            ]
-        }
-        expected = {
-            "entities": [
-                {
-                    "operations": [
-                        {"reasoning": "r" * 300},
-                        {"reasoning": "s" * 300},
-                        {"reasoning": "t" * 300},
-                    ]
-                }
-            ]
-        }
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(
-                side_effect=_fresh_generate_result(json.dumps(response))
-            )
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            result = generate_with_result(
-                "hello",
-                "test.context",
-                json_schema=schema,
-            )
-
-        assert result["text"] == json.dumps(expected, ensure_ascii=False)
-        assert result["schema_validation"] == {
-            "valid": True,
-            "errors": [],
-            "truncated": [
-                "/entities/0/operations/0/reasoning",
-                "/entities/0/operations/1/reasoning",
-                "/entities/0/operations/2/reasoning",
-            ],
-        }
-
-    def test_non_string_at_annotated_path_is_not_coerced(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "reasoning": {
-                    "type": ["string", "null"],
-                    "maxLength": 300,
-                    SCHEMA_TRUNCATE_KEY: True,
-                }
-            },
-            "required": ["reasoning"],
-            "additionalProperties": False,
-        }
-        response_text = json.dumps({"reasoning": 42})
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(side_effect=_fresh_generate_result(response_text))
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            result = generate_with_result(
-                "hello",
-                "test.context",
-                json_schema=schema,
-            )
-
-        assert result["text"] == response_text
-        assert "truncated" not in result["schema_validation"]
-        assert result["schema_validation"]["valid"] is False
-        assert result["schema_validation"]["errors"][0]["path"] == "/reasoning"
-        assert result["schema_validation"]["errors"][0]["constraint"] == "type"
-
-    def test_clean_annotated_response_preserves_byte_identity(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "z": {
-                    "type": "string",
-                    "maxLength": 10,
-                    SCHEMA_TRUNCATE_KEY: True,
-                },
-                "a": {"type": "string", "maxLength": 10},
-            },
-            "required": ["z", "a"],
-            "additionalProperties": False,
-        }
-        response_text = '{\n  "z" : "é",\n  "a" : "ok"\n}'
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(side_effect=_fresh_generate_result(response_text))
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            result = generate_with_result(
-                "hello",
-                "test.context",
-                json_schema=schema,
-            )
-
-        assert result["text"] == response_text
-        assert result["schema_validation"] == {"valid": True, "errors": []}
-
-    def test_async_generate_entrypoints_match_sync_truncation(self):
-        schema = {
-            "type": "object",
-            "properties": {
-                "field": {
-                    "type": "string",
-                    "maxLength": 3,
-                    SCHEMA_TRUNCATE_KEY: True,
-                }
-            },
-            "required": ["field"],
-            "additionalProperties": False,
-        }
-        response_text = json.dumps({"field": "abcdef"})
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(side_effect=_fresh_generate_result(response_text)),
-            run_agenerate=AsyncMock(side_effect=_fresh_generate_result(response_text)),
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            sync_text = generate("hello", "test.context", json_schema=schema)
-            sync_result = generate_with_result(
-                "hello",
-                "test.context",
-                json_schema=schema,
-            )
-            async_text = asyncio.run(
-                agenerate("hello", "test.context", json_schema=schema)
-            )
-            async_result = asyncio.run(
-                agenerate_with_result(
-                    "hello",
-                    "test.context",
-                    json_schema=schema,
-                )
-            )
-
-        expected_text = json.dumps({"field": "abc"}, ensure_ascii=False)
-        expected_validation = {
-            "valid": True,
-            "errors": [],
-            "truncated": ["/field"],
-        }
-        assert sync_text == expected_text
-        assert async_text == expected_text
-        assert sync_result["text"] == expected_text
-        assert async_result["text"] == expected_text
-        assert sync_result["schema_validation"] == expected_validation
-        assert async_result["schema_validation"] == expected_validation
-
-    def test_generate_with_result_adds_schema_validation(self):
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(return_value={"text": "{}", "finish_reason": "stop"})
-        )
-        validation = {"valid": True, "errors": []}
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch("solstone.think.models._validate_schema", return_value=validation),
-        ):
-            result = generate_with_result(
-                "hello",
-                "test.context",
-                json_schema={"type": "object"},
-            )
-
-        assert result["schema_validation"] == validation
-
-    def test_agenerate_with_result_adds_schema_validation(self):
-        provider_module = SimpleNamespace(
-            run_agenerate=AsyncMock(
-                return_value={"text": "{}", "finish_reason": "stop"}
-            )
-        )
-        validation = {"valid": True, "errors": []}
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch("solstone.think.models._validate_schema", return_value=validation),
-        ):
-            result = asyncio.run(
-                agenerate_with_result(
-                    "hello",
-                    "test.context",
-                    json_schema={"type": "object"},
-                )
-            )
-
-        assert result["schema_validation"] == validation
-
-    def test_generate_with_result_returns_failed_schema_validation_without_raising(
-        self,
+    for raised, refusal in (
+        (blank_stop, blank_stop_refusal),
+        (provider_failure, unrelated_provider_failure),
     ):
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(
-                return_value={"text": '{"field": "bad"}', "finish_reason": "stop"}
-            )
-        )
-        validation = {
-            "valid": False,
-            "errors": [{"path": "/field", "constraint": "type", "message": "bad"}],
-        }
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch("solstone.think.models._validate_schema", return_value=validation),
-        ):
-            result = generate_with_result(
-                "hello",
-                "test.context",
-                json_schema={"type": "object"},
-            )
-
-        assert result["schema_validation"] == validation
-
-    def test_generate_with_result_omits_schema_validation_without_schema(self):
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(return_value={"text": "{}", "finish_reason": "stop"})
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch("solstone.think.models._validate_schema") as mock_validate_schema,
-        ):
-            result = generate_with_result("hello", "test.context")
-
-        assert "schema_validation" not in result
-        mock_validate_schema.assert_not_called()
-
-    def test_generate_and_agenerate_do_not_surface_schema_validation(self):
-        sync_provider = SimpleNamespace(
-            run_generate=MagicMock(return_value={"text": "{}", "finish_reason": "stop"})
-        )
-        async_provider = SimpleNamespace(
-            run_agenerate=AsyncMock(
-                return_value={"text": "{}", "finish_reason": "stop"}
-            )
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=sync_provider,
-            ),
-            patch(
-                "solstone.think.models._validate_schema",
-                return_value={"valid": True, "errors": []},
-            ) as mock_validate_schema,
-        ):
-            sync_result = generate(
-                "hello", "test.context", json_schema={"type": "object"}
-            )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=async_provider,
-            ),
-            patch(
-                "solstone.think.models._validate_schema",
-                return_value={"valid": True, "errors": []},
-            ) as mock_async_validate,
-        ):
-            async_result = asyncio.run(
-                agenerate("hello", "test.context", json_schema={"type": "object"})
-            )
-
-        assert sync_result == "{}"
-        assert async_result == "{}"
-        mock_validate_schema.assert_called_once()
-        mock_async_validate.assert_called_once()
-
-    def test_generate_raises_schema_validation_error_with_structured_fields(self):
-        long_text = '{"field": "' + ("x" * 300) + '"}'
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(
-                return_value={"text": long_text, "finish_reason": "stop"}
-            )
-        )
-        schema = {
-            "type": "object",
-            "properties": {"field": {"type": "integer"}},
-        }
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            with pytest.raises(SchemaValidationError) as exc_info:
-                generate("hello", "test.context", json_schema=schema)
-
-        exc = exc_info.value
-        assert exc.text == long_text
-        assert exc.errors[0]["constraint"] == "type"
-        assert len(exc.preview) == 200
-        assert exc.preview.endswith("...")
-        assert "x" * 250 not in str(exc)
-
-    def test_agenerate_raises_schema_validation_error(self):
-        provider_module = SimpleNamespace(
-            run_agenerate=AsyncMock(
-                return_value={"text": '{"field": "bad"}', "finish_reason": "stop"}
-            )
-        )
-        schema = {
-            "type": "object",
-            "properties": {"field": {"type": "integer"}},
-        }
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            with pytest.raises(SchemaValidationError) as exc_info:
-                asyncio.run(agenerate("hello", "test.context", json_schema=schema))
-
-        assert exc_info.value.text == '{"field": "bad"}'
-        assert exc_info.value.errors[0]["constraint"] == "type"
-
-    def test_generate_empty_schema_response_raises_provider_invalid_before_schema(
-        self,
-    ):
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(return_value={"text": "", "finish_reason": "stop"})
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch("solstone.think.models._validate_schema") as mock_validate_schema,
-        ):
-            with pytest.raises(ProviderResponseInvalidError) as exc_info:
-                generate("hello", "test.context", json_schema={"type": "object"})
-
-        assert exc_info.value.reason == "blank_visible_output"
-        mock_validate_schema.assert_not_called()
-
-    def test_truncation_raises_before_schema_validation(self):
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(
-                return_value={"text": "{}", "finish_reason": "max_tokens"}
-            )
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-            patch("solstone.think.models._validate_schema") as mock_validate_schema,
-        ):
-            with pytest.raises(IncompleteJSONError):
-                generate_with_result(
-                    "hello", "test.context", json_schema={"type": "object"}
-                )
-
-        mock_validate_schema.assert_not_called()
-
-
-class TestDefaultProviderTimeout:
-    def test_default_timeout_forwards_to_all_generate_entrypoints(self):
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(
-                return_value={"text": "ok", "finish_reason": "stop"}
-            ),
-            run_agenerate=AsyncMock(
-                return_value={"text": "ok", "finish_reason": "stop"}
-            ),
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            generate("hello", "test.context")
-            generate_with_result("hello", "test.context")
-            asyncio.run(agenerate("hello", "test.context"))
-
-        assert (
-            provider_module.run_generate.call_args_list[0].kwargs["timeout_s"]
-            == DEFAULT_PROVIDER_TIMEOUT_S
-        )
-        assert (
-            provider_module.run_generate.call_args_list[1].kwargs["timeout_s"]
-            == DEFAULT_PROVIDER_TIMEOUT_S
-        )
-        assert (
-            provider_module.run_agenerate.call_args.kwargs["timeout_s"]
-            == DEFAULT_PROVIDER_TIMEOUT_S
-        )
-
-    def test_explicit_timeout_wins_for_all_generate_entrypoints(self):
-        provider_module = SimpleNamespace(
-            run_generate=MagicMock(
-                return_value={"text": "ok", "finish_reason": "stop"}
-            ),
-            run_agenerate=AsyncMock(
-                return_value={"text": "ok", "finish_reason": "stop"}
-            ),
-        )
-
-        with (
-            patch(
-                "solstone.think.models.resolve_provider", return_value=("fake", "model")
-            ),
-            patch(
-                "solstone.think.providers.get_provider_module",
-                return_value=provider_module,
-            ),
-        ):
-            generate("hello", "test.context", timeout_s=5)
-            generate_with_result("hello", "test.context", timeout_s=5)
-            asyncio.run(agenerate("hello", "test.context", timeout_s=5))
-
-        assert provider_module.run_generate.call_args_list[0].kwargs["timeout_s"] == 5
-        assert provider_module.run_generate.call_args_list[1].kwargs["timeout_s"] == 5
-        assert provider_module.run_agenerate.call_args.kwargs["timeout_s"] == 5
+        assert raised.value.reason == refusal["reason"]
+        assert raised.value.reason_code == refusal["reason_code"]
+        assert raised.value.blocking is refusal["blocking"]
+        assert raised.value.retryable is refusal["retryable"]
+    assert blank_stop.value.reason == provider_failure.value.reason

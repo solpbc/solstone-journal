@@ -40,10 +40,11 @@ pub struct SystemSessionFactory;
 
 impl SystemSessionFactory {
     fn client() -> Result<SessionClient, SessionLaunchError> {
-        match env::var_os(WIRE_PATH_ENV) {
-            Some(path) => Ok(SessionClient::at_path(PathBuf::from(path))),
-            None => SessionClient::sibling(),
-        }
+        let client = match env::var_os(WIRE_PATH_ENV) {
+            Some(path) => SessionClient::at_path(PathBuf::from(path)),
+            None => SessionClient::sibling()?,
+        };
+        Ok(client.with_prefix_arguments(["generate".into()]))
     }
 }
 
