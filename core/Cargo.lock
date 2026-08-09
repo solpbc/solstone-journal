@@ -2434,6 +2434,14 @@ name = "solstone-core-cli-boundary"
 version = "1.0.22"
 
 [[package]]
+name = "solstone-core-cogitate"
+version = "1.0.22"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "solstone-core-convey-http"
 version = "1.0.22"
 dependencies = [

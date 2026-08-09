@@ -20,6 +20,7 @@ members = [
     "crates/solstone-core-brain",
     "crates/solstone-core-brain-cli",
     "crates/solstone-core-callosum",
+    "crates/solstone-core-cogitate",
     "crates/solstone-core-processing-record",
     "crates/solstone-core-retention",
     "crates/solstone-core-retention-cli",
