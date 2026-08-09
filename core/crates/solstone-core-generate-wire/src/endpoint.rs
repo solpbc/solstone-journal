@@ -183,14 +183,18 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
         return failure("local_capacity_exhausted");
     }
     let response = {
-        let _permit = match acquire_endpoint_slot(
-            journal_path,
-            endpoint,
-            request.exclusive_admission,
-            admission_timeout,
-        ) {
-            Ok(permit) => permit,
-            Err(reason_code) => return failure(reason_code),
+        let _permit = if endpoint.is_confidential {
+            None
+        } else {
+            match acquire_endpoint_slot(
+                journal_path,
+                endpoint,
+                request.exclusive_admission,
+                admission_timeout,
+            ) {
+                Ok(permit) => Some(permit),
+                Err(reason_code) => return failure(reason_code),
+            }
         };
         let mut attempt = 0;
         loop {
@@ -1083,6 +1087,36 @@ mod tests {
             failure("local_capacity_exhausted")
         );
         server.join().unwrap();
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn confidential_endpoint_does_not_create_a_local_admission_directory() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let endpoint = ByoEndpoint {
+            parallel_slots: None,
+            is_confidential: true,
+            ..endpoint("http://endpoint")
+        };
+        let mut transport = StubTransport {
+            post_result: Some(Ok(response())),
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            endpoint_generate_with(
+                &request(None),
+                &journal,
+                &endpoint,
+                &served_window_config(),
+                &runtime,
+                &mut transport,
+                Instant::now(),
+            ),
+            EndpointResult::Generated(_)
+        ));
+        assert!(!admission_dir(&journal).exists());
         let _ = std::fs::remove_dir_all(journal);
     }
 

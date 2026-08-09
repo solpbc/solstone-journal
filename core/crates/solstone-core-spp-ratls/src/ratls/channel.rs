@@ -45,8 +45,16 @@ const MAX_PROOF_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 type PeerCertificate = Arc<Mutex<Option<Vec<u8>>>>;
 
 /// Read/write transport carrying application requests after attestation.
-pub trait AttestedIo: Read + Write {}
-impl<T: Read + Write + ?Sized> AttestedIo for T {}
+pub trait AttestedIo: Read + Write {
+    fn set_io_timeout(&mut self, timeout: Option<Duration>) -> std::io::Result<()>;
+}
+
+impl AttestedIo for TcpStream {
+    fn set_io_timeout(&mut self, timeout: Option<Duration>) -> std::io::Result<()> {
+        self.set_read_timeout(timeout)?;
+        self.set_write_timeout(timeout)
+    }
+}
 
 /// HTTP response received over an attested transport.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -158,13 +166,19 @@ fn tls_config() -> (Arc<ClientConfig>, PeerCertificate) {
 }
 
 pub struct AttestedChannel {
-    // Later confidential-lane wiring can adapt this direct Read + Write channel once the actual
-    // caller is known.
     stream: StreamOwned<ClientConnection, TcpStream>,
     pub verified: VerifiedCertificateEvidence,
     pub last_used_monotonic: Instant,
     pub epoch: u64,
 }
+
+impl AttestedIo for AttestedChannel {
+    fn set_io_timeout(&mut self, timeout: Option<Duration>) -> std::io::Result<()> {
+        self.stream.sock.set_read_timeout(timeout)?;
+        self.stream.sock.set_write_timeout(timeout)
+    }
+}
+
 impl Read for AttestedChannel {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
         self.stream.read(buffer)

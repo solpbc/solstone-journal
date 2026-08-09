@@ -211,16 +211,24 @@ impl EndpointTransport for AttestedEndpointTransport {
         path: &str,
         body: &Value,
         credential: Option<&str>,
-        _timeout: Duration,
+        timeout: Duration,
     ) -> Result<HttpResponse, EndpointTransportError> {
         let body = serde_json::to_vec(body).map_err(|_| EndpointTransportError::Other)?;
+        self.stream
+            .set_io_timeout(Some(timeout))
+            .map_err(|_| EndpointTransportError::Other)?;
         send_json_request(&mut *self.stream, &self.host, path, credential, &body)
             .map(|response| HttpResponse {
                 status: response.status,
                 body: String::from_utf8_lossy(&response.body).into_owned(),
             })
             .map_err(|error| match error {
-                AttestedHttpError::Transport(error) if error.kind() == io::ErrorKind::TimedOut => {
+                AttestedHttpError::Transport(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+                    ) =>
+                {
                     EndpointTransportError::Capacity
                 }
                 AttestedHttpError::Transport(_) => EndpointTransportError::Connection,
@@ -426,6 +434,34 @@ mod tests {
             assert!(body.get(field).is_some(), "missing {field}");
         }
         let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn attested_transport_applies_the_endpoint_request_timeout() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("address").port();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request);
+            thread::sleep(Duration::from_millis(150));
+        });
+        let mut transport = AttestedEndpointTransport {
+            stream: Box::new(TcpStream::connect(("127.0.0.1", port)).expect("connect")),
+            host: format!("127.0.0.1:{port}"),
+        };
+
+        assert!(matches!(
+            transport.post_json(
+                "",
+                "/v1/chat/completions",
+                &json!({}),
+                None,
+                Duration::from_millis(50),
+            ),
+            Err(EndpointTransportError::Capacity)
+        ));
+        server.join().expect("join");
     }
 
     #[test]
