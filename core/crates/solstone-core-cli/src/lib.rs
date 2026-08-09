@@ -12,7 +12,7 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
@@ -29,6 +29,7 @@ pub enum Command {
     Generate(GenerateCommand),
     Brain(BrainCommand),
     Body(BodyCommand),
+    Convey(ConveyOptions),
     Spl(SplCommand),
 }
 
@@ -78,6 +79,12 @@ pub struct BodyOuraSyncOptions {
     pub confirm_body_save: bool,
     pub scheduled: bool,
     pub json: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConveyOptions {
+    pub port: u16,
+    pub journal_override: Option<OsString>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -316,9 +323,56 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("body") => {
             parse_body(rest).map(Command::Body)
         }
+        [command, rest @ ..] if command == OsStr::new("convey") => {
+            parse_convey(rest).map(Command::Convey)
+        }
         [command, rest @ ..] if command == OsStr::new("spl") => parse_spl(rest).map(Command::Spl),
         _ => Err(UsageError),
     }
+}
+
+fn parse_convey(args: &[OsString]) -> Result<ConveyOptions, UsageError> {
+    let mut port = None;
+    let mut journal_override = None;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_os_str();
+        if argument == OsStr::new("--port") {
+            if port.is_some() {
+                return Err(UsageError);
+            }
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if value == OsStr::new("--port") || value == OsStr::new("--journal") {
+                return Err(UsageError);
+            }
+            port = Some(
+                value
+                    .to_str()
+                    .ok_or(UsageError)?
+                    .parse()
+                    .map_err(|_| UsageError)?,
+            );
+            index += 2;
+            continue;
+        }
+        if argument == OsStr::new("--journal") {
+            if journal_override.is_some() {
+                return Err(UsageError);
+            }
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if value == OsStr::new("--port") || value == OsStr::new("--journal") {
+                return Err(UsageError);
+            }
+            journal_override = Some(value.clone());
+            index += 2;
+            continue;
+        }
+        return Err(UsageError);
+    }
+    Ok(ConveyOptions {
+        port: port.ok_or(UsageError)?,
+        journal_override,
+    })
 }
 
 fn parse_body(args: &[OsString]) -> Result<BodyCommand, UsageError> {
@@ -1699,6 +1753,33 @@ mod tests {
                 "--scheduled",
                 "--confirm-body-save",
             ][..],
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+        }
+    }
+
+    #[test]
+    fn parses_convey_options_and_rejects_invalid_ports() {
+        assert_eq!(
+            evaluate_args(&args(&[
+                "convey",
+                "--port",
+                "5015",
+                "--journal",
+                "/tmp/journal",
+            ])),
+            Ok(Command::Convey(ConveyOptions {
+                port: 5015,
+                journal_override: Some("/tmp/journal".into()),
+            }))
+        );
+        for values in [
+            &["convey"][..],
+            &["convey", "--port"][..],
+            &["convey", "--port", "not-a-port"][..],
+            &["convey", "--port", "65536"][..],
+            &["convey", "--port", "5015", "--port", "5016"][..],
+            &["convey", "--journal", "/tmp/journal", "--port", "--journal"][..],
         ] {
             assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
         }

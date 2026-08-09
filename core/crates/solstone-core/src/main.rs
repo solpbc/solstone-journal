@@ -16,8 +16,8 @@ use solstone_core_cli::{
     BodyAppleOptions, BodyCommand, BodyOuraCommand, BodyOuraConnectOptions, BodyOuraSyncOptions,
     BodyRebuildOptions, BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
     BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, Command,
-    GenerateCommand, GenerateSessionOptions, IndexerCommand, IndexerCountsOptions, IndexerOptions,
-    IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions, InstallCommand,
+    ConveyOptions, GenerateCommand, GenerateSessionOptions, IndexerCommand, IndexerCountsOptions,
+    IndexerOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions, InstallCommand,
     JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
     JournalConfigReadOptions, JournalPathOptions, LocalCommand, ServiceOptions,
     SpeakerResolveCommand, SplCommand, USAGE, evaluate_args, version_line,
@@ -98,10 +98,28 @@ fn main() -> ExitCode {
         Ok(Command::Generate(command)) => run_generate(command),
         Ok(Command::Brain(command)) => run_brain(command),
         Ok(Command::Body(command)) => run_body(command),
+        Ok(Command::Convey(options)) => run_convey(options),
         Ok(Command::Spl(command)) => run_spl_process(command),
         Err(_) => {
             eprint!("{USAGE}");
             ExitCode::from(EXIT_USAGE)
+        }
+    }
+}
+
+fn run_convey(options: ConveyOptions) -> ExitCode {
+    let journal = match resolve_journal_config_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    match solstone_core_convey_shell::run_convey(journal, options.port) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::from(EXIT_TEMPFAIL)
         }
     }
 }
