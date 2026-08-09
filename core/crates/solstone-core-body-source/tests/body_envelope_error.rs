@@ -172,7 +172,7 @@ fn body_envelope_rejects_day_count_mismatch() {
     inputs.row_count = 0;
     assert_failure(
         inputs,
-        EnvelopeErrorCode::IncompatibleField,
+        EnvelopeErrorCode::CountMismatch,
         EnvelopeErrorField::Days,
         None,
     );
@@ -202,7 +202,7 @@ fn body_envelope_rejects_shard_presence_mismatch() {
     inputs.shards = vec![];
     assert_failure(
         inputs,
-        EnvelopeErrorCode::IncompatibleField,
+        EnvelopeErrorCode::CountMismatch,
         EnvelopeErrorField::Shards,
         None,
     );
@@ -228,7 +228,7 @@ fn body_envelope_rejects_overflowing_shard_row_totals_at_the_overflowing_index()
     };
     assert_failure(
         inputs,
-        EnvelopeErrorCode::InvalidField,
+        EnvelopeErrorCode::CountMismatch,
         EnvelopeErrorField::ShardRows,
         Some(1),
     );
@@ -255,7 +255,7 @@ fn body_envelope_rejects_mismatched_day_and_shard_month_sets() {
     inputs.shards = vec![shard(&bundle, b"2026-02", 1)];
     assert_failure(
         inputs,
-        EnvelopeErrorCode::IncompatibleField,
+        EnvelopeErrorCode::CountMismatch,
         EnvelopeErrorField::Shards,
         None,
     );

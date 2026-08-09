@@ -81,7 +81,7 @@ impl BodyEnvelope {
         if (row_count == 0) != days.is_empty() || (days.len() as u64) > row_count {
             return Err(error(
                 &bundle_id,
-                EnvelopeErrorCode::IncompatibleField,
+                EnvelopeErrorCode::CountMismatch,
                 EnvelopeErrorField::Days,
                 None,
             ));
@@ -102,7 +102,7 @@ impl BodyEnvelope {
         if (row_count == 0) != shards.is_empty() {
             return Err(error(
                 &bundle_id,
-                EnvelopeErrorCode::IncompatibleField,
+                EnvelopeErrorCode::CountMismatch,
                 EnvelopeErrorField::Shards,
                 None,
             ));
@@ -112,7 +112,7 @@ impl BodyEnvelope {
             let Some(sum) = shard_rows.checked_add(shard.rows()) else {
                 return Err(error(
                     &bundle_id,
-                    EnvelopeErrorCode::InvalidField,
+                    EnvelopeErrorCode::CountMismatch,
                     EnvelopeErrorField::ShardRows,
                     Some(index),
                 ));
@@ -133,7 +133,7 @@ impl BodyEnvelope {
         if day_months != shard_months {
             return Err(error(
                 &bundle_id,
-                EnvelopeErrorCode::IncompatibleField,
+                EnvelopeErrorCode::CountMismatch,
                 EnvelopeErrorField::Shards,
                 None,
             ));
