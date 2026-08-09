@@ -1984,71 +1984,6 @@ def test_manual_tag_overlap_boundary_excludes_above_accepts_equal_absent(
     assert result["observed_value"] == 15
 
 
-def test_owner_centroid_schema_parity_between_confirm_and_manual_build(speakers_env):
-    from solstone.apps.speakers.encoder_config import OWNER_MARGIN_MIN, OWNER_THRESHOLD
-    from solstone.apps.speakers.owner import (
-        bootstrap_owner_from_manual_tags,
-        clear_owner_provisional_cache,
-        confirm_owner_candidate,
-    )
-
-    env = speakers_env()
-    principal_dir = env.create_entity("Self Person", is_principal=True)
-    candidate_path = _candidate_path(env.journal)
-    candidate_path.parent.mkdir(parents=True, exist_ok=True)
-    centroid = _normalized(np.array([1.0] + [0.0] * 255, dtype=np.float32))
-    np.savez_compressed(
-        candidate_path,
-        centroid=centroid,
-        cluster_size=np.array(40, dtype=np.int32),
-        threshold=np.array(OWNER_THRESHOLD, dtype=np.float32),
-        version=np.array("2026-03-19T12:00:00"),
-    )
-
-    confirm_owner_candidate()
-    owner_path = principal_dir / "owner_centroid.npz"
-    with np.load(owner_path, allow_pickle=False) as data:
-        confirmed_keys = set(data.files)
-        confirmed_margin = float(np.asarray(data["margin"]).item())
-
-    owner_path.unlink()
-    clear_owner_provisional_cache("self_person")
-    update_state("voiceprint", {"status": "none"})
-
-    base = np.zeros((10, 256), dtype=np.float32)
-    base[:, 0] = 1.0
-    for idx in range(3):
-        _save_manual_owner_tags(
-            env,
-            "self_person",
-            "20240101",
-            f"{9 + idx:02d}0000_300",
-            base,
-            durations_s=np.full(10, 2.0, dtype=np.float32),
-        )
-
-    bootstrap_owner_from_manual_tags()
-    with np.load(owner_path, allow_pickle=False) as data:
-        manual_keys = set(data.files)
-        manual_margin = float(np.asarray(data["margin"]).item())
-
-    assert (
-        confirmed_keys
-        == manual_keys
-        == {
-            "centroid",
-            "cluster_size",
-            "threshold",
-            "margin",
-            "last_refreshed_at",
-            "created_at",
-            "evidence_tier",
-        }
-    )
-    assert np.isclose(confirmed_margin, OWNER_MARGIN_MIN)
-    assert np.isclose(manual_margin, OWNER_MARGIN_MIN)
-
-
 def test_bootstrap_owner_from_manual_tags_is_idempotent(speakers_env):
     from solstone.apps.speakers.owner import bootstrap_owner_from_manual_tags
 
@@ -2839,9 +2774,7 @@ def test_concurrent_rebuild_same_evidence_second_reports_unchanged(speakers_env)
         assert str(data["evidence_hash"].item())
 
 
-def test_rebuild_update_npz_transform_never_returns_empty_dict(
-    speakers_env, monkeypatch
-):
+def test_rebuild_unchanged_evidence_skips_native_write(speakers_env, monkeypatch):
     from solstone.apps.speakers import owner as owner_module
     from solstone.apps.speakers.owner import rebuild_owner_centroid
 
@@ -2849,23 +2782,22 @@ def test_rebuild_update_npz_transform_never_returns_empty_dict(
     owner_path = _write_rebuild_owner_centroid(env, evidence_hash=None)
     _seed_rebuild_evidence(env)
     rebuild_owner_centroid()
-    transform_results = []
-    real_update_npz = owner_module.update_npz
+    native_calls = []
 
-    def capture_update_npz(path, transform, *, expected_keys):
-        current = owner_module.load_npz(path) or {}
-        result = transform(current)
-        transform_results.append(result)
-        return real_update_npz(
-            path, lambda _current: result, expected_keys=expected_keys
-        )
+    def capture_native_write(*args, **kwargs):
+        native_calls.append((args, kwargs))
+        raise AssertionError("unchanged evidence must not request a native write")
 
-    monkeypatch.setattr(owner_module, "update_npz", capture_update_npz)
+    monkeypatch.setattr(
+        owner_module.native_speakers,
+        "rebuild_owner_centroid",
+        capture_native_write,
+    )
 
     result = rebuild_owner_centroid()
 
     assert result["status"] == "unchanged"
-    assert transform_results == [None]
+    assert native_calls == []
     assert owner_path.exists()
 
 

@@ -15,6 +15,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from solstone.apps.speakers import native as native_speakers
 from solstone.apps.speakers._overlap import _read_segment_overlap_fraction
 from solstone.apps.speakers.audio import resolve_audio_url
 from solstone.apps.speakers.copy import (
@@ -52,8 +53,6 @@ from solstone.think.journal_io.errors import LockTimeout
 from solstone.think.journal_io.npz import (
     load_npz,
     load_npz_row_count,
-    save_npz,
-    update_npz,
 )
 from solstone.think.utils import day_dirs, get_journal, segment_parse, segment_path
 
@@ -708,26 +707,13 @@ def _write_owner_centroid(
 
     owner_path = ensure_journal_entity_memory(principal_id) / "owner_centroid.npz"
     created_at = _iso_now()
-    save_npz(
-        owner_path,
-        {
-            "centroid": np.asarray(centroid, dtype=np.float32).reshape(-1),
-            "cluster_size": np.array(cluster_size, dtype=np.int32),
-            "threshold": np.array(OWNER_THRESHOLD, dtype=np.float32),
-            "margin": np.array(OWNER_MARGIN_MIN, dtype=np.float32),
-            "last_refreshed_at": np.array(created_at),
-            "created_at": np.array(created_at),
-            "evidence_tier": np.array(evidence_tier),
-        },
-        expected_keys=(
-            "centroid",
-            "cluster_size",
-            "threshold",
-            "margin",
-            "last_refreshed_at",
-            "created_at",
-            "evidence_tier",
-        ),
+    native_speakers.write_owner_centroid(
+        get_journal(),
+        principal_entity_id=principal_id,
+        centroid=np.asarray(centroid, dtype=np.float32).reshape(-1).tolist(),
+        cluster_size=cluster_size,
+        timestamp=created_at,
+        evidence_tier=evidence_tier,
     )
     return owner_path
 
@@ -1298,7 +1284,7 @@ def detect_owner_candidate(*, force: bool = False) -> dict[str, Any]:
     candidate_path = _owner_candidate_path()
     voiceprint = get_current().get("voiceprint", {})
     if force:
-        candidate_path.unlink(missing_ok=True)
+        native_speakers.clear_owner_candidate(get_journal())
         if voiceprint.get("rejected_at"):
             update_state("voiceprint", {"rejected_at": None})
             voiceprint = get_current().get("voiceprint", {})
@@ -1377,22 +1363,13 @@ def detect_owner_candidate(*, force: bool = False) -> dict[str, Any]:
 
     version = _iso_now()
     try:
-        save_npz(
-            _owner_candidate_path(create=True),
-            {
-                "centroid": centroid.astype(np.float32),
-                "cluster_size": np.array(cluster_size, dtype=np.int32),
-                "threshold": np.array(OWNER_THRESHOLD, dtype=np.float32),
-                "version": np.array(version),
-                "evidence_tier": np.array(quality.evidence_tier),
-            },
-            expected_keys=(
-                "centroid",
-                "cluster_size",
-                "threshold",
-                "version",
-                "evidence_tier",
-            ),
+        native_speakers.write_owner_candidate(
+            get_journal(),
+            centroid=centroid.astype(np.float32).tolist(),
+            cluster_size=cluster_size,
+            threshold=OWNER_THRESHOLD,
+            version=version,
+            evidence_tier=quality.evidence_tier,
         )
     except LockTimeout as exc:
         return _voiceprint_busy_result(exc)
@@ -2050,7 +2027,47 @@ def rebuild_owner_centroid(*, override: bool = False) -> dict[str, Any]:
             "evidence_tier": np.array(quality.evidence_tier),
         }
 
-    update_npz(owner_path, transform, expected_keys=OWNER_REBUILD_EXPECTED_KEYS)
+    pending_update = transform(load_npz(owner_path) or {})
+    if pending_update is not None:
+        native_result = native_speakers.rebuild_owner_centroid(
+            get_journal(),
+            principal_entity_id=principal_id,
+            centroid=candidate_centroid.astype(np.float32).tolist(),
+            embeddings_count=embeddings_count,
+            timestamp=refreshed_at,
+            evidence_hash=candidate_hash,
+            evidence_intra_cosine_p25=quality.intra_cosine_p25,
+            evidence_tier=quality.evidence_tier,
+            override=override,
+        )
+        outcome = native_result.get("outcome", {})
+        if isinstance(outcome, dict) and "Rebuilt" in outcome:
+            rebuilt = outcome["Rebuilt"]
+            decision["status"] = "rebuilt"
+            decision["override_applied"] = bool(
+                rebuilt.get("override_applied", False)
+                if isinstance(rebuilt, dict)
+                else False
+            )
+        elif outcome == "Unchanged":
+            decision["status"] = "unchanged"
+            decision["reason"] = "evidence_hash_match"
+            decision["override_applied"] = False
+        elif isinstance(outcome, dict) and isinstance(outcome.get("Refused"), dict):
+            reason = str(outcome["Refused"].get("reason", "no_owner_centroid"))
+            if reason == "no_owner_centroid":
+                decision = _rebuild_refusal(reason)
+            else:
+                next_step, guidance = _rebuild_guidance(reason)
+                decision.update(
+                    {
+                        "status": "rejected_regression",
+                        "reason": reason,
+                        "override_applied": False,
+                        "next_step": next_step,
+                        "guidance": guidance,
+                    }
+                )
     if decision is None:
         decision = _rebuild_refusal("no_owner_centroid")
     if decision.get("status") in {"rebuilt", "unchanged"}:
@@ -2114,7 +2131,7 @@ def confirm_owner_candidate() -> dict[str, Any]:
     except LockTimeout as exc:
         return _voiceprint_busy_result(exc)
     clear_owner_provisional_cache(principal["id"])
-    candidate_path.unlink(missing_ok=True)
+    native_speakers.clear_owner_candidate(get_journal())
 
     update_state(
         "voiceprint",
@@ -2250,8 +2267,7 @@ def reject_owner_candidate() -> dict[str, Any]:
 
     Returns a dict with the updated status.
     """
-    candidate_path = _owner_candidate_path()
-    candidate_path.unlink(missing_ok=True)
+    native_speakers.clear_owner_candidate(get_journal())
     update_state(
         "voiceprint",
         {
