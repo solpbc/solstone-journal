@@ -590,7 +590,7 @@ fn generate_response_for_request(
     let (provider, outcome) = solstone_core_generate_wire::resolve_lane(&config);
     let response = match outcome {
         solstone_core_generate_wire::LaneOutcome::BundledLocal => {
-            match solstone_core_generate_wire::bundled_generate(&request, &journal) {
+            match solstone_core_generate_wire::bundled_generate(request, &journal) {
                 Ok(solstone_core_local::GenerateResult::Success(mut success)) => {
                     let usage = success
                         .usage
@@ -629,11 +629,7 @@ fn generate_response_for_request(
                             &mut success.text,
                             request.json_schema.as_ref(),
                         );
-                        let response =
-                            match generated_response(&request, success, schema_validation) {
-                                Ok(response) => response,
-                                Err(detail) => return Err(detail),
-                            };
+                        let response = generated_response(request, success, schema_validation)?;
                         solstone_core_generate::GenerateResponse::Generated(Box::new(response))
                     }
                 }
@@ -888,7 +884,8 @@ struct GenerateSessionConfig {
 }
 
 enum SessionInput {
-    Request(solstone_core_generate::GenerateRequest),
+    // Boxed: the request dwarfs the unit variant, and this crosses a channel.
+    Request(Box<solstone_core_generate::GenerateRequest>),
     Terminal,
 }
 
@@ -940,7 +937,7 @@ fn run_generate_session(options: GenerateSessionOptions) -> ExitCode {
             continue;
         }
         match input_rx.recv_timeout(Duration::from_millis(10)) {
-            Ok(SessionInput::Request(request)) => pending.push_back(request),
+            Ok(SessionInput::Request(request)) => pending.push_back(*request),
             Ok(SessionInput::Terminal) => terminal_received = true,
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -1055,7 +1052,10 @@ fn spawn_generate_session_reader(
                     generate_protocol_exit_and_terminate(None, "malformed-request", detail)
                 }
             };
-            if input.send(SessionInput::Request(request)).is_err() {
+            if input
+                .send(SessionInput::Request(Box::new(request)))
+                .is_err()
+            {
                 return;
             }
         }
