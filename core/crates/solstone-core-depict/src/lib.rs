@@ -131,7 +131,9 @@ pub struct SystemWireClient;
 
 impl WireClient for SystemWireClient {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
-        OneShotClient::sibling()?.execute(request)
+        OneShotClient::sibling()?
+            .with_prefix_arguments(["generate".into()])
+            .execute(request)
     }
 }
 

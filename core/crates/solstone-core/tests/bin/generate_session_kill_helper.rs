@@ -9,14 +9,15 @@ use std::time::Duration;
 use solstone_core_generate::{ContentPart, GenerateRequest, SessionClient};
 
 fn main() {
-    let wire = env::var_os("SOLSTONE_GENERATE_WIRE").expect("real wire path is configured");
+    let core = env::var_os("SOLSTONE_CORE").expect("real core path is configured");
     let journal = env::var_os("SOLSTONE_JOURNAL").expect("journal path is configured");
-    let client = SessionClient::at_path(wire)
+    let client = SessionClient::at_path(core)
+        .with_prefix_arguments(["generate".into()])
         .with_env("SOLSTONE_JOURNAL", journal.to_string_lossy())
         .spawn(1)
-        .expect("wire session starts");
+        .expect("core generate session starts");
     client.submit(request()).expect("request submits");
-    println!("{}", client.child_id().expect("wire child PID"));
+    println!("{}", client.child_id().expect("core child PID"));
     io::stdout().flush().expect("helper stdout flushes");
 
     loop {

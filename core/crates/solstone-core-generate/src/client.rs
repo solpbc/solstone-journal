@@ -22,6 +22,7 @@ pub enum ClientError {
 
 pub struct OneShotClient {
     executable: PathBuf,
+    prefix_arguments: Vec<std::ffi::OsString>,
     environment: BTreeMap<String, String>,
 }
 
@@ -29,8 +30,17 @@ impl OneShotClient {
     pub fn at_path(path: impl Into<PathBuf>) -> Self {
         Self {
             executable: path.into(),
+            prefix_arguments: Vec::new(),
             environment: BTreeMap::new(),
         }
+    }
+
+    pub fn with_prefix_arguments(
+        mut self,
+        arguments: impl IntoIterator<Item = std::ffi::OsString>,
+    ) -> Self {
+        self.prefix_arguments.extend(arguments);
+        self
     }
 
     pub fn with_env(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
@@ -44,7 +54,7 @@ impl OneShotClient {
         let parent = current
             .parent()
             .ok_or_else(|| ClientError::Resolve("current executable has no parent".to_owned()))?;
-        let path = parent.join("solstone-generate-wire");
+        let path = parent.join("solstone-core");
         if Path::new(&path).is_file() {
             Ok(Self::at_path(path))
         } else {
@@ -58,6 +68,7 @@ impl OneShotClient {
     pub fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
         let input = encode_one_shot_request(request).map_err(ClientError::Decode)?;
         let mut child = Command::new(&self.executable)
+            .args(&self.prefix_arguments)
             .arg("--one-shot")
             .envs(&self.environment)
             .stdin(Stdio::piped())
