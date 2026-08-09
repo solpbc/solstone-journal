@@ -44,6 +44,10 @@ fn owner(threshold: f32, margin: Option<f32>) -> OwnerCentroid {
         margin,
         cluster_size: 1,
         last_refreshed_at: None,
+        created_at: None,
+        evidence_tier: None,
+        evidence_hash: None,
+        evidence_intra_cosine_p25: None,
     }
 }
 

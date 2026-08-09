@@ -6,13 +6,22 @@
 use std::error::Error;
 use std::fmt;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 
-use solstone_core_entity::entity_memory_path;
+use solstone_core_entity::{entity_memory_path, normalize_embedding};
+use solstone_core_journal_io::{
+    AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, atomic_replace, hold_lock,
+};
 use zip::ZipArchive;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
 
-use solstone_core_npy::{NpyBlob, parse_npy};
+use solstone_core_npy::{NpyBlob, parse_npy, write_npy};
+use solstone_core_speaker_id::calibration::{
+    OWNER_MARGIN_MIN, OWNER_REBUILD_MAX_COHESION_DROP, OWNER_REBUILD_MIN_CENTROID_AGREEMENT,
+    OWNER_REBUILD_MIN_CLUSTER_SIZE_RATIO, OWNER_THRESHOLD,
+};
 
 /// One normalized owner centroid and the calibration stored beside it.
 #[derive(Debug, Clone, PartialEq)]
@@ -22,6 +31,10 @@ pub struct OwnerCentroid {
     pub margin: Option<f32>,
     pub cluster_size: i32,
     pub last_refreshed_at: Option<String>,
+    pub created_at: Option<String>,
+    pub evidence_tier: Option<String>,
+    pub evidence_hash: Option<String>,
+    pub evidence_intra_cosine_p25: Option<f32>,
 }
 
 /// Failure while reading an owner-centroid NPZ record.
@@ -45,6 +58,84 @@ impl fmt::Display for OwnerCentroidError {
 
 impl Error for OwnerCentroidError {}
 
+/// Input for the common build/confirm owner-centroid writer.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OwnerCentroidWriteInput {
+    pub centroid: Vec<f32>,
+    pub cluster_size: i32,
+    pub timestamp: String,
+    pub evidence_tier: String,
+}
+
+/// Input for a guarded owner-centroid rebuild.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OwnerCentroidRebuildInput {
+    pub centroid: Vec<f32>,
+    pub embeddings_count: i32,
+    pub timestamp: String,
+    pub evidence_hash: String,
+    pub evidence_intra_cosine_p25: f32,
+    pub evidence_tier: String,
+    pub override_regression: bool,
+}
+
+/// Result of a guarded owner-centroid rebuild.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OwnerCentroidRebuildOutcome {
+    Rebuilt { override_applied: bool },
+    Unchanged,
+    Refused { reason: String },
+}
+
+/// Failure while writing an owner-centroid record.
+#[derive(Debug)]
+pub enum OwnerCentroidWriteError {
+    EntityPath(solstone_core_entity::EntityLifecycleError),
+    Lock(LockError),
+    Write(AtomicWriteError),
+    Read(OwnerCentroidError),
+    Invalid(String),
+    Archive(String),
+}
+
+impl fmt::Display for OwnerCentroidWriteError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EntityPath(error) => error.fmt(formatter),
+            Self::Lock(LockError::Timeout(_)) => {
+                formatter.write_str("voiceprint storage is busy; try again")
+            }
+            Self::Lock(error) => error.fmt(formatter),
+            Self::Write(error) => error.fmt(formatter),
+            Self::Read(error) => error.fmt(formatter),
+            Self::Invalid(error) | Self::Archive(error) => formatter.write_str(error),
+        }
+    }
+}
+
+impl Error for OwnerCentroidWriteError {}
+
+impl From<solstone_core_entity::EntityLifecycleError> for OwnerCentroidWriteError {
+    fn from(error: solstone_core_entity::EntityLifecycleError) -> Self {
+        Self::EntityPath(error)
+    }
+}
+impl From<LockError> for OwnerCentroidWriteError {
+    fn from(error: LockError) -> Self {
+        Self::Lock(error)
+    }
+}
+impl From<AtomicWriteError> for OwnerCentroidWriteError {
+    fn from(error: AtomicWriteError) -> Self {
+        Self::Write(error)
+    }
+}
+impl From<OwnerCentroidError> for OwnerCentroidWriteError {
+    fn from(error: OwnerCentroidError) -> Self {
+        Self::Read(error)
+    }
+}
+
 /// Load and normalize an owner's persisted centroid, if present.
 pub fn load_owner_centroid(
     journal_root: &Path,
@@ -67,6 +158,10 @@ pub fn load_owner_centroid(
     let cluster_size_bytes = read_member_bytes(&mut archive, "cluster_size.npy")?;
     let margin = optional_member(&mut archive, "margin.npy")?;
     let last_refreshed_at = optional_member(&mut archive, "last_refreshed_at.npy")?;
+    let created_at = optional_member(&mut archive, "created_at.npy")?;
+    let evidence_tier = optional_member(&mut archive, "evidence_tier.npy")?;
+    let evidence_hash = optional_member(&mut archive, "evidence_hash.npy")?;
+    let evidence_intra_cosine_p25 = optional_member(&mut archive, "evidence_intra_cosine_p25.npy")?;
 
     let centroid_blob = parse_blob(&centroid_bytes)?;
     let threshold_blob = parse_blob(&threshold_bytes)?;
@@ -96,6 +191,15 @@ pub fn load_owner_centroid(
         .map(|blob| unicode_scalar(&blob, "last_refreshed_at.npy"))
         .transpose()?
         .filter(|value| !value.is_empty());
+    let created_at = optional_unicode_scalar(created_at, "created_at.npy")?;
+    let evidence_tier = optional_unicode_scalar(evidence_tier, "evidence_tier.npy")?;
+    let evidence_hash = optional_unicode_scalar(evidence_hash, "evidence_hash.npy")?;
+    let evidence_intra_cosine_p25 = evidence_intra_cosine_p25
+        .as_deref()
+        .map(parse_blob)
+        .transpose()?
+        .map(|blob| f32_scalar(&blob, "evidence_intra_cosine_p25.npy"))
+        .transpose()?;
 
     Ok(Some(OwnerCentroid {
         centroid,
@@ -103,7 +207,225 @@ pub fn load_owner_centroid(
         margin,
         cluster_size,
         last_refreshed_at,
+        created_at,
+        evidence_tier,
+        evidence_hash,
+        evidence_intra_cosine_p25,
     }))
+}
+
+/// Write the seven-member owner-centroid NPZ used by owner build and confirm.
+pub fn write_owner_centroid(
+    journal_root: &Path,
+    principal_entity_id: &str,
+    input: &OwnerCentroidWriteInput,
+) -> Result<(), OwnerCentroidWriteError> {
+    let centroid = normalize_embedding(&input.centroid).ok_or_else(|| {
+        OwnerCentroidWriteError::Invalid("owner centroid must have nonzero norm".to_owned())
+    })?;
+    let path = owner_centroid_path(journal_root, principal_entity_id, true)?;
+    let _lock = hold_lock(&path, LockOptions::default())?;
+    let members = base_members(
+        &centroid,
+        input.cluster_size,
+        &input.timestamp,
+        &input.evidence_tier,
+    );
+    write_and_verify(journal_root, principal_entity_id, &path, &members)
+}
+
+/// Rebuild an owner centroid under the Python-compatible incumbent guards.
+pub fn rebuild_owner_centroid(
+    journal_root: &Path,
+    principal_entity_id: &str,
+    input: &OwnerCentroidRebuildInput,
+) -> Result<OwnerCentroidRebuildOutcome, OwnerCentroidWriteError> {
+    let candidate = normalize_embedding(&input.centroid).ok_or_else(|| {
+        OwnerCentroidWriteError::Invalid("owner centroid must have nonzero norm".to_owned())
+    })?;
+    let path = owner_centroid_path(journal_root, principal_entity_id, false)?;
+    if !path.exists() {
+        return Ok(OwnerCentroidRebuildOutcome::Refused {
+            reason: "no_owner_centroid".to_owned(),
+        });
+    }
+    let _lock = hold_lock(&path, LockOptions::default())?;
+    let Some(incumbent) = load_owner_centroid(journal_root, principal_entity_id)? else {
+        return Ok(OwnerCentroidRebuildOutcome::Refused {
+            reason: "no_owner_centroid".to_owned(),
+        });
+    };
+    if incumbent.last_refreshed_at.is_none() {
+        return Ok(OwnerCentroidRebuildOutcome::Refused {
+            reason: "no_owner_centroid".to_owned(),
+        });
+    }
+    if incumbent.evidence_hash.as_deref() == Some(input.evidence_hash.as_str()) {
+        return Ok(OwnerCentroidRebuildOutcome::Unchanged);
+    }
+    let agreement = dot(&incumbent.centroid, &candidate);
+    let regression = if agreement < OWNER_REBUILD_MIN_CENTROID_AGREEMENT {
+        Some("centroid_agreement_too_low")
+    } else if incumbent.evidence_hash.is_some()
+        && (input.embeddings_count as f32)
+            < (incumbent.cluster_size as f32 * OWNER_REBUILD_MIN_CLUSTER_SIZE_RATIO)
+    {
+        Some("cluster_size_regression")
+    } else if incumbent.evidence_hash.is_some()
+        && incumbent.evidence_intra_cosine_p25.is_some()
+        && incumbent.evidence_tier.as_deref() == Some(input.evidence_tier.as_str())
+        && input.evidence_intra_cosine_p25
+            < incumbent.evidence_intra_cosine_p25.expect("checked above")
+                - OWNER_REBUILD_MAX_COHESION_DROP
+    {
+        Some("cohesion_regression")
+    } else {
+        None
+    };
+    if let Some(reason) = regression
+        && !input.override_regression
+    {
+        return Ok(OwnerCentroidRebuildOutcome::Refused {
+            reason: reason.to_owned(),
+        });
+    }
+    let created_at = incumbent
+        .created_at
+        .as_deref()
+        .or(incumbent.last_refreshed_at.as_deref())
+        .unwrap_or(&input.timestamp);
+    let mut members = base_members(
+        &candidate,
+        input.embeddings_count,
+        &input.timestamp,
+        &input.evidence_tier,
+    );
+    replace_member(
+        &mut members,
+        "created_at.npy",
+        unicode_scalar_npy(created_at),
+    );
+    members.push((
+        "evidence_hash.npy",
+        unicode_scalar_npy(&input.evidence_hash),
+    ));
+    members.push((
+        "evidence_intra_cosine_p25.npy",
+        f32_scalar_npy(input.evidence_intra_cosine_p25),
+    ));
+    write_and_verify(journal_root, principal_entity_id, &path, &members)?;
+    Ok(OwnerCentroidRebuildOutcome::Rebuilt {
+        override_applied: regression.is_some(),
+    })
+}
+
+fn owner_centroid_path(
+    journal_root: &Path,
+    principal_entity_id: &str,
+    create: bool,
+) -> Result<PathBuf, OwnerCentroidWriteError> {
+    Ok(entity_memory_path(journal_root, principal_entity_id, create)?.join("owner_centroid.npz"))
+}
+
+fn base_members(
+    centroid: &[f32],
+    cluster_size: i32,
+    timestamp: &str,
+    evidence_tier: &str,
+) -> Vec<(&'static str, Vec<u8>)> {
+    vec![
+        ("centroid.npy", f32_vector_npy(centroid)),
+        ("cluster_size.npy", i32_scalar_npy(cluster_size)),
+        ("threshold.npy", f32_scalar_npy(OWNER_THRESHOLD)),
+        ("margin.npy", f32_scalar_npy(OWNER_MARGIN_MIN)),
+        ("last_refreshed_at.npy", unicode_scalar_npy(timestamp)),
+        ("created_at.npy", unicode_scalar_npy(timestamp)),
+        ("evidence_tier.npy", unicode_scalar_npy(evidence_tier)),
+    ]
+}
+
+fn replace_member(members: &mut [(&'static str, Vec<u8>)], name: &str, bytes: Vec<u8>) {
+    if let Some((_, member)) = members.iter_mut().find(|(current, _)| *current == name) {
+        *member = bytes;
+    }
+}
+
+fn write_and_verify(
+    journal_root: &Path,
+    principal_entity_id: &str,
+    path: &Path,
+    members: &[(&str, Vec<u8>)],
+) -> Result<(), OwnerCentroidWriteError> {
+    let bytes = write_archive(members)?;
+    atomic_replace(path, &bytes, AtomicWriteOptions::default())?;
+    load_owner_centroid(journal_root, principal_entity_id)?.ok_or_else(|| {
+        OwnerCentroidWriteError::Invalid("owner centroid disappeared after write".to_owned())
+    })?;
+    Ok(())
+}
+
+pub(crate) fn write_archive(
+    members: &[(&str, Vec<u8>)],
+) -> Result<Vec<u8>, OwnerCentroidWriteError> {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    for (name, bytes) in members {
+        writer
+            .start_file(*name, options)
+            .map_err(|error| OwnerCentroidWriteError::Archive(error.to_string()))?;
+        writer
+            .write_all(bytes)
+            .map_err(|error| OwnerCentroidWriteError::Archive(error.to_string()))?;
+    }
+    writer
+        .finish()
+        .map_err(|error| OwnerCentroidWriteError::Archive(error.to_string()))
+        .map(|cursor| cursor.into_inner())
+}
+
+pub(crate) fn f32_vector_npy(values: &[f32]) -> Vec<u8> {
+    let payload = values
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect::<Vec<_>>();
+    write_npy("<f4", &format!("({},)", values.len()), &payload)
+}
+
+pub(crate) fn f32_scalar_npy(value: f32) -> Vec<u8> {
+    write_npy("<f4", "()", &value.to_le_bytes())
+}
+
+pub(crate) fn i32_scalar_npy(value: i32) -> Vec<u8> {
+    write_npy("<i4", "()", &value.to_le_bytes())
+}
+
+pub(crate) fn unicode_scalar_npy(value: &str) -> Vec<u8> {
+    let payload = value
+        .chars()
+        .flat_map(|character| (character as u32).to_le_bytes())
+        .collect::<Vec<_>>();
+    write_npy(&format!("<U{}", value.chars().count()), "()", &payload)
+}
+
+fn dot(left: &[f32], right: &[f32]) -> f32 {
+    left.iter()
+        .zip(right)
+        .map(|(left, right)| left * right)
+        .sum()
+}
+
+fn optional_unicode_scalar(
+    member: Option<Vec<u8>>,
+    name: &str,
+) -> Result<Option<String>, OwnerCentroidError> {
+    let value = member
+        .as_deref()
+        .map(parse_blob)
+        .transpose()?
+        .map(|blob| unicode_scalar(&blob, name))
+        .transpose()?
+        .filter(|value| !value.is_empty());
+    Ok(value)
 }
 
 fn parse_blob(bytes: &[u8]) -> Result<NpyBlob<'_>, OwnerCentroidError> {
