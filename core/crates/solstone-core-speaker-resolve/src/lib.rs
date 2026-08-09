@@ -5,9 +5,10 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
-pub mod evidence;
+pub mod bootstrap;
 pub mod candidate_tracker;
 pub mod discovery_cache;
+pub mod evidence;
 pub mod identify_operations;
 pub mod layer1;
 pub mod layer2;
