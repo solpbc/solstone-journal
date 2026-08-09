@@ -25,10 +25,7 @@ fn plain_source_hashes_have_no_day_bound() {
 
 #[test]
 fn closed_apple_window_includes_both_boundaries_and_interior_only() {
-    let hash = source_hash(
-        BodySourceFamily::AppleHealth,
-        "#window:20260102:20260104",
-    );
+    let hash = source_hash(BodySourceFamily::AppleHealth, "#window:20260102:20260104");
 
     assert!(!hash.includes_day(&day("20260101")));
     assert!(hash.includes_day(&day("20260102")));
@@ -39,10 +36,7 @@ fn closed_apple_window_includes_both_boundaries_and_interior_only() {
 
 #[test]
 fn left_open_apple_window_has_only_an_inclusive_upper_bound() {
-    let hash = source_hash(
-        BodySourceFamily::AppleHealth,
-        "#window:open:20260102",
-    );
+    let hash = source_hash(BodySourceFamily::AppleHealth, "#window:open:20260102");
 
     assert!(hash.includes_day(&day("00010101")));
     assert!(hash.includes_day(&day("20260102")));
@@ -51,10 +45,7 @@ fn left_open_apple_window_has_only_an_inclusive_upper_bound() {
 
 #[test]
 fn right_open_apple_window_has_only_an_inclusive_lower_bound() {
-    let hash = source_hash(
-        BodySourceFamily::AppleHealth,
-        "#window:20260102:open",
-    );
+    let hash = source_hash(BodySourceFamily::AppleHealth, "#window:20260102:open");
 
     assert!(!hash.includes_day(&day("20260101")));
     assert!(hash.includes_day(&day("20260102")));
@@ -63,10 +54,7 @@ fn right_open_apple_window_has_only_an_inclusive_lower_bound() {
 
 #[test]
 fn single_day_apple_window_includes_exactly_that_day() {
-    let hash = source_hash(
-        BodySourceFamily::AppleHealth,
-        "#window:20260102:20260102",
-    );
+    let hash = source_hash(BodySourceFamily::AppleHealth, "#window:20260102:20260102");
 
     assert!(!hash.includes_day(&day("20260101")));
     assert!(hash.includes_day(&day("20260102")));

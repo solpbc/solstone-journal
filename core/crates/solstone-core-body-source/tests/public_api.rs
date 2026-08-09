@@ -963,8 +963,8 @@ fn public_apple_summary_plan_api_checks_and_rejects_unordered_days() {
     assert_eq!(plan.days(), sorted.as_slice());
     assert_eq!(plan.clone(), plan);
 
-    let days_different = AppleSummaryPlan::new(&bundle, sorted[..2].to_vec())
-        .expect("different ordered days bind");
+    let days_different =
+        AppleSummaryPlan::new(&bundle, sorted[..2].to_vec()).expect("different ordered days bind");
     assert_ne!(plan, days_different);
 
     let other_bundle =
