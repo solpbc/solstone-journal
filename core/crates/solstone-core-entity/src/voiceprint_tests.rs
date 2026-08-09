@@ -113,11 +113,9 @@ fn rewrite_member(archive: &[u8], name: &str, replacement: Option<&[u8]>) -> Vec
             writer.write_all(&bytes).unwrap();
         }
     }
-    if !found {
-        if let Some(replacement) = replacement {
-            writer.start_file(name, options).unwrap();
-            writer.write_all(replacement).unwrap();
-        }
+    if !found && let Some(replacement) = replacement {
+        writer.start_file(name, options).unwrap();
+        writer.write_all(replacement).unwrap();
     }
     writer.finish().unwrap().into_inner()
 }
