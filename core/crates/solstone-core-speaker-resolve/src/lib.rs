@@ -6,6 +6,7 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 pub mod evidence;
+pub mod candidate_tracker;
 pub mod discovery_cache;
 pub mod identify_operations;
 pub mod layer1;
@@ -14,6 +15,7 @@ pub mod layer3;
 pub mod owner_candidate;
 pub mod owner_centroid;
 pub mod resolve;
+pub mod retroactive_confirm;
 pub mod voiceprint_accumulation;
 pub mod voiceprint_centroid;
 pub mod voiceprint_metadata;
