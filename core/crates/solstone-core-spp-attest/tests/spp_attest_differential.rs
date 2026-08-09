@@ -115,11 +115,15 @@ def gpu_verdict(kind, root, stdout_name, unknown_result_code=False):
     )
 
 
+class UnknownCase(Exception):
+    pass
+
+
 def evaluate(case):
     kind = case["kind"]
     root = Path(case["root"])
     try:
-        if kind == "snp_report_parse":
+        if kind == "snp_report_parse" or kind == "snp_report_truncated":
             report = SnpReport.parse((root / "report.bin").read_bytes())
             return accepted(
                 kind,
@@ -163,7 +167,14 @@ def evaluate(case):
             return gpu_verdict(kind, root, "negC.stdout")
         if kind == "gpu_unknown_result_code":
             return gpu_verdict(kind, root, "positive.stdout", unknown_result_code=True)
-        raise AssertionError(f"unknown differential case {kind}")
+        raise UnknownCase(kind)
+    except UnknownCase:
+        # Never convert this into a verdict. It is not a rejection the
+        # reference computed -- it is the oracle admitting it does not implement
+        # the case, and `comparable` strips `exception_type`, so a swallowed
+        # UnknownCase is indistinguishable from a real rejection and the
+        # differential passes while testing nothing.
+        raise
     except Exception as exc:
         return rejected(kind, exception_type=type(exc).__name__)
 
@@ -388,7 +399,7 @@ fn rejected(kind: &str, reason: Option<&str>) -> Value {
 
 fn rust_verdict(kind: &str, root: &Path) -> Value {
     match kind {
-        "snp_report_parse" => {
+        "snp_report_parse" | "snp_report_truncated" => {
             match SnpReport::parse(&fs::read(root.join("report.bin")).expect("report")) {
                 Ok(report) => accepted(
                     kind,
