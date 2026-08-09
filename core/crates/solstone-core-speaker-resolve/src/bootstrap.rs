@@ -7,15 +7,15 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use solstone_core_entity::{
-    create_journal_entity, load_all_journal_entities, load_entity_voiceprints_file,
-    read_journal_principal, record_entity_resolution, save_voiceprints_batch, EncoderIdentity,
-    EntityResolutionEntity, EntityResolutionError, EntityResolutionOutcome, JournalEntity,
-    VoiceprintItem,
+    EncoderIdentity, EntityResolutionEntity, EntityResolutionError, EntityResolutionOutcome,
+    JournalEntity, VoiceprintItem, create_journal_entity, load_all_journal_entities,
+    load_entity_voiceprints_file, read_journal_principal, record_entity_resolution,
+    save_voiceprints_batch,
 };
 use solstone_core_entity_matching::entity_slug;
-use solstone_core_journal_io::{day_dirs, iter_segments, PathOrDay};
+use solstone_core_journal_io::{PathOrDay, day_dirs, iter_segments};
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use thiserror::Error;
 

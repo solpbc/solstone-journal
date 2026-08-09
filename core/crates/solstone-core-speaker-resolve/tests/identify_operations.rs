@@ -6,13 +6,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use solstone_core_speaker_resolve::identify_operations::{
-    append_event, expected_restored_correction_artifact_signatures, fold_operation,
+    FORWARD_PHASE_ORDER, ForwardPhase, IdentifyOperationError, MemberProvenance, OperationState,
+    TerminalStatus, UNDO_PHASE_ORDER, UndoPhase, append_event,
+    expected_restored_correction_artifact_signatures, fold_operation,
     identify_correction_artifact_signature, is_fully_restored_identify_operation, load_operations,
-    operation_id_for_request, request_fingerprint, validate_row, ForwardPhase,
-    IdentifyOperationError, MemberProvenance, OperationState, TerminalStatus, UndoPhase,
-    FORWARD_PHASE_ORDER, UNDO_PHASE_ORDER,
+    operation_id_for_request, request_fingerprint, validate_row,
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);

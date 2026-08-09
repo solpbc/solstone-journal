@@ -7,16 +7,16 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 use solstone_core_entity::{
-    is_valid_entity_type, load_all_journal_entities, load_entity_voiceprints_file,
-    read_entity_identity, record_entity_resolution, EntityResolutionError, EntityResolutionOutcome,
-    JournalEntity,
+    EntityResolutionError, EntityResolutionOutcome, JournalEntity, is_valid_entity_type,
+    load_all_journal_entities, load_entity_voiceprints_file, read_entity_identity,
+    record_entity_resolution,
 };
-use solstone_core_entity_matching::{entity_slug, token_sort, MatchTier};
+use solstone_core_entity_matching::{MatchTier, entity_slug, token_sort};
 use thiserror::Error;
 
 use crate::eligibility::{
-    current_principal_id, eligible_speaker_attach_entities, principal_name_collision,
-    speaker_attach_rejection_reason, EligibilityError,
+    EligibilityError, current_principal_id, eligible_speaker_attach_entities,
+    principal_name_collision, speaker_attach_rejection_reason,
 };
 use crate::person_guard::is_admissible_person;
 

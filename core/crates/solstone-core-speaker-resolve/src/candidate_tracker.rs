@@ -7,12 +7,12 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use solstone_core_entity::{
-    load_all_journal_entities, save_voiceprints_batch, EncoderIdentity, VoiceprintItem,
+    EncoderIdentity, VoiceprintItem, load_all_journal_entities, save_voiceprints_batch,
 };
 use solstone_core_journal_io::{
-    atomic_replace, hold_lock, AtomicWriteOptions, LockError, LockOptions,
+    AtomicWriteOptions, LockError, LockOptions, atomic_replace, hold_lock,
 };
 use thiserror::Error;
 

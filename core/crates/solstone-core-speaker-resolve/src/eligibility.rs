@@ -6,7 +6,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use solstone_core_entity::{read_journal_principal, JournalEntity};
+use solstone_core_entity::{JournalEntity, read_journal_principal};
 use solstone_core_entity_matching::normalize_resolution_query;
 use thiserror::Error;
 

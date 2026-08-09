@@ -11,9 +11,9 @@ use solstone_core_journal_io::segment_path;
 use solstone_core_speaker_resolve::candidate_tracker::{CandidateTracker, ClusterInput};
 use solstone_core_speaker_resolve::identify_forward_phases::RetroTrackerPhasePlan;
 use solstone_core_speaker_resolve::identify_forward_phases::{
-    phase_corrections, phase_entity, phase_keep_separate, phase_labels, phase_retro_tracker,
-    phase_sentinel, EntityPhasePlan, ForwardPhaseError, KeepSeparatePhaseEntry, LabelPlanItem,
-    SegmentCorrectionPlan, SegmentLabelPlan, SentinelPhasePlan,
+    EntityPhasePlan, ForwardPhaseError, KeepSeparatePhaseEntry, LabelPlanItem,
+    SegmentCorrectionPlan, SegmentLabelPlan, SentinelPhasePlan, phase_corrections, phase_entity,
+    phase_keep_separate, phase_labels, phase_retro_tracker, phase_sentinel,
 };
 use solstone_core_speaker_resolve::identify_operations::ForwardPhase;
 use solstone_core_speaker_resolve::voiceprint_metadata::VoiceprintMetadata;

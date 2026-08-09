@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::json;
-use solstone_core_entity::{load_entity_voiceprints_file, save_voiceprints_batch, EncoderIdentity};
+use solstone_core_entity::{EncoderIdentity, load_entity_voiceprints_file, save_voiceprints_batch};
 use solstone_core_journal_io::segment_path;
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_resolve::direct_voiceprints::{

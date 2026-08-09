@@ -5,21 +5,21 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
-pub mod bootstrap;
 pub mod backfill;
 pub mod backfill_operations;
+pub mod bootstrap;
 pub mod candidate_tracker;
-pub mod discovery_cache;
 pub mod direct_voiceprints;
-pub mod evidence;
+pub mod discovery_cache;
 pub mod eligibility;
+pub mod evidence;
 pub mod identify_cluster;
-pub mod identify_target;
-pub mod keep_separate;
-pub mod identify_operations;
-pub mod identify_undo_phases;
-pub mod identify_undo;
 pub mod identify_forward_phases;
+pub mod identify_operations;
+pub mod identify_target;
+pub mod identify_undo;
+pub mod identify_undo_phases;
+pub mod keep_separate;
 pub mod layer1;
 pub mod layer2;
 pub mod layer3;

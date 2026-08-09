@@ -7,18 +7,18 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::json;
-use solstone_core_entity::{save_voiceprints_batch, EncoderIdentity, VoiceprintItem};
+use solstone_core_entity::{EncoderIdentity, VoiceprintItem, save_voiceprints_batch};
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_resolve::candidate_tracker::retroactive_voiceprint_metadata;
 use solstone_core_speaker_resolve::candidate_tracker::{
     CandidateProfile, CandidateTracker, ClusterInput, VP_OUTLIER_MIN_SAMPLES,
 };
 use solstone_core_speaker_resolve::owner_centroid::{
-    write_owner_centroid, OwnerCentroidWriteInput,
+    OwnerCentroidWriteInput, write_owner_centroid,
 };
 use solstone_core_speaker_resolve::retroactive_confirm::{
-    apply_retroactive_confirm_plan, plan_retroactive_confirm, RetroactiveConfirmError,
-    RetroactiveConfirmPlan,
+    RetroactiveConfirmError, RetroactiveConfirmPlan, apply_retroactive_confirm_plan,
+    plan_retroactive_confirm,
 };
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};

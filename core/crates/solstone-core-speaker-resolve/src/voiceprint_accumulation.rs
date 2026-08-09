@@ -12,10 +12,10 @@ use std::path::Path;
 use chrono::{NaiveDate, TimeZone};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use solstone_core_entity::{
-    load_all_journal_entities, load_entity_voiceprints_file, normalize_embedding,
-    read_journal_principal, save_voiceprints_batch, EncoderIdentity, VoiceprintItem,
+    EncoderIdentity, VoiceprintItem, load_all_journal_entities, load_entity_voiceprints_file,
+    normalize_embedding, read_journal_principal, save_voiceprints_batch,
 };
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_journal_io::segment_path;

@@ -5,10 +5,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use solstone_core_speaker_resolve::discovery_cache::{
-    canonical_members, discovery_cache_path, load_discovery_cache,
-    normalize_reviewed_near_match_ids, ReviewedNearMatchIdsError,
+    ReviewedNearMatchIdsError, canonical_members, discovery_cache_path, load_discovery_cache,
+    normalize_reviewed_near_match_ids,
 };
 use solstone_core_speaker_resolve::identify_operations::MemberProvenance;
 

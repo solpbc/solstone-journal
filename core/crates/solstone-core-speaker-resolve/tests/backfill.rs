@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::json;
 use solstone_core_speaker_resolve::backfill::{
-    classify_speaker_labels_text, merge_user_labels, plan_backfill_segments, SpeakerLabelsState,
+    SpeakerLabelsState, classify_speaker_labels_text, merge_user_labels, plan_backfill_segments,
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);

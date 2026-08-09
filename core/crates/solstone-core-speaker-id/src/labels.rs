@@ -307,7 +307,8 @@ pub fn restore_label_rows(
                 report.removed_inserted_count += 1;
             }
             "present" => {
-                let Some(prior) = restoration.prior_label.as_ref().and_then(Value::as_object) else {
+                let Some(prior) = restoration.prior_label.as_ref().and_then(Value::as_object)
+                else {
                     return Err(LabelsError::InvalidLabelRestoration);
                 };
                 labels[index] = Value::Object(prior.clone());

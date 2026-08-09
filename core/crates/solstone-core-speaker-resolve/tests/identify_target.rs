@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::json;
 use solstone_core_speaker_resolve::identify_target::{
-    resolve_identify_target, IdentifyTargetOutcome, IdentifyTargetRequest,
+    IdentifyTargetOutcome, IdentifyTargetRequest, resolve_identify_target,
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);

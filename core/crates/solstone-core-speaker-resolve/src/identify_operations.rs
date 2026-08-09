@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
-use solstone_core_journal_io::{append_jsonl, hold_lock, AppendError, LockError, LockOptions};
+use solstone_core_journal_io::{AppendError, LockError, LockOptions, append_jsonl, hold_lock};
 use thiserror::Error;
 
 pub const IDENTIFY_OPERATION_SCHEMA_VERSION: i64 = 1;

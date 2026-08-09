@@ -10,11 +10,11 @@ use serde_json::json;
 use solstone_core_entity::EncoderIdentity;
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_resolve::bootstrap::{
-    bootstrap_voiceprints, merge_names, seed_from_imports, BootstrapOutcome, BootstrapRequest,
-    MergeNamesOutcome, SeedFromImportsOutcome,
+    BootstrapOutcome, BootstrapRequest, MergeNamesOutcome, SeedFromImportsOutcome,
+    bootstrap_voiceprints, merge_names, seed_from_imports,
 };
 use solstone_core_speaker_resolve::owner_centroid::{
-    write_owner_centroid, OwnerCentroidWriteInput,
+    OwnerCentroidWriteInput, write_owner_centroid,
 };
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -184,23 +184,31 @@ fn ac4_ac22_bootstrap_guards_non_person_and_continues_after_entity_write_failure
         panic!("owner centroid is present");
     };
     assert_eq!(stats.embeddings_saved, 1);
-    assert!(stats
-        .errors
-        .iter()
-        .any(|error| error.contains("Failed to save for Bad Person")));
-    assert!(stats
-        .errors
-        .iter()
-        .any(|error| error.contains("Skipped non-Person entity tool")));
-    assert!(temporary
-        .path()
-        .join("entities/good/voiceprints.npz")
-        .is_file());
+    assert!(
+        stats
+            .errors
+            .iter()
+            .any(|error| error.contains("Failed to save for Bad Person"))
+    );
+    assert!(
+        stats
+            .errors
+            .iter()
+            .any(|error| error.contains("Skipped non-Person entity tool"))
+    );
+    assert!(
+        temporary
+            .path()
+            .join("entities/good/voiceprints.npz")
+            .is_file()
+    );
     assert_eq!(fs::read(&bad_path).unwrap(), b"not-an-npz");
-    assert!(!temporary
-        .path()
-        .join("entities/tool/voiceprints.npz")
-        .exists());
+    assert!(
+        !temporary
+            .path()
+            .join("entities/tool/voiceprints.npz")
+            .exists()
+    );
 }
 
 #[test]
@@ -240,19 +248,25 @@ fn ac22_seed_from_imports_continues_after_one_entity_write_failure() {
     assert_eq!(stats.segments_scanned, 2);
     assert_eq!(stats.segments_with_speakers, 2);
     assert_eq!(stats.embeddings_saved, 1);
-    assert!(stats
-        .errors
-        .iter()
-        .any(|error| error.contains("Failed to save for bad")));
-    assert!(temporary
-        .path()
-        .join("entities/good/voiceprints.npz")
-        .is_file());
+    assert!(
+        stats
+            .errors
+            .iter()
+            .any(|error| error.contains("Failed to save for bad"))
+    );
+    assert!(
+        temporary
+            .path()
+            .join("entities/good/voiceprints.npz")
+            .is_file()
+    );
     assert_eq!(fs::read(&bad_path).unwrap(), b"not-an-npz");
-    assert!(!temporary
-        .path()
-        .join("entities/chat/voiceprints.npz")
-        .exists());
+    assert!(
+        !temporary
+            .path()
+            .join("entities/chat/voiceprints.npz")
+            .exists()
+    );
 }
 
 #[test]
@@ -321,10 +335,12 @@ fn bootstrap_creates_a_person_for_a_genuine_no_match() {
         serde_json::from_str::<serde_json::Value>(&identity).unwrap()["type"],
         "Person"
     );
-    assert!(temporary
-        .path()
-        .join("entities/new_person/voiceprints.npz")
-        .is_file());
+    assert!(
+        temporary
+            .path()
+            .join("entities/new_person/voiceprints.npz")
+            .is_file()
+    );
 }
 
 #[test]

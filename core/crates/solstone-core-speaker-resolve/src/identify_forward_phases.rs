@@ -7,14 +7,14 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_entity::{
+    EncoderIdentity, EntityOperationContext, EntityOperationKind, JournalEntity, VoiceprintItem,
     create_journal_entity, load_entity_voiceprints_file, read_entity_identity,
-    read_visible_history, EncoderIdentity, EntityOperationContext, EntityOperationKind,
-    JournalEntity, VoiceprintItem,
+    read_visible_history,
 };
-use solstone_core_journal_io::{atomic_replace, segment_path, AtomicWriteOptions};
+use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, segment_path};
 use solstone_core_speaker_id::corrections::append_correction;
 use solstone_core_speaker_id::labels::patch_labels;
 use thiserror::Error;
@@ -22,9 +22,9 @@ use thiserror::Error;
 use crate::candidate_tracker::{CandidateTracker, CandidateTrackerError};
 use crate::direct_voiceprints::DirectVoiceprintKey;
 use crate::identify_operations::ForwardPhase;
-use crate::keep_separate::{find_assertion, record_keep_separate_assertion, KeepSeparateError};
+use crate::keep_separate::{KeepSeparateError, find_assertion, record_keep_separate_assertion};
 use crate::retroactive_confirm::{
-    apply_retroactive_confirm_plan, RetroactiveConfirmError, RetroactiveConfirmPlan,
+    RetroactiveConfirmError, RetroactiveConfirmPlan, apply_retroactive_confirm_plan,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -428,7 +428,7 @@ pub fn phase_retro_tracker(
                     "voiceprint_metadata_mismatch",
                     "voiceprint",
                     Value::Null,
-                ))
+                ));
             }
         }
     }

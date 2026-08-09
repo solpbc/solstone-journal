@@ -6,17 +6,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use solstone_core_entity::{
-    load_entity_voiceprints_file, load_existing_voiceprint_keys, normalize_embedding,
-    read_journal_principal, save_voiceprints_batch, EncoderIdentity, VoiceprintItem,
+    EncoderIdentity, VoiceprintItem, load_entity_voiceprints_file, load_existing_voiceprint_keys,
+    normalize_embedding, read_journal_principal, save_voiceprints_batch,
 };
 use solstone_core_journal_io::segment_path;
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use thiserror::Error;
 
 use crate::identify_operations::{ForwardPhase, MemberProvenance};
-use crate::owner_centroid::{load_owner_centroid, OwnerCentroid, OwnerCentroidError};
+use crate::owner_centroid::{OwnerCentroid, OwnerCentroidError, load_owner_centroid};
 use crate::voiceprint_metadata::VoiceprintMetadata;
 
 /// The four metadata values that identify a direct voiceprint row.

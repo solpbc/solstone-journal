@@ -8,8 +8,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
-use serde_json::{json, Value};
-use solstone_core_journal_io::{append_jsonl, hold_lock, AppendError, LockError, LockOptions};
+use serde_json::{Value, json};
+use solstone_core_journal_io::{AppendError, LockError, LockOptions, append_jsonl, hold_lock};
 use thiserror::Error;
 
 const SCHEMA_VERSION: i64 = 1;
@@ -218,7 +218,7 @@ fn load_rows(path: &Path) -> Result<Vec<Value>, KeepSeparateError> {
             return Err(KeepSeparateError::Read {
                 path: path.to_owned(),
                 source,
-            })
+            });
         }
     };
     text.lines()

@@ -6,10 +6,10 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use solstone_core_speaker_resolve::backfill_operations::{
-    append_backfill_event, backfill_operation_status, backfill_operations_path,
-    fold_backfill_operation, load_backfill_operations, BackfillCheckpointOutcome,
-    BackfillOperationError, BackfillOperationEvent, BackfillOperationPayload,
-    BackfillOperationTerminalStatus, BackfillSegmentKey, BACKFILL_OPERATION_SCHEMA_VERSION,
+    BACKFILL_OPERATION_SCHEMA_VERSION, BackfillCheckpointOutcome, BackfillOperationError,
+    BackfillOperationEvent, BackfillOperationPayload, BackfillOperationTerminalStatus,
+    BackfillSegmentKey, append_backfill_event, backfill_operation_status, backfill_operations_path,
+    fold_backfill_operation, load_backfill_operations,
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
