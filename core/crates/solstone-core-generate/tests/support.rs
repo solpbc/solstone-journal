@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+// ⚠ Included by several test binaries via `mod support;`. An item used by
+// one of them is dead code in the others, which `-D warnings` rejects.
 use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -16,6 +18,7 @@ use std::process::Command;
 /// as a side effect of testing this crate — the dependency runs the other way.
 /// A workspace test run builds it; a bare `-p solstone-core-generate` run does
 /// not, and the assertion below says so rather than failing obscurely.
+#[allow(dead_code)]
 pub fn core_binary() -> PathBuf {
     if let Some(path) = env::var_os("SOLSTONE_CORE") {
         let path = PathBuf::from(path);
@@ -51,12 +54,14 @@ pub fn core_binary() -> PathBuf {
 /// binaries — the wheel check builds an exact member set from a one-name script
 /// list, so a separate `solstone-generate-wire` executable is unreachable on an
 /// installed host.
+#[allow(dead_code)]
 pub fn prefix() -> Vec<OsString> {
     vec![OsString::from("generate")]
 }
 
 /// A `Command` already pointed at the wire, for the tests that drive it as a
 /// process rather than through a client.
+#[allow(dead_code)]
 pub fn generate_command() -> Command {
     let mut command = Command::new(core_binary());
     command.arg("generate");

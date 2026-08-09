@@ -7,11 +7,10 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use solstone_core_generate::{
     ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse, RefusalReason,
@@ -94,10 +93,6 @@ impl LocalStub {
         Self::start("x".repeat(LARGE_TEXT_BYTES), false)
     }
 
-    fn holding() -> Self {
-        Self::start("never sent".to_owned(), true)
-    }
-
     fn start(completion_text: String, hold_completion: bool) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
@@ -129,17 +124,6 @@ impl LocalStub {
             port,
             state,
             worker: Some(worker),
-        }
-    }
-
-    fn wait_for_inferences(&self, expected: usize) {
-        let deadline = Instant::now() + RECEIVE_BOUND;
-        while self.state.inferences.load(Ordering::Acquire) < expected {
-            assert!(
-                Instant::now() < deadline,
-                "timed out waiting for {expected} inference calls"
-            );
-            thread::sleep(Duration::from_millis(10));
         }
     }
 
