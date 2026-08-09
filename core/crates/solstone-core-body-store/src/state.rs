@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use solstone_core_body_source::{BodyDigest, BodyString, ValidatedBodyRowEvent};
 
 use crate::error::{BodyDedupeError, BodyDedupeErrorField};
+use crate::legacy::ValidatedLegacyBodyRow;
 use crate::row::BodyDedupeRow;
 use crate::text::body_string_to_text;
 
@@ -19,7 +20,7 @@ pub enum BodyDedupeDisposition {
 /// Pure in-memory replay state for validated body observations.
 #[derive(Default)]
 pub struct BodyDedupeState {
-    rows: BTreeMap<BodyDigest, BodyDedupeRow>,
+    rows: BTreeMap<String, BodyDedupeRow>,
 }
 
 impl BodyDedupeState {
@@ -46,7 +47,7 @@ impl BodyDedupeState {
         let normalized_ref = body_string_to_text(event.normalized_ref())
             .expect("normalized_ref is ASCII by validated ledger-event construction");
 
-        let key = event.dedupe_key().clone();
+        let key = event.dedupe_key().as_str().to_owned();
         let incoming = BodyDedupeRow::new(
             key.clone(),
             event.source_family(),
@@ -54,19 +55,29 @@ impl BodyDedupeState {
             record_type,
             start_time,
             end_time,
-            event.value_hash().clone(),
-            event.bundle_id().clone(),
-            event.bundle_id().clone(),
-            normalized_ref,
+            Some(event.value_hash().clone()),
+            Some(event.bundle_id().as_str().to_owned()),
+            Some(event.bundle_id().as_str().to_owned()),
+            Some(normalized_ref),
             raw_ref,
         );
+        Ok(self.apply_row(incoming))
+    }
+
+    /// Replays one checked row from a pre-native body bundle.
+    pub fn apply_legacy(&mut self, observation: &ValidatedLegacyBodyRow) -> BodyDedupeDisposition {
+        self.apply_row(observation.row().clone())
+    }
+
+    fn apply_row(&mut self, incoming: BodyDedupeRow) -> BodyDedupeDisposition {
+        let key = incoming.dedupe_key().to_owned();
         let Some(existing) = self.rows.get_mut(&key) else {
             self.rows.insert(key, incoming);
-            return Ok(BodyDedupeDisposition::Inserted);
+            return BodyDedupeDisposition::Inserted;
         };
 
         existing.update(incoming);
-        Ok(BodyDedupeDisposition::Updated)
+        BodyDedupeDisposition::Updated
     }
 
     pub fn len(&self) -> usize {
@@ -78,6 +89,11 @@ impl BodyDedupeState {
     }
 
     pub fn get(&self, key: &BodyDigest) -> Option<&BodyDedupeRow> {
+        self.rows.get(key.as_str())
+    }
+
+    /// Looks up either a native digest key or an older importer-defined key.
+    pub fn get_by_key(&self, key: &str) -> Option<&BodyDedupeRow> {
         self.rows.get(key)
     }
 
