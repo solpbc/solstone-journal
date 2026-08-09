@@ -2870,11 +2870,13 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sha2",
  "solstone-core-entity",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-npy",
  "solstone-core-speaker-id",
+ "thiserror 2.0.19",
  "zip",
 ]
 
