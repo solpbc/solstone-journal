@@ -66,7 +66,6 @@ class NativeSpeakerTranscriptWriteError(RuntimeError):
 
 def write_speaker_transcript(
     *,
-    raw_path: Path,
     jsonl_path: Path,
     npz_path: Path,
     base_time_us_of_day: int,

@@ -647,7 +647,6 @@ def _write_native_transcript(
 
     payload = embedding_payload
     return write_speaker_transcript(
-        raw_path=raw_path,
         jsonl_path=jsonl_path,
         npz_path=_get_embeddings_path(raw_path),
         base_time_us_of_day=_base_time_us_of_day(base_datetime),
@@ -1054,7 +1053,9 @@ def process_audio(
                 audio_seconds=audio_seconds,
                 reduced_seconds=reduced_seconds,
                 reason=e.reason,
-                error=_failure_label(e),
+                error=None
+                if exit_code == EXIT_PROVIDER_BLOCKED
+                else _failure_label(e),
             )
         except Exception:
             logging.exception("Failed to emit native transcript write failure event")
@@ -1167,7 +1168,9 @@ def _process_one(
                     outcome="deferred" if exit_code == EXIT_PROVIDER_BLOCKED else "failed",
                     timings=timings,
                     reason=native_error.reason,
-                    error=_failure_label(native_error),
+                    error=None
+                    if exit_code == EXIT_PROVIDER_BLOCKED
+                    else _failure_label(native_error),
                 )
             except Exception:
                 logging.exception("Failed to emit native decode-write failure event")
@@ -1227,7 +1230,9 @@ def _process_one(
                 timings=timings,
                 audio_seconds=len(audio_buffer) / SAMPLE_RATE,
                 reason=error.reason,
-                error=_failure_label(error),
+                error=None
+                if exit_code == EXIT_PROVIDER_BLOCKED
+                else _failure_label(error),
             )
             raise SystemExit(exit_code) from error
         if preserve_all:
