@@ -9,9 +9,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use serde_json::json;
 use solstone_core_entity::{EncoderIdentity, VoiceprintItem, save_voiceprints_batch};
 use solstone_core_npy::write_npy;
+use solstone_core_speaker_id::calibration::VP_OUTLIER_MIN_SAMPLES;
 use solstone_core_speaker_resolve::candidate_tracker::retroactive_voiceprint_metadata;
 use solstone_core_speaker_resolve::candidate_tracker::{
-    CandidateProfile, CandidateTracker, ClusterInput, VP_OUTLIER_MIN_SAMPLES,
+    CandidateProfile, CandidateTracker, ClusterInput,
 };
 use solstone_core_speaker_resolve::owner_centroid::{
     OwnerCentroidWriteInput, write_owner_centroid,

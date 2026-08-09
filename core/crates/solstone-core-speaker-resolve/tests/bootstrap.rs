@@ -6,11 +6,11 @@ use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use serde_json::json;
+use serde_json::{Value, json};
 use solstone_core_entity::EncoderIdentity;
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_resolve::bootstrap::{
-    BootstrapOutcome, BootstrapRequest, MergeNamesOutcome, SeedFromImportsOutcome,
+    BootstrapOutcome, BootstrapRequest, BootstrapStats, MergeNamesOutcome, SeedFromImportsOutcome,
     bootstrap_voiceprints, merge_names, seed_from_imports,
 };
 use solstone_core_speaker_resolve::owner_centroid::{
@@ -164,6 +164,20 @@ fn request(root: &Path) -> BootstrapRequest {
     }
 }
 
+fn bootstrap_stats_json(stats: &BootstrapStats) -> Value {
+    json!({
+        "segments_scanned":stats.segments_scanned,
+        "single_speaker_segments":stats.single_speaker_segments,
+        "speakers_found":stats.speakers_found,
+        "entities_created":stats.entities_created,
+        "embeddings_saved":stats.embeddings_saved,
+        "embeddings_skipped_owner":stats.embeddings_skipped_owner,
+        "embeddings_skipped_duplicate":stats.embeddings_skipped_duplicate,
+        "speakers_unmatched":stats.speakers_unmatched,
+        "errors":stats.errors,
+    })
+}
+
 #[test]
 fn ac4_ac22_bootstrap_guards_non_person_and_continues_after_entity_write_failure() {
     let temporary = Temp::new();
@@ -209,6 +223,37 @@ fn ac4_ac22_bootstrap_guards_non_person_and_continues_after_entity_write_failure
             .join("entities/tool/voiceprints.npz")
             .exists()
     );
+}
+
+#[test]
+fn ac23_bootstrap_voiceprints_output_is_deterministic_against_a_literal() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "principal", "Principal", "Person", true);
+    entity(temporary.path(), "good", "Good Person", "Person", false);
+    write_owner(temporary.path());
+    segment(temporary.path(), "120000_300", "Good Person");
+    let mut request = request(temporary.path());
+    request.dry_run = true;
+
+    let BootstrapOutcome::Completed(first) = bootstrap_voiceprints(&request).unwrap() else {
+        panic!("owner centroid is present");
+    };
+    let BootstrapOutcome::Completed(second) = bootstrap_voiceprints(&request).unwrap() else {
+        panic!("owner centroid is present");
+    };
+    let expected = json!({
+        "segments_scanned":1,
+        "single_speaker_segments":1,
+        "speakers_found":{"Good Person":1},
+        "entities_created":0,
+        "embeddings_saved":1,
+        "embeddings_skipped_owner":0,
+        "embeddings_skipped_duplicate":0,
+        "speakers_unmatched":[],
+        "errors":[],
+    });
+    assert_eq!(bootstrap_stats_json(&first), expected);
+    assert_eq!(bootstrap_stats_json(&second), expected);
 }
 
 #[test]

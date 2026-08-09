@@ -30,8 +30,6 @@ pub const CONSOLIDATE_SUGGEST_MIN: f32 = 0.45;
 pub const CONFIRM_MIN_SEGMENTS: usize = 2;
 pub const CONFIRM_MIN_INTERVALS: usize = 5;
 pub const CONFIRM_MIN_DURATION_S: f64 = 25.0;
-pub const VP_OUTLIER_MIN_SAMPLES: usize = 5;
-pub const VP_OUTLIER_MIN_SIMILARITY: f32 = 0.18;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CandidateProfile {

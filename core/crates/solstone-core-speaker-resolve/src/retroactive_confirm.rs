@@ -12,12 +12,13 @@ use solstone_core_entity::{
     read_journal_principal, save_voiceprints_batch,
 };
 use solstone_core_journal_io::segment_path;
-use solstone_core_speaker_id::calibration::NOISY_FLYWHEEL_OVERLAP_MAX;
+use solstone_core_speaker_id::calibration::{
+    NOISY_FLYWHEEL_OVERLAP_MAX, VP_OUTLIER_MIN_SAMPLES, VP_OUTLIER_MIN_SIMILARITY,
+};
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 
 use crate::candidate_tracker::{
-    CandidateProfile, CandidateTracker, MERGE_THRESHOLD, VP_OUTLIER_MIN_SAMPLES,
-    VP_OUTLIER_MIN_SIMILARITY, retroactive_voiceprint_metadata,
+    CandidateProfile, CandidateTracker, MERGE_THRESHOLD, retroactive_voiceprint_metadata,
 };
 use crate::owner_centroid::load_owner_centroid;
 use crate::person_guard::is_admissible_person;
