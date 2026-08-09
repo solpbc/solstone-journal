@@ -132,14 +132,30 @@ fn handle_local_request(mut stream: TcpStream, completion: Completion) -> bool {
     let mut chunk = [0_u8; 4096];
     loop {
         let read = stream.read(&mut chunk).unwrap();
+        if read == 0 {
+            break;
+        }
         request.extend_from_slice(&chunk[..read]);
         let Some(header_end) = request.windows(4).position(|window| window == b"\r\n\r\n") else {
             continue;
         };
         let header = String::from_utf8_lossy(&request[..header_end]);
+        // HTTP field names are case-insensitive (RFC 9110) and the client sends
+        // them lower-cased. Matching `Content-Length: ` exactly read every POST
+        // body as zero-length, so this returned with the body still unread and
+        // the close that followed became an RST rather than a FIN -- which can
+        // discard the response already in flight. The caller then saw a
+        // truncated provider response and refused with ProviderResponseInvalid
+        // instead of the reason under test, in roughly one full-target run in
+        // three, on any of the bundled-local cases.
         let content_length = header
             .lines()
-            .find_map(|line| line.strip_prefix("Content-Length: "))
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.trim()
+                    .eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim())
+            })
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or_default();
         if request.len() >= header_end + 4 + content_length {

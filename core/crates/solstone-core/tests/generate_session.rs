@@ -352,9 +352,16 @@ fn read_http_request(stream: &mut TcpStream) -> String {
     };
     let headers = std::str::from_utf8(&bytes[..header_end]).expect("HTTP headers are UTF-8");
     let request_line = headers.lines().next().expect("HTTP request line");
+    // HTTP field names are case-insensitive (RFC 9110). This matched only the
+    // lower-cased spelling the current client happens to send.
     let content_length = headers
         .lines()
-        .find_map(|line| line.strip_prefix("content-length: "))
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.trim()
+                .eq_ignore_ascii_case("content-length")
+                .then(|| value.trim())
+        })
         .map(|value| value.parse::<usize>().expect("Content-Length integer"));
     if request_line.starts_with("POST ") {
         assert!(

@@ -125,9 +125,17 @@ fn serve(mut stream: TcpStream, inferences: &AtomicUsize) -> bool {
             continue;
         };
         let header = String::from_utf8_lossy(&request[..header_end]);
+        // HTTP field names are case-insensitive (RFC 9110) and the client sends
+        // them lower-cased, so an exact match read every POST body as
+        // zero-length and left the body unread when this returned.
         let content_length = header
             .lines()
-            .find_map(|line| line.strip_prefix("Content-Length: "))
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.trim()
+                    .eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim())
+            })
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or_default();
         if request.len() >= header_end + 4 + content_length {
