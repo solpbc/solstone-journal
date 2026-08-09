@@ -231,3 +231,70 @@ pub enum CpuLegError {
         source: TpmQuoteError,
     },
 }
+
+/// Stable GPU-appraisal classifications shared with the nvattest forwarder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuAppraisalReason {
+    NvattestUnavailable,
+    NvattestIntegrityFailed,
+    GpuNonceMismatch,
+    GpuAppraisalFailed,
+}
+
+/// Fail-closed errors raised while appraising nvattest JSON claims.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum GpuClaimsError {
+    #[error("nvattest stdout is empty")]
+    StdoutEmpty,
+    #[error("nvattest stdout did not parse as JSON")]
+    StdoutInvalidJson,
+    #[error("nvattest stdout is not a JSON object")]
+    StdoutNotObject,
+    #[error("nvattest stdout is missing {key}")]
+    MissingTopLevelKey { key: &'static str },
+    #[error("nvattest return code is not green")]
+    NonGreenReturncode,
+    #[error("nvattest result code is not green")]
+    NonGreenResultCode,
+    #[error("nvattest result message is not green")]
+    NonGreenResultMessage,
+    #[error("nvattest claims do not have the required one-object shape")]
+    ClaimsShape,
+    #[error("nvattest detached EAT does not have the required shape")]
+    DetachedEatShape,
+    #[error("nvattest overall JWT does not have three segments")]
+    JwtShape,
+    #[error("nvattest overall JWT segment did not decode")]
+    JwtSegmentDecode,
+    #[error("nvattest overall JWT header is not an object")]
+    JwtHeaderNotObject,
+    #[error("nvattest overall JWT payload is not an object")]
+    JwtPayloadNotObject,
+    #[error("nvattest overall JWT header is missing alg")]
+    JwtHeaderMissingAlgorithm,
+    #[error("nvattest overall JWT payload is missing iss")]
+    JwtPayloadMissingIssuer,
+    #[error("nvattest overall JWT payload is missing overall result")]
+    JwtPayloadMissingOverallResult,
+    #[error("nvattest overall JWT algorithm is not accepted")]
+    JwtAlgorithm,
+    #[error("nvattest overall JWT issuer is not accepted")]
+    JwtIssuer,
+    #[error("nvattest overall JWT result is not literal true")]
+    JwtOverallResult,
+    #[error("nvattest claim is missing {key}")]
+    ClaimMissingKey { key: &'static str },
+    #[error("nvattest claim value does not match")]
+    ClaimValueMismatch,
+    #[error("nvattest claim identity value does not match")]
+    ClaimIdentityMismatch,
+    #[error("nvattest certificate-chain claim is not an object")]
+    CertificateChainShape,
+    #[error("nvattest certificate-chain field does not match")]
+    CertificateChainField,
+    #[error("nvattest claim string field is invalid")]
+    ClaimStringField,
+    #[error("SPP envelope metadata is not UTF-8")]
+    EnvelopeFieldUtf8,
+}
