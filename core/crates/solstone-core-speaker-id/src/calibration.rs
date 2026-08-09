@@ -13,6 +13,12 @@ pub const ACOUSTIC_MARGIN_MIN: f32 = 0.05;
 pub const CC_COVERAGE_GATE: f32 = 0.45;
 pub const CC_CONFIDENCE_GATE: f32 = 0.28;
 pub const VP_DECAY_LAMBDA: f64 = std::f64::consts::LN_2 / 120.0;
+pub const VP_OUTLIER_MIN_SIMILARITY: f32 = 0.18;
+pub const VP_OUTLIER_MIN_SAMPLES: usize = 5;
+pub const NOISY_FLYWHEEL_OVERLAP_MAX: f32 = 0.10;
+pub const OWNER_REBUILD_MIN_CENTROID_AGREEMENT: f32 = 0.80;
+pub const OWNER_REBUILD_MIN_CLUSTER_SIZE_RATIO: f32 = 0.80;
+pub const OWNER_REBUILD_MAX_COHESION_DROP: f32 = 0.05;
 
 /// Name-resolution threshold from `solstone/think/entities/matching.py`.
 /// This is not one of the encoder-config values pinned by AC25.
