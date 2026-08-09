@@ -601,46 +601,6 @@
       "target": "entities/<id>/voiceprints.npz"
     },
     {
-      "callee": "load_existing_voiceprint_keys",
-      "classification": "read",
-      "file": "solstone/apps/speakers/discovery.py",
-      "fingerprint": "61977f4211d26b34",
-      "function": "<module>._direct_voiceprint_plan",
-      "line": 1164,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "load_entity_voiceprints_file",
-      "classification": "read",
-      "file": "solstone/apps/speakers/discovery.py",
-      "fingerprint": "5ee458c2ee07980c",
-      "function": "<module>._entity_voiceprint_metadata",
-      "line": 1134,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "normalize_embedding",
-      "classification": "read",
-      "file": "solstone/apps/speakers/discovery.py",
-      "fingerprint": "987e07bede5361c0",
-      "function": "<module>._load_embedding_for_member",
-      "line": 1106,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "normalize_embedding",
-      "classification": "read",
-      "file": "solstone/apps/speakers/discovery.py",
-      "fingerprint": "4a577c29234c7d1c",
-      "function": "<module>._plan_identify",
-      "line": 1680,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
       "callee": "normalize_embedding",
       "classification": "read",
       "file": "solstone/apps/speakers/discovery.py",

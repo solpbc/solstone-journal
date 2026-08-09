@@ -21,11 +21,8 @@ canonical entity.
 
 from __future__ import annotations
 
-import bisect
-import json
 import logging
 from collections import defaultdict
-from pathlib import Path
 from typing import Any
 
 from solstone.think.entities import (
@@ -396,67 +393,6 @@ def resolve_name_variants(dry_run: bool = False) -> dict[str, Any]:
 
 # Import streams that contain AI chat (no real speakers to seed)
 _AI_CHAT_STREAMS = frozenset({"import.chatgpt", "import.claude", "import.gemini"})
-
-
-def _time_str_to_seconds(time_str: str) -> int:
-    """Parse HH:MM:SS to total seconds."""
-    parts = time_str.split(":")
-    return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-
-
-def _parse_conversation_speakers(seg_dir: Path) -> list[tuple[int, str]]:
-    """Parse speaker assignments from conversation_transcript.jsonl.
-
-    Returns sorted list of (start_seconds, speaker_name) tuples.
-    Skips the metadata header line and entries with empty speaker fields.
-    """
-    ct_path = seg_dir / "conversation_transcript.jsonl"
-    if not ct_path.exists():
-        return []
-
-    entries: list[tuple[int, str]] = []
-    try:
-        with open(ct_path, encoding="utf-8") as f:
-            lines = f.readlines()
-    except OSError:
-        return []
-
-    # Skip header (line 0), parse entry lines
-    for line in lines[1:]:
-        try:
-            entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        speaker = entry.get("speaker", "")
-        start = entry.get("start", "")
-        if not speaker or not start:
-            continue
-        try:
-            seconds = _time_str_to_seconds(start)
-        except (ValueError, IndexError):
-            continue
-        entries.append((seconds, speaker))
-
-    entries.sort(key=lambda x: x[0])
-    return entries
-
-
-def _find_speaker_at_time(
-    speaker_entries: list[tuple[int, str]], target_seconds: int
-) -> str | None:
-    """Find the speaker at a given time using binary search.
-
-    Returns the speaker whose entry starts at or before target_seconds,
-    or None if no entry precedes the target time.
-    """
-    if not speaker_entries:
-        return None
-    # bisect on just the time values
-    times = [e[0] for e in speaker_entries]
-    idx = bisect.bisect_right(times, target_seconds) - 1
-    if idx < 0:
-        return None
-    return speaker_entries[idx][1]
 
 
 def link_import(name: str, entity_id: str) -> dict[str, Any]:

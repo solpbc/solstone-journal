@@ -380,11 +380,6 @@ def _extract_meeting_participants_with_gaps(
     return names, []
 
 
-def _extract_meeting_participants(day: str, segment_key: str) -> list[str]:
-    """Extract participant names from daily meetings.md."""
-    return _extract_meeting_participants_with_gaps(day, segment_key)[0]
-
-
 def _assemble_candidate_evidence(
     name_channels: dict[str, set[str]],
     name_entity_ids: dict[str, str],

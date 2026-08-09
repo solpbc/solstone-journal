@@ -654,13 +654,12 @@ def test_audited_mutation_owners_use_record_entity_resolution() -> None:
         ("solstone.apps.entities.talent.entity_observer", "_clean_relation"),
         ("solstone.apps.import.ingest", "ingest_entities"),
         ("solstone.apps.speakers.attribution", "attribute_segment"),
-        ("solstone.apps.speakers.bootstrap", "bootstrap_voiceprints"),
         ("solstone.apps.speakers.bootstrap", "merge_names"),
-        ("solstone.apps.speakers.bootstrap", "seed_from_imports"),
-        ("solstone.apps.speakers.discovery", "_plan_identify"),
         ("solstone.think.entities.seeding", "seed_entities"),
         ("solstone.think.merge", "_merge_entities"),
     ]
+    # The native bootstrap-voiceprints and seed-from-imports verbs call the
+    # Rust record_entity_resolution equivalent, including ambiguity recording.
 
     missing = [
         f"{module_name}:{function_name}"
