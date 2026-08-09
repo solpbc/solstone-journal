@@ -85,7 +85,6 @@ from solstone.think.cogitate_contract import (
     TALENT_FINALIZATION_MODES,
     capabilities_for_access_tier,
 )
-from solstone.think.generate_wire import _IMAGE_MIME_TYPES, _SESSION_LINE_LIMIT
 from solstone.think.indexer.edges import EDGES_SCHEMA_VERSION, _ensure_edges_schema
 from solstone.think.providers.shared import (
     _UNKNOWN_FINISH_REASON,
@@ -148,6 +147,36 @@ TALENT_PROJECTIONS_ARTIFACT_PATH = FIXTURE_DIR / "talent_projections.json"
 CALLOSUM_ARTIFACT_PATH = FIXTURE_DIR / "callosum_registry.json"
 COGITATE_ARTIFACT_PATH = FIXTURE_DIR / "cogitate_contract.json"
 GENERATE_ARTIFACT_PATH = FIXTURE_DIR / "generate_contract.json"
+
+# Two generate-contract values that used to be read from
+# solstone/think/generate_wire.py. The Rust wire is the implementation now and
+# the conversion deletes that module, so they are authored here -- the same
+# place every other value in this contract with no Python constant behind it
+# already lives (see the protocol_error comment below).
+#
+# While the Python shim still exists both spellings are present, so
+# `_assert_no_generate_wire_drift` pins them together. It disappears on its own
+# when the module does.
+_IMAGE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+_SESSION_LINE_LIMIT = 64 * 1024 * 1024
+
+
+def _assert_no_generate_wire_drift() -> None:
+    try:
+        from solstone.think import generate_wire
+    except ImportError:
+        return  # the shim is gone; these constants are the only spelling left
+    for name, ours in (
+        ("_IMAGE_MIME_TYPES", _IMAGE_MIME_TYPES),
+        ("_SESSION_LINE_LIMIT", _SESSION_LINE_LIMIT),
+    ):
+        theirs = getattr(generate_wire, name, None)
+        if theirs is not None and theirs != ours:
+            raise SystemExit(
+                f"{name} drifted: generate_wire has {theirs!r}, this generator "
+                f"has {ours!r}. The contract fixture is built from the value "
+                f"here, so they must agree while both exist."
+            )
 INSTALL_STATUS_ARTIFACT_PATH = FIXTURE_DIR / "install_status.json"
 EDGE_SCHEMA_ARTIFACT_PATH = FIXTURE_DIR / "edge_schema.json"
 MARKDOWN_CHUNKS_ARTIFACT_PATH = FIXTURE_DIR / "markdown_chunks.json"
@@ -1670,6 +1699,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Check generated fixtures without writing files.",
     )
     args = parser.parse_args(argv)
+
+    _assert_no_generate_wire_drift()
 
     if args.check:
         return check_outputs()
