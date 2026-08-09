@@ -734,6 +734,48 @@ fn pin_tables_cover_every_pinned_platform() {
 }
 
 #[test]
+fn parakeet_pin_tables_cover_every_pinned_platform_and_backend() {
+    assert_eq!(pins::PARAKEET_VULKAN_PINS.len(), 2);
+    assert_eq!(pins::PARAKEET_CPU_PINS.len(), 2);
+    let root = std::path::Path::new("/journal");
+    for (backend, table) in [
+        ("vulkan", pins::PARAKEET_VULKAN_PINS),
+        ("cpu", pins::PARAKEET_CPU_PINS),
+    ] {
+        for (key, release, _filename, digest, binary) in table {
+            let paths = pins::parakeet_paths(root, key);
+            assert_eq!(
+                paths[format!("binary_path_{backend}")],
+                format!("/journal/cache/providers/parakeet/bin/{key}/{backend}/{release}/{binary}")
+            );
+            assert_eq!(
+                pins::parakeet_backend_identity(key, backend).unwrap()["sha256"],
+                *digest
+            );
+        }
+    }
+    let (repo, filename, revision, sha256, size_bytes) = pins::PARAKEET_MODEL;
+    assert_eq!(
+        pins::parakeet_paths(root, "x86_64-unknown-linux-gnu")["model_path"],
+        format!(
+            "/journal/cache/providers/parakeet/models/{}/{revision}/{filename}",
+            repo.replace('/', "__")
+        )
+    );
+    let model = pins::parakeet_model_identity();
+    assert_eq!(model["repo"], repo);
+    assert_eq!(model["sha256"], sha256);
+    assert_eq!(model["size_bytes"], size_bytes);
+}
+
+#[test]
+fn parakeet_backend_pin_is_none_for_an_unknown_backend_or_key() {
+    assert!(pins::parakeet_backend_pin("x86_64-unknown-linux-gnu", "cuda").is_none());
+    assert!(pins::parakeet_backend_pin("aarch64-apple-darwin", "vulkan").is_none());
+    assert!(pins::parakeet_backend_identity("x86_64-unknown-linux-gnu", "cuda").is_none());
+}
+
+#[test]
 fn progress_writes_are_coalesced_until_the_window_elapses() {
     let root = temp("progress");
     let mut state = status::idle_status("local");
