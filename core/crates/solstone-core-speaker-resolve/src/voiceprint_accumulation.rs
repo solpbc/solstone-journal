@@ -12,10 +12,10 @@ use std::path::Path;
 use chrono::{NaiveDate, TimeZone};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use solstone_core_entity::{
-    EncoderIdentity, VoiceprintItem, load_all_journal_entities, load_entity_voiceprints_file,
-    normalize_embedding, read_journal_principal, save_voiceprints_batch,
+    load_all_journal_entities, load_entity_voiceprints_file, normalize_embedding,
+    read_journal_principal, save_voiceprints_batch, EncoderIdentity, VoiceprintItem,
 };
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_journal_io::segment_path;
@@ -417,7 +417,7 @@ fn plain_mean_normalized(rows: &[Vec<f32>]) -> Option<Vec<f32>> {
     normalize_embedding(&mean)
 }
 
-fn read_overlap_fraction(path: &Path) -> f32 {
+pub(crate) fn read_overlap_fraction(path: &Path) -> f32 {
     let Ok(contents) = fs::read_to_string(path) else {
         return 0.0;
     };
