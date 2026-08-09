@@ -15,6 +15,7 @@ mod body_envelope_scan;
 mod body_ledger_validator;
 mod body_month;
 mod body_raw_retention;
+mod body_row_event;
 mod body_source_family;
 mod body_source_hash;
 mod bundle_id;
@@ -58,6 +59,7 @@ pub use body_envelope_manifest_binding::decode_body_envelope_with_manifest;
 pub use body_ledger_validator::{BodyLedgerValidator, ValidatedBodyLedger};
 pub use body_month::BodyMonth;
 pub use body_raw_retention::BodyRawRetention;
+pub use body_row_event::validate_body_row_event;
 pub use body_source_family::BodySourceFamily;
 pub use body_source_hash::BodySourceHash;
 pub use bundle_id::BundleId;
@@ -68,12 +70,12 @@ pub use digest::BodyDigest;
 pub use envelope_ledger::EnvelopeLedger;
 pub use envelope_shard::EnvelopeShard;
 pub use error::{
-    BodyCalendarError, BodyCalendarField, BodyHashError, BodySourceHashError,
-    BodySourcePolicyError, BodySourcePolicyField, BodyWireIdentityError, BodyWireIdentityField,
-    CandidateError, CandidateErrorCode, CandidateErrorField, CanonicalizeError, EnvelopeError,
-    EnvelopeErrorCode, EnvelopeErrorField, IdentityField, LedgerEventError, LedgerEventErrorCode,
-    LedgerEventErrorField, ManifestBindingError, ManifestBindingErrorCode,
-    ManifestBindingErrorField, ManifestScanError, ParseError,
+    BodyCalendarError, BodyCalendarField, BodyHashError, BodyRowEventError, BodyRowEventErrorKind,
+    BodySourceHashError, BodySourcePolicyError, BodySourcePolicyField, BodyWireIdentityError,
+    BodyWireIdentityField, CandidateError, CandidateErrorCode, CandidateErrorField,
+    CanonicalizeError, EnvelopeError, EnvelopeErrorCode, EnvelopeErrorField, IdentityField,
+    LedgerEventError, LedgerEventErrorCode, LedgerEventErrorField, ManifestBindingError,
+    ManifestBindingErrorCode, ManifestBindingErrorField, ManifestScanError, ParseError,
 };
 pub use health_hash::{
     HealthRecordIdentity, health_hash, health_record_dedupe_key, health_value_hash,

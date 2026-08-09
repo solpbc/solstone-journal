@@ -956,6 +956,102 @@ impl fmt::Debug for LedgerEventError {
 
 impl std::error::Error for LedgerEventError {}
 
+/// A failure while validating a normalized body-row frame against an event.
+#[derive(Clone, Debug, PartialEq)]
+pub enum BodyRowEventErrorKind {
+    /// The row frame exceeds the maximum permitted size.
+    Oversized,
+    /// The row frame does not contain exactly one trailing line feed.
+    InvalidFraming,
+    /// The row frame digest does not match the event digest.
+    RowDigestMismatch,
+    /// The row frame could not be parsed.
+    Parse(ParseError),
+    /// The parsed row could not be projected into a ledger candidate.
+    Candidate(CandidateError),
+    /// The candidate could not be reconstructed into a ledger event.
+    Event(LedgerEventError),
+    /// The reconstructed event differs from the supplied event.
+    EventMismatch,
+}
+
+impl BodyRowEventErrorKind {
+    /// Returns the stable spelling for this error kind.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Oversized => "oversized",
+            Self::InvalidFraming => "invalid_framing",
+            Self::RowDigestMismatch => "row_digest_mismatch",
+            Self::Parse(_) => "parse",
+            Self::Candidate(_) => "candidate",
+            Self::Event(_) => "event",
+            Self::EventMismatch => "event_mismatch",
+        }
+    }
+}
+
+/// A contextual failure while validating a normalized body-row event.
+#[derive(Clone, PartialEq)]
+pub struct BodyRowEventError {
+    bundle: BundleId,
+    sequence: u64,
+    kind: BodyRowEventErrorKind,
+}
+
+impl BodyRowEventError {
+    pub(crate) fn new(bundle: BundleId, sequence: u64, kind: BodyRowEventErrorKind) -> Self {
+        Self {
+            bundle,
+            sequence,
+            kind,
+        }
+    }
+
+    /// Returns the bundle associated with the failed event.
+    pub fn bundle(&self) -> &BundleId {
+        &self.bundle
+    }
+
+    /// Returns the sequence associated with the failed event.
+    pub fn sequence(&self) -> u64 {
+        self.sequence
+    }
+
+    /// Returns the failure kind.
+    pub fn kind(&self) -> &BodyRowEventErrorKind {
+        &self.kind
+    }
+}
+
+impl fmt::Display for BodyRowEventError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "body-row-event[{}]#E{} {}",
+            self.bundle.as_str(),
+            self.sequence,
+            self.kind.as_str()
+        )
+    }
+}
+
+impl fmt::Debug for BodyRowEventError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
+}
+
+impl std::error::Error for BodyRowEventError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match &self.kind {
+            BodyRowEventErrorKind::Parse(error) => Some(error),
+            BodyRowEventErrorKind::Candidate(error) => Some(error),
+            BodyRowEventErrorKind::Event(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
