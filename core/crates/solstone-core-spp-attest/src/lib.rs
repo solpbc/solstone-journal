@@ -6,6 +6,7 @@
 pub mod binding;
 pub mod error;
 pub mod tlv;
+pub mod tpm_quote;
 
 #[cfg(test)]
 pub(crate) mod test_support {

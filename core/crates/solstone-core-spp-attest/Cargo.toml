@@ -10,7 +10,9 @@ differential = []
 
 [dependencies]
 ring = "=0.17.14"
+subtle = "=2.6.1"
 thiserror = { workspace = true }
+x509-parser = "=0.16.0"
 
 [lints]
 workspace = true

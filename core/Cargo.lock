@@ -2922,7 +2922,9 @@ name = "solstone-core-spp-attest"
 version = "1.0.22"
 dependencies = [
  "ring",
+ "subtle",
  "thiserror 2.0.19",
+ "x509-parser",
 ]
 
 [[package]]
