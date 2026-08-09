@@ -26,6 +26,11 @@ name = "journal_config_corruption"
 path = "tests/journal_config_corruption.rs"
 required-features = ["differential"]
 
+[[test]]
+name = "body_restore_client"
+path = "tests/body_restore_client.rs"
+required-features = ["differential"]
+
 [[bin]]
 name = "solstone-core-generate-session-kill-helper"
 path = "tests/bin/generate_session_kill_helper.rs"
@@ -35,6 +40,7 @@ test = false
 chrono.workspace = true
 serde.workspace = true
 solstone-core-cli.workspace = true
+solstone-core-body-rebuild.workspace = true
 solstone-core-entity.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-indexer-query.workspace = true

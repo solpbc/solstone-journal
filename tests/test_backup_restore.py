@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from solstone.think import core_handshake, journal_config
 from solstone.think.backup import restore
 from solstone.think.backup.destination import Destination
 from solstone.think.backup.hosted import HostedBinding, HostedCredentials
@@ -85,6 +86,11 @@ def _result(returncode: int, parsed_json: Any | None = None) -> ResticResult:
     )
 
 
+@pytest.fixture(autouse=True)
+def _native_body_rebuild_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(restore, "rebuild_body_store", lambda journal: {})
+
+
 def test_restore_success_normalizes_key_assembles_env_and_reindexes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -139,6 +145,11 @@ def test_restore_success_normalizes_key_assembles_env_and_reindexes(
         assert kwargs == {"full": True}
         return ScanReport(changed=True, edge_rows_inserted=0)
 
+    def fake_rebuild_body_store(journal: Path) -> dict[str, Any]:
+        order.append("rebuild_body_store")
+        assert Path(journal) == tmp_path
+        return {"rows": 0}
+
     monkeypatch.setattr(restore, "ensure_restic", lambda: Path("/restic"))
     monkeypatch.setattr(restore, "run_restic", fake_run_restic)
     monkeypatch.setattr(restore, "set_destination", fake_set_destination)
@@ -149,6 +160,7 @@ def test_restore_success_normalizes_key_assembles_env_and_reindexes(
         fake_set_recovery_key_confirmed,
     )
     monkeypatch.setattr(restore, "get_backup_config", lambda: {"daily_key": "daily"})
+    monkeypatch.setattr(restore, "rebuild_body_store", fake_rebuild_body_store)
     monkeypatch.setattr(restore, "scan_journal", fake_scan_journal)
 
     result = restore.restore_journal(destination, entered)
@@ -164,6 +176,7 @@ def test_restore_success_normalizes_key_assembles_env_and_reindexes(
         "snapshots",
         "restore",
         "check",
+        "rebuild_body_store",
         "set_destination",
         "set_recovery_key",
         "set_recovery_key_confirmed",
@@ -510,6 +523,23 @@ def test_restore_operated_success_persists_mode_and_key_without_destination(
         fake_set_recovery_key_confirmed,
     )
     monkeypatch.setattr(restore, "scan_journal", fake_scan_journal)
+    helper = (
+        Path(__file__).resolve().parents[1]
+        / "core"
+        / "target"
+        / "debug"
+        / "solstone-core"
+    )
+    monkeypatch.setattr(
+        journal_config.core_handshake,
+        "check_solstone_core_handshake",
+        lambda: core_handshake.CoreHandshakeResult("ok"),
+    )
+    monkeypatch.setattr(
+        journal_config.core_handshake,
+        "helper_path_for_executable",
+        lambda: helper,
+    )
 
     result = restore.restore_journal_operated(
         _operated_binding(),

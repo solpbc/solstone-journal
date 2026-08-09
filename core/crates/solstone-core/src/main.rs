@@ -13,13 +13,13 @@ use chrono::Local;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 use solstone_core_cli::{
-    BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
-    BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, Command,
-    GenerateCommand, GenerateSessionOptions, IndexerCommand, IndexerCountsOptions, IndexerOptions,
-    IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions, InstallCommand,
-    JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
-    JournalConfigReadOptions, JournalPathOptions, LocalCommand, ServiceOptions,
-    SpeakerResolveCommand, SplCommand, USAGE, evaluate_args, version_line,
+    BodyCommand, BodyRebuildOptions, BrainCommand, BrainInspectOptions,
+    BrainPrerequisiteRenewalSessionOptions, BrainRefreshExpectArg, BrainRefreshSessionOptions,
+    BrainRuntimeFailureOptions, Command, GenerateCommand, GenerateSessionOptions, IndexerCommand,
+    IndexerCountsOptions, IndexerOptions, IndexerQueryOptions, IndexerReadOptions,
+    IndexerSearchOptions, InstallCommand, JournalConfigCommand, JournalConfigCommitOptions,
+    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand,
+    ServiceOptions, SpeakerResolveCommand, SplCommand, USAGE, evaluate_args, version_line,
 };
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -96,6 +96,7 @@ fn main() -> ExitCode {
         Ok(Command::Local(command)) => run_local(command),
         Ok(Command::Generate(command)) => run_generate(command),
         Ok(Command::Brain(command)) => run_brain(command),
+        Ok(Command::Body(command)) => run_body(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
         Err(_) => {
             eprint!("{USAGE}");
@@ -3230,6 +3231,63 @@ fn run_journal_path(options: JournalPathOptions) -> Result<JournalPathLine, Jour
     Ok(line)
 }
 
+fn run_body(command: BodyCommand) -> ExitCode {
+    match command {
+        BodyCommand::Rebuild(options) => run_body_rebuild(options),
+    }
+}
+
+fn run_body_rebuild(options: BodyRebuildOptions) -> ExitCode {
+    let json_output = options.json;
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    match solstone_core_body_rebuild::rebuild_body_store(&journal) {
+        Ok(report) => {
+            if json_output {
+                print_json(&json!({
+                    "schema": "solstone.body.rebuild.result.v1",
+                    "native_bundles": report.native_bundles(),
+                    "legacy_bundles": report.legacy_bundles(),
+                    "rows": report.rows(),
+                }));
+            } else {
+                println!(
+                    "body rebuild complete: native_bundles={} legacy_bundles={} rows={}",
+                    report.native_bundles(),
+                    report.legacy_bundles(),
+                    report.rows()
+                );
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("body rebuild failed: {error}");
+            let exit = body_rebuild_error_exit(error.kind(), error.stage());
+            ExitCode::from(exit)
+        }
+    }
+}
+
+fn body_rebuild_error_exit(
+    kind: solstone_core_body_rebuild::BodyRebuildErrorKind,
+    stage: &str,
+) -> u8 {
+    use solstone_core_body_rebuild::BodyRebuildErrorKind;
+
+    match (kind, stage) {
+        (BodyRebuildErrorKind::Publication, "database_lock_timeout") => EXIT_TEMPFAIL,
+        (
+            BodyRebuildErrorKind::Journal
+            | BodyRebuildErrorKind::Sqlite
+            | BodyRebuildErrorKind::Publication,
+            _,
+        ) => EXIT_IOERR,
+        _ => EXIT_DATAERR,
+    }
+}
+
 fn run_indexer(command: IndexerCommand) -> ExitCode {
     match command {
         IndexerCommand::Maintenance(options) => run_indexer_maintenance(options),
@@ -3586,6 +3644,31 @@ mod tests {
         assert_eq!(EXIT_IOERR, 74);
         assert_eq!(EXIT_TEMPFAIL, 75);
         assert_eq!(EXIT_PROTOCOL, 76);
+    }
+
+    #[test]
+    fn body_rebuild_errors_distinguish_data_io_and_retryable_lock_failure() {
+        use solstone_core_body_rebuild::BodyRebuildErrorKind;
+
+        assert_eq!(
+            body_rebuild_error_exit(BodyRebuildErrorKind::Publication, "database_lock_timeout"),
+            EXIT_TEMPFAIL
+        );
+        for (kind, stage) in [
+            (BodyRebuildErrorKind::Journal, "journal_root"),
+            (BodyRebuildErrorKind::Sqlite, "open_temp_database"),
+            (BodyRebuildErrorKind::Publication, "database_lock"),
+        ] {
+            assert_eq!(body_rebuild_error_exit(kind, stage), EXIT_IOERR);
+        }
+        for kind in [
+            BodyRebuildErrorKind::Authority,
+            BodyRebuildErrorKind::Envelope,
+            BodyRebuildErrorKind::NativeReplay,
+            BodyRebuildErrorKind::LegacyReplay,
+        ] {
+            assert_eq!(body_rebuild_error_exit(kind, "semantic"), EXIT_DATAERR);
+        }
     }
 
     #[test]

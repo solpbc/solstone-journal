@@ -21,6 +21,9 @@ nix = { workspace = true, features = ["feature", "fs", "process", "signal"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 solstone-core-journal-io = { workspace = true }
+solstone-core-journal-config = { workspace = true }
+solstone-core-brain = { workspace = true }
+solstone-core-local = { workspace = true }
 thiserror = { workspace = true }
 
 [[bin]]

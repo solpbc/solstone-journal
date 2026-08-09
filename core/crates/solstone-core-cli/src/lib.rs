@@ -12,7 +12,7 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
@@ -28,7 +28,19 @@ pub enum Command {
     Local(LocalCommand),
     Generate(GenerateCommand),
     Brain(BrainCommand),
+    Body(BodyCommand),
     Spl(SplCommand),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BodyCommand {
+    Rebuild(BodyRebuildOptions),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyRebuildOptions {
+    pub journal_override: Option<OsString>,
+    pub json: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -264,9 +276,52 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("brain") => {
             parse_brain(rest).map(Command::Brain)
         }
+        [command, rest @ ..] if command == OsStr::new("body") => {
+            parse_body(rest).map(Command::Body)
+        }
         [command, rest @ ..] if command == OsStr::new("spl") => parse_spl(rest).map(Command::Spl),
         _ => Err(UsageError),
     }
+}
+
+fn parse_body(args: &[OsString]) -> Result<BodyCommand, UsageError> {
+    let [verb, rest @ ..] = args else {
+        return Err(UsageError);
+    };
+    if verb != OsStr::new("rebuild") {
+        return Err(UsageError);
+    }
+    let mut journal_override = None;
+    let mut json = false;
+    let mut index = 0;
+    while index < rest.len() {
+        let argument = rest[index].as_os_str();
+        if argument == OsStr::new("--json") {
+            if json {
+                return Err(UsageError);
+            }
+            json = true;
+            index += 1;
+            continue;
+        }
+        if argument == OsStr::new("--journal") {
+            if journal_override.is_some() {
+                return Err(UsageError);
+            }
+            let value = rest.get(index + 1).ok_or(UsageError)?;
+            if value == OsStr::new("--json") || value == OsStr::new("--journal") {
+                return Err(UsageError);
+            }
+            journal_override = Some(value.clone());
+            index += 2;
+            continue;
+        }
+        return Err(UsageError);
+    }
+    Ok(BodyCommand::Rebuild(BodyRebuildOptions {
+        journal_override,
+        json,
+    }))
 }
 
 fn parse_speaker_resolve(args: &[OsString]) -> Result<SpeakerResolveCommand, UsageError> {
@@ -1195,6 +1250,40 @@ mod tests {
             evaluate_args(&args(&["--version", "extra"])),
             Err(UsageError)
         );
+    }
+
+    #[test]
+    fn parses_body_rebuild_options_and_rejects_ambiguous_forms() {
+        assert_eq!(
+            evaluate_args(&args(&["body", "rebuild"])),
+            Ok(Command::Body(BodyCommand::Rebuild(BodyRebuildOptions {
+                journal_override: None,
+                json: false,
+            })))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "body",
+                "rebuild",
+                "--json",
+                "--journal",
+                "/tmp/journal",
+            ])),
+            Ok(Command::Body(BodyCommand::Rebuild(BodyRebuildOptions {
+                journal_override: Some("/tmp/journal".into()),
+                json: true,
+            })))
+        );
+        for values in [
+            &["body"][..],
+            &["body", "unknown"][..],
+            &["body", "rebuild", "--journal"][..],
+            &["body", "rebuild", "--journal", "--json"][..],
+            &["body", "rebuild", "--json", "--json"][..],
+            &["body", "rebuild", "--journal", "/one", "--journal", "/two"][..],
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+        }
     }
 
     #[test]
