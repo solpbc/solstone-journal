@@ -304,6 +304,7 @@ check-differentials:
 		"-p solstone-core-spp-attest --test spp_attest_differential" \
 		"-p solstone-core-spp-ratls --test composite_differential" \
 		"-p solstone-core-local --test admission_cross_process" \
+		"-p solstone-core-system --test stt_backend_choice_differential" \
 		"-p solstone-core-callosum --test callosum_cross_process --test registry_conformance" \
 		"-p solstone-core-system-health --test pipeline_health_oracle" ; do \
 		echo "==> cargo test --features differential --no-fail-fast $$leg"; \

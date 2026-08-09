@@ -29,6 +29,7 @@ const LIFECYCLE_STATE: &str = include_str!("../src/lifecycle/state.rs");
 const LIFECYCLE_SWEEP: &str = include_str!("../src/lifecycle/sweep.rs");
 const LIFECYCLE_SYNC: &str = include_str!("../src/lifecycle/sync.rs");
 const LIFECYCLE_WATCHER: &str = include_str!("../src/lifecycle/watcher.rs");
+const STT_BACKEND_CHOICE: &str = include_str!("../src/stt_backend_choice.rs");
 const SCHEDULE: &str = include_str!("../src/schedule/mod.rs");
 const SCHEDULE_CAPS: &str = include_str!("../src/schedule/caps.rs");
 const SCHEDULE_COMPLETION: &str = include_str!("../src/schedule/completion.rs");
@@ -111,6 +112,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("request", REQUEST),
         ("provider_runtime", PROVIDER_RUNTIME),
         ("schedule", SCHEDULE),
+        ("stt_backend_choice", STT_BACKEND_CHOICE),
     ];
     let process_modules = [
         ("descendants", DESCENDANTS),
