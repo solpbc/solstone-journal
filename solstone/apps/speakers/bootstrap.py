@@ -28,24 +28,21 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from solstone.apps.speakers.owner import load_owner_centroid
 from solstone.think.entities import (
     EntityResolution,
     EntityResolutionOutcome,
     ResolutionOrigin,
     ResolutionScope,
-    entity_slug,
     find_matching_entity,
     is_name_variant_match,
     record_entity_resolution,
 )
 from solstone.think.entities.journal import (
-    create_journal_entity,
     load_all_journal_entities,
     load_journal_entity,
     save_journal_entity,
 )
-from solstone.think.utils import day_dirs, now_ms, segment_path
+from solstone.think.utils import get_journal, now_ms
 
 logger = logging.getLogger(__name__)
 
@@ -62,199 +59,16 @@ def _ambiguity_payload(resolution: EntityResolution) -> dict[str, Any]:
 
 
 def bootstrap_voiceprints(dry_run: bool = False) -> dict[str, Any]:
-    """Bootstrap voiceprints from 1-listed-speaker segments across the full journal.
+    """Bootstrap voiceprints through the native speaker-identity owner."""
+    from solstone.apps.speakers import native as native_speakers
+    from solstone.apps.speakers.attribution import _speaker_encoder_identity
 
-    For each segment where speakers.json lists exactly one name, all
-    non-owner sentence embeddings belong to that speaker. The owner
-    centroid is used to classify sentences — embeddings with cosine
-    similarity >= OWNER_THRESHOLD to the owner centroid are excluded
-    (contamination guard). Remaining embeddings are saved as voiceprints
-    for the matched or newly created entity.
-
-    The operation is idempotent: existing voiceprint entries are checked
-    by (day, segment_key, source, sentence_id) key and skipped if already
-    present.
-
-    Args:
-        dry_run: If True, report what would be saved without saving
-
-    Returns:
-        Dict with statistics about the bootstrap run
-    """
-    import numpy as np
-
-    from solstone.apps.speakers.routes import (
-        _load_embeddings_file,
-        _scan_segment_embeddings,
+    return native_speakers.bootstrap_voiceprints(
+        get_journal(),
+        encoder=_speaker_encoder_identity(),
+        added_at=now_ms(),
+        dry_run=dry_run,
     )
-    from solstone.think.entities import (
-        load_existing_voiceprint_keys,
-        normalize_embedding,
-        save_voiceprints_batch,
-    )
-
-    load_embeddings_file = _load_embeddings_file
-    scan_segment_embeddings = _scan_segment_embeddings
-
-    # Load owner centroid — required for owner subtraction
-    centroid_data = load_owner_centroid()
-    if centroid_data is None:
-        return {"error": "No confirmed owner centroid. Run owner detection first."}
-
-    owner_centroid = centroid_data.centroid
-    owner_threshold = centroid_data.threshold
-
-    # Load all journal entities for speaker name matching
-    journal_entities = load_all_journal_entities()
-    entities_list = [e for e in journal_entities.values() if not e.get("blocked")]
-
-    stats: dict[str, Any] = {
-        "segments_scanned": 0,
-        "single_speaker_segments": 0,
-        "speakers_found": {},
-        "entities_created": 0,
-        "embeddings_saved": 0,
-        "embeddings_skipped_owner": 0,
-        "embeddings_skipped_duplicate": 0,
-        "speakers_unmatched": [],
-        "errors": [],
-    }
-
-    # Collect embeddings per entity for efficient batch saves
-    entity_embeddings: dict[str, list[tuple[np.ndarray, dict]]] = defaultdict(list)
-    entity_existing: dict[str, set] = {}
-    entity_names: dict[str, str] = {}
-    unmatched_speakers: set[str] = set()
-    resolution_scope = ResolutionScope.journal()
-
-    days = sorted(day_dirs().keys())
-
-    for day_idx, day in enumerate(days):
-        segments = scan_segment_embeddings(day)
-
-        for segment in segments:
-            stats["segments_scanned"] += 1
-            stream = segment["stream"]
-            seg_key = segment["key"]
-            speakers = segment["speakers"]
-
-            # Only process segments with exactly 1 listed speaker
-            if len(speakers) != 1:
-                continue
-
-            stats["single_speaker_segments"] += 1
-            speaker_name = speakers[0]
-
-            # Match speaker name to an existing journal entity
-            resolution = record_entity_resolution(
-                speaker_name,
-                entities_list,
-                scope=resolution_scope,
-                origin=ResolutionOrigin(
-                    lane="apps.speakers.bootstrap_voiceprints",
-                    day=day,
-                    segment_id=seg_key,
-                    field="speaker",
-                ),
-            )
-            if resolution.outcome == EntityResolutionOutcome.AMBIGUOUS:
-                if speaker_name not in unmatched_speakers:
-                    unmatched_speakers.add(speaker_name)
-                    stats["speakers_unmatched"].append(speaker_name)
-                continue
-            if (
-                resolution.outcome == EntityResolutionOutcome.RESOLVED
-                and resolution.entity
-            ):
-                entity_id = resolution.entity["id"]
-                entity_name = resolution.entity.get("name", speaker_name)
-            else:
-                # Create a new entity for this speaker
-                entity_id = entity_slug(speaker_name)
-                if not dry_run:
-                    entity = load_journal_entity(entity_id) or create_journal_entity(
-                        entity_id=entity_id,
-                        name=speaker_name,
-                        entity_type="Person",
-                    )
-                    # Add to list so subsequent segments find this entity
-                    entities_list.append(entity)
-                    stats["entities_created"] += 1
-                entity_name = speaker_name
-
-            entity_names[entity_id] = entity_name
-            stats["speakers_found"].setdefault(entity_name, 0)
-
-            # Load existing voiceprint keys for idempotency (once per entity)
-            if entity_id not in entity_existing:
-                entity_existing[entity_id] = load_existing_voiceprint_keys(entity_id)
-
-            existing_keys = entity_existing[entity_id]
-            seg_dir = segment_path(day, seg_key, stream)
-
-            for source in segment["sources"]:
-                emb_data = load_embeddings_file(seg_dir / f"{source}.npz")
-                if emb_data is None:
-                    continue
-
-                embeddings, statement_ids, _ = emb_data
-
-                for embedding, sid in zip(embeddings, statement_ids):
-                    sentence_id = int(sid)
-                    vp_key = (day, seg_key, source, sentence_id)
-
-                    # Idempotency: skip if already saved
-                    if vp_key in existing_keys:
-                        stats["embeddings_skipped_duplicate"] += 1
-                        continue
-
-                    normalized = normalize_embedding(embedding)
-                    if normalized is None:
-                        continue
-
-                    # Contamination guard: reject embeddings too similar to owner
-                    owner_score = float(np.dot(normalized, owner_centroid))
-                    if owner_score >= owner_threshold:
-                        stats["embeddings_skipped_owner"] += 1
-                        continue
-
-                    # Non-owner embedding — belongs to the listed speaker
-                    metadata = {
-                        "day": day,
-                        "segment_key": seg_key,
-                        "source": source,
-                        "stream": stream,
-                        "sentence_id": sentence_id,
-                        "added_at": now_ms(),
-                    }
-
-                    entity_embeddings[entity_id].append((normalized, metadata))
-                    existing_keys.add(vp_key)
-                    stats["speakers_found"][entity_name] += 1
-
-        if (day_idx + 1) % 10 == 0:
-            logger.info(
-                "Bootstrap progress: %d/%d days, %d segments, %d embeddings queued",
-                day_idx + 1,
-                len(days),
-                stats["segments_scanned"],
-                sum(len(v) for v in entity_embeddings.values()),
-            )
-
-    # Batch save all collected embeddings
-    if not dry_run:
-        for entity_id, emb_list in entity_embeddings.items():
-            try:
-                saved = save_voiceprints_batch(entity_id, emb_list)
-                stats["embeddings_saved"] += saved
-            except Exception as e:
-                name = entity_names.get(entity_id, entity_id)
-                stats["errors"].append(f"Failed to save for {name}: {e}")
-                logger.exception("Failed to save voiceprints for %s", entity_id)
-    else:
-        stats["embeddings_saved"] = sum(len(v) for v in entity_embeddings.values())
-
-    return stats
 
 
 def merge_names(alias_name: str, canonical_name: str) -> dict[str, Any]:
@@ -684,190 +498,13 @@ def link_import(name: str, entity_id: str) -> dict[str, Any]:
 
 
 def seed_from_imports(dry_run: bool = False) -> dict[str, Any]:
-    """Seed voiceprints from import segments with speaker-attributed transcripts."""
-    import numpy as np
+    """Seed import voiceprints through the native speaker-identity owner."""
+    from solstone.apps.speakers import native as native_speakers
+    from solstone.apps.speakers.attribution import _speaker_encoder_identity
 
-    from solstone.apps.speakers.routes import (
-        _load_embeddings_file,
-        _scan_segment_embeddings,
+    return native_speakers.seed_from_imports(
+        get_journal(),
+        encoder=_speaker_encoder_identity(),
+        added_at=now_ms(),
+        dry_run=dry_run,
     )
-    from solstone.think.entities import (
-        load_existing_voiceprint_keys,
-        normalize_embedding,
-        save_voiceprints_batch,
-    )
-
-    load_embeddings_file = _load_embeddings_file
-    scan_segment_embeddings = _scan_segment_embeddings
-
-    centroid_data = load_owner_centroid()
-    if centroid_data is None:
-        return {"error": "No confirmed owner centroid. Run owner detection first."}
-
-    owner_centroid = centroid_data.centroid
-    owner_threshold = centroid_data.threshold
-
-    journal_entities = load_all_journal_entities()
-    entities_list = [e for e in journal_entities.values() if not e.get("blocked")]
-
-    stats: dict[str, Any] = {
-        "segments_scanned": 0,
-        "segments_with_speakers": 0,
-        "speakers_found": {},
-        "embeddings_saved": 0,
-        "embeddings_skipped_owner": 0,
-        "embeddings_skipped_duplicate": 0,
-        "speakers_unmatched": [],
-        "errors": [],
-    }
-
-    entity_embeddings: dict[str, list[tuple[np.ndarray, dict]]] = defaultdict(list)
-    entity_existing: dict[str, set] = {}
-    unmatched_set: set[str] = set()
-    speaker_entity_cache: dict[str, Any] = {}
-    resolution_scope = ResolutionScope.journal()
-
-    days = sorted(day_dirs().keys())
-
-    for day_idx, day in enumerate(days):
-        segments = scan_segment_embeddings(day)
-
-        for segment in segments:
-            stream = segment["stream"]
-            if not stream.startswith("import.") or stream in _AI_CHAT_STREAMS:
-                continue
-
-            stats["segments_scanned"] += 1
-            seg_key = segment["key"]
-            seg_dir = segment_path(day, seg_key, stream)
-            speaker_entries = _parse_conversation_speakers(seg_dir)
-            if not speaker_entries:
-                continue
-
-            stats["segments_with_speakers"] += 1
-
-            for source in segment["sources"]:
-                source_jsonl = seg_dir / f"{source}.jsonl"
-                stmt_times: dict[int, int] = {}
-                if source_jsonl.exists():
-                    try:
-                        with open(source_jsonl, encoding="utf-8") as f:
-                            src_lines = f.readlines()
-                    except OSError as exc:
-                        stats["errors"].append(
-                            f"Failed to read source transcript {day}/{seg_key}/{source}: {exc}"
-                        )
-                        continue
-
-                    for i, line in enumerate(src_lines[1:], start=1):
-                        try:
-                            entry = json.loads(line)
-                            start = entry.get("start", "")
-                            if start:
-                                stmt_times[i] = _time_str_to_seconds(start)
-                        except (json.JSONDecodeError, ValueError, IndexError):
-                            continue
-
-                emb_data = load_embeddings_file(seg_dir / f"{source}.npz")
-                if emb_data is None:
-                    continue
-
-                embeddings, statement_ids, _ = emb_data
-
-                for embedding, sid in zip(embeddings, statement_ids):
-                    sentence_id = int(sid)
-
-                    target_time = stmt_times.get(sentence_id)
-                    if target_time is None:
-                        continue
-
-                    speaker_name = _find_speaker_at_time(speaker_entries, target_time)
-                    if not speaker_name:
-                        continue
-
-                    if speaker_name not in speaker_entity_cache:
-                        resolution = record_entity_resolution(
-                            speaker_name,
-                            entities_list,
-                            scope=resolution_scope,
-                            origin=ResolutionOrigin(
-                                lane="apps.speakers.seed_from_imports",
-                                day=day,
-                                segment_id=seg_key,
-                                field="speaker",
-                            ),
-                        )
-                        speaker_entity_cache[speaker_name] = (
-                            resolution.entity
-                            if resolution.outcome == EntityResolutionOutcome.RESOLVED
-                            else None
-                        )
-
-                    entity = speaker_entity_cache[speaker_name]
-                    if entity is None:
-                        if speaker_name not in unmatched_set:
-                            unmatched_set.add(speaker_name)
-                            stats["speakers_unmatched"].append(speaker_name)
-                        continue
-
-                    entity_id = entity["id"]
-                    entity_name = entity.get("name", speaker_name)
-                    stats["speakers_found"].setdefault(entity_name, 0)
-
-                    if entity_id not in entity_existing:
-                        entity_existing[entity_id] = load_existing_voiceprint_keys(
-                            entity_id
-                        )
-
-                    existing_keys = entity_existing[entity_id]
-                    vp_key = (day, seg_key, source, sentence_id)
-
-                    if vp_key in existing_keys:
-                        stats["embeddings_skipped_duplicate"] += 1
-                        continue
-
-                    normalized = normalize_embedding(embedding)
-                    if normalized is None:
-                        continue
-
-                    owner_score = float(np.dot(normalized, owner_centroid))
-                    if owner_score >= owner_threshold:
-                        stats["embeddings_skipped_owner"] += 1
-                        continue
-
-                    metadata = {
-                        "day": day,
-                        "segment_key": seg_key,
-                        "source": source,
-                        "stream": stream,
-                        "sentence_id": sentence_id,
-                        "added_at": now_ms(),
-                    }
-
-                    entity_embeddings[entity_id].append((normalized, metadata))
-                    existing_keys.add(vp_key)
-                    stats["speakers_found"][entity_name] += 1
-
-        if (day_idx + 1) % 10 == 0:
-            logger.info(
-                "Import seeding progress: %d/%d days, %d segments, %d embeddings queued",
-                day_idx + 1,
-                len(days),
-                stats["segments_scanned"],
-                sum(len(v) for v in entity_embeddings.values()),
-            )
-
-    if not dry_run:
-        for entity_id, emb_list in entity_embeddings.items():
-            try:
-                saved = save_voiceprints_batch(entity_id, emb_list)
-                stats["embeddings_saved"] += saved
-            except Exception as e:
-                stats["errors"].append(f"Failed to save for {entity_id}: {e}")
-                logger.exception(
-                    "Failed to save import-seeded voiceprints for %s", entity_id
-                )
-    else:
-        stats["embeddings_saved"] = sum(len(v) for v in entity_embeddings.values())
-
-    return stats
