@@ -259,11 +259,18 @@ mod tests {
     use std::sync::atomic::Ordering as TestOrdering;
     use std::sync::{Mutex, OnceLock};
 
-    // The retry epoch is a process-wide static; serialize tests that touch it
-    // so parallel `cargo test` runs cannot see each other's bumps.
-    fn epoch_test_lock() -> &'static Mutex<()> {
+    // The retry epoch is a process-wide static that every
+    // `parakeet_stt_admission_latch` call reads, so *every* test in this
+    // module -- not only the two that bump it -- must serialize against it;
+    // `cargo test` runs tests in parallel, and a bump mid-flight in one test
+    // is visible to any other concurrently reading the epoch. Tolerates
+    // poisoning so one panicking test does not cascade into spurious
+    // failures across the rest of the module.
+    fn lock_epoch() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
@@ -328,6 +335,7 @@ mod tests {
 
     #[test]
     fn a_fresh_journal_recomputes_and_finds_ample_ram_undesired() {
+        let _guard = lock_epoch();
         let journal = TempJournal::new();
         let input = ParakeetAdmissionInput {
             backend: None,
@@ -344,6 +352,7 @@ mod tests {
 
     #[test]
     fn explicit_parakeet_backend_is_desired_and_never_reads_ram() {
+        let _guard = lock_epoch();
         let journal = TempJournal::new();
         let input = ParakeetAdmissionInput {
             backend: Some("parakeet".to_owned()),
@@ -358,6 +367,7 @@ mod tests {
 
     #[test]
     fn insufficient_ram_with_implicit_parakeet_backend_blocks() {
+        let _guard = lock_epoch();
         let journal = TempJournal::new();
         let input = baseline_input();
         let scarce = || Some(1_u64);
@@ -371,6 +381,7 @@ mod tests {
 
     #[test]
     fn a_matching_memo_is_returned_without_recomputing_choice() {
+        let _guard = lock_epoch();
         let journal = TempJournal::new();
         let input = ParakeetAdmissionInput {
             backend: Some("parakeet".to_owned()),
@@ -393,6 +404,7 @@ mod tests {
 
     #[test]
     fn a_changed_input_sha_invalidates_the_memo() {
+        let _guard = lock_epoch();
         let journal = TempJournal::new();
         let input = ParakeetAdmissionInput {
             backend: Some("parakeet".to_owned()),
@@ -416,7 +428,7 @@ mod tests {
 
     #[test]
     fn a_bumped_retry_epoch_invalidates_the_memo_even_with_identical_input() {
-        let _guard = epoch_test_lock().lock().expect("epoch lock");
+        let _guard = lock_epoch();
         let before = PARAKEET_ADMISSION_RETRY_EPOCH.load(TestOrdering::SeqCst);
         let journal = TempJournal::new();
         let input = ParakeetAdmissionInput {
@@ -439,6 +451,7 @@ mod tests {
 
     #[test]
     fn a_memo_missing_a_well_typed_desired_flag_is_not_reused() {
+        let _guard = lock_epoch();
         let journal = TempJournal::new();
         let input = ParakeetAdmissionInput {
             backend: Some("parakeet".to_owned()),
@@ -474,7 +487,7 @@ mod tests {
 
     #[test]
     fn admission_retry_epoch_bump_is_process_wide_not_per_provider() {
-        let _guard = epoch_test_lock().lock().expect("epoch lock");
+        let _guard = lock_epoch();
         let before = admission_retry_epoch();
         bump_admission_retry_epoch();
         assert_eq!(admission_retry_epoch(), before + 1);
