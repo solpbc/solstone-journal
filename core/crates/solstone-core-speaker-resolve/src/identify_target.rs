@@ -52,6 +52,8 @@ pub struct TargetResolution {
     pub entity_name: String,
     pub entity_type: String,
     pub will_create: bool,
+    /// Visible near-match IDs that a create request must explicitly review.
+    pub visible_candidate_ids: Vec<String>,
 }
 
 /// Result of target resolution before any identify execution can occur.
@@ -192,6 +194,7 @@ pub fn resolve_identify_target(
         entity_name: name.to_owned(),
         entity_type: request.entity_type.clone(),
         will_create: true,
+        visible_candidate_ids: candidate_ids(&candidates),
     }))
 }
 
@@ -249,6 +252,7 @@ fn target_from_entity(entity: &JournalEntity) -> TargetResolution {
             .to_owned(),
         entity_type: entity.entity_type().unwrap_or_default().to_owned(),
         will_create: false,
+        visible_candidate_ids: Vec::new(),
     }
 }
 

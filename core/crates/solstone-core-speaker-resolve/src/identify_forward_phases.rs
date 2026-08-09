@@ -623,7 +623,8 @@ impl SegmentIdentity for SegmentLabelPlan {
 fn sort_keys(values: &mut [Value]) {
     values.sort_by_key(|value| serde_json::to_string(value).expect("JSON serializes"));
 }
-fn load_labels(segment: &Path) -> HashMap<i64, Value> {
+/// Read the current per-sentence labels for prepared-plan snapshotting.
+pub(crate) fn load_labels(segment: &Path) -> HashMap<i64, Value> {
     fs::read(segment.join("talents/speaker_labels.json"))
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
@@ -639,7 +640,8 @@ fn load_labels(segment: &Path) -> HashMap<i64, Value> {
         .collect()
 }
 
-fn load_corrections(segment: &Path) -> Vec<Value> {
+/// Read the current correction rows for prepared-plan snapshotting.
+pub(crate) fn load_corrections(segment: &Path) -> Vec<Value> {
     fs::read(segment.join("talents/speaker_corrections.json"))
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
@@ -689,7 +691,8 @@ fn direct_key_from_metadata(value: &Value) -> Option<DirectVoiceprintKey> {
 fn resolved_path(root: &Path) -> PathBuf {
     root.join("awareness/discovery_clusters.resolved.json")
 }
-fn load_resolved_clusters(root: &Path) -> BTreeMap<String, Value> {
+/// Read the Python-owned resolved-cluster sentinel cache tolerantly.
+pub(crate) fn load_resolved_clusters(root: &Path) -> BTreeMap<String, Value> {
     fs::read(resolved_path(root))
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
