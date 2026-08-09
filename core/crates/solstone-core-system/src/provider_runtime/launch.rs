@@ -655,6 +655,7 @@ fn truth(
         desired_fingerprint,
         has_plan,
         boot_required,
+        detail: None,
     }
 }
 

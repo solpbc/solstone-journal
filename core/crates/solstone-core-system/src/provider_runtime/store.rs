@@ -933,6 +933,7 @@ mod tests {
             desired_fingerprint: Some("fingerprint".to_owned()),
             has_plan: true,
             boot_required: false,
+            detail: None,
         };
 
         shared.record_truth_result(&first, result.clone());
