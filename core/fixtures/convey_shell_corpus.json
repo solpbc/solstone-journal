@@ -1,0 +1,1256 @@
+{
+  "generator": "scripts/convey_shell_corpus.py",
+  "phases": {
+    "corrupt": [
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/",
+        "status": 500,
+        "why": "the root gate: its redirect target is the whole first-run branch"
+      },
+      {
+        "body_bytes": 15086,
+        "body_sha256": "600174b0dbfc37a56fa44d0c320b32958961d43230198fcb7e99e31b98dfbd9c",
+        "content_type": "image/x-icon",
+        "method": "GET",
+        "path": "/favicon.ico",
+        "status": 200,
+        "why": "gate-exempt static, served before any session exists"
+      },
+      {
+        "body_bytes": 12199,
+        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/static/shell.html",
+        "status": 200,
+        "why": "the SPA shell every app serves verbatim"
+      },
+      {
+        "body_bytes": 269,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/api/shell",
+        "status": 500,
+        "why": "the one boot payload shell_boot.js fetches"
+      },
+      {
+        "body_bytes": 269,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/api/system/status",
+        "status": 500,
+        "why": "status_pane.js"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/speakers/",
+        "status": 500,
+        "why": "an app index: must be the shell, byte-identical"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/speakers/workspace",
+        "status": 500,
+        "why": "the app fragment bytes"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/speakers/static/who_is_this.js",
+        "status": 500,
+        "why": "per-app static"
+      },
+      {
+        "body_bytes": 269,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/state",
+        "status": 500,
+        "why": "the app's initial-state endpoint"
+      },
+      {
+        "body_bytes": 269,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/grid",
+        "status": 500,
+        "why": "first data call from workspace.html"
+      },
+      {
+        "body_bytes": 269,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/quality",
+        "status": 500,
+        "why": "overview quality panel"
+      },
+      {
+        "body_bytes": 269,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/speakers/known",
+        "status": 500,
+        "why": "known-voices list"
+      },
+      {
+        "body_bytes": 269,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/owner/status",
+        "status": 500,
+        "why": "owner voiceprint status"
+      },
+      {
+        "body_bytes": 269,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/discovery/cache",
+        "status": 500,
+        "why": "discovery cache read"
+      },
+      {
+        "body_bytes": 269,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/stats/202601",
+        "status": 500,
+        "why": "the date_nav framework contract"
+      },
+      {
+        "body_bytes": 269,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/segments/20260101",
+        "status": 500,
+        "why": "a day with no segments"
+      },
+      {
+        "body_bytes": 269,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/index",
+        "status": 500,
+        "why": "reached only by its own tests -- recorded so a deletion is a decision"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/nonexistent-app/",
+        "status": 404,
+        "why": "the not-found fallback shape"
+      }
+    ],
+    "established": [
+      {
+        "body_bytes": 207,
+        "body_sha256": "33341319624bc7a7f55e1c6de84cdc28419f332ba014f0a40fca9563d717aa22",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/app/home/",
+        "method": "GET",
+        "path": "/",
+        "status": 302,
+        "why": "the root gate: its redirect target is the whole first-run branch"
+      },
+      {
+        "body_bytes": 15086,
+        "body_sha256": "600174b0dbfc37a56fa44d0c320b32958961d43230198fcb7e99e31b98dfbd9c",
+        "content_type": "image/x-icon",
+        "method": "GET",
+        "path": "/favicon.ico",
+        "status": 200,
+        "why": "gate-exempt static, served before any session exists"
+      },
+      {
+        "body_bytes": 12199,
+        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/static/shell.html",
+        "status": 200,
+        "why": "the SPA shell every app serves verbatim"
+      },
+      {
+        "body_bytes": 15456,
+        "body_sha256": "282b7369e7db3ba27464378a601634b9d83b5e66e9b3dfdd5c80c26e4e511af8",
+        "content_type": "application/json",
+        "json": {
+          "apps": [
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": {
+                "allow_future": true,
+                "step": null,
+                "unit": {
+                  "none": "no activities",
+                  "one": "activity",
+                  "other": "activities"
+                }
+              },
+              "facets_enabled": true,
+              "icon": "\ud83d\udcc5",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M8 2v4\" /> <path d=\"M16 2v4\" /> <rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\" /> <path d=\"M3 10h18\" /> <path d=\"M8 14h.01\" /> <path d=\"M12 14h.01\" /> <path d=\"M16 14h.01\" /> <path d=\"M8 18h.01\" /> <path d=\"M12 18h.01\" /> <path d=\"M16 18h.01\" /> </svg>",
+              "label": "activities",
+              "name": "activities",
+              "starred": false,
+              "workspace_url": "/app/activities/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": null,
+              "facets_enabled": false,
+              "icon": "\ud83d\udee1\ufe0f",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\" /> <path d=\"M3 3v5h5\" /> <path d=\"M12 7v5l4 2\" /> </svg>",
+              "label": "backup",
+              "name": "backup",
+              "starred": false,
+              "workspace_url": "/app/backup/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": {
+                "allow_future": false,
+                "step": null,
+                "unit": {
+                  "none": "no readings",
+                  "one": "reading",
+                  "other": "readings"
+                }
+              },
+              "facets_enabled": false,
+              "icon": "\ud83e\udec0",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5\" /> <path d=\"M3.22 13H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27\" /> </svg>",
+              "label": "body",
+              "name": "body",
+              "starred": false,
+              "workspace_url": "/app/body/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": {
+                "allow_future": false,
+                "step": null,
+                "unit": {
+                  "none": "no messages",
+                  "one": "message",
+                  "other": "messages"
+                }
+              },
+              "facets_enabled": true,
+              "icon": "\ud83d\udcac",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\" /> </svg>",
+              "label": "chat",
+              "name": "chat",
+              "starred": false,
+              "workspace_url": "/app/chat/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": null,
+              "facets_enabled": false,
+              "icon": "\u2728",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72\" /> <path d=\"m14 7 3 3\" /> <path d=\"M5 6v4\" /> <path d=\"M19 14v4\" /> <path d=\"M10 2v2\" /> <path d=\"M7 8H3\" /> <path d=\"M21 16h-4\" /> <path d=\"M11 3H9\" /> </svg>",
+              "label": "curation",
+              "name": "curation",
+              "starred": false,
+              "workspace_url": "/app/curation/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": null,
+              "facets_enabled": true,
+              "icon": "\ud83d\udcc7",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M16 2v2\" /> <path d=\"M7 22v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2\" /> <path d=\"M8 2v2\" /> <circle cx=\"12\" cy=\"11\" r=\"3\" /> <rect x=\"3\" y=\"4\" width=\"18\" height=\"18\" rx=\"2\" /> </svg>",
+              "label": "entities",
+              "name": "entities",
+              "starred": false,
+              "workspace_url": "/app/entities/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": null,
+              "facets_enabled": false,
+              "icon": "\ud83e\ude7a",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M11 2v2\" /> <path d=\"M5 2v2\" /> <path d=\"M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1\" /> <path d=\"M8 15a6 6 0 0 0 12 0v-3\" /> <circle cx=\"20\" cy=\"10\" r=\"2\" /> </svg>",
+              "label": "health",
+              "name": "health",
+              "starred": false,
+              "workspace_url": "/app/health/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": null,
+              "facets_enabled": false,
+              "icon": "\ud83c\udfe0",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8\" /> <path d=\"M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\" /> </svg>",
+              "label": "home",
+              "name": "home",
+              "starred": false,
+              "workspace_url": "/app/home/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": null,
+              "facets_enabled": true,
+              "icon": "\ud83d\udce5",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M12 3v12\" /> <path d=\"m8 11 4 4 4-4\" /> <path d=\"M8 5H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-4\" /> </svg>",
+              "label": "import",
+              "name": "import",
+              "starred": false,
+              "workspace_url": "/app/import/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": null,
+              "facets_enabled": false,
+              "icon": "\ud83d\udd17",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <rect x=\"16\" y=\"16\" width=\"6\" height=\"6\" rx=\"1\" /> <rect x=\"2\" y=\"16\" width=\"6\" height=\"6\" rx=\"1\" /> <rect x=\"9\" y=\"2\" width=\"6\" height=\"6\" rx=\"1\" /> <path d=\"M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3\" /> <path d=\"M12 12V8\" /> </svg>",
+              "label": "network",
+              "name": "network",
+              "starred": false,
+              "workspace_url": "/app/network/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": {
+                "allow_future": false,
+                "step": null,
+                "unit": {
+                  "none": "no newsletters",
+                  "one": "newsletter",
+                  "other": "newsletters"
+                }
+              },
+              "facets_enabled": false,
+              "icon": "\ud83d\udcf0",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M15 18h-5\" /> <path d=\"M18 14h-8\" /> <path d=\"M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2\" /> <rect width=\"8\" height=\"4\" x=\"10\" y=\"6\" rx=\"1\" /> </svg>",
+              "label": "newsletters",
+              "name": "news",
+              "starred": false,
+              "workspace_url": "/app/news/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": null,
+              "facets_enabled": false,
+              "icon": "\ud83d\udce1",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M2 12 7 2\" /> <path d=\"m7 12 5-10\" /> <path d=\"m12 12 5-10\" /> <path d=\"m17 12 5-10\" /> <path d=\"M4.5 7h15\" /> <path d=\"M12 16v6\" /> </svg>",
+              "label": "devices",
+              "name": "observer",
+              "starred": false,
+              "workspace_url": "/app/observer/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": {
+                "allow_future": false,
+                "step": "week",
+                "unit": {
+                  "none": "no reflection",
+                  "one": "reflection",
+                  "other": "reflections"
+                }
+              },
+              "facets_enabled": false,
+              "icon": "\ud83c\udf19",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401\" /> </svg>",
+              "label": "reflections",
+              "name": "reflections",
+              "starred": false,
+              "workspace_url": "/app/reflections/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": null,
+              "facets_enabled": true,
+              "icon": "\ud83d\udd0d",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"m21 21-4.34-4.34\" /> <circle cx=\"11\" cy=\"11\" r=\"8\" /> </svg>",
+              "label": "search",
+              "name": "search",
+              "starred": false,
+              "workspace_url": "/app/search/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": null,
+              "facets_enabled": true,
+              "icon": "\u2699\ufe0f",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915\" /> <circle cx=\"12\" cy=\"12\" r=\"3\" /> </svg>",
+              "label": "settings",
+              "name": "settings",
+              "starred": false,
+              "workspace_url": "/app/settings/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": {
+                "allow_future": false,
+                "step": null,
+                "unit": {
+                  "none": "no runs",
+                  "one": "run",
+                  "other": "runs"
+                }
+              },
+              "facets_enabled": true,
+              "icon": "\ud83e\uddbe",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M12 8V4H8\" /> <rect width=\"16\" height=\"12\" x=\"4\" y=\"8\" rx=\"2\" /> <path d=\"M2 14h2\" /> <path d=\"M20 14h2\" /> <path d=\"M15 13v2\" /> <path d=\"M9 13v2\" /> </svg>",
+              "label": "sol",
+              "name": "sol",
+              "starred": false,
+              "workspace_url": "/app/sol/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": {
+                "allow_future": false,
+                "step": null,
+                "unit": {
+                  "none": "no segments",
+                  "one": "segment",
+                  "other": "segments"
+                }
+              },
+              "facets_enabled": false,
+              "icon": "\ud83c\udf99\ufe0f",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"m11 7.601-5.994 8.19a1 1 0 0 0 .1 1.298l.817.818a1 1 0 0 0 1.314.087L15.09 12\" /> <path d=\"M16.5 21.174C15.5 20.5 14.372 20 13 20c-2.058 0-3.928 2.356-6 2-2.072-.356-2.775-3.369-1.5-4.5\" /> <circle cx=\"16\" cy=\"7\" r=\"5\" /> </svg>",
+              "label": "speakers",
+              "name": "speakers",
+              "starred": false,
+              "workspace_url": "/app/speakers/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": null,
+              "facets_enabled": false,
+              "icon": "\ud83d\udcca",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M3 3v16a2 2 0 0 0 2 2h16\" /> <path d=\"M18 17V9\" /> <path d=\"M13 17V5\" /> <path d=\"M8 17v-3\" /> </svg>",
+              "label": "stats",
+              "name": "stats",
+              "starred": false,
+              "workspace_url": "/app/stats/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": "/app/support/background",
+              "date_nav": null,
+              "facets_enabled": false,
+              "icon": "\ud83d\udedf",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <circle cx=\"12\" cy=\"12\" r=\"10\" /> <path d=\"m4.93 4.93 4.24 4.24\" /> <path d=\"m14.83 9.17 4.24-4.24\" /> <path d=\"m14.83 14.83 4.24 4.24\" /> <path d=\"m9.17 14.83-4.24 4.24\" /> <circle cx=\"12\" cy=\"12\" r=\"4\" /> </svg>",
+              "label": "support",
+              "name": "support",
+              "starred": false,
+              "workspace_url": "/app/support/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": null,
+              "facets_enabled": false,
+              "icon": "\ud83e\udde0",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M12 18V5\" /> <path d=\"M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4\" /> <path d=\"M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5\" /> <path d=\"M17.997 5.125a4 4 0 0 1 2.526 5.77\" /> <path d=\"M18 18a4 4 0 0 0 2-7.464\" /> <path d=\"M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517\" /> <path d=\"M6 18a4 4 0 0 1-2-7.464\" /> <path d=\"M6.003 5.125a4 4 0 0 0-2.526 5.77\" /> </svg>",
+              "label": "thinking",
+              "name": "thinking",
+              "starred": false,
+              "workspace_url": "/app/thinking/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": "/app/timeline/background",
+              "date_nav": {
+                "allow_future": false,
+                "step": null,
+                "unit": {
+                  "none": "no segments",
+                  "one": "segment",
+                  "other": "segments"
+                }
+              },
+              "facets_enabled": false,
+              "icon": "\ud83d\udd70\ufe0f",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\" /> <path d=\"M16 2v4\" /> <path d=\"M3 10h18\" /> <path d=\"M8 2v4\" /> <path d=\"M17 14h-6\" /> <path d=\"M13 18H7\" /> <path d=\"M7 14h.01\" /> <path d=\"M17 18h.01\" /> </svg>",
+              "label": "timeline",
+              "name": "timeline",
+              "starred": false,
+              "workspace_url": "/app/timeline/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": {
+                "allow_future": false,
+                "step": null,
+                "unit": {
+                  "kind": "currency"
+                }
+              },
+              "facets_enabled": false,
+              "icon": "\ud83d\udcb0",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M13.744 17.736a6 6 0 1 1-7.48-7.48\" /> <path d=\"M15 6h1v4\" /> <path d=\"m6.134 14.768.866-.5 2 3.464\" /> <circle cx=\"16\" cy=\"8\" r=\"6\" /> </svg>",
+              "label": "tokens",
+              "name": "tokens",
+              "starred": false,
+              "workspace_url": "/app/tokens/workspace"
+            },
+            {
+              "app_bar": true,
+              "background_url": null,
+              "date_nav": {
+                "allow_future": false,
+                "step": null,
+                "unit": {
+                  "none": "no segments",
+                  "one": "segment",
+                  "other": "segments"
+                }
+              },
+              "facets_enabled": false,
+              "icon": "\ud83d\udcdc",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M15 12h-5\" /> <path d=\"M15 8h-5\" /> <path d=\"M19 17V5a2 2 0 0 0-2-2H4\" /> <path d=\"M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3\" /> </svg>",
+              "label": "transcripts",
+              "name": "transcripts",
+              "starred": false,
+              "workspace_url": "/app/transcripts/workspace"
+            }
+          ],
+          "chat_bar": {
+            "attention": null,
+            "placeholder": "bring in past conversations, calendar, or notes to give me context\u2026",
+            "sol_request": null
+          },
+          "facets": [],
+          "selected_facet": null,
+          "settings": {
+            "reporting_enabled": true
+          },
+          "version": "<VERSION>"
+        },
+        "method": "GET",
+        "normalized_fields": [
+          "version"
+        ],
+        "path": "/api/shell",
+        "status": 200,
+        "why": "the one boot payload shell_boot.js fetches"
+      },
+      {
+        "body_bytes": 137,
+        "body_sha256": "52e4398e9df917903e98bce82d2412a48c7e6f982809851bddecd624373fbc93",
+        "content_type": "application/json",
+        "json": {
+          "capture": {
+            "observers": [],
+            "status": "no_observers"
+          },
+          "ok": true,
+          "version": {
+            "current": "1.0.22",
+            "latest": "1.0.22",
+            "update_available": false
+          }
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/api/system/status",
+        "status": 200,
+        "why": "status_pane.js"
+      },
+      {
+        "body_bytes": 12199,
+        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/speakers/",
+        "status": 200,
+        "why": "an app index: must be the shell, byte-identical"
+      },
+      {
+        "body_bytes": 138905,
+        "body_sha256": "488be07c4e607dcc334749a403d6a0f7307388a7da9ddbdc177e4c5fefe1c0b0",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/speakers/workspace",
+        "status": 200,
+        "why": "the app fragment bytes"
+      },
+      {
+        "body_bytes": 35880,
+        "body_sha256": "01893d458598f64e9286490f67e95c4d0618df5ec88880713b72c60abce586f5",
+        "content_type": "text/javascript; charset=utf-8",
+        "method": "GET",
+        "path": "/app/speakers/static/who_is_this.js",
+        "status": 200,
+        "why": "per-app static"
+      },
+      {
+        "body_bytes": 7838,
+        "body_sha256": "a6530562c75bccaf3d310f9df7db47801b74cae8ccaca569b03b56257b7ff646",
+        "content_type": "application/json",
+        "json": {
+          "not_in_new_voices_copy": "this voice isn't in new voices yet. sol needs to hear it a few more times.",
+          "owner_min_statements": 30,
+          "owner_status_routing_tokens": {
+            "candidate": "candidate",
+            "confirmed": "confirmed"
+          },
+          "speaker_copy": {
+            "SPK_ACTION_RETRY": "try again",
+            "SPK_ACTION_WHO_IS_THIS": "who is this?",
+            "SPK_ANCHOR": "in your journal",
+            "SPK_ANCHOR_HAS_VOICE": "in your journal \u00b7 sol already knows their voice",
+            "SPK_CHECK_NAME_ERROR": "sol couldn't check this name. try again.",
+            "SPK_CORRECT_PROPAGATE_APPLY": "Apply these changes",
+            "SPK_CORRECT_PROPAGATE_NONE": "Nothing else would change.",
+            "SPK_CORRECT_PROPAGATE_OFFER": "Sol can look through segments where these two appear and show you what else would change.",
+            "SPK_CORRECT_SCOPE": "This fixes this one statement.",
+            "SPK_CREATE_ROW": "add \"{query}\" as someone new",
+            "SPK_DISCOVERY_DEGRADED_TEMPLATE": "some voice samples could not be used ({count})",
+            "SPK_DISCOVERY_ERROR": "sol couldn't look for new voices right now.",
+            "SPK_EVIDENCE_MEETING_MANY": "in your meeting notes on {count} of those days",
+            "SPK_EVIDENCE_MEETING_ONE": "in your meeting notes that day",
+            "SPK_EVIDENCE_SCREEN_MANY": "on screen in {count} of these conversations",
+            "SPK_EVIDENCE_SCREEN_ONE": "on screen in 1 of these conversations",
+            "SPK_EXIT_NOT_NOW": "not now",
+            "SPK_EXIT_NOT_PERSON": "not a person",
+            "SPK_FILTER_BY_PREFIX": "filtering by:",
+            "SPK_FILTER_NO_SEGMENTS_TODAY": "no segments attributed to this speaker today",
+            "SPK_GRID_ACTIVITY_ONE": "segment, all named",
+            "SPK_GRID_ACTIVITY_OTHER": "segments, all named",
+            "SPK_GRID_BODY": "days with segments still needing names",
+            "SPK_GRID_TITLE": "voices to name",
+            "SPK_GRID_UNIT_NONE": "quiet day",
+            "SPK_GRID_UNIT_ONE": "segment to name",
+            "SPK_GRID_UNIT_OTHER": "segments to name",
+            "SPK_KEEP_SEPARATE_BODY": "{name} is already in your journal. if this is someone else, sol will keep them separate and never suggest mixing the two.",
+            "SPK_KEEP_SEPARATE_CONFIRM": "yes, someone new",
+            "SPK_KEEP_SEPARATE_DECLINE": "no, that's {name}",
+            "SPK_KEEP_SEPARATE_TITLE": "different from {name}?",
+            "SPK_LOAD_ERROR": "sol couldn't load this voice. try again.",
+            "SPK_NEAR_MATCH_BAND": "already in your journal?",
+            "SPK_NOT_NOW_DONE": "no rush. it waits quietly in new voices.",
+            "SPK_NOT_PERSON_DONE": "got it, not a person. sol will leave this one alone and will not ask about it again.",
+            "SPK_OVERVIEW_CARD_LAST_HEARD_PREFIX": "last heard",
+            "SPK_OVERVIEW_CARD_SAMPLES_LABEL": "samples",
+            "SPK_OVERVIEW_CARD_SEGMENTS_LABEL": "segments",
+            "SPK_OVERVIEW_CARD_STREAMS_PREFIX": "streams",
+            "SPK_OVERVIEW_COHESION_LABELS": [
+              "learning",
+              "early",
+              "improving",
+              "good",
+              "strong",
+              "settled"
+            ],
+            "SPK_OVERVIEW_KNOWN_VOICES_EMPTY": "no one else's voice has been learned yet. once the same voice shows up across a few segments, that person will appear here. you can also tag voices manually in any segment.",
+            "SPK_OVERVIEW_KNOWN_VOICES_HEADER": "known voices",
+            "SPK_OVERVIEW_KNOWN_VOICES_SORTS": [
+              "recent",
+              "most samples",
+              "alphabetical"
+            ],
+            "SPK_OVERVIEW_NEW_VOICES_HEADER": "new voices",
+            "SPK_OVERVIEW_OWNER_BUILD_FROM_TAGS_LABEL": "Build from manual tags",
+            "SPK_OVERVIEW_OWNER_BUILT_PREFIX": "built",
+            "SPK_OVERVIEW_OWNER_BUILT_UNKNOWN": "unknown",
+            "SPK_OVERVIEW_OWNER_COHESION_LABEL": "consistency",
+            "SPK_OVERVIEW_OWNER_HELP_LABEL": "help sol learn faster",
+            "SPK_OVERVIEW_OWNER_PROGRESS_SUFFIX": "longer statements",
+            "SPK_OVERVIEW_OWNER_PROGRESS_UNKNOWN": "learning progress unavailable",
+            "SPK_OVERVIEW_OWNER_REFRESHED_PREFIX": "refreshed",
+            "SPK_OVERVIEW_OWNER_SAMPLES_LABEL": "voice samples",
+            "SPK_OVERVIEW_OWNER_STATUS_ERROR": "couldn't load voice status",
+            "SPK_OVERVIEW_OWNER_STREAMS_LABEL": "where heard",
+            "SPK_OVERVIEW_QUALITY_ERROR_HEADING": "couldn't load voice quality",
+            "SPK_OVERVIEW_QUALITY_HEADER": "voice quality",
+            "SPK_OVERVIEW_QUALITY_HIGH_LABEL": "high confidence",
+            "SPK_OVERVIEW_QUALITY_MARGIN_LABEL": "close voice matches",
+            "SPK_OVERVIEW_QUALITY_MEDIUM_LABEL": "needs a look",
+            "SPK_OVERVIEW_QUALITY_MISSING_LABEL": "segments not processed",
+            "SPK_OVERVIEW_QUALITY_PREBOOTSTRAP": "your voice is still learning",
+            "SPK_OVERVIEW_QUALITY_READY": "recent speaker labels",
+            "SPK_OVERVIEW_QUALITY_SKIPPED_LABEL": "set aside for now",
+            "SPK_OVERVIEW_QUALITY_TEACHING_LABEL": "teaching changes",
+            "SPK_OVERVIEW_QUALITY_TEACHING_ZERO": "no recent teaching changes",
+            "SPK_OVERVIEW_QUALITY_UNLABELED_LABEL": "not yet named",
+            "SPK_OVERVIEW_QUALITY_UNREADABLE_WARNING": "some local speaker files could not be read",
+            "SPK_OVERVIEW_TODAY_LINK_LABEL": "today's review \u2192",
+            "SPK_OVERVIEW_YOUR_VOICE_CONFIRMED": "confirmed",
+            "SPK_OVERVIEW_YOUR_VOICE_HEADER": "your voice",
+            "SPK_OVERVIEW_YOUR_VOICE_LEARNING": "sol is still learning",
+            "SPK_OWNER_REVEAL_CLOSE_LABEL": "continue",
+            "SPK_OWNER_REVEAL_EVIDENCE_TEMPLATE": "{tier} evidence",
+            "SPK_OWNER_REVEAL_STATEMENTS_TEMPLATE": "{count} statements taught",
+            "SPK_OWNER_REVEAL_STREAMS_TEMPLATE": "{count} places heard",
+            "SPK_OWNER_REVEAL_TITLE": "your voice is confirmed",
+            "SPK_OWNER_TEACH_BODY": "pick longer statements that are yours. sol uses them to keep your voice separate from other speakers.",
+            "SPK_OWNER_TEACH_BUSY": "voice update is busy; try the next statement in a moment",
+            "SPK_OWNER_TEACH_EMPTY": "no teachable statements are ready yet",
+            "SPK_OWNER_TEACH_EXHAUSTED_BODY_TEMPLATE": "{count} of {minimum} longer statements taught",
+            "SPK_OWNER_TEACH_EXHAUSTED_TITLE": "that's all for today",
+            "SPK_OWNER_TEACH_FAILED": "voice update did not finish; try another statement in a moment",
+            "SPK_OWNER_TEACH_LOADING": "finding teachable statements...",
+            "SPK_OWNER_TEACH_MINE_LABEL": "that's me",
+            "SPK_OWNER_TEACH_NOT_ME_LABEL": "not me",
+            "SPK_OWNER_TEACH_NOT_ME_RESPONSE": "ok \u2014 moving on",
+            "SPK_OWNER_TEACH_PARTIAL": "some of today could not be included",
+            "SPK_OWNER_TEACH_PAUSED": "teaching paused",
+            "SPK_OWNER_TEACH_PAUSE_LABEL": "pause",
+            "SPK_OWNER_TEACH_PROGRESS_TEMPLATE": "{count} of {minimum} longer statements",
+            "SPK_OWNER_TEACH_REFUSED_TITLE": "not ready yet",
+            "SPK_OWNER_TEACH_SKIP_LABEL": "skip for now",
+            "SPK_OWNER_TEACH_START_LABEL": "start teaching",
+            "SPK_OWNER_TEACH_TITLE": "teach sol your voice",
+            "SPK_PLAY_FROM_HERE_LABEL": "play from here",
+            "SPK_PREVIEW_BACK": "back",
+            "SPK_PREVIEW_BODY_FRESH": "everywhere sol has heard it, in every conversation, now and from here on.",
+            "SPK_PREVIEW_BODY_HAS_VOICE": "{name} already has a voice in your journal. sol will treat this as another way they sound and keep them together.",
+            "SPK_PREVIEW_CONFIRM": "yes, this is {first_name}",
+            "SPK_PREVIEW_FACTS": "{statements} statements across {conversations} conversations, all in your journal. you can undo this.",
+            "SPK_PREVIEW_TITLE": "this voice becomes {name}",
+            "SPK_RECEIPT_BODY": "every conversation where this voice was heard now reads {name}.",
+            "SPK_RECEIPT_TITLE": "sol knows {name}'s voice now",
+            "SPK_RECEIPT_UNDO": "undo",
+            "SPK_SAMPLE_UNAVAILABLE": "this sample isn't available",
+            "SPK_SEARCH_ERROR": "sol couldn't search your people. try again.",
+            "SPK_SEARCH_LABEL": "someone else",
+            "SPK_SEARCH_NO_RESULTS": "no one in your journal matches \"{query}\"",
+            "SPK_SEARCH_PLACEHOLDER": "search your people",
+            "SPK_SHEET_LEDE_MANY": "sol has heard this voice in {count} conversations, all kept in your journal. tell sol who this is and it will recognize them from now on.",
+            "SPK_SHEET_LEDE_ONE": "sol has heard this voice in 1 conversation, kept in your journal. tell sol who this is and it will recognize them from now on.",
+            "SPK_SHEET_TITLE": "someone keeps showing up",
+            "SPK_SHELF_CANDIDATES": "sol noticed these people around this voice:",
+            "SPK_SHELF_MENTIONS": "also nearby, from names that come up around this voice:",
+            "SPK_SHELF_NO_EVIDENCE": "sol didn't notice anyone around this voice. search your people:",
+            "SPK_THIS_IS_ME": "this is me",
+            "SPK_THIS_IS_ME_GUIDANCE": "sol learns your voice separately. teach it in your voice settings.",
+            "SPK_UNDO_DONE": "undone. this voice is back in new voices.",
+            "SPK_UNDO_PARTIAL": "undo restored part of this voice. {restored} changed back; {skipped} stayed as they are. try again."
+          },
+          "speaker_filter_name": null,
+          "today": "<TODAY>"
+        },
+        "method": "GET",
+        "normalized_fields": [
+          "today"
+        ],
+        "path": "/app/speakers/api/state",
+        "status": 200,
+        "why": "the app's initial-state endpoint"
+      },
+      {
+        "body_bytes": 55,
+        "body_sha256": "ef9a5988652d063cf98aeb4271bc4a765dbe6e2aa78958f63cb88b674cbb37a9",
+        "content_type": "application/json",
+        "json": {
+          "activity": {},
+          "coverage": null,
+          "days": {},
+          "pending": {}
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/grid",
+        "status": 200,
+        "why": "first data call from workspace.html"
+      },
+      {
+        "body_bytes": 856,
+        "body_sha256": "036347618bd8f120f3897bf740681ab23a42aa67a2767be9db01022bf5148165",
+        "content_type": "application/json",
+        "json": {
+          "corrections_window_count": 0,
+          "demotions_by_class": {
+            "acoustic_margin_declined": {
+              "high_statements": 0,
+              "medium_statements": 0,
+              "none_statements": 0,
+              "total_statements": 0
+            },
+            "owner_margin_declined": {
+              "high_statements": 0,
+              "medium_statements": 0,
+              "none_statements": 0,
+              "total_statements": 0
+            }
+          },
+          "empty_labels_without_skipped_segments": 0,
+          "owner_voice": {
+            "bootstrap_state": "pre_bootstrap",
+            "built_at": null,
+            "centroid_saved": false,
+            "evidence_count": 0,
+            "evidence_tier": null,
+            "refreshed_at": null,
+            "status": "none"
+          },
+          "quality_window_count": 0,
+          "quality_window_days": 30,
+          "quality_window_error_count": 0,
+          "tier_histogram": {
+            "high_statements": 0,
+            "margin_declined_statements": 0,
+            "medium_statements": 0,
+            "no_labels_file_segments": 0,
+            "skipped_stub_segments": 0,
+            "unlabeled_sentence_statements": 0
+          },
+          "unreadable_files": {
+            "speaker_corrections_window_count": 0,
+            "speaker_labels_window_count": 0,
+            "total_window_count": 0
+          }
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/quality",
+        "status": 200,
+        "why": "overview quality panel"
+      },
+      {
+        "body_bytes": 42,
+        "body_sha256": "aaac268f9ee7c66cfd19dfd885f6203c4bad009732697e62d8ac52f227d00ca9",
+        "content_type": "application/json",
+        "json": {
+          "sort": "recent",
+          "speakers": [],
+          "total": 0
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/speakers/known",
+        "status": 200,
+        "why": "known-voices list"
+      },
+      {
+        "body_bytes": 425,
+        "body_sha256": "7b2dea546167fe68e15009e79b3c4551c5925725c0e07a79291aa49bb4343caf",
+        "content_type": "application/json",
+        "json": {
+          "can_build_from_tags": false,
+          "embeddings_available": 0,
+          "guidance": "Use sol call speakers tag-owner <day> <stream> <segment> <source> <sentence-id> on owner sentences in raw media until you have 30 validated owner tags; 30 more needed. Then run sol call speakers build-from-tags.",
+          "manual_tags_count": 0,
+          "next_step": "seed_manual_tags",
+          "segments_available": 0,
+          "segments_with_embeddings": 0,
+          "status": "none",
+          "streams_represented": 0
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/owner/status",
+        "status": 200,
+        "why": "owner voiceprint status"
+      },
+      {
+        "body_bytes": 45,
+        "body_sha256": "40dc8282f493d9df8f321367d34162ff9dd5a2447af06cd45ba8b86bbbee403b",
+        "content_type": "application/json",
+        "json": {
+          "clusters": [],
+          "status": "cache_unavailable"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/discovery/cache",
+        "status": 200,
+        "why": "discovery cache read"
+      },
+      {
+        "body_bytes": 3,
+        "body_sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+        "content_type": "application/json",
+        "json": {},
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/stats/202601",
+        "status": 200,
+        "why": "the date_nav framework contract"
+      },
+      {
+        "body_bytes": 26,
+        "body_sha256": "030130cbf31be62e222950a4079b31a400e40d827b7801a9af5316ab80e776bf",
+        "content_type": "application/json",
+        "json": {
+          "segments": [],
+          "total": 0
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/segments/20260101",
+        "status": 200,
+        "why": "a day with no segments"
+      },
+      {
+        "body_bytes": 30,
+        "body_sha256": "812fe0e39c5ae780257d3dddfc6fee9d3fbca803e85de8848499311c4ef9af70",
+        "content_type": "application/json",
+        "json": {
+          "coverage": null,
+          "months": {}
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/speakers/api/index",
+        "status": 200,
+        "why": "reached only by its own tests -- recorded so a deletion is a decision"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/nonexistent-app/",
+        "status": 404,
+        "why": "the not-found fallback shape"
+      }
+    ],
+    "unestablished": [
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/",
+        "status": 302,
+        "why": "the root gate: its redirect target is the whole first-run branch"
+      },
+      {
+        "body_bytes": 15086,
+        "body_sha256": "600174b0dbfc37a56fa44d0c320b32958961d43230198fcb7e99e31b98dfbd9c",
+        "content_type": "image/x-icon",
+        "method": "GET",
+        "path": "/favicon.ico",
+        "status": 200,
+        "why": "gate-exempt static, served before any session exists"
+      },
+      {
+        "body_bytes": 12199,
+        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/static/shell.html",
+        "status": 200,
+        "why": "the SPA shell every app serves verbatim"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/api/shell",
+        "status": 302,
+        "why": "the one boot payload shell_boot.js fetches"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/api/system/status",
+        "status": 302,
+        "why": "status_pane.js"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/speakers/",
+        "status": 302,
+        "why": "an app index: must be the shell, byte-identical"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/speakers/workspace",
+        "status": 302,
+        "why": "the app fragment bytes"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/speakers/static/who_is_this.js",
+        "status": 302,
+        "why": "per-app static"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/speakers/api/state",
+        "status": 302,
+        "why": "the app's initial-state endpoint"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/speakers/api/grid",
+        "status": 302,
+        "why": "first data call from workspace.html"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/speakers/api/quality",
+        "status": 302,
+        "why": "overview quality panel"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/speakers/api/speakers/known",
+        "status": 302,
+        "why": "known-voices list"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/speakers/api/owner/status",
+        "status": 302,
+        "why": "owner voiceprint status"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/speakers/api/discovery/cache",
+        "status": 302,
+        "why": "discovery cache read"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/speakers/api/stats/202601",
+        "status": 302,
+        "why": "the date_nav framework contract"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/speakers/api/segments/20260101",
+        "status": 302,
+        "why": "a day with no segments"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/speakers/api/index",
+        "status": 302,
+        "why": "reached only by its own tests -- recorded so a deletion is a decision"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/nonexistent-app/",
+        "status": 404,
+        "why": "the not-found fallback shape"
+      }
+    ]
+  },
+  "pinned_completed_at": 1767225600,
+  "placeholders": {
+    "day": "<TODAY>",
+    "journal_root": "<JOURNAL_ROOT>",
+    "version": "<VERSION>"
+  },
+  "schema": "solstone-convey-shell-corpus-v1",
+  "tz": "UTC"
+}
