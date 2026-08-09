@@ -983,7 +983,7 @@ fn stored_request_matches_raw(plan: &Value, request: &IdentifyClusterRequest) ->
 fn fingerprint_conflict_result(operation_id: &str, state: &OperationState) -> Value {
     json!({"status":"conflict","operation_id":operation_id,"operation_state":terminal_name(state.terminal_status),"conflict_code":"request_fingerprint_mismatch"})
 }
-fn state_status_result(state: &OperationState) -> Value {
+pub(crate) fn state_status_result(state: &OperationState) -> Value {
     if state.terminal_status == TerminalStatus::Committed {
         return state.result.clone().unwrap_or_else(|| {
             json!({"status":"identified","operation_id":state.operation_id,"operation_state":"committed"})
