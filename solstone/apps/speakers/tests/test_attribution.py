@@ -1034,44 +1034,6 @@ def test_l3_acoustic_cluster_margin_demotion_happens_after_mean_gate(speakers_en
     assert labels[1]["speaker"] is None
 
 
-def test_accumulate_voiceprints_skips_acoustic_margin_demoted_label(speakers_env):
-    from solstone.apps.speakers.attribution import (
-        accumulate_voiceprints,
-        attribute_segment,
-    )
-
-    env = speakers_env()
-    _setup_owner(env)
-    match_dir = env.create_entity("Mona Match")
-    runner_dir = env.create_entity("Zara Runner")
-    _write_entity_voiceprints(match_dir, [_normalized([0.0, 1.0])] * 5)
-    _write_entity_voiceprints(runner_dir, [_normalized([0.0, 0.0, 1.0])] * 5)
-    demoted = _embedding_with_orthogonal_entity_cosines(0.40, 0.37)
-    control = _embedding_with_orthogonal_entity_cosines(0.42, 0.34)
-    _write_controlled_segment(
-        env,
-        "20240101",
-        "115500_300",
-        np.vstack([demoted, control]),
-    )
-
-    result = attribute_segment("20240101", STREAM, "115500_300")
-    labels = result["labels"]
-    saved = accumulate_voiceprints(
-        "20240101",
-        STREAM,
-        "115500_300",
-        labels,
-        result["source"],
-    )
-
-    assert labels[0]["confidence"] == "medium"
-    assert labels[0]["acoustic_margin_declined"] is True
-    assert labels[1]["confidence"] == "high"
-    assert "acoustic_margin_declined" not in labels[1]
-    assert saved == {"mona_match": 1}
-
-
 def test_l3_per_statement_downgrades_margin_declined_high_match_to_medium(
     speakers_env,
 ):
@@ -1284,6 +1246,8 @@ def test_unmatched_sentences_get_null(speakers_env):
 
 
 def test_candidate_evidence_persisted_for_resolved_entities_only(speakers_env):
+    from unittest.mock import patch
+
     from solstone.apps.speakers.attribution import process_attributed_segment
 
     env = speakers_env()
@@ -1302,178 +1266,24 @@ def test_candidate_evidence_persisted_for_resolved_entities_only(speakers_env):
         stream=STREAM,
     )
 
-    process_attributed_segment(
-        "20240101",
-        STREAM,
-        "094000_300",
-        commit=True,
-        read_only=False,
-    )
+    with (
+        patch(
+            "solstone.apps.speakers.attribution.native_speakers.write_full_labels"
+        ) as write_full_labels,
+        patch("solstone.apps.speakers.attribution.accumulate_voiceprints"),
+    ):
+        process_attributed_segment(
+            "20240101",
+            STREAM,
+            "094000_300",
+            commit=True,
+            read_only=False,
+        )
 
-    labels_path = (
-        env.journal
-        / "chronicle"
-        / "20240101"
-        / STREAM
-        / "094000_300"
-        / "talents"
-        / "speaker_labels.json"
-    )
-    data = json.loads(labels_path.read_text(encoding="utf-8"))
-    assert data["candidate_evidence"] == [
+    assert write_full_labels.call_args.args[3]["candidate_evidence"] == [
         {"entity_id": "alice_test", "sources": ["screen"]}
     ]
-    assert "candidate_evidence_gaps" not in data
-
-
-def test_candidate_evidence_merges_channels_in_canonical_order(speakers_env):
-    from solstone.apps.speakers.attribution import process_attributed_segment
-
-    env = speakers_env()
-    _setup_owner(env)
-    env.create_entity("Alice Test")
-    env.create_import_segment(
-        "20240101",
-        "094500_300",
-        [("", "Hello.")],
-        stream=STREAM,
-        embeddings=np.vstack([_normalized([1.0, 0.0])]),
-        setting="Meeting with Alice Test",
-    )
-    env.create_screen_json("20240101", "094500_300", ["Alice Test"], stream=STREAM)
-
-    process_attributed_segment(
-        "20240101",
-        STREAM,
-        "094500_300",
-        commit=True,
-        read_only=False,
-    )
-
-    labels_path = (
-        env.journal
-        / "chronicle"
-        / "20240101"
-        / STREAM
-        / "094500_300"
-        / "talents"
-        / "speaker_labels.json"
-    )
-    data = json.loads(labels_path.read_text(encoding="utf-8"))
-    assert data["candidate_evidence"] == [
-        {"entity_id": "alice_test", "sources": ["screen", "setting"]}
-    ]
-
-
-def test_candidate_evidence_sort_is_deterministic(speakers_env):
-    from solstone.apps.speakers.attribution import process_attributed_segment
-
-    env = speakers_env()
-    _setup_owner(env)
-    env.create_entity("Bob Test")
-    env.create_entity("Alice Test")
-    env.create_import_segment(
-        "20240101",
-        "095000_300",
-        [("", "Hello.")],
-        stream=STREAM,
-        embeddings=np.vstack([_normalized([1.0, 0.0])]),
-        setting="Meeting with Bob Test and Alice Test",
-    )
-    env.create_screen_json(
-        "20240101",
-        "095000_300",
-        ["Bob Test", "Alice Test"],
-        stream=STREAM,
-    )
-    env.create_meetings_md("20240101", ["Bob Test"])
-    env.create_speakers_json("20240101", "095000_300", ["Bob Test"])
-
-    process_attributed_segment(
-        "20240101",
-        STREAM,
-        "095000_300",
-        commit=True,
-        read_only=False,
-    )
-
-    labels_path = (
-        env.journal
-        / "chronicle"
-        / "20240101"
-        / STREAM
-        / "095000_300"
-        / "talents"
-        / "speaker_labels.json"
-    )
-    data = json.loads(labels_path.read_text(encoding="utf-8"))
-    assert data["candidate_evidence"] == [
-        {"entity_id": "alice_test", "sources": ["screen", "setting"]},
-        {
-            "entity_id": "bob_test",
-            "sources": ["screen", "meeting_day", "setting", "speakers"],
-        },
-    ]
-
-
-def test_process_attributed_segment_writes_evidence_only_refresh(speakers_env):
-    from solstone.apps.speakers.attribution import process_attributed_segment
-
-    env = speakers_env()
-    _setup_owner(env)
-    env.create_entity("Alice Test")
-    env.create_entity("Bob Test")
-    _write_controlled_segment(
-        env,
-        "20240101",
-        "095500_300",
-        np.vstack([_normalized([1.0, 0.0])]),
-    )
-    env.create_screen_json("20240101", "095500_300", ["Alice Test"], stream=STREAM)
-
-    first = process_attributed_segment(
-        "20240101",
-        STREAM,
-        "095500_300",
-        commit=True,
-        read_only=False,
-    )
-    assert first["changed_count"] == 1
-
-    labels_path = (
-        env.journal
-        / "chronicle"
-        / "20240101"
-        / STREAM
-        / "095500_300"
-        / "talents"
-        / "speaker_labels.json"
-    )
-    before_bytes = labels_path.read_bytes()
-    env.create_screen_json(
-        "20240101",
-        "095500_300",
-        ["Alice Test", "Bob Test"],
-        stream=STREAM,
-    )
-
-    second = process_attributed_segment(
-        "20240101",
-        STREAM,
-        "095500_300",
-        commit=True,
-        read_only=False,
-    )
-
-    assert second["status"] == "unchanged"
-    assert second["changes"] == []
-    assert second["changed_count"] == 0
-    assert labels_path.read_bytes() != before_bytes
-    data = json.loads(labels_path.read_text(encoding="utf-8"))
-    assert data["candidate_evidence"] == [
-        {"entity_id": "alice_test", "sources": ["screen"]},
-        {"entity_id": "bob_test", "sources": ["screen"]},
-    ]
+    assert "candidate_evidence_gaps" not in write_full_labels.call_args.args[3]
 
 
 def test_legacy_speaker_labels_without_candidate_evidence_still_load(speakers_env):
@@ -1643,619 +1453,63 @@ def test_candidate_evidence_keeps_speakers_when_setting_is_wrong_shaped(
     assert evidence == [{"entity_id": "bob_test", "sources": ["speakers"]}]
 
 
-def test_process_attributed_segment_refreshes_persisted_speakers_gap(
-    speakers_env,
-):
-    from solstone.apps.speakers.attribution import process_attributed_segment
+def test_save_speaker_labels_forwards_native_request(tmp_path: Path) -> None:
+    from unittest.mock import patch
 
-    env = speakers_env()
-    _setup_owner(env)
-    env.create_entity("Bob Test")
-    _write_controlled_segment(
-        env,
-        "20240101",
-        "102500_300",
-        np.vstack([_normalized([1.0, 0.0])]),
-    )
-    env.create_speakers_json(
-        "20240101",
-        "102500_300",
-        [],
-        raw=json.dumps(["Bob Test", 5]),
-    )
-    env.create_speaker_labels(
-        "20240101",
-        "102500_300",
-        [],
-        metadata={
-            "owner_centroid_last_refreshed_at": None,
-            "voiceprint_versions": {},
-            "unrelated": {"keep": True},
-        },
-    )
-
-    first = process_attributed_segment(
-        "20240101",
-        STREAM,
-        "102500_300",
-        commit=True,
-        read_only=False,
-    )
-
-    labels_path = (
-        env.journal
-        / "chronicle"
-        / "20240101"
-        / STREAM
-        / "102500_300"
-        / "talents"
-        / "speaker_labels.json"
-    )
-    first_data = json.loads(labels_path.read_text(encoding="utf-8"))
-    first_labels = first_data["labels"]
-    assert first["status"] == "changed"
-    assert first_data["unrelated"] == {"keep": True}
-    assert first_data["candidate_evidence"] == [
-        {"entity_id": "bob_test", "sources": ["speakers"]}
-    ]
-    assert first_data["candidate_evidence_gaps"] == [
-        {"source": "speakers", "reason": "wrong_shape"}
-    ]
-
-    env.create_speakers_json("20240101", "102500_300", ["Bob Test"])
-
-    second = process_attributed_segment(
-        "20240101",
-        STREAM,
-        "102500_300",
-        commit=True,
-        read_only=False,
-    )
-
-    second_data = json.loads(labels_path.read_text(encoding="utf-8"))
-    assert second["status"] == "unchanged"
-    assert second["changed_count"] == 0
-    assert second_data["labels"] == first_labels
-    assert second_data["unrelated"] == {"keep": True}
-    assert second_data["candidate_evidence"] == [
-        {"entity_id": "bob_test", "sources": ["speakers"]}
-    ]
-    assert "candidate_evidence_gaps" not in second_data
-
-
-def test_speaker_labels_container_preserves_unrelated_keys_and_drops_stub_markers(
-    tmp_path,
-):
     from solstone.apps.speakers.attribution import save_speaker_labels
-
-    talents_dir = tmp_path / "talents"
-    talents_dir.mkdir()
-    labels_path = talents_dir / "speaker_labels.json"
-    labels_path.write_text(
-        json.dumps(
-            {
-                "labels": [],
-                "skipped": True,
-                "reason": "no_embeddings",
-                "unrelated": {"keep": True},
-                "candidate_evidence_gaps": [
-                    {"source": "screen", "reason": "malformed_json"}
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
+    from solstone.think.utils import get_journal
 
     labels = [
         {
             "sentence_id": 1,
-            "speaker": "alice_test",
+            "speaker": "alice",
             "confidence": "high",
             "method": "acoustic",
         }
     ]
-    save_speaker_labels(
+    metadata = {"voiceprint_versions": {"alice": 1}}
+
+    with patch(
+        "solstone.apps.speakers.attribution.native_speakers.write_full_labels"
+    ) as write_full_labels:
+        path = save_speaker_labels(tmp_path, labels, metadata)
+
+    assert path == tmp_path / "talents" / "speaker_labels.json"
+    write_full_labels.assert_called_once_with(
+        get_journal(),
         tmp_path,
         labels,
         {
-            "owner_centroid_last_refreshed_at": "2026-03-15T12:00:00Z",
-            "voiceprint_versions": {"alice_test": 1},
+            "owner_centroid_last_refreshed_at": None,
+            "voiceprint_versions": {"alice": 1},
+            "candidate_evidence": [],
         },
     )
 
-    data = json.loads(labels_path.read_text(encoding="utf-8"))
-    assert data["labels"] == labels
-    assert data["unrelated"] == {"keep": True}
-    assert "skipped" not in data
-    assert "reason" not in data
-    assert data["candidate_evidence"] == []
-    assert "candidate_evidence_gaps" not in data
 
+def test_restore_label_rows_forwards_native_request(tmp_path: Path) -> None:
+    from unittest.mock import patch
 
-# ---------------------------------------------------------------------------
-# Output: save_speaker_labels
-# ---------------------------------------------------------------------------
+    from solstone.apps.speakers.attribution import restore_label_rows
+    from solstone.think.utils import get_journal
 
-
-def test_public_speaker_labels_save(tmp_path):
-    from solstone.apps.speakers.attribution import save_speaker_labels
-
-    labels = [
+    restorations = [
         {
             "sentence_id": 1,
-            "speaker": "owner",
-            "confidence": "high",
-            "method": "owner_centroid",
-        },
-        {
-            "sentence_id": 2,
-            "speaker": "alice",
-            "confidence": "high",
-            "method": "acoustic",
-        },
-    ]
-    metadata = {
-        "owner_centroid_last_refreshed_at": "2026-03-15T12:00:00",
-        "voiceprint_versions": {"alice": 10},
-    }
-
-    path = save_speaker_labels(tmp_path, labels, metadata)
-
-    assert path.name == "speaker_labels.json"
-    data = json.loads(path.read_text())
-    assert len(data["labels"]) == 2
-    assert data["owner_centroid_last_refreshed_at"] == "2026-03-15T12:00:00"
-    assert data["voiceprint_versions"]["alice"] == 10
-
-
-def test_public_labels_save_preserves_current_user_labels(tmp_path):
-    from solstone.apps.speakers.attribution import save_speaker_labels
-
-    existing = {
-        "labels": [
-            {
-                "sentence_id": 1,
-                "speaker": "old_pipeline",
-                "confidence": "high",
-                "method": "acoustic",
-            },
-            {
-                "sentence_id": 2,
-                "speaker": "user_choice",
-                "confidence": "high",
-                "method": "user_corrected",
-            },
-            {
-                "sentence_id": 3,
-                "speaker": "user_only",
-                "confidence": "high",
-                "method": "user_assigned",
-            },
-        ],
-        "owner_centroid_last_refreshed_at": None,
-        "voiceprint_versions": {},
-    }
-    talents_dir = tmp_path / "talents"
-    talents_dir.mkdir()
-    labels_path = talents_dir / "speaker_labels.json"
-    labels_path.write_text(json.dumps(existing), encoding="utf-8")
-
-    labels = [
-        {
-            "sentence_id": 1,
-            "speaker": "fresh_pipeline",
-            "confidence": "high",
-            "method": "acoustic",
-        },
-        {
-            "sentence_id": 2,
-            "speaker": "fresh_pipeline",
-            "confidence": "high",
-            "method": "acoustic",
-        },
-    ]
-
-    save_speaker_labels(tmp_path, labels, {})
-
-    data = json.loads(labels_path.read_text(encoding="utf-8"))
-    by_sid = {label["sentence_id"]: label for label in data["labels"]}
-    assert by_sid[1]["speaker"] == "fresh_pipeline"
-    assert by_sid[2]["speaker"] == "user_choice"
-    assert by_sid[2]["method"] == "user_corrected"
-    assert by_sid[3]["speaker"] == "user_only"
-    assert by_sid[3]["method"] == "user_assigned"
-
-
-def test_public_labels_save_keeps_corrections_overlay(tmp_path):
-    from solstone.apps.speakers.attribution import save_speaker_labels
-
-    talents_dir = tmp_path / "talents"
-    talents_dir.mkdir()
-    (talents_dir / "speaker_corrections.json").write_text(
-        json.dumps(
-            {
-                "corrections": [
-                    {
-                        "sentence_id": 1,
-                        "original_speaker": "alice",
-                        "corrected_speaker": "bob",
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    labels = [
-        {
-            "sentence_id": 1,
-            "speaker": "alice",
-            "confidence": "high",
-            "method": "acoustic",
+            "expected_current_label": {"sentence_id": 1, "speaker": "target"},
+            "prior_state": "absent",
+            "prior_label": None,
         }
     ]
+    report = {"restored_count": 1, "skipped_count": 0}
 
-    save_speaker_labels(tmp_path, labels, {})
+    with patch(
+        "solstone.apps.speakers.attribution.native_speakers.restore_label_rows",
+        return_value=report,
+    ) as restore_rows:
+        assert restore_label_rows(tmp_path, restorations) == report
 
-    data = json.loads((talents_dir / "speaker_labels.json").read_text())
-    assert data["labels"][0]["speaker"] == "bob"
-    assert data["labels"][0]["method"] == "user_corrected"
-    assert labels[0]["speaker"] == "bob"
-
-
-def test_owner_correction_output_preserves_public_label_overlay(tmp_path):
-    from solstone.apps.speakers.attribution import (
-        append_speaker_correction,
-        save_speaker_labels,
-    )
-
-    append_speaker_correction(
-        tmp_path,
-        {
-            "sentence_id": 1,
-            "original_speaker": "alice",
-            "corrected_speaker": "bob",
-            "original_method": "acoustic",
-            "timestamp": 0,
-        },
-    )
-
-    save_speaker_labels(
-        tmp_path,
-        [
-            {
-                "sentence_id": 1,
-                "speaker": "alice",
-                "confidence": "high",
-                "method": "acoustic",
-            }
-        ],
-        {},
-    )
-
-    data = json.loads((tmp_path / "talents" / "speaker_labels.json").read_text())
-    assert data["labels"][0]["speaker"] == "bob"
-    assert data["labels"][0]["method"] == "user_corrected"
-
-
-def test_restore_label_rows_restores_present_prior_label(tmp_path):
-    from solstone.apps.speakers.attribution import restore_label_rows
-
-    talents_dir = tmp_path / "talents"
-    talents_dir.mkdir()
-    labels_path = talents_dir / "speaker_labels.json"
-    expected = {
-        "sentence_id": 1,
-        "speaker": "target",
-        "confidence": "high",
-        "method": "user_identified",
-    }
-    prior = {
-        "sentence_id": 1,
-        "speaker": "prior",
-        "confidence": "high",
-        "method": "acoustic",
-    }
-    labels_path.write_text(json.dumps({"labels": [expected]}), encoding="utf-8")
-
-    report = restore_label_rows(
-        tmp_path,
-        [
-            {
-                "sentence_id": 1,
-                "expected_current_label": expected,
-                "prior_state": "present",
-                "prior_label": prior,
-            }
-        ],
-    )
-
-    data = json.loads(labels_path.read_text(encoding="utf-8"))
-    assert report["restored_count"] == 1
-    assert report["patched_existing_count"] == 1
-    assert data["labels"] == [prior]
-
-
-def test_restore_label_rows_removes_absent_prior_row(tmp_path):
-    from solstone.apps.speakers.attribution import restore_label_rows
-
-    talents_dir = tmp_path / "talents"
-    talents_dir.mkdir()
-    labels_path = talents_dir / "speaker_labels.json"
-    inserted = {
-        "sentence_id": 1,
-        "speaker": "target",
-        "confidence": "high",
-        "method": "user_identified",
-    }
-    labels_path.write_text(json.dumps({"labels": [inserted]}), encoding="utf-8")
-
-    report = restore_label_rows(
-        tmp_path,
-        [
-            {
-                "sentence_id": 1,
-                "expected_current_label": inserted,
-                "prior_state": "absent",
-                "prior_label": None,
-            }
-        ],
-    )
-
-    data = json.loads(labels_path.read_text(encoding="utf-8"))
-    assert report["restored_count"] == 1
-    assert report["removed_inserted_count"] == 1
-    assert data["labels"] == []
-
-
-def test_restore_label_rows_skips_changed_current_label(tmp_path):
-    from solstone.apps.speakers.attribution import restore_label_rows
-
-    talents_dir = tmp_path / "talents"
-    talents_dir.mkdir()
-    labels_path = talents_dir / "speaker_labels.json"
-    expected = {
-        "sentence_id": 1,
-        "speaker": "target",
-        "confidence": "high",
-        "method": "user_identified",
-    }
-    changed = {**expected, "speaker": "other"}
-    prior = {**expected, "speaker": "prior", "method": "acoustic"}
-    labels_path.write_text(json.dumps({"labels": [changed]}), encoding="utf-8")
-
-    report = restore_label_rows(
-        tmp_path,
-        [
-            {
-                "sentence_id": 1,
-                "expected_current_label": expected,
-                "prior_state": "present",
-                "prior_label": prior,
-            }
-        ],
-    )
-
-    data = json.loads(labels_path.read_text(encoding="utf-8"))
-    assert report["restored_count"] == 0
-    assert report["skipped_count"] == 1
-    assert report["skipped_reasons"] == {"missing": 0, "changed": 1}
-    assert data["labels"] == [changed]
-
-
-def test_restore_label_rows_rerun_is_noop_skip(tmp_path):
-    from solstone.apps.speakers.attribution import restore_label_rows
-
-    talents_dir = tmp_path / "talents"
-    talents_dir.mkdir()
-    labels_path = talents_dir / "speaker_labels.json"
-    inserted = {
-        "sentence_id": 1,
-        "speaker": "target",
-        "confidence": "high",
-        "method": "user_identified",
-    }
-    restoration = {
-        "sentence_id": 1,
-        "expected_current_label": inserted,
-        "prior_state": "absent",
-        "prior_label": None,
-    }
-    labels_path.write_text(json.dumps({"labels": [inserted]}), encoding="utf-8")
-
-    first = restore_label_rows(tmp_path, [restoration])
-    second = restore_label_rows(tmp_path, [restoration])
-
-    assert first["restored_count"] == 1
-    assert second["restored_count"] == 0
-    assert second["skipped_reasons"] == {"missing": 1, "changed": 0}
-    assert json.loads(labels_path.read_text(encoding="utf-8"))["labels"] == []
-
-
-def test_identify_tagged_correction_overlays_speaker(tmp_path):
-    from solstone.apps.speakers.attribution import save_speaker_labels
-
-    talents_dir = tmp_path / "talents"
-    talents_dir.mkdir()
-    (talents_dir / "speaker_corrections.json").write_text(
-        json.dumps(
-            {
-                "corrections": [
-                    {
-                        "sentence_id": 1,
-                        "original_speaker": "alice",
-                        "corrected_speaker": "target",
-                        "original_method": "acoustic",
-                        "timestamp": 1,
-                        "operation_id": "idop_1",
-                        "correction_kind": "identify",
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    save_speaker_labels(
-        tmp_path,
-        [
-            {
-                "sentence_id": 1,
-                "speaker": "alice",
-                "confidence": "high",
-                "method": "acoustic",
-            }
-        ],
-        {},
-    )
-
-    data = json.loads((talents_dir / "speaker_labels.json").read_text())
-    assert data["labels"][0]["speaker"] == "target"
-    assert data["labels"][0]["method"] == "user_corrected"
-
-
-def test_identify_undo_correction_reverts_to_prior_speaker(tmp_path):
-    from solstone.apps.speakers.attribution import save_speaker_labels
-
-    talents_dir = tmp_path / "talents"
-    talents_dir.mkdir()
-    (talents_dir / "speaker_corrections.json").write_text(
-        json.dumps(
-            {
-                "corrections": [
-                    {
-                        "sentence_id": 1,
-                        "original_speaker": "alice",
-                        "corrected_speaker": "target",
-                        "original_method": "acoustic",
-                        "timestamp": 1,
-                        "operation_id": "idop_1",
-                        "correction_kind": "identify",
-                    },
-                    {
-                        "sentence_id": 1,
-                        "original_speaker": "target",
-                        "corrected_speaker": "prior",
-                        "original_method": "user_identified",
-                        "timestamp": 2,
-                        "operation_id": "idop_1",
-                        "undo_of_operation_id": "idop_1",
-                        "correction_kind": "identify_undo",
-                    },
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    save_speaker_labels(
-        tmp_path,
-        [
-            {
-                "sentence_id": 1,
-                "speaker": "alice",
-                "confidence": "high",
-                "method": "acoustic",
-            }
-        ],
-        {},
-    )
-
-    data = json.loads((talents_dir / "speaker_labels.json").read_text())
-    assert data["labels"][0]["speaker"] == "prior"
-    assert data["labels"][0]["method"] == "user_corrected"
-
-
-def test_identify_undo_correction_with_null_reverts_to_unmatched(tmp_path):
-    from solstone.apps.speakers.attribution import save_speaker_labels
-
-    talents_dir = tmp_path / "talents"
-    talents_dir.mkdir()
-    (talents_dir / "speaker_corrections.json").write_text(
-        json.dumps(
-            {
-                "corrections": [
-                    {
-                        "sentence_id": 1,
-                        "original_speaker": None,
-                        "corrected_speaker": "target",
-                        "original_method": None,
-                        "timestamp": 1,
-                        "operation_id": "idop_1",
-                        "correction_kind": "identify",
-                    },
-                    {
-                        "sentence_id": 1,
-                        "original_speaker": "target",
-                        "corrected_speaker": None,
-                        "original_method": "user_identified",
-                        "timestamp": 2,
-                        "operation_id": "idop_1",
-                        "undo_of_operation_id": "idop_1",
-                        "correction_kind": "identify_undo",
-                    },
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    save_speaker_labels(
-        tmp_path,
-        [
-            {
-                "sentence_id": 1,
-                "speaker": "target",
-                "confidence": "high",
-                "method": "user_identified",
-            }
-        ],
-        {},
-    )
-
-    data = json.loads((talents_dir / "speaker_labels.json").read_text())
-    assert data["labels"][0]["speaker"] is None
-    assert data["labels"][0]["confidence"] is None
-    assert data["labels"][0]["method"] is None
-
-
-def test_ordinary_null_correction_keeps_existing_behavior(tmp_path):
-    from solstone.apps.speakers.attribution import save_speaker_labels
-
-    talents_dir = tmp_path / "talents"
-    talents_dir.mkdir()
-    (talents_dir / "speaker_corrections.json").write_text(
-        json.dumps(
-            {
-                "corrections": [
-                    {
-                        "sentence_id": 1,
-                        "original_speaker": "alice",
-                        "corrected_speaker": None,
-                        "original_method": "acoustic",
-                        "timestamp": 1,
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    save_speaker_labels(
-        tmp_path,
-        [
-            {
-                "sentence_id": 1,
-                "speaker": "alice",
-                "confidence": "high",
-                "method": "acoustic",
-            }
-        ],
-        {},
-    )
-
-    data = json.loads((talents_dir / "speaker_labels.json").read_text())
-    assert data["labels"][0]["speaker"] == "alice"
-    assert data["labels"][0]["method"] == "acoustic"
+    restore_rows.assert_called_once_with(get_journal(), tmp_path, restorations)
 
 
 # ---------------------------------------------------------------------------
@@ -2272,77 +1526,6 @@ def test_voiceprint_accumulation_methods_are_explicit() -> None:
         "acoustic",
         "acoustic_cluster",
     }
-
-
-def test_accumulate_voiceprints_saves(speakers_env):
-    from solstone.apps.speakers.attribution import accumulate_voiceprints
-    from solstone.think.utils import segment_start_ts_ms
-
-    env = speakers_env()
-    _setup_owner(env)
-    env.create_entity("Bob Smith")
-
-    # Create segment with one non-owner embedding
-    other_emb = _normalized([0.1, 0.99])
-    _write_controlled_segment(env, "20240101", "090000_300", np.vstack([other_emb]))
-
-    labels = [
-        {
-            "sentence_id": 1,
-            "speaker": "bob_smith",
-            "confidence": "high",
-            "method": "structural_single_speaker",
-        }
-    ]
-
-    saved = accumulate_voiceprints(
-        "20240101", STREAM, "090000_300", labels, "mic_audio"
-    )
-
-    assert "bob_smith" in saved
-    assert saved["bob_smith"] == 1
-
-    # Verify voiceprints.npz was written
-    vp_path = env.journal / "entities" / "bob_smith" / "voiceprints.npz"
-    assert vp_path.exists()
-    data = np.load(vp_path, allow_pickle=False)
-    assert len(data["embeddings"]) == 1
-    metadata = json.loads(str(data["metadata"][0]))
-    assert metadata["last_seen_ts"] == segment_start_ts_ms("20240101", "090000_300")
-
-
-def test_accumulate_idempotent(speakers_env):
-    from solstone.apps.speakers.attribution import accumulate_voiceprints
-
-    env = speakers_env()
-    _setup_owner(env)
-    env.create_entity("Bob Smith")
-
-    other_emb = _normalized([0.1, 0.99])
-    _write_controlled_segment(env, "20240101", "090000_300", np.vstack([other_emb]))
-
-    labels = [
-        {
-            "sentence_id": 1,
-            "speaker": "bob_smith",
-            "confidence": "high",
-            "method": "structural_single_speaker",
-        }
-    ]
-
-    # Run twice
-    accumulate_voiceprints("20240101", STREAM, "090000_300", labels, "mic_audio")
-    saved = accumulate_voiceprints(
-        "20240101", STREAM, "090000_300", labels, "mic_audio"
-    )
-
-    # Second run should save nothing (idempotent)
-    assert saved == {}
-
-    # Still only 1 embedding in voiceprints
-    vp_path = env.journal / "entities" / "bob_smith" / "voiceprints.npz"
-    data = np.load(vp_path, allow_pickle=False)
-    assert len(data["embeddings"]) == 1
 
 
 def test_accumulate_contamination_guard(speakers_env):
@@ -2371,51 +1554,6 @@ def test_accumulate_contamination_guard(speakers_env):
 
     # Should not save — embedding is too similar to owner
     assert saved == {}
-
-
-def test_accumulate_voiceprints_skips_margin_declined_relabel_but_keeps_control(
-    speakers_env,
-):
-    from solstone.apps.speakers.attribution import accumulate_voiceprints
-
-    env = speakers_env()
-    _setup_margin_owner(env)
-    env.create_entity("Bob Smith")
-    trap = _embedding_with_owner_cos(0.45)
-    control = _normalized([0.1, 0.99])
-    _write_controlled_segment(
-        env,
-        "20240101",
-        "104500_300",
-        np.vstack([trap, control]),
-    )
-
-    labels = [
-        {
-            "sentence_id": 1,
-            "speaker": "bob_smith",
-            "confidence": "high",
-            "method": "acoustic",
-            "owner_margin_declined": True,
-        },
-        {
-            "sentence_id": 2,
-            "speaker": "bob_smith",
-            "confidence": "high",
-            "method": "acoustic",
-        },
-    ]
-
-    saved = accumulate_voiceprints(
-        "20240101", STREAM, "104500_300", labels, "mic_audio"
-    )
-
-    assert saved == {"bob_smith": 1}
-    vp_path = env.journal / "entities" / "bob_smith" / "voiceprints.npz"
-    with np.load(vp_path, allow_pickle=False) as data:
-        assert len(data["embeddings"]) == 1
-        metadata = json.loads(str(data["metadata"][0]))
-    assert metadata["sentence_id"] == 2
 
 
 def test_accumulate_skips_medium_confidence(speakers_env):
@@ -2507,103 +1645,6 @@ def test_accumulate_voiceprints_skips_chaotic_segment(speakers_env):
     assert not vp_path.exists()
 
 
-def test_accumulate_voiceprints_admits_clean_segment(speakers_env):
-    from solstone.apps.speakers.attribution import accumulate_voiceprints
-
-    env = speakers_env()
-    _setup_owner(env)
-    env.create_entity("Bob Smith")
-
-    other_emb = _normalized([0.1, 0.99])
-    seg_dir = _write_controlled_segment(
-        env, "20240101", "090000_300", np.vstack([other_emb])
-    )
-    _rewrite_segment_header(
-        seg_dir,
-        "mic_audio",
-        overlap_fraction=0.05,
-        overlap_detector=OVERLAP_DETECTOR_ID,
-    )
-
-    labels = [
-        {
-            "sentence_id": 1,
-            "speaker": "bob_smith",
-            "confidence": "high",
-            "method": "structural_single_speaker",
-        }
-    ]
-
-    saved = accumulate_voiceprints(
-        "20240101", STREAM, "090000_300", labels, "mic_audio"
-    )
-
-    assert saved == {"bob_smith": 1}
-
-
-def test_accumulate_voiceprints_boundary_overlap_admits(speakers_env):
-    from solstone.apps.speakers.attribution import accumulate_voiceprints
-
-    env = speakers_env()
-    _setup_owner(env)
-    env.create_entity("Bob Smith")
-
-    other_emb = _normalized([0.1, 0.99])
-    seg_dir = _write_controlled_segment(
-        env, "20240101", "090000_300", np.vstack([other_emb])
-    )
-    _rewrite_segment_header(
-        seg_dir,
-        "mic_audio",
-        overlap_fraction=0.10,
-        overlap_detector=OVERLAP_DETECTOR_ID,
-    )
-
-    labels = [
-        {
-            "sentence_id": 1,
-            "speaker": "bob_smith",
-            "confidence": "high",
-            "method": "structural_single_speaker",
-        }
-    ]
-
-    saved = accumulate_voiceprints(
-        "20240101", STREAM, "090000_300", labels, "mic_audio"
-    )
-
-    assert saved == {"bob_smith": 1}
-
-
-def test_accumulate_voiceprints_missing_overlap_field_admits(speakers_env):
-    from solstone.apps.speakers.attribution import accumulate_voiceprints
-
-    env = speakers_env()
-    _setup_owner(env)
-    env.create_entity("Bob Smith")
-
-    other_emb = _normalized([0.1, 0.99])
-    seg_dir = _write_controlled_segment(
-        env, "20240101", "090000_300", np.vstack([other_emb])
-    )
-    _rewrite_segment_header(seg_dir, "mic_audio")
-
-    labels = [
-        {
-            "sentence_id": 1,
-            "speaker": "bob_smith",
-            "confidence": "high",
-            "method": "structural_single_speaker",
-        }
-    ]
-
-    saved = accumulate_voiceprints(
-        "20240101", STREAM, "090000_300", labels, "mic_audio"
-    )
-
-    assert saved == {"bob_smith": 1}
-
-
 # ---------------------------------------------------------------------------
 # Backfill
 # ---------------------------------------------------------------------------
@@ -2657,77 +1698,14 @@ def test_backfill_skips_already_labeled(speakers_env):
     assert stats["already_labeled"] == 1
 
 
-def test_backfill_processes_chronologically(speakers_env):
-    """Segments are processed oldest-first across days."""
-    from solstone.apps.speakers.attribution import backfill_segments
+def test_backfill_last_seen_forwards_pending_metadata_to_native(speakers_env):
+    from unittest.mock import patch
 
-    env = speakers_env()
-    _setup_owner(env)
-    env.create_entity("Bob Smith")
-
-    # Create segments across two days — later day first to test ordering
-    env.create_speakers_json("20260210", "090000_300", ["Bob Smith"])
-    _write_controlled_segment(
-        env,
-        "20260210",
-        "090000_300",
-        np.vstack([_normalized([1.0, 0.0]), _normalized([0.1, 0.99])]),
-    )
-
-    env.create_speakers_json("20260201", "080000_300", ["Bob Smith"])
-    _write_controlled_segment(
-        env,
-        "20260201",
-        "080000_300",
-        np.vstack([_normalized([1.0, 0.0]), _normalized([0.1, 0.99])]),
-    )
-
-    order: list[str] = []
-
-    def track_order(processed, total, day, stream, seg_key):
-        order.append(f"{day}/{seg_key}")
-
-    stats = backfill_segments(progress_callback=track_order)
-
-    assert stats["processed"] == 2
-    # Oldest day processed first
-    assert order[0].startswith("20260201")
-    assert order[1].startswith("20260210")
-    # Labels written
-    for day, seg_key in [("20260201", "080000_300"), ("20260210", "090000_300")]:
-        labels_path = (
-            env.journal / day / STREAM / seg_key / "talents" / "speaker_labels.json"
-        )
-        assert labels_path.exists()
-
-
-def test_backfill_resumable(speakers_env):
-    """Re-running backfill skips already-processed segments."""
-    from solstone.apps.speakers.attribution import backfill_segments
-
-    env = speakers_env()
-    _setup_owner(env)
-
-    _write_controlled_segment(
-        env, "20260201", "090000_300", np.vstack([_normalized([1.0, 0.0])])
-    )
-
-    # First run
-    stats1 = backfill_segments()
-    assert stats1["processed"] == 1
-
-    # Second run — should skip the already-labeled segment
-    stats2 = backfill_segments()
-    assert stats2["processed"] == 0
-    assert stats2["already_labeled"] == 1
-
-
-def test_backfill_last_seen_commit_writes_then_dry_run_reports_zero(speakers_env):
     from solstone.apps.speakers.attribution import backfill_last_seen
     from solstone.think.utils import segment_start_ts_ms
 
     env = speakers_env()
-    entity_dir = env.create_entity(
+    env.create_entity(
         "Alice Test",
         voiceprints=[("20240101", "090000_300", "audio", 1)],
     )
@@ -2743,13 +1721,14 @@ def test_backfill_last_seen_commit_writes_then_dry_run_reports_zero(speakers_env
     )
 
     preview = backfill_last_seen(dry_run=True)
-    committed = backfill_last_seen(dry_run=False)
-    second_preview = backfill_last_seen(dry_run=True)
+    with patch(
+        "solstone.apps.speakers.attribution.native_speakers.backfill_voiceprint_last_seen",
+        return_value={"rows_written": 1},
+    ) as backfill:
+        committed = backfill_last_seen(dry_run=False)
 
     expected = segment_start_ts_ms("20240102", "100000_300")
     assert preview["rows_pending"] == 1
     assert committed["rows_written"] == 1
-    assert second_preview["rows_pending"] == 0
-    with np.load(entity_dir / "voiceprints.npz", allow_pickle=False) as data:
-        metadata = json.loads(str(data["metadata"][0]))
-    assert metadata["last_seen_ts"] == expected
+    assert backfill.call_args.kwargs["entity_id"] == "alice_test"
+    assert backfill.call_args.kwargs["last_seen_ts"] == expected

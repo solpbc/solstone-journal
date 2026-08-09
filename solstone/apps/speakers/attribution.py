@@ -29,6 +29,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from solstone.apps.speakers import native as native_speakers
 from solstone.apps.speakers._overlap import _read_segment_overlap_fraction
 from solstone.apps.speakers.encoder_config import (
     ACOUSTIC_HIGH,
@@ -36,10 +37,13 @@ from solstone.apps.speakers.encoder_config import (
     ACOUSTIC_MEDIUM,
     CC_CONFIDENCE_GATE,
     CC_COVERAGE_GATE,
+    ENCODER_ID,
     NOISY_FLYWHEEL_OVERLAP_MAX,
     VP_DECAY_LAMBDA,
     VP_OUTLIER_MIN_SAMPLES,
     VP_OUTLIER_MIN_SIMILARITY,
+    WESPEAKER_EMBEDDING_WIDTH,
+    WESPEAKER_MODEL_SHA256,
 )
 from solstone.apps.speakers.owner import load_owner_centroid
 from solstone.think.entities import (
@@ -82,6 +86,15 @@ VOICEPRINT_ACCUMULATION_METHODS = {
     "acoustic",
     "acoustic_cluster",
 }
+
+
+def _speaker_encoder_identity() -> dict[str, Any]:
+    """Return the configured identity for speaker embedding artifacts."""
+    return {
+        "id": ENCODER_ID,
+        "sha256": WESPEAKER_MODEL_SHA256,
+        "width": WESPEAKER_EMBEDDING_WIDTH,
+    }
 
 
 def _routes_helpers():
@@ -993,24 +1006,8 @@ def update_speaker_labels(
 
 
 def append_speaker_correction(seg_dir: Path, correction: dict) -> None:
-    """Append a correction entry to speaker_corrections.json under an exclusive lock.
-
-    The locked load-append-replace closes the concurrent-correction lost-update
-    window: two simultaneous appends to the same segment serialize, so neither
-    clobbers the other. Byte output matches json.dump({"corrections": ...},
-    indent=2) (no trailing newline) — atomic_replace, not write_json (which would
-    append a trailing newline and break byte-compat).
-    """
-    path = seg_dir / "talents" / "speaker_corrections.json"
-    with hold_lock(path):
-        current = read_json(
-            path,
-            on_error=MalformedPolicy.WARN_AND_SKIP,
-            default=None,
-        )
-        corrections = (current or {}).get("corrections", [])
-        corrections.append(correction)
-        atomic_replace(path, json.dumps({"corrections": corrections}, indent=2))
+    """Append a correction through the native speaker-identity owner."""
+    native_speakers.append_correction(get_journal(), seg_dir, correction)
 
 
 def remap_speaker_corrections_for_entity_merge(
@@ -1298,16 +1295,24 @@ def _speaker_labels_payload(
     merged_labels.extend(user_only)
 
     result["labels"] = merged_labels
-    result["owner_centroid_last_refreshed_at"] = metadata.get(
-        "owner_centroid_last_refreshed_at"
-    )
-    result["voiceprint_versions"] = metadata.get("voiceprint_versions", {})
-    result["candidate_evidence"] = metadata.get("candidate_evidence") or []
+    shaped_metadata = _speaker_labels_metadata(metadata)
+    result.update(shaped_metadata)
+    if "candidate_evidence_gaps" not in shaped_metadata:
+        result.pop("candidate_evidence_gaps", None)
+    return result
+
+
+def _speaker_labels_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    result = {
+        "owner_centroid_last_refreshed_at": metadata.get(
+            "owner_centroid_last_refreshed_at"
+        ),
+        "voiceprint_versions": metadata.get("voiceprint_versions", {}),
+        "candidate_evidence": metadata.get("candidate_evidence") or [],
+    }
     gaps = metadata.get("candidate_evidence_gaps") or []
     if gaps:
         result["candidate_evidence_gaps"] = gaps
-    else:
-        result.pop("candidate_evidence_gaps", None)
     return result
 
 
@@ -1316,32 +1321,19 @@ def save_speaker_labels(
     labels: list[dict],
     metadata: dict[str, Any],
 ) -> Path:
-    """Write speaker_labels.json to the segment's talents/ directory.
+    """Write speaker labels through the native speaker-identity owner."""
+    native_speakers.write_full_labels(
+        get_journal(), seg_dir, labels, _speaker_labels_metadata(metadata)
+    )
 
-    Preserves user corrections: if speaker_corrections.json exists, any
-    sentence that was corrected by the user keeps the corrected attribution
-    rather than being overwritten by a fresh pipeline run.
-    """
-    agents_dir = seg_dir / "talents"
-    agents_dir.mkdir(parents=True, exist_ok=True)
-
-    out_path = agents_dir / "speaker_labels.json"
-
-    def transform(current: dict | None) -> dict:
-        return _speaker_labels_payload(seg_dir, labels, metadata, current)
-
-    update_speaker_labels(seg_dir, transform)
-
+    out_path = seg_dir / "talents" / "speaker_labels.json"
     logger.info("Wrote %d labels to %s", len(labels), out_path)
     return out_path
 
 
 def save_speaker_labels_stub(seg_dir: Path, reason: str) -> None:
-    """Write a locked attribution stub for segments that cannot be labeled."""
-    update_speaker_labels(
-        seg_dir,
-        lambda _current: {"labels": [], "skipped": True, "reason": reason},
-    )
+    """Write an attribution stub through the native speaker-identity owner."""
+    native_speakers.write_stub_labels(get_journal(), seg_dir, reason)
 
 
 def _read_speaker_labels(seg_dir: Path) -> dict | None:
@@ -1597,139 +1589,21 @@ def apply_label_patches(
     *,
     allow_insert: bool,
 ) -> None:
-    """Apply locked per-sentence speaker label patches."""
-
-    def transform(current: dict | None) -> dict:
-        if isinstance(current, dict):
-            base = dict(current)
-            labels_value = current.get("labels", [])
-            labels = list(labels_value) if isinstance(labels_value, list) else []
-        else:
-            base = {}
-            labels = []
-
-        labels_by_sid: dict[int, dict] = {}
-        for label in labels:
-            if not isinstance(label, dict):
-                continue
-            sid = _label_sentence_id(label)
-            if sid is not None:
-                labels_by_sid[sid] = label
-
-        for sid, fields in patches.items():
-            sid_int = int(sid)
-            existing = labels_by_sid.get(sid_int)
-            if existing is not None:
-                existing.update(fields)
-                continue
-            if not allow_insert:
-                raise ValueError(f"speaker label sentence_id {sid_int} not found")
-            label = {"sentence_id": sid_int, **fields}
-            labels.append(label)
-            labels_by_sid[sid_int] = label
-
-        if allow_insert:
-            labels = sorted(labels, key=lambda label: int(label["sentence_id"]))
-
-        base["labels"] = labels
-        return base
-
-    update_speaker_labels(seg_dir, transform)
+    """Apply per-sentence patches through the native speaker-identity owner."""
+    native_speakers.patch_labels(
+        get_journal(),
+        seg_dir,
+        patches,
+        allow_insert=allow_insert,
+    )
 
 
 def restore_label_rows(
     seg_dir: Path,
     restorations: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Compare-restore speaker label rows for identify undo."""
-    report: dict[str, Any] = {
-        "restored_count": 0,
-        "removed_inserted_count": 0,
-        "patched_existing_count": 0,
-        "skipped_count": 0,
-        "skipped_reasons": {"missing": 0, "changed": 0},
-    }
-    if not restorations:
-        return report
-
-    def transform(current: dict | None) -> dict | None:
-        if isinstance(current, dict):
-            base = dict(current)
-            labels_value = current.get("labels", [])
-            labels = [
-                dict(label) if isinstance(label, dict) else label
-                for label in (labels_value if isinstance(labels_value, list) else [])
-            ]
-        else:
-            base = {}
-            labels = []
-
-        labels_by_sid: dict[int, dict] = {}
-        for label in labels:
-            if not isinstance(label, dict):
-                continue
-            sid = _label_sentence_id(label)
-            if sid is not None:
-                labels_by_sid[sid] = label
-
-        changed = False
-        remove_sids: set[int] = set()
-        for restoration in restorations:
-            sid = int(restoration["sentence_id"])
-            expected = restoration.get("expected_current_label")
-            current_label = labels_by_sid.get(sid)
-            if current_label is None:
-                report["skipped_reasons"]["missing"] += 1
-                continue
-            if current_label != expected:
-                report["skipped_reasons"]["changed"] += 1
-                continue
-
-            prior_state = restoration.get("prior_state")
-            if prior_state == "absent":
-                remove_sids.add(sid)
-                report["removed_inserted_count"] += 1
-            elif prior_state == "present":
-                prior_label = restoration.get("prior_label")
-                if not isinstance(prior_label, dict):
-                    raise ValueError("present label restoration requires prior_label")
-                current_label.clear()
-                current_label.update(prior_label)
-                report["patched_existing_count"] += 1
-            else:
-                raise ValueError(
-                    f"unknown prior_state for label restore: {prior_state}"
-                )
-            report["restored_count"] += 1
-            changed = True
-
-        report["skipped_count"] = sum(report["skipped_reasons"].values())
-        if not changed:
-            return None
-
-        if remove_sids:
-            labels = [
-                label
-                for label in labels
-                if not (
-                    isinstance(label, dict)
-                    and (sid := _label_sentence_id(label)) is not None
-                    and sid in remove_sids
-                )
-            ]
-
-        labels = sorted(
-            labels,
-            key=lambda label: (
-                _label_sentence_id(label) is None if isinstance(label, dict) else True,
-                _label_sentence_id(label) if isinstance(label, dict) else 0,
-            ),
-        )
-        base["labels"] = labels
-        return base
-
-    update_speaker_labels(seg_dir, transform)
-    return report
+    """Compare-restore rows through the native speaker-identity owner."""
+    return native_speakers.restore_label_rows(get_journal(), seg_dir, restorations)
 
 
 # ---------------------------------------------------------------------------
@@ -1758,8 +1632,6 @@ def accumulate_voiceprints(
     Returns dict mapping entity_id -> number of new embeddings saved.
     """
     import numpy as np
-
-    from solstone.think.entities import save_voiceprints_batch
 
     (
         load_embeddings_file,
@@ -1793,8 +1665,6 @@ def accumulate_voiceprints(
 
     embeddings, statement_ids, _ = emb_data
     sid_to_idx = {int(s): i for i, s in enumerate(statement_ids)}
-    last_seen_ts = segment_start_ts_ms(day, segment_key)
-
     principal = get_journal_principal()
     owner_entity_id = principal["id"] if principal else None
 
@@ -1802,7 +1672,6 @@ def accumulate_voiceprints(
     entity_new: dict[str, list[tuple[np.ndarray, dict]]] = defaultdict(list)
     entity_existing: dict[str, set] = {}
     entity_existing_centroids: dict[str, tuple[int, np.ndarray | None]] = {}
-    saved_counts: dict[str, int] = {}
 
     for label in labels:
         if label.get("confidence") != "high":
@@ -1870,26 +1739,59 @@ def accumulate_voiceprints(
         ):
             continue
 
-        metadata = {
-            "day": day,
-            "segment_key": segment_key,
-            "source": source,
-            "stream": stream,
-            "sentence_id": sid,
-            "added_at": now_ms(),
-            "last_seen_ts": last_seen_ts,
-        }
+        metadata = {"sentence_id": sid, "method": label["method"]}
         entity_new[speaker].append((normalized, metadata))
         entity_existing[speaker].add(vp_key)
 
-    for eid, items in entity_new.items():
-        try:
-            count = save_voiceprints_batch(eid, items)
-            saved_counts[eid] = count
-        except Exception as exc:
-            logger.warning("Failed to accumulate voiceprints for %s: %s", eid, exc)
+    if not entity_new:
+        return {}
 
-    return saved_counts
+    prepared_labels: list[dict[str, Any]] = []
+    prepared_embeddings: list[dict[str, Any]] = []
+    for entity_id, items in entity_new.items():
+        for embedding, metadata in items:
+            sentence_id = int(metadata["sentence_id"])
+            prepared_labels.append(
+                {
+                    "sentence_id": sentence_id,
+                    "speaker": entity_id,
+                    "confidence": "high",
+                    "method": metadata["method"],
+                }
+            )
+            prepared_embeddings.append(
+                {
+                    "sentence_id": sentence_id,
+                    "values": embedding.astype(np.float32).tolist(),
+                }
+            )
+
+    response = native_speakers.accumulate_voiceprints(
+        get_journal(),
+        day=day,
+        stream=stream,
+        segment_key=segment_key,
+        source=source,
+        now_ms=now_ms(),
+        encoder=_speaker_encoder_identity(),
+        labels=prepared_labels,
+        embeddings=prepared_embeddings,
+        entity_ids=sorted(entity_new),
+    )
+    outcome = next(
+        (
+            value
+            for key, value in response.items()
+            if key in {"Completed", "NothingEligible", "NoOwnerCentroid"}
+        ),
+        {},
+    )
+    reports = outcome.get("entity_reports", {}) if isinstance(outcome, dict) else {}
+    return {
+        entity_id: int(report.get("written_rows", 0))
+        for entity_id, report in reports.items()
+        if isinstance(report, dict) and int(report.get("written_rows", 0)) > 0
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -2039,10 +1941,7 @@ def _load_attributed_speakers(labels_path: Path) -> set[str]:
 
 def backfill_last_seen(*, dry_run: bool = True) -> dict[str, Any]:
     """Backfill last_seen_ts on existing voiceprint metadata rows."""
-    from solstone.think.entities.voiceprints import (
-        load_entity_voiceprints_file,
-        rewrite_voiceprint_metadata,
-    )
+    from solstone.think.entities.voiceprints import load_entity_voiceprints_file
     from solstone.think.utils import day_dirs, iter_segments
 
     entity_max_ts: dict[str, int] = {}
@@ -2094,15 +1993,13 @@ def backfill_last_seen(*, dry_run: bool = True) -> dict[str, Any]:
         if dry_run:
             continue
 
-        def mutator(rows: list[dict], *, target_ts: int = max_ts) -> int:
-            changed = 0
-            for row in rows:
-                if needs_update(row, target_ts):
-                    row["last_seen_ts"] = target_ts
-                    changed += 1
-            return changed
-
-        rows_written += rewrite_voiceprint_metadata(entity_id, mutator)
+        result = native_speakers.backfill_voiceprint_last_seen(
+            get_journal(),
+            entity_id=entity_id,
+            last_seen_ts=max_ts,
+            encoder=_speaker_encoder_identity(),
+        )
+        rows_written += int(result.get("rows_written", 0))
 
     return {
         "dry_run": dry_run,
