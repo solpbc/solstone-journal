@@ -18,8 +18,9 @@ use solstone_core_body_source::{
 };
 use solstone_core_body_store::{BodyBundleReplay, BodyDedupeState, validate_legacy_body_row};
 use solstone_core_journal_io::{
-    AtomicWriteOptions, DirEntry, DirEntryKind, LockOptions, Removed, create_directory_with_mode,
-    hold_lock, install_file, list_dir_entries, remove_file, sync_dir, write_bytes_exclusive,
+    AtomicWriteOptions, DirEntry, DirEntryKind, LockError, LockOptions, Removed,
+    create_directory_with_mode, hold_lock, install_file, list_dir_entries, remove_file, sync_dir,
+    write_bytes_exclusive,
 };
 
 const IMPORTS_DIR: &str = "imports";
@@ -176,7 +177,10 @@ pub fn rebuild_body_store(journal_root: &Path) -> Result<BodyRebuildReport, Body
             ..LockOptions::default()
         },
     )
-    .map_err(|_| error(BodyRebuildErrorKind::Publication, "database_lock"))?;
+    .map_err(|source| match source {
+        LockError::Timeout(_) => error(BodyRebuildErrorKind::Publication, "database_lock_timeout"),
+        LockError::Io { .. } => error(BodyRebuildErrorKind::Publication, "database_lock"),
+    })?;
 
     let replay = replay_history(journal_root)?;
     let rows = u64::try_from(replay.state.len())

@@ -2338,6 +2338,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-body-rebuild",
  "solstone-core-brain",
  "solstone-core-cli",
  "solstone-core-entity",

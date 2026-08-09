@@ -28,6 +28,7 @@ from solstone.think.backup.state import (
     set_recovery_key,
     set_recovery_key_confirmed,
 )
+from solstone.think.body_native import BodyNativeError, rebuild_body_store
 from solstone.think.indexer.journal import scan_journal
 from solstone.think.utils import get_journal
 
@@ -177,6 +178,12 @@ def _run_restore(
             check.returncode,
             reason_code,
         )
+
+    try:
+        rebuild_body_store(journal)
+    except BodyNativeError:
+        logger.warning("backup restore body-history rebuild failed")
+        return _restore_error("body_rebuild_failed")
 
     persist(canonical)
     daily_key = get_backup_config()["daily_key"]

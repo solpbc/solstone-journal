@@ -204,6 +204,7 @@
       "timeout": "the destination took too long to respond. try again shortly.",
       "failed": "i couldn't finish the backup action. check the recovery key and destination, then try again.",
       "incomplete": "the backup action didn't finish. you can try again.",
+      "body_rebuild_failed": "your journal was restored, but your body history couldn't be rebuilt from it. the restore wasn't finalized.",
       "integrity_failed": "your journal was restored to this device, but the backup copy failed its integrity check and may be damaged.",
       "integrity_unverified": "your journal was restored to this device, but the integrity check couldn't run (the backup was busy or timed out), so the backup copy is unverified.",
       "missing_required_field": "fill in the required fields, then try again.",
