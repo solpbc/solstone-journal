@@ -149,6 +149,12 @@ pub fn ledger_events_fixture() -> Value {
     .expect("fixture should parse")
 }
 
+/// Returns the canonical SHA-256 body digest for exact input bytes.
+pub fn sha256_body_digest(bytes: &[u8]) -> BodyDigest {
+    let value = format!("sha256:{:x}", Sha256::digest(bytes));
+    BodyDigest::from_bytes(value.as_bytes()).expect("SHA-256 digest is valid")
+}
+
 /// Binds one fixture-shaped normalized row to a checked ledger event.
 pub fn build_ledger_event(
     envelope: &BodyEnvelope,
@@ -164,10 +170,8 @@ pub fn build_ledger_event(
     let presentation =
         PresentationRow::new(&value, &coordinate).expect("fixture normalized row is an object");
     let candidate = project(&presentation, coordinate).expect("fixture normalized row projects");
-    let row_sha256 = row_sha256.unwrap_or_else(|| {
-        let value = format!("sha256:{:x}", Sha256::digest(format!("{row}\n").as_bytes()));
-        BodyDigest::from_bytes(value.as_bytes()).expect("row digest is valid")
-    });
+    let row_sha256 =
+        row_sha256.unwrap_or_else(|| sha256_body_digest(format!("{row}\n").as_bytes()));
     BodyLedgerEvent::new(
         envelope,
         sequence,

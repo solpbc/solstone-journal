@@ -2,20 +2,14 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use solstone_core_body_source::{
-    BodyDigest, BodyRowEventErrorKind, LedgerEventErrorCode, LedgerEventErrorField,
-    decode_body_envelope, decode_body_ledger_event, validate_body_row_event,
+    BodyRowEventErrorKind, LedgerEventErrorCode, LedgerEventErrorField, decode_body_envelope,
+    decode_body_ledger_event, validate_body_row_event,
 };
 
 mod support;
 
-use support::{build_ledger_event, native_bundle_fixture};
-
-fn digest(bytes: &[u8]) -> BodyDigest {
-    let text = format!("sha256:{:x}", Sha256::digest(bytes));
-    BodyDigest::from_bytes(text.as_bytes()).unwrap()
-}
+use support::{build_ledger_event, native_bundle_fixture, sha256_body_digest};
 
 fn base() -> (
     solstone_core_body_source::BodyEnvelope,
@@ -60,7 +54,7 @@ fn original_event_with_mutated_digest(
         0,
         1,
         1,
-        Some(digest(frame)),
+        Some(sha256_body_digest(frame)),
         event.value_hash().clone(),
     )
 }

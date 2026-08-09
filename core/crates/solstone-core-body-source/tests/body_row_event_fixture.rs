@@ -1,20 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use sha2::{Digest, Sha256};
 use solstone_core_body_source::{
-    BodyDigest, Coordinate, PresentationRow, decode_body_envelope, decode_body_ledger_event,
+    Coordinate, PresentationRow, decode_body_envelope, decode_body_ledger_event,
     encode_body_ledger_event, health_value_hash, parse, project, validate_body_row_event,
 };
 
 mod support;
 
-use support::{ledger_events_fixture, native_bundle_fixture};
-
-fn digest(bytes: &[u8]) -> BodyDigest {
-    let text = format!("sha256:{:x}", Sha256::digest(bytes));
-    BodyDigest::from_bytes(text.as_bytes()).expect("SHA-256 digest is valid")
-}
+use support::{ledger_events_fixture, native_bundle_fixture, sha256_body_digest};
 
 #[test]
 fn validates_all_committed_nonzero_rows_and_events() {
@@ -38,7 +32,10 @@ fn validates_all_committed_nonzero_rows_and_events() {
         let row_frame = format!("{row}\n");
         let event_frame = ledger.as_bytes();
         let event = decode_body_ledger_event(event_frame, &envelope, 1).expect("event decodes");
-        assert_eq!(digest(row_frame.as_bytes()), *event.row_sha256());
+        assert_eq!(
+            sha256_body_digest(row_frame.as_bytes()),
+            *event.row_sha256()
+        );
         let returned = validate_body_row_event(&envelope, row_frame.as_bytes(), &event)
             .expect("committed row validates");
         assert_eq!(returned, event);
@@ -81,7 +78,7 @@ fn validates_all_committed_nonzero_rows_and_events() {
             .zip(expected_hashes)
         {
             let row_frame = format!("{row}\n");
-            let computed = digest(row_frame.as_bytes());
+            let computed = sha256_body_digest(row_frame.as_bytes());
             assert_eq!(computed.as_str(), expected_hash.as_str().unwrap());
             let event_frame = format!("{}\n", event_frames[(sequence - 1) as usize]);
             let event = decode_body_ledger_event(event_frame.as_bytes(), &envelope, sequence)

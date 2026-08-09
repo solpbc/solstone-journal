@@ -4,19 +4,13 @@
 use std::error::Error;
 
 use serde_json::json;
-use sha2::{Digest, Sha256};
 use solstone_core_body_source::{
-    BodyDigest, BodyRowEventErrorKind, decode_body_envelope, decode_body_ledger_event,
-    validate_body_row_event,
+    BodyRowEventErrorKind, decode_body_envelope, decode_body_ledger_event, validate_body_row_event,
 };
 
 mod support;
 
-use support::{build_ledger_event, native_bundle_fixture};
-
-fn digest(bytes: &[u8]) -> BodyDigest {
-    BodyDigest::from_bytes(format!("sha256:{:x}", Sha256::digest(bytes)).as_bytes()).unwrap()
-}
+use support::{build_ledger_event, native_bundle_fixture, sha256_body_digest};
 
 fn fixture(
     index: usize,
@@ -54,7 +48,7 @@ fn event_for(
         0,
         event.sequence(),
         event.line(),
-        Some(digest(frame)),
+        Some(sha256_body_digest(frame)),
         event.value_hash().clone(),
     )
 }

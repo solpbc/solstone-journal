@@ -3,22 +3,18 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use sha2::{Digest, Sha256};
 use solstone_core_body_source::{
-    BodyDigest, BodyEnvelope, BodyLedgerEvent, BodyRowEventErrorKind, decode_body_envelope,
+    BodyEnvelope, BodyLedgerEvent, BodyRowEventErrorKind, decode_body_envelope,
     decode_body_ledger_event, validate_body_row_event,
 };
 
 mod support;
 
-use support::{build_ledger_event, ledger_events_fixture, native_bundle_fixture};
+use support::{
+    build_ledger_event, ledger_events_fixture, native_bundle_fixture, sha256_body_digest,
+};
 
 const MAX_ROW_FRAME_BYTES: usize = 1_048_576;
-
-fn digest(bytes: &[u8]) -> BodyDigest {
-    let text = format!("sha256:{:x}", Sha256::digest(bytes));
-    BodyDigest::from_bytes(text.as_bytes()).expect("digest is valid")
-}
 
 fn base() -> (BodyEnvelope, String, BodyLedgerEvent) {
     let case = &native_bundle_fixture()["cases"][0];
@@ -51,7 +47,7 @@ fn event_for_frame(
         0,
         event.sequence(),
         event.line(),
-        Some(digest(frame)),
+        Some(sha256_body_digest(frame)),
         event.value_hash().clone(),
     )
 }
@@ -207,7 +203,7 @@ fn every_proper_committed_prefix_and_adversarial_bytes_are_panic_free() {
                 *shard_index,
                 event.sequence(),
                 event.line(),
-                Some(digest(prefix)),
+                Some(sha256_body_digest(prefix)),
                 event.value_hash().clone(),
             );
             assert!(
