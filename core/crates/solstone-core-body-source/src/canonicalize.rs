@@ -59,12 +59,12 @@ pub fn canonicalize(value: &BodyValue) -> Result<String, CanonicalizeError> {
     Ok(output)
 }
 
-enum CanonicalizeValueError<E> {
+pub(crate) enum CanonicalizeValueError<E> {
     Canonicalize(CanonicalizeError),
     Sink(E),
 }
 
-fn canonicalize_value<S: CanonicalSink>(
+pub(crate) fn canonicalize_value<S: CanonicalSink>(
     value: &BodyValue,
     depth: usize,
     output: &mut S,

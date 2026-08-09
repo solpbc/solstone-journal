@@ -8,6 +8,7 @@ mod authority;
 mod body_day;
 mod body_envelope;
 mod body_envelope_encode;
+mod body_envelope_scan;
 mod body_month;
 mod body_raw_retention;
 mod body_source_family;

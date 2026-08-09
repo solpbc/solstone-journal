@@ -8,7 +8,7 @@ use crate::canonicalize::{
 };
 use crate::{BodyEnvelope, BodyInteger, EnvelopeError, EnvelopeErrorCode, EnvelopeErrorField};
 
-const MAX_ENVELOPE_BYTES: usize = 1_048_576;
+pub(crate) const MAX_ENVELOPE_BYTES: usize = 1_048_576;
 
 /// Encodes a checked body envelope as canonical JSONL bytes.
 pub fn encode_body_envelope(envelope: &BodyEnvelope) -> Result<Vec<u8>, EnvelopeError> {
