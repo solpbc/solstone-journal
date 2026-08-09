@@ -30,6 +30,12 @@ regression.
 
 from __future__ import annotations
 
+# This module is a differential-oracle fixture builder. Its four direct
+# speaker-identity writes feed native differential fixtures, never runtime
+# behavior. The cutover gate verifies this declaration against its Make/build
+# import graph; it is not a path-based exemption.
+SPEAKER_IDENTITY_CUTOVER_ROLE = "differential_fixture_oracle_builder"
+
 import copy
 import hashlib
 import json

@@ -652,6 +652,9 @@ install-checks: .installed
 	@echo "=== Running brain-health cutover check ==="
 	@$(MAKE) check-brain-health-cutover
 	@echo ""
+	@echo "=== Running speaker-identity cutover check ==="
+	@$(MAKE) check-speaker-identity-cutover
+	@echo ""
 	@echo "=== Running schema-bounds check ==="
 	@$(MAKE) check-schema-bounds
 	@echo ""
@@ -860,6 +863,10 @@ check-channel-adapter-scrub: .installed
 # Brain health cutover guard
 check-brain-health-cutover: .installed
 	$(VENV_BIN)/python scripts/check_brain_health_cutover.py
+
+# Speaker-identity durable-state ownership guard
+check-speaker-identity-cutover: .installed
+	$(VENV_BIN)/python scripts/check_speaker_identity_cutover.py
 
 # Generation schema bounds ratchet
 check-schema-bounds: .installed
