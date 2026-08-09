@@ -1,0 +1,60 @@
+{
+  "schema": "solstone.body_source.ledger_events_fixture.v1",
+  "cases": [
+    {
+      "name": "apple_three_events_two_months_two_shards",
+      "directory": "body-01J9ZK2F5M7Q8R3S4T6V0W1X33",
+      "source_family": "apple_health",
+      "source_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff#window:20260102:20260201",
+      "raw_retention": "retain_parsed",
+      "days": [
+        "20260102",
+        "20260103",
+        "20260201"
+      ],
+      "shards": [
+        {
+          "path": "normalized/2026-01.jsonl",
+          "expected_jsonl": "{\"day\":\"20260102\",\"dedupe_key\":\"sha256:bb8d71847f8c102eb1b9ecc9a0b3866181bc0c0100bd092b7dfed010e1b0303b\",\"end_date\":\"2026-01-02 08:01:00 -0700\",\"import_id\":\"body-01J9ZK2F5M7Q8R3S4T6V0W1X33\",\"kind\":\"record\",\"metadata\":{\"nested\":{\"flag\":true},\"sample\":\"alpha\"},\"month\":\"2026-01\",\"normalized_ref\":\"imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X33/normalized/2026-01.jsonl#L1\",\"raw_ref\":\"imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X33/raw/apple_health/export.xml#record-1\",\"record_type\":\"HKQuantityTypeIdentifierHeartRate\",\"schema\":\"solstone.health.apple_health.v1\",\"source_family\":\"apple_health\",\"source_name\":\"Synthetic Watch\",\"source_version\":\"1.0\",\"start_date\":\"2026-01-02 08:00:00 -0700\",\"unit\":\"count/min\",\"value\":\"72\"}\n{\"day\":\"20260103\",\"dedupe_key\":\"sha256:a7ef592a55b9d58d0900e9a80627844fdf7928fa22c4f967038a368b10474bc4\",\"end_date\":\"2026-01-03 09:20:00 -0700\",\"import_id\":\"body-01J9ZK2F5M7Q8R3S4T6V0W1X33\",\"kind\":\"record\",\"metadata\":{\"sample\":\"beta\",\"verified\":false},\"month\":\"2026-01\",\"normalized_ref\":\"imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X33/normalized/2026-01.jsonl#L2\",\"raw_ref\":\"imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X33/raw/apple_health/export.xml#record-2\",\"record_type\":\"HKQuantityTypeIdentifierStepCount\",\"schema\":\"solstone.health.apple_health.v1\",\"source_family\":\"apple_health\",\"source_name\":\"Synthetic Phone\",\"source_record_id\":\"synthetic-record-2\",\"source_version\":\"2.0\",\"start_date\":\"2026-01-03 09:15:00 -0700\",\"unit\":\"count\",\"value\":1234}\n",
+          "bytes": 1441,
+          "rows": 2,
+          "sha256": "sha256:f9f3bff461fb6d871d3e526b3efd30530e0fd97b7b067956247cdfe84aef7b5c",
+          "row_sha256": [
+            "sha256:686c0e52d70a04b380fb0f429a4015b0dcae40acd295dead4c71ea110cbccecb",
+            "sha256:8123173a8a22befc4c729fef29d5b51c48418c5579ddfbbd2e1292c8ddefc023"
+          ]
+        },
+        {
+          "path": "normalized/2026-02.jsonl",
+          "expected_jsonl": "{\"day\":\"20260201\",\"dedupe_key\":\"sha256:d314b46b88d59610d66e7d93dcd1fb90cf2f3edf00b350016ba47d76d8098eac\",\"end_date\":null,\"import_id\":\"body-01J9ZK2F5M7Q8R3S4T6V0W1X33\",\"kind\":\"record\",\"metadata\":{\"optional\":null,\"sample\":\"gamma\"},\"month\":\"2026-02\",\"normalized_ref\":\"imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X33/normalized/2026-02.jsonl#L1\",\"raw_ref\":\"imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X33/raw/apple_health/export.xml#record-3\",\"record_type\":\"HKCategoryTypeIdentifierSleepAnalysis\",\"schema\":\"solstone.health.apple_health.v1\",\"source_family\":\"apple_health\",\"source_name\":\"Synthetic Watch\",\"source_version\":\"1.0\",\"start_date\":\"2026-02-01 01:00:00 -0700\",\"value\":\"HKCategoryValueSleepAnalysisAsleepCore\"}\n",
+          "bytes": 697,
+          "rows": 1,
+          "sha256": "sha256:6234be98c4a2cb2a095d9a64b0946b40a10e78ffee67453dfba3be85f083c993",
+          "row_sha256": [
+            "sha256:6234be98c4a2cb2a095d9a64b0946b40a10e78ffee67453dfba3be85f083c993"
+          ]
+        }
+      ],
+      "expected_ledger_jsonl": "{\"bundle_id\":\"body-01J9ZK2F5M7Q8R3S4T6V0W1X33\",\"day\":\"20260102\",\"dedupe_key\":\"sha256:bb8d71847f8c102eb1b9ecc9a0b3866181bc0c0100bd092b7dfed010e1b0303b\",\"end_time\":\"2026-01-02 08:01:00 -0700\",\"line\":1,\"normalized_ref\":\"imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X33/normalized/2026-01.jsonl#L1\",\"raw_ref\":\"imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X33/raw/apple_health/export.xml#record-1\",\"record_type\":\"HKQuantityTypeIdentifierHeartRate\",\"row_schema\":\"solstone.health.apple_health.v1\",\"row_sha256\":\"sha256:686c0e52d70a04b380fb0f429a4015b0dcae40acd295dead4c71ea110cbccecb\",\"schema\":\"solstone.body.ledger_event.v1\",\"sequence\":1,\"shard\":\"normalized/2026-01.jsonl\",\"source_family\":\"apple_health\",\"source_record_id\":null,\"start_time\":\"2026-01-02 08:00:00 -0700\",\"value_hash\":\"sha256:49632558b2bd793be8abde6e65af6c8947e901512ab0ce23c16845af6b9e849a\"}\n{\"bundle_id\":\"body-01J9ZK2F5M7Q8R3S4T6V0W1X33\",\"day\":\"20260103\",\"dedupe_key\":\"sha256:a7ef592a55b9d58d0900e9a80627844fdf7928fa22c4f967038a368b10474bc4\",\"end_time\":\"2026-01-03 09:20:00 -0700\",\"line\":2,\"normalized_ref\":\"imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X33/normalized/2026-01.jsonl#L2\",\"raw_ref\":\"imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X33/raw/apple_health/export.xml#record-2\",\"record_type\":\"HKQuantityTypeIdentifierStepCount\",\"row_schema\":\"solstone.health.apple_health.v1\",\"row_sha256\":\"sha256:8123173a8a22befc4c729fef29d5b51c48418c5579ddfbbd2e1292c8ddefc023\",\"schema\":\"solstone.body.ledger_event.v1\",\"sequence\":2,\"shard\":\"normalized/2026-01.jsonl\",\"source_family\":\"apple_health\",\"source_record_id\":\"synthetic-record-2\",\"start_time\":\"2026-01-03 09:15:00 -0700\",\"value_hash\":\"sha256:f07b4297012688fc3ac4cbabc5ae1dacaddfb1c9fa82ce8ad974ffe0936936cc\"}\n{\"bundle_id\":\"body-01J9ZK2F5M7Q8R3S4T6V0W1X33\",\"day\":\"20260201\",\"dedupe_key\":\"sha256:d314b46b88d59610d66e7d93dcd1fb90cf2f3edf00b350016ba47d76d8098eac\",\"end_time\":null,\"line\":1,\"normalized_ref\":\"imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X33/normalized/2026-02.jsonl#L1\",\"raw_ref\":\"imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X33/raw/apple_health/export.xml#record-3\",\"record_type\":\"HKCategoryTypeIdentifierSleepAnalysis\",\"row_schema\":\"solstone.health.apple_health.v1\",\"row_sha256\":\"sha256:6234be98c4a2cb2a095d9a64b0946b40a10e78ffee67453dfba3be85f083c993\",\"schema\":\"solstone.body.ledger_event.v1\",\"sequence\":3,\"shard\":\"normalized/2026-02.jsonl\",\"source_family\":\"apple_health\",\"source_record_id\":null,\"start_time\":\"2026-02-01 01:00:00 -0700\",\"value_hash\":\"sha256:f2e0f2e4175a04a2bd996145f905cf3db5574ce6e21e74be0fdceb6163b74e38\"}\n",
+      "expected_ledger_bytes": 2493,
+      "expected_ledger_sha256": "sha256:3a3bccf5f2049f113f05123cf3adc6f90416e17505754b4f7bf586b5ebfc8ae2",
+      "expected_envelope_jsonl": "{\"bundle_id\":\"body-01J9ZK2F5M7Q8R3S4T6V0W1X33\",\"days\":[\"20260102\",\"20260103\",\"20260201\"],\"ledger\":{\"bytes\":2493,\"events\":3,\"path\":\"body-ledger.jsonl\",\"sha256\":\"sha256:3a3bccf5f2049f113f05123cf3adc6f90416e17505754b4f7bf586b5ebfc8ae2\"},\"raw_retention\":\"retain_parsed\",\"row_count\":3,\"schema\":\"solstone.body.bundle.v1\",\"shards\":[{\"bytes\":1441,\"path\":\"normalized/2026-01.jsonl\",\"rows\":2,\"sha256\":\"sha256:f9f3bff461fb6d871d3e526b3efd30530e0fd97b7b067956247cdfe84aef7b5c\"},{\"bytes\":697,\"path\":\"normalized/2026-02.jsonl\",\"rows\":1,\"sha256\":\"sha256:6234be98c4a2cb2a095d9a64b0946b40a10e78ffee67453dfba3be85f083c993\"}],\"source_family\":\"apple_health\",\"source_hash\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff#window:20260102:20260201\",\"summary_plan\":{\"days\":[\"20260102\",\"20260103\",\"20260201\"],\"schema\":\"solstone.body.apple_day_summaries.v1\"}}\n",
+      "expected_envelope_sha256": "sha256:a385619bc2e214865549a42a933eee95039cc4e7d4715116c2ad5086b3add606",
+      "expected_manifest_binding": {
+        "body_source_schema": "solstone.body.bundle.v1",
+        "body_bundle_ref": "body-bundle.json",
+        "body_bundle_sha256": "sha256:a385619bc2e214865549a42a933eee95039cc4e7d4715116c2ad5086b3add606",
+        "import_id": "body-01J9ZK2F5M7Q8R3S4T6V0W1X33",
+        "source_type": "apple_health",
+        "source_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff#window:20260102:20260201",
+        "entry_count": 3,
+        "days_affected": [
+          "20260102",
+          "20260103",
+          "20260201"
+        ],
+        "raw_retention": "retain_parsed"
+      }
+    }
+  ]
+}

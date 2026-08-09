@@ -62,3 +62,12 @@ The Apple workout event deliberately retains the pre-enrichment value hash,
 while its stored normalized row includes flattened workout statistics. The
 fixture is a contract input; future implementations must consume rather than
 regenerate its expected strings and digests.
+
+body_source_ledger_events_v1.json extends that independent oracle across one
+synthetic Apple bundle with three events, three days, two calendar months, and
+two normalized shards. It pins each exact normalized row line, per-row and
+per-shard digests, source-id and composite dedupe branches, exact ledger JSONL,
+ledger and envelope digests, and the matching manifest binding. The values were
+computed from the shipping Python identity/value-hash contract before the Rust
+ledger-event model or stream decoder existed; those implementations must
+consume the fixture and may not regenerate its expected values.
