@@ -738,8 +738,12 @@ install-checks: .installed
 check-release-package-inventory:
 	@python3 scripts/release_package_inventory.py
 
+# check-release-package-inventory is deliberately NOT here: it shells to python3,
+# and ci_gate_purity::make_ci_never_executes_forbidden_interpreters runs a nested
+# `make ci` with python/python3/pytest/ruff/uv shimmed to exit 97. It already runs
+# in install-checks, which depends on .installed and is where interpreter-requiring
+# checks belong. Run it directly with `make check-release-package-inventory`.
 ci:
-	@$(MAKE) check-release-package-inventory
 	@$(MAKE) check-rust-fmt
 	@$(MAKE) check-rust-msrv
 	@$(MAKE) check-rust-clippy
