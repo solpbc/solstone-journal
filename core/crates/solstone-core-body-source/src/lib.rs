@@ -28,6 +28,7 @@ mod error;
 mod health_hash;
 mod integer;
 mod ledger_event;
+mod ledger_event_encode;
 mod manifest_binding;
 mod manifest_decode;
 mod manifest_known_key;
@@ -74,6 +75,7 @@ pub use health_hash::{
 };
 pub use integer::BodyInteger;
 pub use ledger_event::BodyLedgerEvent;
+pub use ledger_event_encode::encode_body_ledger_event;
 pub use manifest_binding::BodyManifestBinding;
 pub use manifest_decode::decode_body_manifest;
 pub use manifest_known_key::{
