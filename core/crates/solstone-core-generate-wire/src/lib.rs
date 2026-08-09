@@ -5,6 +5,7 @@
 
 mod anthropic;
 mod bundled;
+mod confidential;
 mod endpoint;
 mod google;
 mod lane;
@@ -23,6 +24,7 @@ pub use anthropic::{
     UreqAnthropicTransport, anthropic_generate,
 };
 pub use bundled::{BundledError, LOCAL_MODEL_ID, bundled_generate, bundled_input};
+pub use confidential::{ConfidentialResult, confidential_generate};
 pub use endpoint::{
     ENDPOINT_SERVED_WINDOW_CACHE_TTL, EndpointFailure, EndpointGenerated, EndpointResult,
     EndpointRuntime, EndpointTransport, EndpointTransportError, OverflowDecision,
@@ -89,6 +91,7 @@ mod vocabulary_tests {
         let sources: &[(&str, &str)] = &[
             ("anthropic", include_str!("anthropic.rs")),
             ("bundled", include_str!("bundled.rs")),
+            ("confidential", include_str!("confidential.rs")),
             ("endpoint", include_str!("endpoint.rs")),
             ("google", include_str!("google.rs")),
             ("lane", include_str!("lane.rs")),

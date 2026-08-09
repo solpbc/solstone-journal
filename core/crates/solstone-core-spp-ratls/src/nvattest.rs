@@ -86,4 +86,22 @@ mod tests {
             AttestationFailureKind::Failed
         );
     }
+
+    #[test]
+    fn composite_failures_are_all_failed_not_unreachable() {
+        for reason in [
+            "pcr_pin_mismatch",
+            "cpu_verification_failed",
+            "nvattest_unavailable",
+            "nvattest_integrity_failed",
+            "gpu_nonce_mismatch",
+            "gpu_appraisal_failed",
+        ] {
+            assert_eq!(
+                classify_channel_failure(reason),
+                AttestationFailureKind::Failed,
+                "{reason} must fail closed"
+            );
+        }
+    }
 }

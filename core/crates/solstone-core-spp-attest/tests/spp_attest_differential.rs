@@ -130,7 +130,7 @@ def evaluate(case):
                 report_version=report.version,
                 cpuid=[report.cpuid_family, report.cpuid_model, report.cpuid_step],
             )
-        if kind == "cpu_leg_positive" or kind == "snp_signature_bit_flip":
+        if kind == "cpu_leg_positive" or kind == "snp_signature_bit_flip" or kind == "snp_report_truncated":
             result = appraise_cpu_leg(
                 load_cpu_bundle(root),
                 envelope_tlv=(root / "gpu-envelope.tlv").read_bytes(),
@@ -414,10 +414,12 @@ fn rust_verdict(kind: &str, root: &Path) -> Value {
                 Err(_) => rejected(kind, None),
             }
         }
-        "cpu_leg_positive" | "snp_signature_bit_flip" => match cpu_appraisal_steps(root) {
-            Ok(steps) => accepted(kind, Map::from_iter([("steps".to_owned(), json!(steps))])),
-            Err(()) => rejected(kind, None),
-        },
+        "cpu_leg_positive" | "snp_signature_bit_flip" | "snp_report_truncated" => {
+            match cpu_appraisal_steps(root) {
+                Ok(steps) => accepted(kind, Map::from_iter([("steps".to_owned(), json!(steps))])),
+                Err(()) => rejected(kind, None),
+            }
+        }
         "tlv_decode_positive" | "tlv_envelope_truncated" => {
             if decode_gpu_envelope(&fs::read(root.join("gpu-envelope.tlv")).expect("envelope"))
                 .is_ok()
@@ -519,6 +521,7 @@ fn expected_status(kind: &str) -> &'static str {
     match kind {
         "snp_report_parse"
         | "cpu_leg_positive"
+        | "snp_report_truncated"
         | "tlv_decode_positive"
         | "binding_hash_positive"
         | "tpm_quote_positive"

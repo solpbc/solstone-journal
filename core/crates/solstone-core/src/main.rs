@@ -938,60 +938,68 @@ fn generate_response_for_request(
             }
         }
         solstone_core_generate_wire::LaneOutcome::ByoEndpoint(endpoint) => {
-            match solstone_core_generate_wire::endpoint_generate(
+            endpoint_result_response(
+                solstone_core_generate_wire::endpoint_generate(
+                    request,
+                    &journal,
+                    &endpoint,
+                    &config,
+                    endpoint_runtime,
+                ),
+                request,
+                &journal,
+                &provider,
+                request_id.clone(),
+            )?
+        }
+        solstone_core_generate_wire::LaneOutcome::ConfidentialEndpoint(endpoint) => {
+            match solstone_core_generate_wire::confidential_generate(
                 request,
                 &journal,
                 &endpoint,
                 &config,
                 endpoint_runtime,
             ) {
-                solstone_core_generate_wire::EndpointResult::Generated(mut success) => {
-                    let usage = success
-                        .usage
-                        .as_ref()
-                        .map(serde_json::to_value)
-                        .transpose()
-                        .map_err(|error| error.to_string())?
-                        .unwrap_or_else(|| json!({}));
-                    let assessment = solstone_core_generate_wire::assess_provider_result(
-                        solstone_core_generate_wire::ProviderResultView {
-                            journal_path: &journal,
-                            context: &request.context,
-                            model: &success.model,
-                            text: &success.text,
-                            finish_reason: &success.finish_reason,
-                            usage: &usage,
-                            json_output: request.json_output,
-                            enforce_responsiveness: request.enforce_responsiveness,
-                        },
-                    );
-                    if let Some(error) = assessment.token_log_error {
-                        eprintln!("generate token usage log failed: {error}");
-                    }
-                    if let Some(failure) = assessment.failure {
-                        solstone_core_generate::GenerateResponse::Refused(
-                            solstone_core_generate_wire::refusal_for(
-                                &solstone_core_generate_wire::LaneOutcome::ValidationFailure(
-                                    failure,
-                                ),
-                                &provider,
-                                request_id.clone(),
-                            ),
-                        )
-                    } else {
-                        let schema_validation = apply_schema_validation(
-                            &mut success.text,
-                            request.json_schema.as_ref(),
-                        );
-                        let response =
-                            endpoint_generated_response(request, success, schema_validation)?;
-                        solstone_core_generate::GenerateResponse::Generated(Box::new(response))
-                    }
+                solstone_core_generate_wire::ConfidentialResult::Generated(success) => {
+                    endpoint_result_response(
+                        solstone_core_generate_wire::EndpointResult::Generated(success),
+                        request,
+                        &journal,
+                        &provider,
+                        request_id.clone(),
+                    )?
                 }
-                solstone_core_generate_wire::EndpointResult::Failed(failure) => {
+                solstone_core_generate_wire::ConfidentialResult::Failed(failure) => {
+                    endpoint_result_response(
+                        solstone_core_generate_wire::EndpointResult::Failed(failure),
+                        request,
+                        &journal,
+                        &provider,
+                        request_id.clone(),
+                    )?
+                }
+                solstone_core_generate_wire::ConfidentialResult::AttestationNotVerified => {
                     solstone_core_generate::GenerateResponse::Refused(
                         solstone_core_generate_wire::refusal_for(
-                            &solstone_core_generate_wire::LaneOutcome::EndpointFailure(failure),
+                            &solstone_core_generate_wire::LaneOutcome::AttestationNotVerified,
+                            &provider,
+                            request_id.clone(),
+                        ),
+                    )
+                }
+                solstone_core_generate_wire::ConfidentialResult::AttestationFailed => {
+                    solstone_core_generate::GenerateResponse::Refused(
+                        solstone_core_generate_wire::refusal_for(
+                            &solstone_core_generate_wire::LaneOutcome::AttestationFailed,
+                            &provider,
+                            request_id.clone(),
+                        ),
+                    )
+                }
+                solstone_core_generate_wire::ConfidentialResult::AttestationStale => {
+                    solstone_core_generate::GenerateResponse::Refused(
+                        solstone_core_generate_wire::refusal_for(
+                            &solstone_core_generate_wire::LaneOutcome::AttestationStale,
                             &provider,
                             request_id.clone(),
                         ),
@@ -1148,6 +1156,8 @@ fn generate_response_for_request(
         }
         solstone_core_generate_wire::LaneOutcome::NoEngine
         | solstone_core_generate_wire::LaneOutcome::AttestationNotVerified
+        | solstone_core_generate_wire::LaneOutcome::AttestationFailed
+        | solstone_core_generate_wire::LaneOutcome::AttestationStale
         | solstone_core_generate_wire::LaneOutcome::UnimplementedLane => {
             solstone_core_generate::GenerateResponse::Refused(
                 solstone_core_generate_wire::refusal_for(&outcome, &provider, request_id.clone()),
@@ -1163,6 +1173,66 @@ fn generate_response_for_request(
         }
     };
     Ok(response)
+}
+
+fn endpoint_result_response(
+    result: solstone_core_generate_wire::EndpointResult,
+    request: &solstone_core_generate::GenerateRequest,
+    journal: &std::path::Path,
+    provider: &str,
+    request_id: Option<String>,
+) -> Result<solstone_core_generate::GenerateResponse, String> {
+    match result {
+        solstone_core_generate_wire::EndpointResult::Generated(mut success) => {
+            let usage = success
+                .usage
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()
+                .map_err(|error| error.to_string())?
+                .unwrap_or_else(|| json!({}));
+            let assessment = solstone_core_generate_wire::assess_provider_result(
+                solstone_core_generate_wire::ProviderResultView {
+                    journal_path: journal,
+                    context: &request.context,
+                    model: &success.model,
+                    text: &success.text,
+                    finish_reason: &success.finish_reason,
+                    usage: &usage,
+                    json_output: request.json_output,
+                    enforce_responsiveness: request.enforce_responsiveness,
+                },
+            );
+            if let Some(error) = assessment.token_log_error {
+                eprintln!("generate token usage log failed: {error}");
+            }
+            if let Some(failure) = assessment.failure {
+                Ok(solstone_core_generate::GenerateResponse::Refused(
+                    solstone_core_generate_wire::refusal_for(
+                        &solstone_core_generate_wire::LaneOutcome::ValidationFailure(failure),
+                        provider,
+                        request_id,
+                    ),
+                ))
+            } else {
+                let schema_validation =
+                    apply_schema_validation(&mut success.text, request.json_schema.as_ref());
+                let response = endpoint_generated_response(request, success, schema_validation)?;
+                Ok(solstone_core_generate::GenerateResponse::Generated(
+                    Box::new(response),
+                ))
+            }
+        }
+        solstone_core_generate_wire::EndpointResult::Failed(failure) => {
+            Ok(solstone_core_generate::GenerateResponse::Refused(
+                solstone_core_generate_wire::refusal_for(
+                    &solstone_core_generate_wire::LaneOutcome::EndpointFailure(failure),
+                    provider,
+                    request_id,
+                ),
+            ))
+        }
+    }
 }
 
 struct GenerateSessionConfig {

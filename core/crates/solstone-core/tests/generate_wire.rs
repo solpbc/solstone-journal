@@ -13,6 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use chrono::Local;
 use serde_json::{Value, json};
 use solstone_core_generate::contract;
+use solstone_core_generate_wire::{LaneOutcome, refusal_for};
 
 static NEXT_ROOT: AtomicUsize = AtomicUsize::new(0);
 
@@ -680,8 +681,68 @@ fn non_responsive_empty_usage_logs_diagnostics_and_json_truncation_wins() {
 }
 
 #[test]
-#[ignore = "N5: attestation failed and stale vectors require real attestation verification"]
-fn n5_only_refusal_vectors_are_deferred() {}
+fn attestation_stale_refusal_matches_fixture_vector_fields() {
+    // The one-shot binary owns a fresh process-local state store; producing a
+    // stale session would require waiting for the real cadence deadline.
+    let expected = &fixture_vector("refused-attestation-stale")["response"];
+    let refusal = refusal_for(
+        &LaneOutcome::AttestationStale,
+        "local",
+        Some("fixture-request".into()),
+    );
+    assert_eq!(
+        refusal.reason.as_str(),
+        expected["reason"].as_str().expect("fixture reason")
+    );
+    assert_eq!(
+        refusal.reason_code.as_ref().map(|code| code.as_wire()),
+        expected["reason_code"].as_str()
+    );
+    assert_eq!(refusal.retryable, expected["retryable"]);
+    assert_eq!(refusal.blocking, expected["blocking"]);
+    assert_eq!(refusal.detail, expected["detail"]);
+    assert_eq!(refusal.provider.as_deref(), expected["provider"].as_str());
+}
+
+#[test]
+fn confidential_channel_failure_uses_attestation_failed_vector() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind attestation stub");
+    let port = listener.local_addr().expect("attestation address").port();
+    let dropped = thread::spawn(move || {
+        let (_stream, _) = listener.accept().expect("accept attestation connection");
+    });
+    let journal = root("confidential-attestation-failed");
+    let nvattest = journal.join("cache/providers/nvattest");
+    std::fs::create_dir_all(nvattest.join("bin")).expect("create nvattest bin");
+    std::fs::create_dir_all(nvattest.join("lib")).expect("create nvattest lib");
+    std::fs::create_dir_all(nvattest.join("share/ca")).expect("create nvattest CA");
+    std::fs::write(nvattest.join("bin/nvattest"), "stub").expect("write nvattest stub");
+    std::fs::write(nvattest.join("share/ca/ca-bundle.pem"), "stub").expect("write CA bundle");
+    write_config(
+        &journal,
+        json!({"providers": {"active": {"provider": "local"}, "local": {
+            "endpoint_url": format!("http://127.0.0.1:{port}"),
+            "served_model_id": "served",
+        }}, "services": {"confidential": {}}}),
+    );
+    let output = one_shot(&journal, &fixture_vector("generated")["request"]);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stderr, b"");
+    let response = stdout_json(&output);
+    let expected = &fixture_vector("refused-attestation-failed")["response"];
+    for name in [
+        "reason",
+        "reason_code",
+        "retryable",
+        "blocking",
+        "detail",
+        "provider",
+    ] {
+        assert_eq!(response[name], expected[name], "{name}");
+    }
+    dropped.join().expect("join attestation stub");
+    let _ = std::fs::remove_dir_all(journal);
+}
 
 #[test]
 fn byo_endpoint_generates_without_confidential_downgrade() {

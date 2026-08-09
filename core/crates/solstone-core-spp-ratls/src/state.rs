@@ -87,6 +87,10 @@ mod tests {
         };
         AttestationSession {
             verdict: CompositeVerdict {
+                verified: true,
+                legs: ["cpu", "gpu"],
+                substrate: String::new(),
+                checked_at: UNIX_EPOCH,
                 cpu: CpuAppraisal {
                     steps: Vec::new(),
                     hcla_version: 0,

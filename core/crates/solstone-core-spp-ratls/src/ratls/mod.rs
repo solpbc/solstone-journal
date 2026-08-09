@@ -3,4 +3,5 @@
 
 pub mod channel;
 pub mod contract;
+pub mod production_verifier;
 pub mod verify;

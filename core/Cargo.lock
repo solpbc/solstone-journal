@@ -2554,6 +2554,8 @@ dependencies = [
  "serde_json",
  "solstone-core-generate",
  "solstone-core-local",
+ "solstone-core-spp-attest",
+ "solstone-core-spp-ratls",
  "ureq",
 ]
 

@@ -19,6 +19,7 @@ use solstone_core_local::{
     build_request_body, count_image_parts, estimate_tokens, fit_contents, parse_response,
     serialized_message_text, served_window_from_models_response,
 };
+use solstone_core_spp_ratls::AttestationStateStore;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 const ENDPOINT_MODELS_TIMEOUT: Duration = Duration::from_millis(2_500);
@@ -132,6 +133,7 @@ impl EndpointTransport for UreqEndpointTransport {
 #[derive(Default)]
 pub struct EndpointRuntime {
     served_windows: Mutex<ServedWindowCache>,
+    attestation_state: AttestationStateStore,
 }
 
 pub fn endpoint_generate(
@@ -153,7 +155,7 @@ pub fn endpoint_generate(
     )
 }
 
-fn endpoint_generate_with<T: EndpointTransport>(
+pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
     request: &GenerateRequest,
     journal_path: &Path,
     endpoint: &ByoEndpoint,
@@ -181,14 +183,18 @@ fn endpoint_generate_with<T: EndpointTransport>(
         return failure("local_capacity_exhausted");
     }
     let response = {
-        let _permit = match acquire_endpoint_slot(
-            journal_path,
-            endpoint,
-            request.exclusive_admission,
-            admission_timeout,
-        ) {
-            Ok(permit) => permit,
-            Err(reason_code) => return failure(reason_code),
+        let _permit = if endpoint.is_confidential {
+            None
+        } else {
+            match acquire_endpoint_slot(
+                journal_path,
+                endpoint,
+                request.exclusive_admission,
+                admission_timeout,
+            ) {
+                Ok(permit) => Some(permit),
+                Err(reason_code) => return failure(reason_code),
+            }
         };
         let mut attempt = 0;
         loop {
@@ -279,9 +285,9 @@ fn prepare_endpoint_request(
             let clamped_max_tokens = max_tokens.min(room);
             let request_budget = RequestBudget {
                 window,
-                slots: endpoint
-                    .parallel_slots
-                    .expect("non-confidential BYO endpoint lanes have configured parallel slots"),
+                // Confidential calls create a fresh attested channel, not a
+                // shared local endpoint slot; this only records budget metadata.
+                slots: endpoint.parallel_slots.unwrap_or(1),
                 estimated_prompt_tokens,
                 image_tokens,
                 clamped_max_tokens,
@@ -304,8 +310,9 @@ fn prepare_endpoint_request(
             request.json_output,
             request.json_schema.as_ref(),
             // The reference gates the llama-server sampling controls on
-            // `is_bundled or is_confidential`, not on `is_bundled` alone: the
-            // confidential lane is a Qwen server behind a forwarder.
+            // `is_bundled or is_confidential`, not on `is_bundled` alone. The
+            // confidential lane sends this request over a directly attested
+            // RA-TLS channel.
             endpoint.is_confidential,
         ),
         input_budget,
@@ -321,9 +328,8 @@ fn acquire_endpoint_slot(
 ) -> Result<LocalSlotPermit, &'static str> {
     acquire_local_slot(
         &admission_dir(journal_path),
-        endpoint
-            .parallel_slots
-            .expect("non-confidential BYO endpoint lanes have configured parallel slots"),
+        // Confidential calls have no shared local admission resource.
+        endpoint.parallel_slots.unwrap_or(1),
         Some(timeout),
         exclusive_admission,
     )
@@ -399,6 +405,10 @@ pub fn endpoint_overflow_decision(
 }
 
 impl EndpointRuntime {
+    pub(crate) fn attestation_state(&self) -> &AttestationStateStore {
+        &self.attestation_state
+    }
+
     fn resolve_served_window<T: EndpointTransport>(
         &self,
         endpoint: &ByoEndpoint,
@@ -674,10 +684,9 @@ mod tests {
 
     #[test]
     fn qwen_sampling_controls_follow_the_confidential_flag() {
-        // The reference gates these on `is_bundled or is_confidential`. The
-        // confidential lane still refuses before reaching this arm, so this is
-        // the only place the mapping can be asserted today - and it is the
-        // place that will carry it when N5 makes the lane reachable.
+        // This directly checks the flag mapping for both values at the
+        // convenient request-preparation boundary. The confidential lane's
+        // wire-level coverage is in confidential.rs.
         for is_confidential in [false, true] {
             let mut endpoint = endpoint("http://127.0.0.1:1");
             endpoint.is_confidential = is_confidential;
@@ -1078,6 +1087,36 @@ mod tests {
             failure("local_capacity_exhausted")
         );
         server.join().unwrap();
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn confidential_endpoint_does_not_create_a_local_admission_directory() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let endpoint = ByoEndpoint {
+            parallel_slots: None,
+            is_confidential: true,
+            ..endpoint("http://endpoint")
+        };
+        let mut transport = StubTransport {
+            post_result: Some(Ok(response())),
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            endpoint_generate_with(
+                &request(None),
+                &journal,
+                &endpoint,
+                &served_window_config(),
+                &runtime,
+                &mut transport,
+                Instant::now(),
+            ),
+            EndpointResult::Generated(_)
+        ));
+        assert!(!admission_dir(&journal).exists());
         let _ = std::fs::remove_dir_all(journal);
     }
 

@@ -20,7 +20,14 @@ pub use nvattest::{
     NvattestEnsureStatus, classify_channel_failure, classify_nvattest_prerequisite,
 };
 pub use ratls::{
-    channel::{AttestedChannel, RatlsEndpoint, establish_attested_channel},
+    channel::{
+        AttestedChannel, AttestedHttpError, AttestedHttpResponse, AttestedIo, RatlsEndpoint,
+        establish_attested_channel, send_json_request,
+    },
+    production_verifier::{
+        ProductionCompositeVerifier, check_nvattest_readiness,
+        establish_production_attested_channel, verify_composite_with_gpu_appraiser,
+    },
     verify::{
         CompositeVerificationInput, CompositeVerifier, VerifiedCertificateEvidence,
         verify_certificate_evidence, verify_exporter_proof,
