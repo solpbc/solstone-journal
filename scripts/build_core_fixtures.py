@@ -79,6 +79,7 @@ from solstone.convey.provider_readiness import (
 from solstone.think import markdown as markdown_formatter
 from solstone.think.cogitate_contract import (
     COGITATE_ACCESS_TIERS,
+    COGITATE_DIAGNOSTIC_PREAMBLE,
     COGITATE_READ_TOOL_NAMES,
     COGITATE_RUNTIME_PREAMBLE,
     FUTURE_ACCESS_TIERS,
@@ -228,7 +229,8 @@ def build_callosum_registry_fixture() -> dict[str, Any]:
 
 
 def build_cogitate_contract_fixture() -> dict[str, Any]:
-    preamble_bytes = COGITATE_RUNTIME_PREAMBLE.encode("utf-8")
+    runtime_preamble_bytes = COGITATE_RUNTIME_PREAMBLE.encode("utf-8")
+    diagnostic_preamble_bytes = COGITATE_DIAGNOSTIC_PREAMBLE.encode("utf-8")
     return {
         "fixture": "solstone-cogitate-contract",
         "fixture_version": 1,
@@ -246,10 +248,18 @@ def build_cogitate_contract_fixture() -> dict[str, Any]:
         "read_tools": list(COGITATE_READ_TOOL_NAMES),
         "finalization_modes": list(TALENT_FINALIZATION_MODES),
         "runtime_preamble": {
-            "digest": hashlib.sha256(preamble_bytes).hexdigest(),
+            "digest": hashlib.sha256(runtime_preamble_bytes).hexdigest(),
             "algorithm": "sha256",
             "encoding": "utf-8",
-            "byte_length": len(preamble_bytes),
+            "byte_length": len(runtime_preamble_bytes),
+            "text": COGITATE_RUNTIME_PREAMBLE,
+        },
+        "diagnostic_preamble": {
+            "digest": hashlib.sha256(diagnostic_preamble_bytes).hexdigest(),
+            "algorithm": "sha256",
+            "encoding": "utf-8",
+            "byte_length": len(diagnostic_preamble_bytes),
+            "text": COGITATE_DIAGNOSTIC_PREAMBLE,
         },
     }
 

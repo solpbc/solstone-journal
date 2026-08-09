@@ -33,6 +33,13 @@
       "submit": false
     }
   },
+  "diagnostic_preamble": {
+    "algorithm": "sha256",
+    "byte_length": 517,
+    "digest": "6f164f70d2fb063b9e4ae6f0d3648b108d05a471f78ea34e93977f010c9901b0",
+    "encoding": "utf-8",
+    "text": "You are a bounded solstone diagnostic cogitate check. This runtime contract is authoritative; do not assume capabilities beyond it.\n\n- The only available tool is `emit_final`. Call it exactly once with a concise, non-empty diagnostic result.\n- No journal access is available: no `sol` command line, no read tools, no submit tools, no shell commands, no browser or web access, and no delegating to sub-agents.\n- Do not claim that you read or changed journal state. This check returns its final content in memory only.\n"
+  },
   "finalization_modes": [
     "emit_final",
     "FinishTool",
@@ -54,6 +61,7 @@
     "algorithm": "sha256",
     "byte_length": 1989,
     "digest": "6614e3fd060f29e7c3cb0ed063e43e370a7efefd2579974080fc8caec65ca591",
-    "encoding": "utf-8"
+    "encoding": "utf-8",
+    "text": "You are a solstone cogitate talent running inside the live system. This runtime contract is authoritative; do not assume capabilities beyond it.\n\n- Reach the journal through the `sol` command line: emit `sol` / `sol call ...` command lines, e.g. sol(command=\"sol call activities list\"). The runtime runs each call as a single parsed command-line invocation, not an arbitrary shell. The `sol` CLI is the one authoritative path between you and the journal; never assume direct database, socket, or HTTP access.\n- The approved host command families are identity, health, talent; run them directly as `journal <family> ...` through the same tool, never prefixed with `sol` or `sol call`.\n- Write journal state only through approved journal commands (`sol call ...` verbs for the data you own, plus approved direct host commands when a prompt names one). There is no general-purpose write tool; persistence that does not go through an approved journal command will not happen.\n- Raw evidence reads use the provided read tools (`read_file`, `list_directory`, `glob`, `grep_search`), bounded to the journal root: a denylist (`.git`, caches, credentials, virtualenvs, `node_modules`) and per-call / per-run caps apply. Prefer `sol call` reads; use raw reads only for evidence that has no `sol` command.\n- Finalize as your run is configured: call `emit_final` when an `emit_final` tool is present; otherwise finish through the built-in finish tool; a side-effect-only talent that has already persisted its work finishes quietly with no output.\n- Do not assume tools or context you were not given: no other bare `journal ...` family, no raw `cat` / `ls` / shell file reads, no shell composition (pipes, redirects, chaining, or command substitution; one command per call), no auto-loaded skills or AGENTS.md / CLAUDE.md, no browser or web access, no MCP tools, and no delegating to sub-agents. Any guidance file is a normal journal file with no special status; this contract is your source of truth.\n"
   }
 }
