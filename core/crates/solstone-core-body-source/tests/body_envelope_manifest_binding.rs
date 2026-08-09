@@ -419,6 +419,21 @@ fn digest_and_retention_claims_bind_exact_input_bytes() {
     );
     let error = decode_body_envelope_with_manifest(&input, &retention).unwrap_err();
     assert_manifest_mismatch(error, &apple.import_id);
+
+    let mut mutated: Value = serde_json::from_slice(&input).expect("fixture envelope parses");
+    mutated["raw_retention"] = Value::from("retain_parsed");
+    let mutated_input = canonical(&mutated);
+    let stale_semantics = binding(
+        sha256(&mutated_input),
+        apple.import_id.clone(),
+        apple.source_type,
+        apple.source_hash.clone(),
+        apple.entry_count,
+        apple.days_affected.clone(),
+        apple.raw_retention,
+    );
+    let error = decode_body_envelope_with_manifest(&mutated_input, &stale_semantics).unwrap_err();
+    assert_manifest_mismatch(error, &apple.import_id);
 }
 
 #[test]
