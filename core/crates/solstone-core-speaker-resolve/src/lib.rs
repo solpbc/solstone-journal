@@ -9,8 +9,10 @@ pub mod evidence;
 pub mod layer1;
 pub mod layer2;
 pub mod layer3;
+pub mod owner_candidate;
 pub mod owner_centroid;
 pub mod resolve;
+pub mod voiceprint_accumulation;
 pub mod voiceprint_centroid;
 
 mod person_guard;
