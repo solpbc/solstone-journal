@@ -19,7 +19,10 @@ pub fn validate_body_row_event(
     event: &BodyLedgerEvent,
 ) -> Result<BodyLedgerEvent, BodyRowEventError> {
     if row_frame.len() > MAX_ROW_FRAME_BYTES {
-        return Err(row_event_error(event, BodyRowEventErrorKind::Oversized));
+        return Err(row_event_error(
+            event,
+            BodyRowEventErrorKind::InputTooLarge,
+        ));
     }
 
     if row_frame.is_empty()

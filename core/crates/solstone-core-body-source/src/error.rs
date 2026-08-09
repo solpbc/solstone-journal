@@ -960,7 +960,7 @@ impl std::error::Error for LedgerEventError {}
 #[derive(Clone, Debug, PartialEq)]
 pub enum BodyRowEventErrorKind {
     /// The row frame exceeds the maximum permitted size.
-    Oversized,
+    InputTooLarge,
     /// The row frame does not contain exactly one trailing line feed.
     InvalidFraming,
     /// The row frame digest does not match the event digest.
@@ -979,7 +979,7 @@ impl BodyRowEventErrorKind {
     /// Returns the stable spelling for this error kind.
     pub const fn as_str(&self) -> &'static str {
         match self {
-            Self::Oversized => "oversized",
+            Self::InputTooLarge => "input_too_large",
             Self::InvalidFraming => "invalid_framing",
             Self::RowDigestMismatch => "row_digest_mismatch",
             Self::Parse(_) => "parse",
@@ -1495,5 +1495,25 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn body_row_event_error_renders_maximum_checked_coordinate() {
+        let [_, maximum] = bundles();
+        let error = BodyRowEventError::new(
+            maximum,
+            u64::MAX,
+            BodyRowEventErrorKind::InputTooLarge,
+        );
+        let expected = "body-row-event[body-7ZZZZZZZZZZZZZZZZZZZZZZZZZ]#E18446744073709551615 input_too_large";
+
+        assert_eq!(error.bundle().as_str(), MAX_BUNDLE);
+        assert_eq!(error.sequence(), u64::MAX);
+        assert_eq!(error.kind(), &BodyRowEventErrorKind::InputTooLarge);
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(format!("{error:?}"), expected);
+        assert!(Error::source(&error).is_none());
+        assert!(expected.is_ascii());
+        assert!(expected.len() <= 256);
     }
 }

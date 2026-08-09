@@ -27,7 +27,7 @@ fn oversized_rows_have_bounded_peak_allocation() {
         let info = measure(|| {
             let error = validate_body_row_event(&envelope, &frame, &event)
                 .expect_err("oversized row refuses");
-            assert_eq!(error.kind().as_str(), "oversized");
+            assert_eq!(error.kind().as_str(), "input_too_large");
         });
         assert!(
             info.bytes_max <= 128 * 1024,

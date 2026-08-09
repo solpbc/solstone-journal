@@ -119,7 +119,7 @@ fn crlf_and_size_boundary_are_accepted_before_later_stages() {
     );
     let error =
         validate_body_row_event(&envelope, &over, &over_event).expect_err("oversize refuses");
-    assert_eq!(error.kind(), &BodyRowEventErrorKind::Oversized);
+    assert_eq!(error.kind(), &BodyRowEventErrorKind::InputTooLarge);
 }
 
 #[test]

@@ -95,7 +95,7 @@ fn all_kinds_have_stable_spelling_accessors_sources_and_value_semantics() {
         .unwrap_err(),
     ];
     let spellings = [
-        "oversized",
+        "input_too_large",
         "invalid_framing",
         "row_digest_mismatch",
         "parse",
@@ -147,7 +147,7 @@ fn outer_rendering_never_leaks_row_content_or_inner_display() {
 #[test]
 fn precedence_size_before_framing() {
     let error = error_for(&vec![b'x'; 1_048_577]);
-    assert_eq!(error.kind(), &BodyRowEventErrorKind::Oversized);
+    assert_eq!(error.kind(), &BodyRowEventErrorKind::InputTooLarge);
 }
 
 #[test]
