@@ -279,12 +279,16 @@ impl ProviderRuntimeCoordinator {
             state.replacement_artifact_not_ready_fingerprint = None;
         }
         let fingerprint_changed = state.desired_fingerprint != result.desired_fingerprint;
-        let pending_target = state
-            .pending_stop_request
-            .as_ref()
-            .map_or(state.pending_stop_target_phase, |request| {
-                request.target_phase
-            });
+        let pending_target = state.pending_stop_request.as_ref().map_or(
+            state.pending_stop_target_phase,
+            |request| {
+                if request.orphaned_start_outcome {
+                    state.pending_stop_target_phase
+                } else {
+                    request.target_phase
+                }
+            },
+        );
         if !fingerprint_changed
             && matches!(
                 state.latest_phase,
@@ -1921,6 +1925,71 @@ mod tests {
         });
         coordinator.handle_truth_result(now(2.0), &mut state, &mut store, &mut sink, None);
         assert_eq!(state.latest_phase, RuntimePhase::Starting);
+    }
+
+    #[test]
+    fn orphaned_pending_cleanup_does_not_latch_a_matching_truth_target() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+
+        let mut orphaned = state_for(ProviderName::Local);
+        orphaned.latest_phase = RuntimePhase::StopDeferred;
+        orphaned.pending_stop_target_phase = RuntimePhase::Stopped;
+        let mut orphaned_request = make_stop_request(
+            &orphaned,
+            managed("orphan"),
+            ReasonCode::known("launch-failed"),
+            RuntimePhase::NotDesired,
+            Some(ReasonCode::known("intent-disabled")),
+            false,
+        );
+        orphaned_request.orphaned_start_outcome = true;
+        orphaned.pending_stop_request = Some(orphaned_request);
+        let fence = coordinator.fence(&orphaned, 0);
+        orphaned.truth = Some(InFlight {
+            fence,
+            result: Some(truth(
+                ProviderName::Local,
+                RuntimePhase::NotDesired,
+                Some("desired-a"),
+                Some("intent-disabled"),
+            )),
+        });
+        coordinator.handle_truth_result(now(1.0), &mut orphaned, &mut store, &mut sink, None);
+        assert_eq!(orphaned.latest_phase, RuntimePhase::NotDesired);
+        assert_eq!(
+            orphaned.latest_reason_code.as_ref().map(ReasonCode::as_str),
+            Some("intent-disabled")
+        );
+
+        let mut ordinary = state_for(ProviderName::Local);
+        ordinary.latest_phase = RuntimePhase::StopDeferred;
+        ordinary.pending_stop_target_phase = RuntimePhase::Stopped;
+        ordinary.pending_stop_request = Some(make_stop_request(
+            &ordinary,
+            managed("ordinary"),
+            ReasonCode::known("intent-removed"),
+            RuntimePhase::NotDesired,
+            Some(ReasonCode::known("intent-disabled")),
+            false,
+        ));
+        let fence = coordinator.fence(&ordinary, 0);
+        ordinary.truth = Some(InFlight {
+            fence,
+            result: Some(truth(
+                ProviderName::Local,
+                RuntimePhase::NotDesired,
+                Some("desired-a"),
+                Some("intent-disabled"),
+            )),
+        });
+        coordinator.handle_truth_result(now(2.0), &mut ordinary, &mut store, &mut sink, None);
+        assert_eq!(ordinary.latest_phase, RuntimePhase::StopDeferred);
+        assert_eq!(
+            ordinary.latest_reason_code.as_ref().map(ReasonCode::as_str),
+            Some("stale-result-ignored")
+        );
     }
 
     #[test]
