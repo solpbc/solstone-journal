@@ -19,6 +19,7 @@ pub use restart::{
 pub use spawn::{ManagedProcess, SpawnError, SpawnOptions};
 #[cfg(target_os = "linux")]
 pub(crate) use terminate::signal_pid;
+pub(crate) use terminate::terminate;
 pub use terminate::{
     CAP_TERMINATION_TIMEOUT, KILL_REAP_GRACE, SERVICE_SHUTDOWN_TIMEOUT,
     TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome,

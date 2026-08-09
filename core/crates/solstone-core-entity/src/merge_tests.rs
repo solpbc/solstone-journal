@@ -24,6 +24,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 static NEXT_VOICEPRINT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+type MergeInjector<'a> = &'a (dyn Fn(&str, usize) -> bool + 'static);
 
 fn test_encoder() -> EncoderIdentity {
     EncoderIdentity {
@@ -55,7 +56,7 @@ fn commit_entity_merge_with_injector(
     source_id: &str,
     target_id: &str,
     options: EntityMergeOptions,
-    injector: Option<&(dyn Fn(&str, usize) -> bool + 'static)>,
+    injector: Option<MergeInjector<'_>>,
 ) -> Result<crate::EntityMergeReport, EntityMergeError> {
     commit_entity_merge_with_injector_with_encoder(
         journal,
@@ -141,11 +142,9 @@ fn rewrite_member(archive: &[u8], name: &str, replacement: Option<&[u8]>) -> Vec
             writer.write_all(&bytes).unwrap();
         }
     }
-    if !found {
-        if let Some(replacement) = replacement {
-            writer.start_file(name, options).unwrap();
-            writer.write_all(replacement).unwrap();
-        }
+    if !found && let Some(replacement) = replacement {
+        writer.start_file(name, options).unwrap();
+        writer.write_all(replacement).unwrap();
     }
     writer.finish().unwrap().into_inner()
 }

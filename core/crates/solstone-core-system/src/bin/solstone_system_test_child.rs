@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::io::Write;
+use std::io::{Read, Write};
+use std::net::TcpListener;
 use std::process::Command;
 use std::time::Duration;
 
@@ -11,6 +12,7 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let mode = args.next().unwrap_or_default();
     match mode.as_str() {
+        "-m" => launch_stub(args),
         "lines" => {
             println!("stdout-line");
             let _ = std::io::stderr().write_all(b"stderr-line\n");
@@ -138,6 +140,38 @@ fn main() {
             std::fs::write(ready_path, std::process::id().to_string()).expect("signal readiness");
             std::thread::sleep(Duration::from_secs(30));
         }
+        _ => std::process::exit(64),
+    }
+}
+
+fn launch_stub(mut args: impl Iterator<Item = String>) {
+    let model_path = args.next().unwrap_or_default();
+    let arguments = args.collect::<Vec<_>>();
+    let port = arguments
+        .windows(2)
+        .find(|window| window[0] == "--port")
+        .and_then(|window| window[1].parse::<u16>().ok());
+    match model_path.as_str() {
+        "test-ready" | "test-ready-block-term" => {
+            if model_path == "test-ready-block-term" {
+                let mut signals = nix::sys::signal::SigSet::empty();
+                signals.add(nix::sys::signal::Signal::SIGTERM);
+                signals.thread_block().expect("block SIGTERM");
+            }
+            let listener = TcpListener::bind(("127.0.0.1", port.expect("launch port")))
+                .expect("bind launch stub");
+            for stream in listener.incoming() {
+                let mut stream = stream.expect("accept health probe");
+                let mut request = [0_u8; 1024];
+                let _ = stream.read(&mut request);
+                stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+                    )
+                    .expect("write health response");
+            }
+        }
+        "test-hold" => std::thread::sleep(Duration::from_secs(30)),
         _ => std::process::exit(64),
     }
 }
