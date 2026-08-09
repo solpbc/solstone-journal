@@ -5,6 +5,7 @@
 
 pub mod binding;
 pub mod error;
+pub mod snp;
 pub mod tlv;
 pub mod tpm_quote;
 

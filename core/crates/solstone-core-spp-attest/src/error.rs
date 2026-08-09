@@ -112,3 +112,53 @@ pub enum TpmQuoteError {
     #[error("quote.pcrs has trailing bytes")]
     TrailingPcrBytes,
 }
+
+/// Fail-closed errors raised while parsing HCLA and SEV-SNP report bytes.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum SnpParseError {
+    #[error("SNP report length does not match")]
+    ReportLength,
+    #[error("HCLA blob is truncated")]
+    HclaTooShort,
+    #[error("HCLA signature does not match")]
+    HclaMagicMismatch,
+    #[error("HCLA request type does not match")]
+    HclaRequestTypeMismatch,
+    #[error("HCLA runtime JSON was not found")]
+    RuntimeJsonNotFound,
+    #[error("HCLA runtime JSON did not parse")]
+    RuntimeJsonInvalid,
+    #[error("HCLA runtime JSON is not an object")]
+    RuntimeJsonNotObject,
+}
+
+/// Fail-closed errors raised while verifying AMD certificate and report evidence.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum SnpVerifyError {
+    #[error("certificate did not parse")]
+    CertificateParse,
+    #[error("no PEM certificates were supplied")]
+    NoBundleCertificates,
+    #[error("VCEK selection failed")]
+    VcekSelectionFailure,
+    #[error("VCEK issuer did not select a pinned AMD root generation")]
+    UnknownRootGeneration,
+    #[error("AMD root material is invalid")]
+    RootMaterialInvalid,
+    #[error("certificate signature verification failed")]
+    ChainSignatureInvalid,
+    #[error("certificate is outside its validity window")]
+    CertificateTimeInvalid,
+    #[error("bundle CA does not match pinned root material")]
+    BundleCaMismatch,
+    #[error("AMD report signature reserved bytes are nonzero")]
+    ReportSignatureReservedNonZero,
+    #[error("AMD report signature scalar exceeds P-384 width")]
+    ReportSignatureScalarOverflow,
+    #[error("AMD report signature is invalid")]
+    ReportSignatureInvalid,
+    #[error("certificate algorithm is outside the supported profile")]
+    UnsupportedCertificateAlgorithm,
+}
