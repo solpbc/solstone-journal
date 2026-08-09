@@ -295,7 +295,8 @@ fn rebuild_owner_centroid_request(value: Value) -> Result<Value, String> {
         },
     )
     .map_err(|error| error.to_string())?;
-    Ok(json!({"outcome": format!("{outcome:?}")}))
+    let outcome = serde_json::to_value(outcome).map_err(|error| error.to_string())?;
+    Ok(json!({"outcome": outcome}))
 }
 
 fn write_owner_candidate_request(value: Value) -> Result<Value, String> {
@@ -323,7 +324,8 @@ fn read_owner_candidate_request(value: Value) -> Result<Value, String> {
         &PathBuf::from(required_string(object, "journal_root")?),
     )
     .map_err(|error| error.to_string())?;
-    Ok(json!({"candidate": format!("{candidate:?}")}))
+    let candidate = serde_json::to_value(candidate).map_err(|error| error.to_string())?;
+    Ok(json!({"candidate": candidate}))
 }
 
 struct OwnerFields {

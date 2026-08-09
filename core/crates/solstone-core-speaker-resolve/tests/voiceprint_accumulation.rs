@@ -270,6 +270,7 @@ fn ac12_non_person_refusal_leaves_archive_bytes_unchanged_and_ac13_ac14_report_g
     let t = TempDir::new();
     owner(&t);
     entity(&t, "tool", "Tool", false);
+    entity(&t, "alice", "Person", false);
     save_voiceprints_batch(
         t.path(),
         "tool",
@@ -285,17 +286,41 @@ fn ac12_non_person_refusal_leaves_archive_bytes_unchanged_and_ac13_ac14_report_g
     let unknown = label(1, "missing");
     let missing = label(2, "tool");
     let zero = label(3, "tool");
+    let non_person = label(4, "tool");
     let result = accumulate_voiceprints(&request(
         &t,
-        vec![unknown, missing, zero],
-        vec![embedding(3, vector(0.0, 0.0))],
+        vec![unknown, missing, zero, non_person],
+        vec![
+            embedding(3, vector(0.0, 0.0)),
+            embedding(4, vector(0.0, 1.0)),
+        ],
         vec!["tool"],
     ))
     .unwrap();
     assert_eq!(fs::read(path).unwrap(), before);
     assert_eq!(skip(&result, AccumulationSkipReason::MissingEmbedding), 1);
     assert_eq!(skip(&result, AccumulationSkipReason::ZeroNormEmbedding), 1);
-    assert_eq!(skip(&result, AccumulationSkipReason::UnknownEntity), 1);
+    assert_eq!(skip(&result, AccumulationSkipReason::UnknownEntity), 2);
+    let accepted = accumulate_voiceprints(&request(
+        &t,
+        vec![label(4, "alice")],
+        vec![embedding(4, vector(0.0, 1.0))],
+        vec!["alice"],
+    ))
+    .unwrap();
+    assert!(matches!(
+        accepted,
+        AccumulationOutcome::Completed {
+            written_rows: 1,
+            ..
+        }
+    ));
+    assert_eq!(
+        load_entity_voiceprints_file(t.path(), "alice")
+            .unwrap()
+            .rows,
+        1
+    );
 }
 
 #[test]

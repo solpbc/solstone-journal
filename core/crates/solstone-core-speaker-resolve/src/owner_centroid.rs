@@ -9,6 +9,7 @@ use std::fs::File;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
 use solstone_core_entity::{entity_memory_path, normalize_embedding};
 use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, atomic_replace, hold_lock,
@@ -80,7 +81,7 @@ pub struct OwnerCentroidRebuildInput {
 }
 
 /// Result of a guarded owner-centroid rebuild.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum OwnerCentroidRebuildOutcome {
     Rebuilt { override_applied: bool },
     Unchanged,

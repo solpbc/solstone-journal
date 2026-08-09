@@ -9,6 +9,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
+use serde::Serialize;
 use solstone_core_entity::normalize_embedding;
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockError, LockOptions, atomic_replace, contained_path, hold_lock,
@@ -22,7 +23,7 @@ use crate::owner_centroid::{
 };
 
 /// One owner-candidate snapshot written before user confirmation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct OwnerCandidate {
     pub centroid: Vec<f32>,
     pub cluster_size: i32,
