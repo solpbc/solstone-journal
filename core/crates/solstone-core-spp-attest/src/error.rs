@@ -181,6 +181,33 @@ pub enum SnpVerifyError {
     PolicyVmpl,
     #[error("SNP report policy allows DEBUG")]
     PolicyDebugEnabled,
+    #[error("{label} TCB has no {field} field")]
+    PolicyTcbMissing { label: String, field: &'static str },
+    #[error("{label} TCB {field}={value} is below policy floor {floor}")]
+    PolicyTcbBelowFloor {
+        label: String,
+        field: &'static str,
+        value: u8,
+        floor: u8,
+    },
+    #[error("SNP TCB policy label is unknown")]
+    PolicyTcbLabelUnknown,
+}
+
+/// A PCR fingerprint did not match the configured pinned policy.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PcrPinMismatchError {
+    #[error("PCR fingerprint {fingerprint} is not in pinned policy")]
+    Mismatch { fingerprint: String },
+}
+
+/// Fail-closed errors raised while applying the PCR fingerprint policy.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PcrFingerprintError {
+    #[error("unknown PCR policy mode {mode:?}")]
+    UnknownMode { mode: String },
+    #[error(transparent)]
+    PinMismatch(#[from] PcrPinMismatchError),
 }
 
 /// The CPU-evidence check at which a typed error occurred.
@@ -229,6 +256,12 @@ pub enum CpuLegError {
         stage: CpuAppraisalStage,
         #[source]
         source: TpmQuoteError,
+    },
+    #[error("CPU evidence failed at {stage:?}: {source}")]
+    PcrFingerprint {
+        stage: CpuAppraisalStage,
+        #[source]
+        source: PcrFingerprintError,
     },
 }
 
