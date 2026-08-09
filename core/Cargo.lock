@@ -146,6 +146,7 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
+ "hyper-util",
  "itoa",
  "matchit",
  "memchr",
@@ -158,6 +159,7 @@ dependencies = [
  "serde_path_to_error",
  "serde_urlencoded",
  "sync_wrapper",
+ "tokio",
  "tower",
  "tower-layer",
  "tower-service",
@@ -2351,6 +2353,7 @@ dependencies = [
  "solstone-core-body-rebuild",
  "solstone-core-brain",
  "solstone-core-cli",
+ "solstone-core-convey-shell",
  "solstone-core-entity",
  "solstone-core-generate",
  "solstone-core-generate-wire",
@@ -2485,6 +2488,21 @@ dependencies = [
  "serde_json",
  "tokio",
  "tower-http",
+]
+
+[[package]]
+name = "solstone-core-convey-shell"
+version = "1.0.22"
+dependencies = [
+ "axum",
+ "chrono",
+ "futures-core",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-convey-http",
+ "tokio",
+ "tower",
 ]
 
 [[package]]
@@ -3358,6 +3376,7 @@ dependencies = [
  "futures-util",
  "pin-project-lite",
  "sync_wrapper",
+ "tokio",
  "tower-layer",
  "tower-service",
 ]

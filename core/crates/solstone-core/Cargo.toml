@@ -40,6 +40,7 @@ test = false
 chrono.workspace = true
 serde.workspace = true
 solstone-core-cli.workspace = true
+solstone-core-convey-shell.workspace = true
 solstone-core-body-rebuild.workspace = true
 solstone-core-body-ingest.workspace = true
 solstone-core-entity.workspace = true
