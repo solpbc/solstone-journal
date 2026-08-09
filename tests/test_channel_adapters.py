@@ -416,7 +416,9 @@ def test_build_request_response_round_trip_through_rail_parser(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     request_path, source_bundle, payload = _write_build_request(tmp_path)
-    expected_files = list(payload["expected_outputs"].values())
+    expected_files = [
+        name for names in payload["expected_outputs"].values() for name in names
+    ]
     artifact_bytes = {
         name: f"artifact:{name}".encode("utf-8") for name in expected_files
     }
@@ -448,12 +450,8 @@ def test_build_request_response_round_trip_through_rail_parser(
     evidence = build_rail._validate_macos_tool_evidence(response)
     wheel_names, record_names = build_rail._names_from_payload(response)
     assert set(evidence) == set(expected_presign_lane_tool_evidence("macos-arm64"))
-    assert len(wheel_names) == 3
-    assert tuple(record_names) == (
-        build_rail.MACOS_ROOT_RECORD,
-        build_rail.MACOS_CORE_RECORD,
-        build_rail.MACOS_SPEAKERS_ANALYZE_RECORD,
-    )
+    assert tuple(wheel_names) == build_rail._expected_macos_wheel_names()
+    assert tuple(record_names) == build_rail._expected_native_record_names()
 
 
 def test_build_host_macos_unlock_failure_preserves_labeled_streams(
@@ -566,7 +564,9 @@ def test_build_retrieved_artifact_digest_mismatch_writes_no_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     request_path, _source_bundle, payload = _write_build_request(tmp_path)
-    expected_files = list(payload["expected_outputs"].values())
+    expected_files = [
+        name for names in payload["expected_outputs"].values() for name in names
+    ]
     artifact_bytes = {
         name: f"artifact:{name}".encode("utf-8") for name in expected_files
     }

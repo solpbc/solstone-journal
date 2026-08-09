@@ -15,6 +15,9 @@ manifest-path = "../../core/crates/solstone-core-journal-bin/Cargo.toml"
 profile = "release"
 strip = true
 
+[tool.solstone-release]
+target-family = "core"
+
 [tool.uv]
 cache-keys = [
     { file = "pyproject.toml" },

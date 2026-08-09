@@ -149,6 +149,17 @@ def _local_dist_names_for_build_argv(
         package = args[3]
         prefix = f"{package.replace('-', '_')}-"
         return {name for name in expected if name.startswith(prefix)}
+    if (
+        len(args) == 5
+        and args[:3] == ("uv", "build", "--package")
+        and args[4] == "--wheel"
+    ):
+        prefix = f"{args[3].replace('-', '_')}-"
+        return {
+            name
+            for name in expected
+            if name.startswith(prefix) and name.endswith(".whl")
+        }
     return set()
 
 
@@ -245,6 +256,15 @@ def _fabricate_local_dist_for_build_argv(
             and name.endswith(".whl")
         }
         remaining = sorted(name for name in helper_wheels if not (dist / name).exists())
+        if remaining:
+            (dist / remaining[0]).write_bytes(b"package")
+        return
+    if (
+        len(args) == 5
+        and args[:3] == ("uv", "build", "--package")
+        and args[4] == "--wheel"
+    ):
+        remaining = sorted(name for name in names if not (dist / name).exists())
         if remaining:
             (dist / remaining[0]).write_bytes(b"package")
         return
@@ -2652,12 +2672,13 @@ def test_models_decision_is_bound_in_ledger_and_recovery(tmp_path: Path) -> None
 
 def test_default_build_local_dist_package_selection_tracks_workspace_sources() -> None:
     root_data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    inventory = driver.load_release_package_inventory(driver.ROOT)
     expected_include = tuple(
-        sorted({driver.ROOT_WORKSPACE_PACKAGE, *driver.WORKSPACE_SOURCES})
+        sorted({inventory.root_distribution, *inventory.workspace_distributions})
     )
 
     assert driver.ROOT_WORKSPACE_PACKAGE == root_data["project"]["name"]
-    assert driver.MODELS_WORKSPACE_PACKAGE in driver.WORKSPACE_SOURCES
+    assert driver.MODELS_WORKSPACE_PACKAGE in inventory.workspace_distributions
     assert (
         driver._expected_local_build_packages(include_models=True) == expected_include
     )
@@ -2866,104 +2887,19 @@ def test_default_build_local_dist_uses_exact_linux_contract_and_scrubbed_env(
 
     driver._default_build_local_dist(tmp_path, include_models=False, runner=runner)
 
-    expected_x86_env = _expected_scrubbed_env(
-        tmp_path, driver.CORE_X86_64_MATURIN_ARGS, None
+    expected_commands = driver._expected_local_build_commands(
+        include_models=False,
+        version=checker._current_version(),
     )
-    expected_aarch64_env = _expected_scrubbed_env(
-        tmp_path, driver.CORE_AARCH64_MATURIN_ARGS, None
-    )
-    expected_helper_x86_target = "linux-x86_64"
-    expected_helper_aarch64_target = "linux-aarch64"
-    expected_helper_x86_env = _expected_scrubbed_env(
-        tmp_path,
-        driver.SPEAKERS_ANALYZE_X86_64_MATURIN_ARGS,
-        expected_helper_x86_target,
-    )
-    expected_helper_aarch64_env = _expected_scrubbed_env(
-        tmp_path,
-        driver.SPEAKERS_ANALYZE_AARCH64_MATURIN_ARGS,
-        expected_helper_aarch64_target,
-    )
-    core_sdist_path = f"dist/solstone_core-{checker._current_version()}.tar.gz"
     assert calls == [
-        (
-            ("python3", "scripts/render_packaging.py", "--check"),
-            _expected_scrubbed_env(tmp_path, "", None),
-        ),
-        (
-            ("uv", "build", "--package", "solstone"),
-            expected_x86_env,
-        ),
-        (
-            ("uv", "build", "--package", "solstone-journal"),
-            expected_x86_env,
-        ),
-        (
-            ("uv", "build", "--package", "solstone-journal-cuda"),
-            expected_x86_env,
-        ),
-        (
-            ("uv", "build", "--package", "solstone-core", "--sdist"),
-            _expected_scrubbed_env(tmp_path, "", None),
-        ),
-        (
-            ("uv", "build", core_sdist_path, "--wheel", "--out-dir", "dist"),
-            expected_x86_env,
-        ),
-        (
-            ("uv", "build", core_sdist_path, "--wheel", "--out-dir", "dist"),
-            expected_aarch64_env,
-        ),
-        (
-            (
-                "python3",
-                "scripts/stage_speakers_analyze_runtime.py",
-                "--target",
-                expected_helper_x86_target,
-            ),
-            _expected_scrubbed_env(tmp_path, "", None),
-        ),
-        (
-            (
-                "uv",
-                "build",
-                "--package",
-                driver.SPEAKERS_ANALYZE_WORKSPACE_PACKAGE,
-                "--wheel",
-            ),
-            expected_helper_x86_env,
-        ),
-        (
-            (
-                "python3",
-                "scripts/stage_speakers_analyze_runtime.py",
-                "--target",
-                expected_helper_aarch64_target,
-            ),
-            _expected_scrubbed_env(tmp_path, "", None),
-        ),
-        (
-            (
-                "uv",
-                "build",
-                "--package",
-                driver.SPEAKERS_ANALYZE_WORKSPACE_PACKAGE,
-                "--wheel",
-            ),
-            expected_helper_aarch64_env,
-        ),
+        (argv, _expected_scrubbed_env(tmp_path, maturin_args, ort_target))
+        for argv, maturin_args, ort_target in expected_commands
     ]
     assert all("--exclude" not in argv for argv, _env in calls)
-    assert [
-        env["MATURIN_PEP517_ARGS"]
-        for argv, env in calls
-        if argv[:2] == ("uv", "build") and "--wheel" not in argv
-    ] == [driver.CORE_X86_64_MATURIN_ARGS] * 3 + [""]
     assert [env["MATURIN_PEP517_ARGS"] for argv, env in calls if "--wheel" in argv] == [
-        driver.CORE_X86_64_MATURIN_ARGS,
-        driver.CORE_AARCH64_MATURIN_ARGS,
-        driver.SPEAKERS_ANALYZE_X86_64_MATURIN_ARGS,
-        driver.SPEAKERS_ANALYZE_AARCH64_MATURIN_ARGS,
+        maturin_args
+        for argv, maturin_args, _ort_target in expected_commands
+        if "--wheel" in argv
     ]
     assert all("AMBIENT_RELEASE_TOKEN" not in env for _argv, env in calls)
     helper_build_argv = (
@@ -3032,42 +2968,12 @@ def test_default_build_local_dist_honors_include_models_build_selection(
 
     driver._default_build_local_dist(tmp_path, include_models=True, runner=runner)
 
-    core_sdist_path = f"dist/solstone_core-{checker._current_version()}.tar.gz"
     assert calls == [
-        ("python3", "scripts/render_packaging.py", "--check"),
-        ("uv", "build", "--package", "solstone"),
-        ("uv", "build", "--package", "solstone-journal"),
-        ("uv", "build", "--package", "solstone-journal-cuda"),
-        ("uv", "build", "--package", "solstone-journal-models"),
-        ("uv", "build", "--package", "solstone-core", "--sdist"),
-        ("uv", "build", core_sdist_path, "--wheel", "--out-dir", "dist"),
-        ("uv", "build", core_sdist_path, "--wheel", "--out-dir", "dist"),
-        (
-            "python3",
-            "scripts/stage_speakers_analyze_runtime.py",
-            "--target",
-            "linux-x86_64",
-        ),
-        (
-            "uv",
-            "build",
-            "--package",
-            driver.SPEAKERS_ANALYZE_WORKSPACE_PACKAGE,
-            "--wheel",
-        ),
-        (
-            "python3",
-            "scripts/stage_speakers_analyze_runtime.py",
-            "--target",
-            "linux-aarch64",
-        ),
-        (
-            "uv",
-            "build",
-            "--package",
-            driver.SPEAKERS_ANALYZE_WORKSPACE_PACKAGE,
-            "--wheel",
-        ),
+        argv
+        for argv, _maturin_args, _ort_target in driver._expected_local_build_commands(
+            include_models=True,
+            version=checker._current_version(),
+        )
     ]
     assert all("--exclude" not in call for call in calls)
     assert {path.name for path in (tmp_path / "dist").iterdir()} == set(

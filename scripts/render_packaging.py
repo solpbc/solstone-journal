@@ -75,19 +75,13 @@ def _leaf_paths(root: Path) -> tuple[Path, Path]:
     )
 
 
-def _core_leaf_path(root: Path) -> Path:
-    return root / "packages" / "solstone-core" / "pyproject.toml"
-
-
-def _command_leaf_paths(root: Path) -> tuple[Path, Path]:
-    return (
-        root / "packages" / "solstone-core-sol" / "pyproject.toml",
-        root / "packages" / "solstone-core-journal" / "pyproject.toml",
-    )
-
-
-def _speakers_analyze_leaf_path(root: Path) -> Path:
-    return root / "packages" / "solstone-core-speakers-analyze" / "pyproject.toml"
+def _maturin_leaf_paths(root: Path) -> tuple[Path, ...]:
+    paths: list[Path] = []
+    for path in sorted((root / "packages").glob("*/pyproject.toml")):
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        if data.get("build-system", {}).get("build-backend") == "maturin":
+            paths.append(path)
+    return tuple(paths)
 
 
 def _core_unsupported_tombstone_path(root: Path) -> Path:
@@ -119,6 +113,9 @@ def _rewrite_leaf(text: str, version: str) -> str:
     )
     text = _rewrite_native_pins(
         text, version, "solstone-core-journal", "journal leaf pyproject"
+    )
+    text = _rewrite_native_pins(
+        text, version, "solstone-core-retention", "journal leaf pyproject"
     )
     return text
 
@@ -448,14 +445,8 @@ def render(root: Path = ROOT) -> dict[Path, str]:
     )
     root_text = _rewrite_root_core_unsupported_pin(root_text, version)
     root_text = _rewrite_root_speakers_analyze_override_pin(root_text, version)
-    expected = {
+    expected: dict[Path, str] = {
         root / "pyproject.toml": root_text,
-        _core_leaf_path(root): _rewrite_core_leaf(
-            _core_leaf_path(root).read_text(encoding="utf-8"), version
-        ),
-        _speakers_analyze_leaf_path(root): _rewrite_speakers_analyze_leaf(
-            _speakers_analyze_leaf_path(root).read_text(encoding="utf-8"), version
-        ),
         _core_unsupported_tombstone_path(root): _rewrite_tombstone_setup(
             _core_unsupported_tombstone_path(root).read_text(encoding="utf-8"),
             version,
@@ -464,7 +455,7 @@ def render(root: Path = ROOT) -> dict[Path, str]:
     expected.update(
         {
             path: _rewrite_core_leaf(path.read_text(encoding="utf-8"), version)
-            for path in _command_leaf_paths(root)
+            for path in _maturin_leaf_paths(root)
         }
     )
     expected.update(

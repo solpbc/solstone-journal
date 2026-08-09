@@ -193,28 +193,14 @@ def _ort_env_keys(env: dict[str, str]) -> set[str]:
 
 def test_wheel_macos_signing_facts_stay_outside_packed_dirs() -> None:
     makefile = MAKEFILE.read_text(encoding="utf-8")
+    builder = (REPO_ROOT / "scripts" / "build_macos_release_packages.py").read_text(
+        encoding="utf-8"
+    )
 
-    for lane in _macos_signing_lanes(makefile):
-        facts_dir = f"{lane.prefix}_FACTS_DIR"
-        packed_dir = f"{lane.prefix}_TMP"
-        aggregate_file = f"{lane.prefix}_FACTS"
-
-        assert f"{facts_dir}=$$(mktemp -d)" in lane.block
-        assert f'"$${facts_dir}"' in lane.block
-
-        signing_matches = tuple(MACOS_SIGNING_RE.finditer(lane.block))
-        assert len(signing_matches) == lane.expected_signing_outputs
-        assert {match.group("dest_var") for match in signing_matches} == {facts_dir}
-        assert packed_dir not in {match.group("dest_var") for match in signing_matches}
-
-        aggregate = MACOS_AGGREGATE_RE.search(lane.block)
-        assert aggregate is not None, f"{lane.prefix} lane missing facts aggregation"
-        assert aggregate.group("input_dir") == facts_dir
-        assert aggregate.group("output_file") == aggregate_file
-
-        repack = MACOS_REPACK_RE.search(lane.block)
-        assert repack is not None, f"{lane.prefix} lane missing wheel repack"
-        assert repack.group("input_dir") == packed_dir
+    assert "python3 scripts/build_macos_release_packages.py" in makefile
+    assert builder.index("repack(unpacked, wheel_path)") < builder.index(
+        'facts_path = unpacked / "signing-facts.json"'
+    )
 
 
 def test_release_driver_helper_ort_env_matches_makefile_and_staging(

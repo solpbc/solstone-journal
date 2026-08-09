@@ -12,7 +12,7 @@ import os
 import zipfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from scripts.check_rust_release_manifest import (
     SHA256_RE,
@@ -29,6 +29,12 @@ from scripts.check_wheel_contents import (
     core_wheel_script_members,
 )
 from scripts.release_digest import file_sha256_size
+from scripts.release_package_inventory import (
+    NativePackage,
+    load_release_package_inventory,
+    native_role,
+    normalized_distribution,
+)
 from scripts.release_public_evidence import validate_public_evidence_tree
 from scripts.release_tool_pins import (
     MACOS_CODESIGN_PUBLIC_PIN,
@@ -41,7 +47,7 @@ from scripts.release_tool_pins import (
 )
 from scripts.stage_speakers_analyze_runtime import TARGETS as SPEAKERS_ANALYZE_TARGETS
 
-NativeRole = Literal["root", "core", "speakers-analyze"]
+NativeRole = str
 
 KIND = "macos-native-record/v1"
 TARGET = {
@@ -86,6 +92,17 @@ def _failure(error: str, *, expected: str, actual: str, repair: str) -> Failure:
     return Failure(error=error, expected=expected, actual=actual, repair=repair)
 
 
+def _native_package_for_role(role: NativeRole) -> NativePackage | None:
+    if role == "root":
+        return None
+    matches = [
+        package
+        for package in load_release_package_inventory().macos_native_packages
+        if native_role(package) == role
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
 def _members_for_role(
     wheel: zipfile.ZipFile, role: NativeRole
 ) -> dict[str, zipfile.ZipInfo] | None:
@@ -100,6 +117,17 @@ def _members_for_role(
         if len(scripts) != len(CORE_SCRIPT_NAMES) or names != set(CORE_SCRIPT_NAMES):
             return None
         return {Path(info.filename).name: info for info in scripts}
+
+    if role != "speakers-analyze":
+        package = _native_package_for_role(role)
+        if package is None:
+            return None
+        script_members = [
+            info
+            for info in wheel.infolist()
+            if info.filename.endswith(f".data/scripts/{package.binary}")
+        ]
+        return {package.binary: script_members[0]} if len(script_members) == 1 else None
 
     script_members = [
         info
@@ -126,6 +154,13 @@ def _expected_member_path(role: NativeRole) -> str:
         return PARAKEET_HELPER_MEMBER
     if role == "core":
         return ", ".join(f".data/scripts/{name}" for name in CORE_SCRIPT_NAMES)
+    if role != "speakers-analyze":
+        package = _native_package_for_role(role)
+        return (
+            f".data/scripts/{package.binary}"
+            if package is not None
+            else "known packaged native binary"
+        )
     dylib_name = _speakers_analyze_dylib_name()
     return (
         f".data/scripts/{SPEAKERS_ANALYZE_SCRIPT_NAMES[0]} and "
@@ -138,9 +173,16 @@ def _role_matches_wheel(role: NativeRole, wheel_name: str) -> bool:
         return wheel_name.startswith("solstone-") and wheel_name.endswith(".whl")
     if role == "core":
         return wheel_name.startswith("solstone_core-") and wheel_name.endswith(".whl")
-    return wheel_name.startswith(
-        "solstone_core_speakers_analyze-"
-    ) and wheel_name.endswith(".whl")
+    if role == "speakers-analyze":
+        return wheel_name.startswith(
+            "solstone_core_speakers_analyze-"
+        ) and wheel_name.endswith(".whl")
+    package = _native_package_for_role(role)
+    return (
+        package is not None
+        and wheel_name.startswith(f"{normalized_distribution(package.distribution)}-")
+        and wheel_name.endswith(".whl")
+    )
 
 
 def _primary_member_name(role: NativeRole) -> str:
@@ -148,7 +190,12 @@ def _primary_member_name(role: NativeRole) -> str:
         return "parakeet-helper"
     if role == "core":
         return "solstone-core"
-    return SPEAKERS_ANALYZE_SCRIPT_NAMES[0]
+    if role == "speakers-analyze":
+        return SPEAKERS_ANALYZE_SCRIPT_NAMES[0]
+    package = _native_package_for_role(role)
+    if package is None:
+        raise ValueError(f"unknown native role: {role}")
+    return package.binary
 
 
 def _speakers_analyze_dylib_name() -> str:
@@ -322,14 +369,16 @@ def _facts_by_member(
                 repair="python3 scripts/check_rust_release_manifest.py",
             )
         ]
-    expected_names = (
-        set(CORE_SCRIPT_NAMES)
-        if role == "core"
-        else {
+    if role == "core":
+        expected_names = set(CORE_SCRIPT_NAMES)
+    elif role == "speakers-analyze":
+        expected_names = {
             SPEAKERS_ANALYZE_SCRIPT_NAMES[0],
             SPEAKERS_ANALYZE_TARGETS["macos-arm64"].runtime_staged_name,
         }
-    )
+    else:
+        package = _native_package_for_role(role)
+        expected_names = {package.binary} if package is not None else set()
     if set(members) != expected_names:
         return {}, [
             _failure(
@@ -734,9 +783,7 @@ def write_macos_native_record(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--role", choices=("root", "core", "speakers-analyze"), required=True
-    )
+    parser.add_argument("--role", required=True)
     parser.add_argument("--wheel", type=Path, required=True)
     parser.add_argument("--signing-facts", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)

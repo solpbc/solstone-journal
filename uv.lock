@@ -26,8 +26,10 @@ resolution-markers = [
 members = [
     "solstone",
     "solstone-core",
+    "solstone-core-depict",
     "solstone-core-describe",
     "solstone-core-journal",
+    "solstone-core-retention",
     "solstone-core-sol",
     "solstone-core-speakers-analyze",
     "solstone-journal",
@@ -4415,6 +4417,11 @@ version = "1.0.22"
 source = { editable = "packages/solstone-core" }
 
 [[package]]
+name = "solstone-core-depict"
+version = "1.0.22"
+source = { editable = "packages/solstone-core-depict" }
+
+[[package]]
 name = "solstone-core-describe"
 version = "1.0.22"
 source = { editable = "packages/solstone-core-describe" }
@@ -4423,6 +4430,11 @@ source = { editable = "packages/solstone-core-describe" }
 name = "solstone-core-journal"
 version = "1.0.22"
 source = { editable = "packages/solstone-core-journal" }
+
+[[package]]
+name = "solstone-core-retention"
+version = "1.0.22"
+source = { editable = "packages/solstone-core-retention" }
 
 [[package]]
 name = "solstone-core-sol"
@@ -4438,6 +4450,7 @@ dependencies = [
     { name = "solstone", extra = ["journal-host"] },
     { name = "solstone-core", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "solstone-core-journal", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "solstone-core-retention", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 
 [package.metadata]
@@ -4451,6 +4464,9 @@ requires-dist = [
     { name = "solstone-core-journal", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-journal" },
     { name = "solstone-core-journal", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-journal" },
     { name = "solstone-core-journal", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-journal" },
+    { name = "solstone-core-retention", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-retention" },
+    { name = "solstone-core-retention", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-retention" },
+    { name = "solstone-core-retention", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-retention" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-speakers-analyze" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-speakers-analyze" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-speakers-analyze" },
@@ -4472,6 +4488,7 @@ dependencies = [
     { name = "solstone", extra = ["journal-host"] },
     { name = "solstone-core", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "solstone-core-journal", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "solstone-core-retention", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 
 [package.metadata]
@@ -4491,6 +4508,9 @@ requires-dist = [
     { name = "solstone-core-journal", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-journal" },
     { name = "solstone-core-journal", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-journal" },
     { name = "solstone-core-journal", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-journal" },
+    { name = "solstone-core-retention", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-retention" },
+    { name = "solstone-core-retention", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-retention" },
+    { name = "solstone-core-retention", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-retention" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-speakers-analyze" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-speakers-analyze" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-speakers-analyze" },

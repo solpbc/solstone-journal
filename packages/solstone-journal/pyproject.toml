@@ -20,6 +20,11 @@ dependencies = [
     "solstone-core-journal==1.0.22; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "solstone-core-journal==1.0.22; sys_platform == 'linux' and platform_machine == 'aarch64'",
     "solstone-core-journal==1.0.22; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    # Native retention executor: every owner-data removal routes through this
+    # binary, so the journal leaf owns making it available on PATH.
+    "solstone-core-retention==1.0.22; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "solstone-core-retention==1.0.22; sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "solstone-core-retention==1.0.22; sys_platform == 'darwin' and platform_machine == 'arm64'",
     # Native speaker analysis helper: same host coverage as the packaged helper
     # wheels, while dev sync prunes the workspace build through [tool.uv].
     "solstone-core-speakers-analyze==1.0.22; sys_platform == 'linux' and platform_machine == 'x86_64'",
@@ -45,3 +50,4 @@ script-files = ["scripts/journal"]
 solstone = {workspace = true}
 solstone-core = {workspace = true}
 solstone-core-journal = {workspace = true}
+solstone-core-retention = {workspace = true}

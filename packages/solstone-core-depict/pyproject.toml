@@ -3,15 +3,15 @@ requires = ["maturin==1.14.1"]
 build-backend = "maturin"
 
 [project]
-name = "solstone-core-sol"
+name = "solstone-core-depict"
 version = "1.0.22"
-description = "Native API-only sol command surface."
+description = "Native still-image depiction helper for the journal."
 requires-python = ">=3.12"
 license = {text = "AGPL-3.0-only"}
 
 [tool.maturin]
 bindings = "bin"
-manifest-path = "../../core/crates/solstone-core-sol-bin/Cargo.toml"
+manifest-path = "../../core/crates/solstone-core-depict/Cargo.toml"
 profile = "release"
 strip = true
 
@@ -25,5 +25,4 @@ cache-keys = [
     { file = "../../core/Cargo.lock" },
     { file = "../../core/crates/**/Cargo.toml" },
     { file = "../../core/crates/**/*.rs" },
-    { file = "../../core/fixtures/**" },
 ]

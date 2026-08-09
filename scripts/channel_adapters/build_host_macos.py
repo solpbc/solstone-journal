@@ -194,12 +194,16 @@ def build_macos(build_lane: LaneConfig, request_path: Path) -> None:
     commit = req["expected_commit"]
     sb = req["source_bundle"]
     outputs = req["expected_outputs"]
-    root_wheel = outputs["root_wheel"]
-    core_wheel = outputs["core_wheel"]
-    speakers_analyze_wheel = outputs["speakers_analyze_wheel"]
-    root_record = outputs["root_record"]
-    core_record = outputs["core_record"]
-    speakers_analyze_record = outputs["speakers_analyze_record"]
+    macos_wheels = outputs["macos_wheels"]
+    native_records = outputs["native_records"]
+    if not isinstance(macos_wheels, list) or not all(
+        isinstance(name, str) for name in macos_wheels
+    ):
+        die("macOS expected wheel inventory is invalid")
+    if not isinstance(native_records, list) or not all(
+        isinstance(name, str) for name in native_records
+    ):
+        die("macOS expected native record inventory is invalid")
 
     bundle = Path(sb["path"])
     out_dir = Path(req["paths"]["output_dir"])
@@ -278,14 +282,7 @@ echo CHECKOUT_OK
             detail=_stream_detail(build.stderr, build.stdout),
         )
 
-    expected_files = [
-        root_wheel,
-        core_wheel,
-        speakers_analyze_wheel,
-        root_record,
-        core_record,
-        speakers_analyze_record,
-    ]
+    expected_files = [*macos_wheels, *native_records]
     quoted_expected_files = " ".join(shlex.quote(name) for name in expected_files)
     listing = ssh_run(
         build_lane,
@@ -326,8 +323,8 @@ echo DIST_OK
             "bundle_bytes": sb["bytes"],
         },
         "tool_evidence": tool_evidence,
-        "macos_wheels": [root_wheel, core_wheel, speakers_analyze_wheel],
-        "native_records": [root_record, core_record, speakers_analyze_record],
+        "macos_wheels": macos_wheels,
+        "native_records": native_records,
     }
     write_json(resp_path, response)
 
