@@ -1043,9 +1043,20 @@ core-fixtures:
 # conversion deletes. Checking them here catches a corpus edited without
 # regenerating -- which the recording's consumers cannot see, because they read
 # the fixture and not the script that wrote it.
+#
+# Both legs run and each reports its own status. Chaining them would put the
+# second behind the first, and a check that never executes is a check that
+# reports green by never having an opinion.
 check-core-fixtures: .installed
-	$(VENV_BIN)/python scripts/build_core_fixtures.py --check
-	$(VENV_BIN)/python scripts/generate_seam_oracles.py --check
+	@status=0; \
+	echo "==> build_core_fixtures --check"; \
+	$(VENV_BIN)/python scripts/build_core_fixtures.py --check || status=$$?; \
+	echo "==> generate_seam_oracles --check"; \
+	$(VENV_BIN)/python scripts/generate_seam_oracles.py --check || status=$$?; \
+	if [ $$status -ne 0 ]; then \
+		echo "check-core-fixtures: FAILED (status $$status) -- both legs above ran; read each leg's own result"; \
+	fi; \
+	exit $$status
 
 check-release-advisory-liveness: .installed
 	$(VENV_BIN)/python scripts/check_release_advisory_liveness.py
