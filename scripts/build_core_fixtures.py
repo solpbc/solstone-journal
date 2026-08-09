@@ -137,9 +137,9 @@ from tests.speaker_oracle.overlap import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import content_family_corpus  # noqa: E402  — sibling module, not a package
-import talent_projection_corpus  # noqa: E402  — sibling module, not a package
 import entity_corpus  # noqa: E402  — sibling module, not a package
 import install_status_corpus  # noqa: E402  — sibling module, not a package
+import talent_projection_corpus  # noqa: E402  — sibling module, not a package
 
 FIXTURE_DIR = ROOT / "core" / "fixtures"
 CONTENT_FAMILIES_ARTIFACT_PATH = FIXTURE_DIR / "content_families.json"
@@ -148,35 +148,8 @@ CALLOSUM_ARTIFACT_PATH = FIXTURE_DIR / "callosum_registry.json"
 COGITATE_ARTIFACT_PATH = FIXTURE_DIR / "cogitate_contract.json"
 GENERATE_ARTIFACT_PATH = FIXTURE_DIR / "generate_contract.json"
 
-# Two generate-contract values that used to be read from
-# solstone/think/generate_wire.py. The Rust wire is the implementation now and
-# the conversion deletes that module, so they are authored here -- the same
-# place every other value in this contract with no Python constant behind it
-# already lives (see the protocol_error comment below).
-#
-# While the Python shim still exists both spellings are present, so
-# `_assert_no_generate_wire_drift` pins them together. It disappears on its own
-# when the module does.
 _IMAGE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
 _SESSION_LINE_LIMIT = 64 * 1024 * 1024
-
-
-def _assert_no_generate_wire_drift() -> None:
-    try:
-        from solstone.think import generate_wire
-    except ImportError:
-        return  # the shim is gone; these constants are the only spelling left
-    for name, ours in (
-        ("_IMAGE_MIME_TYPES", _IMAGE_MIME_TYPES),
-        ("_SESSION_LINE_LIMIT", _SESSION_LINE_LIMIT),
-    ):
-        theirs = getattr(generate_wire, name, None)
-        if theirs is not None and theirs != ours:
-            raise SystemExit(
-                f"{name} drifted: generate_wire has {theirs!r}, this generator "
-                f"has {ours!r}. The contract fixture is built from the value "
-                f"here, so they must agree while both exist."
-            )
 INSTALL_STATUS_ARTIFACT_PATH = FIXTURE_DIR / "install_status.json"
 EDGE_SCHEMA_ARTIFACT_PATH = FIXTURE_DIR / "edge_schema.json"
 MARKDOWN_CHUNKS_ARTIFACT_PATH = FIXTURE_DIR / "markdown_chunks.json"
@@ -337,13 +310,25 @@ def build_generate_contract_fixture() -> dict[str, Any]:
         "inference": None,
     }
     typed_refusals = [
-        ("attestation-not-verified", "AttestationNotVerifiedError", "attestation_not_yet_verified"),
+        (
+            "attestation-not-verified",
+            "AttestationNotVerifiedError",
+            "attestation_not_yet_verified",
+        ),
         ("attestation-failed", "AttestationFailedError", "attestation_failed"),
         ("attestation-stale", "AttestationStaleError", "attestation_stale"),
-        ("no-engine-configured", "NoBrainConfiguredError", "thinking_engine_not_chosen"),
+        (
+            "no-engine-configured",
+            "NoBrainConfiguredError",
+            "thinking_engine_not_chosen",
+        ),
         ("incomplete-json", "IncompleteJSONError", "incomplete_json_length"),
         ("incomplete-text", "IncompleteTextError", "incomplete_text_length"),
-        ("provider-response-invalid", "ProviderResponseInvalidError", "provider_response_invalid"),
+        (
+            "provider-response-invalid",
+            "ProviderResponseInvalidError",
+            "provider_response_invalid",
+        ),
         ("schema-validation-failed", "SchemaValidationError", None),
         ("non-responsive-output", "NonResponsiveOutputError", "non_responsive"),
     ]
@@ -382,7 +367,11 @@ def build_generate_contract_fixture() -> dict[str, Any]:
                     "detail": f"fixture {reason}",
                 },
                 "exit_code": 0,
-                "source": {"path": "typed_exception", "exception": exception, "reason_code": reason_code},
+                "source": {
+                    "path": "typed_exception",
+                    "exception": exception,
+                    "reason_code": reason_code,
+                },
             }
         )
     vectors.extend(
@@ -449,7 +438,11 @@ def build_generate_contract_fixture() -> dict[str, Any]:
             "one_shot_optional_fields": ["id"],
             "session_required_fields": ["id"],
             "forbidden_fields": ["provider", "model"],
-            "defaults": {key: value for key, value in request.items() if key not in {"schema", "id", "context", "contents"}},
+            "defaults": {
+                key: value
+                for key, value in request.items()
+                if key not in {"schema", "id", "context", "contents"}
+            },
             "content_parts": {
                 "text": {"fields": ["type", "text"]},
                 "image": {
@@ -466,10 +459,23 @@ def build_generate_contract_fixture() -> dict[str, Any]:
             "finish_reason_unknown": _UNKNOWN_FINISH_REASON,
             "outcomes": {
                 "generated": {"fields": [*generated, "hints_applied"]},
-                "refused": {"fields": ["schema", "id", "outcome", "reason", "reason_code", "retryable", "blocking", "reset_at_ms", "provider", "detail"]},
+                "refused": {
+                    "fields": [
+                        "schema",
+                        "id",
+                        "outcome",
+                        "reason",
+                        "reason_code",
+                        "retryable",
+                        "blocking",
+                        "reset_at_ms",
+                        "provider",
+                        "detail",
+                    ]
+                },
             },
         },
-        # Mirrors solstone/think/generate_wire.py:_v2_protocol_error and
+        # Mirrors the native generate protocol-error response and
         # :_v2_internal_error, whose literals are not named constants.
         "protocol_error": {
             "fields": ["schema", "id", "reason", "detail"],
@@ -477,11 +483,19 @@ def build_generate_contract_fixture() -> dict[str, Any]:
         },
         "outcomes": ["generated", "refused"],
         "refusal_reasons": [reason for reason, _, _ in typed_refusals] + ["unknown"],
-        "unknown_member": {"refusal_reason": "unknown", "retryable": False, "blocking": True},
+        "unknown_member": {
+            "refusal_reason": "unknown",
+            "retryable": False,
+            "blocking": True,
+        },
         "reason_codes": reason_codes,
         "exit_codes": {"response": 0, "malformed_request": 64, "internal_failure": 70},
         "framing": {
-            "one_shot": {"selector": "--one-shot", "stdin": "json-eof", "id": "optional"},
+            "one_shot": {
+                "selector": "--one-shot",
+                "stdin": "json-eof",
+                "id": "optional",
+            },
             "session": {
                 "selector": "--session",
                 "stdin": "ndjson",
@@ -1699,8 +1713,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Check generated fixtures without writing files.",
     )
     args = parser.parse_args(argv)
-
-    _assert_no_generate_wire_drift()
 
     if args.check:
         return check_outputs()

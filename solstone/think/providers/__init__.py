@@ -3,16 +3,8 @@
 
 """AI provider backends for think.
 
-This package exposes one OpenHands/LiteLLM cloud transport plus the local policy
-wrapper used for bundled and OpenAI-compatible endpoint execution. Effective
-provider modules expose:
-
-- run_generate(): Sync text generation, returns GenerateResult
-- run_agenerate(): Async text generation, returns GenerateResult
-- run_cogitate(): Tool-calling execution with event streaming
-
-GenerateResult is a TypedDict with: text, usage, finish_reason, thinking.
-The wrapper functions in think.models handle token logging and JSON validation.
+This package exposes the cogitate provider implementations and settings
+validation helpers. Native ``solstone-core generate`` owns all generation.
 
 Available providers:
 - google: Google Gemini models
@@ -29,10 +21,7 @@ from typing import Any, Dict, List
 # Provider Registry
 # ---------------------------------------------------------------------------
 # Central registry of supported providers and their module paths.
-# All registered provider module targets must implement:
-#   - run_generate(contents, model, ...) -> GenerateResult
-#   - run_agenerate(contents, model, ...) -> GenerateResult
-#   - run_cogitate(config, on_event) -> str
+# All registered provider module targets implement run_cogitate(config, on_event).
 # ---------------------------------------------------------------------------
 
 PROVIDER_REGISTRY: Dict[str, str] = {
@@ -101,7 +90,7 @@ def get_provider_module(provider: str) -> ModuleType:
     Returns
     -------
     ModuleType
-        The provider module with run_generate, run_agenerate, and run_cogitate functions.
+        The provider module with run_cogitate.
 
     Raises
     ------

@@ -12,14 +12,8 @@ from typing import Any
 import pytest
 
 from solstone.apps.timeline.rollup import build_rollup_schema
-from solstone.think.schema_prep import (
-    prepare_provider_schema,
-    unsupported_keyword_hits,
-)
-from solstone.think.talent import hydrate_runtime_enums
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-STRICT_PROVIDERS = ("openai", "anthropic", "google")
 
 
 def _discover_schemas() -> tuple[tuple[str, dict[str, Any]], ...]:
@@ -80,41 +74,6 @@ def test_all_discovered_schemas_are_strict_portable(
 ) -> None:
     schema_violations = violations(schema)
     assert schema_violations == [], f"{schema_id}: {schema_violations}"
-
-
-@pytest.mark.parametrize("provider", STRICT_PROVIDERS)
-@pytest.mark.parametrize(
-    ("schema_id", "schema"),
-    [pytest.param(schema_id, schema, id=schema_id) for schema_id, schema in SCHEMAS],
-)
-def test_prepared_schemas_have_no_provider_unsupported_keywords(
-    schema_id: str, schema: dict[str, Any], provider: str
-) -> None:
-    prepared = prepare_provider_schema(schema, provider)
-
-    assert prepared is not None
-    assert unsupported_keyword_hits(prepared, provider) == [], schema_id
-
-
-@pytest.mark.parametrize(
-    "schema_path",
-    [
-        Path("solstone/talent/schedule.schema.json"),
-        Path("solstone/talent/sense.schema.json"),
-    ],
-)
-def test_zero_facet_runtime_hydration_of_shipped_schemas_has_no_banned_keys(
-    schema_path: Path, monkeypatch
-) -> None:
-    monkeypatch.setattr("solstone.think.talent._valid_runtime_facets", lambda: [])
-    schema = json.loads((REPO_ROOT / schema_path).read_text(encoding="utf-8"))
-
-    hydrated = hydrate_runtime_enums(schema)
-
-    for provider in STRICT_PROVIDERS:
-        prepared = prepare_provider_schema(hydrated, provider)
-        assert prepared is not None
-        assert unsupported_keyword_hits(prepared, provider) == []
 
 
 @pytest.mark.parametrize(

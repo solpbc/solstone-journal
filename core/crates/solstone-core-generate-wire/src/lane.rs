@@ -11,6 +11,7 @@ use crate::anthropic::AnthropicFailure;
 use crate::endpoint::EndpointFailure;
 use crate::google::GoogleFailure;
 use crate::openai::OpenAiFailure;
+use crate::overrides::configured_provider;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LaneOutcome {
@@ -34,10 +35,7 @@ pub enum LaneOutcome {
 }
 
 pub fn resolve_lane(config: &Map<String, Value>) -> (String, LaneOutcome) {
-    let provider = string_at(config, &["providers", "active", "provider"])
-        .filter(|provider| !provider.is_empty())
-        .unwrap_or("none")
-        .to_owned();
+    let provider = configured_provider(config);
     if provider == "none" {
         return (provider, LaneOutcome::NoEngine);
     }
@@ -64,15 +62,6 @@ pub fn resolve_lane(config: &Map<String, Value>) -> (String, LaneOutcome) {
             LocalEndpointResolution::Byo(endpoint) => LaneOutcome::ByoEndpoint(endpoint),
         },
     )
-}
-
-fn string_at<'a>(config: &'a Map<String, Value>, path: &[&str]) -> Option<&'a str> {
-    let (first, rest) = path.split_first()?;
-    let mut value = config.get(*first)?;
-    for key in rest {
-        value = value.as_object()?.get(*key)?;
-    }
-    value.as_str().map(str::trim)
 }
 
 #[cfg(test)]

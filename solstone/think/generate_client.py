@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
+from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -232,14 +234,20 @@ def _response_result(raw: str) -> dict[str, Any]:
     return _response_result_from_response(_decode_protocol_response(raw))
 
 
-def _run_one_shot(request: dict[str, Any]) -> dict[str, Any]:
+def _run_one_shot(
+    request: dict[str, Any], *, child_environment: Mapping[str, str] | None = None
+) -> dict[str, Any]:
     try:
+        environment = os.environ.copy()
+        if child_environment:
+            environment.update(child_environment)
         process = subprocess.Popen(
             [str(_native_binary()), "generate", "--one-shot"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env=environment,
         )
     except OSError as exc:
         raise RuntimeError(f"generate native command could not start: {exc}") from exc
@@ -309,6 +317,7 @@ def generate_with_result(
     inference_retry_index: int = 0,
     local_exclusive_admission: bool = False,
     enforce_responsiveness: bool = True,
+    child_environment: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     if json_schema is not None:
         json_output = True
@@ -327,7 +336,8 @@ def generate_with_result(
             inference_retry_index=inference_retry_index,
             local_exclusive_admission=local_exclusive_admission,
             enforce_responsiveness=enforce_responsiveness,
-        )
+        ),
+        child_environment=child_environment,
     )
 
 

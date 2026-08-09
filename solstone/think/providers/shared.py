@@ -5,7 +5,7 @@
 
 This module contains:
 - Event TypedDicts emitted by providers during talent execution
-- GenerateResult TypedDict returned by run_generate/run_agenerate
+- GenerateResult TypedDict used by native generate consumers
 - JSONEventCallback for event emission
 - Utility functions for common provider operations
 """
@@ -493,10 +493,7 @@ _UNKNOWN_FINISH_REASON = "unknown"
 
 
 class GenerateResult(TypedDict, total=False):
-    """Result from provider run_generate/run_agenerate functions.
-
-    Structured result that allows the wrapper to handle cross-cutting concerns
-    like token logging and JSON validation centrally.
+    """Result from the native generate boundary.
 
     The thinking field contains dicts with: summary (str), signature (optional str),
     redacted_data (optional str for Anthropic redacted thinking).
@@ -585,56 +582,6 @@ def _safe_finish_reason(value: Any) -> str | None:
     if _SAFE_FINISH_REASON_PATTERN.fullmatch(normalized):
         return normalized
     return _UNKNOWN_FINISH_REASON
-
-
-def validate_generate_result_strict(
-    result: GenerateResult,
-    *,
-    json_output: bool,
-    model: str | None = None,
-) -> None:
-    """Validate provider result shape and visible output after usage logging."""
-    from solstone.think.models import (
-        ProviderResponseInvalidError,
-        finish_reason_error,
-    )
-
-    if not isinstance(result, Mapping):
-        raise ProviderResponseInvalidError(
-            "malformed_result",
-            model=model,
-        )
-
-    token_counts = _safe_token_counts(result.get("usage"))
-    result_model = result.get("model")
-    error_model = (
-        result_model if isinstance(result_model, str) and result_model else model
-    )
-    finish_reason = result.get("finish_reason")
-    safe_finish_reason = _safe_finish_reason(finish_reason)
-
-    if finish_reason is not None and not isinstance(finish_reason, str):
-        raise ProviderResponseInvalidError(
-            "malformed_finish_reason",
-            finish_reason=safe_finish_reason,
-            model=error_model,
-            token_counts=token_counts,
-        )
-
-    if json_output:
-        error = finish_reason_error(
-            {**result, "finish_reason": safe_finish_reason}, json_output=True
-        )
-        if error is not None:
-            raise error
-
-    if safe_finish_reason in {None, "stop"} and _is_blank_visible_output(result):
-        raise ProviderResponseInvalidError(
-            "blank_visible_output",
-            finish_reason=safe_finish_reason,
-            model=error_model,
-            token_counts=token_counts,
-        )
 
 
 def classify_canned_generate(result: GenerateResult) -> CannedGenerateVerdict:

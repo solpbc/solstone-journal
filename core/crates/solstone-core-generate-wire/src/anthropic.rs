@@ -116,7 +116,7 @@ fn anthropic_generate_with<T: AnthropicTransport>(
         ANTHROPIC_BASE_URL,
         ANTHROPIC_MESSAGES_PATH,
         &body,
-        api_key,
+        &api_key,
         ANTHROPIC_VERSION,
         request_timeout(request.timeout_s),
     ) {
@@ -131,28 +131,12 @@ fn anthropic_generate_with<T: AnthropicTransport>(
     parse_response(&response.body)
 }
 
-fn configured_api_key(config: &Map<String, Value>) -> Option<&str> {
-    config
-        .get("env")
-        .and_then(Value::as_object)
-        .and_then(|env| env.get(ANTHROPIC_API_KEY_ENV))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|key| !key.is_empty())
+fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
+    crate::overrides::configured_api_key(config, ANTHROPIC_API_KEY_ENV)
 }
 
 fn configured_model(config: &Map<String, Value>) -> String {
-    config
-        .get("providers")
-        .and_then(Value::as_object)
-        .and_then(|providers| providers.get("active"))
-        .and_then(Value::as_object)
-        .and_then(|active| active.get("model"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|model| !model.is_empty())
-        .unwrap_or(DEFAULT_MODEL)
-        .to_owned()
+    crate::overrides::configured_model(config, DEFAULT_MODEL)
 }
 
 fn request_body(request: &GenerateRequest, model: &str) -> Value {
@@ -306,12 +290,18 @@ fn classify_ureq_error(error: ureq::Error) -> EndpointTransportError {
 
 #[cfg(test)]
 mod tests {
-    use std::process::Command;
+    use std::{
+        fs,
+        process::Command,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
-    use solstone_core_generate::{ContentPart, ReasonCodeValue};
+    use solstone_core_generate::{
+        ContentPart, GenerateResponse, ReasonCodeValue, encode_one_shot_response,
+    };
 
     use super::*;
-    use crate::{LaneOutcome, refusal_for};
+    use crate::{LaneOutcome, ProviderResultView, assess_provider_result, refusal_for};
 
     #[derive(Default)]
     struct StubTransport {
@@ -438,6 +428,83 @@ mod tests {
         );
         assert_eq!(transport.api_keys, ["configured-secret"]);
         assert_eq!(transport.versions, [ANTHROPIC_VERSION]);
+    }
+
+    #[test]
+    fn override_key_is_transport_only_and_not_emitted() {
+        if std::env::var_os("SOLSTONE_ANTHROPIC_OVERRIDE_CHILD").is_none() {
+            let status = Command::new(std::env::current_exe().unwrap())
+                .arg("--exact")
+                .arg("anthropic::tests::override_key_is_transport_only_and_not_emitted")
+                .env("SOLSTONE_ANTHROPIC_OVERRIDE_CHILD", "1")
+                .env(crate::overrides::API_KEY_OVERRIDE_ENV, "override-secret")
+                .status()
+                .unwrap();
+            assert!(status.success());
+            return;
+        }
+
+        let mut transport = StubTransport {
+            responses: vec![Ok(success_response())],
+            ..Default::default()
+        };
+        let generated = generated(anthropic_generate_with(
+            &request(),
+            &config(None, None),
+            &mut transport,
+        ));
+        assert_eq!(transport.api_keys, ["override-secret"]);
+        assert!(
+            !serde_json::to_vec(&transport.posts[0])
+                .unwrap()
+                .windows(b"override-secret".len())
+                .any(|window| window == b"override-secret")
+        );
+
+        let journal = std::env::temp_dir().join(format!(
+            "solstone-anthropic-override-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let assessment = assess_provider_result(ProviderResultView {
+            journal_path: &journal,
+            context: "test.generate",
+            model: &generated.model,
+            text: &generated.text,
+            finish_reason: &generated.finish_reason,
+            usage: &generated.usage,
+            json_output: false,
+            enforce_responsiveness: false,
+        });
+        assert!(assessment.token_log_error.is_none());
+        let token_log = fs::read_to_string(
+            fs::read_dir(journal.join("tokens"))
+                .unwrap()
+                .next()
+                .unwrap()
+                .unwrap()
+                .path(),
+        )
+        .unwrap();
+        assert!(!token_log.contains("override-secret"));
+
+        let diagnostic = encode_one_shot_response(&GenerateResponse::Refused(refusal_for(
+            &LaneOutcome::AnthropicFailure(AnthropicFailure {
+                reason_code: Some("provider_response_invalid".into()),
+            }),
+            "anthropic",
+            Some("request".into()),
+        )))
+        .unwrap()
+        .into_bytes();
+        assert!(
+            !diagnostic
+                .windows(b"override-secret".len())
+                .any(|window| window == b"override-secret")
+        );
+        let _ = fs::remove_dir_all(journal);
     }
 
     #[test]

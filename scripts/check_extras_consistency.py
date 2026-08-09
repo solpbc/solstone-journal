@@ -72,7 +72,6 @@ ROOT_SCRIPT_FILES = tuple(
 )
 HOST_SCRIPTS = {
     "mlx-vlm-server": "solstone.think.providers.mlx_server:main",
-    "solstone-generate-wire": "solstone.think.generate_wire:main",
 }
 TOMBSTONE_PIN = "solstone-journal-host==0.7.0"
 LITELLM_PIN = "litellm==1.86.1"
@@ -310,8 +309,7 @@ def _leaf_dependencies(
             )
         if uv.get("sources", {}).get(native_name) != {"workspace": True}:
             errors.append(
-                f"{label} [tool.uv.sources].{native_name} must be "
-                "{workspace = true}"
+                f"{label} [tool.uv.sources].{native_name} must be {{workspace = true}}"
             )
     return deps
 
@@ -476,9 +474,7 @@ def _check_describe_leaf(
     uv = tool.get("uv", {})
 
     if project.get("name") != "solstone-core-describe":
-        errors.append(
-            "describe leaf [project].name must be 'solstone-core-describe'"
-        )
+        errors.append("describe leaf [project].name must be 'solstone-core-describe'")
     if project.get("version") != root_version:
         errors.append(
             "describe leaf [project].version must match root version "

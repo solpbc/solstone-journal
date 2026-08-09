@@ -10,7 +10,6 @@ from jsonschema import Draft202012Validator
 
 from solstone.talent.story import ALLOWED_RELATION_KINDS
 from solstone.think.schema_bounds import unbounded_nodes
-from solstone.think.schema_prep import SCHEMA_TRUNCATE_KEY
 from solstone.think.talent import get_talent
 
 SCHEMA_PATH = (
@@ -152,10 +151,10 @@ def test_audit_fields_carry_truncation_annotation():
 
     assert reasoning["type"] == ["string", "null"]
     assert reasoning["maxLength"] == 300
-    assert reasoning[SCHEMA_TRUNCATE_KEY] is True
+    assert reasoning["x-truncate"] is True
     assert summary["type"] == "string"
     assert summary["maxLength"] == 500
-    assert summary[SCHEMA_TRUNCATE_KEY] is True
+    assert summary["x-truncate"] is True
 
 
 def test_invalid_missing_top_required():
