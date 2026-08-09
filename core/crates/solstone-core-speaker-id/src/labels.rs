@@ -28,6 +28,27 @@ pub enum LabelsError {
     Corrections(CorrectionsError),
     SentenceIdNotFound(i64),
     InvalidCorrectionSentenceId,
+    InvalidLabelRestoration,
+}
+
+/// One compare-and-restore request for an identify-authored label row.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LabelRestoration {
+    pub sentence_id: i64,
+    pub expected_current_label: Value,
+    pub prior_state: String,
+    pub prior_label: Option<Value>,
+}
+
+/// Counts from a compare-and-restore label batch.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LabelRestoreReport {
+    pub restored_count: usize,
+    pub removed_inserted_count: usize,
+    pub patched_existing_count: usize,
+    pub skipped_count: usize,
+    pub missing_count: usize,
+    pub changed_count: usize,
 }
 
 impl fmt::Display for LabelsError {
@@ -46,6 +67,9 @@ impl fmt::Display for LabelsError {
             Self::InvalidCorrectionSentenceId => {
                 write!(f, "speaker correction has an invalid sentence ID")
             }
+            Self::InvalidLabelRestoration => {
+                write!(f, "speaker label restoration has invalid prior state")
+            }
         }
     }
 }
@@ -57,7 +81,9 @@ impl Error for LabelsError {
             Self::Write(error) => Some(error),
             Self::Serialize(error) => Some(error),
             Self::Corrections(error) => Some(error),
-            Self::SentenceIdNotFound(_) | Self::InvalidCorrectionSentenceId => None,
+            Self::SentenceIdNotFound(_)
+            | Self::InvalidCorrectionSentenceId
+            | Self::InvalidLabelRestoration => None,
         }
     }
 }
@@ -239,6 +265,76 @@ pub fn patch_labels(
 
     base.insert("labels".to_owned(), Value::Array(labels));
     write_labels(&path, Value::Object(base))
+}
+
+/// Restore identify-authored labels only when their current values still match.
+pub fn restore_label_rows(
+    segment_dir: &Path,
+    restorations: &[LabelRestoration],
+) -> Result<LabelRestoreReport, LabelsError> {
+    let mut report = LabelRestoreReport::default();
+    if restorations.is_empty() {
+        return Ok(report);
+    }
+    let path = labels_path(segment_dir);
+    let _lock = hold_lock(&path, LockOptions::default()).map_err(LabelsError::Lock)?;
+    let mut base = read_current_labels(&path).unwrap_or_default();
+    let mut labels = base
+        .get("labels")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut by_sentence = HashMap::new();
+    for (index, label) in labels.iter().enumerate() {
+        if let Some(sentence_id) = label.as_object().and_then(label_sentence_id) {
+            by_sentence.insert(sentence_id, index);
+        }
+    }
+    let mut removals = HashSet::new();
+    let mut changed = false;
+    for restoration in restorations {
+        let Some(index) = by_sentence.get(&restoration.sentence_id).copied() else {
+            report.missing_count += 1;
+            continue;
+        };
+        if labels[index] != restoration.expected_current_label {
+            report.changed_count += 1;
+            continue;
+        }
+        match restoration.prior_state.as_str() {
+            "absent" => {
+                removals.insert(restoration.sentence_id);
+                report.removed_inserted_count += 1;
+            }
+            "present" => {
+                let Some(prior) = restoration.prior_label.as_ref().and_then(Value::as_object) else {
+                    return Err(LabelsError::InvalidLabelRestoration);
+                };
+                labels[index] = Value::Object(prior.clone());
+                report.patched_existing_count += 1;
+            }
+            _ => return Err(LabelsError::InvalidLabelRestoration),
+        }
+        report.restored_count += 1;
+        changed = true;
+    }
+    report.skipped_count = report.missing_count + report.changed_count;
+    if !changed {
+        return Ok(report);
+    }
+    labels.retain(|label| {
+        !label
+            .as_object()
+            .and_then(label_sentence_id)
+            .is_some_and(|sentence_id| removals.contains(&sentence_id))
+    });
+    labels.sort_by_key(|label| {
+        let sentence_id = label.as_object().and_then(label_sentence_id);
+        (sentence_id.is_none(), sentence_id.unwrap_or(0))
+    });
+    base.insert("labels".to_owned(), Value::Array(labels));
+    write_labels(&path, Value::Object(base))?;
+    Ok(report)
 }
 
 fn labels_path(segment_dir: &Path) -> PathBuf {

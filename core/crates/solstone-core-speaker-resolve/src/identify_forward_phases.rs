@@ -700,7 +700,8 @@ pub(crate) fn load_resolved_clusters(root: &Path) -> BTreeMap<String, Value> {
         .map(|object| object.into_iter().collect())
         .unwrap_or_default()
 }
-fn replace_resolved_clusters(
+/// Replace the resolved-cluster sentinel cache after a compare-and-swap decision.
+pub(crate) fn replace_resolved_clusters(
     root: &Path,
     values: &BTreeMap<String, Value>,
 ) -> Result<(), ForwardPhaseError> {

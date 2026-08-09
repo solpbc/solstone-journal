@@ -2874,6 +2874,7 @@ dependencies = [
  "sha2",
  "solstone-core-entity",
  "solstone-core-entity-matching",
+ "solstone-core-facets",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-npy",

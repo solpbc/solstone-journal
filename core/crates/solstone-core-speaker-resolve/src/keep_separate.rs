@@ -107,6 +107,50 @@ pub fn record_keep_separate_assertion(
     Ok(())
 }
 
+/// Append tombstones for every active keep-separate source owned by an operation.
+pub fn remove_operation_sources(
+    journal_root: &Path,
+    operation_id: &str,
+    pair_keys: &[String],
+) -> Result<usize, KeepSeparateError> {
+    let path = keep_separate_path(journal_root);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| KeepSeparateError::Read {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let _lock = hold_lock(&path, LockOptions::default())?;
+    let assertions = fold_assertions(journal_root)?;
+    let mut removed = 0usize;
+    for pair_key in pair_keys {
+        let Some(assertion) = assertions.get(pair_key) else {
+            continue;
+        };
+        for source in &assertion.sources {
+            if source.operation_id.as_deref() != Some(operation_id) {
+                continue;
+            }
+            let row = json!({
+                "schema_version": SCHEMA_VERSION,
+                "event_kind": "source_removed",
+                "pair_key": pair_key,
+                "source_kind": source.source_kind,
+                "operation_id": operation_id,
+                "ts": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            });
+            validate_row(&row).map_err(|detail| KeepSeparateError::InvalidRow {
+                path: path.clone(),
+                line: 0,
+                detail,
+            })?;
+            append_jsonl(&path, &row)?;
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 fn fold_assertions(
     journal_root: &Path,
 ) -> Result<BTreeMap<String, KeepSeparateAssertion>, KeepSeparateError> {

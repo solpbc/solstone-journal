@@ -718,7 +718,7 @@ fn build_retro_plan(
     after.status = "confirmed".to_owned();
     after.confirmed_entity = Some(target.to_owned());
     Ok(
-        json!({"matched":planned.matched,"match_score":dot(&centroid,&candidate.centroid),"candidate_id":planned.candidate_id,"candidate_before":candidate.to_json(),"candidate_after":after.to_json(),"preexisting_voiceprint_keys":[],"voiceprints_to_add":planned.items.iter().map(|item| json!({"metadata":item.metadata,"embedding":item.embedding})).collect::<Vec<_>>() }),
+        json!({"matched":planned.matched,"match_score":dot(&centroid,&candidate.centroid),"candidate_id":planned.candidate_id,"candidate_before":candidate.to_json(),"candidate_after":after.to_json(),"preexisting_voiceprint_keys":[],"voiceprints_to_add":planned.items.iter().map(|item| json!({"key":{"day":item.metadata["day"],"segment_key":item.metadata["segment_key"],"source":item.metadata["source"],"sentence_id":item.metadata["sentence_id"]},"metadata":item.metadata,"embedding":item.embedding})).collect::<Vec<_>>() }),
     )
 }
 fn empty_retro_plan() -> Value {

@@ -126,6 +126,16 @@ pub struct RetroactiveConfirmPlan {
     pub voiceprint_items_to_add: Vec<VoiceprintItem>,
 }
 
+/// Result of compare-restoring a candidate confirmed by identify.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CandidateRestoreReport {
+    pub restored_count: usize,
+    pub skipped_count: usize,
+    pub missing_count: usize,
+    pub already_restored_count: usize,
+    pub concurrent_change_count: usize,
+}
+
 pub fn trim_solo_cluster_rows(rows: &[Vec<f32>]) -> (Vec<Vec<f32>>, Option<Vec<f32>>, usize) {
     if rows.is_empty() {
         return (vec![], None, 0);
@@ -369,6 +379,51 @@ impl CandidateTracker {
             self.write()?;
         }
         Ok(())
+    }
+    /// Restore a candidate only if its current snapshot still equals identify's after snapshot.
+    pub(crate) fn restore_confirmed_candidate(
+        &mut self,
+        cand_id: i64,
+        expected_after: &Value,
+        candidate_before: &Value,
+    ) -> Result<CandidateRestoreReport, CandidateTrackerError> {
+        let _lock = hold_lock(&self.store_path, LockOptions::default())?;
+        self.load_tolerant();
+        let Some(candidate) = self.candidates.get(&cand_id) else {
+            return Ok(CandidateRestoreReport {
+                skipped_count: 1,
+                missing_count: 1,
+                ..CandidateRestoreReport::default()
+            });
+        };
+        let current = candidate.to_json();
+        if current == *candidate_before {
+            return Ok(CandidateRestoreReport {
+                skipped_count: 1,
+                already_restored_count: 1,
+                ..CandidateRestoreReport::default()
+            });
+        }
+        if current != *expected_after {
+            return Ok(CandidateRestoreReport {
+                skipped_count: 1,
+                concurrent_change_count: 1,
+                ..CandidateRestoreReport::default()
+            });
+        }
+        let Some(restored) = CandidateProfile::from_json(candidate_before) else {
+            return Ok(CandidateRestoreReport {
+                skipped_count: 1,
+                concurrent_change_count: 1,
+                ..CandidateRestoreReport::default()
+            });
+        };
+        self.candidates.insert(cand_id, restored);
+        self.write()?;
+        Ok(CandidateRestoreReport {
+            restored_count: 1,
+            ..CandidateRestoreReport::default()
+        })
     }
     pub fn apply_retroactive_confirm_plan(
         &mut self,

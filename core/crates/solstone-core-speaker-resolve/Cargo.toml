@@ -22,6 +22,7 @@ serde_json.workspace = true
 sha2.workspace = true
 solstone-core-entity.workspace = true
 solstone-core-entity-matching.workspace = true
+solstone-core-facets.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-npy.workspace = true
