@@ -18,8 +18,13 @@ fn adjacent_u64_aggregate_uses_exact_unsigned_decimal_spellings() {
 
 fn assert_numeric_encoding(value: u64, expected: &str) {
     let encoded = String::from_utf8(encode_body_envelope(&envelope(value)).unwrap()).unwrap();
-    for field in ["row_count", "bytes", "rows", "events"] {
-        assert!(encoded.contains(&format!("\"{field}\":{expected}")));
+    for (field, expected_count) in [("row_count", 1), ("bytes", 2), ("rows", 1), ("events", 1)] {
+        let needle = format!("\"{field}\":{expected}");
+        let occurrences = encoded.matches(&needle).count();
+        assert_eq!(
+            occurrences, expected_count,
+            "field {field} occurrence count mismatch"
+        );
     }
     assert!(!encoded.contains(&format!("\"row_count\":-{expected}")));
     assert!(!encoded.contains(&format!("\"row_count\":{expected}.")));
