@@ -1500,12 +1500,9 @@ mod tests {
     #[test]
     fn body_row_event_error_renders_maximum_checked_coordinate() {
         let [_, maximum] = bundles();
-        let error = BodyRowEventError::new(
-            maximum,
-            u64::MAX,
-            BodyRowEventErrorKind::InputTooLarge,
-        );
-        let expected = "body-row-event[body-7ZZZZZZZZZZZZZZZZZZZZZZZZZ]#E18446744073709551615 input_too_large";
+        let error = BodyRowEventError::new(maximum, u64::MAX, BodyRowEventErrorKind::InputTooLarge);
+        let expected =
+            "body-row-event[body-7ZZZZZZZZZZZZZZZZZZZZZZZZZ]#E18446744073709551615 input_too_large";
 
         assert_eq!(error.bundle().as_str(), MAX_BUNDLE);
         assert_eq!(error.sequence(), u64::MAX);

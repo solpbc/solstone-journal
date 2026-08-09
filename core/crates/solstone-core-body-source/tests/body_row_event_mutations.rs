@@ -162,10 +162,9 @@ fn digest_precedes_projection_and_untracked_fields_do_not_change_event() {
     assert_eq!(error.kind(), &BodyRowEventErrorKind::RowDigestMismatch);
     let updated =
         original_event_with_mutated_digest(&envelope, &row, &event, untracked_frame.as_bytes());
-    assert_eq!(
-        validate_body_row_event(&envelope, untracked_frame.as_bytes(), &updated),
-        Ok(updated)
-    );
+    let validated = validate_body_row_event(&envelope, untracked_frame.as_bytes(), &updated)
+        .expect("updated digest validates");
+    assert_eq!(validated.event(), &updated);
 
     // These fields project into LedgerCandidate but are not retained in
     // BodyLedgerEvent, so an updated row digest is sufficient for replay.
@@ -180,10 +179,8 @@ fn digest_precedes_projection_and_untracked_fields_do_not_change_event() {
         let mutated = mutate(&row, field, value);
         let frame = format!("{mutated}\n");
         let updated = original_event_with_mutated_digest(&envelope, &row, &event, frame.as_bytes());
-        assert_eq!(
-            validate_body_row_event(&envelope, frame.as_bytes(), &updated),
-            Ok(updated),
-            "{field} is row-only"
-        );
+        let validated = validate_body_row_event(&envelope, frame.as_bytes(), &updated)
+            .unwrap_or_else(|error| panic!("{field} is row-only: {error}"));
+        assert_eq!(validated.event(), &updated, "{field} is row-only");
     }
 }

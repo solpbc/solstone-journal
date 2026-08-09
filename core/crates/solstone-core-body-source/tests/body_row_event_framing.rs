@@ -84,10 +84,9 @@ fn crlf_and_size_boundary_are_accepted_before_later_stages() {
     let (envelope, row, event) = base();
     let crlf = format!("{row}\r\n");
     let crlf_event = event_for_frame(&envelope, &row, &event, crlf.as_bytes());
-    assert_eq!(
-        validate_body_row_event(&envelope, crlf.as_bytes(), &crlf_event),
-        Ok(crlf_event)
-    );
+    let validated = validate_body_row_event(&envelope, crlf.as_bytes(), &crlf_event)
+        .expect("CRLF row validates");
+    assert_eq!(validated.event(), &crlf_event);
 
     let mut exact = row.into_bytes();
     exact.extend(std::iter::repeat_n(

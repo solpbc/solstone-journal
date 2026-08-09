@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::fmt;
+
 use sha2::{Digest, Sha256};
 
 use crate::candidate;
@@ -12,17 +14,61 @@ use crate::{
 
 const MAX_ROW_FRAME_BYTES: usize = 1_048_576;
 
+/// Proof that one checked body-ledger event agrees with its normalized row.
+///
+/// The private field prevents callers from promoting an event that has not
+/// passed [`validate_body_row_event`]:
+///
+/// ```compile_fail,E0423
+/// use solstone_core_body_source::{BodyLedgerEvent, ValidatedBodyRowEvent};
+///
+/// fn promote(event: BodyLedgerEvent) -> ValidatedBodyRowEvent {
+///     ValidatedBodyRowEvent(event)
+/// }
+/// ```
+///
+/// There is no unchecked conversion from an ordinary event:
+///
+/// ```compile_fail,E0277
+/// use solstone_core_body_source::{BodyLedgerEvent, ValidatedBodyRowEvent};
+///
+/// fn assert_from<T: From<BodyLedgerEvent>>() {}
+/// assert_from::<ValidatedBodyRowEvent>();
+/// ```
+#[derive(Clone, PartialEq, Eq)]
+pub struct ValidatedBodyRowEvent(BodyLedgerEvent);
+
+impl fmt::Debug for ValidatedBodyRowEvent {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "validated-body-row-event[{}]#E{}",
+            self.0.bundle_id().as_str(),
+            self.0.sequence()
+        )
+    }
+}
+
+impl ValidatedBodyRowEvent {
+    /// Returns the row-agreed event.
+    pub fn event(&self) -> &BodyLedgerEvent {
+        &self.0
+    }
+
+    /// Consumes the proof and returns its checked event.
+    pub fn into_event(self) -> BodyLedgerEvent {
+        self.0
+    }
+}
+
 /// Validates one normalized-row JSONL frame against its ledger event.
 pub fn validate_body_row_event(
     envelope: &BodyEnvelope,
     row_frame: &[u8],
     event: &BodyLedgerEvent,
-) -> Result<BodyLedgerEvent, BodyRowEventError> {
+) -> Result<ValidatedBodyRowEvent, BodyRowEventError> {
     if row_frame.len() > MAX_ROW_FRAME_BYTES {
-        return Err(row_event_error(
-            event,
-            BodyRowEventErrorKind::InputTooLarge,
-        ));
+        return Err(row_event_error(event, BodyRowEventErrorKind::InputTooLarge));
     }
 
     if row_frame.is_empty()
@@ -75,7 +121,7 @@ pub fn validate_body_row_event(
         return Err(row_event_error(event, BodyRowEventErrorKind::EventMismatch));
     }
 
-    Ok(reconstructed)
+    Ok(ValidatedBodyRowEvent(reconstructed))
 }
 
 fn row_event_error(event: &BodyLedgerEvent, kind: BodyRowEventErrorKind) -> BodyRowEventError {

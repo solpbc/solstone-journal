@@ -38,9 +38,9 @@ fn validates_all_committed_nonzero_rows_and_events() {
         );
         let returned = validate_body_row_event(&envelope, row_frame.as_bytes(), &event)
             .expect("committed row validates");
-        assert_eq!(returned, event);
+        assert_eq!(returned.event(), &event);
         assert_eq!(
-            encode_body_ledger_event(&returned).expect("event encodes"),
+            encode_body_ledger_event(returned.event()).expect("event encodes"),
             event_frame
         );
         if case["name"].as_str() == Some("apple_retain_complete_one_row") {
@@ -85,9 +85,9 @@ fn validates_all_committed_nonzero_rows_and_events() {
                 .expect("committed event decodes");
             let returned = validate_body_row_event(&envelope, row_frame.as_bytes(), &event)
                 .expect("committed row validates");
-            assert_eq!(returned, event);
+            assert_eq!(returned.event(), &event);
             assert_eq!(
-                encode_body_ledger_event(&returned).expect("event encodes"),
+                encode_body_ledger_event(returned.event()).expect("event encodes"),
                 event_frame.as_bytes()
             );
             sequence += 1;

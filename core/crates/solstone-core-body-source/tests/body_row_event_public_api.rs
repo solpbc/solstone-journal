@@ -63,10 +63,19 @@ fn public_surface_validates_native_rows_and_returns_owned_pure_events() {
         let returned =
             validate_body_row_event(&envelope, &frame, &event).expect("public API succeeds");
         drop(frame);
-        assert_eq!(returned.bundle_id(), envelope.bundle_id());
-        assert_eq!(returned.sequence(), 1);
-        assert_eq!(returned.row_sha256(), event.row_sha256());
-        assert_eq!(returned.record_type(), event.record_type());
+        assert_eq!(returned.event().bundle_id(), envelope.bundle_id());
+        assert_eq!(returned.event().sequence(), 1);
+        assert_eq!(returned.event().row_sha256(), event.row_sha256());
+        assert_eq!(returned.event().record_type(), event.record_type());
+        assert_eq!(
+            format!("{returned:?}"),
+            format!(
+                "validated-body-row-event[{}]#E1",
+                envelope.bundle_id().as_str()
+            )
+        );
+        let returned = returned.into_event();
+        assert_eq!(returned, event);
         // Shared references make mutation impossible; this keeps that contract observable.
         assert_eq!(envelope, envelope_before);
         assert_eq!(event, event_before);
