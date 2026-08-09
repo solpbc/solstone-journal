@@ -14,12 +14,15 @@ use solstone_core_body_source::{
     ManifestBindingErrorField, ManifestKeySignal, ManifestKnownKey, ManifestScanError,
     NativeAuthority, ParseError, RAW_RETENTION_KEY, SOURCE_HASH_KEY, SOURCE_TYPE_KEY,
     ScannedBodyManifest, authorize_native_bundle, canonicalize, classify_bundle_directory,
-    decode_body_manifest, inspect_body_manifest_signal, parse, scan_body_manifest,
+    decode_body_manifest, encode_body_envelope, inspect_body_manifest_signal, parse,
+    scan_body_manifest,
 };
 
 mod support;
 
-use support::{codec_rows, native_bundle_directory_cases, native_bundle_fixture};
+use support::{
+    codec_rows, envelope_multimonth_fixture, native_bundle_directory_cases, native_bundle_fixture,
+};
 
 fn assert_authority_error(
     result: Result<NativeAuthority, AuthorityError>,
@@ -1283,4 +1286,82 @@ fn public_body_envelope_api_checks_and_rejects_invalid_aggregates() {
     }
 
     // `new` returns only `Result<Self, _>`; an error leaves no envelope value to observe.
+}
+
+#[test]
+fn public_body_envelope_encoder_encodes_the_independently_constructed_multimonth_case() {
+    let case = &envelope_multimonth_fixture()["cases"][0];
+    let binding = &case["expected_manifest_binding"];
+    let bundle = BundleId::from_bytes(case["directory"].as_str().unwrap().as_bytes()).unwrap();
+    let family =
+        BodySourceFamily::from_bytes(binding["source_type"].as_str().unwrap().as_bytes()).unwrap();
+    let days = binding["days_affected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|day| BodyDay::from_bytes(day.as_str().unwrap().as_bytes()).unwrap())
+        .collect::<Vec<_>>();
+    let expected = &case["expected_envelope"];
+    let shards = case["digest_basis"]["shards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(index, basis)| {
+            let path = basis["path"].as_str().unwrap();
+            let month = path
+                .strip_prefix("normalized/")
+                .unwrap()
+                .strip_suffix(".jsonl")
+                .unwrap();
+            let text = basis["exact_bytes"].as_str().unwrap();
+            EnvelopeShard::new(
+                &bundle,
+                index as u64,
+                BodyMonth::from_bytes(month.as_bytes()).unwrap(),
+                text.len() as u64,
+                text.lines().count() as u64,
+                BodyDigest::from_bytes(
+                    expected["shards"][index]["sha256"]
+                        .as_str()
+                        .unwrap()
+                        .as_bytes(),
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        })
+        .collect();
+    let ledger_text = case["digest_basis"]["ledger"]["exact_bytes"]
+        .as_str()
+        .unwrap();
+    let envelope = BodyEnvelope::new(
+        bundle.clone(),
+        family,
+        BodySourceHash::from_bytes_for_family(
+            binding["source_hash"].as_str().unwrap().as_bytes(),
+            &family,
+        )
+        .unwrap(),
+        BodyRawRetention::from_bytes(binding["raw_retention"].as_str().unwrap().as_bytes())
+            .unwrap(),
+        binding["entry_count"].as_u64().unwrap(),
+        days.clone(),
+        shards,
+        EnvelopeLedger::new(
+            &bundle,
+            ledger_text.len() as u64,
+            ledger_text.lines().count() as u64,
+            BodyDigest::from_bytes(expected["ledger"]["sha256"].as_str().unwrap().as_bytes())
+                .unwrap(),
+        )
+        .unwrap(),
+        Some(AppleSummaryPlan::new(&bundle, days).unwrap()),
+    )
+    .unwrap();
+
+    assert_eq!(
+        encode_body_envelope(&envelope).unwrap(),
+        case["expected_envelope_jsonl"].as_str().unwrap().as_bytes()
+    );
 }
