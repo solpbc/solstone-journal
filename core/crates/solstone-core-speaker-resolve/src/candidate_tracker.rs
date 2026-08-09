@@ -8,15 +8,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use solstone_core_entity::{
-    EncoderIdentity, VoiceprintItem, load_all_journal_entities, save_voiceprints_batch,
-};
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockError, LockOptions, atomic_replace, hold_lock,
 };
 use thiserror::Error;
 
-use crate::person_guard::is_admissible_person;
 use crate::voiceprint_metadata::VoiceprintMetadata;
 
 // Verbatim from solstone/apps/speakers/encoder_config.py.
@@ -102,12 +98,6 @@ pub enum CandidateTrackerError {
     Read(#[from] std::io::Error),
     #[error("candidate pool write failed: {0}")]
     Write(#[from] solstone_core_journal_io::AtomicWriteError),
-    #[error("entity lookup failed: {0}")]
-    Entity(#[from] solstone_core_entity::EntityStoreError),
-    #[error("voiceprint write failed: {0}")]
-    Voiceprint(#[from] solstone_core_entity::VoiceprintOperationError),
-    #[error("target entity is not an admissible Person")]
-    NonPersonTarget,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -116,14 +106,6 @@ pub struct ClusterInput {
     pub embeddings: Vec<Vec<f32>>,
     pub durations_s: Vec<f64>,
 }
-#[derive(Debug, Clone, PartialEq)]
-pub struct RetroactiveConfirmPlan {
-    pub matched: bool,
-    pub candidate_id: Option<i64>,
-    pub entity_id: String,
-    pub voiceprint_items_to_add: Vec<VoiceprintItem>,
-}
-
 /// Result of compare-restoring a candidate confirmed by identify.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CandidateRestoreReport {
@@ -344,23 +326,6 @@ impl CandidateTracker {
         }
         best
     }
-    pub fn plan_retroactive_confirm(
-        &self,
-        center: &[f32],
-        entity_id: &str,
-        items: Vec<VoiceprintItem>,
-    ) -> RetroactiveConfirmPlan {
-        let matched = self
-            .best_match(center)
-            .is_some_and(|(_, score)| score >= MERGE_THRESHOLD);
-        let candidate_id = matched.then(|| self.best_match(center).expect("matched").0);
-        RetroactiveConfirmPlan {
-            matched,
-            candidate_id,
-            entity_id: entity_id.into(),
-            voiceprint_items_to_add: items,
-        }
-    }
     pub(crate) fn mark_confirmed(
         &mut self,
         cand_id: i64,
@@ -419,40 +384,6 @@ impl CandidateTracker {
             restored_count: 1,
             ..CandidateRestoreReport::default()
         })
-    }
-    pub fn apply_retroactive_confirm_plan(
-        &mut self,
-        journal_root: &Path,
-        plan: &RetroactiveConfirmPlan,
-        encoder: &EncoderIdentity,
-    ) -> Result<usize, CandidateTrackerError> {
-        if !plan.matched {
-            return Ok(0);
-        }
-        let entities = load_all_journal_entities(journal_root)?;
-        let kind = entities
-            .iter()
-            .find(|e| e.id == plan.entity_id)
-            .and_then(|e| e.entity_type());
-        if !is_admissible_person(kind) {
-            return Err(CandidateTrackerError::NonPersonTarget);
-        }
-        let saved = save_voiceprints_batch(
-            journal_root,
-            &plan.entity_id,
-            &plan.voiceprint_items_to_add,
-            encoder,
-        )?;
-        if let Some(id) = plan.candidate_id {
-            let _lock = hold_lock(&self.store_path, LockOptions::default())?;
-            self.load_tolerant();
-            if let Some(candidate) = self.candidates.get_mut(&id) {
-                candidate.status = "confirmed".into();
-                candidate.confirmed_entity = Some(plan.entity_id.clone());
-                self.write()?
-            }
-        }
-        Ok(saved)
     }
 }
 
@@ -570,10 +501,14 @@ mod tests {
     }
 
     fn source_segment() -> ClusterInput {
+        cluster_input("seg-a", vec![vec![1.0, 0.0], vec![1.0, 0.0]])
+    }
+
+    fn cluster_input(segment_key: &str, embeddings: Vec<Vec<f32>>) -> ClusterInput {
         ClusterInput {
-            source_segment: json!({"day":"20260101","segment_key":"seg-a","stream":"mic","source":"audio","cluster_label":1}),
-            embeddings: vec![vec![1.0, 0.0], vec![1.0, 0.0]],
-            durations_s: vec![2.0, 3.0],
+            source_segment: json!({"day":"20260101","segment_key":segment_key,"stream":"mic","source":"audio","cluster_label":1}),
+            durations_s: vec![1.0; embeddings.len()],
+            embeddings,
         }
     }
 
@@ -615,9 +550,69 @@ mod tests {
     }
 
     #[test]
-    fn ac11_ac12_merge_and_stability_boundaries_are_inclusive() {
-        assert!(MERGE_THRESHOLD >= 0.72);
-        assert!(STABILITY_THRESHOLD >= 0.25);
+    fn ac11_process_segment_merges_at_threshold_and_creates_below_it() {
+        let at_threshold = vec![MERGE_THRESHOLD, (1.0 - MERGE_THRESHOLD.powi(2)).sqrt()];
+        let below_threshold = vec![
+            MERGE_THRESHOLD - f32::EPSILON,
+            (1.0 - (MERGE_THRESHOLD - f32::EPSILON).powi(2)).sqrt(),
+        ];
+
+        let journal = temporary_journal("ac11-at-threshold");
+        let mut tracker = CandidateTracker::new(&journal);
+        tracker
+            .process_segment(&[cluster_input("seed", vec![vec![1.0, 0.0]])])
+            .unwrap();
+        tracker
+            .process_segment(&[cluster_input("at-threshold", vec![at_threshold])])
+            .unwrap();
+        let merged = tracker.snapshot_candidates_locked().unwrap();
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].n_intervals, 2);
+        let _ = fs::remove_dir_all(&journal);
+
+        let journal = temporary_journal("ac11-below-threshold");
+        let mut tracker = CandidateTracker::new(&journal);
+        tracker
+            .process_segment(&[cluster_input("seed", vec![vec![1.0, 0.0]])])
+            .unwrap();
+        tracker
+            .process_segment(&[cluster_input("below-threshold", vec![below_threshold])])
+            .unwrap();
+        let created = tracker.snapshot_candidates_locked().unwrap();
+        assert_eq!(created.len(), 2);
+        assert_eq!(created[0].n_intervals, 1);
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn ac12_process_segment_drops_at_stability_threshold_and_keeps_below_it() {
+        let cluster_rows = |spread: f32| {
+            let cosine = 1.0 - spread;
+            let offset = (1.0 - cosine.powi(2)).sqrt();
+            vec![vec![cosine, offset], vec![cosine, -offset]]
+        };
+
+        let journal = temporary_journal("ac12-at-threshold");
+        let mut tracker = CandidateTracker::new(&journal);
+        tracker
+            .process_segment(&[cluster_input(
+                "at-threshold",
+                cluster_rows(STABILITY_THRESHOLD),
+            )])
+            .unwrap();
+        assert!(tracker.snapshot_candidates_locked().unwrap().is_empty());
+        let _ = fs::remove_dir_all(&journal);
+
+        let journal = temporary_journal("ac12-below-threshold");
+        let mut tracker = CandidateTracker::new(&journal);
+        tracker
+            .process_segment(&[cluster_input(
+                "below-threshold",
+                cluster_rows(STABILITY_THRESHOLD - f32::EPSILON),
+            )])
+            .unwrap();
+        assert_eq!(tracker.snapshot_candidates_locked().unwrap().len(), 1);
+        let _ = fs::remove_dir_all(journal);
     }
 
     #[test]

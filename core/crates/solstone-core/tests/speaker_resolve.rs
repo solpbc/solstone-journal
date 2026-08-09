@@ -62,6 +62,26 @@ fn ac1_identify_cli_reaches_native_orchestrator() {
 }
 
 #[test]
+fn identify_cli_returns_python_compatible_duplicate_reviewed_id_error() {
+    let journal = root("identify-duplicate-reviewed-id");
+    let (_, output) = run(
+        "identify",
+        json!({
+            "schema":"solstone-speaker-resolve-identify-request-v1", "journal_root":journal,
+            "cluster_id":1, "name":"Target", "entity_id":null, "resolve_only":false,
+            "create_new":false, "entity_type":"Person", "request_id":"duplicate-reviewed-id",
+            "reviewed_near_match_entity_ids":["ent-bob", " ent-bob "],
+            "caller":"test", "actor":null, "encoder":encoder(),
+        }),
+    );
+    assert_eq!(output["status"], "invalid_request");
+    assert_eq!(
+        output["invalid_reviewed_near_match_entity_ids"],
+        json!([{"entity_id":"ent-bob","reason":"duplicate"}])
+    );
+}
+
+#[test]
 fn ac1_undo_identify_cli_reaches_native_orchestrator() {
     let journal = root("undo-identify");
     let (_, output) = run(

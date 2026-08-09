@@ -158,6 +158,7 @@ fn run_speaker_resolve(command: SpeakerResolveCommand) -> ExitCode {
 }
 
 fn identify_request(value: Value) -> Result<Value, String> {
+    use solstone_core_speaker_resolve::discovery_cache::normalize_reviewed_near_match_ids;
     use solstone_core_speaker_resolve::identify_cluster::{
         IdentifyClusterRequest, identify_cluster,
     };
@@ -181,6 +182,11 @@ fn identify_request(value: Value) -> Result<Value, String> {
         ],
     )?;
     let object = &request_object;
+    let reviewed_near_match_entity_ids =
+        match normalize_reviewed_near_match_ids(object.get("reviewed_near_match_entity_ids")) {
+            Ok(ids) => ids,
+            Err(error) => return Ok(error.invalid_request_response()),
+        };
     let request = IdentifyClusterRequest {
         journal_root: PathBuf::from(required_string(object, "journal_root")?),
         cluster_id: required_i64(object, "cluster_id")?,
@@ -190,7 +196,7 @@ fn identify_request(value: Value) -> Result<Value, String> {
         create_new: required_bool(object, "create_new")?,
         entity_type: required_string(object, "entity_type")?,
         request_id: required_string(object, "request_id")?,
-        reviewed_near_match_entity_ids: required_strings(object, "reviewed_near_match_entity_ids")?,
+        reviewed_near_match_entity_ids,
         caller: optional_string(object, "caller")?.unwrap_or_default(),
         actor: optional_string(object, "actor")?,
     };
@@ -430,22 +436,6 @@ fn required_i64(object: &Map<String, Value>, name: &str) -> Result<i64, String> 
         .get(name)
         .and_then(Value::as_i64)
         .ok_or_else(|| format!("{name} is required"))
-}
-
-fn required_strings(object: &Map<String, Value>, name: &str) -> Result<Vec<String>, String> {
-    object
-        .get(name)
-        .and_then(Value::as_array)
-        .ok_or_else(|| format!("{name} is required"))?
-        .iter()
-        .map(|value| {
-            value
-                .as_str()
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-                .ok_or_else(|| format!("invalid {name}"))
-        })
-        .collect()
 }
 
 fn parse_accumulation_request(
