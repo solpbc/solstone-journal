@@ -137,6 +137,7 @@ fn caller_digests_and_string_code_points_round_trip_exactly() {
         assert_eq!(event.value_hash(), &value_hash);
     }
     for escaped in [
+        "\\u0001",
         "\\u001c",
         "\\u0085",
         "\\u3000",
@@ -144,9 +145,31 @@ fn caller_digests_and_string_code_points_round_trip_exactly() {
         "\\ud83e\\udde0",
         "\\ud800",
     ] {
-        let row = row_with_string_suffix(
-            &row_with_string_suffix(&row_text, "record_type", escaped),
+        let mut row = row_text.clone();
+        for field in [
+            "record_type",
+            "start_date",
+            "end_date",
+            "source_record_id",
             "raw_ref",
+        ] {
+            row = row_with_string_suffix(&row, field, escaped);
+        }
+        let event = build_ledger_event(
+            &envelope,
+            &row,
+            0,
+            1,
+            1,
+            None,
+            digest(expected["value_hash"].as_str().expect("value hash")),
+        );
+        round_trip(&envelope, event);
+    }
+    for escaped in ["", " \\t", "\\u0001\\u001c\\u0085\\u3000"] {
+        let row = row_with_string_value(
+            &row_with_string_value(&row_text, "end_date", escaped),
+            "source_record_id",
             escaped,
         );
         let event = build_ledger_event(
@@ -246,4 +269,11 @@ fn row_with_string_suffix(row: &str, field: &str, suffix: &str) -> String {
     let start = row.find(&marker).expect("field marker") + marker.len();
     let end = row[start..].find('"').expect("field terminator") + start;
     format!("{}{}{}", &row[..end], suffix, &row[end..])
+}
+
+fn row_with_string_value(row: &str, field: &str, value: &str) -> String {
+    let marker = format!("\"{field}\":\"");
+    let start = row.find(&marker).expect("field marker") + marker.len();
+    let end = row[start..].find('"').expect("field terminator") + start;
+    format!("{}{}{}", &row[..start], value, &row[end..])
 }

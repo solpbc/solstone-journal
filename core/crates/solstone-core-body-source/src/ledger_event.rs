@@ -257,9 +257,7 @@ fn build_ledger_event(
             LedgerEventErrorField::Line,
         ));
     }
-    if inputs.row_schema == LedgerSchema::NormalizedV1
-        || inputs.row_schema.expected_family() != envelope.source_family().as_str()
-    {
+    if !row_schema_is_compatible(envelope, inputs.row_schema) {
         return Err(ledger_error(
             envelope,
             sequence,
@@ -291,7 +289,7 @@ fn build_ledger_event(
             LedgerEventErrorField::Day,
         )
     })?;
-    if envelope.days().binary_search(&day).is_err() || day.month() != *shard.month() {
+    if !day_matches(envelope, shard.month(), &day) {
         return Err(ledger_error(
             envelope,
             sequence,
@@ -299,12 +297,6 @@ fn build_ledger_event(
             LedgerEventErrorField::Day,
         ));
     }
-    let expected_normalized_ref = format!(
-        "imports/{}/{}#L{}",
-        envelope.bundle_id().as_str(),
-        shard.path(),
-        line
-    );
     let Some(normalized_ref) = inputs.normalized_ref else {
         return Err(ledger_error(
             envelope,
@@ -313,7 +305,7 @@ fn build_ledger_event(
             LedgerEventErrorField::NormalizedRef,
         ));
     };
-    if !body_string_matches(normalized_ref, &expected_normalized_ref) {
+    if !normalized_ref_matches(envelope, shard.path(), line, normalized_ref) {
         return Err(ledger_error(
             envelope,
             sequence,
@@ -371,7 +363,7 @@ fn ledger_error(
     LedgerEventError::new(Some(envelope.bundle_id().clone()), code, field, sequence)
 }
 
-fn body_string_matches(value: &BodyString, literal: &str) -> bool {
+pub(crate) fn body_string_matches(value: &BodyString, literal: &str) -> bool {
     value
         .code_points()
         .iter()
@@ -386,7 +378,34 @@ fn present(state: &FieldState<BodyString>) -> Option<&BodyString> {
     }
 }
 
-fn raw_ref_is_valid(raw_ref: &BodyString, bundle_id: &BundleId) -> bool {
+pub(crate) fn row_schema_is_compatible(envelope: &BodyEnvelope, row_schema: LedgerSchema) -> bool {
+    row_schema != LedgerSchema::NormalizedV1
+        && row_schema.expected_family() == envelope.source_family().as_str()
+}
+
+pub(crate) fn normalized_ref_matches(
+    envelope: &BodyEnvelope,
+    shard_path: &str,
+    line: u64,
+    normalized_ref: &BodyString,
+) -> bool {
+    let expected = format!(
+        "imports/{}/{}#L{line}",
+        envelope.bundle_id().as_str(),
+        shard_path
+    );
+    body_string_matches(normalized_ref, &expected)
+}
+
+pub(crate) fn day_matches(
+    envelope: &BodyEnvelope,
+    shard_month: &crate::BodyMonth,
+    day: &BodyDay,
+) -> bool {
+    envelope.days().binary_search(day).is_ok() && day.month() == *shard_month
+}
+
+pub(crate) fn raw_ref_is_valid(raw_ref: &BodyString, bundle_id: &BundleId) -> bool {
     let prefix: Vec<u32> = format!("imports/{}/raw/", bundle_id.as_str())
         .bytes()
         .map(u32::from)

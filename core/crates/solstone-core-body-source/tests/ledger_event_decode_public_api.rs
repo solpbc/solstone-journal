@@ -80,7 +80,7 @@ fn public_decoder_exposes_structured_scan_field_and_reference_errors() {
         .expect("ledger frame")
         .replace("\"sequence\":1", "\"sequence\":2");
     let error = decode_body_ledger_event(frame.as_bytes(), &envelope, 1).expect_err("refuses");
-    assert_eq!(error.code(), LedgerEventErrorCode::ReferenceMismatch);
+    assert_eq!(error.code(), LedgerEventErrorCode::InvalidSequence);
     assert_eq!(error.field(), LedgerEventErrorField::Sequence);
     assert_eq!(error.bundle(), Some(envelope.bundle_id()));
     assert_eq!(error.line(), 1);

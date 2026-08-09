@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use crate::ledger_event::{DecodedLedgerEventParts, LEDGER_EVENT_SCHEMA};
+use crate::ledger_event::{
+    DecodedLedgerEventParts, LEDGER_EVENT_SCHEMA, body_string_matches, day_matches,
+    normalized_ref_matches, raw_ref_is_valid, row_schema_is_compatible, sequence_location,
+};
 use crate::whitespace::is_python_whitespace;
 use crate::{
-    BodyDigest, BodyEnvelope, BodyObject, BodySourceFamily, BodyString, BodyValue, BundleId,
-    LedgerEventError, LedgerEventErrorCode, LedgerEventErrorField, LedgerSchema,
+    BodyDay, BodyDigest, BodyEnvelope, BodyObject, BodySourceFamily, BodyString, BodyValue,
+    BundleId, LedgerEventError, LedgerEventErrorCode, LedgerEventErrorField, LedgerSchema,
 };
 
 #[derive(Clone, Copy)]
@@ -135,6 +138,14 @@ pub(crate) fn project_body_ledger_event(
             LedgerEventErrorField::BundleId,
         )
     })?;
+    if &frame_bundle_id != bundle_id {
+        return Err(error(
+            bundle_id,
+            expected_sequence,
+            LedgerEventErrorCode::ReferenceMismatch,
+            LedgerEventErrorField::BundleId,
+        ));
+    }
 
     let sequence = body_u64(
         required_value(
@@ -151,7 +162,7 @@ pub(crate) fn project_body_ledger_event(
         return Err(error(
             bundle_id,
             expected_sequence,
-            LedgerEventErrorCode::ReferenceMismatch,
+            LedgerEventErrorCode::InvalidSequence,
             LedgerEventErrorField::Sequence,
         ));
     }
@@ -170,6 +181,18 @@ pub(crate) fn project_body_ledger_event(
             LedgerEventErrorField::RowSchema,
         )
     })?;
+    if !row_schema_is_compatible(envelope, row_schema) {
+        return Err(error(
+            bundle_id,
+            expected_sequence,
+            LedgerEventErrorCode::IncompatibleField,
+            LedgerEventErrorField::RowSchema,
+        ));
+    }
+
+    let (expected_shard_index, expected_line) = sequence_location(envelope, expected_sequence)
+        .expect("a checked envelope covers every in-range row sequence");
+    let expected_shard = &envelope.shards()[expected_shard_index];
 
     let shard = required_string(
         object,
@@ -178,6 +201,14 @@ pub(crate) fn project_body_ledger_event(
         expected_sequence,
     )?
     .clone();
+    if !body_string_matches(&shard, expected_shard.path()) {
+        return Err(error(
+            bundle_id,
+            expected_sequence,
+            LedgerEventErrorCode::ReferenceMismatch,
+            LedgerEventErrorField::Shard,
+        ));
+    }
     let line = body_u64(
         required_value(
             object,
@@ -189,6 +220,14 @@ pub(crate) fn project_body_ledger_event(
         expected_sequence,
         LedgerEventErrorField::Line,
     )?;
+    if line != expected_line {
+        return Err(error(
+            bundle_id,
+            expected_sequence,
+            LedgerEventErrorCode::ReferenceMismatch,
+            LedgerEventErrorField::Line,
+        ));
+    }
     let normalized_ref = required_string(
         object,
         LedgerEventTopLevelKey::NormalizedRef,
@@ -196,6 +235,14 @@ pub(crate) fn project_body_ledger_event(
         expected_sequence,
     )?
     .clone();
+    if !normalized_ref_matches(envelope, expected_shard.path(), line, &normalized_ref) {
+        return Err(error(
+            bundle_id,
+            expected_sequence,
+            LedgerEventErrorCode::ReferenceMismatch,
+            LedgerEventErrorField::NormalizedRef,
+        ));
+    }
     let row_sha256 = BodyDigest::from_body_string(required_string(
         object,
         LedgerEventTopLevelKey::RowSha256,
@@ -217,6 +264,14 @@ pub(crate) fn project_body_ledger_event(
         expected_sequence,
     )?
     .clone();
+    BodyDigest::from_body_string(&dedupe_key).map_err(|_| {
+        error(
+            bundle_id,
+            expected_sequence,
+            LedgerEventErrorCode::InvalidField,
+            LedgerEventErrorField::DedupeKey,
+        )
+    })?;
     let source_family = BodySourceFamily::from_body_string(required_string(
         object,
         LedgerEventTopLevelKey::SourceFamily,
@@ -231,6 +286,14 @@ pub(crate) fn project_body_ledger_event(
             LedgerEventErrorField::SourceFamily,
         )
     })?;
+    if source_family != envelope.source_family() {
+        return Err(error(
+            bundle_id,
+            expected_sequence,
+            LedgerEventErrorCode::ReferenceMismatch,
+            LedgerEventErrorField::SourceFamily,
+        ));
+    }
     let source_record_id = nullable_string(
         object,
         LedgerEventTopLevelKey::SourceRecordId,
@@ -262,6 +325,22 @@ pub(crate) fn project_body_ledger_event(
         expected_sequence,
     )?
     .clone();
+    let checked_day = BodyDay::from_body_string(&day).map_err(|_| {
+        error(
+            bundle_id,
+            expected_sequence,
+            LedgerEventErrorCode::InvalidField,
+            LedgerEventErrorField::Day,
+        )
+    })?;
+    if !day_matches(envelope, expected_shard.month(), &checked_day) {
+        return Err(error(
+            bundle_id,
+            expected_sequence,
+            LedgerEventErrorCode::ReferenceMismatch,
+            LedgerEventErrorField::Day,
+        ));
+    }
     let value_hash = BodyDigest::from_body_string(required_string(
         object,
         LedgerEventTopLevelKey::ValueHash,
@@ -282,6 +361,17 @@ pub(crate) fn project_body_ledger_event(
         bundle_id,
         expected_sequence,
     )?;
+    if raw_ref
+        .as_ref()
+        .is_some_and(|raw_ref| !raw_ref_is_valid(raw_ref, bundle_id))
+    {
+        return Err(error(
+            bundle_id,
+            expected_sequence,
+            LedgerEventErrorCode::InvalidField,
+            LedgerEventErrorField::RawRef,
+        ));
+    }
 
     Ok((
         sequence,
@@ -449,14 +539,6 @@ fn field(key: LedgerEventTopLevelKey) -> LedgerEventErrorField {
         LedgerEventTopLevelKey::ValueHash => LedgerEventErrorField::ValueHash,
         LedgerEventTopLevelKey::RawRef => LedgerEventErrorField::RawRef,
     }
-}
-
-fn body_string_matches(value: &BodyString, literal: &str) -> bool {
-    value
-        .code_points()
-        .iter()
-        .copied()
-        .eq(literal.bytes().map(u32::from))
 }
 
 fn error(

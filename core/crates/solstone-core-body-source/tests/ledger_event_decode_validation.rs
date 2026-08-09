@@ -94,7 +94,7 @@ fn decoded_references_and_nullable_fields_follow_the_checked_contract() {
         &canonical(value.clone()),
         &envelope,
         1,
-        LedgerEventErrorCode::ReferenceMismatch,
+        LedgerEventErrorCode::InvalidSequence,
         LedgerEventErrorField::Sequence,
     );
 
@@ -337,6 +337,27 @@ fn value_and_reference_validation_rejects_exactly_the_event_contract_twins() {
         LedgerEventErrorCode::InvalidField,
         LedgerEventErrorField::SourceFamily,
     );
+
+    let mut wrong_bundle = base.clone();
+    wrong_bundle["bundle_id"] = json!("body-00000000000000000000000000");
+    assert_error(
+        &canonical(wrong_bundle),
+        &envelope,
+        1,
+        LedgerEventErrorCode::ReferenceMismatch,
+        LedgerEventErrorField::BundleId,
+    );
+    for row_schema in ["solstone.health.normalized.v1", "solstone.health.oura.v1"] {
+        let mut incompatible = base.clone();
+        incompatible["row_schema"] = json!(row_schema);
+        assert_error(
+            &canonical(incompatible),
+            &envelope,
+            1,
+            LedgerEventErrorCode::IncompatibleField,
+            LedgerEventErrorField::RowSchema,
+        );
+    }
     for field in ["sequence", "line"] {
         for (literal, code) in [
             ("1.0", LedgerEventErrorCode::WrongType),
@@ -413,6 +434,7 @@ fn exact_reference_fields_reject_lossy_or_normalizing_twins_for_both_families() 
         let base: Value = serde_json::from_str(&frame).expect("fixture ledger object");
         let bundle = base["bundle_id"].as_str().expect("bundle id");
         let shard = base["shard"].as_str().expect("shard");
+        let normalized_ref = base["normalized_ref"].as_str().expect("normalized ref");
         for (field, exact, variants, code, error_field) in [
             (
                 "schema",
@@ -449,6 +471,18 @@ fn exact_reference_fields_reject_lossy_or_normalizing_twins_for_both_families() 
                 ],
                 LedgerEventErrorCode::ReferenceMismatch,
                 LedgerEventErrorField::Shard,
+            ),
+            (
+                "normalized_ref",
+                normalized_ref.to_owned(),
+                vec![
+                    normalized_ref.to_uppercase(),
+                    format!(" {normalized_ref}"),
+                    format!("{normalized_ref}é"),
+                    format!("{normalized_ref}\\ud800"),
+                ],
+                LedgerEventErrorCode::ReferenceMismatch,
+                LedgerEventErrorField::NormalizedRef,
             ),
         ] {
             let needle = format!("\"{field}\":\"{exact}\"");
@@ -570,15 +604,81 @@ fn cross_shard_day_and_multi_fault_precedence_follow_shared_validation() {
         LedgerEventErrorField::NormalizedRef,
     );
 
-    let mut raw_before_source_family = second;
-    raw_before_source_family["raw_ref"] = json!("imports/wrong/raw/file");
-    raw_before_source_family["source_family"] = json!("oura_api");
+    let mut bundle_before_sequence = second.clone();
+    bundle_before_sequence["bundle_id"] = json!("body-00000000000000000000000000");
+    bundle_before_sequence["sequence"] = json!(3);
     assert_error(
-        &canonical(raw_before_source_family),
+        &canonical(bundle_before_sequence),
+        &envelope,
+        2,
+        LedgerEventErrorCode::ReferenceMismatch,
+        LedgerEventErrorField::BundleId,
+    );
+
+    let mut schema_before_shard = second.clone();
+    schema_before_shard["row_schema"] = json!("solstone.health.oura.v1");
+    schema_before_shard["shard"] = json!("normalized/2026-02.jsonl");
+    assert_error(
+        &canonical(schema_before_shard),
+        &envelope,
+        2,
+        LedgerEventErrorCode::IncompatibleField,
+        LedgerEventErrorField::RowSchema,
+    );
+
+    let mut dedupe_before_family = second.clone();
+    dedupe_before_family["dedupe_key"] = json!("sha256:abc");
+    dedupe_before_family["source_family"] = json!("not_a_family");
+    assert_error(
+        &canonical(dedupe_before_family),
         &envelope,
         2,
         LedgerEventErrorCode::InvalidField,
-        LedgerEventErrorField::RawRef,
+        LedgerEventErrorField::DedupeKey,
+    );
+
+    let mut family_before_day = second.clone();
+    family_before_day["source_family"] = json!("oura_api");
+    family_before_day["day"] = json!("20260201");
+    assert_error(
+        &canonical(family_before_day),
+        &envelope,
+        2,
+        LedgerEventErrorCode::ReferenceMismatch,
+        LedgerEventErrorField::SourceFamily,
+    );
+
+    let mut normalized_before_day = second.clone();
+    normalized_before_day["normalized_ref"] = json!("wrong");
+    normalized_before_day["day"] = json!("20260201");
+    assert_error(
+        &canonical(normalized_before_day),
+        &envelope,
+        2,
+        LedgerEventErrorCode::ReferenceMismatch,
+        LedgerEventErrorField::NormalizedRef,
+    );
+
+    let mut day_before_value_hash = second.clone();
+    day_before_value_hash["day"] = json!("20260230");
+    day_before_value_hash["value_hash"] = json!("sha256:abc");
+    assert_error(
+        &canonical(day_before_value_hash),
+        &envelope,
+        2,
+        LedgerEventErrorCode::InvalidField,
+        LedgerEventErrorField::Day,
+    );
+
+    let mut source_family_before_raw = second;
+    source_family_before_raw["source_family"] = json!("oura_api");
+    source_family_before_raw["raw_ref"] = json!("imports/wrong/raw/file");
+    assert_error(
+        &canonical(source_family_before_raw),
+        &envelope,
+        2,
+        LedgerEventErrorCode::ReferenceMismatch,
+        LedgerEventErrorField::SourceFamily,
     );
 }
 
