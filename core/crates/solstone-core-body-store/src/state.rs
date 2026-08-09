@@ -60,7 +60,6 @@ impl BodyDedupeState {
             normalized_ref,
             raw_ref,
         );
-
         let Some(existing) = self.rows.get_mut(&key) else {
             self.rows.insert(key, incoming);
             return Ok(BodyDedupeDisposition::Inserted);
