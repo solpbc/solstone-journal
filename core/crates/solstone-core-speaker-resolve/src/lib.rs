@@ -10,6 +10,7 @@ pub mod backfill;
 pub mod backfill_operations;
 pub mod candidate_tracker;
 pub mod discovery_cache;
+pub mod direct_voiceprints;
 pub mod evidence;
 pub mod eligibility;
 pub mod identify_target;
