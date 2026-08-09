@@ -54,6 +54,18 @@ const ALLOWED: &[(&str, &str)] = &[
          attaching a resolved entity for the first time -- never used to look one up",
     ),
     (
+        "solstone-core-speaker-resolve/src/bootstrap.rs",
+        "names a NEW entity id when bootstrap creates a person for a speaker the \
+         resolver returned NoMatch for -- never used to look one up; resolution is \
+         owned by find_matching_entity",
+    ),
+    (
+        "solstone-core-speaker-resolve/src/identify_target.rs",
+        "names the entity id a will-create identify target would be given, forming a \
+         proposed label for a person that does not exist yet -- never used to look \
+         one up",
+    ),
+    (
         "solstone-core-entities/src/router.rs",
         "names merge-candidate key components and is a compatibility fallback only after a \
          stored attached-facet identity lookup fails -- never used to locate an existing entity",

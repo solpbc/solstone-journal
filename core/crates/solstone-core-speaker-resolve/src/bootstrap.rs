@@ -188,18 +188,13 @@ pub fn bootstrap_voiceprints(
                 continue;
             }
             EntityResolutionOutcome::NoMatch => {
+                // The slug names a NEW entity; it never looks one up. Resolution is
+                // owned by find_matching_entity, whose Slug tier is high-confidence,
+                // so a slug that matches an existing id has already returned Resolved.
+                // Re-scanning here would override that verdict and attach the owner's
+                // voiceprints to an entity the resolver declined.
                 let id = entity_slug(speaker);
-                if let Some(entity) = entities.iter().find(|entity| entity.id == id) {
-                    (
-                        id,
-                        entity
-                            .value
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .unwrap_or(speaker)
-                            .to_owned(),
-                    )
-                } else if request.dry_run {
+                if request.dry_run {
                     entity_types.insert(id.clone(), "Person".to_owned());
                     (id, speaker.clone())
                 } else {
