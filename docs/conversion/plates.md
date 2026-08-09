@@ -618,11 +618,15 @@ Operations for managing asynchronous activity — starting things, running thing
 
 Health of running things — current status, in-memory. ⛔ **System** health, never owner body data.
 
-🔴 The per-day health JSONL grammar is **entirely Python string literals**. The callosum envelope likewise — two constants and a docstring carrying the whole control plane.
+🔴 The per-day health JSONL grammar is **almost entirely Python string literals** — ⚠ *almost*, and the exceptions are the ones that matter. Three of the sets are already **imported from their owners** (the sensed-terminal states from the data-state enum; the deterministic-failure reason codes and the failure-cap predicate from the cogitate policy), so a rebuild that re-types them creates a cross-language fork with nothing binding it. What has **no owner anywhere** is the mode set — the writer derives the run mode from an argparse chain, not from a constant.
 
-🔴 **And the per-day run log derives identity from its filename** — `{ref}_{mode}.jsonl`, read back by matching the filename suffix at three separate sites. That is the derived-identity rule: persist `ref` and `mode` **in the record** and let the filename be a label.
+📌 **Measured: 18 record kinds on the writer side, and the reader consumes 10.** Eight are written on every run and read by no production consumer, though six of those eight are asserted on by existing tests. A typed schema forces that question; ⛔ do not answer it by quietly dropping them.
+
+⚠ **The run log's identity story is real but NOT where it first appears to be.** ⛔ Corrected: the fold reads `mode` **from inside the record**. The filename-suffix derivation lives in the day-summary path and in two consumers that bypass this plate entirely and glob `*_daily.jsonl` directly — one of which already carries a comment admitting it will *"silently undercount"* if the shape changes. `ref` is written by one of the 18 kinds and **no reader anywhere parses it out of a path**. Fix the derivation where it is; ⛔ do not invent a filename fallback where it is not.
 
 ⚠ **The current-status snapshot publishes a field it never populates** — `stale_heartbeats` is hardcoded empty. Either it means something or it goes; shipping it empty is a claim the code does not back.
+
+⚠ **The writer is fail-silent by construction** — a failed open logs once and every later write is a no-op. **So a run whose sidecar never opened is indistinguishable, to this plate, from a run that did nothing.**
 
 ## `P-body-source`
 
