@@ -636,6 +636,137 @@ def test_save_voiceprint_forwards_each_native_request(speakers_env, monkeypatch)
     ]
 
 
+def test_assign_attribution_native_voiceprint_lock_returns_busy(
+    speakers_env, monkeypatch
+):
+    from solstone.apps.speakers import routes
+    from solstone.apps.speakers.routes import speakers_bp
+
+    env = speakers_env()
+    env.create_segment(
+        "20240101",
+        "143022_300",
+        ["mic_audio"],
+        embeddings=np.eye(1, 256, dtype=np.float32),
+    )
+    env.create_entity("Alice Test")
+    env.create_speaker_labels(
+        "20240101",
+        "143022_300",
+        [
+            {
+                "sentence_id": 1,
+                "speaker": None,
+                "confidence": "low",
+                "method": "unmatched",
+            }
+        ],
+    )
+
+    def busy_write(*_args, **_kwargs):
+        raise routes.native_speakers.NativeSpeakerResolveError(
+            "temporary failure",
+            reason="tempfail",
+            detail="could not acquire lock for entities/alice_test/voiceprints.npz",
+            exit_code=75,
+        )
+
+    monkeypatch.setattr(routes.native_speakers, "write_voiceprint", busy_write)
+    app = Flask(__name__)
+    app.register_blueprint(speakers_bp)
+
+    with app.test_client() as client:
+        response = client.post(
+            "/app/speakers/api/assign-attribution",
+            json={
+                "day": "20240101",
+                "stream": "test",
+                "segment_key": "143022_300",
+                "source": "mic_audio",
+                "sentence_id": 1,
+                "speaker": "alice_test",
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.get_json()["reason_code"] == "speaker_voiceprint_busy"
+
+
+def test_correct_attribution_native_voiceprint_removal_lock_returns_busy(
+    speakers_env, monkeypatch
+):
+    from solstone.apps.speakers import routes
+    from solstone.apps.speakers.routes import speakers_bp
+
+    env = speakers_env()
+    env.create_segment(
+        "20240101",
+        "143022_300",
+        ["mic_audio"],
+        embeddings=np.eye(1, 256, dtype=np.float32),
+    )
+    env.create_entity(
+        "Alice Test",
+        voiceprints=[("20240101", "143022_300", "mic_audio", 1)],
+    )
+    env.create_entity("Bob Test")
+    env.create_speaker_labels(
+        "20240101",
+        "143022_300",
+        [
+            {
+                "sentence_id": 1,
+                "speaker": "alice_test",
+                "confidence": "high",
+                "method": "acoustic",
+            }
+        ],
+    )
+
+    def busy_remove(*_args, **_kwargs):
+        raise routes.native_speakers.NativeSpeakerResolveError(
+            "temporary failure",
+            reason="tempfail",
+            detail="could not acquire lock for entities/alice_test/voiceprints.npz",
+            exit_code=75,
+        )
+
+    monkeypatch.setattr(routes.native_speakers, "remove_voiceprint", busy_remove)
+    app = Flask(__name__)
+    app.register_blueprint(speakers_bp)
+
+    with app.test_client() as client:
+        response = client.post(
+            "/app/speakers/api/correct-attribution",
+            json={
+                "day": "20240101",
+                "stream": "test",
+                "segment_key": "143022_300",
+                "source": "mic_audio",
+                "sentence_id": 1,
+                "new_speaker": "bob_test",
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.get_json()["reason_code"] == "speaker_voiceprint_busy"
+
+
+def test_native_non_lock_failure_is_not_mapped_to_busy_response(speakers_env):
+    from solstone.apps.speakers import routes
+
+    speakers_env()
+    error = routes.native_speakers.NativeSpeakerResolveError(
+        "unsupported input",
+        reason="unavailable",
+        detail="entity not found",
+        exit_code=69,
+    )
+
+    with pytest.raises(routes.native_speakers.NativeSpeakerResolveError):
+        routes._native_storage_busy_response(error)
+
+
 def test_check_owner_contamination_uses_provisional_centroid(speakers_env):
     from solstone.apps.speakers.routes import _check_owner_contamination
 

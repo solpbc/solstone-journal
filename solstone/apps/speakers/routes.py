@@ -767,6 +767,8 @@ def _assign_attribution_impl(
                 return _labels_busy_response(exc)
     except LockTimeout as exc:
         return _labels_busy_response(exc)
+    except native_speakers.NativeSpeakerResolveError as exc:
+        return _native_storage_busy_response(exc)
 
     log_app_action(
         app="speakers",
@@ -789,20 +791,43 @@ def _assign_attribution_impl(
     return success_response(response)
 
 
-def _voiceprint_busy_response(exc: LockTimeout) -> Any:
-    logger.warning("voiceprint storage busy for %s", exc.path)
+def _busy_location(exc: LockTimeout | native_speakers.NativeSpeakerResolveError) -> str:
+    if isinstance(exc, LockTimeout):
+        return str(exc.path)
+    return exc.detail or exc.message
+
+
+def _voiceprint_busy_response(
+    exc: LockTimeout | native_speakers.NativeSpeakerResolveError,
+) -> Any:
+    logger.warning("voiceprint storage busy for %s", _busy_location(exc))
     return error_response(
         SPEAKER_VOICEPRINT_BUSY,
         detail="voiceprint storage is busy; try again",
     )
 
 
-def _labels_busy_response(exc: LockTimeout) -> Any:
-    logger.warning("speaker labels busy for %s", exc.path)
+def _labels_busy_response(
+    exc: LockTimeout | native_speakers.NativeSpeakerResolveError,
+) -> Any:
+    logger.warning("speaker labels busy for %s", _busy_location(exc))
     return error_response(
         SPEAKER_LABELS_BUSY,
         detail="speaker labels are busy; try again",
     )
+
+
+def _native_storage_busy_response(
+    exc: native_speakers.NativeSpeakerResolveError,
+) -> Any:
+    detail = exc.detail or ""
+    if exc.reason != "tempfail" or not (
+        "could not acquire lock" in detail or "storage is busy" in detail
+    ):
+        raise exc
+    if "speaker_labels.json" in detail or "speaker_corrections.json" in detail:
+        return _labels_busy_response(exc)
+    return _voiceprint_busy_response(exc)
 
 
 def _owner_bootstrap_status_fields() -> dict[str, Any]:
@@ -1738,6 +1763,8 @@ def api_confirm_attribution() -> Any:
                 return _labels_busy_response(exc)
     except LockTimeout as exc:
         return _labels_busy_response(exc)
+    except native_speakers.NativeSpeakerResolveError as exc:
+        return _native_storage_busy_response(exc)
 
     log_app_action(
         app="speakers",
@@ -1922,6 +1949,8 @@ def api_correct_attribution() -> Any:
                 )
     except LockTimeout as exc:
         return _labels_busy_response(exc)
+    except native_speakers.NativeSpeakerResolveError as exc:
+        return _native_storage_busy_response(exc)
 
     log_app_action(
         app="speakers",
@@ -2007,6 +2036,8 @@ def api_propagate_correction() -> Any:
         if exc.path.name in ("speaker_labels.json", "speaker_corrections.json"):
             return _labels_busy_response(exc)
         return _voiceprint_busy_response(exc)
+    except native_speakers.NativeSpeakerResolveError as exc:
+        return _native_storage_busy_response(exc)
 
     if commit and result.get("statement_count"):
         log_app_action(
@@ -2167,6 +2198,8 @@ def api_owner_detect() -> Any:
         result = detect_owner_candidate(force=force)
     except LockTimeout as exc:
         return _voiceprint_busy_response(exc)
+    except native_speakers.NativeSpeakerResolveError as exc:
+        return _native_storage_busy_response(exc)
     if result.get("error_kind") == "voiceprint_busy":
         return error_response(SPEAKER_VOICEPRINT_BUSY, detail=result["error"])
     return jsonify(result)
@@ -2179,6 +2212,8 @@ def api_owner_build_from_tags() -> Any:
         result = bootstrap_owner_from_manual_tags()
     except LockTimeout as exc:
         return _voiceprint_busy_response(exc)
+    except native_speakers.NativeSpeakerResolveError as exc:
+        return _native_storage_busy_response(exc)
     if result.get("error_kind") == "voiceprint_busy":
         return error_response(SPEAKER_VOICEPRINT_BUSY, detail=result["error"])
     if "error" in result:
@@ -2205,6 +2240,8 @@ def api_owner_rebuild() -> Any:
         result = rebuild_owner_centroid(override=override)
     except LockTimeout as exc:
         return _voiceprint_busy_response(exc)
+    except native_speakers.NativeSpeakerResolveError as exc:
+        return _native_storage_busy_response(exc)
     if result.get("error_kind") == "voiceprint_busy":
         return error_response(SPEAKER_VOICEPRINT_BUSY, detail=result["error"])
     if result.get("status") == "rebuilt":
@@ -2255,6 +2292,8 @@ def api_owner_confirm() -> Any:
         result = confirm_owner_candidate()
     except LockTimeout as exc:
         return _voiceprint_busy_response(exc)
+    except native_speakers.NativeSpeakerResolveError as exc:
+        return _native_storage_busy_response(exc)
     if result.get("error_kind") == "voiceprint_busy":
         return error_response(SPEAKER_VOICEPRINT_BUSY, detail=result["error"])
     if "error" in result:
@@ -2282,6 +2321,8 @@ def api_owner_reject() -> Any:
         reject_owner_candidate()
     except LockTimeout as exc:
         return _voiceprint_busy_response(exc)
+    except native_speakers.NativeSpeakerResolveError as exc:
+        return _native_storage_busy_response(exc)
     return jsonify({"status": "needs_detection"})
 
 
@@ -2619,6 +2660,8 @@ def api_discovery_identify() -> Any:
         if exc.path.name in ("speaker_labels.json", "speaker_corrections.json"):
             return _labels_busy_response(exc)
         return _voiceprint_busy_response(exc)
+    except native_speakers.NativeSpeakerResolveError as exc:
+        return _native_storage_busy_response(exc)
 
     if result.get("status") == "identified":
         log_app_action(
@@ -2757,6 +2800,8 @@ def api_cli_attribute_segment() -> Any:
             )
         except LockTimeout as exc:
             return _labels_busy_response(exc)
+        except native_speakers.NativeSpeakerResolveError as exc:
+            return _native_storage_busy_response(exc)
         written_path = str(out_path)
 
     if commit and accumulate and source:
@@ -2764,6 +2809,8 @@ def api_cli_attribute_segment() -> Any:
             accumulated = accumulate_voiceprints(day, stream, segment, labels, source)
         except LockTimeout as exc:
             return _voiceprint_busy_response(exc)
+        except native_speakers.NativeSpeakerResolveError as exc:
+            return _native_storage_busy_response(exc)
 
     return jsonify(
         {
@@ -2838,6 +2885,8 @@ def api_cli_discovery_identify() -> Any:
         if exc.path.name in ("speaker_labels.json", "speaker_corrections.json"):
             return _labels_busy_response(exc)
         return _voiceprint_busy_response(exc)
+    except native_speakers.NativeSpeakerResolveError as exc:
+        return _native_storage_busy_response(exc)
 
     return _identify_result_response(result)
 
@@ -2859,6 +2908,8 @@ def api_discovery_identify_undo() -> Any:
         if exc.path.name in ("speaker_labels.json", "speaker_corrections.json"):
             return _labels_busy_response(exc)
         return _voiceprint_busy_response(exc)
+    except native_speakers.NativeSpeakerResolveError as exc:
+        return _native_storage_busy_response(exc)
     return _identify_result_response(result)
 
 
@@ -2987,6 +3038,8 @@ def api_cli_owner_confirm() -> Any:
         result = confirm_owner_candidate()
     except LockTimeout as exc:
         return _voiceprint_busy_response(exc)
+    except native_speakers.NativeSpeakerResolveError as exc:
+        return _native_storage_busy_response(exc)
     if result.get("error_kind") == "voiceprint_busy":
         return error_response(SPEAKER_VOICEPRINT_BUSY, detail=result["error"])
     if "error" in result:
@@ -3005,6 +3058,8 @@ def api_cli_owner_reject() -> Any:
         result = reject_owner_candidate()
     except LockTimeout as exc:
         return _voiceprint_busy_response(exc)
+    except native_speakers.NativeSpeakerResolveError as exc:
+        return _native_storage_busy_response(exc)
     return jsonify(result)
 
 
