@@ -15,7 +15,7 @@ use solstone_core_entity::{
 use solstone_core_journal_io::segment_path;
 use thiserror::Error;
 
-use crate::candidate_tracker::{CandidateTracker, MERGE_THRESHOLD};
+use crate::candidate_tracker::{CandidateTracker, MERGE_THRESHOLD, best_matching_candidate};
 use crate::direct_voiceprints::{
     DirectVoiceprintEntry, DirectVoiceprintKey, DirectVoiceprintsPlan,
     execute_direct_voiceprints_phase, plan_direct_voiceprints,
@@ -706,19 +706,18 @@ fn build_retro_plan(
     };
     let mut tracker = CandidateTracker::new(root);
     let candidates = tracker.snapshot_candidates_locked()?;
-    let Some(candidate) = candidates
-        .into_iter()
-        .filter(|candidate| dot(&centroid, &candidate.centroid) >= MERGE_THRESHOLD)
-        .max_by(|a, b| dot(&centroid, &a.centroid).total_cmp(&dot(&centroid, &b.centroid)))
+    let Some((candidate, score)) = best_matching_candidate(&candidates, &centroid)
+        .filter(|(_, score)| *score >= MERGE_THRESHOLD)
     else {
         return Ok(empty_retro_plan());
     };
+    let candidate = candidate.clone();
     let planned = plan_retroactive_confirm(root, &candidate, &centroid, target, added_at);
     let mut after = candidate.clone();
     after.status = "confirmed".to_owned();
     after.confirmed_entity = Some(target.to_owned());
     Ok(
-        json!({"matched":planned.matched,"match_score":dot(&centroid,&candidate.centroid),"candidate_id":planned.candidate_id,"candidate_before":candidate.to_json(),"candidate_after":after.to_json(),"preexisting_voiceprint_keys":[],"voiceprints_to_add":planned.items.iter().map(|item| json!({"key":{"day":item.metadata["day"],"segment_key":item.metadata["segment_key"],"source":item.metadata["source"],"sentence_id":item.metadata["sentence_id"]},"metadata":item.metadata,"embedding":item.embedding})).collect::<Vec<_>>() }),
+        json!({"matched":planned.matched,"match_score":score,"candidate_id":planned.candidate_id,"candidate_before":candidate.to_json(),"candidate_after":after.to_json(),"preexisting_voiceprint_keys":[],"voiceprints_to_add":planned.items.iter().map(|item| json!({"key":{"day":item.metadata["day"],"segment_key":item.metadata["segment_key"],"source":item.metadata["source"],"sentence_id":item.metadata["sentence_id"]},"metadata":item.metadata,"embedding":item.embedding})).collect::<Vec<_>>() }),
     )
 }
 fn empty_retro_plan() -> Value {
@@ -734,10 +733,6 @@ fn mean_centroid(items: &[VoiceprintItem]) -> Option<Vec<f32>> {
     }
     normalize_embedding(&sum)
 }
-fn dot(a: &[f32], b: &[f32]) -> f32 {
-    a.iter().zip(b).map(|(a, b)| a * b).sum()
-}
-
 fn direct_plan_json(plan: &DirectVoiceprintsPlan) -> Value {
     json!({"preexisting_keys":plan.preexisting_keys.iter().map(DirectVoiceprintKey::to_json).collect::<Vec<_>>(),"entries_to_add":plan.entries_to_add.iter().map(|entry| json!({"key":entry.key.to_json(),"metadata":entry.metadata,"source_member":member_json(&entry.source_member)})).collect::<Vec<_>>()})
 }
@@ -1208,6 +1203,47 @@ mod tests {
             caller: String::new(),
             actor: None,
         }
+    }
+
+    #[test]
+    fn identify_retro_plan_ignores_rejected_candidates() {
+        let temporary = Temp::new();
+        fs::create_dir_all(temporary.path().join("awareness")).unwrap();
+        let rejected = crate::candidate_tracker::CandidateProfile {
+            cand_id: 1,
+            centroid: vector(),
+            n_segments: 1,
+            n_intervals: 1,
+            total_duration_s: 1.0,
+            source_segments: vec![],
+            confirmed_entity: None,
+            status: "rejected".to_owned(),
+            merge_events: vec![],
+        };
+        fs::write(
+            temporary.path().join("awareness/speaker_candidates.json"),
+            json!({"next_id":2,"candidates":[rejected.to_json()]}).to_string(),
+        )
+        .unwrap();
+        let direct = vec![VoiceprintItem {
+            embedding: vector(),
+            metadata: json!({}),
+        }];
+        assert_eq!(
+            build_retro_plan(temporary.path(), "target", &direct, 1).unwrap()["matched"],
+            false
+        );
+
+        let mut pending = rejected;
+        pending.status = "pending".to_owned();
+        fs::write(
+            temporary.path().join("awareness/speaker_candidates.json"),
+            json!({"next_id":2,"candidates":[pending.to_json()]}).to_string(),
+        )
+        .unwrap();
+        let plan = build_retro_plan(temporary.path(), "target", &direct, 1).unwrap();
+        assert_eq!(plan["matched"], true);
+        assert_eq!(plan["candidate_id"], 1);
     }
 
     #[test]

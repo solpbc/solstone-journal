@@ -3,19 +3,19 @@
 
 //! Backfill selection and speaker-label preservation primitives.
 
-use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use serde_json::{Map, Value};
+use solstone_core_entity::hold_entity_trust_lock;
 use solstone_core_speaker_id::labels::write_full_labels;
 use thiserror::Error;
 
 use crate::backfill_operations::{
     BACKFILL_OPERATION_SCHEMA_VERSION, BackfillCheckpointOutcome, BackfillOperationEvent,
     BackfillOperationPayload, BackfillOperationState, BackfillOperationTerminalStatus,
-    BackfillSegmentKey, append_backfill_event, backfill_operations_path, fold_backfill_operation,
-    load_backfill_operations,
+    BackfillSegmentError, BackfillSegmentKey, append_backfill_event, backfill_operations_path,
+    fold_backfill_operation, load_backfill_operations,
 };
 use crate::bootstrap::scan_segments;
 use crate::resolve::{ResolveError, ResolveOutcome, resolve};
@@ -63,6 +63,7 @@ pub struct BackfillRunResult {
     pub processed_count: usize,
     pub skipped_count: usize,
     pub error_count: usize,
+    pub error_segments: Vec<BackfillSegmentError>,
     pub pending_count: usize,
     pub done: bool,
 }
@@ -79,6 +80,8 @@ pub enum BackfillError {
     Labels(#[from] solstone_core_speaker_id::labels::LabelsError),
     #[error("segment path failed: {0}")]
     Path(#[from] solstone_core_journal_io::PathError),
+    #[error("backfill operation lock failed: {0}")]
+    Trust(#[from] solstone_core_entity::EntityTrustLockError),
 }
 
 /// Distinguish an explicit locked stub from every other label payload.
@@ -162,6 +165,7 @@ pub fn resolve_backfill_segment(
 
 /// Execute or resume one durable backfill operation without rewriting its snapshot.
 pub fn run_backfill(request: &BackfillRunRequest) -> Result<BackfillRunResult, BackfillError> {
+    let _trust = hold_entity_trust_lock(&request.journal_root)?;
     let ledger_path = backfill_operations_path(&request.journal_root);
     let mut state = fold_backfill_operation(
         &load_backfill_operations(&ledger_path)?,
@@ -216,29 +220,26 @@ pub fn run_backfill(request: &BackfillRunRequest) -> Result<BackfillRunResult, B
                 false,
             )?,
         };
-        let outcome =
+        let (outcome, error_detail) =
             match resolve_backfill_segment(&request.journal_root, &segment, request.now_ms) {
                 Ok(ResolveOutcome::Resolved(output)) => {
-                    let labels = output.labels.iter().map(label_json).collect::<Vec<_>>();
-                    write_full_labels(&segment.path, labels, &Map::new())?;
-                    BackfillCheckpointOutcome::Processed
+                    write_resolved_backfill_labels(&segment.path, &output)?;
+                    (BackfillCheckpointOutcome::Processed, None)
                 }
-                Ok(_) => BackfillCheckpointOutcome::Skipped,
-                Err(_) => BackfillCheckpointOutcome::Error,
+                Ok(_) => (BackfillCheckpointOutcome::Skipped, None),
+                Err(error) => (BackfillCheckpointOutcome::Error, Some(error.to_string())),
             };
         append_backfill_event(
             &ledger_path,
             &BackfillOperationEvent {
                 schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
-                event_id: format!(
-                    "{}:checkpoint:{}:{}:{}",
-                    request.operation_id, key.day, key.stream, key.segment_key
-                ),
+                event_id: next_checkpoint_event_id(&ledger_path, &request.operation_id, key)?,
                 operation_id: request.operation_id.clone(),
                 ts: Utc::now().to_rfc3339(),
                 payload: BackfillOperationPayload::Checkpoint {
                     segment: key.clone(),
                     outcome,
+                    error_detail,
                 },
             },
         )?;
@@ -270,6 +271,14 @@ pub fn run_backfill(request: &BackfillRunRequest) -> Result<BackfillRunResult, B
     Ok(backfill_result(&state))
 }
 
+fn write_resolved_backfill_labels(
+    segment: &Path,
+    output: &crate::resolve::ResolveOutput,
+) -> Result<(), solstone_core_speaker_id::labels::LabelsError> {
+    let labels = output.labels.iter().map(label_json).collect::<Vec<_>>();
+    write_full_labels(segment, labels, &metadata_json(&output.metadata))
+}
+
 fn label_json(label: &crate::layer1::Label) -> Value {
     let mut value = serde_json::json!({"sentence_id":label.sentence_id});
     let object = value.as_object_mut().expect("label is an object");
@@ -282,7 +291,90 @@ fn label_json(label: &crate::layer1::Label) -> Value {
     if let Some(method) = &label.method {
         object.insert("method".to_owned(), Value::String(method.clone()));
     }
+    if let Some(owner_margin_declined) = label.owner_margin_declined {
+        object.insert(
+            "owner_margin_declined".to_owned(),
+            Value::Bool(owner_margin_declined),
+        );
+    }
+    if let Some(acoustic_margin_declined) = label.acoustic_margin_declined {
+        object.insert(
+            "acoustic_margin_declined".to_owned(),
+            Value::Bool(acoustic_margin_declined),
+        );
+    }
     value
+}
+
+fn metadata_json(metadata: &crate::resolve::ResolveMetadata) -> Map<String, Value> {
+    let mut value = Map::new();
+    value.insert(
+        "owner_centroid_last_refreshed_at".to_owned(),
+        metadata
+            .owner_centroid_last_refreshed_at
+            .clone()
+            .map(Value::String)
+            .unwrap_or(Value::Null),
+    );
+    value.insert(
+        "voiceprint_versions".to_owned(),
+        Value::Object(
+            metadata
+                .voiceprint_versions
+                .iter()
+                .map(|(entity_id, version)| (entity_id.clone(), Value::from(*version)))
+                .collect(),
+        ),
+    );
+    value.insert(
+        "candidate_evidence".to_owned(),
+        Value::Array(
+            metadata
+                .candidate_evidence
+                .iter()
+                .map(|evidence| {
+                    serde_json::json!({"entity_id":evidence.entity_id,"sources":evidence.sources})
+                })
+                .collect(),
+        ),
+    );
+    if let Some(gaps) = &metadata.candidate_evidence_gaps {
+        value.insert(
+            "candidate_evidence_gaps".to_owned(),
+            Value::Array(
+                gaps.iter()
+                    .map(|gap| serde_json::json!({"source":gap.source,"reason":gap.reason}))
+                    .collect(),
+            ),
+        );
+    }
+    value
+}
+
+fn next_checkpoint_event_id(
+    ledger_path: &Path,
+    operation_id: &str,
+    key: &BackfillSegmentKey,
+) -> Result<String, BackfillError> {
+    let attempts = load_backfill_operations(ledger_path)?
+        .iter()
+        .filter(|row| {
+            row.event.operation_id == operation_id
+                && matches!(
+                    &row.event.payload,
+                    BackfillOperationPayload::Checkpoint { segment, .. } if segment == key
+                )
+        })
+        .count();
+    let base = format!(
+        "{operation_id}:checkpoint:{}:{}:{}",
+        key.day, key.stream, key.segment_key
+    );
+    Ok(if attempts == 0 {
+        base
+    } else {
+        format!("{base}:retry:{attempts}")
+    })
 }
 
 fn backfill_result(state: &BackfillOperationState) -> BackfillRunResult {
@@ -302,49 +394,17 @@ fn backfill_result(state: &BackfillOperationState) -> BackfillRunResult {
         processed_count,
         skipped_count,
         error_count,
+        error_segments: state
+            .error_details
+            .iter()
+            .map(|(segment, detail)| BackfillSegmentError {
+                segment: segment.clone(),
+                detail: detail.clone(),
+            })
+            .collect(),
         pending_count: state.pending_segments.len(),
         done: state.terminal_status == BackfillOperationTerminalStatus::Done,
     }
-}
-
-/// Preserve every `user_`-method label at its sentence ID while replacing other rows.
-#[must_use]
-pub fn merge_user_labels(current: Option<&Value>, fresh_labels: &[Value]) -> Vec<Value> {
-    let mut user_by_sentence = BTreeMap::<i64, Value>::new();
-    if let Some(labels) = current
-        .and_then(|payload| payload.get("labels"))
-        .and_then(Value::as_array)
-    {
-        for label in labels {
-            if is_user_label(label) {
-                if let Some(sentence_id) = label_sentence_id(label) {
-                    user_by_sentence.insert(sentence_id, label.clone());
-                }
-            }
-        }
-    }
-    let mut fresh_sentence_ids = HashSet::<i64>::new();
-    let mut merged = Vec::with_capacity(fresh_labels.len() + user_by_sentence.len());
-    for label in fresh_labels {
-        let Some(sentence_id) = label_sentence_id(label) else {
-            merged.push(label.clone());
-            continue;
-        };
-        fresh_sentence_ids.insert(sentence_id);
-        merged.push(
-            user_by_sentence
-                .get(&sentence_id)
-                .cloned()
-                .unwrap_or_else(|| label.clone()),
-        );
-    }
-    merged.extend(
-        user_by_sentence
-            .into_iter()
-            .filter(|(sentence_id, _)| !fresh_sentence_ids.contains(sentence_id))
-            .map(|(_, label)| label),
-    );
-    merged
 }
 
 fn has_audio_embeddings(sources: &[String]) -> bool {
@@ -353,17 +413,102 @@ fn has_audio_embeddings(sources: &[String]) -> bool {
         .any(|source| source == "audio" || source.ends_with("_audio"))
 }
 
-fn is_user_label(label: &Value) -> bool {
-    label
-        .get("method")
-        .and_then(Value::as_str)
-        .is_some_and(|method| method.starts_with("user_"))
-}
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::fs;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
-fn label_sentence_id(label: &Value) -> Option<i64> {
-    match label.get("sentence_id")? {
-        Value::Number(number) => number.as_i64(),
-        Value::String(value) => value.parse().ok(),
-        _ => None,
+    use super::*;
+    use crate::evidence::{CandidateEvidence, EvidenceGap};
+    use crate::layer1::Label;
+    use crate::resolve::{ResolveMetadata, ResolveOutput};
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn ac2_backfill_write_preserves_user_prefix_and_persists_full_resolve_output() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-backfill-label-write-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let segment = root.join("segment");
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        let preserved = serde_json::json!({
+            "sentence_id": 1,
+            "speaker": "person-user",
+            "method": "user_zzz_test",
+            "opaque": {"preserve": [1, 2, 3]},
+        });
+        fs::write(
+            segment.join("talents/speaker_labels.json"),
+            serde_json::json!({"labels":[
+                preserved.clone(),
+                {"sentence_id":2,"speaker":"stale","method":"cluster"}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        let output = ResolveOutput {
+            labels: vec![
+                Label {
+                    sentence_id: 1,
+                    speaker: Some("replacement".to_owned()),
+                    confidence: Some("high".to_owned()),
+                    method: Some("acoustic".to_owned()),
+                    owner_margin_declined: None,
+                    acoustic_margin_declined: None,
+                },
+                Label {
+                    sentence_id: 2,
+                    speaker: Some("fresh".to_owned()),
+                    confidence: Some("low".to_owned()),
+                    method: Some("cluster".to_owned()),
+                    owner_margin_declined: Some(true),
+                    acoustic_margin_declined: Some(true),
+                },
+            ],
+            unmatched: vec![],
+            unmatched_texts: HashMap::new(),
+            source: Some("audio".to_owned()),
+            candidates: vec![],
+            metadata: ResolveMetadata {
+                owner_centroid_last_refreshed_at: Some("2026-08-08T00:00:00Z".to_owned()),
+                voiceprint_versions: HashMap::from([("fresh".to_owned(), 3)]),
+                candidate_evidence: vec![CandidateEvidence {
+                    entity_id: "fresh".to_owned(),
+                    sources: vec!["screen".to_owned()],
+                }],
+                candidate_evidence_gaps: Some(vec![EvidenceGap {
+                    source: "meeting".to_owned(),
+                    reason: "missing".to_owned(),
+                }]),
+                voiceprint_gaps: None,
+            },
+        };
+
+        write_resolved_backfill_labels(&segment, &output).unwrap();
+        let saved: Value =
+            serde_json::from_slice(&fs::read(segment.join("talents/speaker_labels.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved["labels"][0], preserved);
+        assert_eq!(saved["labels"][1]["speaker"], "fresh");
+        assert_eq!(saved["labels"][1]["owner_margin_declined"], true);
+        assert_eq!(saved["labels"][1]["acoustic_margin_declined"], true);
+        assert_eq!(
+            saved["owner_centroid_last_refreshed_at"],
+            "2026-08-08T00:00:00Z"
+        );
+        assert_eq!(saved["voiceprint_versions"], serde_json::json!({"fresh":3}));
+        assert_eq!(
+            saved["candidate_evidence"],
+            serde_json::json!([{"entity_id":"fresh","sources":["screen"]}])
+        );
+        assert_eq!(
+            saved["candidate_evidence_gaps"],
+            serde_json::json!([{"source":"meeting","reason":"missing"}])
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 }

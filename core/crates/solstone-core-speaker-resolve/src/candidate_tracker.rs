@@ -281,11 +281,8 @@ impl CandidateTracker {
             .collect()
     }
     fn best_match(&self, center: &[f32]) -> Option<(i64, f32)> {
-        self.candidates
-            .values()
-            .filter(|c| c.status != "rejected")
-            .map(|c| (c.cand_id, dot(center, &c.centroid)))
-            .max_by(|a, b| a.1.total_cmp(&b.1))
+        best_matching_candidate(&self.candidates(), center)
+            .map(|(candidate, score)| (candidate.cand_id, score))
     }
     fn create(&mut self, center: Vec<f32>, n: usize, d: f64, source: Value) {
         let id = self.next_id;
@@ -457,6 +454,18 @@ impl CandidateTracker {
         }
         Ok(saved)
     }
+}
+
+/// Return the highest-scoring candidate eligible for a new match.
+pub(crate) fn best_matching_candidate<'a>(
+    candidates: &'a [CandidateProfile],
+    center: &[f32],
+) -> Option<(&'a CandidateProfile, f32)> {
+    candidates
+        .iter()
+        .filter(|candidate| candidate.status != "rejected")
+        .map(|candidate| (candidate, dot(center, &candidate.centroid)))
+        .max_by(|left, right| left.1.total_cmp(&right.1))
 }
 fn eligible(c: &CandidateProfile) -> bool {
     c.n_intervals >= CONSOLIDATE_MIN_INTERVALS

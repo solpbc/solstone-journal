@@ -99,6 +99,7 @@ pub enum BackfillOperationPayload {
     Checkpoint {
         segment: BackfillSegmentKey,
         outcome: BackfillCheckpointOutcome,
+        error_detail: Option<String>,
     },
     Completed {
         completed_at: String,
@@ -156,7 +157,11 @@ impl BackfillOperationEvent {
                     Value::Array(segments.iter().map(BackfillSegmentKey::to_json).collect()),
                 );
             }
-            BackfillOperationPayload::Checkpoint { segment, outcome } => {
+            BackfillOperationPayload::Checkpoint {
+                segment,
+                outcome,
+                error_detail,
+            } => {
                 row.insert("day".to_owned(), Value::String(segment.day.clone()));
                 row.insert("stream".to_owned(), Value::String(segment.stream.clone()));
                 row.insert(
@@ -167,6 +172,12 @@ impl BackfillOperationEvent {
                     "outcome".to_owned(),
                     Value::String(outcome.as_str().to_owned()),
                 );
+                if let Some(error_detail) = error_detail {
+                    row.insert(
+                        "error_detail".to_owned(),
+                        Value::String(error_detail.clone()),
+                    );
+                }
             }
             BackfillOperationPayload::Completed { completed_at } => {
                 row.insert(
@@ -227,6 +238,7 @@ pub struct BackfillOperationState {
     pub reattribute: bool,
     pub total_segments: usize,
     pub checkpointed_segments: BTreeMap<BackfillSegmentKey, BackfillCheckpointOutcome>,
+    pub error_details: BTreeMap<BackfillSegmentKey, String>,
     pub pending_segments: Vec<BackfillSegmentKey>,
     pub terminal_status: BackfillOperationTerminalStatus,
 }
@@ -236,8 +248,17 @@ pub struct BackfillOperationStatus {
     pub total_count: usize,
     pub completed_count: usize,
     pub pending_count: usize,
+    pub error_count: usize,
+    pub error_segments: Vec<BackfillSegmentError>,
     pub resumable: bool,
     pub done: bool,
+}
+
+/// A retryable segment failure retained in the append-only backfill ledger.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackfillSegmentError {
+    pub segment: BackfillSegmentKey,
+    pub detail: String,
 }
 
 #[derive(Debug, Error)]
@@ -359,7 +380,21 @@ pub fn validate_backfill_row(
                     outcome: outcome_text,
                 },
             )?;
-            BackfillOperationPayload::Checkpoint { segment, outcome }
+            let error_detail = object
+                .get("error_detail")
+                .and_then(Value::as_str)
+                .filter(|detail| !detail.is_empty())
+                .map(str::to_owned);
+            if outcome != BackfillCheckpointOutcome::Error && error_detail.is_some() {
+                return Err(BackfillOperationError::MissingOrInvalidField {
+                    field: "error_detail",
+                });
+            }
+            BackfillOperationPayload::Checkpoint {
+                segment,
+                outcome,
+                error_detail,
+            }
         }
         BackfillEventKind::Completed => BackfillOperationPayload::Completed {
             completed_at: required_string(object, "completed_at")?,
@@ -443,14 +478,29 @@ pub fn fold_backfill_operation(
     let (started_at, reattribute, total_count, segments) = prepared[0];
     let planned = segments.iter().cloned().collect::<BTreeSet<_>>();
     let mut checkpointed_segments = BTreeMap::new();
+    let mut error_details = BTreeMap::new();
     let mut done = false;
     for event in events {
         match &event.payload {
-            BackfillOperationPayload::Checkpoint { segment, outcome } => {
+            BackfillOperationPayload::Checkpoint {
+                segment,
+                outcome,
+                error_detail,
+            } => {
                 if !planned.contains(segment) {
                     return Err(BackfillOperationError::CheckpointOutsidePrepared);
                 }
                 checkpointed_segments.insert(segment.clone(), *outcome);
+                if *outcome == BackfillCheckpointOutcome::Error {
+                    error_details.insert(
+                        segment.clone(),
+                        error_detail.clone().unwrap_or_else(|| {
+                            "legacy checkpoint did not retain error detail".to_owned()
+                        }),
+                    );
+                } else {
+                    error_details.remove(segment);
+                }
             }
             BackfillOperationPayload::Completed { .. } => done = true,
             BackfillOperationPayload::Prepared { .. } => {}
@@ -458,7 +508,10 @@ pub fn fold_backfill_operation(
     }
     let pending_segments = segments
         .iter()
-        .filter(|segment| !checkpointed_segments.contains_key(*segment))
+        .filter(|segment| {
+            !checkpointed_segments.contains_key(*segment)
+                || checkpointed_segments.get(*segment) == Some(&BackfillCheckpointOutcome::Error)
+        })
         .cloned()
         .collect();
     Ok(Some(BackfillOperationState {
@@ -467,6 +520,7 @@ pub fn fold_backfill_operation(
         reattribute: *reattribute,
         total_segments: *total_count,
         checkpointed_segments,
+        error_details,
         pending_segments,
         terminal_status: if done {
             BackfillOperationTerminalStatus::Done
@@ -487,8 +541,21 @@ pub fn backfill_operation_status(
     let done = state.terminal_status == BackfillOperationTerminalStatus::Done;
     Ok(Some(BackfillOperationStatus {
         total_count: state.total_segments,
-        completed_count: state.checkpointed_segments.len(),
+        completed_count: state
+            .checkpointed_segments
+            .values()
+            .filter(|outcome| **outcome != BackfillCheckpointOutcome::Error)
+            .count(),
         pending_count: state.pending_segments.len(),
+        error_count: state.error_details.len(),
+        error_segments: state
+            .error_details
+            .iter()
+            .map(|(segment, detail)| BackfillSegmentError {
+                segment: segment.clone(),
+                detail: detail.clone(),
+            })
+            .collect(),
         resumable: !done,
         done,
     }))

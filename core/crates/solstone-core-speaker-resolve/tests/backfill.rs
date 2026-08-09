@@ -4,10 +4,16 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
+use std::time::Duration;
 
-use serde_json::json;
+use solstone_core_entity::hold_entity_trust_lock;
 use solstone_core_speaker_resolve::backfill::{
-    SpeakerLabelsState, classify_speaker_labels_text, merge_user_labels, plan_backfill_segments,
+    BackfillRunRequest, SpeakerLabelsState, classify_speaker_labels_text, plan_backfill_segments,
+    run_backfill,
+};
+use solstone_core_speaker_resolve::backfill_operations::{
+    BackfillOperationPayload, backfill_operations_path, load_backfill_operations,
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -83,38 +89,38 @@ fn ac5_default_backfill_reprocesses_stub_and_skips_real_labelled_segment() {
 }
 
 #[test]
-fn ac2_user_method_prefix_preserves_unknown_user_labels_and_replaces_non_user_rows() {
-    let preserved_unknown = json!({
-        "sentence_id": 1,
-        "speaker": "person-user",
-        "method": "user_zzz_test",
-        "opaque": {"preserve": [1, 2, 3]},
+fn backfill_waits_for_the_operation_lock_without_duplicate_prepared_rows() {
+    let temporary = Temp::new();
+    fs::create_dir_all(temporary.path().join("chronicle")).unwrap();
+    let lock = hold_entity_trust_lock(temporary.path()).unwrap();
+    let root = temporary.path().to_path_buf();
+    let (sender, receiver) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        sender
+            .send(run_backfill(&BackfillRunRequest {
+                journal_root: root,
+                operation_id: "bfop-lock".to_owned(),
+                reattribute: false,
+                now_ms: 1,
+            }))
+            .unwrap();
     });
-    let preserved_known = json!({
-        "sentence_id": 3,
-        "speaker": "person-known",
-        "method": "user_identified",
-    });
-    let current = json!({
-        "labels": [
-            preserved_unknown.clone(),
-            {"sentence_id": 2, "speaker": "stale", "method": "cluster"},
-            preserved_known.clone(),
-        ],
-    });
-    let fresh = vec![
-        json!({"sentence_id": 1, "speaker": "replacement", "method": "acoustic"}),
-        json!({"sentence_id": 2, "speaker": "fresh", "method": "acoustic"}),
-        json!({"sentence_id": 4, "speaker": "new", "method": "cluster"}),
-    ];
+    assert!(receiver.recv_timeout(Duration::from_millis(50)).is_err());
+    drop(lock);
+    assert!(
+        receiver
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap()
+            .done
+    );
+    worker.join().unwrap();
 
+    let rows = load_backfill_operations(&backfill_operations_path(temporary.path())).unwrap();
     assert_eq!(
-        merge_user_labels(Some(&current), &fresh),
-        vec![
-            preserved_unknown,
-            fresh[1].clone(),
-            fresh[2].clone(),
-            preserved_known,
-        ]
+        rows.iter()
+            .filter(|row| matches!(row.event.payload, BackfillOperationPayload::Prepared { .. }))
+            .count(),
+        1
     );
 }

@@ -70,6 +70,8 @@ fn checkpoint(index: usize, outcome: BackfillCheckpointOutcome) -> BackfillOpera
         payload: BackfillOperationPayload::Checkpoint {
             segment: segment(index),
             outcome,
+            error_detail: (outcome == BackfillCheckpointOutcome::Error)
+                .then(|| "temporary resolver failure".to_owned()),
         },
     }
 }
@@ -136,7 +138,11 @@ fn resume_fold_returns_exactly_uncheckpointed_segments() {
     );
     assert_eq!(
         state.pending_segments,
-        vec![segment(2), segment(3), segment(4)]
+        vec![segment(1), segment(2), segment(3), segment(4)]
+    );
+    assert_eq!(
+        state.error_details.get(&segment(1)).map(String::as_str),
+        Some("temporary resolver failure")
     );
 }
 
@@ -153,6 +159,7 @@ fn status_reports_resumable_then_done_from_terminal_row() {
     assert_eq!(resumable.total_count, 5);
     assert_eq!(resumable.completed_count, 1);
     assert_eq!(resumable.pending_count, 4);
+    assert_eq!(resumable.error_count, 0);
     assert!(resumable.resumable);
     assert!(!resumable.done);
 
@@ -163,4 +170,49 @@ fn status_reports_resumable_then_done_from_terminal_row() {
         .unwrap();
     assert!(!done.resumable);
     assert!(done.done);
+}
+
+#[test]
+fn errored_checkpoint_remains_retryable_and_reports_its_detail() {
+    let temporary = TempDir::new();
+    let path = temporary.ledger();
+    append_backfill_event(&path, &prepared()).unwrap();
+    append_backfill_event(&path, &checkpoint(0, BackfillCheckpointOutcome::Error)).unwrap();
+
+    let status = backfill_operation_status(&load_backfill_operations(&path).unwrap(), "bfop_test")
+        .unwrap()
+        .unwrap();
+    assert!(status.resumable);
+    assert!(!status.done);
+    assert_eq!(status.completed_count, 0);
+    assert_eq!(status.pending_count, 5);
+    assert_eq!(status.error_count, 1);
+    assert_eq!(status.error_segments[0].segment, segment(0));
+    assert_eq!(
+        status.error_segments[0].detail,
+        "temporary resolver failure"
+    );
+}
+
+#[test]
+fn legacy_error_checkpoint_without_detail_remains_readable_and_retryable() {
+    let temporary = TempDir::new();
+    let path = temporary.ledger();
+    append_backfill_event(&path, &prepared()).unwrap();
+    let mut legacy = checkpoint(0, BackfillCheckpointOutcome::Error);
+    let BackfillOperationPayload::Checkpoint { error_detail, .. } = &mut legacy.payload else {
+        unreachable!("checkpoint fixture has checkpoint payload");
+    };
+    *error_detail = None;
+    append_backfill_event(&path, &legacy).unwrap();
+
+    let status = backfill_operation_status(&load_backfill_operations(&path).unwrap(), "bfop_test")
+        .unwrap()
+        .unwrap();
+    assert!(status.resumable);
+    assert_eq!(status.error_count, 1);
+    assert_eq!(
+        status.error_segments[0].detail,
+        "legacy checkpoint did not retain error detail"
+    );
 }

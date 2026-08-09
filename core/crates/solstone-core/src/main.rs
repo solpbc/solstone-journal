@@ -332,7 +332,12 @@ fn backfill_request(value: Value) -> Result<Value, String> {
     Ok(json!({
         "operation_id":result.operation_id, "total_count":result.total_count,
         "processed_count":result.processed_count, "skipped_count":result.skipped_count,
-        "error_count":result.error_count, "pending_count":result.pending_count,
+        "error_count":result.error_count,
+        "error_segments":result.error_segments.into_iter().map(|error| json!({
+            "day":error.segment.day, "stream":error.segment.stream,
+            "segment_key":error.segment.segment_key, "detail":error.detail,
+        })).collect::<Vec<_>>(),
+        "pending_count":result.pending_count,
         "done":result.done,
     }))
 }
@@ -362,6 +367,11 @@ fn backfill_status_request(value: Value) -> Result<Value, String> {
                 "status":if status.done { "done" } else { "resumable" },
                 "operation_id":operation_id, "total_count":status.total_count,
                 "completed_count":status.completed_count, "pending_count":status.pending_count,
+                "error_count":status.error_count,
+                "error_segments":status.error_segments.into_iter().map(|error| json!({
+                    "day":error.segment.day, "stream":error.segment.stream,
+                    "segment_key":error.segment.segment_key, "detail":error.detail,
+                })).collect::<Vec<_>>(),
                 "resumable":status.resumable, "done":status.done,
             })
         },
