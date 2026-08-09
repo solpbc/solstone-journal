@@ -77,11 +77,7 @@ fn probe(
     probe_fence: &ProviderFence,
 ) -> solstone_core_system::provider_runtime::ProviderProbeOutcome {
     let state = state();
-    shared.record_launch_request(
-        state.generation,
-        state.desired_fingerprint.clone(),
-        probe_config(),
-    );
+    shared.record_launch_request(state.desired_fingerprint.clone(), probe_config());
     let mut seam = LocalProbeSeam::new(shared.clone(), journal);
     seam.dispatch_probe(&state, probe_fence);
     shared.wait_for_probe_result(probe_fence)

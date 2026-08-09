@@ -15,8 +15,13 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use serde_json::Value;
-use solstone_core_local::nvidia::{ArtifactTrust, NvidiaProbe};
+use serde_json::{Map, Value, json};
+use solstone_core_brain::{CanonicalInput, canonical_fingerprint};
+use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
+use solstone_core_local::install::readiness::{inspect_local, inspect_mlx};
+use solstone_core_local::nvidia::{
+    ArtifactTrust, CUDA_EMBEDDED_ARCH_SET, CUDA_MIN_DRIVER_VERSION, NvidiaProbe, probe_nvidia_gpu,
+};
 use solstone_core_local::plan::{PlanBackend, PlanInput, Platform, VulkanDevice};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use solstone_core_local::plan::{PlanOutcome, plan};
@@ -30,12 +35,13 @@ use super::model::{
     LaunchOutcomeStatus, ProviderFence, ProviderLaunchOutcome, ProviderProbeOutcome,
     ProviderRuntimeState, ProviderStopCleanupOutcome, ReasonCode, StopCleanupStatus,
 };
-use super::seams::{LifecycleSeam, ProbeSeam};
+use super::seams::{LifecycleSeam, ProbeSeam, TruthObservationSeam};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use super::store::LocalReadyProcess;
 use super::store::{LocalRuntimeShared, RuntimeClock};
 
 const PLAN_INPUT_SCHEMA: &str = "solstone-local-plan-input-v1";
+const MLX_SERVER_PROCESS_NAME: &str = "mlx-vlm-server";
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 const WARMUP_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -278,7 +284,7 @@ impl LifecycleSeam for LocalLifecycleSeam {
     fn dispatch_start(&mut self, state: &ProviderRuntimeState, fence: &ProviderFence) {
         let shared = Arc::clone(&self.shared);
         let clock = Arc::clone(&self.clock);
-        let launch = shared.launch_request_for(state.generation, &state.desired_fingerprint);
+        let launch = shared.launch_request_for(&state.desired_fingerprint);
         let state = state.clone();
         let fence = fence.clone();
         let warmup_timeout = self.warmup_timeout;
@@ -338,7 +344,7 @@ impl ProbeSeam for LocalProbeSeam {
         let shared = Arc::clone(&self.shared);
         let journal_path = self.journal_path.clone();
         let fence = fence.clone();
-        let launch = shared.launch_request_for(state.generation, &state.desired_fingerprint);
+        let launch = shared.launch_request_for(&state.desired_fingerprint);
         thread::spawn(move || {
             let outcome = match launch {
                 Some(launch) => probe_local(&journal_path, &launch),
@@ -375,6 +381,291 @@ fn probe_unavailable() -> ProviderProbeOutcome {
         status: super::model::ProbeStatus::Unavailable,
         reason_code: ReasonCode::known("proof-observation-unavailable"),
     }
+}
+
+#[derive(Clone)]
+pub struct LocalTruthConfig {
+    pub journal_path: PathBuf,
+    pub platform: Platform,
+    pub nvidia_probe: Option<NvidiaProbe>,
+    pub vulkan_devices: Vec<VulkanDevice>,
+}
+
+pub struct LocalTruthSeam {
+    shared: Arc<LocalRuntimeShared>,
+    config: LocalTruthConfig,
+}
+
+impl LocalTruthSeam {
+    pub fn new(shared: Arc<LocalRuntimeShared>, journal_path: impl Into<PathBuf>) -> Self {
+        Self::with_config(
+            shared,
+            LocalTruthConfig {
+                journal_path: journal_path.into(),
+                platform: if cfg!(target_os = "macos") {
+                    Platform::Darwin
+                } else {
+                    Platform::Linux
+                },
+                nvidia_probe: None,
+                vulkan_devices: Vec::new(),
+            },
+        )
+    }
+
+    pub fn with_config(shared: Arc<LocalRuntimeShared>, config: LocalTruthConfig) -> Self {
+        Self { shared, config }
+    }
+}
+
+impl TruthObservationSeam for LocalTruthSeam {
+    fn dispatch_truth(&mut self, _: &ProviderRuntimeState, fence: &ProviderFence) {
+        let shared = Arc::clone(&self.shared);
+        let config = self.config.clone();
+        let fence = fence.clone();
+        thread::spawn(move || {
+            let outcome = observe_truth(&shared, &config);
+            shared.record_truth_result(&fence, outcome);
+        });
+    }
+}
+
+fn observe_truth(
+    shared: &LocalRuntimeShared,
+    config: &LocalTruthConfig,
+) -> super::model::ProviderTruthObservation {
+    if !config.journal_path.is_dir() {
+        return truth_unavailable();
+    }
+    let journal_config =
+        match solstone_core_journal_config::read_journal_config(&config.journal_path) {
+            Ok(read) => read.config.unwrap_or_default(),
+            Err(_) => return truth_unavailable(),
+        };
+    if matches!(
+        resolve_local_endpoint(&journal_config),
+        LocalEndpointResolution::Byo(_)
+    ) {
+        return truth(
+            super::model::RuntimePhase::NotDesired,
+            "provider-not-needed",
+            None,
+            false,
+            false,
+        );
+    }
+    let model_id = journal_config
+        .get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get("active"))
+        .and_then(Value::as_object)
+        .and_then(|active| active.get("model"))
+        .and_then(Value::as_str)
+        .filter(|model| !model.trim().is_empty())
+        .unwrap_or(if config.platform == Platform::Darwin {
+            "qwen3.5:9b"
+        } else {
+            "local/qwen3.5-4b"
+        })
+        .to_owned();
+    let probe = config.nvidia_probe.clone().unwrap_or_else(probe_nvidia_gpu);
+    let readiness = match config.platform {
+        Platform::Linux => inspect_local(Map::from_iter([
+            (
+                "journal".into(),
+                Value::String(config.journal_path.display().to_string()),
+            ),
+            ("model_id".into(), Value::String(model_id.clone())),
+            (
+                "nvidia_probe".into(),
+                serde_json::to_value(&probe).expect("NvidiaProbe serialization"),
+            ),
+        ])),
+        Platform::Darwin => inspect_mlx(Map::from_iter([
+            (
+                "journal".into(),
+                Value::String(config.journal_path.display().to_string()),
+            ),
+            ("model_id".into(), Value::String(model_id.clone())),
+            ("platform_supported".into(), Value::Bool(true)),
+            ("mlx_vlm_importable".into(), Value::Bool(true)),
+        ])),
+    };
+    let Some(object) = readiness.as_object() else {
+        return truth_unavailable();
+    };
+    if object
+        .get("install")
+        .and_then(Value::as_object)
+        .and_then(|install| install.get("install_state"))
+        .and_then(Value::as_str)
+        .is_some_and(|state| {
+            matches!(
+                state,
+                "resolving" | "downloading" | "verifying" | "installing"
+            )
+        })
+    {
+        return truth(
+            super::model::RuntimePhase::ArtifactNotReady,
+            "install-in-progress",
+            None,
+            false,
+            false,
+        );
+    }
+    if object.get("ready").and_then(Value::as_bool) != Some(true) {
+        let reason = object
+            .get("reason_code")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let (phase, code) = match reason {
+            "platform_unsupported" | "unsupported_platform" => (
+                super::model::RuntimePhase::HostBlocked,
+                "platform-unsupported",
+            ),
+            "package_unavailable" => (
+                super::model::RuntimePhase::HostBlocked,
+                "package-unavailable",
+            ),
+            "manifest_pin_mismatch" | "sha256_mismatch" | "inventory_member_missing" => (
+                super::model::RuntimePhase::ArtifactNotReady,
+                "artifact-stale",
+            ),
+            _ if object.get("status").and_then(Value::as_str) == Some("proof-unavailable") => (
+                super::model::RuntimePhase::ArtifactNotReady,
+                "artifact-proof-failed",
+            ),
+            _ => (
+                super::model::RuntimePhase::ArtifactNotReady,
+                "artifact-missing",
+            ),
+        };
+        return truth(phase, code, None, false, false);
+    }
+    let artifacts = object.get("artifacts").and_then(Value::as_object);
+    let Some(model_path) = artifacts
+        .and_then(|artifacts| {
+            artifacts
+                .get("model_path")
+                .or_else(|| artifacts.get("snapshot_dir"))
+        })
+        .and_then(Value::as_str)
+    else {
+        return truth_unavailable();
+    };
+    let backend = object
+        .get("host")
+        .and_then(Value::as_object)
+        .and_then(|host| host.get("backend"))
+        .and_then(Value::as_str)
+        .unwrap_or("mlx");
+    let desired =
+        json!({"provider":"local","backend":backend,"model_id":model_id,"model_path":model_path});
+    let Ok(fingerprint) = canonical_fingerprint(&CanonicalInput::Json(desired.clone())) else {
+        return truth_unavailable();
+    };
+    let common = LocalLaunchCommon {
+        desired_fingerprint_json: desired,
+        desired_fingerprint_sha256: fingerprint.clone(),
+        model_id,
+        model_path: model_path.into(),
+        mmproj_path: None,
+    };
+    let launch = match (config.platform, backend) {
+        (Platform::Darwin, _) => LocalLaunchConfig::Mlx {
+            common,
+            runtime_dir: Some(model_path.to_owned()),
+            interpreter_path: std::env::current_exe().ok().map(|path| {
+                path.with_file_name(MLX_SERVER_PROCESS_NAME)
+                    .display()
+                    .to_string()
+            }),
+        },
+        (Platform::Linux, "cuda") => LocalLaunchConfig::Cuda {
+            common,
+            binary_path: artifacts
+                .and_then(|artifacts| artifacts.get("binary_path"))
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned),
+            lib_dir: None,
+            nvidia_probe: probe,
+            cuda_embedded_arch_set: CUDA_EMBEDDED_ARCH_SET
+                .iter()
+                .map(|value| (*value).into())
+                .collect(),
+            cuda_min_driver_version: CUDA_MIN_DRIVER_VERSION,
+            cuda_artifact_trust: ArtifactTrust::Trusted,
+            cuda_persisted_installed_cuda_target: false,
+        },
+        (Platform::Linux, "vulkan") => {
+            let Some(device) = config.vulkan_devices.first().cloned() else {
+                return truth(
+                    super::model::RuntimePhase::HostBlocked,
+                    "gpu-unavailable",
+                    None,
+                    false,
+                    false,
+                );
+            };
+            LocalLaunchConfig::Vulkan {
+                common,
+                binary_path: artifacts
+                    .and_then(|artifacts| artifacts.get("binary_path"))
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned),
+                devices: config.vulkan_devices.clone(),
+                selected_gpu_index: device.index,
+                selected_gpu_name: device.name,
+                selected_vram_mib: device.vram_mib,
+                vram_before_mib: None,
+            }
+        }
+        _ => {
+            return truth(
+                super::model::RuntimePhase::HostBlocked,
+                "gpu-unavailable",
+                None,
+                false,
+                false,
+            );
+        }
+    };
+    shared.record_launch_request(Some(fingerprint.clone()), launch);
+    truth(
+        super::model::RuntimePhase::Starting,
+        "launch-requested",
+        Some(fingerprint),
+        true,
+        true,
+    )
+}
+
+fn truth(
+    phase: super::model::RuntimePhase,
+    code: &'static str,
+    desired_fingerprint: Option<String>,
+    has_plan: bool,
+    boot_required: bool,
+) -> super::model::ProviderTruthObservation {
+    super::model::ProviderTruthObservation {
+        provider: super::model::ProviderName::Local,
+        phase,
+        reason_code: Some(ReasonCode::known(code)),
+        desired_fingerprint,
+        has_plan,
+        boot_required,
+    }
+}
+
+fn truth_unavailable() -> super::model::ProviderTruthObservation {
+    truth(
+        super::model::RuntimePhase::StateUnavailable,
+        "truth-observation-failed",
+        None,
+        false,
+        true,
+    )
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]

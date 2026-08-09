@@ -90,16 +90,10 @@ pub struct LocalReadyProcess {
 #[derive(Debug, Default)]
 pub struct LocalRuntimeShared {
     ready_processes: Mutex<BTreeMap<FenceKey, LocalReadyProcess>>,
-    launch_requests: Mutex<BTreeMap<LaunchRequestKey, LocalLaunchConfig>>,
+    launch_requests: Mutex<BTreeMap<Option<String>, LocalLaunchConfig>>,
     results: Mutex<LocalRuntimeResults>,
     result_available: Condvar,
     children: Mutex<BTreeMap<String, Child>>,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct LaunchRequestKey {
-    generation: u64,
-    desired_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -113,34 +107,23 @@ struct LocalRuntimeResults {
 impl LocalRuntimeShared {
     pub fn record_launch_request(
         &self,
-        generation: u64,
         desired_fingerprint: Option<String>,
         config: LocalLaunchConfig,
     ) {
         self.launch_requests
             .lock()
             .expect("local runtime shared lock")
-            .insert(
-                LaunchRequestKey {
-                    generation,
-                    desired_fingerprint,
-                },
-                config,
-            );
+            .insert(desired_fingerprint, config);
     }
 
     pub fn launch_request_for(
         &self,
-        generation: u64,
         desired_fingerprint: &Option<String>,
     ) -> Option<LocalLaunchConfig> {
         self.launch_requests
             .lock()
             .expect("local runtime shared lock")
-            .get(&LaunchRequestKey {
-                generation,
-                desired_fingerprint: desired_fingerprint.clone(),
-            })
+            .get(desired_fingerprint)
             .cloned()
     }
 
@@ -159,6 +142,20 @@ impl LocalRuntimeShared {
             .expect("local runtime shared lock")
             .truth
             .remove(&FenceKey::from(fence))
+    }
+
+    pub fn wait_for_truth_result(&self, fence: &ProviderFence) -> ProviderTruthObservation {
+        let key = FenceKey::from(fence);
+        let mut results = self.results.lock().expect("local runtime shared lock");
+        loop {
+            if let Some(result) = results.truth.remove(&key) {
+                return result;
+            }
+            results = self
+                .result_available
+                .wait(results)
+                .expect("local runtime shared lock");
+        }
     }
 
     pub fn record_launch_result(&self, fence: &ProviderFence, result: ProviderLaunchOutcome) {

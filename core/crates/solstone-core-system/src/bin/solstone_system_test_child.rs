@@ -160,14 +160,16 @@ fn launch_stub(mut args: impl Iterator<Item = String>) {
             }
             let listener = TcpListener::bind(("127.0.0.1", port.expect("launch port")))
                 .expect("bind launch stub");
-            let (mut stream, _) = listener.accept().expect("accept health probe");
-            let mut request = [0_u8; 1024];
-            let _ = stream.read(&mut request);
-            stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
-                .expect("write health response");
-            drop(stream);
-            std::thread::sleep(Duration::from_secs(30));
+            for stream in listener.incoming() {
+                let mut stream = stream.expect("accept health probe");
+                let mut request = [0_u8; 1024];
+                let _ = stream.read(&mut request);
+                stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+                    )
+                    .expect("write health response");
+            }
         }
         "test-hold" => std::thread::sleep(Duration::from_secs(30)),
         _ => std::process::exit(64),

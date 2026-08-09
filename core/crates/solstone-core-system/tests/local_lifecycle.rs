@@ -117,7 +117,7 @@ fn start(
     start_fence: &ProviderFence,
 ) -> solstone_core_system::provider_runtime::ProviderLaunchOutcome {
     let state = state();
-    shared.record_launch_request(state.generation, state.desired_fingerprint.clone(), launch);
+    shared.record_launch_request(state.desired_fingerprint.clone(), launch);
     lifecycle.dispatch_start(&state, start_fence);
     wait_launch(shared, start_fence)
 }
