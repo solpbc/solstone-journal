@@ -9,9 +9,13 @@ pub const TPM_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10 * 60);
 pub const GPU_REATTEST_INTERVAL: Duration = Duration::from_secs(30 * 60);
 pub const SESSION_CAP: Duration = Duration::from_secs(60 * 60);
 
-/// Minimal seam stand-in; Python composite verdict parity belongs to later work.
+/// Successful composite CPU and GPU attestation verdict.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompositeVerdict {
+    pub verified: bool,
+    pub legs: [&'static str; 2],
+    pub substrate: String,
+    pub checked_at: SystemTime,
     pub cpu: CpuAppraisal,
     pub gpu: GpuAppraisal,
 }
@@ -67,6 +71,10 @@ mod tests {
         };
         AttestationSession {
             verdict: CompositeVerdict {
+                verified: true,
+                legs: ["cpu", "gpu"],
+                substrate: String::new(),
+                checked_at: UNIX_EPOCH,
                 cpu: CpuAppraisal {
                     steps: Vec::new(),
                     hcla_version: 0,

@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Direct synchronous channel. The loopback forwarder is deferred: no
-//! endpoint/base_url caller exists yet, and freezing its shape now is premature.
+//! Direct synchronous channel. This intentionally uses no loopback forwarder:
+//! no local listener, ephemeral port, or connection pool. Each confidential
+//! generate call establishes and uses its own attested channel through
+//! `solstone-core-generate-wire::confidential::AttestedEndpointTransport` and
+//! `send_json_request`. The per-caller channel model rules out a shared,
+//! long-lived daemon, and the Python forwarder's listener-thread/pool/epoch
+//! lifecycle is unnecessary when one in-process caller owns each request.
 
 use std::fmt;
 use std::io::{Read, Write};
@@ -38,6 +43,26 @@ use crate::{
 const MAX_PROOF_RESPONSE_HEADERS: usize = 16 * 1024;
 const MAX_PROOF_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 type PeerCertificate = Arc<Mutex<Option<Vec<u8>>>>;
+
+/// Read/write transport carrying application requests after attestation.
+pub trait AttestedIo: Read + Write {}
+impl<T: Read + Write + ?Sized> AttestedIo for T {}
+
+/// HTTP response received over an attested transport.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttestedHttpResponse {
+    pub status: u16,
+    pub body: Vec<u8>,
+}
+
+/// Bounded HTTP transport or protocol failure.
+#[derive(Debug, thiserror::Error)]
+pub enum AttestedHttpError {
+    #[error("attested HTTP transport failed")]
+    Transport(#[source] std::io::Error),
+    #[error("attested HTTP protocol failed ({0})")]
+    Protocol(&'static str),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RatlsEndpoint {
@@ -278,28 +303,87 @@ pub fn establish_attested_channel(
     })
 }
 
+/// Sends one JSON POST over an already attested transport.
+pub fn send_json_request(
+    stream: &mut dyn AttestedIo,
+    host: &str,
+    path: &str,
+    bearer: Option<&str>,
+    body: &[u8],
+) -> Result<AttestedHttpResponse, AttestedHttpError> {
+    let mut request = format!(
+        "POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n",
+        body.len()
+    );
+    if let Some(bearer) = bearer {
+        request.push_str("Authorization: Bearer ");
+        request.push_str(bearer);
+        request.push_str("\r\n");
+    }
+    request.push_str("\r\n");
+    stream
+        .write_all(request.as_bytes())
+        .and_then(|_| stream.write_all(body))
+        .and_then(|_| stream.flush())
+        .map_err(AttestedHttpError::Transport)?;
+    let response = recv_bounded_http_response(stream).map_err(http_error)?;
+    let status = response_status(&response.status_line).map_err(AttestedHttpError::Protocol)?;
+    Ok(AttestedHttpResponse {
+        status,
+        body: response.body,
+    })
+}
+
 fn recv_proof_response(
     stream: &mut StreamOwned<ClientConnection, TcpStream>,
 ) -> Result<Vec<u8>, RatlsChannelError> {
+    let response = recv_bounded_http_response(stream).map_err(|_| RatlsChannelError {
+        reason_code: "proof_http_failed",
+    })?;
+    if response.status_line.as_slice() != b"HTTP/1.1 200 OK" {
+        return Err(RatlsChannelError {
+            reason_code: "proof_http_failed",
+        });
+    }
+    for (name, value) in &response.headers {
+        if name.eq_ignore_ascii_case(b"content-type")
+            && std::str::from_utf8(value).ok().map(str::trim) != Some(EXPORTER_PROOF_MEDIA_TYPE)
+        {
+            return Err(RatlsChannelError {
+                reason_code: "proof_http_failed",
+            });
+        }
+    }
+    Ok(response.body)
+}
+
+struct BoundedHttpResponse {
+    status_line: Vec<u8>,
+    headers: Vec<(Vec<u8>, Vec<u8>)>,
+    body: Vec<u8>,
+}
+
+enum BoundedHttpError {
+    Transport(std::io::Error),
+    Protocol,
+}
+
+fn recv_bounded_http_response<R: Read + ?Sized>(
+    stream: &mut R,
+) -> Result<BoundedHttpResponse, BoundedHttpError> {
     let mut data = Vec::new();
     let marker = b"\r\n\r\n";
     while !data.windows(marker.len()).any(|window| window == marker) {
         if data.len() >= MAX_PROOF_RESPONSE_HEADERS {
-            return Err(RatlsChannelError {
-                reason_code: "proof_http_failed",
-            });
+            return Err(BoundedHttpError::Protocol);
         }
         let mut buffer = [0u8; 4096];
         let read_len = buffer.len().min(MAX_PROOF_RESPONSE_HEADERS - data.len());
         let count = stream
             .read(&mut buffer[..read_len])
-            .map_err(|_| RatlsChannelError {
-                reason_code: "proof_http_failed",
-            })?;
+            .map_err(BoundedHttpError::Transport)?;
         if count == 0 {
-            return Err(RatlsChannelError {
-                reason_code: "proof_http_failed",
-            });
+            return Err(BoundedHttpError::Protocol);
         }
         data.extend_from_slice(&buffer[..count]);
     }
@@ -309,60 +393,69 @@ fn recv_proof_response(
         .expect("marker present");
     let (head, remainder) = data.split_at(split);
     let mut body = remainder[marker.len()..].to_vec();
-    let lines = proof_header_lines(head).ok_or(RatlsChannelError {
-        reason_code: "proof_http_failed",
-    })?;
-    if lines.first() != Some(&b"HTTP/1.1 200 OK".as_slice()) {
-        return Err(RatlsChannelError {
-            reason_code: "proof_http_failed",
-        });
-    }
+    let lines = http_header_lines(head).ok_or(BoundedHttpError::Protocol)?;
+    let status_line = lines.first().ok_or(BoundedHttpError::Protocol)?.to_vec();
+    let mut headers = Vec::new();
     let mut content_length = None;
     for line in &lines[1..] {
         let Some(colon) = line.iter().position(|byte| *byte == b':') else {
-            return Err(RatlsChannelError {
-                reason_code: "proof_http_failed",
-            });
+            return Err(BoundedHttpError::Protocol);
         };
         let (name, value_with_colon) = line.split_at(colon);
         let value = &value_with_colon[1..];
-        if name.eq_ignore_ascii_case(b"content-type")
-            && std::str::from_utf8(value).ok().map(str::trim) != Some(EXPORTER_PROOF_MEDIA_TYPE)
-        {
-            return Err(RatlsChannelError {
-                reason_code: "proof_http_failed",
-            });
-        }
         if name.eq_ignore_ascii_case(b"content-length") {
             content_length = std::str::from_utf8(value)
                 .ok()
                 .and_then(|text| text.trim().parse::<usize>().ok());
         }
+        headers.push((name.to_vec(), value.to_vec()));
     }
     let length = content_length
         .filter(|length| *length <= MAX_PROOF_RESPONSE_BYTES)
-        .ok_or(RatlsChannelError {
-            reason_code: "proof_http_failed",
-        })?;
+        .ok_or(BoundedHttpError::Protocol)?;
     while body.len() < length {
         let mut buffer = [0u8; 65536];
         let remaining = (length - body.len()).min(buffer.len());
         let count = stream
             .read(&mut buffer[..remaining])
-            .map_err(|_| RatlsChannelError {
-                reason_code: "proof_http_failed",
-            })?;
+            .map_err(BoundedHttpError::Transport)?;
         if count == 0 {
-            return Err(RatlsChannelError {
-                reason_code: "proof_http_failed",
-            });
+            return Err(BoundedHttpError::Protocol);
         }
         body.extend_from_slice(&buffer[..count]);
     }
-    Ok(body[..length].to_vec())
+    Ok(BoundedHttpResponse {
+        status_line,
+        headers,
+        body: body[..length].to_vec(),
+    })
 }
 
-fn proof_header_lines(head: &[u8]) -> Option<Vec<&[u8]>> {
+fn http_error(error: BoundedHttpError) -> AttestedHttpError {
+    match error {
+        BoundedHttpError::Transport(error) => AttestedHttpError::Transport(error),
+        BoundedHttpError::Protocol => AttestedHttpError::Protocol("response_invalid"),
+    }
+}
+
+fn response_status(status_line: &[u8]) -> Result<u16, &'static str> {
+    let mut parts = status_line.split(|byte| *byte == b' ');
+    let Some(version) = parts.next() else {
+        return Err("status_invalid");
+    };
+    let Some(status) = parts.next() else {
+        return Err("status_invalid");
+    };
+    if !version.starts_with(b"HTTP/") || status.len() != 3 {
+        return Err("status_invalid");
+    }
+    std::str::from_utf8(status)
+        .ok()
+        .and_then(|status| status.parse().ok())
+        .ok_or("status_invalid")
+}
+
+fn http_header_lines(head: &[u8]) -> Option<Vec<&[u8]>> {
     let mut lines = Vec::new();
     let mut start = 0;
     let mut index = 0;
@@ -383,7 +476,13 @@ fn proof_header_lines(head: &[u8]) -> Option<Vec<&[u8]>> {
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Read, net::TcpListener, path::Path, sync::mpsc, thread};
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        path::Path,
+        sync::mpsc,
+        thread,
+    };
 
     use rcgen::{CertificateParams, CustomExtension, KeyPair, PKCS_ECDSA_P256_SHA256};
     use ring::{
@@ -481,6 +580,10 @@ mod tests {
             fmc: None,
         };
         CompositeVerdict {
+            verified: true,
+            legs: ["cpu", "gpu"],
+            substrate: String::new(),
+            checked_at: SystemTime::UNIX_EPOCH,
             cpu: CpuAppraisal {
                 steps: Vec::new(),
                 hcla_version: 0,
@@ -908,6 +1011,42 @@ mod tests {
         assert_eq!(
             state.failure.expect("failure").reason_code,
             "certificate_extension_missing"
+        );
+    }
+
+    #[test]
+    fn json_request_uses_plain_read_write_transport_with_bounded_response_parsing() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let address = listener.local_addr().expect("listener address");
+        let handle = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().expect("client");
+            let mut request = vec![0; 1024];
+            let count = socket.read(&mut request).expect("read request");
+            request.truncate(count);
+            socket
+                .write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\n{}")
+                .expect("response");
+            request
+        });
+        let mut stream = TcpStream::connect(address).expect("connect");
+
+        let response = send_json_request(
+            &mut stream,
+            "example.test",
+            "/v1/chat/completions",
+            Some("secret"),
+            br#"{"model":"test"}"#,
+        )
+        .expect("application response");
+        let request = handle.join().expect("server thread");
+
+        assert_eq!(response.status, 201);
+        assert_eq!(response.body, br"{}");
+        assert!(request.starts_with(b"POST /v1/chat/completions HTTP/1.1\r\n"));
+        assert!(
+            request
+                .windows(b"Authorization: Bearer secret".len())
+                .any(|window| window == b"Authorization: Bearer secret")
         );
     }
 }
