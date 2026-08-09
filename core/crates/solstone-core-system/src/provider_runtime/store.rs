@@ -626,10 +626,10 @@ impl RuntimeStore for LocalRuntimeStore {
         let fence = self.capture_owner_fence(state);
         let ready_process = self.ready_process_for(fence.as_ref());
         let cleanup_owner = self.cleanup_owner_for(fence.as_ref());
-        if state.latest_phase == RuntimePhase::Stopped {
-            if let Some(owner) = cleanup_owner.as_ref() {
-                self.clear_port_if_owned(&current, owner)?;
-            }
+        if state.latest_phase == RuntimePhase::Stopped
+            && let Some(owner) = cleanup_owner.as_ref()
+        {
+            self.clear_port_if_owned(&current, owner)?;
         }
         let process = match state.latest_phase {
             RuntimePhase::Ready | RuntimePhase::ReadyProofUnavailable => ready_process.clone(),

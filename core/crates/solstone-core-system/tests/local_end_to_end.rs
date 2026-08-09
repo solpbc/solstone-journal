@@ -52,25 +52,25 @@ fn pump(
     sh: &LocalRuntimeShared,
     x: &mut ReconcileContext<'_>,
 ) {
-    if let Some(f) = s.truth.as_mut() {
-        if f.result.is_none() {
-            f.result = Some(sh.wait_for_truth_result(&f.fence));
-        }
+    if let Some(f) = s.truth.as_mut()
+        && f.result.is_none()
+    {
+        f.result = Some(sh.wait_for_truth_result(&f.fence));
     }
-    if let Some(f) = s.start.as_mut() {
-        if f.result.is_none() {
-            f.result = Some(sh.wait_for_launch_result(&f.fence));
-        }
+    if let Some(f) = s.start.as_mut()
+        && f.result.is_none()
+    {
+        f.result = Some(sh.wait_for_launch_result(&f.fence));
     }
-    if let Some(f) = s.stop_cleanup.as_mut() {
-        if f.result.is_none() {
-            f.result = Some(sh.wait_for_stop_cleanup_result(&f.fence));
-        }
+    if let Some(f) = s.stop_cleanup.as_mut()
+        && f.result.is_none()
+    {
+        f.result = Some(sh.wait_for_stop_cleanup_result(&f.fence));
     }
-    if let Some(f) = s.probe.as_mut() {
-        if f.result.is_none() {
-            f.result = Some(sh.wait_for_probe_result(&f.fence));
-        }
+    if let Some(f) = s.probe.as_mut()
+        && f.result.is_none()
+    {
+        f.result = Some(sh.wait_for_probe_result(&f.fence));
     }
     c.reconcile(n, s, p, x);
 }

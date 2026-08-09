@@ -696,15 +696,12 @@ fn start_local(
     let pid = child.id();
     let deadline = clock.monotonic_seconds() + warmup_timeout.as_secs_f64();
     loop {
-        match child.try_wait() {
-            Ok(Some(_)) => {
-                return ProviderLaunchOutcome {
-                    status: LaunchOutcomeStatus::Exited,
-                    reason_code: ReasonCode::known("process-exited"),
-                    managed: None,
-                };
-            }
-            Err(_) | Ok(None) => {}
+        if let Ok(Some(_)) = child.try_wait() {
+            return ProviderLaunchOutcome {
+                status: LaunchOutcomeStatus::Exited,
+                reason_code: ReasonCode::known("process-exited"),
+                managed: None,
+            };
         }
         if warmup_health_probe(port) == WarmupHealth::Ready {
             let managed = ManagedProcess {
