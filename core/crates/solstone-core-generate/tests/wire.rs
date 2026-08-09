@@ -193,7 +193,7 @@ fn handle_local_request(mut stream: TcpStream, completion: Completion) -> bool {
 }
 
 fn spawn_v2(journal: &Journal, request: &GenerateRequest) -> std::process::Output {
-    Command::new(support::generate_wire())
+    support::generate_command()
         .arg("--one-shot")
         .env("SOLSTONE_JOURNAL", &journal.path)
         .stdin(Stdio::piped())
@@ -212,7 +212,7 @@ fn spawn_v2(journal: &Journal, request: &GenerateRequest) -> std::process::Outpu
 }
 
 fn spawn_raw_v2(journal: &Journal, input: &str) -> std::process::Output {
-    Command::new(support::generate_wire())
+    support::generate_command()
         .arg("--one-shot")
         .env("SOLSTONE_JOURNAL", &journal.path)
         .stdin(Stdio::piped())
@@ -266,7 +266,8 @@ fn bundled_refusal(
 #[test]
 fn one_shot_client_round_trips_no_engine_refusal() {
     let journal = Journal::no_engine();
-    let response = OneShotClient::at_path(support::generate_wire())
+    let response = OneShotClient::at_path(support::core_binary())
+        .with_prefix_arguments(support::prefix())
         .with_env("SOLSTONE_JOURNAL", journal.path.to_string_lossy())
         .execute(&request())
         .unwrap();
@@ -332,7 +333,7 @@ fn real_wire_rejects_unparseable_stdin() {
 
 #[test]
 fn real_wire_contract_matches_compiled_fixture_bytes() {
-    let output = Command::new(support::generate_wire())
+    let output = support::generate_command()
         .arg("--contract")
         .output()
         .unwrap();
@@ -485,7 +486,7 @@ fn bundled_local_non_responsive_output_refuses() {
 #[test]
 fn byo_unreachable_refuses_with_diagnostics_and_one_stdout_record() {
     let journal = Journal::byo_unreachable();
-    let output = Command::new(support::generate_wire())
+    let output = support::generate_command()
         .arg("--one-shot")
         .env("SOLSTONE_JOURNAL", &journal.path)
         .stdin(Stdio::piped())

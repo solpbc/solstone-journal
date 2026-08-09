@@ -1881,13 +1881,7 @@ fn generated_response(
     let inference = serde_json::to_value(&success.inference)
         .map(Some)
         .map_err(|error| error.to_string())?;
-    let mut hints_applied = Vec::new();
-    if request.attempt_index != 0 {
-        hints_applied.push("attempt_index".to_owned());
-    }
-    if request.exclusive_admission {
-        hints_applied.push("exclusive_admission".to_owned());
-    }
+    let hints_applied = applied_hints(request, inference.as_ref());
     Ok(solstone_core_generate::GeneratedResponse {
         id: request.id.clone(),
         text: success.text,
@@ -1901,6 +1895,33 @@ fn generated_response(
         inference,
         hints_applied,
     })
+}
+
+/// Which request hints the boundary actually applied.
+///
+/// 🔴 Both are reported ONLY when the response carries an inference block. They
+/// describe what the local admission path did, so on a lane with no inference
+/// telemetry nothing applied them and naming them there claims an effect that
+/// did not happen.
+///
+/// ⚠ The port dropped this guard on four of five construction sites and every
+/// positive test still passed — the cross-language differential caught it the
+/// moment it started driving the native binary instead of the Python wire.
+fn applied_hints(
+    request: &solstone_core_generate::GenerateRequest,
+    inference: Option<&Value>,
+) -> Vec<String> {
+    let mut hints = Vec::new();
+    if inference.is_none() {
+        return hints;
+    }
+    if request.attempt_index != 0 {
+        hints.push("attempt_index".to_owned());
+    }
+    if request.exclusive_admission {
+        hints.push("exclusive_admission".to_owned());
+    }
+    hints
 }
 
 fn endpoint_generated_response(
@@ -1927,10 +1948,7 @@ fn endpoint_generated_response(
         .map(serde_json::to_value)
         .transpose()
         .map_err(|error| error.to_string())?;
-    let mut hints_applied = Vec::new();
-    if request.exclusive_admission {
-        hints_applied.push("exclusive_admission".to_owned());
-    }
+    let hints_applied = applied_hints(request, None);
     Ok(solstone_core_generate::GeneratedResponse {
         id: request.id.clone(),
         text: success.text,
@@ -1951,10 +1969,7 @@ fn anthropic_generated_response(
     success: solstone_core_generate_wire::AnthropicGenerated,
     schema_validation: Option<Value>,
 ) -> Result<solstone_core_generate::GeneratedResponse, String> {
-    let mut hints_applied = Vec::new();
-    if request.exclusive_admission {
-        hints_applied.push("exclusive_admission".to_owned());
-    }
+    let hints_applied = applied_hints(request, None);
     Ok(solstone_core_generate::GeneratedResponse {
         id: request.id.clone(),
         text: success.text,
@@ -1975,10 +1990,7 @@ fn openai_generated_response(
     success: solstone_core_generate_wire::OpenAiGenerated,
     schema_validation: Option<Value>,
 ) -> Result<solstone_core_generate::GeneratedResponse, String> {
-    let mut hints_applied = Vec::new();
-    if request.exclusive_admission {
-        hints_applied.push("exclusive_admission".to_owned());
-    }
+    let hints_applied = applied_hints(request, None);
     Ok(solstone_core_generate::GeneratedResponse {
         id: request.id.clone(),
         text: success.text,
@@ -1999,10 +2011,7 @@ fn google_generated_response(
     success: solstone_core_generate_wire::GoogleGenerated,
     schema_validation: Option<Value>,
 ) -> Result<solstone_core_generate::GeneratedResponse, String> {
-    let mut hints_applied = Vec::new();
-    if request.exclusive_admission {
-        hints_applied.push("exclusive_admission".to_owned());
-    }
+    let hints_applied = applied_hints(request, None);
     Ok(solstone_core_generate::GeneratedResponse {
         id: request.id.clone(),
         text: success.text,
@@ -2022,8 +2031,33 @@ fn apply_schema_validation(text: &mut String, schema: Option<&Value>) -> Option<
     schema.map(|schema| {
         let result = solstone_core_generate_wire::validate_schema_with_annotations(text, schema);
         *text = result.text;
+        log_schema_validation(&result.validation);
         result.validation
     })
+}
+
+/// Schema validation is advisory, so a failure never changes the outcome and is
+/// visible only in the response record — which reaches the caller and nothing
+/// else.
+///
+/// ⚠ The reference emitted one operator-visible line per error and the port
+/// dropped it. Nothing failed: the record still carried the block, so the
+/// contract-level assertions passed and only the diagnostic disappeared. ⛔ On
+/// stderr, never stdout — a line on stdout would corrupt the response stream,
+/// which is what the test guarding this is named for.
+fn log_schema_validation(validation: &Value) {
+    let Some(errors) = validation.get("errors").and_then(Value::as_array) else {
+        return;
+    };
+    for error in errors {
+        let path = error.get("path").and_then(Value::as_str).unwrap_or("");
+        let constraint = error
+            .get("constraint")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let message = error.get("message").and_then(Value::as_str).unwrap_or("");
+        eprintln!("schema_validation: {path}: {constraint}: {message}");
+    }
 }
 
 enum GenerateStdinError {

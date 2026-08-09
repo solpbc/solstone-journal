@@ -256,7 +256,8 @@ fn request(id: &str, text: String) -> GenerateRequest {
 }
 
 fn client(journal: &Journal, max_in_flight: usize) -> SessionClient {
-    SessionClient::at_path(support::generate_wire())
+    SessionClient::at_path(support::core_binary())
+        .with_prefix_arguments(support::prefix())
         .with_env("SOLSTONE_JOURNAL", journal.path.to_string_lossy())
         .spawn(max_in_flight)
         .unwrap()

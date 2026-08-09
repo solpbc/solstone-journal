@@ -191,7 +191,7 @@ fn request() -> GenerateRequest {
 }
 
 fn spawn(journal: &Journal) -> std::process::Output {
-    Command::new(support::generate_wire())
+    support::generate_command()
         .arg("--one-shot")
         .env("SOLSTONE_JOURNAL", &journal.path)
         .stdin(Stdio::piped())
