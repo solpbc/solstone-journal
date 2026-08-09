@@ -1,8 +1,8 @@
 {
   "fixture": "solstone-cogitate-oracle",
-  "fixture_version": 1,
+  "fixture_version": 2,
   "generated_by": "scripts/cogitate_oracle_corpus.py",
-  "reference_commit": "e15915f038853a33c43b68b9c0756b8bb61be716",
+  "reference_commit": "b339536c1a10929e17fd6551ad387d1847f34fd8",
   "provenance": "Every vector below was produced by EXECUTING the Python reference, one call per case. Nothing here was written by hand from reading the source. CLOCK: this file is a FROZEN RECORD - it can only be regenerated while the Python reference is still importable, and it stops being reproducible when Python is cut. Tests read it; they never execute Python.",
   "preambles": {
     "runtime": {
@@ -110,9 +110,23 @@
       }
     },
     "unknown_tier": {
-      "raises": true,
-      "error": "unknown access_tier: code-agent"
+      "code-agent": {
+        "raises": true,
+        "error": "unknown access_tier: code-agent"
+      },
+      "repair": {
+        "raises": true,
+        "error": "unknown access_tier: repair"
+      },
+      "": {
+        "raises": true,
+        "error": "unknown access_tier: "
+      }
     },
+    "tiers_with_reads_and_submit": [],
+    "submit_tiers": [
+      "outbound"
+    ],
     "citation": "cogitate_contract.py:79-107"
   },
   "policy_commands": [
@@ -666,6 +680,150 @@
       "expect": {
         "allowed": false,
         "reason": "policy_deny: empty command",
+        "argv": null
+      }
+    },
+    {
+      "id": "shlex_split_raises_trailing_backslash",
+      "command": "sol x\\",
+      "access_tier": "normal",
+      "outbound_approval": null,
+      "citation": "cogitate_policy.py:211-214",
+      "why": "a trailing backslash passes _shell_syntax_violation (the index+1 guard) and then makes shlex.split RAISE - a distinct code path reaching the same refusal. A tolerant tokenizer ADMITS this command.",
+      "expect": {
+        "allowed": false,
+        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "argv": null
+      }
+    },
+    {
+      "id": "backslash_literal_inside_single_quotes",
+      "command": "sol call entities search --name 'a\\'",
+      "access_tier": "normal",
+      "outbound_approval": null,
+      "citation": "cogitate_policy.py:140-142",
+      "why": "inside single quotes a backslash is LITERAL - no escape consumption - so this parses and the argument keeps the backslash. A port that escapes uniformly sees an unterminated quote and REFUSES.",
+      "expect": {
+        "allowed": true,
+        "reason": "ok",
+        "argv": [
+          "sol",
+          "call",
+          "entities",
+          "search",
+          "--name",
+          "a\\"
+        ]
+      }
+    },
+    {
+      "id": "escaped_dquote_inside_dquotes",
+      "command": "sol call entities search --name \"a\\\"b\"",
+      "access_tier": "normal",
+      "outbound_approval": null,
+      "citation": "cogitate_policy.py:143-149",
+      "why": "inside double quotes a backslash DOES escape",
+      "expect": {
+        "allowed": true,
+        "reason": "ok",
+        "argv": [
+          "sol",
+          "call",
+          "entities",
+          "search",
+          "--name",
+          "a\"b"
+        ]
+      }
+    },
+    {
+      "id": "repair_quote_apostrophe",
+      "command": "journal facet set \"it's mine\"",
+      "access_tier": "normal",
+      "outbound_approval": null,
+      "citation": "cogitate_policy.py:167-170",
+      "why": "shlex.quote's apostrophe form is not the obvious one",
+      "expect": {
+        "allowed": false,
+        "reason": "policy_deny: `journal facet` is not a host command; run `sol call journal facet set 'it'\"'\"'s mine'` instead",
+        "argv": null
+      }
+    },
+    {
+      "id": "repair_quote_empty_string",
+      "command": "journal facet set ''",
+      "access_tier": "normal",
+      "outbound_approval": null,
+      "citation": "cogitate_policy.py:167-170",
+      "why": "an empty argument must survive as ''",
+      "expect": {
+        "allowed": false,
+        "reason": "policy_deny: `journal facet` is not a host command; run `sol call journal facet set ''` instead",
+        "argv": null
+      }
+    },
+    {
+      "id": "repair_quote_safe_chars",
+      "command": "journal facet set a/b.c@d=e:f,g+h-i%j",
+      "access_tier": "normal",
+      "outbound_approval": null,
+      "citation": "cogitate_policy.py:167-170",
+      "why": "shlex.quote leaves [-\\w@%+=:,./] UNQUOTED",
+      "expect": {
+        "allowed": false,
+        "reason": "policy_deny: `journal facet` is not a host command; run `sol call journal facet set a/b.c@d=e:f,g+h-i%j` instead",
+        "argv": null
+      }
+    },
+    {
+      "id": "repair_quote_unsafe_star",
+      "command": "journal facet set 'a*b'",
+      "access_tier": "normal",
+      "outbound_approval": null,
+      "citation": "cogitate_policy.py:167-170",
+      "why": "a glob char forces quoting",
+      "expect": {
+        "allowed": false,
+        "reason": "policy_deny: `journal facet` is not a host command; run `sol call journal facet set 'a*b'` instead",
+        "argv": null
+      }
+    },
+    {
+      "id": "repair_quote_unsafe_tilde",
+      "command": "journal facet set 'a~b'",
+      "access_tier": "normal",
+      "outbound_approval": null,
+      "citation": "cogitate_policy.py:167-170",
+      "why": "a tilde forces quoting",
+      "expect": {
+        "allowed": false,
+        "reason": "policy_deny: `journal facet` is not a host command; run `sol call journal facet set 'a~b'` instead",
+        "argv": null
+      }
+    },
+    {
+      "id": "repair_quote_unsafe_brace",
+      "command": "journal facet set 'a{b'",
+      "access_tier": "normal",
+      "outbound_approval": null,
+      "citation": "cogitate_policy.py:167-170",
+      "why": "a brace forces quoting",
+      "expect": {
+        "allowed": false,
+        "reason": "policy_deny: `journal facet` is not a host command; run `sol call journal facet set 'a{b'` instead",
+        "argv": null
+      }
+    },
+    {
+      "id": "repair_quote_search_family",
+      "command": "journal search 'two words'",
+      "access_tier": "normal",
+      "outbound_approval": null,
+      "citation": "cogitate_policy.py:167-170",
+      "why": "the search family's repair prefix differs from facet's",
+      "expect": {
+        "allowed": false,
+        "reason": "policy_deny: `journal search` is not a host command; run `sol call journal search 'two words'` instead",
         "argv": null
       }
     },
@@ -1274,6 +1432,56 @@
       },
       "citation": "cogitate_contract.py:114 - cadence is NOT in the set",
       "expect": false
+    },
+    {
+      "id": "final_output_path_zero",
+      "config": {
+        "output_path": 0
+      },
+      "citation": "cogitate_contract.py:113 - bool(0) is False",
+      "expect": false
+    },
+    {
+      "id": "final_output_path_empty_list",
+      "config": {
+        "output_path": []
+      },
+      "citation": "cogitate_contract.py:113 - bool([]) is False",
+      "expect": false
+    },
+    {
+      "id": "final_output_path_empty_dict",
+      "config": {
+        "output_path": {}
+      },
+      "citation": "cogitate_contract.py:113 - bool({}) is False",
+      "expect": false
+    },
+    {
+      "id": "final_output_path_zero_string",
+      "config": {
+        "output_path": "0"
+      },
+      "citation": "cogitate_contract.py:113 - a non-empty string is True",
+      "expect": true
+    },
+    {
+      "id": "final_schedule_none",
+      "config": {
+        "schedule": null
+      },
+      "citation": "cogitate_contract.py:114",
+      "expect": false
+    },
+    {
+      "id": "final_all_three",
+      "config": {
+        "diagnostic": true,
+        "output_path": "/x",
+        "schedule": "daily"
+      },
+      "citation": "cogitate_contract.py:110-116",
+      "expect": true
     }
   ],
   "failure_caps": [
