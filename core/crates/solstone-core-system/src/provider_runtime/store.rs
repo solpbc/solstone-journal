@@ -6,7 +6,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::process::Child;
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use serde_json::{Map, Value, json};
@@ -26,14 +28,34 @@ const SCHEMA_VERSION: u64 = 1;
 
 pub trait RuntimeClock: Send + Sync {
     fn now_utc_rfc3339(&self) -> String;
+    fn monotonic_seconds(&self) -> f64;
+    fn sleep(&self, duration: Duration);
 }
 
-#[derive(Debug, Default)]
-pub struct SystemRuntimeClock;
+#[derive(Debug)]
+pub struct SystemRuntimeClock {
+    started: Instant,
+}
+
+impl Default for SystemRuntimeClock {
+    fn default() -> Self {
+        Self {
+            started: Instant::now(),
+        }
+    }
+}
 
 impl RuntimeClock for SystemRuntimeClock {
     fn now_utc_rfc3339(&self) -> String {
         Utc::now().to_rfc3339()
+    }
+
+    fn monotonic_seconds(&self) -> f64 {
+        self.started.elapsed().as_secs_f64()
+    }
+
+    fn sleep(&self, duration: Duration) {
+        std::thread::sleep(duration);
     }
 }
 
@@ -68,6 +90,8 @@ pub struct LocalReadyProcess {
 pub struct LocalRuntimeShared {
     ready_processes: Mutex<BTreeMap<FenceKey, LocalReadyProcess>>,
     results: Mutex<LocalRuntimeResults>,
+    result_available: Condvar,
+    children: Mutex<BTreeMap<String, Child>>,
 }
 
 #[derive(Debug, Default)]
@@ -85,6 +109,7 @@ impl LocalRuntimeShared {
             .expect("local runtime shared lock")
             .truth
             .insert(FenceKey::from(fence), result);
+        self.result_available.notify_all();
     }
 
     pub fn take_truth_result(&self, fence: &ProviderFence) -> Option<ProviderTruthObservation> {
@@ -101,6 +126,7 @@ impl LocalRuntimeShared {
             .expect("local runtime shared lock")
             .launch
             .insert(FenceKey::from(fence), result);
+        self.result_available.notify_all();
     }
 
     pub fn take_launch_result(&self, fence: &ProviderFence) -> Option<ProviderLaunchOutcome> {
@@ -109,6 +135,20 @@ impl LocalRuntimeShared {
             .expect("local runtime shared lock")
             .launch
             .remove(&FenceKey::from(fence))
+    }
+
+    pub fn wait_for_launch_result(&self, fence: &ProviderFence) -> ProviderLaunchOutcome {
+        let key = FenceKey::from(fence);
+        let mut results = self.results.lock().expect("local runtime shared lock");
+        loop {
+            if let Some(result) = results.launch.remove(&key) {
+                return result;
+            }
+            results = self
+                .result_available
+                .wait(results)
+                .expect("local runtime shared lock");
+        }
     }
 
     pub fn record_stop_cleanup_result(
@@ -121,6 +161,7 @@ impl LocalRuntimeShared {
             .expect("local runtime shared lock")
             .stop_cleanup
             .insert(FenceKey::from(fence), result);
+        self.result_available.notify_all();
     }
 
     pub fn take_stop_cleanup_result(
@@ -134,12 +175,30 @@ impl LocalRuntimeShared {
             .remove(&FenceKey::from(fence))
     }
 
+    pub fn wait_for_stop_cleanup_result(
+        &self,
+        fence: &ProviderFence,
+    ) -> ProviderStopCleanupOutcome {
+        let key = FenceKey::from(fence);
+        let mut results = self.results.lock().expect("local runtime shared lock");
+        loop {
+            if let Some(result) = results.stop_cleanup.remove(&key) {
+                return result;
+            }
+            results = self
+                .result_available
+                .wait(results)
+                .expect("local runtime shared lock");
+        }
+    }
+
     pub fn record_probe_result(&self, fence: &ProviderFence, result: ProviderProbeOutcome) {
         self.results
             .lock()
             .expect("local runtime shared lock")
             .probe
             .insert(FenceKey::from(fence), result);
+        self.result_available.notify_all();
     }
 
     pub fn take_probe_result(&self, fence: &ProviderFence) -> Option<ProviderProbeOutcome> {
@@ -155,6 +214,20 @@ impl LocalRuntimeShared {
             .lock()
             .expect("local runtime shared lock")
             .insert(FenceKey::from(fence), process);
+    }
+
+    pub(crate) fn retain_child(&self, process_id: String, child: Child) {
+        self.children
+            .lock()
+            .expect("local runtime shared lock")
+            .insert(process_id, child);
+    }
+
+    pub(crate) fn take_child(&self, process_id: &str) -> Option<Child> {
+        self.children
+            .lock()
+            .expect("local runtime shared lock")
+            .remove(process_id)
     }
 
     fn ready_process_for_fence(&self, fence: &ProviderFence) -> Option<LocalReadyProcess> {
@@ -724,6 +797,12 @@ mod tests {
         fn now_utc_rfc3339(&self) -> String {
             "2026-08-09T12:00:00+00:00".to_owned()
         }
+
+        fn monotonic_seconds(&self) -> f64 {
+            0.0
+        }
+
+        fn sleep(&self, _: Duration) {}
     }
 
     fn store(journal: &TempJournal, shared: Arc<LocalRuntimeShared>) -> LocalRuntimeStore {

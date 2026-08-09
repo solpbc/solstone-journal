@@ -40,6 +40,7 @@ const SCHEDULE_SUBMISSION: &str = include_str!("../src/schedule/submission.rs");
 const PROVIDER_RUNTIME: &str = include_str!("../src/provider_runtime/mod.rs");
 const PROVIDER_RUNTIME_EVENTS: &str = include_str!("../src/provider_runtime/events.rs");
 const PROVIDER_RUNTIME_GATE: &str = include_str!("../src/provider_runtime/gate.rs");
+const PROVIDER_RUNTIME_LAUNCH: &str = include_str!("../src/provider_runtime/launch.rs");
 const PROVIDER_RUNTIME_MODEL: &str = include_str!("../src/provider_runtime/model.rs");
 const PROVIDER_RUNTIME_RECONCILE: &str = include_str!("../src/provider_runtime/reconcile.rs");
 const PROVIDER_RUNTIME_RETRY: &str = include_str!("../src/provider_runtime/retry.rs");
@@ -140,6 +141,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
     let provider_runtime_modules = [
         ("events", PROVIDER_RUNTIME_EVENTS),
         ("gate", PROVIDER_RUNTIME_GATE),
+        ("launch", PROVIDER_RUNTIME_LAUNCH),
         ("model", PROVIDER_RUNTIME_MODEL),
         ("reconcile", PROVIDER_RUNTIME_RECONCILE),
         ("retry", PROVIDER_RUNTIME_RETRY),
