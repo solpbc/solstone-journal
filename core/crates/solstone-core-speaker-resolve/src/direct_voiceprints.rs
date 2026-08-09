@@ -8,8 +8,9 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 use solstone_core_entity::{
-    EncoderIdentity, VoiceprintItem, load_entity_voiceprints_file, load_existing_voiceprint_keys,
-    normalize_embedding, read_journal_principal, save_voiceprints_batch,
+    EncoderIdentity, VoiceprintItem, VoiceprintRemoval, VoiceprintRemovalReport,
+    load_entity_voiceprints_file, load_existing_voiceprint_keys, normalize_embedding,
+    read_journal_principal, remove_voiceprints_by_key, save_voiceprints_batch,
 };
 use solstone_core_journal_io::segment_path;
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
@@ -104,6 +105,69 @@ pub enum DirectVoiceprintsError {
         categories: BTreeMap<String, usize>,
         partial_report: Value,
     },
+}
+
+/// Failure while applying an authenticated, unguarded single-row voiceprint mutation.
+#[derive(Debug, Error)]
+pub enum DirectVoiceprintMutationError {
+    #[error("voiceprint metadata must contain day, segment_key, source, and sentence_id")]
+    InvalidMetadata,
+    #[error("voiceprint operation failed: {0}")]
+    Voiceprint(#[from] solstone_core_entity::VoiceprintOperationError),
+}
+
+/// Append exactly one caller-supplied voiceprint without identify/accumulation guards.
+pub fn write_voiceprint(
+    journal_root: &Path,
+    entity_id: &str,
+    embedding: Vec<f32>,
+    metadata: Value,
+    encoder: &EncoderIdentity,
+) -> Result<(), DirectVoiceprintMutationError> {
+    if !has_direct_key(&metadata) {
+        return Err(DirectVoiceprintMutationError::InvalidMetadata);
+    }
+    save_voiceprints_batch(
+        journal_root,
+        entity_id,
+        &[VoiceprintItem {
+            embedding,
+            metadata,
+        }],
+        encoder,
+    )?;
+    Ok(())
+}
+
+/// Remove matching rows for one direct voiceprint key without identify guards.
+pub fn remove_voiceprint(
+    journal_root: &Path,
+    entity_id: &str,
+    key: Value,
+    encoder: &EncoderIdentity,
+) -> Result<VoiceprintRemovalReport, DirectVoiceprintMutationError> {
+    if !has_direct_key(&key) {
+        return Err(DirectVoiceprintMutationError::InvalidMetadata);
+    }
+    Ok(remove_voiceprints_by_key(
+        journal_root,
+        entity_id,
+        &[VoiceprintRemoval {
+            key,
+            expected_metadata: None,
+        }],
+        encoder,
+    )?)
+}
+
+fn has_direct_key(metadata: &Value) -> bool {
+    let Some(object) = metadata.as_object() else {
+        return false;
+    };
+    object.get("day").and_then(Value::as_str).is_some()
+        && object.get("segment_key").and_then(Value::as_str).is_some()
+        && object.get("source").and_then(Value::as_str).is_some()
+        && object.get("sentence_id").and_then(Value::as_i64).is_some()
 }
 
 /// Snapshot direct cluster-member voiceprints that are not already on the target.

@@ -119,7 +119,11 @@ pub enum CanonicalKeyField {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VoiceprintKey(pub [CanonicalKeyField; 4]);
 
-/// One requested row removal with its expected complete metadata value.
+/// One requested row removal with an optional expected complete metadata value.
+///
+/// A present value provides the exact-match safety required by durable undo.
+/// `None` removes every row with the canonical four-field key, matching the
+/// authenticated direct speaker-management operation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VoiceprintRemoval {
     pub key: Value,
@@ -433,13 +437,24 @@ pub fn remove_voiceprints_by_key(
         .collect::<Result<Vec<_>, _>>()?;
     let mut remove_indexes = HashSet::new();
     for (removal, key) in removals.iter().zip(&normalized_removals) {
-        let exact_matches = metadata
+        let key_matches = metadata
             .iter()
             .enumerate()
+            .filter_map(|(index, stored)| (keys[index] == *key).then_some((index, stored)))
+            .collect::<Vec<_>>();
+        if removal.expected_metadata.is_none() {
+            if key_matches.is_empty() {
+                report.skipped_reasons.missing += 1;
+            } else {
+                remove_indexes.extend(key_matches.into_iter().map(|(index, _)| index));
+            }
+            continue;
+        }
+        let exact_matches = key_matches
+            .iter()
             .filter_map(|(index, stored)| {
-                (keys[index] == *key
-                    && python_optional_json_equal(Some(stored), removal.expected_metadata.as_ref()))
-                .then_some(index)
+                python_optional_json_equal(Some(*stored), removal.expected_metadata.as_ref())
+                    .then_some(*index)
             })
             .collect::<Vec<_>>();
         if exact_matches.len() > 1 {
@@ -449,7 +464,7 @@ pub fn remove_voiceprints_by_key(
             remove_indexes.insert(*index);
             continue;
         }
-        if keys.iter().any(|stored_key| stored_key == key) {
+        if !key_matches.is_empty() {
             report.skipped_reasons.metadata_mismatch += 1;
         } else {
             report.skipped_reasons.missing += 1;

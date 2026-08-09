@@ -133,6 +133,18 @@ fn run_speaker_resolve(command: SpeakerResolveCommand) -> ExitCode {
         SpeakerResolveCommand::RebuildOwnerCentroid => rebuild_owner_centroid_request(value),
         SpeakerResolveCommand::WriteOwnerCandidate => write_owner_candidate_request(value),
         SpeakerResolveCommand::ReadOwnerCandidate => read_owner_candidate_request(value),
+        SpeakerResolveCommand::ClearOwnerCandidate => clear_owner_candidate_request(value),
+        SpeakerResolveCommand::WriteVoiceprint => write_voiceprint_request(value),
+        SpeakerResolveCommand::RemoveVoiceprint => remove_voiceprint_request(value),
+        SpeakerResolveCommand::BackfillVoiceprintLastSeen => {
+            backfill_voiceprint_last_seen_request(value)
+        }
+        SpeakerResolveCommand::WriteStubLabels => write_stub_labels_request(value),
+        SpeakerResolveCommand::WriteFullLabels => write_full_labels_request(value),
+        SpeakerResolveCommand::PatchLabels => patch_labels_request(value),
+        SpeakerResolveCommand::RestoreLabelRows => restore_label_rows_request(value),
+        SpeakerResolveCommand::AppendCorrection => append_correction_request(value),
+        SpeakerResolveCommand::WipeSpeakerArtifacts => wipe_speaker_artifacts_request(value),
         SpeakerResolveCommand::Identify => identify_request(value),
         SpeakerResolveCommand::UndoIdentify => undo_identify_request(value),
         SpeakerResolveCommand::BootstrapVoiceprints => bootstrap_request(value, false),
@@ -151,9 +163,27 @@ fn run_speaker_resolve(command: SpeakerResolveCommand) -> ExitCode {
             }
         }
         Err(error) => {
-            eprintln!("speaker-resolve failed: {error}");
-            ExitCode::from(EXIT_USAGE)
+            let exit = speaker_resolve_error_exit(&error);
+            eprintln!(
+                "{}",
+                json!({
+                    "error":"speaker_resolve_failed",
+                    "detail":error,
+                    "exit_code":exit,
+                })
+            );
+            ExitCode::from(exit)
         }
+    }
+}
+
+fn speaker_resolve_error_exit(error: &str) -> u8 {
+    if error.contains("entity not found") || error.contains("No such file or directory") {
+        EXIT_UNAVAILABLE
+    } else if error.contains("could not acquire lock") || error.contains("storage is busy") {
+        EXIT_TEMPFAIL
+    } else {
+        EXIT_USAGE
     }
 }
 
@@ -616,6 +646,294 @@ fn read_owner_candidate_request(value: Value) -> Result<Value, String> {
     Ok(json!({"candidate": candidate}))
 }
 
+fn clear_owner_candidate_request(value: Value) -> Result<Value, String> {
+    let object = request_object(
+        value,
+        "solstone-speaker-resolve-clear-owner-candidate-request-v1",
+        &["schema", "journal_root"],
+    )?;
+    let removed = solstone_core_speaker_resolve::owner_candidate::clear_owner_candidate(
+        &PathBuf::from(required_string(&object, "journal_root")?),
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(json!({
+        "status":"cleared",
+        "removed":matches!(removed, solstone_core_journal_io::Removed::Unlinked),
+    }))
+}
+
+fn write_voiceprint_request(value: Value) -> Result<Value, String> {
+    let object = request_object(
+        value,
+        "solstone-speaker-resolve-write-voiceprint-request-v1",
+        &[
+            "schema",
+            "journal_root",
+            "entity_id",
+            "embedding",
+            "metadata",
+            "encoder",
+        ],
+    )?;
+    let metadata = required_object_value(&object, "metadata")?;
+    solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
+        &PathBuf::from(required_string(&object, "journal_root")?),
+        &required_string(&object, "entity_id")?,
+        f32_values_named(object.get("embedding"), "embedding")?,
+        Value::Object(metadata),
+        &encoder(&object)?,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(json!({"status":"written"}))
+}
+
+fn remove_voiceprint_request(value: Value) -> Result<Value, String> {
+    let object = request_object(
+        value,
+        "solstone-speaker-resolve-remove-voiceprint-request-v1",
+        &["schema", "journal_root", "entity_id", "key", "encoder"],
+    )?;
+    let key = required_object_value(&object, "key")?;
+    let report = solstone_core_speaker_resolve::direct_voiceprints::remove_voiceprint(
+        &PathBuf::from(required_string(&object, "journal_root")?),
+        &required_string(&object, "entity_id")?,
+        Value::Object(key.clone()),
+        &encoder(&object)?,
+    )
+    .map_err(|error| error.to_string())?;
+    let outcome = if report.removed_count == 0 {
+        "not_found"
+    } else if report.file_removed {
+        "unlinked"
+    } else {
+        "rewritten"
+    };
+    Ok(json!({
+        "outcome":outcome,
+        "entity_id":required_string(&object, "entity_id")?,
+        "keys_removed":if report.removed_count == 0 { Vec::<Value>::new() } else { vec![Value::Object(key)] },
+        "file_deleted":report.file_removed,
+    }))
+}
+
+fn backfill_voiceprint_last_seen_request(value: Value) -> Result<Value, String> {
+    let object = request_object(
+        value,
+        "solstone-speaker-resolve-backfill-voiceprint-last-seen-request-v1",
+        &[
+            "schema",
+            "journal_root",
+            "entity_id",
+            "last_seen_ts",
+            "encoder",
+        ],
+    )?;
+    let target_ts = required_i64(&object, "last_seen_ts")?;
+    let updates = solstone_core_entity::rewrite_voiceprint_metadata(
+        &PathBuf::from(required_string(&object, "journal_root")?),
+        &required_string(&object, "entity_id")?,
+        &encoder(&object)?,
+        |rows| {
+            let mut changed = 0;
+            for row in rows {
+                let Some(metadata) = row.as_object_mut() else {
+                    continue;
+                };
+                let current = metadata.get("last_seen_ts").and_then(Value::as_i64);
+                if current.is_none_or(|current| current < target_ts) {
+                    metadata.insert("last_seen_ts".to_owned(), Value::from(target_ts));
+                    changed += 1;
+                }
+            }
+            changed
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(json!({"rows_written":updates}))
+}
+
+fn write_stub_labels_request(value: Value) -> Result<Value, String> {
+    let object = request_object(
+        value,
+        "solstone-speaker-resolve-write-stub-labels-request-v1",
+        &["schema", "journal_root", "segment", "reason"],
+    )?;
+    solstone_core_speaker_id::labels::write_stub_labels(
+        &segment_dir(&object)?,
+        &required_string(&object, "reason")?,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(json!({"status":"written"}))
+}
+
+fn write_full_labels_request(value: Value) -> Result<Value, String> {
+    let object = request_object(
+        value,
+        "solstone-speaker-resolve-write-full-labels-request-v1",
+        &["schema", "journal_root", "segment", "labels", "metadata"],
+    )?;
+    let labels = object
+        .get("labels")
+        .and_then(Value::as_array)
+        .cloned()
+        .ok_or_else(|| "labels is required".to_owned())?;
+    solstone_core_speaker_id::labels::write_full_labels(
+        &segment_dir(&object)?,
+        labels,
+        &required_object_value(&object, "metadata")?,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(json!({"status":"written"}))
+}
+
+fn patch_labels_request(value: Value) -> Result<Value, String> {
+    let object = request_object(
+        value,
+        "solstone-speaker-resolve-patch-labels-request-v1",
+        &[
+            "schema",
+            "journal_root",
+            "segment",
+            "patches",
+            "allow_insert",
+        ],
+    )?;
+    let patches = object
+        .get("patches")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "patches is required".to_owned())?
+        .iter()
+        .map(|(sentence_id, fields)| {
+            Ok((
+                sentence_id
+                    .parse::<i64>()
+                    .map_err(|_| "patch sentence ID must be an integer".to_owned())?,
+                fields
+                    .as_object()
+                    .cloned()
+                    .ok_or_else(|| "patch fields must be an object".to_owned())?,
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    solstone_core_speaker_id::labels::patch_labels(
+        &segment_dir(&object)?,
+        &patches,
+        required_bool(&object, "allow_insert")?,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(json!({"status":"written"}))
+}
+
+fn restore_label_rows_request(value: Value) -> Result<Value, String> {
+    let object = request_object(
+        value,
+        "solstone-speaker-resolve-restore-label-rows-request-v1",
+        &["schema", "journal_root", "segment", "restorations"],
+    )?;
+    let restorations = object
+        .get("restorations")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "restorations is required".to_owned())?
+        .iter()
+        .map(parse_label_restoration)
+        .collect::<Result<Vec<_>, _>>()?;
+    let report =
+        solstone_core_speaker_id::labels::restore_label_rows(&segment_dir(&object)?, &restorations)
+            .map_err(|error| error.to_string())?;
+    Ok(json!({
+        "restored_count":report.restored_count,
+        "removed_inserted_count":report.removed_inserted_count,
+        "patched_existing_count":report.patched_existing_count,
+        "skipped_count":report.skipped_count,
+        "skipped_reasons":{"missing":report.missing_count,"changed":report.changed_count},
+    }))
+}
+
+fn append_correction_request(value: Value) -> Result<Value, String> {
+    let object = request_object(
+        value,
+        "solstone-speaker-resolve-append-correction-request-v1",
+        &["schema", "journal_root", "segment", "correction"],
+    )?;
+    solstone_core_speaker_id::corrections::append_correction(
+        &segment_dir(&object)?,
+        required_object_value(&object, "correction")?,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(json!({"status":"appended"}))
+}
+
+fn wipe_speaker_artifacts_request(value: Value) -> Result<Value, String> {
+    let object = request_object(
+        value,
+        "solstone-speaker-resolve-wipe-speaker-artifacts-request-v1",
+        &["schema", "journal_root", "dry_run"],
+    )?;
+    let report = solstone_core_speaker_resolve::artifact_wipe::wipe_speaker_artifacts(
+        &PathBuf::from(required_string(&object, "journal_root")?),
+        required_bool(&object, "dry_run")?,
+    )
+    .map_err(|error| error.to_string())?;
+    serde_json::to_value(report).map_err(|error| error.to_string())
+}
+
+fn segment_dir(object: &Map<String, Value>) -> Result<PathBuf, String> {
+    let root = PathBuf::from(required_string(object, "journal_root")?);
+    let segment = object
+        .get("segment")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "segment is required".to_owned())?;
+    const FIELDS: [&str; 3] = ["day", "stream", "segment_key"];
+    if segment.keys().any(|key| !FIELDS.contains(&key.as_str())) {
+        return Err("invalid segment request".to_owned());
+    }
+    let day = required_string(segment, "day")?;
+    let stream = required_string(segment, "stream")?;
+    let segment_key = required_string(segment, "segment_key")?;
+    solstone_core_journal_io::contained_path(
+        &root,
+        &format!("chronicle/{day}/{stream}/{segment_key}"),
+    )
+    .map_err(|error| error.to_string())
+}
+
+fn required_object_value(
+    object: &Map<String, Value>,
+    name: &str,
+) -> Result<Map<String, Value>, String> {
+    object
+        .get(name)
+        .and_then(Value::as_object)
+        .cloned()
+        .ok_or_else(|| format!("{name} is required"))
+}
+
+fn parse_label_restoration(
+    value: &Value,
+) -> Result<solstone_core_speaker_id::labels::LabelRestoration, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "label restoration must be an object".to_owned())?;
+    const FIELDS: [&str; 4] = [
+        "sentence_id",
+        "expected_current_label",
+        "prior_state",
+        "prior_label",
+    ];
+    if object.keys().any(|key| !FIELDS.contains(&key.as_str())) {
+        return Err("invalid label restoration".to_owned());
+    }
+    Ok(solstone_core_speaker_id::labels::LabelRestoration {
+        sentence_id: required_i64(object, "sentence_id")?,
+        expected_current_label: object
+            .get("expected_current_label")
+            .cloned()
+            .ok_or_else(|| "expected_current_label is required".to_owned())?,
+        prior_state: required_string(object, "prior_state")?,
+        prior_label: object.get("prior_label").cloned(),
+    })
+}
+
 struct OwnerFields {
     root: PathBuf,
     principal: String,
@@ -663,16 +981,19 @@ fn required_f32(object: &Map<String, Value>, name: &str) -> Result<f32, String> 
         .ok_or_else(|| format!("{name} is required"))
 }
 fn f32_values(value: Option<&Value>) -> Result<Vec<f32>, String> {
+    f32_values_named(value, "centroid")
+}
+fn f32_values_named(value: Option<&Value>, name: &str) -> Result<Vec<f32>, String> {
     value
         .and_then(Value::as_array)
-        .ok_or_else(|| "centroid is required".to_owned())?
+        .ok_or_else(|| format!("{name} is required"))?
         .iter()
         .map(|value| {
             value
                 .as_f64()
                 .map(|value| value as f32)
                 .filter(|value| value.is_finite())
-                .ok_or_else(|| "invalid float values".to_owned())
+                .ok_or_else(|| format!("invalid {name} float values"))
         })
         .collect()
 }

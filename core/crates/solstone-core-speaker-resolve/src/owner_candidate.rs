@@ -12,7 +12,8 @@ use std::path::Path;
 use serde::Serialize;
 use solstone_core_entity::normalize_embedding;
 use solstone_core_journal_io::{
-    AtomicWriteOptions, LockError, LockOptions, atomic_replace, contained_path, hold_lock,
+    AtomicWriteOptions, LockError, LockOptions, Removed, atomic_replace, contained_path, hold_lock,
+    remove_file,
 };
 use solstone_core_npy::parse_npy;
 use zip::ZipArchive;
@@ -119,6 +120,18 @@ pub fn write_owner_candidate(
         OwnerCandidateError::Invalid("owner candidate disappeared after write".to_owned())
     })?;
     Ok(())
+}
+
+/// Remove the owner candidate under the same sidecar lock used for writes.
+///
+/// An absent snapshot is a successful no-op, matching the Python clear paths.
+pub fn clear_owner_candidate(journal_root: &Path) -> Result<Removed, OwnerCandidateError> {
+    if !journal_root.join("awareness").is_dir() {
+        return Ok(Removed::AlreadyAbsent);
+    }
+    let path = owner_candidate_path(journal_root)?;
+    let _lock = hold_lock(&path, LockOptions::default()).map_err(OwnerCandidateError::Lock)?;
+    remove_file(journal_root, "awareness/owner_candidate.npz").map_err(OwnerCandidateError::Path)
 }
 
 fn owner_candidate_path(journal_root: &Path) -> Result<std::path::PathBuf, OwnerCandidateError> {

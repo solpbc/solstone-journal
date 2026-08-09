@@ -46,6 +46,214 @@ fn run(verb: &str, request: Value) -> (Output, Value) {
     (output, response)
 }
 
+fn segment_request(root: &std::path::Path) -> Value {
+    std::fs::create_dir_all(root.join("chronicle/20260809/main/120000_1/talents"))
+        .expect("create segment");
+    json!({"day":"20260809","stream":"main","segment_key":"120000_1"})
+}
+
+fn create_entity(root: &std::path::Path, entity_id: &str) {
+    std::fs::create_dir_all(root.join("entities")).expect("create entities directory");
+    solstone_core_entity::create_journal_entity(
+        root,
+        entity_id,
+        "Test Person",
+        "Person",
+        None,
+        None,
+        &[],
+        true,
+        None,
+    )
+    .expect("create test entity");
+}
+
+#[test]
+fn speaker_label_and_correction_write_verbs_reach_their_native_owners() {
+    let journal = root("label-writes");
+    let first_segment = segment_request(&journal);
+    let base = json!({
+        "schema":"solstone-speaker-resolve-write-stub-labels-request-v1",
+        "journal_root":journal,
+        "segment":first_segment,
+        "reason":"no_audio",
+    });
+    assert_eq!(run("write-stub-labels", base).1["status"], "written");
+
+    let segment = segment_request(&journal);
+    assert_eq!(
+        run(
+            "write-full-labels",
+            json!({
+                "schema":"solstone-speaker-resolve-write-full-labels-request-v1",
+                "journal_root":journal, "segment":segment,
+                "labels":[{"sentence_id":1,"speaker":"person","confidence":"high","method":"acoustic"}],
+                "metadata":{},
+            }),
+        )
+        .1["status"],
+        "written"
+    );
+    let segment = segment_request(&journal);
+    assert_eq!(
+        run(
+            "patch-labels",
+            json!({
+                "schema":"solstone-speaker-resolve-patch-labels-request-v1",
+                "journal_root":journal, "segment":segment,
+                "patches":{"1":{"speaker":"other"}}, "allow_insert":false,
+            }),
+        )
+        .1["status"],
+        "written"
+    );
+    let segment = segment_request(&journal);
+    let restore = run(
+        "restore-label-rows",
+        json!({
+            "schema":"solstone-speaker-resolve-restore-label-rows-request-v1",
+            "journal_root":journal, "segment":segment,
+            "restorations":[{
+                "sentence_id":1,
+                "expected_current_label":{"sentence_id":1,"speaker":"other","confidence":"high","method":"acoustic"},
+                "prior_state":"present",
+                "prior_label":{"sentence_id":1,"speaker":"person","confidence":"high","method":"acoustic"},
+            }],
+        }),
+    )
+    .1;
+    assert_eq!(restore["restored_count"], 1);
+    let segment = segment_request(&journal);
+    assert_eq!(
+        run(
+            "append-correction",
+            json!({
+                "schema":"solstone-speaker-resolve-append-correction-request-v1",
+                "journal_root":journal, "segment":segment,
+                "correction":{"sentence_id":1,"corrected_speaker":"person"},
+            }),
+        )
+        .1["status"],
+        "appended"
+    );
+}
+
+#[test]
+fn direct_voiceprint_and_backfill_verbs_reach_entity_store() {
+    let journal = root("voiceprint-writes");
+    create_entity(&journal, "person");
+    let metadata = json!({
+        "day":"20260809", "segment_key":"120000_1", "source":"audio",
+        "sentence_id":1, "added_at":1, "last_seen_ts":1,
+    });
+    assert_eq!(
+        run(
+            "write-voiceprint",
+            json!({
+                "schema":"solstone-speaker-resolve-write-voiceprint-request-v1",
+                "journal_root":journal, "entity_id":"person", "embedding":vec![1.0; 256],
+                "metadata":metadata.clone(), "encoder":encoder(),
+            }),
+        )
+        .1["status"],
+        "written"
+    );
+    assert_eq!(
+        run(
+            "backfill-voiceprint-last-seen",
+            json!({
+                "schema":"solstone-speaker-resolve-backfill-voiceprint-last-seen-request-v1",
+                "journal_root":journal, "entity_id":"person", "last_seen_ts":2, "encoder":encoder(),
+            }),
+        )
+        .1["rows_written"],
+        1
+    );
+    assert_eq!(
+        run(
+            "remove-voiceprint",
+            json!({
+                "schema":"solstone-speaker-resolve-remove-voiceprint-request-v1",
+                "journal_root":journal, "entity_id":"person", "key":metadata, "encoder":encoder(),
+            }),
+        )
+        .1["outcome"],
+        "unlinked"
+    );
+}
+
+#[test]
+fn clear_and_wipe_speaker_artifact_verbs_are_mechanical_and_strict() {
+    let journal = root("artifact-wipes");
+    create_entity(&journal, "person");
+    let entity_dir = journal.join("entities/person");
+    std::fs::write(entity_dir.join("voiceprints.npz"), b"voiceprints").expect("write voiceprints");
+    std::fs::write(entity_dir.join("owner_centroid.npz"), b"centroid").expect("write centroid");
+    std::fs::create_dir_all(journal.join("awareness")).expect("create awareness");
+    std::fs::write(journal.join("awareness/owner_candidate.npz"), b"candidate")
+        .expect("write candidate");
+    assert_eq!(
+        run(
+            "clear-owner-candidate",
+            json!({
+                "schema":"solstone-speaker-resolve-clear-owner-candidate-request-v1",
+                "journal_root":journal,
+            }),
+        )
+        .1["removed"],
+        true
+    );
+    std::fs::write(journal.join("awareness/owner_candidate.npz"), b"candidate")
+        .expect("restore candidate");
+    let dry_run = run(
+        "wipe-speaker-artifacts",
+        json!({
+            "schema":"solstone-speaker-resolve-wipe-speaker-artifacts-request-v1",
+            "journal_root":journal, "dry_run":true,
+        }),
+    )
+    .1;
+    assert_eq!(dry_run["total_files"], 3);
+    assert_eq!(
+        run(
+            "wipe-speaker-artifacts",
+            json!({
+                "schema":"solstone-speaker-resolve-wipe-speaker-artifacts-request-v1",
+                "journal_root":journal, "dry_run":false,
+            }),
+        )
+        .1["total_files"],
+        3
+    );
+    assert!(!entity_dir.join("voiceprints.npz").exists());
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+        .args(["speaker-resolve", "write-stub-labels"])
+        .stdin(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start malformed request");
+    serde_json::to_writer(
+        child.stdin.as_mut().expect("stdin"),
+        &json!({
+            "schema":"solstone-speaker-resolve-write-stub-labels-request-v1",
+            "journal_root":journal,
+            "segment":{"day":"20260809","stream":"main","segment_key":"120000_1"},
+            "reason":"no_audio",
+            "unexpected":true,
+        }),
+    )
+    .expect("write malformed request");
+    child.stdin.take();
+    let output = child
+        .wait_with_output()
+        .expect("wait for malformed request");
+    assert_eq!(output.status.code(), Some(64));
+    let error: Value = serde_json::from_slice(&output.stderr).expect("structured error JSON");
+    assert_eq!(error["error"], "speaker_resolve_failed");
+    assert_eq!(error["exit_code"], 64);
+}
+
 #[test]
 fn ac1_identify_cli_reaches_native_orchestrator() {
     let journal = root("identify");
