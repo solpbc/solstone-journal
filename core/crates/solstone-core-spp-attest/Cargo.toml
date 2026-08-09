@@ -16,5 +16,10 @@ subtle = "=2.6.1"
 thiserror = { workspace = true }
 x509-parser = "=0.16.0"
 
+[[test]]
+name = "spp_attest_differential"
+path = "tests/spp_attest_differential.rs"
+required-features = ["differential"]
+
 [lints]
 workspace = true
