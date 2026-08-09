@@ -8,6 +8,7 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::net::{SocketAddr, TcpStream};
+use std::path::PathBuf;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::{Child, Command};
 use std::sync::Arc;
@@ -15,21 +16,21 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::Value;
-use solstone_core_local::LoopbackAddr;
 use solstone_core_local::nvidia::{ArtifactTrust, NvidiaProbe};
 use solstone_core_local::plan::{PlanBackend, PlanInput, Platform, VulkanDevice};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use solstone_core_local::plan::{PlanOutcome, plan};
+use solstone_core_local::{ConnectInput, ConnectOutcome, LoopbackAddr, connect};
 
 use crate::process::{SERVICE_SHUTDOWN_TIMEOUT, terminate};
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use super::model::ManagedProcess;
 use super::model::{
-    LaunchOutcomeStatus, ProviderFence, ProviderLaunchOutcome, ProviderRuntimeState,
-    ProviderStopCleanupOutcome, ReasonCode, StopCleanupStatus,
+    LaunchOutcomeStatus, ProviderFence, ProviderLaunchOutcome, ProviderProbeOutcome,
+    ProviderRuntimeState, ProviderStopCleanupOutcome, ReasonCode, StopCleanupStatus,
 };
-use super::seams::LifecycleSeam;
+use super::seams::{LifecycleSeam, ProbeSeam};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use super::store::LocalReadyProcess;
 use super::store::{LocalRuntimeShared, RuntimeClock};
@@ -107,6 +108,17 @@ impl LocalLaunchConfig {
             Self::Cuda { common, .. } | Self::Vulkan { common, .. } | Self::Mlx { common, .. } => {
                 common
             }
+        }
+    }
+
+    fn default_model_id(&self) -> String {
+        self.common().model_id.clone()
+    }
+
+    fn platform(&self) -> Platform {
+        match self {
+            Self::Mlx { .. } => Platform::Darwin,
+            Self::Cuda { .. } | Self::Vulkan { .. } => Platform::Linux,
         }
     }
 
@@ -229,22 +241,16 @@ impl LocalLaunchConfig {
 pub struct LocalLifecycleSeam {
     shared: Arc<LocalRuntimeShared>,
     clock: Arc<dyn RuntimeClock>,
-    launch: LocalLaunchConfig,
     warmup_timeout: Duration,
     warmup_poll_interval: Duration,
     termination_timeout: Duration,
 }
 
 impl LocalLifecycleSeam {
-    pub fn new(
-        shared: Arc<LocalRuntimeShared>,
-        clock: Arc<dyn RuntimeClock>,
-        launch: LocalLaunchConfig,
-    ) -> Self {
+    pub fn new(shared: Arc<LocalRuntimeShared>, clock: Arc<dyn RuntimeClock>) -> Self {
         Self::with_timeouts(
             shared,
             clock,
-            launch,
             Duration::from_secs(120),
             Duration::from_millis(250),
             SERVICE_SHUTDOWN_TIMEOUT,
@@ -254,7 +260,6 @@ impl LocalLifecycleSeam {
     pub fn with_timeouts(
         shared: Arc<LocalRuntimeShared>,
         clock: Arc<dyn RuntimeClock>,
-        launch: LocalLaunchConfig,
         warmup_timeout: Duration,
         warmup_poll_interval: Duration,
         termination_timeout: Duration,
@@ -262,7 +267,6 @@ impl LocalLifecycleSeam {
         Self {
             shared,
             clock,
-            launch,
             warmup_timeout,
             warmup_poll_interval,
             termination_timeout,
@@ -274,21 +278,25 @@ impl LifecycleSeam for LocalLifecycleSeam {
     fn dispatch_start(&mut self, state: &ProviderRuntimeState, fence: &ProviderFence) {
         let shared = Arc::clone(&self.shared);
         let clock = Arc::clone(&self.clock);
-        let launch = self.launch.clone();
+        let launch = shared.launch_request_for(state.generation, &state.desired_fingerprint);
         let state = state.clone();
         let fence = fence.clone();
         let warmup_timeout = self.warmup_timeout;
         let warmup_poll_interval = self.warmup_poll_interval;
         thread::spawn(move || {
-            let outcome = start_local(
-                &shared,
-                clock.as_ref(),
-                &launch,
-                &state,
-                &fence,
-                warmup_timeout,
-                warmup_poll_interval,
-            );
+            let outcome = launch
+                .map(|launch| {
+                    start_local(
+                        &shared,
+                        clock.as_ref(),
+                        &launch,
+                        &state,
+                        &fence,
+                        warmup_timeout,
+                        warmup_poll_interval,
+                    )
+                })
+                .unwrap_or_else(launch_failed);
             shared.record_launch_result(&fence, outcome);
         });
     }
@@ -308,6 +316,64 @@ impl LifecycleSeam for LocalLifecycleSeam {
             );
             shared.record_stop_cleanup_result(&fence, outcome);
         });
+    }
+}
+
+pub struct LocalProbeSeam {
+    shared: Arc<LocalRuntimeShared>,
+    journal_path: PathBuf,
+}
+
+impl LocalProbeSeam {
+    pub fn new(shared: Arc<LocalRuntimeShared>, journal_path: impl Into<PathBuf>) -> Self {
+        Self {
+            shared,
+            journal_path: journal_path.into(),
+        }
+    }
+}
+
+impl ProbeSeam for LocalProbeSeam {
+    fn dispatch_probe(&mut self, state: &ProviderRuntimeState, fence: &ProviderFence) {
+        let shared = Arc::clone(&self.shared);
+        let journal_path = self.journal_path.clone();
+        let fence = fence.clone();
+        let launch = shared.launch_request_for(state.generation, &state.desired_fingerprint);
+        thread::spawn(move || {
+            let outcome = match launch {
+                Some(launch) => probe_local(&journal_path, &launch),
+                None => probe_unavailable(),
+            };
+            shared.record_probe_result(&fence, outcome);
+        });
+    }
+}
+
+fn probe_local(journal_path: &std::path::Path, launch: &LocalLaunchConfig) -> ProviderProbeOutcome {
+    let outcome = connect(ConnectInput {
+        schema: "solstone-local-connect-input-v1".into(),
+        journal_path: journal_path.display().to_string(),
+        bind_address: LoopbackAddr::IPV4_LOOPBACK,
+        default_model_id: launch.default_model_id(),
+        platform: launch.platform(),
+    });
+    match outcome {
+        ConnectOutcome::Ready { .. } => ProviderProbeOutcome {
+            status: super::model::ProbeStatus::Ready,
+            reason_code: ReasonCode::known("probe-ready"),
+        },
+        ConnectOutcome::Loading { .. } => ProviderProbeOutcome {
+            status: super::model::ProbeStatus::NotReady,
+            reason_code: ReasonCode::known("probe-not-ready"),
+        },
+        ConnectOutcome::NotReady { .. } | ConnectOutcome::Failed { .. } => probe_unavailable(),
+    }
+}
+
+fn probe_unavailable() -> ProviderProbeOutcome {
+    ProviderProbeOutcome {
+        status: super::model::ProbeStatus::Unavailable,
+        reason_code: ReasonCode::known("proof-observation-unavailable"),
     }
 }
 

@@ -16,6 +16,7 @@ use solstone_core_journal_io::{
     AtomicWriteOptions, JsonWriteOptions, LockOptions, hold_lock, write_json, write_text,
 };
 
+use super::launch::LocalLaunchConfig;
 use super::model::{
     ProviderFence, ProviderLaunchOutcome, ProviderName, ProviderProbeOutcome, ProviderRuntimeState,
     ProviderStopCleanupOutcome, ProviderTruthObservation, ReasonCode, RuntimePhase,
@@ -89,9 +90,16 @@ pub struct LocalReadyProcess {
 #[derive(Debug, Default)]
 pub struct LocalRuntimeShared {
     ready_processes: Mutex<BTreeMap<FenceKey, LocalReadyProcess>>,
+    launch_requests: Mutex<BTreeMap<LaunchRequestKey, LocalLaunchConfig>>,
     results: Mutex<LocalRuntimeResults>,
     result_available: Condvar,
     children: Mutex<BTreeMap<String, Child>>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct LaunchRequestKey {
+    generation: u64,
+    desired_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -103,6 +111,39 @@ struct LocalRuntimeResults {
 }
 
 impl LocalRuntimeShared {
+    pub fn record_launch_request(
+        &self,
+        generation: u64,
+        desired_fingerprint: Option<String>,
+        config: LocalLaunchConfig,
+    ) {
+        self.launch_requests
+            .lock()
+            .expect("local runtime shared lock")
+            .insert(
+                LaunchRequestKey {
+                    generation,
+                    desired_fingerprint,
+                },
+                config,
+            );
+    }
+
+    pub fn launch_request_for(
+        &self,
+        generation: u64,
+        desired_fingerprint: &Option<String>,
+    ) -> Option<LocalLaunchConfig> {
+        self.launch_requests
+            .lock()
+            .expect("local runtime shared lock")
+            .get(&LaunchRequestKey {
+                generation,
+                desired_fingerprint: desired_fingerprint.clone(),
+            })
+            .cloned()
+    }
+
     pub fn record_truth_result(&self, fence: &ProviderFence, result: ProviderTruthObservation) {
         self.results
             .lock()
@@ -207,6 +248,20 @@ impl LocalRuntimeShared {
             .expect("local runtime shared lock")
             .probe
             .remove(&FenceKey::from(fence))
+    }
+
+    pub fn wait_for_probe_result(&self, fence: &ProviderFence) -> ProviderProbeOutcome {
+        let key = FenceKey::from(fence);
+        let mut results = self.results.lock().expect("local runtime shared lock");
+        loop {
+            if let Some(result) = results.probe.remove(&key) {
+                return result;
+            }
+            results = self
+                .result_available
+                .wait(results)
+                .expect("local runtime shared lock");
+        }
     }
 
     pub fn record_ready_process(&self, fence: &ProviderFence, process: LocalReadyProcess) {

@@ -16,7 +16,9 @@ mod wedge;
 
 pub use events::{ProviderRuntimeEvent, ProviderRuntimeEventSink, VecEventSink};
 pub use gate::ProviderStartupGate;
-pub use launch::{LocalLaunchCommon, LocalLaunchConfig, LocalLifecycleSeam, ReservedPort};
+pub use launch::{
+    LocalLaunchCommon, LocalLaunchConfig, LocalLifecycleSeam, LocalProbeSeam, ReservedPort,
+};
 pub use model::*;
 pub use reconcile::{ProviderRuntimeCoordinator, ReconcileContext};
 pub use retry::{schedule_cleanup_retry, schedule_launch_retry};

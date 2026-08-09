@@ -100,19 +100,26 @@ fn state() -> ProviderRuntimeState {
     state
 }
 
-fn lifecycle(
-    shared: Arc<LocalRuntimeShared>,
-    launch: LocalLaunchConfig,
-    termination_timeout: Duration,
-) -> LocalLifecycleSeam {
+fn lifecycle(shared: Arc<LocalRuntimeShared>, termination_timeout: Duration) -> LocalLifecycleSeam {
     LocalLifecycleSeam::with_timeouts(
         shared,
         clock(),
-        launch,
         Duration::from_secs(10),
         Duration::from_millis(1),
         termination_timeout,
     )
+}
+
+fn start(
+    lifecycle: &mut LocalLifecycleSeam,
+    shared: &LocalRuntimeShared,
+    launch: LocalLaunchConfig,
+    start_fence: &ProviderFence,
+) -> solstone_core_system::provider_runtime::ProviderLaunchOutcome {
+    let state = state();
+    shared.record_launch_request(state.generation, state.desired_fingerprint.clone(), launch);
+    lifecycle.dispatch_start(&state, start_fence);
+    wait_launch(shared, start_fence)
 }
 
 fn wait_launch(
@@ -192,13 +199,23 @@ fn each_backend_plan_rejection_maps_to_launch_failed() {
     ];
     for (attempt, launch) in configs.into_iter().enumerate() {
         let shared = Arc::new(LocalRuntimeShared::default());
-        let mut lifecycle = lifecycle(shared.clone(), launch, Duration::from_secs(1));
+        let mut lifecycle = lifecycle(shared.clone(), Duration::from_secs(1));
         let start_fence = fence(u32::try_from(attempt).unwrap());
-        lifecycle.dispatch_start(&state(), &start_fence);
-        let outcome = wait_launch(&shared, &start_fence);
+        let outcome = start(&mut lifecycle, &shared, launch, &start_fence);
         assert_eq!(outcome.status, LaunchOutcomeStatus::LaunchFailed);
         assert_eq!(outcome.reason_code, ReasonCode::known("launch-failed"));
     }
+}
+
+#[test]
+fn missing_launch_request_maps_to_launch_failed() {
+    let shared = Arc::new(LocalRuntimeShared::default());
+    let mut lifecycle = lifecycle(shared.clone(), Duration::from_secs(1));
+    let start_fence = fence(0);
+    lifecycle.dispatch_start(&state(), &start_fence);
+    let outcome = wait_launch(&shared, &start_fence);
+    assert_eq!(outcome.status, LaunchOutcomeStatus::LaunchFailed);
+    assert_eq!(outcome.reason_code, ReasonCode::known("launch-failed"));
 }
 
 #[test]
@@ -214,10 +231,9 @@ fn warmup_reports_ready_exited_and_timeout_without_wall_clock_waits() {
     ];
     for (attempt, (model_path, status, reason)) in cases.into_iter().enumerate() {
         let shared = Arc::new(LocalRuntimeShared::default());
-        let mut lifecycle = lifecycle(shared.clone(), cuda(model_path), Duration::from_secs(1));
+        let mut lifecycle = lifecycle(shared.clone(), Duration::from_secs(1));
         let start_fence = fence(u32::try_from(attempt).unwrap());
-        lifecycle.dispatch_start(&state(), &start_fence);
-        let outcome = wait_launch(&shared, &start_fence);
+        let outcome = start(&mut lifecycle, &shared, cuda(model_path), &start_fence);
         assert_eq!(outcome.status, status);
         assert_eq!(outcome.reason_code, ReasonCode::known(reason));
         if let Some(managed) = outcome.managed {
@@ -236,10 +252,9 @@ fn warmup_reports_ready_exited_and_timeout_without_wall_clock_waits() {
 #[test]
 fn dispatch_stop_reports_stopped_cleanup_failed_cancelled_and_already_gone() {
     let shared = Arc::new(LocalRuntimeShared::default());
-    let mut seam = lifecycle(shared.clone(), cuda("test-ready"), Duration::from_secs(1));
+    let mut seam = lifecycle(shared.clone(), Duration::from_secs(1));
     let start_fence = fence(1);
-    seam.dispatch_start(&state(), &start_fence);
-    let started = wait_launch(&shared, &start_fence)
+    let started = start(&mut seam, &shared, cuda("test-ready"), &start_fence)
         .managed
         .expect("ready child");
     let stop_fence = fence(2);
@@ -249,16 +264,16 @@ fn dispatch_stop_reports_stopped_cleanup_failed_cancelled_and_already_gone() {
         StopCleanupStatus::Stopped
     );
 
-    let mut failing = lifecycle(
-        shared.clone(),
-        cuda("test-ready-block-term"),
-        Duration::ZERO,
-    );
+    let mut failing = lifecycle(shared.clone(), Duration::ZERO);
     let failing_start_fence = fence(3);
-    failing.dispatch_start(&state(), &failing_start_fence);
-    let managed = wait_launch(&shared, &failing_start_fence)
-        .managed
-        .expect("ready resistant child");
+    let managed = start(
+        &mut failing,
+        &shared,
+        cuda("test-ready-block-term"),
+        &failing_start_fence,
+    )
+    .managed
+    .expect("ready resistant child");
     let failed_stop_fence = fence(4);
     failing.dispatch_stop(&stop_state(managed), &failed_stop_fence);
     let failed = wait_stop(&shared, &failed_stop_fence);
