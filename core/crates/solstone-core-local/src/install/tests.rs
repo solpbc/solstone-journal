@@ -776,6 +776,45 @@ fn parakeet_backend_pin_is_none_for_an_unknown_backend_or_key() {
 }
 
 #[test]
+fn parakeet_artifact_key_matches_every_python_alias() {
+    for (arch, expected) in [
+        ("amd64", "x86_64-unknown-linux-gnu"),
+        ("x64", "x86_64-unknown-linux-gnu"),
+        ("x86_64", "x86_64-unknown-linux-gnu"),
+        ("AMD64", "x86_64-unknown-linux-gnu"),
+        ("arm64", "aarch64-unknown-linux-gnu"),
+        ("aarch64", "aarch64-unknown-linux-gnu"),
+        ("ARM64", "aarch64-unknown-linux-gnu"),
+    ] {
+        assert_eq!(
+            pins::parakeet_artifact_key("linux", arch).unwrap(),
+            expected,
+            "arch={arch}"
+        );
+    }
+}
+
+#[test]
+fn parakeet_artifact_key_refuses_non_linux_and_unrecognized_arch() {
+    for (os_name, arch) in [
+        ("macos", "arm64"),
+        ("windows", "x86_64"),
+        ("darwin", "amd64"),
+    ] {
+        let error = pins::parakeet_artifact_key(os_name, arch).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("parakeet-cpp is unsupported on {os_name}/{arch}")
+        );
+    }
+    let error = pins::parakeet_artifact_key("linux", "riscv64").unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "parakeet-cpp is unsupported on linux/riscv64"
+    );
+}
+
+#[test]
 fn progress_writes_are_coalesced_until_the_window_elapses() {
     let root = temp("progress");
     let mut state = status::idle_status("local");

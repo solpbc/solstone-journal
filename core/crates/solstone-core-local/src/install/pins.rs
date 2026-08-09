@@ -244,6 +244,52 @@ pub fn platform_key() -> String {
     }
 }
 
+/// Unlike `platform_key`, parakeet-cpp has no macOS/other-OS fallback shape
+/// to format -- it is a closed lookup over exactly the two supported Linux
+/// arches, and anything else is a hard error. Takes `os_name`/`arch`
+/// explicitly (never reads `std::env::consts` itself) so callers -- and
+/// tests -- supply the platform rather than this function probing the real
+/// host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsupportedParakeetPlatform {
+    pub os_name: String,
+    pub arch: String,
+}
+impl std::fmt::Display for UnsupportedParakeetPlatform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "parakeet-cpp is unsupported on {}/{}",
+            self.os_name, self.arch
+        )
+    }
+}
+impl std::error::Error for UnsupportedParakeetPlatform {}
+
+pub fn parakeet_artifact_key(
+    os_name: &str,
+    arch: &str,
+) -> Result<String, UnsupportedParakeetPlatform> {
+    let unsupported = || UnsupportedParakeetPlatform {
+        os_name: os_name.to_owned(),
+        arch: arch.to_owned(),
+    };
+    if os_name != "linux" {
+        return Err(unsupported());
+    }
+    match arch.to_lowercase().as_str() {
+        "amd64" | "x64" | "x86_64" => Ok("x86_64-unknown-linux-gnu".to_owned()),
+        "arm64" | "aarch64" => Ok("aarch64-unknown-linux-gnu".to_owned()),
+        _ => Err(unsupported()),
+    }
+}
+/// Convenience wrapper over `parakeet_artifact_key` for the current host.
+/// Never call this from a test -- pass explicit os_name/arch instead so the
+/// assertion is about the mapping, not about the build machine.
+pub fn parakeet_host_artifact_key() -> Result<String, UnsupportedParakeetPlatform> {
+    parakeet_artifact_key(std::env::consts::OS, std::env::consts::ARCH)
+}
+
 pub fn paths(journal: &Path, key: &str, model_id: Option<&str>) -> Value {
     let vulkan = LLAMA_SERVER_PINS.iter().find(|pin| pin.0 == key);
     let cuda = CUDA_ARTIFACTS.iter().find(|pin| pin.0 == key);
