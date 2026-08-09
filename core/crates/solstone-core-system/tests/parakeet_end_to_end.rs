@@ -1,0 +1,185 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Proves AC1: Parakeet launches behind the same `LifecycleSeam` trait Local
+//! implements and reaches `Ready` with a fixture executable, no real model,
+//! using the real seams/store (no mocks) exactly like
+//! `local_end_to_end.rs`'s `ac18_real_coordinator_seams_and_store`.
+//!
+//! There is no `ParakeetTruthSeam` yet -- the admission latch and GPU
+//! placement it would depend on are ported separately -- so this seeds
+//! `ProviderRuntimeState` directly the way `reconcile.rs`'s own
+//! `desired_not_running_starts` test does (`latest_phase: Starting`,
+//! `next_truth_at` far in the future) rather than driving a real truth
+//! dispatch. `NoopWorkers` fills the truth slot precisely because it is
+//! never called on this path. Lifecycle, probe, and the durable store are
+//! all real.
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread;
+use std::time::Duration;
+
+use solstone_core_system::provider_runtime::{
+    FileRuntimeStore, NoopWorkers, ParakeetLaunchConfig, ParakeetLifecycleSeam, ParakeetPlacement,
+    ParakeetProbeSeam, ParakeetRuntimeShared, ProviderName, ProviderRuntimeCoordinator,
+    ProviderRuntimeNow, ProviderRuntimeState, ReconcileContext, RuntimeClock, RuntimePhase,
+    VecEventSink,
+};
+
+const FIXTURE: &str = env!("CARGO_BIN_EXE_solstone-system-test-child");
+
+struct TestClock {
+    millis: AtomicU64,
+}
+impl RuntimeClock for TestClock {
+    fn now_utc_rfc3339(&self) -> String {
+        "2026-08-09T12:00:00+00:00".into()
+    }
+    fn monotonic_seconds(&self) -> f64 {
+        self.millis.load(Ordering::Relaxed) as f64 / 1_000.0
+    }
+    fn sleep(&self, duration: Duration) {
+        self.millis.fetch_add(
+            u64::try_from(duration.as_millis()).unwrap_or(1).max(1),
+            Ordering::Relaxed,
+        );
+        thread::yield_now();
+    }
+}
+
+fn journal() -> PathBuf {
+    let root = std::env::temp_dir().join(format!("solstone-parakeet-e2e-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    root
+}
+
+fn pump(
+    coordinator: &ProviderRuntimeCoordinator,
+    now: ProviderRuntimeNow,
+    state: &mut ProviderRuntimeState,
+    processes: &mut Vec<solstone_core_system::provider_runtime::ManagedProcess>,
+    shared: &ParakeetRuntimeShared,
+    context: &mut ReconcileContext<'_>,
+) {
+    if let Some(in_flight) = state.start.as_mut()
+        && in_flight.result.is_none()
+    {
+        in_flight.result = Some(shared.wait_for_launch_result(&in_flight.fence));
+    }
+    if let Some(in_flight) = state.stop_cleanup.as_mut()
+        && in_flight.result.is_none()
+    {
+        in_flight.result = Some(shared.wait_for_stop_cleanup_result(&in_flight.fence));
+    }
+    if let Some(in_flight) = state.probe.as_mut()
+        && in_flight.result.is_none()
+    {
+        in_flight.result = Some(shared.wait_for_probe_result(&in_flight.fence));
+    }
+    coordinator.reconcile(now, state, processes, context);
+}
+
+#[test]
+fn parakeet_launches_through_the_real_lifecycle_seam_and_reaches_ready() {
+    let journal = journal();
+    let shared = Arc::new(ParakeetRuntimeShared::default());
+    let clock: Arc<dyn RuntimeClock> = Arc::new(TestClock {
+        millis: AtomicU64::new(0),
+    });
+    let mut truth = NoopWorkers;
+    let mut lifecycle = ParakeetLifecycleSeam::with_timeouts(
+        shared.clone(),
+        clock.clone(),
+        Duration::from_secs(5),
+        Duration::from_millis(1),
+        Duration::from_secs(1),
+    );
+    let mut probe = ParakeetProbeSeam::new(shared.clone(), journal.clone());
+    let mut store = FileRuntimeStore::new(
+        journal.clone(),
+        ProviderName::Parakeet,
+        shared.clone(),
+        clock,
+    );
+    let mut sink = VecEventSink::default();
+    let coordinator = ProviderRuntimeCoordinator::new();
+
+    let mut state = ProviderRuntimeState::new(ProviderName::Parakeet);
+    state.desired_fingerprint = Some("desired-a".to_owned());
+    state.has_plan = true;
+    state.latest_phase = RuntimePhase::Starting;
+    state.next_truth_at = 100.0;
+    state.next_probe_at = 100.0;
+
+    shared.record_launch_request(
+        Some("desired-a".to_owned()),
+        ParakeetLaunchConfig {
+            binary_backend: "cpu".to_owned(),
+            env_updates: BTreeMap::new(),
+            gpu_index: None,
+            binary_path: PathBuf::from(FIXTURE),
+            model_path: PathBuf::from("test-ready"),
+            threads: 4,
+            desired_fingerprint_json: "{}".to_owned(),
+            desired_fingerprint_sha256: "desired-a".to_owned(),
+            placement: ParakeetPlacement::Cpu,
+        },
+    );
+
+    let mut processes = vec![];
+    let now = ProviderRuntimeNow {
+        monotonic_seconds: 0.0,
+    };
+    for _ in 0..6 {
+        let mut context = ReconcileContext {
+            truth: &mut truth,
+            lifecycle: &mut lifecycle,
+            probe: &mut probe,
+            store: &mut store,
+            sink: &mut sink,
+            gate: None,
+        };
+        pump(
+            &coordinator,
+            now,
+            &mut state,
+            &mut processes,
+            &shared,
+            &mut context,
+        );
+        if state.latest_phase == RuntimePhase::Ready {
+            break;
+        }
+    }
+
+    assert_eq!(state.latest_phase, RuntimePhase::Ready);
+    assert_eq!(processes.len(), 1);
+
+    let health: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(journal.join("health/providers/runtime/parakeet.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(health["phase"], "ready");
+    assert_eq!(health["provider"], "parakeet");
+
+    // Parakeet's owned-port file is a distinct service name from its
+    // provider name -- health/parakeet-cpp.port, not health/parakeet.port.
+    let port_path = journal.join("health/parakeet-cpp.port");
+    assert!(port_path.exists());
+    let published_port = std::fs::read_to_string(&port_path)
+        .expect("port file")
+        .trim()
+        .parse::<u16>()
+        .expect("port number");
+    assert_eq!(
+        health["process"]["port"].as_u64(),
+        Some(u64::from(published_port))
+    );
+    assert_eq!(health["process"]["name"], "parakeet-server");
+
+    let _ = std::fs::remove_dir_all(journal);
+}

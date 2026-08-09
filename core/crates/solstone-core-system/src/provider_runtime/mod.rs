@@ -7,6 +7,7 @@ mod events;
 mod gate;
 mod launch;
 mod model;
+mod parakeet;
 mod reconcile;
 mod retry;
 mod seams;
@@ -21,6 +22,10 @@ pub use launch::{
     LocalTruthSeam, ReservedPort,
 };
 pub use model::*;
+pub use parakeet::{
+    PARAKEET_SERVER_PROCESS_NAME, ParakeetLaunchConfig, ParakeetLifecycleSeam, ParakeetPlacement,
+    ParakeetProbeSeam, ParakeetRuntimeShared,
+};
 pub use reconcile::{ProviderRuntimeCoordinator, ReconcileContext};
 pub use retry::{schedule_cleanup_retry, schedule_launch_retry};
 pub use seams::{
