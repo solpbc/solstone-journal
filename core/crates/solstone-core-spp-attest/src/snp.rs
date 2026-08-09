@@ -1430,6 +1430,19 @@ mod tests {
     }
 
     #[test]
+    fn check_policy_rejects_debug_enabled_report() {
+        let report = fixture_report();
+        assert_eq!(check_policy_with(&report, &Policy::default()), Ok(()));
+
+        let mut debug_enabled = report;
+        debug_enabled.policy |= 1_u64 << super::SNP_POLICY_DEBUG_BIT;
+        assert_eq!(
+            check_policy_with(&debug_enabled, &Policy::default()),
+            Err(SnpVerifyError::PolicyDebugEnabled)
+        );
+    }
+
+    #[test]
     fn default_pcr_policy_records_without_rejecting() {
         assert!(check_pcr_fingerprint(b"any PCR bytes", &Policy::default()).is_ok());
     }
