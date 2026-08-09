@@ -6,6 +6,7 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 pub mod evidence;
+pub mod discovery_cache;
 pub mod identify_operations;
 pub mod layer1;
 pub mod layer2;
