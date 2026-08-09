@@ -19,6 +19,25 @@ const STATUS_MODE: u32 = 0o600;
 pub const PROGRESS_COALESCE_SECONDS: Duration = Duration::from_secs(1);
 static ATTEMPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// The install-status domain's complete provider allowlist, matching
+/// Python's `install_state.PROVIDERS`. `read_status` and `write_status`
+/// validate against this and build their rejection message from it, so the
+/// accepted set and the message describing it can never drift apart.
+pub const PROVIDERS: &[&str] = &["local", "parakeet"];
+
+fn unknown_provider() -> StatusError {
+    let mut sorted = PROVIDERS.to_vec();
+    sorted.sort_unstable();
+    let listed = sorted
+        .iter()
+        .map(|name| format!("'{name}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    StatusError::Malformed(format!(
+        "provider install status must be one of: [{listed}]"
+    ))
+}
+
 #[derive(Debug, Error)]
 pub enum StatusError {
     #[error("malformed install status: {0}")]
@@ -118,10 +137,8 @@ fn validate(status: &InstallStatus, provider: &str) -> Result<(), StatusError> {
 }
 
 pub fn read_status(journal: &Path, provider: &str) -> Result<InstallStatus, StatusError> {
-    if provider != "local" {
-        return Err(StatusError::Malformed(
-            "provider install status must be one of: ['local', 'parakeet']".to_owned(),
-        ));
+    if !PROVIDERS.contains(&provider) {
+        return Err(unknown_provider());
     }
     let path = status_path(journal, provider);
     if !path.exists() {
@@ -268,10 +285,8 @@ fn read_unlocked(path: &Path, provider: &str) -> Result<InstallStatus, StatusErr
 
 pub fn write_status(journal: &Path, incoming: InstallStatus) -> Result<InstallStatus, StatusError> {
     let provider = incoming.provider.clone();
-    if provider != "local" {
-        return Err(StatusError::Malformed(
-            "native status supports only local".to_owned(),
-        ));
+    if !PROVIDERS.contains(&provider.as_str()) {
+        return Err(unknown_provider());
     }
     validate(&incoming, &provider)?;
     let path = status_path(journal, &provider);

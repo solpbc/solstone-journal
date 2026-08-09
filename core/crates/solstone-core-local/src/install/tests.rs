@@ -289,6 +289,40 @@ fn redact_status(value: &Value) -> Value {
 }
 
 #[test]
+fn unknown_provider_message_matches_the_accepted_set() {
+    // The rejection message is built from `status::PROVIDERS` at the call
+    // site, not hardcoded here, so this fails the moment the message and
+    // the accepted set could ever disagree again.
+    let mut sorted = status::PROVIDERS.to_vec();
+    sorted.sort_unstable();
+    let listed = sorted
+        .iter()
+        .map(|name| format!("'{name}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let expected =
+        format!("malformed install status: provider install status must be one of: [{listed}]");
+
+    let root = temp("unknown-provider-read");
+    let error = status::read_status(&root, "not-a-provider").unwrap_err();
+    assert_eq!(error.to_string(), expected);
+
+    let root = temp("unknown-provider-write");
+    let error = status::write_status(&root, status::idle_status("not-a-provider")).unwrap_err();
+    assert_eq!(error.to_string(), expected);
+}
+
+#[test]
+fn read_status_accepts_every_provider_in_the_allowlist() {
+    for provider in status::PROVIDERS {
+        let root = temp(&format!("accepts-{provider}"));
+        let idle = status::read_status(&root, provider).unwrap();
+        assert_eq!(idle.provider, *provider);
+        assert_eq!(idle.install_state, "idle");
+    }
+}
+
+#[test]
 fn canonical_fingerprint_vectors_match_fixture() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../../fixtures/local_contract.json")).unwrap();
