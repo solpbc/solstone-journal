@@ -355,9 +355,16 @@ fn criterion_19_real_child_reports_applied_hints() {
     requested.exclusive_admission = true;
     external.submit(requested).unwrap();
     let response = generated(&external);
+    // The endpoint lane does not read the attempt index.
     assert!(!response.hints_applied.contains(&"attempt_index".to_owned()));
+    // 🔴 It DOES read exclusive_admission, to size its admission slot, so it
+    // reports it. ⚠ This assertion was inverted while the test drove the Python
+    // wire: the reference decided what to report from whether the result carried
+    // an inference block, which the endpoint lane never does — so it honoured the
+    // hint and stayed silent about it. A hint is reported by the lane that
+    // honoured it, ⛔ not by the shape of the result.
     assert!(
-        !response
+        response
             .hints_applied
             .contains(&"exclusive_admission".to_owned())
     );

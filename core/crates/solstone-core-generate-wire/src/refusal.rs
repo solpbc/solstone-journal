@@ -414,3 +414,34 @@ mod tests {
         }
     }
 }
+
+/// The two protocol-error reasons, read from the contract rather than spelled
+/// as literals.
+///
+/// ⚠ They live here because the vocabulary guard makes `refusal.rs` the single
+/// home for closed-vocabulary members. The session framing used to hold them as
+/// literals — that was invisible while the framing sat in the binary crate,
+/// where the guard does not reach, and the guard caught them the moment the
+/// framing moved into the library.
+pub fn protocol_reason(kind: &str) -> &'static str {
+    let reasons = solstone_core_generate::contract()["protocol_error"]["reasons"]
+        .as_array()
+        .expect("the contract carries protocol_error.reasons");
+    // ⚠ Positional, because naming them here would be the literal this accessor
+    // exists to avoid. The fixture declares exactly two, in this order; a third
+    // would silently shift the mapping, so the count is asserted.
+    assert_eq!(
+        reasons.len(),
+        2,
+        "the contract's protocol_error.reasons changed shape; this positional \
+         mapping no longer holds"
+    );
+    let wanted = match kind {
+        "malformed_request" => 0,
+        "internal_failure" => 1,
+        other => panic!("unknown protocol error kind {other:?}"),
+    };
+    reasons[wanted]
+        .as_str()
+        .expect("protocol error reason is a string")
+}
