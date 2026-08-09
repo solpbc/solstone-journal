@@ -1,0 +1,185 @@
+{
+  "_provenance": {
+    "case_count": 21,
+    "generator": "scripts/generate_seam_oracles.py",
+    "method": "each row's kind and max_tokens are OBSERVED by calling the reference with the row's own body, served_window and attempt",
+    "oracle": "solstone.think.providers.local._endpoint_overflow_decision",
+    "reference": {
+      "decision": "solstone/think/providers/local.py:711",
+      "patterns": "solstone/think/providers/shared.py:164"
+    },
+    "source_revision": "fa56025855549057fdff7581ea99bbad22ee3681",
+    "source_revision_date": "2026-08-07T13:33:05-06:00",
+    "why": "the generate conversion deletes the half of the reference module this oracle lives in. Once that lands these answers cannot be re-derived from the reference at any cost, because the reference is gone -- so they were observed while it still ran."
+  },
+  "cases": [
+    {
+      "attempt": 0,
+      "body": "maximum context length of 1000 tokens: 600 tokens from the input messages and 400 tokens for the completion",
+      "kind": "retry",
+      "max_tokens": 384,
+      "name": "live-retry-first-attempt",
+      "served_window": null
+    },
+    {
+      "attempt": 1,
+      "body": "maximum context length of 1000 tokens: 600 tokens from the input messages and 400 tokens for the completion",
+      "kind": "context",
+      "max_tokens": null,
+      "name": "live-context-second-attempt",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "maximum context length of 1000 tokens: 800 tokens from the input messages and 400 tokens for the completion",
+      "kind": "budget",
+      "max_tokens": null,
+      "name": "live-budget-input-dominates",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "600 tokens from the input messages and 400 tokens for the completion",
+      "kind": "retry",
+      "max_tokens": 384,
+      "name": "live-served-window-supplies-limit",
+      "served_window": 1000
+    },
+    {
+      "attempt": 0,
+      "body": "600 tokens from the input messages and 400 tokens for the completion",
+      "kind": "contract",
+      "max_tokens": null,
+      "name": "live-no-limit-available",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "request exceeds the context window",
+      "kind": "context",
+      "max_tokens": null,
+      "name": "live-context-pattern",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "unexpected endpoint response",
+      "kind": "contract",
+      "max_tokens": null,
+      "name": "live-unrecognised",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "maximum context length of 1000 tokens: 728 tokens from the input messages and 400 tokens for the completion",
+      "kind": "retry",
+      "max_tokens": 256,
+      "name": "reclamp-exactly-at-minimum",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "maximum context length of 1000 tokens: 729 tokens from the input messages and 400 tokens for the completion",
+      "kind": "budget",
+      "max_tokens": null,
+      "name": "reclamp-one-below-minimum",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "maximum context length of 1000 tokens: 1200 tokens from the input messages and 400 tokens for the completion",
+      "kind": "budget",
+      "max_tokens": null,
+      "name": "reclamp-negative-headroom",
+      "served_window": null
+    },
+    {
+      "attempt": 2,
+      "body": "maximum context length of 1000 tokens: 600 tokens from the input messages and 400 tokens for the completion",
+      "kind": "context",
+      "max_tokens": null,
+      "name": "attempt-beyond-first",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "MAXIMUM CONTEXT LENGTH OF 1000 TOKENS: 600 TOKENS FROM THE INPUT MESSAGES AND 400 TOKENS FOR THE COMPLETION",
+      "kind": "retry",
+      "max_tokens": 384,
+      "name": "uppercase-body",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "maximum context length of 1000 tokens: 600 tokens from the input messages and 400 tokens for the completion",
+      "kind": "retry",
+      "max_tokens": 384,
+      "name": "limit-phrase-outranks-served-window",
+      "served_window": 99999
+    },
+    {
+      "attempt": 0,
+      "body": "maximum context length of 1000 tokens: 600 tokens from the input message and 400 tokens for the completion",
+      "kind": "retry",
+      "max_tokens": 384,
+      "name": "singular-input-message",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "maximum context length of 1000 tokens for the completion",
+      "kind": "context",
+      "max_tokens": null,
+      "name": "anchor-without-input-count",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "600 tokens from the input messages and 400 tokens for the completion",
+      "kind": "budget",
+      "max_tokens": null,
+      "name": "served-window-zero-is-a-limit",
+      "served_window": 0
+    },
+    {
+      "attempt": 0,
+      "body": "context length exceeded",
+      "kind": "context",
+      "max_tokens": null,
+      "name": "pattern-context-length-exceeded",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "this request exceeds the available context size",
+      "kind": "context",
+      "max_tokens": null,
+      "name": "pattern-available-context-size",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "the prompt is longer than the model's context length",
+      "kind": "context",
+      "max_tokens": null,
+      "name": "pattern-model-context-length",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "context size has been exceeded",
+      "kind": "context",
+      "max_tokens": null,
+      "name": "pattern-context-size-exceeded",
+      "served_window": null
+    },
+    {
+      "attempt": 0,
+      "body": "",
+      "kind": "contract",
+      "max_tokens": null,
+      "name": "empty-body",
+      "served_window": null
+    }
+  ]
+}

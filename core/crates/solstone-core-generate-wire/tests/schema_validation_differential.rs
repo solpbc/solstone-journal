@@ -1,11 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+//! The live Python reference still agrees with the frozen schema-validation oracle.
+//!
+//! ⚠ This is the *faithfulness* half of the freeze, and it can only be run
+//! while the reference exists. The Rust implementation is checked against the
+//! recorded answers in `frozen_seam_oracles.rs`, which needs no interpreter and
+//! runs in `make ci`.
+//!
+//! ⛔ When the conversion deletes `models`' generate half, this target goes with
+//! it -- deliberately. Its replacement is already green.
+
 use std::path::PathBuf;
 use std::process::Command;
 
 use serde_json::{Value, json};
-use solstone_core_generate_wire::validate_schema_with_annotations;
+
+const SCHEMA_ORACLE: &str = include_str!("../../../fixtures/schema_validation_oracle.json");
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -37,23 +48,15 @@ fn python_verdict(text: &str, schema: &Value) -> Value {
     assert!(
         output.status.success(),
         "Python stderr: {:?}",
-        output.stderr
+        String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).expect("Python verdict JSON")
 }
 
-fn rust_verdict(text: &str, schema: &Value) -> Value {
-    let result = validate_schema_with_annotations(text, schema);
-    json!({"text": result.text, "validation": result.validation})
-}
-
-// Messages intentionally differ between jsonschema and Python jsonschema. Raw text is also
-// excluded because truncation permits different valid JSON formatting.
-fn comparable(verdict: Value) -> Value {
-    let validation = verdict
-        .get("validation")
-        .cloned()
-        .expect("validation is present");
+/// Messages intentionally differ between the Rust and Python jsonschema
+/// implementations. Raw text is compared separately because truncation permits
+/// different valid JSON formatting.
+fn comparable(validation: &Value) -> Value {
     let mut validation = validation
         .as_object()
         .expect("validation is an object")
@@ -73,75 +76,25 @@ fn comparable(verdict: Value) -> Value {
 }
 
 #[test]
-fn schema_validation_matches_python_except_messages() {
-    let cases = vec![
-        (
-            "valid",
-            r#"{"field":"ok"}"#,
-            json!({"type": "object", "properties": {"field": {"type": "string"}}, "required": ["field"]}),
-        ),
-        (
-            "type",
-            r#"{"field":"bad"}"#,
-            json!({"type": "object", "properties": {"field": {"type": "integer"}}}),
-        ),
-        (
-            "required",
-            "{}",
-            json!({"type": "object", "required": ["field"]}),
-        ),
-        (
-            "nested",
-            r#"{"outer":{"inner":"bad"}}"#,
-            json!({"type": "object", "properties": {"outer": {"type": "object", "properties": {"inner": {"type": "integer"}}}}}),
-        ),
-        (
-            "array-element",
-            r#"{"items":[1,"bad"]}"#,
-            json!({"type": "object", "properties": {"items": {"type": "array", "items": {"type": "integer"}}}}),
-        ),
-        ("unparseable", "{", json!({"type": "object"})),
-        (
-            "uncompilable-schema",
-            r#"{"field":"ok"}"#,
-            json!({"type": "not-a-real-type"}),
-        ),
-        (
-            "truncation",
-            r#"{"word":"four"}"#,
-            json!({"type": "object", "properties": {"word": {"type": "string", "maxLength": 3, "x-truncate": true}}}),
-        ),
-        (
-            "unicode-truncation",
-            r#"{"word":"éééé"}"#,
-            json!({"type": "object", "properties": {"word": {"type": "string", "maxLength": 3, "x-truncate": true}}}),
-        ),
-        (
-            "reference-hidden",
-            r#"{"word":"four"}"#,
-            json!({"$defs": {"word": {"type": "string", "maxLength": 3, "x-truncate": true}}, "properties": {"word": {"$ref": "#/$defs/word"}}}),
-        ),
-        (
-            "all-of-hidden",
-            r#"{"word":"four"}"#,
-            json!({"type": "object", "properties": {"word": {"allOf": [{"type": "string", "maxLength": 3, "x-truncate": true}]}}}),
-        ),
-        (
-            "pattern-properties-hidden",
-            r#"{"word":"four"}"#,
-            json!({"type": "object", "patternProperties": {"^word$": {"type": "string", "maxLength": 3, "x-truncate": true}}}),
-        ),
-        (
-            "prefix-items-hidden",
-            r#"["four"]"#,
-            json!({"type": "array", "prefixItems": [{"type": "string", "maxLength": 3, "x-truncate": true}]}),
-        ),
-    ];
-    for (name, text, schema) in cases {
+fn the_frozen_oracle_still_matches_the_live_reference() {
+    let document: Value = serde_json::from_str(SCHEMA_ORACLE).expect("oracle fixture parses");
+    let cases = document["cases"].as_array().expect("cases");
+    assert!(!cases.is_empty(), "the frozen corpus is empty");
+
+    for case in cases {
+        let name = case["name"].as_str().expect("case name");
+        let verdict = python_verdict(case["text"].as_str().expect("text"), &case["schema"]);
+
+        // ⚠ The recording carries the reference's messages verbatim, so this
+        // half compares the full verdict the consumers compare, not less.
         assert_eq!(
-            comparable(rust_verdict(text, &schema)),
-            comparable(python_verdict(text, &schema)),
-            "case={name}"
+            comparable(&verdict["validation"]),
+            comparable(&case["validation"]),
+            "case={name}: the recording no longer matches the reference"
+        );
+        assert_eq!(
+            verdict["text"], case["observed_text"],
+            "case={name}: the reference's own output text changed"
         );
     }
 }

@@ -1037,9 +1037,15 @@ check-contract: .installed
 
 core-fixtures:
 	$(VENV_BIN)/python scripts/build_core_fixtures.py
+	$(VENV_BIN)/python scripts/generate_seam_oracles.py
 
+# The seam oracles are frozen recordings of a Python reference the generate
+# conversion deletes. Checking them here catches a corpus edited without
+# regenerating -- which the recording's consumers cannot see, because they read
+# the fixture and not the script that wrote it.
 check-core-fixtures: .installed
 	$(VENV_BIN)/python scripts/build_core_fixtures.py --check
+	$(VENV_BIN)/python scripts/generate_seam_oracles.py --check
 
 check-release-advisory-liveness: .installed
 	$(VENV_BIN)/python scripts/check_release_advisory_liveness.py

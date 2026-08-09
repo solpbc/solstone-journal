@@ -1,0 +1,660 @@
+{
+  "_provenance": {
+    "case_count": 27,
+    "generator": "scripts/generate_seam_oracles.py",
+    "method": "each row's observed_text and validation are OBSERVED by calling the reference with the row's own text and schema. ⚠ Consumers compare error path and constraint only -- messages differ between the Python and Rust jsonschema implementations by design, and observed_text differs by permitted JSON formatting",
+    "oracle": "solstone.think.models._validate_schema_with_annotations",
+    "reference": {
+      "truncate_key": "solstone/think/schema_prep.py",
+      "validator": "solstone/think/models.py"
+    },
+    "source_revision": "050c73a01a9a9f2c2d9c87dfa400cf09a620f4ea",
+    "source_revision_date": "2026-08-05T19:49:19-06:00",
+    "why": "the generate conversion deletes the half of the reference module this oracle lives in. Once that lands these answers cannot be re-derived from the reference at any cost, because the reference is gone -- so they were observed while it still ran."
+  },
+  "cases": [
+    {
+      "name": "live-valid",
+      "observed_text": "{\"field\":\"ok\"}",
+      "schema": {
+        "properties": {
+          "field": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "type": "object"
+      },
+      "text": "{\"field\":\"ok\"}",
+      "validation": {
+        "errors": [],
+        "valid": true
+      }
+    },
+    {
+      "name": "live-type",
+      "observed_text": "{\"field\":\"bad\"}",
+      "schema": {
+        "properties": {
+          "field": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"field\":\"bad\"}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "type",
+            "message": "'bad' is not of type 'integer'",
+            "path": "/field"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "live-required",
+      "observed_text": "{}",
+      "schema": {
+        "required": [
+          "field"
+        ],
+        "type": "object"
+      },
+      "text": "{}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "required",
+            "message": "'field' is a required property",
+            "path": ""
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "live-nested",
+      "observed_text": "{\"outer\":{\"inner\":\"bad\"}}",
+      "schema": {
+        "properties": {
+          "outer": {
+            "properties": {
+              "inner": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"outer\":{\"inner\":\"bad\"}}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "type",
+            "message": "'bad' is not of type 'integer'",
+            "path": "/outer/inner"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "live-array-element",
+      "observed_text": "{\"items\":[1,\"bad\"]}",
+      "schema": {
+        "properties": {
+          "items": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"items\":[1,\"bad\"]}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "type",
+            "message": "'bad' is not of type 'integer'",
+            "path": "/items/1"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "live-unparseable",
+      "observed_text": "{",
+      "schema": {
+        "type": "object"
+      },
+      "text": "{",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "json_parse",
+            "message": "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
+            "path": ""
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "live-uncompilable-schema",
+      "observed_text": "{\"field\":\"ok\"}",
+      "schema": {
+        "type": "not-a-real-type"
+      },
+      "text": "{\"field\":\"ok\"}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "schema_validation",
+            "message": "Unknown type 'not-a-real-type' for validator with schema:\n    {'type': 'not-a-real-type'}\n\nWhile checking instance:\n    {'field': 'ok'}",
+            "path": ""
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "live-truncation",
+      "observed_text": "{\"word\": \"fou\"}",
+      "schema": {
+        "properties": {
+          "word": {
+            "maxLength": 3,
+            "type": "string",
+            "x-truncate": true
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"word\":\"four\"}",
+      "validation": {
+        "errors": [],
+        "truncated": [
+          "/word"
+        ],
+        "valid": true
+      }
+    },
+    {
+      "name": "live-unicode-truncation",
+      "observed_text": "{\"word\": \"ééé\"}",
+      "schema": {
+        "properties": {
+          "word": {
+            "maxLength": 3,
+            "type": "string",
+            "x-truncate": true
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"word\":\"éééé\"}",
+      "validation": {
+        "errors": [],
+        "truncated": [
+          "/word"
+        ],
+        "valid": true
+      }
+    },
+    {
+      "name": "live-reference-hidden",
+      "observed_text": "{\"word\":\"four\"}",
+      "schema": {
+        "$defs": {
+          "word": {
+            "maxLength": 3,
+            "type": "string",
+            "x-truncate": true
+          }
+        },
+        "properties": {
+          "word": {
+            "$ref": "#/$defs/word"
+          }
+        }
+      },
+      "text": "{\"word\":\"four\"}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "maxLength",
+            "message": "'four' is too long",
+            "path": "/word"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "live-all-of-hidden",
+      "observed_text": "{\"word\":\"four\"}",
+      "schema": {
+        "properties": {
+          "word": {
+            "allOf": [
+              {
+                "maxLength": 3,
+                "type": "string",
+                "x-truncate": true
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"word\":\"four\"}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "maxLength",
+            "message": "'four' is too long",
+            "path": "/word"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "live-pattern-properties-hidden",
+      "observed_text": "{\"word\":\"four\"}",
+      "schema": {
+        "patternProperties": {
+          "^word$": {
+            "maxLength": 3,
+            "type": "string",
+            "x-truncate": true
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"word\":\"four\"}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "maxLength",
+            "message": "'four' is too long",
+            "path": "/word"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "live-prefix-items-hidden",
+      "observed_text": "[\"four\"]",
+      "schema": {
+        "prefixItems": [
+          {
+            "maxLength": 3,
+            "type": "string",
+            "x-truncate": true
+          }
+        ],
+        "type": "array"
+      },
+      "text": "[\"four\"]",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "maxLength",
+            "message": "'four' is too long",
+            "path": "/0"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "multiple-errors",
+      "observed_text": "{\"a\":\"bad\",\"b\":\"bad\"}",
+      "schema": {
+        "properties": {
+          "a": {
+            "type": "integer"
+          },
+          "b": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"a\":\"bad\",\"b\":\"bad\"}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "type",
+            "message": "'bad' is not of type 'integer'",
+            "path": "/a"
+          },
+          {
+            "constraint": "type",
+            "message": "'bad' is not of type 'integer'",
+            "path": "/b"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "enum",
+      "observed_text": "{\"field\":\"c\"}",
+      "schema": {
+        "properties": {
+          "field": {
+            "enum": [
+              "a",
+              "b"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"field\":\"c\"}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "enum",
+            "message": "'c' is not one of ['a', 'b']",
+            "path": "/field"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "numeric-minimum",
+      "observed_text": "{\"field\":1}",
+      "schema": {
+        "properties": {
+          "field": {
+            "minimum": 5,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"field\":1}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "minimum",
+            "message": "1 is less than the minimum of 5",
+            "path": "/field"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "additional-properties-false",
+      "observed_text": "{\"field\":\"ok\",\"extra\":1}",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"field\":\"ok\",\"extra\":1}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "additionalProperties",
+            "message": "Additional properties are not allowed ('extra' was unexpected)",
+            "path": ""
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "deeply-nested",
+      "observed_text": "{\"a\":{\"b\":{\"c\":\"bad\"}}}",
+      "schema": {
+        "properties": {
+          "a": {
+            "properties": {
+              "b": {
+                "properties": {
+                  "c": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"a\":{\"b\":{\"c\":\"bad\"}}}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "type",
+            "message": "'bad' is not of type 'integer'",
+            "path": "/a/b/c"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "truncation-exactly-at-limit",
+      "observed_text": "{\"word\":\"abc\"}",
+      "schema": {
+        "properties": {
+          "word": {
+            "maxLength": 3,
+            "type": "string",
+            "x-truncate": true
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"word\":\"abc\"}",
+      "validation": {
+        "errors": [],
+        "valid": true
+      }
+    },
+    {
+      "name": "empty-schema",
+      "observed_text": "{\"anything\":true}",
+      "schema": {},
+      "text": "{\"anything\":true}",
+      "validation": {
+        "errors": [],
+        "valid": true
+      }
+    },
+    {
+      "name": "array-of-objects",
+      "observed_text": "{\"rows\":[{\"n\":1},{\"n\":\"bad\"}]}",
+      "schema": {
+        "properties": {
+          "rows": {
+            "items": {
+              "properties": {
+                "n": {
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"rows\":[{\"n\":1},{\"n\":\"bad\"}]}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "type",
+            "message": "'bad' is not of type 'integer'",
+            "path": "/rows/1/n"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "truncate-without-max-length",
+      "observed_text": "{\"word\":\"four\"}",
+      "schema": {
+        "properties": {
+          "word": {
+            "type": "string",
+            "x-truncate": true
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"word\":\"four\"}",
+      "validation": {
+        "errors": [],
+        "valid": true
+      }
+    },
+    {
+      "name": "any-of-hidden",
+      "observed_text": "{\"word\":\"four\"}",
+      "schema": {
+        "properties": {
+          "word": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "type": "string",
+                "x-truncate": true
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"word\":\"four\"}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "anyOf",
+            "message": "'four' is not valid under any of the given schemas",
+            "path": "/word"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "one-of-hidden",
+      "observed_text": "{\"word\":\"four\"}",
+      "schema": {
+        "properties": {
+          "word": {
+            "oneOf": [
+              {
+                "maxLength": 3,
+                "type": "string",
+                "x-truncate": true
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"word\":\"four\"}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "oneOf",
+            "message": "'four' is not valid under any of the given schemas",
+            "path": "/word"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "null-where-string-required",
+      "observed_text": "{\"field\":null}",
+      "schema": {
+        "properties": {
+          "field": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"field\":null}",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "type",
+            "message": "None is not of type 'string'",
+            "path": "/field"
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "root-is-not-an-object",
+      "observed_text": "\"a bare string\"",
+      "schema": {
+        "type": "object"
+      },
+      "text": "\"a bare string\"",
+      "validation": {
+        "errors": [
+          {
+            "constraint": "type",
+            "message": "'a bare string' is not of type 'object'",
+            "path": ""
+          }
+        ],
+        "valid": false
+      }
+    },
+    {
+      "name": "emoji-truncation",
+      "observed_text": "{\"word\": \"👍👍👍\"}",
+      "schema": {
+        "properties": {
+          "word": {
+            "maxLength": 3,
+            "type": "string",
+            "x-truncate": true
+          }
+        },
+        "type": "object"
+      },
+      "text": "{\"word\":\"👍👍👍👍\"}",
+      "validation": {
+        "errors": [],
+        "truncated": [
+          "/word"
+        ],
+        "valid": true
+      }
+    }
+  ]
+}

@@ -1,10 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+//! The live Python reference still agrees with the frozen overflow oracle.
+//!
+//! ⚠ This is the *faithfulness* half of the freeze, and it can only be run
+//! while the reference exists. The Rust implementation is checked against the
+//! recorded answers in `frozen_seam_oracles.rs`, which needs no interpreter and
+//! runs in `make ci`. This target exists so that, for as long as the Python is
+//! still here, a drift between it and the recording is caught rather than
+//! assumed away.
+//!
+//! ⛔ When the conversion deletes `providers/local`'s generate half, this target
+//! goes with it -- deliberately. Its replacement is already green.
+
 use std::path::PathBuf;
 use std::process::Command;
 
-use solstone_core_generate_wire::{OverflowDecision, endpoint_overflow_decision};
+use serde_json::Value;
+
+const OVERFLOW_ORACLE: &str = include_str!("../../../fixtures/endpoint_overflow_oracle.json");
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -39,62 +53,41 @@ fn python_decision(body: &str, served_window: Option<u32>, attempt: u32) -> (Str
         ])
         .env("SOLSTONE_REPO_ROOT", repository_root())
         .output()
-        .expect("run Python endpoint overflow decision");
+        .expect("run Python overflow decision");
     assert!(
         output.status.success(),
         "Python stderr: {:?}",
-        output.stderr
+        String::from_utf8_lossy(&output.stderr)
     );
-    serde_json::from_slice(&output.stdout).expect("Python decision JSON")
-}
-
-fn rust_decision(body: &str, served_window: Option<u32>, attempt: u32) -> (String, Option<u32>) {
-    match endpoint_overflow_decision(body, served_window, attempt) {
-        OverflowDecision::Retry(max_tokens) => ("retry".into(), Some(max_tokens)),
-        OverflowDecision::Budget => ("budget".into(), None),
-        OverflowDecision::Context => ("context".into(), None),
-        OverflowDecision::Contract => ("contract".into(), None),
-    }
+    let decision: Value = serde_json::from_slice(&output.stdout).expect("Python decision JSON");
+    (
+        decision[0].as_str().expect("kind").to_owned(),
+        decision[1].as_u64().map(|value| value as u32),
+    )
 }
 
 #[test]
-fn overflow_decisions_match_python() {
-    for (body, served_window, attempt) in [
-        (
-            "maximum context length of 1000 tokens: 600 tokens from the input messages and 400 tokens for the completion",
-            None,
-            0,
-        ),
-        (
-            "maximum context length of 1000 tokens: 600 tokens from the input messages and 400 tokens for the completion",
-            None,
-            1,
-        ),
-        (
-            "maximum context length of 1000 tokens: 800 tokens from the input messages and 400 tokens for the completion",
-            None,
-            0,
-        ),
-        (
-            "600 tokens from the input messages and 400 tokens for the completion",
-            Some(1000),
-            0,
-        ),
-        // Same body, no configured window: the reference cannot compute a clamp,
-        // falls through to the context-pattern check, misses that too, and
-        // classifies it `contract` rather than a context error.
-        (
-            "600 tokens from the input messages and 400 tokens for the completion",
-            None,
-            0,
-        ),
-        ("request exceeds the context window", None, 0),
-        ("unexpected endpoint response", None, 0),
-    ] {
+fn the_frozen_oracle_still_matches_the_live_reference() {
+    let document: Value = serde_json::from_str(OVERFLOW_ORACLE).expect("oracle fixture parses");
+    let cases = document["cases"].as_array().expect("cases");
+    assert!(!cases.is_empty(), "the frozen corpus is empty");
+
+    for case in cases {
+        let name = case["name"].as_str().expect("case name");
+        let (kind, max_tokens) = python_decision(
+            case["body"].as_str().expect("body"),
+            case["served_window"].as_u64().map(|value| value as u32),
+            case["attempt"].as_u64().expect("attempt") as u32,
+        );
         assert_eq!(
-            rust_decision(body, served_window, attempt),
-            python_decision(body, served_window, attempt),
-            "body={body:?}, served_window={served_window:?}, attempt={attempt}"
+            kind,
+            case["kind"].as_str().expect("recorded kind"),
+            "case={name}: the recording no longer matches the reference"
+        );
+        assert_eq!(
+            max_tokens,
+            case["max_tokens"].as_u64().map(|value| value as u32),
+            "case={name}: the recording no longer matches the reference"
         );
     }
 }
