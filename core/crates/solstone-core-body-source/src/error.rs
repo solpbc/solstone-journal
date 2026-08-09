@@ -896,10 +896,6 @@ pub struct LedgerEventError {
 }
 
 impl LedgerEventError {
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by B1h2 ledger event model")
-    )]
     pub(crate) fn new(
         bundle: Option<BundleId>,
         code: LedgerEventErrorCode,

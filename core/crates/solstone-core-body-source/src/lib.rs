@@ -27,6 +27,7 @@ mod envelope_shard;
 mod error;
 mod health_hash;
 mod integer;
+mod ledger_event;
 mod manifest_binding;
 mod manifest_decode;
 mod manifest_known_key;
@@ -72,6 +73,7 @@ pub use health_hash::{
     HealthRecordIdentity, health_hash, health_record_dedupe_key, health_value_hash,
 };
 pub use integer::BodyInteger;
+pub use ledger_event::BodyLedgerEvent;
 pub use manifest_binding::BodyManifestBinding;
 pub use manifest_decode::decode_body_manifest;
 pub use manifest_known_key::{
