@@ -1226,8 +1226,8 @@ mod tests {
 
     #[test]
     fn ledger_event_error_renders_bounded_checked_output() {
-        let [_, maximum] = bundles();
-        let bundle_options = [None, Some(maximum.clone())];
+        let [minimum, maximum] = bundles();
+        let bundle_options = [None, Some(minimum), Some(maximum.clone())];
         let lines = [0, 1, u64::MAX];
 
         for bundle in bundle_options {
