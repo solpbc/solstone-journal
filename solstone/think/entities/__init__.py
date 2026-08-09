@@ -158,11 +158,9 @@ from solstone.think.entities.saving import (
     update_facet_entity_identity,
 )
 from solstone.think.entities.voiceprints import (
-    VoiceprintRemovalError,
     load_entity_voiceprints_file,
     load_existing_voiceprint_keys,
     normalize_embedding,
-    remove_voiceprints_by_key,
     save_voiceprints_batch,
     voiceprint_file_path,
 )
@@ -186,7 +184,6 @@ __all__ = [
     "EntityNotFoundError",
     "EntityWriteError",
     "EntityAmbiguityError",
-    "VoiceprintRemovalError",
     # History
     "EntityHistoryError",
     "EntityHistoryRepairRequired",
@@ -238,7 +235,6 @@ __all__ = [
     "detach_facet_entity",
     "save_detected_entity",
     "save_entities",
-    "remove_voiceprints_by_key",
     "save_voiceprints_batch",
     "update_facet_entity_description",
     "update_facet_entity_identity",

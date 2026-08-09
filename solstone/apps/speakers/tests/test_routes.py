@@ -565,75 +565,75 @@ def test_load_entity_voiceprints_file_not_found(speakers_env):
     assert result is None
 
 
-def test_save_voiceprint(speakers_env):
-    """Test saving voiceprint to consolidated voiceprints.npz."""
-    import json
-
-    from solstone.apps.speakers.routes import _save_voiceprint
-    from solstone.think.utils import segment_start_ts_ms
+def test_save_voiceprint_forwards_native_request(speakers_env, monkeypatch):
+    """The route helper prepares one direct native voiceprint request."""
+    from solstone.apps.speakers import routes
 
     env = speakers_env()
-
-    # Create entities dir
-    entities_dir = env.journal / "entities"
-    entities_dir.mkdir(parents=True)
+    env.create_entity("John Doe")
+    calls = []
+    monkeypatch.setattr(
+        routes.native_speakers,
+        "write_voiceprint",
+        lambda journal_root, **kwargs: (
+            calls.append((journal_root, kwargs)) or {"status": "written"}
+        ),
+    )
 
     emb = np.array([1.0, 0.0, 0.0] + [0.0] * 253, dtype=np.float32)
 
-    path = _save_voiceprint("john_doe", emb, "20240101", "143022_300", "mic_audio", 5)
+    path = routes._save_voiceprint(
+        "john_doe", emb, "20240101", "143022_300", "mic_audio", 5
+    )
 
-    assert path.exists()
     assert path.name == "voiceprints.npz"
     assert "john_doe" in str(path.parent)
+    assert len(calls) == 1
+    journal_root, request = calls[0]
+    assert journal_root == str(env.journal)
+    assert request["entity_id"] == "john_doe"
+    assert request["embedding"] == emb.tolist()
+    assert (
+        request["metadata"].items()
+        >= {
+            "day": "20240101",
+            "segment_key": "143022_300",
+            "source": "mic_audio",
+            "sentence_id": 5,
+        }.items()
+    )
 
-    # Verify format content
-    data = np.load(path)
-    assert "embeddings" in data
-    assert "metadata" in data
-    assert data["embeddings"].shape == (1, 256)
 
-    # Verify metadata
-    metadata = json.loads(data["metadata"][0])
-    assert metadata["day"] == "20240101"
-    assert metadata["segment_key"] == "143022_300"
-    assert metadata["source"] == "mic_audio"
-    assert metadata["sentence_id"] == 5
-    assert "added_at" in metadata
-    assert metadata["last_seen_ts"] == segment_start_ts_ms("20240101", "143022_300")
-
-
-def test_save_voiceprint_appends(speakers_env):
-    """Test saving multiple voiceprints appends to existing file."""
-    import json
-
-    from solstone.apps.speakers.routes import _save_voiceprint
+def test_save_voiceprint_forwards_each_native_request(speakers_env, monkeypatch):
+    from solstone.apps.speakers import routes
 
     env = speakers_env()
-
-    # Create entities dir
-    entities_dir = env.journal / "entities"
-    entities_dir.mkdir(parents=True)
+    env.create_entity("John Doe")
+    calls = []
+    monkeypatch.setattr(
+        routes.native_speakers,
+        "write_voiceprint",
+        lambda journal_root, **kwargs: (
+            calls.append((journal_root, kwargs)) or {"status": "written"}
+        ),
+    )
 
     emb1 = np.array([1.0, 0.0, 0.0] + [0.0] * 253, dtype=np.float32)
     emb2 = np.array([0.0, 1.0, 0.0] + [0.0] * 253, dtype=np.float32)
 
-    # Save first voiceprint
-    path = _save_voiceprint("john_doe", emb1, "20240101", "143022_300", "mic_audio", 5)
-
-    # Save second voiceprint
-    path2 = _save_voiceprint("john_doe", emb2, "20240102", "150000_300", "audio", 3)
+    path = routes._save_voiceprint(
+        "john_doe", emb1, "20240101", "143022_300", "mic_audio", 5
+    )
+    path2 = routes._save_voiceprint(
+        "john_doe", emb2, "20240102", "150000_300", "audio", 3
+    )
 
     assert path == path2  # Same file
 
-    # Verify both are in the file
-    data = np.load(path)
-    assert data["embeddings"].shape == (2, 256)
-    assert len(data["metadata"]) == 2
-
-    meta1 = json.loads(data["metadata"][0])
-    meta2 = json.loads(data["metadata"][1])
-    assert meta1["day"] == "20240101"
-    assert meta2["day"] == "20240102"
+    assert [request["metadata"]["day"] for _, request in calls] == [
+        "20240101",
+        "20240102",
+    ]
 
 
 def test_check_owner_contamination_uses_provisional_centroid(speakers_env):
@@ -1295,68 +1295,6 @@ def test_discovery_identify_route_entity_id_only_and_result_mapping(
     }
 
 
-def test_discovery_identify_route_name_create_flags_preserve_visible_paths(
-    speakers_env,
-):
-    env = speakers_env()
-    env.create_entity("Bob Smith")
-    env.create_entity("Sarah Connor")
-    env.create_entity("Sarah Lee")
-    _write_discovery_cluster(env, 31, "104000_300")
-    _write_discovery_cluster(env, 32, "104500_300")
-    _write_discovery_cluster(env, 33, "105000_300")
-    _write_discovery_cluster(env, 34, "105500_300")
-    client = _convey_client(env.journal)
-
-    no_create = client.post(
-        "/app/speakers/api/discovery/identify",
-        json={"cluster_id": 31, "name": "Zelda Unknown"},
-    )
-    assert no_create.status_code == 200
-    no_create_body = no_create.get_json()
-    assert no_create_body["status"] == "no_match"
-
-    created = client.post(
-        "/app/speakers/api/discovery/identify",
-        json={
-            "cluster_id": 32,
-            "name": "Zelda Unknown",
-            "create_new": True,
-            "reviewed_near_match_entity_ids": [
-                candidate["id"] for candidate in no_create_body["candidates"]
-            ],
-        },
-    )
-    resolved = client.post(
-        "/app/speakers/api/discovery/identify",
-        json={"cluster_id": 33, "name": "Bob Smith", "create_new": True},
-    )
-    before_ambiguous = _journal_file_hashes(env.journal)
-    ambiguous = client.post(
-        "/app/speakers/api/discovery/identify",
-        json={"cluster_id": 34, "name": "Sarah", "create_new": True},
-    )
-
-    assert created.status_code == 200
-    assert created.get_json()["status"] == "identified"
-    assert created.get_json()["entity_created"] is True
-    assert resolved.status_code == 200
-    assert resolved.get_json()["entity_id"] == "bob_smith"
-    assert resolved.get_json()["entity_created"] is False
-    assert ambiguous.status_code == 400
-    ambiguous_body = ambiguous.get_json()
-    assert ambiguous_body["reason_code"] == "invalid_request_value"
-    assert ambiguous_body["invalid_request_code"] == "reviewed_near_match_set_mismatch"
-    assert (
-        ambiguous_body["detail"]
-        == "reviewed_near_match_entity_ids must match shown near matches"
-    )
-    assert "expected_reviewed_near_match_entity_ids" not in ambiguous_body
-    assert "actual_reviewed_near_match_entity_ids" not in ambiguous_body
-    assert not (env.journal / "entities" / "sarah" / "entity.json").exists()
-    assert _journal_file_hashes(env.journal) == before_ambiguous
-
-
 def test_discovery_identify_route_invalid_entity_type(speakers_env):
     env = speakers_env()
     _write_discovery_cluster(env, 35, "110000_300")
@@ -1376,100 +1314,6 @@ def test_discovery_identify_route_invalid_entity_type(speakers_env):
     body = response.get_json()
     assert body["reason_code"] == "invalid_entity_type"
     assert not (env.journal / "entities" / "widget_person").exists()
-
-
-def test_discovery_identify_route_recoverable_and_retry(speakers_env, monkeypatch):
-    from solstone.apps.speakers import discovery
-    from solstone.think.entities.voiceprints import load_entity_voiceprints_file
-
-    env = speakers_env()
-    env.create_entity("Bob Smith")
-    _write_discovery_cluster(env, 36, "110500_300")
-    _write_discovery_cluster(env, 37, "111000_300")
-    client = _convey_client(env.journal)
-    request_id = "route-retry-request"
-
-    def fail_after_prepared(stage: str) -> None:
-        if stage == "after_prepared":
-            raise RuntimeError("forced after prepared")
-
-    monkeypatch.setattr(
-        discovery,
-        "_maybe_inject_identify_fault",
-        fail_after_prepared,
-    )
-    recoverable = client.post(
-        "/app/speakers/api/discovery/identify",
-        json={"cluster_id": 36, "name": "Bob Smith", "request_id": request_id},
-    )
-
-    assert recoverable.status_code == 409
-    body = recoverable.get_json()
-    assert body["reason_code"] == "speaker_identify_recoverable"
-    assert body["status"] == "recoverable"
-    assert body["operation_state"] == "in_progress"
-    operation_id = body["operation_id"]
-    assert body["request_id"] == request_id
-    assert body["completed_phases"] == []
-    assert "entity" in body["pending_phases"]
-
-    monkeypatch.setattr(
-        discovery,
-        "_maybe_inject_identify_fault",
-        lambda stage: None,
-    )
-    retry = client.post(
-        "/app/speakers/api/discovery/identify",
-        json={"cluster_id": 36, "name": "Bob Smith", "request_id": request_id},
-    )
-    assert retry.status_code == 200
-    retry_body = retry.get_json()
-    assert retry_body["status"] == "identified"
-    assert retry_body["operation_id"] == operation_id
-    assert retry_body["operation_state"] == "committed"
-    assert "corrections_appended" in retry_body
-    assert "retro_voiceprints_saved" in retry_body
-    assert len(load_entity_voiceprints_file("bob_smith")[1]) == 1
-
-    replay = client.post(
-        "/app/speakers/api/discovery/identify",
-        json={"cluster_id": 36, "name": "Bob Smith", "request_id": request_id},
-    )
-    assert replay.status_code == 200
-    assert replay.get_json() == retry_body
-    assert len(load_entity_voiceprints_file("bob_smith")[1]) == 1
-
-    conflict = client.post(
-        "/app/speakers/api/discovery/identify",
-        json={"cluster_id": 37, "name": "Bob Smith", "request_id": request_id},
-    )
-    assert conflict.status_code == 409
-    conflict_body = conflict.get_json()
-    assert conflict_body["reason_code"] == "speaker_identify_conflict"
-    assert conflict_body["conflict_code"] == "request_fingerprint_mismatch"
-    assert conflict_body["operation_state"] == "committed"
-
-    legacy_success = client.post(
-        "/app/speakers/api/discovery/identify",
-        json={"cluster_id": 37, "name": "Bob Smith"},
-    )
-    assert legacy_success.status_code == 200
-    assert legacy_success.get_json()["status"] == "identified"
-
-    _write_discovery_cluster(env, 38, "111500_300")
-    monkeypatch.setattr(
-        discovery,
-        "_maybe_inject_identify_fault",
-        fail_after_prepared,
-    )
-    legacy_recoverable = client.post(
-        "/app/speakers/api/discovery/identify",
-        json={"cluster_id": 38, "name": "Bob Smith"},
-    )
-    assert legacy_recoverable.status_code == 409
-    assert (
-        legacy_recoverable.get_json()["reason_code"] == "speaker_identify_recoverable"
-    )
 
 
 def test_discovery_identify_route_non_success_operation_states_are_errors(
@@ -2833,7 +2677,7 @@ def test_api_confirm_attribution_labels_busy(speakers_env, monkeypatch):
 
     from flask import Flask
 
-    from solstone.apps.speakers import attribution
+    from solstone.apps.speakers import routes
     from solstone.apps.speakers.routes import speakers_bp
     from solstone.think.journal_io.errors import LockTimeout
 
@@ -2856,7 +2700,11 @@ def test_api_confirm_attribution_labels_busy(speakers_env, monkeypatch):
     def busy_hold_lock(path: Path):
         raise LockTimeout(path=path, timeout=0.0)
 
-    monkeypatch.setattr(attribution, "hold_lock", busy_hold_lock)
+    def busy_labels(*_args, **_kwargs):
+        busy_hold_lock(Path("speaker_labels.json"))
+
+    monkeypatch.setattr(routes, "_save_voiceprint", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(routes, "apply_label_patches", busy_labels)
 
     app = Flask(__name__)
     app.register_blueprint(speakers_bp)

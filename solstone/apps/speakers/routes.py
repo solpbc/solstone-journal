@@ -25,7 +25,9 @@ from flask import (
     send_file,
 )
 
+from solstone.apps.speakers import native as native_speakers
 from solstone.apps.speakers.attribution import (
+    _speaker_encoder_identity,
     accumulate_voiceprints,
     append_speaker_correction,
     apply_label_patches,
@@ -89,7 +91,6 @@ from solstone.apps.speakers.owner import (
 from solstone.apps.speakers.quality import get_speaker_quality_status
 from solstone.apps.speakers.status import get_speakers_status
 from solstone.apps.speakers.suggest import suggest_opportunities
-from solstone.apps.speakers.wipe import wipe_speaker_artifacts
 from solstone.apps.utils import log_app_action
 from solstone.convey.date_nav import build_date_nav_index
 from solstone.convey.day_grid import build_day_grid_payload
@@ -138,7 +139,7 @@ from solstone.think.entities.journal import (
     load_journal_entity,
 )
 from solstone.think.journal_io.errors import LockTimeout
-from solstone.think.journal_io.npz import load_npz, update_npz
+from solstone.think.journal_io.npz import load_npz
 from solstone.think.media import MIME_TYPES
 from solstone.think.speaker_cluster_dismissals import (
     list_dismissals,
@@ -169,7 +170,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 SEGMENT_KEY_RE = re.compile(r"\d{6}_\d+")
-VOICEPRINT_KEYS = ("embeddings", "metadata")
 OWNER_STATUS_CANDIDATE = "candidate"
 OWNER_STATUS_CONFIRMED = "confirmed"
 OWNER_STATUS_ROUTING_TOKENS = {
@@ -303,6 +303,8 @@ def _save_voiceprint(
     Returns:
         Path to the voiceprints.npz file
     """
+    import numpy as np
+
     folder = ensure_journal_entity_memory(entity_id)
     npz_path = folder / "voiceprints.npz"
 
@@ -316,29 +318,13 @@ def _save_voiceprint(
     }
     if stream:
         metadata["stream"] = stream
-    metadata_json = json.dumps(metadata)
-
-    def transform(current: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        import numpy as np
-
-        if current:
-            existing_embeddings = current["embeddings"]
-            existing_metadata = current["metadata"]
-        else:
-            existing_embeddings = np.empty((0, 256), dtype=np.float32)
-            existing_metadata = np.asarray([], dtype=str)
-
-        return {
-            "embeddings": np.vstack(
-                [
-                    existing_embeddings,
-                    embedding.reshape(1, -1).astype(np.float32),
-                ]
-            ),
-            "metadata": np.append(existing_metadata, metadata_json),
-        }
-
-    update_npz(npz_path, transform, expected_keys=VOICEPRINT_KEYS)
+    native_speakers.write_voiceprint(
+        get_journal(),
+        entity_id=entity_id,
+        embedding=embedding.astype(np.float32).reshape(-1).tolist(),
+        metadata=metadata,
+        encoder=_speaker_encoder_identity(),
+    )
     return npz_path
 
 
@@ -375,54 +361,22 @@ def _remove_voiceprint(
             voiceprints_path=npz_path,
         )
 
-    outcome = "not_found"
-    keys_removed: list[str] = []
-
-    def transform(current: dict[str, np.ndarray]) -> dict[str, np.ndarray] | None:
-        nonlocal outcome, keys_removed
-        embeddings = current.get("embeddings")
-        metadata_arr = current.get("metadata")
-        if embeddings is None or metadata_arr is None:
-            outcome = "not_found"
-            return None
-
-        keep = []
-        matched = False
-        for i, m_str in enumerate(metadata_arr):
-            try:
-                m = json.loads(str(m_str))
-                if (
-                    m.get("day") == day
-                    and m.get("segment_key") == segment_key
-                    and m.get("source") == source
-                    and m.get("sentence_id") == sentence_id
-                ):
-                    matched = True
-                    continue
-            except (json.JSONDecodeError, TypeError):
-                pass
-            keep.append(i)
-
-        if not matched:
-            outcome = "not_found"
-            return None
-
-        keys_removed = [rendered_key]
-        if not keep:
-            outcome = "unlinked"
-            return {}
-
-        outcome = "rewritten"
-        return {
-            "embeddings": embeddings[keep],
-            "metadata": metadata_arr[keep],
-        }
-
-    update_npz(npz_path, transform, expected_keys=VOICEPRINT_KEYS)
+    result = native_speakers.remove_voiceprint(
+        get_journal(),
+        entity_id=entity_id,
+        key={
+            "day": day,
+            "segment_key": segment_key,
+            "source": source,
+            "sentence_id": sentence_id,
+        },
+        encoder=_speaker_encoder_identity(),
+    )
+    outcome = str(result.get("outcome", "not_found"))
     return VoiceprintRemovalResult(
         outcome=outcome,
         entity_id=entity_id,
-        keys_removed=keys_removed,
+        keys_removed=[rendered_key] if outcome != "not_found" else [],
         file_deleted=outcome == "unlinked",
         voiceprints_path=npz_path,
     )
@@ -2754,8 +2708,8 @@ def api_cli_wipe() -> Any:
     """Wipe speaker artifacts for the CLI."""
     data = request.get_json(silent=True) or {}
     commit = bool(data.get("commit", False))
-    report = wipe_speaker_artifacts(dry_run=not commit)
-    return jsonify(report.to_dict())
+    report = native_speakers.wipe_speaker_artifacts(get_journal(), dry_run=not commit)
+    return jsonify(report)
 
 
 @speakers_bp.route("/api/attribute-segment", methods=["POST"])

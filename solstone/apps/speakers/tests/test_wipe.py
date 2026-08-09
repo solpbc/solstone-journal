@@ -1,83 +1,84 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Tests for speaker artifact wipe reporting."""
+"""Tests for the native speaker artifact wipe route."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
-from solstone.apps.speakers.wipe import wipe_speaker_artifacts
-
-FILE_BYTES = b"test-data"
+from flask import Flask
 
 
-@pytest.fixture
-def wipe_journal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> tuple[Path, list[Path]]:
-    journal = tmp_path / "journal"
-    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
+def test_wipe_dry_run_forwards_native_request(speakers_env, monkeypatch) -> None:
+    from solstone.apps.speakers import routes
 
-    import solstone.think.utils as think_utils
+    env = speakers_env()
+    expected = {
+        "dry_run": True,
+        "entity_voiceprints": {
+            "count": 1,
+            "bytes": 9,
+            "paths": ["entities/a/voiceprints.npz"],
+        },
+        "owner_centroids": {"count": 0, "bytes": 0, "paths": []},
+        "owner_candidate": {"count": 0, "bytes": 0, "paths": []},
+        "total_files": 1,
+        "total_bytes": 9,
+    }
+    calls = []
 
-    think_utils._journal_path_cache = None
+    def wipe(journal_root, *, dry_run):
+        calls.append((journal_root, dry_run))
+        return expected
 
-    targets = [
-        journal / "chronicle/20240101/test/120000_300/mic_audio.npz",
-        # labels + corrections live under both agents/ (historical) and talents/
-        # (current writes); the wipe must catch both.
-        journal / "chronicle/20240101/test/120000_300/agents/speaker_labels.json",
-        journal / "chronicle/20240101/test/120000_300/agents/speaker_corrections.json",
-        journal / "chronicle/20240102/test/120000_300/talents/speaker_labels.json",
-        journal / "chronicle/20240102/test/120000_300/talents/speaker_corrections.json",
-        journal / "entities/alice/voiceprints.npz",
-        journal / "entities/alice/owner_centroid.npz",
-        journal / "entities/bob/owner_centroid.npz",
-        journal / "awareness/owner_candidate.npz",
-    ]
+    monkeypatch.setattr(routes.native_speakers, "wipe_speaker_artifacts", wipe)
+    app = Flask(__name__)
+    app.register_blueprint(routes.speakers_bp)
 
-    for path in targets:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(FILE_BYTES)
+    with app.test_client() as client:
+        response = client.post("/app/speakers/api/wipe", json={})
 
-    yield journal, targets
-    think_utils._journal_path_cache = None
-
-
-def test_wipe_dry_run(wipe_journal: tuple[Path, list[Path]]) -> None:
-    _, targets = wipe_journal
-
-    report = wipe_speaker_artifacts(dry_run=True)
-
-    assert report.segment_embeddings.count == 1
-    assert report.speaker_labels.count == 2  # agents/ + talents/
-    assert report.speaker_corrections.count == 2  # agents/ + talents/
-    assert report.entity_voiceprints.count == 1
-    assert report.owner_centroids.count == 2
-    assert report.owner_candidate.count == 1
-    assert report.total_files == 9
-    assert report.total_bytes == 9 * len(FILE_BYTES)
-
-    for path in targets:
-        assert path.exists()
+    assert response.status_code == 200
+    assert response.get_json() == expected
+    assert calls == [(str(env.journal), True)]
 
 
-def test_wipe_commit(wipe_journal: tuple[Path, list[Path]]) -> None:
-    _, targets = wipe_journal
+def test_wipe_commit_forwards_native_request(speakers_env, monkeypatch) -> None:
+    from solstone.apps.speakers import routes
 
-    report = wipe_speaker_artifacts(dry_run=False)
+    env = speakers_env()
+    expected = {
+        "dry_run": False,
+        "entity_voiceprints": {
+            "count": 1,
+            "bytes": 9,
+            "paths": ["entities/a/voiceprints.npz"],
+        },
+        "owner_centroids": {
+            "count": 1,
+            "bytes": 9,
+            "paths": ["entities/a/owner_centroid.npz"],
+        },
+        "owner_candidate": {
+            "count": 1,
+            "bytes": 9,
+            "paths": ["awareness/owner_candidate.npz"],
+        },
+        "total_files": 3,
+        "total_bytes": 27,
+    }
+    calls = []
 
-    assert report.segment_embeddings.count == 1
-    assert report.speaker_labels.count == 2  # agents/ + talents/
-    assert report.speaker_corrections.count == 2  # agents/ + talents/
-    assert report.entity_voiceprints.count == 1
-    assert report.owner_centroids.count == 2
-    assert report.owner_candidate.count == 1
-    assert report.total_files == 9
-    assert report.total_bytes == 9 * len(FILE_BYTES)
+    def wipe(journal_root, *, dry_run):
+        calls.append((journal_root, dry_run))
+        return expected
 
-    for path in targets:
-        assert not path.exists()
+    monkeypatch.setattr(routes.native_speakers, "wipe_speaker_artifacts", wipe)
+    app = Flask(__name__)
+    app.register_blueprint(routes.speakers_bp)
+
+    with app.test_client() as client:
+        response = client.post("/app/speakers/api/wipe", json={"commit": True})
+
+    assert response.status_code == 200
+    assert response.get_json() == expected
+    assert calls == [(str(env.journal), False)]

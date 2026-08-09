@@ -24,10 +24,6 @@ logger = logging.getLogger(__name__)
 VOICEPRINT_KEYS = ("embeddings", "metadata")
 
 
-class VoiceprintRemovalError(RuntimeError):
-    """Raised when a by-key voiceprint removal cannot be applied safely."""
-
-
 def normalize_embedding(emb: np.ndarray) -> np.ndarray | None:
     """L2-normalize an embedding vector. Returns None if norm is zero."""
     import numpy as np
@@ -234,108 +230,6 @@ def apply_entity_merge_voiceprint_inverse(
 
     update_npz(npz_path, transform, expected_keys=VOICEPRINT_KEYS)
     return removed
-
-
-def remove_voiceprints_by_key(
-    entity_id: str,
-    removals: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """Remove voiceprint rows by exact key and metadata match.
-
-    Missing rows and metadata mismatches are skipped. Duplicate exact matches
-    raise because the caller cannot safely attribute one removal to one row.
-    """
-    report: dict[str, Any] = {
-        "removed_count": 0,
-        "skipped_count": 0,
-        "skipped_reasons": {"missing": 0, "metadata_mismatch": 0},
-        "file_removed": False,
-    }
-    if not removals:
-        return report
-
-    try:
-        folder = journal_entity_memory_path(entity_id)
-    except (RuntimeError, ValueError):
-        report["skipped_count"] = len(removals)
-        report["skipped_reasons"]["missing"] = len(removals)
-        return report
-
-    npz_path = folder / "voiceprints.npz"
-    if not npz_path.exists():
-        report["skipped_count"] = len(removals)
-        report["skipped_reasons"]["missing"] = len(removals)
-        return report
-
-    normalized_removals = [
-        (_removal_key(removal), removal.get("expected_metadata"))
-        for removal in removals
-    ]
-
-    def transform(current: dict[str, np.ndarray]) -> dict[str, np.ndarray] | None:
-        import numpy as np
-
-        embeddings = current.get("embeddings")
-        metadata_arr = current.get("metadata")
-        if embeddings is None or metadata_arr is None:
-            raise MalformedDataError(npz_path)
-
-        metadata = [json.loads(str(item)) for item in metadata_arr]
-        remove_indexes: set[int] = set()
-        for key, expected_metadata in normalized_removals:
-            exact_matches = [
-                index
-                for index, meta in enumerate(metadata)
-                if _voiceprint_key(meta) == key and meta == expected_metadata
-            ]
-            if len(exact_matches) > 1:
-                raise VoiceprintRemovalError(
-                    "voiceprint removal locator matched multiple rows"
-                )
-            if len(exact_matches) == 1:
-                remove_indexes.add(exact_matches[0])
-                continue
-
-            key_present = any(_voiceprint_key(meta) == key for meta in metadata)
-            if key_present:
-                report["skipped_reasons"]["metadata_mismatch"] += 1
-            else:
-                report["skipped_reasons"]["missing"] += 1
-
-        if not remove_indexes:
-            report["skipped_count"] = sum(report["skipped_reasons"].values())
-            return None
-
-        keep_indexes = [
-            index for index in range(len(metadata)) if index not in remove_indexes
-        ]
-        report["removed_count"] = len(remove_indexes)
-        report["skipped_count"] = sum(report["skipped_reasons"].values())
-        if not keep_indexes:
-            report["file_removed"] = True
-            return {}
-        return {
-            "embeddings": embeddings[keep_indexes],
-            "metadata": np.asarray(
-                [json.dumps(metadata[index]) for index in keep_indexes],
-                dtype=str,
-            ),
-        }
-
-    update_npz(npz_path, transform, expected_keys=VOICEPRINT_KEYS)
-    return report
-
-
-def _removal_key(removal: dict[str, Any]) -> tuple[Any, Any, Any, Any]:
-    key = removal.get("key")
-    if not isinstance(key, dict):
-        raise VoiceprintRemovalError("voiceprint removal key must be an object")
-    return (
-        key.get("day"),
-        key.get("segment_key"),
-        key.get("source"),
-        key.get("sentence_id"),
-    )
 
 
 def _voiceprint_key(meta: dict[str, Any]) -> tuple[Any, Any, Any, Any]:

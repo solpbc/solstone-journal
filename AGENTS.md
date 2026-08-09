@@ -344,12 +344,14 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 
 | Domain | Write-owning module(s) |
 |--------|------------------------|
-| Entities (`entities/*/entity.json`, `entities/*/*.npz`) | `solstone/think/entities/journal.py` + `solstone/think/entities/relationships.py` + `solstone/think/entities/saving.py` + `solstone/think/entities/merge.py` + `solstone/think/entities/voiceprints.py` + `solstone/apps/speakers/owner.py` + `solstone/apps/speakers/routes.py` |
+| Entities (`entities/*/entity.json`) | `solstone/think/entities/journal.py` + `solstone/think/entities/relationships.py` + `solstone/think/entities/saving.py` + `solstone/think/entities/merge.py` |
+| Speaker-identity entity artifacts (`entities/*/{voiceprints,owner_centroid}.npz`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/native.py` is the sole Python transport. `solstone/think/entities/voiceprints.py` remains only for the Lane B entity-merge flow; `scripts/entity_corpus.py` remains the differential-fixture oracle builder. |
 | Entity history content (`entities/*/history/{events,prepared,private}/**`) | `solstone/think/entities/history.py` is the sole writer of history events, prepared staging, and private merge payloads. Whole-entity deletion by entity owners removes `history/` only as part of removing `entities/<id>/`. |
-| Owner voice candidate (`awareness/owner_candidate.npz`) | `solstone/apps/speakers/owner.py` |
+| Owner voice candidate (`awareness/owner_candidate.npz`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/native.py` is transport only. `solstone/apps/speakers/owner.py` retains candidate-selection policy and awareness-state updates. |
 | Speaker discovery clusters (`awareness/discovery_clusters.json`, `awareness/discovery_clusters.resolved.json`) | `solstone/apps/speakers/discovery.py` |
 | Speaker candidate pool (`awareness/speaker_candidates.json`) | `solstone/apps/speakers/candidate_tracker.py` |
-| Speaker identify operation ledger (`speakers/identify-operations.jsonl`) | `solstone/think/speaker_identify_operations.py` |
+| Speaker identify operation ledger (`speakers/identify-operations.jsonl`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve identify`; `solstone/apps/speakers/native.py` is transport only. |
+| Speaker backfill operation ledger (`speakers/backfill-operations.jsonl`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve backfill`; `solstone/apps/speakers/native.py` is transport only. |
 | Support portal operation ledger and local fingerprint key (`apps/support/portal/operations/*.json`, `apps/support/portal/operation-fingerprint.key`) | `solstone/apps/support/operations.py` |
 | Entity resolution ambiguities (`entities/ambiguities.jsonl`) | `solstone/think/entities/ambiguities.py` |
 | Entity merge candidates (`entities/review-candidates.jsonl`) | `solstone/think/entities/review_candidates.py` |
@@ -387,8 +389,8 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Hosted backup binding (`backup/hosted/binding.json`) | `solstone/think/backup/hosted.py` |
 | Convey config (`config/convey.json`) | `solstone/convey/config.py` + `solstone/think/facets.py` |
 | Chat config (`config/chat.json`) | `solstone/apps/chat/config.py` |
-| Speaker labels (`chronicle/**/talents/speaker_labels.json`) | `solstone/apps/speakers/attribution.py` |
-| Speaker corrections (`chronicle/**/talents/speaker_corrections.json`) | `solstone/apps/speakers/attribution.py` |
+| Speaker labels (`chronicle/**/talents/speaker_labels.json`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/native.py` is the sole Python transport. `solstone/apps/speakers/attribution.py` and `routes.py` prepare requests only. |
+| Speaker corrections (`chronicle/**/talents/speaker_corrections.json`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/native.py` is the sole Python transport. `solstone/apps/speakers/attribution.py` and `routes.py` prepare requests only. |
 | Stream identity (`chronicle/**/<seg>/stream.json` marker + `streams/<name>.json` state) | `solstone/think/streams.py` |
 | Observer ingest manifest (`chronicle/**/<seg>/ingest.json`) | `solstone/apps/observer/utils.py` |
 | Link service state (`link/ca/cert.pem`, `link/ca/private.pem`, `link/ca-staging/**`, `link/nonces.json`, `link/authorized_clients.json`, `link/state.json` including optional `locked_at`, `link/tokens/account.json`, `link/totp.json`) | `solstone/think/link/ca.py` + `solstone/think/link/establish.py` + `solstone/think/link/nonces.py` + `solstone/think/link/auth.py` + `solstone/think/link/paths.py` |
