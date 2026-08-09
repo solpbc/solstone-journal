@@ -60,14 +60,7 @@ fn observe(
     let state = ProviderRuntimeState::new(ProviderName::Local);
     let fence = fence(attempt);
     seam.dispatch_truth(&state, &fence);
-    shared.take_truth_result(&fence).unwrap_or_else(|| {
-        loop {
-            if let Some(value) = shared.take_truth_result(&fence) {
-                break value;
-            }
-            std::thread::yield_now();
-        }
-    })
+    shared.wait_for_truth_result(&fence)
 }
 
 #[test]

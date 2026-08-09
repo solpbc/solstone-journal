@@ -171,6 +171,18 @@ fn ac18_real_coordinator_seams_and_store() {
     .unwrap();
     assert_eq!(health["phase"], "ready");
     assert!(port.exists());
+    let published_port = std::fs::read_to_string(&port)
+        .expect("port file")
+        .trim()
+        .parse::<u16>()
+        .expect("port number");
+    assert_eq!(
+        health["process"]["port"].as_u64(),
+        Some(u64::from(published_port))
+    );
+    assert!(health["incarnation"].is_string());
+    assert!(health["generation"].is_u64());
+    assert!(health["attempt"].is_u64());
     let mut probed_ready = false;
     for _ in 0..4 {
         let mut x = ReconcileContext {
