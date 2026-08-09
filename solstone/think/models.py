@@ -1063,7 +1063,7 @@ def finish_reason_error(
     *,
     json_output: bool,
 ) -> Exception | None:
-    """Map a finish reason to the error it should raise, or None if acceptable."""
+    """Map the native wire's normalized finish reason to an existing exception."""
     finish_reason = result.get("finish_reason")
     if not finish_reason or finish_reason == "stop":
         return None
@@ -1081,19 +1081,11 @@ def finish_reason_error(
             reason=finish_reason,
             partial_text=partial_text,
         )
-    from solstone.think.providers.shared import (
-        _UNKNOWN_FINISH_REASON,
-        _safe_finish_reason,
-        _safe_token_counts,
-    )
-
-    safe_finish_reason = _safe_finish_reason(finish_reason)
     result_model = result.get("model")
     return ProviderResponseInvalidError(
-        reason=safe_finish_reason or _UNKNOWN_FINISH_REASON,
-        finish_reason=safe_finish_reason,
+        reason=str(finish_reason),
+        finish_reason=finish_reason if isinstance(finish_reason, str) else None,
         model=result_model if isinstance(result_model, str) and result_model else None,
-        token_counts=_safe_token_counts(result.get("usage")),
     )
 
 
@@ -1234,7 +1226,7 @@ def _validate_schema_with_annotations(text: str, schema: dict) -> tuple[str, dic
     return text_to_validate, validation
 
 
-def generate(
+def _legacy_generate(
     contents: Union[str, List[Any]],
     context: str,
     temperature: float = 0.3,
@@ -1340,7 +1332,7 @@ def generate(
     return result["text"]
 
 
-def generate_with_result(
+def _legacy_generate_with_result(
     contents: Union[str, List[Any]],
     context: str,
     temperature: float = 0.3,
@@ -1459,7 +1451,7 @@ def generate_with_result(
     return result
 
 
-async def agenerate_with_result(
+async def _legacy_agenerate_with_result(
     contents: Union[str, List[Any]],
     context: str,
     temperature: float = 0.3,
@@ -1538,7 +1530,7 @@ async def agenerate_with_result(
     return result
 
 
-async def agenerate(
+async def _legacy_agenerate(
     contents: Union[str, List[Any]],
     context: str,
     temperature: float = 0.3,
@@ -1642,6 +1634,134 @@ async def agenerate(
         return text
 
     return result["text"]
+
+
+def generate(
+    contents: Union[str, List[Any]],
+    context: str,
+    temperature: float = 0.3,
+    max_output_tokens: int = 8192 * 2,
+    system_instruction: Optional[str] = None,
+    json_output: bool = False,
+    *,
+    json_schema: dict | None = None,
+    thinking_budget: Optional[int] = None,
+    timeout_s: Optional[float] = None,
+) -> str:
+    """Generate text through the native generate boundary."""
+    from solstone.think import generate_client
+
+    return generate_client.generate(
+        contents,
+        context,
+        temperature,
+        max_output_tokens,
+        system_instruction,
+        json_output,
+        json_schema=json_schema,
+        thinking_budget=thinking_budget,
+        timeout_s=timeout_s,
+    )
+
+
+def generate_with_result(
+    contents: Union[str, List[Any]],
+    context: str,
+    temperature: float = 0.3,
+    max_output_tokens: int = 8192 * 2,
+    system_instruction: Optional[str] = None,
+    json_output: bool = False,
+    *,
+    json_schema: dict | None = None,
+    thinking_budget: Optional[int] = None,
+    timeout_s: Optional[float] = None,
+    num_retries: int | None = None,
+    inference_retry_index: int = 0,
+    local_exclusive_admission: bool = False,
+    enforce_responsiveness: bool = True,
+) -> dict:
+    """Generate a full result through the native generate boundary."""
+    from solstone.think import generate_client
+
+    return generate_client.generate_with_result(
+        contents,
+        context,
+        temperature,
+        max_output_tokens,
+        system_instruction,
+        json_output,
+        json_schema=json_schema,
+        thinking_budget=thinking_budget,
+        timeout_s=timeout_s,
+        num_retries=num_retries,
+        inference_retry_index=inference_retry_index,
+        local_exclusive_admission=local_exclusive_admission,
+        enforce_responsiveness=enforce_responsiveness,
+    )
+
+
+async def agenerate_with_result(
+    contents: Union[str, List[Any]],
+    context: str,
+    temperature: float = 0.3,
+    max_output_tokens: int = 8192 * 2,
+    system_instruction: Optional[str] = None,
+    json_output: bool = False,
+    *,
+    json_schema: dict | None = None,
+    thinking_budget: Optional[int] = None,
+    timeout_s: Optional[float] = None,
+    num_retries: int | None = None,
+    inference_retry_index: int = 0,
+    local_exclusive_admission: bool = False,
+    enforce_responsiveness: bool = True,
+) -> dict:
+    """Asynchronously generate a full result through native core."""
+    from solstone.think import generate_client
+
+    return await generate_client.agenerate_with_result(
+        contents,
+        context,
+        temperature,
+        max_output_tokens,
+        system_instruction,
+        json_output,
+        json_schema=json_schema,
+        thinking_budget=thinking_budget,
+        timeout_s=timeout_s,
+        num_retries=num_retries,
+        inference_retry_index=inference_retry_index,
+        local_exclusive_admission=local_exclusive_admission,
+        enforce_responsiveness=enforce_responsiveness,
+    )
+
+
+async def agenerate(
+    contents: Union[str, List[Any]],
+    context: str,
+    temperature: float = 0.3,
+    max_output_tokens: int = 8192 * 2,
+    system_instruction: Optional[str] = None,
+    json_output: bool = False,
+    *,
+    json_schema: dict | None = None,
+    thinking_budget: Optional[int] = None,
+    timeout_s: Optional[float] = None,
+) -> str:
+    """Asynchronously generate text through the native generate boundary."""
+    from solstone.think import generate_client
+
+    return await generate_client.agenerate(
+        contents,
+        context,
+        temperature,
+        max_output_tokens,
+        system_instruction,
+        json_output,
+        json_schema=json_schema,
+        thinking_budget=thinking_budget,
+        timeout_s=timeout_s,
+    )
 
 
 __all__ = [

@@ -2872,3 +2872,187 @@ class TestDefaultProviderTimeout:
         assert provider_module.run_generate.call_args_list[0].kwargs["timeout_s"] == 5
         assert provider_module.run_generate.call_args_list[1].kwargs["timeout_s"] == 5
         assert provider_module.run_agenerate.call_args.kwargs["timeout_s"] == 5
+
+
+def _native_generated_response(
+    *, text: str = "native OK", finish_reason: str = "stop"
+) -> dict:
+    return {
+        "schema": "solstone-generate-response-v2",
+        "id": None,
+        "outcome": "generated",
+        "text": text,
+        "model": "native-model",
+        "usage": {"input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
+        "finish_reason": finish_reason,
+        "thinking": None,
+        "schema_validation": None,
+        "input_budget": None,
+        "request_budget": None,
+        "inference": None,
+    }
+
+
+class _NativeOneShotProcess:
+    def __init__(self, response: dict, captured: dict):
+        self._response = response
+        self._captured = captured
+        self.returncode = 0
+
+    def communicate(self, input_text: str) -> tuple[str, str]:
+        self._captured["request"] = json.loads(input_text)
+        return json.dumps(self._response), ""
+
+
+def test_native_generate_sync_round_trip_never_resolves_provider(monkeypatch):
+    from solstone.think import generate_client
+
+    captured: dict = {}
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError(
+            "native generate client must not use Python generate internals"
+        )
+
+    def fake_popen(args, **_kwargs):
+        captured["args"] = args
+        return _NativeOneShotProcess(_native_generated_response(), captured)
+
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(generate_client.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(models_module, "resolve_provider", fail_if_called)
+    monkeypatch.setattr(models_module, "prepare_provider_schema", fail_if_called)
+    monkeypatch.setattr(models_module, "log_token_usage", fail_if_called)
+
+    result = generate_with_result("hello", "test.context")
+    assert result["text"] == "native OK"
+    assert generate("hello", "test.context") == "native OK"
+    assert captured["args"] == ["/native/core", "generate", "--one-shot"]
+    assert captured["request"]["context"] == "test.context"
+    assert captured["request"]["contents"] == [{"type": "text", "text": "hello"}]
+    assert "provider" not in captured["request"]
+    assert "model" not in captured["request"]
+
+
+def test_native_generate_async_round_trip_uses_async_subprocess(monkeypatch):
+    from solstone.think import generate_client
+
+    captured: dict = {}
+
+    class AsyncNativeOneShotProcess:
+        returncode = 0
+
+        async def communicate(self, input_bytes: bytes) -> tuple[bytes, bytes]:
+            captured["request"] = json.loads(input_bytes)
+            return json.dumps(_native_generated_response()).encode(), b""
+
+    async def fake_create_subprocess_exec(*args, **_kwargs):
+        captured["args"] = args
+        return AsyncNativeOneShotProcess()
+
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(
+        generate_client.asyncio,
+        "create_subprocess_exec",
+        fake_create_subprocess_exec,
+    )
+
+    result = asyncio.run(agenerate_with_result("hello", "test.context"))
+    assert result["text"] == "native OK"
+    assert asyncio.run(agenerate("hello", "test.context")) == "native OK"
+    assert captured["args"] == ("/native/core", "generate", "--one-shot")
+    assert captured["request"]["contents"] == [{"type": "text", "text": "hello"}]
+
+
+def test_native_generate_refusal_preserves_native_classification(monkeypatch):
+    from solstone.think import generate_client
+
+    contract = generate_client._generate_contract()
+    refusal = dict(
+        next(
+            vector["response"]
+            for vector in contract["conformance_vectors"]
+            if vector.get("source", {}).get("exception") == "NoBrainConfiguredError"
+        )
+    )
+    refusal["id"] = None
+    captured: dict = {}
+
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(
+        generate_client.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: _NativeOneShotProcess(refusal, captured),
+    )
+
+    with pytest.raises(NoBrainConfiguredError) as raised:
+        generate("hello", "test.context")
+
+    assert raised.value.reason == refusal["reason"]
+    assert raised.value.blocking is refusal["blocking"]
+    assert raised.value.retryable is refusal["retryable"]
+
+
+def test_native_generate_non_json_truncation_returns_text(monkeypatch):
+    from solstone.think import generate_client
+
+    captured: dict = {}
+    response = _native_generated_response(
+        text="truncated but usable", finish_reason="length"
+    )
+
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(
+        generate_client.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: _NativeOneShotProcess(response, captured),
+    )
+
+    assert (
+        generate("hello", "test.context", json_output=False) == "truncated but usable"
+    )
+
+
+def test_native_generate_provider_invalid_refusals_preserve_wire_classification(
+    monkeypatch,
+):
+    from solstone.think import generate_client
+
+    contract = generate_client._generate_contract()
+    blank_stop_refusal = dict(
+        next(
+            vector["response"]
+            for vector in contract["conformance_vectors"]
+            if vector.get("source", {}).get("exception")
+            == "ProviderResponseInvalidError"
+        )
+    )
+    blank_stop_refusal["id"] = None
+    unrelated_provider_failure = {
+        **blank_stop_refusal,
+        "detail": "mocked malformed provider response",
+    }
+    captured: dict = {}
+    refusals = iter((blank_stop_refusal, unrelated_provider_failure))
+
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(
+        generate_client.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: _NativeOneShotProcess(next(refusals), captured),
+    )
+
+    with pytest.raises(ProviderResponseInvalidError) as blank_stop:
+        generate("hello", "test.context")
+    with pytest.raises(ProviderResponseInvalidError) as provider_failure:
+        generate("hello", "test.context")
+
+    for raised, refusal in (
+        (blank_stop, blank_stop_refusal),
+        (provider_failure, unrelated_provider_failure),
+    ):
+        assert raised.value.reason == refusal["reason"]
+        assert raised.value.reason_code == refusal["reason_code"]
+        assert raised.value.blocking is refusal["blocking"]
+        assert raised.value.retryable is refusal["retryable"]
+    assert blank_stop.value.reason == provider_failure.value.reason
