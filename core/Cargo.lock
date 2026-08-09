@@ -2867,6 +2867,7 @@ version = "1.0.22"
 dependencies = [
  "chrono",
  "chrono-tz",
+ "rapidfuzz",
  "regex",
  "serde",
  "serde_json",
