@@ -411,12 +411,13 @@ pub fn transition(
 
 pub fn begin_or_replace(
     journal: &Path,
+    provider: &str,
     fingerprint_json: String,
     fingerprint_sha256: String,
     owner: Option<Value>,
     state: &str,
 ) -> Result<InstallStatus, StatusError> {
-    let current = read_status(journal, "local")?;
+    let current = read_status(journal, provider)?;
     let mut next = current;
     if is_in_flight(&next.install_state) {
         next = transition(

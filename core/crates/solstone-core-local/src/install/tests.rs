@@ -125,6 +125,7 @@ fn replay_status_special_cases(
                 let other = fingerprint::canonical(other_target.clone()).unwrap();
                 status::begin_or_replace(
                     &root,
+                    "local",
                     other.clone(),
                     fingerprint::sha256(&other),
                     None,
@@ -182,6 +183,7 @@ fn replay_status_special_cases(
                 let other = fingerprint::canonical(other_target.clone()).unwrap();
                 let _ = status::begin_or_replace(
                     &root,
+                    "local",
                     other.clone(),
                     fingerprint::sha256(&other),
                     None,
@@ -195,6 +197,7 @@ fn replay_status_special_cases(
                 let other = fingerprint::canonical(other_target.clone()).unwrap();
                 let _ = status::begin_or_replace(
                     &root,
+                    "local",
                     other.clone(),
                     fingerprint::sha256(&other),
                     None,
@@ -414,6 +417,90 @@ fn fingerprint_transport_resolves_targets_without_writing_status() {
         mlx["target_fingerprint_json"],
         r#"{"model_pin":{"model_id":"qwen3.5:9b","repo":"mlx-community/Qwen3.5-9B-MLX-8bit","revision":"84f7c2deea248d8df56240f88102def51c7ed5d6","soft_token_budget":null,"unit":"mlx-snapshot"},"provider":"local","runtime":"mlx"}"#
     );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn dispatch_pins_parakeet_matches_the_pins_table() {
+    let result = dispatch(InstallVerb::PinsParakeet, json!({})).unwrap();
+    let pins = result.result.unwrap();
+    assert_eq!(
+        pins["parakeet_vulkan_pins"].as_array().unwrap().len(),
+        pins::PARAKEET_VULKAN_PINS.len()
+    );
+    assert_eq!(
+        pins["parakeet_cpu_pins"].as_array().unwrap().len(),
+        pins::PARAKEET_CPU_PINS.len()
+    );
+    assert_eq!(pins["parakeet_model"]["repo"], pins::PARAKEET_MODEL.0);
+}
+
+#[test]
+fn dispatch_paths_parakeet_with_explicit_artifact_key_is_host_independent() {
+    // artifact_key is supplied explicitly, so this never touches the real
+    // host's OS/arch -- it must pass on every CI runner, not just Linux.
+    let root = temp("paths-parakeet");
+    let result = dispatch(
+        InstallVerb::PathsParakeet,
+        json!({"journal": root, "artifact_key": "aarch64-unknown-linux-gnu"}),
+    )
+    .unwrap();
+    let paths = result.result.unwrap();
+    assert_eq!(
+        paths["binary_path_cpu"],
+        format!(
+            "{}/cache/providers/parakeet/bin/aarch64-unknown-linux-gnu/cpu/v0.5.0/parakeet-server",
+            root.display()
+        )
+    );
+    assert_eq!(
+        paths["binary_path_vulkan"],
+        format!(
+            "{}/cache/providers/parakeet/bin/aarch64-unknown-linux-gnu/vulkan/v0.5.0/parakeet-server",
+            root.display()
+        )
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn fingerprint_parakeet_matches_host_support() {
+    // Deliberately host-conditional rather than host-independent: this is
+    // the one test that exercises `parakeet_host_artifact_key`'s real-host
+    // path, so it asserts whatever is actually correct for the machine it
+    // runs on (both branches are exercised host-independently already by
+    // `parakeet_artifact_key_matches_every_python_alias` /
+    // `_refuses_non_linux_and_unrecognized_arch` above).
+    let root = temp("fingerprint-parakeet");
+    let result = dispatch(InstallVerb::FingerprintParakeet, json!({"journal": root}));
+    let host_supported =
+        std::env::consts::OS == "linux" && matches!(std::env::consts::ARCH, "x86_64" | "aarch64");
+    if host_supported {
+        let ok = result.unwrap().result.unwrap();
+        let target: Value =
+            serde_json::from_str(ok["target_fingerprint_json"].as_str().unwrap()).unwrap();
+        assert_eq!(target["provider"], "parakeet");
+        assert_eq!(target["runtime"], "parakeet.cpp");
+        assert_eq!(target["binary_pins"].as_array().unwrap().len(), 2);
+        assert!(target["model_pin"].is_object());
+    } else {
+        let error = result.unwrap_err();
+        assert_eq!(error.envelope.error.as_ref().unwrap().kind, "platform");
+    }
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn run_parakeet_returns_exit_75_when_the_lease_is_held() {
+    // The lease check runs before any platform lookup, so this is
+    // host-independent even though parakeet itself is Linux-only.
+    let root = temp("run-parakeet-busy-lease");
+    let _held = lease::acquire(&root, "parakeet").unwrap().unwrap();
+    let error = dispatch(InstallVerb::RunParakeet, json!({"journal": root})).unwrap_err();
+    assert_eq!(error.exit_code, lease::BUSY_EXIT_CODE);
+    let error_body = error.envelope.error.as_ref().unwrap();
+    assert_eq!(error_body.kind, "busy");
+    assert_eq!(error_body.reason_code, "install_busy");
     let _ = fs::remove_dir_all(root);
 }
 

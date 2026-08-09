@@ -1979,6 +1979,12 @@ fn run_local_install(command: InstallCommand) -> ExitCode {
         InstallCommand::ProbeBinary => solstone_core_local::InstallVerb::ProbeBinary,
         InstallCommand::RunLocal => solstone_core_local::InstallVerb::RunLocal,
         InstallCommand::RunMlx => solstone_core_local::InstallVerb::RunMlx,
+        InstallCommand::PinsParakeet => solstone_core_local::InstallVerb::PinsParakeet,
+        InstallCommand::PathsParakeet => solstone_core_local::InstallVerb::PathsParakeet,
+        InstallCommand::FingerprintParakeet => {
+            solstone_core_local::InstallVerb::FingerprintParakeet
+        }
+        InstallCommand::RunParakeet => solstone_core_local::InstallVerb::RunParakeet,
     };
     match solstone_core_local::dispatch_install(verb, input) {
         Ok(envelope) => write_install_envelope(&envelope, ExitCode::SUCCESS),
