@@ -5,16 +5,16 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use solstone_core_body_source::{
     AppleSummaryPlan, AuthorityError, BODY_BUNDLE_REF_KEY, BODY_BUNDLE_SHA256_KEY,
-    BODY_SOURCE_SCHEMA_KEY, BodyCalendarError, BodyCalendarField, BodyDay, BodyDigest, BodyInteger,
-    BodyManifestBinding, BodyMonth, BodyRawRetention, BodySourceFamily, BodySourceHash,
-    BodySourceHashError, BodySourcePolicyError, BodySourcePolicyField, BodyString, BodyValue,
-    BodyWireIdentityError, BodyWireIdentityField, BundleClass, BundleId, DAYS_AFFECTED_KEY,
-    DirectoryObservation, ENTRY_COUNT_KEY, EnvelopeErrorCode, EnvelopeErrorField, EnvelopeLedger,
-    EnvelopeShard, IMPORT_ID_KEY, ManifestBindingErrorCode, ManifestBindingErrorField,
-    ManifestKeySignal, ManifestKnownKey, ManifestScanError, NativeAuthority, ParseError,
-    RAW_RETENTION_KEY, SOURCE_HASH_KEY, SOURCE_TYPE_KEY, ScannedBodyManifest,
-    authorize_native_bundle, canonicalize, classify_bundle_directory, decode_body_manifest,
-    inspect_body_manifest_signal, parse, scan_body_manifest,
+    BODY_SOURCE_SCHEMA_KEY, BodyCalendarError, BodyCalendarField, BodyDay, BodyDigest,
+    BodyEnvelope, BodyInteger, BodyManifestBinding, BodyMonth, BodyRawRetention, BodySourceFamily,
+    BodySourceHash, BodySourceHashError, BodySourcePolicyError, BodySourcePolicyField, BodyString,
+    BodyValue, BodyWireIdentityError, BodyWireIdentityField, BundleClass, BundleId,
+    DAYS_AFFECTED_KEY, DirectoryObservation, ENTRY_COUNT_KEY, EnvelopeErrorCode,
+    EnvelopeErrorField, EnvelopeLedger, EnvelopeShard, IMPORT_ID_KEY, ManifestBindingErrorCode,
+    ManifestBindingErrorField, ManifestKeySignal, ManifestKnownKey, ManifestScanError,
+    NativeAuthority, ParseError, RAW_RETENTION_KEY, SOURCE_HASH_KEY, SOURCE_TYPE_KEY,
+    ScannedBodyManifest, authorize_native_bundle, canonicalize, classify_bundle_directory,
+    decode_body_manifest, inspect_body_manifest_signal, parse, scan_body_manifest,
 };
 
 mod support;
@@ -1054,4 +1054,233 @@ fn public_raw_manifest_decoder_is_checked_and_keeps_non_reserved_extensions_perm
     };
     assert_eq!(unknown_error.code(), ManifestBindingErrorCode::UnknownField);
     assert_eq!(unknown_error.field(), ManifestBindingErrorField::Manifest);
+}
+
+#[test]
+fn public_body_envelope_api_checks_and_rejects_invalid_aggregates() {
+    fn assert_traits<T: Clone + std::fmt::Debug + PartialEq + Eq>() {}
+
+    let bundle = BundleId::from_bytes(b"body-00000000000000000000000000").expect("bundle is valid");
+    let digest = BodyDigest::from_bytes(
+        b"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .expect("digest is valid");
+    let empty_digest = BodyDigest::from_bytes(
+        b"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    )
+    .expect("empty digest is valid");
+    let days = vec![
+        BodyDay::from_bytes(b"20260102").expect("day is valid"),
+        BodyDay::from_bytes(b"20260103").expect("day is valid"),
+        BodyDay::from_bytes(b"20260201").expect("day is valid"),
+    ];
+    let source_hash = BodySourceHash::from_bytes_for_family(
+        b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#window:20260102:20260201",
+        &BodySourceFamily::AppleHealth,
+    )
+    .expect("source hash is valid");
+    let january = BodyMonth::from_bytes(b"2026-01").expect("month is valid");
+    let february = BodyMonth::from_bytes(b"2026-02").expect("month is valid");
+    let shards = vec![
+        EnvelopeShard::new(&bundle, 0, january.clone(), 3, 2, digest.clone())
+            .expect("January shard is valid"),
+        EnvelopeShard::new(&bundle, 1, february.clone(), 1, 1, digest.clone())
+            .expect("February shard is valid"),
+    ];
+    let ledger = EnvelopeLedger::new(&bundle, 3, 3, digest.clone()).expect("ledger is valid");
+    let plan = AppleSummaryPlan::new(&bundle, days.clone()).expect("plan is valid");
+    let envelope = BodyEnvelope::new(
+        bundle.clone(),
+        BodySourceFamily::AppleHealth,
+        source_hash.clone(),
+        BodyRawRetention::RetainParsed,
+        3,
+        days.clone(),
+        shards.clone(),
+        ledger.clone(),
+        Some(plan.clone()),
+    )
+    .expect("multi-month Apple envelope binds");
+
+    assert_traits::<BodyEnvelope>();
+    assert_eq!(envelope.schema(), "solstone.body.bundle.v1");
+    assert_eq!(envelope.bundle_id(), &bundle);
+    assert_eq!(envelope.source_family(), BodySourceFamily::AppleHealth);
+    assert_eq!(envelope.source_hash(), &source_hash);
+    assert_eq!(envelope.raw_retention(), BodyRawRetention::RetainParsed);
+    assert_eq!(envelope.row_count(), 3);
+    assert_eq!(envelope.days(), days.as_slice());
+    assert_eq!(envelope.shards(), shards.as_slice());
+    assert_eq!(envelope.ledger(), &ledger);
+    assert_eq!(envelope.summary_plan(), Some(&plan));
+    assert_eq!(envelope.clone(), envelope);
+
+    let other_bundle =
+        BundleId::from_bytes(b"body-7ZZZZZZZZZZZZZZZZZZZZZZZZZ").expect("bundle is valid");
+    let bundle_different = BodyEnvelope::new(
+        other_bundle,
+        BodySourceFamily::AppleHealth,
+        source_hash.clone(),
+        BodyRawRetention::RetainParsed,
+        3,
+        days.clone(),
+        shards.clone(),
+        ledger.clone(),
+        Some(plan.clone()),
+    )
+    .expect("bundle-different envelope binds");
+    assert_ne!(envelope, bundle_different);
+
+    let other_hash = BodySourceHash::from_bytes_for_family(
+        b"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#window:20260102:20260201",
+        &BodySourceFamily::AppleHealth,
+    )
+    .expect("other source hash is valid");
+    let hash_different = BodyEnvelope::new(
+        bundle.clone(),
+        BodySourceFamily::AppleHealth,
+        other_hash,
+        BodyRawRetention::RetainParsed,
+        3,
+        days.clone(),
+        shards.clone(),
+        ledger.clone(),
+        Some(plan.clone()),
+    )
+    .expect("hash-different envelope binds");
+    assert_ne!(envelope, hash_different);
+
+    let retention_different = BodyEnvelope::new(
+        bundle.clone(),
+        BodySourceFamily::AppleHealth,
+        source_hash.clone(),
+        BodyRawRetention::Discard,
+        3,
+        days.clone(),
+        shards.clone(),
+        ledger.clone(),
+        Some(plan.clone()),
+    )
+    .expect("retention-different envelope binds");
+    assert_ne!(envelope, retention_different);
+
+    let shards_different = vec![
+        EnvelopeShard::new(&bundle, 0, january, 4, 2, digest.clone())
+            .expect("other January shard is valid"),
+        EnvelopeShard::new(&bundle, 1, february, 1, 1, digest.clone())
+            .expect("other February shard is valid"),
+    ];
+    let shard_different = BodyEnvelope::new(
+        bundle.clone(),
+        BodySourceFamily::AppleHealth,
+        source_hash.clone(),
+        BodyRawRetention::RetainParsed,
+        3,
+        days.clone(),
+        shards_different,
+        ledger.clone(),
+        Some(plan.clone()),
+    )
+    .expect("shard-different envelope binds");
+    assert_ne!(envelope, shard_different);
+
+    let ledger_different =
+        EnvelopeLedger::new(&bundle, 4, 3, digest.clone()).expect("other ledger is valid");
+    let ledger_different = BodyEnvelope::new(
+        bundle.clone(),
+        BodySourceFamily::AppleHealth,
+        source_hash.clone(),
+        BodyRawRetention::RetainParsed,
+        3,
+        days.clone(),
+        shards.clone(),
+        ledger_different,
+        Some(plan.clone()),
+    )
+    .expect("ledger-different envelope binds");
+    assert_ne!(envelope, ledger_different);
+
+    let zero_bundle =
+        BundleId::from_bytes(b"body-00000000000000000000000001").expect("bundle is valid");
+    let zero_hash = BodySourceHash::from_bytes_for_family(
+        b"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        &BodySourceFamily::OuraApi,
+    )
+    .expect("Oura hash is valid");
+    let zero_envelope = BodyEnvelope::new(
+        zero_bundle.clone(),
+        BodySourceFamily::OuraApi,
+        zero_hash.clone(),
+        BodyRawRetention::Discard,
+        0,
+        vec![],
+        vec![],
+        EnvelopeLedger::new(&zero_bundle, 0, 0, empty_digest.clone()).expect("ledger is valid"),
+        None,
+    )
+    .expect("zero-row Oura envelope binds");
+    assert_eq!(zero_envelope.row_count(), 0);
+    assert!(zero_envelope.days().is_empty());
+    assert!(zero_envelope.shards().is_empty());
+    assert_eq!(zero_envelope.source_family(), BodySourceFamily::OuraApi);
+    assert_eq!(zero_envelope.source_hash(), &zero_hash);
+    assert_eq!(zero_envelope.summary_plan(), None);
+    assert_ne!(envelope, zero_envelope);
+
+    let failures = [
+        (
+            BodyEnvelope::new(
+                bundle.clone(),
+                BodySourceFamily::AppleHealth,
+                source_hash.clone(),
+                BodyRawRetention::RetainParsed,
+                3,
+                vec![days[0].clone(), days[0].clone()],
+                shards.clone(),
+                ledger.clone(),
+                Some(plan.clone()),
+            ),
+            EnvelopeErrorCode::InvalidField,
+            EnvelopeErrorField::Days,
+        ),
+        (
+            BodyEnvelope::new(
+                bundle.clone(),
+                BodySourceFamily::AppleHealth,
+                source_hash.clone(),
+                BodyRawRetention::RetainParsed,
+                3,
+                days.clone(),
+                vec![shards[1].clone(), shards[0].clone()],
+                ledger.clone(),
+                Some(plan.clone()),
+            ),
+            EnvelopeErrorCode::InvalidField,
+            EnvelopeErrorField::Shards,
+        ),
+        (
+            BodyEnvelope::new(
+                bundle,
+                BodySourceFamily::AppleHealth,
+                source_hash,
+                BodyRawRetention::RetainParsed,
+                3,
+                days,
+                shards,
+                ledger,
+                None,
+            ),
+            EnvelopeErrorCode::MissingField,
+            EnvelopeErrorField::SummaryPlan,
+        ),
+    ];
+    for (result, code, field) in failures {
+        let Err(error) = result else {
+            panic!("invalid aggregate must refuse");
+        };
+        assert_eq!(error.code(), code);
+        assert_eq!(error.field(), field);
+    }
+
+    // `new` returns only `Result<Self, _>`; an error leaves no envelope value to observe.
 }

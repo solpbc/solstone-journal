@@ -6,6 +6,7 @@
 mod apple_summary_plan;
 mod authority;
 mod body_day;
+mod body_envelope;
 mod body_month;
 mod body_raw_retention;
 mod body_source_family;
@@ -39,6 +40,7 @@ pub use authority::{
     classify_bundle_directory,
 };
 pub use body_day::BodyDay;
+pub use body_envelope::BodyEnvelope;
 pub use body_month::BodyMonth;
 pub use body_raw_retention::BodyRawRetention;
 pub use body_source_family::BodySourceFamily;

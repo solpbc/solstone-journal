@@ -440,7 +440,8 @@ impl EnvelopeError {
         self.field
     }
 
-    /// Returns the envelope index this error concerns, if available.
+    /// Returns the zero-based array-element index for the named field, when this failure
+    /// concerns a specific element rather than a whole collection or envelope.
     pub fn index(&self) -> Option<u64> {
         self.index
     }
