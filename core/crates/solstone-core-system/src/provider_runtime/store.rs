@@ -324,6 +324,7 @@ struct HealthRecord {
     generation: u64,
     attempt: u32,
     process: Option<Map<String, Value>>,
+    detail: Value,
 }
 
 #[derive(Debug, Clone)]
@@ -404,8 +405,7 @@ impl FileRuntimeStore {
     }
 
     fn health_path(&self) -> PathBuf {
-        self.runtime_directory()
-            .join(format!("{}.json", self.provider.as_str()))
+        health_record_path(&self.journal_path, self.provider)
     }
 
     fn retry_path(&self) -> PathBuf {
@@ -719,6 +719,30 @@ fn port_service_name(provider: ProviderName) -> &'static str {
     }
 }
 
+fn health_record_path(journal_path: &Path, provider: ProviderName) -> PathBuf {
+    journal_path
+        .join("health")
+        .join("providers")
+        .join("runtime")
+        .join(format!("{}.json", provider.as_str()))
+}
+
+/// Reads the durable record's `detail` payload for a provider, propagating
+/// `Corrupt`/`Unavailable` on a malformed or unreadable record rather than
+/// defaulting to an empty one -- an unreadable record fails closed, exactly
+/// like Python's `read_runtime_health`. A genuinely absent record (no file
+/// yet) is not an error: it is a synthetic, empty detail, matching Python's
+/// "absent records are synthetic and read-only" contract. Standalone (not a
+/// `FileRuntimeStore` method) because callers such as the admission latch
+/// read the record before, or without ever holding, a store for this
+/// provider.
+pub fn read_current_detail(
+    journal_path: &Path,
+    provider: ProviderName,
+) -> Result<Value, RuntimeStoreError> {
+    Ok(read_health(&health_record_path(journal_path, provider), provider)?.detail)
+}
+
 fn read_health(path: &Path, provider: ProviderName) -> Result<HealthRecord, RuntimeStoreError> {
     let value = read_value(path)?;
     let Some(value) = value else {
@@ -728,6 +752,7 @@ fn read_health(path: &Path, provider: ProviderName) -> Result<HealthRecord, Runt
             generation: 0,
             attempt: 0,
             process: None,
+            detail: json!({}),
         });
     };
     let object = value.as_object().ok_or(RuntimeStoreError::Corrupt)?;
@@ -749,6 +774,7 @@ fn read_health(path: &Path, provider: ProviderName) -> Result<HealthRecord, Runt
         attempt: u32::try_from(nonnegative(object.get("attempt"))?)
             .map_err(|_| RuntimeStoreError::Corrupt)?,
         process: optional_object(object.get("process"))?,
+        detail: object.get("detail").cloned().unwrap_or_else(|| json!({})),
     })
 }
 
@@ -1049,6 +1075,38 @@ mod tests {
             Err(RuntimeStoreError::Unavailable)
         );
         let _ = fs::remove_file(file_journal);
+    }
+
+    #[test]
+    fn read_current_detail_fails_closed_on_corrupt_and_unavailable_records() {
+        let journal = TempJournal::new();
+        let runtime_dir = journal.0.join("health").join("providers").join("runtime");
+        fs::create_dir_all(&runtime_dir).unwrap();
+        fs::write(runtime_dir.join("parakeet.json"), b"not json").unwrap();
+        assert_eq!(
+            read_current_detail(&journal.0, ProviderName::Parakeet),
+            Err(RuntimeStoreError::Corrupt)
+        );
+
+        let file_journal = std::env::temp_dir().join(format!(
+            "solstone-admission-detail-file-{}",
+            NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::write(&file_journal, b"not a directory").unwrap();
+        assert_eq!(
+            read_current_detail(&file_journal, ProviderName::Parakeet),
+            Err(RuntimeStoreError::Unavailable)
+        );
+        let _ = fs::remove_file(file_journal);
+    }
+
+    #[test]
+    fn read_current_detail_on_a_fresh_journal_is_a_synthetic_empty_object() {
+        let journal = TempJournal::new();
+        assert_eq!(
+            read_current_detail(&journal.0, ProviderName::Parakeet),
+            Ok(json!({}))
+        );
     }
 
     #[test]

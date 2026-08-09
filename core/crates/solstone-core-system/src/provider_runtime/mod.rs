@@ -3,6 +3,7 @@
 
 //! Provider runtime reconciliation primitives without supervisor wiring.
 
+mod admission;
 mod events;
 mod gate;
 mod launch;
@@ -15,6 +16,10 @@ mod stop;
 mod store;
 mod wedge;
 
+pub use admission::{
+    AvailableBytesReader, ParakeetAdmissionInput, ParakeetAdmissionLatch, admission_retry_epoch,
+    bump_admission_retry_epoch, parakeet_stt_admission_latch,
+};
 pub use events::{ProviderRuntimeEvent, ProviderRuntimeEventSink, VecEventSink};
 pub use gate::ProviderStartupGate;
 pub use launch::{
@@ -38,6 +43,6 @@ pub use stop::{
 };
 pub use store::{
     FenceKey, FileRuntimeStore, LocalReadySideEffect, LocalRuntimeShared, ReadyProcess,
-    ReadyProcessLookup, RuntimeClock, SystemRuntimeClock,
+    ReadyProcessLookup, RuntimeClock, SystemRuntimeClock, read_current_detail,
 };
 pub use wedge::{CortexEventKind, CortexOutcomeEvent, WedgeState, observe_cortex_outcome};
