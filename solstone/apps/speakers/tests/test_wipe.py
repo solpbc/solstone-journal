@@ -14,6 +14,27 @@ def test_wipe_dry_run_forwards_native_request(speakers_env, monkeypatch) -> None
     env = speakers_env()
     expected = {
         "dry_run": True,
+        "segment_embeddings": {
+            "count": 1,
+            "bytes": 9,
+            "paths": ["chronicle/20240101/test/120000_300/audio.npz"],
+        },
+        "speaker_labels": {
+            "count": 2,
+            "bytes": 18,
+            "paths": [
+                "chronicle/20240101/test/120000_300/agents/speaker_labels.json",
+                "chronicle/20240101/test/120000_300/talents/speaker_labels.json",
+            ],
+        },
+        "speaker_corrections": {
+            "count": 2,
+            "bytes": 18,
+            "paths": [
+                "chronicle/20240101/test/120000_300/agents/speaker_corrections.json",
+                "chronicle/20240101/test/120000_300/talents/speaker_corrections.json",
+            ],
+        },
         "entity_voiceprints": {
             "count": 1,
             "bytes": 9,
@@ -21,8 +42,8 @@ def test_wipe_dry_run_forwards_native_request(speakers_env, monkeypatch) -> None
         },
         "owner_centroids": {"count": 0, "bytes": 0, "paths": []},
         "owner_candidate": {"count": 0, "bytes": 0, "paths": []},
-        "total_files": 1,
-        "total_bytes": 9,
+        "total_files": 6,
+        "total_bytes": 54,
     }
     calls = []
 
@@ -48,6 +69,27 @@ def test_wipe_commit_forwards_native_request(speakers_env, monkeypatch) -> None:
     env = speakers_env()
     expected = {
         "dry_run": False,
+        "segment_embeddings": {
+            "count": 1,
+            "bytes": 9,
+            "paths": ["chronicle/20240101/test/120000_300/audio.npz"],
+        },
+        "speaker_labels": {
+            "count": 2,
+            "bytes": 18,
+            "paths": [
+                "chronicle/20240101/test/120000_300/agents/speaker_labels.json",
+                "chronicle/20240101/test/120000_300/talents/speaker_labels.json",
+            ],
+        },
+        "speaker_corrections": {
+            "count": 2,
+            "bytes": 18,
+            "paths": [
+                "chronicle/20240101/test/120000_300/agents/speaker_corrections.json",
+                "chronicle/20240101/test/120000_300/talents/speaker_corrections.json",
+            ],
+        },
         "entity_voiceprints": {
             "count": 1,
             "bytes": 9,
@@ -63,8 +105,8 @@ def test_wipe_commit_forwards_native_request(speakers_env, monkeypatch) -> None:
             "bytes": 9,
             "paths": ["awareness/owner_candidate.npz"],
         },
-        "total_files": 3,
-        "total_bytes": 27,
+        "total_files": 8,
+        "total_bytes": 72,
     }
     calls = []
 
