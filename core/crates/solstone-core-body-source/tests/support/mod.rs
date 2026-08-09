@@ -7,9 +7,11 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use solstone_core_body_source::{
-    BodyDay, BodyDigest, BodyManifestBinding, BodyRawRetention, BodySourceFamily, BodySourceHash,
-    BodyValue, BundleId, parse,
+    BodyDay, BodyDigest, BodyEnvelope, BodyLedgerEvent, BodyManifestBinding, BodyRawRetention,
+    BodySourceFamily, BodySourceHash, BodyValue, BundleId, Coordinate, PresentationRow, parse,
+    project,
 };
 
 pub const MIN_BUNDLE: &str = "body-00000000000000000000000000";
@@ -145,6 +147,37 @@ pub fn ledger_events_fixture() -> Value {
         &std::fs::read_to_string(ledger_events_fixture_path()).expect("fixture should read"),
     )
     .expect("fixture should parse")
+}
+
+/// Binds one fixture-shaped normalized row to a checked ledger event.
+pub fn build_ledger_event(
+    envelope: &BodyEnvelope,
+    row: &str,
+    shard_index: u64,
+    sequence: u64,
+    line: u64,
+    row_sha256: Option<BodyDigest>,
+    value_hash: BodyDigest,
+) -> BodyLedgerEvent {
+    let value = parse(row.as_bytes()).expect("fixture normalized row parses");
+    let coordinate = Coordinate::new(envelope.bundle_id().as_str(), "shard", line);
+    let presentation =
+        PresentationRow::new(&value, &coordinate).expect("fixture normalized row is an object");
+    let candidate = project(&presentation, coordinate).expect("fixture normalized row projects");
+    let row_sha256 = row_sha256.unwrap_or_else(|| {
+        let value = format!("sha256:{:x}", Sha256::digest(format!("{row}\n").as_bytes()));
+        BodyDigest::from_bytes(value.as_bytes()).expect("row digest is valid")
+    });
+    BodyLedgerEvent::new(
+        envelope,
+        sequence,
+        shard_index,
+        line,
+        row_sha256,
+        value_hash,
+        &candidate,
+    )
+    .expect("fixture event binds")
 }
 
 pub fn envelope_multimonth_fixture_path() -> PathBuf {
