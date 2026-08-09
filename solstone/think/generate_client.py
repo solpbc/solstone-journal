@@ -91,7 +91,7 @@ def _request(
     }
 
 
-def _decode_protocol_response(raw: str) -> dict[str, Any]:
+def _decode_protocol_response(raw: str, *, session: bool = False) -> dict[str, Any]:
     try:
         response = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -104,7 +104,13 @@ def _decode_protocol_response(raw: str) -> dict[str, Any]:
         raise RuntimeError(
             "generate native command returned an unexpected response schema"
         )
-    if response.get("id") is not None:
+    response_id = response.get("id")
+    if session:
+        if not isinstance(response_id, str):
+            raise RuntimeError(
+                "generate native command returned an invalid response id"
+            )
+    elif response_id is not None:
         raise RuntimeError("generate native command returned an unexpected response id")
     if response.get("outcome") not in contract["outcomes"]:
         raise RuntimeError("generate native command returned an unsupported outcome")
@@ -186,8 +192,7 @@ def _refusal_exception(response: dict[str, Any]) -> Exception:
     return exc
 
 
-def _response_result(raw: str) -> dict[str, Any]:
-    response = _decode_protocol_response(raw)
+def _response_result_from_response(response: dict[str, Any]) -> dict[str, Any]:
     if response["outcome"] == "generated":
         return _generated_result(response)
 
@@ -221,6 +226,10 @@ def _response_result(raw: str) -> dict[str, Any]:
     if response["provider"] is not None and not isinstance(response["provider"], str):
         raise RuntimeError("refused response has an invalid provider")
     raise _refusal_exception(response)
+
+
+def _response_result(raw: str) -> dict[str, Any]:
+    return _response_result_from_response(_decode_protocol_response(raw))
 
 
 def _run_one_shot(request: dict[str, Any]) -> dict[str, Any]:

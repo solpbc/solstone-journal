@@ -1,711 +1,349 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Tests for the Batch async batch processor."""
+"""Tests for the native-session Batch processor."""
 
 import asyncio
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+import json
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
+from solstone.think import generate_client
 from solstone.think.batch import Batch, BatchRequest
-from solstone.think.models import GEMINI_FLASH, SchemaValidationError
-from solstone.think.responsiveness import NON_RESPONSIVE_REASON_CODE
 
 
-def _result(text: str = "Response", finish_reason: str = "stop", **extra):
-    return {"text": text, "finish_reason": finish_reason, **extra}
+def _generated_response(
+    request_id: str, text: str, *, finish_reason: str = "stop"
+) -> dict:
+    return {
+        "schema": "solstone-generate-response-v2",
+        "id": request_id,
+        "outcome": "generated",
+        "text": text,
+        "model": "native-model",
+        "usage": {"input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
+        "finish_reason": finish_reason,
+        "thinking": None,
+        "schema_validation": None,
+        "input_budget": None,
+        "request_budget": None,
+        "inference": None,
+        "hints_applied": [],
+    }
 
 
-def test_batch_request_creation():
-    """Test BatchRequest can be created with required and custom params."""
-    # Required params only
-    req = BatchRequest(contents="Test prompt", context="test.context")
-    assert req.contents == "Test prompt"
-    assert req.context == "test.context"
-    assert req.temperature == 0.3
-    assert req.response is None
-    assert req.error is None
-
-    # With generation options
-    req2 = BatchRequest(
-        contents=["Part 1", "Part 2"],
-        context="test.context",
-        temperature=0.7,
-        json_output=True,
-    )
-    assert req2.contents == ["Part 1", "Part 2"]
-    assert req2.temperature == 0.7
-    assert req2.json_output is True
+def _refused_response(request_id: str) -> dict:
+    return {
+        "schema": "solstone-generate-response-v2",
+        "id": request_id,
+        "outcome": "refused",
+        "reason": "provider-response-invalid",
+        "reason_code": "provider_response_invalid",
+        "retryable": True,
+        "blocking": False,
+        "reset_at_ms": None,
+        "provider": "local",
+        "detail": "mocked provider failure",
+    }
 
 
-def test_batch_request_custom_attributes():
-    """Test that arbitrary attributes can be added to BatchRequest."""
-    req = BatchRequest(contents="Test", context="test.context")
-    req.frame_id = 123
-    req.stage = "initial"
-    req.custom_data = {"foo": "bar"}
+class _FakeReader:
+    def __init__(self):
+        self._lines: asyncio.Queue[bytes] = asyncio.Queue()
 
-    assert req.frame_id == 123
-    assert req.stage == "initial"
-    assert req.custom_data == {"foo": "bar"}
+    def feed_data(self, line: bytes) -> None:
+        self._lines.put_nowait(line)
 
+    def feed_eof(self) -> None:
+        self._lines.put_nowait(b"")
 
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_basic(mock_agenerate):
-    """Test basic batch execution with single request."""
-    mock_agenerate.return_value = _result("Response 1")
-
-    # Create batch and add request
-    batch = Batch(max_concurrent=5)
-    req = batch.create(contents="What is 2+2?", context="test.calc")
-    req.task_id = "calc1"
-    batch.add(req)
-
-    # Iterate and verify
-    results = []
-    async for completed_req in batch.drain_batch():
-        results.append(completed_req)
-
-    assert len(results) == 1
-    assert results[0].task_id == "calc1"
-    assert results[0].response == "Response 1"
-    assert results[0].error is None
-    assert results[0].duration > 0
-
-    # Verify API was called correctly
-    mock_agenerate.assert_called_once()
-    call_kwargs = mock_agenerate.call_args[1]
-    assert call_kwargs["contents"] == "What is 2+2?"
-    assert call_kwargs["context"] == "test.calc"
+    async def readline(self) -> bytes:
+        return await self._lines.get()
 
 
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_records_resolved_model(mock_agenerate):
-    """The transport-reported model is recorded without a request override."""
-    mock_agenerate.return_value = _result("Response", model=GEMINI_FLASH)
+class _FakeSessionProcess:
+    def __init__(
+        self, *, reverse_first_two: bool = False, eof_after_first_request: bool = False
+    ):
+        self.stdout = _FakeReader()
+        self.stderr = _FakeReader()
+        self.stderr.feed_eof()
+        self.stdin = _FakeSessionStdin(
+            self,
+            reverse_first_two=reverse_first_two,
+            eof_after_first_request=eof_after_first_request,
+        )
+        self.returncode: int | None = None
+        self._exited = asyncio.Event()
 
-    batch = Batch(max_concurrent=5)
-    req = batch.create(contents="Test", context="test.context")
-    batch.add(req)
+    async def wait(self) -> int:
+        await self._exited.wait()
+        assert self.returncode is not None
+        return self.returncode
 
-    results = []
-    async for completed_req in batch.drain_batch():
-        results.append(completed_req)
-
-    assert len(results) == 1
-    assert results[0].model_used == GEMINI_FLASH
-
-    call_kwargs = mock_agenerate.call_args[1]
-    assert "model" not in call_kwargs
-
-
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_multiple_requests(mock_agenerate):
-    """Test batch with multiple requests."""
-    mock_agenerate.side_effect = [
-        _result("Response 1"),
-        _result("Response 2"),
-        _result("Response 3"),
-    ]
-
-    batch = Batch(max_concurrent=2)
-
-    # Add multiple requests
-    req1 = batch.create(contents="Prompt 1", context="test.context")
-    req1.id = 1
-    batch.add(req1)
-
-    req2 = batch.create(contents="Prompt 2", context="test.context")
-    req2.id = 2
-    batch.add(req2)
-
-    req3 = batch.create(contents="Prompt 3", context="test.context")
-    req3.id = 3
-    batch.add(req3)
-
-    # Collect results
-    results = []
-    async for req in batch.drain_batch():
-        results.append(req)
-
-    # Should have all 3 results
-    assert len(results) == 3
-
-    # Results may come in any order (concurrent execution)
-    result_ids = {r.id for r in results}
-    assert result_ids == {1, 2, 3}
-
-    # All should have responses
-    for r in results:
-        assert r.response is not None
-        assert r.error is None
+    def exit(self) -> None:
+        if self.returncode is None:
+            self.returncode = 0
+            self.stdout.feed_eof()
+            self._exited.set()
 
 
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_error_handling(mock_agenerate):
-    """Test that errors are captured in request.error."""
-    mock_agenerate.side_effect = ValueError("API error")
+class _FakeSessionStdin:
+    def __init__(
+        self,
+        process: _FakeSessionProcess,
+        *,
+        reverse_first_two: bool,
+        eof_after_first_request: bool,
+    ):
+        self._process = process
+        self._reverse_first_two = reverse_first_two
+        self._eof_after_first_request = eof_after_first_request
+        self.requests: list[dict] = []
+        self.terminal: dict | None = None
 
-    batch = Batch(max_concurrent=5)
-    req = batch.create(contents="Bad prompt", context="test.context")
-    req.id = "error_test"
-    batch.add(req)
+    def write(self, data: bytes) -> None:
+        record = json.loads(data)
+        if record["schema"] == "solstone-generate-session-terminal-v2":
+            self.terminal = record
+            return
+        self.requests.append(record)
+        if self._eof_after_first_request and len(self.requests) == 1:
+            self._process.exit()
+            return
+        if self._reverse_first_two and len(self.requests) == 1:
+            return
+        if self._reverse_first_two and len(self.requests) == 2:
+            self._respond(self.requests[1])
+            self._respond(self.requests[0])
+            return
+        self._respond(record)
 
-    # Get result
-    results = []
-    async for r in batch.drain_batch():
-        results.append(r)
+    async def drain(self) -> None:
+        return None
 
-    assert len(results) == 1
-    assert results[0].id == "error_test"
-    assert results[0].response is None
-    assert results[0].error == "API error"
-    assert results[0].duration > 0
+    def close(self) -> None:
+        self._process.exit()
 
+    async def wait_closed(self) -> None:
+        return None
 
-@pytest.mark.asyncio
-@patch("solstone.think.batch.resolve_provider")
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_preserves_exception_metadata(
-    mock_agenerate, mock_resolve_provider
-):
-    """Structured provider metadata should survive the batch error path."""
-
-    class ProviderError(RuntimeError):
-        reason_code = "provider_key_invalid"
-        reset_at_ms = 12345
-        provider = "anthropic"
-
-    mock_agenerate.side_effect = ProviderError("bad key")
-    mock_resolve_provider.return_value = ("google", "unused")
-
-    batch = Batch(max_concurrent=5)
-    req = batch.create(contents="Bad prompt", context="test.context")
-    batch.add(req)
-
-    results = []
-    async for r in batch.drain_batch():
-        results.append(r)
-
-    assert len(results) == 1
-    assert results[0].error == "bad key"
-    assert results[0].reason_code == "provider_key_invalid"
-    assert results[0].reset_at_ms == 12345
-    assert results[0].provider == "anthropic"
-    mock_resolve_provider.assert_not_called()
+    def _respond(self, request: dict) -> None:
+        contents = request["contents"]
+        text = contents[0]["text"]
+        response = (
+            _refused_response(request["id"])
+            if text == "refuse"
+            else _generated_response(request["id"], text)
+        )
+        self._process.stdout.feed_data(json.dumps(response).encode() + b"\n")
 
 
-@pytest.mark.asyncio
-@patch("solstone.think.batch.resolve_provider")
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_classifies_exception_metadata_when_attrs_missing(
-    mock_agenerate, mock_resolve_provider
-):
-    """Batch should classify generic exceptions and best-effort provider."""
-    mock_agenerate.side_effect = ConnectionError("network down")
-    mock_resolve_provider.return_value = ("google", "gemini-test")
+def test_batch_request_creation_and_custom_attributes():
+    request = BatchRequest(contents="Test prompt", context="test.context")
+    request.frame_id = 123
 
-    batch = Batch(max_concurrent=5)
-    req = batch.create(contents="Bad prompt", context="test.context")
-    batch.add(req)
-
-    results = []
-    async for r in batch.drain_batch():
-        results.append(r)
-
-    assert len(results) == 1
-    assert results[0].reason_code == "network_unreachable"
-    assert results[0].reset_at_ms is None
-    assert results[0].provider == "google"
-    mock_resolve_provider.assert_called_once_with("generate")
+    assert request.contents == "Test prompt"
+    assert request.temperature == 0.3
+    assert request.frame_id == 123
+    assert request.response is None
+    assert request.error is None
 
 
 def test_batch_update_clears_error_metadata():
     batch = Batch(max_concurrent=5)
-    req = batch.create(contents="Retry prompt", context="test.context")
-    req.reason_code = "provider_key_invalid"
-    req.provider = "anthropic"
-    req.reset_at_ms = 12345
-    req.error = "bad key"
+    request = batch.create(contents="Retry prompt", context="test.context")
+    request.reason_code = "provider_key_invalid"
+    request.provider = "anthropic"
+    request.reset_at_ms = 12345
+    request.error = "bad key"
 
     with patch.object(batch, "add") as mock_add:
-        batch.update(req)
+        batch.update(request)
 
-    assert req.reason_code is None
-    assert req.provider is None
-    assert req.reset_at_ms is None
-    assert req.error is None
-    mock_add.assert_called_once_with(req)
-
-
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_dynamic_adding(mock_agenerate):
-    """Test adding requests dynamically during iteration."""
-    mock_agenerate.return_value = _result("Response")
-
-    batch = Batch(max_concurrent=5)
-
-    # Add initial request
-    req1 = batch.create(contents="Initial", context="test.context")
-    req1.stage = "initial"
-    batch.add(req1)
-
-    # Process and add more during iteration
-    results = []
-    added_followup = False
-
-    async for req in batch.drain_batch():
-        results.append(req)
-
-        # After first result, add a follow-up
-        if req.stage == "initial" and not added_followup:
-            req2 = batch.create(contents="Follow-up", context="test.context")
-            req2.stage = "followup"
-            batch.add(req2)
-            added_followup = True
-
-    # Should have both results
-    assert len(results) == 2
-    stages = {r.stage for r in results}
-    assert stages == {"initial", "followup"}
+    assert request.reason_code is None
+    assert request.provider is None
+    assert request.reset_at_ms is None
+    assert request.error is None
+    mock_add.assert_called_once_with(request)
 
 
 @pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_retry_pattern(mock_agenerate):
-    """Test retry pattern without bypassing the active model profile."""
-    # First call fails, second succeeds
-    call_count = 0
+async def test_batch_uses_one_session_and_routes_success_and_refusal(monkeypatch):
+    spawned: list[_FakeSessionProcess] = []
 
-    async def mock_response(*args, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            raise ValueError("Transient error")
-        return _result("Success on retry")
+    async def fake_create_subprocess_exec(*_args, **_kwargs):
+        process = _FakeSessionProcess(reverse_first_two=True)
+        spawned.append(process)
+        return process
 
-    mock_agenerate.side_effect = mock_response
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
 
-    batch = Batch(max_concurrent=5)
-
-    # Add initial request
-    req1 = batch.create(contents="Test", context="test.context")
-    req1.attempt = 1
-    batch.add(req1)
-
-    results = []
-    async for req in batch.drain_batch():
-        results.append(req)
-
-        # If error, retry through the same active profile.
-        if req.error and req.attempt == 1:
-            retry = batch.create(
-                contents=req.contents,
-                context="test.context",
-            )
-            retry.attempt = 2
-            batch.add(retry)
-
-    # Should have both attempts
-    assert len(results) == 2
-    assert results[0].error is not None
-    assert results[0].attempt == 1
-    assert results[1].response == "Success on retry"
-    assert results[1].attempt == 2
-
-
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_factory_method(mock_agenerate):
-    """Test that batch.create() factory method works correctly."""
-    mock_agenerate.return_value = _result("Response")
-
-    batch = Batch()
-
-    # Use factory method
-    req = batch.create(
-        contents="Test",
-        context="test.context",
-        temperature=0.8,
-        json_output=True,
-    )
-
-    assert isinstance(req, BatchRequest)
-    assert req.contents == "Test"
-    assert req.context == "test.context"
-    assert req.temperature == 0.8
-    assert req.json_output is True
-
-
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_can_add_after_draining(mock_agenerate):
-    """Test that adding after draining works (reusable batch)."""
-    mock_agenerate.side_effect = [_result("Response 1"), _result("Response 2")]
-
-    batch = Batch()
-
-    # First batch
-    req1 = batch.create(contents="First", context="test.context")
-    req1.id = 1
-    batch.add(req1)
-
-    results = []
-    async for req in batch.drain_batch():
-        results.append(req)
-
-    assert len(results) == 1
-    assert results[0].id == 1
-
-    # Add more work after draining
-    req2 = batch.create(contents="Second", context="test.context")
-    req2.id = 2
-    batch.add(req2)
-
-    async for req in batch.drain_batch():
-        results.append(req)
-
-    # Should have both results
-    assert len(results) == 2
-    assert {r.id for r in results} == {1, 2}
-
-
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_empty_batch(mock_agenerate):
-    """Test that empty batch (no requests) completes immediately."""
-    batch = Batch()
-
-    results = []
-    async for req in batch.drain_batch():
-        results.append(req)
-
-    assert len(results) == 0
-
-
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_concurrency_limit(mock_agenerate):
-    """Test that semaphore limits concurrent requests."""
-    # Track concurrent calls
-    concurrent_calls = 0
-    max_concurrent_seen = 0
-    lock = asyncio.Lock()
-
-    async def mock_with_tracking(*args, **kwargs):
-        nonlocal concurrent_calls, max_concurrent_seen
-        async with lock:
-            concurrent_calls += 1
-            max_concurrent_seen = max(max_concurrent_seen, concurrent_calls)
-
-        await asyncio.sleep(0.1)  # Simulate API call
-
-        async with lock:
-            concurrent_calls -= 1
-
-        return _result("Response")
-
-    mock_agenerate.side_effect = mock_with_tracking
-
-    # Create batch with max_concurrent=2
     batch = Batch(max_concurrent=2)
+    first = batch.create(contents="first", context="test.context")
+    first.label = "first"
+    refusal = batch.create(contents="refuse", context="test.context")
+    refusal.label = "refusal"
+    third = batch.create(contents="third", context="test.context")
+    third.label = "third"
+    batch.add(first)
+    batch.add(refusal)
+    batch.add(third)
 
-    # Add 5 requests
-    for i in range(5):
-        req = batch.create(contents=f"Request {i}", context="test.context")
-        batch.add(req)
+    completed = [request async for request in batch.drain_batch()]
+    await batch.aclose()
 
-    results = []
-    async for req in batch.drain_batch():
-        results.append(req)
-
-    assert len(results) == 5
-    # Should never exceed max_concurrent=2
-    assert max_concurrent_seen <= 2
-
-
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_update_method(mock_agenerate):
-    """Test batch.update() method for modifying and re-adding requests."""
-    call_temperatures = []
-
-    async def mock_track_options(*args, **kwargs):
-        call_temperatures.append(kwargs["temperature"])
-        return _result(f"Response at {kwargs['temperature']}")
-
-    mock_agenerate.side_effect = mock_track_options
-
-    batch = Batch(max_concurrent=5)
-
-    # Create initial request
-    req = batch.create(contents="Initial prompt", context="test.context")
-    req.stage = "initial"
-    batch.add(req)
-
-    results = []
-    result_count = 0
-    async for completed_req in batch.drain_batch():
-        result_count += 1
-        # Capture the response at this point
-        results.append((result_count, completed_req.response, completed_req.stage))
-
-        # After first result, update generation options and re-add.
-        if result_count == 1:
-            batch.update(
-                completed_req,
-                contents="Updated prompt",
-                temperature=0.8,
-                stage="updated",  # Update custom attribute too
-                custom_field="test_value",  # Add new custom attribute
-            )
-
-    # Should have both results
-    assert len(results) == 2
-    assert results[0][2] == "initial"  # First result was initial stage
-    assert results[1][2] == "updated"  # Second result was updated stage
-
-    assert call_temperatures == [0.3, 0.8]
-
-    # Verify correct responses at each stage
-    assert results[0][1] == "Response at 0.3"
-    assert results[1][1] == "Response at 0.8"
-
-    # Verify custom attribute was set
-    assert req.custom_field == "test_value"
-
-
-def test_batch_request_with_timeout():
-    """Test BatchRequest can be created with timeout_s parameter."""
-    req = BatchRequest(contents="Test prompt", context="test.context", timeout_s=30)
-    assert req.timeout_s == 30
-
-    req2 = BatchRequest(contents="Test prompt", context="test.context", timeout_s=60.5)
-    assert req2.timeout_s == 60.5
-
-    # Default is None
-    req3 = BatchRequest(contents="Test prompt", context="test.context")
-    assert req3.timeout_s is None
+    assert len(spawned) == 1
+    assert len(spawned[0].stdin.requests) == 3
+    assert spawned[0].stdin.terminal == {
+        "schema": "solstone-generate-session-terminal-v2"
+    }
+    by_label = {request.label: request for request in completed}
+    assert by_label["first"].response == "first"
+    assert by_label["third"].response == "third"
+    assert by_label["refusal"].response is None
+    assert by_label["refusal"].reason_code == "provider_response_invalid"
+    assert by_label["refusal"].provider == "local"
 
 
 @pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_timeout_passthrough(mock_agenerate):
-    """Test that timeout_s is passed through to agenerate_with_result."""
-    mock_agenerate.return_value = _result("Response")
+async def test_batch_can_add_after_draining_until_closed(monkeypatch):
+    async def fake_create_subprocess_exec(*_args, **_kwargs):
+        return _FakeSessionProcess()
 
-    batch = Batch(max_concurrent=5)
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
 
-    # Create request with timeout_s
-    req = batch.create(contents="Test prompt", context="test.context", timeout_s=45)
-    batch.add(req)
+    batch = Batch()
+    first = batch.create(contents="first", context="test.context")
+    batch.add(first)
+    assert [request.response async for request in batch.drain_batch()] == ["first"]
 
-    results = []
-    async for completed_req in batch.drain_batch():
-        results.append(completed_req)
+    second = batch.create(contents="second", context="test.context")
+    batch.add(second)
+    assert [request.response async for request in batch.drain_batch()] == ["second"]
 
-    assert len(results) == 1
-
-    # Verify timeout_s was passed to agenerate_with_result
-    mock_agenerate.assert_called_once()
-    call_kwargs = mock_agenerate.call_args[1]
-    assert call_kwargs["timeout_s"] == 45
-
-
-def test_batch_rejects_provider_specific_client_override():
-    with pytest.raises(TypeError, match="unexpected keyword argument 'client'"):
-        Batch(max_concurrent=5, client=object())
+    await batch.aclose()
+    with pytest.raises(RuntimeError, match="closed batch"):
+        batch.add(batch.create(contents="later", context="test.context"))
 
 
 @pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_passes_json_schema_to_agenerate(mock_agenerate):
-    """Test that json_schema is passed through to agenerate_with_result."""
-    mock_agenerate.return_value = _result("Response")
+async def test_batch_start_failure_completes_every_pending_request(monkeypatch):
+    def fail_binary_resolution() -> Path:
+        raise RuntimeError("native core unavailable")
 
-    batch = Batch(max_concurrent=5)
-    req = batch.create(
-        contents="Test prompt",
-        context="test.context",
-        json_schema={"type": "object"},
-    )
-    batch.add(req)
+    monkeypatch.setattr(generate_client, "_native_binary", fail_binary_resolution)
 
-    results = []
-    async for completed_req in batch.drain_batch():
-        results.append(completed_req)
+    batch = Batch()
+    batch.add(batch.create(contents="first", context="test.context"))
+    batch.add(batch.create(contents="second", context="test.context"))
+    completed = [request async for request in batch.drain_batch()]
+    await batch.aclose()
 
-    assert len(results) == 1
-
-    call_kwargs = mock_agenerate.call_args[1]
-    assert call_kwargs["json_schema"] == {"type": "object"}
-
-
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_schema_validation_error_populates_request_error(mock_agenerate):
-    mock_agenerate.side_effect = SchemaValidationError(
-        [{"path": "", "constraint": "json_parse", "message": "empty"}],
-        "",
+    assert len(completed) == 2
+    assert all(request.response is None for request in completed)
+    assert all(
+        "native core unavailable" in (request.error or "") for request in completed
     )
 
-    batch = Batch(max_concurrent=5)
-    req = batch.create(
-        contents="Test prompt",
-        context="test.context",
-        json_schema={"type": "object"},
-    )
-    batch.add(req)
-
-    results = []
-    async for completed_req in batch.drain_batch():
-        results.append(completed_req)
-
-    assert len(results) == 1
-    assert results[0].response is None
-    assert "schema validation" in results[0].error
-
 
 @pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_non_json_length_finish_populates_text_length_error(mock_agenerate):
-    mock_agenerate.return_value = _result("partial text", finish_reason="max_tokens")
+async def test_batch_eof_completes_every_pending_request(monkeypatch):
+    async def fake_create_subprocess_exec(*_args, **_kwargs):
+        return _FakeSessionProcess(eof_after_first_request=True)
 
-    batch = Batch(max_concurrent=5)
-    req = batch.create(contents="Test prompt", context="test.context")
-    batch.add(req)
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
 
-    results = []
-    async for completed_req in batch.drain_batch():
-        results.append(completed_req)
+    batch = Batch()
+    batch.add(batch.create(contents="first", context="test.context"))
+    batch.add(batch.create(contents="second", context="test.context"))
+    completed = [request async for request in batch.drain_batch()]
+    await batch.aclose()
 
-    assert len(results) == 1
-    assert results[0].response is None
-    assert results[0].reason_code == "incomplete_text_length"
-    assert "Text response incomplete" in results[0].error
-
-
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_non_json_stop_finish_succeeds(mock_agenerate):
-    mock_agenerate.return_value = _result("complete text", finish_reason="stop")
-
-    batch = Batch(max_concurrent=1)
-    req = batch.create(
-        contents="Test",
-        context="test.context",
-        json_output=False,
-    )
-    batch.add(req)
-
-    results = []
-    async for completed_req in batch.drain_batch():
-        results.append(completed_req)
-
-    assert len(results) == 1
-    assert req.response == "complete text"
-    assert req.error is None
-    assert req.reason_code is None
-
-
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_non_json_non_length_finish_is_provider_response_invalid(
-    mock_agenerate,
-):
-    mock_agenerate.return_value = _result("", finish_reason="content_filter")
-
-    batch = Batch(max_concurrent=5)
-    req = batch.create(contents="Test prompt", context="test.context")
-    batch.add(req)
-
-    results = []
-    async for completed_req in batch.drain_batch():
-        results.append(completed_req)
-
-    assert len(results) == 1
-    assert results[0].response is None
-    assert results[0].reason_code == "provider_response_invalid"
-
-
-@pytest.mark.asyncio
-@patch("solstone.think.batch.agenerate_with_result", new_callable=AsyncMock)
-async def test_batch_full_result_schema_invalid_stays_hard_failure(mock_agenerate):
-    mock_agenerate.return_value = _result(
-        '{"field": "bad"}',
-        schema_validation={
-            "valid": False,
-            "errors": [{"path": "/field", "constraint": "type", "message": "bad"}],
-        },
+    assert len(completed) == 2
+    assert all(request.response is None for request in completed)
+    assert all(
+        "ended before all requests" in (request.error or "") for request in completed
     )
 
-    batch = Batch(max_concurrent=5)
-    req = batch.create(
-        contents="Test prompt",
-        context="test.context",
-        json_schema={"type": "object"},
-    )
-    batch.add(req)
-
-    results = []
-    async for completed_req in batch.drain_batch():
-        results.append(completed_req)
-
-    assert len(results) == 1
-    assert results[0].response is None
-    assert "schema validation" in results[0].error
-
 
 @pytest.mark.asyncio
-async def test_batch_preserves_non_responsive_exception_reason_code(monkeypatch):
-    import solstone.think.providers as providers_package
-    from solstone.think import batch as batch_module
-    from solstone.think import models
+async def test_batch_applies_caller_side_schema_validation(monkeypatch):
+    class InvalidSchemaProcess(_FakeSessionProcess):
+        pass
 
-    provider_module = SimpleNamespace(
-        run_agenerate=AsyncMock(
-            return_value={
-                "text": "I cannot describe this screen.",
-                "model": "provider-model",
-                "finish_reason": "stop",
+    async def fake_create_subprocess_exec(*_args, **_kwargs):
+        process = InvalidSchemaProcess()
+        original_respond = process.stdin._respond
+
+        def respond_with_invalid_schema(request: dict) -> None:
+            original_respond(request)
+            line = process.stdout._lines.get_nowait()
+            response = json.loads(line)
+            response["schema_validation"] = {
+                "valid": False,
+                "errors": [{"path": "", "constraint": "type", "message": "bad"}],
             }
-        )
-    )
-    monkeypatch.setattr(
-        models,
-        "resolve_provider",
-        lambda _interface: ("fake", "provider-model"),
-    )
-    monkeypatch.setattr(
-        providers_package,
-        "get_provider_module",
-        lambda _provider: provider_module,
-    )
-    monkeypatch.setattr(
-        batch_module,
-        "resolve_provider",
-        lambda _interface: ("fake", "provider-model"),
-    )
+            process.stdout.feed_data(json.dumps(response).encode() + b"\n")
 
-    batch = Batch(max_concurrent=5)
-    req = batch.create(
-        contents="Test prompt",
-        context="observe.describe.frame",
-        json_output=True,
+        process.stdin._respond = respond_with_invalid_schema
+        return process
+
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    batch = Batch()
+    request = batch.create(
+        contents="schema", context="test.context", json_schema={"type": "object"}
     )
-    batch.add(req)
+    batch.add(request)
+    completed = [item async for item in batch.drain_batch()]
+    await batch.aclose()
 
-    results = []
-    async for completed_req in batch.drain_batch():
-        results.append(completed_req)
+    assert len(completed) == 1
+    assert completed[0].response is None
+    assert completed[0].error is not None
+    assert completed[0].reason_code == "unknown"
+    assert "JSON response failed schema validation" in completed[0].error
 
-    assert len(results) == 1
-    assert results[0].response is None
-    assert results[0].reason_code == NON_RESPONSIVE_REASON_CODE
+
+@pytest.mark.asyncio
+async def test_batch_applies_caller_side_finish_reason_check(monkeypatch):
+    async def fake_create_subprocess_exec(*_args, **_kwargs):
+        process = _FakeSessionProcess()
+        original_respond = process.stdin._respond
+
+        def respond_with_truncation(request: dict) -> None:
+            original_respond(request)
+            line = process.stdout._lines.get_nowait()
+            response = json.loads(line)
+            response["finish_reason"] = "max_tokens"
+            process.stdout.feed_data(json.dumps(response).encode() + b"\n")
+
+        process.stdin._respond = respond_with_truncation
+        return process
+
+    monkeypatch.setattr(generate_client, "_native_binary", lambda: Path("/native/core"))
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    batch = Batch()
+    batch.add(batch.create(contents="partial", context="test.context"))
+    completed = [item async for item in batch.drain_batch()]
+    await batch.aclose()
+
+    assert len(completed) == 1
+    assert completed[0].response is None
+    assert completed[0].reason_code == "incomplete_text_length"
+
+
+@pytest.mark.asyncio
+async def test_empty_batch_never_spawns_a_session():
+    batch = Batch()
+
+    assert [request async for request in batch.drain_batch()] == []
+    await batch.aclose()
