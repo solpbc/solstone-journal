@@ -28,7 +28,6 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.check_extras_consistency import WORKSPACE_SOURCES  # noqa: E402
 from scripts.check_release_preflight import (
     LANE_TOOL_KEYS,
     check_lane_tool_evidence,
@@ -115,6 +114,12 @@ from scripts.release_nvattest_support import (
     validate_support_declarations,
     verify_support_wheels_against_lock,
 )
+from scripts.release_package_inventory import (  # noqa: E402
+    load_release_package_inventory,
+    macos_native_record_name,
+    native_role,
+    normalized_distribution,
+)
 from scripts.release_proof_host import (
     ProofHostError,
     TargetProofPaths,
@@ -135,7 +140,6 @@ from scripts.stage_speakers_analyze_runtime import (
 )
 from scripts.stage_speakers_analyze_runtime import ROOT as SPEAKERS_ANALYZE_STAGE_ROOT
 from scripts.stage_speakers_analyze_runtime import TARGETS as SPEAKERS_ANALYZE_TARGETS
-from solstone.think.probe import SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_TAGS
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -158,12 +162,8 @@ SPEAKERS_ANALYZE_AARCH64_MATURIN_ARGS = (
     "--locked --zig --compatibility manylinux_2_27 --auditwheel skip "
     "--target aarch64-unknown-linux-gnu"
 )
-# Derived, never restated: the helper's declared coverage lives in
-# solstone/think/probe.py. A literal here would keep selecting the old
-# filename if the measured floor ever moves.
-SPEAKERS_ANALYZE_MACOS_TAG = SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_TAGS[
-    ("darwin", "arm64")
-]
+DESCRIBE_X86_64_MATURIN_ARGS = SPEAKERS_ANALYZE_X86_64_MATURIN_ARGS
+DESCRIBE_AARCH64_MATURIN_ARGS = SPEAKERS_ANALYZE_AARCH64_MATURIN_ARGS
 ROOT_WORKSPACE_PACKAGE = "solstone"
 MODELS_WORKSPACE_PACKAGE = "solstone-journal-models"
 CORE_WORKSPACE_PACKAGE = "solstone-core"
@@ -1064,7 +1064,8 @@ def _scrubbed_build_env(
 
 
 def _expected_local_build_packages(*, include_models: bool) -> tuple[str, ...]:
-    packages = {ROOT_WORKSPACE_PACKAGE, *WORKSPACE_SOURCES}
+    inventory = load_release_package_inventory(ROOT)
+    packages = {inventory.root_distribution, *inventory.workspace_distributions}
     if not include_models:
         packages -= {MODELS_WORKSPACE_PACKAGE}
     return tuple(sorted(packages))
@@ -1074,10 +1075,14 @@ def _expected_local_build_commands(
     *, include_models: bool, version: str
 ) -> tuple[tuple[tuple[str, ...], str, str | None], ...]:
     render_check = (("python3", "scripts/render_packaging.py", "--check"), "", None)
+    inventory = load_release_package_inventory(ROOT)
+    native_distributions = {
+        package.distribution for package in inventory.native_packages
+    }
     package_builds = tuple(
-        (("uv", "build", "--package", package), CORE_X86_64_MATURIN_ARGS, None)
+        (("uv", "build", "--package", package), "", None)
         for package in _expected_local_build_packages(include_models=include_models)
-        if package not in {CORE_WORKSPACE_PACKAGE, SPEAKERS_ANALYZE_WORKSPACE_PACKAGE}
+        if package not in native_distributions
     )
     core_sdist = (
         ("uv", "build", "--package", CORE_WORKSPACE_PACKAGE, "--sdist"),
@@ -1095,60 +1100,53 @@ def _expected_local_build_commands(
         CORE_AARCH64_MATURIN_ARGS,
         None,
     )
-    x86_64_helper_target = "linux-x86_64"
-    aarch64_helper_target = "linux-aarch64"
-    x86_64_helper_stage = (
-        (
-            "python3",
-            "scripts/stage_speakers_analyze_runtime.py",
-            "--target",
-            x86_64_helper_target,
-        ),
-        "",
-        None,
-    )
-    x86_64_helper = (
-        (
-            "uv",
-            "build",
-            "--package",
-            SPEAKERS_ANALYZE_WORKSPACE_PACKAGE,
-            "--wheel",
-        ),
-        SPEAKERS_ANALYZE_X86_64_MATURIN_ARGS,
-        x86_64_helper_target,
-    )
-    aarch64_helper_stage = (
-        (
-            "python3",
-            "scripts/stage_speakers_analyze_runtime.py",
-            "--target",
-            aarch64_helper_target,
-        ),
-        "",
-        None,
-    )
-    aarch64_helper = (
-        (
-            "uv",
-            "build",
-            "--package",
-            SPEAKERS_ANALYZE_WORKSPACE_PACKAGE,
-            "--wheel",
-        ),
-        SPEAKERS_ANALYZE_AARCH64_MATURIN_ARGS,
-        aarch64_helper_target,
-    )
+    native_builds: list[tuple[tuple[str, ...], str, str | None]] = []
+    for package in inventory.native_packages:
+        if package.distribution == CORE_WORKSPACE_PACKAGE:
+            continue
+        if package.target_family == "core":
+            build_args = (
+                (CORE_X86_64_MATURIN_ARGS, None),
+                (CORE_AARCH64_MATURIN_ARGS, None),
+            )
+        elif package.target_family == "describe":
+            build_args = (
+                (DESCRIBE_X86_64_MATURIN_ARGS, None),
+                (DESCRIBE_AARCH64_MATURIN_ARGS, None),
+            )
+        else:
+            build_args = (
+                (SPEAKERS_ANALYZE_X86_64_MATURIN_ARGS, "linux-x86_64"),
+                (SPEAKERS_ANALYZE_AARCH64_MATURIN_ARGS, "linux-aarch64"),
+            )
+        for maturin_args, ort_target in build_args:
+            if ort_target is not None:
+                native_builds.append(
+                    (
+                        (
+                            "python3",
+                            "scripts/stage_speakers_analyze_runtime.py",
+                            "--target",
+                            ort_target,
+                        ),
+                        "",
+                        None,
+                    )
+                )
+            native_builds.append(
+                (
+                    ("uv", "build", "--package", package.distribution, "--wheel"),
+                    maturin_args,
+                    ort_target,
+                )
+            )
     return (
         render_check,
         *package_builds,
         core_sdist,
         x86_64_core,
         aarch64_core,
-        x86_64_helper_stage,
-        x86_64_helper,
-        aarch64_helper_stage,
-        aarch64_helper,
+        *native_builds,
     )
 
 
@@ -1166,10 +1164,18 @@ def _default_build_local_dist(
         (SPEAKERS_ANALYZE_X86_64_MATURIN_ARGS, "x86_64-unknown-linux-gnu"),
         (SPEAKERS_ANALYZE_AARCH64_MATURIN_ARGS, "aarch64-unknown-linux-gnu"),
     )
+    describe_contracts = (
+        (DESCRIBE_X86_64_MATURIN_ARGS, "x86_64-unknown-linux-gnu"),
+        (DESCRIBE_AARCH64_MATURIN_ARGS, "aarch64-unknown-linux-gnu"),
+    )
     failures: list[Failure] = []
     for args, target in linux_contracts:
         failures.extend(validate_linux_maturin_args(args, target=target))
     for args, target in speakers_analyze_contracts:
+        failures.extend(
+            validate_speakers_analyze_linux_maturin_args(args, target=target)
+        )
+    for args, target in describe_contracts:
         failures.extend(
             validate_speakers_analyze_linux_maturin_args(args, target=target)
         )
@@ -1503,31 +1509,38 @@ def _assert_clean_identity(
 
 
 def _macos_wheel_role(path: Path) -> str | None:
-    name = path.name
+    return {name: role for role, name in _expected_macos_wheels_by_role().items()}.get(
+        path.name
+    )
+
+
+def _expected_macos_wheels_by_role() -> dict[str, str]:
+    inventory = load_release_package_inventory(ROOT)
     expected_wheels = expected_package_names(include_models=False)
     expected_root = next(
         item
         for item in expected_wheels
         if item.startswith("solstone-") and "macosx_14_0_arm64" in item
     )
-    expected_core = next(
-        item
-        for item in expected_wheels
-        if item.startswith("solstone_core-") and "macosx_14_0_arm64" in item
-    )
-    expected_speakers_analyze = next(
-        item
-        for item in expected_wheels
-        if item.startswith("solstone_core_speakers_analyze-")
-        and SPEAKERS_ANALYZE_MACOS_TAG in item
-    )
-    if name == expected_core:
-        return "core"
-    if name == expected_root:
-        return "root"
-    if name == expected_speakers_analyze:
-        return "speakers-analyze"
-    return None
+    by_role = {"root": expected_root}
+    for package in inventory.macos_native_packages:
+        prefix = f"{normalized_distribution(package.distribution)}-"
+        matches = [
+            item
+            for item in expected_wheels
+            if item.startswith(prefix) and "macosx_14_0_arm64" in item
+        ]
+        if len(matches) != 1:
+            raise RuntimeError(
+                f"release artifacts did not include exactly one macOS wheel for "
+                f"{package.distribution}"
+            )
+        by_role[native_role(package)] = matches[0]
+    return by_role
+
+
+def _expected_macos_roles() -> set[str]:
+    return set(_expected_macos_wheels_by_role())
 
 
 def _macos_wheel_names() -> frozenset[str]:
@@ -1640,13 +1653,9 @@ def _validate_candidate_wheel_contents(
 
 
 def _native_record_role(path: Path) -> str | None:
-    if path.name == "macos-native-root.json":
-        return "root"
-    if path.name == "macos-native-core.json":
-        return "core"
-    if path.name == "macos-native-speakers-analyze.json":
-        return "speakers-analyze"
-    return None
+    return {
+        macos_native_record_name(role): role for role in _expected_macos_roles()
+    }.get(path.name)
 
 
 def _native_record_payloads(
@@ -1656,6 +1665,7 @@ def _native_record_payloads(
     core_lock_sha256: str,
 ) -> list[dict[str, Any]]:
     failures: list[Failure] = []
+    expected_roles = _expected_macos_roles()
     wheel_by_role: dict[str, Path] = {}
     for wheel in host_result.macos_wheels:
         role = _macos_wheel_role(wheel)
@@ -1663,7 +1673,7 @@ def _native_record_payloads(
             failures.append(
                 _failure(
                     "build-host macOS wheel role is invalid",
-                    expected="root, core, or speakers-analyze macOS arm64 wheel",
+                    expected=", ".join(sorted(expected_roles)),
                     actual=wheel.name,
                     repair="bash scripts/release.sh --candidate",
                 )
@@ -1673,7 +1683,7 @@ def _native_record_payloads(
             failures.append(
                 _failure(
                     "build-host macOS wheel role is duplicated",
-                    expected="one root wheel, one core wheel, and one speakers-analyze wheel",
+                    expected="one wheel for every declared macOS role",
                     actual=role,
                     repair="bash scripts/release.sh --candidate",
                 )
@@ -1687,9 +1697,10 @@ def _native_record_payloads(
             failures.append(
                 _failure(
                     "build-host native record role is invalid",
-                    expected=(
-                        "macos-native-root.json, macos-native-core.json, and "
-                        "macos-native-speakers-analyze.json"
+                    expected=", ".join(
+                        sorted(
+                            macos_native_record_name(role) for role in expected_roles
+                        )
                     ),
                     actual=path.name,
                     repair="bash scripts/release.sh --candidate",
@@ -1700,10 +1711,7 @@ def _native_record_payloads(
             failures.append(
                 _failure(
                     "build-host native record role is duplicated",
-                    expected=(
-                        "one root record, one core record, and one speakers-analyze "
-                        "record"
-                    ),
+                    expected="one record for every declared macOS role",
                     actual=role,
                     repair="bash scripts/release.sh --candidate",
                 )
@@ -1732,20 +1740,20 @@ def _native_record_payloads(
                 )
             )
         records.append(payload)
-    if set(wheel_by_role) != {"root", "core", "speakers-analyze"}:
+    if set(wheel_by_role) != expected_roles:
         failures.append(
             _failure(
                 "build-host macOS wheel set is incomplete",
-                expected="root, core, and speakers-analyze macOS wheels",
+                expected=", ".join(sorted(expected_roles)),
                 actual=", ".join(sorted(wheel_by_role)) or "<empty>",
                 repair="bash scripts/release.sh --candidate",
             )
         )
-    if record_roles != {"root", "core", "speakers-analyze"}:
+    if record_roles != expected_roles:
         failures.append(
             _failure(
                 "build-host native record set is incomplete",
-                expected="root, core, and speakers-analyze native records",
+                expected=", ".join(sorted(expected_roles)),
                 actual=", ".join(sorted(record_roles)) or "<empty>",
                 repair="bash scripts/release.sh --candidate",
             )
@@ -1760,13 +1768,14 @@ def _native_records_by_role(
 ) -> dict[str, Mapping[str, Any]]:
     records: dict[str, Mapping[str, Any]] = {}
     failures: list[Failure] = []
+    expected_roles = _expected_macos_roles()
     for record in native_records:
         role = record.get("role")
-        if role not in {"root", "core", "speakers-analyze"}:
+        if role not in expected_roles:
             failures.append(
                 _failure(
                     "native record role is invalid",
-                    expected="root, core, or speakers-analyze",
+                    expected=", ".join(sorted(expected_roles)),
                     actual=str(role),
                     repair="bash scripts/release.sh --candidate",
                 )
@@ -1776,20 +1785,17 @@ def _native_records_by_role(
             failures.append(
                 _failure(
                     "native record role is duplicated",
-                    expected=(
-                        "one root record, one core record, and one "
-                        "speakers-analyze record"
-                    ),
+                    expected="one record for every declared macOS role",
                     actual=str(role),
                     repair="bash scripts/release.sh --candidate",
                 )
             )
         records[str(role)] = record
-    if set(records) != {"root", "core", "speakers-analyze"}:
+    if set(records) != expected_roles:
         failures.append(
             _failure(
                 "native record set is incomplete",
-                expected="root, core, and speakers-analyze native records",
+                expected=", ".join(sorted(expected_roles)),
                 actual=", ".join(sorted(records)) or "<empty>",
                 repair="bash scripts/release.sh --candidate",
             )
@@ -2032,11 +2038,12 @@ def _lane_evidence_from_full_tool_evidence(
 
 def _copy_macos_wheels(host_result: BuildHostResult, dist_dir: Path) -> None:
     failures: list[Failure] = []
-    if len(host_result.macos_wheels) != 3:
+    expected_count = len(_expected_macos_roles())
+    if len(host_result.macos_wheels) != expected_count:
         failures.append(
             _failure(
                 "build-host macOS wheel set has wrong size",
-                expected="exactly three macOS wheels",
+                expected=f"exactly {expected_count} declared macOS wheels",
                 actual=str(len(host_result.macos_wheels)),
                 repair="bash scripts/release.sh --candidate",
             )

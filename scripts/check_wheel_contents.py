@@ -22,6 +22,11 @@ from typing import Literal, NamedTuple, Sequence
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from scripts.release_package_inventory import (
+    NativePackage,
+    load_release_package_inventory,
+    normalized_distribution,
+)
 from scripts.stage_speakers_analyze_runtime import (
     NOTICE_INSTALL_DIR as SPEAKERS_ANALYZE_NOTICE_INSTALL_DIR,
 )
@@ -66,6 +71,10 @@ ROOT_LAUNCHER_NAMES = ("sol", "solstone")
 CORE_SCRIPT_NAMES = ("solstone-core",)
 SPEAKERS_ANALYZE_SCRIPT_NAMES = ("solstone-core-speakers-analyze",)
 DESCRIBE_SCRIPT_NAME = "solstone-core-describe"
+DESCRIBE_PLATFORM_TAGS: dict[CorePlatform, str] = {
+    ("linux", "x86_64"): "manylinux_2_27_x86_64",
+    ("linux", "aarch64"): "manylinux_2_27_aarch64",
+}
 ELF_MAGIC = b"\x7fELF"
 ELF_CLASS_64 = 2
 ELF_DATA_LITTLE_ENDIAN = 1
@@ -235,7 +244,7 @@ def _is_models_wheel(path: Path) -> bool:
 
 
 def _is_core_wheel(path: Path) -> bool:
-    return path.name.startswith("solstone_core-") and path.name.endswith(".whl")
+    return bool(re.match(r"solstone_core-[^-]+-py3-none-.+\.whl$", path.name))
 
 
 def _is_speakers_analyze_wheel(path: Path) -> bool:
@@ -251,7 +260,12 @@ def _is_describe_wheel(path: Path) -> bool:
 
 
 def _is_core_sdist(path: Path) -> bool:
-    return path.name.startswith("solstone_core-") and path.name.endswith(".tar.gz")
+    return bool(re.match(r"solstone_core-[^-]+\.tar\.gz$", path.name))
+
+
+def _is_native_package_wheel(path: Path, package: NativePackage) -> bool:
+    distribution = normalized_distribution(package.distribution)
+    return path.name.startswith(f"{distribution}-") and path.name.endswith(".whl")
 
 
 def _project_version(path: Path) -> str:
@@ -1382,6 +1396,103 @@ def check_core_wheel(path: Path, max_bytes: int) -> list[str]:
     return errors
 
 
+def _native_binary_expected_members(path: Path, package: NativePackage) -> set[str]:
+    distribution = normalized_distribution(package.distribution)
+    version = _wheel_version_from_name(path, distribution)
+    data_prefix = f"{distribution}-{version}.data"
+    dist_info_prefix = f"{distribution}-{version}.dist-info"
+    return {
+        f"{data_prefix}/scripts/{package.binary}",
+        f"{dist_info_prefix}/METADATA",
+        f"{dist_info_prefix}/WHEEL",
+        f"{dist_info_prefix}/RECORD",
+        f"{dist_info_prefix}/sboms/{package.crate}.cyclonedx.json",
+    }
+
+
+def check_native_binary_wheel(path: Path, package: NativePackage) -> list[str]:
+    """Validate a standard one-binary Maturin release leaf."""
+
+    errors: list[str] = []
+    tag = _core_wheel_tag(path)
+    platform_tuple = CORE_TAG_PLATFORMS.get(tag)
+    repair = _core_rebuild_command(platform_tuple)
+    if path.stat().st_size > MAX_CORE_WHEEL_BYTES:
+        errors.append(
+            _failure(
+                path.name,
+                "native binary wheel is too large",
+                expected=f"<= {MAX_CORE_WHEEL_BYTES} bytes",
+                actual=str(path.stat().st_size),
+                repair=repair,
+            )
+        )
+    if platform_tuple is None:
+        errors.append(
+            _failure(
+                path.name,
+                "native binary wheel tag is unsupported",
+                expected=", ".join(sorted(SOLSTONE_CORE_PLATFORM_TAGS.values())),
+                actual=tag,
+                repair=repair,
+            )
+        )
+    if "-linux_" in path.name:
+        errors.append(f"{path.name}: bare linux tag is not publishable")
+
+    with zipfile.ZipFile(path) as wheel:
+        expected_members = _native_binary_expected_members(path, package)
+        actual_members = set(wheel.namelist())
+        if actual_members != expected_members:
+            errors.append(
+                _failure(
+                    path.name,
+                    f"{package.distribution} wheel member set is wrong",
+                    expected=", ".join(sorted(expected_members)),
+                    actual=", ".join(sorted(actual_members)) or "<empty>",
+                    repair=repair,
+                )
+            )
+        binary_infos = [
+            info
+            for info in wheel.infolist()
+            if info.filename.endswith(f".data/scripts/{package.binary}")
+        ]
+        if len(binary_infos) != 1:
+            errors.append(
+                _failure(
+                    path.name,
+                    "native binary member count is wrong",
+                    expected=f"exactly one .data/scripts/{package.binary}",
+                    actual=str(len(binary_infos)),
+                    repair=repair,
+                )
+            )
+        else:
+            binary_info = binary_infos[0]
+            mode = (binary_info.external_attr >> 16) & 0o777
+            if mode & 0o111 == 0:
+                errors.append(
+                    _failure(
+                        path.name,
+                        f"{package.binary} is not executable",
+                        expected="executable mode bit set",
+                        actual=oct(mode),
+                        repair=repair,
+                    )
+                )
+            elif platform_tuple is not None:
+                errors.extend(
+                    _check_core_binary(
+                        f"{path.name}:{binary_info.filename}",
+                        wheel.read(binary_info),
+                        platform_tuple,
+                    )
+                )
+        errors.extend(_check_record(path, wheel))
+    return errors
+
+
 def _speakers_analyze_expected_members(
     path: Path, platform_tuple: CorePlatform
 ) -> tuple[set[str], str, str]:
@@ -1847,47 +1958,78 @@ def _speakers_analyze_platforms_for_scope(
     )
 
 
+def _native_platform_tags(
+    package: NativePackage, release_scope: ReleaseScope
+) -> tuple[str, ...]:
+    if package.target_family == "core":
+        return tuple(
+            SOLSTONE_CORE_PLATFORM_TAGS[platform]
+            for platform in _core_platforms_for_scope(release_scope)
+        )
+    if package.target_family == "speakers-analyze":
+        return tuple(
+            SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_TAGS[platform]
+            for platform in _speakers_analyze_platforms_for_scope(release_scope)
+        )
+    return tuple(
+        DESCRIBE_PLATFORM_TAGS[platform]
+        for platform in sorted(DESCRIBE_PLATFORM_TAGS)
+        if platform[0] == "linux"
+    )
+
+
 def _release_artifact_members(
     dist_dir: Path,
     *,
     release_scope: ReleaseScope,
     models_decision: ModelsDecision,
 ) -> list[tuple[Path, str]]:
-    version = _release_version()
-    models_version = _models_version()
+    inventory = load_release_package_inventory(ROOT)
+    version = inventory.root_version
     artifacts = [
         (dist_dir / f"solstone-{version}.tar.gz", "root sdist"),
         (dist_dir / f"solstone-{version}-py3-none-any.whl", "root any wheel"),
-        (dist_dir / f"solstone_core-{version}.tar.gz", "core sdist"),
-        (dist_dir / f"solstone_journal-{version}.tar.gz", "journal CPU sdist"),
-        (
-            dist_dir / f"solstone_journal-{version}-py3-none-any.whl",
-            "journal CPU wheel",
-        ),
-        (dist_dir / f"solstone_journal_cuda-{version}.tar.gz", "journal CUDA sdist"),
-        (
-            dist_dir / f"solstone_journal_cuda-{version}-py3-none-any.whl",
-            "journal CUDA wheel",
-        ),
     ]
-    for platform_tuple in _core_platforms_for_scope(release_scope):
-        tag = SOLSTONE_CORE_PLATFORM_TAGS[platform_tuple]
-        artifacts.append(
+    native_distributions = {
+        package.distribution for package in inventory.native_packages
+    }
+    for package in inventory.packages:
+        if package.distribution in native_distributions:
+            continue
+        if (
+            package.distribution == "solstone-journal-models"
+            and models_decision == "skip"
+        ):
+            continue
+        distribution = normalized_distribution(package.distribution)
+        artifacts.extend(
             (
-                dist_dir / f"solstone_core-{version}-py3-none-{tag}.whl",
-                f"core wheel for {platform_tuple[0]}/{platform_tuple[1]}",
+                (
+                    dist_dir / f"{distribution}-{package.version}.tar.gz",
+                    f"{package.distribution} sdist",
+                ),
+                (
+                    dist_dir / f"{distribution}-{package.version}-py3-none-any.whl",
+                    f"{package.distribution} wheel",
+                ),
             )
         )
-    for platform_tuple in _speakers_analyze_platforms_for_scope(release_scope):
-        tag = SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_TAGS[platform_tuple]
-        artifacts.append(
-            (
-                dist_dir
-                / f"solstone_core_speakers_analyze-{version}-py3-none-{tag}.whl",
-                "speakers analyze helper wheel for "
-                f"{platform_tuple[0]}/{platform_tuple[1]}",
+    for package in inventory.native_packages:
+        distribution = normalized_distribution(package.distribution)
+        if package.sdist:
+            artifacts.append(
+                (
+                    dist_dir / f"{distribution}-{package.version}.tar.gz",
+                    f"{package.distribution} sdist",
+                )
             )
-        )
+        for tag in _native_platform_tags(package, release_scope):
+            artifacts.append(
+                (
+                    dist_dir / f"{distribution}-{package.version}-py3-none-{tag}.whl",
+                    f"{package.distribution} wheel for {tag}",
+                )
+            )
     if release_scope == "all-hosts":
         for platform_tuple in SOLSTONE_CORE_COVERED_PLATFORMS:
             if platform_tuple[0] != "darwin":
@@ -1899,22 +2041,6 @@ def _release_artifact_members(
                     f"root platform wheel for {platform_tuple[0]}/{platform_tuple[1]}",
                 )
             )
-    # The caller owns the explicit models include/exclude decision; this helper
-    # only maps that decision to the legacy publish/skip artifact vocabulary.
-    if models_decision == "publish":
-        artifacts.extend(
-            [
-                (
-                    dist_dir / f"solstone_journal_models-{models_version}.tar.gz",
-                    "models sdist",
-                ),
-                (
-                    dist_dir
-                    / f"solstone_journal_models-{models_version}-py3-none-any.whl",
-                    "models wheel",
-                ),
-            ]
-        )
     return artifacts
 
 
@@ -1975,6 +2101,7 @@ def check_dist(
     models_decision: ModelsDecision | None = None,
 ) -> list[str]:
     errors: list[str] = []
+    inventory = load_release_package_inventory(ROOT)
     wheels = sorted(dist_dir.glob("*.whl"))
     base_wheels = [path for path in wheels if _is_base_wheel(path)]
     models_wheels = [path for path in wheels if _is_models_wheel(path)]
@@ -1983,11 +2110,29 @@ def check_dist(
         path for path in wheels if _is_speakers_analyze_wheel(path)
     ]
     describe_wheels = [path for path in wheels if _is_describe_wheel(path)]
+    generic_native_packages = tuple(
+        package
+        for package in inventory.native_packages
+        if package.distribution
+        not in {
+            "solstone-core",
+            "solstone-core-describe",
+            "solstone-core-speakers-analyze",
+        }
+    )
+    generic_native_wheels = {
+        package: [path for path in wheels if _is_native_package_wheel(path, package)]
+        for package in generic_native_packages
+    }
     core_sdists = sorted(
         path for path in dist_dir.glob("*.tar.gz") if _is_core_sdist(path)
     )
     helper_only_dist = (
-        (speakers_analyze_wheels or describe_wheels)
+        (
+            speakers_analyze_wheels
+            or describe_wheels
+            or any(generic_native_wheels.values())
+        )
         and not base_wheels
         and not models_wheels
         and not core_wheels
@@ -2032,6 +2177,9 @@ def check_dist(
         errors.extend(check_speakers_analyze_wheel(path))
     for path in describe_wheels:
         errors.extend(check_describe_wheel(path))
+    for package, package_wheels in generic_native_wheels.items():
+        for path in package_wheels:
+            errors.extend(check_native_binary_wheel(path, package))
     for path in core_sdists:
         errors.extend(check_core_sdist(path))
     if release_scope is not None:

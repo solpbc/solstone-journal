@@ -55,6 +55,12 @@ from scripts.release_install_smoke import (
 )
 from scripts.release_nvattest_proof import SUPPORT_DISTRIBUTION_NAMES
 from scripts.release_nvattest_support import read_support_lock_entries
+from scripts.release_package_inventory import (
+    load_release_package_inventory,
+    macos_native_record_name,
+    native_role,
+    normalized_distribution,
+)
 from scripts.release_proof_host import TargetProofPaths
 from scripts.release_target_policy import TARGET_POLICY
 from solstone.think.probe import SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_TAGS
@@ -73,6 +79,7 @@ from tests.helpers.release_wheel_fixtures import (
     speakers_analyze_elf,
     speakers_analyze_macho,
     write_core_wheel,
+    write_native_binary_wheel,
     write_platform_base_wheel,
     write_speakers_analyze_wheel,
     write_support_wheel,
@@ -419,6 +426,30 @@ def write_macos_host_outputs(
         source_commit=SOURCE_COMMIT,
         core_lock_sha256=LOCK_SHA,
     )
+    macos_wheels = [root_wheel, core_wheel, speakers_analyze_wheel]
+    records_by_role: dict[str, dict[str, Any]] = {
+        "root": root_record,
+        "core": core_record,
+        "speakers-analyze": speakers_record,
+    }
+    for package in load_release_package_inventory().macos_native_packages:
+        role = native_role(package)
+        if role in records_by_role:
+            continue
+        wheel = write_native_binary_wheel(
+            output_dir,
+            package=package,
+            tag="macosx_14_0_arm64",
+            binary=MACOS_CORE,
+        )
+        macos_wheels.append(wheel)
+        records_by_role[role] = native.build_macos_native_record(
+            role=role,
+            wheel_path=wheel,
+            signing_facts={"members": {package.binary: _facts(MACOS_CORE)}},
+            source_commit=SOURCE_COMMIT,
+            core_lock_sha256=LOCK_SHA,
+        )
     if mutate == "record_role":
         root_record["role"] = "core"
     if mutate == "member":
@@ -433,21 +464,20 @@ def write_macos_host_outputs(
         root_record["wheel"]["sha256"] = "0" * 64
     root_record_path = output_dir / "macos-native-root.json"
     core_record_path = output_dir / "macos-native-core.json"
-    speakers_record_path = output_dir / "macos-native-speakers-analyze.json"
     if mutate == "record_paths_swapped":
         root_record_path, core_record_path = core_record_path, root_record_path
-    root_record_path.write_text(
-        json.dumps(root_record, sort_keys=True), encoding="utf-8"
-    )
-    core_record_path.write_text(
-        json.dumps(core_record, sort_keys=True), encoding="utf-8"
-    )
-    speakers_record_path.write_text(
-        json.dumps(speakers_record, sort_keys=True), encoding="utf-8"
-    )
+    record_paths: list[Path] = []
+    for role, record in records_by_role.items():
+        path = output_dir / macos_native_record_name(role)
+        if role == "root":
+            path = root_record_path
+        elif role == "core":
+            path = core_record_path
+        path.write_text(json.dumps(record, sort_keys=True), encoding="utf-8")
+        record_paths.append(path)
     return BuildHostResult(
-        macos_wheels=(root_wheel, core_wheel, speakers_analyze_wheel),
-        native_records=(root_record_path, core_record_path, speakers_record_path),
+        macos_wheels=tuple(macos_wheels),
+        native_records=tuple(record_paths),
         tool_evidence=pins.fixture_presign_lane_tool_evidence("macos-arm64"),
     )
 
@@ -916,12 +946,32 @@ def services(
         dist.mkdir(parents=True, exist_ok=True)
         for name in driver._expected_local_dist_names(include_models=include_models):
             path = dist / name
+            native_package = next(
+                (
+                    package
+                    for package in load_release_package_inventory().native_packages
+                    if name.startswith(
+                        f"{normalized_distribution(package.distribution)}-"
+                    )
+                ),
+                None,
+            )
             if name.startswith("solstone_journal_models-") and name.endswith(".whl"):
                 _write_models_wheel(path)
             elif name.startswith("solstone_core_speakers_analyze-") and name.endswith(
                 ".whl"
             ):
                 continue
+            elif (
+                native_package is not None
+                and native_package.distribution != "solstone-core"
+                and name.endswith(".whl")
+            ):
+                write_native_binary_wheel(
+                    dist,
+                    package=native_package,
+                    tag=name.removesuffix(".whl").split("-")[-1],
+                )
             elif name.endswith(".whl"):
                 _write_metadata_wheel(path)
             elif name.startswith("solstone_core-") and name.endswith(".tar.gz"):

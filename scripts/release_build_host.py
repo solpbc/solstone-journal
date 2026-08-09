@@ -25,27 +25,26 @@ from scripts.check_rust_release_manifest import (
     expected_package_names,
 )
 from scripts.release_digest import file_sha256_size
+from scripts.release_package_inventory import (
+    load_release_package_inventory,
+    macos_native_record_name,
+    native_role,
+    normalized_distribution,
+)
 from scripts.release_public_evidence import validate_public_evidence_tree
-from solstone.think.probe import SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_TAGS
-
-# Derived, never restated: the helper's declared coverage lives in
-# solstone/think/probe.py. A literal here would keep selecting the old
-# filename if the measured floor ever moves.
-SPEAKERS_ANALYZE_MACOS_TAG = SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_TAGS[
-    ("darwin", "arm64")
-]
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 IdFactory = Callable[[], str]
 FileCopier = Callable[[Path, Path], object]
 
 
+# Stable names retained for the three original native roles. The complete
+# record set is derived by _expected_native_record_names().
 MACOS_ROOT_RECORD = "macos-native-root.json"
 MACOS_CORE_RECORD = "macos-native-core.json"
 MACOS_SPEAKERS_ANALYZE_RECORD = "macos-native-speakers-analyze.json"
-EXPECTED_NATIVE_RECORDS = frozenset(
-    (MACOS_ROOT_RECORD, MACOS_CORE_RECORD, MACOS_SPEAKERS_ANALYZE_RECORD)
-)
+
+
 REQUEST_KEYS = frozenset(
     (
         "schema_version",
@@ -60,12 +59,8 @@ REQUEST_KEYS = frozenset(
 REQUEST_BUNDLE_KEYS = frozenset(("path", "source_commit", "sha256", "bytes"))
 REQUEST_OUTPUT_KEYS = frozenset(
     (
-        "root_wheel",
-        "core_wheel",
-        "speakers_analyze_wheel",
-        "root_record",
-        "core_record",
-        "speakers_analyze_record",
+        "macos_wheels",
+        "native_records",
     )
 )
 REQUEST_PATH_KEYS = frozenset(("response", "output_dir"))
@@ -511,43 +506,49 @@ def _validate_source_bundle(
 
 
 def _wheel_role(name: str) -> str | None:
-    expected_root, expected_core, expected_speakers_analyze = (
-        _expected_macos_wheel_names()
-    )
-    if name == expected_core:
-        return "core"
-    if name == expected_root:
-        return "root"
-    if name == expected_speakers_analyze:
-        return "speakers-analyze"
-    return None
+    return {
+        wheel_name: role
+        for role, wheel_name in _expected_macos_wheels_by_role().items()
+    }.get(name)
 
 
-def _expected_macos_wheel_names() -> tuple[str, str, str]:
+def _expected_macos_wheels_by_role() -> dict[str, str]:
+    inventory = load_release_package_inventory()
     expected_wheels = expected_package_names(include_models=False)
     expected_root = next(
         item
         for item in expected_wheels
         if item.startswith("solstone-") and "macosx_14_0_arm64" in item
     )
-    expected_core = next(
-        item
-        for item in expected_wheels
-        if item.startswith("solstone_core-") and "macosx_14_0_arm64" in item
+    by_role = {"root": expected_root}
+    for package in inventory.macos_native_packages:
+        prefix = f"{normalized_distribution(package.distribution)}-"
+        matches = [
+            item
+            for item in expected_wheels
+            if item.startswith(prefix) and "macosx_14_0_arm64" in item
+        ]
+        if len(matches) != 1:
+            raise RuntimeError(
+                f"release artifacts did not include exactly one macOS wheel for "
+                f"{package.distribution}"
+            )
+        by_role[native_role(package)] = matches[0]
+    return by_role
+
+
+def _expected_macos_wheel_names() -> tuple[str, ...]:
+    return tuple(_expected_macos_wheels_by_role().values())
+
+
+def _expected_native_record_names() -> tuple[str, ...]:
+    return tuple(
+        macos_native_record_name(role) for role in _expected_macos_wheels_by_role()
     )
-    expected_speakers_analyze = next(
-        item
-        for item in expected_wheels
-        if item.startswith("solstone_core_speakers_analyze-")
-        and SPEAKERS_ANALYZE_MACOS_TAG in item
-    )
-    return expected_root, expected_core, expected_speakers_analyze
 
 
 def _expected_release_version() -> str:
-    expected_root, _expected_core, _expected_speakers_analyze = (
-        _expected_macos_wheel_names()
-    )
+    expected_root = _expected_macos_wheels_by_role()["root"]
     return expected_root.removeprefix("solstone-").split("-", 1)[0]
 
 
@@ -728,7 +729,7 @@ def _names_from_payload(
             failures.append(
                 _failure(
                     "build-host returned unexpected macOS wheel",
-                    expected="root, core, and speakers-analyze macOS arm64 wheels",
+                    expected=", ".join(sorted(_expected_macos_wheels_by_role())),
                     actual=safe,
                     repair="bash scripts/release.sh --candidate",
                 )
@@ -738,9 +739,7 @@ def _names_from_payload(
             failures.append(
                 _failure(
                     "build-host returned duplicate macOS wheel role",
-                    expected=(
-                        "one root wheel, one core wheel, and one speakers-analyze wheel"
-                    ),
+                    expected="one wheel for every declared macOS role",
                     actual=role,
                     repair="bash scripts/release.sh --candidate",
                 )
@@ -749,22 +748,22 @@ def _names_from_payload(
     safe_records = tuple(
         safe for value in raw_records if (safe := _safe_basename(value)) is not None
     )
-    if set(wheel_by_role) != {"root", "core", "speakers-analyze"}:
+    expected_wheels_by_role = _expected_macos_wheels_by_role()
+    if set(wheel_by_role) != set(expected_wheels_by_role):
         failures.append(
             _failure(
                 "build-host returned wrong macOS wheel set",
-                expected=(
-                    "one root wheel, one core wheel, and one speakers-analyze wheel"
-                ),
+                expected=", ".join(sorted(expected_wheels_by_role)),
                 actual=", ".join(sorted(wheel_by_role)) or "<empty>",
                 repair="bash scripts/release.sh --candidate",
             )
         )
-    if set(safe_records) != EXPECTED_NATIVE_RECORDS:
+    expected_records = set(_expected_native_record_names())
+    if set(safe_records) != expected_records:
         failures.append(
             _failure(
                 "build-host returned wrong native record set",
-                expected=", ".join(sorted(EXPECTED_NATIVE_RECORDS)),
+                expected=", ".join(sorted(expected_records)),
                 actual=", ".join(sorted(safe_records)) or "<empty>",
                 repair="bash scripts/release.sh --candidate",
             )
@@ -772,12 +771,8 @@ def _names_from_payload(
     if failures:
         raise BuildHostError(failures)
     return (
-        (
-            wheel_by_role["root"],
-            wheel_by_role["core"],
-            wheel_by_role["speakers-analyze"],
-        ),
-        (MACOS_ROOT_RECORD, MACOS_CORE_RECORD, MACOS_SPEAKERS_ANALYZE_RECORD),
+        tuple(wheel_by_role[role] for role in expected_wheels_by_role),
+        _expected_native_record_names(),
     )
 
 
@@ -926,7 +921,8 @@ class ExternalBuildHostChannel:
         source_bundle: SourceBundle,
         expected_commit: str,
     ) -> dict[str, object]:
-        root_wheel, core_wheel, speakers_analyze_wheel = _expected_macos_wheel_names()
+        macos_wheels = list(_expected_macos_wheel_names())
+        native_records = list(_expected_native_record_names())
         payload: dict[str, object] = {
             "schema_version": 1,
             "cohort_id": cohort_id,
@@ -939,12 +935,8 @@ class ExternalBuildHostChannel:
                 "bytes": source_bundle.bytes,
             },
             "expected_outputs": {
-                "root_wheel": root_wheel,
-                "core_wheel": core_wheel,
-                "speakers_analyze_wheel": speakers_analyze_wheel,
-                "root_record": MACOS_ROOT_RECORD,
-                "core_record": MACOS_CORE_RECORD,
-                "speakers_analyze_record": MACOS_SPEAKERS_ANALYZE_RECORD,
+                "macos_wheels": macos_wheels,
+                "native_records": native_records,
             },
             "paths": {
                 "response": "response.json",

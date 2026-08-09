@@ -9,6 +9,9 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[package.metadata.solstone-release]
+skip = "standalone inspection bed; production brain verbs ship through solstone-core"
+
 [[bin]]
 name = "solstone-brain"
 path = "src/main.rs"

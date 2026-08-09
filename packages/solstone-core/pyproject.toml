@@ -15,6 +15,10 @@ manifest-path = "../../core/crates/solstone-core/Cargo.toml"
 profile = "release"
 strip = true
 
+[tool.solstone-release]
+target-family = "core"
+sdist = true
+
 # This package's build inputs live outside its directory (see manifest-path).
 # uv's default cache key for a path dependency is this pyproject.toml alone, so
 # a Rust-only change left `uv sync` reporting "no changes" and the environment

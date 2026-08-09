@@ -16,6 +16,9 @@ profile = "release"
 strip = true
 data = "wheel-data"
 
+[tool.solstone-release]
+target-family = "speakers-analyze"
+
 # This package's build inputs live outside its directory (see manifest-path),
 # and its wheel payload includes staged ONNX Runtime shared-library bytes.
 # uv's default cache key for a path dependency is this pyproject.toml alone, so

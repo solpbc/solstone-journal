@@ -251,21 +251,13 @@ def _channel(
                 "bytes": bundle.bytes,
             }
             assert request["expected_outputs"] == {
-                "root_wheel": ROOT_WHEEL,
-                "core_wheel": CORE_WHEEL,
-                "speakers_analyze_wheel": SPEAKERS_ANALYZE_WHEEL,
-                "root_record": build_host.MACOS_ROOT_RECORD,
-                "core_record": build_host.MACOS_CORE_RECORD,
-                "speakers_analyze_record": (build_host.MACOS_SPEAKERS_ANALYZE_RECORD),
+                "macos_wheels": list(build_host._expected_macos_wheel_names()),
+                "native_records": list(build_host._expected_native_record_names()),
             }
             if during_build is not None:
                 during_build(cwd)
-            wheel_names = [ROOT_WHEEL, CORE_WHEEL, SPEAKERS_ANALYZE_WHEEL]
-            record_names = [
-                build_host.MACOS_ROOT_RECORD,
-                build_host.MACOS_CORE_RECORD,
-                build_host.MACOS_SPEAKERS_ANALYZE_RECORD,
-            ]
+            wheel_names = list(build_host._expected_macos_wheel_names())
+            record_names = list(build_host._expected_native_record_names())
             if write_files:
                 _write_expected(
                     cwd / "output",
@@ -335,14 +327,10 @@ def test_external_channel_validates_attestation_and_uses_shlex(
     )
 
     assert [path.name for path in result.macos_wheels] == [
-        ROOT_WHEEL,
-        CORE_WHEEL,
-        SPEAKERS_ANALYZE_WHEEL,
+        *build_host._expected_macos_wheel_names(),
     ]
     assert [path.name for path in result.native_records] == [
-        build_host.MACOS_ROOT_RECORD,
-        build_host.MACOS_CORE_RECORD,
-        build_host.MACOS_SPEAKERS_ANALYZE_RECORD,
+        *build_host._expected_native_record_names(),
     ]
     assert calls == [
         ("adapter", "quoted arg", "build-macos", "request.json"),

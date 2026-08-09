@@ -15,6 +15,7 @@ from pathlib import Path
 
 import scripts.check_wheel_contents as checker
 from scripts.build_nvattest_authority import render_nvattest_authority_json
+from scripts.release_package_inventory import NativePackage, normalized_distribution
 from solstone.think.probe import (
     SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_TAGS,
 )
@@ -306,6 +307,50 @@ def write_core_wheel(
             )
             _write_member(wheel, name, content, mode=mode)
         _write_member(wheel, f"solstone_core-{version}.dist-info/RECORD", record)
+    return wheel_path
+
+
+def write_native_binary_wheel(
+    path: Path,
+    *,
+    package: NativePackage,
+    tag: str,
+    binary: bytes | None = None,
+) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    distribution = normalized_distribution(package.distribution)
+    wheel_path = path / (f"{distribution}-{package.version}-py3-none-{tag}.whl")
+    if binary is None:
+        if "macosx" in tag:
+            binary = minimal_macho(checker.CPU_TYPE_ARM64)
+        elif "aarch64" in tag:
+            binary = minimal_elf(checker.ELF_MACHINE["aarch64"])
+        else:
+            binary = minimal_elf(checker.ELF_MACHINE["x86_64"])
+    data_prefix = f"{distribution}-{package.version}.data"
+    dist_info = f"{distribution}-{package.version}.dist-info"
+    members = {
+        f"{data_prefix}/scripts/{package.binary}": binary,
+        f"{dist_info}/METADATA": (
+            f"Name: {package.distribution}\nVersion: {package.version}\n".encode()
+        ),
+        f"{dist_info}/WHEEL": b"Wheel-Version: 1.0\n",
+        f"{dist_info}/sboms/{package.crate}.cyclonedx.json": b"{}",
+    }
+    rows = [
+        f"{name},{record_hash(content)},{len(content)}"
+        for name, content in members.items()
+    ]
+    rows.append(f"{dist_info}/RECORD,,")
+    with zipfile.ZipFile(wheel_path, "w") as wheel:
+        for name, content in members.items():
+            mode = 0o755 if Path(name).name == package.binary else 0o644
+            _write_member(wheel, name, content, mode=mode)
+        _write_member(
+            wheel,
+            f"{dist_info}/RECORD",
+            "\n".join(rows).encode("utf-8"),
+        )
     return wheel_path
 
 

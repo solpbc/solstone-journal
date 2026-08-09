@@ -722,11 +722,11 @@ def _native_summary(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     failures: list[Failure] = []
     for record in records:
         role = record.get("role")
-        if role not in {"root", "core", "speakers-analyze"}:
+        if not isinstance(role, str) or not role:
             failures.append(
                 _failure(
                     "macOS native record role is invalid",
-                    expected="root, core, or speakers-analyze",
+                    expected="non-empty native package role",
                     actual=str(role),
                     repair="python3 scripts/check_rust_release_manifest.py",
                 )
@@ -736,18 +736,19 @@ def _native_summary(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             failures.append(
                 _failure(
                     "macOS native record role is duplicated",
-                    expected="one root, one core, and one speakers-analyze record",
+                    expected="one record per native package role",
                     actual=str(role),
                     repair="python3 scripts/check_rust_release_manifest.py",
                 )
             )
             continue
         by_role[str(role)] = record
-    if set(by_role) != {"root", "core", "speakers-analyze"}:
+    required_roles = {"root", "core", "speakers-analyze"}
+    if not required_roles.issubset(by_role):
         failures.append(
             _failure(
                 "macOS native record set is incomplete",
-                expected="exactly root, core, and speakers-analyze records",
+                expected="at least root, core, and speakers-analyze records",
                 actual=", ".join(sorted(by_role)) or "<empty>",
                 repair="python3 scripts/check_rust_release_manifest.py",
             )
@@ -791,11 +792,11 @@ def _macos_records_by_role(
     by_role: dict[str, Mapping[str, Any]] = {}
     for record in records:
         role = record.get("role")
-        if role not in {"root", "core", "speakers-analyze"}:
+        if not isinstance(role, str) or not role:
             failures.append(
                 _failure(
                     "macOS native record role is invalid",
-                    expected="root, core, or speakers-analyze",
+                    expected="non-empty native package role",
                     actual=str(role),
                     repair="python3 scripts/check_rust_release_manifest.py",
                 )
@@ -805,18 +806,19 @@ def _macos_records_by_role(
             failures.append(
                 _failure(
                     "macOS native record role is duplicated",
-                    expected="one root, one core, and one speakers-analyze record",
+                    expected="one record per native package role",
                     actual=str(role),
                     repair="python3 scripts/check_rust_release_manifest.py",
                 )
             )
             continue
         by_role[str(role)] = record
-    if set(by_role) != {"root", "core", "speakers-analyze"}:
+    required_roles = {"root", "core", "speakers-analyze"}
+    if not required_roles.issubset(by_role):
         failures.append(
             _failure(
                 "macOS native record set is incomplete",
-                expected="exactly root, core, and speakers-analyze records",
+                expected="at least root, core, and speakers-analyze records",
                 actual=", ".join(sorted(by_role)) or "<empty>",
                 repair="python3 scripts/check_rust_release_manifest.py",
             )

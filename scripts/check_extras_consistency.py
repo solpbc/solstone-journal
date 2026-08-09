@@ -33,9 +33,8 @@ The invariants are:
      public POSIX launchers.
  10. Each leaf has metadata-only setuptools config, a workspace source for
      `solstone`, the expected package name, and the root version.
- 11. uv workspace members/sources are exactly the two journal leaves plus
-     models, the host helper, the two command binaries, and native helpers;
-     `solstone-journal-host` is absent.
+ 11. uv workspace members/sources exactly cover every package pyproject under
+     `packages/`; `solstone-journal-host` is absent.
  12. `[tool.uv].override-dependencies` contains both tombstone pins.
  13. The Makefile no longer uses root journal extra spellings.
  14. The speakers analyze helper is a workspace-only maturin bin leaf with
@@ -95,26 +94,6 @@ NVIDIA_CUDA_DEPS = {
     "nvidia-curand-cu12",
     "nvidia-cuda-nvrtc-cu12",
     "nvidia-nvjitlink-cu12",
-}
-WORKSPACE_MEMBERS = [
-    "packages/solstone-journal",
-    "packages/solstone-journal-cuda",
-    "packages/solstone-journal-models",
-    "packages/solstone-core",
-    "packages/solstone-core-sol",
-    "packages/solstone-core-journal",
-    "packages/solstone-core-speakers-analyze",
-    "packages/solstone-core-describe",
-]
-WORKSPACE_SOURCES = {
-    "solstone-journal",
-    "solstone-journal-cuda",
-    "solstone-journal-models",
-    "solstone-core",
-    "solstone-core-sol",
-    "solstone-core-journal",
-    "solstone-core-speakers-analyze",
-    "solstone-core-describe",
 }
 SPEAKERS_ANALYZE_CACHE_KEYS = [
     {"file": "pyproject.toml"},
@@ -233,6 +212,19 @@ def _check_speakers_analyze_pins(
     if root_version is not None and pins != expected:
         return [
             f"{label} solstone-core-speakers-analyze marker pins must be exactly "
+            f"{expected}; found {pins}"
+        ]
+    return []
+
+
+def _check_native_leaf_pins(
+    *, distribution: str, label: str, deps: list[str], root_version: str | None
+) -> list[str]:
+    pins = sorted(dep for dep in deps if dep.startswith(f"{distribution}=="))
+    expected = sorted(_native_marker_pins(distribution, root_version or ""))
+    if pins != expected:
+        return [
+            f"{label} {distribution} marker pins must be exactly "
             f"{expected}; found {pins}"
         ]
     return []
@@ -714,6 +706,15 @@ def main(root: Path | None = None) -> int:
             label="CUDA leaf", deps=cuda_deps, root_version=root_version
         )
     )
+    for label, deps in (("CPU leaf", cpu_deps), ("CUDA leaf", cuda_deps)):
+        errors.extend(
+            _check_native_leaf_pins(
+                distribution="solstone-core-retention",
+                label=label,
+                deps=deps,
+                root_version=root_version,
+            )
+        )
 
     # 5. CPU leaf runtime split.
     missing_cpu_runtime = sorted(CPU_ONNXRUNTIME_DEPS - set(cpu_deps))
@@ -738,14 +739,34 @@ def main(root: Path | None = None) -> int:
         errors.append("CUDA leaf must not depend on solstone-journal")
 
     # 11. uv workspace members/sources.
-    workspace_members = root_uv.get("workspace", {}).get("members", [])
-    if workspace_members != WORKSPACE_MEMBERS:
+    package_pyprojects = sorted((root / "packages").glob("*/pyproject.toml"))
+    expected_workspace_members = sorted(
+        str(path.parent.relative_to(root)) for path in package_pyprojects
+    )
+    expected_workspace_sources = {
+        package_data.get("project", {}).get("name")
+        for path in package_pyprojects
+        if (package_data := _read_toml(path, root, errors))
+    }
+    expected_workspace_sources.discard(None)
+    workspace_members = sorted(root_uv.get("workspace", {}).get("members", []))
+    if workspace_members != expected_workspace_members:
         errors.append(
-            f"root [tool.uv.workspace].members must be exactly {WORKSPACE_MEMBERS}; "
+            "root [tool.uv.workspace].members must cover every package pyproject; "
+            f"expected {expected_workspace_members}; "
             f"found {workspace_members}"
         )
     root_sources = root_uv.get("sources", {})
-    for name in sorted(WORKSPACE_SOURCES):
+    actual_workspace_sources = {
+        name for name, source in root_sources.items() if source == {"workspace": True}
+    }
+    if actual_workspace_sources != expected_workspace_sources:
+        errors.append(
+            "root [tool.uv.sources] workspace entries must cover every package; "
+            f"expected {sorted(expected_workspace_sources)}; "
+            f"found {sorted(actual_workspace_sources)}"
+        )
+    for name in sorted(expected_workspace_sources):
         if root_sources.get(name) != {"workspace": True}:
             errors.append(f"root [tool.uv.sources].{name} must be {{workspace = true}}")
     if "solstone-journal-host" in root_sources:

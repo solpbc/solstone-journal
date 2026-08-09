@@ -141,7 +141,8 @@ def test_native_record_cli_and_makefile_use_package_module() -> None:
 
     assert result.returncode == 0, result.stderr
     makefile = (root / "Makefile").read_text(encoding="utf-8")
-    assert makefile.count("python3 -m scripts.record_macos_native_wheel") == 3
+    assert makefile.count("python3 -m scripts.record_macos_native_wheel") == 1
+    assert "python3 scripts/build_macos_release_packages.py" in makefile
     assert "python3 scripts/record_macos_native_wheel.py" not in makefile
 
 
