@@ -159,6 +159,12 @@ class FakeBatch:
         self.add_count = 0
         FakeBatch.instances.append(self)
 
+    async def aclose(self):
+        # The session restructure gave Batch a real close: drain, reap the
+        # child, reject later additions. The double records it so a caller
+        # that forgets to close is visible rather than silently fine.
+        self.closed = getattr(self, "closed", 0) + 1
+
     def create(self, **kwargs):
         return SimpleNamespace(
             **kwargs,
@@ -212,6 +218,12 @@ class MergeBatch:
         self.queue = []
         self.history = []
         MergeBatch.instances.append(self)
+
+    async def aclose(self):
+        # The session restructure gave Batch a real close: drain, reap the
+        # child, reject later additions. The double records it so a caller
+        # that forgets to close is visible rather than silently fine.
+        self.closed = getattr(self, "closed", 0) + 1
 
     def create(self, **kwargs):
         return SimpleNamespace(
