@@ -33,55 +33,71 @@ impl<'a> BodyLedgerValidator<'a> {
     }
 
     /// Adds a chunk of ledger bytes to this validator.
-    pub fn push(&mut self, mut chunk: &[u8]) {
-        if self.error.is_some() || chunk.is_empty() {
-            return;
+    pub fn push(&mut self, mut chunk: &[u8]) -> Result<(), LedgerEventError> {
+        if let Some(error) = &self.error {
+            return Err(error.clone());
+        }
+        if chunk.is_empty() {
+            return Ok(());
         }
 
         while !chunk.is_empty() {
-            if self.error.is_some() {
-                return;
-            }
             if self.events_processed >= self.envelope.ledger().events() {
-                self.poison(LedgerEventError::new(
+                return Err(self.poison(LedgerEventError::new(
                     Some(self.envelope.bundle_id().clone()),
                     LedgerEventErrorCode::CountMismatch,
                     LedgerEventErrorField::Ledger,
                     self.events_processed.saturating_add(1),
-                ));
-                return;
+                )));
             }
 
-            if let Some(index) = chunk.iter().position(|&byte| byte == b'\n') {
-                let frame = &chunk[..=index];
+            let buffered_bytes =
+                u64::try_from(self.buffer.len()).expect("one bounded frame length always fits u64");
+            let observed_bytes = self.bytes_processed.saturating_add(buffered_bytes);
+            let remaining_bytes = self
+                .envelope
+                .ledger()
+                .bytes()
+                .saturating_sub(observed_bytes);
+            if remaining_bytes == 0 {
+                let error = self.ledger_error(
+                    LedgerEventErrorCode::CountMismatch,
+                    self.events_processed.saturating_add(1),
+                );
+                return Err(self.poison(error));
+            }
+            let permitted = chunk
+                .len()
+                .min(usize::try_from(remaining_bytes).unwrap_or(usize::MAX));
+            let bounded = &chunk[..permitted];
+
+            if let Some(index) = bounded.iter().position(|&byte| byte == b'\n') {
+                let frame = &bounded[..=index];
                 if frame.len() > MAX_LEDGER_EVENT_FRAME_BYTES - self.buffer.len() {
-                    self.poison(LedgerEventError::new(
+                    return Err(self.poison(LedgerEventError::new(
                         Some(self.envelope.bundle_id().clone()),
                         LedgerEventErrorCode::InputTooLarge,
                         LedgerEventErrorField::Ledger,
                         self.events_processed.saturating_add(1),
-                    ));
-                    return;
+                    )));
                 }
                 self.buffer.extend_from_slice(frame);
-                if !self.try_decode_buffered_frame() {
-                    return;
-                }
+                self.try_decode_buffered_frame()?;
                 chunk = &chunk[index + 1..];
             } else {
-                if chunk.len() > MAX_LEDGER_EVENT_FRAME_BYTES - self.buffer.len() {
-                    self.poison(LedgerEventError::new(
+                if bounded.len() > MAX_LEDGER_EVENT_FRAME_BYTES - self.buffer.len() {
+                    return Err(self.poison(LedgerEventError::new(
                         Some(self.envelope.bundle_id().clone()),
                         LedgerEventErrorCode::InputTooLarge,
                         LedgerEventErrorField::Ledger,
                         self.events_processed.saturating_add(1),
-                    ));
-                    return;
+                    )));
                 }
-                self.buffer.extend_from_slice(chunk);
-                return;
+                self.buffer.extend_from_slice(bounded);
+                chunk = &chunk[bounded.len()..];
             }
         }
+        Ok(())
     }
 
     /// Finishes validation and returns the checked ledger receipt.
@@ -90,11 +106,8 @@ impl<'a> BodyLedgerValidator<'a> {
             return Err(error);
         }
 
-        if !self.buffer.is_empty()
-            && !self.try_decode_buffered_frame()
-            && let Some(error) = self.error
-        {
-            return Err(error);
+        if !self.buffer.is_empty() {
+            self.try_decode_buffered_frame()?;
         }
 
         if self.events_processed < self.envelope.ledger().events() {
@@ -131,7 +144,7 @@ impl<'a> BodyLedgerValidator<'a> {
         })
     }
 
-    fn try_decode_buffered_frame(&mut self) -> bool {
+    fn try_decode_buffered_frame(&mut self) -> Result<(), LedgerEventError> {
         let sequence = self.events_processed.saturating_add(1);
         match decode_body_ledger_event(&self.buffer, self.envelope, sequence) {
             Ok(_) => {
@@ -141,18 +154,16 @@ impl<'a> BodyLedgerValidator<'a> {
                     .saturating_add(self.buffer.len() as u64);
                 self.events_processed = self.events_processed.saturating_add(1);
                 self.buffer.clear();
-                true
+                Ok(())
             }
-            Err(error) => {
-                self.poison(error);
-                false
-            }
+            Err(error) => Err(self.poison(error)),
         }
     }
 
-    fn poison(&mut self, error: LedgerEventError) {
-        self.error = Some(error);
+    fn poison(&mut self, error: LedgerEventError) -> LedgerEventError {
+        self.error = Some(error.clone());
         self.buffer.clear();
+        error
     }
 
     fn ledger_error(&self, code: LedgerEventErrorCode, line: u64) -> LedgerEventError {
@@ -193,5 +204,62 @@ impl ValidatedBodyLedger {
     /// Returns the validated ledger SHA-256 digest.
     pub fn sha256(&self) -> &BodyDigest {
         &self.sha256
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{EnvelopeLedger, decode_body_envelope};
+
+    fn oversized_frame_envelope() -> BodyEnvelope {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/body_source_native_bundle_v1.json"
+        ))
+        .expect("native bundle fixture parses");
+        let case = &fixture["cases"][0];
+        let source = decode_body_envelope(
+            case["expected_envelope_jsonl"]
+                .as_str()
+                .expect("fixture envelope")
+                .as_bytes(),
+        )
+        .expect("fixture envelope decodes");
+        let ledger = EnvelopeLedger::new(
+            source.bundle_id(),
+            MAX_LEDGER_EVENT_FRAME_BYTES as u64 + 1,
+            source.ledger().events(),
+            source.ledger().sha256().clone(),
+        )
+        .expect("oversized descriptor is intrinsically valid");
+        BodyEnvelope::new(
+            source.bundle_id().clone(),
+            source.source_family(),
+            source.source_hash().clone(),
+            source.raw_retention(),
+            source.row_count(),
+            source.days().to_vec(),
+            source.shards().to_vec(),
+            ledger,
+            source.summary_plan().cloned(),
+        )
+        .expect("oversized-frame envelope is checked")
+    }
+
+    #[test]
+    fn internal_frame_buffer_never_exceeds_the_public_cap() {
+        let envelope = oversized_frame_envelope();
+        let mut validator = BodyLedgerValidator::new(&envelope);
+        for _ in 0..MAX_LEDGER_EVENT_FRAME_BYTES {
+            validator
+                .push(b"x")
+                .expect("bytes through the exact cap remain buffered");
+            assert!(validator.buffer.len() <= MAX_LEDGER_EVENT_FRAME_BYTES);
+        }
+        let error = validator
+            .push(b"x")
+            .expect_err("one byte over the cap refuses during push");
+        assert_eq!(error.code(), LedgerEventErrorCode::InputTooLarge);
+        assert!(validator.buffer.len() <= MAX_LEDGER_EVENT_FRAME_BYTES);
     }
 }

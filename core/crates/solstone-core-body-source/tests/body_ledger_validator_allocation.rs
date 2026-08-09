@@ -93,6 +93,27 @@ fn max_frame() -> (BodyEnvelope, Vec<u8>) {
     (envelope, frame)
 }
 
+fn with_ledger_bytes(envelope: &BodyEnvelope, bytes: u64) -> BodyEnvelope {
+    BodyEnvelope::new(
+        envelope.bundle_id().clone(),
+        envelope.source_family(),
+        envelope.source_hash().clone(),
+        envelope.raw_retention(),
+        envelope.row_count(),
+        envelope.days().to_vec(),
+        envelope.shards().to_vec(),
+        EnvelopeLedger::new(
+            envelope.bundle_id(),
+            bytes,
+            envelope.ledger().events(),
+            envelope.ledger().sha256().clone(),
+        )
+        .expect("replacement ledger is intrinsically valid"),
+        envelope.summary_plan().cloned(),
+    )
+    .expect("replacement envelope is checked")
+}
+
 #[test]
 fn maximum_frame_validator_overhead_is_bounded() {
     let (envelope, frame) = max_frame();
@@ -101,7 +122,9 @@ fn maximum_frame_validator_overhead_is_bounded() {
     });
     let validator = allocation_counter::measure(|| {
         let mut validator = BodyLedgerValidator::new(&envelope);
-        validator.push(&frame);
+        validator
+            .push(&frame)
+            .expect("maximum frame push validates");
         validator.finish().expect("maximum frame validates");
     });
     assert!(
@@ -111,6 +134,29 @@ fn maximum_frame_validator_overhead_is_bounded() {
         baseline.bytes_max,
         MAX_VALIDATOR_OVERHEAD_BYTES
     );
+
+    let lf = frame.len() - 1;
+    let mut split_before_lf = BodyLedgerValidator::new(&envelope);
+    split_before_lf
+        .push(&frame[..lf])
+        .expect("maximum frame prefix is buffered");
+    split_before_lf
+        .push(&frame[lf..])
+        .expect("maximum frame LF completes the event");
+    split_before_lf
+        .finish()
+        .expect("maximum frame split immediately before LF validates");
+
+    let mut split_after_lf = BodyLedgerValidator::new(&envelope);
+    split_after_lf
+        .push(&frame)
+        .expect("maximum frame through LF validates");
+    split_after_lf
+        .push(b"")
+        .expect("empty chunk after LF is a no-op");
+    split_after_lf
+        .finish()
+        .expect("maximum frame split immediately after LF validates");
 }
 
 #[test]
@@ -138,7 +184,9 @@ fn one_byte_chunks_have_bounded_overhead_for_the_largest_committed_ledger() {
     let validator = allocation_counter::measure(|| {
         let mut validator = BodyLedgerValidator::new(&envelope);
         for byte in data {
-            validator.push(std::slice::from_ref(byte));
+            validator
+                .push(std::slice::from_ref(byte))
+                .expect("one-byte chunk validates");
         }
         validator.finish().expect("fixture ledger validates");
     });
@@ -153,19 +201,14 @@ fn one_byte_chunks_have_bounded_overhead_for_the_largest_committed_ledger() {
 
 #[test]
 fn unterminated_oversized_frame_has_bounded_allocation() {
-    let case = &native_bundle_fixture()["cases"][0];
-    let envelope = decode_body_envelope(
-        case["expected_envelope_jsonl"]
-            .as_str()
-            .expect("envelope")
-            .as_bytes(),
-    )
-    .expect("fixture envelope decodes");
+    let (maximum_envelope, _) = max_frame();
+    let envelope = with_ledger_bytes(&maximum_envelope, MAX_LEDGER_EVENT_FRAME_BYTES as u64 + 1);
     let frame = vec![b'x'; MAX_LEDGER_EVENT_FRAME_BYTES + 1];
     let info = allocation_counter::measure(|| {
         let mut validator = BodyLedgerValidator::new(&envelope);
-        validator.push(&frame);
-        let error = validator.finish().expect_err("oversized frame refuses");
+        let error = validator
+            .push(&frame)
+            .expect_err("oversized frame refuses during push");
         assert_eq!(error.code(), LedgerEventErrorCode::InputTooLarge);
         assert_eq!(error.field(), LedgerEventErrorField::Ledger);
         assert_eq!(error.line(), 1);
@@ -197,8 +240,9 @@ fn trailing_megabyte_is_not_buffered_after_the_declared_event_count() {
     input.extend_from_slice(b"after-overrun-sentinel");
     let info = allocation_counter::measure(|| {
         let mut validator = BodyLedgerValidator::new(&envelope);
-        validator.push(&input);
-        let error = validator.finish().expect_err("trailing bytes refuse");
+        let error = validator
+            .push(&input)
+            .expect_err("trailing bytes refuse during push");
         assert_eq!(error.code(), LedgerEventErrorCode::CountMismatch);
         assert_eq!(error.field(), LedgerEventErrorField::Ledger);
         assert_eq!(error.line(), 2);
@@ -255,7 +299,7 @@ fn assert_panic_free(envelope: &BodyEnvelope, chunks: &[&[u8]]) {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut validator = BodyLedgerValidator::new(envelope);
             for chunk in chunks {
-                validator.push(chunk);
+                let _ = validator.push(chunk);
             }
             let _ = validator.finish();
         }))

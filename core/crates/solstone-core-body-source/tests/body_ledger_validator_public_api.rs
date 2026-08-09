@@ -33,7 +33,7 @@ fn fixture_envelope(index: usize) -> (BodyEnvelope, Vec<u8>) {
 fn validate_chunks(envelope: &BodyEnvelope, chunks: &[&[u8]]) -> ValidatedBodyLedger {
     let mut validator = BodyLedgerValidator::new(envelope);
     for chunk in chunks {
-        validator.push(chunk);
+        validator.push(chunk).expect("fixture chunk validates");
     }
     validator.finish().expect("fixture validates")
 }
@@ -67,10 +67,16 @@ fn public_validator_handles_chunked_receipts_and_structured_errors() {
     let mut validator = BodyLedgerValidator::new(&envelope);
     let first = data.len() / 3;
     let second = data.len() * 2 / 3;
-    let unit: () = validator.push(&data[..first]);
+    let unit: () = validator
+        .push(&data[..first])
+        .expect("successful push returns a unit payload");
     assert_eq!(unit, ());
-    validator.push(&data[first..second]);
-    validator.push(&data[second..]);
+    validator
+        .push(&data[first..second])
+        .expect("middle chunk validates");
+    validator
+        .push(&data[second..])
+        .expect("final chunk validates");
     let receipt = validator.finish().expect("fixture validates");
     let clone = receipt.clone();
 
@@ -81,7 +87,9 @@ fn public_validator_handles_chunked_receipts_and_structured_errors() {
     assert_eq!(receipt.sha256(), envelope.ledger().sha256());
 
     let mut malformed = BodyLedgerValidator::new(&envelope);
-    malformed.push(b"{");
+    malformed
+        .push(b"{")
+        .expect("bounded partial frame is buffered until finish");
     let error = malformed.finish().expect_err("malformed frame refuses");
     assert_eq!(error.code(), LedgerEventErrorCode::MalformedJson);
     assert_eq!(error.field(), LedgerEventErrorField::Ledger);
@@ -99,7 +107,9 @@ fn public_validator_handles_chunked_receipts_and_structured_errors() {
     .expect("digest is valid");
     let digest_envelope = with_digest(&envelope, digest);
     let mut digest_validator = BodyLedgerValidator::new(&digest_envelope);
-    digest_validator.push(&data);
+    digest_validator
+        .push(&data)
+        .expect("digest twin frame validates before finish");
     let error = digest_validator
         .finish()
         .expect_err("digest mismatch refuses");

@@ -14,7 +14,8 @@ type DigestAccessor = fn(&ValidatedBodyLedger) -> &BodyDigest;
 fn public_validator_and_receipt_shapes_type_check() {
     fn validator_api(envelope: &BodyEnvelope) -> Result<ValidatedBodyLedger, LedgerEventError> {
         let mut validator = BodyLedgerValidator::new(envelope);
-        validator.push(b"");
+        let push_result: Result<(), LedgerEventError> = validator.push(b"");
+        push_result?;
         validator.finish()
     }
 
