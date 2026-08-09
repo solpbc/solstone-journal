@@ -13,20 +13,12 @@ pub(crate) struct ScannedBodyEnvelope {
 
 impl ScannedBodyEnvelope {
     /// Returns the parsed top-level envelope object.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by B1g6b envelope decoder")
-    )]
     pub(crate) fn object(&self) -> &BodyObject {
         &self.object
     }
 }
 
 /// Scans bounded raw bytes as an exact canonical body-envelope JSONL object.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by B1g6b envelope decoder")
-)]
 pub(crate) fn scan_body_envelope(input: &[u8]) -> Result<ScannedBodyEnvelope, EnvelopeError> {
     if input.len() > MAX_ENVELOPE_BYTES {
         return Err(envelope_error(EnvelopeErrorCode::InputTooLarge));

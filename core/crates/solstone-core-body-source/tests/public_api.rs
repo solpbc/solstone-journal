@@ -14,8 +14,8 @@ use solstone_core_body_source::{
     ManifestBindingErrorField, ManifestKeySignal, ManifestKnownKey, ManifestScanError,
     NativeAuthority, ParseError, RAW_RETENTION_KEY, SOURCE_HASH_KEY, SOURCE_TYPE_KEY,
     ScannedBodyManifest, authorize_native_bundle, canonicalize, classify_bundle_directory,
-    decode_body_manifest, encode_body_envelope, inspect_body_manifest_signal, parse,
-    scan_body_manifest,
+    decode_body_envelope, decode_body_manifest, encode_body_envelope, inspect_body_manifest_signal,
+    parse, scan_body_manifest,
 };
 
 mod support;
@@ -1364,4 +1364,23 @@ fn public_body_envelope_encoder_encodes_the_independently_constructed_multimonth
         encode_body_envelope(&envelope).unwrap(),
         case["expected_envelope_jsonl"].as_str().unwrap().as_bytes()
     );
+}
+
+#[test]
+fn public_body_envelope_decoder_exposes_checked_values_and_structured_errors() {
+    let case = &native_bundle_fixture()["cases"][0];
+    let input = case["expected_envelope_jsonl"].as_str().unwrap().as_bytes();
+    let envelope = decode_body_envelope(input).expect("fixture envelope decodes publicly");
+    assert_eq!(
+        envelope.bundle_id().as_str(),
+        case["directory"].as_str().unwrap()
+    );
+    assert_eq!(envelope.row_count(), 1);
+    assert_eq!(encode_body_envelope(&envelope).unwrap(), input);
+
+    let error = decode_body_envelope(b"null\n").expect_err("non-object envelope refuses");
+    assert_eq!(error.code(), EnvelopeErrorCode::WrongType);
+    assert_eq!(error.field(), EnvelopeErrorField::Envelope);
+    assert_eq!(error.bundle(), None);
+    assert_eq!(error.index(), None);
 }
