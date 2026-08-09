@@ -40,9 +40,9 @@ pub use locking::{
     DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, FileLock, LockOptions, hold_lock,
 };
 pub use paths::{
-    DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, Segment, contained_path, day_dirs, day_path,
-    ensure_directory, iter_segments, list_dir_entries, path_lexists, resolve_configured_journal,
-    resolve_journal_path, segment_path,
+    DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, Segment, contained_path,
+    create_directory_with_mode, day_dirs, day_path, ensure_directory, iter_segments,
+    list_dir_entries, path_lexists, resolve_configured_journal, resolve_journal_path, segment_path,
 };
 pub use readers::{
     JsonlReadReport, JsonlRecord, MalformedPolicy, read_bytes, read_json, read_jsonl,

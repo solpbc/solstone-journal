@@ -6,6 +6,8 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 
 use chrono::Local;
@@ -102,6 +104,31 @@ pub fn path_lexists(path: &Path) -> Result<bool, PathError> {
 /// Create a directory and any missing parents without changing existing contents.
 pub fn ensure_directory(path: &Path) -> Result<(), PathError> {
     fs::create_dir_all(path).map_err(|source| path_io(path, source))
+}
+
+/// Create a directory tree and set the final directory's Unix permission mode.
+///
+/// Existing contents are preserved. On Unix, the final directory is always
+/// normalized to `mode`; on other targets, creation remains available and the
+/// mode argument is intentionally ignored.
+pub fn create_directory_with_mode(path: &Path, mode: u32) -> Result<(), PathError> {
+    fs::create_dir_all(path).map_err(|source| path_io(path, source))?;
+    let metadata = fs::symlink_metadata(path).map_err(|source| path_io(path, source))?;
+    if !metadata.file_type().is_dir() {
+        return Err(path_io(
+            path,
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "private directory path must not be a symlink",
+            ),
+        ));
+    }
+    #[cfg(unix)]
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))
+        .map_err(|source| path_io(path, source))?;
+    #[cfg(not(unix))]
+    let _ = mode;
+    Ok(())
 }
 
 /// List direct directory entries by name without creating anything.
@@ -353,7 +380,7 @@ fn path_io(path: &Path, source: io::Error) -> PathError {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::os::unix::fs::symlink;
+    use std::os::unix::fs::{PermissionsExt, symlink};
 
     use super::*;
     use crate::test_support::TempDir;
@@ -403,6 +430,36 @@ mod tests {
                     kind: DirEntryKind::File,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn create_directory_with_mode_normalizes_final_directory_privacy() {
+        let temporary = TempDir::new();
+        let directory = temporary.path().join("private").join("imports");
+
+        create_directory_with_mode(&directory, 0o700).unwrap();
+        assert_eq!(
+            fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o755)).unwrap();
+        create_directory_with_mode(&directory, 0o700).unwrap();
+        assert_eq!(
+            fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        let outside = temporary.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::set_permissions(&outside, fs::Permissions::from_mode(0o755)).unwrap();
+        let linked = temporary.path().join("linked");
+        symlink(&outside, &linked).unwrap();
+        assert!(create_directory_with_mode(&linked, 0o700).is_err());
+        assert_eq!(
+            fs::metadata(&outside).unwrap().permissions().mode() & 0o777,
+            0o755
         );
     }
 
