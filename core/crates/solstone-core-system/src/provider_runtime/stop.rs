@@ -33,6 +33,10 @@ pub fn defer_target_stop(
     target_reason: Option<ReasonCode>,
     admission_exclusive: bool,
 ) {
+    if let Some(request) = state.pending_stop_request.as_mut() {
+        request.target_phase = target_phase;
+        request.target_reason_code = target_reason.clone();
+    }
     state.pending_stop_target_phase = target_phase;
     state.pending_stop_target_reason_code = target_reason;
     state.pending_stop_admission_exclusive = admission_exclusive;
@@ -40,7 +44,7 @@ pub fn defer_target_stop(
 }
 
 /// Retain a handle returned by a start worker after that outcome is no longer acceptable.
-pub fn queue_orphaned_start_cleanup(
+pub(super) fn queue_orphaned_start_cleanup(
     state: &mut ProviderRuntimeState,
     managed: ManagedProcess,
     target_phase: RuntimePhase,

@@ -77,7 +77,13 @@ impl ProviderRuntimeCoordinator {
         context
             .sink
             .emit(ProviderRuntimeEvent::Step("handle-retry-token"));
-        self.handle_retry_token(now, state, context.store, context.sink);
+        self.handle_retry_token(
+            now,
+            state,
+            context.store,
+            context.sink,
+            context.gate.as_deref_mut(),
+        );
 
         context
             .sink
@@ -199,11 +205,13 @@ impl ProviderRuntimeCoordinator {
         state: &mut ProviderRuntimeState,
         store: &mut dyn RuntimeStore,
         sink: &mut dyn ProviderRuntimeEventSink,
+        gate: Option<&mut ProviderStartupGate>,
     ) {
         let token = match store.read_retry_token(state.provider) {
             Ok(token) => token,
             Err(error) => {
                 state.latest_phase = store_error_phase(error);
+                self.note_terminal(state, gate);
                 return;
             }
         };
@@ -216,6 +224,7 @@ impl ProviderRuntimeCoordinator {
         // supervisor.py:5765-5800 publishes this transition before consuming the token.
         if let Err(error) = store.publish_state(state) {
             state.latest_phase = store_error_phase(error);
+            self.note_terminal(state, gate);
             return;
         }
         match store.consume_retry_token(state.provider, &token.token_id) {
@@ -225,9 +234,13 @@ impl ProviderRuntimeCoordinator {
             }
             // Another owner consumed it; retain the durable retry-requested transition.
             Err(RuntimeStoreError::Conflict) => {}
-            Err(RuntimeStoreError::Corrupt) => state.latest_phase = RuntimePhase::StateCorrupt,
+            Err(RuntimeStoreError::Corrupt) => {
+                state.latest_phase = RuntimePhase::StateCorrupt;
+                self.note_terminal(state, gate);
+            }
             Err(RuntimeStoreError::Unavailable) => {
-                state.latest_phase = RuntimePhase::StateUnavailable
+                state.latest_phase = RuntimePhase::StateUnavailable;
+                self.note_terminal(state, gate);
             }
         }
         let _ = sink;
@@ -426,7 +439,7 @@ impl ProviderRuntimeCoordinator {
                 provider: state.provider,
             });
             if let Some(managed) = result.managed {
-                // W7a owns the cleanup decision; W7b supplies concrete termination behind this seam.
+                // This crate decides cleanup; the LifecycleSeam performs concrete termination.
                 queue_orphaned_start_cleanup(
                     state,
                     managed,
@@ -450,23 +463,28 @@ impl ProviderRuntimeCoordinator {
             return;
         }
         let mut managed = result.managed;
+        let result_reason_code = result.reason_code.clone();
         match result.status {
             LaunchOutcomeStatus::Ready => {
                 if let Some(managed) = managed.take() {
                     processes.push(managed);
                     state.latest_phase = RuntimePhase::Ready;
+                    state.latest_reason_code = Some(result_reason_code.clone());
                     self.note_terminal(state, gate);
                 } else {
                     schedule_launch_retry(state, now, sink);
+                    state.latest_reason_code = Some(result_reason_code.clone());
                     self.note_terminal(state, gate);
                 }
             }
             LaunchOutcomeStatus::HostBlocked => {
                 state.latest_phase = RuntimePhase::HostBlocked;
+                state.latest_reason_code = Some(result_reason_code.clone());
                 self.note_terminal(state, gate);
             }
             _ => {
                 schedule_launch_retry(state, now, sink);
+                state.latest_reason_code = Some(result_reason_code.clone());
                 self.note_terminal(state, gate);
             }
         }
@@ -508,12 +526,19 @@ impl ProviderRuntimeCoordinator {
             state.stop_cancelled = false;
             return true;
         }
+        let orphaned_start_outcome = state
+            .pending_stop_request
+            .as_ref()
+            .is_some_and(|request| request.orphaned_start_outcome);
         match result.status {
             StopCleanupStatus::Stopped => {
                 if let Some(request) = state.pending_stop_request.take() {
                     processes.retain(|process| process.id != request.managed.id);
-                    state.latest_phase = request.target_phase;
-                    state.pending_stop_target_reason_code = request.target_reason_code;
+                    if !request.orphaned_start_outcome {
+                        state.latest_phase = request.target_phase;
+                        state.latest_reason_code = Some(result.reason_code.clone());
+                        state.pending_stop_target_reason_code = request.target_reason_code;
+                    }
                 } else {
                     state.latest_phase = RuntimePhase::Stopped;
                 }
@@ -521,7 +546,10 @@ impl ProviderRuntimeCoordinator {
                 self.note_terminal(state, gate);
             }
             StopCleanupStatus::StopDeferred => {
-                state.latest_phase = RuntimePhase::StopDeferred;
+                if !orphaned_start_outcome {
+                    state.latest_phase = RuntimePhase::StopDeferred;
+                    state.latest_reason_code = Some(result.reason_code.clone());
+                }
                 sink.emit(ProviderRuntimeEvent::StopDeferred {
                     provider: state.provider,
                 });
@@ -529,6 +557,7 @@ impl ProviderRuntimeCoordinator {
             StopCleanupStatus::CleanupFailed => {
                 state.pending_stop_target_reason_code = Some(result.reason_code);
                 schedule_cleanup_retry(state, now, sink);
+                state.latest_reason_code = state.pending_stop_target_reason_code.clone();
             }
             StopCleanupStatus::Cancelled => unreachable!("handled above"),
         }
@@ -538,7 +567,7 @@ impl ProviderRuntimeCoordinator {
 
     fn handle_probe_result(
         &self,
-        _now: ProviderRuntimeNow,
+        now: ProviderRuntimeNow,
         state: &mut ProviderRuntimeState,
         store: &mut dyn RuntimeStore,
         sink: &mut dyn ProviderRuntimeEventSink,
@@ -551,6 +580,12 @@ impl ProviderRuntimeCoordinator {
             state.probe = Some(in_flight);
             return;
         };
+        if state.replacement_artifact_not_ready_fingerprint.is_some()
+            && result.status == ProbeStatus::Ready
+        {
+            state.next_probe_at = now.monotonic_seconds + PROVIDER_PROBE_INTERVAL_SECONDS;
+            return;
+        }
         if !self.fence_matches(state, &in_flight.fence, state.retry.attempt_count) {
             sink.emit(ProviderRuntimeEvent::StaleResultDiscarded {
                 operation: "probe",
@@ -558,10 +593,18 @@ impl ProviderRuntimeCoordinator {
             });
             return;
         }
+        state.next_probe_at = now.monotonic_seconds + PROVIDER_PROBE_INTERVAL_SECONDS;
+        if state.pending_stop_request.is_some() {
+            state.latest_reason_code =
+                Some(super::model::ReasonCode::known("stale-result-ignored"));
+            self.persist(state, store);
+            return;
+        }
         state.latest_phase = match result.status {
             ProbeStatus::Ready => RuntimePhase::Ready,
             ProbeStatus::NotReady | ProbeStatus::Unavailable => RuntimePhase::ReadyProofUnavailable,
         };
+        state.latest_reason_code = Some(result.reason_code);
         self.note_terminal(state, gate);
         self.persist(state, store);
     }
@@ -691,7 +734,6 @@ impl ProviderRuntimeCoordinator {
         {
             return;
         }
-        state.next_probe_at = now.monotonic_seconds + PROVIDER_PROBE_INTERVAL_SECONDS;
         let fence = self.fence(state, state.retry.attempt_count);
         state.probe = Some(InFlight {
             fence: fence.clone(),
@@ -1433,6 +1475,10 @@ mod tests {
             None,
         );
         assert_eq!(state.latest_phase, RuntimePhase::Ready);
+        assert_eq!(
+            state.latest_reason_code.as_ref().map(ReasonCode::as_str),
+            Some("launch-failed")
+        );
         assert_eq!(processes.len(), 1);
     }
 
@@ -1500,6 +1546,10 @@ mod tests {
         );
         assert!(processes.is_empty());
         assert_eq!(state.latest_phase, RuntimePhase::Stopped);
+        assert_eq!(
+            state.latest_reason_code.as_ref().map(ReasonCode::as_str),
+            Some("cleanup-attempt-failed")
+        );
     }
 
     #[test]
@@ -1533,6 +1583,81 @@ mod tests {
         let mut sink = VecEventSink::default();
         coordinator.handle_probe_result(now(0.0), &mut state, &mut store, &mut sink, None);
         assert_eq!(state.latest_phase, RuntimePhase::ReadyProofUnavailable);
+        assert_eq!(
+            state.latest_reason_code.as_ref().map(ReasonCode::as_str),
+            Some("probe-not-ready")
+        );
+    }
+
+    #[test]
+    fn ready_probe_preserves_replacement_artifact_and_pending_cleanup_phase() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+
+        let mut artifact_state = state_for(ProviderName::Local);
+        artifact_state.latest_phase = RuntimePhase::ArtifactNotReady;
+        artifact_state.replacement_artifact_not_ready_fingerprint = Some("desired-b".to_owned());
+        let fence = coordinator.fence(&artifact_state, 0);
+        artifact_state.probe = Some(InFlight {
+            fence,
+            result: Some(probe(ProbeStatus::Ready)),
+        });
+        coordinator.handle_probe_result(
+            now(10.0),
+            &mut artifact_state,
+            &mut store,
+            &mut sink,
+            None,
+        );
+        assert_eq!(artifact_state.latest_phase, RuntimePhase::ArtifactNotReady);
+        assert_eq!(
+            artifact_state.next_probe_at,
+            10.0 + PROVIDER_PROBE_INTERVAL_SECONDS
+        );
+
+        let mut cleanup_state = state_for(ProviderName::Local);
+        cleanup_state.latest_phase = RuntimePhase::Stopping;
+        let request = make_stop_request(
+            &cleanup_state,
+            managed("old"),
+            ReasonCode::known("intent-removed"),
+            RuntimePhase::Stopped,
+            None,
+            false,
+        );
+        cleanup_state.pending_stop_request = Some(request);
+        let fence = coordinator.fence(&cleanup_state, 0);
+        cleanup_state.probe = Some(InFlight {
+            fence,
+            result: Some(probe(ProbeStatus::Ready)),
+        });
+        coordinator.handle_probe_result(now(10.0), &mut cleanup_state, &mut store, &mut sink, None);
+        assert_eq!(cleanup_state.latest_phase, RuntimePhase::Stopping);
+        assert_eq!(
+            cleanup_state
+                .latest_reason_code
+                .as_ref()
+                .map(ReasonCode::as_str),
+            Some("stale-result-ignored")
+        );
+    }
+
+    #[test]
+    fn probe_interval_starts_when_the_result_lands() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        let mut workers = RecordingWorkers::default();
+        let mut sink = VecEventSink::default();
+        coordinator.submit_probe_if_needed(now(0.0), &mut state, &mut workers, &mut sink);
+        assert_eq!(state.next_probe_at, 0.0);
+        state.probe.as_mut().unwrap().result = Some(probe(ProbeStatus::Ready));
+        let mut store = InMemoryRuntimeStore::default();
+        coordinator.handle_probe_result(now(10.0), &mut state, &mut store, &mut sink, None);
+        assert_eq!(state.next_probe_at, 10.0 + PROVIDER_PROBE_INTERVAL_SECONDS);
+        coordinator.submit_probe_if_needed(now(10.0), &mut state, &mut workers, &mut sink);
+        assert_eq!(*workers.calls.borrow(), ["probe-dispatch"]);
     }
 
     #[test]
@@ -1916,6 +2041,104 @@ mod tests {
                 .admission_exclusive
         );
         assert_eq!(state.pending_stop_target_phase, RuntimePhase::NotDesired);
+    }
+
+    #[test]
+    fn successive_truth_deferrals_retarget_the_existing_stop_request() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        state.pending_stop_request = Some(make_stop_request(
+            &state,
+            managed("old"),
+            ReasonCode::known("target-changed"),
+            RuntimePhase::Stopped,
+            Some(ReasonCode::known("cleanup-succeeded")),
+            false,
+        ));
+        let fence = coordinator.fence(&state, 0);
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(truth(
+                ProviderName::Local,
+                RuntimePhase::NotDesired,
+                Some("desired-a"),
+                Some("intent-disabled"),
+            )),
+        });
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        coordinator.handle_truth_result(now(1.0), &mut state, &mut store, &mut sink, None);
+        assert_eq!(
+            state.pending_stop_request.as_ref().unwrap().target_phase,
+            RuntimePhase::NotDesired
+        );
+
+        state.latest_phase = RuntimePhase::Ready;
+        let fence = coordinator.fence(&state, 0);
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(truth(
+                ProviderName::Local,
+                RuntimePhase::Starting,
+                Some("desired-b"),
+                Some("launch-requested"),
+            )),
+        });
+        coordinator.handle_truth_result(now(2.0), &mut state, &mut store, &mut sink, None);
+        let request = state.pending_stop_request.as_ref().unwrap();
+        assert_eq!(request.target_phase, RuntimePhase::Starting);
+        assert_eq!(
+            request.target_reason_code.as_ref().map(ReasonCode::as_str),
+            Some("launch-requested")
+        );
+    }
+
+    #[test]
+    fn orphaned_cleanup_completion_does_not_rollback_newer_truth() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        let mut request = make_stop_request(
+            &state,
+            managed("orphan"),
+            ReasonCode::known("launch-failed"),
+            RuntimePhase::Stopped,
+            Some(ReasonCode::known("cleanup-succeeded")),
+            false,
+        );
+        request.orphaned_start_outcome = true;
+        state.pending_stop_request = Some(request);
+        let fence = coordinator.fence(&state, 0);
+        state.stop_cleanup = Some(InFlight {
+            fence: fence.clone(),
+            result: Some(stop(StopCleanupStatus::Stopped)),
+        });
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(truth(
+                ProviderName::Local,
+                RuntimePhase::ReadyProofUnavailable,
+                Some("desired-a"),
+                Some("proof-observation-unavailable"),
+            )),
+        });
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        coordinator.handle_truth_result(now(1.0), &mut state, &mut store, &mut sink, None);
+        coordinator.handle_stop_cleanup_result(
+            now(1.0),
+            &mut state,
+            &mut vec![],
+            &mut store,
+            &mut sink,
+            None,
+        );
+        assert_eq!(state.latest_phase, RuntimePhase::ReadyProofUnavailable);
+        assert_eq!(
+            state.latest_reason_code.as_ref().map(ReasonCode::as_str),
+            Some("proof-observation-unavailable")
+        );
     }
 
     #[test]
@@ -2444,6 +2667,39 @@ mod tests {
     }
 
     #[test]
+    fn retry_token_store_failure_finishes_the_startup_gate() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Backoff;
+        state.next_truth_at = 100.0;
+        let workers = RecordingWorkers::default();
+        let mut truth = workers.clone();
+        let mut lifecycle = workers.clone();
+        let mut probe = workers.clone();
+        let mut store = InMemoryRuntimeStore {
+            failure: Some(RuntimeStoreError::Unavailable),
+            ..InMemoryRuntimeStore::default()
+        };
+        let mut sink = VecEventSink::default();
+        let mut gate = ProviderStartupGate::new(now(0.0), [ProviderName::Local]);
+        coordinator.reconcile(
+            now(1.0),
+            &mut state,
+            &mut vec![],
+            &mut ReconcileContext {
+                truth: &mut truth,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe,
+                store: &mut store,
+                sink: &mut sink,
+                gate: Some(&mut gate),
+            },
+        );
+        assert_eq!(state.latest_phase, RuntimePhase::StateUnavailable);
+        assert!(gate.terminal.contains(&ProviderName::Local));
+    }
+
+    #[test]
     fn retry_token_publishes_transition_before_consuming_and_resets_after_success() {
         let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
         let mut state = state_for(ProviderName::Local);
@@ -2456,7 +2712,7 @@ mod tests {
             reason_code: ReasonCode::known("retry-token-requested"),
         });
         let mut sink = VecEventSink::default();
-        coordinator.handle_retry_token(now(7.0), &mut state, &mut store, &mut sink);
+        coordinator.handle_retry_token(now(7.0), &mut state, &mut store, &mut sink, None);
         assert_eq!(store.calls, ["read", "publish", "consume"]);
         assert_eq!(store.published, [RuntimePhase::Observing]);
         assert_eq!(state.retry.attempt_count, 0);
@@ -2476,7 +2732,7 @@ mod tests {
         });
         store.consume_error = Some(RuntimeStoreError::Conflict);
         let mut sink = VecEventSink::default();
-        coordinator.handle_retry_token(now(7.0), &mut state, &mut store, &mut sink);
+        coordinator.handle_retry_token(now(7.0), &mut state, &mut store, &mut sink, None);
         assert_eq!(state.latest_phase, RuntimePhase::Observing);
         assert_eq!(state.retry.attempt_count, 3);
         assert_ne!(state.latest_phase, RuntimePhase::StateUnavailable);

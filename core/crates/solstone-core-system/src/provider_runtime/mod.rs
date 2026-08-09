@@ -23,6 +23,6 @@ pub use seams::{
 };
 pub use stop::{
     cancel_start, cancel_stop, defer_target_stop, duplicate_owned_process_request,
-    queue_orphaned_start_cleanup, stop_before_replace_request,
+    stop_before_replace_request,
 };
 pub use wedge::{CortexEventKind, CortexOutcomeEvent, WedgeState, observe_cortex_outcome};
