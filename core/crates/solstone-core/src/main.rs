@@ -133,6 +133,13 @@ fn run_speaker_resolve(command: SpeakerResolveCommand) -> ExitCode {
         SpeakerResolveCommand::RebuildOwnerCentroid => rebuild_owner_centroid_request(value),
         SpeakerResolveCommand::WriteOwnerCandidate => write_owner_candidate_request(value),
         SpeakerResolveCommand::ReadOwnerCandidate => read_owner_candidate_request(value),
+        SpeakerResolveCommand::Identify => identify_request(value),
+        SpeakerResolveCommand::UndoIdentify => undo_identify_request(value),
+        SpeakerResolveCommand::BootstrapVoiceprints => bootstrap_request(value, false),
+        SpeakerResolveCommand::SeedFromImports => bootstrap_request(value, true),
+        SpeakerResolveCommand::MergeNames => merge_names_request(value),
+        SpeakerResolveCommand::Backfill => backfill_request(value),
+        SpeakerResolveCommand::BackfillStatus => backfill_status_request(value),
     };
     match result {
         Ok(output) => {
@@ -148,6 +155,287 @@ fn run_speaker_resolve(command: SpeakerResolveCommand) -> ExitCode {
             ExitCode::from(EXIT_USAGE)
         }
     }
+}
+
+fn identify_request(value: Value) -> Result<Value, String> {
+    use solstone_core_speaker_resolve::identify_cluster::{
+        IdentifyClusterRequest, identify_cluster,
+    };
+    let request_object = request_object(
+        value,
+        "solstone-speaker-resolve-identify-request-v1",
+        &[
+            "schema",
+            "journal_root",
+            "cluster_id",
+            "name",
+            "entity_id",
+            "resolve_only",
+            "create_new",
+            "entity_type",
+            "request_id",
+            "reviewed_near_match_entity_ids",
+            "caller",
+            "actor",
+            "encoder",
+        ],
+    )?;
+    let object = &request_object;
+    let request = IdentifyClusterRequest {
+        journal_root: PathBuf::from(required_string(object, "journal_root")?),
+        cluster_id: required_i64(object, "cluster_id")?,
+        name: optional_string(object, "name")?,
+        entity_id: optional_string(object, "entity_id")?,
+        resolve_only: required_bool(object, "resolve_only")?,
+        create_new: required_bool(object, "create_new")?,
+        entity_type: required_string(object, "entity_type")?,
+        request_id: required_string(object, "request_id")?,
+        reviewed_near_match_entity_ids: required_strings(object, "reviewed_near_match_entity_ids")?,
+        caller: optional_string(object, "caller")?.unwrap_or_default(),
+        actor: optional_string(object, "actor")?,
+    };
+    identify_cluster(&request, &encoder(object)?).map_err(|error| error.to_string())
+}
+
+fn undo_identify_request(value: Value) -> Result<Value, String> {
+    let request_object = request_object(
+        value,
+        "solstone-speaker-resolve-undo-identify-request-v1",
+        &["schema", "journal_root", "operation_id", "encoder"],
+    )?;
+    let object = &request_object;
+    solstone_core_speaker_resolve::identify_undo::undo_identify_operation(
+        &PathBuf::from(required_string(object, "journal_root")?),
+        &required_string(object, "operation_id")?,
+        &encoder(object)?,
+    )
+    .map_err(|error| error.to_string())
+}
+
+fn bootstrap_request(value: Value, imports: bool) -> Result<Value, String> {
+    use solstone_core_speaker_resolve::bootstrap::{
+        BootstrapOutcome, BootstrapRequest, SeedFromImportsOutcome, bootstrap_voiceprints,
+        seed_from_imports,
+    };
+    let schema = if imports {
+        "solstone-speaker-resolve-seed-from-imports-request-v1"
+    } else {
+        "solstone-speaker-resolve-bootstrap-voiceprints-request-v1"
+    };
+    let request_object = request_object(
+        value,
+        schema,
+        &["schema", "journal_root", "encoder", "added_at", "dry_run"],
+    )?;
+    let object = &request_object;
+    let request = BootstrapRequest {
+        journal_root: PathBuf::from(required_string(object, "journal_root")?),
+        encoder: encoder(object)?,
+        added_at: required_i64(object, "added_at")?,
+        dry_run: required_bool(object, "dry_run")?,
+    };
+    if imports {
+        let outcome = seed_from_imports(&request).map_err(|error| error.to_string())?;
+        Ok(match outcome {
+            SeedFromImportsOutcome::NoOwnerCentroid => json!({"status":"no_owner_centroid"}),
+            SeedFromImportsOutcome::Completed(stats) => json!({
+                "status":"completed", "segments_scanned":stats.segments_scanned,
+                "segments_with_speakers":stats.segments_with_speakers,
+                "speakers_found":stats.speakers_found, "embeddings_saved":stats.embeddings_saved,
+                "embeddings_skipped_owner":stats.embeddings_skipped_owner,
+                "embeddings_skipped_duplicate":stats.embeddings_skipped_duplicate,
+                "speakers_unmatched":stats.speakers_unmatched, "errors":stats.errors,
+            }),
+        })
+    } else {
+        let outcome = bootstrap_voiceprints(&request).map_err(|error| error.to_string())?;
+        Ok(match outcome {
+            BootstrapOutcome::NoOwnerCentroid => json!({"status":"no_owner_centroid"}),
+            BootstrapOutcome::Completed(stats) => json!({
+                "status":"completed", "segments_scanned":stats.segments_scanned,
+                "single_speaker_segments":stats.single_speaker_segments,
+                "speakers_found":stats.speakers_found, "entities_created":stats.entities_created,
+                "embeddings_saved":stats.embeddings_saved,
+                "embeddings_skipped_owner":stats.embeddings_skipped_owner,
+                "embeddings_skipped_duplicate":stats.embeddings_skipped_duplicate,
+                "speakers_unmatched":stats.speakers_unmatched, "errors":stats.errors,
+            }),
+        })
+    }
+}
+
+fn merge_names_request(value: Value) -> Result<Value, String> {
+    use solstone_core_speaker_resolve::bootstrap::{MergeNamesOutcome, merge_names};
+    let request_object = request_object(
+        value,
+        "solstone-speaker-resolve-merge-names-request-v1",
+        &["schema", "journal_root", "alias_name", "canonical_name"],
+    )?;
+    let object = &request_object;
+    let outcome = merge_names(
+        &PathBuf::from(required_string(object, "journal_root")?),
+        &required_string(object, "alias_name")?,
+        &required_string(object, "canonical_name")?,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(match outcome {
+        MergeNamesOutcome::Ambiguous {
+            field,
+            ambiguity_id,
+            candidates,
+        } => json!({
+            "status":"ambiguous", "field":field, "ambiguity_id":ambiguity_id,
+            "candidates":candidates.into_iter().map(|candidate| json!({
+                "id":candidate.id, "name":candidate.name, "tier":candidate.tier as u8,
+                "score":candidate.score,
+            })).collect::<Vec<_>>(),
+        }),
+        MergeNamesOutcome::AliasNotFound => json!({"status":"alias_not_found"}),
+        MergeNamesOutcome::CanonicalNotFound => json!({"status":"canonical_not_found"}),
+        MergeNamesOutcome::SameEntity { entity_id } => {
+            json!({"status":"same_entity","entity_id":entity_id})
+        }
+        MergeNamesOutcome::PrincipalEntity { entity_id } => {
+            json!({"status":"principal_entity","entity_id":entity_id})
+        }
+        MergeNamesOutcome::Ready {
+            alias_entity_id,
+            canonical_entity_id,
+        } => json!({
+            "status":"ready", "alias_entity_id":alias_entity_id,
+            "canonical_entity_id":canonical_entity_id,
+        }),
+    })
+}
+
+fn backfill_request(value: Value) -> Result<Value, String> {
+    use solstone_core_speaker_resolve::backfill::{BackfillRunRequest, run_backfill};
+    let request_object = request_object(
+        value,
+        "solstone-speaker-resolve-backfill-request-v1",
+        &[
+            "schema",
+            "journal_root",
+            "operation_id",
+            "reattribute",
+            "now_ms",
+        ],
+    )?;
+    let object = &request_object;
+    let result = run_backfill(&BackfillRunRequest {
+        journal_root: PathBuf::from(required_string(object, "journal_root")?),
+        operation_id: required_string(object, "operation_id")?,
+        reattribute: required_bool(object, "reattribute")?,
+        now_ms: required_i64(object, "now_ms")?,
+    })
+    .map_err(|error| error.to_string())?;
+    Ok(json!({
+        "operation_id":result.operation_id, "total_count":result.total_count,
+        "processed_count":result.processed_count, "skipped_count":result.skipped_count,
+        "error_count":result.error_count, "pending_count":result.pending_count,
+        "done":result.done,
+    }))
+}
+
+fn backfill_status_request(value: Value) -> Result<Value, String> {
+    use solstone_core_speaker_resolve::backfill_operations::{
+        backfill_operation_status, backfill_operations_path, load_backfill_operations,
+    };
+    let request_object = request_object(
+        value,
+        "solstone-speaker-resolve-backfill-status-request-v1",
+        &["schema", "journal_root", "operation_id"],
+    )?;
+    let object = &request_object;
+    let root = PathBuf::from(required_string(object, "journal_root")?);
+    let operation_id = required_string(object, "operation_id")?;
+    let status = backfill_operation_status(
+        &load_backfill_operations(&backfill_operations_path(&root))
+            .map_err(|error| error.to_string())?,
+        &operation_id,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(status.map_or_else(
+        || json!({"status":"not_found","operation_id":operation_id}),
+        |status| {
+            json!({
+                "status":if status.done { "done" } else { "resumable" },
+                "operation_id":operation_id, "total_count":status.total_count,
+                "completed_count":status.completed_count, "pending_count":status.pending_count,
+                "resumable":status.resumable, "done":status.done,
+            })
+        },
+    ))
+}
+
+fn request_object(
+    value: Value,
+    schema: &str,
+    fields: &[&str],
+) -> Result<Map<String, Value>, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "request must be an object".to_owned())?;
+    if object.keys().any(|key| !fields.contains(&key.as_str()))
+        || object.get("schema").and_then(Value::as_str) != Some(schema)
+    {
+        return Err(format!("invalid request schema: {schema}"));
+    }
+    Ok(object.clone())
+}
+
+fn encoder(object: &Map<String, Value>) -> Result<solstone_core_entity::EncoderIdentity, String> {
+    let encoder = object
+        .get("encoder")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "encoder is required".to_owned())?;
+    Ok(solstone_core_entity::EncoderIdentity {
+        id: required_string(encoder, "id")?,
+        sha256: required_string(encoder, "sha256")?,
+        width: encoder
+            .get("width")
+            .and_then(Value::as_u64)
+            .and_then(|value| usize::try_from(value).ok())
+            .ok_or_else(|| "encoder width is required".to_owned())?,
+    })
+}
+
+fn optional_string(object: &Map<String, Value>, name: &str) -> Result<Option<String>, String> {
+    match object.get(name) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) if !value.is_empty() => Ok(Some(value.clone())),
+        _ => Err(format!("{name} must be a non-empty string or null")),
+    }
+}
+
+fn required_bool(object: &Map<String, Value>, name: &str) -> Result<bool, String> {
+    object
+        .get(name)
+        .and_then(Value::as_bool)
+        .ok_or_else(|| format!("{name} is required"))
+}
+
+fn required_i64(object: &Map<String, Value>, name: &str) -> Result<i64, String> {
+    object
+        .get(name)
+        .and_then(Value::as_i64)
+        .ok_or_else(|| format!("{name} is required"))
+}
+
+fn required_strings(object: &Map<String, Value>, name: &str) -> Result<Vec<String>, String> {
+    object
+        .get(name)
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("{name} is required"))?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .ok_or_else(|| format!("invalid {name}"))
+        })
+        .collect()
 }
 
 fn parse_accumulation_request(

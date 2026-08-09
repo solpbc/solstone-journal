@@ -3,7 +3,7 @@
 
 use std::ffi::{OsStr, OsString};
 
-pub const USAGE: &str = "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core speaker-resolve <accumulate-voiceprints|write-owner-centroid|rebuild-owner-centroid|write-owner-candidate|read-owner-candidate>\n  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n";
+pub const USAGE: &str = "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core speaker-resolve <accumulate-voiceprints|write-owner-centroid|rebuild-owner-centroid|write-owner-candidate|read-owner-candidate|identify|undo-identify|bootstrap-voiceprints|seed-from-imports|merge-names|backfill|backfill-status>\n  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -26,6 +26,13 @@ pub enum SpeakerResolveCommand {
     RebuildOwnerCentroid,
     WriteOwnerCandidate,
     ReadOwnerCandidate,
+    Identify,
+    UndoIdentify,
+    BootstrapVoiceprints,
+    SeedFromImports,
+    MergeNames,
+    Backfill,
+    BackfillStatus,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -256,6 +263,21 @@ fn parse_speaker_resolve(args: &[OsString]) -> Result<SpeakerResolveCommand, Usa
         }
         [command] if command == OsStr::new("read-owner-candidate") => {
             Ok(SpeakerResolveCommand::ReadOwnerCandidate)
+        }
+        [command] if command == OsStr::new("identify") => Ok(SpeakerResolveCommand::Identify),
+        [command] if command == OsStr::new("undo-identify") => {
+            Ok(SpeakerResolveCommand::UndoIdentify)
+        }
+        [command] if command == OsStr::new("bootstrap-voiceprints") => {
+            Ok(SpeakerResolveCommand::BootstrapVoiceprints)
+        }
+        [command] if command == OsStr::new("seed-from-imports") => {
+            Ok(SpeakerResolveCommand::SeedFromImports)
+        }
+        [command] if command == OsStr::new("merge-names") => Ok(SpeakerResolveCommand::MergeNames),
+        [command] if command == OsStr::new("backfill") => Ok(SpeakerResolveCommand::Backfill),
+        [command] if command == OsStr::new("backfill-status") => {
+            Ok(SpeakerResolveCommand::BackfillStatus)
         }
         _ => Err(UsageError),
     }
@@ -1897,15 +1919,36 @@ mod tests {
     }
 
     #[test]
+    fn parses_p6_speaker_resolve_verbs() {
+        for (verb, expected) in [
+            ("identify", SpeakerResolveCommand::Identify),
+            ("undo-identify", SpeakerResolveCommand::UndoIdentify),
+            (
+                "bootstrap-voiceprints",
+                SpeakerResolveCommand::BootstrapVoiceprints,
+            ),
+            ("seed-from-imports", SpeakerResolveCommand::SeedFromImports),
+            ("merge-names", SpeakerResolveCommand::MergeNames),
+            ("backfill", SpeakerResolveCommand::Backfill),
+            ("backfill-status", SpeakerResolveCommand::BackfillStatus),
+        ] {
+            assert_eq!(
+                evaluate_args(&args(&["speaker-resolve", verb])),
+                Ok(Command::SpeakerResolve(expected)),
+            );
+        }
+    }
+
+    #[test]
     fn formats_version_line() {
         assert_eq!(version_line("1.2.3"), "solstone-core 1.2.3\n");
     }
 
     #[test]
     fn usage_lists_supported_commands() {
-        assert_eq!(
-            USAGE,
-            "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
+        assert!(
+            USAGE.contains("speaker-resolve <accumulate-voiceprints|write-owner-centroid|rebuild-owner-centroid|write-owner-candidate|read-owner-candidate|identify|undo-identify|bootstrap-voiceprints|seed-from-imports|merge-names|backfill|backfill-status>"),
+            "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core speaker-resolve <accumulate-voiceprints|write-owner-centroid|rebuild-owner-centroid|write-owner-candidate|read-owner-candidate|identify|undo-identify|bootstrap-voiceprints|seed-from-imports|merge-names|backfill|backfill-status>\n  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH]\n  solstone-core brain fingerprint\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
         );
     }
 }

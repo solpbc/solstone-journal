@@ -6,11 +6,19 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use serde_json::Value;
+use chrono::Utc;
+use serde_json::{Map, Value};
+use solstone_core_speaker_id::labels::write_full_labels;
 use thiserror::Error;
 
+use crate::backfill_operations::{
+    BACKFILL_OPERATION_SCHEMA_VERSION, BackfillCheckpointOutcome, BackfillOperationEvent,
+    BackfillOperationPayload, BackfillOperationState, BackfillOperationTerminalStatus,
+    BackfillSegmentKey, append_backfill_event, backfill_operations_path, fold_backfill_operation,
+    load_backfill_operations,
+};
 use crate::bootstrap::scan_segments;
-use crate::resolve::{resolve, ResolveError, ResolveOutcome};
+use crate::resolve::{ResolveError, ResolveOutcome, resolve};
 
 /// Classification used by default backfill selection for an existing label payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,12 +46,39 @@ pub struct BackfillPlan {
     pub to_process: Vec<BackfillSegment>,
 }
 
+/// One bounded-JSON CLI request for a resumable native backfill run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackfillRunRequest {
+    pub journal_root: PathBuf,
+    pub operation_id: String,
+    pub reattribute: bool,
+    pub now_ms: i64,
+}
+
+/// Progress and terminal state returned after one in-process backfill invocation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackfillRunResult {
+    pub operation_id: String,
+    pub total_count: usize,
+    pub processed_count: usize,
+    pub skipped_count: usize,
+    pub error_count: usize,
+    pub pending_count: usize,
+    pub done: bool,
+}
+
 #[derive(Debug, Error)]
 pub enum BackfillError {
     #[error("backfill scan failed: {0}")]
     Scan(#[from] crate::bootstrap::BootstrapError),
     #[error("native attribution failed: {0}")]
     Resolve(#[from] ResolveError),
+    #[error("backfill operation ledger failed: {0}")]
+    Ledger(#[from] crate::backfill_operations::BackfillOperationError),
+    #[error("speaker label write failed: {0}")]
+    Labels(#[from] solstone_core_speaker_id::labels::LabelsError),
+    #[error("segment path failed: {0}")]
+    Path(#[from] solstone_core_journal_io::PathError),
 }
 
 /// Distinguish an explicit locked stub from every other label payload.
@@ -123,6 +158,153 @@ pub fn resolve_backfill_segment(
         false,
         now_ms,
     )?)
+}
+
+/// Execute or resume one durable backfill operation without rewriting its snapshot.
+pub fn run_backfill(request: &BackfillRunRequest) -> Result<BackfillRunResult, BackfillError> {
+    let ledger_path = backfill_operations_path(&request.journal_root);
+    let mut state = fold_backfill_operation(
+        &load_backfill_operations(&ledger_path)?,
+        &request.operation_id,
+    )?;
+    if state.is_none() {
+        let plan = plan_backfill_segments(&request.journal_root, request.reattribute)?;
+        let segments = plan
+            .to_process
+            .iter()
+            .map(|segment| BackfillSegmentKey {
+                day: segment.day.clone(),
+                stream: segment.stream.clone(),
+                segment_key: segment.segment_key.clone(),
+            })
+            .collect::<Vec<_>>();
+        let now = Utc::now().to_rfc3339();
+        append_backfill_event(
+            &ledger_path,
+            &BackfillOperationEvent {
+                schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
+                event_id: format!("{}:prepared", request.operation_id),
+                operation_id: request.operation_id.clone(),
+                ts: now.clone(),
+                payload: BackfillOperationPayload::Prepared {
+                    started_at: now,
+                    reattribute: request.reattribute,
+                    total_count: segments.len(),
+                    segments,
+                },
+            },
+        )?;
+        state = fold_backfill_operation(
+            &load_backfill_operations(&ledger_path)?,
+            &request.operation_id,
+        )?;
+    }
+    let state = state.expect("prepared backfill operation folds");
+    if state.terminal_status == BackfillOperationTerminalStatus::Done {
+        return Ok(backfill_result(&state));
+    }
+    for key in &state.pending_segments {
+        let segment = BackfillSegment {
+            day: key.day.clone(),
+            stream: key.stream.clone(),
+            segment_key: key.segment_key.clone(),
+            path: solstone_core_journal_io::segment_path(
+                &request.journal_root,
+                &key.day,
+                &key.segment_key,
+                &key.stream,
+                false,
+            )?,
+        };
+        let outcome =
+            match resolve_backfill_segment(&request.journal_root, &segment, request.now_ms) {
+                Ok(ResolveOutcome::Resolved(output)) => {
+                    let labels = output.labels.iter().map(label_json).collect::<Vec<_>>();
+                    write_full_labels(&segment.path, labels, &Map::new())?;
+                    BackfillCheckpointOutcome::Processed
+                }
+                Ok(_) => BackfillCheckpointOutcome::Skipped,
+                Err(_) => BackfillCheckpointOutcome::Error,
+            };
+        append_backfill_event(
+            &ledger_path,
+            &BackfillOperationEvent {
+                schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
+                event_id: format!(
+                    "{}:checkpoint:{}:{}:{}",
+                    request.operation_id, key.day, key.stream, key.segment_key
+                ),
+                operation_id: request.operation_id.clone(),
+                ts: Utc::now().to_rfc3339(),
+                payload: BackfillOperationPayload::Checkpoint {
+                    segment: key.clone(),
+                    outcome,
+                },
+            },
+        )?;
+    }
+    let state = fold_backfill_operation(
+        &load_backfill_operations(&ledger_path)?,
+        &request.operation_id,
+    )?
+    .expect("prepared backfill operation remains present");
+    if state.pending_segments.is_empty() {
+        append_backfill_event(
+            &ledger_path,
+            &BackfillOperationEvent {
+                schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
+                event_id: format!("{}:completed", request.operation_id),
+                operation_id: request.operation_id.clone(),
+                ts: Utc::now().to_rfc3339(),
+                payload: BackfillOperationPayload::Completed {
+                    completed_at: Utc::now().to_rfc3339(),
+                },
+            },
+        )?;
+    }
+    let state = fold_backfill_operation(
+        &load_backfill_operations(&ledger_path)?,
+        &request.operation_id,
+    )?
+    .expect("prepared backfill operation remains present");
+    Ok(backfill_result(&state))
+}
+
+fn label_json(label: &crate::layer1::Label) -> Value {
+    let mut value = serde_json::json!({"sentence_id":label.sentence_id});
+    let object = value.as_object_mut().expect("label is an object");
+    if let Some(speaker) = &label.speaker {
+        object.insert("speaker".to_owned(), Value::String(speaker.clone()));
+    }
+    if let Some(confidence) = &label.confidence {
+        object.insert("confidence".to_owned(), Value::String(confidence.clone()));
+    }
+    if let Some(method) = &label.method {
+        object.insert("method".to_owned(), Value::String(method.clone()));
+    }
+    value
+}
+
+fn backfill_result(state: &BackfillOperationState) -> BackfillRunResult {
+    let mut processed_count = 0;
+    let mut skipped_count = 0;
+    let mut error_count = 0;
+    for outcome in state.checkpointed_segments.values() {
+        match outcome {
+            BackfillCheckpointOutcome::Processed => processed_count += 1,
+            BackfillCheckpointOutcome::Skipped => skipped_count += 1,
+            BackfillCheckpointOutcome::Error => error_count += 1,
+        }
+    }
+    BackfillRunResult {
+        operation_id: state.operation_id.clone(),
+        total_count: state.total_segments,
+        processed_count,
+        skipped_count,
+        error_count,
+        pending_count: state.pending_segments.len(),
+        done: state.terminal_status == BackfillOperationTerminalStatus::Done,
+    }
 }
 
 /// Preserve every `user_`-method label at its sentence ID while replacing other rows.
