@@ -10,6 +10,11 @@ pub mod snp;
 pub mod tlv;
 pub mod tpm_quote;
 
+pub use error::{PcrFingerprintError, PcrPinMismatchError};
+pub use snp::{
+    CpuBundle, PcrMode, Policy, QuoteVerifier, TcbFloor, appraise_cpu_leg, check_pcr_fingerprint,
+};
+
 #[cfg(test)]
 pub(crate) mod test_support {
     use std::path::PathBuf;

@@ -1,60 +1,184 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fmt::Write;
+use std::convert::Infallible;
 
 use crate::parser::MAX_NESTING;
-use crate::{BodyString, BodyValue, CanonicalizeError};
+use crate::{BodyValue, CanonicalizeError};
+
+pub(crate) trait CanonicalSink {
+    type Error;
+
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Self::Error>;
+}
+
+impl CanonicalSink for String {
+    type Error = Infallible;
+
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+        self.push_str(std::str::from_utf8(bytes).expect("canonical JSON grammar is ASCII"));
+        Ok(())
+    }
+}
+
+pub(crate) struct CappedVecSink<'a> {
+    output: &'a mut Vec<u8>,
+    limit: usize,
+}
+
+impl<'a> CappedVecSink<'a> {
+    pub(crate) fn new(output: &'a mut Vec<u8>, limit: usize) -> Self {
+        Self { output, limit }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CappedSinkError {
+    InputTooLarge,
+}
+
+impl CanonicalSink for CappedVecSink<'_> {
+    type Error = CappedSinkError;
+
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+        if bytes.len() > self.limit.saturating_sub(self.output.len()) {
+            return Err(CappedSinkError::InputTooLarge);
+        }
+        self.output.extend_from_slice(bytes);
+        Ok(())
+    }
+}
 
 /// Encodes a body value as Python-compatible compact ASCII JSON.
 pub fn canonicalize(value: &BodyValue) -> Result<String, CanonicalizeError> {
     let mut output = String::new();
-    canonicalize_value(value, 0, &mut output)?;
+    canonicalize_value(value, 0, &mut output).map_err(|error| match error {
+        CanonicalizeValueError::Canonicalize(error) => error,
+        CanonicalizeValueError::Sink(error) => match error {},
+    })?;
     Ok(output)
 }
 
-fn canonicalize_value(
+pub(crate) enum CanonicalizeValueError<E> {
+    Canonicalize(CanonicalizeError),
+    Sink(E),
+}
+
+pub(crate) fn canonicalize_value<S: CanonicalSink>(
     value: &BodyValue,
     depth: usize,
-    output: &mut String,
-) -> Result<(), CanonicalizeError> {
+    output: &mut S,
+) -> Result<(), CanonicalizeValueError<S::Error>> {
     match value {
-        BodyValue::Null => output.push_str("null"),
-        BodyValue::Bool(value) => output.push_str(if *value { "true" } else { "false" }),
-        BodyValue::Integer(value) => {
-            if value.is_negative() {
-                output.push('-');
-            }
-            output.push_str(value.digits());
+        BodyValue::Null => output
+            .write_bytes(b"null")
+            .map_err(CanonicalizeValueError::Sink)?,
+        BodyValue::Bool(value) => output
+            .write_bytes(if *value { b"true" } else { b"false" })
+            .map_err(CanonicalizeValueError::Sink)?,
+        BodyValue::Integer(value) => write_integer(output, value.is_negative(), value.digits())
+            .map_err(CanonicalizeValueError::Sink)?,
+        BodyValue::Number(value) => output
+            .write_bytes(format_python_float(*value).as_bytes())
+            .map_err(CanonicalizeValueError::Sink)?,
+        BodyValue::String(value) => {
+            write_quoted_code_points(output, value.code_points().iter().copied())
+                .map_err(CanonicalizeValueError::Sink)?;
         }
-        BodyValue::Number(value) => output.push_str(&format_python_float(*value)),
-        BodyValue::String(value) => write_quoted_ascii_string(value, output),
         BodyValue::Array(values) => {
-            let child_depth = enter_container(depth)?;
-            output.push('[');
+            let child_depth =
+                enter_container(depth).map_err(CanonicalizeValueError::Canonicalize)?;
+            write_array_start(output).map_err(CanonicalizeValueError::Sink)?;
             for (index, value) in values.iter().enumerate() {
                 if index > 0 {
-                    output.push(',');
+                    write_separator(output).map_err(CanonicalizeValueError::Sink)?;
                 }
                 canonicalize_value(value, child_depth, output)?;
             }
-            output.push(']');
+            write_array_end(output).map_err(CanonicalizeValueError::Sink)?;
         }
         BodyValue::Object(values) => {
-            let child_depth = enter_container(depth)?;
-            output.push('{');
+            let child_depth =
+                enter_container(depth).map_err(CanonicalizeValueError::Canonicalize)?;
+            write_object_start(output).map_err(CanonicalizeValueError::Sink)?;
             for (index, (key, value)) in values.iter().enumerate() {
                 if index > 0 {
-                    output.push(',');
+                    write_separator(output).map_err(CanonicalizeValueError::Sink)?;
                 }
-                write_quoted_ascii_string(key, output);
-                output.push(':');
+                write_object_key(output, key.code_points().iter().copied())
+                    .map_err(CanonicalizeValueError::Sink)?;
                 canonicalize_value(value, child_depth, output)?;
             }
-            output.push('}');
+            write_object_end(output).map_err(CanonicalizeValueError::Sink)?;
         }
     }
     Ok(())
+}
+
+pub(crate) fn write_integer<S: CanonicalSink>(
+    output: &mut S,
+    negative: bool,
+    digits: &str,
+) -> Result<(), S::Error> {
+    if negative {
+        output.write_bytes(b"-")?;
+    }
+    output.write_bytes(digits.as_bytes())
+}
+
+pub(crate) fn write_quoted_code_points<S: CanonicalSink, I: Iterator<Item = u32>>(
+    output: &mut S,
+    code_points: I,
+) -> Result<(), S::Error> {
+    output.write_bytes(b"\"")?;
+    for code_point in code_points {
+        match code_point {
+            0x22 => output.write_bytes(b"\\\"")?,
+            0x5c => output.write_bytes(b"\\\\")?,
+            0x08 => output.write_bytes(b"\\b")?,
+            0x0c => output.write_bytes(b"\\f")?,
+            0x0a => output.write_bytes(b"\\n")?,
+            0x0d => output.write_bytes(b"\\r")?,
+            0x09 => output.write_bytes(b"\\t")?,
+            0x00..=0x1f | 0x7f..=0xffff => write_unicode_escape(output, code_point)?,
+            0x20..=0x7e => output.write_bytes(&[code_point as u8])?,
+            0x10000..=0x10ffff => {
+                let reduced = code_point - 0x10000;
+                write_unicode_escape(output, 0xd800 + (reduced >> 10))?;
+                write_unicode_escape(output, 0xdc00 + (reduced & 0x3ff))?;
+            }
+            _ => unreachable!("BodyString only stores code points through U+10FFFF"),
+        }
+    }
+    output.write_bytes(b"\"")
+}
+
+pub(crate) fn write_object_start<S: CanonicalSink>(output: &mut S) -> Result<(), S::Error> {
+    output.write_bytes(b"{")
+}
+
+pub(crate) fn write_object_end<S: CanonicalSink>(output: &mut S) -> Result<(), S::Error> {
+    output.write_bytes(b"}")
+}
+
+pub(crate) fn write_array_start<S: CanonicalSink>(output: &mut S) -> Result<(), S::Error> {
+    output.write_bytes(b"[")
+}
+
+pub(crate) fn write_array_end<S: CanonicalSink>(output: &mut S) -> Result<(), S::Error> {
+    output.write_bytes(b"]")
+}
+
+pub(crate) fn write_separator<S: CanonicalSink>(output: &mut S) -> Result<(), S::Error> {
+    output.write_bytes(b",")
+}
+
+pub(crate) fn write_object_key<S: CanonicalSink, I: Iterator<Item = u32>>(
+    output: &mut S,
+    key: I,
+) -> Result<(), S::Error> {
+    write_quoted_code_points(output, key)?;
+    output.write_bytes(b":")
 }
 
 fn enter_container(depth: usize) -> Result<usize, CanonicalizeError> {
@@ -148,30 +272,15 @@ fn format_python_float(value: f64) -> String {
     format!("{sign}{fixed}")
 }
 
-fn write_quoted_ascii_string(value: &BodyString, output: &mut String) {
-    output.push('"');
-    for code_point in value.code_points() {
-        match *code_point {
-            0x22 => output.push_str("\\\""),
-            0x5c => output.push_str("\\\\"),
-            0x08 => output.push_str("\\b"),
-            0x0c => output.push_str("\\f"),
-            0x0a => output.push_str("\\n"),
-            0x0d => output.push_str("\\r"),
-            0x09 => output.push_str("\\t"),
-            0x00..=0x1f | 0x7f..=0xffff => write_unicode_escape(*code_point, output),
-            0x20..=0x7e => output.push(*code_point as u8 as char),
-            0x10000..=0x10ffff => {
-                let reduced = *code_point - 0x10000;
-                write_unicode_escape(0xd800 + (reduced >> 10), output);
-                write_unicode_escape(0xdc00 + (reduced & 0x3ff), output);
-            }
-            _ => unreachable!("BodyString only stores code points through U+10FFFF"),
-        }
-    }
-    output.push('"');
-}
-
-fn write_unicode_escape(code_point: u32, output: &mut String) {
-    write!(output, "\\u{code_point:04x}").expect("writing to String cannot fail");
+fn write_unicode_escape<S: CanonicalSink>(output: &mut S, code_point: u32) -> Result<(), S::Error> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let bytes = [
+        b'\\',
+        b'u',
+        HEX[((code_point >> 12) & 0xf) as usize],
+        HEX[((code_point >> 8) & 0xf) as usize],
+        HEX[((code_point >> 4) & 0xf) as usize],
+        HEX[(code_point & 0xf) as usize],
+    ];
+    output.write_bytes(&bytes)
 }

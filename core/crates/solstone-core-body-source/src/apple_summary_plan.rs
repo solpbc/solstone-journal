@@ -3,7 +3,7 @@
 
 use crate::{BodyDay, BundleId, EnvelopeError, EnvelopeErrorCode, EnvelopeErrorField};
 
-const APPLE_SUMMARY_SCHEMA: &str = "solstone.body.apple_day_summaries.v1";
+pub(crate) const APPLE_SUMMARY_SCHEMA: &str = "solstone.body.apple_day_summaries.v1";
 
 /// Checked native body-envelope plan for Apple daily summaries.
 #[derive(Clone, Debug, PartialEq, Eq)]

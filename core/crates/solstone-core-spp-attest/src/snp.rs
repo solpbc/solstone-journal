@@ -3,6 +3,9 @@
 
 //! HCLA and SEV-SNP report parsing with pinned AMD chain verification.
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use ring::{
     digest::{SHA256, digest},
@@ -21,7 +24,10 @@ use x509_parser::{
 
 use crate::{
     binding::{BINDING_DOMAIN, check_envelope_nonce, composite_binding_hash},
-    error::{CpuAppraisalStage, CpuLegError, SnpParseError, SnpVerifyError},
+    error::{
+        CpuAppraisalStage, CpuLegError, PcrFingerprintError, PcrPinMismatchError, SnpParseError,
+        SnpVerifyError,
+    },
     tlv::decode_gpu_envelope,
     tpm_quote::{TpmQuoteInput, load_ak_public_key, verify_quote, without_leading_zeros},
 };
@@ -93,6 +99,79 @@ impl TcbVersion {
                 microcode: Some(raw[7]),
                 fmc: None,
             },
+        }
+    }
+}
+
+/// Minimum accepted values for one SNP TCB record.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TcbFloor {
+    pub boot_loader: Option<u8>,
+    pub tee: Option<u8>,
+    pub snp: Option<u8>,
+    pub microcode: Option<u8>,
+    pub fmc: Option<u8>,
+}
+
+impl TcbFloor {
+    fn check(&self, observed: &TcbVersion, label: &str) -> Result<(), SnpVerifyError> {
+        for (field, floor, value) in [
+            ("boot_loader", self.boot_loader, observed.boot_loader),
+            ("tee", self.tee, observed.tee),
+            ("snp", self.snp, observed.snp),
+            ("microcode", self.microcode, observed.microcode),
+            ("fmc", self.fmc, observed.fmc),
+        ] {
+            let Some(floor) = floor else { continue };
+            let Some(value) = value else {
+                return Err(SnpVerifyError::PolicyTcbMissing {
+                    label: label.to_owned(),
+                    field,
+                });
+            };
+            if value < floor {
+                return Err(SnpVerifyError::PolicyTcbBelowFloor {
+                    label: label.to_owned(),
+                    field,
+                    value,
+                    floor,
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// PCR acceptance mode. Unknown preserves untrusted configuration for rejection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PcrMode {
+    Record,
+    Pin,
+    Unknown(String),
+}
+
+/// Policy applied while appraising CPU evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Policy {
+    pub allowed_report_versions: BTreeSet<u32>,
+    pub allowed_hcla_versions: BTreeSet<u32>,
+    pub allowed_vmpl: BTreeSet<u32>,
+    pub require_debug_disabled: bool,
+    pub min_tcb: BTreeMap<String, TcbFloor>,
+    pub pcr_mode: PcrMode,
+    pub pcr_pins: BTreeSet<String>,
+}
+
+impl Default for Policy {
+    fn default() -> Self {
+        Self {
+            allowed_report_versions: [3, 5].into_iter().collect(),
+            allowed_hcla_versions: [1, 2].into_iter().collect(),
+            allowed_vmpl: [0].into_iter().collect(),
+            require_debug_disabled: true,
+            min_tcb: BTreeMap::new(),
+            pcr_mode: PcrMode::Record,
+            pcr_pins: BTreeSet::new(),
         }
     }
 }
@@ -290,15 +369,25 @@ fn decode_jwk_component(value: Option<&Value>) -> Result<Vec<u8>, SnpVerifyError
     Ok(without_leading_zeros(&decoded))
 }
 
-fn check_policy(report: &SnpReport) -> Result<(), SnpVerifyError> {
-    if !matches!(report.version, 3 | 5) {
+fn check_policy_with(report: &SnpReport, policy: &Policy) -> Result<(), SnpVerifyError> {
+    if !policy.allowed_report_versions.contains(&report.version) {
         return Err(SnpVerifyError::PolicyReportVersion);
     }
-    if report.vmpl != 0 {
+    if !policy.allowed_vmpl.is_empty() && !policy.allowed_vmpl.contains(&report.vmpl) {
         return Err(SnpVerifyError::PolicyVmpl);
     }
-    if debug_allowed(report) {
+    if policy.require_debug_disabled && debug_allowed(report) {
         return Err(SnpVerifyError::PolicyDebugEnabled);
+    }
+    for (label, floor) in &policy.min_tcb {
+        let observed = match label.as_str() {
+            "current" => &report.current_tcb,
+            "reported" => &report.reported_tcb,
+            "committed" => &report.committed_tcb,
+            "launch" => &report.launch_tcb,
+            _ => return Err(SnpVerifyError::PolicyTcbLabelUnknown),
+        };
+        floor.check(observed, label)?;
     }
     Ok(())
 }
@@ -316,21 +405,92 @@ pub fn appraise_cpu_evidence(
     evidence: CpuEvidence<'_>,
     now_unix_seconds: i64,
 ) -> Result<CpuAppraisal, CpuLegError> {
-    let envelope =
-        decode_gpu_envelope(evidence.envelope_tlv).map_err(|source| CpuLegError::Tlv {
-            stage: CpuAppraisalStage::Envelope,
-            source,
-        })?;
-    check_envelope_nonce(&envelope, evidence.nonce).map_err(|source| CpuLegError::Binding {
+    appraise_cpu_leg_at(
+        CpuBundle {
+            hcl_report: evidence.hcl_report,
+            standalone_report: evidence.standalone_report,
+            cert_pems: evidence.cert_pems,
+            ak_public_key_pem: evidence.ak_public_key_pem,
+            nonce: evidence.nonce,
+            quote_message: evidence.quote_message,
+            quote_signature: evidence.quote_signature,
+            quote_pcrs: evidence.quote_pcrs,
+        },
+        evidence.envelope_tlv,
+        evidence.channel_binding,
+        BINDING_DOMAIN,
+        Some(&Policy::default()),
+        None,
+        now_unix_seconds,
+    )
+}
+
+/// All CPU evidence bytes carried by composite evidence.
+pub struct CpuBundle<'a> {
+    pub hcl_report: &'a [u8],
+    pub standalone_report: Option<&'a [u8]>,
+    pub cert_pems: &'a [&'a [u8]],
+    pub ak_public_key_pem: &'a [u8],
+    pub nonce: &'a [u8],
+    pub quote_message: &'a [u8],
+    pub quote_signature: &'a [u8],
+    pub quote_pcrs: &'a [u8],
+}
+
+/// Optional TPM quote verification seam for composite callers.
+pub trait QuoteVerifier: Send + Sync {
+    fn verify(&self, input: TpmQuoteInput<'_>) -> Result<(), crate::error::TpmQuoteError>;
+}
+
+/// Appraises CPU-leg evidence with the supplied policy or Python-equivalent defaults.
+pub fn appraise_cpu_leg(
+    bundle: CpuBundle<'_>,
+    envelope_tlv: &[u8],
+    channel_binding: &[u8],
+    binding_domain: &[u8],
+    policy: Option<&Policy>,
+    quote_verifier: Option<&dyn QuoteVerifier>,
+) -> Result<CpuAppraisal, CpuLegError> {
+    let now_unix_seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| i64::try_from(duration.as_secs()).unwrap_or(i64::MAX))
+        .unwrap_or(0);
+    appraise_cpu_leg_at(
+        bundle,
+        envelope_tlv,
+        channel_binding,
+        binding_domain,
+        policy,
+        quote_verifier,
+        now_unix_seconds,
+    )
+}
+
+fn appraise_cpu_leg_at(
+    bundle: CpuBundle<'_>,
+    envelope_tlv: &[u8],
+    channel_binding: &[u8],
+    binding_domain: &[u8],
+    policy: Option<&Policy>,
+    quote_verifier: Option<&dyn QuoteVerifier>,
+    now_unix_seconds: i64,
+) -> Result<CpuAppraisal, CpuLegError> {
+    let default_policy = Policy::default();
+    let policy = policy.unwrap_or(&default_policy);
+    let envelope = decode_gpu_envelope(envelope_tlv).map_err(|source| CpuLegError::Tlv {
+        stage: CpuAppraisalStage::Envelope,
+        source,
+    })?;
+    check_envelope_nonce(&envelope, bundle.nonce).map_err(|source| CpuLegError::Binding {
         stage: CpuAppraisalStage::Envelope,
         source,
     })?;
 
-    let hcla = parse_hcla(evidence.hcl_report).map_err(|source| CpuLegError::SnpParse {
+    let hcla = parse_hcla(bundle.hcl_report).map_err(|source| CpuLegError::SnpParse {
         stage: CpuAppraisalStage::Hcla,
         source,
     })?;
-    if !matches!(hcla.version, 1 | 2) {
+    if !policy.allowed_hcla_versions.contains(&hcla.version) {
         return Err(CpuLegError::SnpVerify {
             stage: CpuAppraisalStage::Hcla,
             source: SnpVerifyError::HclaVersionDisallowed,
@@ -343,7 +503,7 @@ pub fn appraise_cpu_evidence(
             hcla.version, hcla.request_type
         ),
     )];
-    if evidence
+    if bundle
         .standalone_report
         .is_some_and(|report| report != hcla.report.as_slice())
     {
@@ -368,13 +528,11 @@ pub fn appraise_cpu_evidence(
         "report_data == SHA-256(runtime JSON)".to_owned(),
     ));
 
-    let amd_verification =
-        verify_amd_chain_and_report(&report, evidence.cert_pems, now_unix_seconds).map_err(
-            |source| CpuLegError::SnpVerify {
-                stage: CpuAppraisalStage::AmdChain,
-                source,
-            },
-        )?;
+    let amd_verification = verify_amd_chain_and_report(&report, bundle.cert_pems, now_unix_seconds)
+        .map_err(|source| CpuLegError::SnpVerify {
+            stage: CpuAppraisalStage::AmdChain,
+            source,
+        })?;
     steps.push(ok_step(
         "amd-chain",
         format!(
@@ -387,7 +545,7 @@ pub fn appraise_cpu_evidence(
         "VCEK signed report bytes 0..0x29f".to_owned(),
     ));
 
-    check_policy(&report).map_err(|source| CpuLegError::SnpVerify {
+    check_policy_with(&report, policy).map_err(|source| CpuLegError::SnpVerify {
         stage: CpuAppraisalStage::SnpPolicy,
         source,
     })?;
@@ -401,7 +559,7 @@ pub fn appraise_cpu_evidence(
         ),
     ));
 
-    verify_ak_binding(&hcla.runtime, evidence.ak_public_key_pem).map_err(|source| {
+    verify_ak_binding(&hcla.runtime, bundle.ak_public_key_pem).map_err(|source| {
         CpuLegError::SnpVerify {
             stage: CpuAppraisalStage::AkBinding,
             source,
@@ -412,23 +570,23 @@ pub fn appraise_cpu_evidence(
         "bundle AK public key matches AMD-bound HCLAkPub".to_owned(),
     ));
 
-    let binding = composite_binding_hash(
-        evidence.nonce,
-        evidence.channel_binding,
-        evidence.envelope_tlv,
-        BINDING_DOMAIN,
-    )
-    .map_err(|source| CpuLegError::Binding {
-        stage: CpuAppraisalStage::Quote,
-        source,
-    })?;
-    verify_quote(TpmQuoteInput {
-        ak_public_key_pem: evidence.ak_public_key_pem,
-        quote_msg: evidence.quote_message,
-        quote_sig: evidence.quote_signature,
-        quote_pcrs: evidence.quote_pcrs,
+    let binding =
+        composite_binding_hash(bundle.nonce, channel_binding, envelope_tlv, binding_domain)
+            .map_err(|source| CpuLegError::Binding {
+                stage: CpuAppraisalStage::Quote,
+                source,
+            })?;
+    let quote_input = TpmQuoteInput {
+        ak_public_key_pem: bundle.ak_public_key_pem,
+        quote_msg: bundle.quote_message,
+        quote_sig: bundle.quote_signature,
+        quote_pcrs: bundle.quote_pcrs,
         expected_binding: &binding,
-    })
+    };
+    match quote_verifier {
+        Some(verifier) => verifier.verify(quote_input),
+        None => verify_quote(quote_input),
+    }
     .map_err(|source| CpuLegError::TpmQuote {
         stage: CpuAppraisalStage::Quote,
         source,
@@ -438,10 +596,18 @@ pub fn appraise_cpu_evidence(
         "AK quote signature valid and extraData matches verifier nonce + guest key".to_owned(),
     ));
 
-    let pcr_sha256 = pcr_fingerprint_hex(evidence.quote_pcrs);
+    let pcr_sha256 = check_pcr_fingerprint(bundle.quote_pcrs, policy).map_err(|source| {
+        CpuLegError::PcrFingerprint {
+            stage: CpuAppraisalStage::Quote,
+            source,
+        }
+    })?;
     steps.push(ok_step(
         "pcr-policy",
-        format!("record-then-pin v1 fingerprint={pcr_sha256}"),
+        match policy.pcr_mode {
+            PcrMode::Record => format!("record-then-pin v1 fingerprint={pcr_sha256}"),
+            _ => format!("pinned PCR fingerprint matched {pcr_sha256}"),
+        },
     ));
 
     Ok(CpuAppraisal {
@@ -462,6 +628,29 @@ pub fn appraise_cpu_evidence(
         measurement_hex: hex_lower(&report.measurement),
         chip_id_hex: hex_lower(&report.chip_id),
     })
+}
+
+/// Returns the SHA-256 PCR fingerprint after applying the configured policy.
+pub fn check_pcr_fingerprint(
+    quote_pcrs: &[u8],
+    policy: &Policy,
+) -> Result<String, PcrFingerprintError> {
+    let fingerprint = pcr_fingerprint_hex(quote_pcrs);
+    match &policy.pcr_mode {
+        PcrMode::Record => Ok(fingerprint),
+        PcrMode::Pin => {
+            if policy
+                .pcr_pins
+                .iter()
+                .any(|pin| pin.eq_ignore_ascii_case(&fingerprint))
+            {
+                Ok(fingerprint)
+            } else {
+                Err(PcrPinMismatchError::Mismatch { fingerprint }.into())
+            }
+        }
+        PcrMode::Unknown(mode) => Err(PcrFingerprintError::UnknownMode { mode: mode.clone() }),
+    }
 }
 
 fn ok_step(name: &'static str, detail: String) -> AppraisalStep {
@@ -866,10 +1055,11 @@ mod tests {
     use x509_parser::pem::parse_x509_pem;
 
     use super::{
-        CpuAppraisalStage, CpuEvidence, CpuLegError, HCL_REPORT_OFFSET, SNP_OFF_MEASUREMENT,
-        SNP_OFF_VERSION, SnpParseError, SnpReport, SnpVerifyError, appraise_cpu_evidence,
-        check_policy, embedded_root_pairs, parse_hcla, select_root_generation,
-        verify_amd_chain_and_report, verify_rsa_pss_sha384_signature,
+        CpuAppraisalStage, CpuEvidence, CpuLegError, HCL_REPORT_OFFSET, PcrMode, Policy,
+        SNP_OFF_MEASUREMENT, SNP_OFF_VERSION, SnpParseError, SnpReport, SnpVerifyError,
+        appraise_cpu_evidence, check_pcr_fingerprint, check_policy_with, embedded_root_pairs,
+        parse_hcla, select_root_generation, verify_amd_chain_and_report,
+        verify_rsa_pss_sha384_signature,
     };
     use crate::test_support::fixture_bytes;
 
@@ -1231,8 +1421,52 @@ mod tests {
         let mut report = fixture_bytes("report.bin");
         report[SNP_OFF_VERSION] = 4;
         assert_eq!(
-            check_policy(&SnpReport::parse(&report).expect("mutated report parses")),
+            check_policy_with(
+                &SnpReport::parse(&report).expect("mutated report parses"),
+                &Policy::default(),
+            ),
             Err(SnpVerifyError::PolicyReportVersion)
         );
+    }
+
+    #[test]
+    fn default_pcr_policy_records_without_rejecting() {
+        assert!(check_pcr_fingerprint(b"any PCR bytes", &Policy::default()).is_ok());
+    }
+
+    #[test]
+    fn pinned_pcr_policy_compares_case_insensitively() {
+        let fingerprint = super::pcr_fingerprint_hex(b"PCR bytes").to_uppercase();
+        let policy = Policy {
+            pcr_mode: PcrMode::Pin,
+            pcr_pins: [fingerprint].into_iter().collect(),
+            ..Policy::default()
+        };
+        assert!(check_pcr_fingerprint(b"PCR bytes", &policy).is_ok());
+    }
+
+    #[test]
+    fn pinned_pcr_policy_reports_a_distinct_mismatch() {
+        let policy = Policy {
+            pcr_mode: PcrMode::Pin,
+            pcr_pins: ["00".repeat(32)].into_iter().collect(),
+            ..Policy::default()
+        };
+        assert!(matches!(
+            check_pcr_fingerprint(b"PCR bytes", &policy),
+            Err(crate::error::PcrFingerprintError::PinMismatch(_))
+        ));
+    }
+
+    #[test]
+    fn unknown_pcr_policy_mode_rejects() {
+        let policy = Policy {
+            pcr_mode: PcrMode::Unknown("surprise".to_owned()),
+            ..Policy::default()
+        };
+        assert!(matches!(
+            check_pcr_fingerprint(b"PCR bytes", &policy),
+            Err(crate::error::PcrFingerprintError::UnknownMode { .. })
+        ));
     }
 }

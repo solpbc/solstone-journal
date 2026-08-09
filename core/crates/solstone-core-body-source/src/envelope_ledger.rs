@@ -4,7 +4,7 @@
 use crate::digest::EMPTY_CONTENT_SHA256;
 use crate::{BodyDigest, BundleId, EnvelopeError, EnvelopeErrorCode, EnvelopeErrorField};
 
-const LEDGER_PATH: &str = "body-ledger.jsonl";
+pub(crate) const LEDGER_PATH: &str = "body-ledger.jsonl";
 
 /// Checked native body-envelope values for its ledger sidecar.
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -14,12 +14,16 @@ use solstone_core_body_source::{
     ManifestBindingErrorField, ManifestKeySignal, ManifestKnownKey, ManifestScanError,
     NativeAuthority, ParseError, RAW_RETENTION_KEY, SOURCE_HASH_KEY, SOURCE_TYPE_KEY,
     ScannedBodyManifest, authorize_native_bundle, canonicalize, classify_bundle_directory,
-    decode_body_manifest, inspect_body_manifest_signal, parse, scan_body_manifest,
+    decode_body_envelope, decode_body_envelope_with_manifest, decode_body_manifest,
+    encode_body_envelope, inspect_body_manifest_signal, parse, scan_body_manifest,
 };
 
 mod support;
 
-use support::{codec_rows, native_bundle_directory_cases, native_bundle_fixture};
+use support::{
+    codec_rows, envelope_multimonth_fixture, native_bundle_directory_cases, native_bundle_fixture,
+    native_bundle_manifest_binding_cases,
+};
 
 fn assert_authority_error(
     result: Result<NativeAuthority, AuthorityError>,
@@ -960,8 +964,8 @@ fn public_apple_summary_plan_api_checks_and_rejects_unordered_days() {
     assert_eq!(plan.days(), sorted.as_slice());
     assert_eq!(plan.clone(), plan);
 
-    let days_different = AppleSummaryPlan::new(&bundle, sorted[..2].to_vec())
-        .expect("different ordered days bind");
+    let days_different =
+        AppleSummaryPlan::new(&bundle, sorted[..2].to_vec()).expect("different ordered days bind");
     assert_ne!(plan, days_different);
 
     let other_bundle =
@@ -1283,4 +1287,154 @@ fn public_body_envelope_api_checks_and_rejects_invalid_aggregates() {
     }
 
     // `new` returns only `Result<Self, _>`; an error leaves no envelope value to observe.
+}
+
+#[test]
+fn public_body_envelope_encoder_encodes_the_independently_constructed_multimonth_case() {
+    let case = &envelope_multimonth_fixture()["cases"][0];
+    let binding = &case["expected_manifest_binding"];
+    let bundle = BundleId::from_bytes(case["directory"].as_str().unwrap().as_bytes()).unwrap();
+    let family =
+        BodySourceFamily::from_bytes(binding["source_type"].as_str().unwrap().as_bytes()).unwrap();
+    let days = binding["days_affected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|day| BodyDay::from_bytes(day.as_str().unwrap().as_bytes()).unwrap())
+        .collect::<Vec<_>>();
+    let expected = &case["expected_envelope"];
+    let shards = case["digest_basis"]["shards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(index, basis)| {
+            let path = basis["path"].as_str().unwrap();
+            let month = path
+                .strip_prefix("normalized/")
+                .unwrap()
+                .strip_suffix(".jsonl")
+                .unwrap();
+            let text = basis["exact_bytes"].as_str().unwrap();
+            EnvelopeShard::new(
+                &bundle,
+                index as u64,
+                BodyMonth::from_bytes(month.as_bytes()).unwrap(),
+                text.len() as u64,
+                text.lines().count() as u64,
+                BodyDigest::from_bytes(
+                    expected["shards"][index]["sha256"]
+                        .as_str()
+                        .unwrap()
+                        .as_bytes(),
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        })
+        .collect();
+    let ledger_text = case["digest_basis"]["ledger"]["exact_bytes"]
+        .as_str()
+        .unwrap();
+    let envelope = BodyEnvelope::new(
+        bundle.clone(),
+        family,
+        BodySourceHash::from_bytes_for_family(
+            binding["source_hash"].as_str().unwrap().as_bytes(),
+            &family,
+        )
+        .unwrap(),
+        BodyRawRetention::from_bytes(binding["raw_retention"].as_str().unwrap().as_bytes())
+            .unwrap(),
+        binding["entry_count"].as_u64().unwrap(),
+        days.clone(),
+        shards,
+        EnvelopeLedger::new(
+            &bundle,
+            ledger_text.len() as u64,
+            ledger_text.lines().count() as u64,
+            BodyDigest::from_bytes(expected["ledger"]["sha256"].as_str().unwrap().as_bytes())
+                .unwrap(),
+        )
+        .unwrap(),
+        Some(AppleSummaryPlan::new(&bundle, days).unwrap()),
+    )
+    .unwrap();
+
+    assert_eq!(
+        encode_body_envelope(&envelope).unwrap(),
+        case["expected_envelope_jsonl"].as_str().unwrap().as_bytes()
+    );
+}
+
+#[test]
+fn public_body_envelope_decoder_exposes_checked_values_and_structured_errors() {
+    let case = &native_bundle_fixture()["cases"][0];
+    let input = case["expected_envelope_jsonl"].as_str().unwrap().as_bytes();
+    let envelope = decode_body_envelope(input).expect("fixture envelope decodes publicly");
+    assert_eq!(
+        envelope.bundle_id().as_str(),
+        case["directory"].as_str().unwrap()
+    );
+    assert_eq!(envelope.row_count(), 1);
+    assert_eq!(encode_body_envelope(&envelope).unwrap(), input);
+
+    let error = decode_body_envelope(b"null\n").expect_err("non-object envelope refuses");
+    assert_eq!(error.code(), EnvelopeErrorCode::WrongType);
+    assert_eq!(error.field(), EnvelopeErrorField::Envelope);
+    assert_eq!(error.bundle(), None);
+    assert_eq!(error.index(), None);
+}
+
+#[test]
+fn public_bound_body_envelope_decoder_owns_its_result() {
+    let case = &native_bundle_fixture()["cases"][0];
+    let expected = case["expected_envelope_jsonl"]
+        .as_str()
+        .expect("fixture envelope JSONL")
+        .as_bytes()
+        .to_vec();
+    let binding_case = native_bundle_manifest_binding_cases()
+        .into_iter()
+        .find(|case| case.name == "apple_retain_complete_one_row")
+        .expect("fixture binding case");
+
+    let envelope = {
+        let mut input = expected.clone();
+        let binding = BodyManifestBinding::new(
+            binding_case.body_bundle_sha256.clone(),
+            binding_case.import_id.clone(),
+            binding_case.source_type,
+            binding_case.source_hash.clone(),
+            binding_case.entry_count,
+            binding_case.days_affected.clone(),
+            binding_case.raw_retention,
+        )
+        .expect("fixture binding is valid");
+        let envelope = decode_body_envelope_with_manifest(&input, &binding)
+            .expect("fixture envelope binds publicly");
+        input.fill(b'x');
+        envelope
+    };
+    assert_eq!(envelope.bundle_id(), &binding_case.import_id);
+    assert_eq!(encode_body_envelope(&envelope).unwrap(), expected);
+
+    let different_digest = BodyDigest::from_bytes(
+        b"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    )
+    .expect("digest is valid");
+    let mismatch = BodyManifestBinding::new(
+        different_digest,
+        binding_case.import_id.clone(),
+        binding_case.source_type,
+        binding_case.source_hash.clone(),
+        binding_case.entry_count,
+        binding_case.days_affected.clone(),
+        binding_case.raw_retention,
+    )
+    .expect("mismatched binding remains valid");
+    let error = decode_body_envelope_with_manifest(&expected, &mismatch)
+        .expect_err("digest mismatch refuses publicly");
+    assert_eq!(error.code(), EnvelopeErrorCode::ManifestMismatch);
+    assert_eq!(error.field(), EnvelopeErrorField::ManifestBinding);
 }

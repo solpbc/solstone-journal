@@ -268,7 +268,7 @@ check-rust-ios:
 	@$(REQUIRE_RUSTUP)
 	@rustup target list --installed 2>/dev/null | grep -qx "$(IOS_TARGET)" || { echo "Rust target $(IOS_TARGET) is required for the iOS gate; run rustup target add $(IOS_TARGET)" >&2; exit 1; }
 	# FFmpeg is not an iOS target concern in this wave.
-	cargo check --manifest-path $(RUST_MANIFEST) --workspace --exclude solstone-core --exclude solstone-core-indexer-store --exclude solstone-core-indexer-query --exclude solstone-core-entity --exclude solstone-core-facets --exclude solstone-core-sol-link --exclude solstone-core-spp-attest --exclude solstone-core-generate-wire --exclude solstone-core-convey-http --exclude solstone-core-serving --exclude solstone-core-segment --exclude solstone-core-ingest --exclude solstone-core-entities --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-describe --lib --target $(IOS_TARGET) --locked
+	cargo check --manifest-path $(RUST_MANIFEST) --workspace --exclude solstone-core --exclude solstone-core-indexer-store --exclude solstone-core-indexer-query --exclude solstone-core-entity --exclude solstone-core-facets --exclude solstone-core-sol-link --exclude solstone-core-spp-attest --exclude solstone-core-spp-ratls --exclude solstone-core-generate-wire --exclude solstone-core-convey-http --exclude solstone-core-serving --exclude solstone-core-segment --exclude solstone-core-ingest --exclude solstone-core-entities --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-describe --lib --target $(IOS_TARGET) --locked
 
 check-rust-deny:
 	@$(REQUIRE_CARGO)
