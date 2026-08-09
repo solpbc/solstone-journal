@@ -108,6 +108,7 @@ solstone-core-generate-wire = { path = "crates/solstone-core-generate-wire" }
 solstone-core-speakers-onnx = { path = "crates/solstone-core-speakers-onnx" }
 solstone-core-local = { path = "crates/solstone-core-local" }
 solstone-core-spp-attest = { path = "crates/solstone-core-spp-attest" }
+solstone-core-spp-ratls = { path = "crates/solstone-core-spp-ratls" }
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 chrono-tz = "0.10.4"
 glob = "0.3.3"

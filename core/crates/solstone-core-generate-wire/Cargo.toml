@@ -17,6 +17,7 @@ jsonschema.workspace = true
 serde_json.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-local.workspace = true
+solstone-core-spp-ratls.workspace = true
 ureq = { workspace = true, features = ["rustls"] }
 regex = "1.13.1"
 
@@ -44,6 +45,9 @@ required-features = ["differential"]
 name = "schema_validation_differential"
 path = "tests/schema_validation_differential.rs"
 required-features = ["differential"]
+
+[dev-dependencies]
+solstone-core-spp-attest.workspace = true
 
 [lints]
 workspace = true

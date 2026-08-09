@@ -23,6 +23,16 @@ pub fn refusal_for(
             RefusalReason::AttestationNotVerified,
             Some("attestation_not_yet_verified".to_owned()),
         ),
+        LaneOutcome::AttestationFailed => (
+            "refused-attestation-failed",
+            RefusalReason::AttestationFailed,
+            Some("attestation_failed".to_owned()),
+        ),
+        LaneOutcome::AttestationStale => (
+            "refused-attestation-stale",
+            RefusalReason::AttestationStale,
+            Some("attestation_stale".to_owned()),
+        ),
         LaneOutcome::BundledFailure(failure) => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
@@ -71,6 +81,7 @@ pub fn refusal_for(
         ),
         LaneOutcome::BundledLocal
         | LaneOutcome::ByoEndpoint(_)
+        | LaneOutcome::ConfidentialEndpoint(_)
         | LaneOutcome::Anthropic
         | LaneOutcome::OpenAi
         | LaneOutcome::Google => {
@@ -160,6 +171,22 @@ mod tests {
                 "local",
                 RefusalReason::AttestationNotVerified,
                 Some("attestation_not_yet_verified"),
+                true,
+                true,
+            ),
+            (
+                LaneOutcome::AttestationFailed,
+                "local",
+                RefusalReason::AttestationFailed,
+                Some("attestation_failed"),
+                true,
+                true,
+            ),
+            (
+                LaneOutcome::AttestationStale,
+                "local",
+                RefusalReason::AttestationStale,
+                Some("attestation_stale"),
                 true,
                 true,
             ),

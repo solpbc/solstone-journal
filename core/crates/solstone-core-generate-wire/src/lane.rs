@@ -17,7 +17,10 @@ pub enum LaneOutcome {
     NoEngine,
     BundledLocal,
     AttestationNotVerified,
+    AttestationFailed,
+    AttestationStale,
     ByoEndpoint(ByoEndpoint),
+    ConfidentialEndpoint(ByoEndpoint),
     UnimplementedLane,
     BundledFailure(Box<GenerateFailure>),
     EndpointFailure(EndpointFailure),
@@ -56,7 +59,7 @@ pub fn resolve_lane(config: &Map<String, Value>) -> (String, LaneOutcome) {
         match resolve_local_endpoint(config) {
             LocalEndpointResolution::Bundled => LaneOutcome::BundledLocal,
             LocalEndpointResolution::Byo(endpoint) if endpoint.is_confidential => {
-                LaneOutcome::AttestationNotVerified
+                LaneOutcome::ConfidentialEndpoint(endpoint)
             }
             LocalEndpointResolution::Byo(endpoint) => LaneOutcome::ByoEndpoint(endpoint),
         },
@@ -94,7 +97,13 @@ mod tests {
             (
                 json!({"providers": {"active": {"provider": "local"}, "local": {"endpoint_url": "https://endpoint", "served_model_id": "served"}}, "services": {"confidential": {}}}),
                 "local",
-                LaneOutcome::AttestationNotVerified,
+                LaneOutcome::ConfidentialEndpoint(ByoEndpoint {
+                    base_url: "https://endpoint".into(),
+                    served_model_id: "served".into(),
+                    credential: None,
+                    parallel_slots: None,
+                    is_confidential: true,
+                }),
             ),
             (
                 json!({"providers": {"active": {"provider": "local"}, "local": {"endpoint_url": "https://endpoint", "served_model_id": "served"}}}),
