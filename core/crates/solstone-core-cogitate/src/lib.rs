@@ -24,4 +24,6 @@ pub use preambles::{
 };
 
 #[cfg(test)]
+mod divergence;
+#[cfg(test)]
 mod oracle;
