@@ -177,17 +177,20 @@ fn invalid_top_level_values_and_integer_boundaries_are_classified() {
 }
 
 #[test]
-fn correlated_u64_maximum_bytes_round_trip_exactly() {
+fn correlated_u64_maximum_counts_and_bytes_round_trip_exactly() {
     let mut input = valid();
+    input["row_count"] = json!(u64::MAX);
     input["shards"][0]["bytes"] = json!(u64::MAX);
+    input["shards"][0]["rows"] = json!(u64::MAX);
     input["ledger"]["bytes"] = json!(u64::MAX);
+    input["ledger"]["events"] = json!(u64::MAX);
     let input = canonical(&input);
-    let envelope = decode_body_envelope(&input).expect("maximum byte counts remain valid");
-    assert_eq!(envelope.row_count(), 1);
+    let envelope = decode_body_envelope(&input).expect("correlated maximum counts remain valid");
+    assert_eq!(envelope.row_count(), u64::MAX);
     assert_eq!(envelope.shards()[0].bytes(), u64::MAX);
-    assert_eq!(envelope.shards()[0].rows(), 1);
+    assert_eq!(envelope.shards()[0].rows(), u64::MAX);
     assert_eq!(envelope.ledger().bytes(), u64::MAX);
-    assert_eq!(envelope.ledger().events(), 1);
+    assert_eq!(envelope.ledger().events(), u64::MAX);
     assert_eq!(
         solstone_core_body_source::encode_body_envelope(&envelope).unwrap(),
         input

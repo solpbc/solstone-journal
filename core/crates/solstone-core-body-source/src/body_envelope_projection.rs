@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use crate::apple_summary_plan::APPLE_SUMMARY_SCHEMA;
+use crate::envelope_ledger::LEDGER_PATH;
 use crate::manifest_binding::BODY_SOURCE_SCHEMA_VALUE;
 use crate::{
     AppleSummaryPlan, BodyDay, BodyDigest, BodyEnvelope, BodyMonth, BodyObject, BodyRawRetention,
@@ -14,7 +15,6 @@ const LEDGER_KEYS: [&str; 4] = ["path", "bytes", "events", "sha256"];
 const SUMMARY_PLAN_KEYS: [&str; 2] = ["schema", "days"];
 const NORMALIZED_PREFIX: &[u8] = b"normalized/";
 const JSONL_SUFFIX: &[u8] = b".jsonl";
-const LEDGER_PATH: &str = "body-ledger.jsonl";
 
 #[derive(Clone, Copy)]
 pub(crate) enum EnvelopeTopLevelKey {
@@ -259,7 +259,7 @@ fn project_shards(
             let BodyValue::Object(object) = value else {
                 return Err(error(
                     Some(bundle),
-                    EnvelopeErrorCode::InvalidField,
+                    EnvelopeErrorCode::WrongType,
                     EnvelopeErrorField::Shards,
                     Some(index),
                 ));
@@ -481,7 +481,7 @@ fn project_days(
             let BodyValue::String(value) = value else {
                 return Err(error(
                     Some(bundle),
-                    EnvelopeErrorCode::InvalidField,
+                    EnvelopeErrorCode::WrongType,
                     field,
                     Some(index),
                 ));

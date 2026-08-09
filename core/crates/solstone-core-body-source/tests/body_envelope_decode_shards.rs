@@ -36,7 +36,7 @@ fn shard_container_and_paths_report_their_own_fields_and_indices() {
     let mut element = valid();
     element["shards"] = json!([null]);
     let error = decode_body_envelope(&canonical(&element)).unwrap_err();
-    assert_eq!(error.code(), EnvelopeErrorCode::InvalidField);
+    assert_eq!(error.code(), EnvelopeErrorCode::WrongType);
     assert_eq!(error.field(), EnvelopeErrorField::Shards);
     assert_eq!(error.index(), Some(0));
 

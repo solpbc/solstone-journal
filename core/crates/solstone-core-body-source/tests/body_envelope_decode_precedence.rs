@@ -143,12 +143,12 @@ fn every_top_level_field_observes_the_declared_fixed_validation_order() {
         ),
         (
             "days",
-            EnvelopeErrorCode::InvalidField,
+            EnvelopeErrorCode::WrongType,
             EnvelopeErrorField::Days,
         ),
         (
             "shards",
-            EnvelopeErrorCode::InvalidField,
+            EnvelopeErrorCode::WrongType,
             EnvelopeErrorField::Shards,
         ),
         (

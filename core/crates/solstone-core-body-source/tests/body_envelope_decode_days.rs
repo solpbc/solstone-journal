@@ -36,7 +36,7 @@ fn days_whole_field_and_elements_are_indexed_correctly() {
     let mut element = valid();
     element["days"] = json!(["20260102", null]);
     let error = decode_body_envelope(&canonical(&element)).unwrap_err();
-    assert_eq!(error.code(), EnvelopeErrorCode::InvalidField);
+    assert_eq!(error.code(), EnvelopeErrorCode::WrongType);
     assert_eq!(error.field(), EnvelopeErrorField::Days);
     assert_eq!(error.index(), Some(1));
 
@@ -60,11 +60,17 @@ fn aggregate_day_order_errors_pass_through_after_local_projection() {
 
 #[test]
 fn summary_days_report_nonzero_element_indices() {
-    for days in [json!(["20260102", null]), json!(["20260102", "20260230"])] {
+    for (days, expected_code) in [
+        (json!(["20260102", null]), EnvelopeErrorCode::WrongType),
+        (
+            json!(["20260102", "20260230"]),
+            EnvelopeErrorCode::InvalidField,
+        ),
+    ] {
         let mut input = valid();
         input["summary_plan"]["days"] = days;
         let error = decode_body_envelope(&canonical(&input)).unwrap_err();
-        assert_eq!(error.code(), EnvelopeErrorCode::InvalidField);
+        assert_eq!(error.code(), expected_code);
         assert_eq!(error.field(), EnvelopeErrorField::SummaryDays);
         assert_eq!(error.index(), Some(1));
     }
