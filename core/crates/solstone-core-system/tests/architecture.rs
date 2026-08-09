@@ -37,6 +37,15 @@ const SCHEDULE_DUE: &str = include_str!("../src/schedule/due.rs");
 const SCHEDULE_ENGINE: &str = include_str!("../src/schedule/engine.rs");
 const SCHEDULE_STATUS: &str = include_str!("../src/schedule/status.rs");
 const SCHEDULE_SUBMISSION: &str = include_str!("../src/schedule/submission.rs");
+const PROVIDER_RUNTIME: &str = include_str!("../src/provider_runtime/mod.rs");
+const PROVIDER_RUNTIME_EVENTS: &str = include_str!("../src/provider_runtime/events.rs");
+const PROVIDER_RUNTIME_GATE: &str = include_str!("../src/provider_runtime/gate.rs");
+const PROVIDER_RUNTIME_MODEL: &str = include_str!("../src/provider_runtime/model.rs");
+const PROVIDER_RUNTIME_RECONCILE: &str = include_str!("../src/provider_runtime/reconcile.rs");
+const PROVIDER_RUNTIME_RETRY: &str = include_str!("../src/provider_runtime/retry.rs");
+const PROVIDER_RUNTIME_SEAMS: &str = include_str!("../src/provider_runtime/seams.rs");
+const PROVIDER_RUNTIME_STOP: &str = include_str!("../src/provider_runtime/stop.rs");
+const PROVIDER_RUNTIME_WEDGE: &str = include_str!("../src/provider_runtime/wedge.rs");
 
 fn declared_modules(source: &str) -> BTreeSet<&str> {
     source
@@ -98,6 +107,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("process", PROCESS_MOD),
         ("queue", QUEUE),
         ("request", REQUEST),
+        ("provider_runtime", PROVIDER_RUNTIME),
         ("schedule", SCHEDULE),
     ];
     let process_modules = [
@@ -126,6 +136,16 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("status", SCHEDULE_STATUS),
         ("submission", SCHEDULE_SUBMISSION),
     ];
+    let provider_runtime_modules = [
+        ("events", PROVIDER_RUNTIME_EVENTS),
+        ("gate", PROVIDER_RUNTIME_GATE),
+        ("model", PROVIDER_RUNTIME_MODEL),
+        ("reconcile", PROVIDER_RUNTIME_RECONCILE),
+        ("retry", PROVIDER_RUNTIME_RETRY),
+        ("seams", PROVIDER_RUNTIME_SEAMS),
+        ("stop", PROVIDER_RUNTIME_STOP),
+        ("wedge", PROVIDER_RUNTIME_WEDGE),
+    ];
     assert_eq!(
         declared_modules(LIB),
         root_modules.iter().map(|(name, _)| *name).collect()
@@ -142,12 +162,20 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         declared_modules(SCHEDULE),
         schedule_modules.iter().map(|(name, _)| *name).collect()
     );
+    assert_eq!(
+        declared_modules(PROVIDER_RUNTIME),
+        provider_runtime_modules
+            .iter()
+            .map(|(name, _)| *name)
+            .collect()
+    );
 
     for (name, source) in root_modules
         .into_iter()
         .chain(process_modules)
         .chain(lifecycle_modules)
         .chain(schedule_modules)
+        .chain(provider_runtime_modules)
         .filter(|(name, _)| *name != "log" && *name != "state" && *name != "completion")
     {
         for primitive in [

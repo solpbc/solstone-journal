@@ -8,6 +8,7 @@ pub mod error;
 pub mod lifecycle;
 pub mod partition;
 pub mod process;
+pub mod provider_runtime;
 pub mod queue;
 pub mod request;
 pub mod schedule;
