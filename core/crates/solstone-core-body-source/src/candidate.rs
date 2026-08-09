@@ -178,7 +178,7 @@ pub fn project(
 
     let schema = field_value(object, "schema")
         .and_then(|value| match value {
-            BodyValue::String(value) => schema_from_body_string(value),
+            BodyValue::String(value) => LedgerSchema::from_body_string(value),
             _ => None,
         })
         .ok_or_else(|| {
@@ -264,16 +264,6 @@ fn field_value<'a>(object: &'a BodyObject, name: &str) -> Option<&'a BodyValue> 
     let key = BodyString::from_code_points(name.bytes().map(u32::from).collect())
         .expect("ASCII field name is a valid body string");
     object.get(&key)
-}
-
-fn schema_from_body_string(value: &BodyString) -> Option<LedgerSchema> {
-    [
-        LedgerSchema::AppleHealthV1,
-        LedgerSchema::OuraV1,
-        LedgerSchema::NormalizedV1,
-    ]
-    .into_iter()
-    .find(|schema| body_string_matches(value, schema.as_str()))
 }
 
 fn required_nonblank_string<'a>(
