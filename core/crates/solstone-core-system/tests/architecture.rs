@@ -211,9 +211,14 @@ fn ac21_only_operational_log_module_names_write_primitives() {
     assert!(PROVIDER_RUNTIME_STORE.contains("health"));
     assert!(PROVIDER_RUNTIME_STORE.contains("providers"));
     assert!(PROVIDER_RUNTIME_STORE.contains("runtime"));
-    assert!(PROVIDER_RUNTIME_STORE.contains("local.json"));
-    assert!(PROVIDER_RUNTIME_STORE.contains("local.retry-token.json"));
-    assert!(PROVIDER_RUNTIME_STORE.contains("local.port"));
+    // The durable record is one write path per provider, not a literal
+    // "local"-only filename -- health_path/retry_path/port_path all format!
+    // on self.provider (or its mapped port service name), so the evidence
+    // here is the parameterization itself, not a hardcoded "local.json".
+    assert!(PROVIDER_RUNTIME_STORE.contains(".json\", self.provider.as_str()"));
+    assert!(PROVIDER_RUNTIME_STORE.contains(".retry-token.json\", self.provider.as_str()"));
+    assert!(PROVIDER_RUNTIME_STORE.contains("port_service_name(self.provider)"));
+    assert!(PROVIDER_RUNTIME_STORE.contains("\"parakeet-cpp\""));
     assert!(PROVIDER_RUNTIME_STORE.contains("hold_lock"));
     assert!(PROVIDER_RUNTIME_STORE.contains("write_json"));
 }

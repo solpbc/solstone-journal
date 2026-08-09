@@ -23,7 +23,6 @@ use super::model::{
 };
 use super::seams::{RetryToken, RuntimeStore, RuntimeStoreError};
 
-const PROVIDER: ProviderName = ProviderName::Local;
 const FILE_MODE: u32 = 0o600;
 const SCHEMA_VERSION: u64 = 1;
 
@@ -80,7 +79,7 @@ impl From<&ProviderFence> for FenceKey {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LocalReadyProcess {
+pub struct ReadyProcess {
     pub process_id: String,
     pub process_name: String,
     pub pid: u32,
@@ -89,7 +88,7 @@ pub struct LocalReadyProcess {
 
 #[derive(Debug, Default)]
 pub struct LocalRuntimeShared {
-    ready_processes: Mutex<BTreeMap<FenceKey, LocalReadyProcess>>,
+    ready_processes: Mutex<BTreeMap<FenceKey, ReadyProcess>>,
     launch_requests: Mutex<BTreeMap<Option<String>, LocalLaunchConfig>>,
     results: Mutex<LocalRuntimeResults>,
     result_available: Condvar,
@@ -261,7 +260,7 @@ impl LocalRuntimeShared {
         }
     }
 
-    pub fn record_ready_process(&self, fence: &ProviderFence, process: LocalReadyProcess) {
+    pub fn record_ready_process(&self, fence: &ProviderFence, process: ReadyProcess) {
         self.ready_processes
             .lock()
             .expect("local runtime shared lock")
@@ -281,8 +280,21 @@ impl LocalRuntimeShared {
             .expect("local runtime shared lock")
             .remove(process_id)
     }
+}
 
-    fn ready_process_for_fence(&self, fence: &ProviderFence) -> Option<LocalReadyProcess> {
+/// What `FileRuntimeStore` needs from a provider's own in-memory
+/// seam-to-reconcile bus, so one store implementation (the durable record)
+/// can serve any provider without needing that provider's own bus to be the
+/// same concrete type -- Local's `LocalRuntimeShared` carries a
+/// `LocalLaunchConfig` staging map a Parakeet-equivalent bus has no use for,
+/// and does not need to share a type with, to satisfy this.
+pub trait ReadyProcessLookup: Send + Sync {
+    fn ready_process_for_fence(&self, fence: &ProviderFence) -> Option<ReadyProcess>;
+    fn ready_process_for_id(&self, process_id: &str) -> Option<ReadyProcess>;
+}
+
+impl ReadyProcessLookup for LocalRuntimeShared {
+    fn ready_process_for_fence(&self, fence: &ProviderFence) -> Option<ReadyProcess> {
         self.ready_processes
             .lock()
             .expect("local runtime shared lock")
@@ -290,7 +302,7 @@ impl LocalRuntimeShared {
             .cloned()
     }
 
-    fn ready_process_for_id(&self, process_id: &str) -> Option<LocalReadyProcess> {
+    fn ready_process_for_id(&self, process_id: &str) -> Option<ReadyProcess> {
         self.ready_processes
             .lock()
             .expect("local runtime shared lock")
@@ -333,13 +345,20 @@ struct RetryObservation {
 #[derive(Debug, Clone)]
 struct PortOwner {
     fence: ProviderFence,
-    process: LocalReadyProcess,
+    process: ReadyProcess,
 }
 
-/// RuntimeStore implementation for the Local provider only.
-pub struct LocalRuntimeStore {
+/// RuntimeStore implementation shared by every provider: the durable record
+/// -- `health/providers/runtime/<provider>.json`, `<provider>.retry-token.json`,
+/// and the owned-port file -- is one write path, constructed per provider
+/// rather than duplicated per provider. `shared` is a trait object so each
+/// provider's own in-memory seam-to-reconcile bus (Local's carries a
+/// `LocalLaunchConfig` staging map this store never touches) can stay its
+/// own concrete type.
+pub struct FileRuntimeStore {
     journal_path: PathBuf,
-    shared: Arc<LocalRuntimeShared>,
+    provider: ProviderName,
+    shared: Arc<dyn ReadyProcessLookup>,
     clock: Arc<dyn RuntimeClock>,
     observed_health_revision: Option<u64>,
     observed_retry_tokens: BTreeMap<String, RetryObservation>,
@@ -349,14 +368,16 @@ pub struct LocalRuntimeStore {
     ready_side_effects: Vec<LocalReadySideEffect>,
 }
 
-impl LocalRuntimeStore {
+impl FileRuntimeStore {
     pub fn new(
         journal_path: impl Into<PathBuf>,
-        shared: Arc<LocalRuntimeShared>,
+        provider: ProviderName,
+        shared: Arc<dyn ReadyProcessLookup>,
         clock: Arc<dyn RuntimeClock>,
     ) -> Self {
         Self {
             journal_path: journal_path.into(),
+            provider,
             shared,
             clock,
             observed_health_revision: None,
@@ -368,6 +389,9 @@ impl LocalRuntimeStore {
         }
     }
 
+    /// `RefreshBrain` is meaningful only for Local's own bundled-LLM
+    /// backend; a store constructed for any other provider never produces
+    /// one even if that provider also reaches `Ready`.
     pub fn take_ready_side_effects(&mut self) -> Vec<LocalReadySideEffect> {
         std::mem::take(&mut self.ready_side_effects)
     }
@@ -380,19 +404,35 @@ impl LocalRuntimeStore {
     }
 
     fn health_path(&self) -> PathBuf {
-        self.runtime_directory().join("local.json")
+        self.runtime_directory()
+            .join(format!("{}.json", self.provider.as_str()))
     }
 
     fn retry_path(&self) -> PathBuf {
-        self.runtime_directory().join("local.retry-token.json")
+        self.runtime_directory()
+            .join(format!("{}.retry-token.json", self.provider.as_str()))
     }
 
     fn operation_path(&self) -> PathBuf {
-        self.runtime_directory().join("local.operation")
+        self.runtime_directory()
+            .join(format!("{}.operation", self.provider.as_str()))
     }
 
     fn port_path(&self) -> PathBuf {
-        self.journal_path.join("health").join("local.port")
+        self.journal_path
+            .join("health")
+            .join(format!("{}.port", port_service_name(self.provider)))
+    }
+
+    /// This store instance only accepts records for the provider it was
+    /// constructed for -- one `FileRuntimeStore` per provider, never one
+    /// instance silently serving both.
+    fn ensure_provider(&self, provider: ProviderName) -> Result<(), RuntimeStoreError> {
+        if provider == self.provider {
+            Ok(())
+        } else {
+            Err(RuntimeStoreError::Unavailable)
+        }
     }
 
     fn lock_operation(&self) -> Result<solstone_core_journal_io::FileLock, RuntimeStoreError> {
@@ -447,7 +487,7 @@ impl LocalRuntimeStore {
         self.last_fence.clone()
     }
 
-    fn ready_process_for(&self, fence: Option<&ProviderFence>) -> Option<LocalReadyProcess> {
+    fn ready_process_for(&self, fence: Option<&ProviderFence>) -> Option<ReadyProcess> {
         fence.and_then(|fence| self.shared.ready_process_for_fence(fence))
     }
 
@@ -493,7 +533,7 @@ impl LocalRuntimeStore {
         state: &ProviderRuntimeState,
         revision: u64,
         fence: Option<&ProviderFence>,
-        process: Option<LocalReadyProcess>,
+        process: Option<ReadyProcess>,
     ) -> Result<(), RuntimeStoreError> {
         let process = process.map(|process| {
             json!({
@@ -505,11 +545,11 @@ impl LocalRuntimeStore {
         });
         let record = json!({
             "schema_version": SCHEMA_VERSION,
-            "provider": "local",
+            "provider": self.provider.as_str(),
             "revision": revision,
             "phase": state.latest_phase.as_str(),
             "reason_code": state.latest_reason_code.as_ref().map(ReasonCode::as_str),
-            "detail": {},
+            "detail": state.latest_detail.clone().unwrap_or_else(|| json!({})),
             "desired_fingerprint_sha256": state.desired_fingerprint,
             "incarnation": fence.map(|value| value.incarnation.as_str()),
             "generation": state.generation,
@@ -534,7 +574,7 @@ impl LocalRuntimeStore {
     fn write_retry(&self, record: &RetryRecord) -> Result<(), RuntimeStoreError> {
         let value = json!({
             "schema_version": SCHEMA_VERSION,
-            "provider": "local",
+            "provider": self.provider.as_str(),
             "revision": record.revision,
             "token_id": record.token_id,
             "desired_fingerprint_sha256": record.desired_fingerprint,
@@ -555,14 +595,14 @@ impl LocalRuntimeStore {
     }
 }
 
-impl RuntimeStore for LocalRuntimeStore {
+impl RuntimeStore for FileRuntimeStore {
     fn read_retry_token(
         &mut self,
         provider: ProviderName,
     ) -> Result<Option<RetryToken>, RuntimeStoreError> {
-        ensure_local(provider)?;
+        self.ensure_provider(provider)?;
         let _lock = self.lock_operation()?;
-        let record = read_retry(&self.retry_path())?;
+        let record = read_retry(&self.retry_path(), self.provider)?;
         if let Some(token_id) = record.token_id {
             let reason_code = record.reason_code.ok_or(RuntimeStoreError::Corrupt)?;
             self.observed_retry_tokens.insert(
@@ -586,14 +626,14 @@ impl RuntimeStore for LocalRuntimeStore {
         provider: ProviderName,
         token_id: &str,
     ) -> Result<(), RuntimeStoreError> {
-        ensure_local(provider)?;
+        self.ensure_provider(provider)?;
         let expected = self
             .observed_retry_tokens
             .get(token_id)
             .cloned()
             .ok_or(RuntimeStoreError::Conflict)?;
         let _lock = self.lock_operation()?;
-        let current = read_retry(&self.retry_path())?;
+        let current = read_retry(&self.retry_path(), self.provider)?;
         if current.revision != expected.revision
             || current.token_id.as_deref() != Some(token_id)
             || current.desired_fingerprint != expected.desired_fingerprint
@@ -614,9 +654,9 @@ impl RuntimeStore for LocalRuntimeStore {
     }
 
     fn publish_state(&mut self, state: &ProviderRuntimeState) -> Result<(), RuntimeStoreError> {
-        ensure_local(state.provider)?;
+        self.ensure_provider(state.provider)?;
         let _lock = self.lock_operation()?;
-        let current = read_health(&self.health_path())?;
+        let current = read_health(&self.health_path(), self.provider)?;
         if self
             .observed_health_revision
             .is_some_and(|revision| revision != current.revision)
@@ -651,7 +691,8 @@ impl RuntimeStore for LocalRuntimeStore {
             )
             .map_err(|_| RuntimeStoreError::Unavailable)?;
             let key = FenceKey::from(fence);
-            if self.ready_effect_fences.insert(key)
+            if self.provider == ProviderName::Local
+                && self.ready_effect_fences.insert(key)
                 && let Some(fingerprint) = state.desired_fingerprint.clone()
             {
                 self.ready_side_effects
@@ -664,15 +705,21 @@ impl RuntimeStore for LocalRuntimeStore {
     }
 }
 
-fn ensure_local(provider: ProviderName) -> Result<(), RuntimeStoreError> {
-    if provider == PROVIDER {
-        Ok(())
-    } else {
-        Err(RuntimeStoreError::Unavailable)
+/// The owned-port file's service name, which is not always the provider
+/// name -- Parakeet's runtime-health/retry-token records use "parakeet"
+/// (matching `ProviderName::Parakeet::as_str()`), but its port file is
+/// `health/parakeet-cpp.port` (matching Python's `_SERVICE_NAME =
+/// "parakeet-cpp"` in `parakeet_server.py`, itself one instance of the
+/// generic `write_service_port(service, port)` -> `health/{service}.port`
+/// pattern). Local's happens to coincide with its provider name.
+fn port_service_name(provider: ProviderName) -> &'static str {
+    match provider {
+        ProviderName::Local => "local",
+        ProviderName::Parakeet => "parakeet-cpp",
     }
 }
 
-fn read_health(path: &Path) -> Result<HealthRecord, RuntimeStoreError> {
+fn read_health(path: &Path, provider: ProviderName) -> Result<HealthRecord, RuntimeStoreError> {
     let value = read_value(path)?;
     let Some(value) = value else {
         return Ok(HealthRecord {
@@ -684,7 +731,7 @@ fn read_health(path: &Path) -> Result<HealthRecord, RuntimeStoreError> {
         });
     };
     let object = value.as_object().ok_or(RuntimeStoreError::Corrupt)?;
-    validate_schema_and_provider(object)?;
+    validate_schema_and_provider(object, provider)?;
     let _phase = object
         .get("phase")
         .and_then(Value::as_str)
@@ -705,7 +752,7 @@ fn read_health(path: &Path) -> Result<HealthRecord, RuntimeStoreError> {
     })
 }
 
-fn read_retry(path: &Path) -> Result<RetryRecord, RuntimeStoreError> {
+fn read_retry(path: &Path, provider: ProviderName) -> Result<RetryRecord, RuntimeStoreError> {
     let value = read_value(path)?;
     let Some(value) = value else {
         return Ok(RetryRecord {
@@ -718,7 +765,7 @@ fn read_retry(path: &Path) -> Result<RetryRecord, RuntimeStoreError> {
         });
     };
     let object = value.as_object().ok_or(RuntimeStoreError::Corrupt)?;
-    validate_schema_and_provider(object)?;
+    validate_schema_and_provider(object, provider)?;
     let token_id = optional_string(object.get("token_id"))?;
     let desired_fingerprint = optional_string(object.get("desired_fingerprint_sha256"))?;
     let requested_at = optional_string(object.get("requested_at"))?;
@@ -754,13 +801,16 @@ fn read_value(path: &Path) -> Result<Option<Value>, RuntimeStoreError> {
         .map_err(|_| RuntimeStoreError::Corrupt)
 }
 
-fn validate_schema_and_provider(object: &Map<String, Value>) -> Result<(), RuntimeStoreError> {
+fn validate_schema_and_provider(
+    object: &Map<String, Value>,
+    provider: ProviderName,
+) -> Result<(), RuntimeStoreError> {
     if object
         .get("schema_version")
         .is_some_and(|value| value.as_u64() != Some(SCHEMA_VERSION))
         || object
             .get("provider")
-            .is_some_and(|value| value.as_str() != Some("local"))
+            .is_some_and(|value| value.as_str() != Some(provider.as_str()))
     {
         return Err(RuntimeStoreError::Corrupt);
     }
@@ -857,8 +907,13 @@ mod tests {
         fn sleep(&self, _: Duration) {}
     }
 
-    fn store(journal: &TempJournal, shared: Arc<LocalRuntimeShared>) -> LocalRuntimeStore {
-        LocalRuntimeStore::new(journal.0.clone(), shared, Arc::new(FixedClock))
+    fn store(journal: &TempJournal, shared: Arc<LocalRuntimeShared>) -> FileRuntimeStore {
+        FileRuntimeStore::new(
+            journal.0.clone(),
+            ProviderName::Local,
+            shared,
+            Arc::new(FixedClock),
+        )
     }
 
     fn fence(attempt: u32) -> ProviderFence {
@@ -889,8 +944,8 @@ mod tests {
         state
     }
 
-    fn ready_process(port: u16) -> LocalReadyProcess {
-        LocalReadyProcess {
+    fn ready_process(port: u16) -> ReadyProcess {
+        ReadyProcess {
             process_id: "local:42".to_owned(),
             process_name: "local".to_owned(),
             pid: 42,
@@ -949,7 +1004,12 @@ mod tests {
         let mut store = store(&journal, shared);
         let state = state(RuntimePhase::Starting);
         store.publish_state(&state).expect("first publish");
-        assert_eq!(read_health(&store.health_path()).unwrap().revision, 1);
+        assert_eq!(
+            read_health(&store.health_path(), ProviderName::Local)
+                .unwrap()
+                .revision,
+            1
+        );
 
         let mut external =
             serde_json::from_slice::<Value>(&fs::read(store.health_path()).unwrap()).unwrap();
@@ -978,8 +1038,9 @@ mod tests {
             NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
         ));
         fs::write(&file_journal, b"not a directory").unwrap();
-        let mut unavailable = LocalRuntimeStore::new(
+        let mut unavailable = FileRuntimeStore::new(
             file_journal.clone(),
+            ProviderName::Local,
             Arc::new(LocalRuntimeShared::default()),
             Arc::new(FixedClock),
         );
@@ -1058,7 +1119,7 @@ mod tests {
         );
     }
 
-    fn prepare_for_clear() -> (TempJournal, LocalRuntimeStore, ProviderRuntimeState) {
+    fn prepare_for_clear() -> (TempJournal, FileRuntimeStore, ProviderRuntimeState) {
         let journal = TempJournal::new();
         let shared = Arc::new(LocalRuntimeShared::default());
         let start_fence = fence(1);
@@ -1129,6 +1190,97 @@ mod tests {
                 expected_fingerprint_sha256: "fingerprint".to_owned(),
             }]
         );
+        store.publish_state(&state).unwrap();
+        assert!(store.take_ready_side_effects().is_empty());
+    }
+
+    fn parakeet_state(phase: RuntimePhase) -> ProviderRuntimeState {
+        let mut state = ProviderRuntimeState::new(ProviderName::Parakeet);
+        state.generation = 1;
+        state.desired_fingerprint = Some("fingerprint".to_owned());
+        state.latest_phase = phase;
+        state.latest_reason_code = Some(ReasonCode::known("provider-not-needed"));
+        state
+    }
+
+    #[test]
+    fn a_store_built_for_parakeet_writes_parakeet_paths_not_local_ones() {
+        let journal = TempJournal::new();
+        let shared = Arc::new(LocalRuntimeShared::default());
+        let mut store = FileRuntimeStore::new(
+            journal.0.clone(),
+            ProviderName::Parakeet,
+            shared,
+            Arc::new(FixedClock),
+        );
+        store
+            .publish_state(&parakeet_state(RuntimePhase::NotDesired))
+            .unwrap();
+        assert_eq!(
+            store.health_path(),
+            journal.0.join("health/providers/runtime/parakeet.json")
+        );
+        assert_eq!(
+            store.retry_path(),
+            journal
+                .0
+                .join("health/providers/runtime/parakeet.retry-token.json")
+        );
+        // The port file's service name is "parakeet-cpp" (matching Python's
+        // parakeet_server.py _SERVICE_NAME), not "parakeet" -- the two are
+        // allowed to differ per provider.
+        assert_eq!(
+            store.port_path(),
+            journal.0.join("health/parakeet-cpp.port")
+        );
+        assert!(
+            !journal
+                .0
+                .join("health/providers/runtime/local.json")
+                .exists()
+        );
+
+        let on_disk: Value =
+            serde_json::from_slice(&fs::read(store.health_path()).unwrap()).unwrap();
+        assert_eq!(on_disk["provider"], "parakeet");
+    }
+
+    #[test]
+    fn a_store_built_for_one_provider_refuses_the_other_providers_state() {
+        let journal = TempJournal::new();
+        let shared = Arc::new(LocalRuntimeShared::default());
+        let mut local_store = store(&journal, shared);
+        assert_eq!(
+            local_store.publish_state(&parakeet_state(RuntimePhase::NotDesired)),
+            Err(RuntimeStoreError::Unavailable)
+        );
+        assert_eq!(
+            local_store.read_retry_token(ProviderName::Parakeet),
+            Err(RuntimeStoreError::Unavailable)
+        );
+    }
+
+    #[test]
+    fn parakeet_reaching_ready_never_produces_a_refresh_brain_side_effect() {
+        // RefreshBrain is meaningful only for Local's own bundled-LLM
+        // backend; Parakeet reaching Ready must never queue one even though
+        // publish_state's Ready-phase branch runs for every provider.
+        let journal = TempJournal::new();
+        let shared = Arc::new(LocalRuntimeShared::default());
+        let start_fence = fence(1);
+        shared.record_ready_process(&start_fence, ready_process(5150));
+        let mut store = FileRuntimeStore::new(
+            journal.0.clone(),
+            ProviderName::Parakeet,
+            shared,
+            Arc::new(FixedClock),
+        );
+        let mut state = parakeet_state(RuntimePhase::Ready);
+        state.retry.attempt_count = start_fence.attempt;
+        state.start = Some(InFlight {
+            fence: start_fence,
+            result: None,
+        });
         store.publish_state(&state).unwrap();
         assert!(store.take_ready_side_effects().is_empty());
     }

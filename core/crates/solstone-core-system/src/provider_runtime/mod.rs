@@ -32,7 +32,7 @@ pub use stop::{
     stop_before_replace_request,
 };
 pub use store::{
-    FenceKey, LocalReadyProcess, LocalReadySideEffect, LocalRuntimeShared, LocalRuntimeStore,
-    RuntimeClock, SystemRuntimeClock,
+    FenceKey, FileRuntimeStore, LocalReadySideEffect, LocalRuntimeShared, ReadyProcess,
+    ReadyProcessLookup, RuntimeClock, SystemRuntimeClock,
 };
 pub use wedge::{CortexEventKind, CortexOutcomeEvent, WedgeState, observe_cortex_outcome};

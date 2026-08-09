@@ -10,8 +10,8 @@ use serde_json::json;
 use solstone_core_local::nvidia::NvidiaProbe;
 use solstone_core_local::{ArtifactTrust, Platform};
 use solstone_core_system::provider_runtime::{
-    LocalLaunchCommon, LocalLaunchConfig, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared,
-    LocalRuntimeStore, LocalTruthConfig, LocalTruthSeam, ManagedProcess, ProviderName,
+    FileRuntimeStore, LocalLaunchCommon, LocalLaunchConfig, LocalLifecycleSeam, LocalProbeSeam,
+    LocalRuntimeShared, LocalTruthConfig, LocalTruthSeam, ManagedProcess, ProviderName,
     ProviderRuntimeCoordinator, ProviderRuntimeNow, ProviderRuntimeState,
     ProviderStopCleanupRequest, ReasonCode, ReconcileContext, RuntimeClock, RuntimePhase,
     VecEventSink,
@@ -118,7 +118,8 @@ fn ac18_real_coordinator_seams_and_store() {
         Duration::from_secs(1),
     );
     let mut probe = LocalProbeSeam::new(shared.clone(), journal.clone());
-    let mut store = LocalRuntimeStore::new(journal.clone(), shared.clone(), clock);
+    let mut store =
+        FileRuntimeStore::new(journal.clone(), ProviderName::Local, shared.clone(), clock);
     let mut sink = VecEventSink::default();
     let c = ProviderRuntimeCoordinator::new();
     let mut s = ProviderRuntimeState::new(ProviderName::Local);
