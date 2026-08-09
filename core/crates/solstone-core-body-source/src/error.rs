@@ -5,6 +5,7 @@ use std::fmt;
 
 use crate::Coordinate;
 use crate::bundle_id::BundleId;
+use crate::envelope_ledger::LEDGER_PATH;
 use crate::manifest_binding::BODY_BUNDLE_REF_VALUE;
 use crate::manifest_known_key::{
     BODY_BUNDLE_REF_KEY, BODY_BUNDLE_SHA256_KEY, BODY_SOURCE_SCHEMA_KEY, DAYS_AFFECTED_KEY,
@@ -766,6 +767,199 @@ impl fmt::Debug for CandidateError {
 
 impl std::error::Error for CandidateError {}
 
+/// The closed set of body-ledger event failure codes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LedgerEventErrorCode {
+    InputTooLarge,
+    MalformedJson,
+    NoncanonicalJson,
+    MissingField,
+    UnknownField,
+    WrongType,
+    InvalidField,
+    IncompatibleField,
+    InvalidSequence,
+    ReferenceMismatch,
+    CountMismatch,
+}
+
+impl LedgerEventErrorCode {
+    /// Returns this code's stable wire spelling.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::InputTooLarge => "input_too_large",
+            Self::MalformedJson => "malformed_json",
+            Self::NoncanonicalJson => "noncanonical_json",
+            Self::MissingField => "missing_field",
+            Self::UnknownField => "unknown_field",
+            Self::WrongType => "wrong_type",
+            Self::InvalidField => "invalid_field",
+            Self::IncompatibleField => "incompatible_field",
+            Self::InvalidSequence => "invalid_sequence",
+            Self::ReferenceMismatch => "reference_mismatch",
+            Self::CountMismatch => "count_mismatch",
+        }
+    }
+
+    pub const ALL: [Self; 11] = [
+        Self::InputTooLarge,
+        Self::MalformedJson,
+        Self::NoncanonicalJson,
+        Self::MissingField,
+        Self::UnknownField,
+        Self::WrongType,
+        Self::InvalidField,
+        Self::IncompatibleField,
+        Self::InvalidSequence,
+        Self::ReferenceMismatch,
+        Self::CountMismatch,
+    ];
+}
+
+/// The closed set of body-ledger event failure fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LedgerEventErrorField {
+    Ledger,
+    Schema,
+    BundleId,
+    Sequence,
+    RowSchema,
+    Shard,
+    Line,
+    NormalizedRef,
+    RowSha256,
+    DedupeKey,
+    SourceFamily,
+    SourceRecordId,
+    RecordType,
+    StartTime,
+    EndTime,
+    Day,
+    ValueHash,
+    RawRef,
+}
+
+impl LedgerEventErrorField {
+    /// Returns this field's stable wire spelling.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ledger => "ledger",
+            Self::Schema => "schema",
+            Self::BundleId => "bundle_id",
+            Self::Sequence => "sequence",
+            Self::RowSchema => "row_schema",
+            Self::Shard => "shard",
+            Self::Line => "line",
+            Self::NormalizedRef => "normalized_ref",
+            Self::RowSha256 => "row_sha256",
+            Self::DedupeKey => "dedupe_key",
+            Self::SourceFamily => "source_family",
+            Self::SourceRecordId => "source_record_id",
+            Self::RecordType => "record_type",
+            Self::StartTime => "start_time",
+            Self::EndTime => "end_time",
+            Self::Day => "day",
+            Self::ValueHash => "value_hash",
+            Self::RawRef => "raw_ref",
+        }
+    }
+
+    pub const ALL: [Self; 18] = [
+        Self::Ledger,
+        Self::Schema,
+        Self::BundleId,
+        Self::Sequence,
+        Self::RowSchema,
+        Self::Shard,
+        Self::Line,
+        Self::NormalizedRef,
+        Self::RowSha256,
+        Self::DedupeKey,
+        Self::SourceFamily,
+        Self::SourceRecordId,
+        Self::RecordType,
+        Self::StartTime,
+        Self::EndTime,
+        Self::Day,
+        Self::ValueHash,
+        Self::RawRef,
+    ];
+}
+
+/// A bounded body-ledger event failure.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LedgerEventError {
+    bundle: Option<BundleId>,
+    code: LedgerEventErrorCode,
+    field: LedgerEventErrorField,
+    line: u64,
+}
+
+impl LedgerEventError {
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "used by B1h2 ledger event model")
+    )]
+    pub(crate) fn new(
+        bundle: Option<BundleId>,
+        code: LedgerEventErrorCode,
+        field: LedgerEventErrorField,
+        line: u64,
+    ) -> Self {
+        Self {
+            bundle,
+            code,
+            field,
+            line,
+        }
+    }
+
+    /// Returns the checked bundle identifier this error is bound to, if available.
+    pub fn bundle(&self) -> Option<&BundleId> {
+        self.bundle.as_ref()
+    }
+
+    /// Returns this error's failure code.
+    pub fn code(&self) -> LedgerEventErrorCode {
+        self.code
+    }
+
+    /// Returns the ledger event field this error concerns.
+    pub fn field(&self) -> LedgerEventErrorField {
+        self.field
+    }
+
+    /// Returns the ledger line this error concerns.
+    pub fn line(&self) -> u64 {
+        self.line
+    }
+}
+
+impl fmt::Display for LedgerEventError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let bundle = self
+            .bundle
+            .as_ref()
+            .map(BundleId::as_str)
+            .unwrap_or(INVALID_BUNDLE_PLACEHOLDER);
+        write!(
+            formatter,
+            "body-ledger[{bundle}]/{LEDGER_PATH}#L{} {}: {}",
+            self.line,
+            self.code.as_str(),
+            self.field.as_str()
+        )
+    }
+}
+
+impl fmt::Debug for LedgerEventError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
+}
+
+impl std::error::Error for LedgerEventError {}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
@@ -989,5 +1183,225 @@ mod tests {
         );
         assert_eq!(maximum_display.len(), 122);
         assert!(maximum_display.len() <= 256);
+    }
+
+    fn ledger_event_expected_rendering(
+        bundle: Option<&BundleId>,
+        code: LedgerEventErrorCode,
+        field: LedgerEventErrorField,
+        line: u64,
+    ) -> String {
+        let bundle = bundle
+            .map(BundleId::as_str)
+            .unwrap_or(INVALID_BUNDLE_PLACEHOLDER);
+        format!(
+            "body-ledger[{bundle}]/{LEDGER_PATH}#L{line} {}: {}",
+            code.as_str(),
+            field.as_str()
+        )
+    }
+
+    #[test]
+    fn ledger_event_error_constructs_and_clones_every_combination() {
+        let [minimum, maximum] = bundles();
+        let bundle_options = [None, Some(minimum), Some(maximum)];
+        let lines = [0, 1, u64::MAX];
+
+        for bundle in bundle_options {
+            for code in LedgerEventErrorCode::ALL {
+                for field in LedgerEventErrorField::ALL {
+                    for line in lines {
+                        let expected_bundle = bundle.as_ref().map(BundleId::as_str);
+                        let error = LedgerEventError::new(bundle.clone(), code, field, line);
+                        assert_eq!(error.bundle().map(BundleId::as_str), expected_bundle);
+                        assert_eq!(error.code(), code);
+                        assert_eq!(error.field(), field);
+                        assert_eq!(error.line(), line);
+                        assert_eq!(error.clone(), error);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ledger_event_error_renders_bounded_checked_output() {
+        let [_, maximum] = bundles();
+        let bundle_options = [None, Some(maximum.clone())];
+        let lines = [0, 1, u64::MAX];
+
+        for bundle in bundle_options {
+            for code in LedgerEventErrorCode::ALL {
+                for field in LedgerEventErrorField::ALL {
+                    for line in lines {
+                        let error = LedgerEventError::new(bundle.clone(), code, field, line);
+                        let expected =
+                            ledger_event_expected_rendering(bundle.as_ref(), code, field, line);
+                        let display = error.to_string();
+                        assert_eq!(display, expected);
+                        assert_eq!(format!("{error:?}"), expected);
+                        assert!(Error::source(&error).is_none());
+                        assert!(display.is_ascii());
+                        assert!(display.len() <= 256);
+                    }
+                }
+            }
+        }
+
+        let maximum = LedgerEventError::new(
+            Some(maximum),
+            LedgerEventErrorCode::ReferenceMismatch,
+            LedgerEventErrorField::SourceRecordId,
+            u64::MAX,
+        );
+        let maximum_display = maximum.to_string();
+        assert_eq!(
+            maximum_display,
+            "body-ledger[body-7ZZZZZZZZZZZZZZZZZZZZZZZZZ]/body-ledger.jsonl#L18446744073709551615 reference_mismatch: source_record_id"
+        );
+        assert_eq!(maximum_display.len(), 121);
+    }
+
+    #[test]
+    fn ledger_event_error_resists_vocabulary_rendering_and_equality_drift() {
+        assert_eq!(
+            LedgerEventErrorCode::ALL
+                .iter()
+                .map(LedgerEventErrorCode::as_str)
+                .collect::<Vec<_>>(),
+            vec![
+                "input_too_large",
+                "malformed_json",
+                "noncanonical_json",
+                "missing_field",
+                "unknown_field",
+                "wrong_type",
+                "invalid_field",
+                "incompatible_field",
+                "invalid_sequence",
+                "reference_mismatch",
+                "count_mismatch",
+            ]
+        );
+        assert_eq!(
+            LedgerEventErrorField::ALL
+                .iter()
+                .map(LedgerEventErrorField::as_str)
+                .collect::<Vec<_>>(),
+            vec![
+                "ledger",
+                "schema",
+                "bundle_id",
+                "sequence",
+                "row_schema",
+                "shard",
+                "line",
+                "normalized_ref",
+                "row_sha256",
+                "dedupe_key",
+                "source_family",
+                "source_record_id",
+                "record_type",
+                "start_time",
+                "end_time",
+                "day",
+                "value_hash",
+                "raw_ref",
+            ]
+        );
+
+        let [minimum, maximum] = bundles();
+        let baseline = LedgerEventError::new(
+            Some(minimum.clone()),
+            LedgerEventErrorCode::MissingField,
+            LedgerEventErrorField::BundleId,
+            1,
+        );
+        assert_ne!(
+            baseline,
+            LedgerEventError::new(
+                Some(maximum.clone()),
+                LedgerEventErrorCode::MissingField,
+                LedgerEventErrorField::BundleId,
+                1,
+            )
+        );
+        assert_ne!(
+            baseline,
+            LedgerEventError::new(
+                Some(minimum.clone()),
+                LedgerEventErrorCode::WrongType,
+                LedgerEventErrorField::BundleId,
+                1,
+            )
+        );
+        assert_ne!(
+            baseline,
+            LedgerEventError::new(
+                Some(minimum.clone()),
+                LedgerEventErrorCode::MissingField,
+                LedgerEventErrorField::Schema,
+                1,
+            )
+        );
+        assert_ne!(
+            baseline,
+            LedgerEventError::new(
+                Some(minimum),
+                LedgerEventErrorCode::MissingField,
+                LedgerEventErrorField::BundleId,
+                2,
+            )
+        );
+
+        let absent = LedgerEventError::new(
+            None,
+            LedgerEventErrorCode::MissingField,
+            LedgerEventErrorField::BundleId,
+            0,
+        );
+        assert_eq!(
+            absent.to_string(),
+            "body-ledger[<invalid>]/body-ledger.jsonl#L0 missing_field: bundle_id"
+        );
+        assert!(!absent.to_string().contains(MIN_BUNDLE));
+        assert!(!absent.to_string().contains(MAX_BUNDLE));
+    }
+
+    #[test]
+    fn ledger_event_error_all_is_declaration_ordered() {
+        let mut sorted_codes = LedgerEventErrorCode::ALL.to_vec();
+        sorted_codes.sort();
+        assert_eq!(sorted_codes, LedgerEventErrorCode::ALL.to_vec());
+
+        let mut sorted_fields = LedgerEventErrorField::ALL.to_vec();
+        sorted_fields.sort();
+        assert_eq!(sorted_fields, LedgerEventErrorField::ALL.to_vec());
+    }
+
+    #[test]
+    fn ledger_event_error_forbidden_content_never_renders() {
+        let raw_content = format!("SENTINEL_RAW_CONTENT_{}", "x".repeat(1_000_000));
+        let path = format!("SENTINEL_PATH_{}", "/".repeat(1_000_000));
+        let hash = format!("SENTINEL_HASH_{}", "a".repeat(1_000_000));
+        let reference = format!("SENTINEL_REFERENCE_{}", "r".repeat(1_000_000));
+        let root = format!("SENTINEL_ROOT_{}", "~".repeat(1_000_000));
+        let sentinels = [&raw_content, &path, &hash, &reference, &root];
+
+        let [_, maximum] = bundles();
+        let bundle_options = [None, Some(maximum)];
+        for bundle in bundle_options {
+            for code in LedgerEventErrorCode::ALL {
+                for field in LedgerEventErrorField::ALL {
+                    for line in [0, u64::MAX] {
+                        let display =
+                            LedgerEventError::new(bundle.clone(), code, field, line).to_string();
+                        for sentinel in sentinels {
+                            assert!(!display.contains(sentinel));
+                        }
+                    }
+                }
+            }
+        }
     }
 }
