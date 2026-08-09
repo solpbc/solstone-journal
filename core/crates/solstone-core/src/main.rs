@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::VecDeque;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::ExitCode;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::{env, ffi::OsStr, path::PathBuf};
@@ -1556,18 +1553,6 @@ fn endpoint_result_response(
     }
 }
 
-struct GenerateSessionConfig {
-    max_in_flight: usize,
-    line_limit_bytes: usize,
-    terminal_schema: String,
-}
-
-enum SessionInput {
-    // Boxed: the request dwarfs the unit variant, and this crosses a channel.
-    Request(Box<solstone_core_generate::GenerateRequest>),
-    Terminal,
-}
-
 fn run_generate_session(options: GenerateSessionOptions) -> ExitCode {
     let config = match generate_session_config(&options) {
         Ok(config) => config,
@@ -1580,60 +1565,41 @@ fn run_generate_session(options: GenerateSessionOptions) -> ExitCode {
             );
         }
     };
-    let aborting = Arc::new(AtomicBool::new(false));
-    let endpoint_runtime = Arc::new(solstone_core_generate_wire::EndpointRuntime::default());
-    let (input_tx, input_rx) = mpsc::channel();
-    spawn_generate_session_reader(
-        input_tx,
-        config.terminal_schema,
-        config.line_limit_bytes,
-        Arc::clone(&aborting),
+    // The framing itself lives in the wire crate. What stays here is what only
+    // the binary can decide: which lane answers a request, and what the process
+    // does when the protocol cannot continue.
+    let outcome = solstone_core_generate_wire::run_session(
+        io::BufReader::new(io::stdin()),
+        Box::new(io::stdout()),
+        config,
+        solstone_core_generate_wire::SessionHost {
+            respond: generate_response_for_request,
+            fail: |id, reason, detail| generate_protocol_exit_and_terminate(id, reason, detail),
+            // Bare EOF means the caller disappeared: answer nothing further, write no
+            // further usage, exit. The contract declares 0, 64 and 70 only, and the
+            // reference implementation returns from its session loop here, so this exits 0.
+            // Whether the abort deserves a distinct declared code is a contract question,
+            // not one a port settles: 1 would collide with crash, kill and OOM, which is
+            // the same collision the absent 69 exists to avoid.
+            abort: || std::process::exit(0),
+        },
     );
-
-    let stdout = Arc::new(Mutex::new(io::stdout()));
-    let mut pending = VecDeque::new();
-    let mut workers = Vec::new();
-    let mut terminal_received = false;
-
-    loop {
-        reap_generate_session_workers(&mut workers);
-        while workers.len() < config.max_in_flight {
-            let Some(request) = pending.pop_front() else {
-                break;
-            };
-            workers.push(spawn_generate_session_worker(
-                request,
-                Arc::clone(&stdout),
-                Arc::clone(&aborting),
-                Arc::clone(&endpoint_runtime),
-            ));
+    match outcome {
+        solstone_core_generate_wire::SessionOutcome::Completed => {
+            ExitCode::from(generate_exit_code("response"))
         }
-        if terminal_received && pending.is_empty() && workers.is_empty() {
-            return ExitCode::from(generate_exit_code("response"));
-        }
-        if terminal_received {
-            thread::sleep(Duration::from_millis(10));
-            continue;
-        }
-        match input_rx.recv_timeout(Duration::from_millis(10)) {
-            Ok(SessionInput::Request(request)) => pending.push_back(*request),
-            Ok(SessionInput::Terminal) => terminal_received = true,
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return generate_protocol_exit(
-                    None,
-                    "internal-failure",
-                    "session stdin reader disconnected".to_owned(),
-                    generate_exit_code("internal_failure"),
-                );
-            }
-        }
+        solstone_core_generate_wire::SessionOutcome::ReaderDisconnected => generate_protocol_exit(
+            None,
+            "internal-failure",
+            "session stdin reader disconnected".to_owned(),
+            generate_exit_code("internal_failure"),
+        ),
     }
 }
 
 fn generate_session_config(
     options: &GenerateSessionOptions,
-) -> Result<GenerateSessionConfig, String> {
+) -> Result<solstone_core_generate_wire::SessionConfig, String> {
     let session = &solstone_core_generate::contract()["framing"]["session"];
     let selector = session["selector"]
         .as_str()
@@ -1672,179 +1638,11 @@ fn generate_session_config(
             "{flag} is below the fixture minimum of {minimum} for {selector}"
         ));
     }
-    Ok(GenerateSessionConfig {
+    Ok(solstone_core_generate_wire::SessionConfig {
         max_in_flight,
         line_limit_bytes,
         terminal_schema,
     })
-}
-
-fn spawn_generate_session_reader(
-    input: mpsc::Sender<SessionInput>,
-    terminal_schema: String,
-    line_limit_bytes: usize,
-    aborting: Arc<AtomicBool>,
-) {
-    thread::spawn(move || {
-        let stdin = io::stdin();
-        let mut reader = stdin.lock();
-        loop {
-            let line = match read_generate_session_line(&mut reader, line_limit_bytes) {
-                Ok(Some(line)) => line,
-                Ok(None) => {
-                    aborting.store(true, Ordering::Release);
-                    // Bare EOF means the caller disappeared: answer nothing further, write no
-                    // further usage, exit. The contract declares 0, 64 and 70 only, and the
-                    // reference implementation returns from its session loop here, so this exits 0.
-                    // Whether the abort deserves a distinct declared code is a contract question,
-                    // not one a port settles: 1 would collide with crash, kill and OOM, which is
-                    // the same collision the absent 69 exists to avoid.
-                    std::process::exit(0);
-                }
-                Err(detail) => {
-                    generate_protocol_exit_and_terminate(None, "malformed-request", detail)
-                }
-            };
-            let value = match serde_json::from_str::<Value>(line.trim_end()) {
-                Ok(Value::Object(value)) => value,
-                Ok(_) => generate_protocol_exit_and_terminate(
-                    None,
-                    "malformed-request",
-                    "request must be a JSON object".to_owned(),
-                ),
-                Err(_) => generate_protocol_exit_and_terminate(
-                    None,
-                    "malformed-request",
-                    "stdin is not valid JSON".to_owned(),
-                ),
-            };
-            if value.get("schema").and_then(Value::as_str) == Some(terminal_schema.as_str()) {
-                if let Err(detail) = solstone_core_generate::decode_session_terminal_line(&line) {
-                    generate_protocol_exit_and_terminate(None, "malformed-request", detail);
-                }
-                let _ = input.send(SessionInput::Terminal);
-                return;
-            }
-            let request = match solstone_core_generate::decode_session_request_line(&line) {
-                Ok(request) => request,
-                Err(detail) => {
-                    generate_protocol_exit_and_terminate(None, "malformed-request", detail)
-                }
-            };
-            if input
-                .send(SessionInput::Request(Box::new(request)))
-                .is_err()
-            {
-                return;
-            }
-        }
-    });
-}
-
-fn read_generate_session_line(
-    reader: &mut impl BufRead,
-    line_limit_bytes: usize,
-) -> Result<Option<String>, String> {
-    let mut line = Vec::new();
-    loop {
-        let buffer = reader
-            .fill_buf()
-            .map_err(|error| format!("stdin I/O error: {error}"))?;
-        if buffer.is_empty() {
-            if line.is_empty() {
-                return Ok(None);
-            }
-            break;
-        }
-        if let Some(newline) = buffer.iter().position(|byte| *byte == b'\n') {
-            if line
-                .len()
-                .checked_add(newline)
-                .is_none_or(|length| length > line_limit_bytes)
-            {
-                return Err(format!(
-                    "stdin line exceeds fixture limit of {line_limit_bytes} bytes"
-                ));
-            }
-            line.extend_from_slice(&buffer[..newline + 1]);
-            reader.consume(newline + 1);
-            break;
-        }
-        if line
-            .len()
-            .checked_add(buffer.len())
-            .is_none_or(|length| length > line_limit_bytes)
-        {
-            return Err(format!(
-                "stdin line exceeds fixture limit of {line_limit_bytes} bytes"
-            ));
-        }
-        line.extend_from_slice(buffer);
-        let consumed = buffer.len();
-        reader.consume(consumed);
-    }
-    String::from_utf8(line)
-        .map(Some)
-        .map_err(|error| format!("stdin is not UTF-8: {error}"))
-}
-
-fn spawn_generate_session_worker(
-    request: solstone_core_generate::GenerateRequest,
-    stdout: Arc<Mutex<io::Stdout>>,
-    aborting: Arc<AtomicBool>,
-    endpoint_runtime: Arc<solstone_core_generate_wire::EndpointRuntime>,
-) -> thread::JoinHandle<()> {
-    thread::spawn(move || {
-        let request_id = request.id.clone();
-        let response = match generate_response_for_request(&request, &endpoint_runtime) {
-            Ok(response) => response,
-            Err(detail) => {
-                generate_protocol_exit_and_terminate(request_id, "internal-failure", detail)
-            }
-        };
-        if aborting.load(Ordering::Acquire) {
-            return;
-        }
-        let line = match solstone_core_generate::encode_session_response_line(&response) {
-            Ok(line) => line,
-            Err(detail) => {
-                generate_protocol_exit_and_terminate(request_id, "internal-failure", detail)
-            }
-        };
-        if aborting.load(Ordering::Acquire) {
-            return;
-        }
-        let stdout = stdout.lock().expect("session stdout lock poisoned");
-        if aborting.load(Ordering::Acquire) {
-            return;
-        }
-        let result = stdout
-            .lock()
-            .write_all(line.as_bytes())
-            .and_then(|()| stdout.lock().flush())
-            .map_err(|error| format!("stdout I/O error: {error}"));
-        if let Err(detail) = result {
-            generate_protocol_exit_and_terminate(request_id, "internal-failure", detail);
-        }
-    })
-}
-
-fn reap_generate_session_workers(workers: &mut Vec<thread::JoinHandle<()>>) {
-    let mut index = 0;
-    while index < workers.len() {
-        if workers[index].is_finished() {
-            let worker = workers.swap_remove(index);
-            if worker.join().is_err() {
-                generate_protocol_exit_and_terminate(
-                    None,
-                    "internal-failure",
-                    "session request worker panicked".to_owned(),
-                );
-            }
-        } else {
-            index += 1;
-        }
-    }
 }
 
 fn generate_protocol_exit_and_terminate(id: Option<String>, reason: &str, detail: String) -> ! {
@@ -1881,7 +1679,7 @@ fn generated_response(
     let inference = serde_json::to_value(&success.inference)
         .map(Some)
         .map_err(|error| error.to_string())?;
-    let hints_applied = applied_hints(request, inference.as_ref());
+    let hints_applied = applied_hints(request, true, true);
     Ok(solstone_core_generate::GeneratedResponse {
         id: request.id.clone(),
         text: success.text,
@@ -1899,26 +1697,29 @@ fn generated_response(
 
 /// Which request hints the boundary actually applied.
 ///
-/// 🔴 Both are reported ONLY when the response carries an inference block. They
-/// describe what the local admission path did, so on a lane with no inference
-/// telemetry nothing applied them and naming them there claims an effect that
-/// did not happen.
+/// 🔴 A hint is reported only by a lane that HONOURED it, and the lanes differ:
+/// measured, `bundled` reads `exclusive_admission` and the attempt index,
+/// `endpoint` reads `exclusive_admission` to size its admission slot, and the
+/// four cloud lanes read neither — their only mention of it is a test fixture.
 ///
-/// ⚠ The port dropped this guard on four of five construction sites and every
-/// positive test still passed — the cross-language differential caught it the
-/// moment it started driving the native binary instead of the Python wire.
+/// ⚠ Two wrong rules were tried before this one, and both passed a real test
+/// suite. The original reported `exclusive_admission` from every lane, so the
+/// cloud lanes claimed an effect they never had. The correction after that keyed
+/// off the response carrying an inference block, which is how the Python
+/// reference decided it — but that gates on the *shape of the result*, not on
+/// what was honoured, and it silenced the endpoint lane, which genuinely does
+/// acquire the slot. ⛔ Do not re-derive this from the reference; it
+/// under-reported.
 fn applied_hints(
     request: &solstone_core_generate::GenerateRequest,
-    inference: Option<&Value>,
+    honours_attempt_index: bool,
+    honours_exclusive_admission: bool,
 ) -> Vec<String> {
     let mut hints = Vec::new();
-    if inference.is_none() {
-        return hints;
-    }
-    if request.attempt_index != 0 {
+    if honours_attempt_index && request.attempt_index != 0 {
         hints.push("attempt_index".to_owned());
     }
-    if request.exclusive_admission {
+    if honours_exclusive_admission && request.exclusive_admission {
         hints.push("exclusive_admission".to_owned());
     }
     hints
@@ -1948,7 +1749,7 @@ fn endpoint_generated_response(
         .map(serde_json::to_value)
         .transpose()
         .map_err(|error| error.to_string())?;
-    let hints_applied = applied_hints(request, None);
+    let hints_applied = applied_hints(request, false, true);
     Ok(solstone_core_generate::GeneratedResponse {
         id: request.id.clone(),
         text: success.text,
@@ -1969,7 +1770,7 @@ fn anthropic_generated_response(
     success: solstone_core_generate_wire::AnthropicGenerated,
     schema_validation: Option<Value>,
 ) -> Result<solstone_core_generate::GeneratedResponse, String> {
-    let hints_applied = applied_hints(request, None);
+    let hints_applied = applied_hints(request, false, false);
     Ok(solstone_core_generate::GeneratedResponse {
         id: request.id.clone(),
         text: success.text,
@@ -1990,7 +1791,7 @@ fn openai_generated_response(
     success: solstone_core_generate_wire::OpenAiGenerated,
     schema_validation: Option<Value>,
 ) -> Result<solstone_core_generate::GeneratedResponse, String> {
-    let hints_applied = applied_hints(request, None);
+    let hints_applied = applied_hints(request, false, false);
     Ok(solstone_core_generate::GeneratedResponse {
         id: request.id.clone(),
         text: success.text,
@@ -2011,7 +1812,7 @@ fn google_generated_response(
     success: solstone_core_generate_wire::GoogleGenerated,
     schema_validation: Option<Value>,
 ) -> Result<solstone_core_generate::GeneratedResponse, String> {
-    let hints_applied = applied_hints(request, None);
+    let hints_applied = applied_hints(request, false, false);
     Ok(solstone_core_generate::GeneratedResponse {
         id: request.id.clone(),
         text: success.text,

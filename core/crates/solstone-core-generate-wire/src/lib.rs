@@ -16,6 +16,7 @@ mod request;
 mod responsiveness;
 mod schema_prep;
 mod schema_validation;
+pub mod session;
 mod token_budget;
 mod token_log;
 mod validation;
@@ -48,6 +49,7 @@ pub use responsiveness::{
 };
 pub use schema_prep::{prepare_provider_schema, unsupported_keyword_hits};
 pub use schema_validation::{SchemaValidationResult, validate_schema_with_annotations};
+pub use session::{SessionConfig, SessionHost, SessionOutcome, run_session};
 pub use token_budget::generate_token_budget;
 pub use token_log::{GenerateUsageMetadata, record_generate_usage};
 pub use validation::{
@@ -104,6 +106,7 @@ mod vocabulary_tests {
             ("responsiveness", include_str!("responsiveness.rs")),
             ("schema_prep", include_str!("schema_prep.rs")),
             ("schema_validation", include_str!("schema_validation.rs")),
+            ("session", include_str!("session.rs")),
             ("token_budget", include_str!("token_budget.rs")),
             ("token_log", include_str!("token_log.rs")),
             ("validation", include_str!("validation.rs")),

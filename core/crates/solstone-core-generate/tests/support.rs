@@ -19,7 +19,11 @@ use std::process::Command;
 pub fn core_binary() -> PathBuf {
     if let Some(path) = env::var_os("SOLSTONE_CORE") {
         let path = PathBuf::from(path);
-        assert!(path.is_file(), "SOLSTONE_CORE is not a file: {}", path.display());
+        assert!(
+            path.is_file(),
+            "SOLSTONE_CORE is not a file: {}",
+            path.display()
+        );
         return path;
     }
     let exe = env::current_exe().expect("test executable path");
