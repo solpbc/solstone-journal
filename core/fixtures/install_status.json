@@ -2311,7 +2311,7 @@
     "attempt_id": "<attempt-id>",
     "timestamps": "<timestamp>"
   },
-  "reference_commit": "d996fa32121e9c60d7d9c3f391fd79acb9ed5854",
+  "reference_commit": "60923f4f8509eb6b3ac13ce05db2f19f135c7690",
   "reference_sources": [
     "solstone/think/providers/brain_state.py",
     "solstone/think/providers/install_state.py",
