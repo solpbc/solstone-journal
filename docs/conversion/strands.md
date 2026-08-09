@@ -211,11 +211,15 @@ correct:
   vectors — **every one of which is an exception raised above this strand.** No local reason code has a
   vector, so "read it from the fixture, hold no copy" cannot be satisfied for any refusal this lane
   produces.
-- **Unobservable.** The exception→refusal mapping already lives at the wire: it resolves the reason from
-  the raising exception's class and computes `retryable` and `blocking` from the fixture by reason code.
-  A local side that also emitted them would have its answer round-trip through a Python exception and be
+- **Unobservable.** The refusal mapping already lives at the wire, which computes `retryable` and
+  `blocking` from the fixture by reason code. A local side that also emitted them would have its answer
   **re-derived at the wire**, which silently wins. An implementation that hard-coded both booleans would
   produce byte-identical output.
+
+  ⚠ **Updated 2026-08-09.** This used to say the wire resolves the reason *from the raising exception's
+  class*, and that it round-trips through a Python exception. Both were true of the Python wire, which
+  is gone: the wire is Rust and each provider arm classifies its own failures. 📌 **The conclusion did
+  not move and its reason got stronger** — one derivation, at the end that owns the contract.
 
 ✅ **So this strand carries a local result record** — a completion with its usage, finish reason, budgets
 and inference block, or a failure carrying a reason code and a detail — and the boundary above keeps
