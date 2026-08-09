@@ -22,22 +22,18 @@ serde_json.workspace = true
 [[test]]
 name = "no_downgrade"
 path = "tests/no_downgrade.rs"
-required-features = ["differential"]
 
 [[test]]
 name = "session"
 path = "tests/session.rs"
-required-features = ["differential"]
 
 [[test]]
 name = "session_real"
 path = "tests/session_real.rs"
-required-features = ["differential"]
 
 [[test]]
 name = "wire"
 path = "tests/wire.rs"
-required-features = ["differential"]
 
 [[bin]]
 name = "solstone-generate-session-stub"

@@ -300,7 +300,6 @@ check-differentials:
 	for leg in \
 		"-p solstone-core --test journal_config_client --test journal_config_corruption" \
 		"-p solstone-core-journal-bin --test journal_process_bootstrap" \
-		"-p solstone-core-generate --test no_downgrade --test session --test session_real --test wire" \
 		"-p solstone-core-generate-wire --test responsiveness_differential --test token_log_differential" \
 		"-p solstone-core-spp-attest --test spp_attest_differential" \
 		"-p solstone-core-spp-ratls --test composite_differential" \

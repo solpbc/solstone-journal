@@ -572,17 +572,26 @@ the set-aside directory is finished.
 
 ⚠ **`retention.raw_media` accepts an arbitrary string.** The init-finalize route validates the day count and never checks the mode for membership, and `RetentionPolicy.is_eligible` (`:273-281`) reads an unknown mode as *keep* by falling off the end — it fails closed **by accident**, not by construction.
 
-## `P-web` — 🔴 SPLITS into `P-web-[app]`
+## `P-web` — SPLITS into `P-web-[app]`
 
-**Founder-ruled 2026-08-06: this plate breaks into a set of per-app plates**, `P-web-[app]`, worked through individually. ⏸ **The list of apps is a founder approval and has not been made yet** — ⛔ no `P-web-*` plate exists until it is.
+✅ **TEN plates APPROVED by the founder 2026-08-09.** The remainder are deferred, not dropped.
 
-🆕 **The retention approval surface lives in the home app.** When retention has marked something for removal it populates there, with a minimal interface for the owner to choose. ⛔ That is the only owner-facing affordance for approving a removal.
+| Plate | From | Note |
+|---|---|---|
+| `P-web-devices` | the app labelled *devices* | device metadata, posture, adding/managing devices; takes the dashboard. ⚠ **The observer LAYER dies inside it — the UI does not** |
+| `P-web-network` | `network` | VPN-method config and network status **only** |
+| `P-web-home` | `home` | hosts the **retention approval surface** — when retention marks something, it populates here |
+| `P-web-speakers` | `speakers` | the largest surface. ⚠ **Distinct from `P-speaker-id`** — same word, different plate: this is the web surface, that is the engine. 📌 Founder expects **substantial dead code** here, so the measured size will likely fall once a lane is in it |
+| `P-web-thinking` | `thinking` | |
+| `P-web-body` | `body` | ⛔ owner **body** data — never "health" |
+| `P-web-entities` | `entities` | |
+| `P-web-settings` | `settings` | |
+| `P-web-transcripts` | `transcripts` | |
+| `P-web-import` | `import` | |
 
-The journal web service — human interface, web apps, **and the API**.
+⏸ **Deferred, to be grouped rather than plated one-for-one** — decided when the work gets closer: `support` · `backup` · `timeline` · `sol` · `health` · `curation` · `chat` · `search` · `tokens` · `activities` · `news` · `reflections` · `stats` · `awareness` · `facets`. ⚠ Several are smaller than their own handoff would be.
 
-⛔ **Access model: 100% of `P-web` is either `localhost:5015` (human web, or a same-device CLI) or an authorized linked device. There is no third way in — the boundary *is* the authorization.** ⛔ A third access path is not a decision to make inside this repo.
-
-⚠ 77 of 135 routes uncontracted including 20 state-changing; `/api/shell` — the most load-bearing endpoint in the owner UI — is not in the contract. ⛔ Zero of 177 contracted operations declare authentication, so a port generated from the contract inherits an unauthenticated surface.
+⛔ **The `convey` shell is not an app plate.** It is `P-web` core and already has its crate.
 
 ## `P-CLI`
 
