@@ -20,8 +20,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from solstone.apps.speakers import native as native_speakers
 from solstone.apps.speakers.attribution import (
     _load_setting_field,
+    _speaker_encoder_identity,
     compute_segment_candidate_evidence_readonly,
 )
 from solstone.apps.speakers.audio import resolve_audio_url
@@ -2105,256 +2107,6 @@ def _phase_keep_separate(prepared_plan: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _phase_direct_voiceprints(prepared_plan: dict[str, Any]) -> dict[str, Any]:
-    from solstone.think.entities import save_voiceprints_batch
-
-    target_id = prepared_plan["target"]["entity_id"]
-    entries = prepared_plan["direct_voiceprints"]["entries_to_add"]
-    existing_metadata = _entity_voiceprint_metadata(target_id)
-    to_save_entries: list[dict[str, Any]] = []
-    saved_keys: list[dict[str, Any]] = []
-    skipped_existing = 0
-    for entry in entries:
-        key = _key_tuple(entry["key"])
-        rows = existing_metadata.get(key, [])
-        if rows:
-            if any(row == entry["metadata"] for row in rows):
-                saved_keys.append(dict(entry["key"]))
-                continue
-            raise _IdentifyRepairRequired(
-                "direct_voiceprints",
-                "voiceprint_metadata_mismatch",
-                {"voiceprint": 1},
-            )
-        to_save_entries.append(entry)
-    if to_save_entries:
-        save_voiceprints_batch(
-            target_id,
-            _planned_voiceprint_items(to_save_entries),
-        )
-        saved_keys.extend(dict(entry["key"]) for entry in to_save_entries)
-    skipped_existing = max(0, len(entries) - len(saved_keys))
-    return {
-        "saved_keys": sorted(saved_keys, key=lambda key: tuple(key.values())),
-        "saved_count": len(saved_keys),
-        "skipped_existing_count": skipped_existing,
-        "counts": {"saved": len(saved_keys)},
-        "skipped_reasons": {"existing": skipped_existing},
-    }
-
-
-def _phase_corrections(prepared_plan: dict[str, Any]) -> dict[str, Any]:
-    from solstone.apps.speakers.attribution import append_speaker_correction
-
-    appended_keys: list[dict[str, Any]] = []
-    appended_count = 0
-    skipped_existing = 0
-    segment_count = 0
-    for segment in prepared_plan["segments"]:
-        seg_dir = segment_path(
-            segment["day"],
-            segment["segment_key"],
-            segment["stream"],
-            create=False,
-        )
-        existing = _load_segment_corrections(seg_dir)
-        segment_appended = 0
-        for row in segment["corrections"]["rows_to_append"]:
-            natural_match = [
-                existing_row
-                for existing_row in existing
-                if existing_row.get("sentence_id") == row["sentence_id"]
-                and existing_row.get("corrected_speaker") == row["corrected_speaker"]
-            ]
-            if natural_match:
-                if any(
-                    existing_row.get("operation_id") == prepared_plan["operation_id"]
-                    and existing_row.get("correction_kind") == "identify"
-                    for existing_row in natural_match
-                ):
-                    appended_keys.append(_sentence_key(segment, row["sentence_id"]))
-                    segment_appended += 1
-                else:
-                    skipped_existing += 1
-                continue
-            append_speaker_correction(seg_dir, dict(row))
-            existing.append(dict(row))
-            appended_keys.append(_sentence_key(segment, row["sentence_id"]))
-            appended_count += 1
-            segment_appended += 1
-        if segment_appended:
-            segment_count += 1
-    return {
-        "appended_keys": sorted(appended_keys, key=lambda item: tuple(item.values())),
-        "appended_count": len(appended_keys),
-        "skipped_existing_count": skipped_existing,
-        "segment_count": segment_count,
-        "counts": {"appended": len(appended_keys)},
-        "skipped_reasons": {"existing": skipped_existing},
-    }
-
-
-def _phase_labels(prepared_plan: dict[str, Any]) -> dict[str, Any]:
-    from solstone.apps.speakers.attribution import apply_label_patches
-
-    _load_embeddings_file, load_speaker_labels, _normalize, _scan, _check = (
-        _routes_helpers()
-    )
-    patched_keys: list[dict[str, Any]] = []
-    inserted_keys: list[dict[str, Any]] = []
-    already_intended = 0
-    segment_count = 0
-    for segment in prepared_plan["segments"]:
-        seg_dir = segment_path(
-            segment["day"],
-            segment["segment_key"],
-            segment["stream"],
-            create=False,
-        )
-        labels_data = load_speaker_labels(seg_dir) or {"labels": []}
-        current_by_sid: dict[int, dict[str, Any]] = {}
-        for label in labels_data.get("labels", []):
-            if isinstance(label, dict) and label.get("sentence_id") is not None:
-                current_by_sid[int(label["sentence_id"])] = dict(label)
-
-        patches: dict[int, dict[str, Any]] = {}
-        actual_segment_changed = False
-        for item in segment["labels"]:
-            sid = int(item["sentence_id"])
-            current = current_by_sid.get(sid)
-            intended = item["intended_label"]
-            prior_state = item["prior_state"]
-            prior = item.get("prior_label")
-            changed_by_plan = prior != intended
-            if current == intended:
-                if changed_by_plan:
-                    if prior_state == "absent":
-                        inserted_keys.append(_sentence_key(segment, sid))
-                    else:
-                        patched_keys.append(_sentence_key(segment, sid))
-                    actual_segment_changed = True
-                else:
-                    already_intended += 1
-                continue
-            if prior_state == "absent" and current is None:
-                patches[sid] = {
-                    "speaker": intended["speaker"],
-                    "confidence": intended["confidence"],
-                    "method": intended["method"],
-                }
-                inserted_keys.append(_sentence_key(segment, sid))
-                actual_segment_changed = True
-                continue
-            if prior_state == "present" and current == prior:
-                patches[sid] = {
-                    "speaker": intended["speaker"],
-                    "confidence": intended["confidence"],
-                    "method": intended["method"],
-                }
-                patched_keys.append(_sentence_key(segment, sid))
-                actual_segment_changed = True
-                continue
-            raise _IdentifyRepairRequired(
-                "labels",
-                "concurrent_change",
-                {"segment_label": 1, "concurrent_change": 1},
-            )
-        if patches:
-            apply_label_patches(seg_dir, patches, allow_insert=True)
-        if actual_segment_changed:
-            segment_count += 1
-    return {
-        "patched_sentence_keys": sorted(
-            patched_keys, key=lambda item: tuple(item.values())
-        ),
-        "inserted_sentence_keys": sorted(
-            inserted_keys, key=lambda item: tuple(item.values())
-        ),
-        "patched_count": len(patched_keys),
-        "inserted_count": len(inserted_keys),
-        "skipped_already_intended_count": already_intended,
-        "segment_count": segment_count,
-        "counts": {"patched": len(patched_keys), "inserted": len(inserted_keys)},
-        "skipped_reasons": {"already_intended": already_intended},
-    }
-
-
-def _phase_retro_tracker(prepared_plan: dict[str, Any]) -> dict[str, Any]:
-    from solstone.apps.speakers.candidate_tracker import CandidateTracker
-
-    retro = prepared_plan["retro_confirm"]
-    if not retro.get("matched") or retro.get("candidate_id") is None:
-        return {
-            "matched": False,
-            "candidate_id": None,
-            "saved_keys": [],
-            "voiceprints_saved_count": 0,
-            "voiceprints_skipped_existing_count": 0,
-            "tracker_updated": False,
-            "counts": {},
-            "skipped_reasons": {},
-        }
-    target_id = prepared_plan["target"]["entity_id"]
-    existing_metadata = _entity_voiceprint_metadata(target_id)
-    saved_keys: list[dict[str, Any]] = []
-    skipped_existing = 0
-    for entry in retro.get("voiceprints_to_add", []):
-        key = _key_tuple(entry["key"])
-        rows = existing_metadata.get(key, [])
-        if not rows:
-            saved_keys.append(dict(entry["key"]))
-            continue
-        if any(row == entry["metadata"] for row in rows):
-            saved_keys.append(dict(entry["key"]))
-            continue
-        raise _IdentifyRepairRequired(
-            "retro_tracker",
-            "voiceprint_metadata_mismatch",
-            {"voiceprint": 1},
-        )
-    tracker = CandidateTracker()
-    candidate = {
-        item.cand_id: item.to_json() for item in tracker.load_all_candidates()
-    }.get(int(retro["candidate_id"]))
-    if candidate is None:
-        raise _IdentifyRepairRequired(
-            "retro_tracker",
-            "candidate_missing",
-            {"speaker_candidate": 1},
-        )
-    if candidate not in (retro.get("candidate_before"), retro.get("candidate_after")):
-        raise _IdentifyRepairRequired(
-            "retro_tracker",
-            "concurrent_change",
-            {"speaker_candidate": 1, "concurrent_change": 1},
-        )
-    tracker_updated = retro.get("candidate_before") != retro.get("candidate_after")
-    if tracker_updated or retro.get("voiceprints_to_add"):
-        tracker.apply_retroactive_confirm_plan(_retro_plan_from_prepared(prepared_plan))
-        existing_metadata = _entity_voiceprint_metadata(target_id)
-        saved_keys = [
-            dict(entry["key"])
-            for entry in retro.get("voiceprints_to_add", [])
-            if any(
-                row == entry["metadata"]
-                for row in existing_metadata.get(_key_tuple(entry["key"]), [])
-            )
-        ]
-    skipped_existing = max(
-        0, len(retro.get("voiceprints_to_add", [])) - len(saved_keys)
-    )
-    return {
-        "matched": True,
-        "candidate_id": int(retro["candidate_id"]),
-        "saved_keys": sorted(saved_keys, key=lambda key: tuple(key.values())),
-        "voiceprints_saved_count": len(saved_keys),
-        "voiceprints_skipped_existing_count": skipped_existing,
-        "tracker_updated": tracker_updated,
-        "counts": {"saved": len(saved_keys), "tracker_updated": int(tracker_updated)},
-        "skipped_reasons": {"existing": skipped_existing},
-    }
-
-
 def _phase_sentinel(prepared_plan: dict[str, Any]) -> dict[str, Any]:
     sentinel = prepared_plan["sentinel"]
     cluster_key = str(sentinel["cluster_key"])
@@ -2385,10 +2137,6 @@ def _phase_sentinel(prepared_plan: dict[str, Any]) -> dict[str, Any]:
 _FORWARD_PHASES = {
     "entity": _phase_entity,
     "keep_separate": _phase_keep_separate,
-    "direct_voiceprints": _phase_direct_voiceprints,
-    "corrections": _phase_corrections,
-    "labels": _phase_labels,
-    "retro_tracker": _phase_retro_tracker,
     "sentinel": _phase_sentinel,
 }
 
@@ -2451,141 +2199,6 @@ def _execute_forward(prepared_plan: dict[str, Any]) -> dict[str, Any]:
     )
     _maybe_inject_identify_fault("after_committed")
     return result
-
-
-def identify_cluster(
-    cluster_id: int,
-    name: str | None = None,
-    entity_id: str | None = None,
-    *,
-    resolve_only: bool = False,
-    create_new: bool = False,
-    entity_type: str = "Person",
-    request_id: str | None = None,
-    reviewed_near_match_entity_ids: list[str] | None = None,
-) -> dict[str, Any]:
-    """Identify a discovered unknown speaker cluster."""
-    from solstone.think.entities.history import trust_operation_lock
-    from solstone.think.journal_io.errors import LockTimeout
-    from solstone.think.speaker_identify_operations import (
-        fold_all_operations,
-        fold_operation,
-        operation_id_for_request,
-    )
-
-    request_id_value = request_id or f"server:{uuid.uuid4().hex}"
-    operation_id = operation_id_for_request(request_id_value)
-    if resolve_only:
-        _planned, early = _plan_identify(
-            cluster_id,
-            name=name,
-            entity_id=entity_id,
-            resolve_only=True,
-            create_new=create_new,
-            entity_type=entity_type,
-            request_id=request_id_value,
-            operation_id=operation_id,
-            reviewed_near_match_entity_ids=reviewed_near_match_entity_ids,
-        )
-        assert early is not None
-        return early
-
-    try:
-        with trust_operation_lock():
-            state = fold_operation(operation_id)
-            if state is not None:
-                planned, early = _plan_identify(
-                    cluster_id,
-                    name=name,
-                    entity_id=entity_id,
-                    resolve_only=False,
-                    create_new=create_new,
-                    entity_type=entity_type,
-                    request_id=request_id_value,
-                    operation_id=operation_id,
-                    reviewed_near_match_entity_ids=reviewed_near_match_entity_ids,
-                )
-                if early is None:
-                    assert planned is not None
-                    if state.request_fingerprint != planned.request_fingerprint:
-                        return _fingerprint_conflict_result(operation_id, state)
-                elif not _stored_request_matches_raw(
-                    state.prepared_plan,
-                    cluster_id=cluster_id,
-                    name=name,
-                    entity_id=entity_id,
-                    create_new=create_new,
-                    entity_type=entity_type,
-                    reviewed_near_match_entity_ids=reviewed_near_match_entity_ids,
-                ):
-                    return _fingerprint_conflict_result(operation_id, state)
-                if state.terminal_status != "in_progress":
-                    return _state_status_result(state)
-                prepared_plan = state.prepared_plan
-            else:
-                planned, early = _plan_identify(
-                    cluster_id,
-                    name=name,
-                    entity_id=entity_id,
-                    resolve_only=False,
-                    create_new=create_new,
-                    entity_type=entity_type,
-                    request_id=request_id_value,
-                    operation_id=operation_id,
-                    reviewed_near_match_entity_ids=reviewed_near_match_entity_ids,
-                )
-                if early is not None:
-                    return early
-                assert planned is not None
-                for other in fold_all_operations():
-                    if (
-                        other.operation_id == operation_id
-                        or other.terminal_status != "committed"
-                    ):
-                        continue
-                    if other.cluster_member_set != frozenset(
-                        _member_tuple(member)
-                        for member in planned.prepared_plan["cluster"]["members"]
-                    ):
-                        continue
-                    if (
-                        other.target_entity_id
-                        == planned.prepared_plan["target"]["entity_id"]
-                    ):
-                        return (
-                            copy.deepcopy(other.result)
-                            if other.result
-                            else {
-                                "status": "identified",
-                                "operation_id": other.operation_id,
-                                "operation_state": "committed",
-                            }
-                        )
-                    return {
-                        "status": "conflict",
-                        "operation_id": operation_id,
-                        "operation_state": "not_prepared",
-                        "conflict_code": "member_set_target_conflict",
-                        "conflicting_operation_id": other.operation_id,
-                    }
-                _append_prepared(planned)
-                _maybe_inject_identify_fault("after_prepared")
-                prepared_plan = planned.prepared_plan
-            return _execute_forward(prepared_plan)
-    except LockTimeout:
-        raise
-    except _IdentifyRepairRequired as exc:
-        return _append_repair_required(
-            operation_id,
-            request_id_value,
-            exc.phase,
-            repair_code=exc.repair_code,
-            repair_categories=exc.repair_categories,
-        )
-    except Exception as exc:
-        if isinstance(exc, LockTimeout):
-            raise
-        return _recoverable_result(operation_id, str(exc))
 
 
 def _undo_category(**extras: Any) -> dict[str, Any]:
@@ -2706,129 +2319,6 @@ def _planned_correction_rows(
     return result
 
 
-def _undo_labels(state: Any, _undo_started_at: str) -> dict[str, Any]:
-    from solstone.apps.speakers.attribution import restore_label_rows
-
-    checkpoint = state.phase_checkpoints.get("labels")
-    report = _empty_undo_report(state.operation_id, status="undone")["undo_report"][
-        "labels"
-    ]
-    if not checkpoint:
-        return {"labels": report}
-    plan_map = _label_plan_map(state.prepared_plan)
-    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
-    for key in list(checkpoint.get("patched_sentence_keys", [])) + list(
-        checkpoint.get("inserted_sentence_keys", [])
-    ):
-        map_key = (
-            str(key["day"]),
-            str(key["stream"]),
-            str(key["segment_key"]),
-            int(key["sentence_id"]),
-        )
-        item = plan_map.get(map_key)
-        if item is None:
-            report["skipped_count"] += 1
-            report["skipped_reasons"]["missing_plan"] = (
-                report["skipped_reasons"].get("missing_plan", 0) + 1
-            )
-            continue
-        segment, label = item
-        grouped[(segment["day"], segment["stream"], segment["segment_key"])].append(
-            {
-                "sentence_id": label["sentence_id"],
-                "expected_current_label": label["intended_label"],
-                "prior_state": label["prior_state"],
-                "prior_label": label.get("prior_label"),
-            }
-        )
-    for day, stream, segment_key in sorted(grouped):
-        seg_dir = segment_path(day, segment_key, stream, create=False)
-        if not seg_dir.is_dir():
-            count = len(grouped[(day, stream, segment_key)])
-            report["skipped_count"] += count
-            report["skipped_reasons"]["missing"] = (
-                report["skipped_reasons"].get("missing", 0) + count
-            )
-            continue
-        delta = restore_label_rows(seg_dir, grouped[(day, stream, segment_key)])
-        for key, value in delta.items():
-            if key == "skipped_reasons":
-                for reason, count in value.items():
-                    report["skipped_reasons"][reason] = report["skipped_reasons"].get(
-                        reason, 0
-                    ) + int(count)
-            elif isinstance(value, int):
-                report[key] = int(report.get(key, 0)) + value
-    return {"labels": report}
-
-
-def _undo_corrections(state: Any, undo_started_at: str) -> dict[str, Any]:
-    from solstone.apps.speakers.attribution import append_speaker_correction
-
-    checkpoint = state.phase_checkpoints.get("corrections")
-    report = _empty_undo_report(state.operation_id, status="undone")["undo_report"][
-        "corrections"
-    ]
-    if not checkpoint:
-        return {"corrections": report}
-    correction_map = _planned_correction_rows(state.prepared_plan)
-    label_map = _label_plan_map(state.prepared_plan)
-    for key in checkpoint.get("appended_keys", []):
-        map_key = (
-            str(key["day"]),
-            str(key["stream"]),
-            str(key["segment_key"]),
-            int(key["sentence_id"]),
-        )
-        planned = correction_map.get(map_key)
-        label_item = label_map.get(map_key)
-        if planned is None or label_item is None:
-            report["skipped_count"] += 1
-            report["skipped_reasons"]["missing_plan"] = (
-                report["skipped_reasons"].get("missing_plan", 0) + 1
-            )
-            continue
-        segment, _row = planned
-        _segment, label = label_item
-        seg_dir = segment_path(
-            segment["day"],
-            segment["segment_key"],
-            segment["stream"],
-            create=False,
-        )
-        existing = _load_segment_corrections(seg_dir)
-        if any(
-            row.get("operation_id") == state.operation_id
-            and row.get("correction_kind") == "identify_undo"
-            and int(row.get("sentence_id", -1)) == int(key["sentence_id"])
-            for row in existing
-        ):
-            report["already_present_count"] += 1
-            report["skipped_count"] += 1
-            report["skipped_reasons"]["already_present"] = (
-                report["skipped_reasons"].get("already_present", 0) + 1
-            )
-            continue
-        prior = label.get("prior_label") or {}
-        append_speaker_correction(
-            seg_dir,
-            {
-                "sentence_id": int(key["sentence_id"]),
-                "original_speaker": state.target_entity_id,
-                "corrected_speaker": prior.get("speaker"),
-                "original_method": "user_identified",
-                "timestamp": undo_started_at,
-                "operation_id": state.operation_id,
-                "undo_of_operation_id": state.operation_id,
-                "correction_kind": "identify_undo",
-            },
-        )
-        report["appended_count"] += 1
-        report["restored_count"] += 1
-    return {"corrections": report}
-
-
 def _voiceprint_removals_for_checkpoint(state: Any) -> list[dict[str, Any]]:
     metadata_by_key: dict[tuple[str, str, str, int], dict[str, Any]] = {}
     for entry in state.prepared_plan["direct_voiceprints"]["entries_to_add"]:
@@ -2853,30 +2343,6 @@ def _voiceprint_removals_for_checkpoint(state: Any) -> list[dict[str, Any]]:
             {"key": dict(key), "expected_metadata": metadata_by_key[key_tuple]}
         )
     return removals
-
-
-def _undo_voiceprints(state: Any, _undo_started_at: str) -> dict[str, Any]:
-    from solstone.think.entities import remove_voiceprints_by_key
-
-    removals = _voiceprint_removals_for_checkpoint(state)
-    report = _empty_undo_report(state.operation_id, status="undone")["undo_report"][
-        "voiceprints"
-    ]
-    if not removals:
-        return {"voiceprints": report}
-    delta = remove_voiceprints_by_key(state.target_entity_id, removals)
-    report["removed_count"] = int(delta.get("removed_count", 0))
-    report["restored_count"] = report["removed_count"]
-    reasons = delta.get("skipped_reasons", {})
-    missing = int(reasons.get("missing", 0)) if isinstance(reasons, dict) else 0
-    mismatch = (
-        int(reasons.get("metadata_mismatch", 0)) if isinstance(reasons, dict) else 0
-    )
-    report["missing_count"] = missing
-    report["metadata_mismatch_count"] = mismatch
-    report["skipped_count"] = int(delta.get("skipped_count", 0))
-    report["skipped_reasons"] = {"missing": missing, "metadata_mismatch": mismatch}
-    return {"voiceprints": report}
 
 
 def _undo_tracker(state: Any, _undo_started_at: str) -> dict[str, Any]:
@@ -2975,9 +2441,6 @@ def _undo_entity(state: Any, _undo_started_at: str) -> dict[str, Any]:
 
 
 _UNDO_PHASES = {
-    "labels": _undo_labels,
-    "corrections": _undo_corrections,
-    "voiceprints": _undo_voiceprints,
     "tracker": _undo_tracker,
     "sentinel": _undo_sentinel,
     "entity": _undo_entity,
@@ -3072,93 +2535,38 @@ def _append_undo_repair_required(
     }
 
 
-def undo_identify_operation(operation_id: str) -> dict[str, Any]:
-    """Undo a committed speaker identify operation by operation id."""
-    from solstone.think.entities.history import trust_operation_lock
-    from solstone.think.journal_io.errors import LockTimeout
-    from solstone.think.speaker_identify_operations import (
-        UNDO_PHASE_ORDER,
-        append_event,
-        fold_operation,
+def identify_cluster(
+    cluster_id: int,
+    name: str | None = None,
+    entity_id: str | None = None,
+    *,
+    resolve_only: bool = False,
+    create_new: bool = False,
+    entity_type: str = "Person",
+    request_id: str | None = None,
+    reviewed_near_match_entity_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Identify a discovered unknown speaker cluster through the native owner."""
+    return native_speakers.identify(
+        get_journal(),
+        cluster_id=cluster_id,
+        name=name,
+        entity_id=entity_id,
+        resolve_only=resolve_only,
+        create_new=create_new,
+        entity_type=entity_type,
+        request_id=request_id or f"server:{uuid.uuid4().hex}",
+        reviewed_near_match_entity_ids=reviewed_near_match_entity_ids,
+        caller=None,
+        actor=None,
+        encoder=_speaker_encoder_identity(),
     )
 
-    state = fold_operation(operation_id)
-    if state is None:
-        return {
-            "status": "not_found",
-            "operation_id": operation_id,
-            "list_command": "sol call speakers identify-operations",
-        }
-    if state.terminal_status == "undone" and state.undo_report is not None:
-        result = copy.deepcopy(state.undo_report)
-        result["status"] = "already_undone"
-        return result
-    if state.terminal_status not in {"committed", "undoing"}:
-        return _state_status_result(state)
 
-    current_phase = "undo_prepared"
-    try:
-        with trust_operation_lock():
-            state = fold_operation(operation_id)
-            if state is None:
-                return {
-                    "status": "not_found",
-                    "operation_id": operation_id,
-                    "list_command": "sol call speakers identify-operations",
-                }
-            if state.terminal_status == "undone" and state.undo_report is not None:
-                result = copy.deepcopy(state.undo_report)
-                result["status"] = "already_undone"
-                return result
-            if state.terminal_status not in {"committed", "undoing"}:
-                return _state_status_result(state)
-            undo_started_at = _append_undo_prepared_once(
-                operation_id,
-                state.request_id,
-            )
-            _maybe_inject_identify_fault("after_undo_prepared")
-            for phase in UNDO_PHASE_ORDER:
-                state = fold_operation(operation_id)
-                if state is not None and phase in state.undo_phase_checkpoints:
-                    continue
-                current_phase = phase
-                delta = _UNDO_PHASES[phase](state, undo_started_at)
-                _append_undo_checkpoint(operation_id, state.request_id, phase, delta)
-                _maybe_inject_identify_fault(f"after_undo_{phase}")
-            state = fold_operation(operation_id)
-            report = _aggregate_undo_report(state, status="undone")
-            append_event(
-                _identify_event(
-                    operation_id=operation_id,
-                    request_id=state.request_id,
-                    event_kind="undo_committed",
-                    event_id=f"{operation_id}:undo_committed",
-                    undo_report=report,
-                )
-            )
-            _maybe_inject_identify_fault("after_undo_committed")
-            return report
-    except LockTimeout:
-        raise
-    except _IdentifyRepairRequired as exc:
-        return _append_undo_repair_required(
-            operation_id,
-            state.request_id if state else operation_id,
-            exc.phase,
-            repair_code=exc.repair_code,
-            repair_categories=exc.repair_categories,
-        )
-    except Exception as exc:
-        if isinstance(exc, LockTimeout):
-            raise
-        from solstone.think.entities import VoiceprintRemovalError
-
-        if isinstance(exc, VoiceprintRemovalError):
-            return _append_undo_repair_required(
-                operation_id,
-                state.request_id if state else operation_id,
-                current_phase,
-                repair_code="voiceprint_removal_ambiguous",
-                repair_categories={"voiceprints": 1},
-            )
-        return _undo_recoverable_result(operation_id, str(exc))
+def undo_identify_operation(operation_id: str) -> dict[str, Any]:
+    """Undo one speaker identify operation through the native owner."""
+    return native_speakers.undo_identify(
+        get_journal(),
+        operation_id=operation_id,
+        encoder=_speaker_encoder_identity(),
+    )
