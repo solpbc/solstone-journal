@@ -186,11 +186,9 @@ def test_success_maps_request_response_payload_and_cleans_temp_dir(tmp_path: Pat
         {"id": 1, "start": 10.0, "end": 10.5, "text": "one", "speaker": 2},
         {"id": 2, "start": 11.0, "end": 11.5, "text": "two"},
     ]
-    assert result.embeddings_data is not None
-    assert result.embeddings_data["embeddings"].shape == (
-        2,
-        WESPEAKER_EMBEDDING_WIDTH,
-    )
+    assert result.embedding_payload is not None
+    assert result.embedding_payload.statement_ids == [1, 2]
+    assert len(result.embedding_payload.payload) == 2 * WESPEAKER_EMBEDDING_WIDTH * 4
     assert result.speaker_evidence.speaker_evidence == "multi"
     assert result.overlap_fraction == 0.25
 
@@ -205,7 +203,7 @@ def test_helper_shaped_wire_literals_are_accepted(tmp_path: Path):
 
     result, _request, _temp_dir = _run_adapter(tmp_path, response=response)
 
-    assert result.embeddings_data is not None
+    assert result.embedding_payload is not None
 
 
 @pytest.mark.parametrize(
@@ -373,7 +371,7 @@ def test_zero_admitted_rows_are_accepted_without_embeddings(tmp_path: Path):
         statements_restored=short_statements,
     )
 
-    assert result.embeddings_data is None
+    assert result.embedding_payload is None
     assert result.statements == short_statements
     assert result.statement_labels is None
 

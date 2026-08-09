@@ -15,12 +15,15 @@ event carries. Two rules govern everything here:
 | Exit | Meaning | Input file | Output |
 |------|---------|-----------|--------|
 | `0` | Work is done. Either a transcript was written, or the clip was silence-filtered / preserved by policy. | Consumed or preserved per policy | Transcript `.jsonl` (+ `.npz`) written, or a header-only terminal `.jsonl` record written for filtered silence before raw removal |
-| `69` (`EXIT_PROVIDER_BLOCKED`) | **Honest deferral.** The STT provider could not do the work. Nothing was attempted downstream, nothing was written. | **Preserved on disk** | None |
-| `1` | Hard failure. Something broke that a retry will not fix on its own. | Preserved on disk | None |
+| `69` (`EXIT_PROVIDER_BLOCKED`) | **Honest deferral.** The STT provider, or the handler-generated native embedding payload, could not complete the work. | **Preserved on disk** | None |
+| `75` | Temporary native transcript-write failure (launch, local output, verification, or malformed response). | Preserved on disk | None or a detected partial NPZ sidecar |
+| `78` | Native writer host or installation configuration failure. | Preserved on disk | None |
+| `1` | Hard failure, including an invalid native transcript-write request. | Preserved on disk | None |
 
-`sense.py` treats each distinctly. On `69` it records **neither** a success nor a
-failure — it calls `_check_segment_observed()` with no error and does not record a
-successful contact. On `1` it records a handler failure and raises a notification.
+`sense.py` treats `69` as neither a success nor a failure — it calls
+`_check_segment_observed()` with no error and does not record a successful contact.
+The hard/configuration/temporary codes (`1`, `75`, and `78`) are handler failures
+and retain the raw input for investigation or retry.
 
 The deferral path was previously a bare `return`, which exited `0` and made
 `sense.py` log "Handler completed successfully" for a segment that was never
@@ -114,6 +117,11 @@ Every deferred and failed event carries a machine-readable `reason`.
 | `hosted_transcribe_contract_failed` | confidential backend | Hosted STT returned 200 with invalid JSON, a non-object body, or a body that violated the expected word-timing contract. |
 | `hosted_transcribe_unexpected_status` | confidential backend | Hosted STT returned a non-200 status outside the named rejected/backpressure buckets. |
 | `speaker_analysis_native_failure` | native speakers-analyze typed failure | Speaker analysis failed after STT. The event carries content-free native attribution fields below; the local log carries full details. |
+| `destination-exists` | native transcript writer | An output appeared despite the handler's redo guard; the event fails hard but the log explains that it is already processed / redo-shaped. |
+| `invalid-output-path`, `malformed-request`, `unknown-schema`, `missing-statement-id`, `invalid-statement-id`, `duplicate-statement-id`, `invalid-statement`, `invalid-header` | native transcript writer | Handler request-construction failure; hard failure (`1`). |
+| `payload-unreadable`, `payload-invalid`, `payload-non-finite` | native transcript writer | The handler's own generated embedding payload was rejected; deferred (`69`) without blaming owner input. |
+| `output-unwritable`, `npz-verification-failed`, `internal-error`, `launch-failed`, `invalid-response`, `orphan-npz-remove-failed`, `payload-tempfile-failed` | native transcript writer | Temporary write failure (`75`); logs warn if an NPZ exists without its JSONL. |
+| `unsupported-host`, `handshake-skip`, `handshake-fail` | native transcript writer | Native writer compatibility or installation failure (`78`). |
 | *(provider reason code)* | failed path | On a hard failure from a provider error — e.g. `transcription_http_error`, `invalid_json`, `contract_violation`. |
 | *(exception type name)* | failed path | On any other hard failure. |
 

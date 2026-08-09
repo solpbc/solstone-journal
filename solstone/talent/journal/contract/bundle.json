@@ -159,6 +159,9 @@
               "emotion": {
                 "type": "string"
               },
+              "sentence_id": {
+                "type": "integer"
+              },
               "source": {
                 "type": "string"
               },
@@ -198,6 +201,7 @@
             "header.raw",
             "record.start",
             "record.text",
+            "record.sentence_id",
             "record.corrected",
             "record.source",
             "record.speaker",
@@ -209,7 +213,7 @@
           "producer_write_paths": [
             "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/audio.jsonl"
           ],
-          "reference_writer": "solstone.observe.transcribe.main",
+          "reference_writer": "solstone-core speaker-transcript-write",
           "schema_owner": "observe.transcribe",
           "write_discipline": "headered_jsonl atomic whole-file replace"
         }

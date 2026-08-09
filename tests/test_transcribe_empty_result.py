@@ -5,8 +5,10 @@
 
 import argparse
 import datetime
+import importlib
 import json
 import logging
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -18,6 +20,10 @@ from solstone.observe.processing_record import (
     REASON_NO_DECODABLE_AUDIO,
     SCHEMA,
     STATE_EMPTY,
+)
+from solstone.observe.transcribe.native import (
+    NativeSpeakerTranscriptWriteError,
+    SpeakerTranscriptWriteResponse,
 )
 from solstone.observe.transcribe.speakers_analyze_adapter import SpeakerAnalyzeResult
 from solstone.observe.utils import SAMPLE_RATE
@@ -42,11 +48,32 @@ SOUND_TAGS = {
 def _speaker_result(statements: list[dict]) -> SpeakerAnalyzeResult:
     return SpeakerAnalyzeResult(
         statements=[dict(statement) for statement in statements],
-        embeddings_data=None,
+        embedding_payload=None,
         speaker_evidence=SpeakerEvidenceDecision("single", 0.0, 0.0),
         overlap_fraction=0.0,
         statement_labels=None,
     )
+
+
+@pytest.fixture(autouse=True)
+def _native_transcript_writer(monkeypatch: pytest.MonkeyPatch):
+    """Keep empty-result handler tests independent of a built native helper."""
+    transcribe_main = importlib.import_module("solstone.observe.transcribe.main")
+
+    def write(**request):
+        header = dict(request["header"])
+        segment_meta = header.pop("segment_meta", None)
+        if segment_meta:
+            header.update(segment_meta)
+        Path(request["jsonl_path"]).write_text(json.dumps(header) + "\n")
+        return SpeakerTranscriptWriteResponse(
+            jsonl_path=request["jsonl_path"],
+            npz_path=request["npz_path"],
+            statement_count=len(request["statements"]),
+            embedding_row_count=len(request["embedding_statement_ids"] or []),
+        )
+
+    monkeypatch.setattr(transcribe_main, "write_speaker_transcript", write)
 
 
 SILENCE_SOUND_TAGS = {
@@ -129,7 +156,7 @@ def test_process_audio_speech_writes_sound_tags_and_keeps_audio(
 ):
     from solstone.observe.transcribe.main import process_audio
 
-    statements = [{"id": 0, "start": 0.0, "end": 1.0, "text": "hi"}]
+    statements = [{"id": 1, "start": 0.0, "end": 1.0, "text": "hi"}]
 
     with (
         patch(
@@ -345,8 +372,12 @@ def test_empty_statements_write_failure_preserves_audio(
             return_value=_backend_module(),
         ),
         patch(
-            "solstone.observe.transcribe.main.write_text",
-            side_effect=RuntimeError("disk full"),
+            "solstone.observe.transcribe.main.write_speaker_transcript",
+            side_effect=NativeSpeakerTranscriptWriteError(
+                reason="output-unwritable",
+                message="disk full",
+                exit_code=75,
+            ),
         ),
         patch("solstone.observe.transcribe.main.callosum_send") as mock_send,
     ):
@@ -486,12 +517,16 @@ def test_vad_no_speech_write_failure_preserves_audio(
         patch("solstone.observe.vad.run_vad", return_value=no_speech_vad_result),
         patch("solstone.observe.transcribe.main.tag_audio", return_value=SOUND_TAGS),
         patch(
-            "solstone.observe.transcribe.main.write_text",
-            side_effect=RuntimeError("disk full"),
+            "solstone.observe.transcribe.main.write_speaker_transcript",
+            side_effect=NativeSpeakerTranscriptWriteError(
+                reason="output-unwritable",
+                message="disk full",
+                exit_code=75,
+            ),
         ),
         patch("solstone.observe.transcribe.main.callosum_send"),
     ):
-        with pytest.raises(RuntimeError, match="disk full"):
+        with pytest.raises(SystemExit) as exc:
             _process_one(
                 raw_path,
                 args,
@@ -499,6 +534,7 @@ def test_vad_no_speech_write_failure_preserves_audio(
                 "parakeet",
             )
 
+    assert exc.value.code == 75
     assert raw_path.exists()
     assert not raw_path.with_suffix(".jsonl").exists()
 

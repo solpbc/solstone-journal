@@ -56,9 +56,19 @@ HelperInvoker = Callable[[list[str], str, Path], "HelperInvocationResult"]
 
 
 @dataclass(frozen=True)
+class SpeakerEmbeddingPayload:
+    """Validated raw embedding bytes and their native transcript metadata."""
+
+    payload: bytes
+    statement_ids: list[int]
+    durations_s: list[float]
+    encoder: str
+
+
+@dataclass(frozen=True)
 class SpeakerAnalyzeResult:
     statements: list[dict[str, Any]]
-    embeddings_data: dict[str, np.ndarray] | None
+    embedding_payload: SpeakerEmbeddingPayload | None
     speaker_evidence: SpeakerEvidenceDecision
     overlap_fraction: float
     statement_labels: list[int | None] | None
@@ -517,21 +527,21 @@ def _accepted_result_from_response(
         raise NativePayloadError("payload", "embedding-skipped-count-mismatch")
 
     payload_bytes = _read_payload_bytes(payload_path, expected_bytes)
-    embeddings_data: dict[str, np.ndarray] | None
+    embedding_payload: SpeakerEmbeddingPayload | None
     if rows > 0:
         embeddings = np.frombuffer(payload_bytes, dtype="<f4").reshape(
             (rows, WESPEAKER_EMBEDDING_WIDTH)
         )
         if not np.isfinite(embeddings).all():
             raise NativePayloadError("payload", "nonfinite-embedding")
-        embeddings_data = {
-            "embeddings": embeddings.astype(np.float32, copy=False),
-            "statement_ids": np.asarray(statement_ids, dtype=np.int32),
-            "durations_s": np.asarray(durations_s, dtype=np.float32),
-            "encoder": np.array(ENCODER_ID),
-        }
+        embedding_payload = SpeakerEmbeddingPayload(
+            payload=payload_bytes,
+            statement_ids=statement_ids,
+            durations_s=durations_s,
+            encoder=ENCODER_ID,
+        )
     else:
-        embeddings_data = None
+        embedding_payload = None
 
     evidence = _required_object(response, "evidence")
     decision = _required_str(evidence, "speaker_evidence")
@@ -558,7 +568,7 @@ def _accepted_result_from_response(
 
     return SpeakerAnalyzeResult(
         statements=statements,
-        embeddings_data=embeddings_data,
+        embedding_payload=embedding_payload,
         speaker_evidence=speaker_evidence,
         overlap_fraction=overlap_fraction,
         statement_labels=labels,
@@ -756,6 +766,7 @@ __all__ = [
     "DEFAULT_INVOCATION_BUDGET",
     "PRODUCER_ID",
     "RESPONSE_SCHEMA",
+    "SpeakerEmbeddingPayload",
     "SpeakerAnalyzeResult",
     "SpeakersAnalyzeBudget",
     "analyze_speakers",

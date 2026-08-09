@@ -29,8 +29,9 @@ Platform optimizations:
 - Linux hosts use a supervised parakeet.cpp server.
 
 Failure semantics & telemetry:
-- Exit 0 = output written or silence-filtered; EXIT_PROVIDER_BLOCKED (69) = honest
-  deferral with the input preserved for the daily retry; 1 = hard failure.
+- Exit 0 = output written or silence-filtered; 69 = honest provider or generated-
+  payload deferral; 75 = temporary native write failure; 78 = native installation
+  configuration failure; 1 = hard failure.
 - Every attempt emits one content-free observe.transcribed event carrying per-stage
   timings and a machine-readable reason.
 - Full contract: solstone/observe/transcribe/failure-and-telemetry.md
@@ -60,6 +61,7 @@ from solstone.apps.settings.install_copy import (
     STT_NO_LOCAL_STT_RECOVERY,
 )
 from solstone.apps.speakers.encoder_config import (
+    ENCODER_ID,
     OVERLAP_DETECTOR_ID,
     SPEAKER_EVIDENCE_VERSION,
 )
@@ -82,6 +84,12 @@ from solstone.observe.transcribe import (
 )
 from solstone.observe.transcribe import transcribe as stt_transcribe
 from solstone.observe.transcribe.config import confidential_audio_enabled
+from solstone.observe.transcribe.native import (
+    COMPOSED_COMMAND_WARNING,
+    NativeSpeakerTranscriptWriteError,
+    SpeakerTranscriptWriteResponse,
+    write_speaker_transcript,
+)
 from solstone.observe.transcribe.resource import (
     CONFIDENTIAL_STT_MAX_AUDIO_SECONDS,
     STT_SURFACE,
@@ -102,8 +110,6 @@ from solstone.observe.utils import (
     load_audio,
 )
 from solstone.think.callosum import callosum_send
-from solstone.think.journal_io import write_text
-from solstone.think.journal_io.npz import write_npz
 from solstone.think.media import AUDIO_EXTENSIONS as SUPPORTED_AUDIO_FORMATS
 from solstone.think.providers.memory import gb, read_available_bytes
 from solstone.think.providers.parakeet_install import ParakeetProviderError
@@ -450,6 +456,8 @@ def _failure_reason(exc: Exception) -> str:
     Provider errors already carry a reason code; anything else is labelled by its
     exception type.
     """
+    if isinstance(exc, NativeSpeakerTranscriptWriteError):
+        return exc.reason
     if isinstance(exc, SpeakerAnalyzeError):
         return SPEAKER_ANALYSIS_FAILURE_REASON
     if isinstance(exc, ParakeetProviderError):
@@ -526,9 +534,48 @@ def _build_base_event(
     return event
 
 
-def _statements_to_jsonl(
+def _native_exit_code(error: NativeSpeakerTranscriptWriteError) -> int:
+    if error.reason in {
+        "payload-unreadable",
+        "payload-invalid",
+        "payload-non-finite",
+    }:
+        return EXIT_PROVIDER_BLOCKED
+    if error.reason in {"unsupported-host", "handshake-skip", "handshake-fail"}:
+        return SPEAKERS_ANALYZE_EX_CONFIG
+    if error.reason in {
+        "launch-failed",
+        "invalid-response",
+        "orphan-npz-remove-failed",
+        "payload-tempfile-failed",
+    }:
+        return 75
+    if error.exit_code == 75:
+        return 75
+    return 1
+
+
+def _log_native_write_failure(
+    raw_path: Path, error: NativeSpeakerTranscriptWriteError
+) -> None:
+    logging.error("Native transcript write failed for %s: %s", raw_path, error)
+    if error.partial_output:
+        logging.warning("%s Input: %s", COMPOSED_COMMAND_WARNING, raw_path)
+
+
+def _base_time_us_of_day(base_datetime: datetime.datetime) -> int:
+    return (
+        (base_datetime.hour * 3600 + base_datetime.minute * 60 + base_datetime.second)
+        * 1_000_000
+        + base_datetime.microsecond
+    )
+
+
+def _write_native_transcript(
+    raw_path: Path,
+    jsonl_path: Path,
+    *,
     statements: list[dict],
-    raw_filename: str,
     base_datetime: datetime.datetime,
     model_info: dict,
     source: str | None = None,
@@ -536,161 +583,83 @@ def _statements_to_jsonl(
     vad_result: VadResult | None = None,
     segment_meta: dict | None = None,
     backend: str | None = None,
-    *,
     overlap_fraction: float | None = None,
     overlap_detector: str | None = None,
     speaker_evidence: SpeakerEvidenceDecision | None = None,
     processing_record: dict | None = None,
     sound_tags: dict | None = None,
     speaker_analysis_producer: str | None = None,
-) -> list[str]:
-    """Convert statements to JSONL lines.
-
-    Args:
-        statements: List of statements
-        raw_filename: Original audio filename for metadata
-        base_datetime: Base datetime for timestamp calculation
-        model_info: Dict with model, device, compute_type from backend
-        source: Optional source label (e.g., "mic", "sys")
-        observer: Optional observer name for metadata
-        vad_result: Optional VAD result for noise detection metadata
-        segment_meta: Optional metadata dict from SEGMENT_META env var
-            (facet, setting, host, platform, etc.).
-        backend: Optional STT backend name (e.g., "parakeet")
-        overlap_fraction: Optional fraction of speech containing overlapping speakers
-        overlap_detector: Optional overlap detector identifier
-        speaker_evidence: Optional native speaker-evidence decision
-        processing_record: Optional _solstone_processing record
-        sound_tags: Optional ambient sound-tag metadata
-        speaker_analysis_producer: Optional segment-level speaker analysis producer id
-
-    Returns:
-        List of JSON strings (metadata line first, then entries)
-    """
-    # Build metadata line with transcription config
-    metadata = {
-        "raw": raw_filename,
+    embedding_payload: object | None = None,
+    redo: bool = False,
+) -> SpeakerTranscriptWriteResponse:
+    """Route every transcript disposition through the sole native writer."""
+    header: dict = {
+        "raw": f"{raw_path.stem}{raw_path.suffix}",
         "backend": backend or "unknown",
         "model": model_info.get("model", "unknown"),
         "device": model_info.get("device", "unknown"),
         "compute_type": model_info.get("compute_type", "unknown"),
     }
     if observer:
-        metadata["observer"] = observer
+        header["observer"] = observer
 
-    # Add noise detection metadata if available
     if vad_result:
-        metadata["duration"] = round(vad_result.duration, 2)
-        metadata["noisy"] = vad_result.is_noisy()
+        header["duration"] = round(vad_result.duration, 2)
+        header["noisy"] = vad_result.is_noisy()
         if vad_result.noisy_rms is not None:
-            metadata["noisy_rms"] = round(vad_result.noisy_rms, 4)
-            metadata["noisy_s"] = round(vad_result.noisy_s, 1)
+            header["noisy_rms"] = round(vad_result.noisy_rms, 4)
+            header["noisy_s"] = round(vad_result.noisy_s, 1)
         if vad_result.loud_windows > 0:
-            metadata["loud_windows"] = vad_result.loud_windows
-            metadata["speech_loud_windows"] = vad_result.speech_loud_windows
+            header["loud_windows"] = vad_result.loud_windows
+            header["speech_loud_windows"] = vad_result.speech_loud_windows
             ratio = vad_result.loud_speech_ratio
             if ratio is not None:
-                metadata["loud_speech_ratio"] = round(ratio, 2)
+                header["loud_speech_ratio"] = round(ratio, 2)
     if overlap_fraction is not None and overlap_detector is not None:
-        metadata["overlap_fraction"] = round(float(overlap_fraction), 4)
-        metadata["overlap_detector"] = overlap_detector
+        header["overlap_fraction"] = round(float(overlap_fraction), 4)
+        header["overlap_detector"] = overlap_detector
     if speaker_evidence is not None:
-        metadata["speaker_evidence"] = speaker_evidence.speaker_evidence
-        metadata["speaker_evidence_multi_fraction"] = round(
+        header["speaker_evidence"] = speaker_evidence.speaker_evidence
+        header["speaker_evidence_multi_fraction"] = round(
             float(speaker_evidence.multi_window_fraction), 4
         )
-        metadata["speaker_evidence_version"] = SPEAKER_EVIDENCE_VERSION
+        header["speaker_evidence_version"] = SPEAKER_EVIDENCE_VERSION
     if speaker_analysis_producer is not None:
-        metadata["speaker_analysis_producer"] = speaker_analysis_producer
-
-    # Add segment metadata (from SEGMENT_META env var)
+        header["speaker_analysis_producer"] = speaker_analysis_producer
     if segment_meta:
-        for key, value in segment_meta.items():
-            metadata[key] = value
-
+        header["segment_meta"] = segment_meta
     if processing_record is not None:
-        metadata["_solstone_processing"] = processing_record
+        header["_solstone_processing"] = processing_record
     if sound_tags is not None:
-        metadata["sound_tags"] = sound_tags
+        header["sound_tags"] = sound_tags
 
-    lines = [json.dumps(metadata)]
-
-    # Build entry lines
+    native_statements: list[dict] = []
     for stmt in statements:
-        # Calculate absolute timestamp (handle None for invalid timestamps)
         start_seconds = stmt["start"] if stmt["start"] is not None else 0.0
-        stmt_dt = base_datetime + datetime.timedelta(seconds=start_seconds)
-        timestamp_str = stmt_dt.strftime("%H:%M:%S")
-
         entry = {
-            "start": timestamp_str,
+            "id": stmt["id"],
+            "start_offset_us": int(round(float(start_seconds) * 1_000_000)),
             "text": stmt["text"],
         }
-        if source:
-            entry["source"] = source
-
-        # Pass through speaker ID if present from native speaker analysis.
         if "speaker" in stmt:
             entry["speaker"] = stmt["speaker"]
+        native_statements.append(entry)
 
-        lines.append(json.dumps(entry))
-
-    return lines
-
-
-def _write_empty_processing_jsonl(
-    raw_path: Path,
-    jsonl_path: Path,
-    *,
-    model_info: dict,
-    observer: str | None,
-    vad_result: VadResult | None,
-    segment_meta: dict | None,
-    backend: str | None,
-    sound_tags: dict | None = None,
-) -> None:
-    record = build_processing_record(
-        state=STATE_EMPTY,
-        reason_code=REASON_NO_DECODABLE_AUDIO,
-        handler=HANDLER_TRANSCRIBE,
-        input_size=raw_path.stat().st_size,
+    payload = embedding_payload
+    return write_speaker_transcript(
+        raw_path=raw_path,
+        jsonl_path=jsonl_path,
+        npz_path=_get_embeddings_path(raw_path),
+        base_time_us_of_day=_base_time_us_of_day(base_datetime),
+        statements=native_statements,
+        header=header,
+        source=source,
+        embedding_payload=getattr(payload, "payload", None),
+        embedding_statement_ids=getattr(payload, "statement_ids", None),
+        embedding_durations_s=getattr(payload, "durations_s", None),
+        embedding_encoder=getattr(payload, "encoder", ENCODER_ID),
+        redo=redo,
     )
-    lines = _statements_to_jsonl(
-        [],
-        f"{raw_path.stem}{raw_path.suffix}",
-        datetime.datetime.min,
-        model_info,
-        observer=observer,
-        vad_result=vad_result,
-        segment_meta=segment_meta,
-        backend=backend,
-        processing_record=record,
-        sound_tags=sound_tags,
-    )
-    write_text(jsonl_path, "\n".join(lines) + "\n")
-
-
-def _write_failed_processing_jsonl(
-    raw_path: Path,
-    jsonl_path: Path,
-    *,
-    reason_code: str,
-) -> None:
-    record = build_processing_record(
-        state=STATE_FAILED,
-        reason_code=reason_code,
-        handler=HANDLER_TRANSCRIBE,
-        input_size=raw_path.stat().st_size,
-    )
-    lines = _statements_to_jsonl(
-        [],
-        f"{raw_path.stem}{raw_path.suffix}",
-        datetime.datetime.min,
-        {},
-        processing_record=record,
-        sound_tags=None,
-    )
-    write_text(jsonl_path, "\n".join(lines) + "\n")
 
 
 def process_audio(
@@ -807,16 +776,27 @@ def process_audio(
                 vad_result.speech_duration,
                 vad_result.duration,
             )
-            _write_empty_processing_jsonl(
-                raw_path,
-                jsonl_path,
-                model_info=model_info,
-                observer=observer,
-                vad_result=vad_result,
-                segment_meta=segment_meta,
-                backend=resolved_backend,
-                sound_tags=sound_tags,
-            )
+            # Routed: terminal-empty output is written only by solstone-core.
+            with timings.time("write"):
+                _write_native_transcript(
+                    raw_path,
+                    jsonl_path,
+                    statements=[],
+                    base_datetime=datetime.datetime.min,
+                    model_info=model_info,
+                    observer=observer,
+                    vad_result=vad_result,
+                    segment_meta=segment_meta,
+                    backend=resolved_backend,
+                    sound_tags=sound_tags,
+                    processing_record=build_processing_record(
+                        state=STATE_EMPTY,
+                        reason_code=REASON_NO_DECODABLE_AUDIO,
+                        handler=HANDLER_TRANSCRIBE,
+                        input_size=raw_path.stat().st_size,
+                    ),
+                    redo=redo,
+                )
             if preserve_all:
                 outcome = "preserved"
                 logging.info(
@@ -890,52 +870,43 @@ def process_audio(
                 min_statement_duration=MIN_STATEMENT_DURATION,
             )
         statements = speaker_result.statements
-        embeddings_data = speaker_result.embeddings_data
+        embedding_payload = speaker_result.embedding_payload
         speaker_evidence = speaker_result.speaker_evidence
         overlap_fraction_value = speaker_result.overlap_fraction
         speaker_analysis_producer = SPEAKERS_ANALYZE_PRODUCER_ID
 
-        # Convert to JSONL format (now with original timestamps)
-        raw_filename = f"{raw_path.stem}{raw_path.suffix}"
         processing_record = build_processing_record(
             state=STATE_ANALYZED,
             reason_code=REASON_OK,
             handler=HANDLER_TRANSCRIBE,
             input_size=raw_path.stat().st_size,
         )
-        jsonl_lines = _statements_to_jsonl(
-            statements,
-            raw_filename,
-            base_dt,
-            model_info,
-            source,
-            observer,
-            vad_result,
-            segment_meta,
-            resolved_backend,
-            overlap_fraction=overlap_fraction_value,
-            overlap_detector=OVERLAP_DETECTOR_ID,
-            speaker_evidence=speaker_evidence,
-            processing_record=processing_record,
-            sound_tags=sound_tags,
-            speaker_analysis_producer=speaker_analysis_producer,
-        )
-
-        # Write JSONL
+        # Routed: successful transcript output is written only by solstone-core.
         with timings.time("write"):
-            write_text(jsonl_path, "\n".join(jsonl_lines) + "\n")
+            native_response = _write_native_transcript(
+                raw_path,
+                jsonl_path,
+                statements=statements,
+                base_datetime=base_dt,
+                model_info=model_info,
+                source=source,
+                observer=observer,
+                vad_result=vad_result,
+                segment_meta=segment_meta,
+                backend=resolved_backend,
+                overlap_fraction=overlap_fraction_value,
+                overlap_detector=OVERLAP_DETECTOR_ID,
+                speaker_evidence=speaker_evidence,
+                processing_record=processing_record,
+                sound_tags=sound_tags,
+                speaker_analysis_producer=speaker_analysis_producer,
+                embedding_payload=embedding_payload,
+                redo=redo,
+            )
         logging.info(f"Transcribed {raw_path} -> {jsonl_path}")
 
-        # Save embeddings
-        if embeddings_data:
-            embeddings_path = _get_embeddings_path(raw_path)
-            with timings.time("write"):
-                write_npz(
-                    embeddings_path,
-                    embeddings_data,
-                    expected_keys=tuple(embeddings_data.keys()),
-                )
-            logging.info(f"Saved embeddings: {embeddings_path}")
+        if native_response.embedding_row_count > 0:
+            logging.info("Saved embeddings: %s", native_response.npz_path)
             try:
                 from solstone.apps.speakers.candidate_tracker import CandidateTracker
 
@@ -1068,6 +1039,27 @@ def process_audio(
             logging.exception("Failed to emit transcription failure event")
         raise
 
+    except NativeSpeakerTranscriptWriteError as e:
+        _log_native_write_failure(raw_path, e)
+        exit_code = _native_exit_code(e)
+        try:
+            event = _build_base_event(raw_path, vad_result, segment, observer)
+            _emit_transcribed(
+                event,
+                outcome="deferred" if exit_code == EXIT_PROVIDER_BLOCKED else "failed",
+                timings=timings,
+                backend=resolved_backend,
+                model_info=model_info,
+                backend_config=backend_config,
+                audio_seconds=audio_seconds,
+                reduced_seconds=reduced_seconds,
+                reason=e.reason,
+                error=_failure_label(e),
+            )
+        except Exception:
+            logging.exception("Failed to emit native transcript write failure event")
+        raise SystemExit(exit_code) from e
+
     except Exception as e:
         logging.error(f"Failed to transcribe {raw_path}: {e}", exc_info=True)
         try:
@@ -1127,27 +1119,38 @@ def _process_one(
             audio_buffer = load_audio(audio_path)
     except AudioDecodeError as e:
         logging.error("Failed to decode %s: %s", audio_path, e)
-        _write_failed_processing_jsonl(
-            audio_path,
-            jsonl_path,
-            reason_code=REASON_CORRUPT_INPUT,
-        )
+        journal_path = Path(get_journal())
         try:
-            journal_path = Path(get_journal())
-            try:
-                rel_input = journal_relative_path(journal_path, audio_path)
-            except ValueError:
-                rel_input = audio_path
-            event = {"input": str(rel_input)}
-            segment = get_segment_key(audio_path)
-            day = day_from_path(audio_path)
-            observer = os.getenv("OBSERVER_NAME")
-            if day:
-                event["day"] = day
-            if segment:
-                event["segment"] = segment
-            if observer:
-                event["observer"] = observer
+            rel_input = journal_relative_path(journal_path, audio_path)
+        except ValueError:
+            rel_input = audio_path
+        event = {"input": str(rel_input)}
+        segment = get_segment_key(audio_path)
+        day = day_from_path(audio_path)
+        observer = os.getenv("OBSERVER_NAME")
+        if day:
+            event["day"] = day
+        if segment:
+            event["segment"] = segment
+        if observer:
+            event["observer"] = observer
+        try:
+            # Routed: terminal-failed output is written only by solstone-core.
+            with timings.time("write"):
+                _write_native_transcript(
+                    audio_path,
+                    jsonl_path,
+                    statements=[],
+                    base_datetime=datetime.datetime.min,
+                    model_info={},
+                    processing_record=build_processing_record(
+                        state=STATE_FAILED,
+                        reason_code=REASON_CORRUPT_INPUT,
+                        handler=HANDLER_TRANSCRIBE,
+                        input_size=audio_path.stat().st_size,
+                    ),
+                    redo=getattr(args, "redo", False),
+                )
             _emit_transcribed(
                 event,
                 outcome="failed",
@@ -1155,6 +1158,20 @@ def _process_one(
                 reason=_failure_reason(e),
                 error=_failure_label(e),
             )
+        except NativeSpeakerTranscriptWriteError as native_error:
+            _log_native_write_failure(audio_path, native_error)
+            exit_code = _native_exit_code(native_error)
+            try:
+                _emit_transcribed(
+                    event,
+                    outcome="deferred" if exit_code == EXIT_PROVIDER_BLOCKED else "failed",
+                    timings=timings,
+                    reason=native_error.reason,
+                    error=_failure_label(native_error),
+                )
+            except Exception:
+                logging.exception("Failed to emit native decode-write failure event")
+            raise SystemExit(exit_code) from native_error
         except Exception:
             logging.exception("Failed to emit decode failure event")
         return
@@ -1179,16 +1196,40 @@ def _process_one(
         segment = get_segment_key(audio_path)
         event = _build_base_event(audio_path, vad_result, segment, observer)
 
-        _write_empty_processing_jsonl(
-            audio_path,
-            _get_jsonl_path(audio_path),
-            model_info={},
-            observer=observer,
-            vad_result=vad_result,
-            segment_meta=None,
-            backend=None,
-            sound_tags=sound_tags,
-        )
+        try:
+            # Routed: terminal-empty output is written only by solstone-core.
+            with timings.time("write"):
+                _write_native_transcript(
+                    audio_path,
+                    _get_jsonl_path(audio_path),
+                    statements=[],
+                    base_datetime=datetime.datetime.min,
+                    model_info={},
+                    observer=observer,
+                    vad_result=vad_result,
+                    segment_meta=None,
+                    backend=None,
+                    sound_tags=sound_tags,
+                    processing_record=build_processing_record(
+                        state=STATE_EMPTY,
+                        reason_code=REASON_NO_DECODABLE_AUDIO,
+                        handler=HANDLER_TRANSCRIBE,
+                        input_size=audio_path.stat().st_size,
+                    ),
+                    redo=getattr(args, "redo", False),
+                )
+        except NativeSpeakerTranscriptWriteError as error:
+            _log_native_write_failure(audio_path, error)
+            exit_code = _native_exit_code(error)
+            _emit_transcribed(
+                event,
+                outcome="deferred" if exit_code == EXIT_PROVIDER_BLOCKED else "failed",
+                timings=timings,
+                audio_seconds=len(audio_buffer) / SAMPLE_RATE,
+                reason=error.reason,
+                error=_failure_label(error),
+            )
+            raise SystemExit(exit_code) from error
         if preserve_all:
             outcome = "preserved"
             logging.info(

@@ -3,6 +3,7 @@
 
 """Tests for observe.transcribe module."""
 
+import importlib
 import json
 import shutil
 import subprocess
@@ -26,17 +27,16 @@ from solstone.observe.transcribe import (
     build_statement,
     build_statements_from_acoustic,
 )
-from solstone.observe.transcribe.main import _statements_to_jsonl
+from solstone.observe.transcribe.native import SpeakerTranscriptWriteResponse
 from solstone.observe.transcribe.speakers_analyze_adapter import (
     PRODUCER_ID as SPEAKERS_ANALYZE_PRODUCER_ID,
 )
 from solstone.observe.transcribe.speakers_analyze_adapter import (
     SpeakerAnalyzeResult,
+    SpeakerEmbeddingPayload,
 )
 from solstone.observe.utils import SAMPLE_RATE, AudioDecodeError, load_audio
 from solstone.observe.vad import AudioReduction, SpeechSegment, VadResult
-from solstone.think.journal_io.errors import MalformedDataError
-from solstone.think.journal_io.npz import load_npz
 from solstone.think.media import AUDIO_EXTENSIONS
 from tests._repo_inventory import assert_inventory_unchanged, repository_inventory
 
@@ -44,19 +44,80 @@ from tests._repo_inventory import assert_inventory_unchanged, repository_invento
 def _speaker_result(
     statements: list[dict],
     *,
-    embeddings_data: dict[str, np.ndarray] | None = None,
+    embedding_payload: SpeakerEmbeddingPayload | None = None,
     speaker_evidence: SpeakerEvidenceDecision | None = None,
     overlap_fraction: float = 0.0,
     statement_labels: list[int | None] | None = None,
 ) -> SpeakerAnalyzeResult:
     return SpeakerAnalyzeResult(
         statements=[dict(statement) for statement in statements],
-        embeddings_data=embeddings_data,
+        embedding_payload=embedding_payload,
         speaker_evidence=speaker_evidence
         or SpeakerEvidenceDecision("single", 0.0, 0.0),
         overlap_fraction=overlap_fraction,
         statement_labels=statement_labels,
     )
+
+
+@pytest.fixture(autouse=True)
+def _native_transcript_writer(monkeypatch: pytest.MonkeyPatch):
+    """Keep handler tests focused on Python orchestration, not a built helper."""
+    transcribe_main = importlib.import_module("solstone.observe.transcribe.main")
+
+    def write(**request):
+        header = dict(request["header"])
+        segment_meta = header.pop("segment_meta", None)
+        if segment_meta:
+            header.update(segment_meta)
+        base = request["base_time_us_of_day"] // 1_000_000
+        lines = [json.dumps(header)]
+        for statement in request["statements"]:
+            total = base + statement.get("start_offset_us", 0) // 1_000_000
+            hour, remainder = divmod(total % 86_400, 3_600)
+            minute, second = divmod(remainder, 60)
+            row = {
+                "start": f"{hour:02}:{minute:02}:{second:02}",
+                "text": statement["text"],
+                "sentence_id": statement["id"],
+            }
+            if request["source"]:
+                row["source"] = request["source"]
+            if "speaker" in statement:
+                row["speaker"] = statement["speaker"]
+            lines.append(json.dumps(row))
+        Path(request["jsonl_path"]).write_text("\n".join(lines) + "\n")
+        return SpeakerTranscriptWriteResponse(
+            jsonl_path=request["jsonl_path"],
+            npz_path=request["npz_path"],
+            statement_count=len(request["statements"]),
+            embedding_row_count=len(request["embedding_statement_ids"] or []),
+        )
+
+    monkeypatch.setattr(transcribe_main, "write_speaker_transcript", write)
+
+
+def _native_header(*, raw_path: Path = Path("audio.m4a"), **kwargs) -> dict:
+    """Return the request header assembled for the native writer."""
+    from solstone.observe.transcribe.main import _write_native_transcript
+
+    with patch(
+        "solstone.observe.transcribe.main.write_speaker_transcript",
+        return_value=SpeakerTranscriptWriteResponse(
+            jsonl_path="audio.jsonl",
+            npz_path="audio.npz",
+            statement_count=1,
+            embedding_row_count=0,
+        ),
+    ) as writer:
+        _write_native_transcript(
+            raw_path,
+            Path("audio.jsonl"),
+            statements=[{"id": 1, "start": 1.0, "end": 2.0, "text": "Hello"}],
+            base_datetime=datetime(2026, 5, 22, 9, 0, 0),
+            model_info={"model": "unit", "device": "cpu", "compute_type": "int8"},
+            **kwargs,
+        )
+    return writer.call_args.kwargs["header"]
 
 
 class TestBuildStatementsFromAcoustic:
@@ -508,8 +569,9 @@ class TestEmbeddingsFormat:
         assert len(statement_ids) == len(np.unique(statement_ids))
 
 
-def test_process_audio_failed_embeddings_write_emits_failed_event(tmp_path):
+def test_process_audio_failed_native_write_emits_failed_event(tmp_path):
     from solstone.observe.transcribe.main import process_audio
+    from solstone.observe.transcribe.native import NativeSpeakerTranscriptWriteError
 
     raw_path = (
         tmp_path / "chronicle" / "20260416" / "default" / "120000_300" / "audio.m4a"
@@ -523,20 +585,19 @@ def test_process_audio_failed_embeddings_write_emits_failed_event(tmp_path):
         has_speech=True,
         speech_segments=[(1.0, 6.0)],
     )
-    statements = [{"id": 0, "start": 0.0, "end": 1.0, "text": "hi"}]
+    statements = [{"id": 1, "start": 0.0, "end": 1.0, "text": "hi"}]
     backend_module = MagicMock()
     backend_module.get_model_info.return_value = {
         "model": "medium.en",
         "device": "cpu",
         "compute_type": "int8",
     }
-    embeddings_path = raw_path.with_suffix(".npz")
-    embeddings_data = {
-        "embeddings": np.zeros((1, 256), dtype=np.float32),
-        "statement_ids": np.zeros((1,), dtype=np.int32),
-        "durations_s": np.zeros((1,), dtype=np.float32),
-        "encoder": np.array("test"),
-    }
+    embedding_payload = SpeakerEmbeddingPayload(
+        payload=np.zeros((1, 256), dtype="<f4").tobytes(),
+        statement_ids=[1],
+        durations_s=[0.0],
+        encoder="test",
+    )
 
     with (
         patch(
@@ -555,25 +616,28 @@ def test_process_audio_failed_embeddings_write_emits_failed_event(tmp_path):
         ),
         patch(
             "solstone.observe.transcribe.speakers_analyze_adapter.analyze_speakers",
-            return_value=_speaker_result(statements, embeddings_data=embeddings_data),
+            return_value=_speaker_result(statements, embedding_payload=embedding_payload),
         ),
         patch("solstone.observe.transcribe.main.callosum_send") as mock_send,
         patch(
-            "solstone.observe.transcribe.main.write_npz",
-            side_effect=MalformedDataError(embeddings_path),
+            "solstone.observe.transcribe.main.write_speaker_transcript",
+            side_effect=NativeSpeakerTranscriptWriteError(
+                reason="output-unwritable",
+                message="temporary write failure",
+                exit_code=75,
+            ),
         ),
     ):
         with pytest.raises(SystemExit) as exc:
             process_audio(raw_path, audio_buffer, vad_result, {}, backend="parakeet")
 
-    assert exc.value.code == 1
+    assert exc.value.code == 75
     assert mock_send.call_args.args[:2] == ("observe", "transcribed")
     assert mock_send.call_args.kwargs["outcome"] == "failed"
-    assert "MalformedDataError" in mock_send.call_args.kwargs["error"]
-    assert not embeddings_path.exists()
+    assert "NativeSpeakerTranscriptWriteError" in mock_send.call_args.kwargs["error"]
 
 
-def test_process_audio_embeddings_write_round_trips_without_lock(tmp_path):
+def test_process_audio_routes_embedding_payload_to_native_writer(tmp_path):
     from solstone.observe.transcribe.main import process_audio
 
     raw_path = (
@@ -588,20 +652,19 @@ def test_process_audio_embeddings_write_round_trips_without_lock(tmp_path):
         has_speech=True,
         speech_segments=[(1.0, 6.0)],
     )
-    statements = [{"id": 0, "start": 0.0, "end": 1.0, "text": "hi"}]
+    statements = [{"id": 1, "start": 0.0, "end": 1.0, "text": "hi"}]
     backend_module = MagicMock()
     backend_module.get_model_info.return_value = {
         "model": "medium.en",
         "device": "cpu",
         "compute_type": "int8",
     }
-    embeddings_path = raw_path.with_suffix(".npz")
-    embeddings_data = {
-        "embeddings": np.zeros((1, 256), dtype=np.float32),
-        "statement_ids": np.zeros((1,), dtype=np.int32),
-        "durations_s": np.zeros((1,), dtype=np.float32),
-        "encoder": np.array("test"),
-    }
+    embedding_payload = SpeakerEmbeddingPayload(
+        payload=np.zeros((1, 256), dtype="<f4").tobytes(),
+        statement_ids=[1],
+        durations_s=[0.0],
+        encoder="test",
+    )
 
     with (
         patch(
@@ -620,21 +683,16 @@ def test_process_audio_embeddings_write_round_trips_without_lock(tmp_path):
         ),
         patch(
             "solstone.observe.transcribe.speakers_analyze_adapter.analyze_speakers",
-            return_value=_speaker_result(statements, embeddings_data=embeddings_data),
+            return_value=_speaker_result(statements, embedding_payload=embedding_payload),
         ),
         patch("solstone.observe.transcribe.main.callosum_send") as mock_send,
     ):
         process_audio(raw_path, audio_buffer, vad_result, {}, backend="parakeet")
 
-    loaded = load_npz(embeddings_path)
-    assert embeddings_path.exists()
-    assert loaded is not None
-    assert set(loaded) == {"embeddings", "statement_ids", "durations_s", "encoder"}
-    for key, expected in embeddings_data.items():
-        np.testing.assert_array_equal(loaded[key], expected)
+    row = json.loads(raw_path.with_suffix(".jsonl").read_text().splitlines()[1])
+    assert row["sentence_id"] == 1
     assert mock_send.call_args.args[:2] == ("observe", "transcribed")
     assert mock_send.call_args.kwargs["outcome"] == "transcribed"
-    assert list(embeddings_path.parent.glob("*.lock")) == []
 
 
 def test_process_audio_native_failure_emits_attributed_failure_only(tmp_path):
@@ -657,7 +715,7 @@ def test_process_audio_native_failure_emits_attributed_failure_only(tmp_path):
         has_speech=True,
         speech_segments=[(1.0, 6.0)],
     )
-    statements = [{"id": 0, "start": 0.0, "end": 1.0, "text": "hi"}]
+    statements = [{"id": 1, "start": 0.0, "end": 1.0, "text": "hi"}]
     backend_module = MagicMock()
     backend_module.get_model_info.return_value = {
         "model": "medium.en",
@@ -729,7 +787,7 @@ def test_process_audio_native_failure_emit_error_does_not_write_artifacts(
         has_speech=True,
         speech_segments=[(1.0, 6.0)],
     )
-    statements = [{"id": 0, "start": 0.0, "end": 1.0, "text": "hi"}]
+    statements = [{"id": 1, "start": 0.0, "end": 1.0, "text": "hi"}]
     backend_module = MagicMock()
     backend_module.get_model_info.return_value = {
         "model": "medium.en",
@@ -798,7 +856,7 @@ def test_all_batch_typed_speaker_failure_continues_and_preserves_failed_audio(
     second.parent.mkdir(parents=True)
     first.write_bytes(b"first")
     second.write_bytes(b"second")
-    statements = [{"id": 0, "start": 0.0, "end": 1.0, "text": "hi"}]
+    statements = [{"id": 1, "start": 0.0, "end": 1.0, "text": "hi"}]
     backend_module = MagicMock()
     backend_module.get_model_info.return_value = {
         "model": "medium.en",
@@ -903,7 +961,7 @@ def test_all_batch_unexpected_adapter_exception_aborts(tmp_path, monkeypatch):
     second.parent.mkdir(parents=True)
     first.write_bytes(b"first")
     second.write_bytes(b"second")
-    statements = [{"id": 0, "start": 0.0, "end": 1.0, "text": "hi"}]
+    statements = [{"id": 1, "start": 0.0, "end": 1.0, "text": "hi"}]
     backend_module = MagicMock()
     backend_module.get_model_info.return_value = {
         "model": "medium.en",
@@ -983,7 +1041,7 @@ def test_single_file_typed_speaker_failure_emits_once_and_exits_one(
     )
     raw_path.parent.mkdir(parents=True)
     raw_path.write_bytes(b"audio")
-    statements = [{"id": 0, "start": 0.0, "end": 1.0, "text": "hi"}]
+    statements = [{"id": 1, "start": 0.0, "end": 1.0, "text": "hi"}]
     backend_module = MagicMock()
     backend_module.get_model_info.return_value = {
         "model": "medium.en",
@@ -1068,7 +1126,7 @@ def test_process_audio_zero_row_native_response_writes_no_embedding_archive(tmp_
     )
     raw_path.parent.mkdir(parents=True)
     raw_path.write_bytes(b"\x00" * 2048)
-    statements = [{"id": 0, "start": 0.0, "end": 1.0, "text": "hi"}]
+    statements = [{"id": 1, "start": 0.0, "end": 1.0, "text": "hi"}]
     backend_module = MagicMock()
     backend_module.get_model_info.return_value = {
         "model": "medium.en",
@@ -1077,7 +1135,7 @@ def test_process_audio_zero_row_native_response_writes_no_embedding_archive(tmp_
     }
     native_result = SpeakerAnalyzeResult(
         statements=statements,
-        embeddings_data=None,
+        embedding_payload=None,
         speaker_evidence=SpeakerEvidenceDecision("single", 0.0, 0.0),
         overlap_fraction=0.0,
         statement_labels=None,
@@ -1129,7 +1187,7 @@ def test_process_audio_native_adapter_restores_once_after_stt(tmp_path):
     )
     raw_path.parent.mkdir(parents=True)
     raw_path.write_bytes(b"\x00" * 2048)
-    statements = [{"id": 0, "start": 0.0, "end": 1.0, "text": "hi"}]
+    statements = [{"id": 1, "start": 0.0, "end": 1.0, "text": "hi"}]
     reduction = AudioReduction(
         segments=[SpeechSegment(5.0, 6.0, 0.0, 1.0)],
         original_duration=10.0,
@@ -1227,19 +1285,19 @@ def test_process_audio_records_analyzed_processing(tmp_path):
         has_speech=True,
         speech_segments=[(1.0, 6.0)],
     )
-    statements = [{"id": 0, "start": 0.0, "end": 1.0, "text": "hi"}]
+    statements = [{"id": 1, "start": 0.0, "end": 1.0, "text": "hi"}]
     backend_module = MagicMock()
     backend_module.get_model_info.return_value = {
         "model": "unit",
         "device": "cpu",
         "compute_type": "int8",
     }
-    embeddings_data = {
-        "embeddings": np.zeros((1, 256), dtype=np.float32),
-        "statement_ids": np.zeros((1,), dtype=np.int32),
-        "durations_s": np.zeros((1,), dtype=np.float32),
-        "encoder": np.array("test"),
-    }
+    embedding_payload = SpeakerEmbeddingPayload(
+        payload=np.zeros((1, 256), dtype=np.float32).tobytes(),
+        statement_ids=[1],
+        durations_s=[1.0],
+        encoder="test",
+    )
     with (
         patch(
             "solstone.observe.transcribe.main.get_journal",
@@ -1257,7 +1315,7 @@ def test_process_audio_records_analyzed_processing(tmp_path):
         ),
         patch(
             "solstone.observe.transcribe.speakers_analyze_adapter.analyze_speakers",
-            return_value=_speaker_result(statements, embeddings_data=embeddings_data),
+            return_value=_speaker_result(statements, embedding_payload=embedding_payload),
         ),
         patch(
             "solstone.observe.processing_record.now_iso_utc",
@@ -1350,7 +1408,7 @@ def test_process_audio_native_gate_decline_is_accepted(tmp_path):
         has_speech=True,
         speech_segments=[(1.0, 6.0)],
     )
-    statements = [{"id": 0, "start": 0.0, "end": 1.0, "text": "hi"}]
+    statements = [{"id": 1, "start": 0.0, "end": 1.0, "text": "hi"}]
     backend_module = MagicMock()
     backend_module.get_model_info.return_value = {
         "model": "medium.en",
@@ -1409,7 +1467,7 @@ def test_process_audio_writes_native_statement_labels(tmp_path):
         has_speech=True,
         speech_segments=[(1.0, 6.0)],
     )
-    statements = [{"id": 0, "start": 0.0, "end": 1.0, "text": "hi"}]
+    statements = [{"id": 1, "start": 0.0, "end": 1.0, "text": "hi"}]
     backend_module = MagicMock()
     backend_module.get_model_info.return_value = {
         "model": "unit",
@@ -1505,11 +1563,7 @@ class TestJSONLFormat:
 
     def test_statements_to_jsonl_includes_duration(self):
         """Audio metadata should include decode-derived duration."""
-        lines = _statements_to_jsonl(
-            [{"start": 1.0, "end": 2.0, "text": "Hello"}],
-            "audio.m4a",
-            datetime(2026, 5, 22, 9, 0, 0),
-            {"model": "unit", "device": "cpu", "compute_type": "int8"},
+        metadata = _native_header(
             vad_result=VadResult(
                 duration=12.34,
                 speech_duration=1.0,
@@ -1517,35 +1571,20 @@ class TestJSONLFormat:
             ),
         )
 
-        metadata = json.loads(lines[0])
-
         assert metadata["duration"] == 12.34
         assert isinstance(metadata["duration"], float)
 
     def test_statements_to_jsonl_raw_is_producer_invariant(self):
-        lines = _statements_to_jsonl(
-            [{"start": 1.0, "end": 2.0, "text": "Hello"}],
-            "audio.flac",
-            datetime(2026, 5, 22, 9, 0, 0),
-            {"model": "unit", "device": "cpu", "compute_type": "int8"},
-        )
-
-        metadata = json.loads(lines[0])
+        metadata = _native_header(raw_path=Path("audio.flac"))
 
         # raw is the producer's invariant (relaxed from the shared floor), so the
         # transcriber must keep emitting it.
         assert metadata["raw"] == "audio.flac"
 
     def test_statements_to_jsonl_writes_speaker_evidence_decision_fields(self):
-        lines = _statements_to_jsonl(
-            [{"start": 1.0, "end": 2.0, "text": "Hello"}],
-            "audio.flac",
-            datetime(2026, 5, 22, 9, 0, 0),
-            {"model": "unit", "device": "cpu", "compute_type": "int8"},
+        metadata = _native_header(
             speaker_evidence=SpeakerEvidenceDecision("none", 0.0, 0.25),
         )
-
-        metadata = json.loads(lines[0])
 
         assert metadata["speaker_evidence"] == "none"
         assert metadata["speaker_evidence_multi_fraction"] == 0.0
@@ -1553,22 +1592,10 @@ class TestJSONLFormat:
         assert "speaker_evidence_mean_window_overlap_share" not in metadata
 
     def test_new_headers_always_include_speaker_analysis_producer(self):
-        no_helper_lines = _statements_to_jsonl(
-            [{"start": 1.0, "end": 2.0, "text": "Hello"}],
-            "audio.flac",
-            datetime(2026, 5, 22, 9, 0, 0),
-            {"model": "unit", "device": "cpu", "compute_type": "int8"},
-        )
-        helper_lines = _statements_to_jsonl(
-            [{"start": 1.0, "end": 2.0, "text": "Hello"}],
-            "audio.flac",
-            datetime(2026, 5, 22, 9, 0, 0),
-            {"model": "unit", "device": "cpu", "compute_type": "int8"},
+        no_helper_metadata = _native_header()
+        helper_metadata = _native_header(
             speaker_analysis_producer=SPEAKERS_ANALYZE_PRODUCER_ID,
         )
-
-        no_helper_metadata = json.loads(no_helper_lines[0])
-        helper_metadata = json.loads(helper_lines[0])
 
         assert "speaker_analysis_producer" not in no_helper_metadata
         assert (
@@ -1592,7 +1619,7 @@ class TestJSONLFormat:
 
     def test_metadata_includes_transcription_config(self):
         """Metadata should include model, device, and compute_type fields."""
-        # Example metadata as produced by _statements_to_jsonl()
+        # Example metadata passed to the native transcript writer.
         metadata = {
             "raw": "audio.flac",
             "model": "medium.en",

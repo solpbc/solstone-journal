@@ -18,6 +18,7 @@ import numpy as np
 import pytest
 
 from solstone.apps.speakers.evidence import SpeakerEvidenceDecision
+from solstone.observe.transcribe.native import SpeakerTranscriptWriteResponse
 from solstone.observe.transcribe.speakers_analyze_adapter import SpeakerAnalyzeResult
 from solstone.observe.utils import SAMPLE_RATE
 from solstone.observe.vad import VadResult
@@ -28,11 +29,43 @@ from tests.helpers.module_mocks import module_mock
 def _speaker_result(statements: list[dict]) -> SpeakerAnalyzeResult:
     return SpeakerAnalyzeResult(
         statements=[dict(statement) for statement in statements],
-        embeddings_data=None,
+        embedding_payload=None,
         speaker_evidence=SpeakerEvidenceDecision("none", 0.0, 0.0),
         overlap_fraction=0.0,
         statement_labels=None,
     )
+
+
+@pytest.fixture(autouse=True)
+def _native_transcript_writer(monkeypatch: pytest.MonkeyPatch):
+    """Keep telemetry assertions focused on the Python event boundary."""
+    transcribe_main = importlib.import_module("solstone.observe.transcribe.main")
+
+    def write(**request):
+        header = dict(request["header"])
+        segment_meta = header.pop("segment_meta", None)
+        if segment_meta:
+            header.update(segment_meta)
+        lines = [json.dumps(header)]
+        for statement in request["statements"]:
+            lines.append(
+                json.dumps(
+                    {
+                        "start": "00:00:00",
+                        "text": statement["text"],
+                        "sentence_id": statement["id"],
+                    }
+                )
+            )
+        Path(request["jsonl_path"]).write_text("\n".join(lines) + "\n")
+        return SpeakerTranscriptWriteResponse(
+            jsonl_path=request["jsonl_path"],
+            npz_path=request["npz_path"],
+            statement_count=len(request["statements"]),
+            embedding_row_count=len(request["embedding_statement_ids"] or []),
+        )
+
+    monkeypatch.setattr(transcribe_main, "write_speaker_transcript", write)
 
 
 @pytest.fixture
@@ -77,7 +110,7 @@ def _run_success(
     """Run a successful process_audio and return the emitted event kwargs."""
     from solstone.observe.transcribe.main import process_audio
 
-    statements = [{"id": 0, "start": 0.0, "end": 1.0, "text": "hello"}]
+    statements = [{"id": 1, "start": 0.0, "end": 1.0, "text": "hello"}]
 
     with (
         patch(

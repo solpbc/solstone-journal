@@ -62,6 +62,7 @@
       "properties": {
         "start": {"type": "string"},
         "text": {"type": "string"},
+        "sentence_id": {"type": "integer"},
         "source": {"type": "string"},
         "speaker": {"type": ["string", "integer"]},
         "corrected": {"type": "string"},
@@ -72,11 +73,11 @@
   "x-journal-contract": {
     "format_id": "audio-jsonl",
     "schema_owner": "observe.transcribe",
-    "reference_writer": "solstone.observe.transcribe.main",
+    "reference_writer": "solstone-core speaker-transcript-write",
     "allowed_producers": ["journal transcriber", "native observers via ingest"],
     "write_discipline": "headered_jsonl atomic whole-file replace",
     "file_kind": "headered_jsonl",
-    "key_fields": ["header.raw", "record.start", "record.text", "record.corrected", "record.source", "record.speaker", "record.emotion"],
+    "key_fields": ["header.raw", "record.start", "record.text", "record.sentence_id", "record.corrected", "record.source", "record.speaker", "record.emotion"],
     "producer_write_paths": ["chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/audio.jsonl"],
     "legacy_read_paths": ["chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/{source}_audio.jsonl"]
   }

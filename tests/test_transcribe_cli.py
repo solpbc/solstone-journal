@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from solstone.observe.transcribe.native import SpeakerTranscriptWriteResponse
 from solstone.observe.transcribe.speakers_analyze_errors import SpeakerAnalyzeError
 from solstone.observe.vad import VadResult
 from solstone.think.speakers_analyze_installation import (
@@ -102,6 +103,15 @@ def test_main_accepts_journal_relative_path(tmp_path, monkeypatch):
         patch("solstone.observe.vad.run_vad", mock_vad),
         patch("solstone.observe.transcribe.main.tag_audio", return_value=None),
         patch("solstone.observe.transcribe.main.callosum_send"),
+        patch(
+            "solstone.observe.transcribe.main.write_speaker_transcript",
+            return_value=SpeakerTranscriptWriteResponse(
+                jsonl_path=str(audio_file.with_suffix(".jsonl")),
+                npz_path=str(audio_file.with_suffix(".npz")),
+                statement_count=0,
+                embedding_row_count=0,
+            ),
+        ),
         patch(
             "solstone.observe.transcribe.main.get_segment_key",
             return_value="090000_300",
