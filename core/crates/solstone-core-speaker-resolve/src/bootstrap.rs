@@ -559,16 +559,16 @@ fn entity_id(entities: &[JournalEntity], index: Option<usize>) -> String {
 }
 
 #[derive(Debug)]
-struct ScannedSegment {
-    day: String,
-    stream: String,
-    key: String,
-    path: PathBuf,
-    speakers: Vec<String>,
-    sources: Vec<String>,
+pub(crate) struct ScannedSegment {
+    pub(crate) day: String,
+    pub(crate) stream: String,
+    pub(crate) key: String,
+    pub(crate) path: PathBuf,
+    pub(crate) speakers: Vec<String>,
+    pub(crate) sources: Vec<String>,
 }
 
-fn scan_segments(journal_root: &Path) -> Result<Vec<ScannedSegment>, BootstrapError> {
+pub(crate) fn scan_segments(journal_root: &Path) -> Result<Vec<ScannedSegment>, BootstrapError> {
     let mut days = day_dirs(journal_root)?.into_iter().collect::<Vec<_>>();
     days.sort_by(|left, right| left.0.cmp(&right.0));
     let mut scanned = Vec::new();

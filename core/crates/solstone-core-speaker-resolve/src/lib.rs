@@ -6,6 +6,8 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 pub mod bootstrap;
+pub mod backfill;
+pub mod backfill_operations;
 pub mod candidate_tracker;
 pub mod discovery_cache;
 pub mod evidence;
