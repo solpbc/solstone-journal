@@ -21,8 +21,8 @@ use solstone_core_cli::{
     GenerateCommand, GenerateSessionOptions, IndexerCommand, IndexerCountsOptions, IndexerOptions,
     IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions, InstallCommand,
     JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
-    JournalConfigReadOptions, JournalPathOptions, LocalCommand, ServiceOptions, SplCommand, USAGE,
-    evaluate_args, version_line,
+    JournalConfigReadOptions, JournalPathOptions, LocalCommand, ServiceOptions,
+    SpeakerResolveCommand, SplCommand, USAGE, evaluate_args, version_line,
 };
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -95,6 +95,7 @@ fn main() -> ExitCode {
         Ok(Command::Indexer(command)) => run_indexer(*command),
         Ok(Command::JournalConfig(command)) => run_journal_config(command),
         Ok(Command::SpeakerTranscriptWrite) => run_speaker_transcript_write(),
+        Ok(Command::SpeakerResolve(command)) => run_speaker_resolve(command),
         Ok(Command::Local(command)) => run_local(command),
         Ok(Command::Generate(command)) => run_generate(command),
         Ok(Command::Brain(command)) => run_brain(command),
@@ -104,6 +105,286 @@ fn main() -> ExitCode {
             ExitCode::from(EXIT_USAGE)
         }
     }
+}
+
+fn run_speaker_resolve(command: SpeakerResolveCommand) -> ExitCode {
+    let limit = if matches!(command, SpeakerResolveCommand::AccumulateVoiceprints) {
+        MAX_LOCAL_GENERATE_STDIN_BYTES
+    } else {
+        MAX_JSON_STDIN_BYTES
+    };
+    let value = match read_bounded_json_value(limit) {
+        Ok(value) => value,
+        Err(_) => {
+            eprintln!("speaker-resolve failed: stdin was not a valid JSON request");
+            return ExitCode::from(EXIT_USAGE);
+        }
+    };
+    let result = match command {
+        SpeakerResolveCommand::AccumulateVoiceprints => parse_accumulation_request(value)
+            .and_then(|request| {
+                solstone_core_speaker_resolve::voiceprint_accumulation::accumulate_voiceprints(
+                    &request,
+                )
+                .map_err(|error| error.to_string())
+            })
+            .and_then(|outcome| serde_json::to_value(outcome).map_err(|error| error.to_string())),
+        SpeakerResolveCommand::WriteOwnerCentroid => write_owner_centroid_request(value),
+        SpeakerResolveCommand::RebuildOwnerCentroid => rebuild_owner_centroid_request(value),
+        SpeakerResolveCommand::WriteOwnerCandidate => write_owner_candidate_request(value),
+        SpeakerResolveCommand::ReadOwnerCandidate => read_owner_candidate_request(value),
+    };
+    match result {
+        Ok(output) => {
+            if serde_json::to_writer(io::stdout().lock(), &output).is_ok() {
+                println!();
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(EXIT_IOERR)
+            }
+        }
+        Err(error) => {
+            eprintln!("speaker-resolve failed: {error}");
+            ExitCode::from(EXIT_USAGE)
+        }
+    }
+}
+
+fn parse_accumulation_request(
+    value: Value,
+) -> Result<solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationRequest, String> {
+    use solstone_core_entity::EncoderIdentity;
+    use solstone_core_speaker_resolve::voiceprint_accumulation::{
+        AccumulationEmbedding, AccumulationLabel, AccumulationRequest,
+    };
+    let object = value
+        .as_object()
+        .ok_or_else(|| "request must be an object".to_owned())?;
+    const FIELDS: [&str; 8] = [
+        "schema",
+        "journal_root",
+        "segment",
+        "now_ms",
+        "encoder",
+        "labels",
+        "embeddings",
+        "entity_ids",
+    ];
+    if object.keys().any(|key| !FIELDS.contains(&key.as_str()))
+        || object.get("schema").and_then(Value::as_str)
+            != Some("solstone-speaker-resolve-accumulate-voiceprints-request-v1")
+    {
+        return Err("invalid accumulation request schema".to_owned());
+    }
+    let segment = object
+        .get("segment")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "segment is required".to_owned())?;
+    let string = |object: &Map<String, Value>, key: &str| {
+        object
+            .get(key)
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| format!("{key} is required"))
+    };
+    let encoder = object
+        .get("encoder")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "encoder is required".to_owned())?;
+    let labels = serde_json::from_value::<Vec<AccumulationLabel>>(
+        object
+            .get("labels")
+            .cloned()
+            .ok_or_else(|| "labels is required".to_owned())?,
+    )
+    .map_err(|_| "invalid labels".to_owned())?;
+    let embeddings = serde_json::from_value::<Vec<AccumulationEmbedding>>(
+        object
+            .get("embeddings")
+            .cloned()
+            .ok_or_else(|| "embeddings is required".to_owned())?,
+    )
+    .map_err(|_| "invalid embeddings".to_owned())?;
+    let entity_ids = serde_json::from_value::<Vec<String>>(
+        object
+            .get("entity_ids")
+            .cloned()
+            .ok_or_else(|| "entity_ids is required".to_owned())?,
+    )
+    .map_err(|_| "invalid entity_ids".to_owned())?;
+    Ok(AccumulationRequest {
+        journal_root: PathBuf::from(string(object, "journal_root")?),
+        day: string(segment, "day")?,
+        stream: string(segment, "stream")?,
+        segment_key: string(segment, "segment_key")?,
+        source: string(segment, "source")?,
+        now_ms: object
+            .get("now_ms")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| "now_ms is required".to_owned())?,
+        encoder: EncoderIdentity {
+            id: string(encoder, "id")?,
+            sha256: string(encoder, "sha256")?,
+            width: object
+                .get("encoder")
+                .and_then(|value| value.get("width"))
+                .and_then(Value::as_u64)
+                .and_then(|value| usize::try_from(value).ok())
+                .ok_or_else(|| "encoder width is required".to_owned())?,
+        },
+        labels,
+        embeddings,
+        entity_ids,
+    })
+}
+
+fn write_owner_centroid_request(value: Value) -> Result<Value, String> {
+    use solstone_core_speaker_resolve::owner_centroid::{
+        OwnerCentroidWriteInput, write_owner_centroid,
+    };
+    let fields = owner_fields(value)?;
+    write_owner_centroid(
+        &fields.root,
+        &fields.principal,
+        &OwnerCentroidWriteInput {
+            centroid: fields.centroid,
+            cluster_size: fields.cluster_size,
+            timestamp: fields.timestamp,
+            evidence_tier: fields.evidence_tier,
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(json!({"status":"written"}))
+}
+
+fn rebuild_owner_centroid_request(value: Value) -> Result<Value, String> {
+    use solstone_core_speaker_resolve::owner_centroid::{
+        OwnerCentroidRebuildInput, rebuild_owner_centroid,
+    };
+    let object = value
+        .as_object()
+        .ok_or_else(|| "request must be an object".to_owned())?;
+    let fields = owner_fields(Value::Object(object.clone()))?;
+    let evidence_hash = object
+        .get("evidence_hash")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "evidence_hash is required".to_owned())?
+        .to_owned();
+    let p25 = object
+        .get("evidence_intra_cosine_p25")
+        .and_then(Value::as_f64)
+        .map(|value| value as f32)
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| "evidence_intra_cosine_p25 is required".to_owned())?;
+    let outcome = rebuild_owner_centroid(
+        &fields.root,
+        &fields.principal,
+        &OwnerCentroidRebuildInput {
+            centroid: fields.centroid,
+            embeddings_count: fields.cluster_size,
+            timestamp: fields.timestamp,
+            evidence_hash,
+            evidence_intra_cosine_p25: p25,
+            evidence_tier: fields.evidence_tier,
+            override_regression: object
+                .get("override")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(json!({"outcome": format!("{outcome:?}")}))
+}
+
+fn write_owner_candidate_request(value: Value) -> Result<Value, String> {
+    use solstone_core_speaker_resolve::owner_candidate::{OwnerCandidate, write_owner_candidate};
+    let object = value
+        .as_object()
+        .ok_or_else(|| "request must be an object".to_owned())?;
+    let root = PathBuf::from(required_string(object, "journal_root")?);
+    let candidate = OwnerCandidate {
+        centroid: f32_values(object.get("centroid"))?,
+        cluster_size: required_i32(object, "cluster_size")?,
+        threshold: required_f32(object, "threshold")?,
+        version: required_string(object, "version")?,
+        evidence_tier: required_string(object, "evidence_tier")?,
+    };
+    write_owner_candidate(&root, &candidate).map_err(|error| error.to_string())?;
+    Ok(json!({"status":"written"}))
+}
+
+fn read_owner_candidate_request(value: Value) -> Result<Value, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "request must be an object".to_owned())?;
+    let candidate = solstone_core_speaker_resolve::owner_candidate::load_owner_candidate(
+        &PathBuf::from(required_string(object, "journal_root")?),
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(json!({"candidate": format!("{candidate:?}")}))
+}
+
+struct OwnerFields {
+    root: PathBuf,
+    principal: String,
+    centroid: Vec<f32>,
+    cluster_size: i32,
+    timestamp: String,
+    evidence_tier: String,
+}
+
+fn owner_fields(value: Value) -> Result<OwnerFields, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "request must be an object".to_owned())?;
+    Ok(OwnerFields {
+        root: PathBuf::from(required_string(object, "journal_root")?),
+        principal: required_string(object, "principal_entity_id")?,
+        centroid: f32_values(object.get("centroid"))?,
+        cluster_size: required_i32(object, "cluster_size")?,
+        timestamp: required_string(object, "timestamp")?,
+        evidence_tier: required_string(object, "evidence_tier")?,
+    })
+}
+
+fn required_string(object: &Map<String, Value>, name: &str) -> Result<String, String> {
+    object
+        .get(name)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| format!("{name} is required"))
+}
+fn required_i32(object: &Map<String, Value>, name: &str) -> Result<i32, String> {
+    object
+        .get(name)
+        .and_then(Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok())
+        .ok_or_else(|| format!("{name} is required"))
+}
+fn required_f32(object: &Map<String, Value>, name: &str) -> Result<f32, String> {
+    object
+        .get(name)
+        .and_then(Value::as_f64)
+        .map(|value| value as f32)
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| format!("{name} is required"))
+}
+fn f32_values(value: Option<&Value>) -> Result<Vec<f32>, String> {
+    value
+        .and_then(Value::as_array)
+        .ok_or_else(|| "centroid is required".to_owned())?
+        .iter()
+        .map(|value| {
+            value
+                .as_f64()
+                .map(|value| value as f32)
+                .filter(|value| value.is_finite())
+                .ok_or_else(|| "invalid float values".to_owned())
+        })
+        .collect()
 }
 
 fn run_speaker_transcript_write() -> ExitCode {
@@ -2356,6 +2637,11 @@ fn read_journal_config_stdin() -> Result<Map<String, Value>, JsonStdinError> {
 }
 
 fn read_bounded_json_stdin() -> Result<Map<String, Value>, JsonStdinError> {
+    let value = read_bounded_json_value(MAX_JSON_STDIN_BYTES)?;
+    value.as_object().cloned().ok_or(JsonStdinError::Content)
+}
+
+fn read_bounded_json_value(max_bytes: usize) -> Result<Value, JsonStdinError> {
     let stdin = io::stdin();
     let mut stdin = stdin.lock();
     let mut bytes = Vec::new();
@@ -2368,18 +2654,13 @@ fn read_bounded_json_stdin() -> Result<Map<String, Value>, JsonStdinError> {
         if bytes
             .len()
             .checked_add(read)
-            .is_none_or(|next| next > MAX_JSON_STDIN_BYTES)
+            .is_none_or(|next| next > max_bytes)
         {
             return Err(JsonStdinError::Content);
         }
         bytes.extend_from_slice(&chunk[..read]);
     }
-    let config = serde_json::from_slice::<Value>(&bytes)
-        .ok()
-        .and_then(|value| value.as_object().cloned())
-        .ok_or(JsonStdinError::Content)?;
-    drop(bytes);
-    Ok(config)
+    serde_json::from_slice::<Value>(&bytes).map_err(|_| JsonStdinError::Content)
 }
 
 fn commit_config_error_exit(error: &CommitConfigError) -> u8 {

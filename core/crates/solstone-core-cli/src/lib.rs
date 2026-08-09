@@ -12,10 +12,20 @@ pub enum Command {
     Indexer(Box<IndexerCommand>),
     JournalConfig(JournalConfigCommand),
     SpeakerTranscriptWrite,
+    SpeakerResolve(SpeakerResolveCommand),
     Local(LocalCommand),
     Generate(GenerateCommand),
     Brain(BrainCommand),
     Spl(SplCommand),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpeakerResolveCommand {
+    AccumulateVoiceprints,
+    WriteOwnerCentroid,
+    RebuildOwnerCentroid,
+    WriteOwnerCandidate,
+    ReadOwnerCandidate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,6 +223,9 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command] if command == OsStr::new("speaker-transcript-write") => {
             Ok(Command::SpeakerTranscriptWrite)
         }
+        [command, rest @ ..] if command == OsStr::new("speaker-resolve") => {
+            parse_speaker_resolve(rest).map(Command::SpeakerResolve)
+        }
         [command, rest @ ..] if command == OsStr::new("local") => {
             parse_local(rest).map(Command::Local)
         }
@@ -223,6 +236,27 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             parse_brain(rest).map(Command::Brain)
         }
         [command, rest @ ..] if command == OsStr::new("spl") => parse_spl(rest).map(Command::Spl),
+        _ => Err(UsageError),
+    }
+}
+
+fn parse_speaker_resolve(args: &[OsString]) -> Result<SpeakerResolveCommand, UsageError> {
+    match args {
+        [command] if command == OsStr::new("accumulate-voiceprints") => {
+            Ok(SpeakerResolveCommand::AccumulateVoiceprints)
+        }
+        [command] if command == OsStr::new("write-owner-centroid") => {
+            Ok(SpeakerResolveCommand::WriteOwnerCentroid)
+        }
+        [command] if command == OsStr::new("rebuild-owner-centroid") => {
+            Ok(SpeakerResolveCommand::RebuildOwnerCentroid)
+        }
+        [command] if command == OsStr::new("write-owner-candidate") => {
+            Ok(SpeakerResolveCommand::WriteOwnerCandidate)
+        }
+        [command] if command == OsStr::new("read-owner-candidate") => {
+            Ok(SpeakerResolveCommand::ReadOwnerCandidate)
+        }
         _ => Err(UsageError),
     }
 }
