@@ -10,7 +10,7 @@ use solstone_core_body_source::{
 
 mod support;
 
-use support::{build_ledger_event, native_bundle_fixture};
+use support::{build_ledger_event, ledger_events_fixture, native_bundle_fixture};
 
 const KEYS: [&str; 17] = [
     "bundle_id",
@@ -103,6 +103,10 @@ fn field_bytes<'a>(frame: &'a [u8], key: &str) -> &'a [u8] {
 }
 
 fn assert_only_field_diff(baseline: &BodyLedgerEvent, twin: &BodyLedgerEvent, changed: &str) {
+    assert_only_fields_diff(baseline, twin, &[changed]);
+}
+
+fn assert_only_fields_diff(baseline: &BodyLedgerEvent, twin: &BodyLedgerEvent, changed: &[&str]) {
     let baseline = encode_body_ledger_event(baseline).unwrap();
     let twin = encode_body_ledger_event(twin).unwrap();
     let baseline_object = object(&baseline);
@@ -119,7 +123,7 @@ fn assert_only_field_diff(baseline: &BodyLedgerEvent, twin: &BodyLedgerEvent, ch
         );
     }
     for key in KEYS {
-        if key == changed {
+        if changed.contains(&key) {
             assert_ne!(field_bytes(&baseline, key), field_bytes(&twin, key));
         } else {
             assert_eq!(field_bytes(&baseline, key), field_bytes(&twin, key));
@@ -186,6 +190,92 @@ fn optional_field_twins_change_only_their_canonical_value() {
 }
 
 #[test]
+fn caller_supplied_digest_twins_change_only_their_digest_field() {
+    let (envelope, row, _, row_sha256, value_hash) = context();
+    let baseline = event(
+        &envelope,
+        row.clone(),
+        row_sha256.clone(),
+        value_hash.clone(),
+    );
+    assert_only_field_diff(
+        &baseline,
+        &event(
+            &envelope,
+            row.clone(),
+            digest("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            value_hash.clone(),
+        ),
+        "row_sha256",
+    );
+    assert_only_field_diff(
+        &baseline,
+        &event(
+            &envelope,
+            row,
+            row_sha256,
+            digest("sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        ),
+        "value_hash",
+    );
+}
+
+#[test]
+fn sequence_and_line_positions_have_independent_canonical_observables() {
+    let case = &ledger_events_fixture()["cases"][0];
+    let envelope =
+        decode_body_envelope(case["expected_envelope_jsonl"].as_str().unwrap().as_bytes()).unwrap();
+    let row = case["shards"][0]["expected_jsonl"]
+        .as_str()
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap();
+    let expected = serde_json::from_str::<Value>(
+        case["expected_ledger_jsonl"]
+            .as_str()
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    let row_sha256 = digest(expected["row_sha256"].as_str().unwrap());
+    let value_hash = digest(expected["value_hash"].as_str().unwrap());
+    let baseline = build_ledger_event(
+        &envelope,
+        row,
+        0,
+        1,
+        1,
+        Some(row_sha256.clone()),
+        value_hash.clone(),
+    );
+    let sequence_twin = build_ledger_event(
+        &envelope,
+        row,
+        0,
+        2,
+        1,
+        Some(row_sha256.clone()),
+        value_hash.clone(),
+    );
+    assert_only_field_diff(&baseline, &sequence_twin, "sequence");
+
+    let line_two_row = row.replace("normalized/2026-01.jsonl#L1", "normalized/2026-01.jsonl#L2");
+    let line_twin = build_ledger_event(
+        &envelope,
+        &line_two_row,
+        0,
+        1,
+        2,
+        Some(row_sha256),
+        value_hash,
+    );
+    assert_only_fields_diff(&baseline, &line_twin, &["line", "normalized_ref"]);
+}
+
+#[test]
 fn body_string_fields_encode_each_supported_code_point_class() {
     let (envelope, row, row_text, row_sha256, value_hash) = context();
     let baseline = event(&envelope, row, row_sha256.clone(), value_hash.clone());
@@ -198,7 +288,7 @@ fn body_string_fields_encode_each_supported_code_point_class() {
     ] {
         let event = build_ledger_event(
             &envelope,
-            &row_with_raw_ref_suffix(&row_text, suffix),
+            &row_with_string_suffix(&row_text, "raw_ref", suffix),
             0,
             1,
             1,
@@ -216,9 +306,46 @@ fn body_string_fields_encode_each_supported_code_point_class() {
     }
 }
 
-fn row_with_raw_ref_suffix(row: &str, suffix: &str) -> String {
-    let marker = "\"raw_ref\":\"";
-    let start = row.find(marker).unwrap() + marker.len();
+#[test]
+fn required_body_string_fields_use_the_same_lossless_writer() {
+    let (envelope, row, row_text, row_sha256, value_hash) = context();
+    let baseline = event(&envelope, row, row_sha256.clone(), value_hash.clone());
+    for (source_field, event_field, suffix, escaped) in [
+        (
+            "record_type",
+            "record_type",
+            "\\\"\\\\\\u001c\\ud800",
+            "\\\"\\\\\\u001c\\ud800",
+        ),
+        (
+            "start_date",
+            "start_time",
+            "\\ud83e\\udde0",
+            "\\ud83e\\udde0",
+        ),
+    ] {
+        let twin = build_ledger_event(
+            &envelope,
+            &row_with_string_suffix(&row_text, source_field, suffix),
+            0,
+            1,
+            1,
+            Some(row_sha256.clone()),
+            value_hash.clone(),
+        );
+        let encoded = encode_body_ledger_event(&twin).unwrap();
+        assert!(
+            field_bytes(&encoded, event_field)
+                .windows(escaped.len())
+                .any(|window| window == escaped.as_bytes())
+        );
+        assert_only_field_bytes_diff(&baseline, &twin, event_field);
+    }
+}
+
+fn row_with_string_suffix(row: &str, field: &str, suffix: &str) -> String {
+    let marker = format!("\"{field}\":\"");
+    let start = row.find(&marker).unwrap() + marker.len();
     let end = row[start..].find('"').unwrap() + start;
     format!("{}{}{}", &row[..end], suffix, &row[end..])
 }

@@ -39,7 +39,11 @@ fn fixture_events_encode_to_exact_canonical_jsonl_frames() {
             None,
             digest(expected["value_hash"].as_str().unwrap()),
         );
-        assert_eq!(encode_body_ledger_event(&event).unwrap(), ledger.as_bytes());
+        assert_eq!(sha256(normalized.as_bytes()), event.row_sha256().as_str());
+        let frame = encode_body_ledger_event(&event).unwrap();
+        assert_eq!(frame, ledger.as_bytes());
+        assert_eq!(frame.len() as u64, envelope.ledger().bytes());
+        assert_eq!(sha256(&frame), envelope.ledger().sha256().as_str());
         count += 1;
     }
 
@@ -70,6 +74,10 @@ fn fixture_events_encode_to_exact_canonical_jsonl_frames() {
             expected["line"].as_u64().unwrap(),
             None,
             digest(expected["value_hash"].as_str().unwrap()),
+        );
+        assert_eq!(
+            sha256(format!("{row}\n").as_bytes()),
+            event.row_sha256().as_str()
         );
         let frame = encode_body_ledger_event(&event).unwrap();
         assert_eq!(frame, format!("{expected_line}\n").as_bytes());

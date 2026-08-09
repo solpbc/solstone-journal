@@ -4,7 +4,8 @@
 use serde_json::{Value, json};
 use solstone_core_body_source::{
     BodyDay, BodyDigest, BodyEnvelope, BodyRawRetention, BodySourceFamily, BodySourceHash,
-    BundleId, EnvelopeLedger, EnvelopeShard, encode_body_ledger_event,
+    BodyString, BodyValue, BundleId, EnvelopeLedger, EnvelopeShard, encode_body_ledger_event,
+    parse,
 };
 
 mod support;
@@ -26,7 +27,11 @@ fn adjacent_u64_sequence_and_line_use_exact_unsigned_decimal_spellings() {
 }
 
 fn assert_numeric_encoding(value: u64, expected: &str) {
-    let encoded = String::from_utf8(encode_body_ledger_event(&event(value)).unwrap()).unwrap();
+    let frame = encode_body_ledger_event(&event(value)).unwrap();
+    let encoded = String::from_utf8(frame.clone()).unwrap();
+    let BodyValue::Object(object) = parse(&frame[..frame.len() - 1]).unwrap() else {
+        unreachable!("encoded event is an object")
+    };
     for field in ["line", "sequence"] {
         let needle = format!("\"{field}\":{expected}");
         assert_eq!(encoded.matches(&needle).count(), 1);
@@ -34,6 +39,12 @@ fn assert_numeric_encoding(value: u64, expected: &str) {
         assert!(!encoded.contains(&format!("\"{field}\":{expected}.")));
         assert!(!encoded.contains(&format!("\"{field}\":{expected}e")));
         assert!(!encoded.contains(&format!("\"{field}\":{expected}E")));
+        let key = BodyString::from_code_points(field.bytes().map(u32::from).collect()).unwrap();
+        let BodyValue::Integer(integer) = object.get(&key).unwrap() else {
+            panic!("{field} must parse as an exact body integer")
+        };
+        assert!(!integer.is_negative());
+        assert_eq!(integer.digits(), expected);
     }
 }
 

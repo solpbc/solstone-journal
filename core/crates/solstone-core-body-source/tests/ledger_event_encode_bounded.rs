@@ -64,25 +64,63 @@ fn small_event_does_not_preallocate_the_full_cap() {
 }
 
 #[test]
-fn escaped_non_bmp_twin_uses_bytes_not_code_point_count_at_the_boundary() {
+fn every_escape_width_uses_emitted_bytes_at_the_exact_boundary() {
     let baseline = event_with_raw_suffix(1);
     let remaining = MAX_LEDGER_EVENT_OBJECT_BYTES - canonical_len(&baseline);
     let ascii = event_with_raw_suffix(1 + remaining);
     let prefix = format!("imports/{}/raw/oura/", ascii.bundle_id().as_str());
-    let escaped = event_with_raw_ref(format!("{}{}🧠", prefix, "a".repeat(1 + remaining - 12)));
 
     assert_eq!(canonical_len(&ascii), MAX_LEDGER_EVENT_OBJECT_BYTES);
-    assert_eq!(canonical_len(&escaped), MAX_LEDGER_EVENT_OBJECT_BYTES);
+    assert_boundary_frame(&ascii);
+    for (tail, emitted_bytes) in [
+        ("\"", 2),
+        ("\\", 2),
+        ("\u{0001}", 6),
+        ("\u{001c}", 6),
+        ("\u{0100}", 6),
+        ("🧠", 12),
+    ] {
+        let escaped = event_with_raw_ref(format!(
+            "{}{}{}",
+            prefix,
+            "a".repeat(1 + remaining - emitted_bytes),
+            tail
+        ));
+        assert_boundary_frame(&escaped);
+        let escaped_over = event_with_raw_ref(format!(
+            "{}{}{}",
+            prefix,
+            "a".repeat(2 + remaining - emitted_bytes),
+            tail
+        ));
+        assert_eq!(
+            canonical_len(&escaped_over),
+            MAX_LEDGER_EVENT_OBJECT_BYTES + 1
+        );
+        assert_overflow(encode_body_ledger_event(&escaped_over), &escaped_over);
+    }
+
+    let lone_surrogate = event_with_raw_json_tail(1 + remaining - 6, "\\ud800");
     assert_eq!(
-        ascii.raw_ref().unwrap().code_points().len(),
-        escaped.raw_ref().unwrap().code_points().len() + 11
+        lone_surrogate.raw_ref().unwrap().code_points().last(),
+        Some(&0xd800)
     );
+    assert_boundary_frame(&lone_surrogate);
+    let lone_surrogate_over = event_with_raw_json_tail(2 + remaining - 6, "\\ud800");
     assert_eq!(
-        encode_body_ledger_event(&ascii).unwrap().len(),
-        MAX_LEDGER_EVENT_FRAME_BYTES
+        canonical_len(&lone_surrogate_over),
+        MAX_LEDGER_EVENT_OBJECT_BYTES + 1
     );
+    assert_overflow(
+        encode_body_ledger_event(&lone_surrogate_over),
+        &lone_surrogate_over,
+    );
+}
+
+fn assert_boundary_frame(event: &BodyLedgerEvent) {
+    assert_eq!(canonical_len(event), MAX_LEDGER_EVENT_OBJECT_BYTES);
     assert_eq!(
-        encode_body_ledger_event(&escaped).unwrap().len(),
+        encode_body_ledger_event(event).unwrap().len(),
         MAX_LEDGER_EVENT_FRAME_BYTES
     );
 }
@@ -112,6 +150,39 @@ fn event_with_raw_ref(raw_ref: String) -> BodyLedgerEvent {
     build_ledger_event(
         &envelope,
         &serde_json::to_string(&row).unwrap(),
+        0,
+        1,
+        1,
+        None,
+        digest(expected["value_hash"].as_str().unwrap()),
+    )
+}
+
+fn event_with_raw_json_tail(ascii_count: usize, escaped_tail: &str) -> BodyLedgerEvent {
+    let case = &native_bundle_fixture()["cases"][1];
+    let envelope =
+        decode_body_envelope(case["expected_envelope_jsonl"].as_str().unwrap().as_bytes()).unwrap();
+    let row = case["expected_normalized_jsonl"]
+        .as_str()
+        .unwrap()
+        .trim_end();
+    let marker = "\"raw_ref\":\"";
+    let start = row.find(marker).unwrap() + marker.len();
+    let end = row[start..].find('"').unwrap() + start;
+    let prefix = format!("imports/{}/raw/oura/", envelope.bundle_id().as_str());
+    let raw_json = format!(
+        "{}{}{}{}{}",
+        &row[..start],
+        prefix,
+        "a".repeat(ascii_count),
+        escaped_tail,
+        &row[end..]
+    );
+    let expected =
+        serde_json::from_str::<Value>(case["expected_ledger_jsonl"].as_str().unwrap()).unwrap();
+    build_ledger_event(
+        &envelope,
+        &raw_json,
         0,
         1,
         1,

@@ -14,6 +14,7 @@ const VALUE_HASH: &str = "sha256:f3d64f3c75d8c78ebe82d09f697c4c050c2002d4ea1bb1a
 #[test]
 fn public_encoder_is_pure_and_returns_the_canonical_frame() {
     let event = event("imports/body-01J9ZK2F5M7Q8R3S4T6V0W1X2Z/raw/oura/item");
+    let untouched = event.clone();
     let before = (
         event.sequence(),
         event.line(),
@@ -32,6 +33,7 @@ fn public_encoder_is_pure_and_returns_the_canonical_frame() {
         ),
         before
     );
+    assert_eq!(event, untouched);
 }
 
 #[test]

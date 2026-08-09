@@ -120,3 +120,52 @@ fn write_u64<S: CanonicalSink>(sink: &mut S, value: u64) -> Result<(), S::Error>
     let integer = BodyInteger::from_u64(value);
     write_integer(sink, integer.is_negative(), integer.digits())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    struct CountingSink {
+        limit: usize,
+        bytes: usize,
+        calls: usize,
+    }
+
+    impl CanonicalSink for CountingSink {
+        type Error = ();
+
+        fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+            self.calls += 1;
+            if bytes.len() > self.limit.saturating_sub(self.bytes) {
+                return Err(());
+            }
+            self.bytes += bytes.len();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn shared_string_writer_stops_visiting_after_the_event_cap() {
+        let visited = Cell::new(0_usize);
+        let code_points = (0..1_048_576).map(|_| {
+            visited.set(visited.get() + 1);
+            u32::from(b'a')
+        });
+        let mut sink = CountingSink {
+            limit: MAX_LEDGER_EVENT_OBJECT_BYTES,
+            bytes: 0,
+            calls: 0,
+        };
+
+        assert_eq!(write_quoted_code_points(&mut sink, code_points), Err(()));
+        assert_eq!(sink.bytes, MAX_LEDGER_EVENT_OBJECT_BYTES);
+        assert!(
+            visited.get() < 70_000,
+            "visited {} code points",
+            visited.get()
+        );
+        assert_eq!(sink.calls, visited.get() + 1);
+    }
+}
