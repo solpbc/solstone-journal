@@ -44,6 +44,7 @@ const PROVIDER_RUNTIME_MODEL: &str = include_str!("../src/provider_runtime/model
 const PROVIDER_RUNTIME_RECONCILE: &str = include_str!("../src/provider_runtime/reconcile.rs");
 const PROVIDER_RUNTIME_RETRY: &str = include_str!("../src/provider_runtime/retry.rs");
 const PROVIDER_RUNTIME_SEAMS: &str = include_str!("../src/provider_runtime/seams.rs");
+const PROVIDER_RUNTIME_STORE: &str = include_str!("../src/provider_runtime/store.rs");
 const PROVIDER_RUNTIME_STOP: &str = include_str!("../src/provider_runtime/stop.rs");
 const PROVIDER_RUNTIME_WEDGE: &str = include_str!("../src/provider_runtime/wedge.rs");
 
@@ -143,6 +144,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("reconcile", PROVIDER_RUNTIME_RECONCILE),
         ("retry", PROVIDER_RUNTIME_RETRY),
         ("seams", PROVIDER_RUNTIME_SEAMS),
+        ("store", PROVIDER_RUNTIME_STORE),
         ("stop", PROVIDER_RUNTIME_STOP),
         ("wedge", PROVIDER_RUNTIME_WEDGE),
     ];
@@ -176,7 +178,9 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         .chain(lifecycle_modules)
         .chain(schedule_modules)
         .chain(provider_runtime_modules)
-        .filter(|(name, _)| *name != "log" && *name != "state" && *name != "completion")
+        .filter(|(name, _)| {
+            *name != "log" && *name != "state" && *name != "completion" && *name != "store"
+        })
     {
         for primitive in [
             "File::",
@@ -200,6 +204,14 @@ fn ac21_only_operational_log_module_names_write_primitives() {
     assert!(LIFECYCLE_STATE.contains("join(\"health\")"));
     assert!(SCHEDULE_COMPLETION.contains("record_completion"));
     assert!(SCHEDULE_COMPLETION.contains("atomic_replace"));
+    assert!(PROVIDER_RUNTIME_STORE.contains("health"));
+    assert!(PROVIDER_RUNTIME_STORE.contains("providers"));
+    assert!(PROVIDER_RUNTIME_STORE.contains("runtime"));
+    assert!(PROVIDER_RUNTIME_STORE.contains("local.json"));
+    assert!(PROVIDER_RUNTIME_STORE.contains("local.retry-token.json"));
+    assert!(PROVIDER_RUNTIME_STORE.contains("local.port"));
+    assert!(PROVIDER_RUNTIME_STORE.contains("hold_lock"));
+    assert!(PROVIDER_RUNTIME_STORE.contains("write_json"));
 }
 
 #[test]
