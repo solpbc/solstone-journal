@@ -2369,6 +2369,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-body-store"
+version = "1.0.22"
+dependencies = [
+ "serde_json",
+ "sha2",
+ "solstone-core-body-source",
+]
+
+[[package]]
 name = "solstone-core-brain"
 version = "1.0.22"
 dependencies = [
