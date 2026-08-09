@@ -3,7 +3,7 @@
 
 #![cfg(unix)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -120,6 +120,25 @@ fn manual_test_targets(manifest: &str) -> Vec<(String, BTreeSet<String>)> {
     }
 
     targets
+}
+
+fn package_name(manifest: &str) -> String {
+    let mut in_package = false;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_package = trimmed == "[package]";
+            continue;
+        }
+        if in_package && let Some(value) = trimmed.strip_prefix("name = ") {
+            return value.trim().trim_matches('"').to_owned();
+        }
+    }
+    panic!("manifest has no package name")
+}
+
+fn makefile_text(root: &Path) -> String {
+    fs::read_to_string(root.join("Makefile")).expect("read Makefile")
 }
 
 fn workspace_members(workspace: &str) -> Vec<String> {
@@ -256,6 +275,81 @@ fn every_differential_test_is_named_in_its_own_gate() {
     assert!(
         !target_body(&makefile, "check-rust-test").contains("differential"),
         "make ci must not enable the differential feature"
+    );
+}
+
+/// Naming a test in the differential gate is not enough -- it has to be named
+/// under the package that owns it.
+///
+/// `cargo test -p A --test t` where `t` lives in package B does not skip `t`;
+/// it fails the whole invocation before running anything, so every other target
+/// sharing that leg is skipped too. Measured: one such leg had been carrying
+/// three targets and executing none of them, and the gate above was green the
+/// entire time because it only ever checked that the name appeared somewhere in
+/// the recipe.
+#[test]
+fn every_differential_leg_names_the_package_that_owns_its_tests() {
+    let root = repo_root();
+    let core = root.join("core");
+    let members = workspace_members(
+        &fs::read_to_string(core.join("Cargo.toml")).expect("read workspace manifest"),
+    );
+
+    // test-target name -> the packages that actually define it
+    let mut owners: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for member in &members {
+        let directory = core.join(member);
+        let manifest =
+            fs::read_to_string(directory.join("Cargo.toml")).expect("read member manifest");
+        let package = package_name(&manifest);
+        for (name, _features) in manual_test_targets(&manifest) {
+            owners.entry(name).or_default().insert(package.clone());
+        }
+        let Ok(entries) = fs::read_dir(directory.join("tests")) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|extension| extension == "rs") {
+                let name = path
+                    .file_stem()
+                    .expect("test file stem")
+                    .to_string_lossy()
+                    .into_owned();
+                owners.entry(name).or_default().insert(package.clone());
+            }
+        }
+    }
+
+    let makefile = makefile_text(&root);
+    let gate = target_body(&makefile, "check-differentials");
+    let mut checked = 0_usize;
+    for leg in gate
+        .split('"')
+        .filter(|leg| leg.trim_start().starts_with("-p "))
+    {
+        let words = leg.split_whitespace().collect::<Vec<_>>();
+        let package = words[words.iter().position(|word| *word == "-p").expect("-p") + 1];
+        for (index, word) in words.iter().enumerate() {
+            if *word != "--test" {
+                continue;
+            }
+            let target = words[index + 1];
+            let owning = owners
+                .get(target)
+                .unwrap_or_else(|| panic!("no package in the workspace defines a test {target}"));
+            assert!(
+                owning.contains(package),
+                "check-differentials runs `-p {package} --test {target}`, but {target} \
+                 lives in {owning:?}. That leg fails before running anything, so every \
+                 target sharing it is skipped"
+            );
+            checked += 1;
+        }
+    }
+    assert!(
+        checked > 0,
+        "the differential gate named no targets -- the leg parsing is wrong"
     );
 }
 
