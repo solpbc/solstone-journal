@@ -7,7 +7,8 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::json;
-use solstone_core_local::{ArtifactTrust, Platform, probe_nvidia_gpu};
+use solstone_core_local::nvidia::NvidiaProbe;
+use solstone_core_local::{ArtifactTrust, Platform};
 use solstone_core_system::provider_runtime::{
     LocalLaunchCommon, LocalLaunchConfig, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared,
     LocalRuntimeStore, LocalTruthConfig, LocalTruthSeam, ManagedProcess, ProviderName,
@@ -17,6 +18,25 @@ use solstone_core_system::provider_runtime::{
 };
 
 const FIXTURE: &str = env!("CARGO_BIN_EXE_solstone-system-test-child");
+
+/// A synthetic probe, never the real one: this test drives a CUDA launch to
+/// `Ready`, so calling `probe_nvidia_gpu()` would make the assertion a
+/// statement about the host's graphics card rather than about the coordinator.
+fn nvidia() -> NvidiaProbe {
+    NvidiaProbe {
+        schema: "solstone-local-nvidia-probe-v1".into(),
+        detected: true,
+        gpu_index: Some(0),
+        gpu_name: Some("test GPU".into()),
+        compute_cap: Some("8.9".into()),
+        arch: Some("sm_89".into()),
+        driver_cuda_major: Some(13),
+        vram_mib: Some(16_000),
+        unified_memory_mib: None,
+        probe_error: None,
+    }
+}
+
 struct TestClock {
     millis: AtomicU64,
 }
@@ -141,7 +161,7 @@ fn ac18_real_coordinator_seams_and_store() {
             },
             binary_path: Some(FIXTURE.into()),
             lib_dir: None,
-            nvidia_probe: probe_nvidia_gpu(),
+            nvidia_probe: nvidia(),
             cuda_embedded_arch_set: vec!["sm_89".into()],
             cuda_min_driver_version: 1,
             cuda_artifact_trust: ArtifactTrust::Trusted,
