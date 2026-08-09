@@ -9,6 +9,7 @@ license.workspace = true
 differential = []
 
 [dependencies]
+base64 = "=0.22.1"
 ring = "=0.17.14"
 serde_json = { workspace = true }
 subtle = "=2.6.1"

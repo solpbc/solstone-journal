@@ -170,7 +170,9 @@ pub fn verify_quote(input: TpmQuoteInput<'_>) -> Result<(), TpmQuoteError> {
     verify_signature(&key, input.quote_msg, signature)
 }
 
-fn load_ak_public_key(pem_bytes: &[u8]) -> Result<RsaPublicKeyComponents<Vec<u8>>, TpmQuoteError> {
+pub(crate) fn load_ak_public_key(
+    pem_bytes: &[u8],
+) -> Result<RsaPublicKeyComponents<Vec<u8>>, TpmQuoteError> {
     let (remaining, pem) = parse_x509_pem(pem_bytes).map_err(|_| TpmQuoteError::AkPemInvalid)?;
     if !remaining.is_empty() || pem.label != "PUBLIC KEY" {
         return Err(TpmQuoteError::AkPemInvalid);
@@ -191,7 +193,7 @@ fn load_ak_public_key(pem_bytes: &[u8]) -> Result<RsaPublicKeyComponents<Vec<u8>
     })
 }
 
-fn without_leading_zeros(value: &[u8]) -> Vec<u8> {
+pub(crate) fn without_leading_zeros(value: &[u8]) -> Vec<u8> {
     value
         .iter()
         .skip_while(|byte| **byte == 0)

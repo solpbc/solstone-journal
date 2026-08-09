@@ -3,6 +3,7 @@
 
 //! HCLA and SEV-SNP report parsing with pinned AMD chain verification.
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use ring::{
     digest::{SHA256, digest},
     signature::{
@@ -18,7 +19,12 @@ use x509_parser::{
     signature_algorithm::SignatureAlgorithm,
 };
 
-use crate::error::{SnpParseError, SnpVerifyError};
+use crate::{
+    binding::{BINDING_DOMAIN, check_envelope_nonce, composite_binding_hash},
+    error::{CpuAppraisalStage, CpuLegError, SnpParseError, SnpVerifyError},
+    tlv::decode_gpu_envelope,
+    tpm_quote::{TpmQuoteInput, load_ak_public_key, verify_quote, without_leading_zeros},
+};
 
 const HCL_SIG: &[u8; 4] = b"HCLA";
 const HCL_REPORT_OFFSET: usize = 32;
@@ -47,6 +53,7 @@ const SNP_OFF_COMMITTED_VERSION: usize = 0x1ec;
 const SNP_OFF_LAUNCH_TCB: usize = 0x1f0;
 const SNP_OFF_SIGNATURE: usize = 0x2a0;
 const SNP_SIGNED_PREFIX_LEN: usize = 0x2a0;
+const SNP_POLICY_DEBUG_BIT: u32 = 19;
 
 const SHA384_OID: &str = "2.16.840.1.101.3.4.2.2";
 const MGF1_OID: &str = "1.2.840.113549.1.1.8";
@@ -235,10 +242,301 @@ pub fn parse_hcla(blob: &[u8]) -> Result<HclaBlob, SnpParseError> {
     })
 }
 
+pub(crate) fn check_runtime_binding(
+    report: &SnpReport,
+    runtime_json: &[u8],
+) -> Result<(), SnpVerifyError> {
+    let runtime_digest = digest(&SHA256, runtime_json);
+    if report.report_data[..32] != runtime_digest.as_ref()[..] {
+        return Err(SnpVerifyError::RuntimeBindingDigestMismatch);
+    }
+    if report.report_data[32..].iter().any(|byte| *byte != 0) {
+        return Err(SnpVerifyError::RuntimeBindingTailNonZero);
+    }
+    Ok(())
+}
+
+pub(crate) fn verify_ak_binding(
+    runtime: &Map<String, Value>,
+    ak_public_key_pem: &[u8],
+) -> Result<(), SnpVerifyError> {
+    let keys = runtime
+        .get("keys")
+        .and_then(Value::as_array)
+        .ok_or(SnpVerifyError::AkJwkMissing)?;
+    let jwk = keys
+        .iter()
+        .filter_map(Value::as_object)
+        .find(|key| key.get("kid").and_then(Value::as_str) == Some("HCLAkPub"))
+        .ok_or(SnpVerifyError::AkJwkMissing)?;
+    let modulus = decode_jwk_component(jwk.get("n"))?;
+    let exponent = decode_jwk_component(jwk.get("e"))?;
+    let key = load_ak_public_key(ak_public_key_pem).map_err(|_| SnpVerifyError::AkKeyInvalid)?;
+    if key.n != modulus || key.e != exponent {
+        return Err(SnpVerifyError::AkKeyMismatch);
+    }
+    Ok(())
+}
+
+fn decode_jwk_component(value: Option<&Value>) -> Result<Vec<u8>, SnpVerifyError> {
+    let value = value
+        .and_then(Value::as_str)
+        .ok_or(SnpVerifyError::AkJwkInvalid)?;
+    let mut padded = value.to_owned();
+    padded.extend(std::iter::repeat_n('=', (4 - padded.len() % 4) % 4));
+    let decoded = URL_SAFE
+        .decode(padded)
+        .map_err(|_| SnpVerifyError::AkJwkInvalid)?;
+    Ok(without_leading_zeros(&decoded))
+}
+
+fn check_policy(report: &SnpReport) -> Result<(), SnpVerifyError> {
+    if !matches!(report.version, 3 | 5) {
+        return Err(SnpVerifyError::PolicyReportVersion);
+    }
+    if report.vmpl != 0 {
+        return Err(SnpVerifyError::PolicyVmpl);
+    }
+    if debug_allowed(report) {
+        return Err(SnpVerifyError::PolicyDebugEnabled);
+    }
+    Ok(())
+}
+
+fn debug_allowed(report: &SnpReport) -> bool {
+    ((report.policy >> SNP_POLICY_DEBUG_BIT) & 1) == 1
+}
+
+pub(crate) fn pcr_fingerprint_hex(quote_pcrs: &[u8]) -> String {
+    hex_lower(digest(&SHA256, quote_pcrs).as_ref())
+}
+
+/// Appraises CPU-leg evidence using the fixed SPP defaults.
+pub fn appraise_cpu_evidence(
+    evidence: CpuEvidence<'_>,
+    now_unix_seconds: i64,
+) -> Result<CpuAppraisal, CpuLegError> {
+    let envelope =
+        decode_gpu_envelope(evidence.envelope_tlv).map_err(|source| CpuLegError::Tlv {
+            stage: CpuAppraisalStage::Envelope,
+            source,
+        })?;
+    check_envelope_nonce(&envelope, evidence.nonce).map_err(|source| CpuLegError::Binding {
+        stage: CpuAppraisalStage::Envelope,
+        source,
+    })?;
+
+    let hcla = parse_hcla(evidence.hcl_report).map_err(|source| CpuLegError::SnpParse {
+        stage: CpuAppraisalStage::Hcla,
+        source,
+    })?;
+    if !matches!(hcla.version, 1 | 2) {
+        return Err(CpuLegError::SnpVerify {
+            stage: CpuAppraisalStage::Hcla,
+            source: SnpVerifyError::HclaVersionDisallowed,
+        });
+    }
+    let mut steps = vec![ok_step(
+        "hcla",
+        format!(
+            "sig=HCLA version={} request_type={}",
+            hcla.version, hcla.request_type
+        ),
+    )];
+    if evidence
+        .standalone_report
+        .is_some_and(|report| report != hcla.report.as_slice())
+    {
+        steps.push(ok_step(
+            "standalone-report",
+            "report.bin differs; using HCLA-embedded report".to_owned(),
+        ));
+    }
+
+    let report = SnpReport::parse(&hcla.report).map_err(|source| CpuLegError::SnpParse {
+        stage: CpuAppraisalStage::Report,
+        source,
+    })?;
+    check_runtime_binding(&report, &hcla.runtime_json).map_err(|source| {
+        CpuLegError::SnpVerify {
+            stage: CpuAppraisalStage::RuntimeBinding,
+            source,
+        }
+    })?;
+    steps.push(ok_step(
+        "runtime-binding",
+        "report_data == SHA-256(runtime JSON)".to_owned(),
+    ));
+
+    let amd_verification =
+        verify_amd_chain_and_report(&report, evidence.cert_pems, now_unix_seconds).map_err(
+            |source| CpuLegError::SnpVerify {
+                stage: CpuAppraisalStage::AmdChain,
+                source,
+            },
+        )?;
+    steps.push(ok_step(
+        "amd-chain",
+        format!(
+            "VCEK chains to pinned {} roots",
+            amd_verification.vcek_issuer_cn
+        ),
+    ));
+    steps.push(ok_step(
+        "amd-report-signature",
+        "VCEK signed report bytes 0..0x29f".to_owned(),
+    ));
+
+    check_policy(&report).map_err(|source| CpuLegError::SnpVerify {
+        stage: CpuAppraisalStage::SnpPolicy,
+        source,
+    })?;
+    steps.push(ok_step(
+        "snp-policy",
+        format!(
+            "version={} vmpl={} debug_allowed={}",
+            report.version,
+            report.vmpl,
+            python_bool(debug_allowed(&report))
+        ),
+    ));
+
+    verify_ak_binding(&hcla.runtime, evidence.ak_public_key_pem).map_err(|source| {
+        CpuLegError::SnpVerify {
+            stage: CpuAppraisalStage::AkBinding,
+            source,
+        }
+    })?;
+    steps.push(ok_step(
+        "ak-binding",
+        "bundle AK public key matches AMD-bound HCLAkPub".to_owned(),
+    ));
+
+    let binding = composite_binding_hash(
+        evidence.nonce,
+        evidence.channel_binding,
+        evidence.envelope_tlv,
+        BINDING_DOMAIN,
+    )
+    .map_err(|source| CpuLegError::Binding {
+        stage: CpuAppraisalStage::Quote,
+        source,
+    })?;
+    verify_quote(TpmQuoteInput {
+        ak_public_key_pem: evidence.ak_public_key_pem,
+        quote_msg: evidence.quote_message,
+        quote_sig: evidence.quote_signature,
+        quote_pcrs: evidence.quote_pcrs,
+        expected_binding: &binding,
+    })
+    .map_err(|source| CpuLegError::TpmQuote {
+        stage: CpuAppraisalStage::Quote,
+        source,
+    })?;
+    steps.push(ok_step(
+        "quote",
+        "AK quote signature valid and extraData matches verifier nonce + guest key".to_owned(),
+    ));
+
+    let pcr_sha256 = pcr_fingerprint_hex(evidence.quote_pcrs);
+    steps.push(ok_step(
+        "pcr-policy",
+        format!("record-then-pin v1 fingerprint={pcr_sha256}"),
+    ));
+
+    Ok(CpuAppraisal {
+        steps,
+        hcla_version: hcla.version,
+        report_version: report.version,
+        cpuid_family: report.cpuid_family,
+        cpuid_model: report.cpuid_model,
+        cpuid_step: report.cpuid_step,
+        tcb: CpuTcb {
+            current: report.current_tcb,
+            reported: report.reported_tcb,
+            committed: report.committed_tcb,
+            launch: report.launch_tcb,
+        },
+        pcr_sha256,
+        host_data_hex: hex_lower(&report.host_data),
+        measurement_hex: hex_lower(&report.measurement),
+        chip_id_hex: hex_lower(&report.chip_id),
+    })
+}
+
+fn ok_step(name: &'static str, detail: String) -> AppraisalStep {
+    AppraisalStep {
+        name,
+        status: "ok",
+        detail,
+    }
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut result = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        result.push(HEX[usize::from(byte >> 4)] as char);
+        result.push(HEX[usize::from(byte & 0x0f)] as char);
+    }
+    result
+}
+
+fn python_bool(value: bool) -> &'static str {
+    if value { "True" } else { "False" }
+}
+
 /// Successful AMD chain and report-signature verification details.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AmdReportVerification {
     pub vcek_issuer_cn: String,
+}
+
+/// All evidence bytes required for the CPU leg of SPP attestation.
+pub struct CpuEvidence<'a> {
+    pub hcl_report: &'a [u8],
+    pub standalone_report: Option<&'a [u8]>,
+    pub cert_pems: &'a [&'a [u8]],
+    pub ak_public_key_pem: &'a [u8],
+    pub nonce: &'a [u8],
+    pub quote_message: &'a [u8],
+    pub quote_signature: &'a [u8],
+    pub quote_pcrs: &'a [u8],
+    pub envelope_tlv: &'a [u8],
+    pub channel_binding: &'a [u8],
+}
+
+/// One successful CPU-evidence appraisal check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppraisalStep {
+    pub name: &'static str,
+    pub status: &'static str,
+    pub detail: String,
+}
+
+/// The four SNP TCB records surfaced by an accepted CPU appraisal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CpuTcb {
+    pub current: TcbVersion,
+    pub reported: TcbVersion,
+    pub committed: TcbVersion,
+    pub launch: TcbVersion,
+}
+
+/// The accepted CPU-leg evidence result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CpuAppraisal {
+    pub steps: Vec<AppraisalStep>,
+    pub hcla_version: u32,
+    pub report_version: u32,
+    pub cpuid_family: Option<u8>,
+    pub cpuid_model: Option<u8>,
+    pub cpuid_step: Option<u8>,
+    pub tcb: CpuTcb,
+    pub pcr_sha256: String,
+    pub host_data_hex: String,
+    pub measurement_hex: String,
+    pub chip_id_hex: String,
 }
 
 /// Verifies the selected pinned AMD chain and its VCEK report signature.
@@ -536,14 +834,6 @@ fn fixed_signature_component(raw: &[u8]) -> Result<[u8; 48], SnpVerifyError> {
     Ok(component)
 }
 
-fn without_leading_zeros(value: &[u8]) -> Vec<u8> {
-    value
-        .iter()
-        .skip_while(|byte| **byte == 0)
-        .copied()
-        .collect()
-}
-
 fn u32_at(data: &[u8], offset: usize) -> Result<u32, SnpParseError> {
     Ok(u32::from_le_bytes(array_at(data, offset)?))
 }
@@ -572,14 +862,86 @@ fn version_at(raw: [u8; 3]) -> String {
 mod tests {
     use std::{fs, path::PathBuf};
 
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use x509_parser::pem::parse_x509_pem;
+
     use super::{
-        HCL_REPORT_OFFSET, SNP_OFF_MEASUREMENT, SnpParseError, SnpReport, SnpVerifyError,
-        embedded_root_pairs, parse_hcla, select_root_generation, verify_amd_chain_and_report,
-        verify_rsa_pss_sha384_signature,
+        CpuAppraisalStage, CpuEvidence, CpuLegError, HCL_REPORT_OFFSET, SNP_OFF_MEASUREMENT,
+        SNP_OFF_VERSION, SnpParseError, SnpReport, SnpVerifyError, appraise_cpu_evidence,
+        check_policy, embedded_root_pairs, parse_hcla, select_root_generation,
+        verify_amd_chain_and_report, verify_rsa_pss_sha384_signature,
     };
     use crate::test_support::fixture_bytes;
 
     const VALID_NOW_UNIX_SECONDS: i64 = 1_800_000_000;
+
+    struct FixtureInputs {
+        hcl_report: Vec<u8>,
+        report: Vec<u8>,
+        certificates: [Vec<u8>; 3],
+        ak_public_key_pem: Vec<u8>,
+        nonce: Vec<u8>,
+        quote_message: Vec<u8>,
+        quote_signature: Vec<u8>,
+        quote_pcrs: Vec<u8>,
+        envelope_tlv: Vec<u8>,
+        channel_binding: Vec<u8>,
+    }
+
+    fn fixture_inputs() -> FixtureInputs {
+        let nonce_hex = String::from_utf8(fixture_bytes("nonce.hex")).expect("nonce is UTF-8");
+        let nonce = nonce_hex
+            .split_whitespace()
+            .collect::<String>()
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| {
+                u8::from_str_radix(std::str::from_utf8(pair).expect("ASCII hex"), 16)
+                    .expect("valid hex")
+            })
+            .collect();
+        FixtureInputs {
+            hcl_report: fixture_bytes("hcl_report.bin"),
+            report: fixture_bytes("report.bin"),
+            certificates: fixture_certificates(),
+            ak_public_key_pem: fixture_bytes("akpub.pem"),
+            nonce,
+            quote_message: fixture_bytes("quote.msg"),
+            quote_signature: fixture_bytes("quote.sig"),
+            quote_pcrs: fixture_bytes("quote.pcrs"),
+            envelope_tlv: fixture_bytes("gpu-envelope.tlv"),
+            channel_binding: fixture_bytes("guest_x25519.pub.der"),
+        }
+    }
+
+    fn cpu_evidence<'a>(
+        inputs: &'a FixtureInputs,
+        cert_pems: &'a [&'a [u8]],
+        standalone_report: Option<&'a [u8]>,
+        ak_public_key_pem: &'a [u8],
+        envelope_tlv: &'a [u8],
+    ) -> CpuEvidence<'a> {
+        CpuEvidence {
+            hcl_report: &inputs.hcl_report,
+            standalone_report,
+            cert_pems,
+            ak_public_key_pem,
+            nonce: &inputs.nonce,
+            quote_message: &inputs.quote_message,
+            quote_signature: &inputs.quote_signature,
+            quote_pcrs: &inputs.quote_pcrs,
+            envelope_tlv,
+            channel_binding: &inputs.channel_binding,
+        }
+    }
+
+    fn fixture_cert_refs(inputs: &FixtureInputs) -> [&[u8]; 3] {
+        [
+            inputs.certificates[0].as_slice(),
+            inputs.certificates[1].as_slice(),
+            inputs.certificates[2].as_slice(),
+        ]
+    }
 
     fn fixture_certificates() -> [Vec<u8>; 3] {
         [
@@ -718,5 +1080,159 @@ mod tests {
                 fs::read(source_root.join("ask.pem")).expect("source ASK is readable")
             );
         }
+    }
+
+    #[test]
+    fn appraise_cpu_evidence_matches_captured_fixture() {
+        let inputs = fixture_inputs();
+        let cert_pems = fixture_cert_refs(&inputs);
+        let appraisal = appraise_cpu_evidence(
+            cpu_evidence(
+                &inputs,
+                &cert_pems,
+                Some(&inputs.report),
+                &inputs.ak_public_key_pem,
+                &inputs.envelope_tlv,
+            ),
+            VALID_NOW_UNIX_SECONDS,
+        )
+        .expect("fixture CPU evidence appraises");
+        let steps: Vec<(&str, &str)> = appraisal
+            .steps
+            .iter()
+            .map(|step| (step.name, step.detail.as_str()))
+            .collect();
+        assert_eq!(
+            steps,
+            vec![
+                ("hcla", "sig=HCLA version=2 request_type=2"),
+                ("runtime-binding", "report_data == SHA-256(runtime JSON)"),
+                ("amd-chain", "VCEK chains to pinned SEV-Genoa roots"),
+                ("amd-report-signature", "VCEK signed report bytes 0..0x29f"),
+                ("snp-policy", "version=5 vmpl=0 debug_allowed=False"),
+                (
+                    "ak-binding",
+                    "bundle AK public key matches AMD-bound HCLAkPub"
+                ),
+                (
+                    "quote",
+                    "AK quote signature valid and extraData matches verifier nonce + guest key",
+                ),
+                (
+                    "pcr-policy",
+                    "record-then-pin v1 fingerprint=b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3",
+                ),
+            ]
+        );
+        assert_eq!(appraisal.hcla_version, 2);
+        assert_eq!(appraisal.report_version, 5);
+        assert_eq!(
+            (
+                appraisal.cpuid_family,
+                appraisal.cpuid_model,
+                appraisal.cpuid_step
+            ),
+            (Some(25), Some(17), Some(1))
+        );
+        assert_eq!(
+            appraisal.pcr_sha256,
+            "b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3"
+        );
+        for tcb in [
+            &appraisal.tcb.current,
+            &appraisal.tcb.reported,
+            &appraisal.tcb.committed,
+            &appraisal.tcb.launch,
+        ] {
+            assert_eq!(tcb.boot_loader, Some(10));
+            assert_eq!(tcb.tee, Some(0));
+            assert_eq!(tcb.snp, Some(27));
+            assert_eq!(tcb.microcode, Some(88));
+            assert_eq!(tcb.fmc, None);
+        }
+    }
+
+    #[test]
+    fn appraise_cpu_evidence_rejects_tlv_splice_before_any_step() {
+        let inputs = fixture_inputs();
+        let cert_pems = fixture_cert_refs(&inputs);
+        let mut envelope = inputs.envelope_tlv.clone();
+        let nonce_start = 16;
+        envelope[nonce_start] ^= 1;
+        assert_eq!(
+            appraise_cpu_evidence(
+                cpu_evidence(
+                    &inputs,
+                    &cert_pems,
+                    None,
+                    &inputs.ak_public_key_pem,
+                    &envelope,
+                ),
+                VALID_NOW_UNIX_SECONDS,
+            ),
+            Err(CpuLegError::Binding {
+                stage: CpuAppraisalStage::Envelope,
+                source: crate::error::BindingError::EnvelopeNonceMismatch,
+            })
+        );
+    }
+
+    #[test]
+    fn appraise_cpu_evidence_rejects_foreign_ak_public_key() {
+        let inputs = fixture_inputs();
+        let cert_pems = fixture_cert_refs(&inputs);
+        let (_, pem) = parse_x509_pem(&inputs.ak_public_key_pem).expect("fixture AK PEM parses");
+        let mut der = pem.contents;
+        let exponent = der
+            .windows(3)
+            .rposition(|window| window == [1, 0, 1])
+            .expect("RSA exponent is present");
+        der[exponent + 2] = 3;
+        let foreign_ak = format!(
+            "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----\n",
+            STANDARD.encode(der)
+        )
+        .into_bytes();
+        assert_eq!(
+            appraise_cpu_evidence(
+                cpu_evidence(&inputs, &cert_pems, None, &foreign_ak, &inputs.envelope_tlv,),
+                VALID_NOW_UNIX_SECONDS,
+            ),
+            Err(CpuLegError::SnpVerify {
+                stage: CpuAppraisalStage::AkBinding,
+                source: SnpVerifyError::AkKeyMismatch,
+            })
+        );
+    }
+
+    #[test]
+    fn appraise_cpu_evidence_records_standalone_report_difference() {
+        let inputs = fixture_inputs();
+        let cert_pems = fixture_cert_refs(&inputs);
+        let standalone = b"not the HCLA-embedded report";
+        let appraisal = appraise_cpu_evidence(
+            cpu_evidence(
+                &inputs,
+                &cert_pems,
+                Some(standalone),
+                &inputs.ak_public_key_pem,
+                &inputs.envelope_tlv,
+            ),
+            VALID_NOW_UNIX_SECONDS,
+        )
+        .expect("fixture CPU evidence appraises");
+        assert_eq!(appraisal.steps.len(), 9);
+        assert_eq!(appraisal.steps[0].name, "hcla");
+        assert_eq!(appraisal.steps[1].name, "standalone-report");
+    }
+
+    #[test]
+    fn check_policy_rejects_unsupported_report_version() {
+        let mut report = fixture_bytes("report.bin");
+        report[SNP_OFF_VERSION] = 4;
+        assert_eq!(
+            check_policy(&SnpReport::parse(&report).expect("mutated report parses")),
+            Err(SnpVerifyError::PolicyReportVersion)
+        );
     }
 }

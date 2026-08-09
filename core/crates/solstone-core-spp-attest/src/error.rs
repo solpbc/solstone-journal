@@ -137,6 +137,10 @@ pub enum SnpParseError {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum SnpVerifyError {
+    #[error("runtime JSON digest does not match report data")]
+    RuntimeBindingDigestMismatch,
+    #[error("runtime JSON report-data tail is nonzero")]
+    RuntimeBindingTailNonZero,
     #[error("certificate did not parse")]
     CertificateParse,
     #[error("no PEM certificates were supplied")]
@@ -161,4 +165,69 @@ pub enum SnpVerifyError {
     ReportSignatureInvalid,
     #[error("certificate algorithm is outside the supported profile")]
     UnsupportedCertificateAlgorithm,
+    #[error("HCLA version is not allowed")]
+    HclaVersionDisallowed,
+    #[error("HCLA AK JWK is missing")]
+    AkJwkMissing,
+    #[error("HCLA AK JWK is invalid")]
+    AkJwkInvalid,
+    #[error("bundle AK public key is invalid")]
+    AkKeyInvalid,
+    #[error("bundle AK public key does not match HCLA AK JWK")]
+    AkKeyMismatch,
+    #[error("SNP report version is not allowed")]
+    PolicyReportVersion,
+    #[error("SNP report VMPL is not allowed")]
+    PolicyVmpl,
+    #[error("SNP report policy allows DEBUG")]
+    PolicyDebugEnabled,
+}
+
+/// The CPU-evidence check at which a typed error occurred.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CpuAppraisalStage {
+    Envelope,
+    Hcla,
+    Report,
+    RuntimeBinding,
+    AmdChain,
+    SnpPolicy,
+    AkBinding,
+    Quote,
+}
+
+/// Fail-closed errors raised while appraising CPU-leg evidence.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum CpuLegError {
+    #[error("CPU evidence failed at {stage:?}: {source}")]
+    Tlv {
+        stage: CpuAppraisalStage,
+        #[source]
+        source: TlvError,
+    },
+    #[error("CPU evidence failed at {stage:?}: {source}")]
+    Binding {
+        stage: CpuAppraisalStage,
+        #[source]
+        source: BindingError,
+    },
+    #[error("CPU evidence failed at {stage:?}: {source}")]
+    SnpParse {
+        stage: CpuAppraisalStage,
+        #[source]
+        source: SnpParseError,
+    },
+    #[error("CPU evidence failed at {stage:?}: {source}")]
+    SnpVerify {
+        stage: CpuAppraisalStage,
+        #[source]
+        source: SnpVerifyError,
+    },
+    #[error("CPU evidence failed at {stage:?}: {source}")]
+    TpmQuote {
+        stage: CpuAppraisalStage,
+        #[source]
+        source: TpmQuoteError,
+    },
 }
