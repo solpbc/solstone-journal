@@ -42,12 +42,14 @@ pub fn confidential_generate(
     runtime: &EndpointRuntime,
 ) -> ConfidentialResult {
     confidential_generate_with(
-        request,
-        journal_path,
-        endpoint,
-        config,
-        runtime,
-        SystemTime::now(),
+        ConfidentialCall {
+            request,
+            journal_path,
+            endpoint,
+            config,
+            runtime,
+            now: SystemTime::now(),
+        },
         check_nvattest_readiness,
         |ratls_endpoint, nvattest_dir| {
             establish_production_attested_channel(
@@ -69,13 +71,18 @@ struct EstablishedChannel {
     stream: Box<dyn AttestedIo>,
 }
 
-fn confidential_generate_with<R, E>(
-    request: &GenerateRequest,
-    journal_path: &Path,
-    endpoint: &ByoEndpoint,
-    config: &Map<String, Value>,
-    runtime: &EndpointRuntime,
+/// The call's context, grouped so the injected seams stay visible in the signature.
+struct ConfidentialCall<'a> {
+    request: &'a GenerateRequest,
+    journal_path: &'a Path,
+    endpoint: &'a ByoEndpoint,
+    config: &'a Map<String, Value>,
+    runtime: &'a EndpointRuntime,
     now: SystemTime,
+}
+
+fn confidential_generate_with<R, E>(
+    call: ConfidentialCall<'_>,
     readiness: R,
     establish: E,
 ) -> ConfidentialResult
@@ -83,6 +90,14 @@ where
     R: FnOnce(&Path) -> NvattestEnsureStatus,
     E: FnOnce(&RatlsEndpoint, &Path) -> Result<EstablishedChannel, &'static str>,
 {
+    let ConfidentialCall {
+        request,
+        journal_path,
+        endpoint,
+        config,
+        runtime,
+        now,
+    } = call;
     if runtime
         .attestation_state()
         .get_attestation_state()
@@ -406,12 +421,14 @@ mod tests {
         let runtime = EndpointRuntime::default();
         let path = journal("success");
         let result = confidential_generate_with(
-            &request(),
-            &path,
-            &endpoint(port),
-            &Map::new(),
-            &runtime,
-            UNIX_EPOCH,
+            ConfidentialCall {
+                request: &request(),
+                journal_path: &path,
+                endpoint: &endpoint(port),
+                config: &Map::new(),
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
             |_| NvattestEnsureStatus::AlreadyInstalled,
             |_, _| {
                 Ok(EstablishedChannel {
@@ -471,12 +488,14 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind endpoint");
         let path = journal("not-verified");
         let result = confidential_generate_with(
-            &request(),
-            &path,
-            &endpoint(listener.local_addr().expect("address").port()),
-            &Map::new(),
-            &runtime,
-            UNIX_EPOCH,
+            ConfidentialCall {
+                request: &request(),
+                journal_path: &path,
+                endpoint: &endpoint(listener.local_addr().expect("address").port()),
+                config: &Map::new(),
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
             |_| NvattestEnsureStatus::InstallFailed,
             |_, _| {
                 attempts.fetch_add(1, Ordering::SeqCst);
@@ -496,12 +515,14 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind endpoint");
         let path = journal("failed");
         let result = confidential_generate_with(
-            &request(),
-            &path,
-            &endpoint(listener.local_addr().expect("address").port()),
-            &Map::new(),
-            &runtime,
-            UNIX_EPOCH,
+            ConfidentialCall {
+                request: &request(),
+                journal_path: &path,
+                endpoint: &endpoint(listener.local_addr().expect("address").port()),
+                config: &Map::new(),
+                runtime: &runtime,
+                now: UNIX_EPOCH,
+            },
             |_| NvattestEnsureStatus::AlreadyInstalled,
             |_, _| {
                 attempts.fetch_add(1, Ordering::SeqCst);
@@ -530,12 +551,14 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind endpoint");
         let path = journal("stale");
         let result = confidential_generate_with(
-            &request(),
-            &path,
-            &endpoint(listener.local_addr().expect("address").port()),
-            &Map::new(),
-            &runtime,
-            UNIX_EPOCH + Duration::from_secs(10 * 60),
+            ConfidentialCall {
+                request: &request(),
+                journal_path: &path,
+                endpoint: &endpoint(listener.local_addr().expect("address").port()),
+                config: &Map::new(),
+                runtime: &runtime,
+                now: UNIX_EPOCH + Duration::from_secs(10 * 60),
+            },
             |_| {
                 readiness.fetch_add(1, Ordering::SeqCst);
                 NvattestEnsureStatus::AlreadyInstalled
