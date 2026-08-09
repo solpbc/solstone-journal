@@ -21,6 +21,7 @@ members = [
     "crates/solstone-core-brain-cli",
     "crates/solstone-core-callosum",
     "crates/solstone-core-cogitate",
+    "crates/solstone-core-cogitate-tools",
     "crates/solstone-core-processing-record",
     "crates/solstone-core-retention",
     "crates/solstone-core-retention-cli",

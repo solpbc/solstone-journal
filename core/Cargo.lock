@@ -2478,6 +2478,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-cogitate-tools"
+version = "1.0.22"
+dependencies = [
+ "nix",
+ "regex",
+ "serde",
+ "serde_json",
+ "solstone-core-format",
+]
+
+[[package]]
 name = "solstone-core-convey-http"
 version = "1.0.22"
 dependencies = [
