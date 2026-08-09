@@ -397,10 +397,23 @@ fn rejects_a_real_day_in_the_selected_shards_wrong_month() {
 }
 
 #[test]
-fn multishard_sequence_boundaries_include_the_declared_row_count() {
+fn multishard_sequence_is_bound_to_its_global_shard_and_line() {
     let (envelope, row) = multishard_context();
     let candidate = project_row(row).unwrap();
-    assert!(bind(&envelope, 3, 0, 1, &candidate).is_ok());
+    assert_error(
+        bind(&envelope, 3, 0, 1, &candidate),
+        LedgerEventErrorCode::ReferenceMismatch,
+        LedgerEventErrorField::Shard,
+        &envelope,
+        3,
+    );
+    assert_error(
+        bind(&envelope, 2, 0, 1, &candidate),
+        LedgerEventErrorCode::ReferenceMismatch,
+        LedgerEventErrorField::Line,
+        &envelope,
+        2,
+    );
     assert_error(
         bind(&envelope, 4, 0, 1, &candidate),
         LedgerEventErrorCode::InvalidSequence,

@@ -345,31 +345,39 @@ fn public_equality_distinguishes_each_constructible_semantic_group() {
         digest(ROW_SHA256),
         digest(VALUE_HASH),
     );
-    let second_sequence = bind_with(
+    let mut january_second = january_first.clone();
+    january_second.insert(
+        "normalized_ref".into(),
+        json!(format!(
+            "imports/{}/normalized/2026-01.jsonl#L2",
+            multishard.bundle_id().as_str()
+        )),
+    );
+    let second_position = bind_with(
         &multishard,
-        january_first.clone(),
+        january_second,
         2,
         0,
-        1,
+        2,
         digest(ROW_SHA256),
         digest(VALUE_HASH),
     );
-    assert_eq!(first.bundle_id(), second_sequence.bundle_id());
-    assert_eq!(first.row_schema(), second_sequence.row_schema());
-    assert_eq!(first.shard(), second_sequence.shard());
-    assert_eq!(first.line(), second_sequence.line());
-    assert_eq!(first.normalized_ref(), second_sequence.normalized_ref());
-    assert_eq!(first.row_sha256(), second_sequence.row_sha256());
-    assert_eq!(first.dedupe_key(), second_sequence.dedupe_key());
-    assert_eq!(first.source_family(), second_sequence.source_family());
-    assert_eq!(first.source_record_id(), second_sequence.source_record_id());
-    assert_eq!(first.record_type(), second_sequence.record_type());
-    assert_eq!(first.start_time(), second_sequence.start_time());
-    assert_eq!(first.end_time(), second_sequence.end_time());
-    assert_eq!(first.day(), second_sequence.day());
-    assert_eq!(first.value_hash(), second_sequence.value_hash());
-    assert_eq!(first.raw_ref(), second_sequence.raw_ref());
-    assert_ne!(first.sequence(), second_sequence.sequence());
+    assert_eq!(first.bundle_id(), second_position.bundle_id());
+    assert_eq!(first.row_schema(), second_position.row_schema());
+    assert_eq!(first.shard(), second_position.shard());
+    assert_eq!(first.row_sha256(), second_position.row_sha256());
+    assert_eq!(first.dedupe_key(), second_position.dedupe_key());
+    assert_eq!(first.source_family(), second_position.source_family());
+    assert_eq!(first.source_record_id(), second_position.source_record_id());
+    assert_eq!(first.record_type(), second_position.record_type());
+    assert_eq!(first.start_time(), second_position.start_time());
+    assert_eq!(first.end_time(), second_position.end_time());
+    assert_eq!(first.day(), second_position.day());
+    assert_eq!(first.value_hash(), second_position.value_hash());
+    assert_eq!(first.raw_ref(), second_position.raw_ref());
+    assert_ne!(first.sequence(), second_position.sequence());
+    assert_ne!(first.line(), second_position.line());
+    assert_ne!(first.normalized_ref(), second_position.normalized_ref());
 
     let mut other_shard_row = january_first;
     other_shard_row.insert("month".into(), json!("2026-02"));
@@ -384,14 +392,13 @@ fn public_equality_distinguishes_each_constructible_semantic_group() {
     let other_shard = bind_with(
         &multishard,
         other_shard_row,
-        1,
+        3,
         1,
         1,
         digest(ROW_SHA256),
         digest(VALUE_HASH),
     );
     assert_eq!(first.bundle_id(), other_shard.bundle_id());
-    assert_eq!(first.sequence(), other_shard.sequence());
     assert_eq!(first.row_schema(), other_shard.row_schema());
     assert_eq!(first.line(), other_shard.line());
     assert_eq!(first.row_sha256(), other_shard.row_sha256());
@@ -404,8 +411,9 @@ fn public_equality_distinguishes_each_constructible_semantic_group() {
     assert_eq!(first.value_hash(), other_shard.value_hash());
     assert_eq!(first.raw_ref(), other_shard.raw_ref());
     assert_ne!(first.shard(), other_shard.shard());
+    assert_ne!(first.sequence(), other_shard.sequence());
     assert_ne!(first.normalized_ref(), other_shard.normalized_ref());
     assert_ne!(first.day(), other_shard.day());
-    assert_ne!(first, second_sequence);
+    assert_ne!(first, second_position);
     assert_ne!(first, other_shard);
 }

@@ -221,7 +221,7 @@ fn caller_supplied_digest_twins_change_only_their_digest_field() {
 }
 
 #[test]
-fn sequence_and_line_positions_have_independent_canonical_observables() {
+fn global_position_changes_its_correlated_canonical_fields() {
     let case = &ledger_events_fixture()["cases"][0];
     let envelope =
         decode_body_envelope(case["expected_envelope_jsonl"].as_str().unwrap().as_bytes()).unwrap();
@@ -251,28 +251,21 @@ fn sequence_and_line_positions_have_independent_canonical_observables() {
         Some(row_sha256.clone()),
         value_hash.clone(),
     );
-    let sequence_twin = build_ledger_event(
-        &envelope,
-        row,
-        0,
-        2,
-        1,
-        Some(row_sha256.clone()),
-        value_hash.clone(),
-    );
-    assert_only_field_diff(&baseline, &sequence_twin, "sequence");
-
     let line_two_row = row.replace("normalized/2026-01.jsonl#L1", "normalized/2026-01.jsonl#L2");
-    let line_twin = build_ledger_event(
+    let position_twin = build_ledger_event(
         &envelope,
         &line_two_row,
         0,
-        1,
+        2,
         2,
         Some(row_sha256),
         value_hash,
     );
-    assert_only_fields_diff(&baseline, &line_twin, &["line", "normalized_ref"]);
+    assert_only_fields_diff(
+        &baseline,
+        &position_twin,
+        &["line", "normalized_ref", "sequence"],
+    );
 }
 
 #[test]

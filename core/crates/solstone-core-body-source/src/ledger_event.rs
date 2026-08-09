@@ -51,21 +51,21 @@ impl BodyLedgerEvent {
                 LedgerEventErrorField::Sequence,
             ));
         }
-        let Some(shard) = usize::try_from(shard_index)
-            .ok()
-            .and_then(|index| envelope.shards().get(index))
-        else {
+        let (expected_shard_index, expected_line) = sequence_location(envelope, sequence)
+            .expect("a checked envelope covers every in-range row sequence");
+        if usize::try_from(shard_index).ok() != Some(expected_shard_index) {
             return Err(err(
                 LedgerEventErrorCode::ReferenceMismatch,
                 LedgerEventErrorField::Shard,
             ));
-        };
-        if line == 0 || line > shard.rows() {
+        }
+        if line != expected_line {
             return Err(err(
                 LedgerEventErrorCode::ReferenceMismatch,
                 LedgerEventErrorField::Line,
             ));
         }
+        let shard = &envelope.shards()[expected_shard_index];
         if candidate.schema() == LedgerSchema::NormalizedV1
             || candidate.schema().expected_family() != envelope.source_family().as_str()
         {
@@ -209,6 +209,17 @@ impl BodyLedgerEvent {
     pub fn raw_ref(&self) -> Option<&BodyString> {
         self.raw_ref.as_ref()
     }
+}
+
+fn sequence_location(envelope: &BodyEnvelope, sequence: u64) -> Option<(usize, u64)> {
+    let mut remaining = sequence;
+    for (index, shard) in envelope.shards().iter().enumerate() {
+        if remaining <= shard.rows() {
+            return Some((index, remaining));
+        }
+        remaining -= shard.rows();
+    }
+    None
 }
 
 fn body_string_matches(value: &BodyString, literal: &str) -> bool {
