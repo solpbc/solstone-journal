@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use solstone_core_body_rebuild::{BodyRebuildErrorKind, rebuild_body_store};
 
 const NATIVE_CASE: &str = "oura_retain_parsed_one_row";
@@ -72,12 +73,21 @@ fn native_case() -> Value {
         .clone()
 }
 
-fn write_native_bundle(journal: &Path, case: &Value) {
+fn discard_case() -> Value {
+    fixture()["cases"]
+        .as_array()
+        .expect("fixture cases")
+        .iter()
+        .find(|case| case["name"].as_str() == Some("oura_discard_zero_rows"))
+        .expect("discard case exists")
+        .clone()
+}
+
+fn write_empty_native_bundle(journal: &Path, case: &Value) -> PathBuf {
     let directory = journal
         .join("imports")
         .join(case["directory"].as_str().expect("directory"));
-    let normalized = directory.join("normalized");
-    fs::create_dir_all(&normalized).expect("native directories create");
+    fs::create_dir_all(&directory).expect("native directory creates");
     fs::write(
         directory.join("manifest.json"),
         serde_json::to_vec(&case["manifest"]).expect("manifest serializes"),
@@ -97,13 +107,78 @@ fn write_native_bundle(journal: &Path, case: &Value) {
             .expect("ledger bytes"),
     )
     .expect("ledger writes");
-    fs::write(
-        normalized.join("2026-01.jsonl"),
+    directory
+}
+
+fn write_native_bundle(journal: &Path, case: &Value) {
+    let directory = journal
+        .join("imports")
+        .join(case["directory"].as_str().expect("directory"));
+    let normalized = directory.join("normalized");
+    fs::create_dir_all(&normalized).expect("native directories create");
+    let raw_bytes = b"{\"synthetic\":true}\n";
+    let raw_digest = format!("sha256:{:x}", Sha256::digest(raw_bytes));
+    let inventory = format!(
+        "{{\"bytes\":{},\"path\":\"oura/daily_readiness-0001.json\",\"sha256\":\"{raw_digest}\"}}\n",
+        raw_bytes.len()
+    );
+    let inventory_digest = format!("sha256:{:x}", Sha256::digest(inventory.as_bytes()));
+
+    let mut row: Value = serde_json::from_str(
         case["expected_normalized_jsonl"]
             .as_str()
             .expect("normalized bytes"),
     )
-    .expect("normalized shard writes");
+    .expect("normalized row parses");
+    row["raw_inventory_sha256"] = Value::String(inventory_digest);
+    let mut row_bytes = serde_json::to_vec(&row).expect("normalized row serializes");
+    row_bytes.push(b'\n');
+    let row_digest = format!("sha256:{:x}", Sha256::digest(&row_bytes));
+
+    let mut event: Value = serde_json::from_str(
+        case["expected_ledger_jsonl"]
+            .as_str()
+            .expect("ledger bytes"),
+    )
+    .expect("ledger event parses");
+    event["row_sha256"] = Value::String(row_digest);
+    let mut ledger_bytes = serde_json::to_vec(&event).expect("ledger event serializes");
+    ledger_bytes.push(b'\n');
+
+    let mut envelope: Value = serde_json::from_str(
+        case["expected_envelope_jsonl"]
+            .as_str()
+            .expect("envelope bytes"),
+    )
+    .expect("envelope parses");
+    envelope["shards"][0]["bytes"] = Value::from(row_bytes.len() as u64);
+    envelope["shards"][0]["sha256"] =
+        Value::String(format!("sha256:{:x}", Sha256::digest(&row_bytes)));
+    envelope["ledger"]["bytes"] = Value::from(ledger_bytes.len() as u64);
+    envelope["ledger"]["sha256"] =
+        Value::String(format!("sha256:{:x}", Sha256::digest(&ledger_bytes)));
+    let mut envelope_bytes = serde_json::to_vec(&envelope).expect("envelope serializes");
+    envelope_bytes.push(b'\n');
+
+    let mut manifest = case["manifest"].clone();
+    manifest["body_bundle_sha256"] =
+        Value::String(format!("sha256:{:x}", Sha256::digest(&envelope_bytes)));
+
+    fs::write(
+        directory.join("manifest.json"),
+        serde_json::to_vec(&manifest).expect("manifest serializes"),
+    )
+    .expect("manifest writes");
+    fs::write(directory.join("body-bundle.json"), envelope_bytes).expect("envelope writes");
+    fs::write(directory.join("body-ledger.jsonl"), ledger_bytes).expect("ledger writes");
+    fs::write(normalized.join("2026-01.jsonl"), row_bytes).expect("normalized shard writes");
+    fs::create_dir_all(directory.join("raw/oura")).expect("raw directory creates");
+    fs::write(
+        directory.join("raw/oura/daily_readiness-0001.json"),
+        raw_bytes,
+    )
+    .expect("raw asset writes");
+    fs::write(directory.join("body-raw-inventory.jsonl"), inventory).expect("raw inventory writes");
 }
 
 fn write_legacy_predecessor(journal: &Path, case: &Value) {
@@ -309,6 +384,50 @@ fn native_authority_failure_preserves_the_previous_database_byte_for_byte() {
             .join("imports/.health-dedupe.sqlite.rebuild")
             .exists()
     );
+}
+
+#[test]
+fn native_raw_retention_shape_is_fail_closed() {
+    let retained = TempDir::new();
+    let retained_case = native_case();
+    write_native_bundle(retained.path(), &retained_case);
+    fs::remove_file(
+        retained
+            .path()
+            .join("imports")
+            .join(retained_case["directory"].as_str().expect("directory"))
+            .join("body-raw-inventory.jsonl"),
+    )
+    .expect("remove retained inventory");
+    let error = rebuild_body_store(retained.path()).expect_err("retained inventory is required");
+    assert_eq!(error.kind(), BodyRebuildErrorKind::NativeReplay);
+    assert_eq!(error.stage(), "raw_inventory_missing");
+
+    let discarded = TempDir::new();
+    let discarded_bundle = write_empty_native_bundle(discarded.path(), &discard_case());
+    fs::create_dir(discarded_bundle.join("raw")).expect("create forbidden raw directory");
+    fs::write(
+        discarded_bundle.join("raw/undeclared"),
+        b"synthetic private body data",
+    )
+    .expect("write forbidden raw data");
+    let error = rebuild_body_store(discarded.path()).expect_err("discard must exclude raw data");
+    assert_eq!(error.kind(), BodyRebuildErrorKind::NativeReplay);
+    assert_eq!(error.stage(), "raw_retention_mismatch");
+
+    let deep = TempDir::new();
+    let deep_case = native_case();
+    write_native_bundle(deep.path(), &deep_case);
+    let raw = deep
+        .path()
+        .join("imports")
+        .join(deep_case["directory"].as_str().expect("directory"))
+        .join("raw");
+    let nested = (0..=128).fold(raw, |path, index| path.join(format!("d{index}")));
+    fs::create_dir_all(nested).expect("create over-depth raw tree");
+    let error = rebuild_body_store(deep.path()).expect_err("raw depth must be bounded");
+    assert_eq!(error.kind(), BodyRebuildErrorKind::NativeReplay);
+    assert_eq!(error.stage(), "raw_asset_depth_limit");
 }
 
 #[test]

@@ -211,13 +211,13 @@ def test_blocked_health_gate_creates_no_directories(tmp_path: Path):
     assert not journal.exists()
 
 
-def test_cli_apple_health_save_missing_artifact_blocks_before_setup(
+def test_cli_apple_health_save_delegates_before_python_setup(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ):
     journal = _use_journal(tmp_path, monkeypatch)
     cli = import_module("solstone.think.importers.cli")
+    body_native = import_module("solstone.think.body_native")
     file_importer = import_module("solstone.think.importers.file_importer")
     monkeypatch.setitem(
         file_importer.FILE_IMPORTER_REGISTRY,
@@ -229,6 +229,21 @@ def test_cli_apple_health_save_missing_artifact_blocks_before_setup(
         "_setup_file_import",
         lambda import_id: pytest.fail("_setup_file_import should not run"),
     )
+    calls = []
+
+    def native_apple(source, journal_root, **kwargs):
+        calls.append((source, journal_root, kwargs))
+        return {
+            "schema": "solstone.body.ingest.result.v1",
+            "source": "apple_health",
+            "mode": "save",
+            "rows": 0,
+            "days": [],
+            "skipped": False,
+            "bundle_id": None,
+        }
+
+    monkeypatch.setattr(body_native, "apple_health", native_apple)
 
     args = Namespace(
         media=str(APPLE_HEALTH_FIXTURE),
@@ -249,13 +264,23 @@ def test_cli_apple_health_save_missing_artifact_blocks_before_setup(
         with_day_summaries=False,
     )
 
-    with pytest.raises(SystemExit) as exc_info:
-        cli._import_one_from_args(args)
+    result = cli._import_one_from_args(args)
 
-    assert exc_info.value.code == 2
-    out = capsys.readouterr().out
-    assert "Health import save blocked before journal write." in out
-    assert str(journal.resolve()) in out
+    assert result is not None
+    assert result["rows"] == 0
+    assert calls == [
+        (
+            APPLE_HEALTH_FIXTURE,
+            journal,
+            {
+                "save": True,
+                "confirm_body_save": False,
+                "date_from": None,
+                "date_to": None,
+                "force": False,
+            },
+        )
+    ]
     assert not (journal / "imports" / "20260102_123000").exists()
 
 
@@ -664,14 +689,34 @@ def test_apple_health_save_with_valid_gate_reaches_process(
     assert result.segments is None
 
 
-def test_cli_apple_health_save_with_valid_gate_imports_end_to_end(
+def test_cli_apple_health_save_dispatches_to_native_owner(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
     journal = _use_journal(tmp_path, monkeypatch)
     write_health_approval_artifact(journal, importers=["apple_health"])
+    before = {
+        path.relative_to(journal): path.read_bytes() if path.is_file() else None
+        for path in journal.rglob("*")
+    }
     cli = import_module("solstone.think.importers.cli")
-    monkeypatch.setattr(cli, "_status_emitter", lambda: None)
+    body_native = import_module("solstone.think.body_native")
+    expected = {
+        "schema": "solstone.body.ingest.result.v1",
+        "source": "apple_health",
+        "mode": "save",
+        "rows": 2,
+        "days": ["20260102"],
+        "skipped": False,
+        "bundle_id": "body-01KZZZZZZZZZZZZZZZZZZZZZZZ",
+    }
+    calls = []
+
+    def native_apple(source, journal_root, **kwargs):
+        calls.append((source, journal_root, kwargs))
+        return expected
+
+    monkeypatch.setattr(body_native, "apple_health", native_apple)
 
     result = cli._import_one_from_args(
         Namespace(
@@ -694,23 +739,44 @@ def test_cli_apple_health_save_with_valid_gate_imports_end_to_end(
         )
     )
 
-    import_dir = journal / "imports" / "20260102_123000"
-    assert result is not None
-    assert result["entries_written"] > 0
-    assert (import_dir / "manifest.json").is_file()
-    assert list((import_dir / "normalized").glob("*.jsonl"))
+    assert result == expected
+    assert calls == [
+        (
+            APPLE_HEALTH_FIXTURE,
+            journal,
+            {
+                "save": True,
+                "confirm_body_save": True,
+                "date_from": None,
+                "date_to": None,
+                "force": False,
+            },
+        )
+    ]
+    assert {
+        path.relative_to(journal): path.read_bytes() if path.is_file() else None
+        for path in journal.rglob("*")
+    } == before
 
 
-def test_cli_oura_save_with_valid_gate_reaches_deferred_save_path(
+def test_cli_oura_file_save_refuses_before_python_setup(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
     journal = _use_journal(tmp_path, monkeypatch)
     write_health_approval_artifact(journal, importers=["oura"])
+    before = {
+        path.relative_to(journal): path.read_bytes() if path.is_file() else None
+        for path in journal.rglob("*")
+    }
     cli = import_module("solstone.think.importers.cli")
-    monkeypatch.setattr(cli, "_status_emitter", lambda: None)
+    monkeypatch.setattr(
+        cli,
+        "_setup_file_import",
+        lambda import_id: pytest.fail("_setup_file_import should not run"),
+    )
 
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError, match="imports through sync"):
         cli._import_one_from_args(
             Namespace(
                 media=str(OURA_FIXTURE),
@@ -731,6 +797,10 @@ def test_cli_oura_save_with_valid_gate_reaches_deferred_save_path(
                 with_day_summaries=False,
             )
         )
+    assert {
+        path.relative_to(journal): path.read_bytes() if path.is_file() else None
+        for path in journal.rglob("*")
+    } == before
 
 
 def test_file_importer_dry_run_does_not_require_health_gate(

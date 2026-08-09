@@ -60,7 +60,9 @@ pub use body_envelope_manifest_binding::decode_body_envelope_with_manifest;
 pub use body_ledger_validator::{BodyLedgerValidator, ValidatedBodyLedger};
 pub use body_month::BodyMonth;
 pub use body_raw_retention::BodyRawRetention;
-pub use body_row_event::{ValidatedBodyRowEvent, validate_body_row_event};
+pub use body_row_event::{
+    MAX_BODY_ROW_FRAME_BYTES, ValidatedBodyRowEvent, validate_body_row_event,
+};
 pub use body_shard_validator::{BodyShardValidator, ValidatedBodyShard};
 pub use body_source_family::BodySourceFamily;
 pub use body_source_hash::BodySourceHash;

@@ -64,16 +64,16 @@ def test_load_sync_state_corrupt_json(tmp_path):
 
 
 def test_syncable_registry_exposes_only_supported_backends(caplog):
-    """Discovers only supported syncable backends without loader warnings."""
+    """Discovers only Python-owned sync backends without loader warnings."""
     from solstone.think.importers.sync import SYNCABLE_REGISTRY, get_syncable_backends
 
-    expected = {"plaud", "obsidian", "audio", "oura"}
+    expected = {"plaud", "obsidian", "audio"}
     caplog.set_level(logging.WARNING, logger="solstone.think.importers.sync")
     assert set(SYNCABLE_REGISTRY) == expected
     backends = get_syncable_backends()
     names = {b.name for b in backends}
     assert names == expected
-    assert len(backends) == 4
+    assert len(backends) == 3
     assert not [
         record
         for record in caplog.records

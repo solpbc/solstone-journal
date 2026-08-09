@@ -27,7 +27,13 @@ class _FixedDateTime(datetime):
 
 @pytest.fixture(autouse=True)
 def use_built_core(monkeypatch: pytest.MonkeyPatch) -> None:
-    helper = Path(__file__).resolve().parents[1] / "core" / "target" / "debug" / "solstone-core"
+    helper = (
+        Path(__file__).resolve().parents[1]
+        / "core"
+        / "target"
+        / "debug"
+        / "solstone-core"
+    )
     monkeypatch.setattr(
         journal_config.core_handshake,
         "check_solstone_core_handshake",
@@ -626,20 +632,13 @@ def test_provider_install_migration_reports_changed_and_noop(
     assert changes[-1] is False
 
 
-def test_pairing_oura_and_sol_voice_paths_report_changed_and_noop(
+def test_pairing_and_sol_voice_paths_report_changed_and_noop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
     pairing = importlib.import_module("solstone.think.pairing.config")
-    oura_auth = importlib.import_module("solstone.think.importers.oura_auth")
     sol_voice = importlib.import_module(
         "solstone.convey." + "sol" + "_initiated.settings"
-    )
-    tokens = SimpleNamespace(
-        access_token="a",
-        refresh_token="r",
-        expires_at="2026-07-19T00:00:00Z",
-        token_type="Bearer",
     )
     cases = [
         (pairing, {"pairing": {}}, lambda: pairing.set_home_address("https://home")),
@@ -647,11 +646,6 @@ def test_pairing_oura_and_sol_voice_paths_report_changed_and_noop(
             pairing,
             {"pairing": {"home_address": "https://home"}},
             pairing.clear_home_address,
-        ),
-        (
-            oura_auth,
-            {"oura": {}},
-            lambda: oura_auth.save_oura_tokens(tokens, journal_root=tmp_path),
         ),
         (sol_voice, {}, lambda: sol_voice.save_settings({"daily_cap": 3})),
     ]

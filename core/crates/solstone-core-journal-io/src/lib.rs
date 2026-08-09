@@ -25,7 +25,7 @@ pub(crate) mod test_support;
 pub use append::{append_jsonl, append_text};
 pub use atomic::{
     AtomicWriteOptions, JsonWriteOptions, atomic_replace, install_file, write_bytes_exclusive,
-    write_json, write_jsonl, write_text,
+    write_json, write_jsonl, write_reader_exclusive, write_text,
 };
 pub use entry::{Removed, remove_file, rename_within, sync_dir};
 pub use errors::{
@@ -42,7 +42,8 @@ pub use locking::{
 pub use paths::{
     DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, Segment, contained_path,
     create_directory_with_mode, day_dirs, day_path, ensure_directory, iter_segments,
-    list_dir_entries, path_lexists, resolve_configured_journal, resolve_journal_path, segment_path,
+    list_dir_entries, list_dir_entries_bounded, path_lexists, resolve_configured_journal,
+    resolve_journal_path, segment_path,
 };
 pub use readers::{
     JsonlReadReport, JsonlRecord, MalformedPolicy, read_bytes, read_json, read_jsonl,

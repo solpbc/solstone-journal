@@ -6,28 +6,46 @@
 - **Hard rules honored:** no network code anywhere (a test greps the module for network-capable imports), no OAuth against real Oura, no live-journal writes, no credentials or token files, synthetic fixtures only. The first live OAuth authorization is **OWNER-PRESENT-ONLY** (§8, phase O2).
 - **Medical claims:** Oura's numbers render as attributed facts — "Readiness 82 · Oura's score" — never our gloss, never medical interpretation.
 
-Status note, 2026-07-12: this document records the original Oura lane design.
-Since then, owner-present Oura OAuth connect, journal-config token
-storage/refresh, and Oura API sync with cursor and bundle writes have shipped.
-The Oura file-import save path and webhooks remain deferred.
+> **Historical design record.** Sections 1–10 preserve the July 2026 product
+> and data-shape decisions; they no longer define production code ownership or
+> the current runbook. See [`../health_imports.md`](../health_imports.md) for
+> the current boundary.
+
+Status note, 2026-08-09: Oura connect, HTTPS transport, token refresh,
+pagination, backfill, cursor state, normalization, native-bundle publication,
+dedupe replay, and restore rebuild are now Rust-owned in
+`solstone-core-body-ingest` and the body-source/store/rebuild crates. Python's
+`oura.py` is a read-only differential oracle and `body_native.py` is process
+transport. The Python sync registry, OAuth/token code, network client, cursor
+writer, bundle writer, and dedupe writer are gone. The owner commands remain
+`journal importer --connect oura`, `journal importer --sync oura`, and
+`journal importer --sync oura --save --confirm-body-save`. Oura file-import
+save and webhooks remain deferred.
+
+The native sync has aggregate run budgets in addition to its per-response
+limit: 128 MiB of response bodies, 5,000 pages, and 100,000 source items. A
+save may rotate an expired refresh token because it persists the replacement
+before retrying; catalog mode refuses that 401 rather than invalidate the
+stored grant. Retained API pages are covered by a canonical raw inventory and
+are verified during restore rebuild.
 
 ---
 
 ## 1. Where this fits in the existing architecture
 
-The health-import stack this lane extends (all shipped on `health-imports-phase1`):
+The original stack recorded below is historical. Its current ownership is:
 
 | Piece | File | Role |
 |---|---|---|
-| Apple Health importer | `solstone/think/importers/apple_health.py` | Detect/preview/save `export.xml`; normalized monthly shards; optional day summaries |
-| Shared health schema | `solstone/think/importers/health_schema.py` | Source families, friendly names, sleep-session math, dedupe-key functions |
-| Dedupe store | `solstone/think/importers/health_dedupe.py` | `imports/health-dedupe.sqlite`, batch upserts keyed by `dedupe_key` |
-| Pre-save gate | `solstone/think/importers/pre_save_gate.py` | Fail-closed approval gate for `SENSITIVE_IMPORTERS` save mode |
-| File-importer registry | `solstone/think/importers/file_importer.py` | `FILE_IMPORTER_REGISTRY`, detect/preview/process protocol |
-| Sync framework | `solstone/think/importers/sync.py` | `SyncableBackend` protocol, `SYNCABLE_REGISTRY`, cursor state at `imports/<backend>.json` |
+| Native body ingress | `core/crates/solstone-core-body-ingest/` | Oura OAuth, API sync, cursor, normalization, immutable native-bundle publication |
+| Native body contracts | `core/crates/solstone-core-body-source/` | Row/hash, manifest, envelope, ledger, and validation contracts |
+| Native body store | `core/crates/solstone-core-body-store/` + `solstone-core-body-rebuild/` | Ordered replay and atomic `imports/health-dedupe.sqlite` reconstruction |
+| Python Oura reader | `solstone/think/importers/oura.py` | Preview and independent parse/normalization differential oracle only |
+| Process adapter | `solstone/think/body_native.py` | Version-matched native helper dispatch and result validation only |
 | Body app | `solstone/apps/body/` | Read-only archive + day pages over normalized shards and the dedupe DB |
 
-Oura joins as a **second health source family** using the same storage, dedupe, gate, and (later) sync machinery. Nothing about the Apple Health path changes.
+Oura is the second body source family. Import preserves its source attribution;
+presentation may reconcile overlap with Apple Health later.
 
 ---
 
@@ -317,9 +335,9 @@ commit (the hourly sync lane runs against repo HEAD):
   and the owner's reauthorization, and the skipped endpoint backfills
   from the horizon on the first post-reauth save.
 
-Operator steps after this lands: `journal importer --connect oura`
+Historical operator steps after that amendment: `journal importer --connect oura`
 (browser reauth with the printed scopes), then
-`journal importer --sync oura --save --confirm-health-save` (the new
+`journal importer --sync oura --save --confirm-body-save` (the new
 endpoints backfill from the horizon automatically).
 
 ---
@@ -407,13 +425,13 @@ renders the friendly type ("Workout"); `metadata["activity"]` has the
 specific activity if wanted.
 
 Operator step after this lands (owner-side backfill):
-`journal importer --sync oura --save --confirm-health-save` — the four
+`journal importer --sync oura --save --confirm-body-save`, with the four
 new endpoints backfill from the horizon automatically; no
 reauthorization needed (the scopes were granted 2026-07-07).
 
 ---
 
-## 10. What landed with this doc (phase O0 inventory)
+## 10. What landed with this doc (historical phase-O0 inventory)
 
 - `solstone/think/importers/oura.py` — parse layer (`parse_oura_bundle`, `parse_endpoint_document`, `parse_oura_day`), normalizer (`normalize_bundle` → rows + `HealthDedupeRecord`s via `health_schema`), factual rendering (`render_day_summary`), `OuraImporter` (detect/preview/dry-run live; save gated then seamed), `OuraSyncBackend` + OAuth seams. Network egress follows a lazy-import discipline: no module-level network imports, with live egress confined to the allowlisted transport path enforced by tests.
 - `solstone/think/importers/health_schema.py` — `SOURCE_OURA_API`, `KNOWN_SOURCE_FAMILIES` entry, friendly names for the seven `oura.*` record types.

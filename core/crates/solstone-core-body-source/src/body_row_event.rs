@@ -12,7 +12,8 @@ use crate::{
     Coordinate, PresentationRow,
 };
 
-const MAX_ROW_FRAME_BYTES: usize = 1_048_576;
+/// Maximum accepted size of one canonical normalized-row JSONL frame.
+pub const MAX_BODY_ROW_FRAME_BYTES: usize = 1_048_576;
 
 /// Proof that one checked body-ledger event agrees with its normalized row.
 ///
@@ -67,7 +68,7 @@ pub fn validate_body_row_event(
     row_frame: &[u8],
     event: &BodyLedgerEvent,
 ) -> Result<ValidatedBodyRowEvent, BodyRowEventError> {
-    if row_frame.len() > MAX_ROW_FRAME_BYTES {
+    if row_frame.len() > MAX_BODY_ROW_FRAME_BYTES {
         return Err(row_event_error(event, BodyRowEventErrorKind::InputTooLarge));
     }
 

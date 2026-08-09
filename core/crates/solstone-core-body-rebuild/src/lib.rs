@@ -3,24 +3,26 @@
 
 //! Host-only reconstruction of body dedupe state from immutable import bundles.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fmt;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, params};
+use sha2::{Digest, Sha256};
 use solstone_core_body_source::{
-    BodyEnvelope, BodyMonth, BodyString, BodyValue, BundleClass, DirectoryObservation,
-    PresentationRow, authorize_native_bundle, classify_bundle_directory,
-    decode_body_envelope_with_manifest, parse, project,
+    BodyEnvelope, BodyMonth, BodyRawRetention, BodyString, BodyValue, BundleClass,
+    DirectoryObservation, PresentationRow, authorize_native_bundle, canonicalize,
+    classify_bundle_directory, decode_body_envelope_with_manifest, parse, project,
 };
 use solstone_core_body_store::{BodyBundleReplay, BodyDedupeState, validate_legacy_body_row};
 use solstone_core_journal_io::{
     AtomicWriteOptions, DirEntry, DirEntryKind, LockError, LockOptions, Removed,
-    create_directory_with_mode, hold_lock, install_file, list_dir_entries, remove_file, sync_dir,
-    write_bytes_exclusive,
+    create_directory_with_mode, hold_lock, install_file, list_dir_entries,
+    list_dir_entries_bounded, remove_file, sync_dir, write_bytes_exclusive,
 };
 
 const IMPORTS_DIR: &str = "imports";
@@ -30,8 +32,17 @@ const ENVELOPE_NAME: &str = "body-bundle.json";
 const LEDGER_NAME: &str = "body-ledger.jsonl";
 const MANIFEST_NAME: &str = "manifest.json";
 const NORMALIZED_NAME: &str = "normalized";
+const RAW_NAME: &str = "raw";
+const RAW_INVENTORY_NAME: &str = "body-raw-inventory.jsonl";
+const RAW_INVENTORY_FIELD: &str = "raw_inventory_sha256";
 const MAX_DOCUMENT_BYTES: usize = 1_048_576;
 const MAX_LEDGER_FRAME_BYTES: usize = 65_537;
+const MAX_RAW_INVENTORY_BYTES: usize = 16 * 1024 * 1024;
+const MAX_RAW_ASSETS: usize = 10_000;
+const MAX_RAW_DIRECTORIES: usize = 1_024;
+const MAX_RAW_DEPTH: usize = 128;
+const MAX_RAW_ASSET_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+const MAX_RAW_TOTAL_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const REBUILD_TIMESTAMP: &str = "1970-01-01T00:00:00Z";
 
 const SCHEMA: &str = r#"
@@ -155,6 +166,11 @@ struct ObservedBundle {
     children: Vec<DirEntry>,
     manifest: Option<Vec<u8>>,
     class: BundleClass,
+}
+
+struct RawInventoryTree {
+    files: BTreeMap<String, (u64, String)>,
+    directories: BTreeSet<String>,
 }
 
 /// Rebuilds and atomically publishes `imports/health-dedupe.sqlite`.
@@ -281,8 +297,9 @@ fn replay_native_files(
     envelope: &BodyEnvelope,
     state: BodyDedupeState,
 ) -> Result<BodyDedupeState, BodyRebuildError> {
+    let raw_inventory_digest = validate_raw_inventory(bundle, envelope.raw_retention())?;
     let ledger_entry = required_regular_file(&bundle.children, LEDGER_NAME)?;
-    let ledger_file = File::open(&ledger_entry.path)
+    let ledger_file = open_nofollow(&ledger_entry.path)
         .map_err(|_| error(BodyRebuildErrorKind::Journal, "open_native_ledger"))?;
     let mut ledger = BufReader::new(ledger_file);
     let normalized_entry = named_entry(&bundle.children, NORMALIZED_NAME);
@@ -329,11 +346,12 @@ fn replay_native_files(
             .expect("checked envelope shard path has normalized prefix");
         let shard_entry = named_entry(&normalized_children, name)
             .expect("exact inventory comparison guarantees each shard entry");
-        let shard_file = File::open(&shard_entry.path)
+        let shard_file = open_nofollow(&shard_entry.path)
             .map_err(|_| error(BodyRebuildErrorKind::Journal, "open_native_shard"))?;
         let mut shard = BufReader::new(shard_file);
         for _ in 0..descriptor.rows() {
             let row_frame = required_frame(&mut shard, MAX_DOCUMENT_BYTES, "native_row_frame")?;
+            validate_row_raw_inventory(&row_frame, raw_inventory_digest.as_deref())?;
             let ledger_frame =
                 required_frame(&mut ledger, MAX_LEDGER_FRAME_BYTES, "native_ledger_frame")?;
             let shard_index = u64::try_from(index)
@@ -359,6 +377,343 @@ fn replay_native_files(
         .finish()
         .map(|validated| validated.into_state())
         .map_err(|_| error(BodyRebuildErrorKind::NativeReplay, "finish_native_replay"))
+}
+
+fn validate_raw_inventory(
+    bundle: &ObservedBundle,
+    retention: BodyRawRetention,
+) -> Result<Option<String>, BodyRebuildError> {
+    let inventory_entry = named_entry(&bundle.children, RAW_INVENTORY_NAME);
+    let raw_entry = named_entry(&bundle.children, RAW_NAME);
+    if retention == BodyRawRetention::Discard {
+        if inventory_entry.is_some() || raw_entry.is_some() {
+            return Err(error(
+                BodyRebuildErrorKind::NativeReplay,
+                "raw_retention_mismatch",
+            ));
+        }
+        return Ok(None);
+    }
+    let inventory_entry = inventory_entry
+        .ok_or_else(|| error(BodyRebuildErrorKind::NativeReplay, "raw_inventory_missing"))?;
+    if inventory_entry.kind != DirEntryKind::File {
+        return Err(error(
+            BodyRebuildErrorKind::NativeReplay,
+            "raw_inventory_kind",
+        ));
+    }
+    let raw_entry = raw_entry
+        .filter(|entry| entry.kind == DirEntryKind::Directory)
+        .ok_or_else(|| error(BodyRebuildErrorKind::NativeReplay, "raw_directory"))?;
+    let inventory_bytes = read_bounded_file(
+        &inventory_entry.path,
+        MAX_RAW_INVENTORY_BYTES.saturating_add(1),
+    )?;
+    if inventory_bytes.len() > MAX_RAW_INVENTORY_BYTES || !inventory_bytes.ends_with(b"\n") {
+        return Err(error(
+            BodyRebuildErrorKind::NativeReplay,
+            "raw_inventory_size",
+        ));
+    }
+    let mut declared = BTreeMap::new();
+    let mut declared_total = 0_u64;
+    let mut previous_path: Option<String> = None;
+    for line in inventory_bytes[..inventory_bytes.len() - 1].split(|byte| *byte == b'\n') {
+        if line.is_empty() {
+            return Err(error(
+                BodyRebuildErrorKind::NativeReplay,
+                "raw_inventory_row",
+            ));
+        }
+        let body_value = parse(line)
+            .map_err(|_| error(BodyRebuildErrorKind::NativeReplay, "raw_inventory_row"))?;
+        if canonicalize(&body_value).ok().as_deref() != std::str::from_utf8(line).ok() {
+            return Err(error(
+                BodyRebuildErrorKind::NativeReplay,
+                "raw_inventory_canonical",
+            ));
+        }
+        let object = serde_json::from_slice::<serde_json::Value>(line)
+            .ok()
+            .and_then(|value| value.as_object().cloned())
+            .ok_or_else(|| error(BodyRebuildErrorKind::NativeReplay, "raw_inventory_row"))?;
+        if object.len() != 3 {
+            return Err(error(
+                BodyRebuildErrorKind::NativeReplay,
+                "raw_inventory_row",
+            ));
+        }
+        let path = object
+            .get("path")
+            .and_then(serde_json::Value::as_str)
+            .filter(|path| valid_raw_path(path))
+            .ok_or_else(|| error(BodyRebuildErrorKind::NativeReplay, "raw_inventory_path"))?;
+        if previous_path
+            .as_deref()
+            .is_some_and(|previous| previous >= path)
+        {
+            return Err(error(
+                BodyRebuildErrorKind::NativeReplay,
+                "raw_inventory_order",
+            ));
+        }
+        previous_path = Some(path.to_owned());
+        let bytes = object
+            .get("bytes")
+            .and_then(serde_json::Value::as_u64)
+            .filter(|bytes| *bytes <= MAX_RAW_ASSET_BYTES)
+            .ok_or_else(|| error(BodyRebuildErrorKind::NativeReplay, "raw_inventory_bytes"))?;
+        declared_total = declared_total
+            .checked_add(bytes)
+            .filter(|total| *total <= MAX_RAW_TOTAL_BYTES)
+            .ok_or_else(|| error(BodyRebuildErrorKind::NativeReplay, "raw_bytes_limit"))?;
+        let sha256 = object
+            .get("sha256")
+            .and_then(serde_json::Value::as_str)
+            .filter(|digest| valid_digest(digest))
+            .ok_or_else(|| error(BodyRebuildErrorKind::NativeReplay, "raw_inventory_digest"))?;
+        if declared
+            .insert(path.to_owned(), (bytes, sha256.to_owned()))
+            .is_some()
+            || declared.len() > MAX_RAW_ASSETS
+        {
+            return Err(error(
+                BodyRebuildErrorKind::NativeReplay,
+                "raw_inventory_duplicate",
+            ));
+        }
+    }
+    if declared.is_empty() {
+        return Err(error(
+            BodyRebuildErrorKind::NativeReplay,
+            "raw_inventory_empty",
+        ));
+    }
+    let expected_directories = expected_raw_directories(declared.keys())?;
+    let actual = collect_raw_files(&raw_entry.path)?;
+    if actual.files != declared || actual.directories != expected_directories {
+        return Err(error(
+            BodyRebuildErrorKind::NativeReplay,
+            "raw_inventory_mismatch",
+        ));
+    }
+    Ok(Some(format!(
+        "sha256:{:x}",
+        Sha256::digest(&inventory_bytes)
+    )))
+}
+
+fn expected_raw_directories<'a>(
+    paths: impl Iterator<Item = &'a String>,
+) -> Result<BTreeSet<String>, BodyRebuildError> {
+    let mut directories = BTreeSet::new();
+    for path in paths {
+        let parts = path.split('/').collect::<Vec<_>>();
+        if parts.len().saturating_sub(1) > MAX_RAW_DEPTH {
+            return Err(error(
+                BodyRebuildErrorKind::NativeReplay,
+                "raw_asset_depth_limit",
+            ));
+        }
+        for end in 1..parts.len() {
+            directories.insert(parts[..end].join("/"));
+            if directories.len() > MAX_RAW_DIRECTORIES {
+                return Err(error(
+                    BodyRebuildErrorKind::NativeReplay,
+                    "raw_directory_limit",
+                ));
+            }
+        }
+    }
+    Ok(directories)
+}
+
+fn collect_raw_files(root: &Path) -> Result<RawInventoryTree, BodyRebuildError> {
+    collect_raw_files_with_limit(root, MAX_RAW_TOTAL_BYTES)
+}
+
+fn collect_raw_files_with_limit(
+    root: &Path,
+    total_limit: u64,
+) -> Result<RawInventoryTree, BodyRebuildError> {
+    let mut files = BTreeMap::new();
+    let mut directories = BTreeSet::new();
+    let mut total = 0_u64;
+    let mut pending = vec![(root.to_owned(), 0_usize)];
+    while let Some((directory, depth)) = pending.pop() {
+        let remaining = MAX_RAW_ASSETS
+            .saturating_add(MAX_RAW_DIRECTORIES)
+            .saturating_sub(files.len().saturating_add(directories.len()));
+        let entries = list_dir_entries_bounded(&directory, remaining)
+            .map_err(|_| error(BodyRebuildErrorKind::Journal, "list_raw_assets"))?
+            .ok_or_else(|| error(BodyRebuildErrorKind::NativeReplay, "raw_entry_limit"))?;
+        for entry in entries {
+            match entry.kind {
+                DirEntryKind::Directory => {
+                    let child_depth = depth.checked_add(1).ok_or_else(|| {
+                        error(BodyRebuildErrorKind::NativeReplay, "raw_asset_depth_limit")
+                    })?;
+                    if child_depth > MAX_RAW_DEPTH {
+                        return Err(error(
+                            BodyRebuildErrorKind::NativeReplay,
+                            "raw_asset_depth_limit",
+                        ));
+                    }
+                    if directories.len() >= MAX_RAW_DIRECTORIES {
+                        return Err(error(
+                            BodyRebuildErrorKind::NativeReplay,
+                            "raw_directory_limit",
+                        ));
+                    }
+                    let relative = entry
+                        .path
+                        .strip_prefix(root)
+                        .ok()
+                        .and_then(Path::to_str)
+                        .filter(|path| valid_raw_path(path))
+                        .ok_or_else(|| error(BodyRebuildErrorKind::NativeReplay, "raw_asset_path"))?
+                        .to_owned();
+                    if !directories.insert(relative) {
+                        return Err(error(
+                            BodyRebuildErrorKind::NativeReplay,
+                            "raw_inventory_mismatch",
+                        ));
+                    }
+                    pending.push((entry.path, child_depth));
+                }
+                DirEntryKind::File => {
+                    if files.len() >= MAX_RAW_ASSETS {
+                        return Err(error(BodyRebuildErrorKind::NativeReplay, "raw_asset_limit"));
+                    }
+                    let relative = entry
+                        .path
+                        .strip_prefix(root)
+                        .ok()
+                        .and_then(Path::to_str)
+                        .filter(|path| valid_raw_path(path))
+                        .ok_or_else(|| {
+                            error(BodyRebuildErrorKind::NativeReplay, "raw_asset_path")
+                        })?;
+                    let remaining = total_limit.checked_sub(total).ok_or_else(|| {
+                        error(BodyRebuildErrorKind::NativeReplay, "raw_bytes_limit")
+                    })?;
+                    let value = hash_raw_file(&entry.path, remaining)?;
+                    total = total.checked_add(value.0).ok_or_else(|| {
+                        error(BodyRebuildErrorKind::NativeReplay, "raw_bytes_limit")
+                    })?;
+                    files.insert(relative.to_owned(), value);
+                }
+                DirEntryKind::Other => {
+                    return Err(error(BodyRebuildErrorKind::NativeReplay, "raw_asset_kind"));
+                }
+            }
+        }
+    }
+    Ok(RawInventoryTree { files, directories })
+}
+
+fn hash_raw_file(path: &Path, total_remaining: u64) -> Result<(u64, String), BodyRebuildError> {
+    let mut file =
+        open_nofollow(path).map_err(|_| error(BodyRebuildErrorKind::Journal, "open_raw_asset"))?;
+    let metadata = file
+        .metadata()
+        .map_err(|_| error(BodyRebuildErrorKind::Journal, "raw_asset_metadata"))?;
+    if !metadata.file_type().is_file() || metadata.len() > MAX_RAW_ASSET_BYTES {
+        return Err(error(BodyRebuildErrorKind::NativeReplay, "raw_asset_size"));
+    }
+    if metadata.len() > total_remaining {
+        return Err(error(BodyRebuildErrorKind::NativeReplay, "raw_bytes_limit"));
+    }
+    hash_raw_reader(&mut file, total_remaining)
+}
+
+fn hash_raw_reader(
+    reader: &mut impl Read,
+    total_remaining: u64,
+) -> Result<(u64, String), BodyRebuildError> {
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut total = 0_u64;
+    loop {
+        let probe = total_remaining
+            .saturating_sub(total)
+            .saturating_add(1)
+            .min(buffer.len() as u64) as usize;
+        let read = reader
+            .read(&mut buffer[..probe])
+            .map_err(|_| error(BodyRebuildErrorKind::Journal, "read_raw_asset"))?;
+        if read == 0 {
+            break;
+        }
+        total = total
+            .checked_add(read as u64)
+            .filter(|total| *total <= MAX_RAW_ASSET_BYTES)
+            .ok_or_else(|| error(BodyRebuildErrorKind::NativeReplay, "raw_asset_size"))?;
+        if total > total_remaining {
+            return Err(error(BodyRebuildErrorKind::NativeReplay, "raw_bytes_limit"));
+        }
+        digest.update(&buffer[..read]);
+    }
+    Ok((total, format!("sha256:{:x}", digest.finalize())))
+}
+
+fn open_nofollow(path: &Path) -> std::io::Result<File> {
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK | nix::libc::O_CLOEXEC)
+        .open(path)?;
+    if !file.metadata()?.file_type().is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "body bundle entry is not a regular file",
+        ));
+    }
+    Ok(file)
+}
+
+fn validate_row_raw_inventory(row: &[u8], expected: Option<&str>) -> Result<(), BodyRebuildError> {
+    let value =
+        parse(row).map_err(|_| error(BodyRebuildErrorKind::NativeReplay, "raw_inventory_row"))?;
+    let BodyValue::Object(object) = value else {
+        return Err(error(
+            BodyRebuildErrorKind::NativeReplay,
+            "raw_inventory_row",
+        ));
+    };
+    let actual = object.get(&ascii_body_string(RAW_INVENTORY_FIELD));
+    let matches = match (actual, expected) {
+        (None, None) => true,
+        (Some(BodyValue::String(actual)), Some(expected)) => actual
+            .code_points()
+            .iter()
+            .copied()
+            .eq(expected.bytes().map(u32::from)),
+        _ => false,
+    };
+    if !matches {
+        return Err(error(
+            BodyRebuildErrorKind::NativeReplay,
+            "raw_inventory_binding",
+        ));
+    }
+    Ok(())
+}
+
+fn valid_raw_path(path: &str) -> bool {
+    !path.is_empty()
+        && path.len() <= 4_096
+        && !path.contains('\\')
+        && Path::new(path)
+            .components()
+            .all(|component| matches!(component, std::path::Component::Normal(_)))
+}
+
+fn valid_digest(digest: &str) -> bool {
+    digest.len() == 71
+        && digest.starts_with("sha256:")
+        && digest[7..]
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn replay_legacy_bundle(
@@ -416,8 +771,8 @@ fn replay_legacy_shard(
     month: &BodyMonth,
     state: &mut BodyDedupeState,
 ) -> Result<(), BodyRebuildError> {
-    let file =
-        File::open(path).map_err(|_| error(BodyRebuildErrorKind::Journal, "open_legacy_shard"))?;
+    let file = open_nofollow(path)
+        .map_err(|_| error(BodyRebuildErrorKind::Journal, "open_legacy_shard"))?;
     let mut reader = BufReader::new(file);
     let mut line = 0_u64;
     while let Some(frame) = next_frame(&mut reader, MAX_DOCUMENT_BYTES)? {
@@ -629,8 +984,8 @@ fn required_regular_file<'a>(
 }
 
 fn read_bounded_file(path: &Path, limit: usize) -> Result<Vec<u8>, BodyRebuildError> {
-    let file =
-        File::open(path).map_err(|_| error(BodyRebuildErrorKind::Journal, "open_bundle_file"))?;
+    let file = open_nofollow(path)
+        .map_err(|_| error(BodyRebuildErrorKind::Journal, "open_bundle_file"))?;
     let mut bytes = Vec::new();
     file.take(u64::try_from(limit).unwrap_or(u64::MAX))
         .read_to_end(&mut bytes)
@@ -730,6 +1085,24 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
         }
+    }
+
+    #[test]
+    fn raw_hashing_stops_at_the_remaining_aggregate_budget() {
+        let mut oversized = std::io::Cursor::new(b"abcdef".to_vec());
+        let error = hash_raw_reader(&mut oversized, 3)
+            .expect_err("the aggregate raw budget must stop the reader");
+        assert_eq!(error.kind(), BodyRebuildErrorKind::NativeReplay);
+        assert_eq!(error.stage(), "raw_bytes_limit");
+        assert_eq!(oversized.position(), 4, "only remaining + 1 is read");
+
+        let mut exact = std::io::Cursor::new(b"abc".to_vec());
+        let (bytes, digest) = hash_raw_reader(&mut exact, 3).expect("exact budget succeeds");
+        assert_eq!(bytes, 3);
+        assert_eq!(
+            digest,
+            "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 
     #[test]

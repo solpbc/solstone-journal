@@ -12,7 +12,7 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
@@ -35,11 +35,48 @@ pub enum Command {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BodyCommand {
     Rebuild(BodyRebuildOptions),
+    Apple(BodyAppleOptions),
+    Oura(BodyOuraCommand),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BodyOuraCommand {
+    Connect(BodyOuraConnectOptions),
+    Sync(BodyOuraSyncOptions),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BodyRebuildOptions {
     pub journal_override: Option<OsString>,
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyAppleOptions {
+    pub source: OsString,
+    pub detect: bool,
+    pub journal_override: Option<OsString>,
+    pub date_from: Option<String>,
+    pub date_to: Option<String>,
+    pub save: bool,
+    pub confirm_body_save: bool,
+    pub force: bool,
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyOuraConnectOptions {
+    pub journal_override: Option<OsString>,
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyOuraSyncOptions {
+    pub journal_override: Option<OsString>,
+    pub window_days: Option<u64>,
+    pub save: bool,
+    pub confirm_body_save: bool,
+    pub scheduled: bool,
     pub json: bool,
 }
 
@@ -288,6 +325,12 @@ fn parse_body(args: &[OsString]) -> Result<BodyCommand, UsageError> {
     let [verb, rest @ ..] = args else {
         return Err(UsageError);
     };
+    if verb == OsStr::new("apple") {
+        return parse_body_apple(rest).map(BodyCommand::Apple);
+    }
+    if verb == OsStr::new("oura") {
+        return parse_body_oura(rest).map(BodyCommand::Oura);
+    }
     if verb != OsStr::new("rebuild") {
         return Err(UsageError);
     }
@@ -322,6 +365,222 @@ fn parse_body(args: &[OsString]) -> Result<BodyCommand, UsageError> {
         journal_override,
         json,
     }))
+}
+
+fn parse_body_oura(args: &[OsString]) -> Result<BodyOuraCommand, UsageError> {
+    let [verb, rest @ ..] = args else {
+        return Err(UsageError);
+    };
+    if verb == OsStr::new("connect") {
+        let (journal_override, json) = parse_body_oura_common(rest)?;
+        return Ok(BodyOuraCommand::Connect(BodyOuraConnectOptions {
+            journal_override,
+            json,
+        }));
+    }
+    if verb != OsStr::new("sync") {
+        return Err(UsageError);
+    }
+    let mut journal_override = None;
+    let mut window_days = None;
+    let mut save = false;
+    let mut confirm_body_save = false;
+    let mut scheduled = false;
+    let mut json = false;
+    let mut index = 0;
+    while index < rest.len() {
+        let argument = rest[index].as_os_str();
+        if argument == OsStr::new("--save") {
+            if save {
+                return Err(UsageError);
+            }
+            save = true;
+            index += 1;
+        } else if argument == OsStr::new("--confirm-body-save") {
+            if confirm_body_save {
+                return Err(UsageError);
+            }
+            confirm_body_save = true;
+            index += 1;
+        } else if argument == OsStr::new("--scheduled") {
+            if scheduled {
+                return Err(UsageError);
+            }
+            scheduled = true;
+            index += 1;
+        } else if argument == OsStr::new("--json") {
+            if json {
+                return Err(UsageError);
+            }
+            json = true;
+            index += 1;
+        } else if argument == OsStr::new("--journal") || argument == OsStr::new("--window-days") {
+            let value = rest.get(index + 1).ok_or(UsageError)?;
+            if value.to_str().is_some_and(|value| value.starts_with("--")) {
+                return Err(UsageError);
+            }
+            if argument == OsStr::new("--journal") {
+                if journal_override.replace(value.clone()).is_some() {
+                    return Err(UsageError);
+                }
+            } else {
+                let parsed = value
+                    .to_str()
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .filter(|value| *value > 0)
+                    .ok_or(UsageError)?;
+                if window_days.replace(parsed).is_some() {
+                    return Err(UsageError);
+                }
+            }
+            index += 2;
+        } else {
+            return Err(UsageError);
+        }
+    }
+    if (confirm_body_save || scheduled) && !save {
+        return Err(UsageError);
+    }
+    if confirm_body_save && scheduled {
+        return Err(UsageError);
+    }
+    Ok(BodyOuraCommand::Sync(BodyOuraSyncOptions {
+        journal_override,
+        window_days,
+        save,
+        confirm_body_save,
+        scheduled,
+        json,
+    }))
+}
+
+fn parse_body_oura_common(args: &[OsString]) -> Result<(Option<OsString>, bool), UsageError> {
+    let mut journal_override = None;
+    let mut json = false;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_os_str();
+        if argument == OsStr::new("--json") {
+            if json {
+                return Err(UsageError);
+            }
+            json = true;
+            index += 1;
+        } else if argument == OsStr::new("--journal") {
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if value.to_str().is_some_and(|value| value.starts_with("--"))
+                || journal_override.replace(value.clone()).is_some()
+            {
+                return Err(UsageError);
+            }
+            index += 2;
+        } else {
+            return Err(UsageError);
+        }
+    }
+    Ok((journal_override, json))
+}
+
+fn parse_body_apple(args: &[OsString]) -> Result<BodyAppleOptions, UsageError> {
+    let mut source = None;
+    let mut detect = false;
+    let mut journal_override = None;
+    let mut date_from = None;
+    let mut date_to = None;
+    let mut save = false;
+    let mut confirm_body_save = false;
+    let mut force = false;
+    let mut json = false;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_os_str();
+        if argument == OsStr::new("--detect") {
+            if detect {
+                return Err(UsageError);
+            }
+            detect = true;
+            index += 1;
+        } else if argument == OsStr::new("--save") {
+            if save {
+                return Err(UsageError);
+            }
+            save = true;
+            index += 1;
+        } else if argument == OsStr::new("--confirm-body-save") {
+            if confirm_body_save {
+                return Err(UsageError);
+            }
+            confirm_body_save = true;
+            index += 1;
+        } else if argument == OsStr::new("--force") {
+            if force {
+                return Err(UsageError);
+            }
+            force = true;
+            index += 1;
+        } else if argument == OsStr::new("--json") {
+            if json {
+                return Err(UsageError);
+            }
+            json = true;
+            index += 1;
+        } else if matches!(
+            argument,
+            value if value == OsStr::new("--source")
+                || value == OsStr::new("--journal")
+                || value == OsStr::new("--date-from")
+                || value == OsStr::new("--date-to")
+        ) {
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if value.to_str().is_some_and(|value| value.starts_with("--")) {
+                return Err(UsageError);
+            }
+            if argument == OsStr::new("--source") {
+                if source.replace(value.clone()).is_some() {
+                    return Err(UsageError);
+                }
+            } else if argument == OsStr::new("--journal") {
+                if journal_override.replace(value.clone()).is_some() {
+                    return Err(UsageError);
+                }
+            } else {
+                let text = value.to_str().ok_or(UsageError)?.to_owned();
+                let slot = if argument == OsStr::new("--date-from") {
+                    &mut date_from
+                } else {
+                    &mut date_to
+                };
+                if slot.replace(text).is_some() {
+                    return Err(UsageError);
+                }
+            }
+            index += 2;
+        } else {
+            return Err(UsageError);
+        }
+    }
+    if confirm_body_save && !save
+        || detect
+            && (save
+                || confirm_body_save
+                || force
+                || journal_override.is_some()
+                || date_from.is_some()
+                || date_to.is_some())
+    {
+        return Err(UsageError);
+    }
+    Ok(BodyAppleOptions {
+        source: source.ok_or(UsageError)?,
+        detect,
+        journal_override,
+        date_from,
+        date_to,
+        save,
+        confirm_body_save,
+        force,
+        json,
+    })
 }
 
 fn parse_speaker_resolve(args: &[OsString]) -> Result<SpeakerResolveCommand, UsageError> {
@@ -1281,6 +1540,165 @@ mod tests {
             &["body", "rebuild", "--journal", "--json"][..],
             &["body", "rebuild", "--json", "--json"][..],
             &["body", "rebuild", "--journal", "/one", "--journal", "/two"][..],
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+        }
+    }
+
+    #[test]
+    fn parses_body_apple_preview_and_save_without_ambiguous_flags() {
+        assert_eq!(
+            evaluate_args(&args(&[
+                "body",
+                "apple",
+                "--source",
+                "/tmp/export.zip",
+                "--date-from",
+                "2026-01-01",
+                "--json",
+            ])),
+            Ok(Command::Body(BodyCommand::Apple(BodyAppleOptions {
+                source: "/tmp/export.zip".into(),
+                detect: false,
+                journal_override: None,
+                date_from: Some("2026-01-01".to_owned()),
+                date_to: None,
+                save: false,
+                confirm_body_save: false,
+                force: false,
+                json: true,
+            })))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "body",
+                "apple",
+                "--source",
+                "/tmp/export",
+                "--journal",
+                "/tmp/journal",
+                "--save",
+                "--confirm-body-save",
+            ])),
+            Ok(Command::Body(BodyCommand::Apple(BodyAppleOptions {
+                source: "/tmp/export".into(),
+                detect: false,
+                journal_override: Some("/tmp/journal".into()),
+                date_from: None,
+                date_to: None,
+                save: true,
+                confirm_body_save: true,
+                force: false,
+                json: false,
+            })))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "body",
+                "apple",
+                "--source",
+                "/tmp/export.zip",
+                "--detect",
+                "--json",
+            ])),
+            Ok(Command::Body(BodyCommand::Apple(BodyAppleOptions {
+                source: "/tmp/export.zip".into(),
+                detect: true,
+                journal_override: None,
+                date_from: None,
+                date_to: None,
+                save: false,
+                confirm_body_save: false,
+                force: false,
+                json: true,
+            })))
+        );
+        for values in [
+            &["body", "apple"][..],
+            &["body", "apple", "--source"][..],
+            &["body", "apple", "--source", "--save"][..],
+            &[
+                "body",
+                "apple",
+                "--source",
+                "/tmp/export",
+                "--confirm-body-save",
+            ][..],
+            &["body", "apple", "--source", "/one", "--source", "/two"][..],
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+        }
+    }
+
+    #[test]
+    fn parses_body_oura_connect_and_sync_without_ambiguous_authority() {
+        assert_eq!(
+            evaluate_args(&args(&[
+                "body",
+                "oura",
+                "connect",
+                "--journal",
+                "/tmp/journal",
+                "--json",
+            ])),
+            Ok(Command::Body(BodyCommand::Oura(BodyOuraCommand::Connect(
+                BodyOuraConnectOptions {
+                    journal_override: Some("/tmp/journal".into()),
+                    json: true,
+                }
+            ))))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "body",
+                "oura",
+                "sync",
+                "--journal",
+                "/tmp/journal",
+                "--window-days",
+                "14",
+                "--save",
+                "--confirm-body-save",
+                "--json",
+            ])),
+            Ok(Command::Body(BodyCommand::Oura(BodyOuraCommand::Sync(
+                BodyOuraSyncOptions {
+                    journal_override: Some("/tmp/journal".into()),
+                    window_days: Some(14),
+                    save: true,
+                    confirm_body_save: true,
+                    scheduled: false,
+                    json: true,
+                }
+            ))))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["body", "oura", "sync", "--save", "--scheduled",])),
+            Ok(Command::Body(BodyCommand::Oura(BodyOuraCommand::Sync(
+                BodyOuraSyncOptions {
+                    journal_override: None,
+                    window_days: None,
+                    save: true,
+                    confirm_body_save: false,
+                    scheduled: true,
+                    json: false,
+                }
+            ))))
+        );
+        for values in [
+            &["body", "oura"][..],
+            &["body", "oura", "connect", "--window-days", "7"][..],
+            &["body", "oura", "sync", "--window-days", "0"][..],
+            &["body", "oura", "sync", "--confirm-body-save"][..],
+            &["body", "oura", "sync", "--scheduled"][..],
+            &[
+                "body",
+                "oura",
+                "sync",
+                "--save",
+                "--scheduled",
+                "--confirm-body-save",
+            ][..],
         ] {
             assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
         }

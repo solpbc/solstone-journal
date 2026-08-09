@@ -4,7 +4,7 @@
 //! Crash-safe whole-file writers.
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -119,6 +119,38 @@ pub fn write_bytes_exclusive(
         Ok(())
     })();
 
+    if operation.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    operation
+}
+
+/// Create and durably fill a new file from a bounded-memory reader.
+///
+/// The destination is create-only, receives the requested final mode before
+/// publication is reported, and is synced before this function returns. A
+/// failed copy removes the incomplete destination.
+pub fn write_reader_exclusive(
+    path: &Path,
+    reader: &mut impl Read,
+    options: AtomicWriteOptions,
+) -> Result<u64, AtomicWriteError> {
+    let parent = parent_dir(path);
+    fs::create_dir_all(parent).map_err(|source| io_error(path, source))?;
+    let (temporary_path, mut temporary_file) = create_temporary(parent, path)?;
+    let operation = (|| {
+        let bytes =
+            io::copy(reader, &mut temporary_file).map_err(|source| io_error(path, source))?;
+        sync_file(&temporary_file).map_err(|source| io_error(path, source))?;
+        if let Some(mode) = options.mode {
+            apply_mode(&temporary_file, mode).map_err(|source| io_error(path, source))?;
+        }
+        drop(temporary_file);
+        fs::hard_link(&temporary_path, path).map_err(|source| io_error(path, source))?;
+        fs::remove_file(&temporary_path).map_err(|source| io_error(path, source))?;
+        fsync_dir(parent);
+        Ok(bytes)
+    })();
     if operation.is_err() {
         let _ = fs::remove_file(&temporary_path);
     }
@@ -355,6 +387,27 @@ mod tests {
     use nix::unistd::Pid;
 
     use super::*;
+
+    #[test]
+    fn reader_exclusive_is_create_only_and_copies_the_full_stream() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("reader.bin");
+        let mut reader = io::Cursor::new(vec![b'x'; 131_073]);
+        let copied =
+            write_reader_exclusive(&path, &mut reader, AtomicWriteOptions { mode: Some(0o600) })
+                .unwrap();
+        assert_eq!(copied, 131_073);
+        assert_eq!(fs::read(&path).unwrap(), vec![b'x'; 131_073]);
+        assert!(
+            write_reader_exclusive(
+                &path,
+                &mut io::Cursor::new(b"replacement"),
+                AtomicWriteOptions::default(),
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(path).unwrap(), vec![b'x'; 131_073]);
+    }
     use crate::test_support::TempDir;
 
     #[test]

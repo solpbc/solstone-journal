@@ -8,7 +8,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import zipfile
-from collections import Counter, defaultdict
+from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,32 +17,15 @@ from typing import Any, BinaryIO, Callable, Iterator
 from xml.etree import ElementTree
 
 from solstone.think.importers.file_importer import ImportPreview, ImportResult
-from solstone.think.importers.health_dedupe import (
-    HealthDedupeRecord,
-    upsert_health_dedupe_records,
-)
+from solstone.think.importers.health_dedupe import HealthDedupeRecord
 from solstone.think.importers.health_schema import (
     SOURCE_APPLE_HEALTH,
     HealthRecordIdentity,
     SleepStagedInterval,
     friendly_type_name,
-    health_card_stream,
     health_record_dedupe_key,
     health_value_hash,
     pick_day_sleep,
-)
-from solstone.think.importers.pre_save_gate import (
-    RawRetentionDecision,
-    enforce_pre_save_gate,
-)
-from solstone.think.importers.shared import (
-    install_source_file,
-    install_source_stream,
-    windowed_source_hash,
-    write_content_manifest,
-    write_jsonl_records,
-    write_manifest,
-    write_markdown_segment_file,
 )
 
 logger = logging.getLogger(__name__)
@@ -243,15 +226,6 @@ class AppleHealthImporter:
         with_day_summaries: bool = False,
         confirm_health_save: bool = False,
     ) -> ImportResult:
-        # Save mode fails closed before any parse or write, root-explicit
-        # against the journal this call would actually write.
-        gate_decision = enforce_pre_save_gate(
-            self,
-            dry_run=dry_run,
-            confirm_health_save=confirm_health_save,
-            journal_root=journal_root,
-        )
-        date_window = _parse_date_window(date_from, date_to)
         preview = self.preview(path, date_from=date_from, date_to=date_to)
         if dry_run:
             return ImportResult(
@@ -262,27 +236,9 @@ class AppleHealthImporter:
                 summary=f"Dry run only: {preview.summary}",
                 date_range=preview.date_range,
             )
-        assert gate_decision.raw_retention is not None
-
-        resolved_import_id = import_id or dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-        result = _save_export(
-            path,
-            journal_root,
-            import_id=resolved_import_id,
-            date_window=date_window,
-            with_day_summaries=with_day_summaries,
-            progress_callback=progress_callback,
-            retention=gate_decision.raw_retention,
-        )
-        return ImportResult(
-            entries_written=result["entries_written"],
-            entities_seeded=0,
-            files_created=result["files_created"],
-            errors=[],
-            summary=result["summary"],
-            segments=result["segments"] or None,
-            date_range=result["date_range"],
-            raw_retention=result["raw_retention"],
+        raise RuntimeError(
+            "Apple Health save is owned by native body ingress; use journal importer "
+            "with --confirm-body-save"
         )
 
 
@@ -521,190 +477,6 @@ def _scan_export(
             if root is not None:
                 root.clear()
     return stats
-
-
-def _save_export(
-    path: Path,
-    journal_root: Path,
-    *,
-    import_id: str,
-    date_window: _DateWindow,
-    with_day_summaries: bool,
-    progress_callback: Callable | None,
-    retention: RawRetentionDecision,
-) -> dict[str, Any]:
-    journal_root = Path(journal_root)
-    import_dir = Path(journal_root) / "imports" / import_id
-    raw_ref = _install_raw_source(path, import_dir, retention)
-    normalized_items = _parse_normalized_items(
-        path,
-        import_id=import_id,
-        date_window=date_window,
-        raw_ref=raw_ref,
-        progress_callback=progress_callback,
-    )
-
-    normalized_by_month: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    dedupe_records: list[HealthDedupeRecord] = []
-    summaries: dict[str, _DaySummary] = {}
-    for item in normalized_items:
-        rows = normalized_by_month[item.month]
-        normalized_ref = (
-            f"imports/{import_id}/normalized/{item.month}.jsonl#L{len(rows) + 1}"
-        )
-        item.row["import_id"] = import_id
-        item.row["month"] = item.month
-        item.row["normalized_ref"] = normalized_ref
-        item.dedupe_record = _dedupe_record_with_normalized_ref(
-            item.dedupe_record,
-            normalized_ref,
-        )
-        rows.append(item.row)
-        dedupe_records.append(item.dedupe_record)
-        summaries.setdefault(item.day, _DaySummary(day=item.day))
-        _add_to_day_summary(summaries[item.day], item.row)
-    _attach_night_sleep(summaries)
-
-    normalized_paths: list[Path] = []
-    for month, rows in sorted(normalized_by_month.items()):
-        out_path = import_dir / "normalized" / f"{month}.jsonl"
-        normalized_paths.append(write_jsonl_records(out_path, rows))
-
-    dedupe_result = upsert_health_dedupe_records(journal_root, dedupe_records)
-
-    files_created: list[str] = []
-    segments: list[tuple[str, str]] = []
-    if with_day_summaries and summaries:
-        files_created, segments = _write_day_summaries(
-            journal_root,
-            summaries,
-            import_id=import_id,
-        )
-
-    write_content_manifest(
-        import_id,
-        _content_manifest_entries(
-            normalized_paths,
-            summaries,
-            segments,
-            import_id=import_id,
-        ),
-        journal_root=journal_root,
-    )
-    write_manifest(
-        journal_root,
-        import_id,
-        SOURCE_APPLE_HEALTH,
-        windowed_source_hash(path, date_window.start_day, date_window.end_day),
-        len(normalized_items),
-        files_created,
-        days_affected=sorted(summaries),
-        raw_retention=retention.value,
-    )
-
-    date_range = _date_range_from_days(summaries)
-    return {
-        "entries_written": len(normalized_items),
-        "files_created": files_created,
-        "segments": segments,
-        "date_range": date_range,
-        "raw_retention": retention.value,
-        "summary": (
-            "Saved Apple Health import: "
-            f"records={len(normalized_items)}, "
-            f"new={dedupe_result.inserted}, "
-            f"duplicates={dedupe_result.updated}, "
-            f"normalized_months={len(normalized_paths)}, "
-            f"day_summaries={len(files_created)}"
-        ),
-    }
-
-
-def _dedupe_record_with_normalized_ref(
-    record: HealthDedupeRecord,
-    normalized_ref: str,
-) -> HealthDedupeRecord:
-    return HealthDedupeRecord(
-        dedupe_key=record.dedupe_key,
-        source_family=record.source_family,
-        record_type=record.record_type,
-        start_time=record.start_time,
-        end_time=record.end_time,
-        source_record_id=record.source_record_id,
-        value_hash=record.value_hash,
-        first_import_id=record.first_import_id,
-        last_seen_import_id=record.last_seen_import_id,
-        normalized_ref=normalized_ref,
-        raw_ref=record.raw_ref,
-    )
-
-
-def _write_day_summaries(
-    journal_root: Path,
-    summaries: dict[str, _DaySummary],
-    *,
-    import_id: str,
-) -> tuple[list[str], list[tuple[str, str]]]:
-    files: list[str] = []
-    segments: list[tuple[str, str]] = []
-    stream = health_card_stream(SOURCE_APPLE_HEALTH)
-    for day, summary in sorted(summaries.items()):
-        out_path = write_markdown_segment_file(
-            journal_root,
-            day,
-            stream,
-            _DAY_SUMMARY_SEGMENT,
-            "day_summary_transcript.md",
-            _render_day_summary(summary, import_id=import_id),
-        )
-        files.append(str(out_path))
-        segments.append((day, _DAY_SUMMARY_SEGMENT))
-    return files, segments
-
-
-def _install_raw_source(
-    path: Path,
-    import_dir: Path,
-    retention: RawRetentionDecision,
-) -> str | None:
-    if retention == RawRetentionDecision.DISCARD:
-        return None
-
-    raw_dir = import_dir / "raw"
-    if retention == RawRetentionDecision.RETAIN_PARSED:
-        raw_path = raw_dir / "export.xml"
-        if path.is_file():
-            with zipfile.ZipFile(path) as archive:
-                member = _find_export_xml_in_zip(archive.namelist())
-                if member is None:
-                    raise FileNotFoundError(
-                        f"No Apple Health export.xml found in {path}"
-                    )
-                with archive.open(member) as handle:
-                    install_source_stream(handle, raw_path)
-        else:
-            export_xml = _find_export_xml_in_directory(path)
-            if export_xml is None:
-                raise FileNotFoundError(
-                    f"No Apple Health export.xml found under {path}"
-                )
-            install_source_file(export_xml, raw_path)
-        return f"imports/{import_dir.name}/raw/export.xml"
-
-    if path.is_file():
-        raw_path = raw_dir / path.name
-        install_source_file(path, raw_path)
-        raw_rel = raw_path.relative_to(import_dir).as_posix()
-        return f"imports/{import_dir.name}/{raw_rel}"
-
-    export_xml = _find_export_xml_in_directory(path)
-    if export_xml is None:
-        raise FileNotFoundError(f"No Apple Health export.xml found under {path}")
-    for source_file in sorted(child for child in path.rglob("*") if child.is_file()):
-        install_source_file(source_file, raw_dir / source_file.relative_to(path))
-    raw_path = raw_dir / export_xml.relative_to(path)
-    raw_rel = raw_path.relative_to(import_dir).as_posix()
-    return f"imports/{import_dir.name}/{raw_rel}"
 
 
 def _parse_normalized_items(
@@ -1245,59 +1017,20 @@ def _format_glucose_value(value: float) -> str:
         return f"{int(value):,}"
     return f"{value:g}"
 
-
-def _content_manifest_entries(
-    normalized_paths: list[Path],
-    summaries: dict[str, _DaySummary],
-    segments: list[tuple[str, str]],
-    *,
-    import_id: str,
-) -> list[dict[str, Any]]:
-    segment_by_day = {day: key for day, key in segments}
-    entries: list[dict[str, Any]] = []
-    for path in normalized_paths:
-        entries.append(
-            {
-                "id": f"normalized-{path.stem}",
-                "title": f"Apple Health normalized {path.stem}",
-                "date": path.stem.replace("-", ""),
-                "type": "health_normalized_month",
-                "preview": "Monthly normalized Apple Health records",
-                "meta": {
-                    "import_id": import_id,
-                    "path": path.name,
-                },
-                "segments": [],
-            }
+    if not value:
+        return None
+    value = value.strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S %z", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return dt.datetime.strptime(value, fmt).strftime("%Y%m%d")
+        except ValueError:
+            pass
+    try:
+        return dt.datetime.fromisoformat(value.replace("Z", "+00:00")).strftime(
+            "%Y%m%d"
         )
-    for day, summary in sorted(summaries.items()):
-        segment_key = segment_by_day.get(day)
-        entries.append(
-            {
-                "id": f"summary-{day}",
-                "title": "Apple Health Summary",
-                "date": day,
-                "type": "health_day_summary",
-                "preview": (
-                    f"{summary.record_count} records, "
-                    f"{summary.workout_count} workouts, "
-                    f"{len(summary.glucose_values)} glucose readings"
-                ),
-                "meta": {
-                    "sources": sorted(summary.sources),
-                    "record_types": dict(sorted(summary.type_counts.items())),
-                },
-                "segments": ([{"day": day, "key": segment_key}] if segment_key else []),
-            }
-        )
-    return entries
-
-
-def _date_range_from_days(summaries: dict[str, _DaySummary]) -> tuple[str, str]:
-    if not summaries:
-        return ("", "")
-    days = sorted(summaries)
-    return (days[0], days[-1])
+    except ValueError:
+        return None
 
 
 def _parse_apple_day(value: str | None) -> str | None:

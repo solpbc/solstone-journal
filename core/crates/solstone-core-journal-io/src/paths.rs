@@ -136,6 +136,18 @@ pub fn create_directory_with_mode(path: &Path, mode: u32) -> Result<(), PathErro
 /// A missing path or a path that is not a directory produces no entries. This
 /// mirrors readers that treat absent durable-store subdirectories as empty.
 pub fn list_dir_entries(dir: &Path) -> Result<Vec<DirEntry>, PathError> {
+    Ok(list_dir_entries_bounded(dir, usize::MAX)?
+        .expect("a directory cannot contain more than usize::MAX entries"))
+}
+
+/// List direct directory entries without retaining more than `maximum`.
+///
+/// `Ok(None)` means the directory contains more entries than the caller's
+/// bound. Missing and non-directory paths remain `Ok(Some(Vec::new()))`.
+pub fn list_dir_entries_bounded(
+    dir: &Path,
+    maximum: usize,
+) -> Result<Option<Vec<DirEntry>>, PathError> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(error)
@@ -144,13 +156,16 @@ pub fn list_dir_entries(dir: &Path) -> Result<Vec<DirEntry>, PathError> {
                 io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
             ) =>
         {
-            return Ok(Vec::new());
+            return Ok(Some(Vec::new()));
         }
         Err(source) => return Err(path_io(dir, source)),
     };
 
     let mut listed = Vec::new();
     for entry in entries {
+        if listed.len() >= maximum {
+            return Ok(None);
+        }
         let entry = entry.map_err(|source| path_io(dir, source))?;
         let path = entry.path();
         let kind = entry.file_type().map_err(|source| path_io(&path, source))?;
@@ -167,7 +182,7 @@ pub fn list_dir_entries(dir: &Path) -> Result<Vec<DirEntry>, PathError> {
         });
     }
     listed.sort_by(|left, right| left.name.cmp(&right.name));
-    Ok(listed)
+    Ok(Some(listed))
 }
 
 /// Resolve `rel` below `root`, rejecting a symlink-aware escape.
@@ -430,6 +445,11 @@ mod tests {
                     kind: DirEntryKind::File,
                 },
             ]
+        );
+        assert_eq!(list_dir_entries_bounded(&directory, 1).unwrap(), None);
+        assert_eq!(
+            list_dir_entries_bounded(&directory, 2).unwrap(),
+            Some(list_dir_entries(&directory).unwrap())
         );
     }
 

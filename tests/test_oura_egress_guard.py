@@ -10,21 +10,7 @@ from pathlib import Path
 
 IMPORTER_ROOT = Path(__file__).resolve().parents[1] / "solstone" / "think" / "importers"
 
-ALLOWED_EGRESS: frozenset[tuple[str, str, str]] = frozenset(
-    {
-        ("oura", "_default_transport", "http_client"),
-        ("oura_auth", "<module>", "browser_open"),
-        ("oura_auth", "<module>", "http_client"),
-        ("oura_auth", "<module>", "loopback_http_server"),
-        ("oura_auth", "_default_http_transport", "http_client"),
-        ("oura_auth", "_post_token_request", "http_client"),
-        ("oura_auth", "_authorization_url", "authorization_url"),
-        ("oura_auth", "_CallbackHTTPServer", "loopback_http_server"),
-        ("oura_auth", "_CallbackHandler", "loopback_http_server"),
-        ("oura_auth", "run_owner_present_auth", "browser_open"),
-        ("oura_auth", "run_owner_present_auth", "loopback_http_server"),
-    }
-)
+ALLOWED_EGRESS: frozenset[tuple[str, str, str]] = frozenset()
 
 SAFE_IMPORTS: frozenset[str] = frozenset({"urllib.parse"})
 
@@ -247,7 +233,7 @@ def test_oura_egress_guard_covers_all_oura_modules() -> None:
     paths = _oura_module_paths()
 
     assert paths
-    assert {path.name for path in paths} >= {"oura.py", "oura_auth.py"}
+    assert {path.name for path in paths} == {"oura.py"}
 
     violations: list[str] = []
     for path in paths:

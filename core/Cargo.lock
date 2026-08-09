@@ -1834,6 +1834,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
+name = "quick-xml"
+version = "0.38.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2338,6 +2347,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-body-ingest",
  "solstone-core-body-rebuild",
  "solstone-core-brain",
  "solstone-core-cli",
@@ -2359,11 +2369,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-body-ingest"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "getrandom 0.3.4",
+ "nix",
+ "quick-xml",
+ "rusqlite",
+ "serde_json",
+ "sha2",
+ "solstone-core-body-rebuild",
+ "solstone-core-body-source",
+ "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
+ "solstone-core-journal-io",
+ "ureq",
+ "zip",
+]
+
+[[package]]
 name = "solstone-core-body-rebuild"
 version = "1.0.22"
 dependencies = [
+ "nix",
  "rusqlite",
  "serde_json",
+ "sha2",
  "solstone-core-body-source",
  "solstone-core-body-store",
  "solstone-core-journal-io",

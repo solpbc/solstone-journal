@@ -643,9 +643,11 @@ Health of running things — current status, in-memory. ⛔ **System** health, n
 
 ## `P-body-source`
 
-Owner **body** data arriving from outside — Oura, Apple Health. ⚠ **Ingress, not egress** — nothing of the owner's journal leaves.
+Owner **body** data arriving from outside: Oura and Apple Health. ⚠ **Ingress, not egress.** This body-import path uploads no body records or other journal content.
 
-⚠ The normalized shard format is defined only by its **reader** (`apps/body/routes.py:311-334`), and `imports/health-dedupe.sqlite` uses raw `sqlite3` entirely outside `journal_io` discipline. 🔴 **Excluded from every backup with no rebuild path** — a restore silently empties the owner's body history.
+✅ **CONVERTED 2026-08-09.** `solstone-core-body-ingest` owns bounded Apple parsing and Oura OAuth/network/cursor ingress; `solstone-core-body-source` owns the versioned normalized row, hash, manifest, envelope, and ledger contracts; `solstone-core-body-store` + `solstone-core-body-rebuild` own replay, retained-raw verification, and atomic dedupe publication. The Python Apple/Oura modules retain only independent read/normalization oracles exercised by a Rust-hosted full-corpus differential, and `body_native.py` is process transport. There is no Python body writer, Oura network/token/cursor owner, or dedupe writer.
+
+📌 `imports/health-dedupe.sqlite` remains deliberately excluded by the backup engine's `*.sqlite*` rule because it is derived state. Immutable `imports/body-<ULID>/` bundles are backed up; restore rebuilds SQLite from their validated envelopes, ledgers, normalized shards, and any digest-bound retained-raw inventory before it persists recovery state or reports success. A real-restic synthetic Apple+Oura round trip reproduced every dedupe field exactly and restored the retained Oura API pages; an invalid native bundle or changed retained asset makes restore fail closed rather than silently returning empty history.
 
 ---
 

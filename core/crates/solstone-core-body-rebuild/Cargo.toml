@@ -14,9 +14,9 @@ workspace = true
 
 [dependencies]
 rusqlite.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+nix.workspace = true
 solstone-core-body-source = { path = "../solstone-core-body-source" }
 solstone-core-body-store = { path = "../solstone-core-body-store" }
 solstone-core-journal-io.workspace = true
-
-[dev-dependencies]
-serde_json.workspace = true

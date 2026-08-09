@@ -45,6 +45,8 @@ from solstone.think.utils import (
 logger = logging.getLogger(__name__)
 
 TIME_RE = re.compile(r"\d{8}_\d{6}")
+NATIVE_SYNC_BACKENDS = ("oura",)
+NATIVE_BODY_RESULT_SCHEMA = "solstone.body.ingest.result.v1"
 
 # Importer tract state
 _callosum: CallosumConnection | None = None
@@ -196,36 +198,17 @@ def _run_connect(backend_name: str) -> None:
         raise SystemExit(
             f"Unknown connect backend: {backend_name}\nConnectable backends: oura"
         )
-    from solstone.think.importers import oura_auth
-    from solstone.think.importers.oura import OAUTH_CONFIG_KEY
-    from solstone.think.journal_config import read_journal_config
+    from solstone.think.body_native import BodyNativeError, oura_connect
 
-    # client_id is a public-client identifier — not a secret; it is read
-    # (read-only) from journal config. Exchanged tokens land in journal
-    # config too, through oura_auth -> journal_config (the journal is the
-    # one trusted store); nothing token-shaped is printed.
-    config = read_journal_config()
-    section = config.get(OAUTH_CONFIG_KEY)
-    client_id = section.get("client_id") if isinstance(section, dict) else None
-    if not isinstance(client_id, str) or not client_id:
-        raise SystemExit(
-            "Oura client_id missing from journal config "
-            '(config/journal.json -> {"oura": {"client_id": ...}}). '
-            "Register the Oura dev app and record its public client id "
-            "before connecting."
-        )
-
-    print("Opening the Oura authorization page — owner-present step.")
-    print("Requesting scopes: " + " ".join(oura_auth.OAUTH_SCOPES))
     try:
-        tokens = oura_auth.run_owner_present_auth(client_id=client_id)
-    except oura_auth.OuraAuthError as exc:
-        raise SystemExit(f"Oura authorization did not complete: {exc}") from None
-    oura_auth.save_oura_tokens(tokens)
+        result = oura_connect(Path(get_journal()))
+    except BodyNativeError as exc:
+        raise SystemExit(str(exc)) from None
     print("Oura authorization saved to journal config (config/journal.json).")
+    print("Authorized scopes: " + " ".join(result["scopes"]))
     print("Next:")
     print("  journal importer --sync oura                 (catalog; writes nothing)")
-    print("  journal importer --sync oura --save --confirm-health-save")
+    print("  journal importer --sync oura --save --confirm-body-save")
 
 
 def _run_sync(
@@ -236,9 +219,38 @@ def _run_sync(
     **extra: Any,
 ) -> None:
     """Run sync for a named backend and print results."""
+    if backend_name == "oura":
+        from solstone.think.body_native import BodyNativeError, oura_sync
+
+        try:
+            result = oura_sync(
+                Path(get_journal()),
+                save=not dry_run,
+                confirm_body_save=bool(extra.get("confirm_health_save")),
+                scheduled=bool(extra.get("scheduled")),
+                window_days=extra.get("window_days"),
+            )
+        except BodyNativeError as exc:
+            raise SystemExit(str(exc)) from None
+        mode = "save" if not dry_run else "catalog"
+        print(f"Syncing oura ({mode} mode)...")
+        print()
+        print(f"  Rows:                {result['rows']}")
+        print(f"  Days:                {len(result['days'])}")
+        print(f"  API pages:           {result['pages']}")
+        if result["skipped"]:
+            if result["issues"]:
+                print("  No new body records were saved.")
+            else:
+                print("  Everything is up to date.")
+        if result["issues"]:
+            print(f"  Endpoint issues:     {len(result['issues'])}")
+            for issue in result["issues"]:
+                print(f"    - {issue['endpoint']}: {issue['kind']}")
+        return
+
     import inspect
 
-    from solstone.think.importers.oura import OuraSyncLockError
     from solstone.think.importers.plaud import format_size
     from solstone.think.importers.pre_save_gate import PreSaveGateError
     from solstone.think.importers.sync import get_syncable_backends, load_sync_state
@@ -254,7 +266,9 @@ def _run_sync(
             break
 
     if backend is None:
-        available = ", ".join(b.name for b in backends) or "(none)"
+        available_names = [b.name for b in backends]
+        available_names.extend(NATIVE_SYNC_BACKENDS)
+        available = ", ".join(available_names) or "(none)"
         raise SystemExit(
             f"Unknown sync backend: {backend_name}\nAvailable backends: {available}"
         )
@@ -275,9 +289,6 @@ def _run_sync(
     except PreSaveGateError as e:
         # Health-gated sync backends (oura) fail closed with a
         # traceback-free, owner-facing explanation.
-        print(e.format_text())
-        raise SystemExit(e.exit_code)
-    except OuraSyncLockError as e:
         print(e.format_text())
         raise SystemExit(e.exit_code)
     except ValueError as e:
@@ -380,6 +391,19 @@ def _run_sync(
         print(f"  {cron_hint}")
 
 
+def _print_native_body_result(result: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps(result, sort_keys=True))
+        return
+    source = "Apple Health" if result.get("source") == "apple_health" else "body"
+    mode = "save" if result.get("mode") == "save" else "preview"
+    print(f"{source} {mode} complete.")
+    print(f"  Rows:                {result['rows']}")
+    print(f"  Days:                {len(result['days'])}")
+    if result.get("skipped"):
+        print("  This source was already imported.")
+
+
 def import_one(
     media: str | Path,
     *,
@@ -480,6 +504,21 @@ def _import_one_from_args(args: argparse.Namespace) -> dict[str, Any] | None:
     # Track detection result for metadata
     detection_result = None
 
+    # ZIP classification crosses the bounded native Apple detector before any
+    # Python importer opens an archive. A native cap refusal is terminal; it is
+    # never swallowed as an ordinary registry non-match.
+    if args.source is None and (
+        Path(args.media).is_dir() or Path(args.media).suffix.lower() == ".zip"
+    ):
+        from solstone.think.body_native import detect_apple_health
+        from solstone.think.importers.file_importer import get_file_importer
+
+        if detect_apple_health(Path(args.media)):
+            _file_importer = get_file_importer("apple_health")
+            if _file_importer is None:
+                raise ValueError("Apple Health import is unavailable")
+            import_source = "apple_health"
+
     # --- File importer detection (before timestamp resolution) ---
     if args.source:
         from solstone.think.importers.file_importer import (
@@ -520,6 +559,33 @@ def _import_one_from_args(args: argparse.Namespace) -> dict[str, Any] | None:
         and os.path.splitext(args.media)[1].lower() in PDF_EXTENSIONS
     ):
         raise ValueError(f"PDF import requires the document importer: {args.media}")
+
+    # Apple body ingress is owned by Rust. Return before timestamp resolution,
+    # import-directory setup, locks, streams, manifests, indexing, or any other
+    # Python write path can run. The Python importer remains only as the
+    # differential reader used by the fixture corpus.
+    if _file_importer is not None and _file_importer.name == "apple_health":
+        if getattr(args, "with_day_summaries", False):
+            raise ValueError("Apple day summaries are no longer created")
+        from solstone.think.body_native import apple_health
+
+        return apple_health(
+            Path(args.media),
+            Path(get_journal()),
+            save=not args.dry_run,
+            confirm_body_save=getattr(args, "confirm_health_save", False),
+            date_from=getattr(args, "date_from", None),
+            date_to=getattr(args, "date_to", None),
+            force=getattr(args, "force", False),
+        )
+
+    # Oura ingress is the native API sync, not the retained Python fixture
+    # reader. Refuse this legacy file-import route before any Python import
+    # directory, lock, manifest, stream, or index mutation can occur.
+    if _file_importer is not None and _file_importer.name == "oura":
+        raise ValueError(
+            "Oura body data imports through sync; use journal importer --sync oura"
+        )
 
     # Source-level dedup for audio/text (before timestamp detection and before
     # _setup_import rewrites args.media). Mirrors the file-importer dedup at the
@@ -1472,7 +1538,7 @@ def main() -> None:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Force re-import by deleting existing import directory",
+        help="Force re-import; body sources create a separate import",
     )
     parser.add_argument(
         "--auto",
@@ -1487,9 +1553,16 @@ def main() -> None:
         help="Show what would be imported without writing to the journal",
     )
     parser.add_argument(
-        "--confirm-health-save",
+        "--confirm-body-save",
+        dest="confirm_health_save",
         action="store_true",
-        help="Confirm this run may save sensitive health importer output",
+        help="Confirm this run may save sensitive body importer output",
+    )
+    parser.add_argument(
+        "--confirm-health-save",
+        dest="confirm_health_save",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--date-from",
@@ -1506,7 +1579,7 @@ def main() -> None:
     parser.add_argument(
         "--with-day-summaries",
         action="store_true",
-        help="For Apple Health: write factual daily summary transcript segments",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--deterministic-only",
@@ -1592,10 +1665,12 @@ def main() -> None:
         from solstone.think.importers.sync import get_syncable_backends
 
         backends = get_syncable_backends()
-        if backends:
+        names = [backend.name for backend in backends]
+        names.extend(NATIVE_SYNC_BACKENDS)
+        if names:
             print("Syncable backends:")
-            for b in backends:
-                print(f"  {b.name}")
+            for name in names:
+                print(f"  {name}")
         else:
             print("No syncable backends available")
         return
@@ -1673,6 +1748,8 @@ def main() -> None:
             date_to=args.date_to,
             with_day_summaries=args.with_day_summaries,
         )
+        if result and result.get("schema") == NATIVE_BODY_RESULT_SCHEMA:
+            _print_native_body_result(result, json_output=args.json)
         if result and result.get("hard_failures"):
             raise SystemExit(1)
     except Exception as exc:

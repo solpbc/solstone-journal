@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-body-ingest"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono.workspace = true
+chrono-tz.workspace = true
+getrandom.workspace = true
+nix.workspace = true
+quick-xml = "0.38.4"
+serde_json.workspace = true
+sha2.workspace = true
+solstone-core-body-rebuild.workspace = true
+solstone-core-body-source = { path = "../solstone-core-body-source" }
+solstone-core-journal-io.workspace = true
+solstone-core-journal-config.workspace = true
+solstone-core-journal-config-write.workspace = true
+ureq = { workspace = true, features = ["rustls"] }
+zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+rusqlite.workspace = true

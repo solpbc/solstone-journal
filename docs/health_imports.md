@@ -1,136 +1,185 @@
-# Health Imports
+# body imports
 
-This document is the source-truth planning boundary for Apple Health, Oura, and glucose data imports into Solstone.
+This document is the current engineering boundary for Apple Health and Oura
+body data entering the journal. The filename is retained for links; `health` in
+owner-facing language means the journal system's health, while physiological
+records are body data.
 
-## Current Scope
+## current ownership
 
-The current Apple Health importer supports a gated synthetic/test-week save path:
+Rust owns every production mutation in this lane:
 
-- Preview Apple Health `export.xml` data from a directory or zip.
-- Filter previews and save runs with `--date-from YYYY-MM-DD` and `--date-to YYYY-MM-DD`.
-- Require the health pre-save gate before any non-dry-run Apple Health write.
-- Apply the approved raw-retention decision before installing raw source material.
-- Write normalized monthly JSONL under `imports/<id>/normalized/`.
-- Keep importer-owned record dedupe in `imports/health-dedupe.sqlite`.
-- Optionally write small factual day-summary transcript files with `--with-day-summaries`.
+- `solstone-core-body-ingest` reads Apple exports, performs Oura OAuth and API
+  sync, normalizes rows, computes identities, publishes immutable native
+  bundles, advances the Oura cursor, and requests dedupe rebuilds.
+- `solstone-core-body-source` owns the normalized row, hash, manifest,
+  envelope, and ledger contracts.
+- `solstone-core-body-store` replays row-agreed ledger events into dedupe
+  state; `solstone-core-body-rebuild` publishes that state as
+  `imports/health-dedupe.sqlite`.
+- `solstone-core-journal-io` owns the filesystem mutation mechanics around
+  bundle publication, cursor/config writes, locks, and database replacement.
 
-The live journal and real Apple Health export remain outside automated tests. Use synthetic fixtures and temp/sandbox journals only until the owner creates the approval artifact and runs the first live test-week command.
+Python remains in two non-writing roles: `body_native.py` selects and validates
+the version-matched native process, while `apple_health.py` and `oura.py` keep
+the independent parse/normalization reader used by differential tests. There is
+no Python Apple/Oura writer, network client, OAuth/token owner, cursor writer,
+or dedupe writer. The static production-surface assertion lives in
+`core/crates/solstone-core/tests/body_restore_client.rs`.
 
-## Apple Health Local Save Path
+## owner commands
 
-Apple Health has a concrete importer save path for orchestrated use after privacy preflight. The importer writes only under the provided `journal_root`: approved raw source material under `imports/<id>/raw/`, normalized monthly JSONL under `imports/<id>/normalized/`, importer-owned dedupe rows in `imports/health-dedupe.sqlite`, and optional factual day-summary transcript files under `chronicle/YYYYMMDD/import.apple_health/000000_300/`.
+The existing dispatcher reaches the native owner:
 
-Dense normalized JSONL shards are not returned in `ImportResult.files_created`; only optional day-summary transcript files are returned there so indexers do not ingest per-sample health rows.
+```text
+journal importer /path/to/apple_health_export --confirm-body-save
+journal importer --connect oura
+journal importer --sync oura
+journal importer --sync oura --save --confirm-body-save
+```
 
-Raw retention is enforced from the validated gate decision. `discard` writes no `raw/` directory and normalized rows carry no `raw_ref`. `retain_parsed` installs only `raw/export.xml` for Apple Health, whether the input was a zip or an export directory. `retain_complete` is the only Apple Health branch that copies the original zip or full export tree. Oura API sync accepts `discard` and `retain_parsed`: parsed retention keeps the raw API page JSONL files, while discard writes normalized shards, manifests, dedupe rows, fetch windows, and cursor state without raw page files or raw refs.
+`--dry-run` / catalog mode makes no journal, token, cursor, bundle, or derived
+database mutation. The Apple preview and Oura catalog tests in
+`solstone-core-body-ingest` exercise that boundary. `--confirm-health-save`
+remains a hidden compatibility alias; new instructions use
+`--confirm-body-save`. Apple day-summary transcript generation is retired: the
+body app reads the normalized bundle rows directly.
 
-All files written under `imports/` by the shared importer writers are installed as `0600`. Import-owned directories under `imports/` are created or repaired as `0700`. The approval-artifact directory `imports/_approvals/` remains manually owner-managed and is not created or repaired by the read-only gate.
+The underlying native commands are:
 
-## Source Strategy
+```text
+solstone-core body apple --source PATH [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]
+solstone-core body oura connect
+solstone-core body oura sync [--window-days N] [--save [--confirm-body-save | --scheduled]]
+solstone-core body rebuild
+```
 
-Use Apple Health as the broad local bus:
+## durable native bundle
 
-- workouts
-- steps
-- heart-rate samples
-- sleep records
-- glucose values written by Stelo through HealthKit
-- other HealthKit quantities and categories the user chooses to export
+Each nonempty save publishes one immutable `imports/body-<ULID>/` directory:
 
-Use the Oura API for Oura-native semantics that Apple Health does not preserve well:
+```text
+body-bundle.json
+body-ledger.jsonl
+body-raw-inventory.jsonl        # only when raw assets are retained
+manifest.json
+normalized/<YYYY-MM>.jsonl
+raw/...                         # only when the approved policy retains it
+```
 
-- readiness and resilience scores
-- detailed sleep contributors
-- tag and session metadata
-- ring battery and device metadata when useful
+The manifest and envelope bind the source family, source hash, raw-retention
+decision, affected days, row count, shard inventory, and ledger digest. The
+ledger binds every normalized row to its identity/value hashes and physical
+reference. When raw assets are retained, a canonical inventory records every
+path, byte count, and SHA-256 digest; its own digest is bound into every
+normalized row. Rebuild verifies the complete raw inventory before accepting
+those rows, so a missing, replaced, or truncated retained source fails closed.
+Publication is staged, fsynced, and renamed only after the complete bundle
+validates.
 
-Use a Dexcom/Stelo CSV fixture only as a synthetic glucose shape reference until a real export or API path is explicitly chosen.
+`imports/health-dedupe.sqlite` is derived state, not source history. It is
+excluded by the existing `*.sqlite*` backup rule and rebuilt atomically from
+the immutable bundles. Restore runs this rebuild before saving recovery state
+or reporting success; a torn or invalid native bundle fails the restore rather
+than returning an empty body history. The shipping-adapter and restore-failure
+cases are exercised in `core/crates/solstone-core/tests/body_restore_client.rs`.
 
-## Date Attribution
+A Rust-hosted real-restic test creates synthetic Apple and Oura bundles,
+backs them up with the shipping exclusion list, restores through the shipping
+restore engine, and compares every dedupe field before and after. The database
+is absent from the snapshot and is recreated with identical body history. The
+test is
+`apple_and_oura_body_history_survives_real_backup_restore_and_native_rebuild`.
 
-Apple Health records are assigned to the local calendar day encoded in each record's own timestamp string, including its written timezone offset. The importer does not convert all records into the Mac's current timezone before windowing or grouping. A record with `startDate="2026-01-02 22:30:00 -0700"` belongs to `20260102`.
+## source behavior
 
-## Import Streams
+Apple Health accepts a directory or zip containing `export.xml`, including
+DTD-bearing Apple exports without resolving external entities. Record and
+Workout elements stream through a 1 MiB per-event parser. A save first makes a
+private, bounded source snapshot; parsing, source hashing, and approved raw
+retention all use that one snapshot. One import accepts at most 50,000,000 XML
+events and 50,000,000 Record/Workout elements, 100,000 selected rows, 8 GiB of
+uncompressed `export.xml`,
+128 MiB of normalized JSONL, and 8 GiB of snapshotted source files. Use the
+inclusive date window to split an export that exceeds the selected-row or
+normalized-byte limit. Date windows use the local calendar date written in
+`startDate`. WorkoutStatistics are flattened into the persisted row after the
+pre-enrichment identity/value hash has been frozen, preserving the shipping
+compatibility contract.
 
-`health_schema.HEALTH_CARD_STREAM_BY_FAMILY` is the single declaring registry
-for health card streams; code resolves stream names from it rather than
-hardcoding them. Registering a family's card stream there excludes it from
-sense/think/entities before any writer exists, protecting derived summaries
-ahead of the code that writes them.
+Oura polls the supported v2 endpoint roster with bounded date chunks and
+pagination. A run accepts at most 16 MiB per response, 128 MiB across all
+responses, 5,000 pages, and 100,000 source items. Daily documents keep Oura's attributed day. Instant series such as
+heartrate convert their UTC timestamps into the journal timezone. A fresh
+cursor begins with a 30-day window, unfinished history walks back to
+2015-01-01, and completed endpoints retain a trailing revision window.
+Temporary permission loss is reported per endpoint without erasing prior
+backfill completion; membership loss and unknown 403 responses fail closed.
+One 401 refresh is allowed on save and the rotated token is persisted before
+the request is retried. Catalog mode refuses an expired token rather than
+consume a rotating refresh grant it cannot persist. Tokens and refresh
+rotation live only in journal config and the cursor advances only after
+successful publication.
 
-Today `apple_health` declares `import.apple_health` (writer shipped), `oura_api`
-declares `import.oura` (registered and excluded; no writer yet), and
-`dexcom_clarity` declares no card stream. A new health source that writes a day
-card needs exactly one registry edit; privacy preflight and save-mode tests still
-gate shipping the writer.
+Oura authorization is owner-present: loopback binds only `127.0.0.1:8765`,
+uses a random state and PKCE S256, accepts one bounded callback request, and
+persists tokens only after state/code and token-response validation.
 
-## Dedupe Boundary
+## identity and dedupe
 
-Health dedupe state belongs under:
+Source family is part of every identity, so Apple and Oura records never
+collide at import. Stable source record IDs use the source-ID identity branch;
+records without one use record type, time, source name, value, unit, and
+canonical metadata. Replayed observations preserve first import and update
+last-seen/value/reference fields in ledger order.
 
-`imports/health-dedupe.sqlite`
+The body app may reconcile mirror overlap at presentation time. Import must
+not collapse records across source families.
 
-The dedupe database is importer-owned state. It must not live in entities, facets, observations, activities, indexer state, or app config.
+## privacy and approval gates
 
-Dedupe keys must include the source family so Apple Health, Oura, and Dexcom records do not collide. When a source supplies a stable record identifier, use that identifier. When it does not, use source family, record type, start/end time, source name, and a stable value hash.
+Before any save:
 
-Do not collapse cross-source records during import. Preserve source attribution and reconcile later in query, review, or summary layers.
+- show the target journal and require per-run confirmation;
+- validate every replication-destination decision;
+- apply exactly one raw-retention decision;
+- never send body data, tokens, exports, or fixtures to a remote model;
+- use only synthetic fixtures in the repository.
 
-## Apple Health Date Attribution
+Apple uses `imports/_approvals/health_import_preflight.json` with
+`solstone.health_import_preflight.checklist.v3`. Its retention choices are
+`discard`, `retain_parsed`, and `retain_complete`; complete retention requires
+`unparsed_sensitive_modalities_acknowledged: true`.
 
-Apple Health Phase 1 attributes records and workouts to the local calendar day of their `startDate`. Date windows are inclusive and filter on that attributed start day. This means a sleep record that starts before midnight and ends the next morning belongs to the start day for preview counts, normalized monthly shards, dedupe rows, and optional day-summary transcript placement.
+Oura uses `imports/_approvals/oura_sync_preflight.json` with
+`solstone.oura_sync_preflight.checklist.v2`. Its choices are `discard` and
+`retain_parsed`; `retain_complete` is source-incompatible. Scheduled sync also
+requires unexpired, timezone-aware standing consent. The save gate runs before
+lock, network, token refresh, cursor, bundle, or database mutation.
 
-## Privacy Checklist
-
-Before any live-journal save-mode health import:
-
-- Require explicit user confirmation that the export contains sensitive health data.
-- Print or display the target journal path before writing.
-- Choose a closed raw-retention decision:
-  - `discard`: Apple Health writes no `raw/`; Oura writes no raw API page JSONL; normalized rows and newly inserted dedupe rows carry no `raw_ref`.
-  - `retain_parsed`: Apple Health stores only `imports/<id>/raw/export.xml` for either zip or directory inputs; Oura stores parsed raw API page JSONL under `imports/<id>/raw/oura/`.
-  - `retain_complete`: Apple Health may copy the original zip or full export tree; Oura rejects this value as source-incompatible.
-- Set `raw_retention.unparsed_sensitive_modalities_acknowledged: true` when, and only when, `retain_complete` is chosen.
-- Confirm whether replicated devices or backups are allowed to carry raw health data.
-- Never send raw health data, tokens, service-account JSON, or export files through Oracle, Claude, or other remote review prompts.
-- Never commit real health fixtures.
-- Keep summaries factual and avoid medical interpretation.
-
-The required approval artifact lives at `imports/_approvals/health_import_preflight.json` in the target journal. It must match `solstone.health_import_preflight.checklist.v3`, bind an absolute `journal_root`, contain a closed `raw_retention.decision` of `discard`, `retain_parsed`, or `retain_complete`, and contain a decision for each replication destination: `time_machine`, `icloud`, `solbase`, `hosted_backup`, and `other`. `retain_complete` also requires `raw_retention.unparsed_sensitive_modalities_acknowledged: true`.
-
-The Oura sync approval artifact lives at `imports/_approvals/oura_sync_preflight.json`. It must match `solstone.oura_sync_preflight.checklist.v2`, use the same raw-retention enum (`discard` or `retain_parsed` only), bind an absolute `journal_root`, and include the replication decisions. Scheduled sync consent additionally requires `scheduled_sync.approved: true`, a cadence, and a timezone-aware ISO-8601 `scheduled_sync.valid_until`; expired or malformed standing consent fails closed before any network or journal write.
-
-Owner remediation after this hardening lands is manual by design: update both approval artifacts to checklist v3/v2, migrate old raw-retention strings to the enum (`retain_compressed_zip` -> `retain_complete` only if the owner accepts complete Apple Health raw retention; `retain_raw_pages` -> `retain_parsed` for Oura), add `unparsed_sensitive_modalities_acknowledged: true` only for `retain_complete`, and add/refresh scheduled `valid_until` for Oura if unattended sync should continue.
-
-The Oura connect flow now asks future authorization requests for nine scopes: `daily`, `heartrate`, `workout`, `tag`, `session`, `spo2`, `stress`, `heart_health`, and `metabolic`. Removing `email` and `personal` changes only what future authorization requests ask for. It does not retroactively revoke scopes already granted on an already-issued token. Narrowing an existing token's granted scopes requires owner-present re-consent and/or revoking the old token; this code change does not perform that operator action.
-
-## Current Deferred Work
-
-Shipped on this branch:
-
-- Oura OAuth via `journal importer --connect oura`.
-- Oura token storage and refresh in journal config through `oura_auth.py`.
-- Oura API sync that writes health bundles and sync cursor state.
-- Oura save-mode sync locking, scheduled-consent expiry, and egress/scope guardrails.
-
-Still deferred:
+## deferred work
 
 - Oura webhooks.
-- Oura file-import save path; `OuraImporter.process(...)` gates save mode and then raises `NotImplementedError`.
-- Health Auto Export or custom HealthKit ingest endpoints.
-- Any LAN, public, or phone-to-Mac health ingest service.
-- Entity, facet, observation, activity, or indexer writes.
+- A general owner-facing Oura file-import save path; the retained Python file
+  reader remains preview/differential-only.
+- Health Auto Export or a custom HealthKit ingest service.
+- Any LAN, public, or phone-to-Mac body ingest service.
 - Medical advice, recommendations, or anomaly interpretation.
 
-## Health Import Verification
+## verification
 
-Run these before treating health import changes as complete:
+Focused gates:
 
-- `make test-only TEST=tests/test_health_dedupe.py`
-- `make test-only TEST=tests/test_apple_health_importer.py`
-- `make check-layer-hygiene`
-- `make check-journal-io-access`
-- `make check-journal-io-mechanic`
+```text
+cargo test -p solstone-core-body-ingest
+cargo test -p solstone-core --features differential --test body_restore_client
+cargo test -p solstone-core --features differential --test body_restore_client apple_and_oura_body_history_survives_real_backup_restore_and_native_rebuild -- --ignored --exact
+cargo clippy -p solstone-core-body-ingest --all-targets -- -D warnings
+cargo clippy -p solstone-core --all-targets -- -D warnings
+```
 
-Use the focused checks above while iterating. Run `make ci` once on the settled
-final tree before merge or release.
+The retained Python reader-oracle tests remain useful, but no new Python test
+may be used to prove a writer or process boundary in this lane.
+`rust_and_python_body_readers_match_the_complete_synthetic_corpora` compares
+every synthetic Apple and Oura normalized row, identity, dedupe key, and value
+hash across the native reader and the retained Python oracle.
