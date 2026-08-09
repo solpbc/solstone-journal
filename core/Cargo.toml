@@ -45,6 +45,7 @@ members = [
     "crates/solstone-core-depict",
     "crates/solstone-core-generate",
     "crates/solstone-core-generate-wire",
+    "crates/solstone-core-spp-attest",
     "crates/solstone-core-speakers-onnx",
     "crates/solstone-core-local",
     "crates/solstone-core-body-source",

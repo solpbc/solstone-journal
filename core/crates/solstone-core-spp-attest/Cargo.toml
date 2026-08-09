@@ -1,0 +1,16 @@
+[package]
+name = "solstone-core-spp-attest"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+differential = []
+
+[dependencies]
+ring = "=0.17.14"
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
