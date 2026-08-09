@@ -142,6 +142,7 @@ fn scalar_and_control_text_round_trip_and_failures_do_not_mutate_state() {
     );
     state.apply(&baseline.validate()).expect("baseline applies");
     let before: Vec<BodyDedupeRow> = state.iter().cloned().collect();
+    let sentinel = "owner-body-sentinel-must-not-render";
     let invalid = observation(
         "apple_retain_complete_one_row",
         BUNDLE,
@@ -151,14 +152,16 @@ fn scalar_and_control_text_round_trip_and_failures_do_not_mutate_state() {
             set_text(
                 row,
                 "record_type",
-                std::iter::repeat_n(u32::from(b'x'), 1_000_000).chain([0xd800]),
+                std::iter::repeat_n(u32::from(b'x'), 999_900)
+                    .chain(sentinel.bytes().map(u32::from))
+                    .chain([0xd800]),
             );
         },
     );
-    assert_eq!(
-        state.apply(&invalid.validate()).unwrap_err().field(),
-        BodyDedupeErrorField::RecordType
-    );
+    let error = state.apply(&invalid.validate()).unwrap_err();
+    assert_eq!(error.field(), BodyDedupeErrorField::RecordType);
+    assert!(!error.to_string().contains(sentinel));
+    assert!(!format!("{error:?}").contains(sentinel));
     assert_eq!(state.iter().cloned().collect::<Vec<_>>(), before);
 }
 

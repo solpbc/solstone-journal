@@ -91,12 +91,41 @@ impl std::error::Error for BodyDedupeError {}
 
 #[cfg(test)]
 mod tests {
-    use super::BodyDedupeErrorField;
+    use std::error::Error;
+
+    use solstone_core_body_source::BundleId;
+
+    use super::{BodyDedupeError, BodyDedupeErrorField};
 
     #[test]
     fn body_dedupe_error_field_all_is_declaration_ordered() {
         let mut sorted = BodyDedupeErrorField::ALL.to_vec();
         sorted.sort();
         assert_eq!(sorted, BodyDedupeErrorField::ALL.to_vec());
+
+        for field in BodyDedupeErrorField::ALL {
+            let spelling = match field {
+                BodyDedupeErrorField::SourceRecordId => "source_record_id",
+                BodyDedupeErrorField::RecordType => "record_type",
+                BodyDedupeErrorField::StartTime => "start_time",
+                BodyDedupeErrorField::EndTime => "end_time",
+                BodyDedupeErrorField::RawRef => "raw_ref",
+            };
+            assert_eq!(field.as_str(), spelling);
+        }
+    }
+
+    #[test]
+    fn body_dedupe_error_is_bounded_at_the_maximum_checked_coordinate() {
+        let bundle = BundleId::from_bytes(b"body-7ZZZZZZZZZZZZZZZZZZZZZZZZZ")
+            .expect("maximum bundle id is valid");
+        let error = BodyDedupeError::new(bundle, u64::MAX, BodyDedupeErrorField::SourceRecordId);
+        let expected = "body-dedupe[body-7ZZZZZZZZZZZZZZZZZZZZZZZZZ]#E18446744073709551615 invalid_text: source_record_id";
+
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(format!("{error:?}"), expected);
+        assert!(expected.is_ascii());
+        assert!(expected.len() <= 256);
+        assert!(Error::source(&error).is_none());
     }
 }
