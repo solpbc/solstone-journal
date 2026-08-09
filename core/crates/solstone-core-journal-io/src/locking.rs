@@ -74,7 +74,9 @@ pub fn hold_lock(path: impl AsRef<Path>, options: LockOptions) -> Result<FileLoc
     let mut open_options = OpenOptions::new();
     open_options.write(true).create(true);
     #[cfg(unix)]
-    open_options.mode(options.mode.unwrap_or(0o666));
+    open_options
+        .mode(options.mode.unwrap_or(0o666))
+        .custom_flags(nix::libc::O_NOFOLLOW);
     let deadline = Instant::now() + options.timeout;
     loop {
         let file = open_options
@@ -141,6 +143,7 @@ fn io_error(path: &Path, source: io::Error) -> LockError {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::os::unix::fs::symlink;
     use std::process::Command;
     use std::thread;
     use std::time::{Duration, Instant};
@@ -150,6 +153,18 @@ mod tests {
 
     use super::*;
     use crate::test_support::TempDir;
+
+    #[test]
+    fn lock_sidecar_symlink_is_refused_without_opening_its_target() {
+        let temporary = TempDir::new();
+        let protected = temporary.path().join("health-dedupe.sqlite");
+        let outside = temporary.path().join("outside");
+        fs::write(&outside, b"outside-owner-sentinel").unwrap();
+        symlink(&outside, temporary.path().join("health-dedupe.sqlite.lock")).unwrap();
+
+        assert!(hold_lock(&protected, LockOptions::default()).is_err());
+        assert_eq!(fs::read(outside).unwrap(), b"outside-owner-sentinel");
+    }
 
     #[test]
     fn timeout_reports_the_protected_path_and_timeout() {

@@ -51,6 +51,7 @@ members = [
     "crates/solstone-core-local",
     "crates/solstone-core-body-source",
     "crates/solstone-core-body-store",
+    "crates/solstone-core-body-rebuild",
     "crates/solstone-core-system",
 ]
 resolver = "3"

@@ -2358,6 +2358,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-body-rebuild"
+version = "1.0.22"
+dependencies = [
+ "rusqlite",
+ "serde_json",
+ "solstone-core-body-source",
+ "solstone-core-body-store",
+ "solstone-core-journal-io",
+]
+
+[[package]]
 name = "solstone-core-body-source"
 version = "1.0.22"
 dependencies = [
