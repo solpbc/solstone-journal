@@ -9,6 +9,7 @@ use solstone_core_body_source::{
 
 const MAX_ENVELOPE_BYTES: usize = 1_048_576;
 const MAX_PEAK_BYTES: u64 = 2_200_000;
+const MAX_SMALL_PEAK_BYTES: u64 = 65_536;
 
 #[test]
 fn terminal_framing_accepts_a_canonical_object_one_byte_below_the_cap() {
@@ -36,6 +37,19 @@ fn hundred_thousand_distinct_days_refuse_with_bounded_encoder_peak() {
     assert!(
         info.bytes_max <= MAX_PEAK_BYTES,
         "peak was {} bytes",
+        info.bytes_max
+    );
+}
+
+#[test]
+fn small_envelope_does_not_preallocate_the_full_limit() {
+    let envelope = oura_envelope(1, None);
+    let info = allocation_counter::measure(|| {
+        assert!(encode_body_envelope(&envelope).is_ok());
+    });
+    assert!(
+        info.bytes_max <= MAX_SMALL_PEAK_BYTES,
+        "small-envelope peak was {} bytes",
         info.bytes_max
     );
 }

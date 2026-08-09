@@ -12,7 +12,7 @@ const MAX_ENVELOPE_BYTES: usize = 1_048_576;
 
 /// Encodes a checked body envelope as canonical JSONL bytes.
 pub fn encode_body_envelope(envelope: &BodyEnvelope) -> Result<Vec<u8>, EnvelopeError> {
-    let mut buffer = Vec::with_capacity(MAX_ENVELOPE_BYTES);
+    let mut buffer = Vec::new();
     {
         let mut sink = CappedVecSink::new(&mut buffer, MAX_ENVELOPE_BYTES);
         write_envelope(&mut sink, envelope).map_err(|_| overflow(envelope))?;
@@ -151,6 +151,7 @@ mod tests {
         limit: usize,
         bytes: usize,
         days: usize,
+        digit_run: usize,
     }
 
     impl CanonicalSink for CountingSink {
@@ -160,8 +161,15 @@ mod tests {
             if bytes.len() > self.limit.saturating_sub(self.bytes) {
                 return Err(());
             }
-            if bytes.len() == 8 && bytes.iter().all(u8::is_ascii_digit) {
-                self.days += 1;
+            for byte in bytes {
+                if byte.is_ascii_digit() {
+                    self.digit_run += 1;
+                } else {
+                    if *byte == b'"' && self.digit_run == 8 {
+                        self.days += 1;
+                    }
+                    self.digit_run = 0;
+                }
             }
             self.bytes += bytes.len();
             Ok(())
@@ -175,10 +183,12 @@ mod tests {
             limit: 1_024,
             bytes: 0,
             days: 0,
+            digit_run: 0,
         };
 
         assert_eq!(write_envelope(&mut sink, &envelope), Err(()));
         assert!(sink.bytes <= sink.limit);
+        assert!(sink.days > 0, "counter must observe written day values");
         assert!(sink.days < 100, "writer must stop far before all days");
     }
 
