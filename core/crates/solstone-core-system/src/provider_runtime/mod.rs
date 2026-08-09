@@ -9,6 +9,8 @@ mod gate;
 mod launch;
 mod model;
 mod parakeet;
+mod parakeet_truth;
+mod placement;
 mod reconcile;
 mod retry;
 mod seams;
@@ -30,6 +32,14 @@ pub use model::*;
 pub use parakeet::{
     PARAKEET_SERVER_PROCESS_NAME, ParakeetLaunchConfig, ParakeetLifecycleSeam, ParakeetPlacement,
     ParakeetProbeSeam, ParakeetRuntimeShared,
+};
+pub use parakeet_truth::{
+    admission_blocked_observation, admission_not_desired_observation, parakeet_platform_can_host,
+    platform_cannot_host_not_desired, remote_mode_not_desired,
+};
+pub use placement::{
+    CO_FIT_MARGIN_MIB, PARAKEET_WORST_CASE_MIB, ParakeetPlacementDecision,
+    decide_parakeet_auto_placement,
 };
 pub use reconcile::{ProviderRuntimeCoordinator, ReconcileContext};
 pub use retry::{schedule_cleanup_retry, schedule_launch_retry};

@@ -590,3 +590,53 @@ fn stop_parakeet(
         }
     }
 }
+
+// AC11: cleanup on stop is idempotent, mirroring `_cleanup_parakeet_launch` /
+// `_terminate_cleanup_handle` -- a second stop call for the same managed
+// process must not attempt a second kill or otherwise fail, since nothing
+// guarantees a caller sees the reconciler retire the request before a
+// duplicate stop dispatch lands.
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod tests {
+    use std::process::Command;
+
+    use super::*;
+    use crate::provider_runtime::model::ProviderStopCleanupRequest;
+
+    fn stop_request(managed_id: &str) -> ProviderStopCleanupRequest {
+        ProviderStopCleanupRequest {
+            managed: ManagedProcess {
+                id: managed_id.to_owned(),
+                name: PARAKEET_SERVER_PROCESS_NAME.to_owned(),
+                running: true,
+            },
+            reason_code: ReasonCode::known("cleanup-succeeded"),
+            target_phase: super::super::model::RuntimePhase::NotDesired,
+            target_reason_code: None,
+            admission_exclusive: false,
+            orphaned_start_outcome: false,
+        }
+    }
+
+    #[test]
+    fn stopping_the_same_managed_process_twice_is_idempotent() {
+        let shared = ParakeetRuntimeShared::default();
+        // Plain `sleep`, not the crate's own test-child fixture:
+        // `CARGO_BIN_EXE_<bin>` is only injected for `tests/`/`examples/`/
+        // `benches/` targets, not for the lib's own unit tests, and `sleep`
+        // is present on every platform this test is cfg-gated to.
+        let child = Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleep child");
+        shared.retain_child("managed-1".to_owned(), child);
+        let request = stop_request("managed-1");
+
+        let first = stop_parakeet(&shared, Some(&request), false, Duration::from_secs(5));
+        assert_eq!(first.status, StopCleanupStatus::Stopped);
+
+        let second = stop_parakeet(&shared, Some(&request), false, Duration::from_secs(5));
+        assert_eq!(second.status, StopCleanupStatus::Stopped);
+        assert_eq!(second.managed, None);
+    }
+}
