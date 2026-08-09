@@ -15,7 +15,7 @@ mod wedge;
 pub use events::{ProviderRuntimeEvent, ProviderRuntimeEventSink, VecEventSink};
 pub use gate::ProviderStartupGate;
 pub use model::*;
-pub use reconcile::ProviderRuntimeCoordinator;
+pub use reconcile::{ProviderRuntimeCoordinator, ReconcileContext};
 pub use retry::{schedule_cleanup_retry, schedule_launch_retry};
 pub use seams::{
     InMemoryRuntimeStore, LifecycleSeam, NoopWorkers, ProbeSeam, RetryToken, RuntimeStore,
@@ -23,6 +23,6 @@ pub use seams::{
 };
 pub use stop::{
     cancel_start, cancel_stop, defer_target_stop, duplicate_owned_process_request,
-    stop_before_replace_request,
+    queue_orphaned_start_cleanup, stop_before_replace_request,
 };
-pub use wedge::{CortexEventKind, CortexOutcomeEvent, WedgeState};
+pub use wedge::{CortexEventKind, CortexOutcomeEvent, WedgeState, observe_cortex_outcome};

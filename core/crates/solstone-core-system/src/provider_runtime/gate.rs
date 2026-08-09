@@ -18,6 +18,7 @@ pub struct ProviderStartupGate {
     pub required: BTreeSet<ProviderName>,
     pub terminal: BTreeSet<ProviderName>,
     pub attempted: BTreeMap<ProviderName, LaunchOutcomeStatus>,
+    pub in_flight: BTreeSet<ProviderName>,
     pub first_start_at: Option<f64>,
     pub released: bool,
 }
@@ -29,19 +30,24 @@ impl ProviderStartupGate {
             required: required.into_iter().collect(),
             terminal: BTreeSet::new(),
             attempted: BTreeMap::new(),
+            in_flight: BTreeSet::new(),
             first_start_at: None,
             released: false,
         }
     }
 
     pub fn on_start_submitted(&mut self, provider: ProviderName, now: ProviderRuntimeNow) {
-        if self.required.contains(&provider) && self.first_start_at.is_none() {
-            self.first_start_at = Some(now.monotonic_seconds);
+        if self.required.contains(&provider) {
+            if self.first_start_at.is_none() {
+                self.first_start_at = Some(now.monotonic_seconds);
+            }
+            self.in_flight.insert(provider);
         }
     }
 
     pub fn on_start_result(&mut self, provider: ProviderName, status: LaunchOutcomeStatus) {
         if self.required.contains(&provider) {
+            self.in_flight.remove(&provider);
             self.attempted.entry(provider).or_insert(status);
         }
     }
@@ -67,7 +73,10 @@ impl ProviderStartupGate {
         });
         let window_expired =
             now.monotonic_seconds - self.started_at >= PROVIDER_STARTUP_GATE_WINDOW_SECONDS;
-        if self.required.is_subset(&satisfied) || first_start_expired || window_expired {
+        if self.required.is_subset(&satisfied)
+            || first_start_expired
+            || (window_expired && self.in_flight.is_empty())
+        {
             self.released = true;
             sink.emit(ProviderRuntimeEvent::GateReleased);
             return true;

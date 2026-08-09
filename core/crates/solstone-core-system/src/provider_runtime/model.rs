@@ -124,6 +124,8 @@ pub const PROVIDER_TRUTH_PRESERVED_PHASES: [RuntimePhase; 5] = [
     RuntimePhase::Stopping,
     RuntimePhase::CleanupFailed,
 ];
+/// A RAM-floor observation blocks a new admission, not an already-live provider.
+pub const ADMISSION_ONLY_REASON_CODES: [&str; 1] = ["ram-insufficient"];
 
 pub fn phase_in(phases: &[RuntimePhase], phase: RuntimePhase) -> bool {
     let mut index = 0;
@@ -305,6 +307,8 @@ pub struct ProviderStopCleanupRequest {
     pub target_phase: RuntimePhase,
     pub target_reason_code: Option<ReasonCode>,
     pub admission_exclusive: bool,
+    /// Cleanup for a stale/cancelled start result must not transiently overwrite a newer phase.
+    pub orphaned_start_outcome: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -352,6 +356,8 @@ pub struct ProviderRuntimeState {
     pub stop_cleanup: Option<InFlight<ProviderStopCleanupOutcome>>,
     pub stop_cancelled: bool,
     pub pending_stop_request: Option<ProviderStopCleanupRequest>,
+    /// Orphaned start outcomes can arrive while another cleanup is in flight; retain both handles.
+    pub orphaned_stop_requests: Vec<ProviderStopCleanupRequest>,
     pub pending_stop_target_phase: RuntimePhase,
     pub pending_stop_target_reason_code: Option<ReasonCode>,
     pub pending_stop_admission_exclusive: bool,
@@ -361,8 +367,10 @@ pub struct ProviderRuntimeState {
     pub retry: ProviderRetryState,
     pub generation: u64,
     pub desired_fingerprint: Option<String>,
+    pub replacement_artifact_not_ready_fingerprint: Option<String>,
     pub has_plan: bool,
     pub latest_phase: RuntimePhase,
+    pub latest_reason_code: Option<ReasonCode>,
     pub boot_required: bool,
     pub startup_terminal: bool,
     pub next_truth_at: f64,
@@ -379,6 +387,7 @@ impl ProviderRuntimeState {
             stop_cleanup: None,
             stop_cancelled: false,
             pending_stop_request: None,
+            orphaned_stop_requests: Vec::new(),
             pending_stop_target_phase: RuntimePhase::Stopped,
             pending_stop_target_reason_code: Some(ReasonCode::known("cleanup-succeeded")),
             pending_stop_admission_exclusive: false,
@@ -388,8 +397,10 @@ impl ProviderRuntimeState {
             retry: ProviderRetryState::default(),
             generation: 0,
             desired_fingerprint: None,
+            replacement_artifact_not_ready_fingerprint: None,
             has_plan: false,
             latest_phase: RuntimePhase::Stopped,
+            latest_reason_code: Some(ReasonCode::known("cleanup-succeeded")),
             boot_required: false,
             startup_terminal: false,
             next_truth_at: 0.0,

@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use super::events::{ProviderRuntimeEvent, ProviderRuntimeEventSink};
 use super::model::{
     LOCAL_WEDGE_PROVIDER_MAP_CAP, LOCAL_WEDGE_RECYCLE_GRACE_SECONDS, LOCAL_WEDGE_THRESHOLD,
     ProviderName, ProviderRuntimeNow,
@@ -91,4 +92,16 @@ impl WedgeState {
             }
         }
     }
+}
+
+/// Routes one cortex outcome through bounded wedge tracking and emits an eligible recycle request.
+pub fn observe_cortex_outcome(
+    wedge: &mut WedgeState,
+    event: CortexOutcomeEvent,
+    now: ProviderRuntimeNow,
+    sink: &mut dyn ProviderRuntimeEventSink,
+) -> Option<ProviderName> {
+    let provider = wedge.observe(event, now)?;
+    sink.emit(ProviderRuntimeEvent::RecycleRequested { provider });
+    Some(provider)
 }

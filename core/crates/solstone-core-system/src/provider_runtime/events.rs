@@ -39,6 +39,7 @@ pub trait ProviderRuntimeEventSink {
 }
 
 #[derive(Debug, Default)]
+/// An in-memory event buffer for tests and simple caller integrations.
 pub struct VecEventSink {
     pub events: Vec<ProviderRuntimeEvent>,
 }

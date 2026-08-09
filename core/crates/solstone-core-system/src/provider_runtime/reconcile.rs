@@ -9,18 +9,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use super::events::{ProviderRuntimeEvent, ProviderRuntimeEventSink};
 use super::gate::ProviderStartupGate;
 use super::model::{
-    InFlight, LaunchOutcomeStatus, ManagedProcess, PROVIDER_PROBE_INTERVAL_SECONDS,
-    PROVIDER_START_CANCEL_PHASES, PROVIDER_STARTUP_TERMINAL_PHASES,
-    PROVIDER_TRUTH_OBSERVATION_INTERVAL_SECONDS, PROVIDER_TRUTH_PRESERVED_PHASES, ProbeStatus,
-    ProviderFence, ProviderRuntimeNow, ProviderRuntimeState, ProviderTruthObservation,
-    RuntimePhase, StopCleanupStatus, phase_in,
+    ADMISSION_ONLY_REASON_CODES, InFlight, LaunchOutcomeStatus, ManagedProcess,
+    PROVIDER_PROBE_INTERVAL_SECONDS, PROVIDER_START_CANCEL_PHASES,
+    PROVIDER_STARTUP_TERMINAL_PHASES, PROVIDER_TRUTH_OBSERVATION_INTERVAL_SECONDS,
+    PROVIDER_TRUTH_PRESERVED_PHASES, ProbeStatus, ProviderFence, ProviderRuntimeNow,
+    ProviderRuntimeState, RuntimePhase, StopCleanupStatus, phase_in,
 };
 use super::retry::{retry_token_phase, schedule_cleanup_retry, schedule_launch_retry};
 use super::seams::{
     LifecycleSeam, ProbeSeam, RuntimeStore, RuntimeStoreError, TruthObservationSeam, reset_retry,
 };
 use super::stop::{
-    duplicate_owned_process_request, make_stop_request, stop_before_replace_request,
+    cancel_start, cancel_stop, defer_target_stop, duplicate_owned_process_request,
+    make_stop_request, queue_orphaned_start_cleanup, stop_before_replace_request,
 };
 
 static NEXT_INCARNATION: AtomicU64 = AtomicU64::new(1);
@@ -29,6 +30,23 @@ static NEXT_INCARNATION: AtomicU64 = AtomicU64::new(1);
 #[derive(Debug, Clone)]
 pub struct ProviderRuntimeCoordinator {
     incarnation: String,
+}
+
+/// Caller-owned seams and optional startup state for one reconciliation pass.
+pub struct ReconcileContext<'a> {
+    pub truth: &'a mut dyn TruthObservationSeam,
+    pub lifecycle: &'a mut dyn LifecycleSeam,
+    pub probe: &'a mut dyn ProbeSeam,
+    pub store: &'a mut dyn RuntimeStore,
+    pub sink: &'a mut dyn ProviderRuntimeEventSink,
+    pub gate: Option<&'a mut ProviderStartupGate>,
+}
+
+struct SubmissionSeams<'a> {
+    lifecycle: &'a mut dyn LifecycleSeam,
+    store: &'a mut dyn RuntimeStore,
+    sink: &'a mut dyn ProviderRuntimeEventSink,
+    gate: Option<&'a mut ProviderStartupGate>,
 }
 
 impl ProviderRuntimeCoordinator {
@@ -54,58 +72,103 @@ impl ProviderRuntimeCoordinator {
         now: ProviderRuntimeNow,
         state: &mut ProviderRuntimeState,
         processes: &mut Vec<ManagedProcess>,
-        truth: &mut dyn TruthObservationSeam,
-        lifecycle: &mut dyn LifecycleSeam,
-        probe: &mut dyn ProbeSeam,
-        store: &mut dyn RuntimeStore,
-        sink: &mut dyn ProviderRuntimeEventSink,
-        mut gate: Option<&mut ProviderStartupGate>,
+        context: &mut ReconcileContext<'_>,
     ) {
-        sink.emit(ProviderRuntimeEvent::Step("handle-retry-token"));
-        self.handle_retry_token(now, state, store, sink);
+        context
+            .sink
+            .emit(ProviderRuntimeEvent::Step("handle-retry-token"));
+        self.handle_retry_token(now, state, context.store, context.sink);
 
-        sink.emit(ProviderRuntimeEvent::Step("handle-truth-result"));
-        self.handle_truth_result(now, state, store, sink, gate.as_deref_mut());
+        context
+            .sink
+            .emit(ProviderRuntimeEvent::Step("handle-truth-result"));
+        self.handle_truth_result(
+            now,
+            state,
+            context.store,
+            context.sink,
+            context.gate.as_deref_mut(),
+        );
 
-        sink.emit(ProviderRuntimeEvent::Step("handle-start-result"));
-        self.handle_start_result(now, state, processes, store, sink, gate.as_deref_mut());
+        context
+            .sink
+            .emit(ProviderRuntimeEvent::Step("handle-start-result"));
+        self.handle_start_result(
+            now,
+            state,
+            processes,
+            context.store,
+            context.sink,
+            context.gate.as_deref_mut(),
+        );
 
-        sink.emit(ProviderRuntimeEvent::Step("handle-stop-cleanup-result"));
+        context
+            .sink
+            .emit(ProviderRuntimeEvent::Step("handle-stop-cleanup-result"));
         let stop_result_handled = self.handle_stop_cleanup_result(
             now,
             state,
             processes,
-            store,
-            sink,
-            gate.as_deref_mut(),
+            context.store,
+            context.sink,
+            context.gate.as_deref_mut(),
         );
 
-        sink.emit(ProviderRuntimeEvent::Step("handle-probe-result"));
-        self.handle_probe_result(now, state, store, sink, gate.as_deref_mut());
+        context
+            .sink
+            .emit(ProviderRuntimeEvent::Step("handle-probe-result"));
+        self.handle_probe_result(
+            now,
+            state,
+            context.store,
+            context.sink,
+            context.gate.as_deref_mut(),
+        );
 
         if !stop_result_handled {
-            sink.emit(ProviderRuntimeEvent::Step("submit-stop-cleanup-if-needed"));
-            self.submit_stop_cleanup_if_needed(now, state, processes, lifecycle, sink);
+            context
+                .sink
+                .emit(ProviderRuntimeEvent::Step("submit-stop-cleanup-if-needed"));
+            self.submit_stop_cleanup_if_needed(
+                now,
+                state,
+                processes,
+                &mut SubmissionSeams {
+                    lifecycle: context.lifecycle,
+                    store: context.store,
+                    sink: context.sink,
+                    gate: None,
+                },
+            );
 
-            sink.emit(ProviderRuntimeEvent::Step("submit-start-if-needed"));
+            context
+                .sink
+                .emit(ProviderRuntimeEvent::Step("submit-start-if-needed"));
             self.submit_start_if_needed(
                 now,
                 state,
                 processes,
-                lifecycle,
-                sink,
-                gate.as_deref_mut(),
+                &mut SubmissionSeams {
+                    lifecycle: context.lifecycle,
+                    store: context.store,
+                    sink: context.sink,
+                    gate: context.gate.as_deref_mut(),
+                },
             );
         }
 
-        sink.emit(ProviderRuntimeEvent::Step("submit-probe-if-needed"));
-        self.submit_probe_if_needed(now, state, probe, sink);
+        context
+            .sink
+            .emit(ProviderRuntimeEvent::Step("submit-probe-if-needed"));
+        self.submit_probe_if_needed(now, state, context.probe, context.sink);
 
-        sink.emit(ProviderRuntimeEvent::Step("submit-truth-if-needed"));
-        self.submit_truth_if_needed(now, state, truth, sink);
+        context
+            .sink
+            .emit(ProviderRuntimeEvent::Step("submit-truth-if-needed"));
+        self.submit_truth_if_needed(now, state, context.truth, context.store, context.sink);
 
-        if let Some(gate) = gate.as_deref_mut() {
-            gate.release_if_ready(now, sink);
+        if let Some(gate) = context.gate.as_deref_mut() {
+            gate.release_if_ready(now, context.sink);
         }
     }
 
@@ -149,21 +212,30 @@ impl ProviderRuntimeCoordinator {
             return;
         }
         state.latest_phase = retry_token_phase(state.latest_phase);
-        state.next_truth_at = now.monotonic_seconds;
-        reset_retry(state);
-        if store
-            .consume_retry_token(state.provider, &token.token_id)
-            .is_err()
-        {
-            state.latest_phase = RuntimePhase::StateUnavailable;
+        state.latest_reason_code = Some(super::model::ReasonCode::known("retry-token-requested"));
+        // supervisor.py:5765-5800 publishes this transition before consuming the token.
+        if let Err(error) = store.publish_state(state) {
+            state.latest_phase = store_error_phase(error);
+            return;
         }
-        self.persist(state, store);
+        match store.consume_retry_token(state.provider, &token.token_id) {
+            Ok(()) => {
+                reset_retry(state);
+                state.next_truth_at = now.monotonic_seconds;
+            }
+            // Another owner consumed it; retain the durable retry-requested transition.
+            Err(RuntimeStoreError::Conflict) => {}
+            Err(RuntimeStoreError::Corrupt) => state.latest_phase = RuntimePhase::StateCorrupt,
+            Err(RuntimeStoreError::Unavailable) => {
+                state.latest_phase = RuntimePhase::StateUnavailable
+            }
+        }
         let _ = sink;
     }
 
     fn handle_truth_result(
         &self,
-        _now: ProviderRuntimeNow,
+        now: ProviderRuntimeNow,
         state: &mut ProviderRuntimeState,
         store: &mut dyn RuntimeStore,
         sink: &mut dyn ProviderRuntimeEventSink,
@@ -181,19 +253,134 @@ impl ProviderRuntimeCoordinator {
                 operation: "truth",
                 provider: state.provider,
             });
+            state.next_truth_at = now.monotonic_seconds;
+            state.latest_reason_code =
+                Some(super::model::ReasonCode::known("stale-result-ignored"));
+            self.persist(state, store);
             return;
         }
-        self.apply_truth(state, result, gate);
-        self.persist(state, store);
-    }
-
-    fn apply_truth(
-        &self,
-        state: &mut ProviderRuntimeState,
-        result: ProviderTruthObservation,
-        gate: Option<&mut ProviderStartupGate>,
-    ) {
-        if state.desired_fingerprint != result.desired_fingerprint {
+        if result.provider != state.provider {
+            return;
+        }
+        if result.phase != RuntimePhase::ArtifactNotReady {
+            state.replacement_artifact_not_ready_fingerprint = None;
+        }
+        let fingerprint_changed = state.desired_fingerprint != result.desired_fingerprint;
+        let pending_target = state
+            .pending_stop_request
+            .as_ref()
+            .map_or(state.pending_stop_target_phase, |request| {
+                request.target_phase
+            });
+        if !fingerprint_changed
+            && matches!(
+                state.latest_phase,
+                RuntimePhase::StopDeferred | RuntimePhase::Stopping | RuntimePhase::CleanupFailed
+            )
+            && result.phase == pending_target
+        {
+            state.latest_reason_code =
+                Some(super::model::ReasonCode::known("stale-result-ignored"));
+            self.persist(state, store);
+            return;
+        }
+        if !fingerprint_changed
+            && state.has_plan
+            && ((result.phase == RuntimePhase::Starting
+                && matches!(
+                    state.latest_phase,
+                    RuntimePhase::Starting
+                        | RuntimePhase::Ready
+                        | RuntimePhase::ReadyProofUnavailable
+                ))
+                || (result.phase == RuntimePhase::HostBlocked
+                    && state.latest_phase == RuntimePhase::Starting))
+        {
+            state.latest_reason_code =
+                Some(super::model::ReasonCode::known("stale-result-ignored"));
+            self.persist(state, store);
+            return;
+        }
+        if state.stop_cleanup.is_some()
+            && (fingerprint_changed || result.phase == RuntimePhase::Starting)
+        {
+            cancel_stop(state);
+        }
+        if state.start.is_some()
+            && (fingerprint_changed || phase_in(&PROVIDER_START_CANCEL_PHASES, result.phase))
+        {
+            cancel_start(state);
+        }
+        if fingerprint_changed
+            && result.phase == RuntimePhase::Starting
+            && matches!(
+                state.latest_phase,
+                RuntimePhase::Ready | RuntimePhase::ReadyProofUnavailable
+            )
+        {
+            state.generation += 1;
+            state.desired_fingerprint = result.desired_fingerprint.clone();
+            reset_retry(state);
+            state.has_plan = result.has_plan;
+            defer_target_stop(
+                state,
+                RuntimePhase::Starting,
+                result.reason_code.clone(),
+                false,
+            );
+            state.latest_reason_code = Some(super::model::ReasonCode::known("target-changed"));
+            self.persist(state, store);
+            return;
+        }
+        if fingerprint_changed
+            && result.phase == RuntimePhase::ArtifactNotReady
+            && matches!(
+                state.latest_phase,
+                RuntimePhase::Ready | RuntimePhase::ReadyProofUnavailable
+            )
+        {
+            state.replacement_artifact_not_ready_fingerprint = result.desired_fingerprint.clone();
+            state.latest_phase = result.phase;
+            state.latest_reason_code = result.reason_code;
+            self.note_terminal(state, gate);
+            self.persist(state, store);
+            return;
+        }
+        if !fingerprint_changed
+            && result.phase == RuntimePhase::HostBlocked
+            && result
+                .reason_code
+                .as_ref()
+                .is_some_and(|reason| ADMISSION_ONLY_REASON_CODES.contains(&reason.as_str()))
+            && matches!(
+                state.latest_phase,
+                RuntimePhase::Ready | RuntimePhase::ReadyProofUnavailable
+            )
+        {
+            state.latest_reason_code =
+                Some(super::model::ReasonCode::known("stale-result-ignored"));
+            self.persist(state, store);
+            return;
+        }
+        if matches!(
+            result.phase,
+            RuntimePhase::NotDesired | RuntimePhase::HostBlocked
+        ) && matches!(
+            state.latest_phase,
+            RuntimePhase::Ready | RuntimePhase::ReadyProofUnavailable
+        ) {
+            if fingerprint_changed {
+                state.generation += 1;
+                state.desired_fingerprint = result.desired_fingerprint.clone();
+                reset_retry(state);
+            }
+            defer_target_stop(state, result.phase, result.reason_code, true);
+            state.latest_reason_code =
+                Some(super::model::ReasonCode::known("admission-exclusive-stop"));
+            self.persist(state, store);
+            return;
+        }
+        if fingerprint_changed {
             state.generation += 1;
             state.desired_fingerprint = result.desired_fingerprint.clone();
             reset_retry(state);
@@ -201,7 +388,17 @@ impl ProviderRuntimeCoordinator {
         state.has_plan = result.has_plan;
         state.boot_required = result.boot_required;
         state.latest_phase = result.phase;
+        state.latest_reason_code = result.reason_code;
+        if state.latest_phase == RuntimePhase::Observing
+            && state
+                .latest_reason_code
+                .as_ref()
+                .is_some_and(|reason| reason.as_str() == "observation-raced")
+        {
+            state.next_truth_at = now.monotonic_seconds;
+        }
         self.note_terminal(state, gate);
+        self.persist(state, store);
     }
 
     fn handle_start_result(
@@ -220,36 +417,66 @@ impl ProviderRuntimeCoordinator {
             state.start = Some(in_flight);
             return;
         };
+        if let Some(gate) = gate.as_deref_mut() {
+            gate.on_start_result(state.provider, result.status);
+        }
         if !self.fence_matches(state, &in_flight.fence, state.retry.attempt_count) {
             sink.emit(ProviderRuntimeEvent::StaleResultDiscarded {
                 operation: "start",
                 provider: state.provider,
             });
+            if let Some(managed) = result.managed {
+                // W7a owns the cleanup decision; W7b supplies concrete termination behind this seam.
+                queue_orphaned_start_cleanup(
+                    state,
+                    managed,
+                    state.latest_phase,
+                    state.latest_reason_code.clone(),
+                );
+            }
             return;
         }
         if state.start_cancelled || phase_in(&PROVIDER_START_CANCEL_PHASES, state.latest_phase) {
             state.start_cancelled = false;
+            if let Some(managed) = result.managed {
+                // A cancelled start may still have produced a process that must be cleaned up.
+                queue_orphaned_start_cleanup(
+                    state,
+                    managed,
+                    state.latest_phase,
+                    state.latest_reason_code.clone(),
+                );
+            }
             return;
         }
-        if let Some(gate) = gate.as_deref_mut() {
-            gate.on_start_result(state.provider, result.status);
-        }
+        let mut managed = result.managed;
         match result.status {
             LaunchOutcomeStatus::Ready => {
-                if let Some(managed) = result.managed {
+                if let Some(managed) = managed.take() {
                     processes.push(managed);
+                    state.latest_phase = RuntimePhase::Ready;
+                    self.note_terminal(state, gate);
+                } else {
+                    schedule_launch_retry(state, now, sink);
+                    self.note_terminal(state, gate);
                 }
-                state.latest_phase = RuntimePhase::Ready;
-                self.note_terminal(state, gate.as_deref_mut());
             }
             LaunchOutcomeStatus::HostBlocked => {
                 state.latest_phase = RuntimePhase::HostBlocked;
-                self.note_terminal(state, gate.as_deref_mut());
+                self.note_terminal(state, gate);
             }
             _ => {
                 schedule_launch_retry(state, now, sink);
-                self.note_terminal(state, gate.as_deref_mut());
+                self.note_terminal(state, gate);
             }
+        }
+        if let Some(managed) = managed {
+            queue_orphaned_start_cleanup(
+                state,
+                managed,
+                state.latest_phase,
+                state.latest_reason_code.clone(),
+            );
         }
         self.persist(state, store);
     }
@@ -344,14 +571,15 @@ impl ProviderRuntimeCoordinator {
         now: ProviderRuntimeNow,
         state: &mut ProviderRuntimeState,
         processes: &[ManagedProcess],
-        lifecycle: &mut dyn LifecycleSeam,
-        sink: &mut dyn ProviderRuntimeEventSink,
+        seams: &mut SubmissionSeams<'_>,
     ) {
         if state.stop_cleanup.is_some() || now.monotonic_seconds < state.cleanup_next_at {
             return;
         }
         let request = if let Some(request) = state.pending_stop_request.clone() {
             Some(request)
+        } else if !state.orphaned_stop_requests.is_empty() {
+            Some(state.orphaned_stop_requests.remove(0))
         } else if let Some(request) = duplicate_owned_process_request(state, processes) {
             Some(request)
         } else if state.latest_phase == RuntimePhase::StopDeferred {
@@ -373,15 +601,25 @@ impl ProviderRuntimeCoordinator {
             stop_before_replace_request(state, processes)
         };
         let Some(request) = request else { return };
+        let orphaned_start_outcome = request.orphaned_start_outcome;
         state.pending_stop_request = Some(request);
-        state.latest_phase = RuntimePhase::Stopping;
+        if !orphaned_start_outcome {
+            state.latest_phase = RuntimePhase::Stopping;
+            state.latest_reason_code = state
+                .pending_stop_request
+                .as_ref()
+                .map(|request| request.reason_code.clone());
+        }
         let fence = self.fence(state, state.cleanup_attempt_count);
         state.stop_cleanup = Some(InFlight {
             fence: fence.clone(),
             result: None,
         });
-        lifecycle.dispatch_stop(state, &fence);
-        sink.emit(ProviderRuntimeEvent::Dispatched {
+        if !orphaned_start_outcome {
+            self.persist(state, seams.store);
+        }
+        seams.lifecycle.dispatch_stop(state, &fence);
+        seams.sink.emit(ProviderRuntimeEvent::Dispatched {
             operation: "stop-cleanup",
             provider: state.provider,
         });
@@ -392,9 +630,7 @@ impl ProviderRuntimeCoordinator {
         now: ProviderRuntimeNow,
         state: &mut ProviderRuntimeState,
         processes: &[ManagedProcess],
-        lifecycle: &mut dyn LifecycleSeam,
-        sink: &mut dyn ProviderRuntimeEventSink,
-        gate: Option<&mut ProviderStartupGate>,
+        seams: &mut SubmissionSeams<'_>,
     ) {
         if state.start.is_some()
             || state.stop_cleanup.is_some()
@@ -414,21 +650,26 @@ impl ProviderRuntimeCoordinator {
         if state.retry.attempt_count as usize >= super::model::PROVIDER_RETRY_SCHEDULE_SECONDS.len()
         {
             state.latest_phase = RuntimePhase::Failed;
-            self.note_terminal(state, gate);
+            state.latest_reason_code =
+                Some(super::model::ReasonCode::known("launch-budget-exhausted"));
+            self.note_terminal(state, seams.gate.as_deref_mut());
+            self.persist(state, seams.store);
             return;
         }
         state.retry.attempt_count += 1;
         state.latest_phase = RuntimePhase::Starting;
+        state.latest_reason_code = Some(super::model::ReasonCode::known("launch-requested"));
         let fence = self.fence(state, state.retry.attempt_count);
         state.start = Some(InFlight {
             fence: fence.clone(),
             result: None,
         });
-        if let Some(gate) = gate {
+        if let Some(gate) = seams.gate.as_deref_mut() {
             gate.on_start_submitted(state.provider, now);
         }
-        lifecycle.dispatch_start(state, &fence);
-        sink.emit(ProviderRuntimeEvent::Dispatched {
+        self.persist(state, seams.store);
+        seams.lifecycle.dispatch_start(state, &fence);
+        seams.sink.emit(ProviderRuntimeEvent::Dispatched {
             operation: "start",
             provider: state.provider,
         });
@@ -468,20 +709,27 @@ impl ProviderRuntimeCoordinator {
         now: ProviderRuntimeNow,
         state: &mut ProviderRuntimeState,
         truth: &mut dyn TruthObservationSeam,
+        store: &mut dyn RuntimeStore,
         sink: &mut dyn ProviderRuntimeEventSink,
     ) {
         if state.truth.is_some() || now.monotonic_seconds < state.next_truth_at {
             return;
         }
         state.next_truth_at = now.monotonic_seconds + PROVIDER_TRUTH_OBSERVATION_INTERVAL_SECONDS;
-        if !phase_in(&PROVIDER_TRUTH_PRESERVED_PHASES, state.latest_phase) {
+        let phase_changed = !phase_in(&PROVIDER_TRUTH_PRESERVED_PHASES, state.latest_phase);
+        if phase_changed {
             state.latest_phase = RuntimePhase::Observing;
+            state.latest_reason_code =
+                Some(super::model::ReasonCode::known("truth-observation-started"));
         }
         let fence = self.fence(state, state.retry.attempt_count);
         state.truth = Some(InFlight {
             fence: fence.clone(),
             result: None,
         });
+        if phase_changed {
+            self.persist(state, store);
+        }
         truth.dispatch_truth(state, &fence);
         sink.emit(ProviderRuntimeEvent::Dispatched {
             operation: "truth",
@@ -532,10 +780,11 @@ mod tests {
         CortexEventKind, CortexOutcomeEvent, GATE_TICK_INTERVAL_SECONDS, InMemoryRuntimeStore,
         KNOWN_REASON_CODES, LOCAL_WEDGE_PROVIDER_MAP_CAP, LOCAL_WEDGE_RECYCLE_GRACE_SECONDS,
         LOCAL_WEDGE_THRESHOLD, PROVIDER_CLEANUP_RETRY_SCHEDULE_SECONDS,
-        PROVIDER_RETRY_SCHEDULE_SECONDS, ProviderLaunchOutcome, ProviderName, ProviderProbeOutcome,
-        ProviderStopCleanupOutcome, ReasonCode, RetryToken, VecEventSink, WedgeState, cancel_start,
-        cancel_stop, defer_target_stop, duplicate_owned_process_request, schedule_cleanup_retry,
-        schedule_launch_retry,
+        PROVIDER_RETRY_SCHEDULE_SECONDS, PROVIDER_STARTUP_GATE_CEILING_SECONDS,
+        PROVIDER_STARTUP_GATE_WINDOW_SECONDS, ProviderLaunchOutcome, ProviderName,
+        ProviderProbeOutcome, ProviderStopCleanupOutcome, ProviderTruthObservation, ReasonCode,
+        RetryToken, VecEventSink, WedgeState, cancel_start, cancel_stop, defer_target_stop,
+        duplicate_owned_process_request, schedule_cleanup_retry, schedule_launch_retry,
     };
 
     #[derive(Clone, Default)]
@@ -562,6 +811,106 @@ mod tests {
     impl ProbeSeam for RecordingWorkers {
         fn dispatch_probe(&mut self, _: &ProviderRuntimeState, _: &ProviderFence) {
             self.calls.borrow_mut().push("probe-dispatch");
+        }
+    }
+
+    struct RetryStore {
+        token: Option<RetryToken>,
+        consume_error: Option<RuntimeStoreError>,
+        calls: Vec<&'static str>,
+        published: Vec<RuntimePhase>,
+    }
+
+    impl RetryStore {
+        fn with_token(token: RetryToken) -> Self {
+            Self {
+                token: Some(token),
+                consume_error: None,
+                calls: Vec::new(),
+                published: Vec::new(),
+            }
+        }
+    }
+
+    impl RuntimeStore for RetryStore {
+        fn read_retry_token(
+            &mut self,
+            _: ProviderName,
+        ) -> Result<Option<RetryToken>, RuntimeStoreError> {
+            self.calls.push("read");
+            Ok(self.token.clone())
+        }
+
+        fn consume_retry_token(
+            &mut self,
+            _: ProviderName,
+            _: &str,
+        ) -> Result<(), RuntimeStoreError> {
+            self.calls.push("consume");
+            if let Some(error) = self.consume_error.clone() {
+                return Err(error);
+            }
+            self.token = None;
+            Ok(())
+        }
+
+        fn publish_state(&mut self, state: &ProviderRuntimeState) -> Result<(), RuntimeStoreError> {
+            self.calls.push("publish");
+            self.published.push(state.latest_phase);
+            Ok(())
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct OrderedWorkers {
+        calls: Rc<RefCell<Vec<&'static str>>>,
+    }
+
+    impl TruthObservationSeam for OrderedWorkers {
+        fn dispatch_truth(&mut self, _: &ProviderRuntimeState, _: &ProviderFence) {
+            self.calls.borrow_mut().push("truth-dispatch");
+        }
+    }
+
+    impl LifecycleSeam for OrderedWorkers {
+        fn dispatch_start(&mut self, _: &ProviderRuntimeState, _: &ProviderFence) {
+            self.calls.borrow_mut().push("start-dispatch");
+        }
+
+        fn dispatch_stop(&mut self, _: &ProviderRuntimeState, _: &ProviderFence) {
+            self.calls.borrow_mut().push("stop-dispatch");
+        }
+    }
+
+    impl ProbeSeam for OrderedWorkers {
+        fn dispatch_probe(&mut self, _: &ProviderRuntimeState, _: &ProviderFence) {
+            self.calls.borrow_mut().push("probe-dispatch");
+        }
+    }
+
+    struct OrderedStore {
+        calls: Rc<RefCell<Vec<&'static str>>>,
+    }
+
+    impl RuntimeStore for OrderedStore {
+        fn read_retry_token(
+            &mut self,
+            _: ProviderName,
+        ) -> Result<Option<RetryToken>, RuntimeStoreError> {
+            Ok(None)
+        }
+
+        fn consume_retry_token(
+            &mut self,
+            _: ProviderName,
+            _: &str,
+        ) -> Result<(), RuntimeStoreError> {
+            Ok(())
+        }
+
+        fn publish_state(&mut self, _: &ProviderRuntimeState) -> Result<(), RuntimeStoreError> {
+            self.calls.borrow_mut().push("publish");
+            Ok(())
         }
     }
 
@@ -739,12 +1088,14 @@ mod tests {
             now(0.0),
             &mut state,
             &mut vec![],
-            &mut truth,
-            &mut lifecycle,
-            &mut probe,
-            &mut store,
-            &mut sink,
-            None,
+            &mut ReconcileContext {
+                truth: &mut truth,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
         );
         assert_eq!(*workers.calls.borrow(), ["start-dispatch"]);
     }
@@ -766,12 +1117,14 @@ mod tests {
             now(0.0),
             &mut state,
             &mut processes,
-            &mut truth,
-            &mut lifecycle,
-            &mut probe,
-            &mut store,
-            &mut sink,
-            None,
+            &mut ReconcileContext {
+                truth: &mut truth,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
         );
         assert_eq!(*workers.calls.borrow(), ["stop-dispatch"]);
     }
@@ -783,6 +1136,7 @@ mod tests {
         state.latest_phase = RuntimePhase::Ready;
         state.next_truth_at = 100.0;
         state.next_probe_at = 100.0;
+        state.next_probe_at = 100.0;
         let workers = RecordingWorkers::default();
         let mut truth = workers.clone();
         let mut lifecycle = workers.clone();
@@ -793,21 +1147,102 @@ mod tests {
             now(0.0),
             &mut state,
             &mut vec![managed("ready")],
-            &mut truth,
-            &mut lifecycle,
-            &mut probe,
-            &mut store,
-            &mut sink,
-            None,
+            &mut ReconcileContext {
+                truth: &mut truth,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
         );
         assert!(workers.calls.borrow().is_empty());
     }
 
     #[test]
-    fn probe_unavailable_distinct_from_not_ready_and_ready() {
-        assert_ne!(ProbeStatus::Unavailable, ProbeStatus::NotReady);
-        assert_ne!(ProbeStatus::Unavailable, ProbeStatus::Ready);
-        assert_ne!(ProbeStatus::NotReady, ProbeStatus::Ready);
+    fn reconcile_preserves_distinct_store_and_probe_runtime_phases() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let workers = RecordingWorkers::default();
+        let mut truth = workers.clone();
+        let mut lifecycle = workers.clone();
+        let mut probe_worker = workers.clone();
+        let mut unavailable = state_for(ProviderName::Local);
+        unavailable.latest_phase = RuntimePhase::Backoff;
+        unavailable.next_truth_at = 100.0;
+        let mut unavailable_store = InMemoryRuntimeStore {
+            failure: Some(RuntimeStoreError::Unavailable),
+            ..InMemoryRuntimeStore::default()
+        };
+        let mut sink = VecEventSink::default();
+        coordinator.reconcile(
+            now(0.0),
+            &mut unavailable,
+            &mut vec![],
+            &mut ReconcileContext {
+                truth: &mut truth,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe_worker,
+                store: &mut unavailable_store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        assert_eq!(unavailable.latest_phase, RuntimePhase::StateUnavailable);
+
+        let mut corrupt = state_for(ProviderName::Local);
+        corrupt.latest_phase = RuntimePhase::Backoff;
+        corrupt.next_truth_at = 100.0;
+        let mut corrupt_store = InMemoryRuntimeStore {
+            failure: Some(RuntimeStoreError::Corrupt),
+            ..InMemoryRuntimeStore::default()
+        };
+        coordinator.reconcile(
+            now(0.0),
+            &mut corrupt,
+            &mut vec![],
+            &mut ReconcileContext {
+                truth: &mut truth,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe_worker,
+                store: &mut corrupt_store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        assert_eq!(corrupt.latest_phase, RuntimePhase::StateCorrupt);
+
+        for (status, expected) in [
+            (ProbeStatus::Ready, RuntimePhase::Ready),
+            (
+                ProbeStatus::Unavailable,
+                RuntimePhase::ReadyProofUnavailable,
+            ),
+        ] {
+            let mut state = state_for(ProviderName::Local);
+            state.latest_phase = RuntimePhase::Ready;
+            state.next_truth_at = 100.0;
+            state.next_probe_at = 100.0;
+            let fence = coordinator.fence(&state, 0);
+            state.probe = Some(InFlight {
+                fence,
+                result: Some(probe(status)),
+            });
+            let mut store = InMemoryRuntimeStore::default();
+            coordinator.reconcile(
+                now(0.0),
+                &mut state,
+                &mut vec![],
+                &mut ReconcileContext {
+                    truth: &mut truth,
+                    lifecycle: &mut lifecycle,
+                    probe: &mut probe_worker,
+                    store: &mut store,
+                    sink: &mut sink,
+                    gate: None,
+                },
+            );
+            assert_eq!(state.latest_phase, expected);
+        }
     }
 
     #[test]
@@ -851,23 +1286,27 @@ mod tests {
             now(0.0),
             &mut state,
             &mut vec![],
-            &mut truth,
-            &mut lifecycle,
-            &mut probe,
-            &mut store,
-            &mut sink,
-            None,
+            &mut ReconcileContext {
+                truth: &mut truth,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
         );
         coordinator.reconcile(
             now(1.0),
             &mut state,
             &mut vec![],
-            &mut truth,
-            &mut lifecycle,
-            &mut probe,
-            &mut store,
-            &mut sink,
-            None,
+            &mut ReconcileContext {
+                truth: &mut truth,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
         );
         assert_eq!(
             workers
@@ -1103,16 +1542,31 @@ mod tests {
         state.latest_phase = RuntimePhase::Starting;
         state.generation = 99;
         let mut workers = RecordingWorkers::default();
+        let mut store = InMemoryRuntimeStore::default();
         let mut sink = VecEventSink::default();
         coordinator.submit_start_if_needed(
             now(0.0),
             &mut state,
             &[],
-            &mut workers,
+            &mut SubmissionSeams {
+                lifecycle: &mut workers,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        assert_eq!(*workers.calls.borrow(), ["start-dispatch"]);
+        state.generation += 1;
+        state.start.as_mut().unwrap().result = Some(launch(LaunchOutcomeStatus::Ready));
+        coordinator.handle_start_result(
+            now(1.0),
+            &mut state,
+            &mut vec![],
+            &mut store,
             &mut sink,
             None,
         );
-        assert_eq!(*workers.calls.borrow(), ["start-dispatch"]);
+        assert_eq!(state.latest_phase, RuntimePhase::Starting);
     }
 
     #[test]
@@ -1154,38 +1608,6 @@ mod tests {
         let request = stop_before_replace_request(&state, &[managed("old")]).unwrap();
         assert_eq!(request.target_phase, RuntimePhase::Stopped);
         assert_eq!(request.reason_code.as_str(), "target-changed");
-    }
-
-    #[test]
-    fn stop_shape_admission_exclusive() {
-        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
-        let mut state = state_for(ProviderName::Local);
-        let request = make_stop_request(
-            &state,
-            managed("old"),
-            ReasonCode::known("admission-exclusive-stop"),
-            RuntimePhase::Stopped,
-            None,
-            true,
-        );
-        let fence = coordinator.fence(&state, 0);
-        state.pending_stop_request = Some(request);
-        state.stop_cleanup = Some(InFlight {
-            fence,
-            result: Some(stop(StopCleanupStatus::StopDeferred)),
-        });
-        let mut store = InMemoryRuntimeStore::default();
-        let mut sink = VecEventSink::default();
-        let mut processes = vec![managed("old")];
-        coordinator.handle_stop_cleanup_result(
-            now(0.0),
-            &mut state,
-            &mut processes,
-            &mut store,
-            &mut sink,
-            None,
-        );
-        assert_eq!(state.latest_phase, RuntimePhase::StopDeferred);
     }
 
     #[test]
@@ -1302,6 +1724,431 @@ mod tests {
         assert_eq!(PROVIDER_PROBE_INTERVAL_SECONDS, GATE_TICK_INTERVAL_SECONDS);
     }
 
+    fn truth(
+        provider: ProviderName,
+        phase: RuntimePhase,
+        fingerprint: Option<&str>,
+        reason: Option<&'static str>,
+    ) -> ProviderTruthObservation {
+        ProviderTruthObservation {
+            provider,
+            phase,
+            reason_code: reason.map(ReasonCode::known),
+            desired_fingerprint: fingerprint.map(str::to_owned),
+            has_plan: true,
+            boot_required: false,
+        }
+    }
+
+    #[test]
+    fn truth_wrong_provider_is_a_noop() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        let fence = coordinator.fence(&state, 0);
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(truth(
+                ProviderName::Parakeet,
+                RuntimePhase::NotDesired,
+                Some("desired-b"),
+                Some("intent-disabled"),
+            )),
+        });
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        coordinator.handle_truth_result(now(1.0), &mut state, &mut store, &mut sink, None);
+        assert_eq!(state.latest_phase, RuntimePhase::Ready);
+        assert!(store.published.is_empty());
+    }
+
+    #[test]
+    fn pending_cleanup_and_starting_noise_keep_authoritative_phase() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::StopDeferred;
+        state.pending_stop_target_phase = RuntimePhase::NotDesired;
+        let fence = coordinator.fence(&state, 0);
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(truth(
+                ProviderName::Local,
+                RuntimePhase::NotDesired,
+                Some("desired-a"),
+                Some("intent-disabled"),
+            )),
+        });
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        coordinator.handle_truth_result(now(1.0), &mut state, &mut store, &mut sink, None);
+        assert_eq!(state.latest_phase, RuntimePhase::StopDeferred);
+
+        state.latest_phase = RuntimePhase::Starting;
+        let fence = coordinator.fence(&state, 0);
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(truth(
+                ProviderName::Local,
+                RuntimePhase::HostBlocked,
+                Some("desired-a"),
+                Some("ram-insufficient"),
+            )),
+        });
+        coordinator.handle_truth_result(now(2.0), &mut state, &mut store, &mut sink, None);
+        assert_eq!(state.latest_phase, RuntimePhase::Starting);
+    }
+
+    #[test]
+    fn replacement_start_defers_cleanup_without_overwriting_ready() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        let fence = coordinator.fence(&state, 0);
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(truth(
+                ProviderName::Local,
+                RuntimePhase::Starting,
+                Some("desired-b"),
+                Some("launch-requested"),
+            )),
+        });
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        coordinator.handle_truth_result(now(1.0), &mut state, &mut store, &mut sink, None);
+        assert_eq!(state.latest_phase, RuntimePhase::StopDeferred);
+        assert_eq!(state.pending_stop_target_phase, RuntimePhase::Starting);
+        assert_eq!(state.desired_fingerprint.as_deref(), Some("desired-b"));
+    }
+
+    #[test]
+    fn replacement_artifact_not_ready_remains_visible() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        let fence = coordinator.fence(&state, 0);
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(truth(
+                ProviderName::Local,
+                RuntimePhase::ArtifactNotReady,
+                Some("desired-b"),
+                Some("artifact-missing"),
+            )),
+        });
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        coordinator.handle_truth_result(now(1.0), &mut state, &mut store, &mut sink, None);
+        assert_eq!(state.latest_phase, RuntimePhase::ArtifactNotReady);
+        assert_eq!(
+            state.replacement_artifact_not_ready_fingerprint.as_deref(),
+            Some("desired-b")
+        );
+    }
+
+    #[test]
+    fn ready_provider_ignores_unchanged_ram_admission_block() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        let fence = coordinator.fence(&state, 0);
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(truth(
+                ProviderName::Local,
+                RuntimePhase::HostBlocked,
+                Some("desired-a"),
+                Some("ram-insufficient"),
+            )),
+        });
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        coordinator.handle_truth_result(now(1.0), &mut state, &mut store, &mut sink, None);
+        assert_eq!(state.latest_phase, RuntimePhase::Ready);
+        assert_eq!(
+            state.latest_reason_code.as_ref().map(ReasonCode::as_str),
+            Some("stale-result-ignored")
+        );
+    }
+
+    #[test]
+    fn ready_not_desired_defers_an_admission_exclusive_stop_via_reconcile() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        state.next_truth_at = 100.0;
+        state.next_probe_at = 100.0;
+        let fence = coordinator.fence(&state, 0);
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(truth(
+                ProviderName::Local,
+                RuntimePhase::NotDesired,
+                Some("desired-a"),
+                Some("intent-disabled"),
+            )),
+        });
+        let workers = RecordingWorkers::default();
+        let mut truth_worker = workers.clone();
+        let mut lifecycle = workers.clone();
+        let mut probe = workers.clone();
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        coordinator.reconcile(
+            now(1.0),
+            &mut state,
+            &mut vec![managed("old")],
+            &mut ReconcileContext {
+                truth: &mut truth_worker,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        assert_eq!(*workers.calls.borrow(), ["stop-dispatch"]);
+        assert!(
+            state
+                .pending_stop_request
+                .as_ref()
+                .unwrap()
+                .admission_exclusive
+        );
+        assert_eq!(state.pending_stop_target_phase, RuntimePhase::NotDesired);
+    }
+
+    #[test]
+    fn truth_result_signals_in_flight_start_and_stop_cancellation() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        let fence = coordinator.fence(&state, 0);
+        state.start = Some(InFlight {
+            fence: fence.clone(),
+            result: None,
+        });
+        state.stop_cleanup = Some(InFlight {
+            fence,
+            result: None,
+        });
+        let truth_fence = coordinator.fence(&state, 0);
+        state.truth = Some(InFlight {
+            fence: truth_fence,
+            result: Some(truth(
+                ProviderName::Local,
+                RuntimePhase::NotDesired,
+                Some("desired-b"),
+                Some("intent-disabled"),
+            )),
+        });
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        coordinator.handle_truth_result(now(1.0), &mut state, &mut store, &mut sink, None);
+        assert!(state.start_cancelled);
+        assert!(state.stop_cancelled);
+    }
+
+    #[test]
+    fn cancelled_ready_start_is_routed_to_stop_cleanup_not_ready() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Starting;
+        state.next_truth_at = 100.0;
+        state.retry.attempt_count = 1;
+        let fence = coordinator.fence(&state, 1);
+        state.start = Some(InFlight {
+            fence,
+            result: Some(launch(LaunchOutcomeStatus::Ready)),
+        });
+        state.start_cancelled = true;
+        let workers = RecordingWorkers::default();
+        let mut truth_worker = workers.clone();
+        let mut lifecycle = workers.clone();
+        let mut probe = workers.clone();
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        let mut processes = vec![];
+        coordinator.reconcile(
+            now(1.0),
+            &mut state,
+            &mut processes,
+            &mut ReconcileContext {
+                truth: &mut truth_worker,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        assert_eq!(*workers.calls.borrow(), ["stop-dispatch"]);
+        assert_ne!(state.latest_phase, RuntimePhase::Ready);
+        assert!(processes.is_empty());
+    }
+
+    #[test]
+    fn stale_ready_start_is_cleaned_without_overwriting_current_generation_phase() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        state.next_truth_at = 100.0;
+        state.next_probe_at = 100.0;
+        state.retry.attempt_count = 1;
+        let fence = coordinator.fence(&state, 1);
+        state.generation += 1;
+        state.start = Some(InFlight {
+            fence,
+            result: Some(launch(LaunchOutcomeStatus::Ready)),
+        });
+        let workers = RecordingWorkers::default();
+        let mut truth_worker = workers.clone();
+        let mut lifecycle = workers.clone();
+        let mut probe = workers.clone();
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        let mut processes = vec![];
+        coordinator.reconcile(
+            now(1.0),
+            &mut state,
+            &mut processes,
+            &mut ReconcileContext {
+                truth: &mut truth_worker,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        assert_eq!(state.latest_phase, RuntimePhase::Ready);
+        assert_eq!(*workers.calls.borrow(), ["stop-dispatch"]);
+        assert!(processes.is_empty());
+    }
+
+    #[test]
+    fn orphaned_cleanup_failure_uses_normal_cleanup_retry_schedule() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Starting;
+        state.start_cancelled = true;
+        state.retry.attempt_count = 1;
+        let fence = coordinator.fence(&state, 1);
+        state.start = Some(InFlight {
+            fence,
+            result: Some(launch(LaunchOutcomeStatus::Ready)),
+        });
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        coordinator.handle_start_result(
+            now(0.0),
+            &mut state,
+            &mut vec![],
+            &mut store,
+            &mut sink,
+            None,
+        );
+        let mut workers = RecordingWorkers::default();
+        coordinator.submit_stop_cleanup_if_needed(
+            now(0.0),
+            &mut state,
+            &[],
+            &mut SubmissionSeams {
+                lifecycle: &mut workers,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        state.stop_cleanup.as_mut().unwrap().result = Some(stop(StopCleanupStatus::CleanupFailed));
+        coordinator.handle_stop_cleanup_result(
+            now(0.0),
+            &mut state,
+            &mut vec![],
+            &mut store,
+            &mut sink,
+            None,
+        );
+        assert_eq!(state.latest_phase, RuntimePhase::CleanupFailed);
+        assert_eq!(
+            state.cleanup_next_at,
+            PROVIDER_CLEANUP_RETRY_SCHEDULE_SECONDS[0]
+        );
+    }
+
+    #[test]
+    fn pending_and_orphaned_cleanups_are_drained_without_losing_a_handle() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Starting;
+        state.start_cancelled = true;
+        state.retry.attempt_count = 1;
+        let fence = coordinator.fence(&state, 1);
+        state.start = Some(InFlight {
+            fence,
+            result: Some(launch(LaunchOutcomeStatus::Ready)),
+        });
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        coordinator.handle_start_result(
+            now(0.0),
+            &mut state,
+            &mut vec![],
+            &mut store,
+            &mut sink,
+            None,
+        );
+        let mut workers = RecordingWorkers::default();
+        coordinator.submit_stop_cleanup_if_needed(
+            now(0.0),
+            &mut state,
+            &[],
+            &mut SubmissionSeams {
+                lifecycle: &mut workers,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        state.start_cancelled = true;
+        let second_fence = coordinator.fence(&state, 1);
+        state.start = Some(InFlight {
+            fence: second_fence,
+            result: Some(launch(LaunchOutcomeStatus::Ready)),
+        });
+        coordinator.handle_start_result(
+            now(1.0),
+            &mut state,
+            &mut vec![],
+            &mut store,
+            &mut sink,
+            None,
+        );
+        assert_eq!(state.orphaned_stop_requests.len(), 1);
+        state.stop_cleanup.as_mut().unwrap().result = Some(stop(StopCleanupStatus::Stopped));
+        coordinator.handle_stop_cleanup_result(
+            now(1.0),
+            &mut state,
+            &mut vec![],
+            &mut store,
+            &mut sink,
+            None,
+        );
+        coordinator.submit_stop_cleanup_if_needed(
+            now(1.0),
+            &mut state,
+            &[],
+            &mut SubmissionSeams {
+                lifecycle: &mut workers,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        assert!(state.stop_cleanup.is_some());
+        assert!(state.orphaned_stop_requests.is_empty());
+    }
+
     fn cortex(kind: CortexEventKind, use_id: &str) -> CortexOutcomeEvent {
         CortexOutcomeEvent {
             kind,
@@ -1355,6 +2202,19 @@ mod tests {
             );
         }
         assert_eq!(wedge.failure_count(), 0);
+        for use_id in ["four", "five", "six"] {
+            assert_eq!(
+                wedge.observe(
+                    cortex(CortexEventKind::Error, use_id),
+                    now(LOCAL_WEDGE_RECYCLE_GRACE_SECONDS + 1.0)
+                ),
+                if use_id == "six" {
+                    Some(ProviderName::Local)
+                } else {
+                    None
+                }
+            );
+        }
     }
 
     #[test]
@@ -1389,6 +2249,166 @@ mod tests {
     }
 
     #[test]
+    fn startup_gate_window_waits_for_in_flight_start_but_ceiling_does_not() {
+        let mut gate = ProviderStartupGate::new(now(0.0), [ProviderName::Local]);
+        let mut sink = VecEventSink::default();
+        gate.on_start_submitted(ProviderName::Local, now(1.0));
+        assert!(!gate.release_if_ready(now(PROVIDER_STARTUP_GATE_WINDOW_SECONDS), &mut sink));
+        gate.on_start_result(ProviderName::Local, LaunchOutcomeStatus::LaunchFailed);
+        assert!(gate.release_if_ready(now(PROVIDER_STARTUP_GATE_WINDOW_SECONDS), &mut sink));
+
+        let mut ceiling_gate = ProviderStartupGate::new(now(0.0), [ProviderName::Local]);
+        ceiling_gate.on_start_submitted(ProviderName::Local, now(1.0));
+        assert!(ceiling_gate.release_if_ready(
+            now(1.0 + PROVIDER_STARTUP_GATE_CEILING_SECONDS),
+            &mut VecEventSink::default(),
+        ));
+    }
+
+    #[test]
+    fn cortex_outcomes_emit_one_recycle_request_per_threshold() {
+        let mut wedge = WedgeState::default();
+        let mut sink = VecEventSink::default();
+        for use_id in ["one", "two", "three"] {
+            super::super::wedge::observe_cortex_outcome(
+                &mut wedge,
+                cortex(CortexEventKind::Start, use_id),
+                now(0.0),
+                &mut sink,
+            );
+        }
+        for use_id in ["one", "two"] {
+            assert_eq!(
+                super::super::wedge::observe_cortex_outcome(
+                    &mut wedge,
+                    cortex(CortexEventKind::Error, use_id),
+                    now(0.0),
+                    &mut sink,
+                ),
+                None
+            );
+        }
+        assert_eq!(
+            super::super::wedge::observe_cortex_outcome(
+                &mut wedge,
+                cortex(CortexEventKind::Error, "three"),
+                now(0.0),
+                &mut sink,
+            ),
+            Some(ProviderName::Local)
+        );
+        assert_eq!(
+            sink.events,
+            [ProviderRuntimeEvent::RecycleRequested {
+                provider: ProviderName::Local
+            }]
+        );
+    }
+
+    #[test]
+    fn cortex_finish_clears_wedge_failures() {
+        let mut wedge = WedgeState::default();
+        wedge.observe(cortex(CortexEventKind::Start, "one"), now(0.0));
+        wedge.observe(cortex(CortexEventKind::Error, "one"), now(0.0));
+        assert_eq!(wedge.failure_count(), 1);
+        wedge.observe(cortex(CortexEventKind::Finish, "one"), now(0.0));
+        assert_eq!(wedge.failure_count(), 0);
+    }
+
+    #[test]
+    fn visible_submit_transitions_publish_before_worker_dispatch() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let workers = OrderedWorkers::default();
+        let calls = workers.calls.clone();
+        let mut store = OrderedStore {
+            calls: calls.clone(),
+        };
+        let mut sink = VecEventSink::default();
+
+        let mut truth_state = state_for(ProviderName::Local);
+        truth_state.latest_phase = RuntimePhase::Stopped;
+        coordinator.submit_truth_if_needed(
+            now(0.0),
+            &mut truth_state,
+            &mut workers.clone(),
+            &mut store,
+            &mut sink,
+        );
+        assert_eq!(*calls.borrow(), ["publish", "truth-dispatch"]);
+
+        calls.borrow_mut().clear();
+        let mut start_state = state_for(ProviderName::Local);
+        start_state.latest_phase = RuntimePhase::Starting;
+        coordinator.submit_start_if_needed(
+            now(0.0),
+            &mut start_state,
+            &[],
+            &mut SubmissionSeams {
+                lifecycle: &mut workers.clone(),
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        assert_eq!(*calls.borrow(), ["publish", "start-dispatch"]);
+
+        calls.borrow_mut().clear();
+        let mut stop_state = state_for(ProviderName::Local);
+        defer_target_stop(&mut stop_state, RuntimePhase::NotDesired, None, false);
+        coordinator.submit_stop_cleanup_if_needed(
+            now(0.0),
+            &mut stop_state,
+            &[managed("old")],
+            &mut SubmissionSeams {
+                lifecycle: &mut workers.clone(),
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        assert_eq!(*calls.borrow(), ["publish", "stop-dispatch"]);
+    }
+
+    #[test]
+    fn start_budget_exhaustion_publishes_failed_without_dispatch() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let workers = OrderedWorkers::default();
+        let calls = workers.calls.clone();
+        let mut store = OrderedStore {
+            calls: calls.clone(),
+        };
+        let mut sink = VecEventSink::default();
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Starting;
+        state.retry.attempt_count = PROVIDER_RETRY_SCHEDULE_SECONDS.len() as u32;
+        coordinator.submit_start_if_needed(
+            now(0.0),
+            &mut state,
+            &[],
+            &mut SubmissionSeams {
+                lifecycle: &mut workers.clone(),
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        assert_eq!(state.latest_phase, RuntimePhase::Failed);
+        assert_eq!(*calls.borrow(), ["publish"]);
+    }
+
+    #[test]
+    fn ordinary_probe_submission_does_not_publish_runtime_state() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let workers = OrderedWorkers::default();
+        let calls = workers.calls.clone();
+        let mut sink = VecEventSink::default();
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Ready;
+        coordinator.submit_probe_if_needed(now(0.0), &mut state, &mut workers.clone(), &mut sink);
+        assert_eq!(*calls.borrow(), ["probe-dispatch"]);
+    }
+
+    #[test]
     fn retry_token_is_read_each_reconcile_pass() {
         let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
         let mut state = state_for(ProviderName::Local);
@@ -1411,13 +2431,109 @@ mod tests {
             now(0.0),
             &mut state,
             &mut vec![],
-            &mut truth,
-            &mut lifecycle,
-            &mut probe,
-            &mut store,
-            &mut sink,
-            None,
+            &mut ReconcileContext {
+                truth: &mut truth,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
         );
         assert!(!store.retry_tokens.contains_key(&ProviderName::Local));
+    }
+
+    #[test]
+    fn retry_token_publishes_transition_before_consuming_and_resets_after_success() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Backoff;
+        state.retry.attempt_count = 3;
+        state.retry.next_at = 99.0;
+        let mut store = RetryStore::with_token(RetryToken {
+            token_id: "retry".to_owned(),
+            desired_fingerprint: state.desired_fingerprint.clone(),
+            reason_code: ReasonCode::known("retry-token-requested"),
+        });
+        let mut sink = VecEventSink::default();
+        coordinator.handle_retry_token(now(7.0), &mut state, &mut store, &mut sink);
+        assert_eq!(store.calls, ["read", "publish", "consume"]);
+        assert_eq!(store.published, [RuntimePhase::Observing]);
+        assert_eq!(state.retry.attempt_count, 0);
+        assert_eq!(state.next_truth_at, 7.0);
+    }
+
+    #[test]
+    fn retry_token_consume_conflict_keeps_published_transition_without_reset() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Backoff;
+        state.retry.attempt_count = 3;
+        let mut store = RetryStore::with_token(RetryToken {
+            token_id: "retry".to_owned(),
+            desired_fingerprint: state.desired_fingerprint.clone(),
+            reason_code: ReasonCode::known("retry-token-requested"),
+        });
+        store.consume_error = Some(RuntimeStoreError::Conflict);
+        let mut sink = VecEventSink::default();
+        coordinator.handle_retry_token(now(7.0), &mut state, &mut store, &mut sink);
+        assert_eq!(state.latest_phase, RuntimePhase::Observing);
+        assert_eq!(state.retry.attempt_count, 3);
+        assert_ne!(state.latest_phase, RuntimePhase::StateUnavailable);
+    }
+
+    #[test]
+    fn retry_token_is_consumed_once_across_two_reconcile_passes() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        state.latest_phase = RuntimePhase::Backoff;
+        let mut store = RetryStore::with_token(RetryToken {
+            token_id: "retry".to_owned(),
+            desired_fingerprint: state.desired_fingerprint.clone(),
+            reason_code: ReasonCode::known("retry-token-requested"),
+        });
+        let workers = RecordingWorkers::default();
+        let mut truth_worker = workers.clone();
+        let mut lifecycle = workers.clone();
+        let mut probe = workers.clone();
+        let mut sink = VecEventSink::default();
+        coordinator.reconcile(
+            now(0.0),
+            &mut state,
+            &mut vec![],
+            &mut ReconcileContext {
+                truth: &mut truth_worker,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        coordinator.reconcile(
+            now(1.0),
+            &mut state,
+            &mut vec![],
+            &mut ReconcileContext {
+                truth: &mut truth_worker,
+                lifecycle: &mut lifecycle,
+                probe: &mut probe,
+                store: &mut store,
+                sink: &mut sink,
+                gate: None,
+            },
+        );
+        assert_eq!(
+            store
+                .calls
+                .iter()
+                .filter(|call| **call == "consume")
+                .count(),
+            1
+        );
+        assert_eq!(
+            store.calls.iter().filter(|call| **call == "read").count(),
+            2
+        );
     }
 }

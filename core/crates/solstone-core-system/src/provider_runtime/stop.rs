@@ -22,6 +22,7 @@ pub fn make_stop_request(
         target_phase,
         target_reason_code,
         admission_exclusive,
+        orphaned_start_outcome: false,
     }
 }
 
@@ -36,6 +37,25 @@ pub fn defer_target_stop(
     state.pending_stop_target_reason_code = target_reason;
     state.pending_stop_admission_exclusive = admission_exclusive;
     state.latest_phase = RuntimePhase::StopDeferred;
+}
+
+/// Retain a handle returned by a start worker after that outcome is no longer acceptable.
+pub fn queue_orphaned_start_cleanup(
+    state: &mut ProviderRuntimeState,
+    managed: ManagedProcess,
+    target_phase: RuntimePhase,
+    target_reason_code: Option<ReasonCode>,
+) {
+    let mut request = make_stop_request(
+        state,
+        managed,
+        ReasonCode::known("launch-failed"),
+        target_phase,
+        target_reason_code,
+        false,
+    );
+    request.orphaned_start_outcome = true;
+    state.orphaned_stop_requests.push(request);
 }
 
 pub fn duplicate_owned_process_request(
