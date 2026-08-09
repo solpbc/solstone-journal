@@ -94,7 +94,12 @@ fn phase_keep_separate_dedupes_by_operation_and_source_kind() {
         source_kind: "explicit_create_near_match".into(),
         detection_count_used: 1,
     };
-    let first = phase_keep_separate(temporary.path(), "idop_fixture", &[entry.clone()]).unwrap();
+    let first = phase_keep_separate(
+        temporary.path(),
+        "idop_fixture",
+        std::slice::from_ref(&entry),
+    )
+    .unwrap();
     assert_eq!(first.fields["recorded_count"], 1);
     let replay = phase_keep_separate(temporary.path(), "idop_fixture", &[entry]).unwrap();
     assert_eq!(replay.fields["already_present_count"], 1);
@@ -113,9 +118,13 @@ fn phase_corrections_replays_identify_correction_without_duplicate_append() {
         ],
     };
     assert_eq!(
-        phase_corrections(temporary.path(), "idop_fixture", &[plan.clone()])
-            .unwrap()
-            .fields["appended_count"],
+        phase_corrections(
+            temporary.path(),
+            "idop_fixture",
+            std::slice::from_ref(&plan),
+        )
+        .unwrap()
+        .fields["appended_count"],
         1
     );
     assert_eq!(
@@ -150,7 +159,7 @@ fn phase_labels_patches_matching_prior_and_repairs_concurrent_change() {
         }],
     };
     assert_eq!(
-        phase_labels(temporary.path(), &[plan.clone()])
+        phase_labels(temporary.path(), std::slice::from_ref(&plan))
             .unwrap()
             .fields["patched_count"],
         1

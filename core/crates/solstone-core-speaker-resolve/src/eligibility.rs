@@ -152,10 +152,10 @@ fn name_or_aka_collision(name: &str, entity: &JournalEntity) -> bool {
 
 fn name_values(entity: &JournalEntity) -> Vec<String> {
     let mut values = Vec::new();
-    if let Some(name) = entity.value.get("name").and_then(serde_json::Value::as_str) {
-        if !name.trim().is_empty() {
-            values.push(name.to_owned());
-        }
+    if let Some(name) = entity.value.get("name").and_then(serde_json::Value::as_str)
+        && !name.trim().is_empty()
+    {
+        values.push(name.to_owned());
     }
     if let Some(aliases) = entity
         .value

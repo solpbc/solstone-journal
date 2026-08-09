@@ -243,9 +243,8 @@ impl CandidateTracker {
                     duration,
                     input.source_segment.clone(),
                 );
-            } else if best.is_none() || best.is_some_and(|(_, score)| score < SPLIT_THRESHOLD) {
-                self.create(center, intervals, duration, input.source_segment.clone());
             } else {
+                // SPLIT_THRESHOLD is an inert Python parity calibration; both branches create.
                 self.create(center, intervals, duration, input.source_segment.clone());
             }
             known.insert(key);

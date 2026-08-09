@@ -1410,12 +1410,12 @@ fn fold_events(rows: &[&LedgerRow]) -> Result<OperationState, IdentifyOperationE
     for row in &events {
         match &row.event.payload {
             EventPayload::Checkpoint { phase, checkpoint } => {
-                if let Some(previous) = phase_checkpoints.insert(*phase, checkpoint.clone()) {
-                    if previous != *checkpoint {
-                        return Err(IdentifyOperationError::ConflictingCheckpoint {
-                            phase: phase.as_str().to_owned(),
-                        });
-                    }
+                if let Some(previous) = phase_checkpoints.insert(*phase, checkpoint.clone())
+                    && previous != *checkpoint
+                {
+                    return Err(IdentifyOperationError::ConflictingCheckpoint {
+                        phase: phase.as_str().to_owned(),
+                    });
                 }
             }
             EventPayload::UndoCheckpoint {
@@ -1424,12 +1424,11 @@ fn fold_events(rows: &[&LedgerRow]) -> Result<OperationState, IdentifyOperationE
             } => {
                 if let Some(previous) =
                     undo_phase_checkpoints.insert(*phase, undo_report_delta.clone())
+                    && previous != *undo_report_delta
                 {
-                    if previous != *undo_report_delta {
-                        return Err(IdentifyOperationError::ConflictingUndoCheckpoint {
-                            phase: phase.as_str().to_owned(),
-                        });
-                    }
+                    return Err(IdentifyOperationError::ConflictingUndoCheckpoint {
+                        phase: phase.as_str().to_owned(),
+                    });
                 }
             }
             _ => {}
