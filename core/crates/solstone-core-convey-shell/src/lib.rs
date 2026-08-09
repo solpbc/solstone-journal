@@ -3,13 +3,13 @@
 
 //! # Native Convey shell design
 //!
-//! ## D1: product shape — shell library, journal-host process later
+//! ## D1: product shape — shell library and journal-host process
 //!
-//! This crate owns the HTTP shell routes and their frozen reference contract,
-//! not the `solstone-core` process boundary. The part-two command integration
-//! owns port selection and the persistent listener loop. Like
+//! This crate owns the HTTP shell routes, their frozen reference contract, and
+//! `run_convey`, which binds loopback listeners and drives the accept loop.
+//! `solstone-core` only parses arguments and resolves the journal path. Like
 //! `solstone-core-convey-http`, this server-shaped crate is excluded from the
-//! iOS canary when process integration lands: phones are clients, never hosts.
+//! iOS canary: phones are clients, never hosts.
 //!
 //! ## D2: session state is distinct from transport admission
 //!

@@ -38,6 +38,8 @@ pub async fn who_is_this() -> Response {
     asset_response("/app/speakers/static/who_is_this.js")
 }
 
+/// This wave always returns a null speaker filter because entity lookups are not ported.
+/// That deliberately differs from Python's optional `?speaker=` resolution and is not corpus-tested.
 pub async fn state() -> Response {
     Json(json!({
         "today": Local::now().format("%Y%m%d").to_string(),

@@ -68,7 +68,7 @@ fn assignment_end(source: &str, start: usize) -> usize {
     source.len()
 }
 
-fn python_strings(expression: &str) -> Vec<String> {
+fn python_strings(expression: &str, constant_name: &str) -> Vec<String> {
     let bytes = expression.as_bytes();
     let mut strings = Vec::new();
     let mut index = 0;
@@ -81,7 +81,20 @@ fn python_strings(expression: &str) -> Vec<String> {
         index += 1;
         let mut value = Vec::new();
         while index < bytes.len() && bytes[index] != delimiter {
-            if bytes[index] == b'\\' && index + 1 < bytes.len() {
+            if bytes[index] == b'\\' {
+                assert!(
+                    index + 1 < bytes.len(),
+                    "speaker copy constant {constant_name} ends with a backslash; \
+                     this parser does not support general Python escape decoding"
+                );
+                let escaped = bytes[index + 1];
+                assert!(
+                    matches!(escaped, b'\\' | b'\'' | b'"'),
+                    "speaker copy constant {constant_name} uses unsupported Python escape \\{}; \
+                     this parser does not support general Python escape decoding; \
+                     use different quoting or extend the parser",
+                    escaped as char
+                );
                 index += 1;
             }
             value.push(bytes[index]);
@@ -110,7 +123,7 @@ fn python_constants(source: &str) -> serde_json::Map<String, Value> {
         let start = source.find(line).expect("source line occurs") + name.len() + 3;
         let end = assignment_end(source, start);
         let expression = &source[start..end];
-        let strings = python_strings(expression);
+        let strings = python_strings(expression, name);
         assert!(
             !strings.is_empty(),
             "speaker copy constant is a string or list"
@@ -129,7 +142,7 @@ fn python_constant(source: &str, name: &str) -> String {
     let assignment = format!("{name} =");
     let start = source.find(&assignment).expect("copy constant exists") + assignment.len();
     let end = assignment_end(source, start);
-    python_strings(&source[start..end]).concat()
+    python_strings(&source[start..end], name).concat()
 }
 
 fn main() {
