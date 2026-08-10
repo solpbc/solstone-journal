@@ -307,6 +307,7 @@ check-differentials:
 		"-p solstone-core-spp-attest --test spp_attest_differential" \
 		"-p solstone-core-spp-ratls --test composite_differential" \
 		"-p solstone-core-local --test admission_cross_process" \
+		"-p solstone-core-observer --test observer_list_json_differential --test observer_status_differential --test observer_list_human_differential --test observer_reconcile_dry_run_differential --test observer_increment_stat_differential --test observer_resolve_identity_differential" \
 		"-p solstone-core-system --test stt_backend_choice_differential" \
 		"-p solstone-core-callosum --test callosum_cross_process --test registry_conformance" \
 		"-p solstone-core-transfer --test transfer_differential" \
