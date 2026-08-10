@@ -1,0 +1,961 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Terminal stage outcomes and owner-media deletion ordering.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
+
+use serde_json::{Map, Value};
+use solstone_core_journal_config::JournalConfigRead;
+use solstone_core_observe_audio::{SAMPLE_RATE, audio_to_wav_bytes, decode_f32_mono};
+use solstone_core_speaker_id::writer::WriteResponse;
+
+use crate::TranscribeError;
+use crate::args::should_skip_process_one_processed;
+use crate::audio::{reduce_audio_if_needed, run_vad, speech_ratio, tag_audio};
+use crate::backend::parakeet_cpp;
+use crate::backend::{
+    confidential, local_stt_backend, platform_floor_bytes, read_available_bytes,
+    resolve_default_backend,
+};
+use crate::config::{
+    confidential_audio_enabled, min_speech_seconds, parakeet_cpp_device, preserve_all,
+};
+use crate::event::{
+    Timings, TranscribedEvent, TranscribedOutcome, build_transcribed_event, emit_transcribed_event,
+};
+use crate::processing::analyzed_record;
+use crate::processing::{corrupt_input_record, empty_record};
+use crate::speakers::analyze_speakers;
+use crate::terminal::{TerminalWrite, TerminalWriteFailure, write_terminal, write_terminal_with};
+use crate::transcript::{
+    FullTranscriptWrite, remove_orphan_npz, restore_statement_timestamps, write_full_transcript,
+};
+
+const SPEAKER_EVIDENCE_VERSION: &str = "speaker-evidence-v1";
+const SPEAKER_ANALYSIS_PRODUCER: &str = "solstone-core-speakers-analyze";
+const OVERLAP_DETECTOR: &str = "pyannote-segmentation-3.0";
+
+/// Immutable facts captured from the owner-media file before processing starts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InputFacts {
+    pub(crate) path: PathBuf,
+    pub(crate) input_size: u64,
+}
+
+/// Capture the input's byte count before any terminal branch can remove it.
+pub(crate) fn capture_input_facts(path: &Path) -> Result<InputFacts, TranscribeError> {
+    let input_size = fs::metadata(path)
+        .map_err(|error| TranscribeError::InputMetadata {
+            path: path.to_path_buf(),
+            detail: error.to_string(),
+        })?
+        .len();
+    Ok(InputFacts {
+        path: path.to_path_buf(),
+        input_size,
+    })
+}
+
+/// Terminal result that controls the transcribed event's outcome field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TerminalOutcome {
+    /// Terminal proof was written and the raw input was deleted.
+    Filtered,
+    /// Terminal proof was written but preserve-all retained the raw input.
+    Preserved,
+    /// Decode failed, terminal failure proof was written, and input was retained.
+    Failed,
+}
+
+/// A completed single-file driver disposition with an intentional zero exit status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProcessOutcome {
+    Skipped,
+    Transcribed,
+    Filtered,
+    Preserved,
+    Failed,
+}
+
+/// Run the currently implemented native transcription path for one segment audio file.
+pub(crate) fn process_one(
+    audio_path: &Path,
+    journal_path: &Path,
+    redo: bool,
+    explicit_backend: Option<&str>,
+    config: &JournalConfigRead,
+) -> Result<ProcessOutcome, TranscribeError> {
+    if should_skip_process_one_processed(audio_path, redo) {
+        return Ok(ProcessOutcome::Skipped);
+    }
+    let started = Instant::now();
+    let facts = capture_input_facts(audio_path)?;
+    let mut timings = Timings::default();
+    if let Some(queue_wait_ms) = queue_wait_ms() {
+        timings.add_ms("queue_wait", queue_wait_ms);
+    }
+    let decoded_at = Instant::now();
+    let full_audio = match decode_f32_mono(audio_path) {
+        Ok(audio) => audio,
+        Err(error) => {
+            timings.add_ms("decode", elapsed_ms(decoded_at));
+            let decode_error = TranscribeError::Decode {
+                detail: error.to_string(),
+            };
+            let write_at = Instant::now();
+            let terminal = decode_failure(&facts, redo)?;
+            timings.add_ms("write", elapsed_ms(write_at));
+            emit_event(
+                audio_path,
+                journal_path,
+                TranscribedOutcome::Failed,
+                None,
+                Some("AudioError"),
+                Some(&decode_error),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                &timings,
+                None,
+            );
+            return Ok(match terminal {
+                TerminalOutcome::Failed => ProcessOutcome::Failed,
+                _ => unreachable!(),
+            });
+        }
+    };
+    timings.add_ms("decode", elapsed_ms(decoded_at));
+    let audio_seconds = full_audio.len() as f64 / f64::from(SAMPLE_RATE);
+    let vad_at = Instant::now();
+    let vad = run_vad(&full_audio, min_speech_seconds(config))?;
+    timings.add_ms("vad", elapsed_ms(vad_at));
+    let sound_tags = tag_audio(&full_audio);
+
+    if !vad.has_speech {
+        let write_at = Instant::now();
+        let terminal = vad_no_speech(&facts, preserve_all(config), redo)?;
+        timings.add_ms("write", elapsed_ms(write_at));
+        let outcome = match terminal {
+            TerminalOutcome::Filtered => (ProcessOutcome::Filtered, TranscribedOutcome::Filtered),
+            TerminalOutcome::Preserved => {
+                (ProcessOutcome::Preserved, TranscribedOutcome::Preserved)
+            }
+            TerminalOutcome::Failed => (ProcessOutcome::Failed, TranscribedOutcome::Failed),
+        };
+        emit_event(
+            audio_path,
+            journal_path,
+            outcome.1,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(audio_seconds),
+            None,
+            None,
+            &timings,
+            Some(&vad),
+        );
+        return Ok(outcome.0);
+    }
+
+    let reduce_at = Instant::now();
+    let reduction = reduce_audio_if_needed(&full_audio, &vad, speech_ratio(&vad));
+    if reduction.is_some() {
+        timings.add_ms("reduce", elapsed_ms(reduce_at));
+    }
+    let (reduced_audio, reduction) = reduction
+        .map(|(audio, reduction)| (Some(audio), Some(reduction)))
+        .unwrap_or((None, None));
+    let statement_audio = reduced_audio.as_deref().unwrap_or(&full_audio);
+    let reduced_seconds = reduced_audio
+        .as_ref()
+        .map(|audio| audio.len() as f64 / f64::from(SAMPLE_RATE));
+
+    let backend = resolve_default_backend(
+        explicit_backend,
+        local_stt_backend(),
+        read_available_bytes(),
+        platform_floor_bytes(),
+        confidential::confidential_channel_plausible(config),
+        confidential_audio_enabled(config),
+    )?
+    .backend;
+    if !uses_parakeet_cpp(&backend) {
+        confidential::refuse_confidential_egress(
+            config,
+            &backend,
+            confidential_audio_enabled(config),
+        )?;
+        return Err(TranscribeError::BackendNotImplemented { backend });
+    }
+    let asr_at = Instant::now();
+    let transcription = dispatch_after_egress_gate(config, &backend, || {
+        let wav = audio_to_wav_bytes(statement_audio, SAMPLE_RATE).map_err(|error| {
+            TranscribeError::ParakeetCppFailure {
+                reason: "wav_encode_failed".to_owned(),
+                detail: error.to_string(),
+            }
+        })?;
+        let server = parakeet_cpp::connect(journal_path)?;
+        parakeet_cpp::transcribe(&server, &wav)
+    })?;
+    timings.add_ms("asr", elapsed_ms(asr_at));
+    let model_info =
+        parakeet_cpp::get_model_info(journal_path, parakeet_cpp_device(config).as_deref())?;
+
+    if transcription.words.is_empty() {
+        let write_at = Instant::now();
+        let terminal = stt_zero_statements(&facts, preserve_all(config), redo)?;
+        timings.add_ms("write", elapsed_ms(write_at));
+        let outcome = match terminal {
+            TerminalOutcome::Filtered => (ProcessOutcome::Filtered, TranscribedOutcome::Filtered),
+            TerminalOutcome::Preserved => {
+                (ProcessOutcome::Preserved, TranscribedOutcome::Preserved)
+            }
+            TerminalOutcome::Failed => (ProcessOutcome::Failed, TranscribedOutcome::Failed),
+        };
+        emit_event(
+            audio_path,
+            journal_path,
+            outcome.1,
+            None,
+            None,
+            None,
+            Some(&backend),
+            Some(&model_info.device),
+            Some(&model_info.model),
+            Some(audio_seconds),
+            reduced_seconds,
+            None,
+            &timings,
+            Some(&vad),
+        );
+        return Ok(outcome.0);
+    }
+
+    let statements = statements_from_words(&transcription.words);
+    let restored = reduction.as_ref().map_or_else(
+        || statements.clone(),
+        |mapping| restore_statement_timestamps(&statements, mapping),
+    );
+    let speakers_at = Instant::now();
+    let speaker_result = match analyze_speakers(
+        audio_path,
+        &full_audio,
+        statement_audio,
+        reduced_audio.as_deref(),
+        &statements,
+        &restored,
+        SAMPLE_RATE,
+        0.25,
+    ) {
+        Ok(result) => result,
+        Err(error) => {
+            timings.add_ms("speakers_analyze", elapsed_ms(speakers_at));
+            let error = TranscribeError::SpeakerAnalysis(error);
+            emit_event(
+                audio_path,
+                journal_path,
+                TranscribedOutcome::Failed,
+                Some("speaker-analysis-native-failure"),
+                Some("SpeakerAnalyzeError"),
+                Some(&error),
+                Some(&backend),
+                Some(&model_info.device),
+                Some(&model_info.model),
+                Some(audio_seconds),
+                reduced_seconds,
+                None,
+                &timings,
+                Some(&vad),
+            );
+            return Err(error);
+        }
+    };
+    timings.add_ms("speakers_analyze", elapsed_ms(speakers_at));
+    let (jsonl_path, npz_path) = transcript_paths(audio_path);
+    let processing = analyzed_record(facts.input_size);
+    let write_at = Instant::now();
+    write_full_transcript(FullTranscriptWrite {
+        raw_path: audio_path,
+        jsonl_path: &jsonl_path,
+        npz_path: &npz_path,
+        base_time_us_of_day: base_time_us_of_day(audio_path),
+        source: source_from_path(audio_path).as_deref(),
+        speaker_result: &speaker_result,
+        backend: Some(&backend),
+        model: Some(&model_info.model),
+        device: Some(&model_info.device),
+        compute_type: Some(&model_info.compute_type),
+        observer: std::env::var("OBSERVER_NAME").ok().as_deref(),
+        vad_result: Some(&vad),
+        segment_meta: segment_meta().as_ref(),
+        overlap_detector: Some(OVERLAP_DETECTOR),
+        speaker_evidence_version: SPEAKER_EVIDENCE_VERSION,
+        processing: &processing,
+        sound_tags: sound_tags.as_ref(),
+        speaker_analysis_producer: Some(SPEAKER_ANALYSIS_PRODUCER),
+        redo,
+    })?;
+    timings.add_ms("write", elapsed_ms(write_at));
+    emit_event(
+        audio_path,
+        journal_path,
+        TranscribedOutcome::Transcribed,
+        None,
+        None,
+        None,
+        Some(&backend),
+        Some(&model_info.device),
+        Some(&model_info.model),
+        Some(audio_seconds),
+        reduced_seconds,
+        Some(elapsed_ms(started)),
+        &timings,
+        Some(&vad),
+    );
+    Ok(ProcessOutcome::Transcribed)
+}
+
+fn dispatch_after_egress_gate<T, F>(
+    config: &JournalConfigRead,
+    backend: &str,
+    dispatch: F,
+) -> Result<T, TranscribeError>
+where
+    F: FnOnce() -> Result<T, TranscribeError>,
+{
+    confidential::refuse_confidential_egress(config, backend, confidential_audio_enabled(config))?;
+    dispatch()
+}
+
+fn uses_parakeet_cpp(backend: &str) -> bool {
+    backend == "parakeet-cpp" || (backend == "parakeet" && std::env::consts::OS == "linux")
+}
+
+fn statements_from_words(words: &[parakeet_cpp::TranscriptionWord]) -> Vec<Map<String, Value>> {
+    let mut statements = Vec::new();
+    let mut current = Vec::new();
+    for word in words {
+        current.push(word);
+        if word.word.trim_end().ends_with(['.', '?', '!']) {
+            statements.push(statement_from_words(statements.len() as i64 + 1, &current));
+            current.clear();
+        }
+    }
+    if !current.is_empty() {
+        statements.push(statement_from_words(statements.len() as i64 + 1, &current));
+    }
+    statements
+}
+
+fn statement_from_words(id: i64, words: &[&parakeet_cpp::TranscriptionWord]) -> Map<String, Value> {
+    let first = words.first().expect("statement words are nonempty");
+    let last = words.last().expect("statement words are nonempty");
+    Map::from_iter([
+        ("id".to_owned(), Value::from(id)), ("start".to_owned(), Value::from(first.start)),
+        ("end".to_owned(), Value::from(last.end)),
+        ("text".to_owned(), Value::String(words.iter().map(|word| word.word.as_str()).collect::<String>().trim().to_owned())),
+        ("words".to_owned(), Value::Array(words.iter().map(|word| serde_json::json!({"word": word.word, "start": word.start, "end": word.end, "probability": word.probability})).collect())),
+        ("speaker".to_owned(), Value::Null),
+    ])
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_event(
+    audio_path: &Path,
+    journal_path: &Path,
+    outcome: TranscribedOutcome,
+    reason: Option<&str>,
+    error_label: Option<&str>,
+    error: Option<&TranscribeError>,
+    backend: Option<&str>,
+    device: Option<&str>,
+    model: Option<&str>,
+    audio_seconds: Option<f64>,
+    reduced_seconds: Option<f64>,
+    duration_ms: Option<u64>,
+    timings: &Timings,
+    vad: Option<&solstone_core_observe_audio::VadResult>,
+) {
+    let observer = std::env::var("OBSERVER_NAME").ok();
+    let input = journal_relative(journal_path, audio_path);
+    let output = (outcome == TranscribedOutcome::Transcribed)
+        .then(|| journal_relative(journal_path, &audio_path.with_extension("jsonl")));
+    let event = build_transcribed_event(TranscribedEvent {
+        outcome,
+        input: &input,
+        output: output.as_deref(),
+        reason,
+        error,
+        backend,
+        device,
+        model,
+        audio_seconds,
+        reduced_seconds,
+        vad_result: vad,
+        duration_ms,
+        day: day_from_path(audio_path).as_deref(),
+        segment: segment_from_path(audio_path).as_deref(),
+        observer: observer.as_deref(),
+        timings,
+        peak_rss_mib: peak_rss_mib(),
+    });
+    let _ = error_label;
+    let _ = emit_transcribed_event(audio_path.parent().unwrap_or(journal_path), event);
+}
+
+fn elapsed_ms(start: Instant) -> u64 {
+    u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+fn queue_wait_ms() -> Option<u64> {
+    std::env::var("SOL_QUEUE_WAIT_MS").ok()?.parse().ok()
+}
+fn segment_meta() -> Option<Map<String, Value>> {
+    std::env::var("SEGMENT_META")
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .and_then(|value| value.as_object().cloned())
+}
+fn source_from_path(path: &Path) -> Option<String> {
+    let stem = path.file_stem()?.to_str()?;
+    stem.strip_suffix("_audio")
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+fn base_time_us_of_day(path: &Path) -> u64 {
+    segment_from_path(path)
+        .and_then(|segment| segment.get(..6).map(str::to_owned))
+        .and_then(|time| {
+            let h = time[0..2].parse::<u64>().ok()?;
+            let m = time[2..4].parse::<u64>().ok()?;
+            let s = time[4..6].parse::<u64>().ok()?;
+            Some((h * 3600 + m * 60 + s) * 1_000_000)
+        })
+        .unwrap_or(0)
+}
+fn segment_from_path(path: &Path) -> Option<String> {
+    path.parent()?
+        .file_name()?
+        .to_str()
+        .filter(|name| is_segment_name(name))
+        .map(str::to_owned)
+}
+fn day_from_path(path: &Path) -> Option<String> {
+    path.components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .find(|part| part.len() == 8 && part.bytes().all(|byte| byte.is_ascii_digit()))
+        .map(str::to_owned)
+}
+fn is_segment_name(value: &str) -> bool {
+    let Some((time, length)) = value.split_once('_') else {
+        return false;
+    };
+    time.len() == 6
+        && !length.is_empty()
+        && time.bytes().all(|byte| byte.is_ascii_digit())
+        && length.bytes().all(|byte| byte.is_ascii_digit())
+}
+fn journal_relative(journal: &Path, path: &Path) -> String {
+    path.strip_prefix(journal)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .into_owned()
+}
+fn peak_rss_mib() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|status| {
+            status
+                .lines()
+                .find_map(|line| line.strip_prefix("VmHWM:"))
+                .and_then(|value| value.split_whitespace().next())
+                .and_then(|value| value.parse::<u64>().ok())
+        })
+        .map(|kib| kib / 1024)
+        .unwrap_or(0)
+}
+
+/// Handle VAD's no-speech terminal branch.
+pub(crate) fn vad_no_speech(
+    facts: &InputFacts,
+    preserve_all: bool,
+    redo: bool,
+) -> Result<TerminalOutcome, TranscribeError> {
+    vad_no_speech_with(
+        facts,
+        preserve_all,
+        redo,
+        |bytes| {
+            solstone_core_speaker_id::writer::write_request(bytes)
+                .map_err(TerminalWriteFailure::Typed)
+        },
+        remove_orphan_npz,
+    )
+}
+
+/// Handle STT's zero-statement terminal branch.
+pub(crate) fn stt_zero_statements(
+    facts: &InputFacts,
+    preserve_all: bool,
+    redo: bool,
+) -> Result<TerminalOutcome, TranscribeError> {
+    stt_zero_statements_with(
+        facts,
+        preserve_all,
+        redo,
+        |bytes| {
+            solstone_core_speaker_id::writer::write_request(bytes)
+                .map_err(TerminalWriteFailure::Typed)
+        },
+        remove_orphan_npz,
+    )
+}
+
+/// Write decode failure proof without removing the original input.
+pub(crate) fn decode_failure(
+    facts: &InputFacts,
+    redo: bool,
+) -> Result<TerminalOutcome, TranscribeError> {
+    let (jsonl_path, npz_path) = transcript_paths(&facts.path);
+    write_terminal(TerminalWrite {
+        raw_path: &facts.path,
+        jsonl_path: &jsonl_path,
+        npz_path: &npz_path,
+        processing: &corrupt_input_record(facts.input_size),
+        redo,
+    })?;
+    Ok(TerminalOutcome::Failed)
+}
+
+pub(crate) fn transcript_paths(audio_path: &Path) -> (PathBuf, PathBuf) {
+    (
+        audio_path.with_extension("jsonl"),
+        audio_path.with_extension("npz"),
+    )
+}
+
+fn vad_no_speech_with<W, O>(
+    facts: &InputFacts,
+    preserve_all: bool,
+    redo: bool,
+    writer: W,
+    orphan_remover: O,
+) -> Result<TerminalOutcome, TranscribeError>
+where
+    W: FnOnce(&[u8]) -> Result<WriteResponse, TerminalWriteFailure>,
+    O: FnOnce(&Path, &Path) -> Result<(), TranscribeError>,
+{
+    terminal_empty_then_maybe_remove(facts, preserve_all, redo, writer, orphan_remover)
+}
+
+fn stt_zero_statements_with<W, O>(
+    facts: &InputFacts,
+    preserve_all: bool,
+    redo: bool,
+    writer: W,
+    orphan_remover: O,
+) -> Result<TerminalOutcome, TranscribeError>
+where
+    W: FnOnce(&[u8]) -> Result<WriteResponse, TerminalWriteFailure>,
+    O: FnOnce(&Path, &Path) -> Result<(), TranscribeError>,
+{
+    terminal_empty_then_maybe_remove(facts, preserve_all, redo, writer, orphan_remover)
+}
+
+fn terminal_empty_then_maybe_remove<W, O>(
+    facts: &InputFacts,
+    preserve_all: bool,
+    redo: bool,
+    writer: W,
+    orphan_remover: O,
+) -> Result<TerminalOutcome, TranscribeError>
+where
+    W: FnOnce(&[u8]) -> Result<WriteResponse, TerminalWriteFailure>,
+    O: FnOnce(&Path, &Path) -> Result<(), TranscribeError>,
+{
+    let (jsonl_path, npz_path) = transcript_paths(&facts.path);
+    let processing = empty_record(facts.input_size);
+    write_terminal_with(
+        TerminalWrite {
+            raw_path: &facts.path,
+            jsonl_path: &jsonl_path,
+            npz_path: &npz_path,
+            processing: &processing,
+            redo,
+        },
+        writer,
+        orphan_remover,
+    )?;
+
+    if preserve_all {
+        return Ok(TerminalOutcome::Preserved);
+    }
+
+    fs::remove_file(&facts.path).map_err(|error| TranscribeError::RawInputRemove {
+        path: facts.path.clone(),
+        detail: error.to_string(),
+    })?;
+    Ok(TerminalOutcome::Filtered)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use chrono::DateTime;
+    use serde_json::Value;
+    use solstone_core_processing_record::vocab;
+    use solstone_core_processing_record::{
+        TerminalProofOutcome, evaluate_terminal_proof, is_failure_exhausted,
+    };
+    use solstone_core_speaker_id::writer::SpeakerTranscriptWriteError;
+
+    use super::{
+        InputFacts, TerminalOutcome, capture_input_facts, decode_failure, remove_orphan_npz,
+        stt_zero_statements, stt_zero_statements_with, transcript_paths, vad_no_speech,
+        vad_no_speech_with,
+    };
+    use crate::TranscribeError;
+    use crate::terminal::TerminalWriteFailure;
+
+    fn input(directory: &Path) -> InputFacts {
+        let path = directory.join("clip.wav");
+        fs::write(&path, b"owner-media").expect("input must be writable");
+        capture_input_facts(&path).expect("input facts must be captured")
+    }
+
+    fn typed_payload_failure(
+        _: &[u8],
+    ) -> Result<solstone_core_speaker_id::writer::WriteResponse, TerminalWriteFailure> {
+        Err(TerminalWriteFailure::Typed(
+            SpeakerTranscriptWriteError::PayloadInvalid {
+                path: "injected".to_owned(),
+                detail: "injected failure".to_owned(),
+            },
+        ))
+    }
+
+    fn untyped_failure(
+        _: &[u8],
+    ) -> Result<solstone_core_speaker_id::writer::WriteResponse, TerminalWriteFailure> {
+        Err(TerminalWriteFailure::Untyped {
+            detail: "injected generic failure".to_owned(),
+        })
+    }
+
+    #[test]
+    fn vad_no_speech_typed_write_failure_preserves_input() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+        let (jsonl_path, npz_path) = transcript_paths(&facts.path);
+
+        let error = vad_no_speech_with(
+            &facts,
+            false,
+            false,
+            typed_payload_failure,
+            remove_orphan_npz,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.exit_code(), 69);
+        assert!(facts.path.exists());
+        assert!(!jsonl_path.exists());
+        assert!(!npz_path.exists());
+    }
+
+    #[test]
+    fn vad_no_speech_untyped_write_failure_preserves_input() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+        let (jsonl_path, npz_path) = transcript_paths(&facts.path);
+
+        let error = vad_no_speech_with(&facts, false, false, untyped_failure, remove_orphan_npz)
+            .unwrap_err();
+
+        assert_eq!(error.exit_code(), 1);
+        assert!(facts.path.exists());
+        assert!(!jsonl_path.exists());
+        assert!(!npz_path.exists());
+    }
+
+    #[test]
+    fn stt_zero_statements_typed_write_failure_preserves_input() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+        let (jsonl_path, npz_path) = transcript_paths(&facts.path);
+
+        let error = stt_zero_statements_with(
+            &facts,
+            false,
+            false,
+            typed_payload_failure,
+            remove_orphan_npz,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.exit_code(), 69);
+        assert!(facts.path.exists());
+        assert!(!jsonl_path.exists());
+        assert!(!npz_path.exists());
+    }
+
+    #[test]
+    fn stt_zero_statements_untyped_write_failure_preserves_input() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+        let (jsonl_path, npz_path) = transcript_paths(&facts.path);
+
+        let error =
+            stt_zero_statements_with(&facts, false, false, untyped_failure, remove_orphan_npz)
+                .unwrap_err();
+
+        assert_eq!(error.exit_code(), 1);
+        assert!(facts.path.exists());
+        assert!(!jsonl_path.exists());
+        assert!(!npz_path.exists());
+    }
+
+    #[test]
+    fn vad_no_speech_without_preserve_all_filters_input() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+
+        assert_eq!(
+            vad_no_speech(&facts, false, false).unwrap(),
+            TerminalOutcome::Filtered
+        );
+        assert!(!facts.path.exists());
+    }
+
+    #[test]
+    fn stt_zero_statements_without_preserve_all_filters_input() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+
+        assert_eq!(
+            stt_zero_statements(&facts, false, false).unwrap(),
+            TerminalOutcome::Filtered
+        );
+        assert!(!facts.path.exists());
+    }
+
+    #[test]
+    fn vad_no_speech_with_preserve_all_preserves_input() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+
+        assert_eq!(
+            vad_no_speech(&facts, true, false).unwrap(),
+            TerminalOutcome::Preserved
+        );
+        assert!(facts.path.exists());
+    }
+
+    #[test]
+    fn stt_zero_statements_with_preserve_all_preserves_input() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+
+        assert_eq!(
+            stt_zero_statements(&facts, true, false).unwrap(),
+            TerminalOutcome::Preserved
+        );
+        assert!(facts.path.exists());
+    }
+
+    #[test]
+    fn payload_failure_leaves_no_terminal_artifacts_and_cleans_temporary_payload() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+        let (jsonl_path, npz_path) = transcript_paths(&facts.path);
+        let payload_path = std::cell::RefCell::new(None);
+
+        let error = vad_no_speech_with(
+            &facts,
+            false,
+            false,
+            |bytes| {
+                let request: Value = serde_json::from_slice(bytes).unwrap();
+                *payload_path.borrow_mut() = Some(PathBuf::from(
+                    request["embeddings"]["payload_path"]
+                        .as_str()
+                        .expect("terminal request must include payload path"),
+                ));
+                typed_payload_failure(bytes)
+            },
+            remove_orphan_npz,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.exit_code(), 69);
+        assert!(facts.path.exists());
+        assert!(!jsonl_path.exists());
+        assert!(!npz_path.exists());
+        assert!(
+            !payload_path
+                .into_inner()
+                .expect("terminal writer must receive a payload path")
+                .exists()
+        );
+        let entries = fs::read_dir(temporary.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        assert_eq!(entries, vec![facts.path]);
+    }
+
+    #[test]
+    fn terminal_record_holds_only_for_captured_input_size() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+        let (jsonl_path, _) = transcript_paths(&facts.path);
+
+        assert_eq!(
+            vad_no_speech(&facts, true, false).unwrap(),
+            TerminalOutcome::Preserved
+        );
+        let header = read_header(&jsonl_path);
+        let record = header
+            .get("_solstone_processing")
+            .expect("terminal header must include processing record");
+
+        assert_eq!(
+            evaluate_terminal_proof(Some(record), vocab::HANDLER_TRANSCRIBE, facts.input_size),
+            TerminalProofOutcome::Held
+        );
+        assert_eq!(
+            evaluate_terminal_proof(
+                Some(record),
+                vocab::HANDLER_TRANSCRIBE,
+                facts.input_size + 1
+            ),
+            TerminalProofOutcome::Refused
+        );
+    }
+
+    #[test]
+    fn decode_failure_writes_terminal_failed_record_without_removing_input() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+        let (jsonl_path, _) = transcript_paths(&facts.path);
+
+        assert_eq!(
+            decode_failure(&facts, false).unwrap(),
+            TerminalOutcome::Failed
+        );
+        assert!(facts.path.exists());
+        let record = read_header(&jsonl_path)["_solstone_processing"].clone();
+        assert_eq!(record["state"], vocab::STATE_FAILED);
+        assert_eq!(record["reason_code"], vocab::REASON_CORRUPT_INPUT);
+        assert!(is_failure_exhausted(&record));
+    }
+
+    #[test]
+    fn orphan_npz_is_removed_before_terminal_write() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+        let (_, npz_path) = transcript_paths(&facts.path);
+        fs::write(&npz_path, b"orphan").unwrap();
+
+        assert_eq!(
+            vad_no_speech(&facts, true, false).unwrap(),
+            TerminalOutcome::Preserved
+        );
+        assert!(!npz_path.exists());
+    }
+
+    #[test]
+    fn orphan_npz_removal_failure_stops_write_and_preserves_input() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+        let (jsonl_path, npz_path) = transcript_paths(&facts.path);
+        fs::write(&npz_path, b"orphan").unwrap();
+        let orphan_path = npz_path.clone();
+
+        let error = vad_no_speech_with(
+            &facts,
+            false,
+            false,
+            |_| panic!("writer must not run after orphan removal failure"),
+            move |_, _| {
+                Err(TranscribeError::OrphanNpzRemove {
+                    path: orphan_path,
+                    detail: "injected removal failure".to_owned(),
+                })
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(error.exit_code(), 75);
+        assert!(facts.path.exists());
+        assert!(!jsonl_path.exists());
+        assert!(npz_path.exists());
+    }
+
+    #[test]
+    fn terminal_record_omits_attempts_and_has_parseable_attempted_at() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+        let (jsonl_path, _) = transcript_paths(&facts.path);
+
+        vad_no_speech(&facts, true, false).unwrap();
+        let record = read_header(&jsonl_path)["_solstone_processing"].clone();
+
+        assert!(record.get("attempts").is_none());
+        DateTime::parse_from_rfc3339(
+            record["attempted_at"]
+                .as_str()
+                .expect("attempted_at must be a string"),
+        )
+        .expect("attempted_at must be RFC 3339");
+    }
+
+    #[test]
+    fn confidential_egress_gate_prevents_backend_dispatch() {
+        let config = solstone_core_journal_config::JournalConfigRead {
+            present: true,
+            sha256: None,
+            config: Some(
+                serde_json::json!({
+                    "services": {"confidential": {}},
+                    "providers": {"local": {"credential": "present"}},
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        };
+        let mut dispatched = false;
+        let error = super::dispatch_after_egress_gate(&config, "remote", || {
+            dispatched = true;
+            Ok::<_, TranscribeError>(())
+        })
+        .unwrap_err();
+        assert_eq!(error.exit_code(), 69);
+        assert!(!dispatched);
+    }
+
+    #[test]
+    fn parakeet_cpp_routing_excludes_unimplemented_backends() {
+        assert!(super::uses_parakeet_cpp("parakeet-cpp"));
+        assert!(!super::uses_parakeet_cpp("confidential"));
+    }
+
+    fn read_header(path: &Path) -> Value {
+        let contents = fs::read_to_string(path).expect("terminal JSONL must be readable");
+        serde_json::from_str(contents.lines().next().expect("JSONL must contain header"))
+            .expect("header must be JSON")
+    }
+}

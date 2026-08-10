@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-transcribe-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "solstone-transcribe"
+path = "src/main.rs"
+
+[dependencies]
+solstone-core-transcribe = { workspace = true }
+solstone-core-journal = { workspace = true }
+
+[lints]
+workspace = true

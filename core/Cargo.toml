@@ -29,6 +29,8 @@ members = [
     "crates/solstone-core-processing-record",
     "crates/solstone-core-retention",
     "crates/solstone-core-retention-cli",
+    "crates/solstone-core-transcribe",
+    "crates/solstone-core-transcribe-cli",
     "crates/solstone-core-segment",
     "crates/solstone-core-sol",
     "crates/solstone-core-sol-bin",
@@ -82,6 +84,7 @@ solstone-core-entity = { path = "crates/solstone-core-entity" }
 solstone-core-entity-matching = { path = "crates/solstone-core-entity-matching" }
 solstone-core-facets = { path = "crates/solstone-core-facets" }
 solstone-core-observer = { path = "crates/solstone-core-observer" }
+solstone-core-observe-audio = { path = "crates/solstone-core-observe-audio" }
 solstone-core-indexer = { path = "crates/solstone-core-indexer" }
 solstone-core-format = { path = "crates/solstone-core-format" }
 solstone-core-indexer-store = { path = "crates/solstone-core-indexer-store" }
@@ -107,6 +110,8 @@ solstone-core-cogitate-wire = { path = "crates/solstone-core-cogitate-wire" }
 solstone-core-processing-record = { path = "crates/solstone-core-processing-record" }
 solstone-core-retention = { path = "crates/solstone-core-retention" }
 solstone-core-retention-cli = { path = "crates/solstone-core-retention-cli" }
+solstone-core-transcribe = { path = "crates/solstone-core-transcribe" }
+solstone-core-transcribe-cli = { path = "crates/solstone-core-transcribe-cli" }
 solstone-core-segment = { path = "crates/solstone-core-segment" }
 solstone-core-sol = { path = "crates/solstone-core-sol" }
 solstone-core-sol-client = { path = "crates/solstone-core-sol-client" }

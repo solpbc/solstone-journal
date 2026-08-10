@@ -1404,6 +1404,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
+name = "mime_guess"
+version = "2.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
+dependencies = [
+ "mime",
+ "unicase",
+]
+
+[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3177,6 +3187,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-transcribe"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "nix",
+ "serde_json",
+ "solstone-core-callosum",
+ "solstone-core-journal-config",
+ "solstone-core-journal-io",
+ "solstone-core-observe-audio",
+ "solstone-core-processing-record",
+ "solstone-core-speaker-id",
+ "solstone-core-system",
+ "tempfile",
+ "ureq",
+]
+
+[[package]]
+name = "solstone-core-transcribe-cli"
+version = "1.0.22"
+dependencies = [
+ "solstone-core-journal",
+ "solstone-core-transcribe",
+]
+
+[[package]]
 name = "solstone-core-transfer"
 version = "1.0.22"
 dependencies = [
@@ -3676,7 +3712,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dea7109cdcd5864d4eeb1b58a1648dc9bf520360d7af16ec26d0a9354bafcfc0"
 dependencies = [
  "base64",
+ "getrandom 0.4.3",
  "log",
+ "mime_guess",
  "percent-encoding",
  "rustls",
  "rustls-pki-types",
