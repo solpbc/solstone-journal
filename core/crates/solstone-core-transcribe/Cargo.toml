@@ -14,6 +14,7 @@ differential = []
 
 [dependencies]
 chrono = { workspace = true }
+nix = { workspace = true, features = ["process", "signal"] }
 serde_json = { workspace = true }
 solstone-core-observe-audio = { workspace = true }
 solstone-core-system = { workspace = true }

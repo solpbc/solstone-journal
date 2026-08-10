@@ -16,6 +16,8 @@ mod model_assets;
 #[allow(dead_code)]
 mod processing;
 #[allow(dead_code)]
+mod speakers;
+#[allow(dead_code)]
 mod stage;
 #[allow(dead_code)]
 mod terminal;
@@ -23,6 +25,7 @@ mod terminal;
 mod transcript;
 
 pub use model_assets::{ModelAssetError, resolve_model_asset};
+pub use speakers::SpeakerAnalyzeError;
 
 use std::path::PathBuf;
 
@@ -73,6 +76,8 @@ pub enum TranscribeError {
     ParakeetCppFailure { reason: String, detail: String },
     /// Confidential transcription was refused or unavailable for retryable work.
     ConfidentialDeferred { reason: String, detail: String },
+    /// The native speaker-analysis helper could not produce a usable result.
+    SpeakerAnalysis(SpeakerAnalyzeError),
 }
 
 impl TranscribeError {
@@ -115,6 +120,7 @@ impl TranscribeError {
             Self::ParakeetCppDeferred { .. } => 69,
             Self::ParakeetCppFailure { .. } => 1,
             Self::ConfidentialDeferred { .. } => 69,
+            Self::SpeakerAnalysis(_) => 1,
         }
     }
 }
@@ -192,6 +198,7 @@ impl std::fmt::Display for TranscribeError {
             Self::ConfidentialDeferred { reason, detail } => {
                 write!(formatter, "confidential transcription {reason}: {detail}")
             }
+            Self::SpeakerAnalysis(error) => error.fmt(formatter),
         }
     }
 }
@@ -201,6 +208,7 @@ impl std::error::Error for TranscribeError {
         match self {
             Self::ModelAsset(error) => Some(error),
             Self::SpeakerTranscriptWrite(error) => Some(error),
+            Self::SpeakerAnalysis(error) => Some(error),
             Self::OrphanNpzRemove { .. }
             | Self::TerminalPayload { .. }
             | Self::TerminalWrite { .. }
