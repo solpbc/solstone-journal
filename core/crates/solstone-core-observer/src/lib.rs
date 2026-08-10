@@ -8,4 +8,6 @@ mod service;
 pub mod store;
 
 pub use command::{ObserverCommand, parse_observer_args};
-pub use service::{CREATE_RETIRED_MESSAGE, ObserverError, execute, system_now_ms};
+pub use service::{
+    CREATE_RETIRED_MESSAGE, ObserverError, PruneOutcome, execute, execute_prune, system_now_ms,
+};

@@ -408,6 +408,17 @@ fn run_observer(command: ObserverCommand) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
+    if let ObserverCommand::Prune {
+        day,
+        day_range,
+        all,
+        stream,
+        execute,
+        cross_start,
+    } = command
+    {
+        return run_observer_prune(&journal, day, day_range, all, stream, execute, cross_start);
+    }
     match solstone_core_observer::execute(
         &journal,
         command,
@@ -432,6 +443,44 @@ fn run_observer(command: ObserverCommand) -> ExitCode {
             } else {
                 ExitCode::from(EXIT_IOERR)
             }
+        }
+    }
+}
+
+/// `prune`'s exit codes are 0 (clean run), 2 (refusals present), and 1 (usage
+/// or unexpected error) -- distinct from `run_observer`'s generic
+/// success/failure mapping, so it has its own small dispatcher.
+#[allow(clippy::too_many_arguments)]
+fn run_observer_prune(
+    journal: &Path,
+    day: Option<String>,
+    day_range: Option<(String, String)>,
+    all: bool,
+    stream: Option<String>,
+    execute: bool,
+    cross_start: bool,
+) -> ExitCode {
+    match solstone_core_observer::execute_prune(
+        journal,
+        day,
+        day_range,
+        all,
+        stream,
+        execute,
+        cross_start,
+        solstone_core_observer::system_now_ms(),
+    ) {
+        solstone_core_observer::PruneOutcome::Usage(message) => {
+            eprintln!("Error: {message}");
+            ExitCode::from(1)
+        }
+        solstone_core_observer::PruneOutcome::Report { text, exit_code } => {
+            let mut stdout = io::stdout().lock();
+            if stdout.write_all(text.as_bytes()).is_err() || stdout.flush().is_err() {
+                eprintln!("observer prune failed: stdout I/O error");
+                return ExitCode::from(EXIT_IOERR);
+            }
+            ExitCode::from(exit_code as u8)
         }
     }
 }

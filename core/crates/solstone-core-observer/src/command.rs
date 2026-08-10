@@ -25,6 +25,14 @@ pub enum ObserverCommand {
         dry_run: bool,
         json: bool,
     },
+    Prune {
+        day: Option<String>,
+        day_range: Option<(String, String)>,
+        all: bool,
+        stream: Option<String>,
+        execute: bool,
+        cross_start: bool,
+    },
     Create,
 }
 
@@ -34,6 +42,11 @@ pub struct ObserverUsageError;
 /// Manual parser deliberately accepts --json on either side of the verb.  The
 /// native reconcile default is dry-run-safe; --commit is the write opt-in.
 pub fn parse_observer_args(args: &[OsString]) -> Result<ObserverCommand, ObserverUsageError> {
+    if let Some((first, rest)) = args.split_first()
+        && first == OsStr::new("prune")
+    {
+        return parse_prune_args(rest);
+    }
     let mut json = false;
     let mut dry_run = false;
     let mut commit = false;
@@ -90,6 +103,84 @@ pub fn parse_observer_args(args: &[OsString]) -> Result<ObserverCommand, Observe
         "create" if positional.is_empty() && !dry_run && !commit => Ok(ObserverCommand::Create),
         _ => Err(ObserverUsageError),
     }
+}
+
+/// `prune`'s flag set is disjoint from every other verb's (no `--json`, and
+/// two of its flags take a value), so it is parsed on its own rather than
+/// forced through the shared boolean-flag loop above.
+fn parse_prune_args(args: &[OsString]) -> Result<ObserverCommand, ObserverUsageError> {
+    let mut day: Option<String> = None;
+    let mut day_range_raw: Option<String> = None;
+    let mut all = false;
+    let mut stream: Option<String> = None;
+    let mut execute = false;
+    let mut cross_start = false;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = &args[index];
+        if argument == OsStr::new("--day") {
+            index += 1;
+            let value = args.get(index).ok_or(ObserverUsageError)?;
+            if day.is_some() {
+                return Err(ObserverUsageError);
+            }
+            day = Some(value.to_str().ok_or(ObserverUsageError)?.to_owned());
+        } else if argument == OsStr::new("--day-range") {
+            index += 1;
+            let value = args.get(index).ok_or(ObserverUsageError)?;
+            if day_range_raw.is_some() {
+                return Err(ObserverUsageError);
+            }
+            day_range_raw = Some(value.to_str().ok_or(ObserverUsageError)?.to_owned());
+        } else if argument == OsStr::new("--all") {
+            if all {
+                return Err(ObserverUsageError);
+            }
+            all = true;
+        } else if argument == OsStr::new("--stream") {
+            index += 1;
+            let value = args.get(index).ok_or(ObserverUsageError)?;
+            if stream.is_some() {
+                return Err(ObserverUsageError);
+            }
+            stream = Some(value.to_str().ok_or(ObserverUsageError)?.to_owned());
+        } else if argument == OsStr::new("--execute") {
+            if execute {
+                return Err(ObserverUsageError);
+            }
+            execute = true;
+        } else if argument == OsStr::new("--cross-start") {
+            if cross_start {
+                return Err(ObserverUsageError);
+            }
+            cross_start = true;
+        } else {
+            return Err(ObserverUsageError);
+        }
+        index += 1;
+    }
+    let selector_count = [day.is_some(), day_range_raw.is_some(), all]
+        .into_iter()
+        .filter(|selected| *selected)
+        .count();
+    if selector_count != 1 {
+        return Err(ObserverUsageError);
+    }
+    let day_range = day_range_raw
+        .map(|raw| {
+            raw.split_once("..")
+                .map(|(start, end)| (start.to_owned(), end.to_owned()))
+                .ok_or(ObserverUsageError)
+        })
+        .transpose()?;
+    Ok(ObserverCommand::Prune {
+        day,
+        day_range,
+        all,
+        stream,
+        execute,
+        cross_start,
+    })
 }
 
 #[cfg(test)]

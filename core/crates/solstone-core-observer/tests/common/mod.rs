@@ -121,6 +121,52 @@ pub fn write_history(root: &Path, prefix: &str, day: &str, rows: &[Value]) {
     fs::write(path, contents).expect("history");
 }
 
+pub fn segment_dir(root: &Path, day: &str, stream: &str, segment: &str) -> PathBuf {
+    root.join("chronicle").join(day).join(stream).join(segment)
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+/// Write a segment with a valid `ingest.json` manifest, its declared media
+/// content, and a `stream.json` chain marker -- the shape prune's identity
+/// and chain-repair logic reads on both the Rust and Python sides.
+pub fn write_segment(
+    root: &Path,
+    day: &str,
+    stream: &str,
+    segment: &str,
+    seq: u64,
+    prev_segment: Option<&str>,
+    audio: &[u8],
+) -> PathBuf {
+    let dir = segment_dir(root, day, stream, segment);
+    fs::create_dir_all(&dir).expect("segment dir");
+    fs::write(dir.join("audio.flac"), audio).expect("audio");
+    let manifest = json!({
+        "schema_version": 1,
+        "files": {"audio.flac": {"sha256": sha256_hex(audio), "size": audio.len()}},
+    });
+    fs::write(dir.join("ingest.json"), manifest.to_string()).expect("manifest");
+    let marker = json!({
+        "stream": stream,
+        "prev_day": prev_segment.map(|_| day),
+        "prev_segment": prev_segment,
+        "seq": seq,
+    });
+    fs::write(dir.join("stream.json"), marker.to_string()).expect("marker");
+    dir
+}
+
+pub fn seed_observer_owning_stream(root: &Path, prefix: &str, stream: &str) -> ObserverRecord {
+    write_record(
+        root,
+        json!({"key": format!("{prefix}12345678"), "name": stream, "stream": stream}),
+    )
+}
+
 pub fn python() -> PathBuf {
     let root = repository_root();
     let venv = root.join(".venv/bin/python3");
@@ -186,6 +232,54 @@ json.dump({'code': code, 'stdout': out.getvalue(), 'stderr': err.getvalue()}, sy
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).expect("oracle JSON")
+}
+
+/// Run the Python `prune.py` reference directly (bypassing `observer_cli.py`'s
+/// argparse layer, matching the Rust side's direct `run_prune`/`format_result`
+/// entry points) and return its `{code, stdout, stderr}` triple.
+pub fn oracle_prune(root: &Path, days: &[String], stream: Option<&str>, execute: bool) -> Value {
+    let script = r#"import contextlib, importlib.util, io, json, os, sys, time
+time.tzset()
+spec = importlib.util.spec_from_file_location('prune_oracle', os.path.join(os.environ['SOLSTONE_REPO_ROOT'], 'solstone/apps/observer/prune.py'))
+module = importlib.util.module_from_spec(spec)
+# prune.py defines @dataclass(frozen=True) classes at module scope; dataclass's
+# forward-ref resolution looks the module up via sys.modules[cls.__module__],
+# which is None unless the module is registered before exec_module runs.
+sys.modules['prune_oracle'] = module
+spec.loader.exec_module(module)
+args = json.load(sys.stdin)
+out, err = io.StringIO(), io.StringIO()
+with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+    result = module.run_prune(days=args['days'], stream=args['stream'], execute=args['execute'], cross_start=False)
+    text = module.format_result(result)
+    code = module.result_exit_code(result)
+json.dump({'code': code, 'stdout': text, 'stderr': err.getvalue()}, sys.stdout)
+"#;
+    let input = json!({"days": days, "stream": stream, "execute": execute});
+    let repository = repository_root();
+    let mut child = Command::new(python())
+        .args(["-c", script])
+        .env("SOLSTONE_REPO_ROOT", &repository)
+        .env("PYTHONPATH", &repository)
+        .env("SOLSTONE_JOURNAL", root)
+        .env("TZ", "UTC")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Python prune oracle");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(input.to_string().as_bytes())
+        .expect("input");
+    let output = child.wait_with_output().expect("output");
+    assert!(
+        output.status.success(),
+        "Python prune oracle failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).expect("prune oracle JSON")
 }
 
 pub fn python_json(root: &Path, script: &str, input: Value) -> Value {
