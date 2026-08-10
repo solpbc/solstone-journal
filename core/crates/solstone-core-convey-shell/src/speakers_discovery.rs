@@ -500,9 +500,9 @@ fn setting_field(segment_dir: &Path) -> Option<String> {
 }
 
 // This route deliberately scopes the much larger Python attribution reader to
-// the frozen journal's speakers channel. Setting, screen, and meeting inputs,
-// plus ambiguity-aware resolution, need a future full port; this read-only
-// fallback resolves available speakers through the shared tiers 1–7 matcher.
+// the frozen journal's speakers channel. The shared matcher already covers all
+// eight tiers, including rapidfuzz-backed fuzzy resolution; setting, screen,
+// and meeting inputs plus ambiguity-aware resolution need a future full port.
 fn segment_evidence(segment_dir: &Path, entities: &[(String, Value)]) -> (Evidence, EvidenceGaps) {
     if let Some(labels) = load_speaker_labels(segment_dir)
         && labels.get("candidate_evidence").is_some()

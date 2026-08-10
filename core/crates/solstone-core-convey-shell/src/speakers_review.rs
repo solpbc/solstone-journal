@@ -255,12 +255,12 @@ fn load_sentences(
         let Ok(entry) = serde_json::from_str::<Value>(line) else {
             continue;
         };
-        let Some(absolute_start) = entry
-            .get("start")
-            .and_then(Value::as_str)
-            .and_then(time_to_seconds)
-        else {
-            continue;
+        let absolute_start = match entry.get("start") {
+            Some(start) => match start.as_str().and_then(time_to_seconds) {
+                Some(seconds) => seconds,
+                None => continue,
+            },
+            None => 0,
         };
         let text = entry.get("text").cloned().unwrap_or_else(|| json!(""));
         sentences.push(json!({
