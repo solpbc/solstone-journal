@@ -213,6 +213,23 @@ fn dispatch_process(
             exit: 1,
         };
     }
+    if let Some(native) = processes::native_process_spec_for(token) {
+        let executable = match runner::sibling_native_for_current_executable(native.binary) {
+            Ok(executable) => executable,
+            Err(error) => {
+                let exit = match error {
+                    runner::NativeExecutableError::Missing { .. }
+                    | runner::NativeExecutableError::NonExecutable { .. } => 69,
+                    runner::NativeExecutableError::CurrentExe(_) => 70,
+                };
+                return Outcome::ProcessFailure {
+                    stderr: format!("native journal process launch failed: {error}\n"),
+                    exit,
+                };
+            }
+        };
+        return dispatch_native_process(native, &executable, owner_argv, spawner);
+    }
     let interpreter = match runner::sibling_python_for_current_executable() {
         Ok(interpreter) => interpreter,
         Err(error) => {
@@ -228,6 +245,22 @@ fn dispatch_process(
         }
     };
     dispatch_process_with_interpreter(spec, &interpreter, owner_argv, verbose, spawner)
+}
+
+fn dispatch_native_process(
+    spec: &processes::NativeProcessSpec,
+    executable: &std::path::Path,
+    owner_argv: &[OsString],
+    spawner: &dyn ProcessSpawner,
+) -> Outcome {
+    let args = runner::native_process_args(spec, owner_argv);
+    match spawner.spawn(executable.as_os_str(), &args) {
+        Ok(()) => Outcome::ProcessLaunched,
+        Err(error) => Outcome::ProcessFailure {
+            stderr: format!("native journal process launch failed: {error}\n"),
+            exit: 70,
+        },
+    }
 }
 
 fn dispatch_process_with_interpreter(
@@ -254,7 +287,7 @@ mod tests {
         JOURNAL_COMMAND_COUNT, JOURNAL_HOST_COMMAND_COUNT, JOURNAL_HOST_COMMANDS, all_leaf_paths,
         process_command_tokens,
     };
-    use crate::processes::PROCESS_SPECS;
+    use crate::processes::{NATIVE_PROCESS_SPECS, PROCESS_SPECS, native_process_spec_for};
     use std::cell::RefCell;
     use std::collections::BTreeSet;
     use std::path::Path;
@@ -410,8 +443,12 @@ mod tests {
     }
 
     #[test]
-    fn every_process_spec_builds_exact_bootstrap_argv() {
+    fn every_python_process_spec_builds_exact_bootstrap_argv() {
         let spawner = RecordingSpawner::default();
+        let python_specs = PROCESS_SPECS
+            .iter()
+            .filter(|spec| native_process_spec_for(spec.token).is_none())
+            .collect::<Vec<_>>();
         let owner_argv = args(&[
             "has space",
             "h\u{e9}llo",
@@ -426,7 +463,7 @@ mod tests {
             "a.b.c",
         ]);
         for verbose in [false, true] {
-            for spec in PROCESS_SPECS {
+            for spec in &python_specs {
                 assert_eq!(
                     dispatch_process_with_interpreter(
                         spec,
@@ -442,12 +479,12 @@ mod tests {
             }
         }
         let calls = spawner.calls.borrow();
-        assert_eq!(calls.len(), PROCESS_SPECS.len() * 2);
+        assert_eq!(calls.len(), python_specs.len() * 2);
         for (verbose, calls) in [false, true]
             .into_iter()
-            .zip(calls.chunks_exact(PROCESS_SPECS.len()))
+            .zip(calls.chunks_exact(python_specs.len()))
         {
-            for (spec, (program, argv)) in PROCESS_SPECS.iter().zip(calls) {
+            for (spec, (program, argv)) in python_specs.iter().zip(calls) {
                 assert_eq!(program, OsStr::new("/recording-python"), "{}", spec.token);
                 let expected = [
                     vec![
@@ -469,6 +506,55 @@ mod tests {
                     spec.token
                 );
             }
+        }
+    }
+
+    #[test]
+    fn native_process_specs_bypass_python_with_exact_argv() {
+        let spawner = RecordingSpawner::default();
+        let owner_argv = args(&["opaque", "--help", "has space"]);
+        for spec in NATIVE_PROCESS_SPECS {
+            assert_eq!(
+                dispatch_native_process(
+                    spec,
+                    Path::new(&format!("/native/{}", spec.binary)),
+                    &owner_argv,
+                    &spawner,
+                ),
+                Outcome::ProcessLaunched,
+                "{}",
+                spec.token
+            );
+        }
+        let calls = spawner.calls.borrow();
+        assert_eq!(calls.len(), NATIVE_PROCESS_SPECS.len());
+        for (spec, (program, argv)) in NATIVE_PROCESS_SPECS.iter().zip(calls.iter()) {
+            assert_eq!(program, OsStr::new(&format!("/native/{}", spec.binary)));
+            let expected = [
+                spec.preset_argv.iter().map(OsString::from).collect(),
+                owner_argv.clone(),
+            ]
+            .concat();
+            assert_eq!(*argv, expected, "{}", spec.token);
+        }
+    }
+
+    #[test]
+    fn native_process_specs_are_unique_explicit_census_cutovers() {
+        let tokens = NATIVE_PROCESS_SPECS
+            .iter()
+            .map(|spec| spec.token)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(tokens.len(), NATIVE_PROCESS_SPECS.len());
+        for spec in NATIVE_PROCESS_SPECS {
+            assert!(
+                PROCESS_SPECS
+                    .iter()
+                    .any(|historical| historical.token == spec.token),
+                "native token {} must retain its historical census row",
+                spec.token
+            );
+            assert_eq!(native_process_spec_for(spec.token), Some(spec));
         }
     }
 

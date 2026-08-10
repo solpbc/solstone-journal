@@ -3,13 +3,13 @@
 
 //! Standalone native still-image depiction handler.
 //!
-//! It is intentionally not wired into `journal depict` yet.  The Python
-//! implementation remains the differential reference until the cutover lode.
+//! `journal depict` reaches this handler through the explicit native process
+//! table. The Python implementation remains only as the differential reference.
 
 use std::env;
 use std::ffi::OsString;
-use std::fs;
-use std::io::Cursor;
+use std::fs::{self, File};
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
@@ -18,8 +18,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use base64::Engine;
 use image::{DynamicImage, GenericImageView, ImageFormat, imageops::FilterType};
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient, RefusalReason,
+};
+use solstone_core_journal::{
+    detect_checkout_root, discover_home, read_config_journal, resolve_journal_path,
 };
 use solstone_core_journal_io::{AtomicWriteOptions, write_jsonl};
 
@@ -29,7 +33,13 @@ pub const USAGE: &str = "Usage: solstone-core-depict <image_path> [--redo]";
 const MAX_VLM_DIM: u32 = 1920;
 const ENGINE_NAME: &str = "rf-detr.cpp";
 const ENGINE_REF: &str = "65c0ffcc";
+const ENGINE_SHA256: &str = "7c4fb4d499d53509d5099e768510a164c6647b84480c72170b865233504f367c";
 const MODEL_NAME: &str = "rfdetr-nano-f16";
+const MODEL_REPO: &str = "mudler/rfdetr-cpp-nano";
+const MODEL_REVISION: &str = "c3dc0c037df499f5503545247df6618415fca643";
+const MODEL_FILE: &str = "rfdetr-nano-f16.gguf";
+const MODEL_SHA256: &str = "d798cc448faa53209b88fc905c91beb1dd104634b95f6948cc4877540a8fd3ee";
+const MODEL_SIZE: u64 = 63_439_488;
 const THRESHOLD: f64 = 0.25;
 const RFDETR_TIMEOUT: Duration = Duration::from_secs(120);
 const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(20);
@@ -193,48 +203,138 @@ fn wait_for_child(child: &mut Child, timeout: Duration) -> Result<ExitStatus, St
 }
 
 struct RfdetrPaths {
-    status: String,
+    status: &'static str,
     binary_path: Option<PathBuf>,
     model_path: Option<PathBuf>,
 }
 
-fn query_rfdetr_paths() -> Result<RfdetrPaths, String> {
-    let python = sibling_python()?;
-    let output = Command::new(python)
-        .args(["-P", "-m", "solstone.observe.rfdetr_paths_query"])
-        .output()
-        .map_err(|error| error.to_string())?;
-    if !output.status.success() {
-        return Err("RF-DETR install-state query failed".to_owned());
-    }
-    let value: Value = serde_json::from_slice(&output.stdout).map_err(|error| error.to_string())?;
-    Ok(RfdetrPaths {
-        status: value
-            .get("status")
-            .and_then(Value::as_str)
-            .ok_or("RF-DETR query has no status")?
-            .to_owned(),
-        binary_path: value
-            .get("binary_path")
-            .and_then(Value::as_str)
-            .map(PathBuf::from),
-        model_path: value
-            .get("model_path")
-            .and_then(Value::as_str)
-            .map(PathBuf::from),
-    })
+#[derive(Clone, Copy)]
+struct RfdetrInstallSpec {
+    engine_ref: &'static str,
+    engine_sha256: &'static str,
+    model_repo: &'static str,
+    model_revision: &'static str,
+    model_file: &'static str,
+    model_sha256: &'static str,
+    model_size: u64,
 }
 
-fn sibling_python() -> Result<PathBuf, String> {
-    let current = env::current_exe().map_err(|error| error.to_string())?;
-    let directory = current.parent().ok_or("native executable has no parent")?;
-    for name in ["python3", "python"] {
-        let candidate = directory.join(name);
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
+const RFDETR_INSTALL_SPEC: RfdetrInstallSpec = RfdetrInstallSpec {
+    engine_ref: ENGINE_REF,
+    engine_sha256: ENGINE_SHA256,
+    model_repo: MODEL_REPO,
+    model_revision: MODEL_REVISION,
+    model_file: MODEL_FILE,
+    model_sha256: MODEL_SHA256,
+    model_size: MODEL_SIZE,
+};
+
+fn query_rfdetr_paths() -> Result<RfdetrPaths, String> {
+    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        return Ok(RfdetrPaths {
+            status: "platform_unavailable",
+            binary_path: None,
+            model_path: None,
+        });
     }
-    Err("missing sibling Python interpreter".to_owned())
+    let Some(journal) = current_journal_path() else {
+        return Ok(rfdetr_not_installed());
+    };
+    Ok(query_rfdetr_paths_at(&journal, RFDETR_INSTALL_SPEC))
+}
+
+fn current_journal_path() -> Option<PathBuf> {
+    let env_journal = env::var_os("SOLSTONE_JOURNAL");
+    if let Some(path) = env_journal.as_deref().filter(|value| !value.is_empty()) {
+        return Some(PathBuf::from(path));
+    }
+    let fallback_home = env::home_dir();
+    let home_env = env::var_os("HOME");
+    let home = discover_home(home_env.as_deref(), fallback_home.as_deref()).ok()?;
+    let config_journal = read_config_journal(&home).ok().flatten();
+    let checkout_root = env::current_exe()
+        .ok()
+        .and_then(|executable| executable.parent().map(Path::to_path_buf))
+        .and_then(|directory| directory.ancestors().find_map(detect_checkout_root));
+    Some(
+        resolve_journal_path(
+            env_journal.as_deref(),
+            config_journal.as_deref(),
+            checkout_root.as_deref(),
+            &home,
+        )
+        .path,
+    )
+}
+
+fn query_rfdetr_paths_at(journal: &Path, spec: RfdetrInstallSpec) -> RfdetrPaths {
+    let root = journal.join("cache/providers/rfdetr");
+    let sidecar = root.join(".rfdetr-install.json");
+    let binary = root.join("engine").join(spec.engine_ref).join("rfdetr-cli");
+    let model = root
+        .join("model")
+        .join(spec.model_revision)
+        .join(spec.model_file);
+    let valid = fs::read(&sidecar)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .is_some_and(|record| rfdetr_record_matches(&record, spec))
+        && file_matches(&binary, spec.engine_sha256, None)
+        && file_matches(&model, spec.model_sha256, Some(spec.model_size));
+    if !valid {
+        return rfdetr_not_installed();
+    }
+    RfdetrPaths {
+        status: "installed",
+        binary_path: Some(binary),
+        model_path: Some(model),
+    }
+}
+
+fn rfdetr_record_matches(record: &Value, spec: RfdetrInstallSpec) -> bool {
+    [
+        ("status", "installed"),
+        ("engine_ref", spec.engine_ref),
+        ("engine_sha256", spec.engine_sha256),
+        ("model_repo", spec.model_repo),
+        ("model_revision", spec.model_revision),
+        ("model_file", spec.model_file),
+        ("model_sha256", spec.model_sha256),
+    ]
+    .into_iter()
+    .all(|(field, expected)| record.get(field).and_then(Value::as_str) == Some(expected))
+}
+
+fn file_matches(path: &Path, expected_sha256: &str, expected_size: Option<u64>) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() || expected_size.is_some_and(|size| metadata.len() != size) {
+        return false;
+    }
+    let Ok(mut file) = File::open(path) else {
+        return false;
+    };
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 1024 * 1024];
+    loop {
+        let Ok(read) = file.read(&mut buffer) else {
+            return false;
+        };
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+    }
+    format!("{:x}", digest.finalize()) == expected_sha256
+}
+
+fn rfdetr_not_installed() -> RfdetrPaths {
+    RfdetrPaths {
+        status: "not_installed",
+        binary_path: None,
+        model_path: None,
+    }
 }
 
 struct DetectorTempDir {
@@ -638,6 +738,59 @@ mod tests {
             .save(&image)
             .unwrap();
         (root, image)
+    }
+
+    #[test]
+    fn native_rfdetr_query_requires_the_pinned_sidecar_and_artifacts() {
+        let root = env::temp_dir().join(format!(
+            "depict-rfdetr-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let spec = RfdetrInstallSpec {
+            engine_ref: "engine-ref",
+            engine_sha256: "ed9f6f25068608efd412958da4dfc19328ca3511251fa6d5f9c42baf230e32f8",
+            model_repo: "model/repo",
+            model_revision: "model-revision",
+            model_file: "model.gguf",
+            model_sha256: "9372c470eeadd5ecd9c3c74c2b3cb633f8e2f2fad799250a0f70d652b6b825e4",
+            model_size: 5,
+        };
+        let cache = root.join("cache/providers/rfdetr");
+        let binary = cache.join("engine/engine-ref/rfdetr-cli");
+        let model = cache.join("model/model-revision/model.gguf");
+        fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        fs::create_dir_all(model.parent().unwrap()).unwrap();
+        fs::write(&binary, "engine").unwrap();
+        fs::write(&model, "model").unwrap();
+        fs::write(
+            cache.join(".rfdetr-install.json"),
+            json!({
+                "status": "installed",
+                "engine_ref": spec.engine_ref,
+                "engine_sha256": spec.engine_sha256,
+                "model_repo": spec.model_repo,
+                "model_revision": spec.model_revision,
+                "model_file": spec.model_file,
+                "model_sha256": spec.model_sha256,
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let installed = query_rfdetr_paths_at(&root, spec);
+        assert_eq!(installed.status, "installed");
+        assert_eq!(installed.binary_path.as_deref(), Some(binary.as_path()));
+        assert_eq!(installed.model_path.as_deref(), Some(model.as_path()));
+
+        fs::write(&model, "wrong").unwrap();
+        let stale = query_rfdetr_paths_at(&root, spec);
+        assert_eq!(stale.status, "not_installed");
+        assert_eq!(stale.binary_path, None);
+        assert_eq!(stale.model_path, None);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

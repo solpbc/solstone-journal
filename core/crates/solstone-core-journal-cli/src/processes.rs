@@ -38,9 +38,33 @@ pub(crate) struct ProcessSpec {
     pub(crate) kind: ProcessKind,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NativeProcessSpec {
+    pub(crate) token: &'static str,
+    pub(crate) binary: &'static str,
+    pub(crate) preset_argv: &'static [&'static str],
+}
+
 const EMPTY: &[&str] = &[];
 const UP: &[&str] = &["up"];
 const DOWN: &[&str] = &["down"];
+const SPL_SERVICE: &[&str] = &["spl", "service"];
+
+/// Process verbs whose landed implementation can replace Python at the
+/// journal boundary. Keep this mapping explicit: a native crate alone is not
+/// proof that the owner-facing grammar is ready to cut over.
+pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
+    NativeProcessSpec {
+        token: "depict",
+        binary: "solstone-core-depict",
+        preset_argv: EMPTY,
+    },
+    NativeProcessSpec {
+        token: "spl",
+        binary: "solstone-core",
+        preset_argv: SPL_SERVICE,
+    },
+];
 
 pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
     ProcessSpec {
@@ -329,6 +353,10 @@ pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
 
 pub(crate) fn process_spec_for(token: &str) -> Option<&'static ProcessSpec> {
     PROCESS_SPECS.iter().find(|spec| spec.token == token)
+}
+
+pub(crate) fn native_process_spec_for(token: &str) -> Option<&'static NativeProcessSpec> {
+    NATIVE_PROCESS_SPECS.iter().find(|spec| spec.token == token)
 }
 
 pub(crate) fn process_tokens() -> impl Iterator<Item = &'static str> {

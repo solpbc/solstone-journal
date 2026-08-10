@@ -2524,7 +2524,9 @@ dependencies = [
  "image",
  "serde",
  "serde_json",
+ "sha2",
  "solstone-core-generate",
+ "solstone-core-journal",
  "solstone-core-journal-io",
 ]
 

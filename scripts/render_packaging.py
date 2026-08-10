@@ -115,6 +115,9 @@ def _rewrite_leaf(text: str, version: str) -> str:
         text, version, "solstone-core-journal", "journal leaf pyproject"
     )
     text = _rewrite_native_pins(
+        text, version, "solstone-core-depict", "journal leaf pyproject"
+    )
+    text = _rewrite_native_pins(
         text, version, "solstone-core-retention", "journal leaf pyproject"
     )
     return text

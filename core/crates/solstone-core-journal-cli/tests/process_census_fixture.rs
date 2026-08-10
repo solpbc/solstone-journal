@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+#[allow(dead_code)]
 #[path = "../src/processes.rs"]
 mod production_processes;
 
