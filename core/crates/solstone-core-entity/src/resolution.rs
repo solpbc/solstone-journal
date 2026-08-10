@@ -280,6 +280,55 @@ pub fn record_entity_resolution(
     fuzzy_threshold: f64,
     read_only: bool,
 ) -> Result<EntityResolution, EntityResolutionError> {
+    record_entity_resolution_impl(
+        journal_root,
+        query,
+        entities,
+        scope,
+        origin,
+        fuzzy_threshold,
+        read_only,
+        false,
+    )
+}
+
+/// Resolve a query using names, aliases, emails, and name-derived slugs only.
+///
+/// Written entity IDs are never treated as match evidence in this mode. This
+/// prevents an unrelated entity ID from resolving merely because it equals the
+/// query's derived slug.
+pub fn record_entity_resolution_from_name_evidence(
+    journal_root: &Path,
+    query: &str,
+    entities: &[EntityResolutionEntity],
+    scope: Value,
+    origin: Value,
+    fuzzy_threshold: f64,
+    read_only: bool,
+) -> Result<EntityResolution, EntityResolutionError> {
+    record_entity_resolution_impl(
+        journal_root,
+        query,
+        entities,
+        scope,
+        origin,
+        fuzzy_threshold,
+        read_only,
+        true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_entity_resolution_impl(
+    journal_root: &Path,
+    query: &str,
+    entities: &[EntityResolutionEntity],
+    scope: Value,
+    origin: Value,
+    fuzzy_threshold: f64,
+    read_only: bool,
+    name_evidence_only: bool,
+) -> Result<EntityResolution, EntityResolutionError> {
     if query.trim().is_empty() {
         return Ok(no_match());
     }
@@ -332,7 +381,11 @@ pub fn record_entity_resolution(
     let candidates: Vec<_> = entities
         .iter()
         .map(|entity| EntityNameCandidate {
-            id: entity.id.clone(),
+            id: if name_evidence_only {
+                None
+            } else {
+                entity.id.clone()
+            },
             name: entity.name.clone(),
             aka: entity.aka.clone(),
             emails: entity.emails.clone(),

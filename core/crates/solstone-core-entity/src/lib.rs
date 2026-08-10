@@ -13,7 +13,7 @@ mod trust_lock;
 pub use ambiguity::ambiguity_id;
 pub use resolution::{
     EntityResolution, EntityResolutionEntity, EntityResolutionError, EntityResolutionOutcome,
-    ResolutionCandidate, record_entity_resolution,
+    ResolutionCandidate, record_entity_resolution, record_entity_resolution_from_name_evidence,
 };
 pub use solstone_core_journal_io::FileLock;
 pub use solstone_core_journal_io::LockError;

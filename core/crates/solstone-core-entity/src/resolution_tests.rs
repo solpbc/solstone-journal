@@ -18,7 +18,7 @@ use crate::resolution::collect_low_confidence_candidates;
 use crate::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, EntityResolutionEntity, EntityResolutionError,
     EntityResolutionOutcome, hold_entity_trust_lock, record_ambiguity_choice,
-    record_entity_resolution,
+    record_entity_resolution, record_entity_resolution_from_name_evidence,
 };
 
 static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
@@ -145,6 +145,36 @@ fn high_confidence_tiers_resolve_without_creating_ambiguities() {
         assert_eq!(result.tier, Some(tier));
         assert!(!ambiguities_path(temporary.path()).exists());
     }
+}
+
+#[test]
+fn name_evidence_resolution_ignores_written_id_slug_collisions() {
+    let temporary = TempDir::new();
+    let entities = [entity(Some("new_person"), "Someone Else", false)];
+
+    let legacy = resolve(
+        temporary.path(),
+        "New Person",
+        &entities,
+        journal_scope(),
+        origin("legacy"),
+        false,
+    )
+    .unwrap();
+    assert_eq!(legacy.outcome, EntityResolutionOutcome::Resolved);
+    assert_eq!(legacy.tier, Some(MatchTier::Slug));
+
+    let name_evidence = record_entity_resolution_from_name_evidence(
+        temporary.path(),
+        "New Person",
+        &entities,
+        journal_scope(),
+        origin("name-evidence"),
+        90.0,
+        false,
+    )
+    .unwrap();
+    assert_eq!(name_evidence.outcome, EntityResolutionOutcome::NoMatch);
 }
 
 #[test]
