@@ -20,6 +20,69 @@ pub const USAGE: &str = concat!(
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
 pub const GRAB_USAGE: &str = "Usage: solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n";
 
+/// `journal observer`'s own usage block, captured verbatim from the Python
+/// reference. The native verb must not print `solstone-core`'s top-level usage
+/// when an owner mistypes an observer argument -- that names the wrong program.
+pub const OBSERVER_USAGE: &str = concat!(
+    "usage: journal observer [-h] [--json] [-v] [-d]\n",
+    "                        {create,list,rename,revoke,status,reconcile,prune} ...\n",
+);
+
+/// `journal observer --help`, captured verbatim from the Python reference.
+/// The cut left the native verb with no help at all: `--help` fell through the
+/// observer parser (it is not one of its tokens) and became a usage error, so
+/// an owner asking for help got exit 2 and three lines instead of exit 0 and
+/// twenty-one.
+pub const OBSERVER_HELP: &str = concat!(
+    "usage: journal observer [-h] [--json] [-v] [-d]\n",
+    "                        {create,list,rename,revoke,status,reconcile,prune} ...\n",
+    "\n",
+    "Manage observer registrations\n",
+    "\n",
+    "positional arguments:\n",
+    "  {create,list,rename,revoke,status,reconcile,prune}\n",
+    "    create              Explain retired manual observer creation\n",
+    "    list                List all registered observers\n",
+    "    rename              Rename an observer (affects future streams)\n",
+    "    revoke              Revoke an observer registration\n",
+    "    status              Show observer status details\n",
+    "    reconcile           Collapse duplicate registrations per stream (oldest\n",
+    "                        survives)\n",
+    "    prune               Find or delete provable duplicate observer segments\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --json                Output as JSON\n",
+    "  -v, --verbose         Enable verbose output\n",
+    "  -d, --debug           Enable debug logging\n",
+);
+
+/// `journal observer prune --help`, captured verbatim from the reference.
+/// Note it documents prune's own exit contract, which the native path honours:
+/// 0 clean, 2 refusals present, 1 usage/error.
+pub const OBSERVER_PRUNE_HELP: &str = concat!(
+    "usage: journal observer prune [-h] (--day DAY | --day-range DAY_RANGE | --all)\n",
+    "                              [--stream STREAM] [--execute] [--cross-start]\n",
+    "\n",
+    "Find byte-identical same-start observer duplicate segments. Canonical is the\n",
+    "earliest same-start segment whose content is held by bytes or terminal proof.\n",
+    "Opt-in cross-start mode also uses server-authored segment_original provenance\n",
+    "after same-start pruning. Dry-run is the default and performs zero writes.\n",
+    "Exit codes: 0 clean, 2 refusals present, 1 usage/error.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --day DAY             Prune one day (YYYYMMDD)\n",
+    "  --day-range DAY_RANGE\n",
+    "                        Prune inclusive range A..B\n",
+    "  --all                 Scan every journal day\n",
+    "  --stream STREAM       Limit to one stream\n",
+    "  --execute             Delete provable duplicates; dry-run is the default.\n",
+    "  --cross-start         Also prune different-start duplicates proven by\n",
+    "                        server-authored segment_original provenance; runs\n",
+    "                        after same-start. Off by default.\n",
+);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Version,
@@ -39,6 +102,9 @@ pub enum Command {
     Spl(SplCommand),
     Supervisor(SupervisorOptions),
     Observer(ObserverCommand),
+    ObserverUsage,
+    ObserverHelp,
+    ObserverPruneHelp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -443,9 +509,25 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("supervisor") => {
             parse_supervisor(rest).map(Command::Supervisor)
         }
-        [command, rest @ ..] if command == OsStr::new("observer") => parse_observer_args(rest)
-            .map(Command::Observer)
-            .map_err(|_| UsageError),
+        [command, rest @ ..] if command == OsStr::new("observer") => {
+            // Help is not one of the observer parser's tokens, so it must be
+            // intercepted here or it degrades into a usage error -- which is
+            // exactly what the cut shipped.
+            let help = |a: &OsString| a == OsStr::new("--help") || a == OsStr::new("-h");
+            if let [first, others @ ..] = rest
+                && first == OsStr::new("prune")
+                && others.iter().any(help)
+            {
+                return Ok(Command::ObserverPruneHelp);
+            }
+            if rest.iter().any(help) {
+                return Ok(Command::ObserverHelp);
+            }
+            // The reference exits 2 with `journal observer`'s usage, not 64 with
+            // solstone-core's. Carry the failure as a command so main can render
+            // it faithfully instead of collapsing it into UsageError.
+            Ok(parse_observer_args(rest).map_or(Command::ObserverUsage, Command::Observer))
+        }
         _ => Err(UsageError),
     }
 }

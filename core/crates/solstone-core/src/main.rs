@@ -25,9 +25,9 @@ use solstone_core_cli::{
     IndexerOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions,
     IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalConfigCommand,
     JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
-    JournalPathOptions, LocalCommand, ServiceOptions, SpeakerResolveCommand, SplCommand,
-    TransferCommand, TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE,
-    evaluate_args, version_line,
+    JournalPathOptions, LocalCommand, OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_USAGE,
+    ServiceOptions, SpeakerResolveCommand, SplCommand, TransferCommand, TransferExportOptions,
+    TransferImportOptions, TransferSendOptions, USAGE, evaluate_args, version_line,
 };
 mod supervisor;
 use solstone_core_indexer_query::{
@@ -120,6 +120,20 @@ fn main() -> ExitCode {
         Ok(Command::Spl(command)) => run_spl_process(command),
         Ok(Command::Supervisor(options)) => supervisor::run(options),
         Ok(Command::Observer(command)) => run_observer(command),
+        Ok(Command::ObserverHelp) => {
+            print!("{OBSERVER_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ObserverPruneHelp) => {
+            print!("{OBSERVER_PRUNE_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ObserverUsage) => {
+            // argparse's usage-error exit code, matching the reference.
+            eprint!("{OBSERVER_USAGE}");
+            eprintln!("journal observer: error: invalid arguments");
+            ExitCode::from(2)
+        }
         Err(_) => {
             eprint!("{USAGE}");
             ExitCode::from(EXIT_USAGE)
