@@ -117,26 +117,30 @@ fn manifest_failure_degrades_to_empty_and_uploads() {
 
 #[test]
 fn upload_statuses_have_the_expected_retry_and_terminal_behavior() {
-    for (action, uploads, expected) in [
+    for (action, uploads, expected, stops_later_segments) in [
         (
             ResponseAction::status(200, Vec::new()),
             1,
             "1 sent, 0 skipped, 0 failed",
+            false,
         ),
         (
             ResponseAction::status(401, Vec::new()),
             1,
             "Authentication failed: invalid or missing paired-link identity",
+            true,
         ),
         (
             ResponseAction::status(403, Vec::new()),
             1,
             "Authentication failed: paired-link identity revoked or disabled",
+            true,
         ),
         (
             ResponseAction::status(418, Vec::new()),
             1,
             "0 sent, 0 skipped, 1 failed",
+            false,
         ),
     ] {
         let peer = StubPeer::new(PeerPlan::new(
@@ -144,6 +148,9 @@ fn upload_statuses_have_the_expected_retry_and_terminal_behavior() {
             vec![action],
         ));
         let fixture = fixture(&peer);
+        if stops_later_segments {
+            fixture.add_segment("audio", "130000_30", &[("later.json", b"later")]);
+        }
         let output = run(&fixture, &[]);
         assert!(
             output.status.success(),
@@ -151,7 +158,16 @@ fn upload_statuses_have_the_expected_retry_and_terminal_behavior() {
             String::from_utf8_lossy(&output.stderr)
         );
         assert!(stdout(&output).contains(expected), "{}", stdout(&output));
-        assert_eq!(peer.ingest_requests().len(), uploads);
+        let requests = peer.ingest_requests();
+        assert_eq!(requests.len(), uploads);
+        if stops_later_segments {
+            assert!(
+                !requests[0]
+                    .body
+                    .windows(b"later.json".len())
+                    .any(|part| part == b"later.json")
+            );
+        }
     }
 
     let peer = StubPeer::new(PeerPlan::new(

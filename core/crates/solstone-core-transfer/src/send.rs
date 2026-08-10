@@ -272,10 +272,12 @@ pub fn resolve_peer(journal: &Path, label: &str) -> Result<ResolvedPeer, Transfe
 pub fn parse_day_spec(spec: Option<&str>, journal: &Path) -> Result<Vec<String>, TransferError> {
     let Some(spec) = spec else {
         let chronicle = journal.join("chronicle");
-        if !chronicle.is_dir() {
-            return Ok(Vec::new());
-        }
-        let mut days = fs::read_dir(chronicle)?
+        let day_root = if chronicle.is_dir() {
+            chronicle
+        } else {
+            journal.into()
+        };
+        let mut days = fs::read_dir(day_root)?
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .filter_map(|entry| {
@@ -409,7 +411,12 @@ fn load_credential(journal: &Path, peer: &ResolvedPeer) -> Result<Credential, Tr
                 peer.dir.display()
             ))
         })?;
-    let parsed_chain = tls::parse_certs(&ca_chain).map_err(transport_error)?;
+    let parsed_chain = tls::parse_certs(&ca_chain).map_err(|error| {
+        TransferError::CredentialLoad(format!(
+            "invalid chain.pem in {}: {error}",
+            peer.dir.display()
+        ))
+    })?;
     let Some(first_ca) = parsed_chain.first() else {
         return Err(TransferError::CredentialLoad(
             "chain.pem contains no certificates".to_string(),
@@ -720,6 +727,10 @@ mod tests {
             parse_day_spec(Some("20260301-20260228"), root.path()),
             Err(TransferError::InvalidDay)
         ));
+
+        let fallback = tempfile::tempdir().expect("temporary journal");
+        fs::create_dir_all(fallback.path().join("20260204")).expect("day");
+        assert_eq!(parse_day_spec(None, fallback.path()).unwrap(), ["20260204"]);
     }
 
     #[test]
@@ -802,5 +813,11 @@ mod tests {
         assert_eq!(credential.endpoints[0].host, "127.0.0.1");
         assert!(credential.device_token.is_none());
         assert!(TransportClient::new(credential, None).is_ok());
+
+        fs::write(peer_dir.join("chain.pem"), "not a certificate").unwrap();
+        assert!(matches!(
+            load_credential(root.path(), &peer),
+            Err(TransferError::CredentialLoad(_))
+        ));
     }
 }
