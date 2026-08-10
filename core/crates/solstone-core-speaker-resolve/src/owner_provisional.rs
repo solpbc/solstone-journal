@@ -11,16 +11,16 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use solstone_core_entity::{
-    entity_memory_path, normalize_embedding, read_journal_principal,
-    try_load_entity_voiceprints_file, EntityLifecycleError, VoiceprintArchive,
+    EntityLifecycleError, VoiceprintArchive, entity_memory_path, normalize_embedding,
+    read_journal_principal, try_load_entity_voiceprints_file,
 };
 use solstone_core_journal_io::{day_path, segment_path};
 use solstone_core_speaker_id::calibration::{
     NOISY_FLYWHEEL_OVERLAP_MAX, OWNER_BOOTSTRAP_PROVISIONAL_GUARD_MIN_TAGS,
 };
-use solstone_core_speaker_id::embeddings::{load_embeddings_file, EmbeddingsFile};
+use solstone_core_speaker_id::embeddings::{EmbeddingsFile, load_embeddings_file};
 
-use crate::owner_centroid::{load_owner_centroid, OwnerCentroid, OwnerCentroidError};
+use crate::owner_centroid::{OwnerCentroid, OwnerCentroidError, load_owner_centroid};
 
 const MANUAL_OWNER_METHODS: [&str; 3] = ["user_assigned", "user_corrected", "user_confirmed"];
 
@@ -155,7 +155,7 @@ pub fn resolve_owner_tier(journal_root: &Path) -> Result<OwnerTierOutcome, Owner
         Err(_) => {
             return Ok(OwnerTierOutcome::None(
                 OwnerTierReason::VoiceprintsUnreadable,
-            ))
+            ));
         }
     };
     let rows = collect_manual_tag_rows(journal_root, principal_id, &archive);

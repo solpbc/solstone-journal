@@ -6,11 +6,11 @@ use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_id::calibration::OWNER_THRESHOLD;
 use solstone_core_speaker_resolve::owner_provisional::{
-    resolve_owner_tier, OwnerTierOutcome, OwnerTierReason,
+    OwnerTierOutcome, OwnerTierReason, resolve_owner_tier,
 };
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};

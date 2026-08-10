@@ -53,9 +53,9 @@ impl fmt::Display for OwnerCentroidError {
         match self {
             Self::EntityPath(error) => error.fmt(formatter),
             Self::Io { path, detail } => write!(formatter, "{}: {detail}", path.display()),
-            Self::Archive(detail)
-            | Self::MissingRequiredMember(detail)
-            | Self::Invalid(detail) => formatter.write_str(detail),
+            Self::Archive(detail) | Self::MissingRequiredMember(detail) | Self::Invalid(detail) => {
+                formatter.write_str(detail)
+            }
         }
     }
 }
