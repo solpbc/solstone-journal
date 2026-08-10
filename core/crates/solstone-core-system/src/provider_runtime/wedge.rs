@@ -98,7 +98,10 @@ impl WedgeState {
     }
 }
 
-/// Routes one cortex outcome through bounded wedge tracking and emits an eligible recycle request.
+/// Exercises the pure threshold/cooldown/FIFO transition in isolation.
+///
+/// Live supervisor wiring calls [`WedgeState::observe`] directly so it can apply
+/// its own endpoint gates and emit only after a durable recycle request succeeds.
 pub fn observe_cortex_outcome(
     wedge: &mut WedgeState,
     event: CortexOutcomeEvent,

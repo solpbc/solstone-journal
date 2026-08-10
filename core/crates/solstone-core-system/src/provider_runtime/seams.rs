@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use super::model::{
-    ProviderFence, ProviderName, ProviderRetryState, ProviderRuntimeState, ReasonCode,
+    ProviderFence, ProviderName, ProviderRetryState, ProviderRuntimeState, ReasonCode, RuntimePhase,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +22,15 @@ pub enum RuntimeStoreError {
     Corrupt,
     Unavailable,
     Conflict,
+}
+
+pub fn store_error_phase(error: RuntimeStoreError) -> RuntimePhase {
+    match error {
+        RuntimeStoreError::Corrupt => RuntimePhase::StateCorrupt,
+        RuntimeStoreError::Unavailable | RuntimeStoreError::Conflict => {
+            RuntimePhase::StateUnavailable
+        }
+    }
 }
 
 pub trait TruthObservationSeam {

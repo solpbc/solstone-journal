@@ -2,11 +2,13 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeSet;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
-use solstone_core_callosum::{CallosumEnvelope, DurableEvent, append_durable_event};
+use solstone_core_callosum::CallosumEnvelope;
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_journal_io::day_path;
 use solstone_core_local::nvidia::{ArtifactTrust, NvidiaProbe};
@@ -18,7 +20,7 @@ use solstone_core_system::provider_runtime::{
     CortexEventKind, CortexOutcomeEvent, LocalLaunchCommon, LocalLaunchConfig, ProbeStatus,
     ProviderName, ProviderRetryState, ProviderRuntimeEvent, ProviderRuntimeEventSink,
     ProviderRuntimeNow, ReasonCode, ReconcileContext, RuntimePhase, RuntimeStore,
-    RuntimeStoreError, cancel_start,
+    RuntimeStoreError, cancel_start, store_error_phase,
 };
 use solstone_core_system::request::{BusTaskRequest, ExecutionRequest, TaskArgv};
 use solstone_core_system::schedule::ScheduleNow;
@@ -754,8 +756,15 @@ fn handle_segment_event_log(state: &SupervisorState, message: &CallosumEnvelope)
     if !segment_dir.is_dir() {
         return;
     }
-    if let Err(error) = append_durable_event(&segment_dir, &DurableEvent::Callosum(message.clone()))
-    {
+    let result = (|| -> std::io::Result<()> {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(segment_dir.join("events.jsonl"))?;
+        serde_json::to_writer(&mut file, message).map_err(std::io::Error::other)?;
+        file.write_all(b"\n")
+    })();
+    if let Err(error) = result {
         eprintln!("supervisor: failed to append segment event log: {error}");
     }
 }
@@ -898,15 +907,6 @@ fn request_local_provider_recycle(
         return Err(error);
     }
     Ok(())
-}
-
-fn store_error_phase(error: RuntimeStoreError) -> RuntimePhase {
-    match error {
-        RuntimeStoreError::Corrupt => RuntimePhase::StateCorrupt,
-        RuntimeStoreError::Unavailable | RuntimeStoreError::Conflict => {
-            RuntimePhase::StateUnavailable
-        }
-    }
 }
 
 fn message_string<'a>(message: &'a CallosumEnvelope, key: &str) -> Option<&'a str> {

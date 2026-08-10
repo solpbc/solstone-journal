@@ -18,6 +18,7 @@ use super::model::{
 use super::retry::{retry_token_phase, schedule_cleanup_retry, schedule_launch_retry};
 use super::seams::{
     LifecycleSeam, ProbeSeam, RuntimeStore, RuntimeStoreError, TruthObservationSeam, reset_retry,
+    store_error_phase,
 };
 use super::stop::{
     cancel_start, cancel_stop, defer_target_stop, duplicate_owned_process_request,
@@ -806,15 +807,6 @@ impl ProviderRuntimeCoordinator {
 impl Default for ProviderRuntimeCoordinator {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-fn store_error_phase(error: RuntimeStoreError) -> RuntimePhase {
-    match error {
-        RuntimeStoreError::Corrupt => RuntimePhase::StateCorrupt,
-        RuntimeStoreError::Unavailable | RuntimeStoreError::Conflict => {
-            RuntimePhase::StateUnavailable
-        }
     }
 }
 

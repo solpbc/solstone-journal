@@ -45,7 +45,7 @@ pub use reconcile::{ProviderRuntimeCoordinator, ReconcileContext};
 pub use retry::{schedule_cleanup_retry, schedule_launch_retry};
 pub use seams::{
     InMemoryRuntimeStore, LifecycleSeam, NoopWorkers, ProbeSeam, RetryToken, RuntimeStore,
-    RuntimeStoreError, TruthObservationSeam,
+    RuntimeStoreError, TruthObservationSeam, store_error_phase,
 };
 pub use stop::{
     cancel_start, cancel_stop, defer_target_stop, duplicate_owned_process_request,
