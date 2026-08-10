@@ -23,6 +23,9 @@ serde_json = { workspace = true }
 solstone-core-journal-io = { workspace = true }
 tokio = { workspace = true, optional = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
 
+[dev-dependencies]
+solstone-core-cogitate-wire.workspace = true
+
 [[test]]
 name = "callosum_cross_process"
 path = "tests/callosum_cross_process.rs"

@@ -2360,6 +2360,9 @@ dependencies = [
  "solstone-core-brain",
  "solstone-core-callosum",
  "solstone-core-cli",
+ "solstone-core-cogitate-runtime",
+ "solstone-core-cogitate-tools",
+ "solstone-core-cogitate-wire",
  "solstone-core-convey-shell",
  "solstone-core-entity",
  "solstone-core-generate",
@@ -2467,6 +2470,7 @@ version = "1.0.22"
 dependencies = [
  "serde",
  "serde_json",
+ "solstone-core-cogitate-wire",
  "solstone-core-journal-io",
  "tokio",
 ]
@@ -2508,6 +2512,19 @@ dependencies = [
  "serde_json",
  "solstone-core-cogitate",
  "solstone-core-format",
+]
+
+[[package]]
+name = "solstone-core-cogitate-wire"
+version = "1.0.22"
+dependencies = [
+ "serde_json",
+ "solstone-core-cogitate",
+ "solstone-core-cogitate-runtime",
+ "solstone-core-generate",
+ "solstone-core-generate-wire",
+ "solstone-core-local",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
