@@ -84,11 +84,13 @@ VAD_ANALYZE_PACKAGE_NAME = "solstone-core-vad-analyze"
 VAD_ANALYZE_SCRIPT_NAME = VAD_ANALYZE_PACKAGE_NAME
 # Declared locally, like DESCRIBE_PLATFORM_TAGS above and unlike the
 # speakers-analyze table: the VAD helper has no runtime probe in solstone/ that
-# advertises its coverage, so packaging is the only place that knows it. Linux
-# only by construction — the crate's build.rs panics on any other target OS.
+# advertises its coverage, so packaging is the only place that knows it. The
+# crate's build.rs names the rpath per target OS and refuses anything it has
+# not been taught, so this table and that match must stay in step.
 VAD_ANALYZE_PLATFORM_TAGS: dict[CorePlatform, str] = {
     ("linux", "x86_64"): "manylinux_2_27_x86_64",
     ("linux", "aarch64"): "manylinux_2_27_aarch64",
+    ("darwin", "arm64"): "macosx_14_0_arm64",
 }
 ELF_MAGIC = b"\x7fELF"
 ELF_CLASS_64 = 2
@@ -224,6 +226,7 @@ VAD_ANALYZE_TAG_PLATFORMS = {
 VAD_ANALYZE_PLATFORM_TARGETS = {
     ("linux", "x86_64"): "linux-x86_64",
     ("linux", "aarch64"): "linux-aarch64",
+    ("darwin", "arm64"): "macos-arm64",
 }
 VAD_ANALYZE_RUNTIME_INSTALL_DIR = runtime_install_dir(VAD_ANALYZE_PACKAGE_NAME)
 VAD_ANALYZE_NOTICE_INSTALL_DIR = notice_install_dir(VAD_ANALYZE_PACKAGE_NAME)
@@ -231,8 +234,12 @@ VAD_ANALYZE_RUNTIME_LINK_CONTRACTS: dict[
     CorePlatform, SpeakersAnalyzeRuntimeLinkContract
 ] = {
     platform_tuple: SpeakersAnalyzeRuntimeLinkContract(
-        f"$ORIGIN/../lib/{VAD_ANALYZE_PACKAGE_NAME}",
-        SPEAKERS_ANALYZE_TARGETS[target_key].runtime_staged_name,
+        (
+            f"@loader_path/../lib/{VAD_ANALYZE_PACKAGE_NAME}"
+            if platform_tuple[0] == "darwin"
+            else f"$ORIGIN/../lib/{VAD_ANALYZE_PACKAGE_NAME}"
+        ),
+        _speakers_analyze_runtime_load(platform_tuple),
     )
     for platform_tuple, target_key in VAD_ANALYZE_PLATFORM_TARGETS.items()
 }
@@ -1191,8 +1198,29 @@ def _macho_runtime_load_commands(
 def _check_speakers_analyze_macho_runtime_paths(
     wheel_name: str, content: bytes, platform_tuple: CorePlatform
 ) -> list[str]:
-    repair = _speakers_analyze_rebuild_command(platform_tuple)
-    contract = SPEAKERS_ANALYZE_RUNTIME_LINK_CONTRACTS[platform_tuple]
+    return _check_macho_runtime_paths(
+        wheel_name,
+        content,
+        SPEAKERS_ANALYZE_RUNTIME_LINK_CONTRACTS[platform_tuple],
+        repair=_speakers_analyze_rebuild_command(platform_tuple),
+        label="speakers analyze",
+    )
+
+
+def _check_macho_runtime_paths(
+    wheel_name: str,
+    content: bytes,
+    contract: "SpeakersAnalyzeRuntimeLinkContract",
+    *,
+    repair: str,
+    label: str = "vad analyze",
+) -> list[str]:
+    """Assert a Mach-O helper loads its ONNX Runtime from the bundled sibling.
+
+    Shared by the speakers-analyze and vad-analyze helpers: both ship the same
+    runtime beside the binary and both must resolve it through @loader_path
+    rather than a system path.
+    """
     rpaths, dylibs, failures = _macho_runtime_load_commands(
         wheel_name, content, repair=repair
     )
@@ -1203,7 +1231,7 @@ def _check_speakers_analyze_macho_runtime_paths(
         failures.append(
             _failure(
                 wheel_name,
-                "speakers analyze Mach-O RPATH is wrong",
+                f"{label} Mach-O RPATH is wrong",
                 expected=contract.rpath,
                 actual=", ".join(rpaths) or "<missing>",
                 repair=repair,
@@ -1218,7 +1246,7 @@ def _check_speakers_analyze_macho_runtime_paths(
         failures.append(
             _failure(
                 wheel_name,
-                "speakers analyze Mach-O ONNX Runtime load command is outside bundled sibling-library contract",
+                f"{label} Mach-O ONNX Runtime load command is outside bundled sibling-library contract",
                 expected=f"LC_LOAD_DYLIB {contract.runtime_load}",
                 actual=", ".join(runtime_loads) or "<missing>",
                 repair=repair,
@@ -2061,18 +2089,45 @@ def check_vad_analyze_wheel(path: Path) -> list[str]:
                     )
                 )
         if binary_infos:
-            errors.extend(
-                _check_onnx_bundled_elf_binary(
-                    f"{path.name}:{binary_member}",
-                    wheel.read(binary_member),
-                    library_content,
-                    platform_tuple,
-                    tag,
-                    label="vad analyze",
-                    contract=VAD_ANALYZE_RUNTIME_LINK_CONTRACTS[platform_tuple],
-                    repair=repair,
+            binary_content = wheel.read(binary_member)
+            if platform_tuple[0] == "linux":
+                errors.extend(
+                    _check_onnx_bundled_elf_binary(
+                        f"{path.name}:{binary_member}",
+                        binary_content,
+                        library_content,
+                        platform_tuple,
+                        tag,
+                        label="vad analyze",
+                        contract=VAD_ANALYZE_RUNTIME_LINK_CONTRACTS[platform_tuple],
+                        repair=repair,
+                    )
                 )
-            )
+            else:
+                errors.extend(
+                    _check_macho_binary(
+                        f"{path.name}:{binary_member}",
+                        binary_content,
+                        platform_tuple,
+                        binary_label=VAD_ANALYZE_SCRIPT_NAME,
+                    )
+                )
+                errors.extend(
+                    _check_macho_runtime_paths(
+                        f"{path.name}:{binary_member}",
+                        binary_content,
+                        VAD_ANALYZE_RUNTIME_LINK_CONTRACTS[platform_tuple],
+                        repair=repair,
+                    )
+                )
+                errors.extend(
+                    _check_macho_binary(
+                        f"{path.name}:{library_member}",
+                        library_content,
+                        platform_tuple,
+                        binary_label=spec.runtime_staged_name,
+                    )
+                )
         errors.extend(_check_record(path, wheel))
     return errors
 
@@ -2241,12 +2296,12 @@ def _native_platform_tags(
             for platform in _speakers_analyze_platforms_for_scope(release_scope)
         )
     if package.target_family == "vad-analyze":
-        # Linux only in both scopes: the crate's build.rs refuses any other
-        # target OS, so "all-hosts" adds no darwin wheel here.
+        # Linux plus macOS/arm64: the transcribe driver needs this helper on
+        # every platform it runs on, and Apple is where the CoreML parakeet
+        # backend lives.
         return tuple(
             VAD_ANALYZE_PLATFORM_TAGS[platform]
             for platform in sorted(VAD_ANALYZE_PLATFORM_TAGS)
-            if platform[0] == "linux"
         )
     return tuple(
         DESCRIBE_PLATFORM_TAGS[platform]

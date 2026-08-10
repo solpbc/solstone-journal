@@ -56,12 +56,16 @@ def _run(argv: list[str], *, env: dict[str, str] | None = None) -> str:
     return result.stdout
 
 
+ONNX_LINKED_FAMILIES = frozenset({"speakers-analyze", "vad-analyze"})
+
+
 def _wheel_path(package: NativePackage) -> Path:
-    tag = (
-        SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_TAGS[MACOS_PLATFORM]
-        if package.target_family == "speakers-analyze"
-        else SOLSTONE_CORE_PLATFORM_TAGS[MACOS_PLATFORM]
-    )
+    if package.target_family in ONNX_LINKED_FAMILIES:
+        # Both ONNX-linked helpers carry the same macOS platform tag; they ship
+        # the same runtime for the same deployment target.
+        tag = SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_TAGS[MACOS_PLATFORM]
+    else:
+        tag = SOLSTONE_CORE_PLATFORM_TAGS[MACOS_PLATFORM]
     return DIST / (
         f"{normalized_distribution(package.distribution)}-{package.version}"
         f"-py3-none-{tag}.whl"
@@ -77,7 +81,9 @@ def _build_env(package: NativePackage) -> dict[str, str]:
             "PYTHONNOUSERSITE": "1",
         }
     )
-    if package.target_family == "speakers-analyze":
+    if package.target_family in ONNX_LINKED_FAMILIES:
+        # Both helpers bundle the same pinned runtime; only the destination
+        # package differs, so they link against one staged copy.
         env["ORT_LIB_PATH"] = str(
             (SPEAKERS_LINK_ROOT / SPEAKERS_TARGETS["macos-arm64"].key).resolve()
         )
@@ -104,7 +110,7 @@ def _members_to_sign(package: NativePackage, unpacked: Path) -> dict[str, Path]:
             f"found {len(binary_matches)}"
         )
     members = {package.binary: binary_matches[0]}
-    if package.target_family == "speakers-analyze":
+    if package.target_family in ONNX_LINKED_FAMILIES:
         dylib_name = SPEAKERS_TARGETS["macos-arm64"].runtime_staged_name
         dylib_matches = list(unpacked.glob(f"*.data/data/lib/**/{dylib_name}"))
         if len(dylib_matches) != 1:
@@ -131,15 +137,20 @@ def main() -> int:
     try:
         for package in inventory.macos_native_packages:
             role = native_role(package)
-            if package.target_family == "speakers-analyze":
-                _run(
-                    [
-                        "python3",
-                        "scripts/stage_speakers_analyze_runtime.py",
-                        "--target",
-                        "macos-arm64",
+            if package.target_family in ONNX_LINKED_FAMILIES:
+                stage_argv = [
+                    "python3",
+                    "scripts/stage_speakers_analyze_runtime.py",
+                    "--target",
+                    "macos-arm64",
+                ]
+                if package.target_family != "speakers-analyze":
+                    # The staging table is shared; the destination leaf is not.
+                    stage_argv += [
+                        "--package-dir",
+                        f"packages/{package.distribution}",
                     ]
-                )
+                _run(stage_argv)
             print(f"==> building {package.distribution} for macOS/arm64")
             _run(
                 ["uv", "build", "--package", package.distribution, "--wheel"],
