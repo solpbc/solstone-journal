@@ -287,16 +287,11 @@ fn quote_ascii(value: &str) -> String {
 }
 
 fn sha256_file(path: &Path) -> Result<String, CatchupError> {
-    let mut file = fs::File::open(path).map_err(|source| CatchupError::Io {
+    let bytes = fs::read(path).map_err(|source| CatchupError::Io {
         path: path.to_path_buf(),
         source,
     })?;
-    let mut digest = Sha256::new();
-    io::copy(&mut file, &mut digest).map_err(|source| CatchupError::Io {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    Ok(hex_digest(digest.finalize()))
+    Ok(hex_digest(Sha256::digest(&bytes)))
 }
 
 fn hex_digest(bytes: impl AsRef<[u8]>) -> String {

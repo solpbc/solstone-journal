@@ -11,6 +11,7 @@ const JOURNAL_PROCESSES: &str = include_str!("../../solstone-core-journal-cli/sr
 const JOURNAL_MANIFEST: &str = include_str!("../../solstone-core-journal-cli/src/manifest.rs");
 const LIB: &str = include_str!("../src/lib.rs");
 const CAP: &str = include_str!("../src/cap.rs");
+const CATCHUP: &str = include_str!("../src/catchup.rs");
 const ERROR: &str = include_str!("../src/error.rs");
 const PARTITION: &str = include_str!("../src/partition.rs");
 const QUEUE: &str = include_str!("../src/queue.rs");
@@ -117,6 +118,7 @@ fn ac7_bus_decode_is_typed_to_bus_requests_not_scheduled_execution_requests() {
 fn ac21_only_operational_log_module_names_write_primitives() {
     let root_modules = [
         ("cap", CAP),
+        ("catchup", CATCHUP),
         ("error", ERROR),
         ("lifecycle", LIFECYCLE),
         ("partition", PARTITION),
@@ -200,7 +202,11 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         .chain(schedule_modules)
         .chain(provider_runtime_modules)
         .filter(|(name, _)| {
-            *name != "log" && *name != "state" && *name != "completion" && *name != "store"
+            *name != "log"
+                && *name != "state"
+                && *name != "completion"
+                && *name != "store"
+                && *name != "catchup"
         })
     {
         for primitive in [
@@ -215,6 +221,24 @@ fn ac21_only_operational_log_module_names_write_primitives() {
                 "{name} must not write journal data through {primitive}"
             );
         }
+    }
+    // catchup is read-only in production but its unit tests build real fixture
+    // trees under the OS temp dir, so it is checked against production source
+    // only (everything before its trailing `mod tests`) rather than skipped.
+    let catchup_production = CATCHUP
+        .split_once("mod tests")
+        .map_or(CATCHUP, |(production, _)| production);
+    for primitive in [
+        "File::",
+        "OpenOptions",
+        "fs::write",
+        "fs::rename",
+        "create_dir_all",
+    ] {
+        assert!(
+            !catchup_production.contains(primitive),
+            "catchup must not write journal data through {primitive}"
+        );
     }
     assert!(LOG.contains("OpenOptions"));
     assert!(LOG.contains("create_dir_all"));
