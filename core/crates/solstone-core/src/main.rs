@@ -213,7 +213,9 @@ fn print_transfer_import_report(report: &solstone_core_transfer::ImportReport) {
         }
     }
     println!(
-        "landed={} skipped={} deconflicted={} failed={} not-attempted={} rescan={}",
+        "day={} dry-run={} landed={} skipped={} deconflicted={} failed={} not-attempted={} rescan={}",
+        report.day,
+        report.dry_run,
         report.landed(),
         report.skipped(),
         report.deconflicted(),

@@ -91,3 +91,52 @@ fn export_refusals_for_missing_or_empty_day_exit_two() {
         );
     }
 }
+
+#[test]
+fn direct_binary_import_dry_run_marks_its_summary() {
+    let source = tempfile::tempdir().expect("source journal");
+    let destination = tempfile::tempdir().expect("destination journal");
+    let segment = source.path().join("chronicle/20260203/audio/120000_30");
+    fs::create_dir_all(&segment).expect("segment");
+    fs::write(segment.join("device.json"), b"device").expect("device");
+    let archive = source.path().join("transfer.tgz");
+    let binary = env!("CARGO_BIN_EXE_solstone-core");
+
+    let export = Command::new(binary)
+        .args([
+            "transfer",
+            "export",
+            "--day",
+            "20260203",
+            "--output",
+            archive.to_str().expect("archive path"),
+            "--journal",
+            source.path().to_str().expect("source path"),
+        ])
+        .output()
+        .expect("export command");
+    assert!(export.status.success());
+
+    let import = Command::new(binary)
+        .args([
+            "transfer",
+            "import",
+            "--archive",
+            archive.to_str().expect("archive path"),
+            "--dry-run",
+            "--journal",
+            destination.path().to_str().expect("destination path"),
+        ])
+        .output()
+        .expect("import command");
+    assert!(
+        import.status.success(),
+        "{}",
+        String::from_utf8_lossy(&import.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&import.stdout).contains("dry-run=true"),
+        "{}",
+        String::from_utf8_lossy(&import.stdout)
+    );
+}

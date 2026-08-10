@@ -19,6 +19,7 @@ use tempfile::NamedTempFile;
 
 use crate::manifest::{
     MANIFEST_NAME, MANIFEST_VERSION, ManifestFile, SegmentManifest, TransferManifest, is_day,
+    reject_symlink_day_directory,
 };
 use crate::{ExportReport, ExportRequest, TransferError};
 
@@ -38,6 +39,9 @@ pub fn export(journal: &Path, request: ExportRequest) -> Result<ExportReport, Tr
         return Err(TransferError::InvalidDay);
     }
     let day_directory = day_path(journal, Some(&request.day), false)?;
+    // `contained_path` trusts its supplied root; refuse a symlinked day root so
+    // this transfer boundary cannot read outside the journal.
+    reject_symlink_day_directory(&day_directory)?;
     if !day_directory.is_dir() {
         return Err(TransferError::MissingDay(request.day));
     }

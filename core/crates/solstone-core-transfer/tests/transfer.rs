@@ -10,8 +10,8 @@ use flate2::Compression;
 use flate2::write::GzEncoder;
 use serde_json::json;
 use solstone_core_transfer::{
-    ExportRequest, ImportRequest, RescanOutcome, SegmentOutcome, export, import,
-    send_indexer_rescan,
+    ExportRequest, ImportError, ImportRequest, RescanOutcome, SegmentOutcome, TransferError,
+    export, import, send_indexer_rescan,
 };
 use tar::{Builder, EntryType, Header};
 
@@ -209,6 +209,78 @@ fn export_and_import_preserve_regular_members_and_drop_subdirectories() {
         b"device"
     );
     assert!(!imported.join("nested").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn export_refuses_a_symlinked_day_directory() {
+    use std::os::unix::fs::symlink;
+
+    let journal = tempfile::tempdir().expect("journal");
+    let external = tempfile::tempdir().expect("external");
+    write_file(
+        &external.path().join("audio/120000_30/device.json"),
+        b"must not archive",
+    );
+    let day_directory = journal.path().join("chronicle/20260203");
+    fs::create_dir_all(day_directory.parent().expect("chronicle")).expect("chronicle");
+    symlink(external.path(), &day_directory).expect("day symlink");
+    let before = tree(external.path());
+    let output = journal.path().join("outside.tgz");
+
+    let error = export(
+        journal.path(),
+        ExportRequest {
+            day: "20260203".to_owned(),
+            output: output.clone(),
+        },
+    )
+    .expect_err("symlinked day must be refused");
+
+    assert!(matches!(error, TransferError::PoisonedDayDirectory(_)));
+    assert!(!output.exists());
+    assert_unchanged(external.path(), &before);
+}
+
+#[cfg(unix)]
+#[test]
+fn import_refuses_a_symlinked_day_directory_without_writing_its_target() {
+    use std::os::unix::fs::symlink;
+
+    let temporary = tempfile::tempdir().expect("temporary");
+    let archive = temporary.path().join("input.tgz");
+    let member = "audio/120000_30/device.json";
+    write_archive(
+        &archive,
+        &manifest(
+            "20260203",
+            "audio/120000_30",
+            &[("device.json", b"archive")],
+        ),
+        &[(member, b"archive")],
+    );
+    let journal = tempfile::tempdir().expect("journal");
+    let external = tempfile::tempdir().expect("external");
+    write_file(&external.path().join("sentinel"), b"unchanged");
+    let day_directory = journal.path().join("chronicle/20260203");
+    fs::create_dir_all(day_directory.parent().expect("chronicle")).expect("chronicle");
+    symlink(external.path(), &day_directory).expect("day symlink");
+    let before = tree(external.path());
+
+    let error = import(
+        journal.path(),
+        ImportRequest {
+            archive,
+            dry_run: false,
+        },
+    )
+    .expect_err("symlinked day must be refused");
+
+    assert!(matches!(
+        error,
+        ImportError::Fatal(TransferError::PoisonedDayDirectory(_))
+    ));
+    assert_unchanged(external.path(), &before);
 }
 
 #[test]
@@ -682,85 +754,102 @@ fn simultaneous_collisions_in_one_stream_choose_distinct_reserved_targets() {
     let manifest = manifest_many(
         "20260203",
         &[
-            ("audio/120000_30", &[("device.json", b"first")]),
-            ("audio/120001_30", &[("device.json", b"second")]),
+            ("audio/235958_30", &[("device.json", b"first")]),
+            ("audio/235959_30", &[("device.json", b"second")]),
         ],
     );
     write_archive(
         &archive,
         &manifest,
         &[
-            ("audio/120000_30/device.json", b"first"),
-            ("audio/120001_30/device.json", b"second"),
+            ("audio/235958_30/device.json", b"first"),
+            ("audio/235959_30/device.json", b"second"),
         ],
     );
-    let destination = tempfile::tempdir().expect("destination");
-    write_file(
-        &destination
-            .path()
-            .join("chronicle/20260203/audio/120000_30/device.json"),
-        b"old-first",
-    );
-    write_file(
-        &destination
-            .path()
-            .join("chronicle/20260203/audio/120001_30/device.json"),
-        b"old-second",
-    );
-    let report = import(
-        destination.path(),
-        ImportRequest {
-            archive,
-            dry_run: false,
-        },
-    )
-    .expect("import");
-    let targets: Vec<_> = report
-        .outcomes
-        .iter()
-        .filter_map(|outcome| match outcome {
-            SegmentOutcome::LandedDeconflicted { target, .. } => Some(target.clone()),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(targets.len(), 2);
-    assert_ne!(targets[0], targets[1]);
-    assert_eq!(
-        fs::read(
-            destination
-                .path()
-                .join(format!("chronicle/20260203/{}/device.json", targets[0]))
+    // A's +1-second candidate is B's otherwise-free source key. The other
+    // immediate A candidates are occupied, so retries overwhelmingly observe
+    // the batch-reservation path without adding an RNG test seam.
+    for _ in 0..64 {
+        let destination = tempfile::tempdir().expect("destination");
+        for (key, contents) in [
+            ("235958_30", b"old-first".as_slice()),
+            ("235957_30", b"old-time-minus".as_slice()),
+            ("235958_29", b"old-length-minus".as_slice()),
+            ("235958_31", b"old-length-plus".as_slice()),
+        ] {
+            write_file(
+                &destination
+                    .path()
+                    .join(format!("chronicle/20260203/audio/{key}/device.json")),
+                contents,
+            );
+        }
+        let before = tree(&destination.path().join("chronicle/20260203/audio"));
+        let report = import(
+            destination.path(),
+            ImportRequest {
+                archive: archive.clone(),
+                dry_run: false,
+            },
         )
-        .expect("first landed"),
-        b"first"
-    );
-    assert_eq!(
-        fs::read(
-            destination
-                .path()
-                .join(format!("chronicle/20260203/{}/device.json", targets[1]))
-        )
-        .expect("second landed"),
-        b"second"
-    );
-    assert_eq!(
-        fs::read(
-            destination
-                .path()
-                .join("chronicle/20260203/audio/120000_30/device.json")
-        )
-        .expect("old first"),
-        b"old-first"
-    );
-    assert_eq!(
-        fs::read(
-            destination
-                .path()
-                .join("chronicle/20260203/audio/120001_30/device.json")
-        )
-        .expect("old second"),
-        b"old-second"
-    );
+        .expect("import");
+        let targets: Vec<_> = report
+            .outcomes
+            .iter()
+            .filter_map(|outcome| match outcome {
+                SegmentOutcome::LandedDeconflicted { source, target }
+                    if source == "audio/235958_30" || source == "audio/235959_30" =>
+                {
+                    Some((source, target))
+                }
+                _ => None,
+            })
+            .collect();
+        if !targets
+            .iter()
+            .any(|(source, target)| *source == "audio/235958_30" && *target == "audio/235959_30")
+        {
+            continue;
+        }
+        assert_eq!(targets.len(), 2);
+        assert_ne!(targets[0].1, targets[1].1);
+        for (source, target) in targets {
+            let expected = if source == "audio/235958_30" {
+                b"first".as_slice()
+            } else {
+                b"second".as_slice()
+            };
+            assert_eq!(
+                fs::read(
+                    destination
+                        .path()
+                        .join(format!("chronicle/20260203/{target}/device.json"))
+                )
+                .expect("landed payload"),
+                expected
+            );
+        }
+        for (key, contents) in [
+            ("235958_30", b"old-first".as_slice()),
+            ("235957_30", b"old-time-minus".as_slice()),
+            ("235958_29", b"old-length-minus".as_slice()),
+            ("235958_31", b"old-length-plus".as_slice()),
+        ] {
+            assert_eq!(
+                fs::read(
+                    destination
+                        .path()
+                        .join(format!("chronicle/20260203/audio/{key}/device.json"))
+                )
+                .expect("original payload"),
+                contents
+            );
+        }
+        let after = tree(&destination.path().join("chronicle/20260203/audio"));
+        assert!(after.len() > before.len());
+        return;
+    }
+    panic!("did not observe A claiming B's free source key after 64 retries");
 }
 
 #[test]

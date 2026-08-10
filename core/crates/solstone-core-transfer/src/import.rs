@@ -22,6 +22,7 @@ use tempfile::TempDir;
 
 use crate::manifest::{
     ExpectedMember, SegmentRoute, TransferManifest, expected_members, parse_manifest,
+    reject_symlink_day_directory,
 };
 use crate::rescan::{RescanOutcome, send_indexer_rescan};
 use crate::{ImportError, ImportReport, ImportRequest, SegmentOutcome, TransferError};
@@ -71,6 +72,9 @@ pub fn import(journal: &Path, request: ImportRequest) -> Result<ImportReport, Im
     let manifest = read_manifest(first)?;
     let day_directory =
         day_path(journal, Some(&manifest.day), false).map_err(TransferError::from)?;
+    // `contained_path` trusts its supplied root; refuse a symlinked day root so
+    // untrusted archive paths cannot redirect publication outside the journal.
+    reject_symlink_day_directory(&day_directory)?;
     let expected = expected_members(&manifest, &day_directory)?;
     let scratch = TempDir::new().map_err(TransferError::from)?;
     let buffered = buffer_members(entries, &expected, scratch.path())?;

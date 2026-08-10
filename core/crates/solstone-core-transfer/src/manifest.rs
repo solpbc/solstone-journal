@@ -4,6 +4,9 @@
 //! Version-one transfer manifest parsing and validation.
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::io;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::contained_path;
@@ -81,6 +84,8 @@ impl SegmentRoute {
 pub(crate) fn parse_manifest(bytes: &[u8]) -> Result<TransferManifest, TransferError> {
     let manifest: TransferManifest = serde_json::from_slice(bytes)
         .map_err(|error| TransferError::Manifest(error.to_string()))?;
+    // Deliberately stricter than Python's loose version comparison and deferred
+    // day check: reject malformed archive control data before any path use.
     if manifest.version != MANIFEST_VERSION {
         return Err(TransferError::Manifest(format!(
             "version must be integer {MANIFEST_VERSION}"
@@ -104,6 +109,18 @@ pub(crate) fn parse_manifest(bytes: &[u8]) -> Result<TransferManifest, TransferE
         }
     }
     Ok(manifest)
+}
+
+/// Refuse a symlinked day root before archive-controlled paths use it as containment root.
+pub(crate) fn reject_symlink_day_directory(day_directory: &Path) -> Result<(), TransferError> {
+    match fs::symlink_metadata(day_directory) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(
+            TransferError::PoisonedDayDirectory(day_directory.to_path_buf()),
+        ),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(TransferError::Io(error)),
+    }
 }
 
 /// Build an expected tar-member map after validating containment below `day`.

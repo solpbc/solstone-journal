@@ -33,7 +33,7 @@ pub struct ExportRequest {
 pub struct ExportReport {
     /// Day stored in the archive.
     pub day: String,
-    /// Number of non-empty source segments included.
+    /// Number of segments included in the manifest.
     pub segments: usize,
     /// Number of archived regular files.
     pub files: usize,
@@ -131,6 +131,8 @@ pub enum TransferError {
     /// The supplied day is invalid.
     #[error("day must be YYYYMMDD")]
     InvalidDay,
+    #[error("refusing symlinked journal day directory: {0}")]
+    PoisonedDayDirectory(PathBuf),
     /// The day directory does not exist.
     #[error("journal day {0} does not exist")]
     MissingDay(String),
