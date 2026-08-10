@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 regex.workspace = true
+solstone-core-cogitate = { workspace = true }
 solstone-core-format.workspace = true
 
 [dev-dependencies]

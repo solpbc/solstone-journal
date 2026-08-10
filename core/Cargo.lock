@@ -2361,6 +2361,9 @@ dependencies = [
  "solstone-core-brain",
  "solstone-core-callosum",
  "solstone-core-cli",
+ "solstone-core-cogitate-runtime",
+ "solstone-core-cogitate-tools",
+ "solstone-core-cogitate-wire",
  "solstone-core-convey-shell",
  "solstone-core-entity",
  "solstone-core-generate",
@@ -2377,6 +2380,8 @@ dependencies = [
  "solstone-core-speaker-resolve",
  "solstone-core-spl",
  "solstone-core-system",
+ "solstone-core-transfer",
+ "tempfile",
  "tokio",
  "tokio-tungstenite",
 ]
@@ -2467,6 +2472,7 @@ version = "1.0.22"
 dependencies = [
  "serde",
  "serde_json",
+ "solstone-core-cogitate-wire",
  "solstone-core-journal-io",
  "tokio",
 ]
@@ -2488,6 +2494,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-cogitate-runtime"
+version = "1.0.22"
+dependencies = [
+ "serde",
+ "serde_json",
+ "solstone-core-cogitate",
+ "solstone-core-cogitate-tools",
+ "solstone-core-generate-wire",
+]
+
+[[package]]
 name = "solstone-core-cogitate-tools"
 version = "1.0.22"
 dependencies = [
@@ -2495,7 +2512,21 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "solstone-core-cogitate",
  "solstone-core-format",
+]
+
+[[package]]
+name = "solstone-core-cogitate-wire"
+version = "1.0.22"
+dependencies = [
+ "serde_json",
+ "solstone-core-cogitate",
+ "solstone-core-cogitate-runtime",
+ "solstone-core-generate",
+ "solstone-core-generate-wire",
+ "solstone-core-local",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
@@ -2518,12 +2549,16 @@ dependencies = [
  "axum",
  "chrono",
  "futures-core",
+ "ndarray",
  "serde",
  "serde_json",
  "sha2",
  "solstone-core-convey-http",
+ "solstone-core-entity-matching",
+ "solstone-core-npy",
  "tokio",
  "tower",
+ "zip",
 ]
 
 [[package]]
@@ -2820,11 +2855,13 @@ name = "solstone-core-journal-io"
 version = "1.0.22"
 dependencies = [
  "chrono",
+ "getrandom 0.3.4",
  "log",
  "nix",
  "serde",
  "serde_json",
  "solstone-core-journal",
+ "tempfile",
 ]
 
 [[package]]
@@ -3093,6 +3130,21 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-journal-io",
+ "thiserror 2.0.19",
+]
+
+[[package]]
+name = "solstone-core-transfer"
+version = "1.0.22"
+dependencies = [
+ "flate2",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-callosum",
+ "solstone-core-journal-io",
+ "tar",
+ "tempfile",
  "thiserror 2.0.19",
 ]
 

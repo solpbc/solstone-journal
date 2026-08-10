@@ -15,16 +15,7 @@ use solstone_core_convey_shell::router;
 use tower::ServiceExt;
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-const ESTABLISHED_DEFERRED: [&str; 8] = [
-    "/app/speakers/api/grid",
-    "/app/speakers/api/quality",
-    "/app/speakers/api/speakers/known",
-    "/app/speakers/api/owner/status",
-    "/app/speakers/api/discovery/cache",
-    "/app/speakers/api/stats/202601",
-    "/app/speakers/api/segments/20260101",
-    "/app/speakers/api/index",
-];
+const ESTABLISHED_DEFERRED: [&str; 0] = [];
 
 struct TempDir(PathBuf);
 
@@ -208,10 +199,10 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
     }
 
     assert_eq!(
-        established_asserted, 10,
-        "18 established probes minus 8 deferred"
+        established_asserted, 18,
+        "all 18 established probes are asserted"
     );
-    assert_eq!(established_deferred, 8);
+    assert_eq!(established_deferred, 0);
 }
 
 #[tokio::test]

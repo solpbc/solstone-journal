@@ -1,16 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
 const ORACLE_JSON: &str = include_str!("../../../fixtures/cogitate_oracle.json");
+const CONTRACT_JSON: &str = include_str!("../../../fixtures/cogitate_contract.json");
 static ORACLE: OnceLock<OracleFixture> = OnceLock::new();
+static CONTRACT: OnceLock<Value> = OnceLock::new();
 
 pub(crate) fn fixture() -> &'static OracleFixture {
     ORACLE.get_or_init(|| serde_json::from_str(ORACLE_JSON).expect("cogitate oracle fixture"))
+}
+
+pub(crate) fn generated_contract_fixture() -> &'static Value {
+    CONTRACT.get_or_init(|| serde_json::from_str(CONTRACT_JSON).expect("cogitate contract fixture"))
 }
 
 #[derive(Deserialize)]
@@ -19,6 +26,79 @@ pub(crate) struct OracleFixture {
     pub bed_manifest: BedManifest,
     pub read_tool_limits: Value,
     pub refusal_strings: Map<String, Value>,
+    pub policy_commands: Vec<PolicyCommandVector>,
+    pub tool_surface: ToolSurfaceFixture,
+    pub sol_execution: SolExecutionFixture,
+}
+#[derive(Deserialize)]
+pub(crate) struct ToolSurfaceFixture {
+    pub tools: BTreeMap<String, ToolSurfaceTool>,
+    pub tier_bindings: BTreeMap<String, TierBindingFixture>,
+}
+#[derive(Deserialize)]
+pub(crate) struct ToolSurfaceTool {
+    pub name: String,
+    pub description: String,
+    pub action_properties: BTreeMap<String, ActionPropertyFixture>,
+}
+#[derive(Deserialize)]
+pub(crate) struct ActionPropertyFixture {
+    pub description: String,
+}
+#[derive(Deserialize)]
+pub(crate) struct TierBindingFixture {
+    pub model_tools_excluding_finalization: Vec<String>,
+}
+#[derive(Deserialize)]
+pub(crate) struct SolExecutionFixture {
+    pub format_shell_output: Vec<FormatShellOutputVector>,
+    pub truncate_output: Vec<TruncateOutputVector>,
+    pub run_command: Vec<RunCommandVector>,
+}
+#[derive(Deserialize)]
+pub(crate) struct FormatShellOutputVector {
+    pub id: String,
+    pub args: FormatShellOutputArgs,
+    pub expect: String,
+}
+#[derive(Deserialize)]
+pub(crate) struct FormatShellOutputArgs {
+    pub stdout: String,
+    pub stderr: String,
+    pub returncode: Option<i32>,
+    pub timed_out: bool,
+}
+#[derive(Deserialize)]
+pub(crate) struct TruncateOutputVector {
+    pub id: String,
+    pub cap: usize,
+    pub expect: String,
+    pub expect_chars: usize,
+    pub expect_bytes: usize,
+}
+#[derive(Deserialize)]
+pub(crate) struct RunCommandVector {
+    pub id: String,
+    pub argv: Vec<String>,
+    pub expect: RunCommandExpect,
+}
+#[derive(Deserialize)]
+pub(crate) struct RunCommandExpect {
+    pub text: String,
+    pub is_error: bool,
+}
+#[derive(Deserialize)]
+pub(crate) struct PolicyCommandVector {
+    pub id: String,
+    pub command: String,
+    pub access_tier: String,
+    pub outbound_approval: Option<String>,
+    pub expect: PolicyCommandExpect,
+}
+#[derive(Deserialize)]
+pub(crate) struct PolicyCommandExpect {
+    pub allowed: bool,
+    pub reason: String,
 }
 #[derive(Deserialize)]
 pub(crate) struct BedManifest {

@@ -36,7 +36,7 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 
 ### `cortex` - Agent execution events
 **Source:** `solstone/think/cortex.py`
-**Events:** `request`, `start`, `thinking`, `tool_start`, `tool_end`, `finish`, `error`, `talent_updated`, `info`, `status`, `cancel`, `dry_run`, `progress`, `text_delta`, `tool_budget_exhausted`, `warning`
+**Events:** `request`, `start`, `thinking`, `tool_start`, `tool_end`, `finish`, `error`, `talent_updated`, `info`, `status`, `cancel`, `dry_run`, `progress`, `text_delta`, `tool_budget_exhausted`, `warning`, `budget_escalation`
 **Details:** See [CORTEX.md](CORTEX.md) for agent lifecycle, configuration, and event schemas
 
 **`info` note:** `info` remains the correct vocabulary for cortex telemetry. The current non-JSON stdout fallback in `_monitor_stdout()` writes an `info` record to the durable use-log through `_append_use_event()`; it does not broadcast that fallback record to Callosum. This is a bus-wiring gap, not a naming mismatch.

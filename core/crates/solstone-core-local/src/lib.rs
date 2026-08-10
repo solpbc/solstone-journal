@@ -6,6 +6,7 @@
 pub mod admission;
 pub mod bind;
 pub mod connect;
+pub mod converse;
 pub mod endpoint;
 mod fixture;
 pub mod generate;
@@ -16,6 +17,10 @@ pub(crate) mod tier;
 
 pub use bind::LoopbackAddr;
 pub use connect::{ConnectInput, ConnectOutcome, connect};
+pub use converse::{
+    LocalConverseError, LocalConverseRequest, LocalConverseResponse, LocalConverseToolCall,
+    build_converse_request_body, fit_converse_messages, parse_converse_response,
+};
 pub use endpoint::{
     ByoEndpoint, LocalEndpointResolution, resolve_local_endpoint,
     served_window_from_models_response,

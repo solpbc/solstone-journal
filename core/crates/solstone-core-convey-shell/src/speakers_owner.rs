@@ -1,0 +1,336 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use std::fs;
+use std::path::Path;
+use std::sync::Arc;
+
+use axum::response::{IntoResponse, Response};
+use axum::{Extension, Json};
+use chrono::{DateTime, NaiveDateTime, Utc};
+use serde_json::{Value, json};
+
+use crate::JournalRoot;
+use crate::speakers_calendar::{audio_embedding_sources, day_dirs, journal_principal_id};
+use crate::speakers_known::intra_cosine_p25;
+use crate::speakers_npz::{load_voiceprints, npz_row_count, owner_centroid_summary};
+use crate::speakers_quality::{
+    ManualOwnerTagStats, awareness_voiceprint, manual_owner_tag_stats, segment_overlap_fraction,
+};
+
+const OWNER_BOOTSTRAP_MIN_STATEMENTS: usize = 30;
+const OWNER_REJECTION_COOLDOWN_DAYS: i64 = 14;
+const OWNER_DETECT_CANDIDATE_GUIDANCE: &str =
+    "Analyze available voice patterns to look for an owner voice candidate.";
+const OWNER_REJECTION_COOLDOWN_GUIDANCE: &str = "Wait for the owner voice rejection cooldown before running detection again, \
+or run sol call speakers detect --force to look now.";
+
+pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+    Json(owner_status(&root.0)).into_response()
+}
+
+fn owner_status(root: &Path) -> Value {
+    let voiceprint = awareness_voiceprint(root);
+    let status = match voiceprint.get("status") {
+        Some(Value::String(status)) => status.as_str(),
+        Some(_) => "invalid",
+        None => "none",
+    };
+    let principal_id = journal_principal_id(root);
+    let manual_stats = principal_id
+        .as_deref()
+        .map(|principal_id| manual_owner_tag_stats(root, principal_id))
+        .unwrap_or_else(empty_manual_tag_stats);
+    let diagnostics = diagnostics(root, &manual_stats);
+
+    match status {
+        "confirmed" => confirmed_status(root, principal_id.as_deref(), &manual_stats),
+        "candidate" => json!({
+            "status": "candidate",
+            "cluster_size": voiceprint.get("cluster_size").cloned().unwrap_or(Value::Null),
+            "samples": voiceprint.get("samples").cloned().unwrap_or_else(|| json!([])),
+            "evidence_tier": voiceprint.get("evidence_tier").cloned().unwrap_or(Value::Null),
+        }),
+        "low_quality" => {
+            let guidance = manual_guidance(&manual_stats);
+            json!({
+                "status": "low_quality",
+                "source": voiceprint.get("source").cloned().unwrap_or_else(|| json!("candidate_pool")),
+                "low_quality_reason": voiceprint.get("low_quality_reason").cloned().unwrap_or_else(|| json!("")),
+                "observed_value": voiceprint.get("observed_value").cloned().unwrap_or_else(|| json!(0.0)),
+                "threshold_value": voiceprint.get("threshold_value").cloned().unwrap_or_else(|| json!(0.0)),
+                "evidence_tier": voiceprint.get("evidence_tier").cloned().unwrap_or(Value::Null),
+                "intra_cosine_p25_bound": voiceprint.get("intra_cosine_p25_bound").cloned().unwrap_or(Value::Null),
+                "manual_tags_count": diagnostics.manual_tags_count,
+                "segments_available": diagnostics.segments_available,
+                "embeddings_available": diagnostics.embeddings_available,
+                "streams_represented": diagnostics.streams_represented,
+                "can_build_from_tags": diagnostics.can_build_from_tags,
+                "segments_with_embeddings": diagnostics.segments_with_embeddings,
+                "next_step": guidance.next_step,
+                "guidance": guidance.guidance,
+            })
+        }
+        "no_cluster" => {
+            let guidance = manual_guidance(&manual_stats);
+            json!({
+                "status": "no_cluster",
+                "manual_tags_count": diagnostics.manual_tags_count,
+                "segments_available": diagnostics.segments_available,
+                "embeddings_available": diagnostics.embeddings_available,
+                "streams_represented": diagnostics.streams_represented,
+                "can_build_from_tags": diagnostics.can_build_from_tags,
+                "segments_with_embeddings": diagnostics.segments_with_embeddings,
+                "next_step": guidance.next_step,
+                "guidance": guidance.guidance,
+            })
+        }
+        "none" | "rejected" => {
+            if let Some(cooldown) = rejection_cooldown(&voiceprint) {
+                return json!({
+                    "status": "none",
+                    "manual_tags_count": diagnostics.manual_tags_count,
+                    "segments_available": diagnostics.segments_available,
+                    "embeddings_available": diagnostics.embeddings_available,
+                    "streams_represented": diagnostics.streams_represented,
+                    "can_build_from_tags": diagnostics.can_build_from_tags,
+                    "segments_with_embeddings": diagnostics.segments_with_embeddings,
+                    "reason": "cooldown",
+                    "days_remaining": cooldown,
+                    "next_step": "wait_for_cooldown",
+                    "guidance": OWNER_REJECTION_COOLDOWN_GUIDANCE,
+                });
+            }
+            if diagnostics.segments_available > 0 {
+                return json!({
+                    "status": "needs_detection",
+                    "manual_tags_count": diagnostics.manual_tags_count,
+                    "segments_available": diagnostics.segments_available,
+                    "embeddings_available": diagnostics.embeddings_available,
+                    "streams_represented": diagnostics.streams_represented,
+                    "can_build_from_tags": diagnostics.can_build_from_tags,
+                    "segments_with_embeddings": diagnostics.segments_with_embeddings,
+                    "next_step": "detect_candidate",
+                    "guidance": OWNER_DETECT_CANDIDATE_GUIDANCE,
+                });
+            }
+            manual_fallback(&diagnostics, &manual_stats)
+        }
+        _ => manual_fallback(&diagnostics, &manual_stats),
+    }
+}
+
+fn confirmed_status(
+    root: &Path,
+    principal_id: Option<&str>,
+    manual_stats: &ManualOwnerTagStats,
+) -> Value {
+    let centroid = principal_id.and_then(|principal_id| {
+        owner_centroid_summary(
+            &root
+                .join("entities")
+                .join(principal_id)
+                .join("owner_centroid.npz"),
+        )
+    });
+    let (streams, intra_cosine_p25) = if centroid.is_some() {
+        principal_id
+            .and_then(|principal_id| {
+                load_voiceprints(
+                    &root
+                        .join("entities")
+                        .join(principal_id)
+                        .join("voiceprints.npz"),
+                )
+            })
+            .map(|voiceprints| {
+                let mut streams = voiceprints
+                    .metadata
+                    .iter()
+                    .filter_map(|row| row.get("stream").and_then(Value::as_str))
+                    .filter(|stream| !stream.is_empty())
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>();
+                streams.sort();
+                streams.dedup();
+                (streams, intra_cosine_p25(&voiceprints.embeddings))
+            })
+            .unwrap_or_default()
+    } else {
+        (Vec::new(), None)
+    };
+    json!({
+        "status": "confirmed",
+        "centroid_metadata": {
+            "cluster_size": centroid.as_ref().map_or(0, |centroid| centroid.cluster_size),
+            "streams": streams,
+            "created_at": centroid.as_ref().and_then(|centroid| centroid.created_at.clone()),
+            "last_refreshed_at": centroid.as_ref().map_or("", |centroid| &centroid.last_refreshed_at),
+            "threshold": centroid.as_ref().map(|centroid| centroid.threshold),
+            "margin": centroid.as_ref().and_then(|centroid| centroid.margin),
+            "intra_cosine_p25": intra_cosine_p25,
+            "evidence_hash": centroid.as_ref().and_then(|centroid| centroid.evidence_hash.clone()),
+            "evidence_intra_cosine_p25": centroid.as_ref().and_then(|centroid| centroid.evidence_intra_cosine_p25),
+            "evidence_tier": centroid.as_ref().map(|centroid| centroid.evidence_tier.clone()),
+        },
+        "manual_tags_count": manual_stats.manual_tags_count,
+    })
+}
+
+struct Diagnostics {
+    manual_tags_count: usize,
+    segments_available: usize,
+    embeddings_available: usize,
+    streams_represented: usize,
+    can_build_from_tags: bool,
+    segments_with_embeddings: usize,
+}
+
+fn diagnostics(root: &Path, manual_stats: &ManualOwnerTagStats) -> Diagnostics {
+    let (segments_available, embeddings_available) = owner_embedding_inventory(root);
+    Diagnostics {
+        manual_tags_count: manual_stats.manual_tags_count,
+        segments_available,
+        embeddings_available,
+        streams_represented: manual_stats.streams_represented,
+        can_build_from_tags: manual_stats.manual_tags_count >= OWNER_BOOTSTRAP_MIN_STATEMENTS,
+        segments_with_embeddings: segments_available,
+    }
+}
+
+struct ManualGuidance {
+    next_step: &'static str,
+    guidance: String,
+}
+
+fn manual_guidance(stats: &ManualOwnerTagStats) -> ManualGuidance {
+    if stats.manual_tags_count >= OWNER_BOOTSTRAP_MIN_STATEMENTS {
+        return ManualGuidance {
+            next_step: "build_from_tags",
+            guidance: format!(
+                "You have {} validated owner tags (minimum {}). Run sol call speakers build-from-tags to save your owner voice; add more with sol call speakers tag-owner <day> <stream> <segment> <source> <sentence-id> if needed.",
+                stats.manual_tags_count, OWNER_BOOTSTRAP_MIN_STATEMENTS,
+            ),
+        };
+    }
+    ManualGuidance {
+        next_step: "seed_manual_tags",
+        guidance: format!(
+            "Use sol call speakers tag-owner <day> <stream> <segment> <source> <sentence-id> on owner sentences in raw media until you have {OWNER_BOOTSTRAP_MIN_STATEMENTS} validated owner tags; {} more needed. Then run sol call speakers build-from-tags.",
+            OWNER_BOOTSTRAP_MIN_STATEMENTS - stats.manual_tags_count,
+        ),
+    }
+}
+
+fn manual_fallback(diagnostics: &Diagnostics, manual_stats: &ManualOwnerTagStats) -> Value {
+    let guidance = manual_guidance(manual_stats);
+    json!({
+        "status": "none",
+        "manual_tags_count": diagnostics.manual_tags_count,
+        "segments_available": diagnostics.segments_available,
+        "embeddings_available": diagnostics.embeddings_available,
+        "streams_represented": diagnostics.streams_represented,
+        "can_build_from_tags": diagnostics.can_build_from_tags,
+        "segments_with_embeddings": diagnostics.segments_with_embeddings,
+        "next_step": guidance.next_step,
+        "guidance": guidance.guidance,
+    })
+}
+
+fn empty_manual_tag_stats() -> ManualOwnerTagStats {
+    ManualOwnerTagStats {
+        manual_tags_count: 0,
+        streams_represented: 0,
+    }
+}
+
+fn rejection_cooldown(voiceprint: &std::collections::BTreeMap<String, Value>) -> Option<i64> {
+    let rejected_at = voiceprint.get("rejected_at")?.as_str()?;
+    let days_since = parse_rejection_time(rejected_at)?;
+    (days_since < OWNER_REJECTION_COOLDOWN_DAYS)
+        .then_some(OWNER_REJECTION_COOLDOWN_DAYS - days_since)
+}
+
+fn parse_rejection_time(value: &str) -> Option<i64> {
+    let elapsed = DateTime::parse_from_rfc3339(value)
+        .map(|time| {
+            Utc::now()
+                .signed_duration_since(time.with_timezone(&Utc))
+                .num_days()
+        })
+        .or_else(|_| {
+            NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f").map(|time| {
+                Utc::now()
+                    .naive_utc()
+                    .signed_duration_since(time)
+                    .num_days()
+            })
+        })
+        .ok()?;
+    Some(elapsed)
+}
+
+fn owner_embedding_inventory(root: &Path) -> (usize, usize) {
+    let mut segments_available = 0;
+    let mut embeddings_available = 0;
+    for day in day_dirs(root) {
+        for stream in sorted_directories(&root.join("chronicle").join(day)) {
+            for segment in sorted_directories(&stream) {
+                let segment_key = segment
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_default();
+                if !is_segment_key(segment_key) {
+                    continue;
+                }
+                let sources = audio_embedding_sources(&segment);
+                if sources.is_empty() {
+                    continue;
+                }
+                segments_available += 1;
+                for source in sources {
+                    if segment_overlap_fraction(&segment.join(format!("{source}.jsonl"))) > 0.10 {
+                        continue;
+                    }
+                    embeddings_available +=
+                        npz_row_count(&segment.join(format!("{source}.npz")), "embeddings")
+                            .unwrap_or_default();
+                }
+            }
+        }
+    }
+    (segments_available, embeddings_available)
+}
+
+fn sorted_directories(path: &Path) -> Vec<std::path::PathBuf> {
+    let mut directories = fs::read_dir(path)
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+    directories.sort();
+    directories
+}
+
+fn is_segment_key(key: &str) -> bool {
+    let Some((time, length)) = key.split_once('_') else {
+        return false;
+    };
+    if time.len() != 6
+        || !time.bytes().all(|byte| byte.is_ascii_digit())
+        || length.is_empty()
+        || !length.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return false;
+    }
+    let hour = time[0..2].parse::<u8>().ok();
+    let minute = time[2..4].parse::<u8>().ok();
+    let second = time[4..6].parse::<u8>().ok();
+    matches!(
+        (hour, minute, second),
+        (Some(0..=23), Some(0..=59), Some(0..=59))
+    )
+}

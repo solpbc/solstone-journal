@@ -45,6 +45,13 @@
     "FinishTool",
     "quiet"
   ],
+  "finish_description": {
+    "algorithm": "sha256",
+    "byte_length": 416,
+    "digest": "3dd491867b2c8e87a0b2c61598e2197526ba0003c755fdc6258db17693be9deb",
+    "encoding": "utf-8",
+    "text": "Terminal tool for ending the run when no `emit_final` tool is bound.\n\nCall this tool exactly once when the run is complete. The message argument is a concise, signal-carrying account of what was done: what changed, what was found, or why nothing changed.\n\nA side-effect-only run that already persisted its results through sol commands still calls this tool, with a short completion note rather than ending silently.\n"
+  },
   "fixture": "solstone-cogitate-contract",
   "fixture_version": 1,
   "future_access_tiers": [
