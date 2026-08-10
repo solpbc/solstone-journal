@@ -2376,6 +2376,7 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-local",
+ "solstone-core-npy",
  "solstone-core-observer",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
@@ -2385,6 +2386,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-tungstenite",
+ "zip",
 ]
 
 [[package]]

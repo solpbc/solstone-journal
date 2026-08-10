@@ -7,7 +7,7 @@ use solstone_core_observer::{ObserverCommand, parse_observer_args};
 
 macro_rules! speaker_resolve_usage {
     () => {
-        "  solstone-core speaker-resolve <accumulate-voiceprints|write-owner-centroid|rebuild-owner-centroid|write-owner-candidate|read-owner-candidate|clear-owner-candidate|write-voiceprint|remove-voiceprint|backfill-voiceprint-last-seen|write-stub-labels|write-full-labels|patch-labels|restore-label-rows|append-correction|wipe-speaker-artifacts|identify|undo-identify|bootstrap-voiceprints|seed-from-imports|merge-names|backfill|backfill-status>\\n"
+        "  solstone-core speaker-resolve <accumulate-voiceprints|write-owner-centroid|rebuild-owner-centroid|write-owner-candidate|read-owner-candidate|screen-owner-contamination|clear-owner-candidate|write-voiceprint|remove-voiceprint|backfill-voiceprint-last-seen|write-stub-labels|write-full-labels|patch-labels|restore-label-rows|append-correction|wipe-speaker-artifacts|identify|undo-identify|bootstrap-voiceprints|seed-from-imports|merge-names|backfill|backfill-status>\\n"
     };
 }
 
@@ -131,6 +131,7 @@ pub enum SpeakerResolveCommand {
     RebuildOwnerCentroid,
     WriteOwnerCandidate,
     ReadOwnerCandidate,
+    ScreenOwnerContamination,
     ClearOwnerCandidate,
     WriteVoiceprint,
     RemoveVoiceprint,
@@ -1026,6 +1027,9 @@ fn parse_speaker_resolve(args: &[OsString]) -> Result<SpeakerResolveCommand, Usa
         }
         [command] if command == OsStr::new("read-owner-candidate") => {
             Ok(SpeakerResolveCommand::ReadOwnerCandidate)
+        }
+        [command] if command == OsStr::new("screen-owner-contamination") => {
+            Ok(SpeakerResolveCommand::ScreenOwnerContamination)
         }
         [command] if command == OsStr::new("clear-owner-candidate") => {
             Ok(SpeakerResolveCommand::ClearOwnerCandidate)
@@ -3196,6 +3200,10 @@ mod tests {
             (
                 "clear-owner-candidate",
                 SpeakerResolveCommand::ClearOwnerCandidate,
+            ),
+            (
+                "screen-owner-contamination",
+                SpeakerResolveCommand::ScreenOwnerContamination,
             ),
             ("identify", SpeakerResolveCommand::Identify),
             ("undo-identify", SpeakerResolveCommand::UndoIdentify),

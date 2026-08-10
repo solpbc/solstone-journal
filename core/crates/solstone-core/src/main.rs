@@ -397,6 +397,9 @@ fn run_speaker_resolve(command: SpeakerResolveCommand) -> ExitCode {
         SpeakerResolveCommand::RebuildOwnerCentroid => rebuild_owner_centroid_request(value),
         SpeakerResolveCommand::WriteOwnerCandidate => write_owner_candidate_request(value),
         SpeakerResolveCommand::ReadOwnerCandidate => read_owner_candidate_request(value),
+        SpeakerResolveCommand::ScreenOwnerContamination => {
+            screen_owner_contamination_request(value)
+        }
         SpeakerResolveCommand::ClearOwnerCandidate => clear_owner_candidate_request(value),
         SpeakerResolveCommand::WriteVoiceprint => write_voiceprint_request(value),
         SpeakerResolveCommand::RemoveVoiceprint => remove_voiceprint_request(value),
@@ -949,6 +952,38 @@ fn write_voiceprint_request(value: Value) -> Result<Value, String> {
     )
     .map_err(|error| error.to_string())?;
     Ok(json!({"status":"written"}))
+}
+
+fn screen_owner_contamination_request(value: Value) -> Result<Value, String> {
+    use solstone_core_speaker_resolve::owner_contamination_screen::{
+        ContaminationProbe, screen_owner_contamination,
+    };
+
+    let object = request_object(
+        value,
+        "solstone-speaker-resolve-screen-owner-contamination-request-v1",
+        &[
+            "schema",
+            "journal_root",
+            "day",
+            "stream",
+            "segment_key",
+            "source",
+            "sentence_id",
+            "encoder",
+        ],
+    )?;
+    let root = PathBuf::from(required_string(&object, "journal_root")?);
+    let probe = ContaminationProbe {
+        day: required_string(&object, "day")?,
+        stream: required_string(&object, "stream")?,
+        segment_key: required_string(&object, "segment_key")?,
+        source: required_string(&object, "source")?,
+        sentence_id: required_i64(&object, "sentence_id")?,
+    };
+    let screen = screen_owner_contamination(&root, &probe, &encoder(&object)?)
+        .map_err(|error| error.to_string())?;
+    serde_json::to_value(screen).map_err(|error| error.to_string())
 }
 
 fn remove_voiceprint_request(value: Value) -> Result<Value, String> {

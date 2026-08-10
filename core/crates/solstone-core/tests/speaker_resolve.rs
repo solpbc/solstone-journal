@@ -3,11 +3,15 @@
 
 //! Process-level reachability coverage for native speaker-resolve verbs.
 
+use std::io::{Cursor, Write};
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
+use solstone_core_npy::write_npy;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
@@ -66,6 +70,88 @@ fn create_entity(root: &std::path::Path, entity_id: &str) {
         None,
     )
     .expect("create test entity");
+}
+
+fn f32_bytes(values: &[f32]) -> Vec<u8> {
+    values
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect()
+}
+
+fn i32_bytes(values: &[i32]) -> Vec<u8> {
+    values
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect()
+}
+
+fn archive(members: Vec<(&str, Vec<u8>)>) -> Vec<u8> {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    for (name, bytes) in members {
+        writer.start_file(name, options).expect("start member");
+        writer.write_all(&bytes).expect("write member");
+    }
+    writer.finish().expect("finish archive").into_inner()
+}
+
+fn vector(first: f32) -> Vec<f32> {
+    let mut values = vec![0.0; 256];
+    values[0] = first;
+    values
+}
+
+fn seed_screen_probe(root: &std::path::Path) {
+    let entity = root.join("entities/principal");
+    std::fs::create_dir_all(&entity).expect("create principal");
+    std::fs::write(
+        entity.join("entity.json"),
+        json!({"id":"principal","name":"Synthetic","is_principal":true}).to_string(),
+    )
+    .expect("write principal");
+    std::fs::write(
+        entity.join("owner_centroid.npz"),
+        archive(vec![
+            (
+                "centroid.npy",
+                write_npy("<f4", "(256,)", &f32_bytes(&vector(1.0))),
+            ),
+            ("threshold.npy", write_npy("<f4", "()", &f32_bytes(&[0.55]))),
+            ("cluster_size.npy", write_npy("<i4", "()", &i32_bytes(&[5]))),
+        ]),
+    )
+    .expect("write centroid");
+    let segment = root.join("chronicle/20260809/main/120000_1");
+    std::fs::create_dir_all(&segment).expect("create probe segment");
+    let rows = [vector(1.0), vector(1.0), vector(f32::NAN)];
+    let values = rows
+        .iter()
+        .flat_map(|row| row.iter().copied())
+        .collect::<Vec<_>>();
+    std::fs::write(
+        segment.join("audio.npz"),
+        archive(vec![
+            (
+                "embeddings.npy",
+                write_npy("<f4", "(3, 256)", &f32_bytes(&values)),
+            ),
+            (
+                "statement_ids.npy",
+                write_npy("<i4", "(3,)", &i32_bytes(&[1, 2, 3])),
+            ),
+        ]),
+    )
+    .expect("write probe sidecar");
+}
+
+fn screen_request(root: &std::path::Path, sentence_id: i64, encoder: Value) -> Value {
+    json!({
+        "schema":"solstone-speaker-resolve-screen-owner-contamination-request-v1",
+        "journal_root":root, "day":"20260809", "stream":"main",
+        "segment_key":"120000_1", "source":"audio", "sentence_id":sentence_id,
+        "encoder":encoder,
+    })
 }
 
 #[test]
@@ -366,4 +452,45 @@ fn ac1_backfill_status_cli_reaches_read_only_ledger_fold() {
         }),
     );
     assert_eq!(output["status"], "not_found");
+}
+
+#[test]
+fn owner_contamination_screen_cli_reaches_native_screen_and_validates_probes() {
+    let journal = root("owner-contamination-screen");
+    seed_screen_probe(&journal);
+    let (_, output) = run(
+        "screen-owner-contamination",
+        screen_request(&journal, 1, encoder()),
+    );
+    assert_eq!(output["status"], "contaminated");
+    assert_eq!(output["basis"], "confirmed");
+    assert!((output["threshold"].as_f64().expect("threshold number") - 0.55).abs() < 1e-6);
+
+    for (sentence_id, encoder) in [
+        (
+            2,
+            json!({"id":"test","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","width":255}),
+        ),
+        (3, encoder()),
+    ] {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+            .args(["speaker-resolve", "screen-owner-contamination"])
+            .stdin(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("start invalid probe request");
+        serde_json::to_writer(
+            child.stdin.as_mut().expect("stdin"),
+            &screen_request(&journal, sentence_id, encoder),
+        )
+        .expect("write invalid probe request");
+        child.stdin.take();
+        let output = child
+            .wait_with_output()
+            .expect("wait for invalid probe request");
+        assert_eq!(output.status.code(), Some(64));
+        let error: Value = serde_json::from_slice(&output.stderr).expect("structured stderr");
+        assert_eq!(error["error"], "speaker_resolve_failed");
+        assert_eq!(error["exit_code"], 64);
+    }
 }

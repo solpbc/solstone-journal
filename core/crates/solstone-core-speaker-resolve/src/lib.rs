@@ -26,6 +26,7 @@ pub mod layer2;
 pub mod layer3;
 pub mod owner_candidate;
 pub mod owner_centroid;
+pub mod owner_contamination_screen;
 pub mod owner_provisional;
 pub mod resolve;
 pub mod retroactive_confirm;
