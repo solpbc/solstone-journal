@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
@@ -20,9 +20,11 @@ use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_journal_io::{LockOptions, hold_lock};
 
 use crate::JournalRoot;
+use crate::speakers_attribution::action;
 
 const DISCOVERY_UNIT_NORM_TOLERANCE: f32 = 1.0e-3;
 const MIN_CLUSTER_SIZE: usize = 5;
+const MAX_UNMATCHED_EMBEDDINGS: usize = 10_000;
 const OWNER_VOICE_UNAVAILABLE: &str = "speaker_discovery_owner_voice_unavailable";
 const OWNER_VOICE_UNAVAILABLE_MESSAGE: &str =
     "i need your voice set up before looking for new voices.";
@@ -30,6 +32,8 @@ const INVALID_EMBEDDINGS: &str = "speaker_discovery_invalid_embeddings";
 const INVALID_EMBEDDINGS_MESSAGE: &str =
     "i skipped some voice samples because they were not usable.";
 static DISCOVERY_CACHE_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+type DiscoveryMember = (String, String, String, String, i64);
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct DiscoveryCandidate {
@@ -264,8 +268,25 @@ pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
         actor: None,
     };
     match solstone_core_speaker_resolve::identify_cluster::identify_cluster(&request, &encoder()) {
-        Ok(value) => map(value),
-        Err(error) => command(error.to_string(), StatusCode::INTERNAL_SERVER_ERROR),
+        Ok(value) => {
+            if value.get("status").and_then(Value::as_str) == Some("identified")
+                && let Err(error) = action(
+                    &root.0,
+                    "speaker_identified",
+                    json!({
+                        "entity_id": value.get("entity_id"),
+                        "entity_name": value.get("entity_name"),
+                        "cluster_id": cluster_id,
+                        "voiceprints_saved": value.get("voiceprints_saved"),
+                        "segments_updated": value.get("segments_updated"),
+                    }),
+                )
+            {
+                return command(error, StatusCode::INTERNAL_SERVER_ERROR);
+            }
+            map(value)
+        }
+        Err(error) => identify_error(error.to_string()),
     }
 }
 
@@ -287,7 +308,7 @@ pub async fn undo(Extension(root): Extension<Arc<JournalRoot>>, request: Request
         &encoder(),
     ) {
         Ok(value) => map(value),
-        Err(error) => command(error.to_string(), StatusCode::INTERNAL_SERVER_ERROR),
+        Err(error) => identify_error(error.to_string()),
     }
 }
 
@@ -404,6 +425,7 @@ pub async fn scan(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
         return Json(scan_result(Vec::new(), issues)).into_response();
     }
 
+    let rows = cap_discovery_candidates(rows);
     let embeddings = rows
         .iter()
         .map(|row| row.embedding.clone())
@@ -439,7 +461,112 @@ pub async fn scan(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     if let Err(error) = write_discovery_cache(&root.0, &clusters) {
         return command(error, StatusCode::INTERNAL_SERVER_ERROR);
     }
-    Json(scan_result(serialize_scan_clusters(&clusters), issues)).into_response()
+    let visible_clusters = match serialize_scan_clusters(&root.0, &clusters) {
+        Ok(clusters) => clusters,
+        Err(error) => return command(error, StatusCode::INTERNAL_SERVER_ERROR),
+    };
+    Json(scan_result(visible_clusters, issues)).into_response()
+}
+
+/// Match Python's `default_rng(42).choice(..., replace=False)` admission cap.
+///
+/// Python sorts the sampled indexes before carrying provenance forward, so the
+/// result is stable and independent of the helper's clustering order.
+fn cap_discovery_candidates(rows: Vec<DiscoveryCandidate>) -> Vec<DiscoveryCandidate> {
+    if rows.len() <= MAX_UNMATCHED_EMBEDDINGS {
+        return rows;
+    }
+    let indexes = numpy_choice_indexes(rows.len(), MAX_UNMATCHED_EMBEDDINGS);
+    indexes
+        .into_iter()
+        .map(|index| rows[index].clone())
+        .collect()
+}
+
+/// Exact subset selection used by NumPy 2.x's `default_rng(42).choice` here.
+///
+/// This ports its seeded PCG64 stream, Lemire-bounded draws, and its tail
+/// shuffle/Floyd choice split. Callers sort no further: this function returns
+/// the same ascending indexes Python produces after `indices.sort()`.
+fn numpy_choice_indexes(population: usize, size: usize) -> Vec<usize> {
+    debug_assert!(size <= population);
+    let mut rng = NumpyPcg64::seed_42();
+    let mut indexes = if population > 10_000 && size > population / 50 {
+        let mut values = (0..population).collect::<Vec<_>>();
+        for index in (population - size..population).rev() {
+            let selected = rng.bounded_usize(index);
+            values.swap(selected, index);
+        }
+        values.split_off(population - size)
+    } else {
+        let mut values = Vec::with_capacity(size);
+        let mut seen = HashSet::with_capacity(size);
+        for value in population - size..population {
+            let selected = rng.bounded_usize(value);
+            if !seen.insert(selected) {
+                values.push(value);
+                seen.insert(value);
+            } else {
+                values.push(selected);
+            }
+        }
+        values
+    };
+    indexes.sort_unstable();
+    indexes
+}
+
+struct NumpyPcg64 {
+    state: u128,
+    increment: u128,
+    cached_u32: Option<u32>,
+}
+
+impl NumpyPcg64 {
+    // State emitted by NumPy's `default_rng(42).bit_generator.state`.
+    const SEED_42_STATE: u128 = 274_674_114_334_540_486_603_088_602_300_644_985_544;
+    const SEED_42_INCREMENT: u128 = 332_724_090_758_049_132_448_979_897_138_935_081_983;
+    const MULTIPLIER: u128 = 0x2360_ed05_1fc6_5da4_4385_df64_9fcc_f645;
+
+    fn seed_42() -> Self {
+        Self {
+            state: Self::SEED_42_STATE,
+            increment: Self::SEED_42_INCREMENT,
+            cached_u32: None,
+        }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.state = self
+            .state
+            .wrapping_mul(Self::MULTIPLIER)
+            .wrapping_add(self.increment);
+        let high = (self.state >> 64) as u64;
+        let low = self.state as u64;
+        (high ^ low).rotate_right((high >> 58) as u32)
+    }
+
+    fn next_u32(&mut self) -> u32 {
+        if let Some(value) = self.cached_u32.take() {
+            return value;
+        }
+        let value = self.next_u64();
+        self.cached_u32 = Some((value >> 32) as u32);
+        value as u32
+    }
+
+    fn bounded_usize(&mut self, inclusive_max: usize) -> usize {
+        debug_assert!(inclusive_max <= u32::MAX as usize);
+        let range = inclusive_max as u32;
+        let range_exclusive = range.wrapping_add(1);
+        loop {
+            let product = self.next_u32() as u64 * range_exclusive as u64;
+            let leftover = product as u32;
+            if leftover >= range_exclusive || leftover >= (u32::MAX - range) % range_exclusive {
+                return (product >> 32) as usize;
+            }
+        }
+    }
 }
 
 fn issue(reason_code: &str, message: &str, count: usize) -> Value {
@@ -495,12 +622,18 @@ fn write_discovery_cache(
 }
 
 fn serialize_scan_clusters(
+    root: &Path,
     clusters: &std::collections::BTreeMap<String, Vec<Value>>,
-) -> Vec<Value> {
+) -> Result<Vec<Value>, String> {
+    let dismissals = folded_dismissal_members(root)?;
     let mut output = clusters
         .iter()
         .filter_map(|(raw_id, members)| {
             let cluster_id = raw_id.parse::<i64>().ok()?;
+            let member_set = member_set(members).ok()?;
+            if dismissal_suppressed(&member_set, &dismissals) {
+                return None;
+            }
             let segments = members
                 .iter()
                 .filter_map(|member| {
@@ -531,7 +664,112 @@ fn serialize_scan_clusters(
                     .cmp(&right["cluster_id"].as_i64())
             })
     });
-    output
+    Ok(output)
+}
+
+fn folded_dismissal_members(root: &Path) -> Result<Vec<BTreeSet<DiscoveryMember>>, String> {
+    let path = root.join("speakers/cluster-dismissals.jsonl");
+    let contents = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(format!(
+                "failed to read cluster dismissal store {path:?}: {error}"
+            ));
+        }
+    };
+    let mut events = Vec::new();
+    for (line, raw) in contents.lines().enumerate() {
+        if raw.trim().is_empty() {
+            continue;
+        }
+        let event: Value = serde_json::from_str(raw).map_err(|error| {
+            format!(
+                "malformed cluster dismissal JSONL at {}:{}: {error}",
+                path.display(),
+                line + 1
+            )
+        })?;
+        let members = event
+            .get("members")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                format!(
+                    "invalid cluster dismissal row at {}:{}",
+                    path.display(),
+                    line + 1
+                )
+            })?;
+        events.push(member_set(members)?);
+    }
+
+    let mut folded = Vec::new();
+    let mut seen = vec![false; events.len()];
+    for start in 0..events.len() {
+        if seen[start] {
+            continue;
+        }
+        let mut stack = vec![start];
+        let mut component = BTreeSet::new();
+        seen[start] = true;
+        while let Some(current) = stack.pop() {
+            component.extend(events[current].iter().cloned());
+            for next in 0..events.len() {
+                if !seen[next] && overlap_ratio_at_least_half(&events[current], &events[next]) {
+                    seen[next] = true;
+                    stack.push(next);
+                }
+            }
+        }
+        folded.push(component);
+    }
+    Ok(folded)
+}
+
+fn dismissal_suppressed(
+    candidate: &BTreeSet<DiscoveryMember>,
+    dismissals: &[BTreeSet<DiscoveryMember>],
+) -> bool {
+    !candidate.is_empty()
+        && dismissals
+            .iter()
+            .any(|dismissal| candidate.intersection(dismissal).count() * 2 >= candidate.len())
+}
+
+fn overlap_ratio_at_least_half(
+    left: &BTreeSet<DiscoveryMember>,
+    right: &BTreeSet<DiscoveryMember>,
+) -> bool {
+    let denominator = left.len().min(right.len());
+    denominator != 0 && left.intersection(right).count() * 2 >= denominator
+}
+
+fn member_set(members: &[Value]) -> Result<BTreeSet<DiscoveryMember>, String> {
+    canonical_members(members).map(|members| {
+        members
+            .into_iter()
+            .map(|member| {
+                (
+                    member["day"].as_str().expect("canonical day").to_owned(),
+                    member["stream"]
+                        .as_str()
+                        .expect("canonical stream")
+                        .to_owned(),
+                    member["segment_key"]
+                        .as_str()
+                        .expect("canonical segment key")
+                        .to_owned(),
+                    member["source"]
+                        .as_str()
+                        .expect("canonical source")
+                        .to_owned(),
+                    member["sentence_id"]
+                        .as_i64()
+                        .expect("canonical sentence id"),
+                )
+            })
+            .collect()
+    })
 }
 
 fn canonical_members(members: &[Value]) -> Result<Vec<Value>, String> {
@@ -615,6 +853,26 @@ fn map(value: Value) -> Response {
         ),
     }
 }
+
+fn identify_error(detail: String) -> Response {
+    let lower = detail.to_ascii_lowercase();
+    if lower.contains("busy") || lower.contains("lock") {
+        let (code, message) =
+            if lower.contains("speaker_labels") || lower.contains("speaker_corrections") {
+                (
+                    "speaker_labels_busy",
+                    "I couldn't update speaker labels because another update is running.",
+                )
+            } else {
+                (
+                    "speaker_voiceprint_busy",
+                    "I couldn't update that voice because another update is running.",
+                )
+            };
+        return error(code, message, &detail, StatusCode::SERVICE_UNAVAILABLE);
+    }
+    command(detail, StatusCode::INTERNAL_SERVER_ERROR)
+}
 async fn body(request: Request) -> Result<Value, Response> {
     let bytes = to_bytes(request.into_body(), usize::MAX)
         .await
@@ -644,9 +902,13 @@ fn error(code: &str, message: &str, detail: &str, status: StatusCode) -> Respons
 
 #[cfg(test)]
 mod tests {
-    use super::{DiscoveryCandidate, canonical_members, map, retain_discovery_clusters};
+    use super::{
+        DiscoveryCandidate, MAX_UNMATCHED_EMBEDDINGS, canonical_members, map, numpy_choice_indexes,
+        retain_discovery_clusters,
+    };
     use axum::response::IntoResponse;
     use serde_json::json;
+    use sha2::{Digest, Sha256};
 
     #[test]
     fn canonical_members_are_tuple_sorted_and_deduplicated() {
@@ -724,5 +986,28 @@ mod tests {
             candidate("20260101", "a", "3_1", vec![0.0, 0.0], 3),
         ];
         assert!(retain_discovery_clusters(&rows, &[2, 2, 2]).is_empty());
+    }
+
+    #[test]
+    fn candidate_cap_matches_numpy_seed_42_choice() {
+        let selected = numpy_choice_indexes(MAX_UNMATCHED_EMBEDDINGS + 1, MAX_UNMATCHED_EMBEDDINGS);
+        assert_eq!(selected.len(), MAX_UNMATCHED_EMBEDDINGS);
+        assert!(!selected.contains(&1591));
+        assert!(
+            selected
+                .iter()
+                .enumerate()
+                .all(|(index, value)| { *value == if index < 1591 { index } else { index + 1 } })
+        );
+
+        let selected = numpy_choice_indexes(500_000, MAX_UNMATCHED_EMBEDDINGS);
+        let bytes = selected
+            .iter()
+            .flat_map(|value| (*value as i64).to_le_bytes())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            format!("{:x}", Sha256::digest(bytes)),
+            "22f17a2448e9ce23e3de4589355d68867a5de47ecd7cd96e70b77aad828995b1"
+        );
     }
 }

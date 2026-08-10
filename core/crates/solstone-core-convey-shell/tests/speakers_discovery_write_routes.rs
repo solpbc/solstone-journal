@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
 
 use std::fs;
 use std::io::{Cursor, Write};
@@ -135,6 +136,22 @@ fn members() -> Value {
         {"day":"20260101","stream":"a","segment_key":"1_1","source":"audio","sentence_id":2},
         {"day":"20260102","stream":"b","segment_key":"2_1","source":"audio","sentence_id":10}
     ])
+}
+
+fn candidate_members(count: usize) -> Value {
+    Value::Array(
+        (1..=count)
+            .map(|index| {
+                json!({
+                    "day": DAY,
+                    "stream": STREAM,
+                    "segment_key": format!("120000_{index}"),
+                    "source": SOURCE,
+                    "sentence_id": 1,
+                })
+            })
+            .collect(),
+    )
 }
 
 fn unit(first: f32, second: f32) -> Vec<f32> {
@@ -279,6 +296,75 @@ async fn dismiss_validates_and_requires_a_cached_cluster() {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn identify_uses_the_standard_voiceprint_busy_response_for_a_held_trust_lock() {
+    let journal = Journal::new();
+    let _held = solstone_core_entity::hold_entity_trust_lock_raw_for_test(&journal.0)
+        .expect("hold trust lock outside the route coordinator");
+
+    let (status, body) = call(
+        &journal.0,
+        "/app/speakers/api/discovery/identify",
+        json!({"cluster_id":7,"name":"target"}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+    assert_eq!(body["reason_code"], "speaker_voiceprint_busy");
+    assert_eq!(
+        body["error"],
+        "I couldn't update that voice because another update is running."
+    );
+}
+
+#[tokio::test]
+async fn identify_logs_the_app_action_after_a_successful_identification() {
+    let journal = Journal::new();
+    journal.candidate_segment(1, json!({"labels":[]}), &[unit(0.0, 1.0)]);
+    journal.cache(candidate_members(1));
+
+    let (status, body) = call(
+        &journal.0,
+        "/app/speakers/api/discovery/identify",
+        json!({
+            "cluster_id":7,
+            "name":"target",
+            "create_new":true,
+            "request_id":"identify-action-log",
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "identified");
+    let actions = fs::read_dir(journal.0.join("config/actions"))
+        .expect("action directory")
+        .flatten()
+        .flat_map(|entry| {
+            fs::read_to_string(entry.path())
+                .expect("action log")
+                .lines()
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .map(|line| serde_json::from_str::<Value>(&line).expect("action json"))
+        .collect::<Vec<_>>();
+    let action = actions
+        .iter()
+        .find(|entry| entry["action"] == "speaker_identified")
+        .expect("speaker identify action");
+    assert_eq!(action["params"]["entity_id"], body["entity_id"]);
+    assert_eq!(action["params"]["cluster_id"], 7);
+    assert_eq!(
+        action["params"]["voiceprints_saved"],
+        body["voiceprints_saved"]
+    );
+    assert_eq!(
+        action["params"]["segments_updated"],
+        body["segments_updated"]
+    );
 }
 
 #[tokio::test]
@@ -461,4 +547,31 @@ async fn scan_publishes_viable_clusters_and_keeps_null_label_rows_eligible() {
             .exists(),
         "success must not remove the resolved sentinel"
     );
+}
+
+#[tokio::test]
+async fn scan_hides_clusters_with_at_least_half_dismissed_provenance() {
+    install_discovery_helper();
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    journal.owner_centroid();
+    add_candidates(&journal, 5);
+    journal.cache(candidate_members(5));
+
+    let (status, dismissed) = call(
+        &journal.0,
+        "/app/speakers/api/discovery/dismiss",
+        json!({"cluster_id":7,"disposition":"quiet"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{dismissed}");
+
+    let (status, scan) = call(&journal.0, "/app/speakers/api/discovery/scan", json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{scan}");
+    assert_eq!(scan["clusters"], json!([]));
+    let cache: Value = serde_json::from_slice(
+        &fs::read(journal.0.join("awareness/discovery_clusters.json")).expect("cache"),
+    )
+    .expect("cache json");
+    assert!(cache["clusters"]["0"].is_array(), "{cache}");
 }

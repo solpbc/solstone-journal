@@ -2582,6 +2582,7 @@ dependencies = [
  "chrono",
  "futures-core",
  "ndarray",
+ "nix",
  "serde",
  "serde_json",
  "sha2",
