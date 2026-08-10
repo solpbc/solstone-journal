@@ -20,15 +20,15 @@ use solstone_core_cli::{
     BodyAppleOptions, BodyCommand, BodyOuraCommand, BodyOuraConnectOptions, BodyOuraSyncOptions,
     BodyRebuildOptions, BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
     BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CogitateCommand,
-    Command, ConveyOptions, GRAB_USAGE, GenerateCommand, GenerateSessionOptions, GrabCommand,
-    GrabOptions, IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions,
+    Command, ConveyOptions, GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions,
+    GrabCommand, GrabOptions, IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions,
     IndexerOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions,
     IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalConfigCommand,
     JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
-    JournalPathOptions, LocalCommand, OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_USAGE,
-    ServiceOptions, SpeakerResolveCommand, SplCommand, TRANSFER_HELP, TransferCommand,
-    TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE, evaluate_args,
-    version_line,
+    JournalPathOptions, LocalCommand, OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE,
+    OBSERVER_USAGE, ServiceOptions, SpeakerResolveCommand, SplCommand, TRANSFER_USAGE,
+    TransferCommand, TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE,
+    evaluate_args, version_line,
 };
 mod supervisor;
 use solstone_core_indexer_query::{
@@ -126,7 +126,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(Command::TransferUsage) => {
-            eprint!("{TRANSFER_HELP}");
+            eprint!("{TRANSFER_USAGE}");
             eprintln!("journal transfer: error: invalid arguments");
             ExitCode::from(2)
         }
@@ -137,6 +137,11 @@ fn main() -> ExitCode {
         Ok(Command::ObserverPruneHelp) => {
             print!("{OBSERVER_PRUNE_HELP}");
             ExitCode::SUCCESS
+        }
+        Ok(Command::ObserverPruneUsage) => {
+            eprint!("{OBSERVER_PRUNE_USAGE}");
+            eprintln!("journal observer prune: error: invalid arguments");
+            ExitCode::from(2)
         }
         Ok(Command::ObserverUsage) => {
             // argparse's usage-error exit code, matching the reference.
@@ -176,12 +181,13 @@ impl solstone_core_grab::GrabDiagnostics for StderrGrabDiagnostics {
 fn run_grab(command: GrabCommand) -> ExitCode {
     match command {
         GrabCommand::Help => {
-            print!("{GRAB_USAGE}");
+            print!("{GRAB_HELP}");
             ExitCode::SUCCESS
         }
         GrabCommand::ParseError(message) => {
             eprint!("{GRAB_USAGE}");
-            eprintln!("error: {message}");
+            // argparse prefixes the verb; the bare `error:` named no command.
+            eprintln!("journal grab: error: {message}");
             ExitCode::from(2)
         }
         GrabCommand::Run(options) => run_grab_request(options),

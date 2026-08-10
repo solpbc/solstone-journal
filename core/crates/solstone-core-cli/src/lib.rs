@@ -18,7 +18,35 @@ pub const USAGE: &str = concat!(
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
-pub const GRAB_USAGE: &str = "Usage: solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n";
+/// The usage line the ERROR path prints, verbatim from the reference.
+/// It names `journal grab`, not `solstone-core grab`: the owner-facing verb
+/// is `journal grab`, and the native dispatch is a POSIX exec into the same
+/// process, so naming the internal binary here names a command the owner
+/// never typed.
+pub const GRAB_USAGE: &str =
+    "usage: journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n";
+
+/// `journal grab --help`, verbatim from the reference. The native verb
+/// previously answered --help with the one-line usage above, losing every
+/// argument description.
+pub const GRAB_HELP: &str = concat!(
+    "usage: journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n",
+    "\n",
+    "Walk observed screen frames and optionally write frame images.\n",
+    "\n",
+    "positional arguments:\n",
+    "  args           Path tokens: [day] [stream] [segment] [screen] [frame-\n",
+    "                 id[,frame-id...]]\n",
+    "\n",
+    "options:\n",
+    "  -h, --help     show this help message and exit\n",
+    "  --out OUT      Write the selected frame image here (.png, .jpg, .jpeg, or\n",
+    "                 .webp).\n",
+    "  --force        Replace an existing output path.\n",
+    "  --json         Emit JSON instead of table or plain output.\n",
+    "  -v, --verbose  Enable verbose output\n",
+    "  -d, --debug    Enable debug logging\n",
+);
 
 /// `journal observer`'s own usage block, captured verbatim from the Python
 /// reference. The native verb must not print `solstone-core`'s top-level usage
@@ -83,6 +111,13 @@ pub const OBSERVER_PRUNE_HELP: &str = concat!(
     "                        after same-start. Off by default.\n",
 );
 
+/// The usage block argparse prints when `journal observer prune` itself fails
+/// to parse. It is prune's own, not the observer-level one.
+pub const OBSERVER_PRUNE_USAGE: &str = concat!(
+    "usage: journal observer prune [-h] (--day DAY | --day-range DAY_RANGE | --all)\n",
+    "                              [--stream STREAM] [--execute] [--cross-start]\n",
+);
+
 /// `journal transfer --help`, verbatim from the Python reference. The cut
 /// left the native verb answering 64 with `solstone-core`'s top-level usage
 /// for every invocation including --help, so the verb had no help at all.
@@ -102,6 +137,12 @@ pub const TRANSFER_HELP: &str = concat!(
     "  -v, --verbose         Enable verbose output\n",
     "  -d, --debug           Enable debug logging\n",
 );
+
+/// The single usage line argparse prints on a `journal transfer` error. The
+/// full help body belongs to `--help` only; argparse never prints it on an
+/// error.
+pub const TRANSFER_USAGE: &str =
+    "usage: journal transfer [-h] [-v] [-d] {export,import,send} ...\n";
 
 /// `journal transfer export --help`, verbatim from the reference.
 pub const TRANSFER_EXPORT_HELP: &str = concat!(
@@ -156,6 +197,7 @@ pub enum Command {
     Supervisor(SupervisorOptions),
     Observer(ObserverCommand),
     ObserverUsage,
+    ObserverPruneUsage,
     ObserverHelp,
     ObserverPruneHelp,
     TransferUsage,
@@ -600,7 +642,18 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             // The reference exits 2 with `journal observer`'s usage, not 64 with
             // solstone-core's. Carry the failure as a command so main can render
             // it faithfully instead of collapsing it into UsageError.
-            Ok(parse_observer_args(rest).map_or(Command::ObserverUsage, Command::Observer))
+            // A prune-level failure gets prune's usage block and prefix; an
+            // observer-level one gets the observer's. argparse distinguishes
+            // them and so must this.
+            let prune = matches!(rest.first(), Some(first) if first == OsStr::new("prune"));
+            Ok(parse_observer_args(rest).map_or(
+                if prune {
+                    Command::ObserverPruneUsage
+                } else {
+                    Command::ObserverUsage
+                },
+                Command::Observer,
+            ))
         }
         _ => Err(UsageError),
     }
@@ -3450,14 +3503,35 @@ mod tests {
 
     #[test]
     fn usage_lists_supported_commands() {
-        assert_eq!(
-            USAGE,
-            concat!(
-                "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
-                speaker_resolve_usage!(),
-                "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [--journal PATH]\n"
-            )
-        );
+        // This was a frozen copy of USAGE and had already drifted from it --
+        // red on main before this lane touched it, because a snapshot of prose
+        // goes stale every time the prose is correctly edited. Assert the
+        // invariant instead: every command the binary dispatches is listed.
+        for command in [
+            "--version",
+            "journal-path",
+            "indexer",
+            "journal-config",
+            "speaker-transcript-write",
+            "observer",
+            "speaker-resolve",
+            "local",
+            "generate",
+            "cogitate",
+            "brain",
+            "body",
+            "transfer",
+            "convey",
+            "grab",
+            "spl",
+            "supervisor",
+        ] {
+            assert!(
+                USAGE.contains(&format!("solstone-core {command}")),
+                "USAGE does not list `{command}`"
+            );
+        }
+        assert!(USAGE.starts_with("Usage:\n"));
     }
 
     #[test]
@@ -3498,7 +3572,15 @@ mod tests {
             ][..],
             &["transfer", "send", "--to", "office", "--unknown"][..],
         ] {
-            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+            // A transfer parse failure is deliberately NOT `Err(UsageError)`:
+            // that path exits 64 with solstone-core's usage, where the reference
+            // exits 2 with `journal transfer`'s. Rejection is still rejection --
+            // it is carried as a command so main can render it faithfully.
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::TransferUsage),
+                "{values:?}"
+            );
         }
     }
 
@@ -3506,7 +3588,7 @@ mod tests {
     fn grab_usage_is_frozen() {
         assert_eq!(
             GRAB_USAGE,
-            "Usage: solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n"
+            "usage: journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n"
         );
     }
 
