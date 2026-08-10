@@ -80,7 +80,7 @@ TURN_WARN_VALUE = TURN_WARN_FRACS
 DEFAULT_READ_CALL_BUDGET_VALUE = 200
 
 FIXTURE_NAME = "solstone-cogitate-oracle"
-FIXTURE_VERSION = 7
+FIXTURE_VERSION = 8
 
 # Spelled out so the corpus below never depends on how a shell or an editor
 # treats a backslash. Several vectors exist specifically to pin backslash
@@ -1030,6 +1030,109 @@ def build_bed(root: Path) -> None:
     many.mkdir()
     for i in range(250):
         (many / f"f{i:03d}.txt").write_text("x\n", encoding="utf-8")
+
+
+def build_budget_escalation() -> dict[str, Any]:
+    """The messages the runtime sends the MODEL as budgets tighten.
+
+    ⚠ PROVENANCE: AST-extracted, not executed -- these live in methods that need
+    live SDK state. Same weaker guarantee as `run_outcomes`, and labelled the
+    same way.
+    """
+    import ast
+
+    source_path = REPO_ROOT / "solstone" / "think" / "providers" / "openhands.py"
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+
+    def render(node: ast.AST) -> str | None:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.JoinedStr):
+            out = []
+            for part in node.values:
+                if isinstance(part, ast.Constant):
+                    out.append(part.value)
+                elif isinstance(part, ast.FormattedValue):
+                    inner = part.value
+                    if isinstance(inner, ast.Name):
+                        out.append("{" + inner.id + "}")
+                    elif isinstance(inner, ast.Attribute):
+                        out.append("{" + inner.attr + "}")
+                    else:
+                        out.append("{...}")
+            return "".join(out)
+        return None
+
+    wanted = {"_check_resource_ceiling", "_check_turn_budget"}
+    messages: list[dict[str, Any]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name not in wanted:
+            continue
+        for call in ast.walk(node):
+            if not isinstance(call, ast.Call):
+                continue
+            func = call.func
+            if not (isinstance(func, ast.Attribute) and func.attr == "send_message"):
+                continue
+            for arg in call.args:
+                text = render(arg)
+                if text is not None:
+                    messages.append(
+                        {"method": node.name, "line": call.lineno, "text": text}
+                    )
+
+    # the per-threshold instruction variants, which the turn-warning message
+    # interpolates as {instruction} -- three different sentences, one per
+    # threshold, and a rebuild that uses one sentence for all three loses the
+    # escalation entirely
+    instructions: list[dict[str, Any]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name != "_check_turn_budget":
+            continue
+        for assign in ast.walk(node):
+            if not isinstance(assign, ast.Assign):
+                continue
+            names = [n.id for n in assign.targets if isinstance(n, ast.Name)]
+            if "instruction" not in names:
+                continue
+            text = render(assign.value)
+            if text is not None:
+                instructions.append({"line": assign.lineno, "text": text})
+
+    return {
+        "provenance": (
+            "MECHANICALLY EXTRACTED FROM THE AST, not executed. Interpolations "
+            "appear as {name}. Same weaker guarantee as run_outcomes."
+        ),
+        "turn_warning_instructions": instructions,
+        "mechanism": (
+            "Budgets ESCALATE rather than stopping. Cost and context share one "
+            "three-stage ladder: a single wrap-up warning at the warn fraction, "
+            "then an ultimatum arming exactly ONE more turn at the cap, then a "
+            "hard pause if that armed turn does not finish. Turns have their own "
+            "ladder: latched warnings at each of the turn-warn fractions with a "
+            "DIFFERENT instruction per threshold, an ultimatum when one turn "
+            "remains, then a hard pause. Every message names the finish tool, so "
+            "the tool's name is interpolated into model-visible text."
+        ),
+        "carry_forward": [
+            "The wrap-up warning fires ONCE, latched -- not once per turn past "
+            "the threshold.",
+            "Each turn-warning fraction is latched independently.",
+            "A duplicate or parallel action from an ALREADY-COUNTED response id "
+            "is the same turn and must be deduped BEFORE the armed check, or an "
+            "arming turn immediately force-stops itself.",
+            "The turn ultimatum collapses the remaining threshold warnings -- at "
+            "one turn left, only the ultimatum is sent.",
+            "The cost fallback matters: when the SDK reports no accumulated cost, "
+            "the estimate is fresh (non-cached) tokens at a fixed rate chosen to "
+            "err HIGH, so the ceiling trips early rather than late.",
+            "The context fraction is per-turn tokens over the effective input "
+            "window, and is None when the window is unknown -- an unknown window "
+            "must not read as 0%.",
+        ],
+        "messages": messages,
+    }
 
 
 def build_run_outcomes() -> dict[str, Any]:
@@ -2297,6 +2400,7 @@ def main() -> int:
         "tool_surface": build_tool_surface(),
         "sol_execution": build_sol_execution(),
         "run_outcomes": build_run_outcomes(),
+        "budget_escalation": build_budget_escalation(),
         "read_tools": read_tool_rows,
         "read_tool_limits": {
             "read_file_max_lines": crt.READ_FILE_MAX_LINES,

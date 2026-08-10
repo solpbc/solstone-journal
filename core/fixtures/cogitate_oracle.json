@@ -1,8 +1,8 @@
 {
   "fixture": "solstone-cogitate-oracle",
-  "fixture_version": 7,
+  "fixture_version": 8,
   "generated_by": "scripts/cogitate_oracle_corpus.py",
-  "reference_commit": "69bce40e01ce295b7c006dbd66d5258ba14eaf23",
+  "reference_commit": "8002d42a523f1b5fbac40e7b00d088ba11672fec",
   "provenance": "Every vector below was produced by EXECUTING the Python reference, one call per case. Nothing here was written by hand from reading the source. CLOCK: this file is a FROZEN RECORD - it can only be regenerated while the Python reference is still importable, and it stops being reproducible when Python is cut. Tests read it; they never execute Python.",
   "preambles": {
     "runtime": {
@@ -2020,7 +2020,7 @@
       {
         "path": "escape",
         "type": "symlink",
-        "target": "/tmp/cogitate-oracle-3jns0_si/outside/leak.txt",
+        "target": "/tmp/cogitate-oracle-sy38hwnu/outside/leak.txt",
         "escapes_root": true
       },
       {
@@ -2042,7 +2042,7 @@
       {
         "path": "inside_link",
         "type": "symlink",
-        "target": "/tmp/cogitate-oracle-3jns0_si/journal/facets/work.md",
+        "target": "/tmp/cogitate-oracle-sy38hwnu/journal/facets/work.md",
         "escapes_root": false
       },
       {
@@ -5478,6 +5478,54 @@
       "default_timeout_seconds": 600,
       "citation": "cogitate_policy.py:21-38"
     }
+  },
+  "budget_escalation": {
+    "provenance": "MECHANICALLY EXTRACTED FROM THE AST, not executed. Interpolations appear as {name}. Same weaker guarantee as run_outcomes.",
+    "turn_warning_instructions": [
+      {
+        "line": 849,
+        "text": "Start converging on the final result and call {finish_tool} as soon as useful work is complete."
+      },
+      {
+        "line": 854,
+        "text": "Stop broad gathering; use the remaining turns only for synthesis and final checks, then call {finish_tool}."
+      },
+      {
+        "line": 859,
+        "text": "Finish now unless one more tool call is essential; call {finish_tool} with the best complete result available."
+      }
+    ],
+    "mechanism": "Budgets ESCALATE rather than stopping. Cost and context share one three-stage ladder: a single wrap-up warning at the warn fraction, then an ultimatum arming exactly ONE more turn at the cap, then a hard pause if that armed turn does not finish. Turns have their own ladder: latched warnings at each of the turn-warn fractions with a DIFFERENT instruction per threshold, an ultimatum when one turn remains, then a hard pause. Every message names the finish tool, so the tool's name is interpolated into model-visible text.",
+    "carry_forward": [
+      "The wrap-up warning fires ONCE, latched -- not once per turn past the threshold.",
+      "Each turn-warning fraction is latched independently.",
+      "A duplicate or parallel action from an ALREADY-COUNTED response id is the same turn and must be deduped BEFORE the armed check, or an arming turn immediately force-stops itself.",
+      "The turn ultimatum collapses the remaining threshold warnings -- at one turn left, only the ultimatum is sent.",
+      "The cost fallback matters: when the SDK reports no accumulated cost, the estimate is fresh (non-cached) tokens at a fixed rate chosen to err HIGH, so the ceiling trips early rather than late.",
+      "The context fraction is per-turn tokens over the effective input window, and is None when the window is unknown -- an unknown window must not read as 0%."
+    ],
+    "messages": [
+      {
+        "method": "_check_resource_ceiling",
+        "line": 785,
+        "text": "Resource budget reached: this is the final turn. Stop gathering more context or using tools, and call {finish_tool} now with the best result available."
+      },
+      {
+        "method": "_check_resource_ceiling",
+        "line": 799,
+        "text": "Resource budget warning: this run is approaching its per-run resource budget. Finish useful work now and call {finish_tool} with the best complete result you can produce."
+      },
+      {
+        "method": "_check_turn_budget",
+        "line": 834,
+        "text": "Turn budget reached: this is your last turn. Stop gathering more context or using tools, and call {finish_tool} now with the best result available."
+      },
+      {
+        "method": "_check_turn_budget",
+        "line": 863,
+        "text": "Turn budget warning: you've used {percent}% of your turn budget so far: {used} of {limit} turns, {remaining} turns left. {instruction}"
+      }
+    ]
   },
   "read_tools": [
     {
