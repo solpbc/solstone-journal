@@ -63,6 +63,7 @@ mod speakers;
 mod speakers_calendar;
 mod speakers_known;
 mod speakers_npz;
+mod speakers_owner;
 mod speakers_quality;
 mod sse;
 mod system;
@@ -152,6 +153,10 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/speakers/api/index", get(speakers_calendar::index))
         .route("/app/speakers/api/grid", get(speakers_calendar::grid))
         .route("/app/speakers/api/quality", get(speakers_quality::quality))
+        .route(
+            "/app/speakers/api/owner/status",
+            get(speakers_owner::status),
+        )
         .route(
             "/app/speakers/api/speakers/known",
             get(speakers_known::known),

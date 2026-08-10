@@ -214,3 +214,22 @@ async fn quality_and_known_voices_match_the_empty_established_shell_corpus() {
         assert_case(app.clone(), path, established_shell_case(path)).await;
     }
 }
+
+#[tokio::test]
+async fn owner_status_matches_populated_and_empty_corpora() {
+    let journal = support::build_populated_journal();
+    assert_case(
+        router(journal.root().to_path_buf()),
+        "/app/speakers/api/owner/status",
+        speakers_case("/app/speakers/api/owner/status"),
+    )
+    .await;
+
+    let journal = EmptyEstablishedJournal::new();
+    assert_case(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/status",
+        established_shell_case("/app/speakers/api/owner/status"),
+    )
+    .await;
+}

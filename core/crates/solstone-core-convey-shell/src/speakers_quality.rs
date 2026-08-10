@@ -277,7 +277,7 @@ fn owner_voice_state(root: &Path) -> OwnerVoice {
     }
 }
 
-fn awareness_voiceprint(root: &Path) -> BTreeMap<String, Value> {
+pub(crate) fn awareness_voiceprint(root: &Path) -> BTreeMap<String, Value> {
     let path = root.join("awareness/current.json");
     if !path.exists() {
         return BTreeMap::new();
@@ -293,14 +293,26 @@ fn awareness_voiceprint(root: &Path) -> BTreeMap<String, Value> {
         .unwrap_or_default()
 }
 
-fn count_manual_owner_tags(root: &Path, principal_id: &str) -> usize {
+pub(crate) struct ManualOwnerTagStats {
+    pub(crate) manual_tags_count: usize,
+    pub(crate) streams_represented: usize,
+}
+
+pub(crate) fn count_manual_owner_tags(root: &Path, principal_id: &str) -> usize {
+    manual_owner_tag_stats(root, principal_id).manual_tags_count
+}
+
+pub(crate) fn manual_owner_tag_stats(root: &Path, principal_id: &str) -> ManualOwnerTagStats {
     let Some(voiceprints) = load_voiceprints(
         &root
             .join("entities")
             .join(principal_id)
             .join("voiceprints.npz"),
     ) else {
-        return 0;
+        return ManualOwnerTagStats {
+            manual_tags_count: 0,
+            streams_represented: 0,
+        };
     };
     let mut latest = BTreeMap::<(String, String, String, i64), (i64, usize, Value)>::new();
     for (index, row) in voiceprints.metadata.into_iter().enumerate() {
@@ -330,10 +342,22 @@ fn count_manual_owner_tags(root: &Path, principal_id: &str) -> usize {
             latest.insert(key, (added_at, index, row));
         }
     }
-    latest
+    let (manual_tags_count, streams) = latest
         .into_values()
-        .filter(|(_, _, row)| valid_manual_owner_tag(root, principal_id, row))
-        .count()
+        .filter_map(|(_, _, row)| manual_owner_tag_stream(root, principal_id, &row))
+        .fold(
+            (0, std::collections::BTreeSet::new()),
+            |(count, mut streams), stream| {
+                if !stream.is_empty() {
+                    streams.insert(stream);
+                }
+                (count + 1, streams)
+            },
+        );
+    ManualOwnerTagStats {
+        manual_tags_count,
+        streams_represented: streams.len(),
+    }
 }
 
 fn value_as_i64(value: Option<&Value>) -> Option<i64> {
@@ -342,29 +366,23 @@ fn value_as_i64(value: Option<&Value>) -> Option<i64> {
         .or_else(|| value.and_then(Value::as_str)?.parse().ok())
 }
 
-fn valid_manual_owner_tag(root: &Path, principal_id: &str, row: &Value) -> bool {
-    let Some(day) = row.get("day").and_then(Value::as_str) else {
-        return false;
-    };
-    let Some(segment_key) = row.get("segment_key").and_then(Value::as_str) else {
-        return false;
-    };
-    let Some(source) = row.get("source").and_then(Value::as_str) else {
-        return false;
-    };
-    let Some(sentence_id) = value_as_i64(row.get("sentence_id")) else {
-        return false;
-    };
+fn manual_owner_tag_stream(root: &Path, principal_id: &str, row: &Value) -> Option<String> {
+    let day = row.get("day").and_then(Value::as_str)?;
+    let segment_key = row.get("segment_key").and_then(Value::as_str)?;
+    let source = row.get("source").and_then(Value::as_str)?;
+    let sentence_id = value_as_i64(row.get("sentence_id"))?;
     let segment = match row
         .get("stream")
         .and_then(Value::as_str)
         .filter(|stream| !stream.is_empty())
     {
-        Some(stream) => root
-            .join("chronicle")
-            .join(day)
-            .join(stream)
-            .join(segment_key),
+        Some(stream) => (
+            root.join("chronicle")
+                .join(day)
+                .join(stream)
+                .join(segment_key),
+            stream.to_owned(),
+        ),
         None => {
             let matches = fs::read_dir(root.join("chronicle").join(day))
                 .ok()
@@ -375,33 +393,37 @@ fn valid_manual_owner_tag(root: &Path, principal_id: &str, row: &Value) -> bool 
                 .filter(|path| path.is_dir())
                 .collect::<Vec<_>>();
             if matches.len() != 1 {
-                return false;
+                return None;
             }
-            matches.into_iter().next().unwrap_or_default()
+            let segment = matches.into_iter().next()?;
+            let stream = segment
+                .parent()?
+                .file_name()?
+                .to_string_lossy()
+                .into_owned();
+            (segment, stream)
         }
     };
-    let Some(labels) = read_json_object(&segment.join("talents/speaker_labels.json"))
-        .and_then(|labels| labels.get("labels").and_then(Value::as_array).cloned())
-    else {
-        return false;
-    };
+    let labels = read_json_object(&segment.0.join("talents/speaker_labels.json"))
+        .and_then(|labels| labels.get("labels").and_then(Value::as_array).cloned())?;
     let label = labels
         .into_iter()
         .find(|label| value_as_i64(label.get("sentence_id")) == Some(sentence_id));
-    let Some(label) = label else { return false };
+    let label = label?;
     if label.get("speaker").and_then(Value::as_str) != Some(principal_id) {
-        return false;
+        return None;
     }
     if !matches!(
         label.get("method").and_then(Value::as_str),
         Some("user_assigned" | "user_corrected" | "user_confirmed")
     ) {
-        return false;
+        return None;
     }
-    segment_overlap_fraction(&segment.join(format!("{source}.jsonl"))) <= 0.10
+    (segment_overlap_fraction(&segment.0.join(format!("{source}.jsonl"))) <= 0.10)
+        .then_some(segment.1)
 }
 
-fn segment_overlap_fraction(path: &Path) -> f64 {
+pub(crate) fn segment_overlap_fraction(path: &Path) -> f64 {
     fs::read_to_string(path)
         .ok()
         .and_then(|contents| contents.lines().next().map(str::to_owned))

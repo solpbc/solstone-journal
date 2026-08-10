@@ -40,8 +40,9 @@ pub(crate) fn owner_centroid_summary(path: &Path) -> Option<OwnerCentroidSummary
     if norm == 0.0 {
         return None;
     }
-    let _threshold = f32_scalar(&member(&mut archive, "threshold.npy")?)?;
+    let threshold = f32_scalar(&member(&mut archive, "threshold.npy")?)?;
     let cluster_size = i32_scalar(&member(&mut archive, "cluster_size.npy")?)?;
+    let margin = optional_member(&mut archive, "margin.npy").and_then(|bytes| f32_scalar(&bytes));
     let last_refreshed_at = optional_member(&mut archive, "last_refreshed_at.npy")
         .and_then(|bytes| unicode_scalar(&bytes))
         .unwrap_or_default();
@@ -52,19 +53,39 @@ pub(crate) fn owner_centroid_summary(path: &Path) -> Option<OwnerCentroidSummary
         .and_then(|bytes| unicode_scalar(&bytes))
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "standard".to_owned());
+    let evidence_hash = optional_member(&mut archive, "evidence_hash.npy")
+        .and_then(|bytes| unicode_scalar(&bytes))
+        .filter(|value| !value.is_empty());
+    let evidence_intra_cosine_p25 = optional_member(&mut archive, "evidence_intra_cosine_p25.npy")
+        .and_then(|bytes| f32_scalar(&bytes));
     Some(OwnerCentroidSummary {
         cluster_size,
+        threshold,
+        margin,
         last_refreshed_at,
         created_at,
         evidence_tier,
+        evidence_hash,
+        evidence_intra_cosine_p25,
     })
 }
 
 pub(crate) struct OwnerCentroidSummary {
     pub(crate) cluster_size: i32,
+    pub(crate) threshold: f32,
+    pub(crate) margin: Option<f32>,
     pub(crate) last_refreshed_at: String,
     pub(crate) created_at: Option<String>,
     pub(crate) evidence_tier: String,
+    pub(crate) evidence_hash: Option<String>,
+    pub(crate) evidence_intra_cosine_p25: Option<f32>,
+}
+
+pub(crate) fn npz_row_count(path: &Path, name: &str) -> Option<usize> {
+    let mut archive = open_archive(path)?;
+    let member = member(&mut archive, &format!("{name}.npy"))?;
+    let blob = parse_npy(&member).ok()?;
+    (!blob.shape.is_empty()).then_some(blob.shape[0])
 }
 
 fn open_archive(path: &Path) -> Option<ZipArchive<File>> {
