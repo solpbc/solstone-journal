@@ -243,7 +243,12 @@ async fn ac11_capped_task_is_terminated_with_timeout_exit() {
     )
     .await;
     let _ = receive_until(&mut reader, "ac11-task", "started").await;
-    for _ in 0..300 {
+    // Spawning the child and having it write its marker is scaffolding, not the
+    // behaviour under test, so this budget is deliberately generous: the old
+    // 3 s window failed intermittently on an idle machine — reproduced once in
+    // ~10 runs, on the first run after a cold build — while passing 6/6 in
+    // isolation. A tight budget here reports a slow fork as a supervisor defect.
+    for _ in 0..3_000 {
         if ready.exists() {
             break;
         }
