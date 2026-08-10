@@ -205,10 +205,11 @@ build_py = "build_hooks.BuildPyWithoutTests"
 
 [tool.uv]
 # Some published dependencies must NOT resolve during workspace development.
-# Tombstones are build-fails-by-design distributions; the speakers-analyze helper
-# is a real workspace member, but its editable build needs ONNX Runtime staging
-# that only the release wheel-build targets produce. Unit tests exercise the
-# native adapter with fakes and keep the frozen Python oracle under tests/.
+# Tombstones are build-fails-by-design distributions; the speakers-analyze and
+# vad-analyze helpers are real workspace members, but their editable builds need
+# ONNX Runtime staging that only the release wheel-build targets produce. Unit
+# tests exercise the native adapters with fakes and keep the frozen Python
+# oracles under tests/.
 # The marker `python_version < '3.12'` contradicts requires-python = ">=3.12", so
 # uv drops each override from the active dev environment. [tool.uv] is never
 # published, so end-user wheel METADATA still carries the real pins.
@@ -216,10 +217,11 @@ override-dependencies = [
     "solstone-journal-host==0.7.0; python_version < '3.12'",
     "solstone-core-unsupported-platform==1.0.22; python_version < '3.12'",
     "solstone-core-speakers-analyze==1.0.22; python_version < '3.12'",
+    "solstone-core-vad-analyze==1.0.22; python_version < '3.12'",
 ]
 
 [tool.uv.workspace]
-members = ["packages/solstone-journal", "packages/solstone-journal-cuda", "packages/solstone-journal-models", "packages/solstone-core", "packages/solstone-core-sol", "packages/solstone-core-journal", "packages/solstone-core-retention", "packages/solstone-core-speakers-analyze", "packages/solstone-core-describe", "packages/solstone-core-depict"]
+members = ["packages/solstone-journal", "packages/solstone-journal-cuda", "packages/solstone-journal-models", "packages/solstone-core", "packages/solstone-core-sol", "packages/solstone-core-journal", "packages/solstone-core-retention", "packages/solstone-core-speakers-analyze", "packages/solstone-core-vad-analyze", "packages/solstone-core-describe", "packages/solstone-core-depict"]
 
 [tool.uv.sources]
 solstone-journal = {workspace = true}
@@ -230,6 +232,7 @@ solstone-core-sol = {workspace = true}
 solstone-core-journal = {workspace = true}
 solstone-core-retention = {workspace = true}
 solstone-core-speakers-analyze = {workspace = true}
+solstone-core-vad-analyze = {workspace = true}
 solstone-core-describe = {workspace = true}
 solstone-core-depict = {workspace = true}
 

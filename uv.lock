@@ -32,6 +32,7 @@ members = [
     "solstone-core-retention",
     "solstone-core-sol",
     "solstone-core-speakers-analyze",
+    "solstone-core-vad-analyze",
     "solstone-journal",
     "solstone-journal-cuda",
     "solstone-journal-models",
@@ -39,6 +40,7 @@ members = [
 overrides = [
     { name = "solstone-core-speakers-analyze", marker = "python_full_version < '3.12'", editable = "packages/solstone-core-speakers-analyze" },
     { name = "solstone-core-unsupported-platform", marker = "python_full_version < '3.12'", specifier = "==1.0.22" },
+    { name = "solstone-core-vad-analyze", marker = "python_full_version < '3.12'", editable = "packages/solstone-core-vad-analyze" },
     { name = "solstone-journal-host", marker = "python_full_version < '3.12'", specifier = "==0.7.0" },
 ]
 
