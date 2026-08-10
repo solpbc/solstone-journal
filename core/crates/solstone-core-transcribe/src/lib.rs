@@ -5,6 +5,8 @@
 
 // Config extraction is implemented before the stage machine that consumes it.
 #[allow(dead_code)]
+mod args;
+#[allow(dead_code)]
 mod audio;
 #[allow(dead_code)]
 mod backend;
@@ -26,6 +28,7 @@ mod terminal;
 #[allow(dead_code)]
 mod transcript;
 
+pub use args::{CliError, ParsedArgs, parse_arguments};
 pub use model_assets::{ModelAssetError, resolve_model_asset};
 pub use speakers::SpeakerAnalyzeError;
 

@@ -164,7 +164,7 @@ pub(crate) fn analyze_speakers(
         .map_err(|error| SpeakerAnalyzeError::new(raw_path, "request", error.to_string(), None))?;
     let pyannote_model = resolve_model_asset("pyannote-segmentation-3.0.onnx")
         .map_err(|error| SpeakerAnalyzeError::new(raw_path, "request", error.to_string(), None))?;
-    let binary = resolve_speakers_analyze_binary()
+    let binary = speakers_analyze_binary_path()
         .map_err(|error| SpeakerAnalyzeError::new(raw_path, "invoke", error, None))?;
     let temporary = create_speakers_analyze_temp_dir(raw_path)
         .map_err(|error| SpeakerAnalyzeError::new(raw_path, "request", error.to_string(), None))?;
@@ -328,7 +328,7 @@ fn remove_partial_sidecar(path: &Path, error: AudioError) -> AudioError {
     error
 }
 
-fn resolve_speakers_analyze_binary() -> Result<PathBuf, String> {
+pub(crate) fn speakers_analyze_binary_path() -> Result<PathBuf, String> {
     let executable = env::current_exe().map_err(|error| error.to_string())?;
     let directory = executable
         .parent()
