@@ -48,7 +48,9 @@ fn decision_table() -> Vec<(&'static str, Vec<String>)> {
     let row = |name: &'static str, argv: &[&str]| {
         (
             name,
-            argv.iter().map(|part| (*part).to_owned()).collect::<Vec<_>>(),
+            argv.iter()
+                .map(|part| (*part).to_owned())
+                .collect::<Vec<_>>(),
         )
     };
     vec![
@@ -80,8 +82,14 @@ fn decision_table() -> Vec<(&'static str, Vec<String>)> {
             &["journal", "maintenance", "status", "backup:run"],
         ),
         // path-form fallback: basename of argv[0], NOT a service command
-        row("path_form_journal_is_basename", &["/opt/tools/journal", "backup"]),
-        row("path_form_sol_is_basename", &["/usr/local/bin/sol", "backup"]),
+        row(
+            "path_form_journal_is_basename",
+            &["/opt/tools/journal", "backup"],
+        ),
+        row(
+            "path_form_sol_is_basename",
+            &["/usr/local/bin/sol", "backup"],
+        ),
         row("unrelated_binary", &["/usr/bin/rsync", "-av"]),
         // degenerate shapes
         row("head_only_no_subcommand", &["journal"]),
