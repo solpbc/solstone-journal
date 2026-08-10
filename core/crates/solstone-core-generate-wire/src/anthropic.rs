@@ -51,7 +51,7 @@ pub type AnthropicConverseFailure = ConverseFailure;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AnthropicConverseResult {
-    Turn(AnthropicTurn),
+    Turn(Box<AnthropicTurn>),
     Failed(AnthropicConverseFailure),
 }
 
@@ -380,14 +380,14 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> AnthropicC
     }
     let usage = usage_from_provider(provider_usage);
     if stop_reason == "max_tokens" {
-        return AnthropicConverseResult::Turn(ConverseTurn {
+        return AnthropicConverseResult::Turn(Box::new(ConverseTurn {
             text,
             tool_calls: Vec::new(),
             finish_reason: "max_tokens".to_owned(),
             usage,
             model: model.to_owned(),
             thinking,
-        });
+        }));
     }
 
     let mut tool_calls = Vec::new();
@@ -427,14 +427,14 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> AnthropicC
     } else {
         "tool_calls".to_owned()
     };
-    AnthropicConverseResult::Turn(ConverseTurn {
+    AnthropicConverseResult::Turn(Box::new(ConverseTurn {
         text,
         tool_calls,
         finish_reason,
         usage,
         model: model.to_owned(),
         thinking,
-    })
+    }))
 }
 
 fn usage_from_provider(provider_usage: &Map<String, Value>) -> Value {

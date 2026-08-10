@@ -59,7 +59,7 @@ pub type OpenAiConverseFailure = ConverseFailure;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OpenAiConverseResult {
-    Turn(OpenAiTurn),
+    Turn(Box<OpenAiTurn>),
     Failed(OpenAiConverseFailure),
 }
 
@@ -409,14 +409,14 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> OpenAiConv
     }
     let finish_reason = normalize_finish_reason(&body);
     if body.get("status").and_then(Value::as_str).map(str::trim) == Some("incomplete") {
-        return OpenAiConverseResult::Turn(ConverseTurn {
+        return OpenAiConverseResult::Turn(Box::new(ConverseTurn {
             text,
             tool_calls: Vec::new(),
             finish_reason,
             usage,
             model: model.to_owned(),
             thinking: None,
-        });
+        }));
     }
     let mut tool_calls = Vec::new();
     for item in function_items {
@@ -450,16 +450,18 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> OpenAiConv
             not_offered: !offered.contains(name),
         });
     }
-    OpenAiConverseResult::Turn(ConverseTurn {
+    OpenAiConverseResult::Turn(Box::new(ConverseTurn {
         text,
-        finish_reason: (!tool_calls.is_empty())
-            .then_some("tool_calls".to_owned())
-            .unwrap_or(finish_reason),
+        finish_reason: if !tool_calls.is_empty() {
+            "tool_calls".to_owned()
+        } else {
+            finish_reason
+        },
         tool_calls,
         usage,
         model: model.to_owned(),
         thinking: None,
-    })
+    }))
 }
 
 fn response_usage(body: &Value) -> Result<Value, ()> {

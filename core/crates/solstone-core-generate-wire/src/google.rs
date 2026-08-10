@@ -54,7 +54,7 @@ pub type GoogleConverseFailure = ConverseFailure;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GoogleConverseResult {
-    Turn(GoogleTurn),
+    Turn(Box<GoogleTurn>),
     Failed(GoogleConverseFailure),
 }
 
@@ -382,14 +382,14 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> GoogleConv
     }
     let finish_reason = normalize_finish_reason(candidate);
     if finish_reason == "max_tokens" {
-        return GoogleConverseResult::Turn(ConverseTurn {
+        return GoogleConverseResult::Turn(Box::new(ConverseTurn {
             text,
             tool_calls: Vec::new(),
             finish_reason,
             usage,
             model: model.to_owned(),
             thinking: None,
-        });
+        }));
     }
     if finish_reason == "malformed_function_call" {
         return converse_failure("tool_call_arguments_invalid");
@@ -423,16 +423,18 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> GoogleConv
             not_offered: !offered.contains(name),
         });
     }
-    GoogleConverseResult::Turn(ConverseTurn {
+    GoogleConverseResult::Turn(Box::new(ConverseTurn {
         text,
-        finish_reason: (!tool_calls.is_empty())
-            .then_some("tool_calls".to_owned())
-            .unwrap_or(finish_reason),
+        finish_reason: if !tool_calls.is_empty() {
+            "tool_calls".to_owned()
+        } else {
+            finish_reason
+        },
         tool_calls,
         usage,
         model: model.to_owned(),
         thinking: None,
-    })
+    }))
 }
 
 fn response_usage(body: &Value, model: &str) -> Result<Value, ()> {
