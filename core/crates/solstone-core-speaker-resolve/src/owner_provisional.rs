@@ -112,6 +112,22 @@ struct ManualTagRow {
     jsonl_path: PathBuf,
 }
 
+/// One validated manual owner tag together with its source embedding.
+///
+/// The HTTP owner-write surface uses this same resolution policy for centroid
+/// build and rebuild; keeping it here prevents its admission rules drifting
+/// from provisional-owner resolution.
+#[derive(Debug, Clone)]
+pub struct ManualOwnerEmbedding {
+    pub embedding: Vec<f32>,
+    pub day: String,
+    pub stream: String,
+    pub segment_key: String,
+    pub source: String,
+    pub sentence_id: i64,
+    pub jsonl_path: PathBuf,
+}
+
 #[derive(Debug)]
 struct LabelMatch {
     speaker: Option<String>,
@@ -172,6 +188,50 @@ pub fn resolve_owner_tier(journal_root: &Path) -> Result<OwnerTierOutcome, Owner
         return Ok(OwnerTierOutcome::None(OwnerTierReason::ProvisionalZeroNorm));
     };
     Ok(OwnerTierOutcome::Provisional(centroid))
+}
+
+/// Resolve the validated manual owner-tag embeddings used by owner build and
+/// rebuild. Missing or unreadable voiceprints produce no usable evidence, just
+/// as the provisional tier does.
+pub fn collect_manual_owner_embeddings(
+    journal_root: &Path,
+    principal_id: &str,
+) -> Result<Vec<ManualOwnerEmbedding>, OwnerProvisionalError> {
+    let directory = entity_memory_path(journal_root, principal_id, false)
+        .map_err(OwnerProvisionalError::EntityPath)?;
+    if !directory.join("voiceprints.npz").exists() {
+        return Ok(Vec::new());
+    }
+    let Ok(Some(archive)) = try_load_entity_voiceprints_file(journal_root, principal_id) else {
+        return Ok(Vec::new());
+    };
+    let mut cache = HashMap::<PathBuf, Option<EmbeddingsFile>>::new();
+    Ok(
+        collect_manual_tag_rows(journal_root, principal_id, &archive)
+            .into_iter()
+            .filter_map(|row| {
+                let path = row.segment_dir.join(format!("{}.npz", row.source));
+                let embeddings = cache
+                    .entry(path.clone())
+                    .or_insert_with(|| load_embeddings_file(&path).ok().flatten())
+                    .as_ref()?;
+                let embedding = embeddings
+                    .statements
+                    .iter()
+                    .find(|(statement_id, _)| *statement_id == row.sentence_id)
+                    .map(|(_, embedding)| embedding.clone())?;
+                Some(ManualOwnerEmbedding {
+                    embedding,
+                    day: row.day,
+                    stream: row.stream,
+                    segment_key: row.segment_key,
+                    source: row.source,
+                    sentence_id: row.sentence_id,
+                    jsonl_path: row.jsonl_path,
+                })
+            })
+            .collect(),
+    )
 }
 
 fn evaluate_confirmed_tier(
