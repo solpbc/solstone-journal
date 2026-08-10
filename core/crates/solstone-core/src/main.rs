@@ -37,6 +37,7 @@ use solstone_core_journal_config::{materialized_defaults, read_journal_config};
 use solstone_core_journal_config_write::{
     CommitConfigError, ConfigExpectation, LockError, LockOptions, commit_journal_config,
 };
+use solstone_core_observer::{CREATE_RETIRED_MESSAGE, ObserverCommand};
 const EXIT_USAGE: u8 = 64;
 const EXIT_UNAVAILABLE: u8 = 69;
 const EXIT_TEMPFAIL: u8 = 75;
@@ -100,6 +101,7 @@ fn main() -> ExitCode {
         Ok(Command::Body(command)) => run_body(command),
         Ok(Command::Convey(options)) => run_convey(options),
         Ok(Command::Spl(command)) => run_spl_process(command),
+        Ok(Command::Observer(command)) => run_observer(command),
         Err(_) => {
             eprint!("{USAGE}");
             ExitCode::from(EXIT_USAGE)
@@ -120,6 +122,46 @@ fn run_convey(options: ConveyOptions) -> ExitCode {
         Err(error) => {
             eprintln!("{error}");
             ExitCode::from(EXIT_TEMPFAIL)
+        }
+    }
+}
+
+fn run_observer(command: ObserverCommand) -> ExitCode {
+    if matches!(command, ObserverCommand::Create) {
+        eprint!("{CREATE_RETIRED_MESSAGE}");
+        return ExitCode::from(2);
+    }
+    let journal = match resolve_journal_config_path(None) {
+        Ok(line) => line.path,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    match solstone_core_observer::execute(
+        &journal,
+        command,
+        solstone_core_observer::system_now_ms(),
+    ) {
+        Ok(output) => {
+            let mut stdout = io::stdout().lock();
+            if stdout.write_all(output.as_bytes()).is_err()
+                || stdout.write_all(b"\n").is_err()
+                || stdout.flush().is_err()
+            {
+                eprintln!("observer failed: stdout I/O error");
+                ExitCode::from(EXIT_IOERR)
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            if error.is_user_error() {
+                ExitCode::from(1)
+            } else {
+                ExitCode::from(EXIT_IOERR)
+            }
         }
     }
 }
