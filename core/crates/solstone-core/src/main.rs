@@ -22,6 +22,7 @@ use solstone_core_cli::{
     JournalConfigReadOptions, JournalPathOptions, LocalCommand, ServiceOptions,
     SpeakerResolveCommand, SplCommand, USAGE, evaluate_args, version_line,
 };
+mod supervisor;
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
 };
@@ -100,6 +101,7 @@ fn main() -> ExitCode {
         Ok(Command::Body(command)) => run_body(command),
         Ok(Command::Convey(options)) => run_convey(options),
         Ok(Command::Spl(command)) => run_spl_process(command),
+        Ok(Command::Supervisor(options)) => supervisor::run(options),
         Err(_) => {
             eprint!("{USAGE}");
             ExitCode::from(EXIT_USAGE)

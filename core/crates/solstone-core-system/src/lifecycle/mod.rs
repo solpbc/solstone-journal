@@ -70,6 +70,11 @@ impl SupervisorLifecycle {
         &self.journal
     }
 
+    /// Filename of the self-heartbeat established during lifecycle boot.
+    pub fn heartbeat_filename(&self) -> &str {
+        &self.heartbeat_filename
+    }
+
     /// Acquire admission, reject live foreign writers, record identity, sweep
     /// matching orphans, and publish this process's self-heartbeat.
     #[cfg(target_os = "linux")]
@@ -150,6 +155,7 @@ impl SupervisorLifecycle {
         state::clear_ready(&self.journal)?;
         if !sync_conflict {
             state::clear_self_heartbeat(&self.journal, &self.heartbeat_filename)?;
+            state::clear_supervisor_identity(&self.journal)?;
         }
         Ok(shutdown::shutdown(driver, regime))
     }

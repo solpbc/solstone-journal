@@ -60,6 +60,17 @@ pub fn clear_ready(journal: &Path) -> Result<(), LifecycleError> {
     }
 }
 
+pub(crate) fn clear_supervisor_identity(journal: &Path) -> Result<(), LifecycleError> {
+    for name in ["supervisor.pid", "supervisor.start_time"] {
+        match fs::remove_file(health(journal).join(name)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
+
 pub fn clear_self_heartbeat(journal: &Path, filename: &str) -> Result<(), LifecycleError> {
     match fs::remove_file(heartbeat_path(journal, filename)?) {
         Ok(()) => Ok(()),

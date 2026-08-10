@@ -2352,6 +2352,7 @@ dependencies = [
  "solstone-core-body-ingest",
  "solstone-core-body-rebuild",
  "solstone-core-brain",
+ "solstone-core-callosum",
  "solstone-core-cli",
  "solstone-core-convey-shell",
  "solstone-core-entity",
@@ -2367,6 +2368,7 @@ dependencies = [
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
  "solstone-core-spl",
+ "solstone-core-system",
  "tokio",
  "tokio-tungstenite",
 ]

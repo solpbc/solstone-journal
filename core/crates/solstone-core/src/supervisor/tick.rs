@@ -1,0 +1,411 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use serde_json::{Map, Value, json};
+use solstone_core_callosum::CallosumEnvelope;
+use solstone_core_local::nvidia::{ArtifactTrust, NvidiaProbe};
+use solstone_core_system::lifecycle::{
+    DEFAULT_INTERVAL_SECONDS, check_sync, machine_id, sync_conflict_event, write_sync_heartbeat,
+};
+use solstone_core_system::provider_runtime::{
+    LocalLaunchCommon, LocalLaunchConfig, ProviderRuntimeNow, ReconcileContext,
+};
+use solstone_core_system::request::{BusTaskRequest, ExecutionRequest, TaskArgv};
+use solstone_core_system::schedule::ScheduleNow;
+
+use super::bus::{SupervisorProviderSink, SupervisorScheduleSink, emit};
+use super::runtime::SupervisorState;
+use super::status;
+
+const STATUS_INTERVAL: Duration = Duration::from_secs(5);
+const TICK_INTERVAL: Duration = Duration::from_secs(1);
+const MAX_INBOUND_PER_TICK: usize = 256;
+
+pub(crate) async fn run(state: &mut SupervisorState) -> bool {
+    let mut last_status = Instant::now() - STATUS_INTERVAL;
+    let mut last_sync = Instant::now() - Duration::from_secs_f64(DEFAULT_INTERVAL_SECONDS);
+    loop {
+        drain_inbound(state).await;
+        state.queue.enforce_deadlines(Instant::now());
+        record_schedule_completions(state);
+        reconcile_providers(state);
+        let wall = chrono::Local::now();
+        let schedule_sink = SupervisorScheduleSink {
+            queue: state.queue.clone(),
+            server: state.server.clone(),
+        };
+        let _ = state.scheduler.check(
+            ScheduleNow {
+                local: wall.naive_local(),
+                unix_millis: wall.timestamp_millis(),
+            },
+            &schedule_sink,
+        );
+        if last_sync.elapsed().as_secs_f64() >= DEFAULT_INTERVAL_SECONDS {
+            if sync_tick(state) {
+                return true;
+            }
+            last_sync = Instant::now();
+        }
+        if last_status.elapsed() >= STATUS_INTERVAL {
+            let providers = [&state.local.state, &state.parakeet.state];
+            let services = json!(providers.iter().map(|provider| json!({"name": provider.provider.as_str(), "phase": provider.latest_phase.as_str(), "reason_code": provider.latest_reason_code.as_ref().map(|reason| reason.as_str())})).collect::<Vec<_>>());
+            let crashed = json!(providers.iter().filter(|provider| matches!(provider.latest_phase, solstone_core_system::provider_runtime::RuntimePhase::Failed | solstone_core_system::provider_runtime::RuntimePhase::CleanupFailed | solstone_core_system::provider_runtime::RuntimePhase::StateCorrupt | solstone_core_system::provider_runtime::RuntimePhase::StateUnavailable)).map(|provider| json!({"name": provider.provider.as_str(), "reason_code": provider.latest_reason_code.as_ref().map(|reason| reason.as_str())})).collect::<Vec<_>>());
+            let tasks = json!(
+                state
+                    .queue
+                    .collect_task_status(Instant::now())
+                    .iter()
+                    .map(|task| task.reference.clone())
+                    .collect::<Vec<_>>()
+            );
+            let recent_tasks = json!(
+                state
+                    .queue
+                    .history()
+                    .iter()
+                    .map(|task| json!({
+                        "ref": task.reference,
+                        "exit_status": task.exit_status,
+                        "scheduler_name": task.scheduler_name,
+                    }))
+                    .collect::<Vec<_>>()
+            );
+            let queues = json!(state.queue.collect_queue_counts());
+            let wall = chrono::Local::now();
+            let schedules = json!(
+                state
+                    .scheduler
+                    .collect_status(ScheduleNow {
+                        local: wall.naive_local(),
+                        unix_millis: wall.timestamp_millis()
+                    })
+                    .iter()
+                    .map(|schedule| schedule.name.clone())
+                    .collect::<Vec<_>>()
+            );
+            emit(
+                &state.server,
+                "supervisor",
+                "status",
+                status::values(status::StatusFields {
+                    services,
+                    crashed,
+                    tasks,
+                    recent_tasks,
+                    queues,
+                    stale: state.stale_heartbeats.clone(),
+                    schedules,
+                    clients: state.server.client_count(),
+                }),
+            );
+            last_status = Instant::now();
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(TICK_INTERVAL) => {},
+            _ = wait_for_shutdown() => return false,
+        }
+    }
+}
+
+fn record_schedule_completions(state: &mut SupervisorState) {
+    let history = state.queue.history();
+    let retained = history
+        .iter()
+        .map(|record| record.reference.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    state
+        .recorded_schedule_completions
+        .retain(|reference| retained.contains(reference));
+    for record in history {
+        let Some(name) = record.scheduler_name else {
+            continue;
+        };
+        if !state
+            .recorded_schedule_completions
+            .insert(record.reference.clone())
+        {
+            continue;
+        }
+        let ended_at = record
+            .ended_at
+            .duration_since(UNIX_EPOCH)
+            .map_or(0.0, |value| value.as_secs_f64());
+        if let Err(error) = state.scheduler.record_completion(
+            &name,
+            ended_at,
+            &record.exit_status,
+            &record.reference,
+        ) {
+            eprintln!("supervisor: failed to record schedule completion for {name}: {error}");
+        }
+    }
+}
+
+pub(crate) fn reconcile_providers(state: &mut SupervisorState) {
+    let now = ProviderRuntimeNow {
+        monotonic_seconds: state.started.elapsed().as_secs_f64(),
+    };
+    if let Some(in_flight) = state.local.state.truth.as_mut()
+        && in_flight.result.is_none()
+        && let Some(result) = state.local.shared.take_truth_result(&in_flight.fence)
+    {
+        in_flight.result = Some(result);
+    }
+    record_fixture_local_launch(state);
+    if let Some(in_flight) = state.local.state.start.as_mut()
+        && in_flight.result.is_none()
+        && let Some(result) = state.local.shared.take_launch_result(&in_flight.fence)
+    {
+        in_flight.result = Some(result);
+    }
+    if let Some(in_flight) = state.local.state.stop_cleanup.as_mut()
+        && in_flight.result.is_none()
+        && let Some(result) = state
+            .local
+            .shared
+            .take_stop_cleanup_result(&in_flight.fence)
+    {
+        in_flight.result = Some(result);
+    }
+    if let Some(in_flight) = state.local.state.probe.as_mut()
+        && in_flight.result.is_none()
+        && let Some(result) = state.local.shared.take_probe_result(&in_flight.fence)
+    {
+        in_flight.result = Some(result);
+    }
+    let mut local_sink = SupervisorProviderSink(state.server.clone());
+    let mut local_context = ReconcileContext {
+        truth: &mut state.local.truth,
+        lifecycle: &mut state.local.lifecycle,
+        probe: &mut state.local.probe,
+        store: &mut state.local.store,
+        sink: &mut local_sink,
+        gate: None,
+    };
+    state.local.coordinator.reconcile(
+        now,
+        &mut state.local.state,
+        &mut state.local.processes,
+        &mut local_context,
+    );
+    if let Some(in_flight) = state.parakeet.state.start.as_mut()
+        && in_flight.result.is_none()
+        && let Some(result) = state.parakeet.shared.take_launch_result(&in_flight.fence)
+    {
+        in_flight.result = Some(result);
+    }
+    if let Some(in_flight) = state.parakeet.state.stop_cleanup.as_mut()
+        && in_flight.result.is_none()
+        && let Some(result) = state
+            .parakeet
+            .shared
+            .take_stop_cleanup_result(&in_flight.fence)
+    {
+        in_flight.result = Some(result);
+    }
+    if let Some(in_flight) = state.parakeet.state.probe.as_mut()
+        && in_flight.result.is_none()
+        && let Some(result) = state.parakeet.shared.take_probe_result(&in_flight.fence)
+    {
+        in_flight.result = Some(result);
+    }
+    let mut parakeet_sink = SupervisorProviderSink(state.server.clone());
+    let mut parakeet_context = ReconcileContext {
+        truth: &mut state.parakeet.truth,
+        lifecycle: &mut state.parakeet.lifecycle,
+        probe: &mut state.parakeet.probe,
+        store: &mut state.parakeet.store,
+        sink: &mut parakeet_sink,
+        gate: None,
+    };
+    state.parakeet.coordinator.reconcile(
+        now,
+        &mut state.parakeet.state,
+        &mut state.parakeet.processes,
+        &mut parakeet_context,
+    );
+}
+
+fn record_fixture_local_launch(state: &mut SupervisorState) {
+    let Some(fixture) = state.local.fixture_launch.as_ref() else {
+        return;
+    };
+    let Some(fingerprint) = state
+        .local
+        .state
+        .truth
+        .as_ref()
+        .and_then(|truth| truth.result.as_ref())
+        .and_then(|result| result.desired_fingerprint.clone())
+    else {
+        return;
+    };
+    if state.local.launch_recorded_for.as_deref() == Some(fingerprint.as_str()) {
+        return;
+    }
+    state.local.shared.record_launch_request(
+        Some(fingerprint.clone()),
+        LocalLaunchConfig::Cuda {
+            common: LocalLaunchCommon {
+                desired_fingerprint_json: json!({"provider":"local","stub":true}),
+                desired_fingerprint_sha256: fingerprint.clone(),
+                model_id: fixture.model_id.clone(),
+                model_path: fixture.model_path.clone(),
+                mmproj_path: None,
+            },
+            binary_path: Some(fixture.binary_path.clone()),
+            lib_dir: None,
+            nvidia_probe: synthetic_nvidia_probe(),
+            cuda_embedded_arch_set: vec!["sm_89".to_owned()],
+            cuda_min_driver_version: 1,
+            cuda_artifact_trust: ArtifactTrust::Trusted,
+            cuda_persisted_installed_cuda_target: false,
+        },
+    );
+    state.local.launch_recorded_for = Some(fingerprint);
+}
+
+fn synthetic_nvidia_probe() -> NvidiaProbe {
+    NvidiaProbe {
+        schema: "solstone-local-nvidia-probe-v1".to_owned(),
+        detected: true,
+        gpu_index: Some(0),
+        gpu_name: Some("supervisor fixture GPU".to_owned()),
+        compute_cap: Some("8.9".to_owned()),
+        arch: Some("sm_89".to_owned()),
+        driver_cuda_major: Some(13),
+        vram_mib: Some(16_000),
+        unified_memory_mib: None,
+        probe_error: None,
+    }
+}
+
+async fn wait_for_shutdown() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        if let Ok(mut stream) = signal(SignalKind::terminate()) {
+            tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = stream.recv() => {} }
+            return;
+        }
+    }
+    let _ = tokio::signal::ctrl_c().await;
+}
+
+async fn drain_inbound(state: &mut SupervisorState) {
+    for _ in 0..MAX_INBOUND_PER_TICK {
+        let message =
+            match tokio::time::timeout(Duration::ZERO, state.connection.next_message()).await {
+                Ok(Some(message)) => message,
+                _ => break,
+            };
+        handle_message(state, message);
+    }
+}
+
+fn handle_message(state: &mut SupervisorState, message: CallosumEnvelope) {
+    if message.tract != "supervisor" || message.event != "request" {
+        return;
+    }
+    let Some(Value::Array(command)) = message.extra.get("cmd") else {
+        return;
+    };
+    let Some(command) = command
+        .iter()
+        .map(Value::as_str)
+        .collect::<Option<Vec<_>>>()
+    else {
+        return;
+    };
+    let Ok(cmd) = TaskArgv::from_wire(command.into_iter().map(str::to_owned).collect()) else {
+        return;
+    };
+    let request = BusTaskRequest {
+        cmd,
+        reference: message
+            .extra
+            .get("ref")
+            .and_then(Value::as_str)
+            .unwrap_or("native-supervisor")
+            .to_owned(),
+        day: message
+            .extra
+            .get("day")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        scheduler_name: message
+            .extra
+            .get("scheduler_name")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        queue_if_active_cmd_differs: false,
+    };
+    let _ = state.queue.submit(ExecutionRequest::Bus(request));
+}
+
+fn sync_tick(state: &mut SupervisorState) -> bool {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0.0, |value| value.as_secs_f64());
+    let filename = state.heartbeat_filename.clone();
+    let heartbeat = solstone_core_system::lifecycle::Heartbeat {
+        schema: 1,
+        machine_id: machine_id(),
+        hostname: filename.trim_end_matches(".check").to_owned(),
+        pid: std::process::id(),
+        wall_time: now.to_string(),
+        solstone_version: env!("CARGO_PKG_VERSION").to_owned(),
+        interval_seconds: DEFAULT_INTERVAL_SECONDS as u32,
+        journal_path: state.journal.display().to_string(),
+    };
+    if write_sync_heartbeat(
+        &state.journal,
+        &filename,
+        &serde_json::to_vec(&heartbeat).expect("heartbeat serializes"),
+    )
+    .is_err()
+    {
+        return false;
+    }
+    let Ok(result) = check_sync(
+        &state.journal,
+        &filename,
+        &heartbeat.machine_id,
+        state.last_sync_snapshot.as_ref(),
+        now,
+    ) else {
+        return false;
+    };
+    let conflict_now = result.is_tick_conflict(state.last_sync_snapshot.as_ref());
+    state.stale_heartbeats = result
+        .foreign_writers
+        .iter()
+        .filter(|writer| !writer.is_live)
+        .map(Into::into)
+        .collect();
+    state.last_sync_snapshot = Some(result.snapshot.clone());
+    if !conflict_now {
+        return false;
+    }
+    if let Some(conflict) = sync_conflict_event(&result) {
+        emit(
+            &state.server,
+            "supervisor",
+            "sync_conflict",
+            Map::from_iter([
+                ("hostname".into(), json!(conflict.hostname)),
+                ("journal_path".into(), json!(conflict.journal_path)),
+                ("pid".into(), json!(conflict.pid)),
+                (
+                    "machine_id_prefix".into(),
+                    json!(conflict.machine_id_prefix),
+                ),
+                ("wall_time".into(), json!(conflict.wall_time)),
+            ]),
+        );
+    }
+    true
+}
