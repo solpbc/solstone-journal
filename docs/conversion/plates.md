@@ -698,7 +698,7 @@ the set-aside directory is finished.
 | `P-web-devices` | the app labelled *devices* | device metadata, posture, adding/managing devices; takes the dashboard. ⚠ **The observer LAYER dies inside it — the UI does not** |
 | `P-web-network` | `network` | VPN-method config and network status **only** |
 | `P-web-home` | `home` | hosts the **retention approval surface** — when retention marks something, it populates here |
-| `P-web-speakers` | `speakers` | the largest surface. ⚠ **Distinct from `P-speaker-id`** — same word, different plate: this is the web surface, that is the engine. 📌 Founder expects **substantial dead code** here, so the measured size will likely fall once a lane is in it |
+| `P-web-speakers` | `speakers` | 🔵 **FIRST `P-web-*` LANE, BUILDING 2026-08-10.** ⚠ **Distinct from `P-speaker-id`** — same word, different plate: this is the web surface, that is the engine. 🔴 **Measured, and the plate-size framing was misleading in three directions:** the directory is 34,635 Python lines, **61% of which are tests** a Rust rebuild replaces rather than ports, and **3,536 production lines are the INGEST pipeline's** — `attribution` · `candidate_tracker` · `edges` · `encoder_config` · `evidence`, reached from `observe/transcribe` and `think/`, living here by directory accident. The web surface proper is **~10,000 lines**. ⛔ **Deleting those five with the plate breaks the sense pipeline.** 📌 **Size a `P-web-*` plate by its CONSUMERS, never by its directory** — one import sweep moved the real size by 26%. ⛔ **Retire *"substantial dead code"*: there is essentially none** — of 389 top-level symbols, 4 are test-only and 0 unreferenced; the surface falls because tests are replaced and engine code is reclassified. ⚠ A first instrument reported 46 dead symbols and every one was a decorator-dispatched route handler |
 | `P-web-thinking` | `thinking` | |
 | `P-web-body` | `body` | ⛔ owner **body** data — never "health" |
 | `P-web-entities` | `entities` | |
@@ -709,6 +709,16 @@ the set-aside directory is finished.
 ⏸ **Deferred, to be grouped rather than plated one-for-one** — decided when the work gets closer: `support` · `backup` · `timeline` · `sol` · `health` · `curation` · `chat` · `search` · `tokens` · `activities` · `news` · `reflections` · `stats` · `awareness` · `facets`. ⚠ Several are smaller than their own handoff would be.
 
 ⛔ **The `convey` shell is not an app plate.** It is `P-web` core and already has its crate.
+
+🔒 **OPERATOR RULING 2026-08-09: convey/Flask is REPLACED OUTRIGHT, not proxied** — *"a minimum viable path through the stack that is all rust, no python, no flask"* — and breaking other surfaces is authorized while a lane stays in its own scope. ⛔ That retires proxy, bridge and WSGI-shim shapes for **all ten** `P-web-*` plates.
+
+**Carry forward, from the first lane — each of these cost real time to find:**
+
+- 🔴 **Check that something can SERVE a route before converting one.** `solstone-core-entities` carries a complete **3,427-line** `/app/entities/*` axum router that **nothing in the workspace calls** — it compiles, tests and gates, and no owner can reach it. So the first wave is **the process**, not routes. ⚠ And building the server is not wiring it: `journal convey` still resolved to Flask after the Rust process shipped.
+- 🔴 **The session gate has THREE outcomes, not two.** `journal_is_active` **raises** on a config that exists and cannot be parsed, and the reference answers a **500 in the owner's voice** — not the first-run wizard. A port written `unwrap_or(false)` tells an owner their journal was never set up, over an existing journal.
+- 🔴 **A refusal that answers 2xx tells every client it succeeded.** The unconverted-app refusal shipped as 200; the shell evaluates a background body with `new Function` only when `response.ok`, so it executed refusal JSON as JavaScript on every page load. Nine more plates each serve refusals for their unconverted siblings — pin `!status.is_success()`, never the code.
+- 🔴 **An oracle diff is not an acceptance.** Two frozen corpora agreed while the page was throwing. **Drive it in a browser.** ⚠ `networkidle` never fires — the shell holds an SSE stream open.
+- ⚠ **An empty journal proves almost nothing for a read surface** — `/api/grid` answers 55 bytes. And normalize a corpus **by field path, never by shape**: a `^\d{8}$` rule eats every `day` value and both coverage bounds, so a port returning the wrong window matches.
 
 ## `P-CLI`
 
