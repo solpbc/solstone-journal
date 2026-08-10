@@ -3,8 +3,8 @@
 
 //! OpenAI Responses API generation.
 
-use std::sync::LazyLock;
 use std::time::Duration;
+use std::{collections::BTreeSet, sync::LazyLock};
 
 use regex::Regex;
 use serde_json::{Map, Value, json};
@@ -14,6 +14,7 @@ use solstone_core_local::HttpResponse;
 use crate::endpoint::EndpointTransportError;
 use crate::schema_prep::prepare_provider_schema;
 use crate::token_budget::generate_token_budget;
+use crate::{ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn};
 
 const OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
 const OPENAI_BASE_URL: &str = "https://api.openai.com";
@@ -51,6 +52,15 @@ pub struct OpenAiGenerated {
 pub enum OpenAiResult {
     Generated(OpenAiGenerated),
     Failed(OpenAiFailure),
+}
+
+pub type OpenAiTurn = ConverseTurn;
+pub type OpenAiConverseFailure = ConverseFailure;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum OpenAiConverseResult {
+    Turn(OpenAiTurn),
+    Failed(OpenAiConverseFailure),
 }
 
 pub trait OpenAiTransport {
@@ -102,6 +112,47 @@ impl OpenAiTransport for UreqOpenAiTransport {
 pub fn openai_generate(request: &GenerateRequest, config: &Map<String, Value>) -> OpenAiResult {
     let mut transport = UreqOpenAiTransport;
     openai_generate_with(request, config, &mut transport)
+}
+
+pub fn openai_converse(
+    request: &GenerateRequest,
+    messages: &[ConverseMessage],
+    tools: &[ConverseToolSpec],
+    config: &Map<String, Value>,
+) -> OpenAiConverseResult {
+    let mut transport = UreqOpenAiTransport;
+    openai_converse_with(request, messages, tools, config, &mut transport)
+}
+
+fn openai_converse_with<T: OpenAiTransport>(
+    request: &GenerateRequest,
+    messages: &[ConverseMessage],
+    tools: &[ConverseToolSpec],
+    config: &Map<String, Value>,
+    transport: &mut T,
+) -> OpenAiConverseResult {
+    let Some(api_key) = configured_api_key(config) else {
+        return converse_failure("provider_key_missing");
+    };
+    let model = configured_model(config);
+    let body = converse_request_body(request, messages, tools, &model);
+    let response = match transport.post_json(
+        OPENAI_BASE_URL,
+        OPENAI_RESPONSES_PATH,
+        &body,
+        &api_key,
+        request_timeout(request.timeout_s),
+    ) {
+        Ok(response) => response,
+        Err(EndpointTransportError::Connection) => return converse_failure("network_unreachable"),
+        Err(EndpointTransportError::Capacity) => return converse_failure("provider_unavailable"),
+        Err(EndpointTransportError::Other) => return converse_failure("provider_response_invalid"),
+    };
+    if !(200..300).contains(&response.status) {
+        return converse_failure(classify_http_failure(response.status, &response.body));
+    }
+    let offered = tools.iter().map(|tool| tool.name.clone()).collect();
+    parse_converse_response(&response.body, &offered)
 }
 
 fn openai_generate_with<T: OpenAiTransport>(
@@ -183,6 +234,69 @@ fn request_body(request: &GenerateRequest, model: &str) -> Value {
     body
 }
 
+fn converse_request_body(
+    request: &GenerateRequest,
+    messages: &[ConverseMessage],
+    tools: &[ConverseToolSpec],
+    model: &str,
+) -> Value {
+    let mut input = Vec::new();
+    if let Some(system) = &request.system_instruction {
+        input.push(json!({
+            "role": "system",
+            "content": [{"type": "input_text", "text": system}],
+        }));
+    }
+    for message in messages {
+        match message {
+            ConverseMessage::User { text } => input.push(json!({
+                "role": "user",
+                "content": [{"type": "input_text", "text": text}],
+            })),
+            ConverseMessage::Assistant { text, tool_calls } => {
+                if !text.is_empty() {
+                    input.push(json!({
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": text}],
+                    }));
+                }
+                input.extend(tool_calls.iter().map(|call| {
+                    json!({
+                        "type": "function_call",
+                        "call_id": call.id,
+                        "name": call.name,
+                        "arguments": call.arguments.to_string(),
+                    })
+                }));
+            }
+            ConverseMessage::ToolResult {
+                tool_call_id,
+                tool_name: _,
+                output,
+            } => input.push(json!({
+                "type": "function_call_output",
+                "call_id": tool_call_id,
+                "output": output,
+            })),
+        }
+    }
+    json!({
+        "model": strip_effort_suffix(model),
+        "max_output_tokens": generate_token_budget(
+            "openai",
+            request.max_output_tokens,
+            request.thinking_budget,
+        ),
+        "input": input,
+        "tools": tools.iter().map(|tool| json!({
+            "type": "function",
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters,
+        })).collect::<Vec<_>>(),
+    })
+}
+
 fn strip_effort_suffix(model: &str) -> &str {
     OPENAI_EFFORT_SUFFIXES
         .iter()
@@ -248,6 +362,110 @@ fn parse_response(body: &str) -> OpenAiResult {
         model: model.to_owned(),
         usage,
         finish_reason: normalize_finish_reason(&body),
+        thinking: None,
+    })
+}
+
+fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> OpenAiConverseResult {
+    let Ok(body) = serde_json::from_str::<Value>(body) else {
+        return converse_failure("provider_response_invalid");
+    };
+    let Some(output) = body.get("output").and_then(Value::as_array) else {
+        return converse_failure("provider_response_invalid");
+    };
+    let Some(model) = body
+        .get("model")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+    else {
+        return converse_failure("provider_response_invalid");
+    };
+    let usage = match response_usage(&body) {
+        Ok(usage) => usage,
+        Err(()) => return converse_failure("provider_response_invalid"),
+    };
+    let mut text = String::new();
+    let mut function_items = Vec::new();
+    for item in output {
+        if item.get("type").and_then(Value::as_str) == Some("function_call") {
+            function_items.push(item);
+            continue;
+        }
+        let Some(content) = item.get("content") else {
+            continue;
+        };
+        let Some(content) = content.as_array() else {
+            return converse_failure("provider_response_invalid");
+        };
+        for block in content {
+            if let Some(value) = block.get("output_text") {
+                let Some(value) = value.as_str() else {
+                    return converse_failure("provider_response_invalid");
+                };
+                text.push_str(value);
+            }
+        }
+    }
+    let finish_reason = normalize_finish_reason(&body);
+    if body.get("status").and_then(Value::as_str).map(str::trim) == Some("incomplete") {
+        return OpenAiConverseResult::Turn(ConverseTurn {
+            text,
+            tool_calls: Vec::new(),
+            finish_reason,
+            usage,
+            model: model.to_owned(),
+            thinking: None,
+        });
+    }
+    let mut tool_calls = Vec::new();
+    for item in function_items {
+        let Some(id) = item
+            .get("call_id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+        else {
+            continue;
+        };
+        let Some(name) = item
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|name| !name.is_empty())
+        else {
+            continue;
+        };
+        let Some(arguments) = item.get("arguments").and_then(Value::as_str) else {
+            return converse_failure("tool_call_arguments_invalid");
+        };
+        let Ok(arguments) = serde_json::from_str::<Value>(arguments) else {
+            return converse_failure("tool_call_arguments_invalid");
+        };
+        if !arguments.is_object() {
+            return converse_failure("tool_call_arguments_invalid");
+        }
+        tool_calls.push(ConverseToolCall {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            arguments,
+            not_offered: !offered.contains(name),
+        });
+    }
+    if !output.is_empty()
+        && tool_calls.is_empty()
+        && output
+            .iter()
+            .any(|item| item.get("type").and_then(Value::as_str) == Some("function_call"))
+    {
+        return converse_failure("tool_calls_missing");
+    }
+    OpenAiConverseResult::Turn(ConverseTurn {
+        text,
+        finish_reason: (!tool_calls.is_empty())
+            .then_some("tool_calls".to_owned())
+            .unwrap_or(finish_reason),
+        tool_calls,
+        usage,
+        model: model.to_owned(),
         thinking: None,
     })
 }
@@ -382,6 +600,14 @@ fn is_context_window_error(body: &str) -> bool {
 fn failure(reason_code: &str) -> OpenAiResult {
     OpenAiResult::Failed(OpenAiFailure {
         reason_code: Some(reason_code.to_owned()),
+    })
+}
+
+fn converse_failure(reason_code: &str) -> OpenAiConverseResult {
+    OpenAiConverseResult::Failed(ConverseFailure {
+        reason_code: reason_code.to_owned(),
+        retryable: true,
+        blocking: false,
     })
 }
 
@@ -859,6 +1085,167 @@ mod tests {
         let refusal = refusal_for(&LaneOutcome::OpenAiFailure(failure), "openai", None);
         assert!(!refusal.detail.contains(credential));
         assert_eq!(transport.api_keys, [credential]);
+    }
+
+    #[test]
+    fn converse_body_and_tool_turns_follow_responses_shapes() {
+        let messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city":"Denver"}),
+                    not_offered: false,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+            },
+        ];
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "weather".into(),
+            parameters: json!({"type":"object"}),
+        }];
+        let body = converse_request_body(&request(), &messages, &tools, "gpt");
+        assert_eq!(
+            crate::converse::canonical_json(&body),
+            crate::converse::canonical_json(&json!({
+                "model":"gpt", "max_output_tokens":4000,
+                "input":[
+                    {"role":"system","content":[{"type":"input_text","text":"system"}]},
+                    {"role":"user","content":[{"type":"input_text","text":"ask"}]},
+                    {"role":"assistant","content":[{"type":"output_text","text":"working"}]},
+                    {"type":"function_call","call_id":"call-1","name":"weather","arguments":"{\"city\":\"Denver\"}"},
+                    {"type":"function_call_output","call_id":"call-1","output":"sunny"}
+                ],
+                "tools":[{"type":"function","name":"weather","description":"weather","parameters":{"type":"object"}}]
+            }))
+        );
+        let mut without_tools = body.clone();
+        without_tools.as_object_mut().unwrap().remove("tools");
+        assert_ne!(
+            crate::converse::canonical_json(&body),
+            crate::converse::canonical_json(&without_tools)
+        );
+        assert_ne!(
+            crate::converse::canonical_json(&body),
+            crate::converse::canonical_json(&converse_request_body(
+                &request(),
+                &messages.into_iter().rev().collect::<Vec<_>>(),
+                &tools,
+                "gpt"
+            ))
+        );
+
+        let offered = ["weather".to_owned()].into_iter().collect();
+        let OpenAiConverseResult::Turn(turn) = parse_converse_response(&json!({
+            "model":"gpt", "status":"completed", "usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5,"output_tokens_details":{"reasoning_tokens":1}},
+            "output":[{"content":[{"output_text":"before"}]},{"id":"fc","call_id":"call-1","type":"function_call","name":"weather","arguments":"{\"city\":\"Denver\"}"}]
+        }).to_string(), &offered) else { panic!("tool turn expected") };
+        assert_eq!(turn.finish_reason, "tool_calls");
+        assert_eq!(turn.text, "before");
+        assert!(!turn.tool_calls[0].not_offered);
+        assert_eq!(
+            turn.usage,
+            json!({"input_tokens":2,"output_tokens":3,"total_tokens":5,"reasoning_tokens":1,"model_version":"gpt"})
+        );
+        assert_eq!(
+            crate::validation::sanitize_finish_reason(&turn.finish_reason),
+            crate::SanitizedFinishReason::ToolCalls
+        );
+        let OpenAiResult::Generated(generated) = parse_response(
+            &json!({
+                "model":"gpt", "status":"completed", "usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5,"output_tokens_details":{"reasoning_tokens":1}},
+                "output":[{"content":[{"output_text":"before"}]},{"id":"fc","call_id":"call-1","type":"function_call","name":"weather","arguments":"{\"city\":\"Denver\"}"}]
+            })
+            .to_string(),
+        ) else {
+            panic!("generated response expected")
+        };
+        assert_eq!(
+            crate::validation::usage_for_log(&turn.usage),
+            crate::validation::usage_for_log(&generated.usage)
+        );
+        let OpenAiConverseResult::Turn(zero_cache) = parse_converse_response(
+            &json!({
+                "model":"gpt","status":"completed","usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}},"output":[]
+            })
+            .to_string(),
+            &offered,
+        ) else {
+            panic!("zero cache turn expected")
+        };
+        let OpenAiConverseResult::Turn(absent_cache) = parse_converse_response(
+            &json!({
+                "model":"gpt","status":"completed","usage":{"input_tokens":1,"output_tokens":1},"output":[]
+            })
+            .to_string(),
+            &offered,
+        ) else {
+            panic!("absent cache turn expected")
+        };
+        assert_eq!(zero_cache.usage["cached_tokens"], 0);
+        assert!(absent_cache.usage.get("cached_tokens").is_none());
+
+        let OpenAiConverseResult::Turn(unoffered) = parse_converse_response(&json!({
+            "model":"gpt","status":"completed","usage":{},"output":[{"type":"function_call","call_id":"c","name":"other","arguments":"{}"}]
+        }).to_string(), &offered) else { panic!("tool turn expected") };
+        assert!(unoffered.tool_calls[0].not_offered);
+        let assessment = assess_provider_result(ProviderResultView {
+            journal_path: &temp_journal(),
+            context: "test.converse",
+            model: &unoffered.model,
+            text: &unoffered.text,
+            finish_reason: &unoffered.finish_reason,
+            usage: &unoffered.usage,
+            json_output: false,
+            enforce_responsiveness: false,
+        });
+        assert_eq!(assessment.failure, None);
+        let OpenAiConverseResult::Failed(invalid) = parse_converse_response(&json!({
+            "model":"gpt","status":"completed","usage":{},"output":[{"type":"function_call","call_id":"c","name":"weather","arguments":"not json"}]
+        }).to_string(), &offered) else { panic!("invalid expected") };
+        assert_eq!(invalid.reason_code, "tool_call_arguments_invalid");
+        let OpenAiConverseResult::Failed(missing) = parse_converse_response(&json!({
+            "model":"gpt","status":"completed","usage":{},"output":[{"type":"function_call","arguments":"{}"}]
+        }).to_string(), &offered) else { panic!("missing calls expected") };
+        assert_eq!(missing.reason_code, "tool_calls_missing");
+        let OpenAiConverseResult::Turn(truncated) = parse_converse_response(&json!({
+            "model":"gpt","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{},"output":[{"type":"function_call","call_id":"c","name":"weather","arguments":"{"}]
+        }).to_string(), &offered) else { panic!("truncated expected") };
+        assert_eq!(truncated.finish_reason, "max_tokens");
+        assert!(truncated.tool_calls.is_empty());
+        let OpenAiConverseResult::Turn(text_only) = parse_converse_response(&json!({
+            "model":"gpt","status":"completed","usage":{},"output":[{"content":[{"output_text":"plain text"}]}]
+        }).to_string(), &offered) else { panic!("text turn expected") };
+        assert_eq!(text_only.text, "plain text");
+        assert!(text_only.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn converse_http_failures_reuse_openai_classification() {
+        let mut transport = StubTransport {
+            responses: vec![Ok(HttpResponse {
+                status: 429,
+                body: "{}".into(),
+            })],
+            ..Default::default()
+        };
+        let OpenAiConverseResult::Failed(failure) = openai_converse_with(
+            &request(),
+            &[],
+            &[],
+            &config(Some("configured-secret"), None),
+            &mut transport,
+        ) else {
+            panic!("failure expected")
+        };
+        assert_eq!(failure.reason_code, "provider_quota_exceeded");
     }
 }
 
