@@ -9,6 +9,7 @@ mod export;
 mod import;
 mod manifest;
 mod rescan;
+mod send;
 
 use std::path::PathBuf;
 
@@ -17,6 +18,9 @@ use thiserror::Error;
 pub use export::export;
 pub use import::import;
 pub use rescan::{RescanOutcome, send_indexer_rescan};
+pub use send::{
+    RESERVED_SEGMENT_FILENAMES, ResolvedPeer, SendReport, SendRequest, SendTerminal, send,
+};
 
 /// Input to [`export`].
 #[derive(Debug, Clone)]
@@ -139,6 +143,26 @@ pub enum TransferError {
     /// No transferable segments were found.
     #[error("journal day {0} has no segments")]
     NoSegments(String),
+    /// No paired peers are available in this journal.
+    #[error("no peers paired (run \"sol link join --as peer\" first)")]
+    NoPeersPaired,
+    /// No peer has the requested label.
+    #[error("no peer with label \"{label}\"; available: {available}")]
+    PeerNotFound { label: String, available: String },
+    /// More than one peer has the requested label.
+    #[error(
+        "multiple peers with label \"{label}\": {instance_ids}; use <journal_root>/peers/<instance_id> directly"
+    )]
+    AmbiguousPeer { label: String, instance_ids: String },
+    /// Paired-link identity files or configuration could not be loaded.
+    #[error("paired-link credential load failed: {0}")]
+    CredentialLoad(String),
+    /// Carrier or loopback HTTP transport failed.
+    #[error("paired-link transport failed: {0}")]
+    Transport(String),
+    /// The local paired-link bridge could not start or drain.
+    #[error("paired-link bridge failed: {0}")]
+    Bridge(String),
     /// The requested output parent is absent or not a directory.
     #[error("output parent {0} does not exist or is not a directory")]
     MissingOutputParent(PathBuf),

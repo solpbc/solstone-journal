@@ -2352,7 +2352,9 @@ dependencies = [
  "futures-util",
  "image",
  "nix",
+ "rcgen",
  "rusqlite",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
@@ -2384,8 +2386,10 @@ dependencies = [
  "solstone-core-spl",
  "solstone-core-system",
  "solstone-core-transfer",
+ "spl-core",
  "tempfile",
  "tokio",
+ "tokio-rustls",
  "tokio-tungstenite",
  "zip",
 ]
@@ -3172,15 +3176,22 @@ dependencies = [
 name = "solstone-core-transfer"
 version = "1.0.22"
 dependencies = [
+ "chrono",
  "flate2",
+ "rcgen",
  "serde",
  "serde_json",
  "sha2",
  "solstone-core-callosum",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "spl-core",
+ "spl-transport",
  "tar",
  "tempfile",
  "thiserror 2.0.19",
+ "tokio",
+ "ureq",
 ]
 
 [[package]]

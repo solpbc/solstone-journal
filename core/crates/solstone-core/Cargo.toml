@@ -41,6 +41,11 @@ name = "grab_differential"
 path = "tests/grab_differential.rs"
 required-features = ["differential"]
 
+[[test]]
+name = "transfer_send_differential"
+path = "tests/transfer_send_differential.rs"
+required-features = ["differential"]
+
 [[bin]]
 name = "solstone-core-generate-session-kill-helper"
 path = "tests/bin/generate_session_kill_helper.rs"
@@ -88,10 +93,14 @@ tokio = { workspace = true, features = ["io-std", "io-util", "net", "rt-multi-th
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }
 image.workspace = true
 nix = { workspace = true, features = ["signal"] }
+rcgen.workspace = true
+rustls.workspace = true
 rusqlite.workspace = true
 sha2.workspace = true
 solstone-core-cogitate.workspace = true
 solstone-core-npy.workspace = true
+spl-core.workspace = true
 tempfile = "3.24.0"
 tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["handshake"] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }

@@ -26,8 +26,8 @@ use solstone_core_cli::{
     IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalConfigCommand,
     JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
     JournalPathOptions, LocalCommand, ServiceOptions, SpeakerResolveCommand, SplCommand,
-    TransferCommand, TransferExportOptions, TransferImportOptions, USAGE, evaluate_args,
-    version_line,
+    TransferCommand, TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE,
+    evaluate_args, version_line,
 };
 mod supervisor;
 use solstone_core_indexer_query::{
@@ -209,6 +209,71 @@ fn run_transfer(command: TransferCommand) -> ExitCode {
     match command {
         TransferCommand::Export(options) => run_transfer_export(options),
         TransferCommand::Import(options) => run_transfer_import(options),
+        TransferCommand::Send(options) => run_transfer_send(options),
+    }
+}
+
+fn run_transfer_send(options: TransferSendOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    let dry_run = options.dry_run;
+    match solstone_core_transfer::send(
+        &journal,
+        solstone_core_transfer::SendRequest {
+            to: options.to,
+            day: options.day,
+            dry_run,
+        },
+    ) {
+        Ok(report) => match report.terminal {
+            solstone_core_transfer::SendTerminal::AuthenticationInvalid => {
+                println!("Authentication failed: invalid or missing paired-link identity");
+                ExitCode::SUCCESS
+            }
+            solstone_core_transfer::SendTerminal::AuthenticationRevoked => {
+                println!("Authentication failed: paired-link identity revoked or disabled");
+                ExitCode::SUCCESS
+            }
+            solstone_core_transfer::SendTerminal::Complete => {
+                print_transfer_send_report(&report, dry_run);
+                ExitCode::SUCCESS
+            }
+        },
+        Err(error) => {
+            eprintln!("transfer send failed: {error}");
+            ExitCode::from(match error {
+                solstone_core_transfer::TransferError::NoPeersPaired
+                | solstone_core_transfer::TransferError::PeerNotFound { .. }
+                | solstone_core_transfer::TransferError::AmbiguousPeer { .. } => 2,
+                solstone_core_transfer::TransferError::CredentialLoad(_)
+                | solstone_core_transfer::TransferError::InvalidDay => EXIT_DATAERR,
+                solstone_core_transfer::TransferError::Transport(_)
+                | solstone_core_transfer::TransferError::Bridge(_) => EXIT_IOERR,
+                _ => EXIT_IOERR,
+            })
+        }
+    }
+}
+
+fn print_transfer_send_report(report: &solstone_core_transfer::SendReport, dry_run: bool) {
+    let total = report.sent + report.skipped + report.failed;
+    if total == 0 {
+        println!("No segments found to transfer");
+    } else if dry_run {
+        println!(
+            "\nDry run: would send {}, skip {}",
+            report.sent, report.skipped
+        );
+    } else {
+        println!(
+            "\nTransfer complete: {} sent, {} skipped, {} failed, {} bytes transferred",
+            report.sent, report.skipped, report.failed, report.bytes_transferred
+        );
+        if report.sent == 0 && report.skipped > 0 && report.failed == 0 {
+            println!("Nothing to send - remote is up to date");
+        }
     }
 }
 
