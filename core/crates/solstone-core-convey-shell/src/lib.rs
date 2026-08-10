@@ -60,6 +60,7 @@ pub mod registry;
 pub mod session;
 pub mod session_gate;
 mod speakers;
+mod speakers_analyze_client;
 mod speakers_attribution;
 mod speakers_calendar;
 mod speakers_cli_discovery;
@@ -68,6 +69,7 @@ mod speakers_cli_maintenance;
 mod speakers_cli_owner;
 mod speakers_cli_reads;
 mod speakers_discovery;
+mod speakers_discovery_write;
 mod speakers_known;
 mod speakers_media;
 mod speakers_npz;
@@ -295,6 +297,22 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route(
             "/app/speakers/api/propagate-correction",
             post(speakers_attribution::propagate),
+        )
+        .route(
+            "/app/speakers/api/discovery/identify",
+            post(speakers_discovery_write::identify),
+        )
+        .route(
+            "/app/speakers/api/discovery/identify/undo",
+            post(speakers_discovery_write::undo),
+        )
+        .route(
+            "/app/speakers/api/discovery/dismiss",
+            post(speakers_discovery_write::dismiss),
+        )
+        .route(
+            "/app/speakers/api/discovery/scan",
+            post(speakers_discovery_write::scan),
         )
         .route(
             "/app/speakers/api/owner/detect",
