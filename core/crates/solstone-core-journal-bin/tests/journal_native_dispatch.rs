@@ -7,7 +7,7 @@ use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const NATIVE_STUB: &str = r#"#!/bin/sh
@@ -84,17 +84,7 @@ impl Harness {
     }
 
     fn run(&self, token: &str) -> String {
-        let _ = fs::remove_file(&self.record);
-        let _ = fs::remove_file(&self.poison_marker);
-        let output = Command::new(&self.binary)
-            .arg(token)
-            .args(["--opaque", "has space"])
-            .env("NATIVE_DISPATCH_RECORD", &self.record)
-            .env("POISON_MARKER", &self.poison_marker)
-            .env("HOME", &self._temp.path)
-            .env("SOLSTONE_JOURNAL", self._temp.path.join("journal"))
-            .output()
-            .expect("run native journal process");
+        let output = self.run_process(token);
         assert!(
             output.status.success(),
             "{token} failed: {}",
@@ -105,6 +95,20 @@ impl Harness {
             "{token} invoked a poisoned Python interpreter"
         );
         fs::read_to_string(&self.record).expect("read native dispatch record")
+    }
+
+    fn run_process(&self, token: &str) -> Output {
+        let _ = fs::remove_file(&self.record);
+        let _ = fs::remove_file(&self.poison_marker);
+        Command::new(&self.binary)
+            .arg(token)
+            .args(["--opaque", "has space"])
+            .env("NATIVE_DISPATCH_RECORD", &self.record)
+            .env("POISON_MARKER", &self.poison_marker)
+            .env("HOME", &self._temp.path)
+            .env("SOLSTONE_JOURNAL", self._temp.path.join("journal"))
+            .output()
+            .expect("run native journal process")
     }
 }
 
@@ -120,7 +124,17 @@ fn native_process_verbs_exec_their_sibling_without_python() {
         "solstone-core\nspl\nservice\n--opaque\nhas space\n"
     );
     assert_eq!(
+        harness.run("grab"),
+        "solstone-core\ngrab\n--opaque\nhas space\n"
+    );
+    assert_eq!(
         harness.run("depict"),
         "solstone-core-depict\n--opaque\nhas space\n"
+    );
+    let describe = harness.run_process("describe");
+    assert_eq!(describe.status.code(), Some(97));
+    assert!(
+        harness.poison_marker.exists(),
+        "describe did not invoke poison"
     );
 }
