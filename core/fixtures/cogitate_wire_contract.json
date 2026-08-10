@@ -1,11 +1,10 @@
 {
   "schema": "solstone-cogitate-wire-contract-v1",
   "request_schema": {
-    "id": "solstone-cogitate-request-v1",
+    "id": "solstone-cogitate-request-v2",
     "required_fields": {
       "schema": "string",
       "access_tier": "string",
-      "expects_emit_final": "boolean",
       "max_turns": "positive_integer",
       "cost_cap_usd": "positive_number",
       "context_window": "null_or_positive_integer",
@@ -18,7 +17,12 @@
     },
     "optional_fields": {
       "outbound_approval": "null_or_string",
-      "system_instruction": "null_or_string",
+      "diagnostic": "boolean",
+      "talent_instruction": "null_or_string",
+      "sol_tool_name": "null_or_string",
+      "read_scope": "string_array",
+      "output_path": "null_or_string",
+      "schedule": "null_or_string",
       "dry_run": "boolean"
     }
   },

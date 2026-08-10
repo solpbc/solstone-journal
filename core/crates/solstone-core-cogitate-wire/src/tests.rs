@@ -19,7 +19,8 @@ use solstone_core_generate_wire::{
 
 use crate::{
     COGITATE_API_KEY_OVERRIDE_ENV, COGITATE_ENDPOINT_URL_OVERRIDE_ENV, CogitateRequest,
-    DispatchConverseProvider, EndpointOverrides, NativeRun, REQUEST_SCHEMA, run_or_dry_run,
+    DispatchConverseProvider, EndpointOverrides, NativeRun, REQUEST_SCHEMA, contract_source,
+    run_or_dry_run,
     serialize_dry_run, serialize_event, serialize_event_validated, validate_event,
 };
 
@@ -48,6 +49,74 @@ fn request_value() -> Value {
 
 fn request() -> CogitateRequest {
     CogitateRequest::from_value(&request_value()).expect("fixture request is valid")
+}
+
+/// The published request contract must describe the record the parser accepts.
+///
+/// `validate_event` enforces the `cortex_events` half of this fixture, so a
+/// producer cannot drift from it. Nothing enforced the `request_schema` half,
+/// and the v2 bump landed with the fixture still describing v1 -- two
+/// disagreeing descriptions of one record, which is the class this contract
+/// exists to prevent. Asserted in both directions so neither the fixture nor
+/// the parser can move alone.
+#[test]
+fn request_contract_fixture_describes_the_record_the_parser_accepts() {
+    let contract: Value =
+        serde_json::from_str(contract_source()).expect("wire contract fixture is valid JSON");
+    let schema = &contract["request_schema"];
+
+    assert_eq!(
+        schema["id"].as_str(),
+        Some(REQUEST_SCHEMA),
+        "fixture request_schema.id must name the schema the parser requires"
+    );
+
+    let mut declared: Vec<String> = Vec::new();
+    for section in ["required_fields", "optional_fields"] {
+        for key in schema[section]
+            .as_object()
+            .expect("field section is an object")
+            .keys()
+        {
+            declared.push(key.clone());
+        }
+    }
+
+    // Forward: nothing the fixture advertises is refused as unknown by the
+    // parser. A field the contract promises but the record rejects is a lie.
+    for field in &declared {
+        let mut value = request_value();
+        let object = value.as_object_mut().expect("request is an object");
+        object.entry(field.clone()).or_insert(Value::Null);
+        if let Err(error) = CogitateRequest::from_value(&value) {
+            assert!(
+                !error.to_string().contains("unknown field"),
+                "fixture declares {field:?} but the parser rejects it as unknown"
+            );
+        }
+    }
+
+    // Reverse: a field the fixture does not declare is refused. Without this
+    // the parser could quietly widen and the contract would still read true.
+    let mut widened = request_value();
+    widened
+        .as_object_mut()
+        .expect("request is an object")
+        .insert("undeclared_field".to_owned(), Value::Bool(true));
+    let error = CogitateRequest::from_value(&widened)
+        .expect_err("a field absent from the contract must be rejected");
+    assert!(
+        error.to_string().contains("unknown field"),
+        "unexpected rejection reason: {error}"
+    );
+
+    // The retired v1 fields must be gone from the description too.
+    for retired in ["expects_emit_final", "system_instruction"] {
+        assert!(
+            !declared.iter().any(|field| field == retired),
+            "{retired:?} is retired in v2 but still declared in the fixture"
+        );
+    }
 }
 
 fn clean_outcome() -> RunOutcome {
