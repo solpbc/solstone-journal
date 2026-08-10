@@ -7,6 +7,8 @@
 #[allow(dead_code)]
 mod audio;
 #[allow(dead_code)]
+mod backend;
+#[allow(dead_code)]
 mod config;
 mod model_assets;
 // The standalone CLI is introduced in a later step; retain the completed
@@ -60,6 +62,11 @@ pub enum TranscribeError {
     },
     /// The VAD helper violated its JSON wire contract.
     VadResponse { detail: String },
+    /// No configured, confidential, or resource-admissible STT backend exists.
+    SttSurface {
+        available_bytes: Option<u64>,
+        floor_bytes: Option<u64>,
+    },
 }
 
 impl TranscribeError {
@@ -98,6 +105,7 @@ impl TranscribeError {
                 _ => 1,
             },
             Self::TerminalWrite { .. } | Self::InputMetadata { .. } | Self::VadResponse { .. } => 1,
+            Self::SttSurface { .. } => 1,
         }
     }
 }
@@ -161,6 +169,13 @@ impl std::fmt::Display for TranscribeError {
             Self::VadHelper { reason, detail, .. } => {
                 write!(formatter, "VAD helper {reason}: {detail}")
             }
+            Self::SttSurface {
+                available_bytes,
+                floor_bytes,
+            } => write!(
+                formatter,
+                "no viable STT backend (available memory: {available_bytes:?}, local floor: {floor_bytes:?})"
+            ),
         }
     }
 }
@@ -179,7 +194,8 @@ impl std::error::Error for TranscribeError {
             | Self::VadBinary { .. }
             | Self::VadTemporary { .. }
             | Self::VadHelper { .. }
-            | Self::VadResponse { .. } => None,
+            | Self::VadResponse { .. }
+            | Self::SttSurface { .. } => None,
         }
     }
 }
