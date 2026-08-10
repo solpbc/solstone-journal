@@ -172,6 +172,42 @@ fn manifest_failure_marks_one_area_failed_and_continues_others() {
 }
 
 #[test]
+fn persistent_entity_server_error_reports_retry_exhaustion() {
+    let peer = StubPeer::new(PeerPlan::new([
+        (
+            RequestRoute::get("/app/import/journal/remote-i/manifest/entities"),
+            vec![ResponseAction::manifest_empty()],
+        ),
+        (
+            RequestRoute::post("/app/import/journal/remote-i/ingest/entities"),
+            vec![
+                ResponseAction::status(500, b"unavailable"),
+                ResponseAction::status(500, b"unavailable"),
+                ResponseAction::status(500, b"unavailable"),
+            ],
+        ),
+    ]));
+    let fixture = peer.fixture();
+    fixture.add_entity("alice", json!({"id": "alice", "name": "Alice"}));
+
+    let output = run(&fixture, &["--only", "entities"]);
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("entities: FAILED (Entity upload failed after all retries)"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Entity upload failed: 500"), "{stdout}");
+    assert_eq!(peer.ingest_requests().len(), 3);
+}
+
+#[test]
 fn retired_options_and_bad_area_use_argparse_style_errors() {
     let journal = tempfile::tempdir().expect("journal");
     for (args, expected) in [

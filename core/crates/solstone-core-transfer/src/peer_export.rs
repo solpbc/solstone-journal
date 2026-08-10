@@ -507,7 +507,7 @@ fn query_manifest(
     let response = loopback.get(&format!("/app/import/journal/{key_prefix}/manifest/{area}"))?;
     match response.status {
         200 => serde_json::from_slice(&response.body)
-            .map_err(|error| TransferError::Manifest(error.to_string())),
+            .map_err(|error| TransferError::ManifestQuery(error.to_string())),
         401 => Err(TransferError::ManifestQuery(
             "Authentication failed: invalid or missing API key".to_string(),
         )),
@@ -530,15 +530,13 @@ fn post_with_retry(
 ) -> Result<Option<PeerHttpResponse>, TransferError> {
     for (attempt, delay) in RETRY_BACKOFF.iter().enumerate() {
         match loopback.post(path, content_type, body.clone()) {
-            Ok(response)
-                if !(500..=599).contains(&response.status)
-                    || attempt + 1 == RETRY_BACKOFF.len() =>
-            {
+            Ok(response) if !(500..=599).contains(&response.status) => {
                 return Ok(Some(response));
             }
-            Ok(_) | Err(_) if attempt + 1 < RETRY_BACKOFF.len() => std::thread::sleep(*delay),
-            Err(_) => return Ok(None),
-            _ => unreachable!(),
+            Ok(_) | Err(_) if attempt + 1 < RETRY_BACKOFF.len() => {
+                std::thread::sleep(*delay);
+            }
+            Ok(_) | Err(_) => {}
         }
     }
     Ok(None)
