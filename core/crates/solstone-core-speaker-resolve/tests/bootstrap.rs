@@ -7,11 +7,17 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
-use solstone_core_entity::{EncoderIdentity, VoiceprintItem, save_voiceprints_batch};
+use solstone_core_entity::{
+    EncoderIdentity, VoiceprintItem, load_entity_voiceprints_file, read_entity_identity,
+    save_voiceprints_batch,
+};
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_resolve::bootstrap::{
     BootstrapOutcome, BootstrapRequest, BootstrapStats, MergeNamesOutcome, SeedFromImportsOutcome,
     bootstrap_voiceprints, merge_names, seed_from_imports,
+};
+use solstone_core_speaker_resolve::name_variant_scan::{
+    detect_name_variant_candidates, resolve_name_variant_candidates,
 };
 use solstone_core_speaker_resolve::owner_centroid::{
     OwnerCentroidWriteInput, write_owner_centroid,
@@ -82,6 +88,36 @@ fn write_owner(root: &Path) {
         },
     )
     .unwrap();
+}
+
+fn write_voiceprints(root: &Path, id: &str, embeddings: Vec<Vec<f32>>) {
+    let items = embeddings
+        .into_iter()
+        .enumerate()
+        .map(|(index, embedding)| VoiceprintItem {
+            embedding,
+            metadata: json!({
+                "day": "20260808",
+                "segment_key": format!("voiceprint-{index}"),
+                "source": "audio",
+                "sentence_id": index + 1,
+            }),
+        })
+        .collect::<Vec<_>>();
+    save_voiceprints_batch(root, id, &items, &encoder()).unwrap();
+}
+
+fn write_empty_voiceprints(root: &Path, id: &str) {
+    let path = root.join("entities").join(id).join("voiceprints.npz");
+    let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    archive.start_file("embeddings.npy", options).unwrap();
+    archive
+        .write_all(&write_npy("<f4", "(0, 256)", &[]))
+        .unwrap();
+    archive.start_file("metadata.npy", options).unwrap();
+    archive.write_all(&write_npy("<U0", "(0,)", &[])).unwrap();
+    fs::write(path, archive.finish().unwrap().into_inner()).unwrap();
 }
 
 fn flat(values: &[f32]) -> Vec<u8> {
@@ -564,4 +600,252 @@ fn merge_names_does_not_adopt_a_written_id_slug_collision() {
         merge_names(temporary.path(), "New Person", "Canonical Person").unwrap(),
         MergeNamesOutcome::AliasNotFound
     );
+}
+
+#[test]
+fn ac1_blocked_entity_is_excluded_from_name_variant_pairs() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "alias", "Alex", "Person", false);
+    entity(temporary.path(), "canonical", "Alex Smith", "Person", false);
+    entity(temporary.path(), "blocked", "Blocked Alex", "Person", false);
+    let blocked = temporary.path().join("entities/blocked/entity.json");
+    fs::write(
+        blocked,
+        json!({"id":"blocked","name":"Blocked Alex","type":"Person","blocked":true}).to_string(),
+    )
+    .unwrap();
+    for id in ["alias", "canonical", "blocked"] {
+        write_voiceprints(temporary.path(), id, vec![vector(0.0, 1.0)]);
+    }
+
+    let scan = detect_name_variant_candidates(temporary.path()).unwrap();
+    assert_eq!(scan.entities_with_voiceprints, 2);
+    assert_eq!(scan.pairs_compared, 1);
+    assert_eq!(scan.candidates.len(), 1);
+}
+
+#[test]
+fn ac1_principal_entity_is_excluded_from_name_variant_pairs() {
+    let temporary = Temp::new();
+    entity(
+        temporary.path(),
+        "principal",
+        "Principal Alex",
+        "Person",
+        true,
+    );
+    entity(temporary.path(), "alias", "Alex", "Person", false);
+    entity(temporary.path(), "canonical", "Alex Smith", "Person", false);
+    for id in ["principal", "alias", "canonical"] {
+        write_voiceprints(temporary.path(), id, vec![vector(0.0, 1.0)]);
+    }
+
+    let scan = detect_name_variant_candidates(temporary.path()).unwrap();
+    assert_eq!(scan.entities_with_voiceprints, 2);
+    assert_eq!(scan.pairs_compared, 1);
+    assert_eq!(scan.candidates.len(), 1);
+}
+
+#[test]
+fn ac1_missing_voiceprints_are_excluded_from_name_variant_pairs() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "alias", "Alex", "Person", false);
+    entity(temporary.path(), "canonical", "Alex Smith", "Person", false);
+    entity(temporary.path(), "missing", "Missing Alex", "Person", false);
+    for id in ["alias", "canonical"] {
+        write_voiceprints(temporary.path(), id, vec![vector(0.0, 1.0)]);
+    }
+
+    let scan = detect_name_variant_candidates(temporary.path()).unwrap();
+    assert_eq!(scan.entities_with_voiceprints, 2);
+    assert_eq!(scan.pairs_compared, 1);
+    assert_eq!(scan.candidates.len(), 1);
+}
+
+#[test]
+fn ac1_empty_voiceprints_are_excluded_from_name_variant_pairs() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "alias", "Alex", "Person", false);
+    entity(temporary.path(), "canonical", "Alex Smith", "Person", false);
+    entity(temporary.path(), "empty", "Empty Alex", "Person", false);
+    for id in ["alias", "canonical"] {
+        write_voiceprints(temporary.path(), id, vec![vector(0.0, 1.0)]);
+    }
+    write_empty_voiceprints(temporary.path(), "empty");
+    assert_eq!(
+        load_entity_voiceprints_file(temporary.path(), "empty")
+            .expect("empty voiceprint archive must load")
+            .rows,
+        0
+    );
+
+    let scan = detect_name_variant_candidates(temporary.path()).unwrap();
+    assert_eq!(scan.entities_with_voiceprints, 2);
+    assert_eq!(scan.pairs_compared, 1);
+    assert_eq!(scan.candidates.len(), 1);
+}
+
+#[test]
+fn ac1_empty_name_is_excluded_from_name_variant_pairs() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "alias", "Alex", "Person", false);
+    entity(temporary.path(), "canonical", "Alex Smith", "Person", false);
+    entity(temporary.path(), "nameless", "", "Person", false);
+    for id in ["alias", "canonical", "nameless"] {
+        write_voiceprints(temporary.path(), id, vec![vector(0.0, 1.0)]);
+    }
+
+    let scan = detect_name_variant_candidates(temporary.path()).unwrap();
+    assert_eq!(scan.entities_with_voiceprints, 2);
+    assert_eq!(scan.pairs_compared, 1);
+    assert_eq!(scan.candidates.len(), 1);
+}
+
+#[test]
+fn ac1_valid_entity_is_included_in_name_variant_pairs() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "alias", "Alex", "Person", false);
+    entity(temporary.path(), "canonical", "Alex Smith", "Person", false);
+    for id in ["alias", "canonical"] {
+        write_voiceprints(temporary.path(), id, vec![vector(0.0, 1.0)]);
+    }
+
+    let scan = detect_name_variant_candidates(temporary.path()).unwrap();
+    assert_eq!(scan.entities_with_voiceprints, 2);
+    assert_eq!(scan.pairs_compared, 1);
+    assert_eq!(scan.candidates[0].source_id, "alias");
+    assert_eq!(scan.candidates[0].target_id, "canonical");
+}
+
+#[test]
+fn ac2_principal_twin_is_excluded_but_nonprincipal_twin_is_candidate() {
+    let temporary = Temp::new();
+    entity(
+        temporary.path(),
+        "principal",
+        "Alex Principal",
+        "Person",
+        true,
+    );
+    entity(temporary.path(), "alias", "Alex", "Person", false);
+    entity(temporary.path(), "canonical", "Alex Smith", "Person", false);
+    for id in ["principal", "alias", "canonical"] {
+        write_voiceprints(temporary.path(), id, vec![vector(0.0, 1.0)]);
+    }
+
+    let scan = detect_name_variant_candidates(temporary.path()).unwrap();
+    assert_eq!(scan.matches_found.len(), 1);
+    assert_eq!(scan.candidates.len(), 1);
+    assert_eq!(scan.candidates[0].source_label, "Alex");
+    assert_eq!(scan.candidates[0].target_label, "Alex Smith");
+    assert!(
+        scan.matches_found
+            .iter()
+            .all(|pair| pair.name_a != "Alex Principal" && pair.name_b != "Alex Principal")
+    );
+}
+
+#[test]
+fn ac3_normalizes_each_voiceprint_row_before_plain_mean() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "alias", "Alex", "Person", false);
+    entity(temporary.path(), "canonical", "Alex Smith", "Person", false);
+    write_voiceprints(
+        temporary.path(),
+        "alias",
+        vec![vector(1.0, 0.0), vector(0.0, 1.0)],
+    );
+    write_voiceprints(
+        temporary.path(),
+        "canonical",
+        vec![vector(2.0, 0.0), vector(0.0, 4.0)],
+    );
+
+    let scan = detect_name_variant_candidates(temporary.path()).unwrap();
+    assert_eq!(scan.matches_found[0].similarity, 1.0);
+}
+
+#[test]
+fn name_variant_canonical_selection_uses_unicode_code_point_length() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "a-unicode", "𝔸", "Person", false);
+    entity(temporary.path(), "b-ascii", "A ", "Person", false);
+    for id in ["a-unicode", "b-ascii"] {
+        write_voiceprints(temporary.path(), id, vec![vector(0.0, 1.0)]);
+    }
+
+    let scan = detect_name_variant_candidates(temporary.path()).unwrap();
+    assert_eq!(scan.candidates.len(), 1);
+    assert_eq!(scan.candidates[0].source_id, "a-unicode");
+    assert_eq!(scan.candidates[0].target_id, "b-ascii");
+}
+
+fn hub_scan(hub_id: &str, leaf_one_id: &str, leaf_two_id: &str) -> Vec<String> {
+    let temporary = Temp::new();
+    entity(temporary.path(), hub_id, "Hub", "Person", false);
+    entity(temporary.path(), leaf_one_id, "Leaf One", "Person", false);
+    entity(temporary.path(), leaf_two_id, "Leaf Two", "Person", false);
+    write_voiceprints(temporary.path(), hub_id, vec![vector(1.0, 0.0)]);
+    write_voiceprints(
+        temporary.path(),
+        leaf_one_id,
+        vec![vector(0.91, 0.414_608_33)],
+    );
+    write_voiceprints(
+        temporary.path(),
+        leaf_two_id,
+        vec![vector(0.91, -0.414_608_33)],
+    );
+
+    let scan = detect_name_variant_candidates(temporary.path()).unwrap();
+    assert!(scan.candidates.is_empty());
+    assert_eq!(scan.ambiguous.len(), 1);
+    assert_eq!(scan.ambiguous[0].name, "Hub");
+    scan.ambiguous[0]
+        .candidates
+        .iter()
+        .map(|candidate| candidate.name.clone())
+        .collect()
+}
+
+#[test]
+fn ac5_hub_after_leaves_is_reported_ambiguous_without_ready_candidates() {
+    assert_eq!(
+        hub_scan("z-hub", "a-leaf", "b-leaf"),
+        ["Leaf One", "Leaf Two"]
+    );
+}
+
+#[test]
+fn ac5_hub_before_leaves_has_the_same_ambiguous_result() {
+    assert_eq!(
+        hub_scan("a-hub", "b-leaf", "c-leaf"),
+        ["Leaf One", "Leaf Two"]
+    );
+}
+
+#[test]
+fn ac6_commit_persists_the_alias_on_the_canonical_entity() {
+    let temporary = Temp::new();
+    fs::create_dir_all(temporary.path().join("config")).unwrap();
+    fs::write(
+        temporary.path().join("config/journal.json"),
+        br#"{"setup":{"completed_at":1}}"#,
+    )
+    .unwrap();
+    entity(temporary.path(), "alias", "Alex", "Person", false);
+    entity(temporary.path(), "canonical", "Alex Smith", "Person", false);
+    for id in ["alias", "canonical"] {
+        write_voiceprints(temporary.path(), id, vec![vector(0.0, 1.0)]);
+    }
+
+    let scan = detect_name_variant_candidates(temporary.path()).unwrap();
+    let stats = resolve_name_variant_candidates(scan, temporary.path(), true, &encoder());
+    assert_eq!(stats.errors, Vec::<String>::new());
+    assert_eq!(stats.auto_merged.len(), 1);
+    assert!(!temporary.path().join("entities/alias").exists());
+    let canonical = read_entity_identity(temporary.path(), "canonical")
+        .unwrap()
+        .unwrap();
+    assert_eq!(canonical.value()["aka"], json!(["Alex"]));
 }

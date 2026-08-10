@@ -12,6 +12,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use serde_json::{Value, json};
 use solstone_core_convey_shell::router;
+use solstone_core_entity::{EncoderIdentity, VoiceprintItem, save_voiceprints_batch};
 use tower::ServiceExt;
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -40,15 +41,45 @@ impl Journal {
         Self(root)
     }
     fn entity(&self, id: &str, principal: bool) {
+        self.named_entity(id, id, principal);
+    }
+    fn named_entity(&self, id: &str, name: &str, principal: bool) {
         fs::create_dir_all(self.0.join("entities").join(id)).expect("entity dir");
         fs::write(
             self.0.join("entities").join(id).join("entity.json"),
             serde_json::to_vec(
-                &json!({"id":id,"name":id,"type":"Person","is_principal":principal}),
+                &json!({"id":id,"name":name,"type":"Person","is_principal":principal}),
             )
             .expect("json"),
         )
         .expect("entity");
+    }
+    fn voiceprint(&self, id: &str) {
+        let mut embedding = vec![0.0; 256];
+        embedding[1] = 1.0;
+        save_voiceprints_batch(
+            &self.0,
+            id,
+            &[VoiceprintItem {
+                embedding,
+                metadata: json!({
+                    "day":"20260808",
+                    "segment_key":id,
+                    "source":"audio",
+                    "sentence_id":1,
+                }),
+            }],
+            &resolve_names_encoder(),
+        )
+        .expect("voiceprint");
+    }
+}
+
+fn resolve_names_encoder() -> EncoderIdentity {
+    EncoderIdentity {
+        id: "unresolved".to_owned(),
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+        width: 256,
     }
 }
 
@@ -79,24 +110,58 @@ async fn call(app: axum::Router, uri: &str, body: Value) -> (StatusCode, Value) 
 }
 
 #[tokio::test]
-async fn resolve_names_is_a_typed_501_refusal() {
+async fn ac7_resolve_names_defaults_to_dry_run_and_returns_native_stats() {
     let journal = Journal::new();
+    journal.named_entity("alias", "Alex", false);
+    journal.named_entity("canonical", "Alex Smith", false);
+    journal.voiceprint("alias");
+    journal.voiceprint("canonical");
     let (status, value) = call(
         router(journal.0.clone()),
         "/app/speakers/api/resolve-names",
         json!({}),
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
-    assert_eq!(value["reason_code"], "speaker_resolve_names_not_native");
-    assert_eq!(
-        value["error"],
-        "native speaker name-variant candidate detection is not available yet"
-    );
-    assert_eq!(
-        value["detail"],
-        "this command requires the native similarity-scan implementation and does not perform merges"
-    );
+    assert_eq!(status, StatusCode::OK, "{value}");
+    assert!(value.get("reason_code").is_none());
+    for key in [
+        "entities_with_voiceprints",
+        "pairs_compared",
+        "matches_found",
+        "auto_merged",
+        "ambiguous",
+        "errors",
+    ] {
+        assert!(value.get(key).is_some(), "missing {key}: {value}");
+    }
+    assert_eq!(value["auto_merged"][0]["alias"], "Alex");
+    assert_eq!(value["auto_merged"][0]["canonical"], "Alex Smith");
+    assert!(journal.0.join("entities/alias").exists());
+    assert!(journal.0.join("entities/canonical").exists());
+}
+
+#[tokio::test]
+async fn resolve_names_commit_merges_ready_candidate() {
+    let journal = Journal::new();
+    journal.named_entity("alias", "Alex", false);
+    journal.named_entity("canonical", "Alex Smith", false);
+    journal.voiceprint("alias");
+    journal.voiceprint("canonical");
+    let (status, value) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/resolve-names",
+        json!({"commit":true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{value}");
+    assert_eq!(value["errors"], json!([]));
+    assert_eq!(value["auto_merged"][0]["alias"], "Alex");
+    assert!(!journal.0.join("entities/alias").exists());
+    let canonical: Value = serde_json::from_slice(
+        &fs::read(journal.0.join("entities/canonical/entity.json")).expect("canonical"),
+    )
+    .expect("identity json");
+    assert_eq!(canonical["aka"], json!(["Alex"]));
 }
 
 #[tokio::test]

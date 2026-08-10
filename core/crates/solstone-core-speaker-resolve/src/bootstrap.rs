@@ -22,8 +22,8 @@ use crate::owner_centroid::load_owner_centroid;
 use crate::person_guard::is_admissible_person;
 use crate::voiceprint_metadata::VoiceprintMetadata;
 
-/// Kept verbatim from `solstone/apps/speakers/bootstrap.py`; merge resolution
-/// itself is delegated to the entity resolver and does not consume this yet.
+/// Kept verbatim from `solstone/apps/speakers/bootstrap.py`; consumed by the
+/// name-variant scan when identifying merge candidates.
 pub const NAME_MERGE_THRESHOLD: f64 = 0.90;
 const RESOLUTION_FUZZY_THRESHOLD: f64 = 90.0;
 const AI_CHAT_STREAMS: [&str; 3] = ["import.chatgpt", "import.claude", "import.gemini"];
@@ -645,7 +645,7 @@ fn provenance_key(day: &str, segment_key: &str, source: &str, sentence_id: i64) 
     format!("{day}|{segment_key}|{source}|{sentence_id}")
 }
 
-fn dot(left: &[f32], right: &[f32]) -> f32 {
+pub(crate) fn dot(left: &[f32], right: &[f32]) -> f32 {
     left.iter()
         .zip(right)
         .map(|(left, right)| left * right)
