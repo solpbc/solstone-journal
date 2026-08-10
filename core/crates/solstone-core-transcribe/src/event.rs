@@ -233,6 +233,8 @@ fn error_type_name(error: &TranscribeError) -> &'static str {
         TranscribeError::SttSurface { .. } => "SttSurface",
         TranscribeError::ParakeetCppDeferred { .. } => "ParakeetCppDeferred",
         TranscribeError::ParakeetCppFailure { .. } => "ParakeetCppFailure",
+        TranscribeError::ParakeetCoremlDeferred { .. } => "ParakeetCoremlDeferred",
+        TranscribeError::ParakeetCoremlFailure { .. } => "ParakeetCoremlFailure",
         TranscribeError::ConfidentialDeferred { .. } => "ConfidentialDeferred",
         TranscribeError::SpeakerAnalysis(_) => "SpeakerAnalyzeError",
         TranscribeError::Decode { .. } => "Decode",

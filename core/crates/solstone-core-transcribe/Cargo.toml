@@ -39,6 +39,8 @@ solstone-core-callosum = { workspace = true }
 solstone-core-journal-config = { workspace = true }
 solstone-core-journal-io = { workspace = true }
 solstone-core-sound-tags = { workspace = true }
+solstone-core-local = { workspace = true }
+solstone-core-spp-ratls = { workspace = true }
 tempfile = "3.24.0"
 ureq = { workspace = true, features = ["multipart"] }
 

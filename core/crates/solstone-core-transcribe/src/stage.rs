@@ -11,15 +11,16 @@ use serde_json::{Map, Value};
 use solstone_core_journal_config::JournalConfigRead;
 use solstone_core_observe_audio::{SAMPLE_RATE, audio_to_wav_bytes, decode_f32_mono};
 use solstone_core_speaker_id::writer::WriteResponse;
+use solstone_core_spp_ratls::AttestationStateStore;
 
 use crate::TranscribeError;
 use crate::args::should_skip_process_one_processed;
 use crate::audio::{reduce_audio_if_needed, run_vad, speech_ratio, tag_audio};
-use crate::backend::parakeet_cpp;
 use crate::backend::{
     confidential, local_stt_backend, platform_floor_bytes, read_available_bytes,
     resolve_default_backend,
 };
+use crate::backend::{parakeet_coreml, parakeet_cpp};
 use crate::config::{
     confidential_audio_enabled, min_speech_seconds, parakeet_cpp_device, preserve_all,
 };
@@ -87,6 +88,7 @@ pub(crate) fn process_one(
     redo: bool,
     explicit_backend: Option<&str>,
     config: &JournalConfigRead,
+    attestation_state: &AttestationStateStore,
 ) -> Result<ProcessOutcome, TranscribeError> {
     if should_skip_process_one_processed(audio_path, redo) {
         return Ok(ProcessOutcome::Skipped);
@@ -180,37 +182,74 @@ pub(crate) fn process_one(
         .as_ref()
         .map(|audio| audio.len() as f64 / f64::from(SAMPLE_RATE));
 
-    let backend = resolve_default_backend(
+    let backend = match resolve_default_backend(
         explicit_backend,
         local_stt_backend(),
         read_available_bytes(),
         platform_floor_bytes(),
         confidential::confidential_channel_plausible(config),
         confidential_audio_enabled(config),
-    )?
-    .backend;
-    if !uses_parakeet_cpp(&backend) {
-        confidential::refuse_confidential_egress(
+    ) {
+        Ok(resolution) => resolution.backend,
+        Err(error) => {
+            emit_backend_error(
+                BackendErrorContext {
+                    audio_path,
+                    journal_path,
+                    audio_seconds,
+                    reduced_seconds,
+                    timings: &timings,
+                    vad: &vad,
+                },
+                &error,
+                None,
+            );
+            return Err(error);
+        }
+    };
+    let mut asr_at = None;
+    let dispatched = if backend == "confidential" {
+        dispatch_confidential_with_cap(audio_seconds, || {
+            asr_at = Some(Instant::now());
+            dispatch_backend(
+                config,
+                journal_path,
+                &backend,
+                statement_audio,
+                attestation_state,
+            )
+        })
+    } else {
+        asr_at = Some(Instant::now());
+        dispatch_backend(
             config,
+            journal_path,
             &backend,
-            confidential_audio_enabled(config),
-        )?;
-        return Err(TranscribeError::BackendNotImplemented { backend });
+            statement_audio,
+            attestation_state,
+        )
+    };
+    if let Some(asr_at) = asr_at {
+        timings.add_ms("asr", elapsed_ms(asr_at));
     }
-    let asr_at = Instant::now();
-    let transcription = dispatch_after_egress_gate(config, &backend, || {
-        let wav = audio_to_wav_bytes(statement_audio, SAMPLE_RATE).map_err(|error| {
-            TranscribeError::ParakeetCppFailure {
-                reason: "wav_encode_failed".to_owned(),
-                detail: error.to_string(),
-            }
-        })?;
-        let server = parakeet_cpp::connect(journal_path)?;
-        parakeet_cpp::transcribe(&server, &wav)
-    })?;
-    timings.add_ms("asr", elapsed_ms(asr_at));
-    let model_info =
-        parakeet_cpp::get_model_info(journal_path, parakeet_cpp_device(config).as_deref())?;
+    let (transcription, model_info) = match dispatched {
+        Ok(result) => result,
+        Err(error) => {
+            emit_backend_error(
+                BackendErrorContext {
+                    audio_path,
+                    journal_path,
+                    audio_seconds,
+                    reduced_seconds,
+                    timings: &timings,
+                    vad: &vad,
+                },
+                &error,
+                Some(&backend),
+            );
+            return Err(error);
+        }
+    };
 
     if transcription.words.is_empty() {
         let write_at = Instant::now();
@@ -296,7 +335,8 @@ pub(crate) fn process_one(
         backend: Some(&backend),
         model: Some(&model_info.model),
         device: Some(&model_info.device),
-        compute_type: Some(&model_info.compute_type),
+        compute_type: (!model_info.compute_type.is_empty())
+            .then_some(model_info.compute_type.as_str()),
         observer: std::env::var("OBSERVER_NAME").ok().as_deref(),
         vad_result: Some(&vad),
         segment_meta: segment_meta().as_ref(),
@@ -339,8 +379,125 @@ where
     dispatch()
 }
 
+fn dispatch_confidential_with_cap<T, F>(
+    audio_seconds: f64,
+    dispatch: F,
+) -> Result<T, TranscribeError>
+where
+    F: FnOnce() -> Result<T, TranscribeError>,
+{
+    if audio_seconds > confidential::CONFIDENTIAL_STT_MAX_AUDIO_SECONDS {
+        return Err(TranscribeError::ConfidentialDeferred {
+            reason: "confidential_audio_too_long".to_owned(),
+            detail: format!(
+                "audio is {:.1}s; confidential STT accepts at most {:.1}s",
+                audio_seconds,
+                confidential::CONFIDENTIAL_STT_MAX_AUDIO_SECONDS,
+            ),
+        });
+    }
+    dispatch()
+}
+
+fn dispatch_backend(
+    config: &JournalConfigRead,
+    journal_path: &Path,
+    backend: &str,
+    statement_audio: &[f32],
+    attestation_state: &AttestationStateStore,
+) -> Result<(parakeet_cpp::TranscriptionResponse, parakeet_cpp::ModelInfo), TranscribeError> {
+    if uses_parakeet_cpp(backend) {
+        return dispatch_after_egress_gate(config, backend, || {
+            let wav = audio_to_wav_bytes(statement_audio, SAMPLE_RATE).map_err(|error| {
+                TranscribeError::ParakeetCppFailure {
+                    reason: "wav_encode_failed".to_owned(),
+                    detail: error.to_string(),
+                }
+            })?;
+            let server = parakeet_cpp::connect(journal_path)?;
+            let transcription = parakeet_cpp::transcribe(&server, &wav)?;
+            let model_info =
+                parakeet_cpp::get_model_info(journal_path, parakeet_cpp_device(config).as_deref())?;
+            Ok((transcription, model_info))
+        });
+    }
+    if backend == "parakeet"
+        && std::env::consts::OS == "darwin"
+        && std::env::consts::ARCH == "aarch64"
+    {
+        return dispatch_after_egress_gate(config, backend, || {
+            let transcription = parakeet_coreml::transcribe(statement_audio, config)?;
+            let model_info = parakeet_coreml::get_model_info(config)?;
+            Ok((transcription, model_info))
+        });
+    }
+    if backend == "confidential" {
+        return dispatch_after_egress_gate(config, backend, || {
+            confidential::transcribe(statement_audio, journal_path, config, attestation_state)
+        });
+    }
+    Err(TranscribeError::BackendNotImplemented {
+        backend: backend.to_owned(),
+    })
+}
+
 fn uses_parakeet_cpp(backend: &str) -> bool {
-    backend == "parakeet-cpp" || (backend == "parakeet" && std::env::consts::OS == "linux")
+    uses_parakeet_cpp_for(std::env::consts::OS, backend)
+}
+
+fn uses_parakeet_cpp_for(os: &str, backend: &str) -> bool {
+    backend == "parakeet-cpp" || (backend == "parakeet" && os == "linux")
+}
+
+struct BackendErrorContext<'a> {
+    audio_path: &'a Path,
+    journal_path: &'a Path,
+    audio_seconds: f64,
+    reduced_seconds: Option<f64>,
+    timings: &'a Timings,
+    vad: &'a solstone_core_observe_audio::VadResult,
+}
+
+fn emit_backend_error(
+    context: BackendErrorContext<'_>,
+    error: &TranscribeError,
+    backend: Option<&str>,
+) {
+    let outcome = if error.exit_code() == 69 {
+        TranscribedOutcome::Deferred
+    } else {
+        TranscribedOutcome::Failed
+    };
+    let reason = backend_error_reason(error);
+    emit_event(
+        context.audio_path,
+        context.journal_path,
+        outcome,
+        Some(reason),
+        None,
+        Some(error),
+        backend,
+        None,
+        None,
+        Some(context.audio_seconds),
+        context.reduced_seconds,
+        None,
+        context.timings,
+        Some(context.vad),
+    );
+}
+
+fn backend_error_reason(error: &TranscribeError) -> &str {
+    match error {
+        TranscribeError::ParakeetCppDeferred { reason, .. }
+        | TranscribeError::ParakeetCppFailure { reason, .. }
+        | TranscribeError::ParakeetCoremlDeferred { reason, .. }
+        | TranscribeError::ParakeetCoremlFailure { reason, .. }
+        | TranscribeError::ConfidentialDeferred { reason, .. } => reason,
+        TranscribeError::SttSurface { .. } => "stt_surface",
+        TranscribeError::BackendNotImplemented { .. } => "backend_not_implemented",
+        _ => "backend_error",
+    }
 }
 
 fn statements_from_words(words: &[parakeet_cpp::TranscriptionWord]) -> Vec<Map<String, Value>> {
@@ -639,6 +796,7 @@ mod tests {
 
     use chrono::DateTime;
     use serde_json::{Value, json};
+    use solstone_core_observe_audio::VadResult;
     use solstone_core_processing_record::vocab;
     use solstone_core_processing_record::{
         TerminalProofOutcome, evaluate_terminal_proof, is_failure_exhausted,
@@ -646,11 +804,12 @@ mod tests {
     use solstone_core_speaker_id::writer::SpeakerTranscriptWriteError;
 
     use super::{
-        InputFacts, TerminalOutcome, capture_input_facts, decode_failure, remove_orphan_npz,
-        stt_zero_statements, stt_zero_statements_with, transcript_paths, vad_no_speech,
-        vad_no_speech_with,
+        BackendErrorContext, InputFacts, TerminalOutcome, capture_input_facts, decode_failure,
+        emit_backend_error, remove_orphan_npz, stt_zero_statements, stt_zero_statements_with,
+        transcript_paths, vad_no_speech, vad_no_speech_with,
     };
     use crate::TranscribeError;
+    use crate::event::Timings;
     use crate::terminal::TerminalWriteFailure;
 
     fn input(directory: &Path) -> InputFacts {
@@ -1004,9 +1163,134 @@ mod tests {
     }
 
     #[test]
-    fn parakeet_cpp_routing_excludes_unimplemented_backends() {
-        assert!(super::uses_parakeet_cpp("parakeet-cpp"));
-        assert!(!super::uses_parakeet_cpp("confidential"));
+    fn confidential_duration_cap_prevents_backend_dispatch() {
+        let mut dispatched = false;
+        let error = super::dispatch_confidential_with_cap(300.1, || {
+            dispatched = true;
+            Ok::<_, TranscribeError>(())
+        })
+        .unwrap_err();
+
+        let TranscribeError::ConfidentialDeferred { reason, .. } = error else {
+            panic!("duration cap must defer");
+        };
+        assert_eq!(reason, "confidential_audio_too_long");
+        assert!(!dispatched);
+    }
+
+    #[test]
+    fn disabled_confidential_lane_prevents_backend_dispatch() {
+        let config = solstone_core_journal_config::JournalConfigRead {
+            present: true,
+            sha256: None,
+            config: Some(
+                serde_json::json!({
+                    "services": {"confidential": {}},
+                    "transcribe": {"confidential_audio": false},
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        };
+        let mut dispatched = false;
+        let error = super::dispatch_after_egress_gate(&config, "confidential", || {
+            dispatched = true;
+            Ok::<_, TranscribeError>(())
+        })
+        .unwrap_err();
+
+        let TranscribeError::ConfidentialDeferred { reason, .. } = error else {
+            panic!("disabled confidential lane must defer");
+        };
+        assert_eq!(reason, "confidential_audio_disabled");
+        assert!(!dispatched);
+    }
+
+    #[test]
+    fn inactive_confidential_lane_prevents_backend_dispatch() {
+        let config = solstone_core_journal_config::JournalConfigRead {
+            present: true,
+            sha256: None,
+            config: Some(serde_json::Map::new()),
+        };
+        let mut dispatched = false;
+        let error = super::dispatch_after_egress_gate(&config, "confidential", || {
+            dispatched = true;
+            Ok::<_, TranscribeError>(())
+        })
+        .unwrap_err();
+
+        let TranscribeError::ConfidentialDeferred { reason, .. } = error else {
+            panic!("inactive confidential lane must defer");
+        };
+        assert_eq!(reason, "confidential_lane_inactive");
+        assert!(!dispatched);
+    }
+
+    #[test]
+    fn parakeet_cpp_routing_covers_linux_and_darwin_in_one_host_test() {
+        assert!(super::uses_parakeet_cpp_for("linux", "parakeet-cpp"));
+        assert!(super::uses_parakeet_cpp_for("linux", "parakeet"));
+        assert!(!super::uses_parakeet_cpp_for("darwin", "parakeet"));
+        assert!(super::uses_parakeet_cpp_for("darwin", "parakeet-cpp"));
+        assert!(!super::uses_parakeet_cpp_for("linux", "confidential"));
+    }
+
+    #[test]
+    fn backend_errors_emit_once_with_known_fields_only() {
+        let temporary = tempfile::tempdir().unwrap();
+        let segment = temporary.path().join("chronicle/20260810/audio/120000_60");
+        fs::create_dir_all(&segment).unwrap();
+        let audio = segment.join("clip.wav");
+        fs::write(&audio, b"audio").unwrap();
+        let timings = Timings::default();
+        let vad = VadResult {
+            duration_s: 1.0,
+            speech_duration_s: 1.0,
+            has_speech: true,
+            speech_segments: vec![(0.0, 1.0)],
+            noisy_rms: None,
+            noisy_s: 0.0,
+            loud_windows: 0,
+            speech_loud_windows: 0,
+        };
+        let resolution = TranscribeError::SttSurface {
+            available_bytes: None,
+            floor_bytes: None,
+        };
+        let coreml = TranscribeError::ParakeetCoremlDeferred {
+            reason: "coreml_helper_missing".to_owned(),
+            detail: "test".to_owned(),
+        };
+
+        let context = || BackendErrorContext {
+            audio_path: &audio,
+            journal_path: temporary.path(),
+            audio_seconds: 1.0,
+            reduced_seconds: None,
+            timings: &timings,
+            vad: &vad,
+        };
+        emit_backend_error(context(), &resolution, None);
+        emit_backend_error(context(), &coreml, Some("parakeet"));
+
+        let events: Vec<Value> = fs::read_to_string(segment.join("events.jsonl"))
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["outcome"], "failed");
+        assert_eq!(events[0]["reason"], "stt_surface");
+        assert!(events[0].get("backend").is_none());
+        assert!(events[0].get("device").is_none());
+        assert!(events[0].get("model").is_none());
+        assert_eq!(events[1]["outcome"], "deferred");
+        assert_eq!(events[1]["reason"], "coreml_helper_missing");
+        assert_eq!(events[1]["backend"], "parakeet");
+        assert!(events[1].get("device").is_none());
+        assert!(events[1].get("model").is_none());
     }
 
     fn read_header(path: &Path) -> Value {

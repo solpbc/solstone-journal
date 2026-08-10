@@ -3,7 +3,8 @@
 
 //! Transcription configuration extracted from the journal's JSON object.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use solstone_core_journal_config::{ConfigLoadError, JournalConfigRead, read_journal_config};
 
@@ -63,14 +64,66 @@ pub(crate) fn parakeet_cpp_device(config: &JournalConfigRead) -> Option<String> 
         .map(str::to_owned)
 }
 
+/// CoreML Parakeet model version, falling back to the helper's v3 default.
+pub(crate) fn parakeet_coreml_model_version(config: &JournalConfigRead) -> String {
+    parakeet_coreml_value(config, "model_version")
+        .filter(|value| matches!(*value, "v2" | "v3"))
+        .unwrap_or("v3")
+        .to_owned()
+}
+
+/// CoreML Parakeet model-cache directory.
+pub(crate) fn parakeet_coreml_cache_dir(config: &JournalConfigRead) -> PathBuf {
+    parakeet_coreml_value(config, "cache_dir")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(default_parakeet_coreml_cache_dir)
+}
+
+/// CoreML Parakeet helper deadline, falling back to 120 seconds for invalid values.
+pub(crate) fn parakeet_coreml_timeout(config: &JournalConfigRead) -> Duration {
+    parakeet_coreml_config(config)
+        .and_then(|parakeet| parakeet.get("timeout_sec"))
+        .and_then(|value| value.as_f64())
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .map(Duration::from_secs_f64)
+        .unwrap_or(Duration::from_secs(120))
+}
+
+fn parakeet_coreml_value<'a>(config: &'a JournalConfigRead, key: &str) -> Option<&'a str> {
+    parakeet_coreml_config(config)
+        .and_then(|parakeet| parakeet.get(key))
+        .and_then(|value| value.as_str())
+}
+
+fn parakeet_coreml_config(
+    config: &JournalConfigRead,
+) -> Option<&serde_json::Map<String, serde_json::Value>> {
+    config
+        .config
+        .as_ref()
+        .and_then(|root| root.get("transcribe"))
+        .and_then(|transcribe| transcribe.as_object())
+        .and_then(|transcribe| transcribe.get("parakeet"))
+        .and_then(|parakeet| parakeet.as_object())
+}
+
+fn default_parakeet_coreml_cache_dir() -> PathBuf {
+    std::env::home_dir()
+        .unwrap_or_default()
+        .join("Library/Application Support/solstone/parakeet/models")
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        confidential_audio_enabled, min_speech_seconds, parakeet_cpp_device, preserve_all,
-        read_transcribe_config,
+        confidential_audio_enabled, default_parakeet_coreml_cache_dir, min_speech_seconds,
+        parakeet_coreml_cache_dir, parakeet_coreml_model_version, parakeet_coreml_timeout,
+        parakeet_cpp_device, preserve_all, read_transcribe_config,
     };
     use solstone_core_journal_config::JournalConfigRead;
     use std::fs;
+    use std::path::PathBuf;
 
     #[test]
     fn reads_absent_journal_config() {
@@ -131,6 +184,30 @@ mod tests {
             r#"{"parakeet":{"device":"cpu","timeout_sec":10},"parakeet-cpp":{"timeout_sec":20}}"#,
         );
         assert_eq!(parakeet_cpp_device(&config), None);
+    }
+
+    #[test]
+    fn parakeet_coreml_values_read_only_their_keys_and_validate_defaults() {
+        let config = read_config(
+            r#"{"parakeet":{"model_version":"v2","cache_dir":"/tmp/coreml-cache","timeout_sec":2.5},"parakeet-cpp":{"device":"cpu"}}"#,
+        );
+
+        assert_eq!(parakeet_coreml_model_version(&config), "v2");
+        assert_eq!(
+            parakeet_coreml_cache_dir(&config),
+            PathBuf::from("/tmp/coreml-cache")
+        );
+        assert_eq!(parakeet_coreml_timeout(&config).as_millis(), 2_500);
+
+        let invalid = read_config(
+            r#"{"parakeet":{"model_version":"v1","cache_dir":"","timeout_sec":"zero"}}"#,
+        );
+        assert_eq!(parakeet_coreml_model_version(&invalid), "v3");
+        assert_eq!(
+            parakeet_coreml_cache_dir(&invalid),
+            default_parakeet_coreml_cache_dir()
+        );
+        assert_eq!(parakeet_coreml_timeout(&invalid).as_secs(), 120);
     }
 
     fn config(confidential_audio: Option<&str>) -> JournalConfigRead {
