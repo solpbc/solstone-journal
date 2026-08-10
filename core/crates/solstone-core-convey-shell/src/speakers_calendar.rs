@@ -220,13 +220,13 @@ fn scan_segment_embeddings(root: &Path, day: &str) -> Vec<Segment> {
         .collect()
 }
 
-struct SegmentDirectory {
-    stream: String,
-    key: String,
-    path: PathBuf,
+pub(crate) struct SegmentDirectory {
+    pub(crate) stream: String,
+    pub(crate) key: String,
+    pub(crate) path: PathBuf,
 }
 
-fn day_dirs(root: &Path) -> Vec<String> {
+pub(crate) fn day_dirs(root: &Path) -> Vec<String> {
     let mut days = read_dirs(&root.join("chronicle"))
         .into_iter()
         .filter(|entry| is_day(&entry.file_name().to_string_lossy()))
@@ -236,7 +236,7 @@ fn day_dirs(root: &Path) -> Vec<String> {
     days
 }
 
-fn iter_segments(root: &Path, day: &str) -> Vec<SegmentDirectory> {
+pub(crate) fn iter_segments(root: &Path, day: &str) -> Vec<SegmentDirectory> {
     let day_path = root.join("chronicle").join(day);
     let mut segments = Vec::new();
     for entry in read_dirs(&day_path) {
@@ -304,7 +304,7 @@ fn parse_segment(key: &str) -> Option<(String, String, u64)> {
     ))
 }
 
-fn audio_embedding_sources(path: &Path) -> Vec<String> {
+pub(crate) fn audio_embedding_sources(path: &Path) -> Vec<String> {
     let mut sources = fs::read_dir(path)
         .ok()
         .into_iter()
@@ -384,7 +384,7 @@ fn segment_has_speaker(path: &Path, speaker: &str) -> bool {
         })
 }
 
-fn journal_principal_id(root: &Path) -> Option<String> {
+pub(crate) fn journal_principal_id(root: &Path) -> Option<String> {
     let mut entities = read_dirs(&root.join("entities"));
     entities.sort_by_key(|entry| entry.file_name());
     entities.into_iter().find_map(|entry| {

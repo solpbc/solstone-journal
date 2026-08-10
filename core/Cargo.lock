@@ -2530,6 +2530,7 @@ dependencies = [
  "axum",
  "chrono",
  "futures-core",
+ "ndarray",
  "serde",
  "serde_json",
  "sha2",
