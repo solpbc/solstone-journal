@@ -1,0 +1,597 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! CLI maintenance routes composed from native speaker primitives.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::sync::Arc;
+
+use axum::body::to_bytes;
+use axum::extract::Request;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::{Extension, Json};
+use chrono::Utc;
+use serde_json::{Map, Value, json};
+use solstone_core_convey_http::envelope::error_envelope;
+
+use crate::JournalRoot;
+
+pub async fn bootstrap(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+    bootstrap_call(root, request, false).await
+}
+pub async fn seed_from_imports(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    request: Request,
+) -> Response {
+    bootstrap_call(root, request, true).await
+}
+
+async fn bootstrap_call(root: Arc<JournalRoot>, request: Request, imports: bool) -> Response {
+    let body = match json_body(request).await {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let request = solstone_core_speaker_resolve::bootstrap::BootstrapRequest {
+        journal_root: root.0.clone(),
+        encoder: encoder(),
+        added_at: Utc::now().timestamp_millis(),
+        dry_run: !body.get("commit").and_then(Value::as_bool).unwrap_or(false),
+    };
+    let result = if imports {
+        solstone_core_speaker_resolve::bootstrap::seed_from_imports(&request).map(seed_value)
+    } else {
+        solstone_core_speaker_resolve::bootstrap::bootstrap_voiceprints(&request)
+            .map(bootstrap_value)
+    };
+    match result {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => err(
+            "speaker_command_failed",
+            "I couldn't finish that speaker command.",
+            &error.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
+}
+
+pub async fn wipe(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+    let body = json_body(request).await.unwrap_or_else(|_| json!({}));
+    let dry_run = !body.get("commit").and_then(Value::as_bool).unwrap_or(false);
+    match solstone_core_speaker_resolve::artifact_wipe::wipe_speaker_artifacts(&root.0, dry_run) {
+        Ok(report) => {
+            Json(serde_json::to_value(report).expect("wipe report serializes")).into_response()
+        }
+        Err(solstone_core_speaker_resolve::artifact_wipe::ArtifactWipeError::Lock(
+            solstone_core_journal_io::LockError::Timeout(timeout),
+        )) => err(
+            "speaker_voiceprint_busy",
+            "I couldn't update that voice right now because it was busy. Try again in a moment.",
+            &timeout.to_string(),
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+        Err(error) => err(
+            "speaker_command_failed",
+            "I couldn't finish that speaker command.",
+            &error.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
+}
+
+pub async fn resolve_names() -> Response {
+    err(
+        "speaker_resolve_names_not_native",
+        "native speaker name-variant candidate detection is not available yet",
+        "this command requires the native similarity-scan implementation and does not perform merges",
+        StatusCode::NOT_IMPLEMENTED,
+    )
+}
+
+pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+    let body = match json_body(request).await {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let (day, stream, segment) = match fields(&body) {
+        Ok(fields) => fields,
+        Err(response) => return response,
+    };
+    let now = Utc::now().timestamp_millis();
+    let outcome = match solstone_core_speaker_resolve::resolve::resolve(
+        &root.0, day, stream, segment, true, now,
+    ) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            return err(
+                "speaker_command_failed",
+                "I couldn't finish that speaker command.",
+                &error.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
+    let result = resolve_value(&outcome);
+    if matches!(
+        outcome,
+        solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid
+    ) {
+        return err(
+            "speaker_owner_centroid_required",
+            "I couldn't run that speaker command until your owner voice is set up.",
+            "owner centroid unavailable",
+            StatusCode::CONFLICT,
+        );
+    }
+    let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
+    let save = body.get("save").and_then(Value::as_bool).unwrap_or(true);
+    let mut written_path = Value::Null;
+    if commit
+        && save
+        && let solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(output) = &outcome
+    {
+        let directory = root
+            .0
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join(segment);
+        let metadata = metadata(output);
+        if let Err(error) = solstone_core_speaker_id::labels::write_full_labels(
+            &directory,
+            labels(output),
+            &metadata,
+        ) {
+            return write_error(error.to_string(), true);
+        }
+        written_path = json!(
+            directory
+                .join("talents/speaker_labels.json")
+                .display()
+                .to_string()
+        );
+    }
+    let accumulated = if commit
+        && body
+            .get("accumulate")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        && let solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(output) = &outcome
+        && output.source.is_some()
+    {
+        match accumulate(&root.0, day, stream, segment, output, now) {
+            Ok(value) => value,
+            Err(error) => return accumulation_error(error),
+        }
+    } else {
+        Value::Null
+    };
+    Json(json!({"result":result,"written_path":written_path,"accumulated":accumulated}))
+        .into_response()
+}
+
+pub async fn backfill(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+    let body = json_body(request).await.unwrap_or_else(|_| json!({}));
+    let reattribute = body
+        .get("reattribute")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
+    let plan =
+        match solstone_core_speaker_resolve::backfill::plan_backfill_segments(&root.0, reattribute)
+        {
+            Ok(plan) => plan,
+            Err(error) => {
+                return err(
+                    "speaker_command_failed",
+                    "I couldn't finish that speaker command.",
+                    &error.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+            }
+        };
+    let mut processed = 0usize;
+    let mut errors = Vec::new();
+    let mut speakers = BTreeSet::new();
+    for segment in &plan.to_process {
+        match solstone_core_speaker_resolve::backfill::resolve_backfill_segment(
+            &root.0,
+            segment,
+            Utc::now().timestamp_millis(),
+        ) {
+            Ok(solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(output)) => {
+                for label in &output.labels {
+                    if let Some(speaker) = &label.speaker {
+                        speakers.insert(speaker.clone());
+                    }
+                }
+                let metadata = metadata(&output);
+                if commit {
+                    if let Err(error) = solstone_core_speaker_id::labels::write_full_labels(
+                        &segment.path,
+                        labels(&output),
+                        &metadata,
+                    ) {
+                        errors.push(format!("{}: {error}", segment.segment_key));
+                        continue;
+                    }
+                    if output.source.is_some()
+                        && let Err(error) = accumulate(
+                            &root.0,
+                            &segment.day,
+                            &segment.stream,
+                            &segment.segment_key,
+                            &output,
+                            Utc::now().timestamp_millis(),
+                        )
+                    {
+                        errors.push(format!("{}: {error}", segment.segment_key));
+                        continue;
+                    }
+                }
+                processed += 1;
+            }
+            Ok(_) => processed += 1,
+            Err(error) => errors.push(format!("{}: {error}", segment.segment_key)),
+        }
+    }
+    Json(json!({"total_segments":plan.total_segments,"total_eligible":plan.total_eligible,"already_labeled":plan.already_labeled,"processed":processed,"skipped_no_embed":plan.skipped_no_embed,"errors":errors,"speakers_seen":speakers})).into_response()
+}
+
+pub async fn backfill_last_seen(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    request: Request,
+) -> Response {
+    let body = json_body(request).await.unwrap_or_else(|_| json!({}));
+    let dry_run = !body.get("commit").and_then(Value::as_bool).unwrap_or(false);
+    let encoder = encoder();
+    let (entity_max_ts, labels_read, mut errors) = last_seen_sources(&root.0);
+    let mut rows_written = 0usize;
+    let mut rows_scanned = 0usize;
+    let mut rows_pending = 0usize;
+    let mut pending = BTreeMap::new();
+    for (entity_id, max_ts) in &entity_max_ts {
+        let Some(rows) = solstone_core_entity::load_entity_voiceprints_file(&root.0, entity_id)
+        else {
+            continue;
+        };
+        rows_scanned += rows.metadata.len();
+        let count = rows
+            .metadata
+            .iter()
+            .filter_map(|row| serde_json::from_str::<Value>(row).ok())
+            .filter(|row| {
+                row.get("last_seen_ts")
+                    .and_then(Value::as_i64)
+                    .is_none_or(|value| value < *max_ts)
+            })
+            .count();
+        if count == 0 {
+            continue;
+        }
+        pending.insert(
+            entity_id.clone(),
+            json!({"rows":count,"last_seen_ts":max_ts}),
+        );
+        rows_pending += count;
+        if dry_run {
+            continue;
+        }
+        match solstone_core_entity::rewrite_voiceprint_metadata(
+            &root.0,
+            entity_id,
+            &encoder,
+            |metadata| {
+                metadata
+                    .iter_mut()
+                    .map(|row| {
+                        if row
+                            .get("last_seen_ts")
+                            .and_then(Value::as_i64)
+                            .is_none_or(|value| value < *max_ts)
+                        {
+                            row.as_object_mut().map(|object| {
+                                object.insert("last_seen_ts".to_owned(), json!(max_ts))
+                            });
+                            1
+                        } else {
+                            0
+                        }
+                    })
+                    .sum()
+            },
+        ) {
+            Ok(count) => rows_written += count,
+            Err(error) => errors.push(format!("{entity_id}: {error}")),
+        }
+    }
+    Json(json!({"dry_run":dry_run,"labels_read":labels_read,"entities_seen":entity_max_ts.len(),"entities_pending":pending.len(),"rows_scanned":rows_scanned,"rows_pending":rows_pending,"rows_written":rows_written,"pending":pending,"errors":errors})).into_response()
+}
+
+fn accumulate(
+    root: &std::path::Path,
+    day: &str,
+    stream: &str,
+    segment_key: &str,
+    output: &solstone_core_speaker_resolve::resolve::ResolveOutput,
+    now_ms: i64,
+) -> Result<Value, solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationError> {
+    let Some(source) = output.source.as_ref() else {
+        return Ok(json!({}));
+    };
+    let path = root
+        .join("chronicle")
+        .join(day)
+        .join(stream)
+        .join(segment_key)
+        .join(format!("{source}.npz"));
+    let Some(embeddings) = solstone_core_speaker_id::embeddings::load_embeddings_file(&path)
+        .map_err(|error| {
+            solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationError::Invalid(
+                error.to_string(),
+            )
+        })?
+    else {
+        return Ok(json!({}));
+    };
+    let entity_ids = output
+        .labels
+        .iter()
+        .filter_map(|label| label.speaker.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let request = solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationRequest {
+        journal_root: root.to_path_buf(),
+        day: day.to_owned(),
+        stream: stream.to_owned(),
+        segment_key: segment_key.to_owned(),
+        source: source.clone(),
+        now_ms,
+        encoder: encoder(),
+        labels: output
+            .labels
+            .iter()
+            .map(|label| {
+                solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationLabel {
+                    sentence_id: label.sentence_id,
+                    speaker: label.speaker.clone(),
+                    confidence: label.confidence.clone(),
+                    method: label.method.clone(),
+                }
+            })
+            .collect(),
+        embeddings: embeddings
+            .statements
+            .into_iter()
+            .map(|(sentence_id, values)| {
+                solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationEmbedding {
+                    sentence_id,
+                    values,
+                }
+            })
+            .collect(),
+        entity_ids,
+    };
+    let reports = match solstone_core_speaker_resolve::voiceprint_accumulation::accumulate_voiceprints(&request)? {
+        solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationOutcome::NoOwnerCentroid { entity_reports }
+        | solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationOutcome::NothingEligible { entity_reports, .. }
+        | solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationOutcome::Completed { entity_reports, .. } => entity_reports,
+    };
+    Ok(Value::Object(
+        reports
+            .into_iter()
+            .filter_map(|(id, report)| {
+                (report.written_rows > 0).then(|| (id, json!(report.written_rows)))
+            })
+            .collect(),
+    ))
+}
+
+fn accumulation_error(
+    error: solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationError,
+) -> Response {
+    err(
+        "speaker_command_failed",
+        "I couldn't finish that speaker command.",
+        &error.to_string(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
+}
+
+fn last_seen_sources(root: &std::path::Path) -> (BTreeMap<String, i64>, usize, Vec<String>) {
+    let mut entity_max_ts = BTreeMap::new();
+    let mut labels_read = 0;
+    let mut errors = Vec::new();
+    let chronicle = root.join("chronicle");
+    let Ok(days) = fs::read_dir(chronicle) else {
+        return (entity_max_ts, labels_read, errors);
+    };
+    for day in days.flatten() {
+        let Some(day_name) = day.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let Ok(streams) = fs::read_dir(day.path()) else {
+            continue;
+        };
+        for stream in streams.flatten() {
+            let Ok(segments) = fs::read_dir(stream.path()) else {
+                continue;
+            };
+            for segment in segments.flatten() {
+                let labels = segment.path().join("talents/speaker_labels.json");
+                if !labels.exists() {
+                    continue;
+                }
+                labels_read += 1;
+                let key = segment.file_name().to_string_lossy().into_owned();
+                let ts = match segment_timestamp(&day_name, &key) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        errors.push(format!("{day_name}/{key}: {error}"));
+                        continue;
+                    }
+                };
+                let Ok(value) = fs::read(&labels).and_then(|bytes| {
+                    serde_json::from_slice::<Value>(&bytes).map_err(std::io::Error::other)
+                }) else {
+                    continue;
+                };
+                for speaker in value
+                    .get("labels")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|row| row.get("speaker").and_then(Value::as_str))
+                    .filter(|value| !value.is_empty())
+                {
+                    entity_max_ts
+                        .entry(speaker.to_owned())
+                        .and_modify(|current| *current = (*current).max(ts))
+                        .or_insert(ts);
+                }
+            }
+        }
+    }
+    (entity_max_ts, labels_read, errors)
+}
+
+fn segment_timestamp(day: &str, segment: &str) -> Result<i64, String> {
+    let time = segment
+        .split('_')
+        .next()
+        .ok_or_else(|| "missing segment time".to_owned())?;
+    if day.len() != 8 || time.len() != 6 {
+        return Err("invalid day or segment time".to_owned());
+    }
+    let datetime = chrono::NaiveDateTime::parse_from_str(&format!("{day}{time}"), "%Y%m%d%H%M%S")
+        .map_err(|error| error.to_string())?;
+    Ok(datetime.and_utc().timestamp_millis())
+}
+
+async fn json_body(request: Request) -> Result<Value, Response> {
+    let bytes = to_bytes(request.into_body(), usize::MAX)
+        .await
+        .map_err(|_| {
+            err(
+                "missing_request_body",
+                "I couldn't find any data in that request.",
+                "unable to read request body",
+                StatusCode::BAD_REQUEST,
+            )
+        })?;
+    if bytes.is_empty() {
+        return Ok(json!({}));
+    }
+    serde_json::from_slice(&bytes).map_err(|_| {
+        err(
+            "invalid_json_request",
+            "I couldn't read that JSON request.",
+            "request body must be a JSON object",
+            StatusCode::BAD_REQUEST,
+        )
+    })
+}
+#[allow(clippy::result_large_err)]
+fn fields(body: &Value) -> Result<(&str, &str, &str), Response> {
+    let day = body.get("day").and_then(Value::as_str).ok_or_else(|| {
+        err(
+            "missing_required_field",
+            "I couldn't find a required field.",
+            "day is required",
+            StatusCode::BAD_REQUEST,
+        )
+    })?;
+    let stream = body.get("stream").and_then(Value::as_str).ok_or_else(|| {
+        err(
+            "missing_required_field",
+            "I couldn't find a required field.",
+            "stream is required",
+            StatusCode::BAD_REQUEST,
+        )
+    })?;
+    let segment = body.get("segment").and_then(Value::as_str).ok_or_else(|| {
+        err(
+            "missing_required_field",
+            "I couldn't find a required field.",
+            "segment is required",
+            StatusCode::BAD_REQUEST,
+        )
+    })?;
+    Ok((day, stream, segment))
+}
+fn encoder() -> solstone_core_entity::EncoderIdentity {
+    solstone_core_entity::EncoderIdentity {
+        id: "unresolved".to_owned(),
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+        width: 256,
+    }
+}
+fn labels(output: &solstone_core_speaker_resolve::resolve::ResolveOutput) -> Vec<Value> {
+    output.labels.iter().map(|label| json!({"sentence_id":label.sentence_id,"speaker":label.speaker,"confidence":label.confidence,"method":label.method,"owner_margin_declined":label.owner_margin_declined,"acoustic_margin_declined":label.acoustic_margin_declined})).collect()
+}
+fn metadata(output: &solstone_core_speaker_resolve::resolve::ResolveOutput) -> Map<String, Value> {
+    let mut value = Map::new();
+    value.insert(
+        "owner_centroid_last_refreshed_at".to_owned(),
+        output
+            .metadata
+            .owner_centroid_last_refreshed_at
+            .clone()
+            .map_or(Value::Null, Value::String),
+    );
+    value.insert(
+        "voiceprint_versions".to_owned(),
+        json!(output.metadata.voiceprint_versions),
+    );
+    value.insert("candidate_evidence".to_owned(), Value::Array(Vec::new()));
+    value
+}
+fn resolve_value(outcome: &solstone_core_speaker_resolve::resolve::ResolveOutcome) -> Value {
+    match outcome {
+        solstone_core_speaker_resolve::resolve::ResolveOutcome::SegmentMissing => {
+            json!({"status":"skipped","skip_reason":"segment_missing"})
+        }
+        solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid => {
+            json!({"error":"owner centroid unavailable"})
+        }
+        solstone_core_speaker_resolve::resolve::ResolveOutcome::Empty { source } => {
+            json!({"status":"skipped","source":source,"skip_reason":"no_embeddings"})
+        }
+        solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(output) => {
+            json!({"labels":labels(output),"unmatched":output.unmatched,"unmatched_texts":output.unmatched_texts,"source":output.source,"candidates":output.candidates,"metadata":metadata(output)})
+        }
+    }
+}
+fn bootstrap_value(outcome: solstone_core_speaker_resolve::bootstrap::BootstrapOutcome) -> Value {
+    match outcome {
+        solstone_core_speaker_resolve::bootstrap::BootstrapOutcome::NoOwnerCentroid => {
+            json!({"error":"owner_centroid_required"})
+        }
+        solstone_core_speaker_resolve::bootstrap::BootstrapOutcome::Completed(stats) => {
+            json!({"segments_scanned":stats.segments_scanned,"single_speaker_segments":stats.single_speaker_segments,"speakers_found":stats.speakers_found,"entities_created":stats.entities_created,"embeddings_saved":stats.embeddings_saved,"embeddings_skipped_owner":stats.embeddings_skipped_owner,"embeddings_skipped_duplicate":stats.embeddings_skipped_duplicate,"speakers_unmatched":stats.speakers_unmatched,"errors":stats.errors})
+        }
+    }
+}
+fn seed_value(outcome: solstone_core_speaker_resolve::bootstrap::SeedFromImportsOutcome) -> Value {
+    match outcome {
+        solstone_core_speaker_resolve::bootstrap::SeedFromImportsOutcome::NoOwnerCentroid => {
+            json!({"error":"owner_centroid_required"})
+        }
+        solstone_core_speaker_resolve::bootstrap::SeedFromImportsOutcome::Completed(stats) => {
+            json!({"segments_scanned":stats.segments_scanned,"segments_with_speakers":stats.segments_with_speakers,"speakers_found":stats.speakers_found,"embeddings_saved":stats.embeddings_saved,"embeddings_skipped_owner":stats.embeddings_skipped_owner,"embeddings_skipped_duplicate":stats.embeddings_skipped_duplicate,"speakers_unmatched":stats.speakers_unmatched,"errors":stats.errors})
+        }
+    }
+}
+fn write_error(detail: String, _labels: bool) -> Response {
+    err(
+        "speaker_labels_busy",
+        "I couldn't update those speaker attributions right now because they were busy. Try again in a moment.",
+        &detail,
+        StatusCode::SERVICE_UNAVAILABLE,
+    )
+}
+fn err(code: &str, message: &str, detail: &str, status: StatusCode) -> Response {
+    error_envelope(code, message, detail, status).into_response()
+}

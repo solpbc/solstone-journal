@@ -83,6 +83,9 @@ pub struct EntityMergeReport {
     pub completed_phases: Vec<String>,
     pub aliases_added: usize,
     pub emails_added: usize,
+    /// Final durable-operation counters, including phases that run after the
+    /// audit record is first assembled.
+    pub counts: Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -270,6 +273,7 @@ pub(crate) fn commit_entity_merge_with_injector(
         completed_phases: Vec::new(),
         aliases_added: plan.aliases_added,
         emails_added: plan.emails_added,
+        counts: Value::Null,
     };
     let mut payload = payload_for_merge(journal, &merge_id, source_id, target_id, &plan)?;
     let mut touched_facets = Vec::new();
@@ -318,6 +322,12 @@ pub(crate) fn commit_entity_merge_with_injector(
         }
         report.completed_phases.push(phase.to_owned());
     }
+    report.counts = audit_counts(
+        &stats,
+        plan.aliases_added,
+        plan.emails_added,
+        plan.principal_transferred,
+    );
     Ok(report)
 }
 

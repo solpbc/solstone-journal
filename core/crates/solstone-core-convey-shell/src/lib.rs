@@ -51,7 +51,7 @@ use axum::body::Body;
 use axum::extract::Path;
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 
 mod assets;
@@ -61,6 +61,11 @@ pub mod session;
 pub mod session_gate;
 mod speakers;
 mod speakers_calendar;
+mod speakers_cli_discovery;
+mod speakers_cli_entities;
+mod speakers_cli_maintenance;
+mod speakers_cli_owner;
+mod speakers_cli_reads;
 mod speakers_discovery;
 mod speakers_known;
 mod speakers_media;
@@ -199,6 +204,87 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route(
             "/app/speakers/api/segments/{day}",
             get(speakers_calendar::segments),
+        )
+        .route(
+            "/app/speakers/api/segments-cli/{day}",
+            get(speakers_cli_reads::segments),
+        )
+        .route(
+            "/app/speakers/api/review-cli/{day}/{stream}/{segment_key}/{source}",
+            get(speakers_cli_reads::review),
+        )
+        .route("/app/speakers/api/status", get(speakers_cli_reads::status))
+        .route(
+            "/app/speakers/api/suggest",
+            get(speakers_cli_reads::suggest),
+        )
+        .route(
+            "/app/speakers/api/name-variants/keep-separate",
+            get(speakers_cli_reads::keep_separate),
+        )
+        .route(
+            "/app/speakers/api/discovery/dismissals",
+            get(speakers_cli_reads::dismissals),
+        )
+        .route(
+            "/app/speakers/api/owner/tag-cli",
+            post(speakers_cli_owner::tag),
+        )
+        .route(
+            "/app/speakers/api/owner/confirm-cli",
+            post(speakers_cli_owner::confirm),
+        )
+        .route(
+            "/app/speakers/api/owner/reject-cli",
+            post(speakers_cli_owner::reject),
+        )
+        .route(
+            "/app/speakers/api/discovery/identify-cli",
+            post(speakers_cli_discovery::identify),
+        )
+        .route(
+            "/app/speakers/api/discovery/identify/operations",
+            get(speakers_cli_discovery::operations),
+        )
+        .route(
+            "/app/speakers/api/discovery/identify/operations/{operation_id}",
+            get(speakers_cli_discovery::operation),
+        )
+        .route(
+            "/app/speakers/api/bootstrap",
+            post(speakers_cli_maintenance::bootstrap),
+        )
+        .route(
+            "/app/speakers/api/resolve-names",
+            post(speakers_cli_maintenance::resolve_names),
+        )
+        .route(
+            "/app/speakers/api/seed-from-imports",
+            post(speakers_cli_maintenance::seed_from_imports),
+        )
+        .route(
+            "/app/speakers/api/backfill",
+            post(speakers_cli_maintenance::backfill),
+        )
+        .route(
+            "/app/speakers/api/backfill-last-seen",
+            post(speakers_cli_maintenance::backfill_last_seen),
+        )
+        .route(
+            "/app/speakers/api/wipe",
+            post(speakers_cli_maintenance::wipe),
+        )
+        .route(
+            "/app/speakers/api/attribute-segment",
+            post(speakers_cli_maintenance::attribute),
+        )
+        .route(
+            "/app/speakers/api/merge-names",
+            post(speakers_cli_entities::merge_names),
+        )
+        .route(
+            "/app/speakers/api/link-import",
+            post(speakers_cli_entities::link_import),
         )
         .route("/app/{app}", get(app_root))
         .route("/app/{app}/", get(app_root))

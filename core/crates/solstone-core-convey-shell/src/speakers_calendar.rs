@@ -25,10 +25,10 @@ pub struct SegmentsQuery {
     speaker: Option<String>,
 }
 
-struct Segment {
-    key: String,
-    path: PathBuf,
-    payload: Value,
+pub(crate) struct Segment {
+    pub(crate) key: String,
+    pub(crate) path: PathBuf,
+    pub(crate) payload: Value,
 }
 
 pub async fn index(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
@@ -192,7 +192,7 @@ fn speaker_grid_counts(root: &Path) -> (BTreeMap<String, usize>, BTreeMap<String
     (days, activity)
 }
 
-fn scan_segment_embeddings(root: &Path, day: &str) -> Vec<Segment> {
+pub(crate) fn scan_segment_embeddings(root: &Path, day: &str) -> Vec<Segment> {
     iter_segments(root, day)
         .into_iter()
         .filter_map(|segment| {

@@ -1866,6 +1866,7 @@ async fn merge_and_undo_repair_refusals_have_exact_variant_key_sets() {
             completed_phases: vec!["identity".to_owned()],
             aliases_added: 1,
             emails_added: 0,
+            counts: serde_json::Value::Null,
         }),
         rollback_error: None,
     };

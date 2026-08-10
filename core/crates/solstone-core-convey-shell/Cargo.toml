@@ -18,8 +18,12 @@ ndarray = "=0.17.2"
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-convey-http.workspace = true
+solstone-core-entity.workspace = true
 solstone-core-entity-matching.workspace = true
+solstone-core-journal-io.workspace = true
 solstone-core-npy.workspace = true
+solstone-core-speaker-id.workspace = true
+solstone-core-speaker-resolve.workspace = true
 tokio = { workspace = true, features = ["net", "rt-multi-thread"] }
 tower.workspace = true
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
