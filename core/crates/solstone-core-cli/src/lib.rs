@@ -36,6 +36,7 @@ pub enum Command {
     Convey(ConveyOptions),
     Spl(SplCommand),
     Supervisor(SupervisorOptions),
+    Observer(ObserverCommand),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,7 +57,6 @@ pub struct TransferImportOptions {
     pub archive: OsString,
     pub dry_run: bool,
     pub journal_override: Option<OsString>,
-    Observer(ObserverCommand),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
