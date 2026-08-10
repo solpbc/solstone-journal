@@ -415,9 +415,12 @@ fn bootstrap_does_not_adopt_a_written_id_slug_collision() {
         panic!("owner centroid is present");
     };
 
+    assert!(
+        fs::read(voiceprints).unwrap() == before,
+        "incumbent voiceprint archive changed after NoMatch"
+    );
     assert_eq!(stats.speakers_unmatched, ["New Person"]);
     assert_eq!(stats.embeddings_saved, 0);
-    assert_eq!(fs::read(voiceprints).unwrap(), before);
 }
 
 #[test]
