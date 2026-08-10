@@ -2887,6 +2887,15 @@ name = "solstone-core-npy"
 version = "1.0.22"
 
 [[package]]
+name = "solstone-core-observe-audio"
+version = "1.0.22"
+dependencies = [
+ "ffmpeg-next",
+ "ffmpeg-sys-next",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "solstone-core-processing-record"
 version = "1.0.22"
 dependencies = [

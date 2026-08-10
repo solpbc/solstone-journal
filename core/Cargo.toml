@@ -49,6 +49,7 @@ members = [
     "crates/solstone-core-speakers-analyze",
     "crates/solstone-core-describe",
     "crates/solstone-core-grab",
+    "crates/solstone-core-observe-audio",
     "crates/solstone-core-depict",
     "crates/solstone-core-generate",
     "crates/solstone-core-generate-wire",

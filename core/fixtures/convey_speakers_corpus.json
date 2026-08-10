@@ -1880,6 +1880,23 @@
       }
     ]
   },
+  "native_deviations": [
+    {
+      "native": "a typed 4xx refusal",
+      "path": "/app/speakers/api/serve_audio/{day}/{rel}",
+      "reference": "500 -- the handler raises ValueError and Flask renders its HTML error page",
+      "when": "an EXISTING file whose extension is not in MIME_TYPES",
+      "why": "a raise is not a refusal; the reference's own behaviour here is an unhandled exception, not a contract worth reproducing"
+    },
+    {
+      "field": "intra_cosine_p25",
+      "native": "equal to within 1e-6 absolute",
+      "reference": "float64 accumulation via numpy",
+      "tolerance": 1e-06,
+      "when": "any route reporting voice-cohesion statistics",
+      "why": "a percentile over f32 embeddings differs in the last bits by accumulation order; the value drives a coarse quality label and no reachable difference in it changes what an owner sees"
+    }
+  ],
   "placeholders": {
     "day": "<TODAY>",
     "journal_root": "<JOURNAL_ROOT>"
