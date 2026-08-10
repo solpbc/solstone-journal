@@ -929,6 +929,16 @@
       "line": 62,
       "role": "test_fixture_setup",
       "target": "entities/<id>/voiceprints.npz"
+    },
+    {
+      "callee": "save_voiceprints_batch",
+      "classification": "direct_write",
+      "file": "scripts/entity_corpus.py",
+      "fingerprint": "1a5fbd6fa50210f4",
+      "function": "<module>.seed_populated_speakers_journal",
+      "line": 2226,
+      "role": "differential_fixture_oracle_builder",
+      "target": "entities/<id>/voiceprints.npz"
     }
   ],
   "schema_version": 1,

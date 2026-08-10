@@ -1917,3 +1917,324 @@ def _lifecycle_identify_prepared_event(
         "request_fingerprint": fingerprint,
         "prepared_plan": plan,
     }
+
+
+# ---------------------------------------------------------------------------
+# Populated speakers journal — the read-surface oracle's fixture
+# ---------------------------------------------------------------------------
+#
+# The convey shell corpus was captured against an EMPTY journal, where
+# /api/grid returns 55 bytes and known-voices returns 42. That is sufficient for
+# the shell, the registry and the session gate, and it proves almost nothing for
+# a read surface: an implementation returning empty objects for everything
+# passes every case.
+#
+# This seeds a journal whose content reaches the branches those routes actually
+# have. It lives here rather than in a new module because
+# check_speaker_identity_cutover's _fixture_role_is_valid permits exactly ONE
+# module carrying SPEAKER_IDENTITY_CUTOVER_ROLE, and this file already holds it —
+# and a populated speakers journal necessarily writes speaker_labels and
+# voiceprint artifacts. Widening that checker to N role modules would weaken a
+# guard rather than fix one.
+#
+# ⛔ It is called by no fixture in build_core_fixtures' list, so it does not
+# change any committed core fixture.
+#
+# Determinism: every value is derived from a fixed seed and fixed day names.
+# Nothing reads a clock, a UUID, or filesystem ordering.
+
+POPULATED_SEED = 20260809
+POPULATED_STREAM_A = "field"
+POPULATED_STREAM_B = "desk"
+# 31 days so the 30-day speaker-quality window has a live boundary rather than
+# being a no-op. The window takes the 30 most recent day dirs BY NAME.
+POPULATED_DAY_COUNT = 31
+POPULATED_FIRST_DAY = "20260701"
+
+
+def _populated_days() -> list[str]:
+    from datetime import date, timedelta
+
+    start = date(
+        int(POPULATED_FIRST_DAY[:4]),
+        int(POPULATED_FIRST_DAY[4:6]),
+        int(POPULATED_FIRST_DAY[6:]),
+    )
+    return [(start + timedelta(days=n)).strftime("%Y%m%d") for n in range(POPULATED_DAY_COUNT)]
+
+
+def _unit_vector(rng, width: int = 256):
+    import numpy as np
+
+    vector = rng.standard_normal(width).astype("float32")
+    norm = float(np.linalg.norm(vector))
+    return vector / norm
+
+
+def _write_transcript(path, sentences: list[str], *, malformed_at: int | None = None) -> None:
+    """Write a transcript JSONL: metadata line 1, then one line per sentence.
+
+    ⚠ `malformed_at` inserts a line the reference SKIPS WITHOUT RENUMBERING, so
+    the surviving sentence ids carry a GAP. A port that filters and then
+    enumerates renumbers instead, and diverges silently.
+    """
+    lines = [json.dumps({"raw": f"{path.stem}.flac", "model": "medium.en"})]
+    for index, text in enumerate(sentences):
+        if malformed_at is not None and index == malformed_at:
+            lines.append("{ this line is not json")
+            continue
+        seconds = 3600 + index * 5
+        stamp = f"{seconds // 3600:02d}:{(seconds % 3600) // 60:02d}:{seconds % 60:02d}"
+        lines.append(json.dumps({"start": stamp, "text": text}))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_embeddings(path, rng, count: int, *, durations: bool = True) -> None:
+    import numpy as np
+
+    vectors = np.vstack([_unit_vector(rng) for _ in range(count)]).astype("float32")
+    statement_ids = np.arange(1, count + 1, dtype="int32")
+    payload = {"embeddings": vectors, "statement_ids": statement_ids}
+    if durations:
+        payload["durations_s"] = np.full(count, 2.5, dtype="float32")
+    np.savez_compressed(path, **payload)
+
+
+def seed_populated_speakers_journal(root: Path) -> dict[str, Any]:
+    """Build a deterministic populated journal and return a manifest of it.
+
+    ⛔ Synthetic only. Every name, embedding and transcript here is invented; no
+    value is copied from any real journal. The caller supplies a temporary root
+    and this function never accepts a path to an existing journal.
+    """
+    import numpy as np
+
+    from solstone.think.entities.core import entity_slug
+    from solstone.think.entities.journal import save_journal_entity
+
+    # save_journal_entity resolves the journal from the environment rather than
+    # taking a root, so the caller's temp root must be published before any
+    # entity write. think.utils memoizes the resolved path, so clear its cache.
+    os.environ["SOLSTONE_JOURNAL"] = str(root)
+    import solstone.think.utils as _think_utils
+
+    _think_utils._journal_path_cache = None
+
+    rng = np.random.default_rng(POPULATED_SEED)
+    days = _populated_days()
+
+    (root / "config").mkdir(parents=True, exist_ok=True)
+    (root / "config" / "journal.json").write_text(
+        json.dumps({"setup": {"completed_at": 1767225600}}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    # --- entities -----------------------------------------------------------
+    # One principal, one blocked, and nine more so the people-search limit of 8
+    # is a live boundary -- truncation is invisible in the payload, which carries
+    # no total, so eight or fewer never pins it.
+    people = [
+        ("Ada Lovelace", {"is_principal": True}),
+        ("Grace Hopper", {}),
+        ("Alan Turing", {}),
+        ("Katherine Johnson", {}),
+        ("Barbara Liskov", {}),
+        ("Edsger Dijkstra", {}),
+        ("Radia Perlman", {}),
+        ("Leslie Lamport", {}),
+        ("Margaret Hamilton", {}),
+        ("Frances Allen", {}),
+        ("Blocked Person", {"blocked": True}),
+    ]
+    entity_ids: dict[str, str] = {}
+    for name, extra in people:
+        entity = {"name": name, "type": "Person", "created_at": 1767225600}
+        entity.update(extra)
+        entity_id = entity_slug(name)
+        entity_ids[name] = entity_id
+        entity["id"] = entity_id
+        save_journal_entity(entity)
+
+    # --- days ---------------------------------------------------------------
+    # Most days exist but hold nothing, so the 30-day window truncation is real.
+    for day in days:
+        (root / "chronicle" / day).mkdir(parents=True, exist_ok=True)
+
+    manifest: dict[str, Any] = {
+        "days": days,
+        "entities": entity_ids,
+        "segments": [],
+        "notes": [],
+    }
+
+    def segment(day: str, stream: str, key: str) -> Path:
+        directory = root / "chronicle" / day / stream / key
+        (directory / "talents").mkdir(parents=True, exist_ok=True)
+        manifest["segments"].append({"day": day, "stream": stream, "key": key})
+        return directory
+
+    # Segment 1 -- fully populated: labels, corrections, embeddings, audio.
+    one = segment(days[-1], POPULATED_STREAM_A, "090000_300")
+    _write_transcript(
+        one / "mic_audio.jsonl",
+        ["Good morning.", "The index rebuild finished.", "We should ship it."],
+    )
+    _write_embeddings(one / "mic_audio.npz", rng, 3)
+    (one / "mic_audio.flac").write_bytes(b"\x00" * 64)
+    (one / "talents" / "speakers.json").write_text(
+        json.dumps(["Grace Hopper", "Alan Turing"]), encoding="utf-8"
+    )
+    (one / "talents" / "speaker_labels.json").write_text(
+        json.dumps(
+            {
+                "labels": [
+                    {
+                        "sentence_id": 1,
+                        "speaker": entity_ids["Grace Hopper"],
+                        "confidence": "high",
+                        "method": "user_assigned",
+                    },
+                    {
+                        "sentence_id": 2,
+                        "speaker": entity_ids["Alan Turing"],
+                        "confidence": "low",
+                        "method": "acoustic",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (one / "talents" / "speaker_corrections.json").write_text(
+        json.dumps(
+            {
+                "corrections": [
+                    {
+                        "sentence_id": 2,
+                        "original_speaker": entity_ids["Grace Hopper"],
+                        "corrected_speaker": entity_ids["Alan Turing"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # Segment 2 -- a malformed transcript line, so sentence ids carry a GAP.
+    two = segment(days[-1], POPULATED_STREAM_B, "140000_600")
+    _write_transcript(
+        two / "sys_audio.jsonl",
+        ["First.", "Second.", "Third.", "Fourth."],
+        malformed_at=1,
+    )
+    _write_embeddings(two / "sys_audio.npz", rng, 4, durations=False)
+    (two / "sys_audio.flac").write_bytes(b"\x00" * 32)
+    manifest["notes"].append("segment 2 transcript has a malformed line at index 1")
+
+    # Segment 3 -- transcript present, embeddings ABSENT. The reference answers
+    # 200 with an empty sentence list: a blank review screen with no signal.
+    three = segment(days[-2], POPULATED_STREAM_A, "101500_120")
+    _write_transcript(three / "mic_audio.jsonl", ["Only text here.", "No vectors."])
+    (three / "mic_audio.flac").write_bytes(b"")
+    manifest["notes"].append("segment 3 has no .npz and a ZERO-BYTE audio file")
+
+    # Segment 4 -- an EMPTY labels object. has_labels reads true while every
+    # needs_review computes as if labels were absent.
+    four = segment(days[-3], POPULATED_STREAM_A, "173000_240")
+    _write_transcript(four / "mic_audio.jsonl", ["Alpha.", "Beta."])
+    _write_embeddings(four / "mic_audio.npz", rng, 2)
+    (four / "mic_audio.flac").write_bytes(b"\x00" * 16)
+    (four / "talents" / "speaker_labels.json").write_text("{}", encoding="utf-8")
+    manifest["notes"].append("segment 4 labels file is {} -- has_labels true, needs_review false")
+
+    # Segment 5 -- a CORRUPT labels file, which the reference collapses to absent.
+    five = segment(days[-4], POPULATED_STREAM_B, "080000_180")
+    _write_transcript(five / "mic_audio.jsonl", ["Gamma."])
+    _write_embeddings(five / "mic_audio.npz", rng, 1)
+    (five / "mic_audio.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 24)
+    (five / "talents" / "speaker_labels.json").write_text("{not json", encoding="utf-8")
+    manifest["notes"].append("segment 5 labels file is corrupt; carries a PNG for the image path")
+
+    # --- discovery cache ----------------------------------------------------
+    awareness = root / "awareness"
+    awareness.mkdir(parents=True, exist_ok=True)
+    (awareness / "discovery_clusters.json").write_text(
+        json.dumps(
+            {
+                "clusters": {
+                    "1": [
+                        {
+                            "day": days[-1],
+                            "stream": POPULATED_STREAM_A,
+                            "segment_key": "090000_300",
+                            "source": "mic_audio",
+                            "sentence_id": 1,
+                        },
+                        {
+                            "day": days[-1],
+                            "stream": POPULATED_STREAM_A,
+                            "segment_key": "090000_300",
+                            "source": "mic_audio",
+                            "sentence_id": 3,
+                        },
+                    ],
+                    "2": [
+                        {
+                            "day": days[-1],
+                            "stream": POPULATED_STREAM_B,
+                            "segment_key": "140000_600",
+                            "source": "sys_audio",
+                            "sentence_id": 1,
+                        }
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest["notes"].append("discovery cluster 1 members resolve to real statement tuples")
+
+    # --- voiceprints --------------------------------------------------------
+    # Without these, known-voices answers an empty list and that route stays as
+    # blind as it was on the empty journal. Written through the real batch
+    # writer so the at-rest shape is the product's, not this file's idea of it.
+    from solstone.think.entities.voiceprints import save_voiceprints_batch
+
+    voiceprint_plan = {
+        "Grace Hopper": 4,
+        "Alan Turing": 2,
+        "Katherine Johnson": 1,
+    }
+    for name, count in voiceprint_plan.items():
+        items = []
+        for index in range(count):
+            items.append(
+                (
+                    _unit_vector(rng),
+                    {
+                        "day": days[-1],
+                        "stream": POPULATED_STREAM_A,
+                        "segment_key": "090000_300",
+                        "source": "mic_audio",
+                        "sentence_id": index + 1,
+                        "added_at": 1767225600 + index,
+                        "last_seen_ts": 1767225600 + index,
+                        "method": "user_assigned",
+                    },
+                )
+            )
+        save_voiceprints_batch(entity_ids[name], items)
+    manifest["voiceprints"] = voiceprint_plan
+    manifest["notes"].append(
+        "three entities carry voiceprints and eight do not, so has_voice is both true and false"
+    )
+
+    # An EXISTING file with an unregistered extension. The reference checks
+    # is_file() before the MIME lookup, so a probe at a path that does not exist
+    # returns 404 and never reaches the branch that raises.
+    (one / "mic_audio.xyz").write_bytes(b"\x00" * 8)
+    manifest["notes"].append(
+        "segment 1 carries mic_audio.xyz -- an EXISTING file with an unregistered extension"
+    )
+
+    return manifest

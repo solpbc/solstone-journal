@@ -1,0 +1,1860 @@
+{
+  "cases": [
+    {
+      "body_bytes": 7838,
+      "body_sha256": "8f34eab03545b97236ce4195655d3ff4624585121a29dfa9e2af47fc0ffae166",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "7838",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "not_in_new_voices_copy": "this voice isn't in new voices yet. sol needs to hear it a few more times.",
+        "owner_min_statements": 30,
+        "owner_status_routing_tokens": {
+          "candidate": "candidate",
+          "confirmed": "confirmed"
+        },
+        "speaker_copy": {
+          "SPK_ACTION_RETRY": "try again",
+          "SPK_ACTION_WHO_IS_THIS": "who is this?",
+          "SPK_ANCHOR": "in your journal",
+          "SPK_ANCHOR_HAS_VOICE": "in your journal \u00b7 sol already knows their voice",
+          "SPK_CHECK_NAME_ERROR": "sol couldn't check this name. try again.",
+          "SPK_CORRECT_PROPAGATE_APPLY": "Apply these changes",
+          "SPK_CORRECT_PROPAGATE_NONE": "Nothing else would change.",
+          "SPK_CORRECT_PROPAGATE_OFFER": "Sol can look through segments where these two appear and show you what else would change.",
+          "SPK_CORRECT_SCOPE": "This fixes this one statement.",
+          "SPK_CREATE_ROW": "add \"{query}\" as someone new",
+          "SPK_DISCOVERY_DEGRADED_TEMPLATE": "some voice samples could not be used ({count})",
+          "SPK_DISCOVERY_ERROR": "sol couldn't look for new voices right now.",
+          "SPK_EVIDENCE_MEETING_MANY": "in your meeting notes on {count} of those days",
+          "SPK_EVIDENCE_MEETING_ONE": "in your meeting notes that day",
+          "SPK_EVIDENCE_SCREEN_MANY": "on screen in {count} of these conversations",
+          "SPK_EVIDENCE_SCREEN_ONE": "on screen in 1 of these conversations",
+          "SPK_EXIT_NOT_NOW": "not now",
+          "SPK_EXIT_NOT_PERSON": "not a person",
+          "SPK_FILTER_BY_PREFIX": "filtering by:",
+          "SPK_FILTER_NO_SEGMENTS_TODAY": "no segments attributed to this speaker today",
+          "SPK_GRID_ACTIVITY_ONE": "segment, all named",
+          "SPK_GRID_ACTIVITY_OTHER": "segments, all named",
+          "SPK_GRID_BODY": "days with segments still needing names",
+          "SPK_GRID_TITLE": "voices to name",
+          "SPK_GRID_UNIT_NONE": "quiet day",
+          "SPK_GRID_UNIT_ONE": "segment to name",
+          "SPK_GRID_UNIT_OTHER": "segments to name",
+          "SPK_KEEP_SEPARATE_BODY": "{name} is already in your journal. if this is someone else, sol will keep them separate and never suggest mixing the two.",
+          "SPK_KEEP_SEPARATE_CONFIRM": "yes, someone new",
+          "SPK_KEEP_SEPARATE_DECLINE": "no, that's {name}",
+          "SPK_KEEP_SEPARATE_TITLE": "different from {name}?",
+          "SPK_LOAD_ERROR": "sol couldn't load this voice. try again.",
+          "SPK_NEAR_MATCH_BAND": "already in your journal?",
+          "SPK_NOT_NOW_DONE": "no rush. it waits quietly in new voices.",
+          "SPK_NOT_PERSON_DONE": "got it, not a person. sol will leave this one alone and will not ask about it again.",
+          "SPK_OVERVIEW_CARD_LAST_HEARD_PREFIX": "last heard",
+          "SPK_OVERVIEW_CARD_SAMPLES_LABEL": "samples",
+          "SPK_OVERVIEW_CARD_SEGMENTS_LABEL": "segments",
+          "SPK_OVERVIEW_CARD_STREAMS_PREFIX": "streams",
+          "SPK_OVERVIEW_COHESION_LABELS": [
+            "learning",
+            "early",
+            "improving",
+            "good",
+            "strong",
+            "settled"
+          ],
+          "SPK_OVERVIEW_KNOWN_VOICES_EMPTY": "no one else's voice has been learned yet. once the same voice shows up across a few segments, that person will appear here. you can also tag voices manually in any segment.",
+          "SPK_OVERVIEW_KNOWN_VOICES_HEADER": "known voices",
+          "SPK_OVERVIEW_KNOWN_VOICES_SORTS": [
+            "recent",
+            "most samples",
+            "alphabetical"
+          ],
+          "SPK_OVERVIEW_NEW_VOICES_HEADER": "new voices",
+          "SPK_OVERVIEW_OWNER_BUILD_FROM_TAGS_LABEL": "Build from manual tags",
+          "SPK_OVERVIEW_OWNER_BUILT_PREFIX": "built",
+          "SPK_OVERVIEW_OWNER_BUILT_UNKNOWN": "unknown",
+          "SPK_OVERVIEW_OWNER_COHESION_LABEL": "consistency",
+          "SPK_OVERVIEW_OWNER_HELP_LABEL": "help sol learn faster",
+          "SPK_OVERVIEW_OWNER_PROGRESS_SUFFIX": "longer statements",
+          "SPK_OVERVIEW_OWNER_PROGRESS_UNKNOWN": "learning progress unavailable",
+          "SPK_OVERVIEW_OWNER_REFRESHED_PREFIX": "refreshed",
+          "SPK_OVERVIEW_OWNER_SAMPLES_LABEL": "voice samples",
+          "SPK_OVERVIEW_OWNER_STATUS_ERROR": "couldn't load voice status",
+          "SPK_OVERVIEW_OWNER_STREAMS_LABEL": "where heard",
+          "SPK_OVERVIEW_QUALITY_ERROR_HEADING": "couldn't load voice quality",
+          "SPK_OVERVIEW_QUALITY_HEADER": "voice quality",
+          "SPK_OVERVIEW_QUALITY_HIGH_LABEL": "high confidence",
+          "SPK_OVERVIEW_QUALITY_MARGIN_LABEL": "close voice matches",
+          "SPK_OVERVIEW_QUALITY_MEDIUM_LABEL": "needs a look",
+          "SPK_OVERVIEW_QUALITY_MISSING_LABEL": "segments not processed",
+          "SPK_OVERVIEW_QUALITY_PREBOOTSTRAP": "your voice is still learning",
+          "SPK_OVERVIEW_QUALITY_READY": "recent speaker labels",
+          "SPK_OVERVIEW_QUALITY_SKIPPED_LABEL": "set aside for now",
+          "SPK_OVERVIEW_QUALITY_TEACHING_LABEL": "teaching changes",
+          "SPK_OVERVIEW_QUALITY_TEACHING_ZERO": "no recent teaching changes",
+          "SPK_OVERVIEW_QUALITY_UNLABELED_LABEL": "not yet named",
+          "SPK_OVERVIEW_QUALITY_UNREADABLE_WARNING": "some local speaker files could not be read",
+          "SPK_OVERVIEW_TODAY_LINK_LABEL": "today's review \u2192",
+          "SPK_OVERVIEW_YOUR_VOICE_CONFIRMED": "confirmed",
+          "SPK_OVERVIEW_YOUR_VOICE_HEADER": "your voice",
+          "SPK_OVERVIEW_YOUR_VOICE_LEARNING": "sol is still learning",
+          "SPK_OWNER_REVEAL_CLOSE_LABEL": "continue",
+          "SPK_OWNER_REVEAL_EVIDENCE_TEMPLATE": "{tier} evidence",
+          "SPK_OWNER_REVEAL_STATEMENTS_TEMPLATE": "{count} statements taught",
+          "SPK_OWNER_REVEAL_STREAMS_TEMPLATE": "{count} places heard",
+          "SPK_OWNER_REVEAL_TITLE": "your voice is confirmed",
+          "SPK_OWNER_TEACH_BODY": "pick longer statements that are yours. sol uses them to keep your voice separate from other speakers.",
+          "SPK_OWNER_TEACH_BUSY": "voice update is busy; try the next statement in a moment",
+          "SPK_OWNER_TEACH_EMPTY": "no teachable statements are ready yet",
+          "SPK_OWNER_TEACH_EXHAUSTED_BODY_TEMPLATE": "{count} of {minimum} longer statements taught",
+          "SPK_OWNER_TEACH_EXHAUSTED_TITLE": "that's all for today",
+          "SPK_OWNER_TEACH_FAILED": "voice update did not finish; try another statement in a moment",
+          "SPK_OWNER_TEACH_LOADING": "finding teachable statements...",
+          "SPK_OWNER_TEACH_MINE_LABEL": "that's me",
+          "SPK_OWNER_TEACH_NOT_ME_LABEL": "not me",
+          "SPK_OWNER_TEACH_NOT_ME_RESPONSE": "ok \u2014 moving on",
+          "SPK_OWNER_TEACH_PARTIAL": "some of today could not be included",
+          "SPK_OWNER_TEACH_PAUSED": "teaching paused",
+          "SPK_OWNER_TEACH_PAUSE_LABEL": "pause",
+          "SPK_OWNER_TEACH_PROGRESS_TEMPLATE": "{count} of {minimum} longer statements",
+          "SPK_OWNER_TEACH_REFUSED_TITLE": "not ready yet",
+          "SPK_OWNER_TEACH_SKIP_LABEL": "skip for now",
+          "SPK_OWNER_TEACH_START_LABEL": "start teaching",
+          "SPK_OWNER_TEACH_TITLE": "teach sol your voice",
+          "SPK_PLAY_FROM_HERE_LABEL": "play from here",
+          "SPK_PREVIEW_BACK": "back",
+          "SPK_PREVIEW_BODY_FRESH": "everywhere sol has heard it, in every conversation, now and from here on.",
+          "SPK_PREVIEW_BODY_HAS_VOICE": "{name} already has a voice in your journal. sol will treat this as another way they sound and keep them together.",
+          "SPK_PREVIEW_CONFIRM": "yes, this is {first_name}",
+          "SPK_PREVIEW_FACTS": "{statements} statements across {conversations} conversations, all in your journal. you can undo this.",
+          "SPK_PREVIEW_TITLE": "this voice becomes {name}",
+          "SPK_RECEIPT_BODY": "every conversation where this voice was heard now reads {name}.",
+          "SPK_RECEIPT_TITLE": "sol knows {name}'s voice now",
+          "SPK_RECEIPT_UNDO": "undo",
+          "SPK_SAMPLE_UNAVAILABLE": "this sample isn't available",
+          "SPK_SEARCH_ERROR": "sol couldn't search your people. try again.",
+          "SPK_SEARCH_LABEL": "someone else",
+          "SPK_SEARCH_NO_RESULTS": "no one in your journal matches \"{query}\"",
+          "SPK_SEARCH_PLACEHOLDER": "search your people",
+          "SPK_SHEET_LEDE_MANY": "sol has heard this voice in {count} conversations, all kept in your journal. tell sol who this is and it will recognize them from now on.",
+          "SPK_SHEET_LEDE_ONE": "sol has heard this voice in 1 conversation, kept in your journal. tell sol who this is and it will recognize them from now on.",
+          "SPK_SHEET_TITLE": "someone keeps showing up",
+          "SPK_SHELF_CANDIDATES": "sol noticed these people around this voice:",
+          "SPK_SHELF_MENTIONS": "also nearby, from names that come up around this voice:",
+          "SPK_SHELF_NO_EVIDENCE": "sol didn't notice anyone around this voice. search your people:",
+          "SPK_THIS_IS_ME": "this is me",
+          "SPK_THIS_IS_ME_GUIDANCE": "sol learns your voice separately. teach it in your voice settings.",
+          "SPK_UNDO_DONE": "undone. this voice is back in new voices.",
+          "SPK_UNDO_PARTIAL": "undo restored part of this voice. {restored} changed back; {skipped} stayed as they are. try again."
+        },
+        "speaker_filter_name": null,
+        "today": "<TODAY>"
+      },
+      "method": "GET",
+      "normalized_fields": [
+        "today"
+      ],
+      "path": "/app/speakers/api/state",
+      "request_headers": {},
+      "status": 200,
+      "why": "initial state; the only normalized field"
+    },
+    {
+      "body_bytes": 126,
+      "body_sha256": "01c1789b6959baa33a77b66b534bc1e9804f52cbb2c5f99ef399217b439fe46c",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "126",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "activity": {
+          "20260728": 1,
+          "20260729": 1,
+          "20260731": 2
+        },
+        "coverage": {
+          "end": "20260731",
+          "start": "20260728"
+        },
+        "days": {},
+        "pending": {}
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/grid",
+      "request_headers": {},
+      "status": 200,
+      "why": "overview grid over a populated journal"
+    },
+    {
+      "body_bytes": 73,
+      "body_sha256": "6091417bee15b708b8126ea207bd195c7b52b2e0d712f36e8b23280f34eb62c8",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "73",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "coverage": {
+          "end": "20260731",
+          "start": "20260728"
+        },
+        "months": {
+          "202607": 4
+        }
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/index",
+      "request_headers": {},
+      "status": 200,
+      "why": "the date_nav contract -- coverage + months"
+    },
+    {
+      "body_bytes": 857,
+      "body_sha256": "267a6ca6af96643e3cd07ad089488639d3e52f36addb7d8304eb91908a2a41c5",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "857",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "corrections_window_count": 1,
+        "demotions_by_class": {
+          "acoustic_margin_declined": {
+            "high_statements": 0,
+            "medium_statements": 0,
+            "none_statements": 0,
+            "total_statements": 0
+          },
+          "owner_margin_declined": {
+            "high_statements": 0,
+            "medium_statements": 0,
+            "none_statements": 0,
+            "total_statements": 0
+          }
+        },
+        "empty_labels_without_skipped_segments": 0,
+        "owner_voice": {
+          "bootstrap_state": "pre_bootstrap",
+          "built_at": null,
+          "centroid_saved": false,
+          "evidence_count": 0,
+          "evidence_tier": null,
+          "refreshed_at": null,
+          "status": "none"
+        },
+        "quality_window_count": 30,
+        "quality_window_days": 30,
+        "quality_window_error_count": 3,
+        "tier_histogram": {
+          "high_statements": 0,
+          "margin_declined_statements": 0,
+          "medium_statements": 0,
+          "no_labels_file_segments": 1,
+          "skipped_stub_segments": 0,
+          "unlabeled_sentence_statements": 0
+        },
+        "unreadable_files": {
+          "speaker_corrections_window_count": 0,
+          "speaker_labels_window_count": 3,
+          "total_window_count": 3
+        }
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/quality",
+      "request_headers": {},
+      "status": 200,
+      "why": "quality counters over a 31-day journal"
+    },
+    {
+      "body_bytes": 557,
+      "body_sha256": "2dce2f72444bafb3a7910ddb9e052ec98750180b1db31678d5832b34ce5df051",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "557",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "sort": "recent",
+        "speakers": [
+          {
+            "embedding_count": 4,
+            "entity_id": "grace_hopper",
+            "intra_cosine_p25": -0.04133424907922745,
+            "last_seen_ts": 1767225603,
+            "name": "Grace Hopper",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          },
+          {
+            "embedding_count": 2,
+            "entity_id": "alan_turing",
+            "intra_cosine_p25": 0.07459438592195511,
+            "last_seen_ts": 1767225601,
+            "name": "Alan Turing",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          },
+          {
+            "embedding_count": 1,
+            "entity_id": "katherine_johnson",
+            "intra_cosine_p25": null,
+            "last_seen_ts": 1767225600,
+            "name": "Katherine Johnson",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          }
+        ],
+        "total": 3
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/speakers/known",
+      "request_headers": {},
+      "status": 200,
+      "why": "known voices, default sort"
+    },
+    {
+      "body_bytes": 557,
+      "body_sha256": "2dce2f72444bafb3a7910ddb9e052ec98750180b1db31678d5832b34ce5df051",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "557",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "sort": "recent",
+        "speakers": [
+          {
+            "embedding_count": 4,
+            "entity_id": "grace_hopper",
+            "intra_cosine_p25": -0.04133424907922745,
+            "last_seen_ts": 1767225603,
+            "name": "Grace Hopper",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          },
+          {
+            "embedding_count": 2,
+            "entity_id": "alan_turing",
+            "intra_cosine_p25": 0.07459438592195511,
+            "last_seen_ts": 1767225601,
+            "name": "Alan Turing",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          },
+          {
+            "embedding_count": 1,
+            "entity_id": "katherine_johnson",
+            "intra_cosine_p25": null,
+            "last_seen_ts": 1767225600,
+            "name": "Katherine Johnson",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          }
+        ],
+        "total": 3
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/speakers/known?sort=recent",
+      "request_headers": {},
+      "status": 200,
+      "why": "explicit default sort"
+    },
+    {
+      "body_bytes": 563,
+      "body_sha256": "2d9f89d0256b582694ede22d8d5d6c833b5188f8303f353106ecb1a52d07680b",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "563",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "sort": "most samples",
+        "speakers": [
+          {
+            "embedding_count": 4,
+            "entity_id": "grace_hopper",
+            "intra_cosine_p25": -0.04133424907922745,
+            "last_seen_ts": 1767225603,
+            "name": "Grace Hopper",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          },
+          {
+            "embedding_count": 2,
+            "entity_id": "alan_turing",
+            "intra_cosine_p25": 0.07459438592195511,
+            "last_seen_ts": 1767225601,
+            "name": "Alan Turing",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          },
+          {
+            "embedding_count": 1,
+            "entity_id": "katherine_johnson",
+            "intra_cosine_p25": null,
+            "last_seen_ts": 1767225600,
+            "name": "Katherine Johnson",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          }
+        ],
+        "total": 3
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/speakers/known?sort=most_samples",
+      "request_headers": {},
+      "status": 200,
+      "why": "underscore form normalizes to a space"
+    },
+    {
+      "body_bytes": 563,
+      "body_sha256": "b57b8ac08dfa9ab281cc44ce6c8372e74f395730b1b7a29b84fcef47b95c32af",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "563",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "sort": "alphabetical",
+        "speakers": [
+          {
+            "embedding_count": 2,
+            "entity_id": "alan_turing",
+            "intra_cosine_p25": 0.07459438592195511,
+            "last_seen_ts": 1767225601,
+            "name": "Alan Turing",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          },
+          {
+            "embedding_count": 4,
+            "entity_id": "grace_hopper",
+            "intra_cosine_p25": -0.04133424907922745,
+            "last_seen_ts": 1767225603,
+            "name": "Grace Hopper",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          },
+          {
+            "embedding_count": 1,
+            "entity_id": "katherine_johnson",
+            "intra_cosine_p25": null,
+            "last_seen_ts": 1767225600,
+            "name": "Katherine Johnson",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          }
+        ],
+        "total": 3
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/speakers/known?sort=alphabetical",
+      "request_headers": {},
+      "status": 200,
+      "why": "third registered sort"
+    },
+    {
+      "body_bytes": 557,
+      "body_sha256": "2dce2f72444bafb3a7910ddb9e052ec98750180b1db31678d5832b34ce5df051",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "557",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "sort": "recent",
+        "speakers": [
+          {
+            "embedding_count": 4,
+            "entity_id": "grace_hopper",
+            "intra_cosine_p25": -0.04133424907922745,
+            "last_seen_ts": 1767225603,
+            "name": "Grace Hopper",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          },
+          {
+            "embedding_count": 2,
+            "entity_id": "alan_turing",
+            "intra_cosine_p25": 0.07459438592195511,
+            "last_seen_ts": 1767225601,
+            "name": "Alan Turing",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          },
+          {
+            "embedding_count": 1,
+            "entity_id": "katherine_johnson",
+            "intra_cosine_p25": null,
+            "last_seen_ts": 1767225600,
+            "name": "Katherine Johnson",
+            "segment_count": 1,
+            "streams": [
+              "field"
+            ]
+          }
+        ],
+        "total": 3
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/speakers/known?sort=",
+      "request_headers": {},
+      "status": 200,
+      "why": "empty sort falls back to recent"
+    },
+    {
+      "body_bytes": 120,
+      "body_sha256": "083b4236250f4c7de093726270247513d52af5378096757f385e2c0c4426e479",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "120",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "detail": "Invalid sort parameter",
+        "error": "I couldn't use one of those values.",
+        "reason_code": "invalid_request_value"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/speakers/known?sort=bogus",
+      "request_headers": {},
+      "status": 400,
+      "why": "unregistered sort REFUSES; it does not degrade"
+    },
+    {
+      "body_bytes": 296,
+      "body_sha256": "8382bb03863d5f46273c65a841f95a89dea6786189b9d64c5a9e0a0c912731fe",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "296",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "can_build_from_tags": false,
+        "embeddings_available": 10,
+        "guidance": "Analyze available voice patterns to look for an owner voice candidate.",
+        "manual_tags_count": 0,
+        "next_step": "detect_candidate",
+        "segments_available": 4,
+        "segments_with_embeddings": 4,
+        "status": "needs_detection",
+        "streams_represented": 0
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/owner/status",
+      "request_headers": {},
+      "status": 200,
+      "why": "owner voiceprint state machine"
+    },
+    {
+      "body_bytes": 761,
+      "body_sha256": "87d3ecfda190260c7db11e46459327b76391c5adcda1b2ab4860e4b10cabc3f7",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "761",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "clusters": [
+          {
+            "cluster_id": 1,
+            "samples": [
+              {
+                "audio_url": "/app/speakers/api/serve_audio/20260731/field/090000_300/mic_audio.flac",
+                "day": "20260731",
+                "segment_key": "090000_300",
+                "sentence_id": 1,
+                "source": "mic_audio",
+                "stream": "field",
+                "text": "Good morning."
+              },
+              {
+                "audio_url": "/app/speakers/api/serve_audio/20260731/field/090000_300/mic_audio.flac",
+                "day": "20260731",
+                "segment_key": "090000_300",
+                "sentence_id": 3,
+                "source": "mic_audio",
+                "stream": "field",
+                "text": "We should ship it."
+              }
+            ],
+            "segment_count": 1,
+            "size": 2
+          },
+          {
+            "cluster_id": 2,
+            "samples": [
+              {
+                "audio_url": "/app/speakers/api/serve_audio/20260731/desk/140000_600/sys_audio.flac",
+                "day": "20260731",
+                "segment_key": "140000_600",
+                "sentence_id": 1,
+                "source": "sys_audio",
+                "stream": "desk",
+                "text": "First."
+              }
+            ],
+            "segment_count": 1,
+            "size": 1
+          }
+        ],
+        "status": "ok"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/discovery/cache",
+      "request_headers": {},
+      "status": 200,
+      "why": "cached clusters, no scan"
+    },
+    {
+      "body_bytes": 767,
+      "body_sha256": "368ce3ba228b64b4596c02e5c2d7b819a1bf12c82c14a6046841d6fdef209805",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "767",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "candidates": {
+          "co_presence": [],
+          "mention": [
+            {
+              "entity_id": "alan_turing",
+              "has_voice": true,
+              "meeting_days": 0,
+              "name": "Alan Turing",
+              "screen_conversations": 0,
+              "setting_conversations": 0,
+              "speaker_conversations": 1
+            },
+            {
+              "entity_id": "grace_hopper",
+              "has_voice": true,
+              "meeting_days": 0,
+              "name": "Grace Hopper",
+              "screen_conversations": 0,
+              "setting_conversations": 0,
+              "speaker_conversations": 1
+            }
+          ]
+        },
+        "cluster_id": 1,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "facts": {
+          "conversation_count": 1,
+          "day_count": 1,
+          "samples": [
+            {
+              "audio_url": "/app/speakers/api/serve_audio/20260731/field/090000_300/mic_audio.flac",
+              "day": "20260731",
+              "segment_key": "090000_300",
+              "sentence_id": 1,
+              "setting": null,
+              "source": "mic_audio",
+              "stream": "field",
+              "text": "Good morning."
+            }
+          ],
+          "segment_count": 1,
+          "statement_count": 2,
+          "streams": [
+            "field"
+          ]
+        }
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/discovery/cluster/1/presence",
+      "request_headers": {},
+      "status": 200,
+      "why": "a cluster that exists"
+    },
+    {
+      "body_bytes": 158,
+      "body_sha256": "1a22457ca816b26410c32247730463be1bca825765464de36f6a0fda22829109",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "158",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "detail": "Cluster 999 was not found. Run a discovery scan first.",
+        "error": "I couldn't load that speaker review.",
+        "reason_code": "speaker_review_unavailable"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/discovery/cluster/999/presence",
+      "request_headers": {},
+      "status": 404,
+      "why": "absent cluster: JSON envelope with the id in detail"
+    },
+    {
+      "body_bytes": 85,
+      "body_sha256": "4cf5c0493e22bf44c8029afdf2b70edf3866856d8d8945327a031f4235c8a904",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "85",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "detail": "",
+        "error": "I couldn't complete that request.",
+        "reason_code": "http_error"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/discovery/cluster/-1/presence",
+      "request_headers": {},
+      "status": 404,
+      "why": "negative id: router 404, non-JSON body"
+    },
+    {
+      "body_bytes": 25,
+      "body_sha256": "d57998f2e23915fbc0a3458bcaeb6cbb73f74e99b260f16392ecaa183696eb02",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "25",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "people": [],
+        "query": ""
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/people/search?q=",
+      "request_headers": {},
+      "status": 200,
+      "why": "blank query is 200 with an empty list"
+    },
+    {
+      "body_bytes": 608,
+      "body_sha256": "7737b056f2724c23f1b57ff6cd164f678153a660e4e6f1a7123d71f3b24c0d9b",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "608",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "people": [
+          {
+            "entity_id": "alan_turing",
+            "has_voice": true,
+            "name": "Alan Turing"
+          },
+          {
+            "entity_id": "barbara_liskov",
+            "has_voice": false,
+            "name": "Barbara Liskov"
+          },
+          {
+            "entity_id": "edsger_dijkstra",
+            "has_voice": false,
+            "name": "Edsger Dijkstra"
+          },
+          {
+            "entity_id": "frances_allen",
+            "has_voice": false,
+            "name": "Frances Allen"
+          },
+          {
+            "entity_id": "grace_hopper",
+            "has_voice": true,
+            "name": "Grace Hopper"
+          },
+          {
+            "entity_id": "katherine_johnson",
+            "has_voice": true,
+            "name": "Katherine Johnson"
+          },
+          {
+            "entity_id": "leslie_lamport",
+            "has_voice": false,
+            "name": "Leslie Lamport"
+          },
+          {
+            "entity_id": "margaret_hamilton",
+            "has_voice": false,
+            "name": "Margaret Hamilton"
+          }
+        ],
+        "query": "a"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/people/search?q=a",
+      "request_headers": {},
+      "status": 200,
+      "why": "broad query -- pins the invisible limit of 8"
+    },
+    {
+      "body_bytes": 98,
+      "body_sha256": "43dd0f067cfb0a6cfc72cd271d0f429dd2f694d05f4f359bc178e20e12e80ea0",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "98",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "people": [
+          {
+            "entity_id": "grace_hopper",
+            "has_voice": true,
+            "name": "Grace Hopper"
+          }
+        ],
+        "query": "hopper"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/people/search?q=hopper",
+      "request_headers": {},
+      "status": 200,
+      "why": "narrow query"
+    },
+    {
+      "body_bytes": 41,
+      "body_sha256": "679c6e4e2f588a98710a9e84ac3c2bae5e8fc4cb9bdd9ac4cce8d6a1574c2a05",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "41",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "20260728": 1,
+        "20260729": 1,
+        "20260731": 2
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/stats/202607",
+      "request_headers": {},
+      "status": 200,
+      "why": "month stats: bare {day: count}"
+    },
+    {
+      "body_bytes": 3,
+      "body_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "3",
+        "Content-Type": "application/json"
+      },
+      "json": {},
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/stats/999999",
+      "request_headers": {},
+      "status": 200,
+      "why": "\\d{6} accepts an impossible month"
+    },
+    {
+      "body_bytes": 118,
+      "body_sha256": "2653516781b5de1b2cebe100db97b8da716cfc8e1c216920dc7d2fcdbedbaa9a",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "118",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "detail": "Invalid month format, expected YYYYMM",
+        "error": "I couldn't use that month.",
+        "reason_code": "invalid_month"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/stats/nope",
+      "request_headers": {},
+      "status": 400,
+      "why": "a non-month is 400"
+    },
+    {
+      "body_bytes": 538,
+      "body_sha256": "3672289af3c9dda03ce3c2aaa05e1d8b7c6dd8013d35ceb9c46c42fb16fb5dcf",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "538",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "segments": [
+          {
+            "attribution_needs_review": 0,
+            "attribution_non_owner_total": 2,
+            "attribution_null": 0,
+            "attribution_total": 2,
+            "duration": 300,
+            "end": "09:05",
+            "key": "090000_300",
+            "sources": [
+              "mic_audio"
+            ],
+            "speaker_count": 2,
+            "speakers": [
+              "Grace Hopper",
+              "Alan Turing"
+            ],
+            "start": "09:00",
+            "stream": "field"
+          },
+          {
+            "attribution_needs_review": 0,
+            "attribution_non_owner_total": 0,
+            "attribution_null": 0,
+            "attribution_total": 0,
+            "duration": 600,
+            "end": "14:10",
+            "key": "140000_600",
+            "sources": [
+              "sys_audio"
+            ],
+            "speaker_count": 0,
+            "speakers": [],
+            "start": "14:00",
+            "stream": "desk"
+          }
+        ],
+        "total": 2
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/segments/20260731",
+      "request_headers": {},
+      "status": 200,
+      "why": "a day with segments in two streams"
+    },
+    {
+      "body_bytes": 296,
+      "body_sha256": "ee2f5b2f8c82d8a6ae67fc35a13923306355ec2caf98998347d6daa8c34cf6f9",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "296",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "segments": [
+          {
+            "attribution_needs_review": 0,
+            "attribution_non_owner_total": 2,
+            "attribution_null": 0,
+            "attribution_total": 2,
+            "duration": 300,
+            "end": "09:05",
+            "key": "090000_300",
+            "sources": [
+              "mic_audio"
+            ],
+            "speaker_count": 2,
+            "speakers": [
+              "Grace Hopper",
+              "Alan Turing"
+            ],
+            "start": "09:00",
+            "stream": "field"
+          }
+        ],
+        "total": 2
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/segments/20260731?limit=1",
+      "request_headers": {},
+      "status": 200,
+      "why": "paging: limit"
+    },
+    {
+      "body_bytes": 267,
+      "body_sha256": "930f7d3402728db1511b11b190fdd39d48584d3835a2f40930823d7e5126ccb3",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "267",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "segments": [
+          {
+            "attribution_needs_review": 0,
+            "attribution_non_owner_total": 0,
+            "attribution_null": 0,
+            "attribution_total": 0,
+            "duration": 600,
+            "end": "14:10",
+            "key": "140000_600",
+            "sources": [
+              "sys_audio"
+            ],
+            "speaker_count": 0,
+            "speakers": [],
+            "start": "14:00",
+            "stream": "desk"
+          }
+        ],
+        "total": 2
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/segments/20260731?limit=1&offset=1",
+      "request_headers": {},
+      "status": 200,
+      "why": "paging: offset"
+    },
+    {
+      "body_bytes": 128,
+      "body_sha256": "06dea318aec9627304e0a658e4d72f4d834ae9e27b49f6f3768d327b38299f35",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "128",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "detail": "Invalid limit/offset parameter",
+        "error": "I couldn't use one of those values.",
+        "reason_code": "invalid_request_value"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/segments/20260731?limit=notanint",
+      "request_headers": {},
+      "status": 400,
+      "why": "non-int limit is 400"
+    },
+    {
+      "body_bytes": 123,
+      "body_sha256": "99495d485bb07ff5cbf2c537fe36b915149ad85dd17b1b1342ec0a8daf4f4164",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "123",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "detail": "Invalid speaker parameter",
+        "error": "I couldn't use one of those values.",
+        "reason_code": "invalid_request_value"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/segments/20260731?speaker=%20",
+      "request_headers": {},
+      "status": 400,
+      "why": "whitespace speaker is 400"
+    },
+    {
+      "body_bytes": 197,
+      "body_sha256": "ca1bb3cb2211b15859ce652ccc078f28f25e430b461dbac61554be433c6a074a",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "197",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "matched": [
+          {
+            "detected_name": "Grace Hopper",
+            "entity_name": "Grace Hopper",
+            "entity_type": "Person"
+          },
+          {
+            "detected_name": "Alan Turing",
+            "entity_name": "Alan Turing",
+            "entity_type": "Person"
+          }
+        ],
+        "unmatched": []
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/speakers/20260731/field/090000_300",
+      "request_headers": {},
+      "status": 200,
+      "why": "per-segment speakers, labels present"
+    },
+    {
+      "body_bytes": 30,
+      "body_sha256": "721a8852d473082d0ecedddf683e0c09b3075e12536114ae7e2f308dc693222f",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "30",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "matched": [],
+        "unmatched": []
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/speakers/20260729/field/173000_240",
+      "request_headers": {},
+      "status": 200,
+      "why": "labels file is {}"
+    },
+    {
+      "body_bytes": 30,
+      "body_sha256": "721a8852d473082d0ecedddf683e0c09b3075e12536114ae7e2f308dc693222f",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "30",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "matched": [],
+        "unmatched": []
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/speakers/20260728/desk/080000_180",
+      "request_headers": {},
+      "status": 200,
+      "why": "labels file is corrupt"
+    },
+    {
+      "body_bytes": 1992,
+      "body_sha256": "87ba4ea0479a4e8bc3f9a8336e8327024f6496afff3efcadd91ba8c38ca45d4a",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "1992",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "all_entities": [
+          {
+            "entity_id": "ada_lovelace",
+            "is_principal": true,
+            "name": "Ada Lovelace"
+          },
+          {
+            "entity_id": "alan_turing",
+            "is_principal": false,
+            "name": "Alan Turing"
+          },
+          {
+            "entity_id": "barbara_liskov",
+            "is_principal": false,
+            "name": "Barbara Liskov"
+          },
+          {
+            "entity_id": "edsger_dijkstra",
+            "is_principal": false,
+            "name": "Edsger Dijkstra"
+          },
+          {
+            "entity_id": "frances_allen",
+            "is_principal": false,
+            "name": "Frances Allen"
+          },
+          {
+            "entity_id": "grace_hopper",
+            "is_principal": false,
+            "name": "Grace Hopper"
+          },
+          {
+            "entity_id": "katherine_johnson",
+            "is_principal": false,
+            "name": "Katherine Johnson"
+          },
+          {
+            "entity_id": "leslie_lamport",
+            "is_principal": false,
+            "name": "Leslie Lamport"
+          },
+          {
+            "entity_id": "margaret_hamilton",
+            "is_principal": false,
+            "name": "Margaret Hamilton"
+          },
+          {
+            "entity_id": "radia_perlman",
+            "is_principal": false,
+            "name": "Radia Perlman"
+          }
+        ],
+        "audio_file": "/app/speakers/api/serve_audio/20260731/field/090000_300/mic_audio.flac",
+        "audio_mimetype": "audio/flac",
+        "has_labels": true,
+        "segment": {
+          "end": "09:05",
+          "key": "090000_300",
+          "start": "09:00"
+        },
+        "sentences": [
+          {
+            "confidence": "high",
+            "duration_s": 2.5,
+            "has_embedding": true,
+            "id": 1,
+            "is_correction": true,
+            "is_owner": false,
+            "method": "user_assigned",
+            "needs_review": false,
+            "offset": -28800,
+            "original_speaker_entity_id": null,
+            "original_speaker_name": null,
+            "speaker_entity_id": "grace_hopper",
+            "speaker_name": "Grace Hopper",
+            "text": "Good morning."
+          },
+          {
+            "confidence": "low",
+            "duration_s": 2.5,
+            "has_embedding": true,
+            "id": 2,
+            "is_correction": false,
+            "is_owner": false,
+            "method": "acoustic",
+            "needs_review": false,
+            "offset": -28795,
+            "original_speaker_entity_id": null,
+            "original_speaker_name": null,
+            "speaker_entity_id": "alan_turing",
+            "speaker_name": "Alan Turing",
+            "text": "The index rebuild finished."
+          },
+          {
+            "confidence": null,
+            "duration_s": 2.5,
+            "has_embedding": true,
+            "id": 3,
+            "is_correction": false,
+            "is_owner": false,
+            "method": null,
+            "needs_review": true,
+            "offset": -28790,
+            "original_speaker_entity_id": null,
+            "original_speaker_name": null,
+            "speaker_entity_id": null,
+            "speaker_name": null,
+            "text": "We should ship it."
+          }
+        ],
+        "source": "mic_audio",
+        "summary": {
+          "corrections": 0,
+          "needs_review": 1,
+          "total": 3
+        }
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/review/20260731/field/090000_300/mic_audio",
+      "request_headers": {},
+      "status": 200,
+      "why": "the largest handler, fully populated"
+    },
+    {
+      "body_bytes": 1061,
+      "body_sha256": "93593b8ce41bd84d74029c6d9f99a8e5007e0744d8b35014313c2d2882177999",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "1061",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "all_entities": [
+          {
+            "entity_id": "ada_lovelace",
+            "is_principal": true,
+            "name": "Ada Lovelace"
+          },
+          {
+            "entity_id": "alan_turing",
+            "is_principal": false,
+            "name": "Alan Turing"
+          },
+          {
+            "entity_id": "barbara_liskov",
+            "is_principal": false,
+            "name": "Barbara Liskov"
+          },
+          {
+            "entity_id": "edsger_dijkstra",
+            "is_principal": false,
+            "name": "Edsger Dijkstra"
+          },
+          {
+            "entity_id": "frances_allen",
+            "is_principal": false,
+            "name": "Frances Allen"
+          },
+          {
+            "entity_id": "grace_hopper",
+            "is_principal": false,
+            "name": "Grace Hopper"
+          },
+          {
+            "entity_id": "katherine_johnson",
+            "is_principal": false,
+            "name": "Katherine Johnson"
+          },
+          {
+            "entity_id": "leslie_lamport",
+            "is_principal": false,
+            "name": "Leslie Lamport"
+          },
+          {
+            "entity_id": "margaret_hamilton",
+            "is_principal": false,
+            "name": "Margaret Hamilton"
+          },
+          {
+            "entity_id": "radia_perlman",
+            "is_principal": false,
+            "name": "Radia Perlman"
+          }
+        ],
+        "audio_file": "/app/speakers/api/serve_audio/20260730/field/101500_120/mic_audio.flac",
+        "audio_mimetype": "audio/flac",
+        "has_labels": false,
+        "segment": {
+          "end": "10:17",
+          "key": "101500_120",
+          "start": "10:15"
+        },
+        "sentences": [],
+        "source": "mic_audio",
+        "summary": {
+          "corrections": 0,
+          "needs_review": 0,
+          "total": 0
+        }
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/review/20260730/field/101500_120/mic_audio",
+      "request_headers": {},
+      "status": 200,
+      "why": "\ud83d\udd34 transcript present, .npz ABSENT -- blank screen, no signal"
+    },
+    {
+      "body_bytes": 1616,
+      "body_sha256": "e856287693a53da3451a71a2453d214fa7d771bdd6475524e49c28e8c3e71831",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "1616",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "all_entities": [
+          {
+            "entity_id": "ada_lovelace",
+            "is_principal": true,
+            "name": "Ada Lovelace"
+          },
+          {
+            "entity_id": "alan_turing",
+            "is_principal": false,
+            "name": "Alan Turing"
+          },
+          {
+            "entity_id": "barbara_liskov",
+            "is_principal": false,
+            "name": "Barbara Liskov"
+          },
+          {
+            "entity_id": "edsger_dijkstra",
+            "is_principal": false,
+            "name": "Edsger Dijkstra"
+          },
+          {
+            "entity_id": "frances_allen",
+            "is_principal": false,
+            "name": "Frances Allen"
+          },
+          {
+            "entity_id": "grace_hopper",
+            "is_principal": false,
+            "name": "Grace Hopper"
+          },
+          {
+            "entity_id": "katherine_johnson",
+            "is_principal": false,
+            "name": "Katherine Johnson"
+          },
+          {
+            "entity_id": "leslie_lamport",
+            "is_principal": false,
+            "name": "Leslie Lamport"
+          },
+          {
+            "entity_id": "margaret_hamilton",
+            "is_principal": false,
+            "name": "Margaret Hamilton"
+          },
+          {
+            "entity_id": "radia_perlman",
+            "is_principal": false,
+            "name": "Radia Perlman"
+          }
+        ],
+        "audio_file": "/app/speakers/api/serve_audio/20260729/field/173000_240/mic_audio.flac",
+        "audio_mimetype": "audio/flac",
+        "has_labels": true,
+        "segment": {
+          "end": "17:34",
+          "key": "173000_240",
+          "start": "17:30"
+        },
+        "sentences": [
+          {
+            "confidence": null,
+            "duration_s": 2.5,
+            "has_embedding": true,
+            "id": 1,
+            "is_correction": false,
+            "is_owner": false,
+            "method": null,
+            "needs_review": false,
+            "offset": -59400,
+            "original_speaker_entity_id": null,
+            "original_speaker_name": null,
+            "speaker_entity_id": null,
+            "speaker_name": null,
+            "text": "Alpha."
+          },
+          {
+            "confidence": null,
+            "duration_s": 2.5,
+            "has_embedding": true,
+            "id": 2,
+            "is_correction": false,
+            "is_owner": false,
+            "method": null,
+            "needs_review": false,
+            "offset": -59395,
+            "original_speaker_entity_id": null,
+            "original_speaker_name": null,
+            "speaker_entity_id": null,
+            "speaker_name": null,
+            "text": "Beta."
+          }
+        ],
+        "source": "mic_audio",
+        "summary": {
+          "corrections": 0,
+          "needs_review": 0,
+          "total": 2
+        }
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/review/20260729/field/173000_240/mic_audio",
+      "request_headers": {},
+      "status": 200,
+      "why": "labels {} -- has_labels true, needs_review false"
+    },
+    {
+      "body_bytes": 1897,
+      "body_sha256": "2e15b05a9518f2e43f4217a119e9b5659afe4e3bc361e400ea4f053225b74c41",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "1897",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "all_entities": [
+          {
+            "entity_id": "ada_lovelace",
+            "is_principal": true,
+            "name": "Ada Lovelace"
+          },
+          {
+            "entity_id": "alan_turing",
+            "is_principal": false,
+            "name": "Alan Turing"
+          },
+          {
+            "entity_id": "barbara_liskov",
+            "is_principal": false,
+            "name": "Barbara Liskov"
+          },
+          {
+            "entity_id": "edsger_dijkstra",
+            "is_principal": false,
+            "name": "Edsger Dijkstra"
+          },
+          {
+            "entity_id": "frances_allen",
+            "is_principal": false,
+            "name": "Frances Allen"
+          },
+          {
+            "entity_id": "grace_hopper",
+            "is_principal": false,
+            "name": "Grace Hopper"
+          },
+          {
+            "entity_id": "katherine_johnson",
+            "is_principal": false,
+            "name": "Katherine Johnson"
+          },
+          {
+            "entity_id": "leslie_lamport",
+            "is_principal": false,
+            "name": "Leslie Lamport"
+          },
+          {
+            "entity_id": "margaret_hamilton",
+            "is_principal": false,
+            "name": "Margaret Hamilton"
+          },
+          {
+            "entity_id": "radia_perlman",
+            "is_principal": false,
+            "name": "Radia Perlman"
+          }
+        ],
+        "audio_file": "/app/speakers/api/serve_audio/20260731/desk/140000_600/sys_audio.flac",
+        "audio_mimetype": "audio/flac",
+        "has_labels": false,
+        "segment": {
+          "end": "14:10",
+          "key": "140000_600",
+          "start": "14:00"
+        },
+        "sentences": [
+          {
+            "confidence": null,
+            "duration_s": 0.0,
+            "has_embedding": true,
+            "id": 1,
+            "is_correction": false,
+            "is_owner": false,
+            "method": null,
+            "needs_review": false,
+            "offset": -46800,
+            "original_speaker_entity_id": null,
+            "original_speaker_name": null,
+            "speaker_entity_id": null,
+            "speaker_name": null,
+            "text": "First."
+          },
+          {
+            "confidence": null,
+            "duration_s": 0.0,
+            "has_embedding": true,
+            "id": 3,
+            "is_correction": false,
+            "is_owner": false,
+            "method": null,
+            "needs_review": false,
+            "offset": -46790,
+            "original_speaker_entity_id": null,
+            "original_speaker_name": null,
+            "speaker_entity_id": null,
+            "speaker_name": null,
+            "text": "Third."
+          },
+          {
+            "confidence": null,
+            "duration_s": 0.0,
+            "has_embedding": true,
+            "id": 4,
+            "is_correction": false,
+            "is_owner": false,
+            "method": null,
+            "needs_review": false,
+            "offset": -46785,
+            "original_speaker_entity_id": null,
+            "original_speaker_name": null,
+            "speaker_entity_id": null,
+            "speaker_name": null,
+            "text": "Fourth."
+          }
+        ],
+        "source": "sys_audio",
+        "summary": {
+          "corrections": 0,
+          "needs_review": 0,
+          "total": 3
+        }
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/review/20260731/desk/140000_600/sys_audio",
+      "request_headers": {},
+      "status": 200,
+      "why": "malformed transcript line -- sentence ids carry a GAP"
+    },
+    {
+      "body_bytes": 123,
+      "body_sha256": "561a7c3393b185cf00236da9c4802cdf4d7562d9de90224199e81e3ea2084882",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "123",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "detail": "No transcript found",
+        "error": "I couldn't load that speaker review.",
+        "reason_code": "speaker_review_unavailable"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/review/20260731/field/999999_999/mic_audio",
+      "request_headers": {},
+      "status": 404,
+      "why": "missing transcript is a 404 refusal"
+    },
+    {
+      "body_bytes": 64,
+      "body_sha256": "f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b",
+      "body_sha256_basis": "raw-body",
+      "headers": {
+        "Cache-Control": "public, max-age=300",
+        "Content-Disposition": "inline; filename=mic_audio.flac",
+        "Content-Length": "64",
+        "Content-Type": "audio/flac"
+      },
+      "method": "GET",
+      "path": "/app/speakers/api/serve_audio/20260731/field/090000_300/mic_audio.flac",
+      "request_headers": {},
+      "status": 200,
+      "why": "media, whole body"
+    },
+    {
+      "body_bytes": 16,
+      "body_sha256": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb",
+      "body_sha256_basis": "raw-body",
+      "headers": {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "public, max-age=300",
+        "Content-Disposition": "inline; filename=mic_audio.flac",
+        "Content-Length": "16",
+        "Content-Range": "bytes 0-15/64",
+        "Content-Type": "audio/flac"
+      },
+      "method": "GET",
+      "path": "/app/speakers/api/serve_audio/20260731/field/090000_300/mic_audio.flac",
+      "request_headers": {
+        "Range": "bytes=0-15"
+      },
+      "status": 206,
+      "why": "\ud83d\udd34 ranged: 206 + Content-Range"
+    },
+    {
+      "body_bytes": 85,
+      "body_sha256": "4cf5c0493e22bf44c8029afdf2b70edf3866856d8d8945327a031f4235c8a904",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "85",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "detail": "",
+        "error": "I couldn't complete that request.",
+        "reason_code": "http_error"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/serve_audio/20260731/field/090000_300/mic_audio.flac",
+      "request_headers": {
+        "Range": "bytes=9999-"
+      },
+      "status": 416,
+      "why": "unsatisfiable range is 416"
+    },
+    {
+      "body_bytes": 0,
+      "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "body_sha256_basis": "raw-body",
+      "headers": {
+        "Cache-Control": "public, max-age=300",
+        "Content-Disposition": "inline; filename=mic_audio.flac",
+        "Content-Length": "0",
+        "Content-Type": "audio/flac"
+      },
+      "method": "GET",
+      "path": "/app/speakers/api/serve_audio/20260730/field/101500_120/mic_audio.flac",
+      "request_headers": {
+        "Range": "bytes=0-5"
+      },
+      "status": 200,
+      "why": "\u26a0 ranged against a ZERO-BYTE file is 200, not 416"
+    },
+    {
+      "body_bytes": 32,
+      "body_sha256": "9656be35bd353ebedd79d7d24a14df408ef96b99fb4e4b4542e3bdd56de73134",
+      "body_sha256_basis": "raw-body",
+      "headers": {
+        "Cache-Control": "public, max-age=300",
+        "Content-Disposition": "inline; filename=mic_audio.png",
+        "Content-Length": "32",
+        "Content-Type": "image/png"
+      },
+      "method": "GET",
+      "path": "/app/speakers/api/serve_audio/20260728/desk/080000_180/mic_audio.png",
+      "request_headers": {},
+      "status": 200,
+      "why": "\ud83d\udd34 the allowlist is all media formats, not the audio subset"
+    },
+    {
+      "body_bytes": 79,
+      "body_sha256": "94710673df348e9bcc4340e8b1f0cf6b7a20a41da82ed5255cbab45577fb7266",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "79",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "detail": "",
+        "error": "I couldn't use that path.",
+        "reason_code": "invalid_path"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/serve_audio/20260731/../../../etc/passwd",
+      "request_headers": {},
+      "status": 403,
+      "why": "traversal refusal"
+    },
+    {
+      "body_bytes": 89,
+      "body_sha256": "ce5302c4b0e58534508365fafced5a34d44a623659adebe83396b32ddf2af52c",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "89",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "detail": "",
+        "error": "I couldn't complete that request.",
+        "reason_code": "internal_error"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/serve_audio/20260731/field/090000_300/mic_audio.xyz",
+      "request_headers": {},
+      "status": 500,
+      "why": "unregistered extension on a file that EXISTS -- reaches the raise branch"
+    },
+    {
+      "body_bytes": 96,
+      "body_sha256": "471866e9be8fd5bf5629d5b8de11e412188f95b5eb1f7c18dbffeb35cdd9961f",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "96",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "detail": "File not found",
+        "error": "I couldn't find that file.",
+        "reason_code": "file_not_found"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/serve_audio/20260731/field/090000_300/mic_audio.exe",
+      "request_headers": {},
+      "status": 404,
+      "why": "absent file: is_file() is checked BEFORE the MIME lookup, so this is 404"
+    },
+    {
+      "body_bytes": 90,
+      "body_sha256": "347ceb79b02b6096dc1e850d39894432967b9cdd745ab4c7f3116fc1e50f2a8f",
+      "body_sha256_basis": "normalized-json",
+      "headers": {
+        "Content-Length": "90",
+        "Content-Type": "application/json"
+      },
+      "json": {
+        "detail": "Day not found",
+        "error": "I couldn't use that day.",
+        "reason_code": "invalid_day"
+      },
+      "method": "GET",
+      "normalized_fields": [],
+      "path": "/app/speakers/api/serve_audio/notaday/field/x/y.flac",
+      "request_headers": {},
+      "status": 404,
+      "why": "non-\\d{8} day"
+    }
+  ],
+  "generator": "scripts/convey_speakers_corpus.py",
+  "journal": {
+    "days": 31,
+    "entities": 11,
+    "notes": [
+      "segment 2 transcript has a malformed line at index 1",
+      "segment 3 has no .npz and a ZERO-BYTE audio file",
+      "segment 4 labels file is {} -- has_labels true, needs_review false",
+      "segment 5 labels file is corrupt; carries a PNG for the image path",
+      "discovery cluster 1 members resolve to real statement tuples",
+      "three entities carry voiceprints and eight do not, so has_voice is both true and false",
+      "segment 1 carries mic_audio.xyz -- an EXISTING file with an unregistered extension"
+    ],
+    "segments": [
+      {
+        "day": "20260731",
+        "key": "090000_300",
+        "stream": "field"
+      },
+      {
+        "day": "20260731",
+        "key": "140000_600",
+        "stream": "desk"
+      },
+      {
+        "day": "20260730",
+        "key": "101500_120",
+        "stream": "field"
+      },
+      {
+        "day": "20260729",
+        "key": "173000_240",
+        "stream": "field"
+      },
+      {
+        "day": "20260728",
+        "key": "080000_180",
+        "stream": "desk"
+      }
+    ]
+  },
+  "placeholders": {
+    "day": "<TODAY>",
+    "journal_root": "<JOURNAL_ROOT>"
+  },
+  "schema": "solstone-convey-speakers-corpus-v1",
+  "seeder": "entity_corpus.seed_populated_speakers_journal",
+  "tz": "UTC"
+}
