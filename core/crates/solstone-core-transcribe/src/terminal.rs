@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use solstone_core_speaker_id::writer::{SpeakerTranscriptWriteError, WriteResponse, write_request};
 
 use crate::TranscribeError;
@@ -21,6 +21,7 @@ pub(crate) struct TerminalWrite<'a> {
     pub(crate) jsonl_path: &'a Path,
     pub(crate) npz_path: &'a Path,
     pub(crate) processing: &'a Value,
+    pub(crate) sound_tags: Option<&'a Value>,
     pub(crate) redo: bool,
 }
 
@@ -129,6 +130,16 @@ fn build_terminal_request(
         .file_name()
         .unwrap_or_default()
         .to_string_lossy();
+    let mut header = Map::from_iter([
+        ("raw".to_owned(), Value::String(raw.into_owned())),
+        (
+            "_solstone_processing".to_owned(),
+            request.processing.clone(),
+        ),
+    ]);
+    if let Some(sound_tags) = request.sound_tags {
+        header.insert("sound_tags".to_owned(), sound_tags.clone());
+    }
     serde_json::to_vec(&json!({
         "schema": REQUEST_SCHEMA,
         "output": {
@@ -139,10 +150,7 @@ fn build_terminal_request(
         "base_time_us_of_day": 0,
         "source": null,
         "statements": [],
-        "header": {
-            "raw": raw,
-            "_solstone_processing": request.processing,
-        },
+        "header": header,
         "embeddings": {
             "payload_path": payload_path,
             "payload_format": "raw-f32le-row-major-v1",
@@ -166,7 +174,7 @@ mod tests {
     use serde_json::json;
     use solstone_core_speaker_id::writer::SpeakerTranscriptWriteError;
 
-    use super::{TerminalWrite, TerminalWriteFailure, write_terminal_with_cleanup};
+    use super::{TerminalWrite, TerminalWriteFailure, write_terminal, write_terminal_with_cleanup};
     use crate::TranscribeError;
 
     #[test]
@@ -184,6 +192,7 @@ mod tests {
                 jsonl_path: &jsonl_path,
                 npz_path: &npz_path,
                 processing: &processing,
+                sound_tags: None,
                 redo: false,
             },
             |_| {
@@ -212,5 +221,36 @@ mod tests {
             )
         ));
         assert_eq!(error.exit_code(), 69);
+    }
+
+    #[test]
+    fn terminal_header_omits_sound_tags_when_tagger_has_no_assets() {
+        let temporary = tempfile::tempdir().unwrap();
+        let raw_path = temporary.path().join("clip.wav");
+        let jsonl_path = temporary.path().join("clip.jsonl");
+        let npz_path = temporary.path().join("clip.npz");
+        fs::write(&raw_path, b"owner-media").unwrap();
+        let processing = json!({"state": "empty"});
+        let sound_tags = crate::audio::tag_audio(&vec![0.0; 16_000], temporary.path());
+
+        write_terminal(TerminalWrite {
+            raw_path: &raw_path,
+            jsonl_path: &jsonl_path,
+            npz_path: &npz_path,
+            processing: &processing,
+            sound_tags: sound_tags.as_ref(),
+            redo: false,
+        })
+        .unwrap();
+
+        let header: serde_json::Value = serde_json::from_str(
+            fs::read_to_string(jsonl_path)
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(header.get("sound_tags").is_none());
     }
 }
