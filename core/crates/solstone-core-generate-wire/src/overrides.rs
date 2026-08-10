@@ -23,8 +23,49 @@ pub fn configured_model(config: &Map<String, Value>, default: &str) -> String {
         .unwrap_or_else(|| default.to_owned())
 }
 
+/// Resolve a provider base URL, honouring the override only for loopback hosts.
+///
+/// The override exists so a test can aim a cloud arm at a local stub. Honouring an
+/// arbitrary host would let anything able to set an environment variable redirect
+/// cloud traffic -- carrying the provider credential in its auth header and the
+/// owner's prompt in its body -- to a destination of its choosing. Restricting it
+/// to loopback keeps the test seam and removes that channel. This file already
+/// refuses to read conventional provider environment variables for the same
+/// reason: ambient process environment is not a trusted input.
 pub fn configured_base_url(_config: &Map<String, Value>, default: &str) -> String {
-    non_blank_process_env(BASE_URL_OVERRIDE_ENV).unwrap_or_else(|| default.to_owned())
+    non_blank_process_env(BASE_URL_OVERRIDE_ENV)
+        .filter(|url| is_loopback_base_url(url))
+        .unwrap_or_else(|| default.to_owned())
+}
+
+/// True only for an http/https URL whose host is a loopback address.
+///
+/// Rejects userinfo (`http://127.0.0.1@elsewhere`), non-http schemes, and any
+/// host that merely mentions a loopback literal elsewhere in the string.
+fn is_loopback_base_url(url: &str) -> bool {
+    let Some(rest) = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+    else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.contains('@') {
+        return false;
+    }
+    let host = if let Some(after_bracket) = authority.strip_prefix('[') {
+        match after_bracket.split_once(']') {
+            Some((inner, tail)) if tail.is_empty() || tail.starts_with(':') => inner,
+            _ => return false,
+        }
+    } else {
+        authority.split(':').next().unwrap_or_default()
+    };
+    host == "localhost"
+        || host == "::1"
+        || host
+            .parse::<std::net::Ipv4Addr>()
+            .is_ok_and(|address| address.is_loopback())
 }
 
 pub fn configured_provider(config: &Map<String, Value>) -> String {
@@ -55,6 +96,39 @@ fn config_string(config: &Map<String, Value>, path: &[&str]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::is_loopback_base_url;
+
+    #[test]
+    fn base_url_override_is_honoured_only_for_loopback_hosts() {
+        for accepted in [
+            "http://127.0.0.1:8080",
+            "http://127.0.0.1:8080/v1",
+            "http://127.9.9.9:1",
+            "http://localhost:3000",
+            "http://[::1]:9000",
+            "https://127.0.0.1:8443",
+        ] {
+            assert!(is_loopback_base_url(accepted), "should accept {accepted}");
+        }
+        for rejected in [
+            "https://generativelanguage.googleapis.com",
+            "http://evil.example",
+            // userinfo cannot smuggle a loopback prefix past the host check
+            "http://127.0.0.1@evil.example",
+            "http://localhost@evil.example:80",
+            // a loopback literal in the path is not a loopback host
+            "http://evil.example/127.0.0.1",
+            "http://evil.example?h=localhost",
+            // non-http schemes are never honoured
+            "ftp://127.0.0.1",
+            "file:///etc/passwd",
+            "127.0.0.1:8080",
+            "",
+        ] {
+            assert!(!is_loopback_base_url(rejected), "should reject {rejected}");
+        }
+    }
+
     use std::process::Command;
 
     use serde_json::{Map, Value, json};
