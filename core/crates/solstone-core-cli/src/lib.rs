@@ -151,6 +151,10 @@ pub enum InstallCommand {
     ProbeBinary,
     RunLocal,
     RunMlx,
+    PinsParakeet,
+    PathsParakeet,
+    FingerprintParakeet,
+    RunParakeet,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -743,6 +747,15 @@ fn parse_local_install(args: &[OsString]) -> Result<InstallCommand, UsageError> 
         [one, two] if one == OsStr::new("fingerprint") && two == OsStr::new("mlx") => {
             Ok(InstallCommand::FingerprintMlx)
         }
+        [one, two] if one == OsStr::new("fingerprint") && two == OsStr::new("parakeet") => {
+            Ok(InstallCommand::FingerprintParakeet)
+        }
+        [one, two] if one == OsStr::new("pins") && two == OsStr::new("parakeet") => {
+            Ok(InstallCommand::PinsParakeet)
+        }
+        [one, two] if one == OsStr::new("paths") && two == OsStr::new("parakeet") => {
+            Ok(InstallCommand::PathsParakeet)
+        }
         [one, two] if one == OsStr::new("verify") && two == OsStr::new("sha256") => {
             Ok(InstallCommand::VerifySha256)
         }
@@ -770,6 +783,9 @@ fn parse_local_install(args: &[OsString]) -> Result<InstallCommand, UsageError> 
         }
         [one, two] if one == OsStr::new("run") && two == OsStr::new("mlx") => {
             Ok(InstallCommand::RunMlx)
+        }
+        [one, two] if one == OsStr::new("run") && two == OsStr::new("parakeet") => {
+            Ok(InstallCommand::RunParakeet)
         }
         _ => Err(UsageError),
     }
@@ -1807,6 +1823,34 @@ mod tests {
             evaluate_args(&args(&["local", "generate"])),
             Ok(Command::Local(LocalCommand::Generate))
         );
+    }
+
+    #[test]
+    fn accepts_local_install_parakeet_verbs() {
+        for (args_values, expected) in [
+            (
+                &["local", "install", "pins", "parakeet"][..],
+                InstallCommand::PinsParakeet,
+            ),
+            (
+                &["local", "install", "paths", "parakeet"][..],
+                InstallCommand::PathsParakeet,
+            ),
+            (
+                &["local", "install", "fingerprint", "parakeet"][..],
+                InstallCommand::FingerprintParakeet,
+            ),
+            (
+                &["local", "install", "run", "parakeet"][..],
+                InstallCommand::RunParakeet,
+            ),
+        ] {
+            assert_eq!(
+                evaluate_args(&args(args_values)),
+                Ok(Command::Local(LocalCommand::Install(expected))),
+                "{args_values:?}"
+            );
+        }
     }
 
     #[test]

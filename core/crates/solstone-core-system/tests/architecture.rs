@@ -29,6 +29,7 @@ const LIFECYCLE_STATE: &str = include_str!("../src/lifecycle/state.rs");
 const LIFECYCLE_SWEEP: &str = include_str!("../src/lifecycle/sweep.rs");
 const LIFECYCLE_SYNC: &str = include_str!("../src/lifecycle/sync.rs");
 const LIFECYCLE_WATCHER: &str = include_str!("../src/lifecycle/watcher.rs");
+const STT_BACKEND_CHOICE: &str = include_str!("../src/stt_backend_choice.rs");
 const SCHEDULE: &str = include_str!("../src/schedule/mod.rs");
 const SCHEDULE_CAPS: &str = include_str!("../src/schedule/caps.rs");
 const SCHEDULE_COMPLETION: &str = include_str!("../src/schedule/completion.rs");
@@ -38,10 +39,15 @@ const SCHEDULE_ENGINE: &str = include_str!("../src/schedule/engine.rs");
 const SCHEDULE_STATUS: &str = include_str!("../src/schedule/status.rs");
 const SCHEDULE_SUBMISSION: &str = include_str!("../src/schedule/submission.rs");
 const PROVIDER_RUNTIME: &str = include_str!("../src/provider_runtime/mod.rs");
+const PROVIDER_RUNTIME_ADMISSION: &str = include_str!("../src/provider_runtime/admission.rs");
 const PROVIDER_RUNTIME_EVENTS: &str = include_str!("../src/provider_runtime/events.rs");
 const PROVIDER_RUNTIME_GATE: &str = include_str!("../src/provider_runtime/gate.rs");
 const PROVIDER_RUNTIME_LAUNCH: &str = include_str!("../src/provider_runtime/launch.rs");
 const PROVIDER_RUNTIME_MODEL: &str = include_str!("../src/provider_runtime/model.rs");
+const PROVIDER_RUNTIME_PARAKEET: &str = include_str!("../src/provider_runtime/parakeet.rs");
+const PROVIDER_RUNTIME_PARAKEET_TRUTH: &str =
+    include_str!("../src/provider_runtime/parakeet_truth.rs");
+const PROVIDER_RUNTIME_PLACEMENT: &str = include_str!("../src/provider_runtime/placement.rs");
 const PROVIDER_RUNTIME_RECONCILE: &str = include_str!("../src/provider_runtime/reconcile.rs");
 const PROVIDER_RUNTIME_RETRY: &str = include_str!("../src/provider_runtime/retry.rs");
 const PROVIDER_RUNTIME_SEAMS: &str = include_str!("../src/provider_runtime/seams.rs");
@@ -111,6 +117,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("request", REQUEST),
         ("provider_runtime", PROVIDER_RUNTIME),
         ("schedule", SCHEDULE),
+        ("stt_backend_choice", STT_BACKEND_CHOICE),
     ];
     let process_modules = [
         ("descendants", DESCENDANTS),
@@ -139,10 +146,14 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("submission", SCHEDULE_SUBMISSION),
     ];
     let provider_runtime_modules = [
+        ("admission", PROVIDER_RUNTIME_ADMISSION),
         ("events", PROVIDER_RUNTIME_EVENTS),
         ("gate", PROVIDER_RUNTIME_GATE),
         ("launch", PROVIDER_RUNTIME_LAUNCH),
         ("model", PROVIDER_RUNTIME_MODEL),
+        ("parakeet", PROVIDER_RUNTIME_PARAKEET),
+        ("parakeet_truth", PROVIDER_RUNTIME_PARAKEET_TRUTH),
+        ("placement", PROVIDER_RUNTIME_PLACEMENT),
         ("reconcile", PROVIDER_RUNTIME_RECONCILE),
         ("retry", PROVIDER_RUNTIME_RETRY),
         ("seams", PROVIDER_RUNTIME_SEAMS),
@@ -209,9 +220,14 @@ fn ac21_only_operational_log_module_names_write_primitives() {
     assert!(PROVIDER_RUNTIME_STORE.contains("health"));
     assert!(PROVIDER_RUNTIME_STORE.contains("providers"));
     assert!(PROVIDER_RUNTIME_STORE.contains("runtime"));
-    assert!(PROVIDER_RUNTIME_STORE.contains("local.json"));
-    assert!(PROVIDER_RUNTIME_STORE.contains("local.retry-token.json"));
-    assert!(PROVIDER_RUNTIME_STORE.contains("local.port"));
+    // The durable record is one write path per provider, not a literal
+    // "local"-only filename -- health_path/retry_path/port_path all format!
+    // on self.provider (or its mapped port service name), so the evidence
+    // here is the parameterization itself, not a hardcoded "local.json".
+    assert!(PROVIDER_RUNTIME_STORE.contains(".json\", self.provider.as_str()"));
+    assert!(PROVIDER_RUNTIME_STORE.contains(".retry-token.json\", self.provider.as_str()"));
+    assert!(PROVIDER_RUNTIME_STORE.contains("port_service_name(self.provider)"));
+    assert!(PROVIDER_RUNTIME_STORE.contains("\"parakeet-cpp\""));
     assert!(PROVIDER_RUNTIME_STORE.contains("hold_lock"));
     assert!(PROVIDER_RUNTIME_STORE.contains("write_json"));
 }

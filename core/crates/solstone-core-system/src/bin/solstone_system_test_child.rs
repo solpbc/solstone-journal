@@ -12,7 +12,9 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let mode = args.next().unwrap_or_default();
     match mode.as_str() {
-        "-m" => launch_stub(args),
+        // "-m" is llama-server's model flag; "--model" is parakeet-server's.
+        // Both real binaries land here as this fixture's stand-in.
+        "-m" | "--model" => launch_stub(args),
         "lines" => {
             println!("stdout-line");
             let _ = std::io::stderr().write_all(b"stderr-line\n");

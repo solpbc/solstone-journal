@@ -48,6 +48,10 @@ pub enum InstallVerb {
     ProbeBinary,
     RunLocal,
     RunMlx,
+    PinsParakeet,
+    PathsParakeet,
+    FingerprintParakeet,
+    RunParakeet,
 }
 
 #[derive(Debug, Serialize)]
@@ -144,8 +148,27 @@ pub fn dispatch(verb: InstallVerb, request: Value) -> Result<InstallEnvelope, Di
         InstallVerb::ProbeBinary => readiness::probe_binary(&object),
         InstallVerb::RunLocal => run_local(&object)?,
         InstallVerb::RunMlx => run_mlx(&object)?,
+        InstallVerb::PinsParakeet => pins::parakeet_pins_json(),
+        InstallVerb::PathsParakeet => {
+            let journal = journal(&object)?;
+            pins::parakeet_paths(&journal, &parakeet_key(&object)?)
+        }
+        InstallVerb::FingerprintParakeet => {
+            let journal = journal(&object)?;
+            let target = parakeet_target(&journal)?;
+            resolved_fingerprint(target)?
+        }
+        InstallVerb::RunParakeet => run_parakeet(&object)?,
     };
     Ok(InstallEnvelope::ok(result))
+}
+
+fn parakeet_key(object: &Map<String, Value>) -> Result<String, DispatchError> {
+    match string(object, "artifact_key") {
+        Some(key) => Ok(key),
+        None => pins::parakeet_host_artifact_key()
+            .map_err(|error| failure("platform", "unsupported_platform", error, 65)),
+    }
 }
 
 fn write_manifest(kind: &str, object: &Map<String, Value>) -> Result<Value, DispatchError> {
@@ -190,30 +213,53 @@ fn write_manifest(kind: &str, object: &Map<String, Value>) -> Result<Value, Disp
         .map_err(|error| failure("io", "manifest_write_failed", error, 74))
 }
 
-fn run_local(object: &Map<String, Value>) -> Result<Value, DispatchError> {
-    run(object, false)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RunKind {
+    Local,
+    Mlx,
+    Parakeet,
 }
-fn run_mlx(object: &Map<String, Value>) -> Result<Value, DispatchError> {
-    run(object, true)
+impl RunKind {
+    fn status_provider(self) -> &'static str {
+        match self {
+            Self::Local | Self::Mlx => "local",
+            Self::Parakeet => "parakeet",
+        }
+    }
 }
 
-fn run(object: &Map<String, Value>, mlx: bool) -> Result<Value, DispatchError> {
+fn run_local(object: &Map<String, Value>) -> Result<Value, DispatchError> {
+    run(object, RunKind::Local)
+}
+fn run_mlx(object: &Map<String, Value>) -> Result<Value, DispatchError> {
+    run(object, RunKind::Mlx)
+}
+fn run_parakeet(object: &Map<String, Value>) -> Result<Value, DispatchError> {
+    run(object, RunKind::Parakeet)
+}
+
+fn run(object: &Map<String, Value>, kind: RunKind) -> Result<Value, DispatchError> {
     let journal = journal(object)?;
-    let Some(_lease) = lease::acquire(&journal, "local")
+    let provider = kind.status_provider();
+    let Some(_lease) = lease::acquire(&journal, provider)
         .map_err(|error| failure("io", "lease_error", error, 74))?
     else {
         return Err(failure(
             "busy",
             "install_busy",
-            "local install lease is held",
+            format!("{provider} install lease is held"),
             lease::BUSY_EXIT_CODE,
         ));
     };
-    let model_id = string(object, "model_id").unwrap_or_else(|| "local/qwen3.5-4b".to_owned());
-    let fingerprint = if mlx {
-        mlx_target(&model_id)?
-    } else {
-        local_target(&journal, &model_id)?
+    let fingerprint = match kind {
+        RunKind::Local => local_target(
+            &journal,
+            &string(object, "model_id").unwrap_or_else(|| "local/qwen3.5-4b".to_owned()),
+        )?,
+        RunKind::Mlx => mlx_target(
+            &string(object, "model_id").unwrap_or_else(|| "local/qwen3.5-4b".to_owned()),
+        )?,
+        RunKind::Parakeet => parakeet_target(&journal)?,
     };
     let resolved = resolved_fingerprint(fingerprint)?;
     let fingerprint_json = resolved["target_fingerprint_json"]
@@ -227,6 +273,7 @@ fn run(object: &Map<String, Value>, mlx: bool) -> Result<Value, DispatchError> {
     let owner = object.get("owner").cloned();
     let mut state = status::begin_or_replace(
         &journal,
+        provider,
         fingerprint_json,
         fingerprint_sha256,
         owner,
@@ -234,14 +281,14 @@ fn run(object: &Map<String, Value>, mlx: bool) -> Result<Value, DispatchError> {
     )
     .map_err(|error| failure("state", "begin_failed", error, 74))?;
     let start = Instant::now();
-    let result = if mlx {
-        run_mlx_install(object)
-    } else {
-        run_local_install(object, &mut state, start)
+    let result = match kind {
+        RunKind::Mlx => run_mlx_install(object),
+        RunKind::Local => run_local_install(object, &mut state, start),
+        RunKind::Parakeet => run_parakeet_install(&journal, &mut state),
     };
     match result {
         Ok(result) => {
-            if !mlx && result["backend"] == "cuda" {
+            if kind == RunKind::Local && result["backend"] == "cuda" {
                 let key = pins::platform_key();
                 if let Some((_, digest, _)) = pins::cuda_pin(&key) {
                     let root = pins::cache_root(&journal).join("cuda").join(&key);
@@ -363,6 +410,29 @@ fn mlx_target(model_id: &str) -> Result<Value, DispatchError> {
     Ok(
         json!({"provider":"local","runtime":"mlx","model_pin":{"unit":"mlx-snapshot","model_id":model.0,"repo":model.1,"revision":model.2,"soft_token_budget":if model.0 == "gemma-4-26b-a4b-it-mlx-4bit" { Value::from(1120) } else { Value::Null }}}),
     )
+}
+
+/// Mirrors Python's `parakeet_install.target_fingerprint` field-for-field:
+/// `provider`, `runtime`, `artifact_key`, `binary_pins` (cpu then vulkan,
+/// matching `PARAKEET_CPP_BINARY_BACKENDS`'s order), `model_pin`, `cache_root`.
+fn parakeet_target(journal: &Path) -> Result<Value, DispatchError> {
+    let key = pins::parakeet_host_artifact_key()
+        .map_err(|error| failure("platform", "unsupported_platform", error, 65))?;
+    let binary_pins: Vec<Value> = ["cpu", "vulkan"]
+        .into_iter()
+        .map(|backend| {
+            pins::parakeet_backend_identity(&key, backend)
+                .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(json!({
+        "provider": "parakeet",
+        "runtime": "parakeet.cpp",
+        "artifact_key": key,
+        "binary_pins": binary_pins,
+        "model_pin": pins::parakeet_model_identity(),
+        "cache_root": pins::parakeet_cache_root(journal),
+    }))
 }
 
 fn resolved_fingerprint(target: Value) -> Result<Value, DispatchError> {
@@ -593,6 +663,162 @@ fn run_mlx_install(object: &Map<String, Value>) -> Result<Value, DispatchError> 
         None
     };
     Ok(json!({"snapshot_path":destination,"variant_path":variant,"source":"local_snapshot_seam"}))
+}
+
+/// Mirrors `run_local_install`'s download-extract-chmod-manifest-publish
+/// shape, but for both parakeet-server backends (cpu, vulkan) plus the
+/// model -- `install_parakeet` (Python) installs both backends
+/// unconditionally rather than picking one, so this does too.
+fn run_parakeet_install(
+    journal: &Path,
+    status_value: &mut status::InstallStatus,
+) -> Result<Value, DispatchError> {
+    let target: Value = serde_json::from_str(
+        status_value
+            .target_fingerprint_json
+            .as_deref()
+            .ok_or_else(|| {
+                failure(
+                    "state",
+                    "fingerprint_missing",
+                    "attempt fingerprint missing",
+                    74,
+                )
+            })?,
+    )
+    .map_err(|error| failure("state", "fingerprint_malformed", error, 74))?;
+    let key = target["artifact_key"]
+        .as_str()
+        .ok_or_else(|| failure("state", "fingerprint_malformed", "artifact_key missing", 74))?
+        .to_owned();
+    let mut binaries = Vec::new();
+    for backend in ["cpu", "vulkan"] {
+        let (release, filename, digest, binary_name) = pins::parakeet_backend_pin(&key, backend)
+            .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
+        let install_dir = pins::parakeet_cache_root(journal)
+            .join("bin")
+            .join(&key)
+            .join(backend)
+            .join(release);
+        let staging = install_dir.parent().unwrap().join(format!(
+            ".{}.staging",
+            install_dir.file_name().unwrap().to_string_lossy()
+        ));
+        let _ = fs::remove_dir_all(&staging);
+        fs::create_dir_all(&staging)
+            .map_err(|error| failure("io", "staging_create_failed", error, 74))?;
+        let archive_path = staging.join(filename);
+        let mut progress_at = Instant::now();
+        *status_value = status::write_status(
+            journal,
+            status::transition(status_value.clone(), "downloading", None, None)
+                .map_err(|error| failure("state", "transition_failed", error, 74))?,
+        )
+        .map_err(|error| failure("state", "status_write_failed", error, 74))?;
+        let url = format!(
+            "https://github.com/mudler/parakeet.cpp/releases/download/{release}/{filename}"
+        );
+        archive::download(&url, &archive_path, digest, |received, total| {
+            if let Ok(Some(next)) = status::bump_progress(
+                status_value.clone(),
+                Some(received),
+                total,
+                &mut progress_at,
+            ) && let Ok(written) = status::write_status(journal, next)
+            {
+                *status_value = written;
+            }
+        })
+        .map_err(|error| failure("download", "download_failed", error, 74))?;
+        archive::extract_tar_gz(&archive_path, &staging)
+            .map_err(|error| failure("archive", "extract_failed", error, 65))?;
+        let binary = find_file(&staging, binary_name).ok_or_else(|| {
+            failure(
+                "archive",
+                "binary_missing",
+                format!("{binary_name} missing from archive"),
+                65,
+            )
+        })?;
+        let final_binary = staging.join(binary_name);
+        if binary != final_binary {
+            fs::rename(&binary, &final_binary)
+                .map_err(|error| failure("io", "binary_move_failed", error, 74))?;
+        }
+        archive::make_executable(&final_binary)
+            .map_err(|error| failure("io", "chmod_failed", error, 74))?;
+        archive::clear_macos_quarantine(&staging)
+            .map_err(|error| failure("io", "quarantine_clear_failed", error, 74))?;
+        let pin_identity = pins::parakeet_backend_identity(&key, backend).unwrap();
+        let manifest_value = manifest::build_manifest(
+            "parakeet",
+            "parakeet-server",
+            status_value.target_fingerprint_sha256.as_deref().unwrap(),
+            json!({"pin_identity": pin_identity}),
+            manifest::runtime_inventory(&staging, &[filename.to_owned()])
+                .map_err(|error| failure("io", "manifest_inventory_failed", error, 74))?,
+            None,
+            status_value.attempt_id.as_deref(),
+        )
+        .map_err(|error| failure("io", "manifest_build_failed", error, 74))?;
+        manifest::write_manifest(&manifest::artifact_manifest_path(&staging), &manifest_value)
+            .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
+        publish_staged_tree(&staging, &install_dir)
+            .map_err(|error| failure("io", "publish_failed", error, 74))?;
+        binaries.push(json!({"backend": backend, "binary_path": install_dir.join(binary_name)}));
+    }
+    let model_path = install_parakeet_model(journal, status_value)?;
+    Ok(json!({"artifact_key": key, "binaries": binaries, "model_path": model_path}))
+}
+
+fn install_parakeet_model(
+    journal: &Path,
+    status_value: &mut status::InstallStatus,
+) -> Result<PathBuf, DispatchError> {
+    let (repo, filename, revision, sha256, ..) = pins::PARAKEET_MODEL;
+    let model_dir = pins::parakeet_cache_root(journal)
+        .join("models")
+        .join(repo.replace('/', "__"))
+        .join(revision);
+    fs::create_dir_all(&model_dir)
+        .map_err(|error| failure("io", "model_dir_create_failed", error, 74))?;
+    let dest = model_dir.join(filename);
+    *status_value = status::write_status(
+        journal,
+        status::transition(status_value.clone(), "downloading", None, None)
+            .map_err(|error| failure("state", "transition_failed", error, 74))?,
+    )
+    .map_err(|error| failure("state", "status_write_failed", error, 74))?;
+    archive::download(
+        &format!("https://huggingface.co/{repo}/resolve/{revision}/{filename}"),
+        &dest,
+        sha256,
+        |_received, _total| {},
+    )
+    .map_err(|error| failure("download", "model_download_failed", error, 74))?;
+    *status_value = status::write_status(
+        journal,
+        status::transition(status_value.clone(), "verifying", None, None)
+            .map_err(|error| failure("state", "transition_failed", error, 74))?,
+    )
+    .map_err(|error| failure("state", "status_write_failed", error, 74))?;
+    let built = manifest::build_manifest(
+        "parakeet",
+        "parakeet-model",
+        status_value
+            .target_fingerprint_sha256
+            .as_deref()
+            .unwrap_or(""),
+        json!({"pin_identity": pins::parakeet_model_identity()}),
+        manifest::inventory_for_tree(&model_dir, "model")
+            .map_err(|error| failure("io", "manifest_inventory_failed", error, 74))?,
+        None,
+        status_value.attempt_id.as_deref(),
+    )
+    .map_err(|error| failure("io", "manifest_build_failed", error, 74))?;
+    manifest::write_manifest(&manifest::artifact_manifest_path(&model_dir), &built)
+        .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
+    Ok(dest)
 }
 
 fn copy_tree(source: &Path, destination: &Path) -> Result<(), DispatchError> {

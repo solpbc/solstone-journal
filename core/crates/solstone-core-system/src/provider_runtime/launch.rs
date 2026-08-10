@@ -37,7 +37,7 @@ use super::model::{
 };
 use super::seams::{LifecycleSeam, ProbeSeam, TruthObservationSeam};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-use super::store::LocalReadyProcess;
+use super::store::ReadyProcess;
 use super::store::{LocalRuntimeShared, RuntimeClock};
 
 const PLAN_INPUT_SCHEMA: &str = "solstone-local-plan-input-v1";
@@ -655,6 +655,7 @@ fn truth(
         desired_fingerprint,
         has_plan,
         boot_required,
+        detail: None,
     }
 }
 
@@ -712,7 +713,7 @@ fn start_local(
             shared.retain_child(process_id.clone(), child);
             shared.record_ready_process(
                 fence,
-                LocalReadyProcess {
+                ReadyProcess {
                     process_id,
                     process_name: "local".into(),
                     pid,

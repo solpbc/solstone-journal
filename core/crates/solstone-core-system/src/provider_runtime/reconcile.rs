@@ -359,6 +359,7 @@ impl ProviderRuntimeCoordinator {
             state.replacement_artifact_not_ready_fingerprint = result.desired_fingerprint.clone();
             state.latest_phase = result.phase;
             state.latest_reason_code = result.reason_code;
+            state.latest_detail = result.detail;
             self.note_terminal(state, gate);
             self.persist(state, store);
             return;
@@ -406,6 +407,7 @@ impl ProviderRuntimeCoordinator {
         state.boot_required = result.boot_required;
         state.latest_phase = result.phase;
         state.latest_reason_code = result.reason_code;
+        state.latest_detail = result.detail;
         if state.latest_phase == RuntimePhase::Observing
             && state
                 .latest_reason_code
@@ -1401,6 +1403,7 @@ mod tests {
             desired_fingerprint: state.desired_fingerprint.clone(),
             has_plan: true,
             boot_required: false,
+            detail: None,
         };
         (
             coordinator,
@@ -1866,6 +1869,7 @@ mod tests {
             desired_fingerprint: fingerprint.map(str::to_owned),
             has_plan: true,
             boot_required: false,
+            detail: None,
         }
     }
 
@@ -1925,6 +1929,51 @@ mod tests {
         });
         coordinator.handle_truth_result(now(2.0), &mut state, &mut store, &mut sink, None);
         assert_eq!(state.latest_phase, RuntimePhase::Starting);
+    }
+
+    #[test]
+    fn committed_truth_detail_replaces_the_previous_detail() {
+        // detail is a provider-specific payload (e.g. Parakeet's
+        // stt_admission_latch) carried alongside phase/reason_code, not
+        // merged with whatever the prior committed observation held.
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Parakeet);
+        state.latest_detail = Some(serde_json::json!({"stale": true}));
+        let fence = coordinator.fence(&state, 0);
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(ProviderTruthObservation {
+                provider: ProviderName::Parakeet,
+                phase: RuntimePhase::NotDesired,
+                reason_code: Some(ReasonCode::known("provider-not-needed")),
+                desired_fingerprint: None,
+                has_plan: false,
+                boot_required: false,
+                detail: Some(serde_json::json!({"remote_mode": true})),
+            }),
+        });
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+        coordinator.handle_truth_result(now(1.0), &mut state, &mut store, &mut sink, None);
+        assert_eq!(
+            state.latest_detail,
+            Some(serde_json::json!({"remote_mode": true}))
+        );
+
+        // A later observation carrying no detail replaces the old one with
+        // None -- it is not sticky.
+        let fence = coordinator.fence(&state, 0);
+        state.truth = Some(InFlight {
+            fence,
+            result: Some(truth(
+                ProviderName::Parakeet,
+                RuntimePhase::NotDesired,
+                None,
+                Some("provider-not-needed"),
+            )),
+        });
+        coordinator.handle_truth_result(now(2.0), &mut state, &mut store, &mut sink, None);
+        assert_eq!(state.latest_detail, None);
     }
 
     #[test]

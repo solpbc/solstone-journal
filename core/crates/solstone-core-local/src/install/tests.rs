@@ -125,6 +125,7 @@ fn replay_status_special_cases(
                 let other = fingerprint::canonical(other_target.clone()).unwrap();
                 status::begin_or_replace(
                     &root,
+                    "local",
                     other.clone(),
                     fingerprint::sha256(&other),
                     None,
@@ -182,6 +183,7 @@ fn replay_status_special_cases(
                 let other = fingerprint::canonical(other_target.clone()).unwrap();
                 let _ = status::begin_or_replace(
                     &root,
+                    "local",
                     other.clone(),
                     fingerprint::sha256(&other),
                     None,
@@ -195,6 +197,7 @@ fn replay_status_special_cases(
                 let other = fingerprint::canonical(other_target.clone()).unwrap();
                 let _ = status::begin_or_replace(
                     &root,
+                    "local",
                     other.clone(),
                     fingerprint::sha256(&other),
                     None,
@@ -289,6 +292,40 @@ fn redact_status(value: &Value) -> Value {
 }
 
 #[test]
+fn unknown_provider_message_matches_the_accepted_set() {
+    // The rejection message is built from `status::PROVIDERS` at the call
+    // site, not hardcoded here, so this fails the moment the message and
+    // the accepted set could ever disagree again.
+    let mut sorted = status::PROVIDERS.to_vec();
+    sorted.sort_unstable();
+    let listed = sorted
+        .iter()
+        .map(|name| format!("'{name}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let expected =
+        format!("malformed install status: provider install status must be one of: [{listed}]");
+
+    let root = temp("unknown-provider-read");
+    let error = status::read_status(&root, "not-a-provider").unwrap_err();
+    assert_eq!(error.to_string(), expected);
+
+    let root = temp("unknown-provider-write");
+    let error = status::write_status(&root, status::idle_status("not-a-provider")).unwrap_err();
+    assert_eq!(error.to_string(), expected);
+}
+
+#[test]
+fn read_status_accepts_every_provider_in_the_allowlist() {
+    for provider in status::PROVIDERS {
+        let root = temp(&format!("accepts-{provider}"));
+        let idle = status::read_status(&root, provider).unwrap();
+        assert_eq!(idle.provider, *provider);
+        assert_eq!(idle.install_state, "idle");
+    }
+}
+
+#[test]
 fn canonical_fingerprint_vectors_match_fixture() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../../fixtures/local_contract.json")).unwrap();
@@ -380,6 +417,90 @@ fn fingerprint_transport_resolves_targets_without_writing_status() {
         mlx["target_fingerprint_json"],
         r#"{"model_pin":{"model_id":"qwen3.5:9b","repo":"mlx-community/Qwen3.5-9B-MLX-8bit","revision":"84f7c2deea248d8df56240f88102def51c7ed5d6","soft_token_budget":null,"unit":"mlx-snapshot"},"provider":"local","runtime":"mlx"}"#
     );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn dispatch_pins_parakeet_matches_the_pins_table() {
+    let result = dispatch(InstallVerb::PinsParakeet, json!({})).unwrap();
+    let pins = result.result.unwrap();
+    assert_eq!(
+        pins["parakeet_vulkan_pins"].as_array().unwrap().len(),
+        pins::PARAKEET_VULKAN_PINS.len()
+    );
+    assert_eq!(
+        pins["parakeet_cpu_pins"].as_array().unwrap().len(),
+        pins::PARAKEET_CPU_PINS.len()
+    );
+    assert_eq!(pins["parakeet_model"]["repo"], pins::PARAKEET_MODEL.0);
+}
+
+#[test]
+fn dispatch_paths_parakeet_with_explicit_artifact_key_is_host_independent() {
+    // artifact_key is supplied explicitly, so this never touches the real
+    // host's OS/arch -- it must pass on every CI runner, not just Linux.
+    let root = temp("paths-parakeet");
+    let result = dispatch(
+        InstallVerb::PathsParakeet,
+        json!({"journal": root, "artifact_key": "aarch64-unknown-linux-gnu"}),
+    )
+    .unwrap();
+    let paths = result.result.unwrap();
+    assert_eq!(
+        paths["binary_path_cpu"],
+        format!(
+            "{}/cache/providers/parakeet/bin/aarch64-unknown-linux-gnu/cpu/v0.5.0/parakeet-server",
+            root.display()
+        )
+    );
+    assert_eq!(
+        paths["binary_path_vulkan"],
+        format!(
+            "{}/cache/providers/parakeet/bin/aarch64-unknown-linux-gnu/vulkan/v0.5.0/parakeet-server",
+            root.display()
+        )
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn fingerprint_parakeet_matches_host_support() {
+    // Deliberately host-conditional rather than host-independent: this is
+    // the one test that exercises `parakeet_host_artifact_key`'s real-host
+    // path, so it asserts whatever is actually correct for the machine it
+    // runs on (both branches are exercised host-independently already by
+    // `parakeet_artifact_key_matches_every_python_alias` /
+    // `_refuses_non_linux_and_unrecognized_arch` above).
+    let root = temp("fingerprint-parakeet");
+    let result = dispatch(InstallVerb::FingerprintParakeet, json!({"journal": root}));
+    let host_supported =
+        std::env::consts::OS == "linux" && matches!(std::env::consts::ARCH, "x86_64" | "aarch64");
+    if host_supported {
+        let ok = result.unwrap().result.unwrap();
+        let target: Value =
+            serde_json::from_str(ok["target_fingerprint_json"].as_str().unwrap()).unwrap();
+        assert_eq!(target["provider"], "parakeet");
+        assert_eq!(target["runtime"], "parakeet.cpp");
+        assert_eq!(target["binary_pins"].as_array().unwrap().len(), 2);
+        assert!(target["model_pin"].is_object());
+    } else {
+        let error = result.unwrap_err();
+        assert_eq!(error.envelope.error.as_ref().unwrap().kind, "platform");
+    }
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn run_parakeet_returns_exit_75_when_the_lease_is_held() {
+    // The lease check runs before any platform lookup, so this is
+    // host-independent even though parakeet itself is Linux-only.
+    let root = temp("run-parakeet-busy-lease");
+    let _held = lease::acquire(&root, "parakeet").unwrap().unwrap();
+    let error = dispatch(InstallVerb::RunParakeet, json!({"journal": root})).unwrap_err();
+    assert_eq!(error.exit_code, lease::BUSY_EXIT_CODE);
+    let error_body = error.envelope.error.as_ref().unwrap();
+    assert_eq!(error_body.kind, "busy");
+    assert_eq!(error_body.reason_code, "install_busy");
     let _ = fs::remove_dir_all(root);
 }
 
@@ -697,6 +818,87 @@ fn pin_tables_cover_every_pinned_platform() {
         );
         assert_eq!(pins::cuda_identity(key).unwrap()["sha256"], *digest);
     }
+}
+
+#[test]
+fn parakeet_pin_tables_cover_every_pinned_platform_and_backend() {
+    assert_eq!(pins::PARAKEET_VULKAN_PINS.len(), 2);
+    assert_eq!(pins::PARAKEET_CPU_PINS.len(), 2);
+    let root = std::path::Path::new("/journal");
+    for (backend, table) in [
+        ("vulkan", pins::PARAKEET_VULKAN_PINS),
+        ("cpu", pins::PARAKEET_CPU_PINS),
+    ] {
+        for (key, release, _filename, digest, binary) in table {
+            let paths = pins::parakeet_paths(root, key);
+            assert_eq!(
+                paths[format!("binary_path_{backend}")],
+                format!("/journal/cache/providers/parakeet/bin/{key}/{backend}/{release}/{binary}")
+            );
+            assert_eq!(
+                pins::parakeet_backend_identity(key, backend).unwrap()["sha256"],
+                *digest
+            );
+        }
+    }
+    let (repo, filename, revision, sha256, size_bytes) = pins::PARAKEET_MODEL;
+    assert_eq!(
+        pins::parakeet_paths(root, "x86_64-unknown-linux-gnu")["model_path"],
+        format!(
+            "/journal/cache/providers/parakeet/models/{}/{revision}/{filename}",
+            repo.replace('/', "__")
+        )
+    );
+    let model = pins::parakeet_model_identity();
+    assert_eq!(model["repo"], repo);
+    assert_eq!(model["sha256"], sha256);
+    assert_eq!(model["size_bytes"], size_bytes);
+}
+
+#[test]
+fn parakeet_backend_pin_is_none_for_an_unknown_backend_or_key() {
+    assert!(pins::parakeet_backend_pin("x86_64-unknown-linux-gnu", "cuda").is_none());
+    assert!(pins::parakeet_backend_pin("aarch64-apple-darwin", "vulkan").is_none());
+    assert!(pins::parakeet_backend_identity("x86_64-unknown-linux-gnu", "cuda").is_none());
+}
+
+#[test]
+fn parakeet_artifact_key_matches_every_python_alias() {
+    for (arch, expected) in [
+        ("amd64", "x86_64-unknown-linux-gnu"),
+        ("x64", "x86_64-unknown-linux-gnu"),
+        ("x86_64", "x86_64-unknown-linux-gnu"),
+        ("AMD64", "x86_64-unknown-linux-gnu"),
+        ("arm64", "aarch64-unknown-linux-gnu"),
+        ("aarch64", "aarch64-unknown-linux-gnu"),
+        ("ARM64", "aarch64-unknown-linux-gnu"),
+    ] {
+        assert_eq!(
+            pins::parakeet_artifact_key("linux", arch).unwrap(),
+            expected,
+            "arch={arch}"
+        );
+    }
+}
+
+#[test]
+fn parakeet_artifact_key_refuses_non_linux_and_unrecognized_arch() {
+    for (os_name, arch) in [
+        ("macos", "arm64"),
+        ("windows", "x86_64"),
+        ("darwin", "amd64"),
+    ] {
+        let error = pins::parakeet_artifact_key(os_name, arch).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("parakeet-cpp is unsupported on {os_name}/{arch}")
+        );
+    }
+    let error = pins::parakeet_artifact_key("linux", "riscv64").unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "parakeet-cpp is unsupported on linux/riscv64"
+    );
 }
 
 #[test]

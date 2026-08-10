@@ -5,6 +5,8 @@
 
 use std::fmt;
 
+use serde_json::Value;
+
 /// The cadence shared by truth observation and ready-state probing.
 pub const GATE_TICK_INTERVAL_SECONDS: f64 = 60.0;
 pub const PROVIDER_RETRY_SCHEDULE_SECONDS: [f64; 6] = [0.0, 2.0, 4.0, 8.0, 16.0, 30.0];
@@ -283,7 +285,7 @@ pub struct ManagedProcess {
     pub running: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ProviderTruthObservation {
     pub provider: ProviderName,
     pub phase: RuntimePhase,
@@ -291,6 +293,13 @@ pub struct ProviderTruthObservation {
     pub desired_fingerprint: Option<String>,
     pub has_plan: bool,
     pub boot_required: bool,
+    /// Provider-specific payload the durable health record carries alongside
+    /// phase/reason_code -- e.g. Parakeet's `{"remote_mode": true}` /
+    /// `{"platform": ...}` / `{"stt_admission_latch": ...}`. Local has none
+    /// today, hence `None` at every existing call site; this is the
+    /// provider-specific-payload-inside-one-type the durable record needs
+    /// rather than a second store.
+    pub detail: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -371,6 +380,7 @@ pub struct ProviderRuntimeState {
     pub has_plan: bool,
     pub latest_phase: RuntimePhase,
     pub latest_reason_code: Option<ReasonCode>,
+    pub latest_detail: Option<Value>,
     pub boot_required: bool,
     pub startup_terminal: bool,
     pub next_truth_at: f64,
@@ -401,6 +411,7 @@ impl ProviderRuntimeState {
             has_plan: false,
             latest_phase: RuntimePhase::Stopped,
             latest_reason_code: Some(ReasonCode::known("cleanup-succeeded")),
+            latest_detail: None,
             boot_required: false,
             startup_terminal: false,
             next_truth_at: 0.0,

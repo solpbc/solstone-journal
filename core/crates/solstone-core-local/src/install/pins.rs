@@ -56,6 +56,52 @@ pub const MLX_MODELS: &[(&str, &str, &str, u64)] = &[
     ),
 ];
 
+// Parakeet pins mirror LLAMA_SERVER_PINS's (artifact_key, release_tag,
+// filename, sha256, binary_name) shape, split by backend the same way
+// LLAMA_SERVER_PINS (vulkan) and CUDA_ARTIFACTS (cuda) are split -- one
+// array per backend, keyed by arch -- rather than adding a backend column
+// to a single array.
+pub const PARAKEET_VULKAN_PINS: &[(&str, &str, &str, &str, &str)] = &[
+    (
+        "x86_64-unknown-linux-gnu",
+        "v0.5.0",
+        "parakeet-v0.5.0-bin-linux-vulkan-x64.tar.gz",
+        "36c8d4b93594ec18928c9c76b02e04b2d738e859deda8b5e3944bb34fc0646eb",
+        "parakeet-server",
+    ),
+    (
+        "aarch64-unknown-linux-gnu",
+        "v0.5.0",
+        "parakeet-v0.5.0-bin-linux-vulkan-arm64.tar.gz",
+        "b95483070eb87ed144b9f39826a69fb67ea516c68aacc4fcf13a121a746ad7e4",
+        "parakeet-server",
+    ),
+];
+pub const PARAKEET_CPU_PINS: &[(&str, &str, &str, &str, &str)] = &[
+    (
+        "x86_64-unknown-linux-gnu",
+        "v0.5.0",
+        "parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz",
+        "636a9fc48ac023096037790f9b77d7e5043b200dd6399ec0438bd648c35d79b9",
+        "parakeet-server",
+    ),
+    (
+        "aarch64-unknown-linux-gnu",
+        "v0.5.0",
+        "parakeet-v0.5.0-bin-linux-cpu-arm64.tar.gz",
+        "a7c9064c64b84f6b041252d5d2334d4a47693636e9c7c6ab2c535fcef11cf88b",
+        "parakeet-server",
+    ),
+];
+/// One model, shared by every arch/backend: (repo, filename, revision, sha256, size_bytes).
+pub const PARAKEET_MODEL: (&str, &str, &str, &str, u64) = (
+    "mudler/parakeet-cpp-gguf",
+    "tdt-0.6b-v3-q8_0.gguf",
+    "bf0af9f425fa01809cadec671b3cb672709d13e9",
+    "4d69a4a6683f4f2d952bad794c1357ca6eb628027695b4699c5a9ad4cd07d757",
+    940663680,
+);
+
 pub const CUDA_SHARED_WANTED_FILES: &[&str] = &[
     "llama-server",
     "libllama-server-impl.so",
@@ -146,8 +192,48 @@ pub fn model_identity(model_id: &str) -> Option<Value> {
     (model_id == "local/qwen3.5-4b").then(|| json!({"unit":"local-model","model_id":"local/qwen3.5-4b","repo":"unsloth/Qwen3.5-4B-GGUF","revision":"main","filename":"Qwen3.5-4B-Q4_K_M.gguf","sha256":"00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4","mmproj_filename":"mmproj-F16.gguf","mmproj_sha256":"cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864"}))
 }
 
+pub fn parakeet_vulkan_pin(
+    key: &str,
+) -> Option<(&'static str, &'static str, &'static str, &'static str)> {
+    PARAKEET_VULKAN_PINS
+        .iter()
+        .find(|pin| pin.0 == key)
+        .map(|pin| (pin.1, pin.2, pin.3, pin.4))
+}
+pub fn parakeet_cpu_pin(
+    key: &str,
+) -> Option<(&'static str, &'static str, &'static str, &'static str)> {
+    PARAKEET_CPU_PINS
+        .iter()
+        .find(|pin| pin.0 == key)
+        .map(|pin| (pin.1, pin.2, pin.3, pin.4))
+}
+pub fn parakeet_backend_pin(
+    key: &str,
+    backend: &str,
+) -> Option<(&'static str, &'static str, &'static str, &'static str)> {
+    match backend {
+        "vulkan" => parakeet_vulkan_pin(key),
+        "cpu" => parakeet_cpu_pin(key),
+        _ => None,
+    }
+}
+pub fn parakeet_model_identity() -> Value {
+    let (repo, filename, revision, sha256, size_bytes) = PARAKEET_MODEL;
+    json!({"unit":"parakeet-model","repo":repo,"filename":filename,"revision":revision,"sha256":sha256,"size_bytes":size_bytes})
+}
+pub fn parakeet_backend_identity(key: &str, backend: &str) -> Option<Value> {
+    let (release_tag, filename, sha256, binary_name) = parakeet_backend_pin(key, backend)?;
+    Some(
+        json!({"unit":"parakeet-server","artifact_key":key,"backend":backend,"release_tag":release_tag,"filename":filename,"sha256":sha256,"binary_name":binary_name}),
+    )
+}
+
 pub fn cache_root(journal: &Path) -> PathBuf {
     journal.join("cache/providers/local")
+}
+pub fn parakeet_cache_root(journal: &Path) -> PathBuf {
+    journal.join("cache/providers/parakeet")
 }
 pub fn platform_key() -> String {
     let arch = std::env::consts::ARCH;
@@ -157,6 +243,53 @@ pub fn platform_key() -> String {
         other => format!("{arch}-{other}"),
     }
 }
+
+/// Unlike `platform_key`, parakeet-cpp has no macOS/other-OS fallback shape
+/// to format -- it is a closed lookup over exactly the two supported Linux
+/// arches, and anything else is a hard error. Takes `os_name`/`arch`
+/// explicitly (never reads `std::env::consts` itself) so callers -- and
+/// tests -- supply the platform rather than this function probing the real
+/// host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsupportedParakeetPlatform {
+    pub os_name: String,
+    pub arch: String,
+}
+impl std::fmt::Display for UnsupportedParakeetPlatform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "parakeet-cpp is unsupported on {}/{}",
+            self.os_name, self.arch
+        )
+    }
+}
+impl std::error::Error for UnsupportedParakeetPlatform {}
+
+pub fn parakeet_artifact_key(
+    os_name: &str,
+    arch: &str,
+) -> Result<String, UnsupportedParakeetPlatform> {
+    let unsupported = || UnsupportedParakeetPlatform {
+        os_name: os_name.to_owned(),
+        arch: arch.to_owned(),
+    };
+    if os_name != "linux" {
+        return Err(unsupported());
+    }
+    match arch.to_lowercase().as_str() {
+        "amd64" | "x64" | "x86_64" => Ok("x86_64-unknown-linux-gnu".to_owned()),
+        "arm64" | "aarch64" => Ok("aarch64-unknown-linux-gnu".to_owned()),
+        _ => Err(unsupported()),
+    }
+}
+/// Convenience wrapper over `parakeet_artifact_key` for the current host.
+/// Never call this from a test -- pass explicit os_name/arch instead so the
+/// assertion is about the mapping, not about the build machine.
+pub fn parakeet_host_artifact_key() -> Result<String, UnsupportedParakeetPlatform> {
+    parakeet_artifact_key(std::env::consts::OS, std::env::consts::ARCH)
+}
+
 pub fn paths(journal: &Path, key: &str, model_id: Option<&str>) -> Value {
     let vulkan = LLAMA_SERVER_PINS.iter().find(|pin| pin.0 == key);
     let cuda = CUDA_ARTIFACTS.iter().find(|pin| pin.0 == key);
@@ -171,4 +304,35 @@ pub fn paths(journal: &Path, key: &str, model_id: Option<&str>) -> Value {
 }
 pub fn pins_json() -> Value {
     json!({"llama_server_pins": LLAMA_SERVER_PINS.iter().map(|p| json!({"artifact_key":p.0,"release_tag":p.1,"filename":p.2,"sha256":p.3,"binary_name":p.4})).collect::<Vec<_>>(), "cuda_server_pin":{"cuda_version":13,"embedded_arch_set":["sm_86","sm_89","sm_120a","sm_121a"],"binary_name":"llama-server","device_flag_value":"CUDA0","visible_devices_env":"CUDA_VISIBLE_DEVICES","shared_wanted_files":CUDA_SHARED_WANTED_FILES,"cpu_wanted_files_by_arch":{"amd64":CUDA_AMD64_WANTED_FILES,"arm64":CUDA_ARM64_WANTED_FILES},"artifacts":CUDA_ARTIFACTS.iter().map(|p| cuda_identity(p.0).unwrap()).collect::<Vec<_>>()}, "mlx_models":MLX_MODELS.iter().map(|p| json!({"name":p.0,"repo":p.1,"revision":p.2,"size_bytes":p.3})).collect::<Vec<_>>(), "mlx_soft_token_budget":1120})
+}
+
+/// Mirrors `paths()`, keyed the way Parakeet's own cache tree is laid out
+/// (`journal/cache/providers/parakeet/bin/<key>/<backend>/<release_tag>/parakeet-server`,
+/// `.../models/<repo>/<revision>/<filename>`), not Local's.
+pub fn parakeet_paths(journal: &Path, key: &str) -> Value {
+    let root = parakeet_cache_root(journal);
+    let (repo, filename, revision, ..) = PARAKEET_MODEL;
+    let model_path = root
+        .join("models")
+        .join(repo.replace('/', "__"))
+        .join(revision)
+        .join(filename);
+    json!({
+        "artifact_key": key,
+        "cache_root": root,
+        "binary_path_vulkan": parakeet_vulkan_pin(key).map(|(release_tag, _, _, binary_name)| {
+            root.join("bin").join(key).join("vulkan").join(release_tag).join(binary_name)
+        }),
+        "binary_path_cpu": parakeet_cpu_pin(key).map(|(release_tag, _, _, binary_name)| {
+            root.join("bin").join(key).join("cpu").join(release_tag).join(binary_name)
+        }),
+        "model_path": model_path,
+    })
+}
+pub fn parakeet_pins_json() -> Value {
+    json!({
+        "parakeet_vulkan_pins": PARAKEET_VULKAN_PINS.iter().map(|p| json!({"artifact_key":p.0,"release_tag":p.1,"filename":p.2,"sha256":p.3,"binary_name":p.4})).collect::<Vec<_>>(),
+        "parakeet_cpu_pins": PARAKEET_CPU_PINS.iter().map(|p| json!({"artifact_key":p.0,"release_tag":p.1,"filename":p.2,"sha256":p.3,"binary_name":p.4})).collect::<Vec<_>>(),
+        "parakeet_model": parakeet_model_identity(),
+    })
 }
