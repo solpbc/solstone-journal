@@ -309,6 +309,7 @@ check-differentials:
 		"-p solstone-core-local --test admission_cross_process" \
 		"-p solstone-core-system --test stt_backend_choice_differential" \
 		"-p solstone-core-callosum --test callosum_cross_process --test registry_conformance" \
+		"-p solstone-core-transfer --test transfer_differential" \
 		"-p solstone-core-system-health --test pipeline_health_oracle" \
 		"-p solstone-core-observe-audio --test audio_differential" ; do \
 		echo "==> cargo test --features differential --no-fail-fast $$leg"; \

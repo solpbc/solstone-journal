@@ -28,14 +28,14 @@ pub use anthropic::{
     anthropic_generate,
 };
 pub use bundled::{BundledError, LOCAL_MODEL_ID, bundled_generate, bundled_input};
-pub use confidential::{ConfidentialResult, confidential_generate};
+pub use confidential::{ConfidentialResult, confidential_converse, confidential_generate};
 pub use converse::{
     ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
 };
 pub use endpoint::{
-    ENDPOINT_SERVED_WINDOW_CACHE_TTL, EndpointFailure, EndpointGenerated, EndpointResult,
-    EndpointRuntime, EndpointTransport, EndpointTransportError, OverflowDecision,
-    UreqEndpointTransport, endpoint_generate, endpoint_overflow_decision,
+    ENDPOINT_SERVED_WINDOW_CACHE_TTL, EndpointConverseResult, EndpointFailure, EndpointGenerated,
+    EndpointResult, EndpointRuntime, EndpointTransport, EndpointTransportError, OverflowDecision,
+    UreqEndpointTransport, endpoint_converse, endpoint_generate, endpoint_overflow_decision,
 };
 pub use google::{
     GoogleConverseFailure, GoogleConverseResult, GoogleFailure, GoogleGenerated, GoogleResult,

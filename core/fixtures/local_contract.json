@@ -1154,6 +1154,59 @@
     },
     "schema_version": 1
   },
+  "local_converse": {
+    "generated_by": "hand-authored from the Rust implementation for R4b; not produced by scripts/local_contract_corpus.py or make core-fixtures",
+    "wire_dialect": "openai-chat-completions",
+    "wire_shapes": {
+      "tool_spec": {
+        "type": "function",
+        "function": {
+          "name": "string",
+          "description": "string",
+          "parameters": "object"
+        }
+      },
+      "assistant_tool_calls_message": {
+        "role": "assistant",
+        "content": "string|null",
+        "tool_calls": [
+          {
+            "id": "string",
+            "type": "function",
+            "function": {
+              "name": "string",
+              "arguments": "JSON-encoded string"
+            }
+          }
+        ]
+      },
+      "tool_result_message": {
+        "role": "tool",
+        "tool_call_id": "string",
+        "content": "string"
+      }
+    },
+    "finish_reasons": [
+      "stop",
+      "max_tokens",
+      "content_filter",
+      "tool_calls"
+    ],
+    "reason_codes": [
+      "context_budget_exceeded",
+      "context_window_exceeded",
+      "local_endpoint_contract_failed",
+      "local_endpoint_unreachable",
+      "local_capacity_exhausted",
+      "local_queue_timeout",
+      "provider_response_invalid",
+      "tool_calls_missing",
+      "tool_call_arguments_invalid",
+      "attestation_stale",
+      "attestation_not_yet_verified",
+      "attestation_failed"
+    ]
+  },
   "fixture": "solstone-local-contract",
   "fixture_version": 2,
   "generated_by": "make core-fixtures",

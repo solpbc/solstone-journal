@@ -1,0 +1,161 @@
+{
+  "schema": "solstone-cogitate-wire-contract-v1",
+  "request_schema": {
+    "id": "solstone-cogitate-request-v1",
+    "required_fields": {
+      "schema": "string",
+      "access_tier": "string",
+      "expects_emit_final": "boolean",
+      "max_turns": "positive_integer",
+      "cost_cap_usd": "positive_number",
+      "context_window": "null_or_positive_integer",
+      "timeout_ms": "positive_integer",
+      "read_call_budget": "positive_integer",
+      "model": "string",
+      "correlation_id": "string",
+      "initial_prompt": "string",
+      "journal_root": "absolute_path"
+    },
+    "optional_fields": {
+      "outbound_approval": "null_or_string",
+      "system_instruction": "null_or_string",
+      "dry_run": "boolean"
+    }
+  },
+  "environment": {
+    "endpoint_url_override": "SOLSTONE_COGITATE_ENDPOINT_URL_OVERRIDE",
+    "api_key_override": "SOLSTONE_COGITATE_API_KEY_OVERRIDE"
+  },
+  "exit_codes": {
+    "success": 0,
+    "malformed_request": 65,
+    "internal_failure": 70,
+    "dead_stdout_pipe": 74,
+    "provider_configuration_error": 78
+  },
+  "protocol_semantics": {
+    "provider_run_error_event_exits_success": true
+  },
+  "cortex_events": {
+    "request": {
+      "role": "transport_only",
+      "required_fields": { "event": "string" },
+      "optional_fields": {},
+      "ts_required": false,
+      "terminal_applies": false
+    },
+    "start": {
+      "role": "transport_only",
+      "required_fields": { "event": "string", "ts": "integer" },
+      "optional_fields": {},
+      "ts_required": true,
+      "terminal_applies": false
+    },
+    "thinking": {
+      "role": "native_producer",
+      "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "summary": "string", "model": "string" },
+      "optional_fields": { "payload": "json" },
+      "ts_required": true,
+      "terminal_applies": false
+    },
+    "tool_start": {
+      "role": "native_producer",
+      "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "call_id": "string", "tool": "string", "args": "json" },
+      "optional_fields": {},
+      "ts_required": true,
+      "terminal_applies": false
+    },
+    "tool_end": {
+      "role": "native_producer",
+      "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "call_id": "string", "tool": "string", "args": "json", "result": "string", "is_error": "boolean" },
+      "optional_fields": {},
+      "ts_required": true,
+      "terminal_applies": false
+    },
+    "finish": {
+      "role": "native_producer",
+      "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "terminal": "boolean" },
+      "optional_fields": { "result": "string", "raw": "json" },
+      "ts_required": true,
+      "terminal_applies": true
+    },
+    "error": {
+      "role": "native_producer",
+      "also_consumer_synthesized_in_python": true,
+      "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "terminal": "boolean", "error": "string" },
+      "optional_fields": { "reason_code": "string", "provider_failure": "object", "result": "string", "raw": "json" },
+      "ts_required": true,
+      "terminal_applies": true
+    },
+    "talent_updated": {
+      "role": "transport_only",
+      "required_fields": { "event": "string", "ts": "integer" },
+      "optional_fields": {},
+      "ts_required": true,
+      "terminal_applies": false
+    },
+    "info": {
+      "role": "consumer_synthesized",
+      "required_fields": { "event": "string", "ts": "integer" },
+      "optional_fields": {},
+      "ts_required": true,
+      "terminal_applies": false
+    },
+    "status": {
+      "role": "transport_only",
+      "required_fields": { "event": "string" },
+      "optional_fields": {},
+      "ts_required": false,
+      "terminal_applies": false
+    },
+    "cancel": {
+      "role": "transport_only",
+      "required_fields": { "event": "string" },
+      "optional_fields": {},
+      "ts_required": false,
+      "terminal_applies": false
+    },
+    "dry_run": {
+      "role": "dry_run_native",
+      "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "dry_run": "boolean", "terminal": "boolean" },
+      "optional_fields": {},
+      "ts_required": true,
+      "terminal_applies": true
+    },
+    "progress": {
+      "role": "legacy_registered_not_native_producible",
+      "required_fields": { "event": "string", "ts": "integer" },
+      "optional_fields": {},
+      "ts_required": true,
+      "terminal_applies": false
+    },
+    "text_delta": {
+      "role": "native_producer",
+      "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "delta": "string", "model": "string" },
+      "optional_fields": {},
+      "ts_required": true,
+      "terminal_applies": false
+    },
+    "tool_budget_exhausted": {
+      "role": "native_producer",
+      "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "tool": "string", "budget": "integer", "count": "integer" },
+      "optional_fields": {},
+      "ts_required": true,
+      "terminal_applies": false
+    },
+    "warning": {
+      "role": "legacy_registered_not_native_producible",
+      "required_fields": { "event": "string", "ts": "integer" },
+      "optional_fields": {},
+      "ts_required": true,
+      "terminal_applies": false
+    },
+    "budget_escalation": {
+      "role": "native_producer",
+      "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "ladder": "string", "stage": "string", "message": "null_or_string" },
+      "optional_fields": {},
+      "ts_required": true,
+      "terminal_applies": false
+    }
+  }
+}

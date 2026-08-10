@@ -161,6 +161,36 @@
       "why": "initial state; the only normalized field"
     },
     {
+      "body_bytes": 0,
+      "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "body_sha256_basis": "raw-body",
+      "headers": {
+        "Content-Length": "0",
+        "Content-Type": "text/html; charset=utf-8"
+      },
+      "method": "GET",
+      "path": "/app/speakers/notaday",
+      "request_headers": {},
+      "status": 404,
+      "why": "invalid day deep link returns an empty 404"
+    },
+    {
+      "body_bytes": 12199,
+      "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+      "body_sha256_basis": "raw-body",
+      "headers": {
+        "Cache-Control": "public, max-age=300",
+        "Content-Disposition": "inline; filename=shell.html",
+        "Content-Length": "12199",
+        "Content-Type": "text/html; charset=utf-8"
+      },
+      "method": "GET",
+      "path": "/app/speakers/20260731",
+      "request_headers": {},
+      "status": 200,
+      "why": "valid day deep link serves the shell"
+    },
+    {
       "body_bytes": 126,
       "body_sha256": "01c1789b6959baa33a77b66b534bc1e9804f52cbb2c5f99ef399217b439fe46c",
       "body_sha256_basis": "normalized-json",

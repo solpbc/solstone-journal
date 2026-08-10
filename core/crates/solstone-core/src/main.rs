@@ -15,13 +15,14 @@ use serde_json::{Map, Value, json};
 use solstone_core_cli::{
     BodyAppleOptions, BodyCommand, BodyOuraCommand, BodyOuraConnectOptions, BodyOuraSyncOptions,
     BodyRebuildOptions, BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
-    BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, Command,
-    ConveyOptions, GenerateCommand, GenerateSessionOptions, IndexerCommand, IndexerCountsOptions,
-    IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
+    BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CogitateCommand,
+    Command, ConveyOptions, GenerateCommand, GenerateSessionOptions, IndexerCommand,
+    IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
     IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
     InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
     JournalConfigReadOptions, JournalPathOptions, LocalCommand, ServiceOptions,
-    SpeakerResolveCommand, SplCommand, USAGE, evaluate_args, version_line,
+    SpeakerResolveCommand, SplCommand, TransferCommand, TransferExportOptions,
+    TransferImportOptions, USAGE, evaluate_args, version_line,
 };
 mod supervisor;
 use solstone_core_indexer_query::{
@@ -45,12 +46,14 @@ use solstone_core_journal_config_write::{
 };
 const EXIT_USAGE: u8 = 64;
 const EXIT_UNAVAILABLE: u8 = 69;
+const EXIT_INTERNAL_FAILURE: u8 = 70;
 const EXIT_TEMPFAIL: u8 = 75;
 const EXIT_DATAERR: u8 = 65;
 const EXIT_CANTCREAT: u8 = 73;
 const EXIT_IOERR: u8 = 74;
 /// `EX_PROTOCOL`: the caller broke a brain-session framing contract.
 const EXIT_PROTOCOL: u8 = 76;
+const EXIT_PROVIDER_CONFIGURATION: u8 = 78;
 const MAX_JSON_STDIN_BYTES: usize = 1024 * 1024;
 const MAX_LOCAL_STDIN_BYTES: usize = 1024 * 1024;
 const SESSION_INPUT_TIMEOUT: Duration = Duration::from_secs(90);
@@ -102,8 +105,10 @@ fn main() -> ExitCode {
         Ok(Command::SpeakerResolve(command)) => run_speaker_resolve(command),
         Ok(Command::Local(command)) => run_local(command),
         Ok(Command::Generate(command)) => run_generate(command),
+        Ok(Command::Cogitate(command)) => run_cogitate(command),
         Ok(Command::Brain(command)) => run_brain(command),
         Ok(Command::Body(command)) => run_body(command),
+        Ok(Command::Transfer(command)) => run_transfer(command),
         Ok(Command::Convey(options)) => run_convey(options),
         Ok(Command::Spl(command)) => run_spl_process(command),
         Ok(Command::Supervisor(options)) => supervisor::run(options),
@@ -112,6 +117,115 @@ fn main() -> ExitCode {
             ExitCode::from(EXIT_USAGE)
         }
     }
+}
+
+fn run_transfer(command: TransferCommand) -> ExitCode {
+    match command {
+        TransferCommand::Export(options) => run_transfer_export(options),
+        TransferCommand::Import(options) => run_transfer_import(options),
+    }
+}
+
+fn run_transfer_export(options: TransferExportOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    match solstone_core_transfer::export(
+        &journal,
+        solstone_core_transfer::ExportRequest {
+            day: options.day,
+            output: PathBuf::from(options.output),
+        },
+    ) {
+        Ok(report) => {
+            println!(
+                "exported day={} segments={} files={} output={}",
+                report.day,
+                report.segments,
+                report.files,
+                report.output.display()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("transfer export failed: {error}");
+            ExitCode::from(match error {
+                solstone_core_transfer::TransferError::MissingDay(_)
+                | solstone_core_transfer::TransferError::NoSegments(_) => 2,
+                solstone_core_transfer::TransferError::InvalidDay
+                | solstone_core_transfer::TransferError::Manifest(_) => EXIT_DATAERR,
+                _ => EXIT_IOERR,
+            })
+        }
+    }
+}
+
+fn run_transfer_import(options: TransferImportOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    match solstone_core_transfer::import(
+        &journal,
+        solstone_core_transfer::ImportRequest {
+            archive: PathBuf::from(options.archive),
+            dry_run: options.dry_run,
+        },
+    ) {
+        Ok(report) => {
+            print_transfer_import_report(&report);
+            ExitCode::SUCCESS
+        }
+        Err(solstone_core_transfer::ImportError::Partial { report, reason }) => {
+            print_transfer_import_report(&report);
+            eprintln!("transfer import failed: {reason}");
+            ExitCode::from(EXIT_IOERR)
+        }
+        Err(solstone_core_transfer::ImportError::Fatal(error)) => {
+            eprintln!("transfer import failed: {error}");
+            ExitCode::from(match error {
+                solstone_core_transfer::TransferError::InvalidDay
+                | solstone_core_transfer::TransferError::Manifest(_)
+                | solstone_core_transfer::TransferError::ArchiveMember(_)
+                | solstone_core_transfer::TransferError::ContentMismatch(_) => EXIT_DATAERR,
+                _ => EXIT_IOERR,
+            })
+        }
+    }
+}
+
+fn print_transfer_import_report(report: &solstone_core_transfer::ImportReport) {
+    for outcome in &report.outcomes {
+        match outcome {
+            solstone_core_transfer::SegmentOutcome::Landed { source, target } => {
+                println!("{source}: landed={target}");
+            }
+            solstone_core_transfer::SegmentOutcome::LandedDeconflicted { source, target } => {
+                println!("{source}: landed-deconflicted={target}");
+            }
+            solstone_core_transfer::SegmentOutcome::SkippedAlreadySynced { source } => {
+                println!("{source}: skipped-already-synced");
+            }
+            solstone_core_transfer::SegmentOutcome::Failed { source, reason } => {
+                println!("{source}: failed={reason}");
+            }
+            solstone_core_transfer::SegmentOutcome::NotAttempted { source } => {
+                println!("{source}: not-attempted");
+            }
+        }
+    }
+    println!(
+        "day={} dry-run={} landed={} skipped={} deconflicted={} failed={} not-attempted={} rescan={}",
+        report.day,
+        report.dry_run,
+        report.landed(),
+        report.skipped(),
+        report.deconflicted(),
+        report.failed(),
+        report.not_attempted(),
+        report.rescan.as_str(),
+    );
 }
 
 fn run_convey(options: ConveyOptions) -> ExitCode {
@@ -1134,6 +1248,123 @@ fn run_generate(command: GenerateCommand) -> ExitCode {
         ),
         GenerateCommand::OneShot => run_generate_one_shot(),
         GenerateCommand::Session(options) => run_generate_session(options),
+    }
+}
+
+/// Run the native cogitate process boundary.
+///
+/// `cogitate_wire_contract.json` is the source of truth for which registered
+/// Cortex kinds are native producers and which are consumer/transport-side.
+/// Cortex writes a separate durable use log with consumer-added `use_id` and
+/// `exit_code`, synthesized `info.message` and `error` records, and the
+/// `_active.jsonl` to `.jsonl` rename (`cortex.py:707-733,1379-1384`). This
+/// subcommand only streams its NDJSON boundary. It replaces the in-process
+/// loop, policy, prompt assembly, and provider resolution formerly performed
+/// by `talents.py`/`openhands.py`; Python still owns post-hooks, output files,
+/// provenance, no-output gating, and reuse (`talents.py:1518-1619`).
+fn run_cogitate(command: CogitateCommand) -> ExitCode {
+    match command {
+        CogitateCommand::Contract => {
+            print!("{}", solstone_core_cogitate_wire::contract_source());
+            ExitCode::SUCCESS
+        }
+        CogitateCommand::Malformed => {
+            eprintln!("cogitate: expected --contract or --one-shot");
+            ExitCode::from(EXIT_DATAERR)
+        }
+        CogitateCommand::OneShot => run_cogitate_one_shot(),
+    }
+}
+
+fn run_cogitate_one_shot() -> ExitCode {
+    // One-shot cogitate has one complete request, rather than generate's
+    // multiplexed session framing, so a direct read-to-string is sufficient.
+    let mut raw = String::new();
+    if let Err(error) = io::stdin().lock().read_to_string(&mut raw) {
+        eprintln!("cogitate stdin I/O error: {error}");
+        return ExitCode::from(EXIT_INTERNAL_FAILURE);
+    }
+    let request = match solstone_core_cogitate_wire::CogitateRequest::parse(&raw) {
+        Ok(request) => request,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::from(EXIT_DATAERR);
+        }
+    };
+    // Dry runs deliberately avoid endpoint resolution, allowing callers to
+    // validate a request without any provider configuration.
+    if request.dry_run {
+        return match solstone_core_cogitate_wire::serialize_dry_run(&request) {
+            Ok(value) => {
+                write_ndjson_line_or_exit(&value);
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::from(EXIT_INTERNAL_FAILURE)
+            }
+        };
+    }
+    let mut provider =
+        match solstone_core_cogitate_wire::EndpointConverseProvider::from_request(&request) {
+            Ok(provider) => provider,
+            Err(error) => {
+                eprintln!("{error}");
+                return ExitCode::from(EXIT_PROVIDER_CONFIGURATION);
+            }
+        };
+    let mut slot = solstone_core_cogitate_tools::NoopSlotLease;
+    let mut tools = solstone_core_cogitate_runtime::CogitateToolExecutor::new(
+        &request.journal_root,
+        request.read_call_budget,
+        &mut slot,
+    );
+    let mut sink = StdoutEventSink;
+    match solstone_core_cogitate_wire::run_or_dry_run(
+        &request,
+        &mut provider,
+        &mut tools,
+        &mut sink,
+    ) {
+        Ok(solstone_core_cogitate_wire::NativeRun::Completed(_)) => ExitCode::SUCCESS,
+        Ok(solstone_core_cogitate_wire::NativeRun::DryRun(value)) => {
+            write_ndjson_line_or_exit(&value);
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::from(EXIT_INTERNAL_FAILURE)
+        }
+    }
+}
+
+struct StdoutEventSink;
+
+impl solstone_core_cogitate_runtime::EventSink for StdoutEventSink {
+    fn emit(&mut self, event: solstone_core_cogitate_runtime::RuntimeEvent) {
+        match solstone_core_cogitate_wire::serialize_event_validated(event) {
+            Ok(value) => write_ndjson_line_or_exit(&value),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(EXIT_INTERNAL_FAILURE.into());
+            }
+        }
+    }
+}
+
+fn write_ndjson_line_or_exit(value: &Value) {
+    let stdout = io::stdout();
+    let mut stdout = stdout.lock();
+    if stdout
+        .write_all(value.to_string().as_bytes())
+        .and_then(|()| stdout.write_all(b"\n"))
+        .and_then(|()| stdout.flush())
+        .is_err()
+    {
+        // AC #16: EventSink cannot return Result, so terminate at the exact
+        // failed write. Another final event cannot reach a dead pipe; process
+        // exit belongs in this binary boundary, never in a subsystem crate.
+        std::process::exit(EXIT_IOERR.into());
     }
 }
 

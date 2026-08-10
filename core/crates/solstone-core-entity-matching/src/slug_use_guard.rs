@@ -64,6 +64,11 @@ const ALLOWED: &[(&str, &str)] = &[
         "names merge-candidate key components and is a compatibility fallback only after a \
          stored attached-facet identity lookup fails -- never used to locate an existing entity",
     ),
+    (
+        "solstone-core-convey-shell/src/speakers_review.rs",
+        "labels a synthetic principal entity from the principal_identity_or_none fallback when no \
+         journal entity exists yet -- never used to look one up",
+    ),
 ];
 
 fn crates_root() -> PathBuf {

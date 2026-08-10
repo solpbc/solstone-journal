@@ -979,7 +979,7 @@ pub fn serialized_message_text(messages: &[Value]) -> String {
     text.join("\n")
 }
 
-fn extract_usage(data: &Value) -> Option<Usage> {
+pub(crate) fn extract_usage(data: &Value) -> Option<Usage> {
     let usage = data.get("usage")?.as_object()?;
     let input_tokens = integer_or_zero(usage.get("prompt_tokens"));
     let output_tokens = integer_or_zero(usage.get("completion_tokens"));
@@ -1001,7 +1001,7 @@ fn extract_usage(data: &Value) -> Option<Usage> {
     })
 }
 
-fn integer_or_zero(value: Option<&Value>) -> u64 {
+pub(crate) fn integer_or_zero(value: Option<&Value>) -> u64 {
     value.and_then(Value::as_u64).unwrap_or(0)
 }
 

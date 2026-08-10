@@ -64,10 +64,14 @@ solstone-core-journal-config-write.workspace = true
 solstone-core-local.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-generate-wire.workspace = true
+solstone-core-cogitate-runtime.workspace = true
+solstone-core-cogitate-tools.workspace = true
+solstone-core-cogitate-wire.workspace = true
 solstone-core-spl.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
 solstone-core-system.workspace = true
+solstone-core-transfer.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 serde_json.workspace = true
 nix = { workspace = true, features = ["process", "signal"] }
@@ -78,4 +82,5 @@ futures-util = { version = "0.3.33", default-features = false, features = ["sink
 nix = { workspace = true, features = ["signal"] }
 rusqlite.workspace = true
 sha2.workspace = true
+tempfile = "3.24.0"
 tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["handshake"] }

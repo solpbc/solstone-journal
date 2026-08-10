@@ -41,7 +41,8 @@
       "progress",
       "text_delta",
       "tool_budget_exhausted",
-      "warning"
+      "warning",
+      "budget_escalation"
     ],
     "importer": [
       "started",

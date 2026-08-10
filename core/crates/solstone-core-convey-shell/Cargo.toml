@@ -14,11 +14,15 @@ workspace = true
 axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
 futures-core = "0.3.33"
+ndarray = "=0.17.2"
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-convey-http.workspace = true
+solstone-core-entity-matching.workspace = true
+solstone-core-npy.workspace = true
 tokio = { workspace = true, features = ["net", "rt-multi-thread"] }
 tower.workspace = true
+zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
 [build-dependencies]
 serde_json.workspace = true
