@@ -3,7 +3,7 @@
 
 //! Bring-your-own local endpoint generation.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -15,11 +15,14 @@ use solstone_core_local::admission::{
     AdmissionError, LocalSlotPermit, acquire_local_slot, admission_dir,
 };
 use solstone_core_local::{
-    ByoEndpoint, HttpResponse, InputBudget, RequestBudget, Usage, build_messages,
-    build_request_body, count_image_parts, estimate_tokens, fit_contents, parse_response,
+    ByoEndpoint, HttpResponse, InputBudget, LocalConverseError, LocalConverseRequest,
+    RequestBudget, Usage, build_converse_request_body, build_messages, build_request_body,
+    count_image_parts, estimate_tokens, fit_contents, parse_converse_response, parse_response,
     serialized_message_text, served_window_from_models_response,
 };
 use solstone_core_spp_ratls::AttestationStateStore;
+
+use crate::{ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 const ENDPOINT_MODELS_TIMEOUT: Duration = Duration::from_millis(2_500);
@@ -68,6 +71,18 @@ pub struct EndpointFailure {
 pub enum EndpointResult {
     Generated(EndpointGenerated),
     Failed(EndpointFailure),
+}
+
+pub type EndpointConverseResult = Result<Box<ConverseTurn>, ConverseFailure>;
+
+pub(crate) struct EndpointConverseCall<'a> {
+    pub request: &'a GenerateRequest,
+    pub messages: &'a [ConverseMessage],
+    pub tools: &'a [ConverseToolSpec],
+    pub journal_path: &'a Path,
+    pub endpoint: &'a ByoEndpoint,
+    pub config: &'a Map<String, Value>,
+    pub runtime: &'a EndpointRuntime,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -246,6 +261,182 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
     })
 }
 
+pub fn endpoint_converse(
+    request: &GenerateRequest,
+    messages: &[ConverseMessage],
+    tools: &[ConverseToolSpec],
+    journal_path: &Path,
+    endpoint: &ByoEndpoint,
+    config: &Map<String, Value>,
+    runtime: &EndpointRuntime,
+) -> EndpointConverseResult {
+    let mut transport = UreqEndpointTransport;
+    endpoint_converse_with(
+        EndpointConverseCall {
+            request,
+            messages,
+            tools,
+            journal_path,
+            endpoint,
+            config,
+            runtime,
+        },
+        &mut transport,
+        Instant::now(),
+    )
+}
+
+pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
+    call: EndpointConverseCall<'_>,
+    transport: &mut T,
+    now: Instant,
+) -> EndpointConverseResult {
+    let EndpointConverseCall {
+        request,
+        messages,
+        tools,
+        journal_path,
+        endpoint,
+        config,
+        runtime,
+    } = call;
+    let max_tokens = match u32::try_from(request.max_output_tokens) {
+        Ok(value) => value,
+        Err(_) => return converse_failure("provider_response_invalid"),
+    };
+    let served_window = runtime.resolve_served_window(endpoint, config, transport, now);
+    let input_budget_tokens = match served_window {
+        Some(window) => Some(solstone_core_local::generate::compute_input_budget(
+            max_tokens, window,
+        )),
+        None if endpoint.is_confidential => return converse_failure("context_budget_exceeded"),
+        None => None,
+    };
+    let message_values = converse_messages_to_value(messages);
+    let tool_values = converse_tools_to_value(tools);
+    let local_request = LocalConverseRequest {
+        model: &endpoint.served_model_id,
+        system_instruction: request.system_instruction.as_deref(),
+        messages: &message_values,
+        tools: &tool_values,
+        temperature: request.temperature,
+        max_tokens,
+        json_output: request.json_output,
+        json_schema: request.json_schema.as_ref(),
+        // The reference gates the llama-server sampling controls on
+        // `is_bundled or is_confidential`, not on `is_bundled` alone. The
+        // confidential lane sends this request over a directly attested
+        // RA-TLS channel.
+        include_qwen_sampling_controls: endpoint.is_confidential,
+    };
+    let mut body = match build_converse_request_body(&local_request, input_budget_tokens) {
+        Ok(body) => body,
+        Err(LocalConverseError::ContextBudgetExceeded) => {
+            return converse_failure("context_budget_exceeded");
+        }
+        Err(_) => return converse_failure("provider_response_invalid"),
+    };
+    let timeout = request_timeout(request.timeout_s);
+    let started = Instant::now();
+    let Some(admission_timeout) = remaining_timeout(started, timeout) else {
+        return converse_failure("local_capacity_exhausted");
+    };
+    if admission_timeout.is_zero() {
+        return converse_failure("local_capacity_exhausted");
+    }
+    let response = {
+        let _permit = if endpoint.is_confidential {
+            None
+        } else {
+            match acquire_endpoint_slot(
+                journal_path,
+                endpoint,
+                request.exclusive_admission,
+                admission_timeout,
+            ) {
+                Ok(permit) => Some(permit),
+                Err(reason_code) => return converse_failure(reason_code),
+            }
+        };
+        let mut attempt = 0;
+        loop {
+            let Some(remaining) = remaining_timeout(started, timeout) else {
+                return converse_failure("local_capacity_exhausted");
+            };
+            if remaining.is_zero() {
+                return converse_failure("local_capacity_exhausted");
+            }
+            let response = match endpoint_post(endpoint, &body, remaining, transport) {
+                Ok(response) => response,
+                Err(reason_code) => return converse_failure(reason_code),
+            };
+            if response.status != 400 {
+                break response;
+            }
+            match endpoint_overflow_decision(&response.body, served_window, attempt) {
+                OverflowDecision::Retry(new_max_tokens) => {
+                    body["max_tokens"] = json!(new_max_tokens);
+                    attempt += 1;
+                }
+                OverflowDecision::Budget => return converse_failure("context_budget_exceeded"),
+                OverflowDecision::Context => return converse_failure("context_window_exceeded"),
+                OverflowDecision::Contract => {
+                    return converse_failure("local_endpoint_contract_failed");
+                }
+            }
+        }
+    };
+    if !(200..300).contains(&response.status) {
+        return converse_failure("provider_response_invalid");
+    }
+    let response_body = match serde_json::from_str::<Value>(&response.body) {
+        Ok(body) => body,
+        Err(_) => return converse_failure("provider_response_invalid"),
+    };
+    let parsed = match parse_converse_response(&response_body) {
+        Ok(parsed) => parsed,
+        Err(LocalConverseError::ResponseInvalid | LocalConverseError::ContextBudgetExceeded) => {
+            return converse_failure("provider_response_invalid");
+        }
+        Err(LocalConverseError::ToolCallsMissing) => return converse_failure("tool_calls_missing"),
+        Err(LocalConverseError::ToolCallArgumentsInvalid) => {
+            return converse_failure("tool_call_arguments_invalid");
+        }
+    };
+    let offered = tools
+        .iter()
+        .map(|tool| tool.name.as_str())
+        .collect::<BTreeSet<_>>();
+    let tool_calls = parsed
+        .tool_calls
+        .into_iter()
+        .map(|call| {
+            let not_offered = !offered.contains(call.name.as_str());
+            ConverseToolCall {
+                id: call.id,
+                name: call.name,
+                arguments: call.arguments,
+                not_offered,
+            }
+        })
+        .collect();
+    let usage = match parsed.usage {
+        Some(usage) => match serde_json::to_value(usage) {
+            Ok(usage) => usage,
+            Err(_) => return converse_failure("provider_response_invalid"),
+        },
+        None => json!({}),
+    };
+    Ok(Box::new(ConverseTurn {
+        text: parsed.text,
+        tool_calls,
+        finish_reason: parsed.finish_reason,
+        usage,
+        model: endpoint.served_model_id.clone(),
+        thinking: None,
+    }))
+}
+
 struct PreparedEndpointRequest {
     body: Value,
     input_budget: Option<InputBudget>,
@@ -318,6 +509,52 @@ fn prepare_endpoint_request(
         input_budget,
         request_budget,
     })
+}
+
+fn converse_messages_to_value(messages: &[ConverseMessage]) -> Value {
+    Value::Array(
+        messages
+            .iter()
+            .map(|message| match message {
+                ConverseMessage::User { text } => json!({"role": "user", "content": text}),
+                ConverseMessage::Assistant { text, tool_calls } if tool_calls.is_empty() => {
+                    json!({"role": "assistant", "content": text})
+                }
+                ConverseMessage::Assistant { text, tool_calls } => json!({
+                    "role": "assistant",
+                    "content": if text.is_empty() { Value::Null } else { Value::String(text.clone()) },
+                    "tool_calls": tool_calls.iter().map(|call| json!({
+                        "id": call.id,
+                        "type": "function",
+                        "function": {"name": call.name, "arguments": call.arguments.to_string()},
+                    })).collect::<Vec<_>>(),
+                }),
+                ConverseMessage::ToolResult {
+                    tool_call_id,
+                    tool_name: _,
+                    output,
+                } => json!({"role": "tool", "tool_call_id": tool_call_id, "content": output}),
+            })
+            .collect(),
+    )
+}
+
+fn converse_tools_to_value(tools: &[ConverseToolSpec]) -> Value {
+    Value::Array(
+        tools
+            .iter()
+            .map(|tool| {
+                json!({
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.parameters,
+                    },
+                })
+            })
+            .collect(),
+    )
 }
 
 fn acquire_endpoint_slot(
@@ -498,6 +735,15 @@ fn request_timeout(timeout_s: Option<f64>) -> Duration {
 fn failure(reason_code: &str) -> EndpointResult {
     EndpointResult::Failed(EndpointFailure {
         reason_code: Some(reason_code.to_owned()),
+    })
+}
+
+pub(crate) fn converse_failure(reason_code: &str) -> EndpointConverseResult {
+    let (retryable, blocking) = crate::converse::converse_failure_flags(reason_code);
+    Err(ConverseFailure {
+        reason_code: reason_code.to_owned(),
+        retryable,
+        blocking,
     })
 }
 
@@ -1237,6 +1483,383 @@ mod tests {
             EndpointResult::Generated(_)
         ));
         let _ = std::fs::remove_dir_all(journal);
+    }
+    fn converse_tools() -> Vec<ConverseToolSpec> {
+        vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "weather".into(),
+            parameters: json!({"type": "object"}),
+        }]
+    }
+
+    fn converse_response(name: &str) -> HttpResponse {
+        HttpResponse {
+            status: 200,
+            body: json!({
+                "choices": [{
+                    "message": {
+                        "content": "before",
+                        "tool_calls": [{
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {"name": name, "arguments": "{\"city\":\"Denver\"}"},
+                        }],
+                    },
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
+            })
+            .to_string(),
+        }
+    }
+
+    #[test]
+    fn converse_posts_chat_completions_history_and_marks_unoffered_calls() {
+        for (name, expected_not_offered) in [("weather", false), ("other", true)] {
+            let runtime = EndpointRuntime::default();
+            let journal = journal_path();
+            let messages = vec![
+                ConverseMessage::User { text: "ask".into() },
+                ConverseMessage::Assistant {
+                    text: String::new(),
+                    tool_calls: vec![ConverseToolCall {
+                        id: "prior-call".into(),
+                        name: "weather".into(),
+                        arguments: json!({"city": "Denver"}),
+                        not_offered: false,
+                    }],
+                },
+                ConverseMessage::ToolResult {
+                    tool_call_id: "prior-call".into(),
+                    tool_name: "weather".into(),
+                    output: "sunny".into(),
+                },
+            ];
+            let mut transport = StubTransport {
+                post_result: Some(Ok(converse_response(name))),
+                ..Default::default()
+            };
+            let turn = endpoint_converse_with(
+                EndpointConverseCall {
+                    request: &request(None),
+                    messages: &messages,
+                    tools: &converse_tools(),
+                    journal_path: &journal,
+                    endpoint: &endpoint("http://endpoint"),
+                    config: &served_window_config(),
+                    runtime: &runtime,
+                },
+                &mut transport,
+                Instant::now(),
+            )
+            .expect("converse turn");
+            assert_eq!(turn.text, "before");
+            assert_eq!(turn.finish_reason, "tool_calls");
+            assert_eq!(turn.tool_calls[0].not_offered, expected_not_offered);
+            assert_eq!(turn.tool_calls[0].arguments, json!({"city": "Denver"}));
+            let expected = json!({
+                "model": "served",
+                "messages": [
+                    {"role": "user", "content": "ask"},
+                    {"role": "assistant", "content": null, "tool_calls": [{
+                        "id": "prior-call",
+                        "type": "function",
+                        "function": {"name": "weather", "arguments": "{\"city\":\"Denver\"}"},
+                    }]},
+                    {"role": "tool", "tool_call_id": "prior-call", "content": "sunny"},
+                ],
+                "tools": [{"type": "function", "function": {"name": "weather", "description": "weather", "parameters": {"type": "object"}}}],
+                "temperature": 0.2,
+                "max_tokens": 64,
+                "stream": false,
+            });
+            assert_eq!(transport.posts, vec![expected.clone()]);
+            let mut wrong = expected;
+            wrong.as_object_mut().expect("body object").remove("tools");
+            assert_ne!(transport.posts[0], wrong);
+            let _ = std::fs::remove_dir_all(journal);
+        }
+    }
+
+    #[test]
+    fn converse_fits_growing_history_before_its_single_post() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let tools = converse_tools();
+        let mut messages = Vec::new();
+        for number in 0..10 {
+            let id = format!("call-{number}");
+            messages.push(ConverseMessage::Assistant {
+                text: String::new(),
+                tool_calls: vec![ConverseToolCall {
+                    id: id.clone(),
+                    name: "weather".into(),
+                    arguments: json!({"note": "x".repeat(500)}),
+                    not_offered: false,
+                }],
+            });
+            messages.push(ConverseMessage::ToolResult {
+                tool_call_id: id,
+                tool_name: "weather".into(),
+                output: "y".repeat(500),
+            });
+        }
+        messages.push(ConverseMessage::User {
+            text: "latest".into(),
+        });
+        let mut transport = StubTransport {
+            post_result: Some(Ok(response())),
+            ..Default::default()
+        };
+        let config = json!({"providers": {"local": {"served_context_window": 2048}}})
+            .as_object()
+            .expect("config object")
+            .clone();
+        endpoint_converse_with(
+            EndpointConverseCall {
+                request: &request(None),
+                messages: &messages,
+                tools: &tools,
+                journal_path: &journal,
+                endpoint: &endpoint("http://endpoint"),
+                config: &config,
+                runtime: &runtime,
+            },
+            &mut transport,
+            Instant::now(),
+        )
+        .expect("converse turn");
+        let posted = serde_json::to_string(&transport.posts[0]).expect("posted JSON");
+        assert!(
+            estimate_tokens(&posted)
+                <= solstone_core_local::generate::compute_input_budget(64, 2048)
+        );
+        assert_eq!(transport.posts.len(), 1);
+        assert!(
+            messages.len()
+                > transport.posts[0]["messages"]
+                    .as_array()
+                    .expect("messages")
+                    .len()
+        );
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn converse_fitting_evicts_tool_call_pairs_without_orphans() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let tools = converse_tools();
+        let mut messages = Vec::new();
+        for number in 0..5 {
+            let id = format!("call-{number}");
+            messages.push(ConverseMessage::Assistant {
+                text: String::new(),
+                tool_calls: vec![ConverseToolCall {
+                    id: id.clone(),
+                    name: "weather".into(),
+                    arguments: json!({"note": "x".repeat(650)}),
+                    not_offered: false,
+                }],
+            });
+            messages.push(ConverseMessage::ToolResult {
+                tool_call_id: id,
+                tool_name: "weather".into(),
+                output: "y".repeat(650),
+            });
+        }
+        messages.push(ConverseMessage::User {
+            text: "latest".into(),
+        });
+        let config = json!({"providers": {"local": {"served_context_window": 2048}}})
+            .as_object()
+            .expect("config object")
+            .clone();
+        let mut transport = StubTransport {
+            post_result: Some(Ok(response())),
+            ..Default::default()
+        };
+        endpoint_converse_with(
+            EndpointConverseCall {
+                request: &request(None),
+                messages: &messages,
+                tools: &tools,
+                journal_path: &journal,
+                endpoint: &endpoint("http://endpoint"),
+                config: &config,
+                runtime: &runtime,
+            },
+            &mut transport,
+            Instant::now(),
+        )
+        .expect("converse turn");
+
+        let mut assistant_call_ids = BTreeSet::new();
+        let mut tool_result_ids = BTreeSet::new();
+        for message in transport.posts[0]["messages"]
+            .as_array()
+            .expect("posted messages")
+        {
+            if message["role"] == "assistant" {
+                for call in message["tool_calls"].as_array().into_iter().flatten() {
+                    assistant_call_ids.insert(
+                        call["id"]
+                            .as_str()
+                            .expect("assistant tool call ID")
+                            .to_owned(),
+                    );
+                }
+            }
+            if message["role"] == "tool" {
+                tool_result_ids.insert(
+                    message["tool_call_id"]
+                        .as_str()
+                        .expect("tool result call ID")
+                        .to_owned(),
+                );
+            }
+        }
+        assert!(!assistant_call_ids.is_empty());
+        assert!(assistant_call_ids.len() < 5);
+        assert_eq!(assistant_call_ids, tool_result_ids);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn converse_and_one_shot_builders_share_wire_controls() {
+        let schema = json!({"type": "object", "properties": {"answer": {"type": "string"}}});
+        let one_shot = build_request_body(
+            "served",
+            vec![json!({"role": "user", "content": "ask"})],
+            0.2,
+            64,
+            true,
+            Some(&schema),
+            true,
+        );
+        let messages = json!([{"role": "user", "content": "ask"}]);
+        let tools = json!([]);
+        let converse = build_converse_request_body(
+            &LocalConverseRequest {
+                model: "served",
+                system_instruction: None,
+                messages: &messages,
+                tools: &tools,
+                temperature: 0.2,
+                max_tokens: 64,
+                json_output: true,
+                json_schema: Some(&schema),
+                include_qwen_sampling_controls: true,
+            },
+            None,
+        )
+        .expect("converse request body");
+        for field in [
+            "temperature",
+            "max_tokens",
+            "stream",
+            "response_format",
+            "chat_template_kwargs",
+            "top_p",
+            "top_k",
+            "min_p",
+            "presence_penalty",
+        ] {
+            assert_eq!(one_shot[field], converse[field], "{field}");
+        }
+    }
+
+    #[test]
+    fn endpoint_converse_tool_calls_are_accepted_with_blank_text() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let messages = vec![ConverseMessage::User { text: "ask".into() }];
+        let tools = converse_tools();
+        let config = served_window_config();
+        let mut transport = StubTransport {
+            post_result: Some(Ok(converse_response("weather"))),
+            ..Default::default()
+        };
+        let turn = endpoint_converse_with(
+            EndpointConverseCall {
+                request: &request(None),
+                messages: &messages,
+                tools: &tools,
+                journal_path: &journal,
+                endpoint: &endpoint("http://endpoint"),
+                config: &config,
+                runtime: &runtime,
+            },
+            &mut transport,
+            Instant::now(),
+        )
+        .expect("converse turn");
+        let assessment = crate::assess_provider_result(crate::ProviderResultView {
+            journal_path: &journal,
+            context: "test.converse",
+            model: &turn.model,
+            text: "",
+            finish_reason: &turn.finish_reason,
+            usage: &turn.usage,
+            json_output: false,
+            enforce_responsiveness: false,
+        });
+        assert_eq!(assessment.failure, None);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn converse_without_a_served_window_uses_the_plain_endpoint_fallback() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let messages = vec![ConverseMessage::User { text: "ask".into() }];
+        let mut transport = StubTransport {
+            get_result: Some(Err(EndpointTransportError::Other)),
+            post_result: Some(Ok(response())),
+            ..Default::default()
+        };
+        assert!(
+            endpoint_converse_with(
+                EndpointConverseCall {
+                    request: &request(None),
+                    messages: &messages,
+                    tools: &converse_tools(),
+                    journal_path: &journal,
+                    endpoint: &endpoint("http://endpoint"),
+                    config: &Map::new(),
+                    runtime: &runtime,
+                },
+                &mut transport,
+                Instant::now(),
+            )
+            .is_ok()
+        );
+        assert_eq!(transport.get_calls, 1);
+        assert_eq!(transport.posts.len(), 1);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn converse_reason_codes_use_shared_failure_flags() {
+        for reason_code in [
+            "context_budget_exceeded",
+            "provider_response_invalid",
+            "tool_calls_missing",
+            "tool_call_arguments_invalid",
+            "local_endpoint_unreachable",
+            "local_capacity_exhausted",
+            "local_queue_timeout",
+            "context_window_exceeded",
+            "local_endpoint_contract_failed",
+            "attestation_stale",
+            "attestation_not_yet_verified",
+            "attestation_failed",
+        ] {
+            let Err(failure) = converse_failure(reason_code) else {
+                panic!("converse failure expected");
+            };
+            assert_eq!(failure.reason_code, reason_code);
+        }
     }
 }
 
