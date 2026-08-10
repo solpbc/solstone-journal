@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-grab"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+chrono.workspace = true
+ffmpeg-next = { version = "9.0.0", default-features = false, features = ["format", "software-scaling", "build"] }
+# This direct dependency enables the shared FFmpeg source build's portable baseline.
+ffmpeg-sys-next = { version = "9.0.0", default-features = false, features = ["build-portable"] }
+image.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+solstone-core-format.workspace = true
+solstone-core-journal-io.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3.24.0"
+
+[lints]
+workspace = true

@@ -57,7 +57,7 @@ NativeProcessSpec {
 ```
 
 `NATIVE_PROCESS_SPECS` in
-`core/crates/solstone-core-journal-cli/src/processes.rs` maps `spl` and `depict`
+`core/crates/solstone-core-journal-cli/src/processes.rs` maps `grab`, `spl`, and `depict`
 to sibling native binaries. The journal uses the same process-replacing runner
 for those binaries, while retained Python services use their module name and
 fixed bootstrap code. Owner arguments are forwarded only after fixed

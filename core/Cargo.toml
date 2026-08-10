@@ -49,6 +49,7 @@ members = [
     "crates/solstone-core-speakers",
     "crates/solstone-core-speakers-analyze",
     "crates/solstone-core-describe",
+    "crates/solstone-core-grab",
     "crates/solstone-core-observe-audio",
     "crates/solstone-core-depict",
     "crates/solstone-core-generate",
@@ -114,6 +115,7 @@ solstone-core-convey-http = { path = "crates/solstone-core-convey-http" }
 solstone-core-convey-shell = { path = "crates/solstone-core-convey-shell" }
 solstone-core-entities = { path = "crates/solstone-core-entities" }
 solstone-core-spl = { path = "crates/solstone-core-spl" }
+solstone-core-grab = { path = "crates/solstone-core-grab" }
 axum = { version = "0.8.9", default-features = false, features = ["json", "multipart", "query"] }
 bytes = "1.12.1"
 hyper = { version = "1.11.0", default-features = false, features = ["server", "http1"] }

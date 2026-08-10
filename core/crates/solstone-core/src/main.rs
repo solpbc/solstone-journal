@@ -7,7 +7,11 @@ use std::process::ExitCode;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
-use std::{env, ffi::OsStr, path::PathBuf};
+use std::{
+    env,
+    ffi::OsStr,
+    path::{Path, PathBuf},
+};
 
 use chrono::Local;
 use serde::de::DeserializeOwned;
@@ -16,13 +20,14 @@ use solstone_core_cli::{
     BodyAppleOptions, BodyCommand, BodyOuraCommand, BodyOuraConnectOptions, BodyOuraSyncOptions,
     BodyRebuildOptions, BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
     BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CogitateCommand,
-    Command, ConveyOptions, GenerateCommand, GenerateSessionOptions, IndexerCommand,
-    IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
-    IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
-    InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
-    JournalConfigReadOptions, JournalPathOptions, LocalCommand, ServiceOptions,
-    SpeakerResolveCommand, SplCommand, TransferCommand, TransferExportOptions,
-    TransferImportOptions, USAGE, evaluate_args, version_line,
+    Command, ConveyOptions, GRAB_USAGE, GenerateCommand, GenerateSessionOptions, GrabCommand,
+    GrabOptions, IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions,
+    IndexerOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions,
+    IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalConfigCommand,
+    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
+    JournalPathOptions, LocalCommand, ServiceOptions, SpeakerResolveCommand, SplCommand,
+    TransferCommand, TransferExportOptions, TransferImportOptions, USAGE, evaluate_args,
+    version_line,
 };
 mod supervisor;
 use solstone_core_indexer_query::{
@@ -111,12 +116,92 @@ fn main() -> ExitCode {
         Ok(Command::Body(command)) => run_body(command),
         Ok(Command::Transfer(command)) => run_transfer(command),
         Ok(Command::Convey(options)) => run_convey(options),
+        Ok(Command::Grab(command)) => run_grab(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
         Ok(Command::Supervisor(options)) => supervisor::run(options),
         Ok(Command::Observer(command)) => run_observer(command),
         Err(_) => {
             eprint!("{USAGE}");
             ExitCode::from(EXIT_USAGE)
+        }
+    }
+}
+
+struct StderrGrabDiagnostics {
+    show_warnings: bool,
+}
+
+impl solstone_core_grab::GrabDiagnostics for StderrGrabDiagnostics {
+    fn malformed_jsonl(&mut self, path: &Path, line: usize, error: &str) {
+        if self.show_warnings {
+            eprintln!(
+                "WARNING:solstone.observe.utils:Invalid JSON at line {line} in {}: {error}",
+                path.display()
+            );
+        }
+    }
+
+    fn read_error(&mut self, path: &Path, error: &io::Error) {
+        eprintln!(
+            "ERROR:solstone.observe.utils:Error reading {}: {error}",
+            path.display()
+        );
+    }
+}
+
+fn run_grab(command: GrabCommand) -> ExitCode {
+    match command {
+        GrabCommand::Help => {
+            print!("{GRAB_USAGE}");
+            ExitCode::SUCCESS
+        }
+        GrabCommand::ParseError(message) => {
+            eprint!("{GRAB_USAGE}");
+            eprintln!("error: {message}");
+            ExitCode::from(2)
+        }
+        GrabCommand::Run(options) => run_grab_request(options),
+    }
+}
+
+fn run_grab_request(options: GrabOptions) -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let json = options.json;
+    let mut diagnostics = StderrGrabDiagnostics {
+        show_warnings: options.verbose || options.debug,
+    };
+    let request = solstone_core_grab::GrabRequest {
+        tokens: options.tokens,
+        out: options.out.map(PathBuf::from),
+        force: options.force,
+    };
+    match solstone_core_grab::run(&journal.path, request, &mut diagnostics) {
+        Ok(output) => {
+            if json {
+                match serde_json::to_string_pretty(&output.payload) {
+                    Ok(payload) => println!("{payload}"),
+                    Err(error) => {
+                        eprintln!("{error}");
+                        return ExitCode::from(1);
+                    }
+                }
+            } else {
+                print!("{}", output.human);
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            match error.class() {
+                solstone_core_grab::GrabFailureClass::Usage => ExitCode::from(2),
+                solstone_core_grab::GrabFailureClass::Runtime => ExitCode::from(1),
+            }
         }
     }
 }

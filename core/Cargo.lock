@@ -2350,6 +2350,7 @@ version = "1.0.22"
 dependencies = [
  "chrono",
  "futures-util",
+ "image",
  "nix",
  "rusqlite",
  "serde",
@@ -2367,6 +2368,7 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-generate",
  "solstone-core-generate-wire",
+ "solstone-core-grab",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal",
@@ -2697,6 +2699,22 @@ dependencies = [
  "solstone-core-spp-attest",
  "solstone-core-spp-ratls",
  "ureq",
+]
+
+[[package]]
+name = "solstone-core-grab"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "ffmpeg-next",
+ "ffmpeg-sys-next",
+ "image",
+ "serde",
+ "serde_json",
+ "solstone-core-format",
+ "solstone-core-journal-io",
+ "tempfile",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
