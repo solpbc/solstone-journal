@@ -14,6 +14,9 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_entity_matching::{
+    EntityNameCandidate, entity_slug, find_matching_entity as match_entity_name,
+};
 
 use crate::JournalRoot;
 use crate::speakers_calendar::{
@@ -472,176 +475,42 @@ fn time_to_seconds(time: &str) -> Option<i64> {
         .then_some(hours * 3_600 + minutes * 60 + seconds)
 }
 
-/// Match entity names using Python's tiers 1–7.
-///
-/// Tier 8 fuzzy matching is intentionally not ported: its `rapidfuzz`
-/// `token_sort_ratio` semantics need a faithful implementation, not a merely
-/// similar Rust string-distance crate. A future wave adding fuzzy support must
-/// port those semantics rather than extending this fallback.
+/// Resolve names through the shared Python-compatible eight-tier matcher,
+/// including its rapidfuzz-based fuzzy tier.
 pub(crate) fn find_matching_entity<'a>(
     detected_name: &str,
     entities: &'a [(String, Value)],
 ) -> Option<&'a Value> {
-    if detected_name.is_empty() || entities.is_empty() {
-        return None;
-    }
-    let detected_lower = detected_name.to_lowercase();
     let candidates = entities
         .iter()
-        .filter_map(|(_, entity)| {
-            entity
+        .map(|(_, entity)| EntityNameCandidate {
+            id: entity
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned),
+            name: entity
                 .get("name")
                 .and_then(Value::as_str)
-                .map(|name| (entity, name))
+                .unwrap_or_default()
+                .to_owned(),
+            aka: string_values(entity, "aka"),
+            emails: string_values(entity, "emails"),
         })
         .collect::<Vec<_>>();
-
-    if let Some(entity) = candidates.iter().rev().find_map(|(entity, name)| {
-        entity_strings(entity, name)
-            .contains(&detected_name)
-            .then_some(*entity)
-    }) {
-        return Some(entity);
-    }
-    if let Some(entity) = candidates.iter().rev().find_map(|(entity, name)| {
-        entity_strings(entity, name)
-            .iter()
-            .any(|value| value.to_lowercase() == detected_lower)
-            .then_some(*entity)
-    }) {
-        return Some(entity);
-    }
-    if detected_name.contains('@')
-        && let Some(entity) = candidates.iter().rev().find_map(|(entity, _)| {
-            entity
-                .get("emails")?
-                .as_array()?
-                .iter()
-                .filter_map(Value::as_str)
-                .any(|email| email.to_lowercase() == detected_lower)
-                .then_some(*entity)
-        })
-    {
-        return Some(entity);
-    }
-    let detected_slug = entity_slug(detected_name);
-    if !detected_slug.is_empty()
-        && let Some(entity) = candidates.iter().rev().find_map(|(entity, name)| {
-            entity_matches_slug(entity, name, &detected_slug).then_some(*entity)
-        })
-    {
-        return Some(entity);
-    }
-    if detected_name.len() >= 3 {
-        let matches = candidates
-            .iter()
-            .filter(|(_, name)| first_word(name) == detected_lower)
-            .collect::<Vec<_>>();
-        if matches.len() == 1 {
-            return Some(matches[0].0);
-        }
-        let detected_first = detected_name
-            .split_whitespace()
-            .next()
-            .unwrap_or_default()
-            .to_lowercase();
-        if detected_first != detected_lower && detected_first.len() >= 3 {
-            let matches = candidates
-                .iter()
-                .filter(|(_, name)| first_word(name) == detected_first)
-                .collect::<Vec<_>>();
-            if matches.len() == 1 && matches[0].1.split_whitespace().count() == 1 {
-                return Some(matches[0].0);
-            }
-        }
-    }
-    let subset_matches = candidates
-        .iter()
-        .filter(|(_, name)| token_subset_match(&detected_lower, &name.to_lowercase()))
-        .collect::<Vec<_>>();
-    if subset_matches.len() == 1 {
-        return Some(subset_matches[0].0);
-    }
-    let prefix_matches = candidates
-        .iter()
-        .filter(|(_, name)| prefix_token_match(&detected_lower, &name.to_lowercase()))
-        .collect::<Vec<_>>();
-    if prefix_matches.len() == 1 {
-        Some(prefix_matches[0].0)
-    } else {
-        None
-    }
+    let matched = match_entity_name(detected_name, &candidates, 90.0)?;
+    entities
+        .get(matched.candidate_index)
+        .map(|(_, entity)| entity)
 }
 
-fn entity_strings<'a>(entity: &'a Value, name: &'a str) -> Vec<&'a str> {
-    std::iter::once(name)
-        .chain(entity.get("id").and_then(Value::as_str))
-        .chain(
-            entity
-                .get("aka")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str),
-        )
+fn string_values(entity: &Value, field: &str) -> Vec<String> {
+    entity
+        .get(field)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
         .collect()
-}
-
-fn entity_matches_slug(entity: &Value, name: &str, slug: &str) -> bool {
-    match entity
-        .get("id")
-        .and_then(Value::as_str)
-        .filter(|id| !id.is_empty())
-    {
-        Some(entity_id) => entity_id == slug,
-        None => entity_slug(name) == slug,
-    }
-}
-
-fn entity_slug(value: &str) -> String {
-    let mut slug = String::new();
-    let mut previous_separator = true;
-    for character in value.chars() {
-        if character.is_ascii_alphanumeric() {
-            slug.push(character.to_ascii_lowercase());
-            previous_separator = false;
-        } else if !previous_separator {
-            slug.push('_');
-            previous_separator = true;
-        }
-    }
-    slug.trim_end_matches('_').to_owned()
-}
-
-fn first_word(value: &str) -> String {
-    let word = value
-        .split_whitespace()
-        .next()
-        .unwrap_or_default()
-        .to_lowercase();
-    if word.len() >= 3 { word } else { String::new() }
-}
-
-fn token_subset_match(left: &str, right: &str) -> bool {
-    let left = left.split_whitespace().collect::<BTreeSet<_>>();
-    let right = right.split_whitespace().collect::<BTreeSet<_>>();
-    let (shorter, longer) = if left.len() <= right.len() {
-        (left, right)
-    } else {
-        (right, left)
-    };
-    shorter.len() >= 2 && shorter.is_subset(&longer)
-}
-
-fn prefix_token_match(left: &str, right: &str) -> bool {
-    let mut left = left.split_whitespace().collect::<Vec<_>>();
-    let mut right = right.split_whitespace().collect::<Vec<_>>();
-    left.sort_unstable();
-    right.sort_unstable();
-    left.len() == right.len()
-        && left.into_iter().zip(right).all(|(left, right)| {
-            left == right
-                || (left.len() >= 4 && right.starts_with(left))
-                || (right.len() >= 4 && left.starts_with(right))
-        })
 }
