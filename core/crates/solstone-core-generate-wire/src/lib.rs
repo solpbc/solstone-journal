@@ -6,6 +6,7 @@
 mod anthropic;
 mod bundled;
 mod confidential;
+mod converse;
 mod endpoint;
 mod google;
 mod lane;
@@ -22,24 +23,28 @@ mod token_log;
 mod validation;
 
 pub use anthropic::{
-    AnthropicFailure, AnthropicGenerated, AnthropicResult, AnthropicTransport,
-    UreqAnthropicTransport, anthropic_generate,
+    AnthropicConverseFailure, AnthropicConverseResult, AnthropicFailure, AnthropicGenerated,
+    AnthropicResult, AnthropicTransport, AnthropicTurn, UreqAnthropicTransport, anthropic_converse,
+    anthropic_generate,
 };
 pub use bundled::{BundledError, LOCAL_MODEL_ID, bundled_generate, bundled_input};
 pub use confidential::{ConfidentialResult, confidential_generate};
+pub use converse::{
+    ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
+};
 pub use endpoint::{
     ENDPOINT_SERVED_WINDOW_CACHE_TTL, EndpointFailure, EndpointGenerated, EndpointResult,
     EndpointRuntime, EndpointTransport, EndpointTransportError, OverflowDecision,
     UreqEndpointTransport, endpoint_generate, endpoint_overflow_decision,
 };
 pub use google::{
-    GoogleFailure, GoogleGenerated, GoogleResult, GoogleTransport, UreqGoogleTransport,
-    google_generate,
+    GoogleConverseFailure, GoogleConverseResult, GoogleFailure, GoogleGenerated, GoogleResult,
+    GoogleTransport, GoogleTurn, UreqGoogleTransport, google_converse, google_generate,
 };
 pub use lane::{LaneOutcome, resolve_lane};
 pub use openai::{
-    OpenAiFailure, OpenAiGenerated, OpenAiResult, OpenAiTransport, UreqOpenAiTransport,
-    openai_generate,
+    OpenAiConverseFailure, OpenAiConverseResult, OpenAiFailure, OpenAiGenerated, OpenAiResult,
+    OpenAiTransport, OpenAiTurn, UreqOpenAiTransport, openai_converse, openai_generate,
 };
 pub use refusal::refusal_for;
 pub use request::parse_one_shot_request;
@@ -95,6 +100,7 @@ mod vocabulary_tests {
             ("anthropic", include_str!("anthropic.rs")),
             ("bundled", include_str!("bundled.rs")),
             ("confidential", include_str!("confidential.rs")),
+            ("converse", include_str!("converse.rs")),
             ("endpoint", include_str!("endpoint.rs")),
             ("google", include_str!("google.rs")),
             ("lane", include_str!("lane.rs")),

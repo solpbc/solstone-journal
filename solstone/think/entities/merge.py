@@ -1231,11 +1231,9 @@ def _append_audit_log(
 
 
 def _edge_db_paths() -> list[Path]:
-    from solstone.think.indexer.journal import get_journal_index
-
-    conn, db_path = get_journal_index(str(_journal_root()))
-    conn.close()
-    base = Path(db_path)
+    # The index is derived owner data. Snapshot existing files without opening
+    # SQLite: opening through the Python reference writer would mutate schema.
+    base = _journal_root() / "indexer" / "journal.sqlite"
     return [base, Path(f"{base}-wal"), Path(f"{base}-shm")]
 
 

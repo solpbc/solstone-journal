@@ -15,14 +15,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 ORACLE_COMMIT = "d8200fdf34e4af31f106c7f28fb73cd439d0081b"
 ORACLE_PATH = "solstone/think/sol_cli.py"
 ORACLE_BLOB = "ea62371d5c320329724d051032efbe20f165b25f"
-OUTPUT = (
-    REPO_ROOT / "core/crates/solstone-core-cli-boundary/src/generated.rs"
-)
+OUTPUT = REPO_ROOT / "core/crates/solstone-core-cli-boundary/src/generated.rs"
 EXPECTED_SERVICE_COMMANDS_COUNT = 42
 EXPECTED_UNIVERSAL_COMMANDS = frozenset({"doctor", "check", "contract"})
 EXPECTED_SERVICE_ALIASES = frozenset({"up", "down"})
 EXPECTED_UNIVERSAL_ALIASES = frozenset()
 SERVICE_SENTINELS = frozenset({"think", "setup"})
+# Commands that remain in the pinned Python oracle but are now implemented as
+# root-native journal primitives. They are not journal-host process commands.
+NATIVE_ROOT_COMMANDS = frozenset({"indexer"})
 # Declaration order is the duplicate-diagnostic section order.
 REGISTRY_SURFACE_POSITIONS = {"COMMANDS": 1, "ALIASES": 2}
 UNAVAILABLE_SURFACE = "<unavailable>"
@@ -93,9 +94,13 @@ def extract_partitions(source_text: str | None = None) -> JournalHostCommandPart
 
 
 def oracle_text() -> str:
-    blob = subprocess.check_output(
-        ["git", "rev-parse", f"{ORACLE_COMMIT}:{ORACLE_PATH}"], cwd=REPO_ROOT
-    ).decode().strip()
+    blob = (
+        subprocess.check_output(
+            ["git", "rev-parse", f"{ORACLE_COMMIT}:{ORACLE_PATH}"], cwd=REPO_ROOT
+        )
+        .decode()
+        .strip()
+    )
     if blob != ORACLE_BLOB:
         raise RuntimeError(
             f"{ORACLE_COMMIT}:{ORACLE_PATH} is {blob}, expected {ORACLE_BLOB}"
@@ -191,7 +196,10 @@ def validate_no_duplicate_registry_keys(
 
 def extract(source_text: str | None = None) -> list[str]:
     partitions = extract_partitions(source_text)
-    return sorted(set(partitions.service_commands + partitions.service_aliases))
+    return sorted(
+        set(partitions.service_commands + partitions.service_aliases)
+        - NATIVE_ROOT_COMMANDS
+    )
 
 
 def validate_partitions(partitions: JournalHostCommandPartitions) -> None:

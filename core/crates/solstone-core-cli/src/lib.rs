@@ -12,7 +12,7 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n"
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [--journal PATH]\n"
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
@@ -31,6 +31,7 @@ pub enum Command {
     Body(BodyCommand),
     Convey(ConveyOptions),
     Spl(SplCommand),
+    Supervisor(SupervisorOptions),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,6 +85,11 @@ pub struct BodyOuraSyncOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConveyOptions {
     pub port: u16,
+    pub journal_override: Option<OsString>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SupervisorOptions {
     pub journal_override: Option<OsString>,
 }
 
@@ -243,6 +249,7 @@ pub struct JournalPathOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexerOptions {
     pub journal_override: Option<OsString>,
+    pub json: bool,
     pub reset: bool,
     pub rebuild_edges: bool,
     pub rescan: bool,
@@ -257,6 +264,33 @@ pub enum IndexerCommand {
     Counts(IndexerCountsOptions),
     Agents(IndexerReadOptions),
     Coverage(IndexerReadOptions),
+    PruneStream(IndexerPruneStreamOptions),
+    PrunePaths(IndexerPrunePathsOptions),
+    FoldEntityEdges(IndexerFoldEntityEdgesOptions),
+    EdgeFingerprint(IndexerReadOptions),
+    RebuildEdgesFingerprint(IndexerReadOptions),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexerPruneStreamOptions {
+    pub journal_override: Option<OsString>,
+    pub json: bool,
+    pub stream: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexerPrunePathsOptions {
+    pub journal_override: Option<OsString>,
+    pub json: bool,
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexerFoldEntityEdgesOptions {
+    pub journal_override: Option<OsString>,
+    pub json: bool,
+    pub source_id: String,
+    pub target_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -331,8 +365,28 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             parse_convey(rest).map(Command::Convey)
         }
         [command, rest @ ..] if command == OsStr::new("spl") => parse_spl(rest).map(Command::Spl),
+        [command, rest @ ..] if command == OsStr::new("supervisor") => {
+            parse_supervisor(rest).map(Command::Supervisor)
+        }
         _ => Err(UsageError),
     }
+}
+
+fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, UsageError> {
+    let mut journal_override = None;
+    let mut index = 0;
+    while index < args.len() {
+        if args[index] != OsStr::new("--journal") || journal_override.is_some() {
+            return Err(UsageError);
+        }
+        let value = args.get(index + 1).ok_or(UsageError)?;
+        if value == OsStr::new("--journal") {
+            return Err(UsageError);
+        }
+        journal_override = Some(value.clone());
+        index += 2;
+    }
+    Ok(SupervisorOptions { journal_override })
 }
 
 fn parse_convey(args: &[OsString]) -> Result<ConveyOptions, UsageError> {
@@ -1231,12 +1285,28 @@ fn parse_indexer(args: &[OsString]) -> Result<IndexerCommand, UsageError> {
         [verb, rest @ ..] if verb == OsStr::new("coverage") => {
             parse_indexer_read(rest).map(IndexerCommand::Coverage)
         }
+        [verb, rest @ ..] if verb == OsStr::new("prune-stream") => {
+            parse_indexer_prune_stream(rest).map(IndexerCommand::PruneStream)
+        }
+        [verb, rest @ ..] if verb == OsStr::new("prune-paths") => {
+            parse_indexer_prune_paths(rest).map(IndexerCommand::PrunePaths)
+        }
+        [verb, rest @ ..] if verb == OsStr::new("fold-entity-edges") => {
+            parse_indexer_fold_entity_edges(rest).map(IndexerCommand::FoldEntityEdges)
+        }
+        [verb, rest @ ..] if verb == OsStr::new("edge-fingerprint") => {
+            parse_indexer_read(rest).map(IndexerCommand::EdgeFingerprint)
+        }
+        [verb, rest @ ..] if verb == OsStr::new("rebuild-edges-fingerprint") => {
+            parse_indexer_read(rest).map(IndexerCommand::RebuildEdgesFingerprint)
+        }
         _ => parse_indexer_maintenance(args).map(IndexerCommand::Maintenance),
     }
 }
 
 fn parse_indexer_maintenance(args: &[OsString]) -> Result<IndexerOptions, UsageError> {
     let mut journal_override = None;
+    let mut json = false;
     let mut reset = false;
     let mut rebuild_edges = false;
     let mut rescan = false;
@@ -1245,6 +1315,14 @@ fn parse_indexer_maintenance(args: &[OsString]) -> Result<IndexerOptions, UsageE
     let mut index = 0;
     while index < args.len() {
         let arg = args[index].as_os_str();
+        if arg == OsStr::new("--json") {
+            if json {
+                return Err(UsageError);
+            }
+            json = true;
+            index += 1;
+            continue;
+        }
         if arg == OsStr::new("--reset") {
             if reset {
                 return Err(UsageError);
@@ -1310,6 +1388,7 @@ fn parse_indexer_maintenance(args: &[OsString]) -> Result<IndexerOptions, UsageE
 
     Ok(IndexerOptions {
         journal_override,
+        json,
         reset,
         rebuild_edges,
         rescan,
@@ -1323,6 +1402,7 @@ fn is_maintenance_indexer_flag(value: &OsStr) -> bool {
         value.to_str(),
         Some(
             "--journal"
+                | "--json"
                 | "--reset"
                 | "--rebuild-edges"
                 | "--rescan"
@@ -1330,6 +1410,74 @@ fn is_maintenance_indexer_flag(value: &OsStr) -> bool {
                 | "--rescan-file",
         )
     )
+}
+
+fn parse_indexer_prune_stream(args: &[OsString]) -> Result<IndexerPruneStreamOptions, UsageError> {
+    let (values, journal_override, json) = parse_indexer_values(args, 1, Some(1))?;
+    Ok(IndexerPruneStreamOptions {
+        journal_override,
+        json,
+        stream: values[0].clone(),
+    })
+}
+
+fn parse_indexer_prune_paths(args: &[OsString]) -> Result<IndexerPrunePathsOptions, UsageError> {
+    let (paths, journal_override, json) = parse_indexer_values(args, 1, None)?;
+    Ok(IndexerPrunePathsOptions {
+        journal_override,
+        json,
+        paths,
+    })
+}
+
+fn parse_indexer_fold_entity_edges(
+    args: &[OsString],
+) -> Result<IndexerFoldEntityEdgesOptions, UsageError> {
+    let (values, journal_override, json) = parse_indexer_values(args, 2, Some(2))?;
+    Ok(IndexerFoldEntityEdgesOptions {
+        journal_override,
+        json,
+        source_id: values[0].clone(),
+        target_id: values[1].clone(),
+    })
+}
+
+fn parse_indexer_values(
+    args: &[OsString],
+    minimum: usize,
+    maximum: Option<usize>,
+) -> Result<(Vec<String>, Option<OsString>, bool), UsageError> {
+    let mut values = Vec::new();
+    let mut journal_override = None;
+    let mut json = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_os_str();
+        if arg == OsStr::new("--json") {
+            if json {
+                return Err(UsageError);
+            }
+            json = true;
+            index += 1;
+        } else if arg == OsStr::new("--journal") {
+            if journal_override.is_some() {
+                return Err(UsageError);
+            }
+            journal_override = Some(args.get(index + 1).ok_or(UsageError)?.clone());
+            index += 2;
+        } else {
+            let value = arg.to_str().ok_or(UsageError)?;
+            if value.starts_with("--") {
+                return Err(UsageError);
+            }
+            values.push(value.to_string());
+            index += 1;
+        }
+    }
+    if values.len() < minimum || maximum.is_some_and(|limit| values.len() > limit) {
+        return Err(UsageError);
+    }
+    Ok((values, journal_override, json))
 }
 
 fn parse_indexer_search(args: &[OsString]) -> Result<IndexerSearchOptions, UsageError> {
@@ -1909,6 +2057,7 @@ mod tests {
             evaluate_args(&args(&["indexer"])),
             Ok(indexer(IndexerCommand::Maintenance(IndexerOptions {
                 journal_override: None,
+                json: false,
                 reset: false,
                 rebuild_edges: false,
                 rescan: false,
@@ -2438,6 +2587,7 @@ mod tests {
             ])),
             Ok(indexer(IndexerCommand::Maintenance(IndexerOptions {
                 journal_override: Some(OsString::from("/tmp/journal")),
+                json: false,
                 reset: true,
                 rebuild_edges: false,
                 rescan: false,
@@ -2457,6 +2607,7 @@ mod tests {
             ])),
             Ok(indexer(IndexerCommand::Maintenance(IndexerOptions {
                 journal_override: None,
+                json: false,
                 reset: false,
                 rebuild_edges: false,
                 rescan: false,
@@ -2472,6 +2623,7 @@ mod tests {
             evaluate_args(&args(&["indexer", "--rebuild-edges", "--rescan"])),
             Ok(indexer(IndexerCommand::Maintenance(IndexerOptions {
                 journal_override: None,
+                json: false,
                 reset: false,
                 rebuild_edges: true,
                 rescan: true,
@@ -2479,6 +2631,85 @@ mod tests {
                 rescan_file: None,
             })))
         );
+    }
+
+    #[test]
+    fn accepts_native_indexer_mutation_verbs() {
+        assert_eq!(
+            evaluate_args(&args(&[
+                "indexer",
+                "prune-stream",
+                "private",
+                "--journal",
+                "/tmp/journal",
+                "--json",
+            ])),
+            Ok(indexer(IndexerCommand::PruneStream(
+                IndexerPruneStreamOptions {
+                    journal_override: Some(OsString::from("/tmp/journal")),
+                    json: true,
+                    stream: "private".to_string(),
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "indexer",
+                "prune-paths",
+                "20260809/default/090000_300",
+                "legacy/path.md",
+                "--json",
+            ])),
+            Ok(indexer(IndexerCommand::PrunePaths(
+                IndexerPrunePathsOptions {
+                    journal_override: None,
+                    json: true,
+                    paths: vec![
+                        "20260809/default/090000_300".to_string(),
+                        "legacy/path.md".to_string(),
+                    ],
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "indexer",
+                "fold-entity-edges",
+                "source",
+                "target",
+                "--json",
+            ])),
+            Ok(indexer(IndexerCommand::FoldEntityEdges(
+                IndexerFoldEntityEdgesOptions {
+                    journal_override: None,
+                    json: true,
+                    source_id: "source".to_string(),
+                    target_id: "target".to_string(),
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["indexer", "edge-fingerprint", "--json"])),
+            Ok(indexer(IndexerCommand::EdgeFingerprint(
+                IndexerReadOptions {
+                    journal_override: None,
+                    json: true,
+                }
+            )))
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_native_indexer_mutations() {
+        for values in [
+            &["indexer", "prune-stream"][..],
+            &["indexer", "prune-stream", "one", "two"][..],
+            &["indexer", "prune-paths"][..],
+            &["indexer", "fold-entity-edges", "source"][..],
+            &["indexer", "fold-entity-edges", "source", "target", "extra"][..],
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+        }
     }
 
     #[test]
@@ -2653,5 +2884,23 @@ mod tests {
     #[test]
     fn usage_lists_supported_commands() {
         assert!(USAGE.contains(SPEAKER_RESOLVE_USAGE), "{USAGE}");
+    }
+
+    #[test]
+    fn parses_supervisor_journal_override() {
+        assert_eq!(
+            evaluate_args(&args(&["supervisor", "--journal", "/tmp/journal"])),
+            Ok(Command::Supervisor(SupervisorOptions {
+                journal_override: Some(OsString::from("/tmp/journal")),
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["supervisor", "--journal"])),
+            Err(UsageError)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["supervisor", "--wat"])),
+            Err(UsageError)
+        );
     }
 }

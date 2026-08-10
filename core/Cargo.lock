@@ -2352,6 +2352,7 @@ dependencies = [
  "solstone-core-body-ingest",
  "solstone-core-body-rebuild",
  "solstone-core-brain",
+ "solstone-core-callosum",
  "solstone-core-cli",
  "solstone-core-convey-shell",
  "solstone-core-entity",
@@ -2367,6 +2368,7 @@ dependencies = [
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
  "solstone-core-spl",
+ "solstone-core-system",
  "tokio",
  "tokio-tungstenite",
 ]
@@ -2485,6 +2487,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "solstone-core-cogitate",
  "solstone-core-format",
 ]
 
@@ -2524,7 +2527,9 @@ dependencies = [
  "image",
  "serde",
  "serde_json",
+ "sha2",
  "solstone-core-generate",
+ "solstone-core-journal",
  "solstone-core-journal-io",
 ]
 
@@ -2743,6 +2748,7 @@ name = "solstone-core-journal-bin"
 version = "1.0.22"
 dependencies = [
  "nix",
+ "rusqlite",
  "serde_json",
  "sha2",
  "solstone-core-journal-cli",
@@ -2758,6 +2764,7 @@ dependencies = [
  "solstone-core-callosum",
  "solstone-core-cli-boundary",
  "solstone-core-facets",
+ "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal",
  "solstone-core-journal-archive",

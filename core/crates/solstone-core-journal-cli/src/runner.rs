@@ -40,9 +40,61 @@ impl std::fmt::Display for InterpreterError {
 
 impl std::error::Error for InterpreterError {}
 
+#[derive(Debug)]
+pub(crate) enum NativeExecutableError {
+    CurrentExe(std::io::Error),
+    Missing { path: PathBuf },
+    NonExecutable { path: PathBuf },
+}
+
+impl std::fmt::Display for NativeExecutableError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CurrentExe(error) => write!(
+                formatter,
+                "could not inspect the native journal executable: {error}"
+            ),
+            Self::Missing { path } => write!(
+                formatter,
+                "native journal helper is missing: {}. Reinstall solstone-journal.",
+                path.display()
+            ),
+            Self::NonExecutable { path } => write!(
+                formatter,
+                "native journal helper is not executable: {}. Reinstall solstone-journal.",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for NativeExecutableError {}
+
 pub(crate) fn sibling_python_for_current_executable() -> Result<PathBuf, InterpreterError> {
     let executable = std::env::current_exe().map_err(InterpreterError::CurrentExe)?;
     sibling_python_for_executable(&executable)
+}
+
+pub(crate) fn sibling_native_for_current_executable(
+    binary: &str,
+) -> Result<PathBuf, NativeExecutableError> {
+    let executable = std::env::current_exe().map_err(NativeExecutableError::CurrentExe)?;
+    sibling_native_for_executable(&executable, binary)
+}
+
+pub(crate) fn sibling_native_for_executable(
+    executable: &Path,
+    binary: &str,
+) -> Result<PathBuf, NativeExecutableError> {
+    let candidate = executable_dir(executable).join(binary);
+    match fs::metadata(&candidate) {
+        Ok(_) if is_executable(&candidate) => Ok(candidate),
+        Ok(_) => Err(NativeExecutableError::NonExecutable { path: candidate }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Err(NativeExecutableError::Missing { path: candidate })
+        }
+        Err(_) => Err(NativeExecutableError::NonExecutable { path: candidate }),
+    }
 }
 
 pub(crate) fn sibling_python_for_executable(
@@ -76,6 +128,17 @@ pub(crate) fn process_args(
     args.extend(spec.preset_argv.iter().map(OsString::from));
     args.extend(owner_argv.iter().cloned());
     args
+}
+
+pub(crate) fn native_process_args(
+    spec: &crate::processes::NativeProcessSpec,
+    owner_argv: &[OsString],
+) -> Vec<OsString> {
+    spec.preset_argv
+        .iter()
+        .map(OsString::from)
+        .chain(owner_argv.iter().cloned())
+        .collect()
 }
 
 pub(crate) fn exec_process(program: &OsStr, args: &[OsString]) -> std::io::Result<()> {
@@ -186,6 +249,25 @@ mod tests {
         assert!(matches!(
             sibling_python_for_executable(&executable),
             Err(InterpreterError::Missing { dir }) if dir == temp.path
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sibling_native_requires_the_named_executable() {
+        let temp = TempDir::new();
+        let executable = temp.path.join("solstone-core-journal");
+        fs::write(&executable, "native executable").expect("write executable fixture");
+        let helper = temp.path.join("solstone-core-depict");
+        make_executable(&helper);
+        assert_eq!(
+            sibling_native_for_executable(&executable, "solstone-core-depict")
+                .expect("named native helper should be selected"),
+            helper
+        );
+        assert!(matches!(
+            sibling_native_for_executable(&executable, "missing-helper"),
+            Err(NativeExecutableError::Missing { path }) if path == temp.path.join("missing-helper")
         ));
     }
 

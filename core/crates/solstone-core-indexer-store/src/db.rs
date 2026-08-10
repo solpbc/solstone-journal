@@ -30,7 +30,8 @@ stream UNINDEXED,
 idx UNINDEXED,
 time_bucket UNINDEXED
 )";
-// Source of truth: solstone/think/indexer/edges.py EDGES_SCHEMA_PATH / EDGES_SCHEMA_VERSION
+// Rust is the production schema authority. The Python constants remain only as
+// a differential reference while the rest of the Python tree is converted.
 pub(crate) const EDGES_SCHEMA_PATH: &str = "edges:__schema__";
 pub(crate) const EDGES_SCHEMA_VERSION: i64 = 1;
 pub(crate) const INDEX_BUILD_STATE_SCHEMA_VERSION: i64 = 1;
@@ -235,16 +236,55 @@ pub fn prune_by_paths(
 }
 
 fn ensure_schema(conn: &mut Connection) -> Result<(), StoreError> {
-    // Native indexer only ever targets a fresh or --reset DB for schema changes.
-    // On a fresh DB the sentinel is absent and this unconditional "create tables +
-    // indexes + write sentinel" reaches the same end state as Python's
-    // _ensure_edges_schema, whose in-place version-mismatch drop/rebuild branch
-    // would be dead code here. Re-opening an existing DB is a harmless no-op: all
-    // DDL is IF NOT EXISTS and the sentinel REPLACE rewrites an invariant value.
-    // Native relies on --reset for any future edge schema change.
     let tx = conn.transaction()?;
+    migrate_legacy_chunks(&tx)?;
     create_schema(&tx)?;
     tx.commit()?;
+    Ok(())
+}
+
+fn migrate_legacy_chunks(conn: &Connection) -> Result<(), StoreError> {
+    if !sqlite_table_exists(conn, "chunks")? {
+        return Ok(());
+    }
+    let columns = {
+        let mut statement = conn.prepare("PRAGMA table_info(chunks)")?;
+        statement
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    if columns.iter().any(|column| column == "time_bucket") {
+        return Ok(());
+    }
+
+    conn.execute("DROP TABLE IF EXISTS chunks_native_migration", [])?;
+    conn.execute(
+        "CREATE VIRTUAL TABLE chunks_native_migration USING fts5(
+            content,
+            path UNINDEXED,
+            day UNINDEXED,
+            facet UNINDEXED,
+            agent UNINDEXED,
+            stream UNINDEXED,
+            idx UNINDEXED,
+            time_bucket UNINDEXED
+        )",
+        [],
+    )?;
+    let stream = if columns.iter().any(|column| column == "stream") {
+        "stream"
+    } else {
+        "''"
+    };
+    conn.execute(
+        &format!(
+            "INSERT INTO chunks_native_migration(content,path,day,facet,agent,stream,idx,time_bucket) \
+             SELECT content,path,day,facet,agent,{stream},idx,'' FROM chunks"
+        ),
+        [],
+    )?;
+    conn.execute("DROP TABLE chunks", [])?;
+    conn.execute("ALTER TABLE chunks_native_migration RENAME TO chunks", [])?;
     Ok(())
 }
 
@@ -618,6 +658,80 @@ mod tests {
         );
         drop(conn);
         fs::remove_dir_all(root).expect("cleanup schema root");
+    }
+
+    #[test]
+    fn open_migrates_legacy_chunks_without_losing_rows() {
+        for (name, stream_column, expected_stream) in [
+            ("legacy-time-bucket", ", stream UNINDEXED", "private"),
+            ("legacy-stream", "", ""),
+        ] {
+            let root = temp_root(name);
+            fs::create_dir_all(root.join(INDEX_DIR)).expect("create legacy index dir");
+            let conn = Connection::open(db_path(&root)).expect("open legacy index");
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE chunks USING fts5(
+                    content,
+                    path UNINDEXED,
+                    day UNINDEXED,
+                    facet UNINDEXED,
+                    agent UNINDEXED
+                    {stream_column},
+                    idx UNINDEXED
+                );
+                CREATE TABLE files(path TEXT PRIMARY KEY, mtime INTEGER);"
+            ))
+            .expect("create legacy schema");
+            if stream_column.is_empty() {
+                conn.execute(
+                    "INSERT INTO chunks(content,path,day,facet,agent,idx) VALUES ('remember me','legacy.md','20260809','work','flow',3)",
+                    [],
+                )
+                .expect("insert pre-stream row");
+            } else {
+                conn.execute(
+                    "INSERT INTO chunks(content,path,day,facet,agent,stream,idx) VALUES ('remember me','legacy.md','20260809','work','flow','private',3)",
+                    [],
+                )
+                .expect("insert pre-time-bucket row");
+            }
+            drop(conn);
+
+            let conn = open_index(&root).expect("migrate legacy index");
+            let row = conn
+                .query_row(
+                    "SELECT content,path,day,facet,agent,stream,idx,time_bucket FROM chunks",
+                    [],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, String>(3)?,
+                            row.get::<_, String>(4)?,
+                            row.get::<_, String>(5)?,
+                            row.get::<_, i64>(6)?,
+                            row.get::<_, String>(7)?,
+                        ))
+                    },
+                )
+                .expect("read migrated row");
+            assert_eq!(
+                row,
+                (
+                    "remember me".to_string(),
+                    "legacy.md".to_string(),
+                    "20260809".to_string(),
+                    "work".to_string(),
+                    "flow".to_string(),
+                    expected_stream.to_string(),
+                    3,
+                    String::new(),
+                )
+            );
+            drop(conn);
+            fs::remove_dir_all(root).expect("cleanup legacy index");
+        }
     }
 
     #[test]

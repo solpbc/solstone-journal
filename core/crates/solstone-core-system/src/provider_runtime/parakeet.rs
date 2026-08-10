@@ -126,6 +126,14 @@ impl ParakeetRuntimeShared {
         self.result_available.notify_all();
     }
 
+    pub fn take_launch_result(&self, fence: &ProviderFence) -> Option<ProviderLaunchOutcome> {
+        self.results
+            .lock()
+            .expect("parakeet runtime shared lock")
+            .launch
+            .remove(&FenceKey::from(fence))
+    }
+
     pub fn wait_for_launch_result(&self, fence: &ProviderFence) -> ProviderLaunchOutcome {
         let key = FenceKey::from(fence);
         let mut results = self.results.lock().expect("parakeet runtime shared lock");
@@ -153,6 +161,17 @@ impl ParakeetRuntimeShared {
         self.result_available.notify_all();
     }
 
+    pub fn take_stop_cleanup_result(
+        &self,
+        fence: &ProviderFence,
+    ) -> Option<ProviderStopCleanupOutcome> {
+        self.results
+            .lock()
+            .expect("parakeet runtime shared lock")
+            .stop_cleanup
+            .remove(&FenceKey::from(fence))
+    }
+
     pub fn wait_for_stop_cleanup_result(
         &self,
         fence: &ProviderFence,
@@ -177,6 +196,14 @@ impl ParakeetRuntimeShared {
             .probe
             .insert(FenceKey::from(fence), result);
         self.result_available.notify_all();
+    }
+
+    pub fn take_probe_result(&self, fence: &ProviderFence) -> Option<ProviderProbeOutcome> {
+        self.results
+            .lock()
+            .expect("parakeet runtime shared lock")
+            .probe
+            .remove(&FenceKey::from(fence))
     }
 
     pub fn wait_for_probe_result(&self, fence: &ProviderFence) -> ProviderProbeOutcome {

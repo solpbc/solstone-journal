@@ -47,6 +47,10 @@ from solstone.think.indexer.native import (
     NativeIndexerReadError,
     run_native_indexer_agents,
     run_native_indexer_coverage,
+    run_native_indexer_prune_paths,
+    run_native_indexer_prune_stream,
+    run_native_indexer_rescan_file,
+    run_native_indexer_scan,
     run_native_indexer_search,
 )
 from solstone.think.indexer.rerank_scorer import score
@@ -137,13 +141,11 @@ def _time_bucket(rel: str) -> str:
 
 
 def get_journal_index(journal: str | None = None) -> tuple[sqlite3.Connection, str]:
-    """Return SQLite connection for the journal index.
+    """Return a reference-writer SQLite connection for differential tests.
 
-    Args:
-        journal: Path to journal root. Uses SOLSTONE_JOURNAL env var if not provided.
-
-    Returns:
-        Tuple of (connection, db_path)
+    Production mutation entry points below dispatch to ``solstone-core``. This
+    Python-era implementation remains intentionally executable only as a
+    reference oracle and must not be imported by production callers.
     """
     journal = journal or get_journal()
 
@@ -372,7 +374,6 @@ def _index_file(
             "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (content, rel, day, facet, agent, stream, idx, _time_bucket(rel)),
         )
-
 
 
 def _is_historical_day(rel_path: str) -> bool:
@@ -720,6 +721,62 @@ def scan_journal(journal: str, verbose: bool = False, full: bool = False) -> Sca
     return ScanReport(
         changed=bool(to_index or removed or entity_changed or edge_changed),
         edge_rows_inserted=edge_rows_inserted,
+    )
+
+
+# Preserve the Python-era implementations as differential references, then hard
+# cut every public production mutation entry point to the native writer.
+_reference_prune_chunks_by_stream = prune_chunks_by_stream
+_reference_delete_segment_index_rows = delete_segment_index_rows
+_reference_index_file = index_file
+_reference_scan_journal = scan_journal
+
+
+def prune_chunks_by_stream(stream: str, journal: str | None = None) -> dict[str, int]:
+    """Remove a stream from the index through the native writer."""
+    return run_native_indexer_prune_stream(str(journal or get_journal()), stream)
+
+
+def delete_segment_index_rows(
+    journal: str | None, rel_path: str
+) -> dict[str, int | str | None]:
+    """Remove one segment path from the index through the native writer."""
+    try:
+        counts = run_native_indexer_prune_paths(
+            str(journal or get_journal()), [rel_path]
+        )
+    except NativeIndexerReadError as exc:
+        logger.warning("Segment index row delete failed for %s: %s", rel_path, exc)
+        return {"chunks": 0, "files": 0, "error": str(exc)}
+    return {**counts, "error": None}
+
+
+def index_file(journal: str, file_path: str, verbose: bool = False) -> bool:
+    """Index one file through the native writer."""
+    del verbose
+    journal_path = Path(journal).resolve()
+    path = Path(file_path)
+    absolute = path.resolve() if path.is_absolute() else (journal_path / path).resolve()
+    if not absolute.is_file():
+        raise FileNotFoundError(f"File not found: {absolute}")
+    try:
+        absolute.relative_to(journal_path)
+    except ValueError:
+        raise ValueError(f"File is outside journal directory: {absolute}") from None
+    return run_native_indexer_rescan_file(str(journal_path), str(absolute))
+
+
+def scan_journal(journal: str, verbose: bool = False, full: bool = False) -> ScanReport:
+    """Scan journal content through the native writer."""
+    del verbose
+    report = run_native_indexer_scan(journal, full=full)
+    changed = any(
+        int(report.get(field, 0)) > 0
+        for field in ("indexed", "removed", "edges_indexed", "edges_removed")
+    )
+    return ScanReport(
+        changed=changed,
+        edge_rows_inserted=int(report.get("edge_rows_inserted", 0)),
     )
 
 

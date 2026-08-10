@@ -101,7 +101,7 @@ Media processing: an ingested segment's raw media becoming analysed output on di
 | dispatcher | `observe/sense.py` (1,508) | the `observe.observing` bus event, or a `--day` scan | nothing in the segment | spawns handlers by **file extension**, one `ThreadPoolExecutor` per handler, memory-gated, per-job wall-clock caps (`describe` 1800s · `transcribe` 2700s · `depict` 600s) |
 | audio | `observe/transcribe/` (~3,100) | `.flac .opus .ogg .m4a .mp3 .wav` | `<stem>.jsonl`, `<stem>.npz` | VAD → silence reduction → backend registry → STT → native speaker analysis |
 | screen | `observe/describe.py` (1,660) | `.webm .mp4 .mov` | `<stem>.jsonl` | dHash winnow → ArUco mask → categorize → select → extract |
-| image | `observe/depict.py` (104) | `.png .jpg .jpeg .heic .heif .gif .webp .tiff` | `<stem>.jsonl` | one VLM call |
+| image reference | `observe/depict.py` (104) | `.png .jpg .jpeg .heic .heif .gif .webp .tiff` | `<stem>.jsonl` | frozen oracle for the native handler |
 
 🔴 **The dispatcher is the plate.** Its behaviour is not incidental: skip and defer gates, re-entry rules, the memory gate, the watchdog, `exit 69` hold-raw, and segment completion all live there, and none of it is in a handler. ⚠ `observe/{hear,screen,see,grab,pdf_worker}.py` (2,269 lines) carry `observe/` names but are **read-side or other plates entirely** — sense reaches none of them.
 
@@ -117,11 +117,28 @@ Media processing: an ingested segment's raw media becoming analysed output on di
 
 🔴 **Two silent-success paths.** `describe.py:964-967` and `depict.py:64-69` **return exit 0 having written nothing** when no thinking engine is configured, and the dispatcher reads that as success — it records a successful contact and marks the file done (`sense.py:562-571`). The live path is protected by a gate (`sense.py:817-825`); ⚠ **the `--day` batch path is not**, and the daily sense-repair pre-phase (`think/thinking.py:4592-4632`) is exactly that path. Re-entry eventually recovers because no output exists, but the success signal is false while it does.
 
+🆕 🔴 **MEASURED 2026-08-09 by running the handler: `transcribe` has TWO sites that unlink the owner's raw audio, not one, and they are 440 lines apart.**
+
+| site | fires when | state / reason written first |
+|---|---|---|
+| `transcribe/main.py:1255` | VAD reports insufficient speech, **before** STT runs | `empty` / `no_decodable_audio` |
+| `transcribe/main.py:815` | **STT returned zero statements**, after VAD accepted the clip | `empty` / `no_decodable_audio` |
+
+Both are gated only by `transcribe.preserve_all`, which **defaults to false**, and both write a terminal processing record *before* unlinking — ✅ the correct fail-closed order, and if that write fails the handler raises and never unlinks.
+
+⚠ **The second site is reachable on audio VAD accepted.** Observed: a clip scored `3.4s speech, has_speech=True` went to STT, the engine returned no words, and the raw was removed. **So an STT backend answering `200` with an empty word list deletes the owner's audio and records it as `no_decodable_audio`** — indistinguishable in the durable record from a clip that genuinely had no speech.
+
+⚠ **`_audio_wire.parse_words` is what separates the two outcomes**, and the razor is narrow: `{"words": [], "text": ""}` reaches the delete; `{"words": [], "text": "hello"}` raises a contract error, writes nothing, and **preserves the audio.**
+
+📌 There is a **third** unlink in the same write path — `transcribe/native.py:183-197` removes an existing `.npz` whenever its `.jsonl` is absent, on every write call. Derived artifact, not owner media.
+
+⛔ **Recorded as a measurement, not a proposal.** `P-journal-retention` § 2 says *"`transcribe` stops unlinking VAD-empty raw audio"*; read literally that names one site and leaves the other in place. **Whether the ruling covers both is a founder call and is raised, not edited here.**
+
 ⚠ **The retry budget is describe-only in practice.** `should_reenter_analysis_output` (`observe/processing_record.py:118-152`) returns `True` **only** for `handler == "describe"`, and transcribe writes its `corrupt_input` output through `_write_failed_processing_jsonl`, which then blocks re-entry at three separate guards. `FAILED_ATTEMPT_BOUND` never applies to audio.
 
-**What is already Rust** — the speaker math, behind a one-record argv+stdio contract: `solstone-core-speakers` (3,749), `-speakers-analyze` (2,049), `-speakers-onnx` (662), reached through the 765-line Python adapter. 🆕 `solstone-core-depict` (`core/crates/solstone-core-depict/src/lib.rs`) is a standalone generate-wire consumer added 2026-08-05, but it is not dispatcher-wired: `journal depict` still resolves to `observe/depict.py`. ⛔ No dispatcher, describe, transcribe driver, or `_solstone_processing` *writer* is Rust; the one Rust touch on that header is a reader (`solstone-core-ingest-resolve/src/terminal_proof.rs`).
+**What is already Rust:** the speaker math, behind a one-record argv+stdio contract: `solstone-core-speakers` (3,749), `-speakers-analyze` (2,049), `-speakers-onnx` (662), reached through `solstone/observe/transcribe/speakers_analyze_adapter.py`. `NATIVE_PROCESS_SPECS` routes `journal depict` to the `solstone-core-depict` binary; its entry point calls the handler in `core/crates/solstone-core-depict/src/lib.rs`. The handler reads and verifies the RF-DETR sidecar and pinned artifacts in Rust. `journal_native_dispatch.rs` poisons sibling interpreters while exercising the compiled journal dispatch, and the depict crate tests the native RF-DETR query. The dispatcher and describe/transcribe drivers remain mapped to their Python owner modules; the native depict handler does not write `_solstone_processing`.
 
-🆕 **CORRECTED 2026-08-09: `solstone-core-depict` and `solstone-core-retention-cli` now have Maturin wheel leaves.** An isolated install of the release-style retention wheel put `solstone-retention` on `PATH`. The release inventory now derives required native packages from Cargo default binaries and their UV/Maturin mappings; `make check-release-package-inventory` fails when a required binary has no package. Depict remains deliberately unwired: `sense.py` still dispatches `journal depict` to `observe/depict.py`, so packaging and runtime routing are separate facts.
+**Packaging:** `packages/solstone-core-depict/pyproject.toml` builds the native depict binary with Maturin. The CPU and CUDA journal manifests each pin that package for their supported native platforms, so the sibling binary is installed with the `journal depict` route. The release inventory derives required native packages from Cargo default binaries and their UV/Maturin mappings; `make check-release-package-inventory` fails when a required binary has no package.
 
 🆕 ⚠ **`describe` DOES write a processing record** — it stamps one at every terminal promote, including `attempts` on failures, and `should_reenter_analysis_output` is keyed on it. **`depict` writes none**, in Python or in `solstone-core-depict`, so an ingested still image can never be proven consumed and the sending device never releases its copy.
 
@@ -133,13 +150,13 @@ Media processing: an ingested segment's raw media becoming analysed output on di
 
 🔴 **`day` semantics — one meaning, not three.** `day` is **the day the content originated from**: the source segment's day, or for an activity its **start** time. ⛔ It is not the recording day, not the last-seen day, and not the ingest day. For content that is genuinely not day-based, the **only** permitted fallback is the day it was last updated, and a fallback must be named as one rather than silently occupying the same field. ⚠ Before this, `day` conflated recording, source and last-seen meanings.
 
-The SQLite index. **Ephemeral by design and always rebuildable — that property is required, not incidental.** ⚠ The index schema needs architecture work.
+The SQLite index. **Ephemeral by design and always rebuildable — that property is required, not incidental.**
 
-🔴 **Half of it IS already Rust, and the half that is has the larger share of the code.** ⛔ Do not read `think/indexer/native.py:6-11` as "this plate is Python" — it is accurate about what went native and silent about how much. `core/crates/solstone-core-indexer` (11,825 lines) + `solstone-core-indexer-store` (4,411) = **16,236 lines of Rust owning the entire CLI write path** — `--reset`, `--rescan`, `--rescan-full`, `--rescan-file`, `--rebuild-edges`. That is 5.5× the Python it fronts (`indexer/journal.py` 1,693 + `edges.py` 1,263). **A full rebuild is already native.** What remains Python is **the whole read/query path** plus the in-process writers.
+**Production mutation authority:** `journal indexer` dispatches in the Rust journal binary, and `solstone-core-indexer-store` owns scans, file replacements, stream/path pruning, resets, edge rebuilds, and entity-merge edge maintenance. Python feature plates that have not converted yet request those explicit native mutations rather than opening SQLite for writes. The [poisoned-path integration test](../../core/crates/solstone-core-journal-bin/tests/journal_identity.rs) exercises a real rebuild while the supported Python launchers fail on invocation. `think/indexer/journal.py` and `edges.py` retain their Python-era implementations as differential references.
 
-🔴 **The schema DDL exists in two hand-maintained copies** — `think/indexer/journal.py:SCHEMA` and `core/crates/solstone-core-indexer-store/src/db.rs` (`CREATE_FILES` · `CREATE_CHUNKS` · `CREATE_EDGE_FILES` · `CREATE_EDGES` + the three edge indices). `db.rs:27` names the Python side as source of truth **for the edges half only**; the `chunks` DDL carries no such note. This is the two-places-one-contract class inside the plate whose schema is the thing being redesigned.
+**Schema authority:** the production DDL lives in Rust; the Python DDL is reference corpus. Before a native mutation, Rust transactionally copies pre-`stream` and pre-`time_bucket` FTS rows into the current table shape. The [legacy-shape tests](../../core/crates/solstone-core-indexer-store/src/db.rs) cover both migrations and assert that the existing rows remain queryable.
 
-⚠ **Rust's `ensure_schema` has no equivalent of Python's `time_bucket` rebuild check** and its own comment says it relies on `--reset` instead. A pre-`time_bucket` index reached by the native path first gets `CREATE VIRTUAL TABLE IF NOT EXISTS` as a no-op, then an 8-column insert against a 7-column table.
+**Schema v2 sequencing:** v2 remains the next schema change and is separate from this authority change, so rollback does not also have to undo a new durable shape. Its minimum is **SQLite 3.42**, the version that introduced the FTS5 [`secure-delete` configuration option](https://www.sqlite.org/fts5.html#the_secure_delete_configuration_option). The workspace [builds `rusqlite` with bundled SQLite](../../core/Cargo.toml); the iOS canary excludes indexer-store/query and therefore does not set the journal-host floor.
 
 **Shape of the live schema:** one FTS5 virtual table (`content` + **seven `UNINDEXED` columns** — `path`, `day`, `facet`, `agent`, `stream`, `idx`, `time_bucket`), a `files(path, mtime)` staleness watermark, and the derived `edges` / `edge_files` pair. 🔴 **Every metadata filter is therefore a post-filter over the whole match set, and a filter with no search term is a full table scan** — `_build_where_clause` emits `1=1` for an empty query. The `edges` half, which does have real indices, is the existing proof the same file can serve indexed lookups.
 
@@ -179,13 +196,11 @@ The SQLite index. **Ephemeral by design and always rebuildable — that property
   there** — ⛔ **not** "any token in any script is searchable." With `unicode61` a run of Han indexes
   as **one** token, so a query for part of it cannot match; emoji are separators and are not indexed
   at all. Both were measured. Making those findable is a **tokenizer** decision, not a query-path one.
-- 🔴 **Schema work is gated on there being one writer, and there are two.** Only the CLI write
-  operations are native; the in-process writers — day-accumulator appends, chat stream appends,
-  importers, backup restore, observer prune, share delete, entity-merge — still write the index
-  directly from the reference implementation, against its own copy of the DDL. Day-ordered
-  identities, a typed `day`, a content-type dimension and `secure_delete` on every writer connection
-  all need both writers moved together. ⛔ Do not scope a schema change as though the write path were
-  already single.
+- **Schema v2 has one mutation authority.** The Python feature entry points listed in
+  [`strands.md`](strands.md#sjournalindex) now terminate at
+  Rust-owned operations, and `journal indexer` no longer launches an interpreter. Day-ordered
+  identities, a typed `day`, a content-type dimension, and `secure-delete` can therefore move together
+  without a second production writer preserving the old shape.
 
 ## `P-format`
 
@@ -322,6 +337,22 @@ because the credential denylist is seven `fnmatch` globs, so `credentials.json`,
 `api_secret.txt`, `token.txt`, `passwords.md` and `secrets.yaml` are all **readable** while the
 preamble says the denylist covers "credentials" — a contract-accuracy gap, ⛔ not an exfiltration
 path, and only because of the separation above.
+
+🆕 ✅ **BUILDING — three waves landed 2026-08-09/10, each verified by RUNNING it rather than from a ship report.** `solstone-core-cogitate` holds the contract: both preambles, the access tiers and their capability table, the finalization rule, the live half of the command gate, and the deterministic-failure vocabulary. `solstone-core-cogitate-tools` holds the raw-read tier and, since the tool wave, the `sol` command tool, `emit_final`, `finish`, and **the per-tier binding**. ⛔ **Nothing is wired yet** — the loop and the process boundary are later waves, and no Python has been deleted.
+
+🔴 **THE WRITE-TOOL GUARANTEE IS NOW A MECHANISM, AND IT IS A CLOSED ALLOWLIST.** Every producible binding's tool names must be members of an exact seven-name set, so a newly added tool fails the build until someone widens it deliberately. ⛔ **A denylist here cannot fail on any tree** — the producible names and the forbidden names are disjoint by construction. Proven by mutation: injecting a tool named `journal_write` into every binding reds the check. ⚠ **And state the property accurately** — `sol` *is* write-capable, since `sol call …` verbs persist. The guarantee is not *"no write tool"* but **"no ungated write path": every write goes through `sol`, and every `sol` command goes through the policy gate.**
+
+🔒 **ONE AUTHORIZED DIVERGENCE FROM THE REFERENCE, AND IT IS CARRIED BY A LEDGER.** The runtime preamble moved from **1,989 bytes / `6614e3fd…`** to **2,163 / `39011e2c…`**, correcting the broad-root framing. ✅ The **frozen oracle keeps the reference's value**; the shipped constant and `cogitate_contract.json` carry the new one; a **divergence ledger** in the contract crate reconciles them and refuses **both** an unrecorded difference **and** a stale entry whose case has come back into agreement. ⛔ **The `P-format` precedent implements only the first direction** — it guards `if actual != expected`, so an entry that re-agrees is never inspected. ⚠ **The ledger caught a real defect immediately**: regenerating the oracle re-derived the preamble from *live* source and silently overwrote the divergence's *before* side. 📌 **"Frozen record" was a property of the document, not of the generator.**
+
+⚠ **THE FINISH TOOL WAS AUTHORED, NOT PORTED, AND THAT IS DELIBERATE.** **4 of the 6 cogitate talents finalize through it** — measured — but the tool belongs to the agent SDK this conversion deletes. Its captured description tells the model about *"the **user's** requested task"* and a *"Final message to send to the **user**"*: generic agent-framework copy, and **there is no user on the other end of a talent**. The native description is written in solstone's own terms and pinned by digest.
+
+🔴 **AND THE CONVERSION CANNOT SIMPLY EXTEND THE `generate` ARMS — measured, not assumed.** Two findings a scope review proved against the tree: **`openai` and `google` normalise a valid tool call into a hard refusal** (both map a tool stop to `"stop"`, a tool-call response carries no text, and the shared validation turns `Stop` + blank output into `provider_response_invalid`) — ⚠ unreachable today because `generate` sends no tools, and reachable the moment a tool-calling turn exists. And **`endpoint` and `confidential` cannot represent a tool call at all**: their shared parser **errors** on a `tool_calls` finish reason against a vocabulary frozen in `core/fixtures/local_contract.json`. ⛔ That is a settled one-shot contract, so it gets its own wave and its own decision rather than being widened in passing.
+
+⚠ **A HAZARD THE LOOP INHERITS AND NOTHING CURRENTLY SOLVES:** the endpoint arm's context fitting is keyed to **one-shot content shapes** and cannot express an assistant turn carrying tool calls or a tool-result message; and the **attested arm has no fitting at all**, because its served window comes from a discovery call it deliberately refuses so it cannot issue an unaudited second request. That leaves a 400-overflow retry — keyed on the serving runtime's **English error text** — as the only backstop. Fine for one shot; **primary for a loop that regrows its prompt every turn**, on a 16,384-token window whose preamble alone is ~2 KB.
+
+🔴 **BUDGETS ESCALATE; THEY DO NOT STOP.** Cost and context share a three-stage ladder — a latched wrap-up warning, then an ultimatum **arming exactly one more turn**, then a hard pause — and turns have their own ladder with a **different instruction at each threshold**. Every message is sent **to the model** and names the finish tool. ⛔ A loop that simply stops at the cap behaves completely differently: the model never gets to wrap up, so runs that would have finished cleanly under pressure end as force-stops with partial results. ⚠ Carry the parts not visible in the strings: each warning is **latched once**; a duplicate action from an **already-counted response id is the same turn** and must be deduped *before* the armed check or an arming turn force-stops itself; the cost fallback deliberately **errs high**; and an **unknown context window must not read as 0%**.
+
+✅ **THE CUT'S VERIFIER EXISTS AND FAILS ON PURPOSE.** `scripts/check_cogitate_cutover.py` was committed while the Python runtime was still in place, reporting **16 findings**, so it cannot be shaped to fit what the cut produces. ⛔ **It does not ask whether a symbol exists** — that reading goes green on a destructive implementation and red on a correct one. It asks whether any Python path still **implements** the runtime: the agent SDK, the policy gate, the read tier, the finalization tool, prompt assembly, the contract text. ⛔ Not wired into a gate until the cut, because wiring it earlier would red the build for every lane.
 
 ✅ **The deterministic contract is frozen against execution** — `core/fixtures/cogitate_oracle.json`
 (generator `scripts/cogitate_oracle_corpus.py`): **249 vectors, each produced by running the

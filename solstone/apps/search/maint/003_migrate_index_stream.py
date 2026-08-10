@@ -31,7 +31,7 @@ def _get_columns(db_path: str) -> set[str] | None:
     """Read column names from the chunks table. Returns None if DB or table missing."""
     if not os.path.exists(db_path):
         return None
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
         rows = conn.execute("PRAGMA table_info(chunks)").fetchall()
         if not rows:
@@ -41,32 +41,6 @@ def _get_columns(db_path: str) -> set[str] | None:
         return None
     finally:
         conn.close()
-
-
-def _rebuild_schema(db_path: str) -> None:
-    """Drop and recreate both tables with the current schema."""
-    from solstone.think.indexer.journal import SCHEMA
-
-    conn = sqlite3.connect(db_path)
-    try:
-        conn.execute("DROP TABLE IF EXISTS chunks")
-        conn.execute("DROP TABLE IF EXISTS files")
-        for statement in SCHEMA:
-            conn.execute(statement)
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def _request_full_rescan() -> bool:
-    """Ask supervisor to queue a full index rescan via callosum."""
-    from solstone.think.callosum import callosum_send
-
-    return callosum_send(
-        "supervisor",
-        "request",
-        cmd=["journal", "indexer", "--rescan-full"],
-    )
 
 
 def migrate(journal: str) -> bool:
@@ -84,17 +58,11 @@ def migrate(journal: str) -> bool:
 
     missing = EXPECTED_COLUMNS - cols
     print(f"Index schema outdated (missing: {', '.join(sorted(missing))})")
-    print("Dropping and recreating index tables...")
-    _rebuild_schema(db_path)
-    print("Schema rebuilt successfully")
+    print("Rebuilding the index with the native writer...")
+    from solstone.think.indexer.native import run_native_indexer_reset_and_full_scan
 
-    print("Requesting full rescan from supervisor...")
-    if _request_full_rescan():
-        print("Full rescan queued")
-    else:
-        print(
-            "Could not reach supervisor — run 'journal indexer --rescan-full' manually"
-        )
+    run_native_indexer_reset_and_full_scan(journal)
+    print("Native index rebuild complete")
 
     return True
 

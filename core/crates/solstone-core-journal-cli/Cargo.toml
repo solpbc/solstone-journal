@@ -15,8 +15,11 @@ solstone-core-journal-io = { workspace = true }
 solstone-core-callosum = { workspace = true }
 solstone-core-cli-boundary = { workspace = true }
 solstone-core-facets = { workspace = true }
-solstone-core-indexer-store = { workspace = true }
 solstone-core-sol-client = { workspace = true }
+
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+solstone-core-indexer-query = { workspace = true }
+solstone-core-indexer-store = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

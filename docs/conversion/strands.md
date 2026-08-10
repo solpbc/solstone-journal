@@ -260,11 +260,9 @@ reporting nothing at all.
 ### `S:journal:index`
 **Connects** `P-journal` → `P-index` · **Owner** `P-index` · **Tier** fixture
 
-🔴 **Not already Rust** — see [`plates.md`](plates.md) § `P-index`.
+`journal indexer` is native end to end. The Python feature entry points terminate at Rust operations: backup restore and ordinary scan callers use native scan; chat, importer, day-accumulator, and segment append paths use native file rescan; observer prune and share delete use native path/stream pruning; entity merge uses native fold/rebuild/fingerprint operations; and `apps/search/maint/003_migrate_index_stream.py` invokes a native reset plus full rebuild. The Python implementations remain as reference oracles. The [real-index poison test](../../core/crates/solstone-core-journal-bin/tests/journal_identity.rs) fails Python launchers with exit 97 and verifies the resulting SQLite content.
 
-⚠ **Fan-in is nine writers across six plates**, not one — the list previously named eight: `think/backup/restore.py:31`, `convey/chat_stream.py:182`, `think/importers/cli.py:27`, `think/day_accumulator.py:12`, `apps/observer/prune.py:27`, `apps/observer/share_delete.py:19`, `think/entities/merge.py:1234`, `think/segment.py:19`, and **`apps/search/maint/003_migrate_index_stream.py:34`**.
-
-⚠ **A tenth call site bypasses the accessor entirely** — `think/segment.py:211` opens its own bare `sqlite3.connect(db_path)` rather than `get_journal_index()`, so it never runs the schema-ensure path. ⛔ Count it when counting callers of this boundary; an accessor-name grep misses it.
+`think/segment.py` also reads segment presence and chunk counts through an explicit `mode=ro` connection. It is a reader, not an additional mutation entry point.
 
 ⚠ Plus an **invisible runtime dependency** on `apps/speakers/edges.py` and the entity store via the `EDGE_SOURCES` registry — real, and invisible to any import graph. ⛔ **CORRECTED 2026-08-05: the index build does NOT run `find_matching_entity`.** `edges.py` imports exactly one entity symbol (`load_all_journal_entities`) and has zero references to `find_matching_entity` or `think.entities.matching`. Its name-variant matching is an **independent reimplementation** with its own process-global cache, and it stats entity files directly. ⚠ The previous wording asserted two matchers were one, which is exactly the merge a future scope would make on this document's authority.
 
@@ -292,9 +290,9 @@ The indexer's and the convey apps' consumption of consistently formatted structu
 ### `S:index:*` — the read / query path
 **Owner** `P-index` · **Tier** schema
 
-Nine production readers across search, tools, voice, talents and entity context, plus three more on the edge half (`apps/home/connections.py`, `think/curation.py`, `apps/entities/routes.py`). The `search_journal` / `search_counts` interface — which `P-thinking` calls **directly, in-process, on every talent that searches** — belongs to no strand yet.
+Production readers span search, tools, voice, talents and entity context, including edge readers in `apps/home/connections.py`, `think/curation.py`, and `apps/entities/routes.py`. This section tracks the `search_journal` / `search_counts` interface until it receives a dedicated strand. Both calls cross into `solstone-core-indexer-query`; Python shapes the returned JSON for still-Python consumers but does not open or count the index.
 
-⚠ **The in-process talent call is worse than "a search":** `think/tools/search.py` calls **both** `search_journal` *and* `search_counts` on every invocation, on two separate connections, and `search_counts` returns every matching row to the caller to be counted in Python.
+⚠ **The talent still asks twice.** `think/tools/search.py` calls both native search and native counts for one invocation, so it still pays for two process and query boundaries even though counts are no longer materialized in Python. That is an API-shape cost, not a Python SQLite read path.
 
 ⛔ **`known_agents` is NOT on the talent path** — do not group it with the two above. `think/tools/call.py` returns early into `think/tools/search.py` when JSON output is requested, so `known_agents()` is reached only from the human CLI with an explicit `--agent`. Its cost is an owner-CLI cost, not a per-talent one. ⚠ It is still a full scan of the chunk table to list a set whose measured cardinality is 31.
 

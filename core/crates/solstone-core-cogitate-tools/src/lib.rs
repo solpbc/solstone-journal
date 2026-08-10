@@ -3,10 +3,9 @@
 
 //! Bounded raw filesystem reads for cogitate evidence.
 //!
-//! This crate binds no tools to any talent or tier. Per-tier tool binding,
-//! including the guarantee that no write tool is ever registered, is outside
-//! this crate's scope and belongs to a later wave.
+//! This crate binds the bounded cogitate tool surface to access tiers.
 
+mod binding;
 mod budget;
 mod denylist;
 mod glob;
@@ -16,9 +15,14 @@ mod paths;
 mod patterns;
 mod read_file;
 mod refusals;
+mod slot_lease;
+mod sol_budget;
+mod sol_execution;
+mod tool_metadata;
 mod types;
 mod walk;
 
+pub use binding::{KNOWN_TOOL_NAMES, bound_tools};
 pub use budget::ReadBudget;
 pub use denylist::{
     DENIED_CREDENTIAL_PATTERNS, DENIED_PATH_COMPONENTS, GLOB_MAX_MATCHES, GREP_MAX_BYTES_PER_FILE,
@@ -30,6 +34,16 @@ pub use grep_search::grep_search;
 pub use list_directory::list_directory;
 pub use read_file::read_file;
 pub use refusals::*;
+pub use slot_lease::{NoopSlotLease, SlotLease, SlotReacquireError};
+pub use sol_budget::{BudgetExhaustedEvent, SolCallBudget};
+pub use sol_execution::{
+    SHELL_STDERR_CAP, SHELL_STDOUT_CAP, SHELL_TIMEOUT_SECONDS, SolObservation, SolToolResult,
+    format_shell_output, run_command, run_sol_command, truncate_output,
+};
+pub use tool_metadata::{
+    EMIT_FINAL_TOOL, FINISH_TOOL, GLOB_TOOL, GREP_SEARCH_TOOL, LIST_DIRECTORY_TOOL, READ_FILE_TOOL,
+    ToolArgumentSpec, ToolSpec, sol_tool,
+};
 pub use types::{
     Entry, GlobOptions, GrepMatch, GrepSearchOptions, ListDirectoryOptions, ReadFileOptions,
     ReadPayload, ReadResult, ToolName,
@@ -41,3 +55,5 @@ mod bed;
 mod conformance;
 #[cfg(test)]
 mod oracle;
+#[cfg(test)]
+mod runtime_conformance;

@@ -403,17 +403,17 @@ stdout.
 
 ### Indexer Native Routing
 
-`journal indexer` routes command writes (`--reset`, `--rebuild-edges`,
-`--rescan`, `--rescan-full`, and `--rescan-file`) to the sibling
-`solstone-core indexer` binary. `search_journal`, `search_counts`,
-`known_agents`, and `get_corpus_day_coverage` also route through that binary via
-the Python native bridge. Mixed write+query invocations run native writes first;
-on native success they enter the native-backed query path, and on native
-non-zero they return that code without querying. The command no longer reads
-journal config for write routing, so stale old routing keys in
+`journal indexer` executes command writes (`--reset`, `--rebuild-edges`,
+`--rescan`, `--rescan-full`, and `--rescan-file`) inside the Rust journal
+binary against `solstone-core-indexer-store`; it does not locate or launch an
+interpreter. Owner CLI queries also execute inside the Rust journal binary
+against `solstone-core-indexer-query`. `search_journal`, `search_counts`,
+`known_agents`, and `get_corpus_day_coverage` route through the aggregate Rust
+binary when their still-Python feature plates call them. The command no longer
+reads journal config for write routing, so stale old routing keys in
 `config/journal.json` are inert.
 
-Before launching the native helper, the wrapper checks that the current runtime
+Before a remaining Python feature plate launches the native helper, the bridge checks that the current runtime
 has a compatible `solstone-core` wheel: the normalized host tuple must be in
 `probe.SOLSTONE_CORE_COVERED_PLATFORMS`, and the platform tags advertised by
 `packaging.tags.sys_tags()` must intersect the tag set recorded in
@@ -422,11 +422,13 @@ manylinux 2.17 / manylinux2014 glibc floor. macOS requires
 `macosx_14_0_arm64`; older arm64 macOS hosts therefore report no compatible
 wheel. A covered source checkout without `solstone-core` distribution metadata
 also returns 78 for every write-bearing command until the developer runs
-`make install`.
+`make install`. The [native bridge behavior tests](../tests/test_indexer_native.py)
+cover the preflight ordering and exit-code contract.
 
 Backup-restore full rescans, direct `index_file()` callers, chat stream appends,
-importers, day-accumulator writes, and index-mutating deletes bypass
-`journal indexer` and continue to use the named Python in-process writers.
+importers, day-accumulator writes, index-mutating deletes, and entity-merge edge
+maintenance use explicit `solstone-core indexer` mutation verbs. Their Python
+plates may initiate the operation, but SQLite is opened for writing only in Rust.
 
 The wrapper normalizes `--rescan-file` to an absolute path with the same Python
 journal-path resolver used by `index_file()` before passing it to native. This
@@ -443,11 +445,12 @@ and writes both watermarks as one unit. Reset is SQLite-native: it drops and
 recreates index objects transactionally and does not unlink the database, WAL,
 or SHM files.
 
-Command writes now use the native path only. Journals containing edge source
-files whose extraction fails preserve prior native `edge_files` rows and mtime
-so the unchanged file retries on the next scan. The remaining Python in-process
-bypass consumers keep their existing Python semantics because they do not enter
-`journal indexer`.
+Production index mutations use the native path. If edge-source extraction fails,
+the scanner preserves the prior `edge_files` row and mtime so the unchanged file
+is eligible on the next scan; the [failure/retry test](../core/crates/solstone-core-indexer-store/src/scan.rs)
+covers that behavior. Pre-`stream` and pre-`time_bucket` indexes are migrated
+transactionally before the first native mutation; the [legacy-shape tests](../core/crates/solstone-core-indexer-store/src/db.rs)
+assert that their existing rows remain queryable.
 
 The detailed native atomicity design is in
 `docs/design/indexer-native-atomicity.md`.

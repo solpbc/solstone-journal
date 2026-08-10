@@ -17,15 +17,21 @@ use solstone_core_cli::{
     BodyRebuildOptions, BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
     BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, Command,
     ConveyOptions, GenerateCommand, GenerateSessionOptions, IndexerCommand, IndexerCountsOptions,
-    IndexerOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions, InstallCommand,
-    JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
+    IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
+    IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
+    InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
     JournalConfigReadOptions, JournalPathOptions, LocalCommand, ServiceOptions,
     SpeakerResolveCommand, SplCommand, USAGE, evaluate_args, version_line,
 };
+mod supervisor;
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
 };
-use solstone_core_indexer_store::db::reset_index;
+use solstone_core_indexer_store::db::{prune_by_paths, prune_chunks_by_stream, reset_index};
+use solstone_core_indexer_store::merge::{
+    fingerprint_edge_rows, fold_entity_edges_for_recorded_merge,
+    rebuild_edges_for_recorded_merge_undo,
+};
 use solstone_core_indexer_store::scan::{
     RescanFileStatus, rebuild_edges, rescan_file, scan_journal,
 };
@@ -100,6 +106,7 @@ fn main() -> ExitCode {
         Ok(Command::Body(command)) => run_body(command),
         Ok(Command::Convey(options)) => run_convey(options),
         Ok(Command::Spl(command)) => run_spl_process(command),
+        Ok(Command::Supervisor(options)) => supervisor::run(options),
         Err(_) => {
             eprint!("{USAGE}");
             ExitCode::from(EXIT_USAGE)
@@ -3530,10 +3537,18 @@ fn run_indexer(command: IndexerCommand) -> ExitCode {
         IndexerCommand::Counts(options) => run_indexer_counts(options),
         IndexerCommand::Agents(options) => run_indexer_agents(options),
         IndexerCommand::Coverage(options) => run_indexer_coverage(options),
+        IndexerCommand::PruneStream(options) => run_indexer_prune_stream(options),
+        IndexerCommand::PrunePaths(options) => run_indexer_prune_paths(options),
+        IndexerCommand::FoldEntityEdges(options) => run_indexer_fold_entity_edges(options),
+        IndexerCommand::EdgeFingerprint(options) => run_indexer_edge_fingerprint(options),
+        IndexerCommand::RebuildEdgesFingerprint(options) => {
+            run_indexer_rebuild_edges_fingerprint(options)
+        }
     }
 }
 
 fn run_indexer_maintenance(options: IndexerOptions) -> ExitCode {
+    let json_output = options.json;
     if !options.reset
         && !options.rebuild_edges
         && !options.rescan
@@ -3568,6 +3583,15 @@ fn run_indexer_maintenance(options: IndexerOptions) -> ExitCode {
                 if report.failed > 0 {
                     return ExitCode::from(EXIT_TEMPFAIL);
                 }
+                if json_output && !options.rescan && !options.rescan_full {
+                    print_json(&json!({
+                        "files": report.files,
+                        "rows": report.rows,
+                        "drops": report.drops,
+                        "failed": report.failed,
+                        "skipped": report.skipped,
+                    }));
+                }
             }
             Err(error) => {
                 eprintln!("indexer edge rebuild failed: {error}");
@@ -3581,6 +3605,9 @@ fn run_indexer_maintenance(options: IndexerOptions) -> ExitCode {
             Ok(RescanFileStatus::Indexed { warnings }) => {
                 for warning in warnings {
                     eprintln!("warning: {warning}");
+                }
+                if json_output {
+                    print_json(&json!({"indexed": true}));
                 }
                 return ExitCode::SUCCESS;
             }
@@ -3605,8 +3632,20 @@ fn run_indexer_maintenance(options: IndexerOptions) -> ExitCode {
                     && !options.rebuild_edges
                     && !options.reset
                     && report.edge_rows_inserted == 0;
-                if should_emit_zero_edge_hint {
+                if should_emit_zero_edge_hint && !json_output {
                     println!("{ZERO_EDGE_HINT}");
+                }
+                if json_output {
+                    print_json(&json!({
+                        "indexed": report.indexed,
+                        "removed": report.removed,
+                        "skipped": report.skipped,
+                        "edges_indexed": report.edges_indexed,
+                        "edges_removed": report.edges_removed,
+                        "edge_rows_inserted": report.edge_rows_inserted,
+                        "merge_steps_spent": report.merge_steps_spent,
+                        "failed": report.failed,
+                    }));
                 }
                 return ExitCode::SUCCESS;
             }
@@ -3617,7 +3656,103 @@ fn run_indexer_maintenance(options: IndexerOptions) -> ExitCode {
         }
     }
 
+    if json_output {
+        print_json(&json!({"reset": options.reset}));
+    }
     ExitCode::SUCCESS
+}
+
+fn run_indexer_prune_stream(options: IndexerPruneStreamOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    match prune_chunks_by_stream(&journal, &options.stream) {
+        Ok(counts) => {
+            if options.json {
+                print_json(&json!({"chunks": counts.chunks, "files": counts.files}));
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => print_indexer_mutation_error("prune-stream", error),
+    }
+}
+
+fn run_indexer_prune_paths(options: IndexerPrunePathsOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    let paths = options.paths.iter().map(String::as_str).collect::<Vec<_>>();
+    match prune_by_paths(&journal, &paths) {
+        Ok(counts) => {
+            let counts = counts.unwrap_or_default();
+            if options.json {
+                print_json(&json!({"chunks": counts.chunks, "files": counts.files}));
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => print_indexer_mutation_error("prune-paths", error),
+    }
+}
+
+fn run_indexer_fold_entity_edges(options: IndexerFoldEntityEdgesOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    match fold_entity_edges_for_recorded_merge(&journal, &options.source_id, &options.target_id) {
+        Ok(report) => {
+            if options.json {
+                print_json(&json!({
+                    "rows_folded": report.rows_folded,
+                    "self_edges_dropped": report.self_edges_dropped,
+                    "fallback_rebuild": report.fallback_rebuild,
+                }));
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => print_indexer_mutation_error("fold-entity-edges", error),
+    }
+}
+
+fn run_indexer_edge_fingerprint(options: IndexerReadOptions) -> ExitCode {
+    run_indexer_fingerprint(options, false)
+}
+
+fn run_indexer_rebuild_edges_fingerprint(options: IndexerReadOptions) -> ExitCode {
+    run_indexer_fingerprint(options, true)
+}
+
+fn run_indexer_fingerprint(options: IndexerReadOptions, rebuild: bool) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    let result = if rebuild {
+        rebuild_edges_for_recorded_merge_undo(&journal)
+    } else {
+        fingerprint_edge_rows(&journal)
+    };
+    match result {
+        Ok(fingerprint) => {
+            if options.json {
+                print_json(&json!({"fingerprint": fingerprint}));
+            } else {
+                println!("{fingerprint}");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => print_indexer_mutation_error("edge-fingerprint", error),
+    }
+}
+
+fn print_indexer_mutation_error(
+    operation: &str,
+    error: solstone_core_indexer_store::StoreError,
+) -> ExitCode {
+    eprintln!("indexer {operation} failed: {error}");
+    ExitCode::from(EXIT_TEMPFAIL)
 }
 
 fn run_indexer_search(options: IndexerSearchOptions) -> ExitCode {

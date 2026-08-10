@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 use solstone_core_system::TASK_VERB_TOKENS;
 
 const JOURNAL_PROCESSES: &str = include_str!("../../solstone-core-journal-cli/src/processes.rs");
+const JOURNAL_MANIFEST: &str = include_str!("../../solstone-core-journal-cli/src/manifest.rs");
 const LIB: &str = include_str!("../src/lib.rs");
 const CAP: &str = include_str!("../src/cap.rs");
 const ERROR: &str = include_str!("../src/error.rs");
@@ -68,12 +69,19 @@ fn declared_modules(source: &str) -> BTreeSet<&str> {
 }
 
 #[test]
-fn ac1_every_declared_task_verb_is_in_the_native_journal_census_with_empty_preset_argv() {
+fn ac1_every_declared_task_verb_has_root_native_or_empty_preset_process_authority() {
+    let root_commands_end = JOURNAL_MANIFEST
+        .find("pub(crate) struct LocalPath")
+        .expect("journal root command boundary");
+    let root_commands = &JOURNAL_MANIFEST[..root_commands_end];
     for token in TASK_VERB_TOKENS {
         let marker = format!("token: \"{token}\"");
-        let start = JOURNAL_PROCESSES
-            .find(&marker)
-            .unwrap_or_else(|| panic!("missing task token {token} in PROCESS_SPECS"));
+        if root_commands.contains(&format!("\"{token}\"")) {
+            continue;
+        }
+        let start = JOURNAL_PROCESSES.find(&marker).unwrap_or_else(|| {
+            panic!("task token {token} has no native root or process authority")
+        });
         let entry = &JOURNAL_PROCESSES[start..];
         let end = entry.find("ProcessSpec {").unwrap_or(entry.len());
         assert!(

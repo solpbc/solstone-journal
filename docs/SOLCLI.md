@@ -44,23 +44,27 @@ journal state.
 
 `journal` is a separate launcher for `solstone-core-journal`. Its command
 grammar and local operations live in `solstone-core-journal-cli`; its closed
-service-process table maps retained service names to owner modules:
+process census maps every retained service name to its historical owner module.
+An explicit native dispatch table replaces Python only after the complete
+owner-facing grammar has landed:
 
 ```rust
-ProcessSpec {
-    token: "think",
-    module: "solstone.think.thinking",
-    preset_argv: &[],
-    kind: ProcessKind::Service,
-    ...
+NativeProcessSpec {
+    token: "spl",
+    binary: "solstone-core",
+    preset_argv: &["spl", "service"],
 }
 ```
 
-Retained service modules export `main()`. The compiled process table supplies
-the module name and fixed bootstrap code to a PID-preserving exec; owner
-arguments are forwarded only after those fixed positions. Local writers
-(`archive`, `facet`, and `news`) remain entirely in Rust. Fixed aliases provide
-`journal up` and `journal down`.
+`NATIVE_PROCESS_SPECS` in
+`core/crates/solstone-core-journal-cli/src/processes.rs` maps `spl` and `depict`
+to sibling native binaries. The journal uses the same process-replacing runner
+for those binaries, while retained Python services use their module name and
+fixed bootstrap code. Owner arguments are forwarded only after fixed
+positions. `journal_native_dispatch.rs` runs the compiled journal binary with
+poisoned sibling interpreters and verifies each native program and argument
+list. Local writers (`archive`, `facet`, and `news`) remain entirely in Rust.
+Fixed aliases provide `journal up` and `journal down`.
 
 ### Adding a top-level public `sol` command
 
@@ -79,9 +83,9 @@ through the native HTTP boundary. For local commands that touch no journal data
 and have no `sol call` oracle path, use a direct match arm in
 `solstone_core_sol::run` alongside `root` and `skills`.
 
-For host-only commands, use the native journal command root. Add retained
-service processes to `processes.rs`; implement direct journal mutations in
-Rust under `local_ops.rs` and the relevant owner crate.
+For host-only commands, use the native journal command root. Register retained
+processes and explicit native cutovers in `processes.rs`; implement direct
+journal mutations in Rust under `local_ops.rs` and the relevant owner crate.
 
 ### Files to maintain
 
@@ -89,7 +93,7 @@ Rust under `local_ops.rs` and the relevant owner crate.
 |------|-----------|
 | `solstone/think/native/<command>/authority.toml` | Declare the public native command |
 | `solstone/think/native/<command>/command.rs` | Implement the native handler |
-| `core/crates/solstone-core-journal-cli/src/processes.rs` | Register a retained journal service process |
+| `core/crates/solstone-core-journal-cli/src/processes.rs` | Register a retained process or an explicit native cutover |
 | `core/crates/solstone-core-journal-cli/src/local_ops.rs` | Compose a same-device Rust authority |
 
 ## Call Commands (`sol call <app> <cmd>`)
@@ -159,7 +163,8 @@ the journal host and depends heavily on `solstone/think/` internals.
 
 1. **Create the owner module** with a `main()` entry when the retained service still runs in Python.
 2. **Register its fixed token and module** in `core/crates/solstone-core-journal-cli/src/processes.rs`.
-3. **Optionally update a router skill reference** if the command needs agent-facing guidance.
+3. **When the full grammar is native, add an explicit `NativeProcessSpec`** and package its sibling binary with both journal distributions.
+4. **Optionally update a router skill reference** if the command needs agent-facing guidance.
 
 ### Files to maintain for a new call command
 

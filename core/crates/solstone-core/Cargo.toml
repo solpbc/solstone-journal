@@ -41,6 +41,11 @@ name = "solstone-core-generate-session-kill-helper"
 path = "tests/bin/generate_session_kill_helper.rs"
 test = false
 
+[[bin]]
+name = "solstone-system-test-child"
+path = "../solstone-core-system/src/bin/solstone_system_test_child.rs"
+test = false
+
 [dependencies]
 chrono.workspace = true
 serde.workspace = true
@@ -62,8 +67,11 @@ solstone-core-generate-wire.workspace = true
 solstone-core-spl.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
+solstone-core-system.workspace = true
+solstone-core-callosum = { workspace = true, features = ["wire"] }
 serde_json.workspace = true
-tokio = { workspace = true, features = ["io-std", "io-util", "rt", "time"] }
+nix = { workspace = true, features = ["process", "signal"] }
+tokio = { workspace = true, features = ["io-std", "io-util", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
 [dev-dependencies]
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }

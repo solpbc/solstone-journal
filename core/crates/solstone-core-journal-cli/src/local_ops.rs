@@ -1,18 +1,35 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[cfg(not(target_os = "ios"))]
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
+#[cfg(not(target_os = "ios"))]
+use std::fmt::Write as _;
 use std::fs::{self, DirBuilder};
+#[cfg(not(target_os = "ios"))]
+use std::io::Write as _;
 use std::io::{self, Read};
 #[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
+#[cfg(not(target_os = "ios"))]
+use chrono::Local;
 use chrono::{NaiveDate, SecondsFormat, Utc};
 use serde_json::{Value, json};
 use solstone_core_facets::{append_journal_action_log, hold_facet_trust_lock, write_news_file};
-use solstone_core_indexer_store::scan::scan_journal;
+#[cfg(not(target_os = "ios"))]
+use solstone_core_indexer_query::{
+    CountsResponse, IndexAccessError, Order, SearchHit, SearchRequest, search,
+};
+#[cfg(not(target_os = "ios"))]
+use solstone_core_indexer_store::db::reset_index;
+#[cfg(not(target_os = "ios"))]
+use solstone_core_indexer_store::scan::{
+    RescanFileStatus, rebuild_edges, rescan_file, scan_journal,
+};
 use solstone_core_journal_archive::{
     ArchiveSource, EncodeArchiveRequest, ExplicitArchiveOutputRequest,
     acquire_explicit_output_target, publish_archive,
@@ -27,10 +44,15 @@ use crate::layout::resolve_current_journal;
 const EXIT_FAILED: u8 = 1;
 const EXIT_USAGE: u8 = 64;
 const EXIT_DATA: u8 = 65;
+#[cfg(not(target_os = "ios"))]
+const EXIT_UNAVAILABLE: u8 = 69;
 const EXIT_IO: u8 = 74;
+#[cfg(not(target_os = "ios"))]
+const EXIT_TEMPFAIL: u8 = 75;
 
 pub(crate) fn dispatch(token: &str, args: &[OsString]) -> Outcome {
     match token {
+        "indexer" => indexer(args),
         "archive export" => archive_export(args),
         "archive merge" => archive_merge(args),
         "facet doctor" => facet_doctor(args),
@@ -38,6 +60,429 @@ pub(crate) fn dispatch(token: &str, args: &[OsString]) -> Outcome {
         "news write" => news_write(args),
         _ => failure(token, "unknown local operation", EXIT_USAGE),
     }
+}
+
+#[cfg(not(target_os = "ios"))]
+#[derive(Default)]
+struct IndexerQuery {
+    requested: bool,
+    text: String,
+    day: Option<String>,
+    day_from: Option<String>,
+    day_to: Option<String>,
+    facet: Option<String>,
+    agent: Option<String>,
+    stream: Option<String>,
+    limit: usize,
+    offset: usize,
+    top: usize,
+}
+
+#[cfg(not(target_os = "ios"))]
+impl IndexerQuery {
+    fn with_defaults() -> Self {
+        Self {
+            limit: 10,
+            top: 5,
+            ..Self::default()
+        }
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn indexer(_args: &[OsString]) -> Outcome {
+    failure("indexer", "unavailable on iOS", 69)
+}
+
+#[cfg(not(target_os = "ios"))]
+fn indexer(args: &[OsString]) -> Outcome {
+    const HELP: &str = "Usage: journal indexer [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH] [-q [QUERY]] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--limit N] [--offset N] [--top N]\n";
+
+    let mut reset = false;
+    let mut rebuild = false;
+    let mut rescan = false;
+    let mut rescan_full = false;
+    let mut rescan_file_path: Option<PathBuf> = None;
+    let mut query = IndexerQuery::with_defaults();
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].to_str() {
+            Some("--reset") if !reset => {
+                reset = true;
+                index += 1;
+            }
+            Some("--rebuild-edges") if !rebuild => {
+                rebuild = true;
+                index += 1;
+            }
+            Some("--rescan") if !rescan => {
+                rescan = true;
+                index += 1;
+            }
+            Some("--rescan-full") if !rescan_full => {
+                rescan_full = true;
+                index += 1;
+            }
+            Some("--rescan-file") if rescan_file_path.is_none() => {
+                let Some(path) = args.get(index + 1) else {
+                    return usage("indexer", "--rescan-file requires PATH");
+                };
+                rescan_file_path = Some(PathBuf::from(path));
+                index += 2;
+            }
+            Some("-q" | "--query") if !query.requested => {
+                query.requested = true;
+                if let Some(value) = args.get(index + 1).and_then(|value| value.to_str())
+                    && !value.starts_with('-')
+                {
+                    query.text = value.to_owned();
+                    index += 2;
+                } else {
+                    index += 1;
+                }
+            }
+            Some(value) if value.starts_with("--query=") && !query.requested => {
+                query.requested = true;
+                query.text = value["--query=".len()..].to_owned();
+                index += 1;
+            }
+            Some("--day") if query.day.is_none() => {
+                let Some(value) = utf8_value(args, index + 1) else {
+                    return usage("indexer", "--day requires DAY");
+                };
+                query.day = Some(value.to_owned());
+                index += 2;
+            }
+            Some("--day-from") if query.day_from.is_none() => {
+                let Some(value) = utf8_value(args, index + 1) else {
+                    return usage("indexer", "--day-from requires DAY");
+                };
+                query.day_from = Some(value.to_owned());
+                index += 2;
+            }
+            Some("--day-to") if query.day_to.is_none() => {
+                let Some(value) = utf8_value(args, index + 1) else {
+                    return usage("indexer", "--day-to requires DAY");
+                };
+                query.day_to = Some(value.to_owned());
+                index += 2;
+            }
+            Some("--facet") if query.facet.is_none() => {
+                let Some(value) = utf8_value(args, index + 1) else {
+                    return usage("indexer", "--facet requires FACET");
+                };
+                query.facet = Some(value.to_owned());
+                index += 2;
+            }
+            Some("--agent" | "-a") if query.agent.is_none() => {
+                let Some(value) = utf8_value(args, index + 1) else {
+                    return usage("indexer", "--agent requires AGENT");
+                };
+                query.agent = Some(value.to_owned());
+                index += 2;
+            }
+            Some("--stream") if query.stream.is_none() => {
+                let Some(value) = utf8_value(args, index + 1) else {
+                    return usage("indexer", "--stream requires STREAM");
+                };
+                query.stream = Some(value.to_owned());
+                index += 2;
+            }
+            Some("--limit") => {
+                let Some(value) = usize_value(args, index + 1) else {
+                    return usage("indexer", "--limit requires a non-negative integer");
+                };
+                query.limit = value;
+                index += 2;
+            }
+            Some("--offset") => {
+                let Some(value) = usize_value(args, index + 1) else {
+                    return usage("indexer", "--offset requires a non-negative integer");
+                };
+                query.offset = value;
+                index += 2;
+            }
+            Some("--top") => {
+                let Some(value) = usize_value(args, index + 1) else {
+                    return usage("indexer", "--top requires a non-negative integer");
+                };
+                query.top = value;
+                index += 2;
+            }
+            Some("--help" | "-h") if args.len() == 1 => return success(HELP.to_owned()),
+            _ => return usage("indexer", "unexpected or duplicate argument"),
+        }
+    }
+
+    if rescan_file_path.is_some() && (rescan || rescan_full) {
+        return usage(
+            "indexer",
+            "--rescan-file cannot be combined with --rescan or --rescan-full",
+        );
+    }
+    if !reset
+        && !rebuild
+        && !rescan
+        && !rescan_full
+        && rescan_file_path.is_none()
+        && !query.requested
+    {
+        return success(HELP.to_owned());
+    }
+
+    let journal = match journal_root("indexer") {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+
+    if reset && let Err(error) = reset_index(&journal) {
+        return failure("indexer", &format!("reset failed: {error}"), EXIT_IO);
+    }
+
+    if rebuild {
+        match rebuild_edges(&journal) {
+            Ok(report) => {
+                for warning in report.warnings {
+                    stderr.push_str(&format!("warning: {warning}\n"));
+                }
+                if report.failed > 0 {
+                    return Outcome::LocalFailure {
+                        stdout,
+                        stderr,
+                        exit: EXIT_IO,
+                    };
+                }
+            }
+            Err(error) => {
+                return failure("indexer", &format!("edge rebuild failed: {error}"), EXIT_IO);
+            }
+        }
+    }
+
+    if let Some(path) = rescan_file_path {
+        match rescan_file(&journal, &path) {
+            Ok(RescanFileStatus::Indexed { warnings }) => {
+                for warning in warnings {
+                    stderr.push_str(&format!("warning: {warning}\n"));
+                }
+            }
+            Ok(RescanFileStatus::Declined) => {
+                return failure("indexer", "unsupported file", EXIT_UNAVAILABLE);
+            }
+            Err(error) => {
+                return failure("indexer", &format!("rescan-file failed: {error}"), EXIT_IO);
+            }
+        }
+    } else if rescan || rescan_full {
+        match scan_journal(&journal, rescan_full) {
+            Ok(report) => {
+                for warning in report.warnings {
+                    stderr.push_str(&format!("warning: {warning}\n"));
+                }
+                if rescan_full && !reset && !rebuild && report.edge_rows_inserted == 0 {
+                    stdout.push_str("Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run journal indexer --rebuild-edges to force full edge re-extraction.\n");
+                }
+            }
+            Err(error) => {
+                return failure("indexer", &format!("scan failed: {error}"), EXIT_IO);
+            }
+        }
+    }
+
+    if query.requested {
+        if query.text.is_empty() {
+            if !stdout.is_empty() {
+                print!("{stdout}");
+                stdout.clear();
+            }
+            if !stderr.is_empty() {
+                eprint!("{stderr}");
+                stderr.clear();
+            }
+            if let Err((message, exit)) = run_interactive_indexer_query(&journal, &query) {
+                return failure("indexer", &message, exit);
+            }
+        } else {
+            match run_one_indexer_query(&journal, &query.text, &query) {
+                Ok(output) => stdout.push_str(&output),
+                Err((message, exit)) => {
+                    stderr.push_str(&format!("indexer: {message}\n"));
+                    return Outcome::LocalFailure {
+                        stdout,
+                        stderr,
+                        exit,
+                    };
+                }
+            }
+        }
+    }
+
+    Outcome::LocalSuccess { stdout, stderr }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn utf8_value(args: &[OsString], index: usize) -> Option<&str> {
+    args.get(index).and_then(|value| value.to_str())
+}
+
+#[cfg(not(target_os = "ios"))]
+fn usize_value(args: &[OsString], index: usize) -> Option<usize> {
+    utf8_value(args, index)?.parse().ok()
+}
+
+#[cfg(not(target_os = "ios"))]
+fn run_interactive_indexer_query(
+    journal: &Path,
+    options: &IndexerQuery,
+) -> Result<(), (String, u8)> {
+    loop {
+        print!("search> ");
+        io::stdout()
+            .flush()
+            .map_err(|error| (format!("stdout write failed: {error}"), EXIT_IO))?;
+        let mut query = String::new();
+        let read = io::stdin()
+            .read_line(&mut query)
+            .map_err(|error| (format!("stdin read failed: {error}"), EXIT_IO))?;
+        if read == 0 || query.trim().is_empty() {
+            return Ok(());
+        }
+        let output = run_one_indexer_query(journal, query.trim(), options)?;
+        print!("{output}");
+        io::stdout()
+            .flush()
+            .map_err(|error| (format!("stdout write failed: {error}"), EXIT_IO))?;
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn run_one_indexer_query(
+    journal: &Path,
+    query: &str,
+    options: &IndexerQuery,
+) -> Result<String, (String, u8)> {
+    let mut request =
+        SearchRequest::new(query, Order::Relevance).expect("relevance is a request order");
+    request.limit = options.limit;
+    request.offset = options.offset;
+    request.day = options.day.clone();
+    request.day_from = options.day_from.clone();
+    request.day_to = options.day_to.clone();
+    request.facet = options.facet.clone();
+    request.agent = options.agent.clone();
+    request.stream = options.stream.clone();
+    request.counts = true;
+    let response =
+        search(journal, &request, Local::now().date_naive()).map_err(index_query_error)?;
+    let counts = response.counts.unwrap_or_default();
+    Ok(format_indexer_query(
+        &counts,
+        &response.results,
+        options.offset,
+        options.top,
+    ))
+}
+
+#[cfg(not(target_os = "ios"))]
+fn index_query_error(error: IndexAccessError) -> (String, u8) {
+    let exit = if error.reason() == "index_locked" {
+        EXIT_TEMPFAIL
+    } else {
+        EXIT_UNAVAILABLE
+    };
+    (error.to_string(), exit)
+}
+
+#[cfg(not(target_os = "ios"))]
+fn format_indexer_query(
+    counts: &CountsResponse,
+    results: &[SearchHit],
+    offset: usize,
+    top: usize,
+) -> String {
+    let facets = top_count_column(&counts.facets, top);
+    let agents = top_count_column(&counts.agents, top);
+    let days = top_day_column(&counts.days, top);
+    let mut output = String::new();
+    writeln!(output, "Total: {} chunks\n", counts.total).expect("write string");
+    writeln!(output, "{:<20} {:<20} {:<20}", "Facet", "Agent", "Day").expect("write string");
+    writeln!(output, "{}", "-".repeat(60)).expect("write string");
+    for index in 0..facets.len().max(agents.len()).max(days.len()) {
+        writeln!(
+            output,
+            "{:<20} {:<20} {:<20}",
+            facets.get(index).map(String::as_str).unwrap_or(""),
+            agents.get(index).map(String::as_str).unwrap_or(""),
+            days.get(index).map(String::as_str).unwrap_or("")
+        )
+        .expect("write string");
+    }
+    output.push('\n');
+
+    if counts.total == 0 || results.is_empty() {
+        output.push_str("No results found\n");
+        return output;
+    }
+    writeln!(
+        output,
+        "Showing {}-{} of {} results\n",
+        offset + 1,
+        offset + results.len(),
+        counts.total
+    )
+    .expect("write string");
+    for (index, hit) in results.iter().enumerate() {
+        let text = hit.text.replace('\n', " ");
+        let mut snippet = text.chars().take(100).collect::<String>();
+        if text.chars().count() > 100 {
+            snippet.push_str("...");
+        }
+        let facet = if hit.metadata.facet.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", hit.metadata.facet)
+        };
+        writeln!(
+            output,
+            "{}. {} {}{}: {}",
+            offset + index + 1,
+            hit.metadata.day,
+            hit.metadata.agent,
+            facet,
+            snippet
+        )
+        .expect("write string");
+    }
+    output
+}
+
+#[cfg(not(target_os = "ios"))]
+fn top_count_column(values: &BTreeMap<String, u64>, top: usize) -> Vec<String> {
+    let mut entries = values.iter().collect::<Vec<_>>();
+    entries.sort_by(|left, right| right.1.cmp(left.1).then_with(|| left.0.cmp(right.0)));
+    format_count_column(entries, values.len(), top)
+}
+
+#[cfg(not(target_os = "ios"))]
+fn top_day_column(values: &BTreeMap<String, u64>, top: usize) -> Vec<String> {
+    let mut entries = values.iter().collect::<Vec<_>>();
+    entries.sort_by(|left, right| right.0.cmp(left.0));
+    format_count_column(entries, values.len(), top)
+}
+
+#[cfg(not(target_os = "ios"))]
+fn format_count_column(entries: Vec<(&String, &u64)>, total: usize, top: usize) -> Vec<String> {
+    let mut lines = entries
+        .into_iter()
+        .take(top)
+        .map(|(name, count)| format!("{name} ({count})"))
+        .collect::<Vec<_>>();
+    if total > top {
+        lines.push(format!("... +{} more", total - top));
+    }
+    lines
 }
 
 fn archive_export(args: &[OsString]) -> Outcome {

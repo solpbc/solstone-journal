@@ -182,6 +182,7 @@
         "doctor",
         "check",
         "contract",
+        "indexer",
         "notify"
       ],
       "planned_local_paths": [
@@ -209,7 +210,6 @@
         "heartbeat",
         "identity",
         "importer",
-        "indexer",
         "install-models",
         "install-provider",
         "journal-stats",

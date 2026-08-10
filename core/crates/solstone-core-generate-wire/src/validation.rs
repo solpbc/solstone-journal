@@ -35,6 +35,7 @@ pub struct ProviderResultView<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SanitizedFinishReason {
     Stop,
+    ToolCalls,
     MaxTokens,
     ContentFilter,
     Unknown,
@@ -164,6 +165,7 @@ pub fn sanitize_finish_reason(value: &str) -> SanitizedFinishReason {
     }
     match normalized.as_str() {
         "stop" => SanitizedFinishReason::Stop,
+        "tool_calls" => SanitizedFinishReason::ToolCalls,
         "length" | "max_tokens" => SanitizedFinishReason::MaxTokens,
         "content_filter" => SanitizedFinishReason::ContentFilter,
         _ => SanitizedFinishReason::Unknown,
@@ -317,6 +319,26 @@ mod tests {
             assess_provider_result(view(&journal, "useful answer", unsafe_reason, &usage)).failure,
             None
         );
+    }
+
+    #[test]
+    fn tool_calls_finish_reason_does_not_turn_blank_output_into_provider_invalid() {
+        let journal = std::env::temp_dir().join("solstone-tool-calls-finish-reason");
+        let assessment = assess_provider_result(ProviderResultView {
+            journal_path: &journal,
+            context: "test.generate",
+            model: "model",
+            text: "",
+            finish_reason: "tool_calls",
+            usage: &Value::Object(Map::new()),
+            json_output: false,
+            enforce_responsiveness: false,
+        });
+        assert_eq!(
+            sanitize_finish_reason("tool_calls"),
+            SanitizedFinishReason::ToolCalls
+        );
+        assert_eq!(assessment.failure, None);
     }
 
     #[test]

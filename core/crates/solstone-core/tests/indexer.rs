@@ -38,6 +38,16 @@ fn run_indexer(root: &Path, args: &[&str]) -> Output {
         .expect("solstone-core should execute")
 }
 
+fn run_indexer_verb(root: &Path, args: &[&str]) -> Output {
+    Command::new(bin())
+        .arg("indexer")
+        .args(args)
+        .arg("--journal")
+        .arg(root)
+        .output()
+        .expect("solstone-core should execute")
+}
+
 fn seed_edge_entity(root: &Path, entity_id: &str, name: &str) {
     write(
         root,
@@ -351,4 +361,66 @@ fn indexer_rebuild_edges_failure_exits_tempfail() {
             )
     );
     fs::remove_dir_all(root).expect("cleanup rebuild edge failure root");
+}
+
+#[test]
+fn indexer_native_mutation_verbs_write_and_report_json() {
+    let root = temp_path("mutation-verbs");
+    let conn = open_index(&root).expect("open index");
+    conn.execute(
+        "INSERT INTO chunks(content,path,day,facet,agent,stream,idx,time_bucket) VALUES (?1,?2,'','','',?3,0,'')",
+        rusqlite::params!["private text", "chronicle/private.md", "private"],
+    )
+    .expect("seed stream chunk");
+    conn.execute(
+        "INSERT INTO files(path,mtime) VALUES (?1,1)",
+        ["chronicle/private.md"],
+    )
+    .expect("seed stream file");
+    conn.execute(
+        "INSERT INTO chunks(content,path,day,facet,agent,stream,idx,time_bucket) VALUES (?1,?2,'','','','',0,'')",
+        rusqlite::params!["segment text", "20260809/default/090000_300/talents/flow.md"],
+    )
+    .expect("seed segment chunk");
+    conn.execute(
+        "INSERT INTO files(path,mtime) VALUES (?1,1)",
+        ["20260809/default/090000_300/talents/flow.md"],
+    )
+    .expect("seed segment file");
+    conn.execute(
+        "INSERT INTO edges(src,dst,kind,directed,source,path,weight) VALUES ('source','target','knows',0,'fixture','fixture.jsonl',1)",
+        [],
+    )
+    .expect("seed edge");
+    drop(conn);
+
+    let output = run_indexer_verb(&root, &["prune-stream", "private", "--json"]);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).expect("stream JSON"),
+        serde_json::json!({"chunks": 1, "files": 1})
+    );
+
+    let output = run_indexer_verb(
+        &root,
+        &["prune-paths", "20260809/default/090000_300", "--json"],
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).expect("paths JSON"),
+        serde_json::json!({"chunks": 1, "files": 1})
+    );
+
+    let output = run_indexer_verb(&root, &["fold-entity-edges", "source", "merged", "--json"]);
+    assert_eq!(output.status.code(), Some(0));
+    let fold = serde_json::from_slice::<serde_json::Value>(&output.stdout).expect("fold JSON");
+    assert_eq!(fold["rows_folded"], 1);
+    assert_eq!(fold["self_edges_dropped"], 0);
+
+    let output = run_indexer_verb(&root, &["edge-fingerprint", "--json"]);
+    assert_eq!(output.status.code(), Some(0));
+    let fingerprint =
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).expect("fingerprint JSON");
+    assert_eq!(fingerprint["fingerprint"].as_str().map(str::len), Some(64));
+    fs::remove_dir_all(root).expect("cleanup mutation verbs root");
 }

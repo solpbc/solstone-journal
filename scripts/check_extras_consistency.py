@@ -291,7 +291,11 @@ def _leaf_dependencies(
         errors.append(
             f"{label} [tool.uv.sources].solstone must be {{workspace = true}}"
         )
-    for native_name in ("solstone-core", "solstone-core-journal"):
+    for native_name in (
+        "solstone-core",
+        "solstone-core-journal",
+        "solstone-core-depict",
+    ):
         expected = sorted(_native_marker_pins(native_name, root_version or ""))
         pins = sorted(dep for dep in deps if dep.startswith(f"{native_name}=="))
         if pins != expected:

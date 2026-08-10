@@ -9,7 +9,6 @@
     { "token": "backup", "module": "solstone.think.backup_cli", "preset_argv": [], "surface": "service" },
     { "token": "importer", "module": "solstone.think.importers.cli", "preset_argv": [], "surface": "service" },
     { "token": "think", "module": "solstone.think.thinking", "preset_argv": [], "surface": "service" },
-    { "token": "indexer", "module": "solstone.think.indexer", "preset_argv": [], "surface": "service" },
     { "token": "start", "module": "solstone.think.start", "preset_argv": [], "surface": "service" },
     { "token": "supervisor", "module": "solstone.think.supervisor", "preset_argv": [], "surface": "service" },
     { "token": "schedule", "module": "solstone.think.scheduler", "preset_argv": [], "surface": "service" },
