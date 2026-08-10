@@ -86,6 +86,8 @@ DAY_CORRUPT_LABELS = "20260728"
 # (method, path, headers, why)
 PROBES: list[tuple[str, str, dict[str, str], str]] = [
     ("GET", "/app/speakers/api/state", {}, "initial state; the only normalized field"),
+    ("GET", "/app/speakers/notaday", {}, "invalid day deep link returns an empty 404"),
+    ("GET", "/app/speakers/20260731", {}, "valid day deep link serves the shell"),
     ("GET", "/app/speakers/api/grid", {}, "overview grid over a populated journal"),
     ("GET", "/app/speakers/api/index", {}, "the date_nav contract -- coverage + months"),
     ("GET", "/app/speakers/api/quality", {}, "quality counters over a 31-day journal"),
