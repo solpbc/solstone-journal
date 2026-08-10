@@ -3226,6 +3226,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "solstone-core-callosum",
+ "solstone-core-entity",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "spl-core",
