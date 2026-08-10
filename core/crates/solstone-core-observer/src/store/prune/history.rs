@@ -26,13 +26,10 @@ pub fn append_pruned_once(
 ) {
     let path = history_path(journal, prefix, day);
     let records = load_history(&path).records;
-    let latest = records
-        .iter()
-        .filter(|record| {
-            record.get("stream").and_then(Value::as_str) == Some(stream)
-                && record.get("segment").and_then(Value::as_str) == Some(segment)
-        })
-        .next_back();
+    let latest = records.iter().rfind(|record| {
+        record.get("stream").and_then(Value::as_str) == Some(stream)
+            && record.get("segment").and_then(Value::as_str) == Some(segment)
+    });
     if latest
         .and_then(|record| record.get("type"))
         .and_then(Value::as_str)
