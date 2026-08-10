@@ -2376,6 +2376,7 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-local",
+ "solstone-core-observer",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
  "solstone-core-spl",
@@ -2480,6 +2481,9 @@ dependencies = [
 [[package]]
 name = "solstone-core-cli"
 version = "1.0.22"
+dependencies = [
+ "solstone-core-observer",
+]
 
 [[package]]
 name = "solstone-core-cli-boundary"
@@ -2893,6 +2897,17 @@ dependencies = [
  "ffmpeg-next",
  "ffmpeg-sys-next",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "solstone-core-observer"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "solstone-core-facets",
+ "solstone-core-journal-io",
 ]
 
 [[package]]

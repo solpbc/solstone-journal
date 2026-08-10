@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-observer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+differential = []
+
+[[test]]
+name = "observer_list_json_differential"
+path = "tests/observer_list_json_differential.rs"
+required-features = ["differential"]
+
+[[test]]
+name = "observer_status_differential"
+path = "tests/observer_status_differential.rs"
+required-features = ["differential"]
+
+[[test]]
+name = "observer_list_human_differential"
+path = "tests/observer_list_human_differential.rs"
+required-features = ["differential"]
+
+[[test]]
+name = "observer_reconcile_dry_run_differential"
+path = "tests/observer_reconcile_dry_run_differential.rs"
+required-features = ["differential"]
+
+[[test]]
+name = "observer_increment_stat_differential"
+path = "tests/observer_increment_stat_differential.rs"
+required-features = ["differential"]
+
+[[test]]
+name = "observer_resolve_identity_differential"
+path = "tests/observer_resolve_identity_differential.rs"
+required-features = ["differential"]
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+solstone-core-facets.workspace = true
+solstone-core-journal-io.workspace = true
