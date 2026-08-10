@@ -13,7 +13,6 @@ use solstone_core_generate_wire::{
     ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
 };
 
-use crate::Usage;
 use crate::config::{RunConfig, RunInput};
 use crate::events::{BudgetLadder, BudgetStage, RecordingEventSink, RuntimeEvent};
 use crate::ladders::{ResourceLadder, TurnLadder};
@@ -22,6 +21,7 @@ use crate::provider::{ConverseProvider, ProviderResponse};
 use crate::runtime::run_cogitate;
 use crate::stuck::{HistoryEntry, StuckDetector};
 use crate::tools::{CogitateToolExecutor, ToolExecution, ToolExecutor};
+use crate::{TOOL_BINDING_SETUP_FAILED, Usage};
 
 #[derive(Default)]
 struct ScriptedProvider {
@@ -60,6 +60,8 @@ struct ScriptedTools {
 
 struct FailingLease;
 
+struct FailingSetupTools;
+
 impl SlotLease for FailingLease {
     fn yield_slot(&mut self) {}
     fn reacquire(&mut self) -> Result<(), SlotReacquireError> {
@@ -82,6 +84,16 @@ impl ToolExecutor for ScriptedTools {
                 sol_budget_exhausted: None,
                 slot_reacquire_error: None,
             })
+    }
+}
+
+impl ToolExecutor for FailingSetupTools {
+    fn offered_tools(&self, _config: &RunConfig) -> Result<Vec<ConverseToolSpec>, String> {
+        Err("unknown access_tier: invalid".to_owned())
+    }
+
+    fn execute(&mut self, _config: &RunConfig, _call: &ConverseToolCall) -> ToolExecution {
+        unreachable!("setup failure prevents dispatch")
     }
 }
 
@@ -267,10 +279,6 @@ fn final_tool_bypasses_armed_ladders() {
 #[test]
 fn unbound_dispatch_refusal_is_byte_exact_and_bound_read_executes() {
     let refusal = solstone_core_cogitate_tools::REFUSAL_TOOL_NOT_BOUND;
-    let unbound = ConverseToolCall {
-        not_offered: true,
-        ..call("read_file", json!({"path":"x"}))
-    };
     let root = temp_journal();
     fs::write(root.join("note.txt"), "bound contents").unwrap();
     let mut slot = solstone_core_cogitate_tools::NoopSlotLease;
@@ -286,7 +294,7 @@ fn unbound_dispatch_refusal_is_byte_exact_and_bound_read_executes() {
             .iter()
             .any(|tool| tool.name == "read_file")
     );
-    let denied = executor.execute(&diagnostic, &unbound);
+    let denied = executor.execute(&diagnostic, &call("read_file", json!({"path":"x"})));
     assert_eq!(denied.output, refusal);
     assert!(denied.is_error);
     let normal = RunConfig::default();
@@ -301,6 +309,137 @@ fn unbound_dispatch_refusal_is_byte_exact_and_bound_read_executes() {
     assert_eq!(allowed.output, "bound contents");
     assert!(!allowed.is_error);
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn offered_schemas_follow_every_tool_argument_spec() {
+    let root = temp_journal();
+    let mut slot = solstone_core_cogitate_tools::NoopSlotLease;
+    let executor = CogitateToolExecutor::new(&root, 200, &mut slot);
+    let config = RunConfig::default();
+    let mut schemas = executor.offered_tools(&config).unwrap();
+    schemas.extend(
+        executor
+            .offered_tools(&RunConfig {
+                expects_emit_final: true,
+                ..RunConfig::default()
+            })
+            .unwrap(),
+    );
+    for metadata in [
+        solstone_core_cogitate_tools::sol_tool(),
+        &solstone_core_cogitate_tools::READ_FILE_TOOL,
+        &solstone_core_cogitate_tools::LIST_DIRECTORY_TOOL,
+        &solstone_core_cogitate_tools::GLOB_TOOL,
+        &solstone_core_cogitate_tools::GREP_SEARCH_TOOL,
+        &solstone_core_cogitate_tools::EMIT_FINAL_TOOL,
+        &solstone_core_cogitate_tools::FINISH_TOOL,
+    ] {
+        let schema = schemas
+            .iter()
+            .find(|schema| schema.name == metadata.name)
+            .unwrap();
+        assert_eq!(schema.parameters["additionalProperties"], false);
+        let properties = schema.parameters["properties"].as_object().unwrap();
+        let required = schema.parameters["required"].as_array().unwrap();
+        let expected_required = metadata
+            .arguments
+            .iter()
+            .filter(|argument| argument.required)
+            .map(|argument| argument.name)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            required
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>(),
+            expected_required,
+            "{} required names",
+            metadata.name
+        );
+        for argument in metadata.arguments {
+            assert!(
+                properties.contains_key(argument.name),
+                "{}:{}",
+                metadata.name,
+                argument.name
+            );
+        }
+    }
+    let glob = schemas.iter().find(|schema| schema.name == "glob").unwrap();
+    assert!(glob.parameters["properties"].get("root").is_some());
+    let grep = schemas
+        .iter()
+        .find(|schema| schema.name == "grep_search")
+        .unwrap();
+    assert!(grep.parameters["properties"].get("path").is_some());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn read_limits_notices_and_grep_context_reach_the_model() {
+    let root = temp_journal();
+    fs::create_dir_all(root.join("narrow")).unwrap();
+    fs::write(
+        root.join("lines.txt"),
+        (1..=2_001)
+            .map(|line| format!("line {line}\n"))
+            .collect::<String>(),
+    )
+    .unwrap();
+    fs::write(root.join("narrow/note.txt"), "before\nneedle\nafter\n").unwrap();
+    fs::write(root.join("other.txt"), "needle elsewhere\n").unwrap();
+    let mut slot = solstone_core_cogitate_tools::NoopSlotLease;
+    let mut executor = CogitateToolExecutor::new(&root, 200, &mut slot);
+    let config = RunConfig::default();
+    let read = executor.execute(
+        &config,
+        &call("read_file", json!({"path":"lines.txt", "max_lines":1})),
+    );
+    assert!(
+        read.output.contains("line 2"),
+        "unadvertised max_lines must not lower the default cap"
+    );
+    assert!(
+        read.output
+            .contains(solstone_core_cogitate_tools::NOTICE_READ_FILE_TRUNCATED)
+    );
+    let grep = executor.execute(
+        &config,
+        &call(
+            "grep_search",
+            json!({"pattern":"needle", "path":"narrow", "context_lines":1}),
+        ),
+    );
+    assert!(grep.output.contains("narrow/note.txt:1:before"));
+    assert!(grep.output.contains("narrow/note.txt:2:needle"));
+    assert!(grep.output.contains("narrow/note.txt:3:after"));
+    assert!(
+        !grep.output.contains("other.txt"),
+        "path must narrow the search"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn tool_binding_setup_failure_is_not_a_slot_failure() {
+    let mut provider = ScriptedProvider::default();
+    let mut tools = FailingSetupTools;
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(
+        &mut provider,
+        &mut tools,
+        input(RunConfig::default()),
+        &mut sink,
+    );
+    assert_eq!(
+        outcome.reason_code.as_deref(),
+        Some(TOOL_BINDING_SETUP_FAILED)
+    );
+    assert_ne!(
+        outcome.reason_code.as_deref(),
+        Some(crate::SOL_SLOT_REACQUIRE_FAILED)
+    );
 }
 
 fn temp_journal() -> PathBuf {

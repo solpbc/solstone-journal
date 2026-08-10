@@ -72,7 +72,9 @@ impl ToolExecutor for CogitateToolExecutor<'_> {
     }
 
     fn execute(&mut self, config: &RunConfig, call: &ConverseToolCall) -> ToolExecution {
-        if call.not_offered {
+        let bound = bound_tools(&config.access_tier, config.expects_emit_final)
+            .is_ok_and(|tools| tools.iter().any(|tool| tool.name == call.name));
+        if call.not_offered || !bound {
             return ToolExecution::error(solstone_core_cogitate_tools::REFUSAL_TOOL_NOT_BOUND);
         }
         match call.name.as_str() {
@@ -93,7 +95,6 @@ impl CogitateToolExecutor<'_> {
         };
         let mut options = ReadFileOptions::default();
         options.start_line = integer(arguments, "start_line").unwrap_or(options.start_line);
-        options.max_lines = integer(arguments, "max_lines").unwrap_or(options.max_lines);
         ToolExecution::from_read(read_file(
             self.journal_root,
             path,
@@ -147,11 +148,11 @@ impl CogitateToolExecutor<'_> {
         options.file_glob = string(arguments, "file_glob").map(str::to_owned);
         options.context_lines =
             integer(arguments, "context_lines").unwrap_or(options.context_lines);
-        let root = string(arguments, "root").unwrap_or("");
+        let path = string(arguments, "path").unwrap_or("");
         ToolExecution::from_read(grep_search(
             self.journal_root,
             pattern,
-            root,
+            path,
             &options,
             Some(&mut self.read_budget),
         ))
@@ -184,10 +185,18 @@ impl CogitateToolExecutor<'_> {
 
 impl ToolExecution {
     fn from_read(result: ReadResult) -> Self {
-        let output = result
+        let mut output = result
             .refusal
             .map(str::to_owned)
             .unwrap_or_else(|| render_payload(result.payload));
+        if result.truncated
+            && let Some(notice) = result.notice
+        {
+            if !output.is_empty() {
+                output.push('\n');
+            }
+            output.push_str(notice);
+        }
         Self {
             output,
             is_error: !result.ok,
@@ -238,49 +247,35 @@ fn tool_spec(tool: &solstone_core_cogitate_tools::ToolSpec) -> ConverseToolSpec 
     ConverseToolSpec {
         name: tool.name.to_owned(),
         description: tool.description.to_owned(),
-        parameters: schema(tool.name),
+        parameters: schema(tool),
     }
 }
 
-fn schema(name: &str) -> Value {
-    let fields: &[(&str, &str, bool)] = match name {
-        "sol" => &[("command", "string", true)],
-        "read_file" => &[
-            ("path", "string", true),
-            ("start_line", "integer", false),
-            ("max_lines", "integer", false),
-        ],
-        "list_directory" => &[
-            ("path", "string", true),
-            ("recursive", "boolean", false),
-            ("include_hidden", "boolean", false),
-            ("pattern", "string", false),
-        ],
-        "glob" => &[
-            ("pattern", "string", true),
-            ("include_hidden", "boolean", false),
-        ],
-        "grep_search" => &[
-            ("pattern", "string", true),
-            ("regex", "boolean", false),
-            ("case_sensitive", "boolean", false),
-            ("file_glob", "string", false),
-            ("context_lines", "integer", false),
-            ("include_hidden", "boolean", false),
-        ],
-        "emit_final" => &[("content", "string", true)],
-        "finish" => &[("message", "string", false)],
-        _ => &[],
-    };
-    let properties = fields
+fn schema(tool: &solstone_core_cogitate_tools::ToolSpec) -> Value {
+    let properties = tool
+        .arguments
         .iter()
-        .map(|(key, ty, _)| ((*key).to_owned(), json!({"type": ty})))
+        .map(|argument| {
+            (
+                argument.name.to_owned(),
+                json!({"type": argument_type(argument.name)}),
+            )
+        })
         .collect::<Map<_, _>>();
-    let required = fields
+    let required = tool
+        .arguments
         .iter()
-        .filter_map(|(key, _, required)| required.then_some(*key))
+        .filter_map(|argument| argument.required.then_some(argument.name))
         .collect::<Vec<_>>();
     json!({"type":"object", "properties": properties, "required": required, "additionalProperties": false})
+}
+
+fn argument_type(name: &str) -> &'static str {
+    match name {
+        "recursive" | "include_hidden" | "regex" | "case_sensitive" => "boolean",
+        "start_line" | "context_lines" => "integer",
+        _ => "string",
+    }
 }
 
 fn render_payload(payload: ReadPayload) -> String {
@@ -294,7 +289,21 @@ fn render_payload(payload: ReadPayload) -> String {
             .join("\n"),
         ReadPayload::Matches(matches) => matches
             .into_iter()
-            .map(|item| format!("{}:{}:{}", item.path, item.lineno, item.line))
+            .flat_map(|item| {
+                let first_before = item.lineno.saturating_sub(item.before.len());
+                item.before
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, line)| format!("{}:{}:{}", item.path, first_before + index, line))
+                    .chain(std::iter::once(format!(
+                        "{}:{}:{}",
+                        item.path, item.lineno, item.line
+                    )))
+                    .chain(item.after.into_iter().enumerate().map(|(index, line)| {
+                        format!("{}:{}:{}", item.path, item.lineno + index + 1, line)
+                    }))
+                    .collect::<Vec<_>>()
+            })
             .collect::<Vec<_>>()
             .join("\n"),
     }

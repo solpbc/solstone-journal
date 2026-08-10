@@ -12,9 +12,10 @@
 //! ported beyond preserving that fact.
 //!
 //! Equality is defined over this crate's types, rather than SDK event classes:
-//! an action has the same tool name and JSON arguments, an observation has the
-//! same tool name and output text, and a monologue has the same text. The
-//! `agent_stuck` deterministic-failure cap is 2 in
+//! an action has the same tool name and JSON arguments, and an observation has
+//! the same tool name and output text. A monologue is three consecutive
+//! assistant-message turns with no tool call or intervening user message,
+//! regardless of message content. The `agent_stuck` deterministic-failure cap is 2 in
 //! `solstone-core-cogitate`'s `DETERMINISTIC_FAILURE_CAPS` and is enforced by a
 //! caller, not this crate. A genuine detector trip and either budget ladder's
 //! stage-3 force-stop pause share that `agent_stuck` condition, but the outcome

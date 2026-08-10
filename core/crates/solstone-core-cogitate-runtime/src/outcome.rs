@@ -11,6 +11,9 @@ use crate::Usage;
 /// Slot-reacquire failures are local admission errors, outside both the closed
 /// cogitate deterministic catalogue and generate-wire's provider vocabulary.
 pub const SOL_SLOT_REACQUIRE_FAILED: &str = "sol_slot_reacquire_failed";
+/// Tool binding fails before a conversation starts, distinct from a mid-run
+/// local slot-reacquire failure.
+pub const TOOL_BINDING_SETUP_FAILED: &str = "tool_binding_setup_failed";
 pub const NON_RESPONSIVE_REASON_CODE: &str = "non_responsive";
 
 #[derive(Clone, Debug, PartialEq)]

@@ -29,7 +29,7 @@ mod stuck;
 
 pub use config::{RunConfig, RunInput};
 pub use events::{EventSink, NoopEventSink, RecordingEventSink, RuntimeEvent};
-pub use outcome::{RunOutcome, SOL_SLOT_REACQUIRE_FAILED};
+pub use outcome::{RunOutcome, SOL_SLOT_REACQUIRE_FAILED, TOOL_BINDING_SETUP_FAILED};
 pub use provider::{ConverseProvider, ProviderResponse};
 pub use runtime::run_cogitate;
 pub use tools::{CogitateToolExecutor, ToolExecution, ToolExecutor};

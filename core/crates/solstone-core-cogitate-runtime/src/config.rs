@@ -22,6 +22,8 @@ pub struct RunConfig {
     pub cost_cap_usd: f64,
     pub context_window: Option<u64>,
     pub timeout: Duration,
+    /// Used by the caller when constructing its `ToolExecutor` (for example,
+    /// `CogitateToolExecutor::new`); `run_cogitate` does not consume it.
     pub read_call_budget: i64,
     pub model: String,
     pub correlation_id: String,
@@ -64,5 +66,7 @@ pub struct RunInput {
     pub config: RunConfig,
     pub initial_prompt: String,
     pub system_instruction: Option<String>,
+    /// Used by the caller when constructing its `ToolExecutor`; pluggable
+    /// executors need not use it and `run_cogitate` does not consume it.
     pub journal_root: PathBuf,
 }

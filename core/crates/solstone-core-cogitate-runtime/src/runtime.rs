@@ -8,7 +8,9 @@ use solstone_core_generate_wire::{ConverseMessage, ConverseToolCall};
 use crate::config::RunInput;
 use crate::events::{EventSink, RuntimeEvent};
 use crate::ladders::{LadderEvent, ResourceLadder, TurnLadder};
-use crate::outcome::{RunOutcome, SOL_SLOT_REACQUIRE_FAILED, TailState, compose_tail};
+use crate::outcome::{
+    RunOutcome, SOL_SLOT_REACQUIRE_FAILED, TOOL_BINDING_SETUP_FAILED, TailState, compose_tail,
+};
 use crate::provider::ConverseProvider;
 use crate::stuck::{HistoryEntry, StuckDetector};
 use crate::tools::ToolExecutor;
@@ -32,7 +34,7 @@ pub fn run_cogitate(
         Err(error) => {
             return terminal(
                 sink,
-                local_failure(error, Usage::default(), config.correlation_id),
+                setup_failure(error, Usage::default(), config.correlation_id),
             );
         }
     };
@@ -331,6 +333,18 @@ fn tail(
 fn local_failure(error_text: String, usage: Usage, correlation_id: String) -> RunOutcome {
     RunOutcome {
         reason_code: Some(SOL_SLOT_REACQUIRE_FAILED.to_owned()),
+        error_text: Some(error_text),
+        result: None,
+        usage,
+        raw_payload: None,
+        terminal: true,
+        correlation_id,
+        provider_failure: None,
+    }
+}
+fn setup_failure(error_text: String, usage: Usage, correlation_id: String) -> RunOutcome {
+    RunOutcome {
+        reason_code: Some(TOOL_BINDING_SETUP_FAILED.to_owned()),
         error_text: Some(error_text),
         result: None,
         usage,
