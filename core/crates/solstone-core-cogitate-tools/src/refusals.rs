@@ -16,6 +16,7 @@ pub const REFUSAL_BAD_PATH: &str = "bad_path: refused an invalid journal-relativ
 pub const REFUSAL_BAD_PATTERN: &str = "bad_pattern: refused an invalid regex pattern; fix the regex pattern or drop regex=True for a literal search.";
 pub const REFUSAL_BUDGET_EXHAUSTED: &str = "budget_exhausted: read-call budget is exhausted; stop raw reads and use the evidence already gathered or a domain command.";
 pub const REFUSAL_BROAD_ROOT: &str = "broad_root: refused a recursive scan of the whole journal, chronicle, or facets before any narrowing; scope to a day 'chronicle/YYYYMMDD', a facet tree 'facets/<facet>', the 'entities' tree, or an exact file path.";
+pub const REFUSAL_TOOL_NOT_BOUND: &str = "tool_not_bound: this tool is not available for this cogitate run; use one of the tools provided for this run or finish with the best result available.";
 pub const NOTICE_READ_FILE_TRUNCATED: &str = "read_file_truncated: hit max_lines or max_bytes; use start_line to continue or choose a smaller file.";
 pub const NOTICE_LIST_DIRECTORY_TRUNCATED: &str =
     "list_directory_truncated: hit max_entries; narrow with pattern or list a subdirectory.";

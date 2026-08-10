@@ -23,6 +23,7 @@ members = [
     "crates/solstone-core-callosum",
     "crates/solstone-core-cogitate",
     "crates/solstone-core-cogitate-tools",
+    "crates/solstone-core-cogitate-runtime",
     "crates/solstone-core-processing-record",
     "crates/solstone-core-retention",
     "crates/solstone-core-retention-cli",
@@ -94,6 +95,7 @@ solstone-core-brain = { path = "crates/solstone-core-brain" }
 solstone-core-callosum = { path = "crates/solstone-core-callosum" }
 solstone-core-system = { path = "crates/solstone-core-system" }
 solstone-core-cogitate = { path = "crates/solstone-core-cogitate" }
+solstone-core-cogitate-tools = { path = "crates/solstone-core-cogitate-tools" }
 solstone-core-processing-record = { path = "crates/solstone-core-processing-record" }
 solstone-core-retention = { path = "crates/solstone-core-retention" }
 solstone-core-retention-cli = { path = "crates/solstone-core-retention-cli" }
