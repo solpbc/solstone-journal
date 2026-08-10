@@ -50,14 +50,18 @@ fn repo_root() -> PathBuf {
     root
 }
 
-fn write_forbidden_shim(path: &Path, sentinel: &Path) {
-    let script = format!(
-        "#!/bin/sh\nprintf '%s %s\\n' \"$0\" \"$*\" >> '{}'\nexit 97\n",
-        sentinel.display()
-    );
+fn write_forbidden_shim(path: &Path) {
+    let script = "#!/bin/sh\nset -eu\nprintf '%s %s\\n' \"$0\" \"$*\" >> \"$SOLSTONE_CI_SENTINEL\"\nexit 97\n";
     fs::write(path, script).expect("write forbidden interpreter shim");
     fs::set_permissions(path, fs::Permissions::from_mode(0o755))
         .expect("make forbidden interpreter shim executable");
+}
+
+fn write_recording_cargo_shim(path: &Path) {
+    let script = "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_CI_CARGO_LOG\"\n";
+    fs::write(path, script).expect("write recording Cargo shim");
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+        .expect("make recording Cargo shim executable");
 }
 
 fn dependency_keys(manifest: &str) -> BTreeSet<String> {
@@ -197,12 +201,16 @@ fn make_ci_never_executes_forbidden_interpreters() {
     let venv_dir = temp.path.join("venv");
     let venv_bin = venv_dir.join("bin");
     let sentinel = temp.path.join("sentinel.log");
+    let cargo_log = temp.path.join("cargo.log");
     fs::create_dir(&shim_dir).expect("create shim directory");
     fs::create_dir_all(&venv_bin).expect("create poison virtualenv bin directory");
     for name in ["python", "python3", "pytest", "ruff", "uv"] {
-        write_forbidden_shim(&shim_dir.join(name), &sentinel);
-        write_forbidden_shim(&venv_bin.join(name), &sentinel);
+        write_forbidden_shim(&shim_dir.join(name));
+        write_forbidden_shim(&venv_bin.join(name));
     }
+    // The outer `make ci` invocation already performs every Cargo assertion.
+    // Record the nested traversal instead of repeating the full workspace build.
+    write_recording_cargo_shim(&shim_dir.join("cargo"));
 
     let path = format!(
         "{}:{}",
@@ -216,6 +224,8 @@ fn make_ci_never_executes_forbidden_interpreters() {
         .arg(format!("PYTHON={}", venv_bin.join("python").display()))
         .current_dir(root)
         .env("PATH", path)
+        .env("SOLSTONE_CI_SENTINEL", &sentinel)
+        .env("SOLSTONE_CI_CARGO_LOG", &cargo_log)
         .env("SOLSTONE_CI_PURITY_REENTRY", "1")
         .output()
         .expect("nested make ci should execute");
@@ -233,6 +243,18 @@ fn make_ci_never_executes_forbidden_interpreters() {
                 .is_empty(),
         "make ci invoked a forbidden interpreter: {}",
         fs::read_to_string(&sentinel).unwrap_or_default(),
+    );
+
+    let cargo_invocations = fs::read_to_string(&cargo_log)
+        .expect("nested make ci must traverse its Cargo-backed targets");
+    let cargo_subcommands = cargo_invocations
+        .lines()
+        .filter_map(|invocation| invocation.split_whitespace().next())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        cargo_subcommands,
+        vec!["fmt", "check", "clippy", "test", "check", "fetch", "deny"],
+        "nested make ci did not traverse the complete Cargo command graph:\n{cargo_invocations}",
     );
 }
 

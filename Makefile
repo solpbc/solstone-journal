@@ -297,8 +297,11 @@ check-differentials:
 	@$(REQUIRE_CARGO)
 	$(MAKE) install
 	@status=0; \
+	echo "==> cargo clippy --features differential -p solstone-core --test native_sol_coverage"; \
+	cargo clippy --manifest-path $(RUST_MANIFEST) --features differential --locked --no-deps \
+		-p solstone-core --test native_sol_coverage -- -D warnings || status=$$?; \
 	for leg in \
-		"-p solstone-core --test journal_config_client --test journal_config_corruption --test body_restore_client" \
+		"-p solstone-core --test native_sol_coverage --test journal_config_client --test journal_config_corruption --test body_restore_client" \
 		"-p solstone-core-journal-bin --test journal_process_bootstrap" \
 		"-p solstone-core-generate-wire --test responsiveness_differential --test token_log_differential" \
 		"-p solstone-core-spp-attest --test spp_attest_differential" \
@@ -738,12 +741,24 @@ install-checks: .installed
 check-release-package-inventory:
 	@python3 scripts/release_package_inventory.py
 
-# check-release-package-inventory is deliberately NOT here: it shells to python3,
-# and ci_gate_purity::make_ci_never_executes_forbidden_interpreters runs a nested
-# `make ci` with python/python3/pytest/ruff/uv shimmed to exit 97. It already runs
-# in install-checks, which depends on .installed and is where interpreter-requiring
-# checks belong. Run it directly with `make check-release-package-inventory`.
+# check-release-package-inventory is deliberately NOT here: it shells to python3.
+# It already runs in install-checks, which depends on .installed and is where
+# interpreter-requiring checks belong. Run it directly with
+# `make check-release-package-inventory`.
+CI_FORBIDDEN_INTERPRETERS := python python3 pytest ruff uv
+.PHONY: ci ci-under-poison
 ci:
+	@set -eu; \
+	shim_dir=$$(mktemp -d); \
+	trap 'rm -rf "$$shim_dir"' 0 1 2 15; \
+	for interpreter in $(CI_FORBIDDEN_INTERPRETERS); do \
+		printf '%s\n' '#!/bin/sh' 'echo "make ci invoked a forbidden interpreter: $$0 $$*" >&2' 'exit 97' > "$$shim_dir/$$interpreter"; \
+		chmod 755 "$$shim_dir/$$interpreter"; \
+	done; \
+	PATH="$$shim_dir:$$PATH" SOLSTONE_CI_POISONED=1 $(MAKE) ci-under-poison
+
+ci-under-poison:
+	@test "$$SOLSTONE_CI_POISONED" = 1 || { echo "ci-under-poison is internal; run 'make ci'" >&2; exit 2; }
 	@$(MAKE) check-rust-fmt
 	@$(MAKE) check-rust-msrv
 	@$(MAKE) check-rust-clippy

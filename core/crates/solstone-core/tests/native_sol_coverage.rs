@@ -2,7 +2,6 @@
 // Copyright (c) 2026 sol pbc
 
 use std::env;
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -14,37 +13,25 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn uv_ready(root: &Path) -> bool {
-    let output = match Command::new("uv")
-        .args(["run", "python", "--version"])
+fn require_uv(root: &Path) {
+    let output = Command::new("uv")
+        .args(["run", "--no-sync", "--frozen", "python", "--version"])
         .current_dir(root)
         .output()
-    {
-        Ok(output) => output,
-        Err(error) if error.kind() == ErrorKind::NotFound => {
-            eprintln!("skipping native sol coverage gate: uv unavailable: {error}");
-            return false;
-        }
-        Err(error) => panic!("could not probe uv: {error}"),
-    };
-    if output.status.success() {
-        return true;
-    }
-    eprintln!(
-        "skipping native sol coverage gate: uv environment unavailable: {}",
+        .unwrap_or_else(|error| panic!("native sol coverage gate requires uv: {error}"));
+    assert!(
+        output.status.success(),
+        "native sol coverage gate requires a working uv environment: {}",
         String::from_utf8_lossy(&output.stderr).trim()
     );
-    false
 }
 
 fn run_gate(script: &str, extra_args: &[&str]) {
     let root = repo_root();
-    if !uv_ready(&root) {
-        return;
-    }
+    require_uv(&root);
     let mut command = Command::new("uv");
     command
-        .args(["run", "python", script])
+        .args(["run", "--no-sync", "--frozen", "python", script])
         .args(extra_args)
         .current_dir(root);
     let output: Output = command

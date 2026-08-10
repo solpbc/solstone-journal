@@ -139,6 +139,7 @@ fn call_lines(source: &str) -> Vec<String> {
 #[test]
 fn every_slug_derivation_is_allowlisted_with_a_reason() {
     let mut seen: Vec<String> = Vec::new();
+    let mut unallowlisted: Vec<String> = Vec::new();
     for path in shipping_sources() {
         let Ok(source) = fs::read_to_string(&path) else {
             continue;
@@ -147,17 +148,23 @@ fn every_slug_derivation_is_allowlisted_with_a_reason() {
             continue;
         }
         let file = relative(&path);
-        assert!(
-            ALLOWED.iter().any(|(allowed, _)| *allowed == file),
-            "{file} derives a slug from a name and is not allowlisted.\n\
-             A slug may LABEL a new directory or be COMPARED. It may never be used to \
-             FIND an existing entity -- the directory is a label and diverges from the \
-             written identity. Resolve through the identity map or the stored link \
-             instead. If this really is a labelling or comparison use, add it to \
-             ALLOWED with the reason."
-        );
+        if !ALLOWED.iter().any(|(allowed, _)| *allowed == file) {
+            unallowlisted.push(file);
+            continue;
+        }
         seen.push(file);
     }
+    unallowlisted.sort();
+    assert!(
+        unallowlisted.is_empty(),
+        "these files derive a slug from a name and are not allowlisted:\n- {}\n\
+         A slug may LABEL a new directory or be COMPARED. It may never be used to \
+         FIND an existing entity -- the directory is a label and diverges from the \
+         written identity. Resolve through the identity map or the stored link \
+         instead. If this really is a labelling or comparison use, add it to \
+         ALLOWED with the reason.",
+        unallowlisted.join("\n- ")
+    );
     seen.sort();
     seen.dedup();
     let mut expected: Vec<String> = ALLOWED.iter().map(|(file, _)| (*file).to_owned()).collect();

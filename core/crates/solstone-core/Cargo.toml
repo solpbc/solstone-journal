@@ -17,6 +17,11 @@ workspace = true
 differential = []
 
 [[test]]
+name = "native_sol_coverage"
+path = "tests/native_sol_coverage.rs"
+required-features = ["differential"]
+
+[[test]]
 name = "journal_config_client"
 path = "tests/journal_config_client.rs"
 required-features = ["differential"]
