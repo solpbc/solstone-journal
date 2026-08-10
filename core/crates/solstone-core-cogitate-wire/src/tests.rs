@@ -20,8 +20,7 @@ use solstone_core_generate_wire::{
 use crate::{
     COGITATE_API_KEY_OVERRIDE_ENV, COGITATE_ENDPOINT_URL_OVERRIDE_ENV, CogitateRequest,
     DispatchConverseProvider, EndpointOverrides, NativeRun, REQUEST_SCHEMA, contract_source,
-    run_or_dry_run,
-    serialize_dry_run, serialize_event, serialize_event_validated, validate_event,
+    run_or_dry_run, serialize_dry_run, serialize_event, serialize_event_validated, validate_event,
 };
 
 fn request_value() -> Value {
