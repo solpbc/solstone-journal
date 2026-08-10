@@ -220,6 +220,7 @@ fn owner_path(root: &Path) -> PathBuf {
     root.join("entities/principal/owner_centroid.npz")
 }
 
+/// R14: each call re-reads the current on-disk state rather than caching a tier.
 #[test]
 fn r1_existing_file_states_suppress_and_absence_allows_provisional() {
     let temporary = TempDir::new();
@@ -301,6 +302,11 @@ fn r12_applies_row_and_embedding_floors_at_five() {
 fn r7_uses_first_chronicle_label_not_voiceprint_method() {
     let temporary = TempDir::new();
     seed_provisional_store(&temporary, "stream");
+    let mut metadata = rows(Value::String("stream".to_owned()));
+    for row in &mut metadata {
+        row["method"] = json!("user_assigned");
+    }
+    write_voiceprints(temporary.path(), &metadata);
     write_labels(
         temporary.path(),
         "stream",
@@ -412,6 +418,16 @@ fn r6_stream_resolution_requires_one_glob_match_and_never_falls_back() {
         ));
     }
 
+    let mut metadata = rows(Value::Null);
+    for row in &mut metadata {
+        row["segment_key"] = json!("missing_segment");
+    }
+    write_voiceprints(temporary.path(), &metadata);
+    assert_eq!(
+        resolve_owner_tier(temporary.path()).unwrap(),
+        OwnerTierOutcome::None(OwnerTierReason::BelowRowFloor)
+    );
+
     write_embeddings(temporary.path(), "second", &[1, 2, 3, 4, 5], (1.0, 0.0));
     write_labels(
         temporary.path(),
@@ -459,6 +475,14 @@ fn r5_dedupes_without_stream_and_uses_added_at_then_index() {
         OwnerTierOutcome::None(OwnerTierReason::BelowRowFloor)
     );
 
+    let mut metadata = rows(Value::String("present".to_owned()));
+    metadata.extend(rows(Value::String("missing".to_owned())));
+    write_voiceprints(temporary.path(), &metadata);
+    assert_eq!(
+        resolve_owner_tier(temporary.path()).unwrap(),
+        OwnerTierOutcome::None(OwnerTierReason::BelowRowFloor)
+    );
+
     let mut metadata = rows(Value::String("missing".to_owned()));
     metadata.extend(rows(Value::String("present".to_owned())));
     write_voiceprints(temporary.path(), &metadata);
@@ -484,6 +508,48 @@ fn r3_r4_match_python_integer_coercion_and_added_at_fallback() {
 
     metadata[2]["sentence_id"] = json!("not-an-int");
     write_voiceprints(temporary.path(), &metadata);
+    assert_eq!(
+        resolve_owner_tier(temporary.path()).unwrap(),
+        OwnerTierOutcome::None(OwnerTierReason::BelowRowFloor)
+    );
+
+    metadata[2]["sentence_id"] = json!("3");
+    metadata[4]["sentence_id"] = json!("5_0");
+    write_embeddings(temporary.path(), "stream", &[1, 2, 3, 4, 50], (1.0, 0.0));
+    write_labels(
+        temporary.path(),
+        "stream",
+        json!({"labels":[
+            {"sentence_id":true,"speaker":"principal","method":"user_assigned"},
+            {"sentence_id":2,"speaker":"principal","method":"user_assigned"},
+            {"sentence_id":3,"speaker":"principal","method":"user_assigned"},
+            {"sentence_id":4,"speaker":"principal","method":"user_assigned"},
+            {"sentence_id":50,"speaker":"principal","method":"user_assigned"}
+        ]}),
+    );
+    write_voiceprints(temporary.path(), &metadata);
+    assert!(matches!(
+        resolve_owner_tier(temporary.path()).unwrap(),
+        OwnerTierOutcome::Provisional(_)
+    ));
+
+    metadata[4]["sentence_id"] = json!("5__0");
+    write_voiceprints(temporary.path(), &metadata);
+    assert_eq!(
+        resolve_owner_tier(temporary.path()).unwrap(),
+        OwnerTierOutcome::None(OwnerTierReason::BelowRowFloor)
+    );
+}
+
+#[test]
+fn r9_rejects_nonmanual_user_prefixed_label_method() {
+    let temporary = TempDir::new();
+    seed_provisional_store(&temporary, "stream");
+    write_labels(
+        temporary.path(),
+        "stream",
+        labels("user_bogus", "principal"),
+    );
     assert_eq!(
         resolve_owner_tier(temporary.path()).unwrap(),
         OwnerTierOutcome::None(OwnerTierReason::BelowRowFloor)
@@ -523,7 +589,7 @@ fn r2_distinguishes_absent_and_unreadable_voiceprints() {
 }
 
 #[test]
-fn r10_label_method_replaces_metadata_method_without_leaking_metadata_fields() {
+fn r10_extra_voiceprint_metadata_does_not_block_resolution() {
     let temporary = TempDir::new();
     seed_provisional_store(&temporary, "stream");
     assert!(matches!(

@@ -205,7 +205,25 @@ fn parse_python_int(value: &Value) -> Option<i64> {
                 (value.is_finite() && value >= i64::MIN as f64 && value < i64::MAX as f64)
                     .then_some(value.trunc() as i64)
             }),
-        Value::String(value) => value.trim().parse().ok(),
+        Value::String(value) => {
+            let value = value.trim();
+            let bytes = value.as_bytes();
+            if bytes.contains(&b'_') {
+                for (index, byte) in bytes.iter().enumerate() {
+                    if *byte == b'_'
+                        && (index == 0
+                            || index + 1 == bytes.len()
+                            || !bytes[index - 1].is_ascii_digit()
+                            || !bytes[index + 1].is_ascii_digit())
+                    {
+                        return None;
+                    }
+                }
+                value.replace('_', "").parse().ok()
+            } else {
+                value.parse().ok()
+            }
+        }
         Value::Null | Value::Array(_) | Value::Object(_) => None,
     }
 }
