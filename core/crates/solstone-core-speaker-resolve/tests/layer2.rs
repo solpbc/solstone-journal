@@ -200,6 +200,29 @@ fn structural_single_speaker_branch_remains_unguarded_for_non_person() {
 }
 
 #[test]
+fn structural_single_speaker_does_not_adopt_a_written_id_slug_collision() {
+    let temporary = TempDir::new();
+    write_entity(
+        temporary.path(),
+        "new_person",
+        "Someone Else",
+        Some("Person"),
+        false,
+    );
+    let speakers = ["New Person".to_owned()];
+    let result = apply(
+        &temporary,
+        &speakers,
+        &[],
+        &journal_entities(temporary.path()),
+        &HashSet::new(),
+    )
+    .expect("apply layer 2");
+    assert_eq!(result.labels[&1].speaker, None);
+    assert!(!result.candidate_entity_ids.contains("new_person"));
+}
+
+#[test]
 fn structural_single_speaker_and_setting_branches_are_mutually_exclusive() {
     let temporary = TempDir::new();
     write_entity(

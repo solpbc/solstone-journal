@@ -9,7 +9,7 @@ use std::path::Path;
 use serde_json::json;
 use solstone_core_entity::{
     EntityResolutionEntity, EntityResolutionError, EntityResolutionOutcome, JournalEntity,
-    record_entity_resolution,
+    record_entity_resolution_from_name_evidence,
 };
 
 use crate::evidence::{
@@ -141,7 +141,7 @@ fn resolve_entity<'a>(
     name: &str,
     field: &str,
 ) -> Result<Option<&'a JournalEntity>, EntityResolutionError> {
-    let resolution = record_entity_resolution(
+    let resolution = record_entity_resolution_from_name_evidence(
         inputs.journal_root,
         name,
         resolution_entities,

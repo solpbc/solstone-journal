@@ -168,6 +168,24 @@ fn ac5_readonly_evidence_assembles_resolved_candidates_in_canonical_order() {
 }
 
 #[test]
+fn readonly_evidence_does_not_emit_a_written_id_slug_collision() {
+    let temporary = TempDir::new();
+    let segment = segment(&temporary);
+    write_entity(temporary.path(), "new_person", "Someone Else");
+    fs::write(segment.join("talents/speakers.json"), br#"["New Person"]"#).expect("write speakers");
+
+    let (evidence, gaps) = compute_segment_candidate_evidence_readonly(
+        temporary.path(),
+        "20260808",
+        "mic",
+        "120000_300",
+    )
+    .expect("compute evidence");
+    assert!(gaps.is_empty());
+    assert!(evidence.is_empty());
+}
+
+#[test]
 fn ac6_readonly_evidence_reports_all_five_gap_sources() {
     let temporary = TempDir::new();
     let segment = segment(&temporary);

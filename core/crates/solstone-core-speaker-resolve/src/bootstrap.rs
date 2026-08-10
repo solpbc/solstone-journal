@@ -10,11 +10,9 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 use solstone_core_entity::{
     EncoderIdentity, EntityResolutionEntity, EntityResolutionError, EntityResolutionOutcome,
-    JournalEntity, VoiceprintItem, create_journal_entity, load_all_journal_entities,
-    load_entity_voiceprints_file, read_journal_principal, record_entity_resolution,
-    save_voiceprints_batch,
+    JournalEntity, VoiceprintItem, load_all_journal_entities, load_entity_voiceprints_file,
+    read_journal_principal, record_entity_resolution_from_name_evidence, save_voiceprints_batch,
 };
-use solstone_core_entity_matching::entity_slug;
 use solstone_core_journal_io::{PathOrDay, day_dirs, iter_segments};
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use thiserror::Error;
@@ -81,7 +79,7 @@ pub enum BootstrapError {
     Entity(#[from] solstone_core_entity::EntityStoreError),
     #[error("entity resolution failed: {0}")]
     Resolution(#[from] EntityResolutionError),
-    #[error("entity creation failed: {0}")]
+    #[error("entity lifecycle failed: {0}")]
     Lifecycle(#[from] solstone_core_entity::EntityLifecycleError),
     #[error("owner lookup failed: {0}")]
     Owner(#[from] crate::owner_centroid::OwnerCentroidError),
@@ -132,7 +130,7 @@ pub fn bootstrap_voiceprints(
 
     let mut entities = load_all_journal_entities(&request.journal_root)?;
     entities.retain(|entity| !entity.is_blocked());
-    let mut entity_types = entities
+    let entity_types = entities
         .iter()
         .filter_map(|entity| {
             entity
@@ -156,7 +154,7 @@ pub fn bootstrap_voiceprints(
             .iter()
             .map(JournalEntity::resolution_entity)
             .collect::<Vec<_>>();
-        let resolution = record_entity_resolution(
+        let resolution = record_entity_resolution_from_name_evidence(
             &request.journal_root,
             speaker,
             &resolution_entities,
@@ -188,33 +186,10 @@ pub fn bootstrap_voiceprints(
                 continue;
             }
             EntityResolutionOutcome::NoMatch => {
-                // The slug names a NEW entity; it never looks one up. Resolution is
-                // owned by find_matching_entity, whose Slug tier is high-confidence,
-                // so a slug that matches an existing id has already returned Resolved.
-                // Re-scanning here would override that verdict and attach the owner's
-                // voiceprints to an entity the resolver declined.
-                let id = entity_slug(speaker);
-                if request.dry_run {
-                    entity_types.insert(id.clone(), "Person".to_owned());
-                    (id, speaker.clone())
-                } else {
-                    create_journal_entity(
-                        &request.journal_root,
-                        &id,
-                        speaker,
-                        "Person",
-                        None,
-                        None,
-                        &[],
-                        true,
-                        None,
-                    )?;
-                    entities = load_all_journal_entities(&request.journal_root)?;
-                    entities.retain(|entity| !entity.is_blocked());
-                    stats.entities_created += 1;
-                    entity_types.insert(id.clone(), "Person".to_owned());
-                    (id, speaker.clone())
+                if !stats.speakers_unmatched.contains(speaker) {
+                    stats.speakers_unmatched.push(speaker.clone());
                 }
+                continue;
             }
         };
         entity_names.insert(entity_id.clone(), entity_name.clone());
@@ -363,7 +338,7 @@ pub fn seed_from_imports(
                     continue;
                 };
                 if !speaker_entity_cache.contains_key(speaker_name) {
-                    let resolution = record_entity_resolution(
+                    let resolution = record_entity_resolution_from_name_evidence(
                         &request.journal_root,
                         speaker_name,
                         &resolution_entities,
@@ -524,7 +499,7 @@ fn resolve_merge_name(
     entities: &[EntityResolutionEntity],
     field: &str,
 ) -> Result<solstone_core_entity::EntityResolution, BootstrapError> {
-    Ok(record_entity_resolution(
+    Ok(record_entity_resolution_from_name_evidence(
         journal_root,
         name,
         entities,

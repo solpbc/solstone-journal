@@ -13,7 +13,8 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::{Value, json};
 use solstone_core_entity::{
-    EntityResolutionOutcome, EntityStoreError, load_all_journal_entities, record_entity_resolution,
+    EntityResolutionOutcome, EntityStoreError, load_all_journal_entities,
+    record_entity_resolution_from_name_evidence,
 };
 use solstone_core_journal_config::{ConfigLoadError, materialized_defaults, read_journal_config};
 use solstone_core_journal_io::{PathError, segment_path};
@@ -136,7 +137,7 @@ pub fn compute_segment_candidate_evidence_readonly(
         .collect::<Vec<_>>();
     let mut name_entity_ids = HashMap::new();
     for name in candidate_names {
-        match record_entity_resolution(
+        match record_entity_resolution_from_name_evidence(
             journal_root,
             &name,
             &resolution_entities,

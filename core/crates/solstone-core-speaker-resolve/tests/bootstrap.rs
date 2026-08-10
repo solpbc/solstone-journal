@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
-use solstone_core_entity::EncoderIdentity;
+use solstone_core_entity::{EncoderIdentity, VoiceprintItem, save_voiceprints_batch};
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_resolve::bootstrap::{
     BootstrapOutcome, BootstrapRequest, BootstrapStats, MergeNamesOutcome, SeedFromImportsOutcome,
@@ -361,7 +361,7 @@ fn ac19_bootstrap_keeps_ambiguous_single_speaker_names_unmatched() {
 }
 
 #[test]
-fn bootstrap_creates_a_person_for_a_genuine_no_match() {
+fn bootstrap_records_a_genuine_no_match_without_creating_a_person() {
     let temporary = Temp::new();
     entity(temporary.path(), "principal", "Principal", "Person", true);
     write_owner(temporary.path());
@@ -372,20 +372,134 @@ fn bootstrap_creates_a_person_for_a_genuine_no_match() {
     else {
         panic!("owner centroid is present");
     };
-    assert_eq!(stats.entities_created, 1);
-    assert_eq!(stats.speakers_found.get("New Person"), Some(&1));
-    let identity =
-        fs::read_to_string(temporary.path().join("entities/new_person/entity.json")).unwrap();
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&identity).unwrap()["type"],
-        "Person"
+    assert_eq!(stats.entities_created, 0);
+    assert_eq!(stats.speakers_unmatched, ["New Person"]);
+    assert!(!stats.speakers_found.contains_key("New Person"));
+    assert!(!temporary.path().join("entities/new_person").exists());
+}
+
+#[test]
+fn bootstrap_does_not_adopt_a_written_id_slug_collision() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "principal", "Principal", "Person", true);
+    entity(
+        temporary.path(),
+        "new_person",
+        "Someone Else",
+        "Person",
+        false,
     );
-    assert!(
-        temporary
-            .path()
-            .join("entities/new_person/voiceprints.npz")
-            .is_file()
+    write_owner(temporary.path());
+    save_voiceprints_batch(
+        temporary.path(),
+        "new_person",
+        &[VoiceprintItem {
+            embedding: vector(0.0, 1.0),
+            metadata: json!({
+                "day": "20260808",
+                "segment_key": "prior",
+                "source": "audio",
+                "sentence_id": 1,
+            }),
+        }],
+        &encoder(),
+    )
+    .unwrap();
+    let voiceprints = temporary.path().join("entities/new_person/voiceprints.npz");
+    let before = fs::read(&voiceprints).unwrap();
+    segment(temporary.path(), "120000_300", "New Person");
+
+    let BootstrapOutcome::Completed(stats) =
+        bootstrap_voiceprints(&request(temporary.path())).unwrap()
+    else {
+        panic!("owner centroid is present");
+    };
+
+    assert_eq!(stats.speakers_unmatched, ["New Person"]);
+    assert_eq!(stats.embeddings_saved, 0);
+    assert_eq!(fs::read(voiceprints).unwrap(), before);
+}
+
+#[test]
+fn bootstrap_dry_run_leaves_collision_and_genuine_no_match_unchanged() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "principal", "Principal", "Person", true);
+    entity(
+        temporary.path(),
+        "new_person",
+        "Someone Else",
+        "Person",
+        false,
     );
+    write_owner(temporary.path());
+    save_voiceprints_batch(
+        temporary.path(),
+        "new_person",
+        &[VoiceprintItem {
+            embedding: vector(0.0, 1.0),
+            metadata: json!({"day":"20260808","segment_key":"prior","source":"audio","sentence_id":1}),
+        }],
+        &encoder(),
+    )
+    .unwrap();
+    let voiceprints = temporary.path().join("entities/new_person/voiceprints.npz");
+    let before = fs::read(&voiceprints).unwrap();
+    segment(temporary.path(), "120000_300", "New Person");
+    segment(temporary.path(), "120500_300", "Unknown Person");
+    let mut dry_run = request(temporary.path());
+    dry_run.dry_run = true;
+
+    let BootstrapOutcome::Completed(stats) = bootstrap_voiceprints(&dry_run).unwrap() else {
+        panic!("owner centroid is present");
+    };
+
+    assert_eq!(stats.entities_created, 0);
+    assert_eq!(stats.embeddings_saved, 0);
+    assert_eq!(stats.speakers_unmatched, ["New Person", "Unknown Person"]);
+    assert!(!temporary.path().join("entities/unknown_person").exists());
+    assert_eq!(fs::read(voiceprints).unwrap(), before);
+}
+
+#[test]
+fn seed_from_imports_does_not_adopt_a_written_id_slug_collision() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "principal", "Principal", "Person", true);
+    entity(
+        temporary.path(),
+        "new_person",
+        "Someone Else",
+        "Person",
+        false,
+    );
+    write_owner(temporary.path());
+    save_voiceprints_batch(
+        temporary.path(),
+        "new_person",
+        &[VoiceprintItem {
+            embedding: vector(0.0, 1.0),
+            metadata: json!({"day":"20260808","segment_key":"prior","source":"audio","sentence_id":1}),
+        }],
+        &encoder(),
+    )
+    .unwrap();
+    let voiceprints = temporary.path().join("entities/new_person/voiceprints.npz");
+    let before = fs::read(&voiceprints).unwrap();
+    import_segment(
+        temporary.path(),
+        "import.granola",
+        "120000_300",
+        "New Person",
+    );
+
+    let SeedFromImportsOutcome::Completed(stats) =
+        seed_from_imports(&request(temporary.path())).unwrap()
+    else {
+        panic!("owner centroid is present");
+    };
+
+    assert_eq!(stats.speakers_unmatched, ["New Person"]);
+    assert_eq!(stats.embeddings_saved, 0);
+    assert_eq!(fs::read(voiceprints).unwrap(), before);
 }
 
 #[test]
@@ -422,5 +536,29 @@ fn ac18_merge_names_returns_ambiguity_for_each_side_and_ready_ids_without_mergin
             alias_entity_id: "alias".to_owned(),
             canonical_entity_id: "canonical".to_owned(),
         }
+    );
+}
+
+#[test]
+fn merge_names_does_not_adopt_a_written_id_slug_collision() {
+    let temporary = Temp::new();
+    entity(
+        temporary.path(),
+        "new_person",
+        "Someone Else",
+        "Person",
+        false,
+    );
+    entity(
+        temporary.path(),
+        "canonical",
+        "Canonical Person",
+        "Person",
+        false,
+    );
+
+    assert_eq!(
+        merge_names(temporary.path(), "New Person", "Canonical Person").unwrap(),
+        MergeNamesOutcome::AliasNotFound
     );
 }
