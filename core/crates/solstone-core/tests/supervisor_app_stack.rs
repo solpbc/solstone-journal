@@ -243,7 +243,24 @@ fn shutdown_terminates_all_app_fixture_children() {
         .map(|service| fixture_pid(&journal.marker(service)))
         .collect::<Vec<_>>();
     child.terminate();
-    assert!(pids.into_iter().all(process_is_gone));
+    // `terminate` returns as soon as the SUPERVISOR exits, which is not the
+    // same instant its children are gone: they still have to take SIGTERM,
+    // exit, and be reparented to init before `kill(pid, None)` answers ESRCH.
+    // Asserting on the instant after terminate() therefore raced, and failed
+    // 4 runs in 5. Polling does not weaken the invariant — a supervisor that
+    // never terminates its children still fails, just after a bounded wait
+    // instead of immediately.
+    for _ in 0..2_000 {
+        if pids.iter().copied().all(process_is_gone) {
+            return;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    let survivors = pids
+        .into_iter()
+        .filter(|pid| !process_is_gone(*pid))
+        .collect::<Vec<_>>();
+    panic!("app fixture children survived supervisor shutdown: {survivors:?}");
 }
 
 #[test]
