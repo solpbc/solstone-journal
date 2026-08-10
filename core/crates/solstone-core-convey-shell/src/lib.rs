@@ -262,7 +262,16 @@ async fn app_nested(Path((app, _tail)): Path<(String, String)>) -> Response {
 fn app_response(app: &str) -> Response {
     match known_app(app) {
         Some(definition) if definition.converted => not_found_response(),
-        Some(_) => Json(AppNotConverted::new(app)).into_response(),
+        // 🔴 NOT 2xx. The shell's loadBackground evaluates any response whose
+        // `ok` is true, so a refusal served at 200 was parsed as JavaScript and
+        // threw on every page load. 501 is the exact meaning -- the path is
+        // recognized, the functionality is not implemented -- and it routes
+        // every client into the failure branch it already has.
+        Some(_) => (
+            StatusCode::NOT_IMPLEMENTED,
+            Json(AppNotConverted::new(app)),
+        )
+            .into_response(),
         None => not_found_response(),
     }
 }
