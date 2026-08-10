@@ -80,13 +80,36 @@ pub async fn wipe(Extension(root): Extension<Arc<JournalRoot>>, request: Request
     }
 }
 
-pub async fn resolve_names() -> Response {
-    err(
-        "speaker_resolve_names_not_native",
-        "native speaker name-variant candidate detection is not available yet",
-        "this command requires the native similarity-scan implementation and does not perform merges",
-        StatusCode::NOT_IMPLEMENTED,
-    )
+pub async fn resolve_names(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    request: Request,
+) -> Response {
+    let body = match json_body(request).await {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
+    let scan =
+        match solstone_core_speaker_resolve::name_variant_scan::detect_name_variant_candidates(
+            &root.0,
+        ) {
+            Ok(scan) => scan,
+            Err(error) => {
+                return err(
+                    "speaker_command_failed",
+                    "I couldn't finish that speaker command.",
+                    &error.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+            }
+        };
+    let stats = solstone_core_speaker_resolve::name_variant_scan::resolve_name_variant_candidates(
+        scan,
+        &root.0,
+        commit,
+        &encoder(),
+    );
+    Json(stats).into_response()
 }
 
 pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
