@@ -1,8 +1,8 @@
 {
   "fixture": "solstone-cogitate-oracle",
-  "fixture_version": 6,
+  "fixture_version": 7,
   "generated_by": "scripts/cogitate_oracle_corpus.py",
-  "reference_commit": "1b114599e073a9e4d5f4a191576062855978d739",
+  "reference_commit": "69bce40e01ce295b7c006dbd66d5258ba14eaf23",
   "provenance": "Every vector below was produced by EXECUTING the Python reference, one call per case. Nothing here was written by hand from reading the source. CLOCK: this file is a FROZEN RECORD - it can only be regenerated while the Python reference is still importable, and it stops being reproducible when Python is cut. Tests read it; they never execute Python.",
   "preambles": {
     "runtime": {
@@ -2020,7 +2020,7 @@
       {
         "path": "escape",
         "type": "symlink",
-        "target": "/tmp/cogitate-oracle-gqbnm8od/outside/leak.txt",
+        "target": "/tmp/cogitate-oracle-3jns0_si/outside/leak.txt",
         "escapes_root": true
       },
       {
@@ -2042,7 +2042,7 @@
       {
         "path": "inside_link",
         "type": "symlink",
-        "target": "/tmp/cogitate-oracle-gqbnm8od/journal/facets/work.md",
+        "target": "/tmp/cogitate-oracle-3jns0_si/journal/facets/work.md",
         "escapes_root": false
       },
       {
@@ -5292,6 +5292,192 @@
         }
       }
     ]
+  },
+  "run_outcomes": {
+    "provenance": "MECHANICALLY EXTRACTED FROM THE AST of run_cogitate, not executed. These literals cannot be produced by calling anything -- the function needs a live provider. Weaker than the rest of this fixture, and labelled so a reader does not have to guess.",
+    "precedence_note": "The tail checks in this order: wall_clock_exceeded, then cost-force-stop / max-turns, then agent_stuck, then non_responsive, then the expects-final no_output check, then finish. Every branch except non_responsive PRESERVES a partial result; non_responsive nulls it. The ORDER is read from the source, not executed.",
+    "reason_codes_in_tail": [
+      "agent_stuck",
+      "no_output",
+      "wall_clock_exceeded"
+    ],
+    "event_payloads": [
+      {
+        "line": 1507,
+        "keys": [
+          "cli_session_id",
+          "error",
+          "event",
+          "provider",
+          "reason_code",
+          "result",
+          "terminal",
+          "ts",
+          "usage"
+        ],
+        "event": "error",
+        "reason_code": "wall_clock_exceeded",
+        "terminal": true
+      },
+      {
+        "line": 1559,
+        "keys": [
+          "cli_session_id",
+          "error",
+          "event",
+          "provider",
+          "reason_code",
+          "result",
+          "terminal",
+          "ts",
+          "usage"
+        ],
+        "event": "error",
+        "reason_code": "<var:reason_code>",
+        "terminal": true
+      },
+      {
+        "line": 1591,
+        "keys": [
+          "cli_session_id",
+          "error",
+          "event",
+          "provider",
+          "reason_code",
+          "result",
+          "terminal",
+          "ts",
+          "usage"
+        ],
+        "event": "error",
+        "reason_code": "agent_stuck",
+        "terminal": true
+      },
+      {
+        "line": 1640,
+        "keys": [
+          "cli_session_id",
+          "event",
+          "result",
+          "ts",
+          "usage"
+        ],
+        "event": "finish"
+      },
+      {
+        "line": 1685,
+        "keys": [
+          "error",
+          "event",
+          "provider",
+          "reason_code",
+          "trace"
+        ],
+        "event": "error",
+        "reason_code": "<var:reason_code>"
+      },
+      {
+        "line": 1608,
+        "keys": [
+          "cli_session_id",
+          "error",
+          "event",
+          "provider",
+          "raw",
+          "reason_code",
+          "terminal",
+          "ts",
+          "usage"
+        ],
+        "event": "error",
+        "reason_code": "<var:NON_RESPONSIVE_REASON_CODE>",
+        "terminal": true
+      },
+      {
+        "line": 1626,
+        "keys": [
+          "error",
+          "event",
+          "provider",
+          "reason_code",
+          "terminal",
+          "ts"
+        ],
+        "event": "error",
+        "reason_code": "no_output",
+        "terminal": true
+      }
+    ],
+    "error_texts": [
+      {
+        "line": 1675,
+        "text": null
+      },
+      {
+        "line": 1494,
+        "text": "wall_clock_exceeded: cogitate run exceeded its wall-clock deadline after producing {...}"
+      },
+      {
+        "line": 1499,
+        "text": {
+          "if_true": "wall_clock_exceeded: cogitate run exceeded its wall-clock deadline and was force-finished with a partial result preserved",
+          "if_false": "wall_clock_exceeded: cogitate run exceeded its wall-clock deadline and was force-finished before emitting a final result"
+        }
+      },
+      {
+        "line": 1578,
+        "text": "agent_stuck: cogitate run was interrupted/stuck after producing {...}"
+      },
+      {
+        "line": 1583,
+        "text": {
+          "if_true": "agent_stuck: cogitate run was interrupted/stuck with a partial result preserved",
+          "if_false": "agent_stuck: cogitate run was interrupted/stuck before emitting a final result"
+        }
+      },
+      {
+        "line": 1531,
+        "text": "token_budget_exceeded: cogitate run reached its per-run resource budget after producing {...}"
+      },
+      {
+        "line": 1536,
+        "text": "max_turns_exhausted: cogitate run reached its turn budget after producing {...}"
+      },
+      {
+        "line": 1541,
+        "text": {
+          "if_true": "token_budget_exceeded: cogitate run reached its per-run resource budget and was force-finished with a partial result preserved",
+          "if_false": "token_budget_exceeded: cogitate run reached its per-run resource budget and was force-finished before emitting a final result"
+        }
+      },
+      {
+        "line": 1551,
+        "text": {
+          "if_true": "max_turns_exhausted: cogitate run reached its turn budget and was force-finished with a partial result preserved",
+          "if_false": "max_turns_exhausted: cogitate run reached its turn budget and was force-finished before emitting a final result"
+        }
+      },
+      {
+        "line": 1680,
+        "text": null
+      }
+    ],
+    "budget_defaults": {
+      "max_turns": 60,
+      "max_turns_headroom": 2,
+      "run_cost_cap_usd": 1.0,
+      "cost_warn_fraction": 0.7,
+      "context_warn_fraction": 0.7,
+      "context_final_fraction": 0.78,
+      "turn_warn_fractions": [
+        0.5,
+        0.75,
+        0.9
+      ],
+      "default_read_call_budget": 200,
+      "default_timeout_seconds": 600,
+      "citation": "cogitate_policy.py:21-38"
+    }
   },
   "read_tools": [
     {

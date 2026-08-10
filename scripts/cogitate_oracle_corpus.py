@@ -55,18 +55,32 @@ from solstone.think.cogitate_contract import (  # noqa: E402
     expects_emit_final,
 )
 from solstone.think.cogitate_policy import (  # noqa: E402
+    CONTEXT_FINAL_FRAC,
+    CONTEXT_WARN_FRAC,
+    COST_WARN_FRAC,
+    DEFAULT_RUN_COST_CAP_USD,
     DETERMINISTIC_FAILURE_CAPS,
     DETERMINISTIC_FAILURE_REASON_CODES,
+    MAX_TURNS,
+    MAX_TURNS_HEADROOM,
+    TURN_WARN_FRACS,
     CogitatePolicy,
     failure_capped,
     resolve_read_scope,
 )
 
 SDK_INJECTED_ACTION_PROPERTIES = frozenset({"kind"})
+MAX_TURNS_VALUE = MAX_TURNS
+MAX_TURNS_HEADROOM_VALUE = MAX_TURNS_HEADROOM
+RUN_COST_CAP_VALUE = DEFAULT_RUN_COST_CAP_USD
+COST_WARN_VALUE = COST_WARN_FRAC
+CONTEXT_WARN_VALUE = CONTEXT_WARN_FRAC
+CONTEXT_FINAL_VALUE = CONTEXT_FINAL_FRAC
+TURN_WARN_VALUE = TURN_WARN_FRACS
 DEFAULT_READ_CALL_BUDGET_VALUE = 200
 
 FIXTURE_NAME = "solstone-cogitate-oracle"
-FIXTURE_VERSION = 6
+FIXTURE_VERSION = 7
 
 # Spelled out so the corpus below never depends on how a shell or an editor
 # treats a backslash. Several vectors exist specifically to pin backslash
@@ -1016,6 +1030,124 @@ def build_bed(root: Path) -> None:
     many.mkdir()
     for i in range(250):
         (many / f"f{i:03d}.txt").write_text("x\n", encoding="utf-8")
+
+
+def build_run_outcomes() -> dict[str, Any]:
+    """The terminal-outcome vocabulary of a cogitate run.
+
+    ⚠ PROVENANCE: unlike every other block in this file, these strings are
+    EXTRACTED FROM THE AST, not produced by executing anything. They are literals
+    inside `run_cogitate`, which cannot be called without a live provider. That is
+    a weaker guarantee than the rest of this fixture and is labelled as such --
+    but it is still mechanical, and it is not retyping.
+    """
+    import ast
+
+    source_path = REPO_ROOT / "solstone" / "think" / "providers" / "openhands.py"
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+
+    target = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "run_cogitate":
+            target = node
+            break
+    if target is None:
+        raise RuntimeError("run_cogitate not found; the reference moved")
+
+    # dict literals carrying a reason_code or event key are the event payloads
+    events: list[dict[str, Any]] = []
+    for node in ast.walk(target):
+        if not isinstance(node, ast.Dict):
+            continue
+        keys = [
+            k.value
+            for k in node.keys
+            if isinstance(k, ast.Constant) and isinstance(k.value, str)
+        ]
+        if "reason_code" not in keys and "event" not in keys:
+            continue
+        row: dict[str, Any] = {"line": node.lineno, "keys": sorted(keys)}
+        for key_node, value_node in zip(node.keys, node.values):
+            if not (
+                isinstance(key_node, ast.Constant)
+                and key_node.value in ("event", "reason_code", "terminal")
+            ):
+                continue
+            if isinstance(value_node, ast.Constant):
+                row[key_node.value] = value_node.value
+            elif isinstance(value_node, ast.IfExp):
+                row[key_node.value] = "<conditional>"
+            elif isinstance(value_node, ast.Name):
+                row[key_node.value] = f"<var:{value_node.id}>"
+        events.append(row)
+
+    # the error texts: string constants and f-string prefixes assigned to
+    # error_text inside the function
+    texts: list[dict[str, Any]] = []
+    for node in ast.walk(target):
+        if not isinstance(node, ast.Assign):
+            continue
+        names = [n.id for n in node.targets if isinstance(n, ast.Name)]
+        if "error_text" not in names:
+            continue
+
+        def render(value: ast.AST) -> Any:
+            if isinstance(value, ast.Constant):
+                return value.value
+            if isinstance(value, ast.JoinedStr):
+                out = []
+                for part in value.values:
+                    if isinstance(part, ast.Constant):
+                        out.append(part.value)
+                    else:
+                        out.append("{...}")
+                return "".join(out)
+            if isinstance(value, ast.IfExp):
+                return {
+                    "if_true": render(value.body),
+                    "if_false": render(value.orelse),
+                }
+            return None
+
+        texts.append({"line": node.lineno, "text": render(node.value)})
+
+    return {
+        "provenance": (
+            "MECHANICALLY EXTRACTED FROM THE AST of run_cogitate, not executed. "
+            "These literals cannot be produced by calling anything -- the "
+            "function needs a live provider. Weaker than the rest of this "
+            "fixture, and labelled so a reader does not have to guess."
+        ),
+        "precedence_note": (
+            "The tail checks in this order: wall_clock_exceeded, then "
+            "cost-force-stop / max-turns, then agent_stuck, then non_responsive, "
+            "then the expects-final no_output check, then finish. Every branch "
+            "except non_responsive PRESERVES a partial result; non_responsive "
+            "nulls it. The ORDER is read from the source, not executed."
+        ),
+        "reason_codes_in_tail": sorted(
+            {
+                row["reason_code"]
+                for row in events
+                if isinstance(row.get("reason_code"), str)
+                and not row["reason_code"].startswith("<")
+            }
+        ),
+        "event_payloads": events,
+        "error_texts": texts,
+        "budget_defaults": {
+            "max_turns": MAX_TURNS_VALUE,
+            "max_turns_headroom": MAX_TURNS_HEADROOM_VALUE,
+            "run_cost_cap_usd": RUN_COST_CAP_VALUE,
+            "cost_warn_fraction": COST_WARN_VALUE,
+            "context_warn_fraction": CONTEXT_WARN_VALUE,
+            "context_final_fraction": CONTEXT_FINAL_VALUE,
+            "turn_warn_fractions": list(TURN_WARN_VALUE),
+            "default_read_call_budget": DEFAULT_READ_CALL_BUDGET_VALUE,
+            "default_timeout_seconds": 600,
+            "citation": "cogitate_policy.py:21-38",
+        },
+    }
 
 
 def build_sol_execution() -> dict[str, Any]:
@@ -2164,6 +2296,7 @@ def main() -> int:
         "prompt_assembly": build_prompt_vectors(),
         "tool_surface": build_tool_surface(),
         "sol_execution": build_sol_execution(),
+        "run_outcomes": build_run_outcomes(),
         "read_tools": read_tool_rows,
         "read_tool_limits": {
             "read_file_max_lines": crt.READ_FILE_MAX_LINES,
