@@ -1,8 +1,8 @@
 {
   "fixture": "solstone-cogitate-oracle",
-  "fixture_version": 3,
+  "fixture_version": 4,
   "generated_by": "scripts/cogitate_oracle_corpus.py",
-  "reference_commit": "28f3973cb012ef444f0767f6a6c81f254a32ef40",
+  "reference_commit": "a8945dc0adb7bdbe8f92f29e5b9634715ad827ca",
   "provenance": "Every vector below was produced by EXECUTING the Python reference, one call per case. Nothing here was written by hand from reading the source. CLOCK: this file is a FROZEN RECORD - it can only be regenerated while the Python reference is still importable, and it stops being reproducible when Python is cut. Tests read it; they never execute Python.",
   "preambles": {
     "runtime": {
@@ -2020,7 +2020,7 @@
       {
         "path": "escape",
         "type": "symlink",
-        "target": "/tmp/cogitate-oracle-28l0_e85/outside/leak.txt",
+        "target": "/tmp/cogitate-oracle-uze_q2my/outside/leak.txt",
         "escapes_root": true
       },
       {
@@ -2042,7 +2042,7 @@
       {
         "path": "inside_link",
         "type": "symlink",
-        "target": "/tmp/cogitate-oracle-28l0_e85/journal/facets/work.md",
+        "target": "/tmp/cogitate-oracle-uze_q2my/journal/facets/work.md",
         "escapes_root": false
       },
       {
@@ -4576,6 +4576,352 @@
         "sha256": "0f8a011b66bc6a9fa51ecf7d67049d9236e61db8df81cf7c99813e2809bbc8d4"
       }
     ]
+  },
+  "prompt_assembly": [
+    {
+      "id": "prompt_plain",
+      "config": {
+        "prompt": "do the thing"
+      },
+      "sol_tool_name": "sol",
+      "diagnostic": false,
+      "citation": "cli.py:138-144 - preamble, then the talent instruction, then the hint",
+      "expect": {
+        "prompt_body": "do the thing",
+        "system_instruction": "You are a solstone cogitate talent running inside the live system. This runtime contract is authoritative; do not assume capabilities beyond it.\n\n- Reach the journal through the `sol` command line: emit `sol` / `sol call ...` command lines, e.g. sol(command=\"sol call activities list\"). The runtime runs each call as a single parsed command-line invocation, not an arbitrary shell. The `sol` CLI is the one authoritative path between you and the journal; never assume direct database, socket, or HTTP access.\n- The approved host command families are identity, health, talent; run them directly as `journal <family> ...` through the same tool, never prefixed with `sol` or `sol call`.\n- Write journal state only through approved journal commands (`sol call ...` verbs for the data you own, plus approved direct host commands when a prompt names one). There is no general-purpose write tool; persistence that does not go through an approved journal command will not happen.\n- Raw evidence reads use the provided read tools (`read_file`, `list_directory`, `glob`, `grep_search`) for bounded journal evidence: a denylist (`.git`, caches, credentials, virtualenvs, `node_modules`) and per-call / per-run caps apply. Recursive scans must not start at the journal root, `chronicle/`, or `facets/`: `glob` and directory `grep_search` must start below them, as must recursive `list_directory`. Prefer `sol call` reads; use raw reads only for evidence that has no `sol` command.\n- Finalize as your run is configured: call `emit_final` when an `emit_final` tool is present; otherwise finish through the built-in finish tool; a side-effect-only talent that has already persisted its work finishes quietly with no output.\n- Do not assume tools or context you were not given: no other bare `journal ...` family, no raw `cat` / `ls` / shell file reads, no shell composition (pipes, redirects, chaining, or command substitution; one command per call), no auto-loaded skills or AGENTS.md / CLAUDE.md, no browser or web access, no MCP tools, and no delegating to sub-agents. Any guidance file is a normal journal file with no special status; this contract is your source of truth.\n\nWhen the instructions tell you to run `sol ...` or approved `journal ...` commands, invoke them through the `sol` tool. Normal journal access uses `sol` / `sol call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `sol(command=\"sol call activities list\")`, `sol(command=\"journal identity partner\")`. Do not invent or call a tool literally named `sol`, and do not rewrite approved `journal` commands as `sol call journal ...`."
+      }
+    },
+    {
+      "id": "prompt_with_system_instruction",
+      "config": {
+        "prompt": "body",
+        "system_instruction": "TALENT RULES"
+      },
+      "sol_tool_name": "sol",
+      "diagnostic": false,
+      "citation": "cli.py:138-144 - the talent's own instruction sits BETWEEN preamble and hint",
+      "expect": {
+        "prompt_body": "body",
+        "system_instruction": "You are a solstone cogitate talent running inside the live system. This runtime contract is authoritative; do not assume capabilities beyond it.\n\n- Reach the journal through the `sol` command line: emit `sol` / `sol call ...` command lines, e.g. sol(command=\"sol call activities list\"). The runtime runs each call as a single parsed command-line invocation, not an arbitrary shell. The `sol` CLI is the one authoritative path between you and the journal; never assume direct database, socket, or HTTP access.\n- The approved host command families are identity, health, talent; run them directly as `journal <family> ...` through the same tool, never prefixed with `sol` or `sol call`.\n- Write journal state only through approved journal commands (`sol call ...` verbs for the data you own, plus approved direct host commands when a prompt names one). There is no general-purpose write tool; persistence that does not go through an approved journal command will not happen.\n- Raw evidence reads use the provided read tools (`read_file`, `list_directory`, `glob`, `grep_search`) for bounded journal evidence: a denylist (`.git`, caches, credentials, virtualenvs, `node_modules`) and per-call / per-run caps apply. Recursive scans must not start at the journal root, `chronicle/`, or `facets/`: `glob` and directory `grep_search` must start below them, as must recursive `list_directory`. Prefer `sol call` reads; use raw reads only for evidence that has no `sol` command.\n- Finalize as your run is configured: call `emit_final` when an `emit_final` tool is present; otherwise finish through the built-in finish tool; a side-effect-only talent that has already persisted its work finishes quietly with no output.\n- Do not assume tools or context you were not given: no other bare `journal ...` family, no raw `cat` / `ls` / shell file reads, no shell composition (pipes, redirects, chaining, or command substitution; one command per call), no auto-loaded skills or AGENTS.md / CLAUDE.md, no browser or web access, no MCP tools, and no delegating to sub-agents. Any guidance file is a normal journal file with no special status; this contract is your source of truth.\n\nTALENT RULES\n\nWhen the instructions tell you to run `sol ...` or approved `journal ...` commands, invoke them through the `sol` tool. Normal journal access uses `sol` / `sol call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `sol(command=\"sol call activities list\")`, `sol(command=\"journal identity partner\")`. Do not invent or call a tool literally named `sol`, and do not rewrite approved `journal` commands as `sol call journal ...`."
+      }
+    },
+    {
+      "id": "prompt_no_sol_tool",
+      "config": {
+        "prompt": "body",
+        "system_instruction": "TALENT RULES"
+      },
+      "sol_tool_name": null,
+      "diagnostic": false,
+      "citation": "cli.py:138 - no sol tool name means no preamble and no hint at all",
+      "expect": {
+        "prompt_body": "body",
+        "system_instruction": "TALENT RULES"
+      }
+    },
+    {
+      "id": "prompt_diagnostic",
+      "config": {
+        "prompt": "body",
+        "system_instruction": "TALENT RULES"
+      },
+      "sol_tool_name": "sol",
+      "diagnostic": true,
+      "citation": "cli.py:133-137 - diagnostic swaps in the OTHER preamble and drops the hint",
+      "expect": {
+        "prompt_body": "body",
+        "system_instruction": "You are a bounded solstone diagnostic cogitate check. This runtime contract is authoritative; do not assume capabilities beyond it.\n\n- The only available tool is `emit_final`. Call it exactly once with a concise, non-empty diagnostic result.\n- No journal access is available: no `sol` command line, no read tools, no submit tools, no shell commands, no browser or web access, and no delegating to sub-agents.\n- Do not claim that you read or changed journal state. This check returns its final content in memory only.\n\nTALENT RULES"
+      }
+    },
+    {
+      "id": "prompt_read_scope_hint",
+      "config": {
+        "prompt": "body",
+        "read_scope": [
+          "chronicle/20260809"
+        ]
+      },
+      "sol_tool_name": "sol",
+      "diagnostic": false,
+      "citation": "cli.py:145-153 - read_scope appends a prose hint; it is its ONLY live effect",
+      "expect": {
+        "prompt_body": "body",
+        "system_instruction": "You are a solstone cogitate talent running inside the live system. This runtime contract is authoritative; do not assume capabilities beyond it.\n\n- Reach the journal through the `sol` command line: emit `sol` / `sol call ...` command lines, e.g. sol(command=\"sol call activities list\"). The runtime runs each call as a single parsed command-line invocation, not an arbitrary shell. The `sol` CLI is the one authoritative path between you and the journal; never assume direct database, socket, or HTTP access.\n- The approved host command families are identity, health, talent; run them directly as `journal <family> ...` through the same tool, never prefixed with `sol` or `sol call`.\n- Write journal state only through approved journal commands (`sol call ...` verbs for the data you own, plus approved direct host commands when a prompt names one). There is no general-purpose write tool; persistence that does not go through an approved journal command will not happen.\n- Raw evidence reads use the provided read tools (`read_file`, `list_directory`, `glob`, `grep_search`) for bounded journal evidence: a denylist (`.git`, caches, credentials, virtualenvs, `node_modules`) and per-call / per-run caps apply. Recursive scans must not start at the journal root, `chronicle/`, or `facets/`: `glob` and directory `grep_search` must start below them, as must recursive `list_directory`. Prefer `sol call` reads; use raw reads only for evidence that has no `sol` command.\n- Finalize as your run is configured: call `emit_final` when an `emit_final` tool is present; otherwise finish through the built-in finish tool; a side-effect-only talent that has already persisted its work finishes quietly with no output.\n- Do not assume tools or context you were not given: no other bare `journal ...` family, no raw `cat` / `ls` / shell file reads, no shell composition (pipes, redirects, chaining, or command substitution; one command per call), no auto-loaded skills or AGENTS.md / CLAUDE.md, no browser or web access, no MCP tools, and no delegating to sub-agents. Any guidance file is a normal journal file with no special status; this contract is your source of truth.\n\nWhen the instructions tell you to run `sol ...` or approved `journal ...` commands, invoke them through the `sol` tool. Normal journal access uses `sol` / `sol call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `sol(command=\"sol call activities list\")`, `sol(command=\"journal identity partner\")`. Do not invent or call a tool literally named `sol`, and do not rewrite approved `journal` commands as `sol call journal ...`.\n\nLimit filesystem reads to today's segment dir unless the task explicitly requires broader history. If you need broader scope, state what and why in your reasoning."
+      }
+    },
+    {
+      "id": "prompt_read_scope_hint_diagnostic",
+      "config": {
+        "prompt": "body",
+        "read_scope": [
+          "chronicle/20260809"
+        ]
+      },
+      "sol_tool_name": "sol",
+      "diagnostic": true,
+      "citation": "cli.py:145 - diagnostic suppresses the read_scope hint",
+      "expect": {
+        "prompt_body": "body",
+        "system_instruction": "You are a bounded solstone diagnostic cogitate check. This runtime contract is authoritative; do not assume capabilities beyond it.\n\n- The only available tool is `emit_final`. Call it exactly once with a concise, non-empty diagnostic result.\n- No journal access is available: no `sol` command line, no read tools, no submit tools, no shell commands, no browser or web access, and no delegating to sub-agents.\n- Do not claim that you read or changed journal state. This check returns its final content in memory only."
+      }
+    },
+    {
+      "id": "prompt_join_order",
+      "config": {
+        "transcript": "TRANSCRIPT",
+        "extra_context": "EXTRA",
+        "user_instruction": "USER",
+        "prompt": "PROMPT"
+      },
+      "sol_tool_name": "sol",
+      "diagnostic": false,
+      "citation": "cli.py:126-131 - the body joins these four keys in THIS order with blank lines",
+      "expect": {
+        "prompt_body": "TRANSCRIPT\n\nEXTRA\n\nUSER\n\nPROMPT",
+        "system_instruction": "You are a solstone cogitate talent running inside the live system. This runtime contract is authoritative; do not assume capabilities beyond it.\n\n- Reach the journal through the `sol` command line: emit `sol` / `sol call ...` command lines, e.g. sol(command=\"sol call activities list\"). The runtime runs each call as a single parsed command-line invocation, not an arbitrary shell. The `sol` CLI is the one authoritative path between you and the journal; never assume direct database, socket, or HTTP access.\n- The approved host command families are identity, health, talent; run them directly as `journal <family> ...` through the same tool, never prefixed with `sol` or `sol call`.\n- Write journal state only through approved journal commands (`sol call ...` verbs for the data you own, plus approved direct host commands when a prompt names one). There is no general-purpose write tool; persistence that does not go through an approved journal command will not happen.\n- Raw evidence reads use the provided read tools (`read_file`, `list_directory`, `glob`, `grep_search`) for bounded journal evidence: a denylist (`.git`, caches, credentials, virtualenvs, `node_modules`) and per-call / per-run caps apply. Recursive scans must not start at the journal root, `chronicle/`, or `facets/`: `glob` and directory `grep_search` must start below them, as must recursive `list_directory`. Prefer `sol call` reads; use raw reads only for evidence that has no `sol` command.\n- Finalize as your run is configured: call `emit_final` when an `emit_final` tool is present; otherwise finish through the built-in finish tool; a side-effect-only talent that has already persisted its work finishes quietly with no output.\n- Do not assume tools or context you were not given: no other bare `journal ...` family, no raw `cat` / `ls` / shell file reads, no shell composition (pipes, redirects, chaining, or command substitution; one command per call), no auto-loaded skills or AGENTS.md / CLAUDE.md, no browser or web access, no MCP tools, and no delegating to sub-agents. Any guidance file is a normal journal file with no special status; this contract is your source of truth.\n\nWhen the instructions tell you to run `sol ...` or approved `journal ...` commands, invoke them through the `sol` tool. Normal journal access uses `sol` / `sol call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `sol(command=\"sol call activities list\")`, `sol(command=\"journal identity partner\")`. Do not invent or call a tool literally named `sol`, and do not rewrite approved `journal` commands as `sol call journal ...`."
+      }
+    },
+    {
+      "id": "prompt_empty",
+      "config": {},
+      "sol_tool_name": "sol",
+      "diagnostic": false,
+      "citation": "cli.py:126-131 - no parts means an empty body",
+      "expect": {
+        "prompt_body": "",
+        "system_instruction": "You are a solstone cogitate talent running inside the live system. This runtime contract is authoritative; do not assume capabilities beyond it.\n\n- Reach the journal through the `sol` command line: emit `sol` / `sol call ...` command lines, e.g. sol(command=\"sol call activities list\"). The runtime runs each call as a single parsed command-line invocation, not an arbitrary shell. The `sol` CLI is the one authoritative path between you and the journal; never assume direct database, socket, or HTTP access.\n- The approved host command families are identity, health, talent; run them directly as `journal <family> ...` through the same tool, never prefixed with `sol` or `sol call`.\n- Write journal state only through approved journal commands (`sol call ...` verbs for the data you own, plus approved direct host commands when a prompt names one). There is no general-purpose write tool; persistence that does not go through an approved journal command will not happen.\n- Raw evidence reads use the provided read tools (`read_file`, `list_directory`, `glob`, `grep_search`) for bounded journal evidence: a denylist (`.git`, caches, credentials, virtualenvs, `node_modules`) and per-call / per-run caps apply. Recursive scans must not start at the journal root, `chronicle/`, or `facets/`: `glob` and directory `grep_search` must start below them, as must recursive `list_directory`. Prefer `sol call` reads; use raw reads only for evidence that has no `sol` command.\n- Finalize as your run is configured: call `emit_final` when an `emit_final` tool is present; otherwise finish through the built-in finish tool; a side-effect-only talent that has already persisted its work finishes quietly with no output.\n- Do not assume tools or context you were not given: no other bare `journal ...` family, no raw `cat` / `ls` / shell file reads, no shell composition (pipes, redirects, chaining, or command substitution; one command per call), no auto-loaded skills or AGENTS.md / CLAUDE.md, no browser or web access, no MCP tools, and no delegating to sub-agents. Any guidance file is a normal journal file with no special status; this contract is your source of truth.\n\nWhen the instructions tell you to run `sol ...` or approved `journal ...` commands, invoke them through the `sol` tool. Normal journal access uses `sol` / `sol call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `sol(command=\"sol call activities list\")`, `sol(command=\"journal identity partner\")`. Do not invent or call a tool literally named `sol`, and do not rewrite approved `journal` commands as `sol call journal ...`."
+      }
+    },
+    {
+      "id": "sol_tool_hint",
+      "config": {},
+      "sol_tool_name": "sol",
+      "diagnostic": false,
+      "citation": "cli.py:89-102 - the routing hint, derived from the approved family list",
+      "expect": {
+        "prompt_body": null,
+        "system_instruction": "When the instructions tell you to run `sol ...` or approved `journal ...` commands, invoke them through the `sol` tool. Normal journal access uses `sol` / `sol call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `sol(command=\"sol call activities list\")`, `sol(command=\"journal identity partner\")`. Do not invent or call a tool literally named `sol`, and do not rewrite approved `journal` commands as `sol call journal ...`."
+      }
+    }
+  ],
+  "tool_surface": {
+    "note": "Every name and description here reaches the model and is therefore contract. Built by calling the real constructors, not copied. NO WRITE TOOL APPEARS IN ANY TIER'S SET, and that structural fact -- not the dead policy gate -- is what makes 'there is no general-purpose write tool' true.",
+    "tools": {
+      "sol": {
+        "name": "sol",
+        "description": "Run one policy-approved command directly, without a shell: use `sol`/`sol call ...` for normal journal access; run approved `journal` families (identity, health, talent) directly as `journal <family> ...`, never prefixed with `sol` or `sol call`.",
+        "action_properties": {
+          "command": {
+            "type": "string",
+            "description": "Single command-line invocation to run directly, without a shell: use `sol`/`sol call ...` for normal journal access; run approved `journal` families (identity, health, talent) directly as `journal <family> ...`, never prefixed with `sol` or `sol call`."
+          },
+          "kind": {
+            "type": "string",
+            "description": null
+          }
+        },
+        "action_required": [
+          "command"
+        ]
+      },
+      "emit_final": {
+        "name": "emit_final",
+        "description": "Terminal tool for ending the run with its final result.\n\nCall this tool exactly once when the run is complete. The content argument is the final result the system should carry forward.\n\nArtifact talents: when the talent produces an artifact, content is the complete artifact body itself, such as the markdown or text to save. Do not wrap it in commentary or describe the artifact instead of providing it.\n\nAction talents: when the talent's work was done through side-effecting commands during the run, content is a concise, signal-carrying record of what changed, what was found, and why. Do not emit a bare \"done\".\n\nNo-op: call this tool even when no changes were needed. Emit a brief result explaining why nothing changed rather than ending silently.\n",
+        "action_properties": {
+          "content": {
+            "type": "string",
+            "description": "Final result to carry forward: artifact body or concise record of what changed."
+          },
+          "kind": {
+            "type": "string",
+            "description": null
+          }
+        },
+        "action_required": [
+          "content"
+        ]
+      },
+      "read_file": {
+        "name": "read_file",
+        "description": "Bounded UTF-8 journal text read. Paths are journal-root-relative; use start_line to paginate a truncation.",
+        "action_properties": {
+          "kind": {
+            "type": "string",
+            "description": null
+          },
+          "path": {
+            "type": "string",
+            "description": "Journal-root-relative text file path to read."
+          },
+          "start_line": {
+            "type": "integer",
+            "description": "1-based line number to start reading from."
+          }
+        },
+        "action_required": [
+          "path"
+        ]
+      },
+      "list_directory": {
+        "name": "list_directory",
+        "description": "Journal-root-relative directory listing. Supports recursive walks and fnmatch patterns on entry names.",
+        "action_properties": {
+          "include_hidden": {
+            "type": "boolean",
+            "description": "Include hidden entries that are not otherwise denied."
+          },
+          "kind": {
+            "type": "string",
+            "description": null
+          },
+          "path": {
+            "type": "string",
+            "description": "Journal-root-relative directory path."
+          },
+          "pattern": {
+            "type": null,
+            "description": "Optional fnmatch pattern applied to each entry name."
+          },
+          "recursive": {
+            "type": "boolean",
+            "description": "Walk recursively below the directory."
+          }
+        },
+        "action_required": []
+      },
+      "glob": {
+        "name": "glob",
+        "description": "Recursive fnmatch over journal paths where '*' spans '/'; root narrows the search.",
+        "action_properties": {
+          "include_hidden": {
+            "type": "boolean",
+            "description": "Include hidden entries that are not otherwise denied."
+          },
+          "kind": {
+            "type": "string",
+            "description": null
+          },
+          "pattern": {
+            "type": "string",
+            "description": "Recursive fnmatch pattern over journal-relative paths."
+          },
+          "root": {
+            "type": "string",
+            "description": "Journal-root-relative directory to narrow."
+          }
+        },
+        "action_required": [
+          "pattern"
+        ]
+      },
+      "grep_search": {
+        "name": "grep_search",
+        "description": "Literal-or-regex search of journal text files. Narrow with path and file_glob; context_lines adds surrounding lines.",
+        "action_properties": {
+          "case_sensitive": {
+            "type": "boolean",
+            "description": "Use case-sensitive matching."
+          },
+          "context_lines": {
+            "type": "integer",
+            "description": "Number of surrounding lines to include for each match."
+          },
+          "file_glob": {
+            "type": null,
+            "description": "Optional fnmatch pattern over journal-relative file paths."
+          },
+          "include_hidden": {
+            "type": "boolean",
+            "description": "Include hidden entries that are not otherwise denied."
+          },
+          "kind": {
+            "type": "string",
+            "description": null
+          },
+          "path": {
+            "type": "string",
+            "description": "Journal-root-relative file or directory."
+          },
+          "pattern": {
+            "type": "string",
+            "description": "Literal text or regex pattern to search for."
+          },
+          "regex": {
+            "type": "boolean",
+            "description": "Treat pattern as a regular expression."
+          }
+        },
+        "action_required": [
+          "pattern"
+        ]
+      }
+    },
+    "tier_bindings": {
+      "normal": {
+        "sol": true,
+        "reads": true,
+        "submit": false,
+        "model_tools_excluding_finalization": [
+          "glob",
+          "grep_search",
+          "list_directory",
+          "read_file",
+          "sol"
+        ]
+      },
+      "system-read": {
+        "sol": true,
+        "reads": true,
+        "submit": false,
+        "model_tools_excluding_finalization": [
+          "glob",
+          "grep_search",
+          "list_directory",
+          "read_file",
+          "sol"
+        ]
+      },
+      "outbound": {
+        "sol": true,
+        "reads": false,
+        "submit": true,
+        "model_tools_excluding_finalization": [
+          "sol"
+        ]
+      },
+      "synthesis": {
+        "sol": true,
+        "reads": false,
+        "submit": false,
+        "model_tools_excluding_finalization": [
+          "sol"
+        ]
+      },
+      "diagnostic": {
+        "sol": false,
+        "reads": false,
+        "submit": false,
+        "model_tools_excluding_finalization": []
+      }
+    },
+    "finalization_binding": {
+      "emit_final": {
+        "bound": [
+          "emit_final"
+        ],
+        "default_tools": [],
+        "citation": "openhands.py:1373-1380 - emit_final REPLACES the built-in finish tool"
+      },
+      "finish": {
+        "bound": [],
+        "default_tools": [
+          "FinishTool"
+        ],
+        "citation": "openhands.py:1373 - otherwise the built-in finish tool is included"
+      }
+    },
+    "emit_final_description_source": "Terminal tool for ending the run with its final result.\n\nCall this tool exactly once when the run is complete. The content argument is the final result the system should carry forward.\n\nArtifact talents: when the talent produces an artifact, content is the complete artifact body itself, such as the markdown or text to save. Do not wrap it in commentary or describe the artifact instead of providing it.\n\nAction talents: when the talent's work was done through side-effecting commands during the run, content is a concise, signal-carrying record of what changed, what was found, and why. Do not emit a bare \"done\".\n\nNo-op: call this tool even when no changes were needed. Emit a brief result explaining why nothing changed rather than ending silently.\n",
+    "citation": "openhands.py:1347-1380 - the whole binding sequence"
   },
   "read_tools": [
     {

@@ -62,8 +62,10 @@ from solstone.think.cogitate_policy import (  # noqa: E402
     resolve_read_scope,
 )
 
+DEFAULT_READ_CALL_BUDGET_VALUE = 200
+
 FIXTURE_NAME = "solstone-cogitate-oracle"
-FIXTURE_VERSION = 3
+FIXTURE_VERSION = 4
 
 # Spelled out so the corpus below never depends on how a shell or an editor
 # treats a backslash. Several vectors exist specifically to pin backslash
@@ -1015,6 +1017,206 @@ def build_bed(root: Path) -> None:
         (many / f"f{i:03d}.txt").write_text("x\n", encoding="utf-8")
 
 
+def build_prompt_vectors() -> list[dict[str, Any]]:
+    """The assembled system instruction is model-visible contract.
+
+    ``assemble_prompt`` decides what heads a talent's system prompt, in what
+    order, and what the tool-routing hint says. A rebuild that gets the ORDER
+    wrong produces a prompt that still contains every part and still reads
+    plausibly, which no other check would notice.
+    """
+    from solstone.think.providers.cli import assemble_prompt, cogitate_sol_tool_hint
+
+    cases: list[tuple[str, dict[str, Any], str | None, bool, str]] = [
+        (
+            "prompt_plain",
+            {"prompt": "do the thing"},
+            "sol",
+            False,
+            "cli.py:138-144 - preamble, then the talent instruction, then the hint",
+        ),
+        (
+            "prompt_with_system_instruction",
+            {"prompt": "body", "system_instruction": "TALENT RULES"},
+            "sol",
+            False,
+            "cli.py:138-144 - the talent's own instruction sits BETWEEN preamble and hint",
+        ),
+        (
+            "prompt_no_sol_tool",
+            {"prompt": "body", "system_instruction": "TALENT RULES"},
+            None,
+            False,
+            "cli.py:138 - no sol tool name means no preamble and no hint at all",
+        ),
+        (
+            "prompt_diagnostic",
+            {"prompt": "body", "system_instruction": "TALENT RULES"},
+            "sol",
+            True,
+            "cli.py:133-137 - diagnostic swaps in the OTHER preamble and drops the hint",
+        ),
+        (
+            "prompt_read_scope_hint",
+            {"prompt": "body", "read_scope": ["chronicle/20260809"]},
+            "sol",
+            False,
+            "cli.py:145-153 - read_scope appends a prose hint; it is its ONLY live effect",
+        ),
+        (
+            "prompt_read_scope_hint_diagnostic",
+            {"prompt": "body", "read_scope": ["chronicle/20260809"]},
+            "sol",
+            True,
+            "cli.py:145 - diagnostic suppresses the read_scope hint",
+        ),
+        (
+            "prompt_join_order",
+            {
+                "transcript": "TRANSCRIPT",
+                "extra_context": "EXTRA",
+                "user_instruction": "USER",
+                "prompt": "PROMPT",
+            },
+            "sol",
+            False,
+            "cli.py:126-131 - the body joins these four keys in THIS order with blank lines",
+        ),
+        (
+            "prompt_empty",
+            {},
+            "sol",
+            False,
+            "cli.py:126-131 - no parts means an empty body",
+        ),
+    ]
+    rows: list[dict[str, Any]] = []
+    for case_id, config, tool_name, diagnostic, citation in cases:
+        body, system = assemble_prompt(
+            config, sol_tool_name=tool_name, diagnostic=diagnostic
+        )
+        rows.append(
+            {
+                "id": case_id,
+                "config": config,
+                "sol_tool_name": tool_name,
+                "diagnostic": diagnostic,
+                "citation": citation,
+                "expect": {"prompt_body": body, "system_instruction": system},
+            }
+        )
+    rows.append(
+        {
+            "id": "sol_tool_hint",
+            "config": {},
+            "sol_tool_name": "sol",
+            "diagnostic": False,
+            "citation": "cli.py:89-102 - the routing hint, derived from the approved family list",
+            "expect": {
+                "prompt_body": None,
+                "system_instruction": cogitate_sol_tool_hint("sol"),
+            },
+        }
+    )
+    return rows
+
+
+def build_tool_surface() -> dict[str, Any]:
+    """What the model is actually handed, per access tier.
+
+    Every string here reaches the model and is therefore contract: a tool's
+    name, its description, and its argument's description. They are BUILT by
+    calling the real constructors rather than copied, because two of them
+    interpolate the approved journal-command list and a pasted copy would stop
+    tracking it.
+    """
+    from solstone.think.cogitate_policy import CogitatePolicy
+    from solstone.think.providers.emit_final_tool import (
+        TOOL_DESCRIPTION as EMIT_FINAL_DESCRIPTION,
+    )
+    from solstone.think.providers.emit_final_tool import build_emit_final_tools
+    from solstone.think.providers.openhands import _build_sol_tools
+    from solstone.think.providers.read_tools import build_read_tools
+    from solstone.think.providers.shared import JSONEventCallback
+
+    def describe(tool: Any) -> dict[str, Any]:
+        row: dict[str, Any] = {"name": tool.name, "description": tool.description}
+        schema = None
+        action_type = getattr(tool, "action_type", None)
+        if action_type is not None and hasattr(action_type, "model_json_schema"):
+            schema = action_type.model_json_schema()
+        if schema:
+            row["action_properties"] = {
+                key: {
+                    "type": value.get("type"),
+                    "description": value.get("description"),
+                }
+                for key, value in sorted(schema.get("properties", {}).items())
+            }
+            row["action_required"] = sorted(schema.get("required", []))
+        return row
+
+    policy = CogitatePolicy(allowed_roots=[Path("/journal")], access_tier="normal")
+    sol_tools, _executor = _build_sol_tools(
+        policy=policy,
+        callback=JSONEventCallback(None),
+        read_call_budget=DEFAULT_READ_CALL_BUDGET_VALUE,
+    )
+    read_tools = build_read_tools(journal=Path("/journal"), read_call_budget=200)
+    emit_final_tools = build_emit_final_tools()
+
+    tools = {
+        "sol": describe(sol_tools[0]),
+        "emit_final": describe(emit_final_tools[0]),
+    }
+    for tool in read_tools:
+        tools[tool.name] = describe(tool)
+
+    # Which tools each tier is HANDED. This is the binding contract: it is
+    # decided by the capability table plus the finalization rule, and today it
+    # lives only as two `if` statements in the runtime.
+    bindings: dict[str, Any] = {}
+    for tier in COGITATE_ACCESS_TIERS:
+        caps = capabilities_for_access_tier(tier)
+        names: list[str] = []
+        if caps.sol:
+            names.append("sol")
+        if caps.reads:
+            names.extend(sorted(COGITATE_READ_TOOL_NAMES))
+        bindings[tier] = {
+            "sol": caps.sol,
+            "reads": caps.reads,
+            "submit": caps.submit,
+            "model_tools_excluding_finalization": sorted(names),
+        }
+    finalization = {
+        "emit_final": {
+            "bound": ["emit_final"],
+            "default_tools": [],
+            "citation": "openhands.py:1373-1380 - emit_final REPLACES the built-in finish tool",
+        },
+        "finish": {
+            "bound": [],
+            "default_tools": ["FinishTool"],
+            "citation": "openhands.py:1373 - otherwise the built-in finish tool is included",
+        },
+    }
+    return {
+        "note": (
+            "Every name and description here reaches the model and is therefore "
+            "contract. Built by calling the real constructors, not copied. "
+            "NO WRITE TOOL APPEARS IN ANY TIER'S SET, and that structural fact -- "
+            "not the dead policy gate -- is what makes 'there is no "
+            "general-purpose write tool' true."
+        ),
+        "tools": tools,
+        "tier_bindings": bindings,
+        "finalization_binding": finalization,
+        "emit_final_description_source": EMIT_FINAL_DESCRIPTION,
+        "citation": "openhands.py:1347-1380 - the whole binding sequence",
+    }
+
+
 def build_bed_manifest(root: Path) -> list[dict[str, Any]]:
     """A sorted census of the bed, so a reimplementation can prove its own bed
     matches BEFORE it asserts a single vector.
@@ -1543,7 +1745,33 @@ def reference_commit() -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument(
+        "--rethaw-preambles",
+        action="store_true",
+        help=(
+            "Re-derive the preamble block from live source instead of carrying "
+            "forward the frozen one. Only correct before any divergence has been "
+            "recorded against it."
+        ),
+    )
     args = parser.parse_args()
+
+    # A section is only FROZEN if the generator refuses to re-derive it.
+    #
+    # The preamble block records what the reference said BEFORE the runtime
+    # preamble was deliberately corrected. Re-deriving it from live source would
+    # silently overwrite the "before" side of a recorded divergence and make the
+    # divergence itself disappear -- which is exactly the rot the ledger exists
+    # to prevent. Discovered the hard way: a regeneration did precisely this and
+    # the ledger's stale-entry check caught it.
+    carried_preambles: dict[str, Any] | None = None
+    if args.out.exists() and not args.rethaw_preambles:
+        try:
+            existing = json.loads(args.out.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+        if isinstance(existing.get("preambles"), dict):
+            carried_preambles = existing["preambles"]
 
     tmp = Path(tempfile.mkdtemp(prefix="cogitate-oracle-"))
     try:
@@ -1578,7 +1806,9 @@ def main() -> int:
             "stops being reproducible when Python is cut. Tests read it; they "
             "never execute Python."
         ),
-        "preambles": {
+        "preambles": carried_preambles
+        if carried_preambles is not None
+        else {
             "runtime": {
                 "algorithm": "sha256",
                 "encoding": "utf-8",
@@ -1625,6 +1855,8 @@ def main() -> int:
             "root_relative": True,
             "entries": bed_manifest,
         },
+        "prompt_assembly": build_prompt_vectors(),
+        "tool_surface": build_tool_surface(),
         "read_tools": read_tool_rows,
         "read_tool_limits": {
             "read_file_max_lines": crt.READ_FILE_MAX_LINES,
@@ -1659,6 +1891,7 @@ def main() -> int:
         "expects_emit_final": len(doc["expects_emit_final"]),
         "failure_caps": len(doc["failure_caps"]),
         "read_tools": len(doc["read_tools"]),
+        "prompt_assembly": len(doc["prompt_assembly"]),
     }
     total = sum(counts.values())
     print(f"wrote {args.out} ({args.out.stat().st_size} bytes)")
