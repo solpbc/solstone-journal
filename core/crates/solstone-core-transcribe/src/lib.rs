@@ -5,6 +5,8 @@
 
 // Config extraction is implemented before the stage machine that consumes it.
 #[allow(dead_code)]
+mod audio;
+#[allow(dead_code)]
 mod config;
 mod model_assets;
 // The standalone CLI is introduced in a later step; retain the completed
@@ -46,6 +48,18 @@ pub enum TranscribeError {
     RawInputRemove { path: PathBuf, detail: String },
     /// A terminal writer request could not be serialized.
     TerminalRequest { detail: String },
+    /// The VAD helper binary is unavailable from this installation.
+    VadBinary { detail: String },
+    /// Preparing or invoking the VAD helper failed temporarily.
+    VadTemporary { detail: String },
+    /// The VAD helper returned a typed non-success outcome.
+    VadHelper {
+        helper_exit_code: i32,
+        reason: String,
+        detail: String,
+    },
+    /// The VAD helper violated its JSON wire contract.
+    VadResponse { detail: String },
 }
 
 impl TranscribeError {
@@ -73,8 +87,17 @@ impl TranscribeError {
             Self::OrphanNpzRemove { .. }
             | Self::TerminalPayload { .. }
             | Self::RawInputRemove { .. }
-            | Self::TerminalRequest { .. } => 75,
-            Self::TerminalWrite { .. } | Self::InputMetadata { .. } => 1,
+            | Self::TerminalRequest { .. }
+            | Self::VadTemporary { .. } => 75,
+            Self::VadBinary { .. } => 78,
+            Self::VadHelper {
+                helper_exit_code, ..
+            } => match helper_exit_code {
+                69 => 69,
+                75 => 75,
+                _ => 1,
+            },
+            Self::TerminalWrite { .. } | Self::InputMetadata { .. } | Self::VadResponse { .. } => 1,
         }
     }
 }
@@ -132,6 +155,12 @@ impl std::fmt::Display for TranscribeError {
                     "could not serialize terminal writer request: {detail}"
                 )
             }
+            Self::VadBinary { detail }
+            | Self::VadTemporary { detail }
+            | Self::VadResponse { detail } => formatter.write_str(detail),
+            Self::VadHelper { reason, detail, .. } => {
+                write!(formatter, "VAD helper {reason}: {detail}")
+            }
         }
     }
 }
@@ -146,7 +175,11 @@ impl std::error::Error for TranscribeError {
             | Self::TerminalWrite { .. }
             | Self::InputMetadata { .. }
             | Self::RawInputRemove { .. }
-            | Self::TerminalRequest { .. } => None,
+            | Self::TerminalRequest { .. }
+            | Self::VadBinary { .. }
+            | Self::VadTemporary { .. }
+            | Self::VadHelper { .. }
+            | Self::VadResponse { .. } => None,
         }
     }
 }
