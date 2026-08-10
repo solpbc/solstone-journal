@@ -45,6 +45,11 @@ name = "observer_resolve_identity_differential"
 path = "tests/observer_resolve_identity_differential.rs"
 required-features = ["differential"]
 
+[[test]]
+name = "observer_prune_dry_run_differential"
+path = "tests/observer_prune_dry_run_differential.rs"
+required-features = ["differential"]
+
 [dependencies]
 chrono.workspace = true
 serde.workspace = true
