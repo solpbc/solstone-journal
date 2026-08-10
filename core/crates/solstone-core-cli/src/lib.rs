@@ -14,7 +14,7 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|create> ...\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [--journal PATH]\n"
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n"
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
@@ -118,6 +118,10 @@ pub struct ConveyOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SupervisorOptions {
     pub journal_override: Option<OsString>,
+    pub no_convey: bool,
+    pub no_cortex: bool,
+    pub no_spl: bool,
+    pub remote: Option<OsString>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -562,19 +566,60 @@ fn grab_parse_error(message: &str) -> GrabCommand {
 
 fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, UsageError> {
     let mut journal_override = None;
+    let mut no_convey = false;
+    let mut no_cortex = false;
+    let mut no_spl = false;
+    let mut remote = None;
     let mut index = 0;
     while index < args.len() {
-        if args[index] != OsStr::new("--journal") || journal_override.is_some() {
-            return Err(UsageError);
+        match args[index].as_os_str() {
+            value if value == OsStr::new("--no-convey") => {
+                if no_convey {
+                    return Err(UsageError);
+                }
+                no_convey = true;
+                index += 1;
+            }
+            value if value == OsStr::new("--no-cortex") => {
+                if no_cortex {
+                    return Err(UsageError);
+                }
+                no_cortex = true;
+                index += 1;
+            }
+            value if value == OsStr::new("--no-spl") => {
+                if no_spl {
+                    return Err(UsageError);
+                }
+                no_spl = true;
+                index += 1;
+            }
+            value if value == OsStr::new("--journal") || value == OsStr::new("--remote") => {
+                let destination = if value == OsStr::new("--journal") {
+                    &mut journal_override
+                } else {
+                    &mut remote
+                };
+                if destination.is_some() {
+                    return Err(UsageError);
+                }
+                let value = args.get(index + 1).ok_or(UsageError)?;
+                if value.to_string_lossy().starts_with("--") {
+                    return Err(UsageError);
+                }
+                *destination = Some(value.clone());
+                index += 2;
+            }
+            _ => return Err(UsageError),
         }
-        let value = args.get(index + 1).ok_or(UsageError)?;
-        if value == OsStr::new("--journal") {
-            return Err(UsageError);
-        }
-        journal_override = Some(value.clone());
-        index += 2;
     }
-    Ok(SupervisorOptions { journal_override })
+    Ok(SupervisorOptions {
+        journal_override,
+        no_convey,
+        no_cortex,
+        no_spl,
+        remote,
+    })
 }
 
 fn parse_transfer(args: &[OsString]) -> Result<TransferCommand, UsageError> {
@@ -3339,6 +3384,10 @@ mod tests {
             evaluate_args(&args(&["supervisor", "--journal", "/tmp/journal"])),
             Ok(Command::Supervisor(SupervisorOptions {
                 journal_override: Some(OsString::from("/tmp/journal")),
+                no_convey: false,
+                no_cortex: false,
+                no_spl: false,
+                remote: None,
             }))
         );
         assert_eq!(
@@ -3349,5 +3398,44 @@ mod tests {
             evaluate_args(&args(&["supervisor", "--wat"])),
             Err(UsageError)
         );
+    }
+
+    #[test]
+    fn parses_supervisor_stack_options_in_any_order() {
+        assert_eq!(
+            evaluate_args(&args(&[
+                "supervisor",
+                "--no-spl",
+                "--remote",
+                "https://example.test",
+                "--journal",
+                "/tmp/journal",
+                "--no-convey",
+                "--no-cortex",
+            ])),
+            Ok(Command::Supervisor(SupervisorOptions {
+                journal_override: Some(OsString::from("/tmp/journal")),
+                no_convey: true,
+                no_cortex: true,
+                no_spl: true,
+                remote: Some(OsString::from("https://example.test")),
+            }))
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_supervisor_stack_options() {
+        for values in [
+            &["supervisor", "--no-convey", "--no-convey"][..],
+            &["supervisor", "--no-cortex", "--no-cortex"][..],
+            &["supervisor", "--no-spl", "--no-spl"][..],
+            &["supervisor", "--remote"][..],
+            &["supervisor", "--remote", "--no-spl"][..],
+            &["supervisor", "--remote", "a", "--remote", "b"][..],
+            &["supervisor", "--journal", "/a", "--journal", "/b"][..],
+            &["supervisor", "--unknown"][..],
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+        }
     }
 }

@@ -5,6 +5,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use solstone_core_system::lifecycle::ShutdownDriver;
+use solstone_core_system::process::SERVICE_SHUTDOWN_TIMEOUT;
 use solstone_core_system::provider_runtime::{
     ProviderStopCleanupRequest, ReasonCode, RuntimePhase,
 };
@@ -25,6 +26,22 @@ impl ShutdownDriver for SupervisorShutdownDriver<'_> {
         }
     }
     fn stop_children(&mut self, cap: Option<Duration>) {
+        for app in &mut self.state.app_processes {
+            app.enabled = false;
+            app.restart_at = None;
+        }
+        for app in self.state.app_processes.iter_mut().rev() {
+            let Some(process) = app.process.as_mut() else {
+                continue;
+            };
+            if let Err(error) = process.terminate(SERVICE_SHUTDOWN_TIMEOUT) {
+                eprintln!(
+                    "supervisor: failed to terminate {} during shutdown: {error}",
+                    app.service.as_str()
+                );
+            }
+            process.cleanup();
+        }
         request_stop(&mut self.state.local.state, &self.state.local.processes);
         request_stop(
             &mut self.state.parakeet.state,

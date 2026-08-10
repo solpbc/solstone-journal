@@ -735,6 +735,7 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
             reference: primary.clone(),
             day: dispatch.submission.day.clone(),
             sink: inner.options.process_sink.clone(),
+            environment: Default::default(),
         },
     );
     let Ok(process) = process else {

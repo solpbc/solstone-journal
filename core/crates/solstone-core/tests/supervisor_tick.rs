@@ -40,6 +40,16 @@ struct ChildGuard(Child);
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         if self.0.try_wait().ok().flatten().is_none() {
+            let _ = nix::sys::signal::kill(
+                nix::unistd::Pid::from_raw(self.0.id() as i32),
+                nix::sys::signal::Signal::SIGTERM,
+            );
+            for _ in 0..1_000 {
+                if self.0.try_wait().ok().flatten().is_some() {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
             let _ = self.0.kill();
         }
         let _ = self.0.wait();
@@ -59,6 +69,11 @@ fn start(journal: &TempJournal, cap_seconds: Option<u64>) -> ChildGuard {
         env!("CARGO_BIN_EXE_solstone-system-test-child"),
     );
     command.env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1");
+    command.env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1");
+    command.env(
+        "SOLSTONE_SUPERVISOR_APP_BINARY",
+        env!("CARGO_BIN_EXE_solstone-system-test-child"),
+    );
     if let Some(cap_seconds) = cap_seconds {
         command.env(
             "SOLSTONE_SUPERVISOR_TASK_CAP_SECONDS",

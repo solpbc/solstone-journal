@@ -74,16 +74,27 @@ fn main() {
                 .expect("milliseconds")
                 .parse()
                 .expect("milliseconds integer");
-            std::fs::write(ready_path, "ready").expect("signal readiness");
+            std::fs::write(ready_path, fixture_ready_marker()).expect("signal readiness");
             std::thread::sleep(Duration::from_millis(millis));
         }
         "continuous-lines" => {
             let ready_path = args.next().expect("ready path");
-            std::fs::write(ready_path, "ready").expect("signal readiness");
+            std::fs::write(ready_path, fixture_ready_marker()).expect("signal readiness");
             for index in 0_u64.. {
                 println!("line-{index}");
                 std::io::stdout().flush().expect("flush stdout");
                 std::thread::sleep(Duration::from_millis(2));
+            }
+        }
+        "restart-once" => {
+            let state_path = args.next().expect("state path");
+            if std::path::Path::new(&state_path).exists() {
+                loop {
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+            } else {
+                std::fs::write(&state_path, "exited").expect("record fixture exit");
+                std::process::exit(1);
             }
         }
         "block-term-count" => {
@@ -144,6 +155,14 @@ fn main() {
         }
         _ => std::process::exit(64),
     }
+}
+
+fn fixture_ready_marker() -> String {
+    format!(
+        "ready:{}:{}",
+        std::env::var("SOL_SUPERVISOR_SPAWNED").unwrap_or_default(),
+        std::process::id()
+    )
 }
 
 fn launch_stub(mut args: impl Iterator<Item = String>) {

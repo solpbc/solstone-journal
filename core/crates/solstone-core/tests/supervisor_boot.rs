@@ -39,6 +39,16 @@ struct ChildGuard(Child);
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         if self.0.try_wait().ok().flatten().is_none() {
+            let _ = nix::sys::signal::kill(
+                nix::unistd::Pid::from_raw(self.0.id() as i32),
+                nix::sys::signal::Signal::SIGTERM,
+            );
+            for _ in 0..1_000 {
+                if self.0.try_wait().ok().flatten().is_some() {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
             let _ = self.0.kill();
         }
         let _ = self.0.wait();
@@ -58,6 +68,11 @@ fn start(journal: &TempJournal) -> ChildGuard {
                 env!("CARGO_BIN_EXE_solstone-system-test-child"),
             )
             .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
+            .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+            .env(
+                "SOLSTONE_SUPERVISOR_APP_BINARY",
+                env!("CARGO_BIN_EXE_solstone-system-test-child"),
+            )
             .spawn()
             .expect("supervisor starts"),
     )
@@ -156,6 +171,11 @@ fn ac7_second_instance_refused_first_survives() {
             env!("CARGO_BIN_EXE_solstone-system-test-child"),
         )
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env(
+            "SOLSTONE_SUPERVISOR_APP_BINARY",
+            env!("CARGO_BIN_EXE_solstone-system-test-child"),
+        )
         .status()
         .expect("second supervisor runs");
     assert_eq!(second.code(), Some(75));
@@ -178,6 +198,11 @@ fn ac8_live_foreign_writer_blocks_boot_without_pid() {
             env!("CARGO_BIN_EXE_solstone-system-test-child"),
         )
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env(
+            "SOLSTONE_SUPERVISOR_APP_BINARY",
+            env!("CARGO_BIN_EXE_solstone-system-test-child"),
+        )
         .status()
         .expect("supervisor runs");
     assert_eq!(status.code(), Some(1));

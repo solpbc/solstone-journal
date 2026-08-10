@@ -53,6 +53,16 @@ struct ChildGuard(Child);
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         if self.0.try_wait().ok().flatten().is_none() {
+            let _ = nix::sys::signal::kill(
+                nix::unistd::Pid::from_raw(self.0.id() as i32),
+                nix::sys::signal::Signal::SIGTERM,
+            );
+            for _ in 0..1_000 {
+                if self.0.try_wait().ok().flatten().is_some() {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
             let _ = self.0.kill();
         }
         let _ = self.0.wait();
@@ -69,6 +79,8 @@ fn ac12_local_and_parakeet_reconcile_real_fixture_cycles() {
             .arg(&journal.0)
             .env("SOLSTONE_LOCAL_BINARY", fixture)
             .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
+            .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+            .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture)
             .env("SOLSTONE_PARAKEET_BINARY", fixture)
             .env("SOLSTONE_PARAKEET_MODEL", "test-ready")
             .stdin(Stdio::null())

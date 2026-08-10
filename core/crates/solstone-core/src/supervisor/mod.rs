@@ -13,7 +13,7 @@ use solstone_core_cli::SupervisorOptions;
 use solstone_core_system::lifecycle::{LifecycleError, SupervisorLifecycle};
 
 pub(crate) fn run(options: SupervisorOptions) -> ExitCode {
-    let journal = match super::resolve_journal_config_path(options.journal_override) {
+    let journal = match super::resolve_journal_config_path(options.journal_override.clone()) {
         Ok(line) => line.path,
         Err(error) => {
             super::eprint_journal_path_error(error);
@@ -42,7 +42,7 @@ pub(crate) fn run(options: SupervisorOptions) -> ExitCode {
             return ExitCode::from(super::EXIT_TEMPFAIL);
         }
     };
-    let outcome = match runtime.block_on(runtime::boot_and_tick(lifecycle, journal)) {
+    let outcome = match runtime.block_on(runtime::boot_and_tick(lifecycle, journal, options)) {
         Ok(outcome) => outcome,
         Err(error) => {
             eprintln!("supervisor failed to boot: {error}");

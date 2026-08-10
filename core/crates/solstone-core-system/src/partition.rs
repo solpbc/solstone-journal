@@ -29,7 +29,11 @@ pub fn partition_for(cmd: &[String]) -> Partition {
         return Partition::new("unknown");
     };
 
-    if matches!(first.as_str(), "sol" | "journal") && cmd.len() > 1 {
+    let first_name = Path::new(first)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(first);
+    if matches!(first_name, "sol" | "journal" | "solstone-core-journal") && cmd.len() > 1 {
         let mut name = cmd[1].clone();
         if name == "think" {
             // Order is a contract: the first matching mode wins.
@@ -62,4 +66,22 @@ pub fn partition_for(cmd: &[String]) -> Partition {
             .unwrap_or(first)
             .to_owned(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Partition, partition_for};
+
+    #[test]
+    fn resolves_service_partition_for_sibling_journal_binary() {
+        assert_eq!(
+            partition_for(&[
+                "/foo/bar/solstone-core-journal".to_owned(),
+                "convey".to_owned(),
+                "--port".to_owned(),
+                "5015".to_owned(),
+            ]),
+            Partition::new("convey")
+        );
+    }
 }

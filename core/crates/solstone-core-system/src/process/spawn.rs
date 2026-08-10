@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -35,6 +37,7 @@ pub struct SpawnOptions {
     pub reference: String,
     pub day: Option<String>,
     pub sink: Option<Arc<dyn ProcessEventSink>>,
+    pub environment: BTreeMap<OsString, OsString>,
 }
 
 /// A child process with journal-system operational logs and bounded cleanup.
@@ -69,6 +72,7 @@ impl ManagedProcess {
         let mut command = Command::new(&cmd[0]);
         command
             .args(&cmd[1..])
+            .envs(&options.environment)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

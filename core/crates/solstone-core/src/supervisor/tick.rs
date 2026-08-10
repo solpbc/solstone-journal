@@ -28,6 +28,7 @@ pub(crate) async fn run(state: &mut SupervisorState) -> bool {
     let mut last_sync = Instant::now() - Duration::from_secs_f64(DEFAULT_INTERVAL_SECONDS);
     loop {
         drain_inbound(state).await;
+        reconcile_app_processes(state);
         state.queue.enforce_deadlines(Instant::now());
         record_schedule_completions(state);
         reconcile_providers(state);
@@ -106,6 +107,49 @@ pub(crate) async fn run(state: &mut SupervisorState) -> bool {
         tokio::select! {
             _ = tokio::time::sleep(TICK_INTERVAL) => {},
             _ = wait_for_shutdown() => return false,
+        }
+    }
+}
+
+fn reconcile_app_processes(state: &mut SupervisorState) {
+    let journal = state.journal.clone();
+    let server = state.server.clone();
+    for app in &mut state.app_processes {
+        if !app.enabled {
+            continue;
+        }
+        if let Some(process) = app.process.as_mut() {
+            match process.poll() {
+                Ok(Some(exit_code)) => {
+                    process.cleanup();
+                    eprintln!(
+                        "supervisor: {} exited with {}; scheduling restart",
+                        app.service.as_str(),
+                        exit_code
+                    );
+                    app.record_exit(exit_code);
+                    continue;
+                }
+                Ok(None) => continue,
+                Err(error) => {
+                    eprintln!(
+                        "supervisor: failed to poll {}: {error}",
+                        app.service.as_str()
+                    );
+                    continue;
+                }
+            }
+        }
+        if app
+            .restart_at
+            .is_some_and(|restart_at| Instant::now() >= restart_at)
+            && let Err(error) = super::runtime::spawn_app_process(app, &journal, server.clone())
+        {
+            eprintln!(
+                "supervisor: failed to restart {}: {error}",
+                app.service.as_str()
+            );
+            app.record_exit(-1);
         }
     }
 }

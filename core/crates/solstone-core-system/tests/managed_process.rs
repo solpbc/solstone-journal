@@ -42,6 +42,7 @@ impl Bed {
                 reference: reference.to_owned(),
                 day: Some("20260807".to_owned()),
                 sink: None,
+                environment: Default::default(),
             },
         )
         .expect("spawn fixture")
@@ -274,6 +275,7 @@ fn ac20_spawn_line_and_exit_events_are_emitted_by_a_caller_owned_sink() {
             reference: "events".to_owned(),
             day: Some("20260807".to_owned()),
             sink: Some(collector.clone()),
+            environment: Default::default(),
         },
     )
     .expect("spawn fixture");
