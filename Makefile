@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-deny build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-no-legacy-chat check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-cogitate-prompts check-local-server-argv-owner check-local-install-transport check-local-generate-cutover smoke-cogitate release release-test publish-release publish-release-test FORCE
+.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-deny build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 check-rust-vad-analyze-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-no-legacy-chat check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-cogitate-prompts check-local-server-argv-owner check-local-install-transport check-local-generate-cutover smoke-cogitate release release-test publish-release publish-release-test FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -26,7 +26,7 @@ VENV_PY := $(VENV_BIN)/python
 PYTHON := $(VENV_PY)
 RUST_MANIFEST := core/Cargo.toml
 IOS_TARGET := aarch64-apple-ios
-RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx
+RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze
 
 # bindgen (inside ffmpeg-sys-next, which solstone-core-describe pulls in) asks
 # libclang for its builtin-header directory, and libclang derives that path from
@@ -59,6 +59,19 @@ REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is require
 # are therefore the checked-in developer path for the helper's GLIBC_2.27 floor.
 SPEAKERS_ANALYZE_LINUX_X86_64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target x86_64-unknown-linux-gnu
 SPEAKERS_ANALYZE_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target aarch64-unknown-linux-gnu
+# The VAD helper bundles the SAME pinned CPU ONNX Runtime as the speakers
+# helper (identical `ort` pin, identical onnxruntime 1.25.0 bytes), so it shares
+# the GLIBC_2.27 floor and the same zig-GNU cross args.
+VAD_ANALYZE_LINUX_X86_64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target x86_64-unknown-linux-gnu
+VAD_ANALYZE_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target aarch64-unknown-linux-gnu
+# Host link inputs for the ONNX-bundling helpers. There is exactly ONE staged
+# runtime directory per target — scripts/stage_speakers_analyze_runtime.py owns
+# the pinned URL/digest table — and the VAD targets reuse it rather than
+# provisioning a second copy. Only the wheel *payload* is per-package, because
+# each helper's build.rs rpath points at its own $ORIGIN/../lib/<package>.
+ONNX_RUNTIME_HOST_TARGET := linux-$(shell uname -m)
+ONNX_RUNTIME_HOST_LINK_DIR := $(CURDIR)/target/speakers-analyze-runtime-link/$(ONNX_RUNTIME_HOST_TARGET)
+VAD_ANALYZE_HOST_ORT_ENV := ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(ONNX_RUNTIME_HOST_LINK_DIR)" LD_LIBRARY_PATH="$(ONNX_RUNTIME_HOST_LINK_DIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"
 DESCRIBE_LINUX_X86_64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target x86_64-unknown-linux-gnu
 DESCRIBE_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target aarch64-unknown-linux-gnu
 # Derived, never written out: the helper's declared coverage lives in
@@ -96,7 +109,7 @@ JOURNAL_GROUP := $(if $(filter cuda,$(JOURNAL_VARIANT)),journal-cuda,journal-cpu
 # report uv-absence themselves. Rust-only and frozen/gated goals are likewise
 # optional; Python-dependent goals outside this list still abort at parse time.
 UV := $(shell command -v uv 2>/dev/null)
-UV_OPTIONAL_GOALS := preflight install render-packaging check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-deny audit ci verify test build format format-check hopper-install test-cov test-integration test-release test-performance test-app test-only watch coverage release release-test release-checks publish-release publish-release-test check-transparency-minisign publish-transparency resign-transparency-pointer
+UV_OPTIONAL_GOALS := preflight install render-packaging check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-vad-analyze-test check-rust-deny audit ci verify test build format format-check hopper-install test-cov test-integration test-release test-performance test-app test-only watch coverage release release-test release-checks publish-release publish-release-test check-transparency-minisign publish-transparency resign-transparency-pointer
 ifndef UV
 ifneq ($(filter-out $(UV_OPTIONAL_GOALS),$(MAKECMDGOALS)),)
 $(error uv is not installed. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh)
@@ -230,6 +243,34 @@ wheel-speakers-analyze-linux-aarch64:
 	rm -f dist/solstone_core_speakers_analyze-*.whl
 	ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(CURDIR)/target/speakers-analyze-runtime-link/linux-aarch64" MATURIN_PEP517_ARGS="$(SPEAKERS_ANALYZE_LINUX_AARCH64_MATURIN_ARGS)" $(UV) build --package solstone-core-speakers-analyze --wheel
 
+wheel-vad-analyze-linux: wheel-vad-analyze-linux-x86_64
+
+wheel-vad-analyze-linux-x86_64:
+	python3 scripts/stage_speakers_analyze_runtime.py --target linux-x86_64 --package-dir packages/solstone-core-vad-analyze --receipt target/vad-analyze-runtime-provenance/linux-x86_64.json
+	rm -f dist/solstone_core_vad_analyze-*.whl
+	ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(CURDIR)/target/speakers-analyze-runtime-link/linux-x86_64" MATURIN_PEP517_ARGS="$(VAD_ANALYZE_LINUX_X86_64_MATURIN_ARGS)" $(UV) build --package solstone-core-vad-analyze --wheel
+
+wheel-vad-analyze-linux-aarch64:
+	python3 scripts/stage_speakers_analyze_runtime.py --target linux-aarch64 --package-dir packages/solstone-core-vad-analyze --receipt target/vad-analyze-runtime-provenance/linux-aarch64.json
+	rm -f dist/solstone_core_vad_analyze-*.whl
+	ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(CURDIR)/target/speakers-analyze-runtime-link/linux-aarch64" MATURIN_PEP517_ARGS="$(VAD_ANALYZE_LINUX_AARCH64_MATURIN_ARGS)" $(UV) build --package solstone-core-vad-analyze --wheel
+
+# Host-side staged runtime for the ONNX-linked crates' own cargo test runs.
+# Directory-existence rule, so a populated stage is not re-downloaded; the wheel
+# targets above always restage explicitly for their own cross target.
+$(ONNX_RUNTIME_HOST_LINK_DIR):
+	python3 scripts/stage_speakers_analyze_runtime.py --target $(ONNX_RUNTIME_HOST_TARGET) --package-dir packages/solstone-core-vad-analyze --receipt target/vad-analyze-runtime-provenance/$(ONNX_RUNTIME_HOST_TARGET).json
+
+# solstone-core-vad-analyze links ONNX Runtime, so RUST_HOST_EXCLUDES keeps it
+# out of check-rust-test/build and its own #[test]s would otherwise run nowhere.
+# This target is that somewhere. It stages the shared runtime first, so it is
+# runnable standalone from a state where only `make install` has run. It stays
+# OUTSIDE ci/ci-under-poison, which cannot shell to Python at all — same spirit
+# as check-differentials.
+check-rust-vad-analyze-test: $(ONNX_RUNTIME_HOST_LINK_DIR)
+	@$(REQUIRE_CARGO)
+	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-vad-analyze --locked
+
 wheel-describe-linux: wheel-describe-linux-x86_64
 
 wheel-describe-linux-x86_64:
@@ -268,7 +309,7 @@ check-rust-ios:
 	@$(REQUIRE_RUSTUP)
 	@rustup target list --installed 2>/dev/null | grep -qx "$(IOS_TARGET)" || { echo "Rust target $(IOS_TARGET) is required for the iOS gate; run rustup target add $(IOS_TARGET)" >&2; exit 1; }
 	# Host-only process/server crates, including Convey, are not iOS target concerns in this wave.
-	cargo check --manifest-path $(RUST_MANIFEST) --workspace --exclude solstone-core --exclude solstone-core-journal-cli --exclude solstone-core-indexer-store --exclude solstone-core-indexer-query --exclude solstone-core-entity --exclude solstone-core-facets --exclude solstone-core-sol-link --exclude solstone-core-spp-attest --exclude solstone-core-spp-ratls --exclude solstone-core-generate-wire --exclude solstone-core-convey-http --exclude solstone-core-convey-shell --exclude solstone-core-serving --exclude solstone-core-segment --exclude solstone-core-ingest --exclude solstone-core-entities --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-describe --exclude solstone-core-observe-audio --exclude solstone-core-body-rebuild --lib --target $(IOS_TARGET) --locked
+	cargo check --manifest-path $(RUST_MANIFEST) --workspace --exclude solstone-core --exclude solstone-core-journal-cli --exclude solstone-core-indexer-store --exclude solstone-core-indexer-query --exclude solstone-core-entity --exclude solstone-core-facets --exclude solstone-core-sol-link --exclude solstone-core-spp-attest --exclude solstone-core-spp-ratls --exclude solstone-core-generate-wire --exclude solstone-core-convey-http --exclude solstone-core-convey-shell --exclude solstone-core-serving --exclude solstone-core-segment --exclude solstone-core-ingest --exclude solstone-core-entities --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-describe --exclude solstone-core-observe-audio --exclude solstone-core-body-rebuild --exclude solstone-core-vad-analyze --lib --target $(IOS_TARGET) --locked
 
 check-rust-deny:
 	@$(REQUIRE_CARGO)
@@ -292,8 +333,12 @@ check-rust-deny:
 # --no-fail-fast, every leg runs regardless of its predecessors, and the target
 # exits non-zero if any of them did. A gate that could not judge must never
 # read as a gate that said yes.
+# The final leg is the only one that links ONNX Runtime, so it -- and only it --
+# carries the ORT_* / LD_LIBRARY_PATH plumbing and the staged-runtime
+# prerequisite. It sits outside the loop precisely so those variables do not
+# leak into legs that must not see them.
 .PHONY: check-differentials
-check-differentials:
+check-differentials: $(ONNX_RUNTIME_HOST_LINK_DIR)
 	@$(REQUIRE_CARGO)
 	$(MAKE) install
 	@status=0; \
@@ -317,6 +362,11 @@ check-differentials:
 		cargo test --manifest-path $(RUST_MANIFEST) --features differential --locked --no-fail-fast $$leg \
 			|| status=$$?; \
 	done; \
+	ort_leg="-p solstone-core-vad-analyze --test vad_differential"; \
+	echo "==> cargo test --features differential --no-fail-fast $$ort_leg"; \
+	$(VAD_ANALYZE_HOST_ORT_ENV) \
+		cargo test --manifest-path $(RUST_MANIFEST) --features differential --locked --no-fail-fast $$ort_leg \
+			|| status=$$?; \
 	if [ $$status -eq 0 ]; then \
 		echo "check-differentials: every leg ran and passed"; \
 	else \

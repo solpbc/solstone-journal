@@ -36,6 +36,10 @@ from scripts.stage_speakers_analyze_runtime import (
 from scripts.stage_speakers_analyze_runtime import (
     TARGETS as SPEAKERS_ANALYZE_TARGETS,
 )
+from scripts.stage_speakers_analyze_runtime import (
+    notice_install_dir,
+    runtime_install_dir,
+)
 from solstone.think.probe import (
     SOLSTONE_CORE_COVERED_PLATFORMS,
     SOLSTONE_CORE_PLATFORM_TAGS,
@@ -62,6 +66,7 @@ MAX_BASE_WHEEL_BYTES = 4 * 1024 * 1024
 MAX_BASE_PLATFORM_WHEEL_BYTES = 6 * 1024 * 1024
 MAX_CORE_WHEEL_BYTES = 30 * 1024 * 1024
 MAX_SPEAKERS_ANALYZE_WHEEL_BYTES = 30 * 1024 * 1024
+MAX_VAD_ANALYZE_WHEEL_BYTES = 30 * 1024 * 1024
 MAX_DESCRIBE_WHEEL_BYTES = 30 * 1024 * 1024
 PARAKEET_HELPER_MEMBER = (
     "solstone/observe/transcribe/parakeet_helper/_bin/parakeet-helper"
@@ -72,6 +77,16 @@ CORE_SCRIPT_NAMES = ("solstone-core",)
 SPEAKERS_ANALYZE_SCRIPT_NAMES = ("solstone-core-speakers-analyze",)
 DESCRIBE_SCRIPT_NAME = "solstone-core-describe"
 DESCRIBE_PLATFORM_TAGS: dict[CorePlatform, str] = {
+    ("linux", "x86_64"): "manylinux_2_27_x86_64",
+    ("linux", "aarch64"): "manylinux_2_27_aarch64",
+}
+VAD_ANALYZE_PACKAGE_NAME = "solstone-core-vad-analyze"
+VAD_ANALYZE_SCRIPT_NAME = VAD_ANALYZE_PACKAGE_NAME
+# Declared locally, like DESCRIBE_PLATFORM_TAGS above and unlike the
+# speakers-analyze table: the VAD helper has no runtime probe in solstone/ that
+# advertises its coverage, so packaging is the only place that knows it. Linux
+# only by construction — the crate's build.rs panics on any other target OS.
+VAD_ANALYZE_PLATFORM_TAGS: dict[CorePlatform, str] = {
     ("linux", "x86_64"): "manylinux_2_27_x86_64",
     ("linux", "aarch64"): "manylinux_2_27_aarch64",
 }
@@ -199,6 +214,28 @@ SPEAKERS_ANALYZE_RUNTIME_LINK_CONTRACTS: dict[
 SPEAKERS_ANALYZE_FORBIDDEN_PROVIDER_RE = re.compile(
     r"providers_(?:cuda|tensorrt|shared)", re.IGNORECASE
 )
+VAD_ANALYZE_TAG_PLATFORMS = {
+    tag: platform for platform, tag in VAD_ANALYZE_PLATFORM_TAGS.items()
+}
+# The VAD helper bundles the SAME pinned CPU ONNX Runtime as the speakers
+# helper, so its digests and notices come from that one staging table rather
+# than a second copy. Only the install destination differs, and that is derived
+# from the package name so it stays in lockstep with the crate's build.rs rpath.
+VAD_ANALYZE_PLATFORM_TARGETS = {
+    ("linux", "x86_64"): "linux-x86_64",
+    ("linux", "aarch64"): "linux-aarch64",
+}
+VAD_ANALYZE_RUNTIME_INSTALL_DIR = runtime_install_dir(VAD_ANALYZE_PACKAGE_NAME)
+VAD_ANALYZE_NOTICE_INSTALL_DIR = notice_install_dir(VAD_ANALYZE_PACKAGE_NAME)
+VAD_ANALYZE_RUNTIME_LINK_CONTRACTS: dict[
+    CorePlatform, SpeakersAnalyzeRuntimeLinkContract
+] = {
+    platform_tuple: SpeakersAnalyzeRuntimeLinkContract(
+        f"$ORIGIN/../lib/{VAD_ANALYZE_PACKAGE_NAME}",
+        SPEAKERS_ANALYZE_TARGETS[target_key].runtime_staged_name,
+    )
+    for platform_tuple, target_key in VAD_ANALYZE_PLATFORM_TARGETS.items()
+}
 FORBIDDEN_PRODUCTION_IMPORT_EXACT = {
     "kaldi_native_fbank",
     "solstone.observe.model_assets",
@@ -251,6 +288,12 @@ def _is_speakers_analyze_wheel(path: Path) -> bool:
     return path.name.startswith(
         "solstone_core_speakers_analyze-"
     ) and path.name.endswith(".whl")
+
+
+def _is_vad_analyze_wheel(path: Path) -> bool:
+    return path.name.startswith("solstone_core_vad_analyze-") and path.name.endswith(
+        ".whl"
+    )
 
 
 def _is_describe_wheel(path: Path) -> bool:
@@ -353,6 +396,12 @@ def _speakers_analyze_rebuild_command(platform_tuple: CorePlatform | None) -> st
     if platform_tuple[1] == "aarch64":
         return "make wheel-speakers-analyze-linux-aarch64"
     return "make wheel-speakers-analyze-linux-x86_64"
+
+
+def _vad_analyze_rebuild_command(platform_tuple: CorePlatform | None) -> str:
+    if platform_tuple is not None and platform_tuple[1] == "aarch64":
+        return "make wheel-vad-analyze-linux-aarch64"
+    return "make wheel-vad-analyze-linux-x86_64"
 
 
 def check_base_wheel(path: Path, max_bytes: int) -> list[str]:
@@ -1526,23 +1575,33 @@ def _speakers_analyze_expected_members(
     )
 
 
-def _check_speakers_analyze_elf_binary(
+def _check_onnx_bundled_elf_binary(
     wheel_name: str,
     content: bytes,
     library_content: bytes,
     platform_tuple: CorePlatform,
     tag: str,
+    *,
+    label: str,
+    contract: SpeakersAnalyzeRuntimeLinkContract,
+    repair: str,
 ) -> list[str]:
+    """Validate one ELF helper that dynamically loads its bundled ONNX Runtime.
+
+    Shared by every helper family that ships the runtime beside its binary, so
+    the DT_NEEDED / DT_RUNPATH / GLIBC-floor contract has exactly one
+    implementation. ``label`` only names the family in diagnostics; ``contract``
+    carries the family's own rpath and runtime soname.
+    """
+
     errors: list[str] = []
-    repair = _speakers_analyze_rebuild_command(platform_tuple)
-    contract = SPEAKERS_ANALYZE_RUNTIME_LINK_CONTRACTS[platform_tuple]
     machine_name = platform_tuple[1]
     expected_machine = ELF_MACHINE[machine_name]
     if len(content) < 64 or content[:4] != ELF_MAGIC:
         return [
             _failure(
                 wheel_name,
-                "speakers analyze binary is not ELF64",
+                f"{label} binary is not ELF64",
                 expected="ELF64 helper binary",
                 actual=content[:4].hex(),
                 repair=repair,
@@ -1553,7 +1612,7 @@ def _check_speakers_analyze_elf_binary(
         errors.append(
             _failure(
                 wheel_name,
-                "speakers analyze ELF machine does not match wheel tag",
+                f"{label} ELF machine does not match wheel tag",
                 expected=f"{machine_name} ({expected_machine:#06x})",
                 actual=f"{actual_machine:#06x}",
                 repair=repair,
@@ -1563,7 +1622,7 @@ def _check_speakers_analyze_elf_binary(
         errors.append(
             _failure(
                 wheel_name,
-                "speakers analyze ELF binary is missing PT_INTERP",
+                f"{label} ELF binary is missing PT_INTERP",
                 expected="PT_INTERP program header present",
                 actual="missing",
                 repair=repair,
@@ -1574,7 +1633,7 @@ def _check_speakers_analyze_elf_binary(
         errors.append(
             _failure(
                 wheel_name,
-                "speakers analyze ELF binary is missing DT_NEEDED",
+                f"{label} ELF binary is missing DT_NEEDED",
                 expected="at least one DT_NEEDED entry",
                 actual="<empty>",
                 repair=repair,
@@ -1584,7 +1643,7 @@ def _check_speakers_analyze_elf_binary(
         errors.append(
             _failure(
                 wheel_name,
-                "speakers analyze ELF binary does not need ONNX Runtime",
+                f"{label} ELF binary does not need ONNX Runtime",
                 expected=f"DT_NEEDED {contract.runtime_load}",
                 actual=", ".join(needed) or "<empty>",
                 repair=repair,
@@ -1594,7 +1653,7 @@ def _check_speakers_analyze_elf_binary(
         errors.append(
             _failure(
                 wheel_name,
-                "speakers analyze ELF RUNPATH is wrong",
+                f"{label} ELF RUNPATH is wrong",
                 expected=contract.rpath,
                 actual=runpath or "<missing>",
                 repair=repair,
@@ -1604,7 +1663,7 @@ def _check_speakers_analyze_elf_binary(
         errors.append(
             _failure(
                 wheel_name,
-                "speakers analyze ELF uses legacy RPATH",
+                f"{label} ELF uses legacy RPATH",
                 expected="DT_RUNPATH only",
                 actual=rpath,
                 repair=repair,
@@ -1622,7 +1681,7 @@ def _check_speakers_analyze_elf_binary(
         errors.append(
             _failure(
                 wheel_name,
-                "speakers analyze wheel tag does not declare a manylinux floor",
+                f"{label} wheel tag does not declare a manylinux floor",
                 expected="manylinux_N_M platform tag",
                 actual=tag,
                 repair=repair,
@@ -1632,13 +1691,32 @@ def _check_speakers_analyze_elf_binary(
         errors.append(
             _failure(
                 wheel_name,
-                "speakers analyze wheel tag understates GLIBC floor",
+                f"{label} wheel tag understates GLIBC floor",
                 expected=f"declared floor >= measured GLIBC_{_format_version(measured)}",
                 actual=f"{tag} declares glibc {declared[0]}.{declared[1]}",
                 repair=repair,
             )
         )
     return errors
+
+
+def _check_speakers_analyze_elf_binary(
+    wheel_name: str,
+    content: bytes,
+    library_content: bytes,
+    platform_tuple: CorePlatform,
+    tag: str,
+) -> list[str]:
+    return _check_onnx_bundled_elf_binary(
+        wheel_name,
+        content,
+        library_content,
+        platform_tuple,
+        tag,
+        label="speakers analyze",
+        contract=SPEAKERS_ANALYZE_RUNTIME_LINK_CONTRACTS[platform_tuple],
+        repair=_speakers_analyze_rebuild_command(platform_tuple),
+    )
 
 
 def check_speakers_analyze_wheel(path: Path) -> list[str]:
@@ -1808,6 +1886,197 @@ def check_speakers_analyze_wheel(path: Path) -> list[str]:
     return errors
 
 
+def _vad_analyze_expected_members(
+    path: Path, platform_tuple: CorePlatform
+) -> tuple[set[str], str, str]:
+    version = _wheel_version_from_name(path, "solstone_core_vad_analyze")
+    data_prefix = f"solstone_core_vad_analyze-{version}.data"
+    dist_info_prefix = f"solstone_core_vad_analyze-{version}.dist-info"
+    target_key = VAD_ANALYZE_PLATFORM_TARGETS[platform_tuple]
+    spec = SPEAKERS_ANALYZE_TARGETS[target_key]
+    binary_member = f"{data_prefix}/scripts/{VAD_ANALYZE_SCRIPT_NAME}"
+    library_member = (
+        f"{data_prefix}/{VAD_ANALYZE_RUNTIME_INSTALL_DIR.as_posix()}/"
+        f"{spec.runtime_staged_name}"
+    )
+    notice_members = {
+        f"{data_prefix}/{VAD_ANALYZE_NOTICE_INSTALL_DIR.as_posix()}/"
+        f"{notice.staged_name}"
+        for notice in spec.notices
+    }
+    return (
+        {
+            binary_member,
+            library_member,
+            *notice_members,
+            f"{dist_info_prefix}/METADATA",
+            f"{dist_info_prefix}/WHEEL",
+            f"{dist_info_prefix}/RECORD",
+            f"{dist_info_prefix}/sboms/{VAD_ANALYZE_PACKAGE_NAME}.cyclonedx.json",
+        },
+        binary_member,
+        library_member,
+    )
+
+
+def check_vad_analyze_wheel(path: Path) -> list[str]:
+    """Validate the VAD helper wheel: binary plus its bundled ONNX Runtime.
+
+    The Silero model is NOT bundled here. The helper takes
+    `models.silero_vad_onnx_path` in its request, so the model ships through
+    solstone-journal-models and is resolved by the caller at runtime.
+    """
+
+    errors: list[str] = []
+    tag = _core_wheel_tag(path)
+    platform_tuple = VAD_ANALYZE_TAG_PLATFORMS.get(tag)
+    repair = _vad_analyze_rebuild_command(platform_tuple)
+    size = path.stat().st_size
+    if size > MAX_VAD_ANALYZE_WHEEL_BYTES:
+        errors.append(
+            _failure(
+                path.name,
+                "vad analyze wheel is too large",
+                expected=f"<= {MAX_VAD_ANALYZE_WHEEL_BYTES} bytes",
+                actual=str(size),
+                repair=repair,
+            )
+        )
+    if platform_tuple is None:
+        errors.append(
+            _failure(
+                path.name,
+                "unsupported vad analyze wheel tag",
+                expected=", ".join(sorted(VAD_ANALYZE_PLATFORM_TAGS.values())),
+                actual=tag,
+                repair=repair,
+            )
+        )
+        return errors
+
+    expected_members, binary_member, library_member = _vad_analyze_expected_members(
+        path, platform_tuple
+    )
+    target_key = VAD_ANALYZE_PLATFORM_TARGETS[platform_tuple]
+    spec = SPEAKERS_ANALYZE_TARGETS[target_key]
+    with zipfile.ZipFile(path) as wheel:
+        names = set(wheel.namelist())
+        if names != expected_members:
+            errors.append(
+                _failure(
+                    path.name,
+                    "vad analyze wheel member set is wrong",
+                    expected=", ".join(sorted(expected_members)),
+                    actual=", ".join(sorted(names)) or "<empty>",
+                    repair=repair,
+                )
+            )
+        provider_members = sorted(
+            name
+            for name in names
+            if SPEAKERS_ANALYZE_FORBIDDEN_PROVIDER_RE.search(Path(name).name)
+        )
+        if provider_members:
+            errors.append(
+                _failure(
+                    path.name,
+                    "vad analyze wheel contains unproven provider library",
+                    expected=(
+                        "no providers_cuda, providers_tensorrt, or "
+                        "providers_shared libraries"
+                    ),
+                    actual=", ".join(provider_members),
+                    repair=(
+                        "python3 scripts/stage_speakers_analyze_runtime.py "
+                        "--package-dir packages/solstone-core-vad-analyze"
+                    ),
+                )
+            )
+        binary_infos = [
+            info for info in wheel.infolist() if info.filename == binary_member
+        ]
+        if len(binary_infos) != 1:
+            errors.append(
+                _failure(
+                    path.name,
+                    "vad analyze binary member count is wrong",
+                    expected=f"exactly one {binary_member}",
+                    actual=str(len(binary_infos)),
+                    repair=repair,
+                )
+            )
+        else:
+            mode = (binary_infos[0].external_attr >> 16) & 0o777
+            if mode & 0o111 == 0:
+                errors.append(
+                    _failure(
+                        path.name,
+                        "vad analyze binary is not executable",
+                        expected="executable mode bit set",
+                        actual=oct(mode),
+                        repair=repair,
+                    )
+                )
+
+        try:
+            library_content = wheel.read(library_member)
+        except KeyError:
+            library_content = b""
+        actual_library_sha = hashlib.sha256(library_content).hexdigest()
+        if actual_library_sha != spec.runtime_sha256:
+            errors.append(
+                _failure(
+                    path.name,
+                    "vad analyze ONNX Runtime library digest mismatch",
+                    expected=spec.runtime_sha256,
+                    actual=actual_library_sha,
+                    repair=(
+                        "python3 scripts/stage_speakers_analyze_runtime.py "
+                        "--package-dir packages/solstone-core-vad-analyze"
+                    ),
+                )
+            )
+        version = _wheel_version_from_name(path, "solstone_core_vad_analyze")
+        for notice in spec.notices:
+            notice_member = (
+                f"solstone_core_vad_analyze-{version}.data/"
+                f"{VAD_ANALYZE_NOTICE_INSTALL_DIR.as_posix()}/{notice.staged_name}"
+            )
+            try:
+                notice_content = wheel.read(notice_member)
+            except KeyError:
+                notice_content = b""
+            actual_notice_sha = hashlib.sha256(notice_content).hexdigest()
+            if actual_notice_sha != notice.sha256:
+                errors.append(
+                    _failure(
+                        path.name,
+                        f"vad analyze notice digest mismatch for {notice.staged_name}",
+                        expected=notice.sha256,
+                        actual=actual_notice_sha,
+                        repair=(
+                            "python3 scripts/stage_speakers_analyze_runtime.py "
+                            "--package-dir packages/solstone-core-vad-analyze"
+                        ),
+                    )
+                )
+        if binary_infos:
+            errors.extend(
+                _check_onnx_bundled_elf_binary(
+                    f"{path.name}:{binary_member}",
+                    wheel.read(binary_member),
+                    library_content,
+                    platform_tuple,
+                    tag,
+                    label="vad analyze",
+                    contract=VAD_ANALYZE_RUNTIME_LINK_CONTRACTS[platform_tuple],
+                    repair=repair,
+                )
+            )
+        errors.extend(_check_record(path, wheel))
+    return errors
+
+
 def check_describe_wheel(path: Path) -> list[str]:
     """Validate the statically linked describe helper wheel."""
     errors: list[str] = []
@@ -1971,6 +2240,14 @@ def _native_platform_tags(
             SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_TAGS[platform]
             for platform in _speakers_analyze_platforms_for_scope(release_scope)
         )
+    if package.target_family == "vad-analyze":
+        # Linux only in both scopes: the crate's build.rs refuses any other
+        # target OS, so "all-hosts" adds no darwin wheel here.
+        return tuple(
+            VAD_ANALYZE_PLATFORM_TAGS[platform]
+            for platform in sorted(VAD_ANALYZE_PLATFORM_TAGS)
+            if platform[0] == "linux"
+        )
     return tuple(
         DESCRIBE_PLATFORM_TAGS[platform]
         for platform in sorted(DESCRIBE_PLATFORM_TAGS)
@@ -2109,6 +2386,7 @@ def check_dist(
     speakers_analyze_wheels = [
         path for path in wheels if _is_speakers_analyze_wheel(path)
     ]
+    vad_analyze_wheels = [path for path in wheels if _is_vad_analyze_wheel(path)]
     describe_wheels = [path for path in wheels if _is_describe_wheel(path)]
     generic_native_packages = tuple(
         package
@@ -2118,6 +2396,7 @@ def check_dist(
             "solstone-core",
             "solstone-core-describe",
             "solstone-core-speakers-analyze",
+            "solstone-core-vad-analyze",
         }
     )
     generic_native_wheels = {
@@ -2130,6 +2409,7 @@ def check_dist(
     helper_only_dist = (
         (
             speakers_analyze_wheels
+            or vad_analyze_wheels
             or describe_wheels
             or any(generic_native_wheels.values())
         )
@@ -2175,6 +2455,8 @@ def check_dist(
         errors.extend(check_core_wheel(path, MAX_CORE_WHEEL_BYTES))
     for path in speakers_analyze_wheels:
         errors.extend(check_speakers_analyze_wheel(path))
+    for path in vad_analyze_wheels:
+        errors.extend(check_vad_analyze_wheel(path))
     for path in describe_wheels:
         errors.extend(check_describe_wheel(path))
     for package, package_wheels in generic_native_wheels.items():

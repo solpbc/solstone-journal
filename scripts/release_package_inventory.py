@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
-TARGET_FAMILIES = frozenset(("core", "describe", "speakers-analyze"))
+TARGET_FAMILIES = frozenset(("core", "describe", "speakers-analyze", "vad-analyze"))
 
 
 class ReleasePackageInventoryError(RuntimeError):
